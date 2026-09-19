@@ -3,12 +3,12 @@
   "base": "main",
   "base_resolved": "origin/main",
   "base_note": "local main differs from origin/main by 98 commit(s); judged against origin/main",
-  "head": "4ad88d9f3c99b54f129adedb498d6f008daefff1",
-  "diff_sha256": "59a13c89a94773f1d896acedd683fcca7a403e8741be72d90b51c341d4f53487",
+  "head": "1c1d2cd692d5b1788bc6e7ee5b06108464f84123",
+  "diff_sha256": "d2233883b8ce517cdc0551e1561e285a8e1a158c0c60ce3b5b78edf880f31f57",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "inline",
-  "prompt_bytes": 2285,
+  "prompt_bytes": 11579,
   "author": {
     "model": "claude-fable-5-1",
     "family": "claude",
@@ -20,24 +20,34 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff exactly matches the requirements of PMAT-3505. It creates two new `.cmd` files in `ci/explicit-test-commands.d/` to run the previously dark `ont4_relations_gate` and `ont4b_shapes_gate` tests in CI. This is strictly CI wiring, with no code changes, no weakened gates, and no out-of-scope work included.",
+      "summary": "The diff precisely fulfills PMAT-3505 by wiring the ONT-4 relations and ONT-4b shapes gate tests into CI. It correctly adds the necessary `.cmd` entries in `ci/explicit-test-commands.d/` and updates the test and unwired baseline trackers as requested. No code is modified, no out-of-scope logic is introduced, and no gates are weakened.",
       "findings": [
         {
-          "claim": "Adds explicit test command entry 337 for the ONT-4 relations gate test, correctly executing 'cargo test -p aprender-contracts-cli --test ont4_relations_gate', strictly fulfilling the CI wiring requirement of PMAT-3505.",
+          "claim": "Adds the required CI wiring for the ONT-4 relations gate test.",
           "file": "ci/explicit-test-commands.d/337-aprender-contracts-cli-ont4-relations-gate.cmd",
-          "fix": "",
           "grounding": "cited",
           "line": 1
         },
         {
-          "claim": "Adds explicit test command entry 338 for the ONT-4b SHACL shapes gate test, correctly executing 'cargo test -p aprender-contracts-cli --test ont4b_shapes_gate', fulfilling the remainder of the ticket without altering code.",
+          "claim": "Adds the required CI wiring for the ONT-4b SHACL shapes gate test.",
           "file": "ci/explicit-test-commands.d/338-aprender-contracts-cli-ont4b-shapes-gate.cmd",
-          "fix": "",
           "grounding": "cited",
           "line": 1
+        },
+        {
+          "claim": "Correctly updates the tree reader tests tracker to include the newly wired tests.",
+          "file": "scripts/tree_reader_tests.txt",
+          "grounding": "cited",
+          "line": 63
+        },
+        {
+          "claim": "Removes the newly wired tests from the unwired baseline tracker, fulfilling the ticket requirement.",
+          "file": "scripts/tree_reader_unwired_baseline.txt",
+          "grounding": "cited",
+          "line": 17
         }
       ],
-      "raw_bytes": 3365,
+      "raw_bytes": 3578,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -51,22 +61,34 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff precisely implements ticket PMAT-3505 by adding CI explicit test command entries 337 and 338 in `ci/explicit-test-commands.d/` for `ont4_relations_gate` and `ont4b_shapes_gate`. It contains strictly CI wiring, introduces no code changes or out-of-scope modifications, weakens no gates, and successfully brings the dark ONT-4 and ONT-4b gate tests into CI execution.",
+      "summary": "The diff strictly implements ticket PMAT-3505 by wiring the previously dark ONT-4 and ONT-4b gate tests (ont4_relations_gate and ont4b_shapes_gate) into CI via explicit command entries 337 and 338, and updating the tree reader test baselines (scripts/tree_reader_tests.txt and scripts/tree_reader_unwired_baseline.txt) accordingly. No source code was modified, no gates were weakened, and no forbidden or out-of-scope changes were introduced.",
       "findings": [
         {
-          "claim": "Adds explicit CI test command entry 337 to execute `cargo test -p aprender-contracts-cli --test ont4_relations_gate` for the ONT-4 relations gate test, addressing darkness in CI without touching code.",
+          "claim": "Adds explicit test command entry 337 executing 'cargo test -p aprender-contracts-cli --test ont4_relations_gate' to wire the ONT-4 relations gate test into CI, fulfilling the CI wiring requirement of PMAT-3505 without code changes.",
           "file": "ci/explicit-test-commands.d/337-aprender-contracts-cli-ont4-relations-gate.cmd",
           "grounding": "cited",
           "line": 1
         },
         {
-          "claim": "Adds explicit CI test command entry 338 to execute `cargo test -p aprender-contracts-cli --test ont4b_shapes_gate` for the ONT-4b SHACL shapes gate test, addressing darkness in CI without touching code.",
+          "claim": "Adds explicit test command entry 338 executing 'cargo test -p aprender-contracts-cli --test ont4b_shapes_gate' to wire the ONT-4b SHACL shapes gate test into CI, addressing test darkness in CI as required by PMAT-3505.",
           "file": "ci/explicit-test-commands.d/338-aprender-contracts-cli-ont4b-shapes-gate.cmd",
           "grounding": "cited",
           "line": 1
+        },
+        {
+          "claim": "Adds ont4_relations_gate and ont4b_shapes_gate to the wired tree reader tests registry pursuant to BSE-17 re-derivation.",
+          "file": "scripts/tree_reader_tests.txt",
+          "grounding": "cited",
+          "line": 63
+        },
+        {
+          "claim": "Removes ont4_relations_gate and ont4b_shapes_gate from the unwired baseline, transitioning both targets from unwired to wired in accordance with PMAT-3505.",
+          "file": "scripts/tree_reader_unwired_baseline.txt",
+          "grounding": "cited",
+          "line": 17
         }
       ],
-      "raw_bytes": 3367,
+      "raw_bytes": 4524,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -80,22 +102,28 @@
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff precisely implements ticket PMAT-3505 by adding CI explicit test command entries 337 and 338 in ci/explicit-test-commands.d/ for the ONT-4 relations gate test (`ont4_relations_gate`) and ONT-4b SHACL shapes gate test (`ont4b_shapes_gate`). It contains CI wiring only, makes no code modifications, introduces no out-of-scope changes, and weakens no gates.",
+      "summary": "The diff strictly fulfills ticket PMAT-3505 by wiring the dark ONT-4 and ONT-4b gate tests (ont4_relations_gate and ont4b_shapes_gate) into CI via explicit command entries 337 and 338, and updating tree reader test baselines accordingly. No source code was modified, no gates were weakened, and no out-of-scope changes were made.",
       "findings": [
         {
-          "claim": "Adds explicit test command entry 337 to execute `cargo test -p aprender-contracts-cli --test ont4_relations_gate` in CI for the ONT-4 relations gate test as specified by PMAT-3505.",
+          "claim": "Adds explicit test command entry 337 executing 'cargo test -p aprender-contracts-cli --test ont4_relations_gate' to wire the ONT-4 relations gate test into CI without code changes.",
           "file": "ci/explicit-test-commands.d/337-aprender-contracts-cli-ont4-relations-gate.cmd",
           "grounding": "cited",
           "line": 1
         },
         {
-          "claim": "Adds explicit test command entry 338 to execute `cargo test -p aprender-contracts-cli --test ont4b_shapes_gate` in CI for the ONT-4b SHACL shapes gate test as specified by PMAT-3505.",
+          "claim": "Adds explicit test command entry 338 executing 'cargo test -p aprender-contracts-cli --test ont4b_shapes_gate' to wire the ONT-4b SHACL shapes gate test into CI without code changes.",
           "file": "ci/explicit-test-commands.d/338-aprender-contracts-cli-ont4b-shapes-gate.cmd",
           "grounding": "cited",
           "line": 1
+        },
+        {
+          "claim": "Updates scripts/tree_reader_tests.txt and scripts/tree_reader_unwired_baseline.txt to move ont4_relations_gate and ont4b_shapes_gate from unwired baseline to wired tests list.",
+          "file": "scripts/tree_reader_tests.txt",
+          "grounding": "cited",
+          "line": 63
         }
       ],
-      "raw_bytes": 3261,
+      "raw_bytes": 3717,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -117,9 +145,9 @@
         3
       ],
       "claims": [
-        "Adds explicit CI test command entry 337 to execute `cargo test -p aprender-contracts-cli --test ont4_relations_gate` for the ONT-4 relations gate test, addressing darkness in CI without touching code.",
-        "Adds explicit test command entry 337 for the ONT-4 relations gate test, correctly executing 'cargo test -p aprender-contracts-cli --test ont4_relations_gate', strictly fulfilling the CI wiring requirement of PMAT-3505.",
-        "Adds explicit test command entry 337 to execute `cargo test -p aprender-contracts-cli --test ont4_relations_gate` in CI for the ONT-4 relations gate test as specified by PMAT-3505."
+        "Adds explicit test command entry 337 executing 'cargo test -p aprender-contracts-cli --test ont4_relations_gate' to wire the ONT-4 relations gate test into CI without code changes.",
+        "Adds explicit test command entry 337 executing 'cargo test -p aprender-contracts-cli --test ont4_relations_gate' to wire the ONT-4 relations gate test into CI, fulfilling the CI wiring requirement of PMAT-3505 without code changes.",
+        "Adds the required CI wiring for the ONT-4 relations gate test."
       ]
     },
     {
@@ -131,9 +159,35 @@
         3
       ],
       "claims": [
-        "Adds explicit CI test command entry 338 to execute `cargo test -p aprender-contracts-cli --test ont4b_shapes_gate` for the ONT-4b SHACL shapes gate test, addressing darkness in CI without touching code.",
-        "Adds explicit test command entry 338 for the ONT-4b SHACL shapes gate test, correctly executing 'cargo test -p aprender-contracts-cli --test ont4b_shapes_gate', fulfilling the remainder of the ticket without altering code.",
-        "Adds explicit test command entry 338 to execute `cargo test -p aprender-contracts-cli --test ont4b_shapes_gate` in CI for the ONT-4b SHACL shapes gate test as specified by PMAT-3505."
+        "Adds explicit test command entry 338 executing 'cargo test -p aprender-contracts-cli --test ont4b_shapes_gate' to wire the ONT-4b SHACL shapes gate test into CI without code changes.",
+        "Adds explicit test command entry 338 executing 'cargo test -p aprender-contracts-cli --test ont4b_shapes_gate' to wire the ONT-4b SHACL shapes gate test into CI, addressing test darkness in CI as required by PMAT-3505.",
+        "Adds the required CI wiring for the ONT-4b SHACL shapes gate test."
+      ]
+    },
+    {
+      "file": "scripts/tree_reader_tests.txt",
+      "line": 63,
+      "lanes_agreeing": [
+        1,
+        2,
+        3
+      ],
+      "claims": [
+        "Adds ont4_relations_gate and ont4b_shapes_gate to the wired tree reader tests registry pursuant to BSE-17 re-derivation.",
+        "Correctly updates the tree reader tests tracker to include the newly wired tests.",
+        "Updates scripts/tree_reader_tests.txt and scripts/tree_reader_unwired_baseline.txt to move ont4_relations_gate and ont4b_shapes_gate from unwired baseline to wired tests list."
+      ]
+    },
+    {
+      "file": "scripts/tree_reader_unwired_baseline.txt",
+      "line": 17,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "Removes ont4_relations_gate and ont4b_shapes_gate from the unwired baseline, transitioning both targets from unwired to wired in accordance with PMAT-3505.",
+        "Removes the newly wired tests from the unwired baseline tracker, fulfilling the ticket requirement."
       ]
     }
   ],
@@ -143,9 +197,9 @@
   "partial_reasons": [],
   "auto_merge": {
     "checked": true,
-    "was_armed": false,
-    "disarmed": false,
-    "note": "auto-merge not armed"
+    "was_armed": true,
+    "disarmed": true,
+    "note": "auto-merge was armed from an earlier round; disarmed before lanes launched"
   },
   "lint": {
     "ok": true,
