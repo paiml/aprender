@@ -1,0 +1,100 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-finetune-config-truth-v1 — a training-configuration request is honoured
+# on every path or refused with the documented code; it is never clamped
+# silently (PP-066 DAG row T-2 / spec §5 "T-2 · --max-seq-len honoured or
+# refused, never clamped"; issue #2924; ticket PMAT-1009; S0-11, #2526)
+#
+# WHAT IT GOVERNS
+#   crates/apr-cli/src/commands/finetune.rs: `effective_max_seq_len(requested,
+#   path) -> Result<usize>` for SeqLenPath::{Instruct, Wgpu, Classify}, the
+#   ONE place every path derives its effective max_seq_len, and the printed
+#   `Max seq len: <effective>` line on each path (the value a training receipt
+#   records). The wgpu instruct pipeline used to hardcode `512, // max_seq_len`
+#   (finetune.rs:717) and drop the CLI value.
+#
+# PROOF LADDER, STATED HONESTLY (PP-066 §5 contract discipline, F-26)
+#   * L1 — the resolver exists: crates/apr-cli/src/commands/finetune_seq_len_truth_tests.rs
+#          (a #[cfg(test)] module of commands::finetune; `cargo test -p apr-cli --lib`
+#          is CI's workspace-test).
+#   * L2 — falsification MEASURED 2026-09-06 on lambda: 4/4 rows; the registered
+#          mutation (the Wgpu branch returns 512 regardless) turns the 1024/2048
+#          rows RED.
+#   * L3/L4 — NOT APPLICABLE and deliberately not declared: a pure function over
+#          an Option<usize>, not a kernel. No self-exemption flag, no hand-typed
+#          proof summary.
+# ─────────────────────────────────────────────────────────────────────────────
+name: apr-finetune-config-truth
+version: "1.0.0"
+scope: >
+  The effective `max_seq_len` of `apr finetune` on the instruct, wgpu-instruct
+  and classify paths. Out of scope: the training arithmetic itself, and other
+  configuration fields (each gets its own row when it is found clamped).
+status: active
+
+metadata:
+  kind: pattern     # a request-vs-effective invariant over CLI configuration,
+                    # not a math kernel. Set EXPLICITLY so `pv validate`'s
+                    # `kernel` default never silently applies.
+  version: "1.0.0"
+  created: '2026-09-06'
+  last_modified: '2026-09-06'
+  author: PAIML Engineering
+  references:
+    - 'crates/apr-cli/src/commands/finetune.rs — SeqLenPath, effective_max_seq_len(), the three `Max seq len` prints'
+    - 'crates/apr-cli/src/commands/finetune_seq_len_truth_tests.rs — the case table over {256, 512, 1024, 2048} × {Instruct, Wgpu, Classify}, the default row, the refusal-code row'
+    - 'crates/apr-cli/src/error.rs — CliError::ValidationFailed => exit code 5 (read, never invented)'
+    - 'PP-066 DAG row T-2 (docs/specifications/pp-066-dag.yaml); issue #2924; S0-11 in docs/audits/pp-066-s0-ledger.md'
+  description: >
+    For every requested max_seq_len and every training path the effective
+    value equals the request, or the command refuses with
+    CliError::ValidationFailed (exit code 5) and one line naming the field;
+    with no request each path uses its documented default. The effective value
+    is printed so the training receipt can record what actually ran.
+
+equations:
+  effective_equals_requested_or_refusal:
+    formula: |
+      effective_max_seq_len(Some(n), path) ∈ { Ok(n), Err(ValidationFailed) }   for every path
+      effective_max_seq_len(None, path) = Ok(default(path))
+      ∀ path: Ok(v) ⇒ the path prints "Max seq len: v"
+    domain: 'n ∈ {256, 512, 1024, 2048} (the case table); path ∈ {Instruct, Wgpu, Classify}'
+    codomain: 'Result<usize, CliError>'
+    invariants:
+    - 'NO SILENT CLAMP: no path may return Ok(m) with m ≠ n for a request n (the wgpu path returned 512 for every request before this row).'
+    - 'THE REFUSAL CODE IS READ FROM error.rs: exit_code_value() of ValidationFailed is 5 (validation_failed_exit_code_is_5_the_documented_refusal_code).'
+    preconditions: []
+    postconditions:
+    - 'every path derives its value through effective_max_seq_len(); no second literal exists'
+
+proof_obligations:
+  - id: FCT-OB-001
+    statement: "On every path the effective max_seq_len equals the request or the command refuses with the documented code; the default applies only when nothing was requested."
+    discharged_by: falsification_tests[0]
+
+falsification_tests:
+
+  - id: FCT-F-001
+    rule: honoured or refused, never clamped
+    prediction: >-
+      effective_max_seq_len_honours_every_requested_value_on_every_path,
+      effective_max_seq_len_defaults_when_not_requested,
+      effective_max_seq_len_wgpu_never_clamps_to_the_old_512_literal and
+      validation_failed_exit_code_is_5_the_documented_refusal_code PASS (4/4);
+      one `cargo test` run exercises every row.
+    test: 'cargo test -p apr-cli --lib finetune_seq_len_truth'
+    if_fails: >-
+      a training receipt records a configuration the engine did not run —
+      T-0's apr arm cannot be paired with its Unsloth twin
+    mutation: >-
+      make the Wgpu branch of effective_max_seq_len return Ok(512) regardless of
+      the request; effective_max_seq_len_wgpu_never_clamps_to_the_old_512_literal
+      and effective_max_seq_len_honours_every_requested_value_on_every_path must turn RED.
+
+non_goals:
+  - "Whether 2048 fits in memory on a given host (a runtime OOM is a different failure with its own line; this row is about the CONFIGURATION being honoured)."
+  - "The training receipt schema itself (T-0h)."
+
+binding_registry:
+  function: crates/apr-cli/src/commands/finetune.rs::effective_max_seq_len
+  test: crates/apr-cli/src/commands/finetune_seq_len_truth_tests.rs
+  issue: "https://github.com/paiml/aprender/issues/2924"

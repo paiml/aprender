@@ -1205,7 +1205,7 @@ fn build_instruct_config_threads_max_seq_len() {
     // instruct/LoRA path, NOT be silently dropped to the old hardcoded 512.
     let mut config = plan(1_000_000_000, 24.0, Method::LoRA).expect("plan lora");
     config.method = Method::LoRA;
-    let cfg = build_instruct_config(&config, 1e-4, 3, Some(384));
+    let cfg = build_instruct_config(&config, 1e-4, 3, Some(384)).expect("max_seq_len 384");
     assert_eq!(
         cfg.max_seq_len, 384,
         "--max-seq-len 384 must be honored, not dropped to 512"
@@ -1219,7 +1219,7 @@ fn build_instruct_config_defaults_max_seq_len_to_512_when_absent() {
     use entrenar::finetune::instruct_pipeline::InstructConfig;
     let mut config = plan(1_000_000_000, 24.0, Method::QLoRA).expect("plan qlora");
     config.method = Method::QLoRA;
-    let cfg = build_instruct_config(&config, 5e-5, 1, None);
+    let cfg = build_instruct_config(&config, 5e-5, 1, None).expect("max_seq_len default");
     assert_eq!(cfg.max_seq_len, InstructConfig::default().max_seq_len);
     assert_eq!(cfg.max_seq_len, 512);
     assert!(cfg.quantize_nf4, "QLoRA method → NF4 on");
