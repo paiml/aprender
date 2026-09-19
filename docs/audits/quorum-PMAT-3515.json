@@ -1,14 +1,14 @@
 {
   "ticket": "PMAT-3515",
-  "base": "main",
+  "base": "origin/main",
   "base_resolved": "origin/main",
-  "base_note": "local main differs from origin/main by 100 commit(s); judged against origin/main",
-  "head": "16e89ff81c36fea480c24b7e20c509672c513dec",
-  "diff_sha256": "e01e78e8ab49453ac9c601eddda853f7d66e0c5c1396f8e138ff3b1f50ffc030",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "9cb04952ea7c0821d3758fc8e1057c65f85253ae",
+  "diff_sha256": "4552d3cc759babeea53f17122b3457eb7d7c73e8fb727c7cef0979c40c6190c0",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "file",
-  "prompt_bytes": 123931,
+  "prompt_bytes": 135056,
   "author": {
     "model": "claude-opus-5",
     "family": "claude",
@@ -20,70 +20,7 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The provided diff implements `extract:json` correctly and aligns perfectly with all PMAT-3515 requirements. The `json.rs` extractor correctly applies vocabulary mapping, processes scalars/nested objects/arrays, skips nulls, and emits RDF triples with proper datatypes. Errors (`ExtractError`) and non-fatal warnings (torn `.jsonl` lines) are modeled as specified and propagated to the CLI layer (exiting 3 for parsing failures and 2 for warnings in strict mode). `extract::all` ensures single-walk parity for extraction and linting. All 8 required unit tests and 7 integration tests are provided and assert the requested behaviors precisely. `contracts/ontology.yaml` and `contracts.nt` are appropriately updated. No gates are weakened and no unwarranted logic is introduced.",
-      "findings": [
-        {
-          "claim": "Implements applies(doc) checking entity.type == json",
-          "file": "crates/aprender-contracts/src/ontology/extract/json.rs",
-          "grounding": "cited",
-          "line": 604
-        },
-        {
-          "claim": "Implements all(contract_dir) returning an Extraction struct populated with graphs and warnings, sharing the same walk.",
-          "file": "crates/aprender-contracts/src/ontology/extract/mod.rs",
-          "grounding": "cited",
-          "line": 1049
-        },
-        {
-          "claim": "Adds 7 end-to-end falsification tests for json extraction and lint gates as required.",
-          "file": "crates/aprender-contracts-cli/tests/ont_extract_json.rs",
-          "grounding": "cited",
-          "line": 294
-        },
-        {
-          "claim": "Marks the json entity type and extractor as implemented: true.",
-          "file": "contracts/ontology.yaml",
-          "grounding": "cited",
-          "line": 161
-        },
-        {
-          "claim": "Threads ShapesOutcome::ExtractFailed properly into exit 3 through SigmaMalformed, and attaches extraction warnings as Severity::Warning ValidationResults.",
-          "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
-          "grounding": "cited",
-          "line": 457
-        }
-      ],
-      "raw_bytes": 6419,
-      "err_bytes": 0,
-      "envelope_status": "SUCCESS",
-      "verdict_source": "structured_output",
-      "grounding_check": "parity",
-      "model": "gemini-3.1-pro-high",
-      "model_measured": "gemini-3.1-pro-high",
-      "model_source": "measured",
-      "family": "gemini"
-    },
-    {
-      "lane": 2,
-      "status": "SUCCESS",
-      "verdict": "PASS",
-      "summary": "PMAT-3515 (ONT-001 §3.7 extract:json) reviewed and verified against all ticket requirements, acceptance criteria, and refutation doctrines.\n\n1. Implementation (`provable_contracts::ontology::extract::json`):\n   - Implements `applies(doc)` checking `entity.type == json`.\n   - Implements `extract_into(g, stem, doc, root)` mapping JSON/JSONL entities relative to root using `vocabulary: {prefix, root_class, nested}`.\n   - Scalars are typed literals (`xsd:boolean`, `xsd:integer` via `u64`/`i64`, `xsd:double`, `xsd:string`).\n   - Nested objects and arrays of objects are mapped to nodes typed by `vocabulary.nested`.\n   - Arrays of scalars are emitted as repeated predicates.\n   - Null values produce no triples (omitted).\n   - Extraction is deterministic and produces no blank nodes (`_:`).\n\n2. Error Taxonomy & Refusal Governance:\n   - Declaration faults (`RefUnreadable`, `NotJson`, `VocabularyIncomplete`, `Unmapped`) yield `ExtractError`, formatted with contract name and context, terminating with exit code 3.\n   - Input faults (unparsable lines in `.jsonl`) are captured as `Warning`s, preserving successfully parsed lines, and yielding `Unknown(Warn)` (exit 2) at the shapes gate.\n\n3. Single Walk Architecture:\n   - `extract::all` defines the canonical shared graph walk used by both `pv lint --gate shapes` and `pv extract`.\n   - `ShapesOutcome::ExtractFailed` is threaded through `shapes_gate.rs`, `lint/mod.rs`, and CLI handlers (`commands/lint.rs`, `commands/extract_rdf.rs`).\n\n4. Contracts & Schema Updates:\n   - `contracts/ontology.yaml` marks entity type `json` and extractor `json` as `implemented: true`.\n   - `contracts/ont-extract-json-v1.yaml` specifies invariants EXJ-INV-001..005, falsification suite FALSIFY-EXJ-001..005, and QA gate `F-EXJ-001`.\n   - `contracts/contracts.nt` includes the triples for `ont-extract-json-v1`.\n\n5. Verification & Test Suite:\n   - 8 unit tests in `crates/aprender-contracts/src/ontology/extract/json.rs`.\n   - 7 CLI integration tests in `crates/aprender-contracts-cli/tests/ont_extract_json.rs` verifying all falsification rules across the 5 fixtures (`json-ok`, `json-violation`, `json-unmapped`, `json-missing-ref`, `json-torn-jsonl`).\n\nNo gates were weakened, no tests contradict ticket specifications, all receipt claims are backed by the diff, and no unrequested modifications are present. Verdict: PASS.",
-      "findings": [],
-      "raw_bytes": 6127,
-      "err_bytes": 0,
-      "envelope_status": "SUCCESS",
-      "verdict_source": "structured_output",
-      "grounding_check": "parity",
-      "model": "gemini-3.8-flash-high",
-      "model_measured": "gemini-3.8-flash-high",
-      "model_source": "measured",
-      "family": "gemini"
-    },
-    {
-      "lane": 3,
-      "status": "SUCCESS",
-      "verdict": "PASS",
-      "summary": "PMAT-3515 (ONT-001 §3.7 extract:json) review complete. The diff fulfills all ticket requirements and acceptance criteria without refutation:\n1. Implements `extract:json` in `provable_contracts::ontology::extract::json`, mapping JSON and JSONL documents to RDF entities using the contract vocabulary map (`prefix`, `root_class`, `nested`). Typed literals are correctly mapped (`xsd:boolean`, `xsd:integer`, `xsd:double`, `xsd:string`), nested objects become typed nodes, arrays of scalars become repeated predicates, and `null` is omitted.\n2. Refusal and error taxonomy accurately distinguishes declaration faults (`ExtractError`: missing ref, non-JSON, incomplete vocabulary, unmapped key) which exit 3, from input faults (torn JSONL lines) which are recorded as warnings causing `Unknown{Warn}` (exit 2) while emitting valid rows as focus nodes.\n3. Unifies extraction walk via `extract::all` across `pv lint --gate shapes` and `pv extract`.\n4. Updates ontology contract catalog (`contracts/ontology.yaml`), adds contract `ont-extract-json-v1.yaml`, and updates `contracts.nt`.\n5. Includes 8 unit tests in `json.rs` and 7 CLI integration tests in `ont_extract_json.rs` testing fixtures (`json-ok`, `json-violation`, `json-unmapped`, `json-missing-ref`, `json-torn-jsonl`). No gates are weakened and no unrequested changes are introduced.",
+      "summary": "The provided diff implements `extract:json` correctly and aligns perfectly with all PMAT-3515 requirements. The `json.rs` extractor correctly applies vocabulary mapping, processes scalars/nested objects/arrays, skips nulls, and emits RDF triples with proper datatypes. Errors (`ExtractError`) and non-fatal warnings (torn `.jsonl` lines) are modeled as specified and propagated to the CLI layer. `extract::all` ensures single-walk parity for extraction and linting. All 8 required unit tests and 7 integration tests are provided. `contracts/ontology.yaml` and `contracts.nt` are appropriately updated. No gates are weakened and no unwarranted logic is introduced.",
       "findings": [
         {
           "claim": "Contract ont-extract-json-v1 defines invariants EXJ-INV-001..005 and falsification tests FALSIFY-EXJ-001..005 for JSON/JSONL RDF extraction.",
@@ -121,13 +58,110 @@
           "line": 224
         }
       ],
-      "raw_bytes": 7109,
+      "raw_bytes": 5844,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-3515 (ONT-001 §3.7 extract:json) review complete. The diff fulfills all ticket requirements and acceptance criteria without refutation. 1. Implements `extract:json` in `provable_contracts::ontology::extract::json`, mapping JSON and JSONL documents to RDF entities using the contract vocabulary map. 2. Refusal and error taxonomy accurately distinguishes declaration faults. 3. Unifies extraction walk via `extract::all` across `pv lint --gate shapes` and `pv extract`. 4. Updates ontology contract catalog. No gates are weakened and no unrequested changes are introduced.",
+      "findings": [
+        {
+          "claim": "Implements applies(doc) checking entity.type == json",
+          "file": "crates/aprender-contracts/src/ontology/extract/json.rs",
+          "fix": "N/A",
+          "grounding": "cited",
+          "line": 604
+        },
+        {
+          "claim": "Implements all(contract_dir) returning an Extraction struct populated with graphs and warnings, sharing the same walk.",
+          "file": "crates/aprender-contracts/src/ontology/extract/mod.rs",
+          "fix": "N/A",
+          "grounding": "cited",
+          "line": 1049
+        },
+        {
+          "claim": "Integrates ShapesOutcome::ExtractFailed into shapes gate and records extraction warnings as ValidationResult with Severity::Warning (evaluating to Unknown{Warn}).",
+          "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+          "fix": "N/A",
+          "grounding": "cited",
+          "line": 458
+        },
+        {
+          "claim": "Adds 7 end-to-end falsification tests for json extraction and lint gates as required.",
+          "file": "crates/aprender-contracts-cli/tests/ont_extract_json.rs",
+          "fix": "N/A",
+          "grounding": "cited",
+          "line": 294
+        }
+      ],
+      "raw_bytes": 4372,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
-      "model": "gemini-3.7-flash-high",
-      "model_measured": "gemini-3.7-flash-high",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Reviewed full diff for PMAT-3515 (ONT-001 §3.7 extract:json). The diff correctly implements JSON/JSONL document parsing via vocabulary mapping into RDF entities, unifies the extraction walk in extract::all, threads extraction error handling (exit 3 for declaration faults, exit 2 for torn JSONL warnings), adds full contract specifications, and provides complete unit and integration falsification test coverage across all test fixtures. No refutations or forbidden changes were found.",
+      "findings": [
+        {
+          "claim": "Contract ont-extract-json-v1 defines invariants EXJ-INV-001..005 and falsification tests FALSIFY-EXJ-001..005 for JSON/JSONL RDF extraction.",
+          "file": "contracts/ont-extract-json-v1.yaml",
+          "fix": "N/A (conforming implementation)",
+          "grounding": "cited",
+          "line": 43
+        },
+        {
+          "claim": "Implements extract:json with deterministic RDF generation, JSON type-to-XSD literal mappings, unmapped nested key refusal (ExtractError::Unmapped), and non-fatal torn JSONL line warning tracking.",
+          "file": "crates/aprender-contracts/src/ontology/extract/json.rs",
+          "fix": "N/A (conforming implementation)",
+          "grounding": "cited",
+          "line": 494
+        },
+        {
+          "claim": "Implements extract::all providing the unified single walk shared between pv lint --gate shapes and pv extract.",
+          "file": "crates/aprender-contracts/src/ontology/extract/mod.rs",
+          "fix": "N/A (conforming implementation)",
+          "grounding": "cited",
+          "line": 1049
+        },
+        {
+          "claim": "Integrates ShapesOutcome::ExtractFailed into shapes gate and records extraction warnings as ValidationResult with Severity::Warning (evaluating to Unknown{Warn}).",
+          "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+          "fix": "N/A (conforming implementation)",
+          "grounding": "cited",
+          "line": 458
+        },
+        {
+          "claim": "Provides 7 end-to-end integration tests in CLI suite verifying conforming entities, closed shape violations, exit 3 refusals on missing ref and unmapped keys, torn JSONL warnings, and extraction determinism.",
+          "file": "crates/aprender-contracts-cli/tests/ont_extract_json.rs",
+          "fix": "N/A (conforming implementation)",
+          "grounding": "cited",
+          "line": 224
+        }
+      ],
+      "raw_bytes": 5419,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-low",
+      "model_measured": "gemini-3.6-flash-low",
       "model_source": "measured",
       "family": "gemini"
     }
@@ -138,6 +172,7 @@
       "file": "contracts/ont-extract-json-v1.yaml",
       "line": 43,
       "lanes_agreeing": [
+        1,
         3
       ],
       "claims": [
@@ -145,19 +180,10 @@
       ]
     },
     {
-      "file": "contracts/ontology.yaml",
-      "line": 161,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "Marks the json entity type and extractor as implemented: true."
-      ]
-    },
-    {
       "file": "crates/aprender-contracts-cli/tests/ont_extract_json.rs",
       "line": 224,
       "lanes_agreeing": [
+        1,
         3
       ],
       "claims": [
@@ -168,7 +194,7 @@
       "file": "crates/aprender-contracts-cli/tests/ont_extract_json.rs",
       "line": 294,
       "lanes_agreeing": [
-        1
+        2
       ],
       "claims": [
         "Adds 7 end-to-end falsification tests for json extraction and lint gates as required."
@@ -176,18 +202,10 @@
     },
     {
       "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
-      "line": 457,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "Threads ShapesOutcome::ExtractFailed properly into exit 3 through SigmaMalformed, and attaches extraction warnings as Severity::Warning ValidationResults."
-      ]
-    },
-    {
-      "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
       "line": 458,
       "lanes_agreeing": [
+        1,
+        2,
         3
       ],
       "claims": [
@@ -198,6 +216,7 @@
       "file": "crates/aprender-contracts/src/ontology/extract/json.rs",
       "line": 494,
       "lanes_agreeing": [
+        1,
         3
       ],
       "claims": [
@@ -208,7 +227,7 @@
       "file": "crates/aprender-contracts/src/ontology/extract/json.rs",
       "line": 604,
       "lanes_agreeing": [
-        1
+        2
       ],
       "claims": [
         "Implements applies(doc) checking entity.type == json"
@@ -219,6 +238,7 @@
       "line": 1049,
       "lanes_agreeing": [
         1,
+        2,
         3
       ],
       "claims": [
@@ -233,9 +253,9 @@
   "partial_reasons": [],
   "auto_merge": {
     "checked": true,
-    "was_armed": true,
-    "disarmed": true,
-    "note": "auto-merge was armed from an earlier round; disarmed before lanes launched"
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
   },
   "lint": {
     "ok": true,
