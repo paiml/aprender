@@ -1,0 +1,19 @@
+- id: PMAT-3529
+  github_issue: 3529
+  item_type: task
+  title: 'pv contradicts itself about metadata: (validate requires it, the sigma gate refuses it) and entity.properties is read by nothing — Σ accepts an opaque metadata block, extract:pv-contract emits entity.properties.<k> as <entityType>:<k>, with apex''s two EV-21 falsifiers as fixtures'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-19T12:20:38Z
+  updated: 2026-09-19T12:20:38Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null

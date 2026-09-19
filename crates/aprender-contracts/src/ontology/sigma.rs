@@ -45,6 +45,19 @@ pub struct Sigma {
     /// Which reader claims each Σ key. The anti-decoration rule: a key nobody reads is refused (exit 3).
     #[serde(default)]
     pub readers: BTreeMap<String, String>,
+    /// The CONTRACT schema's own block, carried here because Σ is a contract too.
+    ///
+    /// `pv validate` REQUIRES `metadata.{version, description}` on a contract, and this file is a contract —
+    /// so a corpus that keeps ONE `contracts/ontology.yaml` for both readers had `pv validate` at rc 0 and
+    /// `pv lint --gate sigma` at exit 3 over the same bytes (measured on apex 2026-09-19, `pv 0.68.1`:
+    /// ``unknown field `metadata` … at line 26``). One binary contradicting itself about one key is not a
+    /// corpus defect, so the schema admits the block.
+    ///
+    /// Σ does not INTERPRET it: the value is opaque YAML, no Σ rule reads a field of it, and `readers` must
+    /// still claim the key like every other — the anti-decoration rule is not weakened, it is answered
+    /// ("the contract schema reads it, not Σ").
+    #[serde(default)]
+    pub metadata: Option<serde_yaml::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -174,7 +187,7 @@ impl fmt::Display for SigmaError {
 impl std::error::Error for SigmaError {}
 
 /// The Σ keys that must be claimed by a reader when they are present and non-empty.
-pub const READABLE_KEYS: [&str; 8] = [
+pub const READABLE_KEYS: [&str; 9] = [
     "concepts",
     "roles",
     "symbols",
@@ -183,6 +196,8 @@ pub const READABLE_KEYS: [&str; 8] = [
     "entity_types",
     "extractors",
     "not_expressible",
+    // The contract schema owns this one; Σ only carries it (see `Sigma::metadata`).
+    "metadata",
 ];
 
 impl Sigma {
@@ -289,6 +304,9 @@ impl Sigma {
         if !self.not_expressible.is_empty() {
             keys.insert("not_expressible");
         }
+        if self.metadata.is_some() {
+            keys.insert("metadata");
+        }
         keys
     }
 
@@ -351,6 +369,39 @@ readers:
         assert_eq!(s.schema, "ont-sigma-v1");
         assert_eq!(s.roles["binds"].domain, "Contract");
         assert!(s.check_integrity().is_ok(), "{:?}", s.check_integrity());
+    }
+
+    /// Σ is a CONTRACT, and `pv validate` requires `metadata.{version, description}` on a contract. Before this
+    /// the Σ schema refused the block outright, so one file could not satisfy both readers: apex measured
+    /// `pv validate` rc 0 and `pv lint --gate sigma` exit 3 over the same `contracts/ontology.yaml`
+    /// (2026-09-19, pv 0.68.1). The block parses, is opaque to every Σ rule, and still has to be claimed.
+    #[test]
+    fn sigma_carries_the_contract_schemas_own_metadata_block_and_reads_nothing_of_it() {
+        let y = good().replace(
+            "readers:\n",
+            "metadata:\n  version: 1.0.0\n  description: \"apex's entity-type registry\"\n  references:\n    - 'APEX-001 §5 row EV-19'\nreaders:\n  metadata: schema/types.rs (the contract schema, not Σ)\n",
+        );
+        let s = Sigma::from_yaml(&y).expect("Σ with metadata parses");
+        assert!(s.metadata.is_some());
+        assert!(s.check_integrity().is_ok(), "{:?}", s.check_integrity());
+        // Opaque: no Σ rule reads a field of it, and the rest of Σ is unchanged by its presence.
+        let without = Sigma::from_yaml(good()).expect("Σ parses");
+        assert_eq!(s.concepts, without.concepts);
+        assert_eq!(s.entity_types, without.entity_types);
+    }
+
+    /// …and the anti-decoration rule is answered, not weakened: an unclaimed `metadata:` is still refused.
+    #[test]
+    fn an_unclaimed_metadata_block_is_refused_like_every_other_key() {
+        let y = good().replace(
+            "readers:\n",
+            "metadata:\n  version: 1.0.0\n  description: d\nreaders:\n",
+        );
+        let s = Sigma::from_yaml(&y).expect("Σ parses");
+        match s.check_integrity() {
+            Err(SigmaError::KeyWithoutReader { key }) => assert_eq!(key, "metadata"),
+            other => panic!("an unclaimed metadata: must be refused, got {other:?}"),
+        }
     }
 
     #[test]

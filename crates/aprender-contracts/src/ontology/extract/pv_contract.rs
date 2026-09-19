@@ -71,12 +71,14 @@ pub fn extract_one(g: &mut Graph, stem: &str, file: &str, doc: &serde_yaml::Valu
         g.insert(s.clone(), ont("evidenceLevel"), Term::string(level));
     }
     if let Some(entity) = doc.get("entity") {
-        if let Some(t) = scalar(entity.get("type")) {
+        let entity_type = scalar(entity.get("type"));
+        if let Some(t) = entity_type.clone() {
             g.insert(s.clone(), ont("entityType"), Term::string(t));
         }
         if let Some(r) = scalar(entity.get("ref")) {
             g.insert(s.clone(), ont("entityRef"), Term::string(r));
         }
+        emit_entity_properties(g, &s, entity_type.as_deref(), entity);
     }
     if let Some(rel) = doc.get("relations").and_then(serde_yaml::Value::as_mapping) {
         for (role, targets) in rel {
@@ -90,6 +92,46 @@ pub fn extract_one(g: &mut Graph, stem: &str, file: &str, doc: &serde_yaml::Valu
                 g.insert(s.clone(), ont(role), Term::iri(iri("contract", t)));
             }
         }
+    }
+}
+
+/// §4.2 `entity: {type, ref, properties}` — the entity's OWN properties, as `<type>:<key>` on the contract node.
+///
+/// A contract may carry the properties of the thing it is a contract FOR, and for a pre-registration the
+/// contract IS the thing: apex's nine researcher degrees of freedom live at `entity.properties` because
+/// APEX-001 EV-6 hashes the contract, and moving them to a sidecar document would change what is locked.
+/// Before this they were read by nothing, so a `shape:` over them had no predicate to constrain and every
+/// `minCount: 1` fired for the wrong reason — a shape failing because the extractor was silent, which is the
+/// vacuity R-2 exists to end (measured on apex, 2026-09-19).
+///
+/// The predicate is namespaced by the ENTITY TYPE (`study:scale`, not `ont:scale`): two entity types may both
+/// carry a `scale`, and one predicate for both would let a shape over one constrain the other. A contract with
+/// no `entity.type` gets no property triples — there is no namespace to put them in, and inventing one would
+/// be an inference. Nested mappings and sequences are not emitted at v1alpha1: the subset has no path
+/// expressions, so a predicate no shape could reach is decoration.
+fn emit_entity_properties(
+    g: &mut Graph,
+    subject: &str,
+    entity_type: Option<&str>,
+    entity: &serde_yaml::Value,
+) {
+    let (Some(ty), Some(props)) = (
+        entity_type,
+        entity
+            .get("properties")
+            .and_then(serde_yaml::Value::as_mapping),
+    ) else {
+        return;
+    };
+    for (key, value) in props {
+        let (Some(key), Some(v)) = (key.as_str(), scalar(Some(value))) else {
+            continue;
+        };
+        g.insert(
+            subject.to_string(),
+            crate::ontology::shapes::expand(&format!("{ty}:{key}")),
+            Term::string(v),
+        );
     }
 }
 
@@ -132,6 +174,73 @@ mod tests {
         // no evidence: block → no evidenceLevel triple; a shape's minCount over it is real
         assert!(g.objects(&s, &ont("evidenceLevel")).is_empty());
         assert!(!g.to_ntriples().contains("_:"));
+    }
+
+    #[test]
+    fn an_entitys_own_properties_become_typed_predicates_on_the_contract_node() {
+        // apex EV-21: the nine degrees of freedom live in the contract, because the contract IS the
+        // pre-registration. `study:scale` &c. so a shape can constrain them by path.
+        let doc: serde_yaml::Value = serde_yaml::from_str(
+            "entity:\n  type: study\n  ref: study-shape-v1\n  properties:\n    scale: linear\n    vintage: '2026-09-12'\n    bins: 7\n    logged: true\n    nested: {a: 1}\n    listed: [a, b]\n",
+        )
+        .expect("yaml");
+        let mut g = Graph::new();
+        extract_one(
+            &mut g,
+            "study-shape-v1",
+            "contracts/study-shape-v1.yaml",
+            &doc,
+        );
+        let s = iri("contract", "study-shape-v1");
+        let p = |k: &str| crate::ontology::shapes::expand(&format!("study:{k}"));
+        assert_eq!(
+            g.objects(&s, &p("scale"))[0]
+                .as_literal()
+                .expect("literal")
+                .0,
+            "linear"
+        );
+        assert_eq!(
+            g.objects(&s, &p("vintage"))[0]
+                .as_literal()
+                .expect("literal")
+                .0,
+            "2026-09-12"
+        );
+        assert_eq!(
+            g.objects(&s, &p("bins"))[0]
+                .as_literal()
+                .expect("literal")
+                .0,
+            "7"
+        );
+        assert_eq!(
+            g.objects(&s, &p("logged"))[0]
+                .as_literal()
+                .expect("literal")
+                .0,
+            "true"
+        );
+        // Not emitted at v1alpha1: the subset has no path expressions, so these would be unreachable.
+        assert!(g.objects(&s, &p("nested")).is_empty());
+        assert!(g.objects(&s, &p("listed")).is_empty());
+        // The namespace is the ENTITY TYPE, never ont: — two types may both carry `scale`.
+        assert!(g.objects(&s, &ont("scale")).is_empty());
+    }
+
+    #[test]
+    fn properties_without_an_entity_type_are_not_guessed_into_a_namespace() {
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str("entity:\n  ref: x\n  properties:\n    scale: linear\n")
+                .expect("yaml");
+        let mut g = Graph::new();
+        extract_one(&mut g, "a", "contracts/a.yaml", &doc);
+        let s = iri("contract", "a");
+        assert!(
+            g.predicates_of(&s).iter().all(|p| !p.ends_with("scale")),
+            "{:?}",
+            g.to_ntriples()
+        );
     }
 
     #[test]
