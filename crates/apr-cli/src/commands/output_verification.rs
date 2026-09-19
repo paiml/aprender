@@ -303,21 +303,35 @@ pub enum OutputVerification {
 ///
 /// All thresholds are conservative — coherent English/code outputs pass cleanly,
 /// while the Qwen2-0.5B observed gibberish ("ëĸ» Ãĥ pÃ³Åº zwiÄħzku") is rejected.
+///
+/// The three signals are one function each and are tried in order, so the whole
+/// check stays under the pre-commit cognitive-complexity threshold; the order
+/// and the thresholds are unchanged.
 fn detect_gibberish(output: &str, test_id: &str) -> Option<String> {
-    // Signal 1: non-ASCII saturation
-    let total = output.chars().count();
-    if total >= 16 {
-        let non_ascii = output.chars().filter(|c| !c.is_ascii()).count();
-        let ratio = non_ascii as f64 / total as f64;
-        if ratio > 0.6 {
-            return Some(format!(
-                "{test_id}: gibberish (non-ASCII ratio {:.1}% > 60%)",
-                ratio * 100.0
-            ));
-        }
-    }
+    gibberish_non_ascii_saturation(output, test_id)
+        .or_else(|| gibberish_repeated_fragment(output, test_id))
+        .or_else(|| gibberish_replacement_density(output, test_id))
+}
 
-    // Signal 2: 4+ byte fragment repeated 3+ times in a row
+/// Signal 1: non-ASCII saturation (> 60% of a 16+ char completion).
+fn gibberish_non_ascii_saturation(output: &str, test_id: &str) -> Option<String> {
+    let total = output.chars().count();
+    if total < 16 {
+        return None;
+    }
+    let non_ascii = output.chars().filter(|c| !c.is_ascii()).count();
+    let ratio = non_ascii as f64 / total as f64;
+    if ratio > 0.6 {
+        return Some(format!(
+            "{test_id}: gibberish (non-ASCII ratio {:.1}% > 60%)",
+            ratio * 100.0
+        ));
+    }
+    None
+}
+
+/// Signal 2: a 4+ byte fragment repeated 3+ times in a row.
+fn gibberish_repeated_fragment(output: &str, test_id: &str) -> Option<String> {
     let bytes = output.as_bytes();
     if bytes.len() >= 12 {
         let max_frag = 16.min(bytes.len() / 3);
@@ -338,14 +352,18 @@ fn detect_gibberish(output: &str, test_id: &str) -> Option<String> {
         }
     }
 
-    // Signal 3: replacement-character density
+    None
+}
+
+/// Signal 3: replacement-character density (> 1 U+FFFD per 32 chars).
+fn gibberish_replacement_density(output: &str, test_id: &str) -> Option<String> {
+    let total = output.chars().count();
     let fffd_count = output.matches('\u{FFFD}').count();
     if fffd_count > 0 && total >= 32 && fffd_count * 32 > total {
         return Some(format!(
             "{test_id}: gibberish (U+FFFD density {fffd_count}/{total} > 1/32)"
         ));
     }
-
     None
 }
 
@@ -459,6 +477,19 @@ fn validate_gpu_golden_output(
     config: &QaConfig,
 ) -> Result<Option<String>> {
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
+    // #3432 / #3477: Qwen3.5 (Gated DeltaNet) runs on the CPU only — the runtime
+    // (`realizar::infer::run_inference`) routes `qwen35` around the dense loader,
+    // and the Capability Match gate reports the GPU capability as declined
+    // (#3090). Loading it through `OwnedQuantizedModel::from_mapped` here turned a
+    // declined GPU rung into a hard `Validation failed` that aborted every later
+    // gate. A declined backend is a skip with a reason, not an abort.
+    if mapped.model.architecture() == Some("qwen35") {
+        note_gpu_golden_skip(
+            config,
+            "GPU golden output skipped: Gated DeltaNet runs on the CPU only (#3090)",
+        );
+        return Ok(None);
+    }
     let model = OwnedQuantizedModel::from_mapped(mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
     match OwnedQuantizedModelCuda::new(model, 0) {
@@ -472,19 +503,125 @@ fn validate_gpu_golden_output(
                     return Ok(Some(format!("GPU output failed (CPU passed): {reason}")));
                 }
             }
-            Err(e) => {
-                if !config.json && config.verbose {
-                    println!("{}", format!("GPU golden output skipped: {e}").yellow());
-                }
-            }
+            Err(e) => note_gpu_golden_skip(config, &format!("GPU golden output skipped: {e}")),
         },
-        Err(e) => {
-            if !config.json && config.verbose {
-                println!("{}", format!("CUDA init skipped: {e}").yellow());
-            }
-        }
+        Err(e) => note_gpu_golden_skip(config, &format!("CUDA init skipped: {e}")),
     }
     Ok(None)
+}
+
+/// Note, in a verbose human-readable run, that the GPU half of the golden gate
+/// did not run and why.
+///
+/// Extracted so each skip reason is one call: the nested `if !config.json &&
+/// config.verbose` blocks were what pushed `validate_gpu_golden_output` past the
+/// pre-commit cognitive-complexity threshold when the #3090 early return landed.
+#[cfg_attr(coverage_nightly, coverage(off))]
+#[cfg(all(feature = "inference", feature = "cuda"))]
+fn note_gpu_golden_skip(config: &QaConfig, message: &str) {
+    if !config.json && config.verbose {
+        println!("{}", message.yellow());
+    }
+}
+
+/// #3477: golden generation for a GGUF the dense loader refuses but the runtime
+/// serves on the CPU (Qwen3.5 Gated DeltaNet, #3091).
+///
+/// `golden_output_gguf_cpu` builds the model with
+/// `OwnedQuantizedModel::from_mapped`; for `qwen35` that call returns the
+/// "NEITHER the CPU nor the GPU backend implements ..." error, which `apr qa`
+/// surfaced as `Validation failed` and which aborted the entire run. We go
+/// through the same public entry point `apr run` uses — `run_inference`, which
+/// dispatches `qwen35` to `forward_qwen35` — so the gate certifies the backend
+/// that actually serves the model rather than re-implementing the dispatch.
+///
+/// The golden prompts are already ChatML, so they are tokenized here and passed
+/// via `with_input_tokens` to bypass `prepare_tokens`' chat-template auto-wrap
+/// (the same reason `golden_output_apr` does it). Stop tokens come from the
+/// model's own EOS, which `run_gguf_inference` merges in.
+#[cfg(feature = "inference")]
+fn golden_output_cpu_runtime(path: &Path, prompt: &str, max_tokens: usize) -> Result<String> {
+    use realizar::gguf::MappedGGUFModel;
+    use realizar::{run_inference, InferenceConfig};
+
+    let prompt_tokens = {
+        let mapped = MappedGGUFModel::from_path(path)
+            .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+        mapped.model.encode(prompt).ok_or_else(|| {
+            CliError::ValidationFailed(
+                "GGUF tokenizer could not encode the golden prompt".to_string(),
+            )
+        })?
+    };
+
+    let infer_config = InferenceConfig::new(path)
+        .with_input_tokens(prompt_tokens)
+        .with_max_tokens(max_tokens)
+        .with_temperature(0.0)
+        .with_top_k(1)
+        .without_gpu();
+    let result = run_inference(&infer_config)
+        .map_err(|e| CliError::ValidationFailed(format!("CPU generation failed: {e}")))?;
+    Ok(result.text)
+}
+
+/// Gate 1 for a CPU-only architecture: the same golden cases, run on the CPU
+/// forward that serves the model.
+///
+/// This gate is the point of #3477: `apr qa` must be able to say PASS about the
+/// backend that runs the model. The GPU half is not attempted at all — the GPU
+/// declined this architecture (#3090) and its gates skip with that reason.
+#[cfg(feature = "inference")]
+fn run_golden_output_gate_cpu_only(path: &Path, config: &QaConfig) -> Result<GateResult> {
+    let start = Instant::now();
+
+    if !config.json && config.verbose {
+        println!(
+            "{}",
+            "Running golden output test on the CPU forward (#3091)...".yellow()
+        );
+    }
+
+    let test_cases = golden_test_cases();
+    // GH-279-4: thinking models need room for <think>...</think> + the answer.
+    let golden_max_tokens = config.max_tokens.max(512);
+
+    for (prompt, expected_patterns) in &test_cases {
+        let output_text = golden_output_cpu_runtime(path, prompt, golden_max_tokens)?;
+        let answer_text = strip_thinking_blocks(&output_text);
+        if let OutputVerification::Fail { reason } =
+            verify_output(&answer_text, "golden_output_cpu", expected_patterns)
+        {
+            return Ok(GateResult::failed(
+                "golden_output",
+                &reason,
+                None,
+                None,
+                start.elapsed(),
+            ));
+        }
+    }
+
+    Ok(GateResult::passed(
+        "golden_output",
+        &format!(
+            "{} golden test cases passed on the CPU forward (#3091); GPU declined (#3090)",
+            test_cases.len()
+        ),
+        Some(test_cases.len() as f64),
+        Some(test_cases.len() as f64),
+        start.elapsed(),
+    ))
+}
+
+/// Without `inference` there is no runtime to certify.
+#[cfg(not(feature = "inference"))]
+fn run_golden_output_gate_cpu_only(path: &Path, config: &QaConfig) -> Result<GateResult> {
+    let _ = (path, config);
+    Ok(GateResult::skipped(
+        "golden_output",
+        "Requires 'inference' feature",
+    ))
 }
 
 /// Run golden output test for APR format models.

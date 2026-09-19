@@ -18509,3 +18509,73 @@ roadmap:
   - orch:fable
   - orch-basis:state
   notes: null
+- id: PMAT-3477
+  github_issue: 3477
+  item_type: task
+  title: '0.68.2 interrupt train (#3477): Qwen3 CUDA QK-norm in graph+batched prefill (#3413), TRAITS refusal collapse (#3432/#3091), #3090 disposition, T-4 publish'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-18T10:25:51Z
+  updated: 2026-09-18T10:25:51Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:release
+  - P0
+  notes: null
+- id: PMAT-3487
+  github_issue: 3487
+  item_type: task
+  title: 'ONT-4: typed relations — a contract''s relations: block (refines · supersedes · contradicts · depends_on) is a gate: role in Σ with Contract→Contract domain/range, every target resolves, acyclic roles have no cycle, contradicts is symmetric; pv lint --gate relations, armed; Σ gains supersedes and contradicts naming this gate as reader (R-11); legacy metadata.depends_on measured as legacy_unresolved_depends_on and ratcheted, never rewritten (R-5); relations_n==0 → Unknown{NoRelations} (R-2)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-18T15:04:36Z
+  updated: 2026-09-18T15:04:36Z
+  spec: null
+  acceptance_criteria:
+  - '`pv lint contracts/ --gate relations --format json` is Pass at exit 0 on the real corpus with relations_n=3 (the ONT-001 §5 ONT-4 probe''s predicate); `pv lint contracts/` (all gates, relations armed) is Pass at exit 0.'
+  - 'Σ declares supersedes (acyclic) and contradicts (symmetric), both Contract→Contract, and readers.roles names lint/relations_gate.rs.'
+  - 'tests/fixtures/ont/relations-{ok,dangling,cycle,domain,malformed,legacy,legacy-rise} each witness one rule: 4 relations accepted with contradicts read both ways (relations_n=5); dangling → PV-ONT-008 naming contract, role, target; a→b→c→a → PV-ONT-009 naming the path; binds in relations → PV-ONT-006; undeclared role + non-list → PV-ONT-005 + 007; legacy hold passes, rise → PV-ONT-010; sigma-ok (no typed relation) → exit 2 decline.'
+  - 'metadata.depends_on is NOT rewritten: 354 legacy edges counted, 8 unresolved recorded as ont.legacy_unresolved_depends_on in lint-baseline.json and ratcheted shrink-only.'
+  - 'Two mutations each turn a test RED: the acyclic check skipped (the cycle test), the symmetric closure dropped (the four-relations test).'
+  - 'cargo test -p aprender-contracts --lib (1588) and -p aprender-contracts-cli (260) pass; clippy -D warnings clean on both crates; make contracts green; census regenerated (1795) and the README count synced.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null
+- id: PMAT-3500
+  github_issue: 3500
+  item_type: task
+  title: 'ONT-4b: pv extract (pv-contract) → contracts/contracts.nt (deterministic N-Triples, no blank nodes, R-15); in-house shapes validator over the SHACL-Core subset of §3.6 exactly (unsupported component → exit 3); shape: block on contracts; pv lint --gate shapes with pc_shape planted every run, shapes_n/focus_nodes_n declines (R-2), a corpus violation naming focus node and shape; contracts/shapes.ttl exported; the first shape targets ont:Contract from the ONT contracts so the whole corpus is focus nodes; shapes armed'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-18T20:17:28Z
+  updated: 2026-09-18T20:17:28Z
+  spec: docs/specifications/paiml-ontology.md
+  acceptance_criteria:
+  - 'The spec''s ONT-4b probe text passes verbatim minus `merged`: contracts.nt tracked with no `_:`, shapes.ttl tracked, `pv lint contracts/ --gate shapes --format json` → Pass with shapes_n>0, focus_nodes_n>0 (1731 at acab2e754) and pc_shape=fired at the top level of the report.'
+  - 'ontology/shapes.rs implements §3.6''s subset exactly and refuses every other component at parse by name (targetNode, qualifiedValueShape, languageIn, a sequence path, or/and/not, a second node level): `cargo test -p aprender-contracts --lib ontology::shapes` 10/10.'
+  - 'Two extractions are byte-identical and carry no blank node; `pv extract --check` exits 1 on drift and `make contracts` runs it (R-18).'
+  - 'The exit vocabulary holds on fixtures: Pass 0; a corpus violation 1 naming focus node and shape (PV-ONT-011); NoShapes, NoFocus, PositiveControlFailed and Warn each 2 with the reason; an unsupported component 3: `cargo test -p aprender-contracts-cli --test ont4b_shapes_gate` 11/11.'
+  - 'Two mutations from the spec: minCount removed from ont:id → exit 2 decline: PositiveControlFailed; a kind outside the list on one contract → exit 1 naming that contract and the shape.'
+  - 'shapes is armed (11 armed gates), Σ marks pv-contract/pv_contract implemented, contracts_shaped=1, census 1796 with the README synced; lib 1610 and cli 271 tests pass; clippy -D warnings clean.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null

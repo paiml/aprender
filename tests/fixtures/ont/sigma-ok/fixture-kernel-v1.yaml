@@ -16,5 +16,3 @@ equations:
     lean_theorem: none
 entity:
   type: pv-contract
-relations:
-  binds: [aprender::kernel::identity]

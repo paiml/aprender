@@ -121,6 +121,16 @@ proof_obligations:
   formal: shape(model(tokens)) = [seq_len, V]
   tolerance: 0.0
   applies_to: all
+- id: QW3E-PAR-008
+  type: invariant
+  property: 'GPU and CPU agree at every real position of a greedy probe (gpu-cpu-parity-gate-v2 rule), on every required silicon'
+  formal: '∀ h ∈ required_hosts, ∀ p ≥ 1: argmax(logits_gpu(h, p)) = argmax(logits_cpu(p)) ∧ cos(logits_gpu(h, p), logits_cpu(p)) ≥ 0.95'
+  applies_to: all
+- id: QW3E-DEV-009
+  type: liveness
+  property: 'The selected device is the device that decoded — no silent fallback'
+  formal: '∀ h ∈ required_hosts: fallback(cuda, h) = ⊥ ∧ ran(cuda, h)'
+  applies_to: all
 falsification_tests:
 - id: FALSIFY-QW3E-001
   rule: Parameter count
@@ -157,6 +167,16 @@ falsification_tests:
   prediction: tokens -> [seq_len, 4096] -> ... -> [seq_len, 151936]
   test: 'proptest: trace shapes through mock pipeline'
   if_fails: Shape break in layer composition
+- id: FALSIFY-QW3E-008
+  rule: Backend parity on real silicon
+  prediction: "rungs qwen3-1.7b-q4km and qwen3-8b-q4km of the model capability ladder are green on cpu and cuda on lambda (sm_89) and gx10 (sm_121)"
+  test: "bash scripts/check_model_ladder.sh"
+  if_fails: "dense Qwen3 decodes on the CPU behind a fallback the user never sees — measured at 4a538ddef on both hosts (#3413); QW3E-BND-005's `coverage = 1.0` was true of a contract set that named no backend"
+- id: FALSIFY-QW3E-009
+  rule: The selected device decoded
+  prediction: "`apr run --gpu` on Qwen3-1.7B-Q4_K_M prints neither `falling back to CPU` nor `path rejected, attempting fallback` on either required host"
+  test: "bash scripts/check_model_ladder.sh — receipt field rungs[qwen3-1.7b-q4km].backends.cuda.fallback is false on lambda and gx10"
+  if_fails: "the parity guard hid a broken GPU path behind correct CPU text; the throughput gates then PASSED on the garbage path (apr qa at 4a538ddef: Golden Output FAIL, GPU Speedup PASS 12.2×)"
 kani_harnesses:
 - id: KANI-QW3E-001
   obligation: QW3E-INV-001
@@ -217,5 +237,5 @@ qa_gate:
   - throughput_model
   - verification_ladder
   - contract_composition
-  pass_criteria: All 7 falsification tests pass + 100% obligation coverage
+  pass_criteria: All 9 falsification tests pass + 100% obligation coverage, where coverage is read from `pv coverage`, and QW3E-PAR-008/QW3E-DEV-009 are discharged only by per-host ladder receipts
   falsification: Remove one layer from parameter count to break total

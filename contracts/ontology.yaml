@@ -39,6 +39,10 @@ roles:
     {domain: Contract, range: Contract, symmetric: false, acyclic: true, doc: "this contract assumes that one"}
   documents:
     {domain: Doc, range: Code, symmetric: false, acyclic: false, doc: "the prose that describes this code"}
+  supersedes:
+    {domain: Contract, range: Contract, symmetric: false, acyclic: true, doc: "this contract replaces that one; a chain, never a loop (ONT-4)"}
+  contradicts:
+    {domain: Contract, range: Contract, symmetric: true, acyclic: false, doc: "the two cannot both hold; declared once, read both ways (ONT-4)"}
 
 # Operators and functions a `formal:` expression may carry. A bare variable (x, i, out_i, θ) is not a symbol and is
 # not checked — see the plan's ruling 2 for what symbol-level deliberately does NOT check.
@@ -124,7 +128,7 @@ agents:
 # Each entry names the extractor that reads it. `implemented: false` is the honest state until ONT-4b/4c build them;
 # an entry naming NO extractor, or one extractors[] does not declare, is exit 3.
 entity_types:
-  - {name: pv-contract, extractor: pv_contract, implemented: false}
+  - {name: pv-contract, extractor: pv_contract, implemented: true}
   - {name: code, extractor: code, implemented: false}
   - {name: lean, extractor: lean, implemented: false}
   - {name: readme, extractor: readme, implemented: false}
@@ -133,7 +137,7 @@ entity_types:
   - {name: csv, extractor: csv, implemented: false}
 
 extractors:
-  - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: false}
+  - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: true}
   - {name: code, reader: ontology/extract/code.rs, implemented: false}
   - {name: lean, reader: ontology/extract/lean.rs, implemented: false}
   - {name: readme, reader: ontology/extract/readme.rs, implemented: false}
@@ -150,7 +154,7 @@ not_expressible:
 
 readers:
   concepts: ontology/sigma.rs
-  roles: lint/sigma_gate.rs
+  roles: lint/sigma_gate.rs, lint/relations_gate.rs
   symbols: lint/sigma_symbols.rs
   worlds: ontology/sigma.rs
   agents: ontology/sigma.rs

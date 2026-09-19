@@ -590,6 +590,8 @@ contracts:
 	@git ls-files --error-unmatch contracts/census.json >/dev/null || { echo "FAIL: contracts/census.json is not tracked, so diffing it proves nothing"; exit 1; }
 	@. scripts/pv_bin.sh && "$$PV" census contracts --format json > contracts/census.json
 	@git diff --exit-code contracts/census.json || { echo "FAIL: the tracked census differs from a fresh one — commit the regenerated contracts/census.json"; exit 1; }
+	@echo "== graph: tracked contracts/contracts.nt + shapes.ttl == a fresh extraction (ONT-001 ONT-4b, R-18) =="
+	@. scripts/pv_bin.sh && "$$PV" extract contracts --check >/dev/null
 	@echo "== README states the censused count =="
 	@bash scripts/readme_sync.sh --check
 	@echo "== provenance marks, interim (ONT-001 R-10) =="
