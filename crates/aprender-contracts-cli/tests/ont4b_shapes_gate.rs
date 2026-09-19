@@ -87,10 +87,12 @@ fn the_repo_corpus_passes_with_the_plant_fired_and_the_whole_corpus_as_focus_nod
         show(&r)
     );
     assert_eq!(v["extra"]["pc_shape"], "fired", "{}", show(&r));
+    // ONT-4b: exactly one, from ont:id minCount. ONT-4c1 plants a bare model:Model too, which draws
+    // ladder-measured's two minCounts: three on this corpus, and never zero.
     assert_eq!(
         v["extra"]["plant_violations"],
-        1,
-        "exactly one, from ont:id minCount\n{}",
+        3,
+        "ont:id minCount + ladder-measured's two (ONT-4c1)\n{}",
         show(&r)
     );
 }
@@ -214,7 +216,12 @@ fn the_tracked_repo_graph_is_fresh() {
     assert_eq!(r.code, 0, "{}", show(&r));
     let v = json_of(&r);
     assert!(v["triples"].as_u64().unwrap_or(0) > 5000, "{}", show(&r));
-    assert_eq!(v["shapes_n"], 1, "{}", show(&r));
+    assert_eq!(
+        v["shapes_n"],
+        3,
+        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1)\n{}",
+        show(&r)
+    );
 }
 
 /// R-8: the gate is computed in every `pv lint` run.

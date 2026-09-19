@@ -47,6 +47,7 @@ pub fn run(contract_dir: &Path, check: bool) -> Result<(), Box<dyn std::error::E
             std::process::exit(3);
         }
     };
+    let shapes: Vec<_> = shapes.into_iter().map(|(s, _)| s).collect();
     let ttl = to_turtle(&shapes);
     let mut hasher = Sha256::new();
     hasher.update(nt.as_bytes());

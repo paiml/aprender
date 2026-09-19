@@ -41,6 +41,7 @@ aprender-contracts	--lib	lint::sarif
 aprender-contracts	--lib	lint::shapes_gate
 aprender-contracts	--lib	lint::sigma_gate
 aprender-contracts	--lib	lint::strict_test_binding
+aprender-contracts	--lib	ontology::extract::apr_model
 aprender-contracts	--lib	ontology::extract::pv_contract
 aprender-contracts	--lib	ontology::sigma
 aprender-contracts	--lib	pipeline
@@ -62,6 +63,7 @@ aprender-contracts-cli	--test	ground_truth
 aprender-contracts-cli	--test	ont2b_sigma_gate
 aprender-contracts-cli	--test	ont4_relations_gate
 aprender-contracts-cli	--test	ont4b_shapes_gate
+aprender-contracts-cli	--test	ont4c1_model_receipts
 aprender-contracts-cli	--test	ont6_lint_verdict
 aprender-contracts-cli	--test	ont_extract_json
 aprender-contracts-cli	--test	ont_entity_properties

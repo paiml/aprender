@@ -18,11 +18,22 @@ use crate::ontology::rdf::{iri, ont, Graph, Term, PROV_ENTITY, RDF_TYPE};
 /// parse errors are the `validate` gate's verdict, not this extractor's.
 #[must_use]
 pub fn extract(contract_dir: &Path) -> Graph {
+    let mut g = Graph::new();
+    for (stem, rel, doc) in documents(contract_dir) {
+        extract_one(&mut g, &stem, &rel, &doc);
+    }
+    g
+}
+
+/// Every contract document under `contract_dir` (Σ excluded), in byte order: `(stem, path relative to the
+/// repository root, raw YAML)`. The one walk every extractor shares, so they all see the same corpus.
+#[must_use]
+pub fn documents(contract_dir: &Path) -> Vec<(String, String, serde_yaml::Value)> {
     let sigma_path = contract_dir.join("ontology.yaml");
     let mut files = Vec::new();
     crate::lint::collect_yaml_files(contract_dir, &mut files);
     files.sort();
-    let mut g = Graph::new();
+    let mut out = Vec::new();
     for file in &files {
         if file == &sigma_path {
             continue;
@@ -43,9 +54,9 @@ pub fn extract(contract_dir: &Path) -> Graph {
             .unwrap_or(file)
             .to_string_lossy()
             .replace('\\', "/");
-        extract_one(&mut g, &stem, &rel, &doc);
+        out.push((stem, rel, doc));
     }
-    g
+    out
 }
 
 /// One contract document into `g`. Public so a fixture can be extracted without a directory.
@@ -149,7 +160,7 @@ pub fn entity_predicate(entity_type: &str, key: &str) -> String {
 
 /// A YAML scalar as a string: strings as they are, numbers and booleans by their YAML spelling. Mappings and
 /// sequences are not scalars and produce no triple.
-fn scalar(v: Option<&serde_yaml::Value>) -> Option<String> {
+pub(crate) fn scalar(v: Option<&serde_yaml::Value>) -> Option<String> {
     match v? {
         serde_yaml::Value::String(s) => Some(s.clone()),
         serde_yaml::Value::Number(n) => Some(n.to_string()),

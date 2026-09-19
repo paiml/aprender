@@ -23,7 +23,7 @@ concepts:
   Test: {doc: "a test function a contract cites as its falsifier"}
   Proof: {doc: "a Kani harness or Lean theorem discharging an obligation"}
   Doc: {doc: "a prose document under contract (README.md, CLAUDE.md)"}
-  Model: {doc: "an .apr model file"}
+  Model: {doc: "a model file — an .apr container or a GGUF; the ladder's rungs are the ones the release measures (ONT-4c1: model:Model, model:RequiredModel, model:Receipt)"}
   Dataset: {doc: "a CSV or corpus file"}
 
 roles:
@@ -125,7 +125,8 @@ agents:
   - pmat
   - human
 
-# Each entry names the extractor that reads it. `implemented: false` is the honest state until ONT-4b/4c build them;
+# Each entry names the extractor that reads it. `implemented: false` is the honest state until its row builds it
+# (ONT-4b: pv-contract; ONT-4c1: gguf, apr-model; ONT-4b2: code, lean; ONT-4c: readme, llm-context, csv);
 # an entry naming NO extractor, or one extractors[] does not declare, is exit 3.
 entity_types:
   - {name: pv-contract, extractor: pv_contract, implemented: true}
@@ -134,7 +135,8 @@ entity_types:
   - {name: lean, extractor: lean, implemented: false}
   - {name: readme, extractor: readme, implemented: false}
   - {name: llm-context, extractor: llm_context, implemented: false}
-  - {name: apr-model, extractor: apr_model, implemented: false}
+  - {name: apr-model, extractor: apr_model, implemented: true}
+  - {name: gguf, extractor: gguf, implemented: true}
   - {name: csv, extractor: csv, implemented: false}
 
 extractors:
@@ -144,7 +146,8 @@ extractors:
   - {name: lean, reader: ontology/extract/lean.rs, implemented: false}
   - {name: readme, reader: ontology/extract/readme.rs, implemented: false}
   - {name: llm_context, reader: ontology/extract/llm_context.rs, implemented: false}
-  - {name: apr_model, reader: ontology/extract/apr_model.rs, implemented: false}
+  - {name: apr_model, reader: ontology/extract/apr_model.rs, implemented: true}
+  - {name: gguf, reader: ontology/extract/gguf.rs, implemented: true}
   - {name: csv, reader: ontology/extract/csv.rs, implemented: false}
 
 # What this ontology does NOT express, said out loud so nobody encodes it by accident. Each names the reader that
