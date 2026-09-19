@@ -583,8 +583,15 @@ pub enum KernelType {
     },
     /// PMAT-3477 (#3090): the Gated `DeltaNet` per-head `dt`/`beta` gates.
     GdnGates { num_heads: u32 },
-    /// PMAT-3477 (#3090): the gated delta-rule recurrence, one token.
-    GdnDeltaRule { num_v_heads: u32, head_v_dim: u32 },
+    /// PMAT-3477 (#3090, #3346/#3510): the gated delta-rule recurrence, one token.
+    /// `num_k_heads`/`head_k_dim` are APPENDED (never reordered — a line-keyed guard
+    /// baseline points into this file); value head `h` reads key head `h % num_k_heads`.
+    GdnDeltaRule {
+        num_v_heads: u32,
+        head_v_dim: u32,
+        num_k_heads: u32,
+        head_k_dim: u32,
+    },
     /// PMAT-3477 (#3090): gated RMSNorm — the Gated `DeltaNet` output norm.
     GdnGatedRmsNorm {
         head_dim: u32,

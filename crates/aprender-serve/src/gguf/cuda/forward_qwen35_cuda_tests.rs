@@ -1088,8 +1088,8 @@ fn qwen35_cuda_state_is_sized_from_the_config() {
     );
     assert_eq!(
         gpu.state().ssm_len(),
-        qwen.num_v_heads * qwen.head_v_dim * qwen.head_v_dim,
-        "recurrent state is num_v_heads * head_v_dim^2"
+        qwen.num_v_heads * qwen.head_v_dim * qwen.head_k_dim,
+        "recurrent state is num_v_heads * head_v_dim * head_k_dim (equal dims on this file)"
     );
 }
 
@@ -1300,3 +1300,414 @@ fn qwen35_cuda_dp4a_gemv_is_catastrophic_through_the_recurrence() {
 /// Keep the layer type in the compiled surface: the parity tests bind it, and a
 /// rename of the CPU struct must break here, not silently at phase 2.
 const _: Option<&Qwen35OwnedDeltaNetLayer> = None;
+
+// ============================================================================
+// PMAT-3477 (#3346/#3510): the GQA `DeltaNet` file — num_v_heads > num_k_heads.
+//
+// Everything above runs Qwen3.5-0.8B, whose 16 key heads and 16 value heads make
+// `h % num_k_heads` the identity: NOT ONE assertion above can tell the tiled head
+// mapping from the old one-stride-for-everything indexing, and the CUDA model
+// refused this shape outright until this ticket. These two tests are the only
+// place the grouped mapping is exercised end to end on a real file.
+// ============================================================================
+
+/// The real GQA file: 32 value heads against 16 key heads, 32 blocks.
+const MODEL_PATH_4B: &str = "/home/noah/models/Qwen3.5-4B-Q4_K_M.gguf";
+
+/// "The capital of France is" under the 4B file's own 248320-entry vocabulary
+/// (`The` is 760 here, 785 in the Qwen2/Qwen3 vocabulary) — the same prompt the
+/// CPU test `qwen35_gqa_4b_matches_llama_cpp_greedy_tokens` pins against
+/// llama.cpp's `[11751 " Paris", 13 ".", 198 "\n", 32 "A"]`.
+const PROMPT_4B: [u32; 5] = [760, 6511, 314, 9338, 369];
+
+/// Budget for one whole wired 4B `DeltaNet` layer, hidden state and recurrent
+/// state alike.
+///
+/// MEASURED on this file, 24 `DeltaNet` layers x 2 positions = 48 comparisons:
+/// worst hidden **2.250e-2** (pos 1, layer 2), worst recurrent state
+/// **1.165e-2**. It is looser than the 0.8B [`LAYER_TOL`] for the reason that
+/// file's own budget is looser than [`TOL`] — the wired layer runs the Q4_K/Q8_0
+/// projection GEMVs, whose CPU side quantizes its activation to Q8_K, and 4B is
+/// wider and deeper than 0.8B so that error accumulates over more of it. It is a
+/// budget, not a bar: the same 2.2x headroom over the measurement that
+/// [`LAYER_TOL`] carries.
+///
+/// It still has teeth. Mutating the kernel's head mapping from `h % num_k_heads`
+/// to the grouped `h / (num_v_heads / num_k_heads)` — one line in
+/// `aprender-gpu`'s `delta_rule.rs`, reverted — turns this RED immediately (see
+/// the test's own doc comment for the reading).
+const LAYER_BUDGET_4B: f32 = 5e-2;
+
+/// Skip unless both the device and a named model file are here.
+macro_rules! qwen35_cuda_file_or_skip {
+    ($path:expr) => {{
+        if !std::path::Path::new($path).exists() {
+            eprintln!("SKIP: {} is absent", $path);
+            return;
+        }
+        crate::cuda_executor_or_skip!(0)
+    }};
+}
+
+/// Load a Qwen3.5 file and assert it really is a grouped-head one, so a file
+/// swap cannot quietly turn a GQA test into another 0.8B run.
+fn assert_is_gqa(qwen: &Qwen35Model<'_>) {
+    assert!(
+        qwen.num_v_heads > qwen.num_k_heads,
+        "{MODEL_PATH_4B} is not a GQA DeltaNet file (num_v_heads {} vs num_k_heads {}); this \
+         test cannot falsify the head mapping against it",
+        qwen.num_v_heads,
+        qwen.num_k_heads
+    );
+    assert_eq!(
+        qwen.num_v_heads % qwen.num_k_heads,
+        0,
+        "num_v_heads {} is not a multiple of num_k_heads {}",
+        qwen.num_v_heads,
+        qwen.num_k_heads
+    );
+}
+
+/// Teacher-forced per-layer parity of the GPU Gated `DeltaNet` block against the
+/// CPU on the 4B file, over the first two tokens and every `DeltaNet` layer —
+/// the layer output hidden state, the causal-conv window and the recurrent
+/// state, at the same budgets the 0.8B suite uses.
+///
+/// Two tokens, not three: the 4B file is 32 blocks of ~2.7 GB of weights and
+/// this walks every `DeltaNet` layer at every position with a host round-trip
+/// per layer.
+///
+/// What this adds over the 0.8B layer test: `q` and `k` here are HALF as long as
+/// `v` (`num_k_heads * head_k_dim = 2048` against `num_v_heads * head_v_dim =
+/// 4096`), so a kernel that indexed q/k with the value-head stride would read
+/// past their allocation for every value head `h >= 16`.
+///
+/// MEASURED: worst hidden 2.250e-2 (pos 1, layer 2), worst recurrent state
+/// 1.165e-2, over 48 comparisons — both inside [`LAYER_BUDGET_4B`]. With the
+/// head mapping mutated to `h / ratio` they are 6.319e-1 and 2.445e0.
+#[test]
+#[serial_test::serial]
+fn qwen35_cuda_4b_deltanet_layers_match_cpu_on_the_real_file() {
+    let executor = qwen35_cuda_file_or_skip!(MODEL_PATH_4B);
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH_4B).expect("map the 4B GGUF");
+    let base = load_cpu_model(&mapped);
+    let qwen = Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data())
+        .expect("4B hybrid layers");
+    assert_is_gqa(&qwen);
+
+    let deltanet_layers = qwen
+        .layers
+        .iter()
+        .filter(|l| matches!(l, Qwen35OwnedLayer::DeltaNet(_)))
+        .count();
+    assert!(
+        deltanet_layers > 0,
+        "the 4B file must carry DeltaNet layers"
+    );
+
+    let mut gpu = Qwen35CudaModel::new(&qwen, executor).expect("build the 4B CUDA model");
+    gpu.pin_reference_gemv();
+
+    let hidden_dim = qwen.base.config.hidden_dim;
+    let tokens = &PROMPT_4B[..2];
+    let mut cpu_state = qwen.new_state(tokens.len() + 1);
+    let mut normed = vec![0.0f32; hidden_dim];
+    let mut post_normed = vec![0.0f32; hidden_dim];
+    let mut compared = 0usize;
+    let mut worst_hidden = 0.0f32;
+    let mut worst_ssm = 0.0f32;
+    let mut worst_where = String::new();
+
+    for (pos, &token) in tokens.iter().enumerate() {
+        let mut hidden = qwen.base.token_embedding()
+            [(token as usize) * hidden_dim..(token as usize + 1) * hidden_dim]
+            .to_vec();
+
+        for (il, layer) in qwen.layers.iter().enumerate() {
+            match layer {
+                Qwen35OwnedLayer::DeltaNet(d) => {
+                    gpu.upload_layer(il, &cpu_state.conv_states[il], &cpu_state.ssm_states[il])
+                        .expect("seed the device state");
+                    let dev = GpuBuffer::from_host(gpu.executor_mut().context(), &hidden)
+                        .expect("upload hidden");
+
+                    qwen.forward_deltanet(
+                        d,
+                        &mut hidden,
+                        &mut cpu_state,
+                        il,
+                        pos,
+                        &mut normed,
+                        &mut post_normed,
+                    )
+                    .expect("cpu deltanet");
+
+                    gpu.forward_deltanet_layer(il, &dev).expect("gpu deltanet");
+                    gpu.executor_mut().sync_stream().expect("sync");
+                    let mut got = vec![0.0f32; hidden_dim];
+                    dev.copy_to_host(&mut got).expect("download hidden");
+
+                    let l = rel_linf(&got, &hidden);
+                    if l > worst_hidden {
+                        worst_hidden = l;
+                        worst_where = format!("pos {pos} layer {il}");
+                    }
+
+                    let (conv, ssm) = gpu.download_layer(il).expect("download state");
+                    assert_rel_linf(
+                        &conv,
+                        &cpu_state.conv_states[il],
+                        TOL,
+                        &format!("4B pos {pos} layer {il} conv window"),
+                    );
+                    let ls = rel_linf(&ssm, &cpu_state.ssm_states[il]);
+                    if ls > worst_ssm {
+                        worst_ssm = ls;
+                    }
+                    compared += 1;
+                },
+                Qwen35OwnedLayer::Attention(a) => {
+                    qwen.forward_attention(
+                        a,
+                        &mut hidden,
+                        &mut cpu_state,
+                        il,
+                        pos,
+                        &mut normed,
+                        &mut post_normed,
+                    )
+                    .expect("cpu attention");
+                },
+            }
+        }
+        cpu_state.kv_cache.advance();
+    }
+
+    assert_eq!(
+        compared,
+        deltanet_layers * tokens.len(),
+        "every 4B DeltaNet layer must be compared at every position"
+    );
+    eprintln!(
+        "[4b-layer] worst hidden {worst_hidden:.3e} at {worst_where}, worst ssm {worst_ssm:.3e}, \
+         over {compared} comparisons"
+    );
+    assert!(
+        worst_hidden <= LAYER_BUDGET_4B,
+        "4B layer hidden: worst relative L-inf {worst_hidden:.3e} at {worst_where} exceeds the \
+         measured budget {LAYER_BUDGET_4B:.0e}"
+    );
+    assert!(
+        worst_ssm <= LAYER_BUDGET_4B,
+        "4B recurrent state: worst relative L-inf {worst_ssm:.3e} exceeds the measured budget \
+         {LAYER_BUDGET_4B:.0e}"
+    );
+}
+
+/// End to end on the 4B file: the five prompt positions plus FOUR greedy
+/// continuation tokens, GPU against CPU, **argmax-equal at every position**.
+///
+/// The continuation is driven by the GPU's own argmax and fed to both sides, so
+/// a single divergent token ends the agreement — this is the assertion that says
+/// the GPU runs the same model, not merely a similar one. The CPU side is itself
+/// pinned to llama.cpp's `[11751, 13, 198, 32]` by
+/// `qwen35_gqa_4b_matches_llama_cpp_greedy_tokens`, so those four ids are
+/// asserted here too: without that the pair could agree on garbage.
+///
+/// FALSIFIED: with the kernel's head mapping mutated to the grouped
+/// `h / (num_v_heads / num_k_heads)` this fails at the FIRST prompt position on
+/// the argmax assertion, not on a tolerance.
+#[test]
+#[serial_test::serial]
+fn qwen35_cuda_4b_forward_single_matches_cpu_argmax_end_to_end() {
+    let executor = qwen35_cuda_file_or_skip!(MODEL_PATH_4B);
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH_4B).expect("map the 4B GGUF");
+    let base = load_cpu_model(&mapped);
+    let qwen = Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data())
+        .expect("4B hybrid layers");
+    assert_is_gqa(&qwen);
+
+    /// llama.cpp master `60b06ab9a`, CPU, `-no-cnv --temp 0`, same raw prompt.
+    const WANT: [u32; 4] = [11751, 13, 198, 32];
+
+    let mut gpu = Qwen35CudaModel::new(&qwen, executor).expect("build the 4B CUDA model");
+    gpu.pin_reference_gemv();
+    let mut gpu_state = gpu.new_state().expect("device state");
+    let mut cpu_state = qwen.new_state(PROMPT_4B.len() + WANT.len());
+
+    let mut cpu_logits = Vec::new();
+    let mut gpu_logits = Vec::new();
+    for (pos, &token) in PROMPT_4B.iter().enumerate() {
+        cpu_logits = qwen
+            .forward_single_qwen35(token, &mut cpu_state, pos)
+            .expect("cpu 4B forward");
+        gpu_logits = gpu
+            .forward_single(token, &mut gpu_state, pos)
+            .expect("gpu 4B forward");
+        assert!(
+            gpu_logits.iter().all(|l| l.is_finite()),
+            "4B pos {pos}: the GPU forward produced a non-finite logit"
+        );
+        let (cos, linf) = assert_forward_parity(
+            &gpu_logits,
+            &cpu_logits,
+            LOGITS_BUDGET,
+            &format!("4B prompt pos {pos} logits"),
+        );
+        eprintln!(
+            "[4b-e2e] prompt pos {pos}: argmax {} cosine {cos:.6} relative L-inf {linf:.3e}",
+            crate::gguf::ops::argmax(&cpu_logits),
+        );
+    }
+
+    let mut got = Vec::with_capacity(WANT.len());
+    for step in 0..WANT.len() {
+        let pos = PROMPT_4B.len() + step;
+        // The GPU's own choice drives both sides: an argmax the GPU alone picks
+        // takes the two forwards apart immediately instead of being re-seeded.
+        let next = crate::gguf::ops::argmax(&gpu_logits);
+        assert_eq!(
+            next,
+            crate::gguf::ops::argmax(&cpu_logits),
+            "4B step {step}: GPU and CPU disagree on the next token"
+        );
+        got.push(next);
+        let token = next;
+        cpu_logits = qwen
+            .forward_single_qwen35(token, &mut cpu_state, pos)
+            .expect("cpu 4B forward");
+        gpu_logits = gpu
+            .forward_single(token, &mut gpu_state, pos)
+            .expect("gpu 4B forward");
+        let (cos, linf) = assert_forward_parity(
+            &gpu_logits,
+            &cpu_logits,
+            LOGITS_BUDGET,
+            &format!("4B decode pos {pos} logits"),
+        );
+        eprintln!("[4b-e2e] decode pos {pos}: token {next} cosine {cos:.6} L-inf {linf:.3e}");
+    }
+
+    assert_eq!(
+        got,
+        WANT.to_vec(),
+        "the 4B GPU forward does not follow llama.cpp greedily: got {got:?}, want {WANT:?} — \
+         num_k_heads {}, num_v_heads {}, head_k_dim {}, head_v_dim {}",
+        qwen.num_k_heads,
+        qwen.num_v_heads,
+        qwen.head_k_dim,
+        qwen.head_v_dim
+    );
+    assert_eq!(
+        gpu_state.kv_len(),
+        PROMPT_4B.len() + WANT.len(),
+        "the device KV cache must have advanced once per position"
+    );
+}
+
+/// The device state of a GQA file is `num_v_heads * head_v_dim * head_k_dim`,
+/// and its conv window is `(2 * k_dim + v_dim) * (conv_kernel - 1)` — the two
+/// sizes that were wrong (or unreachable) while `head_k_dim` and `head_v_dim`
+/// were assumed equal.
+#[test]
+#[serial_test::serial]
+fn qwen35_cuda_4b_state_is_sized_from_the_grouped_config() {
+    let executor = qwen35_cuda_file_or_skip!(MODEL_PATH_4B);
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH_4B).expect("map the 4B GGUF");
+    let base = load_cpu_model(&mapped);
+    let qwen = Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data())
+        .expect("4B hybrid layers");
+    assert_is_gqa(&qwen);
+    let conv_dim = qwen.head_k_dim * qwen.num_k_heads * 2 + qwen.head_v_dim * qwen.num_v_heads;
+
+    let gpu = Qwen35CudaModel::new(&qwen, executor).expect("build the 4B CUDA model");
+    assert_eq!(
+        gpu.state().conv_len(),
+        conv_dim * (qwen.conv_kernel - 1),
+        "conv window is (2 * k_dim + v_dim) * (conv_kernel - 1)"
+    );
+    assert_eq!(
+        gpu.state().ssm_len(),
+        qwen.num_v_heads * qwen.head_v_dim * qwen.head_k_dim,
+        "the recurrent state is num_v_heads * head_v_dim * head_k_dim"
+    );
+    assert_eq!(
+        gpu.state().ssm_len(),
+        qwen.new_state(1).ssm_states[0].len(),
+        "the device state must be the same length as the CPU's own"
+    );
+}
+
+/// The one head shape the CUDA `DeltaNet` still refuses, and the one it must not.
+///
+/// `check_head_grouping` is the whole guard between an indivisible file and a
+/// kernel that would read `q`/`k` at `h % num_k_heads` for a value head with no
+/// key head to land on. Nothing else exercised it: the refusal it replaced was
+/// `num_k_heads != num_v_heads`, so every test on this file (0.8B, 16/16) and
+/// every 4B test above (16/32) takes the Ok arm. This runs with no device and no
+/// model file, so it is the one assertion here that CI actually reaches.
+#[test]
+fn qwen35_cuda_refuses_only_value_heads_that_do_not_group() {
+    /// `Qwen35CudaDims` with only the four head fields that decide the grouping.
+    fn dims(
+        num_k_heads: u32,
+        num_v_heads: u32,
+        head_k_dim: u32,
+        head_v_dim: u32,
+    ) -> super::Qwen35CudaDims {
+        super::Qwen35CudaDims {
+            hidden_dim: 1024,
+            intermediate_dim: 3072,
+            conv_dim: num_k_heads * head_k_dim * 2 + num_v_heads * head_v_dim,
+            k_dim: num_k_heads * head_k_dim,
+            v_dim: num_v_heads * head_v_dim,
+            head_k_dim,
+            num_k_heads,
+            head_v_dim,
+            num_v_heads,
+            conv_kernel: 4,
+            eps: 1e-6,
+            num_heads: 16,
+            num_kv_heads: 2,
+            attn_head_dim: 128,
+            n_rot: 128,
+            theta_scale: 0.5,
+            vocab_size: 32,
+        }
+    }
+
+    // Every real Qwen3.5 head shape must be accepted — these are the files this
+    // ticket exists to admit, and a guard that refused one would be found only by
+    // a 16 GB download.
+    for (nk, nv, label) in [
+        (16u32, 16u32, "0.8B / 2B"),
+        (16, 32, "4B / 9B"),
+        (16, 48, "27B"),
+    ] {
+        Qwen35CudaModel::check_head_grouping(dims(nk, nv, 128, 128))
+            .unwrap_or_else(|e| panic!("{label} ({nk} key heads, {nv} value heads) refused: {e}"));
+    }
+
+    // A rectangular state is no longer a refusal: the kernel sizes the state row
+    // from the key dim and the row count from the value dim.
+    Qwen35CudaModel::check_head_grouping(dims(16, 32, 128, 64))
+        .expect("head_k_dim != head_v_dim must be accepted");
+
+    // 5 value heads onto 2 key heads: head 4 would wrap onto key head 0 and read a
+    // group of one where every other group has two.
+    let err = Qwen35CudaModel::check_head_grouping(dims(2, 5, 8, 8))
+        .expect_err("5 value heads do not group onto 2 key heads");
+    let text = format!("{err}");
+    assert!(
+        text.contains("qwen35_cuda_deltanet"),
+        "the refusal must name the operation: {text}"
+    );
+    assert!(
+        text.contains('2') && text.contains('5'),
+        "the refusal must quote both head counts so the file is identifiable: {text}"
+    );
+
+    // Zero key heads would be a division by zero, not merely a bad grouping.
+    Qwen35CudaModel::check_head_grouping(dims(0, 16, 128, 128))
+        .expect_err("zero key heads must be refused, not divided by");
+}
