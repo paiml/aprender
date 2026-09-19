@@ -935,6 +935,15 @@ jobs:
       # --event/--branch, check_hardcoded_paths --full-if-capable) keep their
       # own steps below: an argument is a claim this runner cannot derive.
       - name: Every cargo-free guard runs, and every failure is reported
+        # infra#721: the guards that read GitHub (check_silicon_coverage.sh's job
+        # ledger, check_roadmap_completion_is_cited.sh's `gh pr view`) used the
+        # runner's /opt/ci-gh login -- the SAME 5,000/h quota as every agent
+        # session on the operator's account. When three sessions drained it at
+        # 07:50Z on 2026-09-19, check_silicon_coverage went NO-GO ("job ledger is
+        # EMPTY") on merge-queue run 35430069580 and evicted #3488. GH_TOKEN wins
+        # over the config-dir login in gh, and github.token's 1,000/h is per job.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: bash scripts/guard_tree.sh --no-cargo
       # scripts/tests/guard_tree_test.sh is guard_tree.sh's OWN case table
       # (BSE-01, PMAT-1062) -- it proves guard_tree.sh's no-fail-fast
