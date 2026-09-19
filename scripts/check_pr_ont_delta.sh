@@ -205,7 +205,7 @@ predicate_self_test() {
     # and the guard redded a maintainer's spec PR for a line about a delta that
     # did not exist. The amendment (aprender#3535) makes this row want=1; restoring the
     # directory-wide sink turns it RED again, which is the proof it discriminates.
-    prow "a DESIGN spec is not a sweep (§11.1 amended)"   1 'docs/specifications/PP-QUANT-001-MASTER.md'
+    prow "a DESIGN spec is not a sweep"                  1 'docs/specifications/PP-QUANT-001-MASTER.md'
     printf 'predicate self-test: %s passed, %s failed\n' "$pass" "$fail"
     [ "$fail" -eq 0 ]
 }
