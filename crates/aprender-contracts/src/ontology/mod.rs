@@ -14,3 +14,4 @@ pub mod receipts;
 pub mod shapes;
 pub mod sigma;
 pub mod verdict;
+pub mod w3c;

@@ -23,6 +23,8 @@ concepts:
   Test: {doc: "a test function a contract cites as its falsifier"}
   Proof: {doc: "a Kani harness or Lean theorem discharging an obligation"}
   Doc: {doc: "a prose document under contract (README.md, CLAUDE.md)"}
+  Symbol: {doc: "a Rust symbol a binding names — a free fn or an impl method; the focus node of extract:code (ONT-4b2: ont:Symbol with sym:crate, sym:module, sym:resolved)"}
+  Statement: {doc: "a Lean theorem in the in-tree Theorems tree; the focus node of extract:lean (ONT-4b2: ont:Statement with lean:sorryFree, lean:modelOf)"}
   Model: {doc: "a model file — an .apr container or a GGUF; the ladder's rungs are the ones the release measures (ONT-4c1: model:Model, model:RequiredModel, model:Receipt)"}
   Dataset: {doc: "a CSV or corpus file"}
 
@@ -131,8 +133,8 @@ agents:
 entity_types:
   - {name: pv-contract, extractor: pv_contract, implemented: true}
   - {name: json, extractor: json, implemented: true}
-  - {name: code, extractor: code, implemented: false}
-  - {name: lean, extractor: lean, implemented: false}
+  - {name: code, extractor: code, implemented: true}
+  - {name: lean, extractor: lean, implemented: true}
   - {name: readme, extractor: readme, implemented: false}
   - {name: llm-context, extractor: llm_context, implemented: false}
   - {name: apr-model, extractor: apr_model, implemented: true}
@@ -142,8 +144,8 @@ entity_types:
 extractors:
   - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: true}
   - {name: json, reader: ontology/extract/json.rs, implemented: true}
-  - {name: code, reader: ontology/extract/code.rs, implemented: false}
-  - {name: lean, reader: ontology/extract/lean.rs, implemented: false}
+  - {name: code, reader: ontology/extract/code.rs, implemented: true}
+  - {name: lean, reader: ontology/extract/lean.rs, implemented: true}
   - {name: readme, reader: ontology/extract/readme.rs, implemented: false}
   - {name: llm_context, reader: ontology/extract/llm_context.rs, implemented: false}
   - {name: apr_model, reader: ontology/extract/apr_model.rs, implemented: true}

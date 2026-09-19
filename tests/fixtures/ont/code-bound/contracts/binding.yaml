@@ -1,0 +1,33 @@
+version: 1.0.0
+target_crate: kern
+bindings:
+- contract: softmax-kernel-v1.yaml
+  equation: softmax
+  module_path: kern::nn::functional::softmax
+  function: softmax
+  status: implemented
+- contract: softmax-kernel-v1.yaml
+  equation: relu
+  module_path: kern::nn::functional
+  function: relu
+  status: implemented
+- contract: softmax-kernel-v1.yaml
+  equation: forward
+  module_path: kern::nn
+  function: forward
+  status: implemented
+- contract: softmax-kernel-v1.yaml
+  equation: helper
+  module_path: kern
+  function: helper
+  status: implemented
+- contract: softmax-kernel-v1.yaml
+  equation: ghost
+  module_path: kern::nn::functional
+  function: no_such_function
+  status: implemented
+- contract: softmax-kernel-v1.yaml
+  equation: rmsnorm
+  module_path: kern::nn::functional
+  function: gated_rmsnorm
+  status: implemented

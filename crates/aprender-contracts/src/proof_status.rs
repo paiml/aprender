@@ -394,7 +394,7 @@ fn insert_name_forms(names: &mut std::collections::HashSet<String>, label: &str)
 }
 
 /// `relu_nonneg` → `ReluNonneg`.
-fn camel_case(snake: &str) -> String {
+pub(crate) fn camel_case(snake: &str) -> String {
     snake
         .split('_')
         .map(|s| {
@@ -408,7 +408,7 @@ fn camel_case(snake: &str) -> String {
 }
 
 /// `ReluNonneg` → `Relu`: the leading word of a CamelCase name.
-fn first_camel_word(camel: &str) -> String {
+pub(crate) fn first_camel_word(camel: &str) -> String {
     camel
         .chars()
         .enumerate()

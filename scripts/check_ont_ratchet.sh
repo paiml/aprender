@@ -68,17 +68,36 @@ count_anchored() { { grep -rlE '^entity:' "$REPO_ROOT/contracts" --include='*.ya
 # ONT-4c1: a contract carries ONE `shape:` (id = its stem) or a `shapes:` list of named shapes; either anchors it.
 count_shaped()   { { grep -rlE '^shapes?:' "$REPO_ROOT/contracts" --include='*.yaml' 2>/dev/null || true; } | wc -l | tr -d ' '; }
 
-# Σ lives in crates/aprender-contracts/src/ontology/ (ONT decision 4). Absent
-# directory is 0 registered, not an error — 0 is the honest reading.
+# Σ IS THE REGISTRY, so Σ is what these two count (ONT-4b2, 2026-09-19). They used to grep the RUST for
+# `EntityType::` and `impl Extractor` — two forms this codebase has never used: the entity types are Σ's
+# `entity_types:` list and the extractors are free functions in `ontology/extract/`, declared in Σ's
+# `extractors:` with `implemented:`. So both counters measured 0 while the baseline carried 1 and 1 from an
+# older tree, and every `--write` since would have "ratcheted" a number nobody had measured. The names mean
+# what Σ declares; that is now what they read. An absent Σ is 0 registered, not an error — 0 is the honest
+# reading, and the rows in --self-test pin both directions.
 count_entity_types() {
-    local d="$REPO_ROOT/crates/aprender-contracts/src/ontology"
-    [ -d "$d" ] || { printf '0\n'; return 0; }
-    { grep -rhoE '^[[:space:]]*EntityType::[A-Za-z]+' "$d" 2>/dev/null || true; } | sort -u | wc -l | tr -d ' '
+    local f="$REPO_ROOT/contracts/ontology.yaml"
+    [ -f "$f" ] || { printf '0\n'; return 0; }
+    { sed -n '/^entity_types:/,/^[a-z_]*:/p' "$f" | grep -cE '^[[:space:]]*-[[:space:]]*\{name:' || true; } | tr -d ' '
 }
 count_extractors() {
-    local d="$REPO_ROOT/crates/aprender-contracts/src/ontology"
-    [ -d "$d" ] || { printf '0\n'; return 0; }
-    { grep -rlE 'impl[[:space:]]+Extractor' "$d" 2>/dev/null || true; } | wc -l | tr -d ' '
+    local f="$REPO_ROOT/contracts/ontology.yaml"
+    [ -f "$f" ] || { printf '0\n'; return 0; }
+    { sed -n '/^extractors:/,/^[a-z_]*:/p' "$f" | grep -cE 'implemented:[[:space:]]*true' || true; } | tr -d ' '
+}
+
+# Keys under `ont` that OTHER gates own and this script does not measure: `formal_prose` (the sigma gate's
+# prose-debt ratchet) and `legacy_unresolved_depends_on` (the relations gate's, PV-ONT-010). Both are read
+# from this file by `lint/{sigma,relations}_gate.rs` and neither is computed here — so `--write` used to
+# DELETE them, disarming two shrink-only ratchets in the act of updating a third. They ride through verbatim,
+# the same rule `armed_gates` and `armed_shapes` already follow: what this script does not measure, it does
+# not get to drop.
+foreign_ont_keys() { # foreign_ont_keys FILE -> `    "k": v,` lines, in file order
+    [ -f "$1" ] || return 0
+    local key
+    for key in formal_prose legacy_unresolved_depends_on; do
+        { grep -E "\"$key\"[[:space:]]*:" "$1" || true; } | head -1 | sed 's/^[[:space:]]*/    /; s/,\{0,1\}[[:space:]]*$/,/'
+    done
 }
 
 # ONT R-5, verbatim: "Only contracts that *should* be anchored (kernel-kind with
@@ -196,6 +215,7 @@ ${shapes_line}  "ont": {
     "contracts_anchored": $anchored,
     "contracts_shaped": $shaped,
     "unanchored_but_bindable": $bindable,
+$(foreign_ont_keys "$BASELINE")
     "shapes_unarmed": $unarmed
   }
 }
@@ -264,6 +284,25 @@ self_test() {
     for c in entity_types_registered extractors_implemented contracts_anchored contracts_shaped unanchored_but_bindable consumer_present; do
         grep -q "\"$c\"" "$t/m.json" && row "counter present: $c" ok ok || row "counter present: $c" missing ok
     done
+    # ONT-4b2: the two counters read Σ, and a key another gate owns survives --write.
+    printf 'schema: ont-sigma-v1\nentity_types:\n  - {name: a, extractor: a, implemented: true}\n  - {name: b, extractor: b, implemented: false}\nextractors:\n  - {name: a, reader: x.rs, implemented: true}\n  - {name: b, reader: y.rs, implemented: false}\nreaders:\n  concepts: x\n' > "$t/sigma.yaml"
+    mkdir -p "$t/repo/contracts"
+    cp "$t/sigma.yaml" "$t/repo/contracts/ontology.yaml"
+    row "entity types counted from Σ, not from a Rust form nobody writes" "$(REPO_ROOT="$t/repo" count_entity_types)" 2
+    row "extractors counted from Σ's implemented: true" "$(REPO_ROOT="$t/repo" count_extractors)" 1
+    printf '{\n  "armed_gates": ["validate"],\n  "ont": {\n    "formal_prose": 1464,\n    "legacy_unresolved_depends_on": 8\n  }\n}\n' > "$t/foreign.json"
+    BASELINE="$t/foreign.json" measure > "$t/f.json"
+    row "measure() keeps formal_prose (the sigma gate reads it)" "$(grep -c '"formal_prose": 1464' "$t/f.json")" 1
+    row "measure() keeps legacy_unresolved_depends_on (the relations gate reads it)" "$(grep -c '"legacy_unresolved_depends_on": 8' "$t/f.json")" 1
+    cp "$t/foreign.json" "$t/fw.json"
+    set +e
+    BASELINE="$t/fw.json" main --write >/dev/null 2>&1
+    set -e
+    row "--write keeps both foreign keys in place" "$(grep -cE '"formal_prose"|"legacy_unresolved_depends_on"' "$t/fw.json")" 2
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c "import json,sys;json.load(open('$t/f.json'))" >/dev/null 2>&1 \
+            && row "measure() with foreign keys is valid JSON" ok ok || row "measure() with foreign keys is valid JSON" bad ok
+    fi
     # THE DECIDING ROW: with no consumer, a rise in contracts_anchored is refused.
     printf '{"ont":{"consumer_present": false,"contracts_anchored": 0}}\n' > "$t/base.json"
     local rc

@@ -2,6 +2,63 @@
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix ont: <https://ont.paiml.dev/v1alpha1/> .
 
+<https://ont.paiml.dev/v1alpha1/shape/bound-symbols-resolve> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/Symbol> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sym/crate> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sym/module> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sym/name> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sym/implements> ;
+        sh:minCount 1 ;
+        sh:class <https://ont.paiml.dev/v1alpha1/Contract> ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sym/resolved> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/lean-statements-grounded> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/Statement> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/lean/name> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/lean/file> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/lean/discharge> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "grounded" "admitted" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/lean/sorryFree> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
 <https://ont.paiml.dev/v1alpha1/shape/ladder-measured> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/model/Model> ;
     sh:property [

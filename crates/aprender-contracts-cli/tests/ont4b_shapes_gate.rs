@@ -218,8 +218,8 @@ fn the_tracked_repo_graph_is_fresh() {
     assert!(v["triples"].as_u64().unwrap_or(0) > 5000, "{}", show(&r));
     assert_eq!(
         v["shapes_n"],
-        3,
-        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1)\n{}",
+        5,
+        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2)\n{}",
         show(&r)
     );
 }
