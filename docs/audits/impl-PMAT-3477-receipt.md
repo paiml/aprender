@@ -14,7 +14,7 @@
 | 3 | #3413 C: F2 guard judges the resolved prefill path | same | subagent:opus worker D | — |
 | 4 | #3432: one GGML type table; `apr qa` admits qwen35 on CPU; qa certifies CPU-only arch | same | subagent:opus workers C, F | — |
 | 5 | #3091: IQ2_XXS/IQ4_XS CPU dequant, real files | same | subagent:opus worker E | — |
-| 6 | #3090 disposition | — | direct (issue comment) | — |
+| 6 | #3090 disposition | — | direct (issue comment 2026-09-18: dated non-goal) — SUPERSEDED 2026-09-19: Noah selected "GPU required — build #3090 now"; the GDN CUDA path is built on `PMAT-3477-gdn-gpu` and 0.68.2 waits for it | operator decision 2026-09-19 |
 | 7 | pre-PR review quorum; two-host ladder receipts | `route=agy-quorum w=1.00 basis=absent effort=1[U]` | delegate (agy, width 3) | Phase-4 review |
 | 8 | train T-0…T-4 publish | route=self | pending | — |
 
@@ -68,7 +68,7 @@ Gate stages measured by `pmat verify` (format, complexity, clippy): ok. not_meas
 - `present` / `pr-review-quorum` (Arm 4 signed receipt at `evidence/pr-review/3484`): not produced — review backlog class, not a required check.
 - IQ2_XXS grid table: `iq2_grid_bytes_are_only_the_three_magnitudes` cannot catch a transposed entry (review quorum finding); covered only by the one-block fixture and the coherent real-file output. Follow-up test owed.
 - pv contract in the same PR: contracts co-evolution rides in via #3480's merged head (qk-norm-v1 FALSIFY-QKN-006, parity qa_gate, qwen3-e2e); `pv validate` not re-run by me (`pv_lane=NotRun`).
-- #3090 GDN GPU: dated non-goal (issue comment 2026-09-18).
+- #3090 GDN GPU: was a dated non-goal (issue comment 2026-09-18). Superseded 2026-09-19 — Noah selected "GPU required — build #3090 now". Open until the Gated DeltaNet CUDA path passes `apr qa` Golden Output GPU on both ladder hosts (lambda sm_89, gx10 sm_121) and the qwen35-0.8b-q4km rung of `contracts/model-capability-ladder-v1.yaml` is green for cuda (QHF-GPU-008 / QE2E-DEV-008, #3502). The bump PR #3498 is disarmed until then, and its CHANGELOG `[0.68.2]` paragraph (which still says "#3090 … is a dated non-goal carried to 0.69.0") must be rewritten before it re-arms.
 
 ## Estimates
 - K̂ = 8 (`estimate.sh aprender 8`, basis=first-run[U], ROWS=1 EXCLUDED=43 UNMEASURED=4), K = 16. Actual: unmeasurable per ticket (session predates it) `[U]`; ~8 h wall-clock, 7 dispatches.
