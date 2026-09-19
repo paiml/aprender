@@ -134,8 +134,8 @@ proof_obligations:
   applies_to: all
 - id: QHF-GPU-009
   type: invariant
-  property: 'End to end against the PRODUCTION CPU forward the device decodes the same token at every position and its logits stay on the CPU''s ray: identical argmax and a cosine floor, the same shape as the F2 runtime parity guard (apr-cpu-vs-gpu-output-parity-v1). The floor is a MEASURED number: 0.999 is the expected value at 2026-09-19 and is replaced by the value the 0.68.2 receipt records, never loosened below the F2 catastrophic line 0.90'
-  formal: '∀ t ∈ positions(prompt): argmax(logits^{gpu}(t)) = argmax(logits^{cpu}(t)) ∧ cos(logits^{gpu}(t), logits^{cpu}(t)) ≥ 0.999'
+  property: 'End to end against the PRODUCTION CPU forward the device decodes the same token at every position and its logits stay on the CPU''s ray: identical argmax and a cosine floor, the same shape as the F2 runtime parity guard (apr-cpu-vs-gpu-output-parity-v1). The floor is a MEASURED number: on Qwen3.5-0.8B-Q4_K_M, 6-token prompt, kernel branch 1ed0adf36 (2026-09-19, RTX 4090) the per-position cosine was 0.998348…0.999636 (min 0.998348) with argmax identical at every position and relative L∞ ≤ 6.72e-2; the floor is 0.996 (the measured min with margin, the test''s COSINE_FLOOR), never loosened below the F2 catastrophic line 0.90. The sigmoid-gate mutant scores 0.7656 with a flipped argmax; the DP4A Q4K/Q6K GEMV profile through the recurrence scores 0.466…−0.246 with every argmax wrong (#3513, float MWV pinned for qwen35 in 0.68.2)'
+  formal: '∀ t ∈ positions(prompt): argmax(logits^{gpu}(t)) = argmax(logits^{cpu}(t)) ∧ cos(logits^{gpu}(t), logits^{cpu}(t)) ≥ 0.996'
   applies_to: all
 falsification_tests:
 - id: FALSIFY-QHF-001
@@ -180,8 +180,8 @@ falsification_tests:
   if_fails: "the GDN device kernels (causal conv1d, gated delta-rule recurrence with per-layer state, gated RMSNorm, per-head L2 norm, partial-NEOX rope) diverge from forward_qwen35.rs or never ran — at f4c0daa37 no device path existed and the rung claimed cpu only (#3090, EPIC #3477)"
 - id: FALSIFY-QHF-009
   rule: The device path is judged per op against exact arithmetic and end to end against production, not per op against a quantized CPU
-  prediction: "qwen35_cuda_the_parity_floor_is_the_cpu_references_own_activation_quantization passes (every GDN and attention op ≤ 1e-3 relative to the dequantized-f32 exact reference; the sigmoid-gate mutant turns it RED), and on Qwen3.5-0.8B-Q4_K_M a 6-token prompt gives identical argmax at every position with per-position cosine ≥ 0.999 between the device and the production CPU logits, on lambda (sm_89) and gx10 (sm_121)"
-  test: "on EACH required host (lambda sm_89, gx10 sm_121): cargo test -p aprender-serve --features cuda qwen35_cuda_the_parity_floor -- --nocapture && bash scripts/model_ladder.sh --out evidence/dogfood/models/<version>/ (rung qwen35-0.8b-q4km: apr qa golden_output + gpu-cpu parity per position, argmax match ∧ cos ≥ 0.999); then bash scripts/check_model_ladder.sh reads both receipts — one host is not the fleet"
+  prediction: "qwen35_cuda_the_parity_floor_is_the_cpu_references_own_activation_quantization passes (every GDN and attention op ≤ 1e-3 relative to the dequantized-f32 exact reference; the sigmoid-gate mutant turns it RED), and on Qwen3.5-0.8B-Q4_K_M a 6-token prompt gives identical argmax at every position with per-position cosine ≥ 0.996 between the device and the production CPU logits (measured min 0.998348 at 1ed0adf36), on lambda (sm_89) and gx10 (sm_121)"
+  test: "on EACH required host (lambda sm_89, gx10 sm_121): cargo test -p aprender-serve --features cuda qwen35_cuda_the_parity_floor -- --nocapture && bash scripts/model_ladder.sh --out evidence/dogfood/models/<version>/ (rung qwen35-0.8b-q4km: apr qa golden_output + gpu-cpu parity per position, argmax match ∧ cos ≥ 0.996); then bash scripts/check_model_ladder.sh reads both receipts — one host is not the fleet"
   if_fails: "either a device op is wrong (per-op exact check names the op) or the composed forward drifts (argmax flip or cosine below the measured floor names the position); a check that demanded device == quantized-CPU at 1e-3 could only be passed by an implementation reproducing the CPU's Q8_K activation error, which is not correctness (#3090, EPIC #3477)"
 kani_harnesses:
 - id: KANI-QHF-001
