@@ -15,6 +15,17 @@
 //! | [`GatedRmsNormKernel`] | `gated_rmsnorm` |
 //! | [`SigmoidGateKernel`] | `apply_sigmoid_gate` |
 //!
+//! Qwen3.5 interleaves those Gated `DeltaNet` layers with *gated full-attention*
+//! layers, whose 256-wide heads no attention kernel in this crate could serve
+//! (`kernels/attention` truncates at `head_dim = 128`). Their three kernels live here
+//! too, against the same CPU reference (`forward_attention`, forward_qwen35.rs:985):
+//!
+//! | kernel | CPU function it implements |
+//! |--------|----------------------------|
+//! | [`SplitInterleavedKernel`] | the `q` / `gate` de-interleave of the joint `attn_q` projection |
+//! | [`PartialNeoxRopeKernel`] | `apply_partial_neox_rope` |
+//! | [`DecodeAttention256Kernel`] | the scores / `softmax` / value accumulation block |
+//!
 //! ## Shapes (Qwen3.5-0.8B)
 //!
 //! `head_k_dim = head_v_dim = 128`, `num_k_heads = 16`, `num_v_heads = 16`,
@@ -32,21 +43,27 @@
 //! the Gated `DeltaNet` block holds against the reference implementation.
 
 mod causal_conv1d;
+mod decode_attention;
 mod delta_rule;
 mod gated_rmsnorm;
 mod gdn_gates;
 mod l2_norm;
+mod partial_rope;
 mod sigmoid_gate;
+mod split_interleave;
 
 #[cfg(test)]
 mod test_support;
 
 pub use causal_conv1d::CausalConv1dSiluKernel;
+pub use decode_attention::{DecodeAttention256Kernel, DEFAULT_MAX_POSITIONS_PER_PASS};
 pub use delta_rule::DeltaRuleRecurrenceKernel;
 pub use gated_rmsnorm::GatedRmsNormKernel;
 pub use gdn_gates::GdnGatesKernel;
 pub use l2_norm::PerHeadL2NormKernel;
+pub use partial_rope::PartialNeoxRopeKernel;
 pub use sigmoid_gate::SigmoidGateKernel;
+pub use split_interleave::SplitInterleavedKernel;
 
 use crate::ptx::builder::{KernelBuilder, PtxArithmetic, PtxComparison, PtxControl};
 use crate::ptx::VirtualReg;
