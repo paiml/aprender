@@ -1,0 +1,154 @@
+{
+  "ticket": "PMAT-3505",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 98 commit(s); judged against origin/main",
+  "head": "4ad88d9f3c99b54f129adedb498d6f008daefff1",
+  "diff_sha256": "59a13c89a94773f1d896acedd683fcca7a403e8741be72d90b51c341d4f53487",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 2285,
+  "author": {
+    "model": "claude-fable-5-1",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff exactly matches the requirements of PMAT-3505. It creates two new `.cmd` files in `ci/explicit-test-commands.d/` to run the previously dark `ont4_relations_gate` and `ont4b_shapes_gate` tests in CI. This is strictly CI wiring, with no code changes, no weakened gates, and no out-of-scope work included.",
+      "findings": [
+        {
+          "claim": "Adds explicit test command entry 337 for the ONT-4 relations gate test, correctly executing 'cargo test -p aprender-contracts-cli --test ont4_relations_gate', strictly fulfilling the CI wiring requirement of PMAT-3505.",
+          "file": "ci/explicit-test-commands.d/337-aprender-contracts-cli-ont4-relations-gate.cmd",
+          "fix": "",
+          "grounding": "cited",
+          "line": 1
+        },
+        {
+          "claim": "Adds explicit test command entry 338 for the ONT-4b SHACL shapes gate test, correctly executing 'cargo test -p aprender-contracts-cli --test ont4b_shapes_gate', fulfilling the remainder of the ticket without altering code.",
+          "file": "ci/explicit-test-commands.d/338-aprender-contracts-cli-ont4b-shapes-gate.cmd",
+          "fix": "",
+          "grounding": "cited",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 3365,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff precisely implements ticket PMAT-3505 by adding CI explicit test command entries 337 and 338 in `ci/explicit-test-commands.d/` for `ont4_relations_gate` and `ont4b_shapes_gate`. It contains strictly CI wiring, introduces no code changes or out-of-scope modifications, weakens no gates, and successfully brings the dark ONT-4 and ONT-4b gate tests into CI execution.",
+      "findings": [
+        {
+          "claim": "Adds explicit CI test command entry 337 to execute `cargo test -p aprender-contracts-cli --test ont4_relations_gate` for the ONT-4 relations gate test, addressing darkness in CI without touching code.",
+          "file": "ci/explicit-test-commands.d/337-aprender-contracts-cli-ont4-relations-gate.cmd",
+          "grounding": "cited",
+          "line": 1
+        },
+        {
+          "claim": "Adds explicit CI test command entry 338 to execute `cargo test -p aprender-contracts-cli --test ont4b_shapes_gate` for the ONT-4b SHACL shapes gate test, addressing darkness in CI without touching code.",
+          "file": "ci/explicit-test-commands.d/338-aprender-contracts-cli-ont4b-shapes-gate.cmd",
+          "grounding": "cited",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 3367,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff precisely implements ticket PMAT-3505 by adding CI explicit test command entries 337 and 338 in ci/explicit-test-commands.d/ for the ONT-4 relations gate test (`ont4_relations_gate`) and ONT-4b SHACL shapes gate test (`ont4b_shapes_gate`). It contains CI wiring only, makes no code modifications, introduces no out-of-scope changes, and weakens no gates.",
+      "findings": [
+        {
+          "claim": "Adds explicit test command entry 337 to execute `cargo test -p aprender-contracts-cli --test ont4_relations_gate` in CI for the ONT-4 relations gate test as specified by PMAT-3505.",
+          "file": "ci/explicit-test-commands.d/337-aprender-contracts-cli-ont4-relations-gate.cmd",
+          "grounding": "cited",
+          "line": 1
+        },
+        {
+          "claim": "Adds explicit test command entry 338 to execute `cargo test -p aprender-contracts-cli --test ont4b_shapes_gate` in CI for the ONT-4b SHACL shapes gate test as specified by PMAT-3505.",
+          "file": "ci/explicit-test-commands.d/338-aprender-contracts-cli-ont4b-shapes-gate.cmd",
+          "grounding": "cited",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 3261,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "ci/explicit-test-commands.d/337-aprender-contracts-cli-ont4-relations-gate.cmd",
+      "line": 1,
+      "lanes_agreeing": [
+        1,
+        2,
+        3
+      ],
+      "claims": [
+        "Adds explicit CI test command entry 337 to execute `cargo test -p aprender-contracts-cli --test ont4_relations_gate` for the ONT-4 relations gate test, addressing darkness in CI without touching code.",
+        "Adds explicit test command entry 337 for the ONT-4 relations gate test, correctly executing 'cargo test -p aprender-contracts-cli --test ont4_relations_gate', strictly fulfilling the CI wiring requirement of PMAT-3505.",
+        "Adds explicit test command entry 337 to execute `cargo test -p aprender-contracts-cli --test ont4_relations_gate` in CI for the ONT-4 relations gate test as specified by PMAT-3505."
+      ]
+    },
+    {
+      "file": "ci/explicit-test-commands.d/338-aprender-contracts-cli-ont4b-shapes-gate.cmd",
+      "line": 1,
+      "lanes_agreeing": [
+        1,
+        2,
+        3
+      ],
+      "claims": [
+        "Adds explicit CI test command entry 338 to execute `cargo test -p aprender-contracts-cli --test ont4b_shapes_gate` for the ONT-4b SHACL shapes gate test, addressing darkness in CI without touching code.",
+        "Adds explicit test command entry 338 for the ONT-4b SHACL shapes gate test, correctly executing 'cargo test -p aprender-contracts-cli --test ont4b_shapes_gate', fulfilling the remainder of the ticket without altering code.",
+        "Adds explicit test command entry 338 to execute `cargo test -p aprender-contracts-cli --test ont4b_shapes_gate` in CI for the ONT-4b SHACL shapes gate test as specified by PMAT-3505."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-fable-5-1/claude"
+  }
+}
