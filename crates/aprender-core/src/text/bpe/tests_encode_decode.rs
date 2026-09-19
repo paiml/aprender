@@ -15,10 +15,16 @@ use super::*;
 fn falsify_bpe_load_from_files_matches_load_from_json_encode() {
     let vocab_path = "/tmp/qwen-0.5b-tokenizer-extracted/vocab.json";
     let merges_path = "/tmp/qwen-0.5b-tokenizer-extracted/merges.txt";
-    let json_path = "/home/noah/.cache/qwen2/tokenizer.json";
+    // The invoking user's home, exactly as the sibling S1/S2 tokenizer tests
+    // resolve it (crates/aprender-core/src/models/qwen2/tests.rs,
+    // models/qwen2/falsification.rs). A literal /home/<author>/ here made this
+    // bisection unrunnable on every machine but one, while still printing the
+    // same "skipping" line (#2532).
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let json_path = format!("{home}/.cache/qwen2/tokenizer.json");
     if !std::path::Path::new(vocab_path).exists()
         || !std::path::Path::new(merges_path).exists()
-        || !std::path::Path::new(json_path).exists()
+        || !std::path::Path::new(&json_path).exists()
     {
         eprintln!("[falsify-bpe-upstream-002] skipping: host lacks tokenizer files");
         return;
@@ -28,7 +34,7 @@ fn falsify_bpe_load_from_files_matches_load_from_json_encode() {
     let merges_txt = std::fs::read_to_string(merges_path).expect("read merges");
     let from_files = load_from_files(&vocab_json, &merges_txt).expect("load_from_files ok");
 
-    let json = std::fs::read_to_string(json_path).expect("read tokenizer.json");
+    let json = std::fs::read_to_string(&json_path).expect("read tokenizer.json");
     let from_json = load_from_json(&json).expect("load_from_json ok");
 
     let text = "def fibonacci(n):\n    return n\n";
@@ -95,8 +101,9 @@ fn falsify_bpe_load_from_files_matches_load_from_json_encode() {
 /// See evidence/section-60-5g-2-redispatch-2026-05-09/README.md.
 #[test]
 fn falsify_bpe_qwen_encode_python_does_not_unk_99pct() {
-    let path = "/home/noah/.cache/qwen2/tokenizer.json";
-    if !std::path::Path::new(path).exists() {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let path = format!("{home}/.cache/qwen2/tokenizer.json");
+    if !std::path::Path::new(&path).exists() {
         eprintln!(
             "[falsify_bpe_qwen_encode_python_does_not_unk_99pct] skipping: \
              host lacks {path} (test is host-dependent for upstream H1C \
@@ -104,7 +111,7 @@ fn falsify_bpe_qwen_encode_python_does_not_unk_99pct() {
         );
         return;
     }
-    let json = std::fs::read_to_string(path).expect("read tokenizer.json");
+    let json = std::fs::read_to_string(&path).expect("read tokenizer.json");
     let tokenizer = load_from_json(&json).expect("load_from_json succeeds on Qwen2");
 
     // Python source: a self-contained, well-formed snippet using only

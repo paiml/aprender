@@ -54,11 +54,16 @@ pub mod tui;
 /// (Mock DOM allows testing without actual browser bindings)
 pub mod wasm;
 
-/// Probar Advanced Testing Module
-/// Demonstrates all Probar features: Page Objects, Accessibility,
-/// Visual Regression, Device Emulation, Fixtures, Replay, UX Coverage
-#[cfg(test)]
-mod probar_tests;
+// Probar Advanced Testing (Page Objects, Accessibility, Visual Regression,
+// Device Emulation, Fixtures, Replay, UX Coverage) moved to
+// tests/probar_tests.rs (PMAT-1098).
+//
+// `jugar-probar` is a PATH-ONLY dev-dependency, which `cargo publish` OMITS
+// while publishing this crate's `#[cfg(test)]` code anyway -- so as a `src/`
+// module it made the PUBLISHED crate's lib tests uncompilable (clean-room
+// GATE B2). An integration target is the one that legitimately owns a test
+// whose subject is the (showcase, jugar-probar) pair; tests/gui_coverage_tests.rs
+// already lives there for the same reason.
 
 /// Prelude for convenient imports
 pub mod prelude {

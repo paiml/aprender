@@ -21,6 +21,7 @@ apr-cli	--lib	commands::serve
 apr-cli	--lib	commands::serve_plan
 apr-cli	--lib	commands::test_llm_band
 apr-cli	--lib	commands::tokenize
+apr-cli	--test	backend_refusal_case_table
 apr-cli	--test	beat_apr_sibling_cli_reach
 apr-cli	--test	cli_commands
 apr-cli	--test	pixel_regression
@@ -35,8 +36,14 @@ aprender-contracts	--lib	lint::duplicate_stems
 aprender-contracts	--lib	lint::finding
 aprender-contracts	--lib	lint::gates
 aprender-contracts	--lib	lint::gates_extended
+aprender-contracts	--lib	lint::relations_gate
 aprender-contracts	--lib	lint::sarif
+aprender-contracts	--lib	lint::shapes_gate
+aprender-contracts	--lib	lint::sigma_gate
 aprender-contracts	--lib	lint::strict_test_binding
+aprender-contracts	--lib	ontology::extract::apr_model
+aprender-contracts	--lib	ontology::extract::pv_contract
+aprender-contracts	--lib	ontology::sigma
 aprender-contracts	--lib	pipeline
 aprender-contracts	--lib	query
 aprender-contracts	--lib	query::index
@@ -53,7 +60,15 @@ aprender-contracts-cli	--lib	commands::verify_pipeline
 aprender-contracts-cli	--lib	contract_walk
 aprender-contracts-cli	--test	cli_integration
 aprender-contracts-cli	--test	ground_truth
+aprender-contracts-cli	--test	ont2b_sigma_gate
+aprender-contracts-cli	--test	ont4_relations_gate
+aprender-contracts-cli	--test	ont4b_shapes_gate
+aprender-contracts-cli	--test	ont4c1_model_receipts
+aprender-contracts-cli	--test	ont6_lint_verdict
+aprender-contracts-cli	--test	ont_extract_json
+aprender-contracts-cli	--test	ont_entity_properties
 aprender-contracts-cli	--test	pv_surface_gate
+aprender-contracts-cli	--test	pvl_zero_contracts
 aprender-core	--lib	format::metadata_bounds_contract_falsify
 aprender-core	--lib	format::model_family_loader
 aprender-core	--lib	format::ship_001
@@ -123,4 +138,4 @@ aprender-test-lib	--lib	perf_gate::witness
 aprender-train	--lib	hf_pipeline::export::pipeline
 aprender-train	--lib	models::llama_370m
 aprender-train	--lib	research::archive::tests
-aprender-contracts-cli	--test	pvl_zero_contracts
+aprender-viz	--test	render_determinism

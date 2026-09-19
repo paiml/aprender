@@ -51,19 +51,23 @@ equations:
     - non-tool-call JSON yields an empty [ToolCall]
     lean_theorem: Theorems.Apr_Code_Toolcall_Salvage_Recovery
 proof_obligations:
-- type: invariant
+- id: ACTR-INV-001
+  type: invariant
   property: Prior tool-call turn renders structurally with no prose Continue nudge
   formal: render(history) ∋ <tool_call> ∧ render(history) ∋ <tool_result> ∧ render(history) ∌ "### Continue:"
   applies_to: toolcall_structural_retention
-- type: invariant
+- id: ACTR-INV-002
+  type: invariant
   property: Tool-call markup is never retained as Assistant prose
   formal: ∀ m ∈ history, m = Assistant(s) ⟹ s ∌ "<tool_call>"
   applies_to: toolcall_structural_retention
-- type: equivalence
+- id: ACTR-EQ-003
+  type: equivalence
   property: Salvage recovers an unambiguous out-of-envelope tool call
   formal: parse(bare_or_fenced {"name":n,"input":i}) = (_, [ToolCall{name:n, input:i}])
   applies_to: toolcall_salvage_recovery
-- type: invariant
+- id: ACTR-INV-004
+  type: invariant
   property: Salvage is conservative — no false positives
   formal: ¬(has_name_string ∧ has_input) ⟹ salvage = (text, [])
   applies_to: toolcall_salvage_recovery

@@ -100,11 +100,20 @@ exclude = [
 # the count did not. Between those readings #3004 added one B- definition
 # (registry/wgpu_probe.rs entry, 603) and merged, because no required job runs
 # `pmat comply`; it was split into four graded tables in the pin-bump PR, back to 602.
-baseline = 602
+baseline = 601
+# 601 re-measured 2026-09-17 under pmat 3.40.2 on the 0.68.0 release tree: 604 at head = 602 +
+# three additions since the 09-15 baseline (one Rust fn refactored to A+, two C++ reference
+# `main`s under evidence/** now excluded above); 604 - 3 = 601. Lowered, never raised.
 # CB-200: 21 functions below A are in non-release crates (test-lib, test-cli, train/cuda)
 # These are complex GPU/inference functions where high cyclomatic complexity is inherent
 min_grade = "B"
 exclude = [
+    # evidence/** holds vendored REFERENCE harnesses (e.g. the llama.cpp d1d3c3396 C++
+    # producers under evidence/parity/l0-1/) that exist to reproduce a cited measurement
+    # bit-for-bit; refactoring them for a grade would invalidate the evidence they produce.
+    # Not shipped code. Excluded 2026-09-17 (0.68 train: two C++ `main`s were 2 of the 3
+    # definitions added over the 602 baseline; the third, a Rust one, was refactored).
+    "evidence/**",
     "crates/aprender-test-lib/**",
     "crates/aprender-test-cli/**",
     "crates/aprender-verify-ml/**",

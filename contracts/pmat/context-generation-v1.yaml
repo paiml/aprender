@@ -47,21 +47,25 @@ equations:
     - load(save(ctx)).functions.len() == ctx.functions.len()
     lean_theorem: Theorems.Index_Persistence
 proof_obligations:
-- type: postcondition
+- id: CG173E-POST-001
+  type: postcondition
   property: Call graph consistency
   formal: 'for all (caller, callee) in call_graph: caller in functions and callee
     in functions'
   applies_to: all
-- type: invariant
+- id: CG173E-INV-002
+  type: invariant
   property: TDG scores bounded
   formal: 'for all f in functions: 0.0 <= f.tdg_score <= 100.0'
   applies_to: all
-- type: equivalence
+- id: CG173E-EQ-003
+  type: equivalence
   property: Index roundtrip
   formal: load(save(ctx)).functions == ctx.functions
   tolerance: 0.0
   applies_to: all
-- type: precondition
+- id: CG173E-PRE-004
+  type: precondition
   property: Valid project
   formal: ProjectPath contains at least one .rs file
   applies_to: all

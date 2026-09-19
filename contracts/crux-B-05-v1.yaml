@@ -194,15 +194,20 @@ falsification_tests:
   if_fails: "apr sharded index.json sha256 diverges from HF transformers reference"
 
 proof_obligations:
-- type: equivalence
+- id: CB04FAD-EQ-001
+  type: equivalence
   property: "apr shard/unshard produces index.json and layout compatible with HF transformers sharded loader on evidence/crux/huggingface/shard-merge-goldens.json"
-- type: invariant
+- id: CB04FAD-INV-002
+  type: invariant
   property: "Every tensor appears in exactly one shard (no duplication, no omission)"
-- type: invariant
+- id: CB04FAD-INV-003
+  type: invariant
   property: "index.json total_size equals Σ(element_size × numel) across all tensors"
-- type: invariant
+- id: CB04FAD-INV-004
+  type: invariant
   property: "unshard(shard(S, SZ)) == S (identity on tensor values for any valid max_shard_size)"
-- type: invariant
+- id: CB04FAD-INV-005
+  type: invariant
   property: "weight_map shard filenames are relative (no absolute paths, no ..)"
 
 verification_summary:

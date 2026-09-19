@@ -70,11 +70,14 @@ falsification_tests:
 
   if_fails: rule 'single-socket machine emits warning but does not error' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CC2D46F-EQ-001
+  type: equivalence
   property: "apr serve --numa isolate matches llama.cpp `--numa isolate` thread+memory binding"
-- type: invariant
+- id: CC2D46F-INV-002
+  type: invariant
   property: "numa_miss / numa_hit < 1% on multi-socket host"
-- type: invariant
+- id: CC2D46F-INV-003
+  type: invariant
   property: "single-socket host: warn + continue, never exit nonzero"
 
 verification_summary:

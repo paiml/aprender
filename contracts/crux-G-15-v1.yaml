@@ -70,11 +70,14 @@ falsification_tests:
 
   if_fails: rule 'sibling-dup warning fires when duplicate found in org' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CG1A7AF-EQ-001
+  type: equivalence
   property: "apr dedupe matches HF LFS git-sha1 equality checks"
-- type: invariant
+- id: CG1A7AF-INV-002
+  type: invariant
   property: "byte-identical re-publish uploads 0 LFS bytes"
-- type: invariant
+- id: CG1A7AF-INV-003
+  type: invariant
   property: "sha check precedes any data-plane upload"
 
 verification_summary:

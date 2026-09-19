@@ -111,15 +111,20 @@ falsification_tests:
   if_fails: "Unpinned paged source — supply-chain audit impossible"
 
 proof_obligations:
-- type: invariant
+- id: CL0EB41-INV-001
+  type: invariant
   property: "Numerical parity max_abs_diff <= 5e-3 vs naive reference"
-- type: invariant
+- id: CL0EB41-INV-002
+  type: invariant
   property: "Block size ∈ {16, 32}; enforced at load"
-- type: invariant
+- id: CL0EB41-INV-003
+  type: invariant
   property: "Per-sequence isolation under batch>1"
-- type: invariant
+- id: CL0EB41-INV-004
+  type: invariant
   property: "Kernel source pinned (pkg@sha)"
-- type: equivalence
+- id: CL0EB41-EQ-005
+  type: equivalence
   property: "apr serve --attn paged  ≅  vLLM PagedAttention (batched KV-cache serving)"
 
 verification_summary:

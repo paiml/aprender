@@ -78,11 +78,14 @@ falsification_tests:
 
   if_fails: rule 'invalid URL fails fast with actionable error' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CD33C79-EQ-001
+  type: equivalence
   property: "apr train --resume-from hf://repo@rev matches HF Trainer `resume_from_checkpoint` semantics"
-- type: invariant
+- id: CD33C79-INV-002
+  type: invariant
   property: "resumed loss trajectory matches single-run trajectory within 1e-5"
-- type: invariant
+- id: CD33C79-INV-003
+  type: invariant
   property: "global_step and rng state restored exactly"
 
 verification_summary:

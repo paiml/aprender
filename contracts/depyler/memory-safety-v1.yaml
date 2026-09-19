@@ -99,45 +99,55 @@ equations:
     - '!source.is_empty()'
     lean_theorem: Theorems.Drop_Safety
 proof_obligations:
-- type: precondition
+- id: MS993D-PRE-001
+  type: precondition
   property: Input Python code is valid and parseable
   formal: parse(source) succeeds and produces valid AST
   applies_to: all
-- type: postcondition
+- id: MS993D-POST-002
+  type: postcondition
   property: Generated Rust compiles without errors
   formal: cargo check on generated code succeeds (no borrow checker errors)
   applies_to: all
-- type: invariant
+- id: MS993D-INV-003
+  type: invariant
   property: No use-after-move in generated code
   formal: 'forall v: moved_at(v, p) => not used_at(v, q) for q > p without intervening
     reassignment'
   applies_to: all
-- type: invariant
+- id: MS993D-INV-004
+  type: invariant
   property: No dangling references
   formal: 'forall &''a T: lifetime(''a) <= lifetime(owner(T))'
   applies_to: all
-- type: invariant
+- id: MS993D-INV-005
+  type: invariant
   property: No mutable aliasing
   formal: 'forall &mut T at point p: count(active_refs(T, p)) == 1'
   applies_to: all
-- type: invariant
+- id: MS993D-INV-006
+  type: invariant
   property: Bounds-checked collection access
   formal: 'forall c[i] in generated code: i < len(c) or access uses .get()'
   applies_to: all
-- type: invariant
+- id: MS993D-INV-007
+  type: invariant
   property: No unsafe blocks in generated code
   formal: count(unsafe_blocks(generated_code)) == 0
   applies_to: all
-- type: invariant
+- id: MS993D-INV-008
+  type: invariant
   property: Drop correctness for with-statements
   formal: 'forall with ctx: Drop::drop(ctx) called exactly once on scope exit'
   applies_to: all
-- type: invariant
+- id: MS993D-INV-009
+  type: invariant
   property: Escape analysis correctness
   formal: escape(v) => BorrowingPattern::Owned; mutated(v) => MutableBorrow; read_only(v)
     => Borrowed
   applies_to: all
-- type: invariant
+- id: MS993D-INV-010
+  type: invariant
   property: Copy type optimization
   formal: is_copy(T) => param passed by value (no unnecessary & or .clone())
   applies_to: all

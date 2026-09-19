@@ -47,6 +47,10 @@ mod realizar_chat {
         /// GH-224: Whether CUDA init was attempted and failed (skip retries)
         #[cfg(feature = "cuda")]
         cuda_init_failed: bool,
+        /// #3367: set by `render_assistant_turn` when a turn failed to generate. Read
+        /// once, at session end, to decide the command's exit code. Not reset by
+        /// `/clear` — a failed generation happened whether or not the history is kept.
+        had_generate_error: bool,
     }
 
 include!("chat_load_tokenizers.rs");

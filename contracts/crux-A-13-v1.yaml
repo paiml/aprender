@@ -164,13 +164,17 @@ falsification_tests:
   if_fails: "apr stop post-state diverges from ollama stop golden"
 
 proof_obligations:
-- type: invariant
+- id: CA1301A-INV-001
+  type: invariant
   property: "After apr stop m (exit 0), m ∉ resident_set within grace_ms"
-- type: invariant
+- id: CA1301A-INV-002
+  type: invariant
   property: "apr stop is idempotent (second call on same target exits 0)"
-- type: invariant
+- id: CA1301A-INV-003
+  type: invariant
   property: "VRAM freed ≥ 95% of pre-stop model footprint"
-- type: equivalence
+- id: CA1301A-EQ-004
+  type: equivalence
   property: "apr stop end-state ≡ ollama stop end-state on golden"
 
 verification_summary:

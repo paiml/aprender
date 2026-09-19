@@ -25,7 +25,8 @@ equations:
     - num_heads >= 1
     lean_theorem: Theorems.Alibi_Slope_Exponent
 proof_obligations:
-- type: equivalence
+- id: AS-EQ-001
+  type: equivalence
   property: Head-zero slope equals m0
   formal: m[0] = 2^(-8/n) and in particular m[0] = 0.5 when n = 8
   applies_to: all
@@ -39,7 +40,8 @@ proof_obligations:
     - Mathlib.Analysis.SpecialFunctions.Pow.Real
     notes: 'alibiSlope n 0 = alibiM0 n = 2^(-8/n) (the (h+1) offset collapses to 1);
       concrete alibi_head_zero_eight proves alibiSlope 8 0 = 1/2 via Real.rpow_neg_one.'
-- type: bound
+- id: AS-BND-002
+  type: bound
   property: Slopes are below one
   formal: m[h] = 2^(-8(h+1)/n) < 1 for all h in {0, ..., n-1}, n >= 1
   applies_to: all
@@ -54,7 +56,8 @@ proof_obligations:
     - Mathlib.Analysis.SpecialFunctions.Pow.Real
     notes: 'Exponent -8(h+1)/n < 0 for h >= 0, n > 0; base 2 > 1 so 2^(neg) < 1.
       Companion alibi_slope_pos proves 0 < m[h] (strictly positive geometric sequence).'
-- type: equivalence
+- id: AS-EQ-003
+  type: equivalence
   property: Matches ggml reference exponent
   formal: m[h] = m0^(h+1) with m0 = 2^(-8/n) (llama.cpp soft_max_ext)
   applies_to: all

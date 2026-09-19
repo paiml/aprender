@@ -1,0 +1,948 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.40.2",
+          "informationUri": "https://github.com/paiml/paiml-mcp-agent-toolkit"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "Index REBUILT in this worktree at the reviewed head. The worktree carried an index from an earlier review at 77bc7c5c2 (an ancestor of HEAD, verified), but the tree moved two commits, so it was discarded and rebuilt: 89,078 functions in 10,386 files, 47.8 s of index build inside an 86.9 s query. index_commit is stamped from this worktree, never from /home/noah/src/aprender/.pmat."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "pmat",
+                  "query",
+                  "install script",
+                  "--rebuild-index",
+                  "--limit",
+                  "1"
+                ],
+                "exit_code": 0
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "pmat MCP transport was NOT probed in this session; the CLI transport answered every query. Recorded as `transport: cli` with an empty transport_unavailable rather than asserting the MCP server is down, which would be a claim about a transport nobody tried (operator ruling 2026-09-01)."
+              },
+              "properties": {
+                "grounding": "asserted",
+                "rationale": "No MCP probe was performed, so no MCP claim is made in either direction.",
+                "precision_class": "advisory"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "complexity_delta[] and tdg_delta[] are EMPTY BECAUSE THE ANALYSER REFUSED, not because it measured no increase. pmat 3.40.2 has no backend for .sh: `pmat analyze complexity --path scripts/install.sh` exits 5 with 'no source files were found ... the walk found no files with a file extension', and `pmat analyze tdg --path scripts/install.sh` exits 1 with 'Bash source: this build has no TDG analyzer for .sh, so the file is not part of the score'. 100% of the executable code this diff adds is POSIX sh, so both arrays are unreachable rather than clean. duplication_coverage records shell as `lexical`, which is the coverage that WAS achieved, via scripts/pr_review_duplication_scan.sh."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "pmat",
+                  "analyze",
+                  "tdg",
+                  "--format",
+                  "json",
+                  "--path",
+                  "scripts/install.sh"
+                ],
+                "exit_code": 1
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "satd_introduced[] is empty and that IS a measurement: 0 added lines in the merge-base diff match TODO|FIXME|HACK|XXX, and `pmat analyze satd --path scripts/tests/install_test.sh` reports 'Found 0 SATD violations in 0 files (analysed 1 of 1 file(s) walked)'."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "pmat",
+                  "analyze",
+                  "satd",
+                  "--format",
+                  "json",
+                  "--path",
+                  "scripts/tests/install_test.sh"
+                ],
+                "exit_code": 0
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "duplication_hits[] is empty over a FULLY swept horizon: 17 needles, 168 of 168 sibling branches, 12 files in merge_base..origin/main, 0 hits, 6 s. Independently, the repository holds no prior apr installer: `git ls-files` finds scripts/install_pr_review_tools.sh (installs review tooling) and three crates/*/scripts/install-hooks.sh (git hooks); neither downloads a release asset."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "scripts/pr_review_duplication_scan.sh",
+                  "--base",
+                  "eb262f8eb799ef9b7de26a770a584330a27025b4",
+                  "--head",
+                  "d1d510bbac3d6dd7fc825dda8cea18a45b7a02bf",
+                  "--rust-semantic",
+                  "--json",
+                  "/tmp/dup.json"
+                ],
+                "exit_code": 0
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "pmat/dead-code-added-by-this-diff",
+          "level": "warning",
+          "message": {
+            "text": "Three definitions added by this diff have zero call sites. install.sh defines info() at line 100 and never calls it (grep for an `info \"...\"` invocation returns 0, exit 1). install.sh assigns DIM at line 47 and clears it at line 61 and never expands it ($DIM / ${DIM} match nowhere, exit 1) - it is the only one of the fourteen colour variables with no reference; the other thirteen are referenced at lines 77-112 and 288. install_test.sh defines the t() row helper at line 111 and never calls it: every row goes through t_grep() or is spelled out inline, so the n=$((n+1)) at line 118 is unreachable."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/install.sh"
+                },
+                "region": {
+                  "startLine": 100
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-c",
+              "-E",
+              "(^|[^[:alnum:]_])info[[:space:]]+\"",
+              "scripts/install.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+            "precision_class": "advisory",
+            "corroborating_commands": [
+              [
+                "grep",
+                "-c",
+                "-E",
+                "^[[:space:]]*t[[:space:]]+[0-9]",
+                "scripts/tests/install_test.sh"
+              ],
+              [
+                "grep",
+                "-n",
+                "-E",
+                "\\$\\{?DIM\\}?",
+                "scripts/install.sh"
+              ]
+            ],
+            "corroborating_results": {
+              "t()_call_sites": 0,
+              "$DIM_references": 0
+            },
+            "failure_scenario": "t() is the more expensive of the three: it is the only helper that asserts an exit code WITHOUT also asserting output, so a maintainer adding an exit-code-only row will reach for it, and it has never been executed once. Its n=$((n+1)) runs in the caller's shell, so the first use also silently shifts every subsequent row number in the report."
+          }
+        },
+        {
+          "ruleId": "pmat/hardcoded-row-count-never-matched-the-code",
+          "level": "warning",
+          "message": {
+            "text": "install_test.sh:177 prints 'skipping the 6 network-dependent rows below' from a hardcoded literal 6. The network branch (lines 178-309) holds 9 rows - measured by counting t_grep calls plus n=$((n+1)) increments in that range, which returns 9. The literal was never right: at the first commit of this branch (179c69b2f) the same branch held 8. The PR body's test plan likewise still reads '13/13 rows pass' while the suite at this head runs 14 (the CI job log for run 35115773219 ends 'install_test.sh: 14 row(s), all ok'); commit 9132c9408 added the 'default (no tty, no flags) stays plain' row without updating either count."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/tests/install_test.sh"
+                },
+                "region": {
+                  "startLine": 177
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "sed -n '178,309p' scripts/tests/install_test.sh | grep -cE '^ *(t_grep |n=\\$\\(\\(n \\+ 1\\)\\))'"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "2e6d31a5983a91251bfae5aefa1c0a19d8ba3cf601d0e8a706b4cfa9661a6b8a",
+            "precision_class": "advisory",
+            "counts": {
+              "literal_in_message": 6,
+              "actual_network_rows_at_head": 9,
+              "actual_network_rows_at_179c69b2f": 8,
+              "total_rows_at_head": 14,
+              "pr_body_claims": 13
+            },
+            "failure_scenario": "The skip message is the ONLY signal a reader gets that rows vanished (the suite still exits 0 - see install-test/vacuous-green-when-github-unreachable). A reader who trusts it believes 6 of 14 rows were skipped and 8 ran, when in fact 9 were skipped and 5 ran. CLAUDE.md's standing rule is to derive counts rather than quote them, and this is a quoted one that has drifted twice already in a five-commit branch."
+          }
+        },
+        {
+          "ruleId": "pmat/cuda-asset-name-never-exercised",
+          "level": "warning",
+          "message": {
+            "text": "install-script.yml's header states the gate exists because 'install.sh assumes a specific asset-naming shape from binary-release.yml (stable: apr-vX.Y.Z-<target>-<cpu|cuda>.tar.gz)'. No row ever fetches a -cuda asset: --cuda and APR_VARIANT=cuda appear 0 times in install_test.sh, while --cpu is forced in 8 places. The one row that does not force --cpu is the 404 row (line 179, --version v0.0.1-does-not-exist-3365), which takes whatever detect_variant() returns on the runner - on this reviewer's box, which has a working nvidia-smi, the instrumented run fetched .../apr-v0.0.1-does-not-exist-3365-x86_64-unknown-linux-gnu-cuda.tar.gz, so which half of the naming contract that row exercises is a property of the runner, not of the test."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/tests/install_test.sh"
+                },
+                "region": {
+                  "startLine": 179
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-c",
+              "-E",
+              "--",
+              "--cuda|APR_VARIANT=cuda",
+              "scripts/tests/install_test.sh"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+            "precision_class": "advisory",
+            "corroborating_commands": [
+              [
+                "bash",
+                "-c",
+                "sort <curl-shim call log from one instrumented full run> | uniq -c; curl -fsSL https://api.github.com/rate_limit | jq -c .resources.core"
+              ]
+            ],
+            "failure_scenario": "binary-release.yml renames or drops only the cuda half of the stable asset naming (for example apr-vX.Y.Z-<target>-cuda -> apr-vX.Y.Z-<target>-gpu). Every row stays green because every row that downloads successfully has passed --cpu, and the first report is a CUDA user's `curl | sh` failing at the download step - which is precisely the class of drift the workflow header says this gate exists to catch early."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "version": "contracts/crux-*.yaml @ d1d510bba",
+          "informationUri": "https://github.com/paiml/aprender"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "Scope resolved per S3.C / S10 8.2(a): matched on category + the changed surface, NOT a semantic sweep over all 294 contracts/crux-*.yaml. The surface is the install bootstrap and the installer's own flag set; the covering contract is CRUX-J-01 (category 'J - OpenCLAW Agent Orchestration', competitor openclaw, status draft, intake_status missing), located by matching the surface word against metadata.category and the description text."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "grep",
+                  "-lE",
+                  "install\\.sh|curl .*\\| *sh|one-liner|cargo install",
+                  "contracts/crux-*.yaml"
+                ],
+                "exit_code": 0
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "The guard's own S3.C predicate does NOT fire on this diff: `check_pr_review_receipt.sh --match-crux-surface` returns 1 on all 798 added lines, and --match-shipped-surface returns 1 on all 5 changed paths. The consultation is recorded `consulted` anyway, because the diff plainly adds a user-facing CLI (six flags plus a bare vX positional and two environment variables) that the predicate's vocabulary - tuned to apr subcommands, HTTP routes and MCP tools - does not recognise. Recording not-triggered here would make 'the predicate did not recognise this surface' and 'there is no surface' the same artifact."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "scripts/check_pr_review_receipt.sh",
+                  "--match-crux-surface",
+                  "<each of 798 added lines>"
+                ],
+                "exit_code": 1
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "S3.C.1: no comparative claim anywhere. `--match-comparative` returns 1 on all 798 added lines AND on all 39 lines of the PR body, and --match-shipped-surface returns 1 on every changed path, so B4's diff-side scan has no user-facing surface to read either. comparative_claims[] is empty because there is nothing to record, not because nothing was looked for."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "scripts/check_pr_review_receipt.sh",
+                  "--match-comparative",
+                  "<each added line and each PR-body line>"
+                ],
+                "exit_code": 1
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "crux/advertised-one-liner-is-404-and-the-pipeline-cannot-fail",
+          "level": "error",
+          "message": {
+            "text": "Commit d1d510bba replaced the 404ing https://paiml.com/apr/install.sh with https://raw.githubusercontent.com/paiml/aprender/main/scripts/install.sh. Measured now: that URL is ALSO 404, because scripts/install.sh is not on main until this PR merges; the branch path (.../PMAT-3365-apr-install-script/scripts/install.sh) returns 200. The 404 resolves on merge. What does NOT resolve is the shape of the advertised command: `curl -LsSf <404> | sh` returns curl_rc=22, sh_rc=0 and PIPELINE rc 0. curl -sS still prints 'curl: (22) ...' to stderr, so an interactive user sees something; a Dockerfile RUN, a CI step, a provisioning script or any `set -e` caller sees success and continues with no apr installed."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/install.sh"
+                },
+                "region": {
+                  "startLine": 6
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "printf 'http_code=%s\\n' \"$(curl -sS -o /dev/null -w '%{http_code}' -L --max-time 20 https://raw.githubusercontent.com/paiml/aprender/main/scripts/install.sh)\"; curl -LsSf https://raw.githubusercontent.com/paiml/aprender/main/scripts/install.sh | sh; printf 'pipeline_rc=%s curl_rc=%s sh_rc=%s\\n' \"$?\" \"${PIPESTATUS[0]}\" \"${PIPESTATUS[1]}\""
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "b30e95e5ec6424408e727bfe7004b5f4d74022ad1dbd1147f3d8a9a0d96790f3",
+            "precision_class": "advisory",
+            "measured_states": {
+              "paiml.com/apr/install.sh": 404,
+              "raw/main (pre-merge)": 404,
+              "raw/PMAT-3365-apr-install-script": 200
+            },
+            "failure_scenario": "A Dockerfile line `RUN curl -LsSf https://raw.githubusercontent.com/paiml/aprender/main/scripts/install.sh | sh` succeeds and the image ships with no apr; the failure surfaces at the next layer as 'apr: not found' with no trace of the install step having failed. The same holds for any transient network error or a future rename of the file on main, and no row of install_test.sh fetches the advertised URL at all, so nothing in this PR can detect it."
+          }
+        },
+        {
+          "ruleId": "crux/gate-never-runs-on-a-release",
+          "level": "warning",
+          "message": {
+            "text": "install-script.yml's `on:` keys are exactly ['pull_request', 'push'] - no `release:`, no `schedule:`, no `workflow_dispatch:`. The header argues, correctly, that a parity gate must run when either side of the coupling moves, and it lists binary-release.yml and nightly.yml in the paths filter. But the thing install.sh is actually coupled to is the ASSET a release produced, and the workflow can only fire on a file edit. A release cut from an older tag (binary-release.yml runs the workflow file AT THE TAG), a change to the release matrix made anywhere outside those two files, or a publish that simply fails to attach the aarch64 asset, all change the asset set with no push to a watched path."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/install-script.yml"
+                },
+                "region": {
+                  "startLine": 18
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "python3",
+              "-c",
+              "import yaml;d=yaml.safe_load(open('.github/workflows/install-script.yml'));print(sorted((d.get(True) or d.get('on')).keys()))"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "d316f971713beea1aed9b69157b65655919784c6f3f1d820ddbda8dc299f551f",
+            "precision_class": "advisory",
+            "failure_scenario": "v0.68.0 is published with one asset missing or renamed. No watched path changed, so install-script.yml never runs, and the last green run of this gate certified v0.67.0's naming. The first report is a user's curl one-liner failing - which is the exact outcome the workflow header claims the gate prevents. A `release: [published]` trigger and/or a daily schedule would close it, and both cost one run."
+          }
+        },
+        {
+          "ruleId": "crux/installer-gate-is-not-a-required-check",
+          "level": "note",
+          "message": {
+            "text": "Branch protection on main requires exactly [\"ci / gate\",\"workspace-test\"]. install_test.sh is a separate workflow and is not in that list, so a red installer gate does not block a merge. On this PR it is green (34 s, run 35115773219), so this is a statement about the mechanism and not about the current state. Recorded, not blocked: adding a required check is a repository-settings change with its own cost (a paths-filtered required check never reports on PRs that do not touch those paths, which is how a required check comes to sit pending forever), so the honest note is that the gate is advisory today."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/install-script.yml"
+                },
+                "region": {
+                  "startLine": 39
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "gh",
+              "api",
+              "repos/paiml/aprender/branches/main/protection",
+              "--jq",
+              ".required_status_checks.contexts"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "11712cf12798a2129c273e6211d9c6699f6b2121bf6619e08d717367a2a40802",
+            "precision_class": "advisory",
+            "failure_scenario": "install_test.sh goes red on a PR that also carries an unrelated fix; auto-merge is armed on ci/gate + workspace-test, both green; the PR merges with the installer gate red and main ships a broken one-liner."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "n/a - hand-built shell mutation set; the diff adds no Rust",
+          "informationUri": "https://github.com/paiml/aprender"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "S3.D's scope trigger does NOT fire on this diff, asked of the guard rather than judged by eye: `check_pr_review_receipt.sh --match-mutation-trigger` returns 1 on all five changed paths (scripts/install.sh is not scripts/check_*.sh, and install-script.yml is not ci.yml). The diff also adds no Rust, so `cargo mutants --in-diff` has nothing to mutate. The arm was run ANYWAY, as a hand-built adversarial set, because the diff adds a CI gate whose whole job is to falsify install.sh - and a gate is exactly what S3.D's first row is about. B3 is therefore NOT engaged: it reads 'that guard's COMMITTED mutation set', which here is install_test.sh's own --self-test, one mutation, which passes 1/1 when the network is up. The 4/4 set below is this review's, not the repository's, and its two survivors are recorded as FINDINGS rather than as a B3 block."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "scripts/check_pr_review_receipt.sh",
+                  "--match-mutation-trigger",
+                  "<each of 5 changed paths>"
+                ],
+                "exit_code": 1
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Positive control for the set: mutant M1 (delete the three-line --nightly/--version mutual-exclusivity guard from parse_args) turns row 3 RED - 'FAIL row 3 rc=1 (wanted 1), pattern=mutually exclusive'. The set can kill, so the two survivors below are survivors and not an inert harness."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "-c",
+                  "<mutant M1: delete the mutual-exclusivity guard, run the five network-free rows>"
+                ],
+                "exit_code": 1
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "The suite itself is GREEN at this head and that was verified twice, so none of the findings below is a claim that CI is currently red. Locally: 14 rows, all ok, rc 0, 10.99 s wall. On CI: run 35115773219 job 104860694090 ends 'install_test.sh: 14 row(s), all ok' after the --self-test step printed ok, 34 s total. bashrs at the level the workflow gates on is clean on both scripts (`bashrs lint --level error`, rc 0, 'No issues found'); at its default level it reports 0 errors with 9 warnings / 26 infos on install.sh (including two SEC014 path-traversal warnings on the mv and chmod at lines 258-259) and 0 errors with 26 warnings / 69 infos on install_test.sh (all REL002: mktemp without a trap cleanup, at nine sites). The workflow gates only --level error, so none of those 35 warnings can fail it."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "gh",
+                  "run",
+                  "view",
+                  "--job",
+                  "104860694090",
+                  "--log"
+                ],
+                "exit_code": 0
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "mutants/checksum-verification-is-untested-surviving-mutant",
+          "level": "error",
+          "message": {
+            "text": "SURVIVING MUTANT. install_test.sh's header names the checksum row as one of two rows that exist because the failure already happened: 'the one failure mode where \"install succeeded\" and \"installed a corrupt binary\" must never be confused'. The row (line 302-308) does not exercise that path - it runs `grep -qE 'Checksum mismatch.*not installing' \"$SCRIPT\"` against the script's own source text. Mutant: change line 245 from `expected=$(awk '{print $1}' \"$tmp_dir/archive.tar.gz.sha256\")` to `expected=$(sha256_of \"$tmp_dir/archive.tar.gz\")`, so `expected` is computed from the very file being verified and can never mismatch, while every character of the fatal wording stays. Measured against that mutant: row 14's grep still matches, the five network-free rows still report ok, and a real `--version v0.67.0 --cpu` install through the mutant exits 0 and produces a working `apr 0.67.0`. No row turns red."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/tests/install_test.sh"
+                },
+                "region": {
+                  "startLine": 303
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "<mutant M2: expected=$(awk ...) -> expected=$(sha256_of \"$tmp_dir/archive.tar.gz\"); then row 14's grep, the five network-free rows, and one real --version v0.67.0 install against the mutant>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "85a64c005987054b06d4b401b9895fd9a1ffa5b57277634ddeed8436ec3918ef",
+            "precision_class": "advisory",
+            "mutant": "scripts/install.sh:245 expected=$(awk '{print $1}' \"$tmp_dir/archive.tar.gz.sha256\") -> expected=$(sha256_of \"$tmp_dir/archive.tar.gz\")",
+            "killed": false,
+            "failure_scenario": "The supply-chain check the installer advertises is silently disabled - by a refactor, a bad merge, or a tampered release whose .sha256 is served from the same compromised origin as the tarball - and the whole gate stays green, because the only row that names the checksum measures the script's own comment text. This is a test that can only fail if someone edits an error MESSAGE."
+          }
+        },
+        {
+          "ruleId": "install/success-is-reported-for-a-broken-binary",
+          "level": "error",
+          "message": {
+            "text": "The 'Verifying install' step cannot change the installer's exit code. Line 263 is `installed_version=$(\"$INSTALL_DIR/apr\" --version 2>&1) || warn \"could not run ...\"` and line 264 is `[ -n \"${installed_version:-}\" ] && ok \"$installed_version\"`; neither arm can fail the script. Measured with a mutant that truncates the binary immediately after `mv` (the partial cross-filesystem copy $TMPDIR-on-another-fs makes possible): a ZERO-BYTE apr was installed, the installer printed 'Done' and exited 0, and it printed NO warning at all - an empty file with mode 755 is exec'd as an empty shell script, so `--version` returns rc 0 with empty output and even the `|| warn` arm does not fire. A second mutant deleting `chmod +x` (line 259) also survives every row, because the tar member already carries mode 755 - so the only line that would rescue a non-executable release asset is itself unexercised."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/install.sh"
+                },
+                "region": {
+                  "startLine": 262
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "<mutant M3: truncate the binary immediately after mv (: > \"$INSTALL_DIR/${BINARY_NAME}\"), simulating a partial cross-filesystem copy; then one real --version v0.67.0 install and read the installer's exit code>"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "1d475f01e8869011555688705ff33b5a25bfc5197c00e6aaec1b38c8648f796b",
+            "precision_class": "advisory",
+            "corroborating_commands": [
+              [
+                "bash",
+                "-c",
+                "<mutant M4: delete chmod +x \"$INSTALL_DIR/${BINARY_NAME}\"; then one real --version v0.67.0 install and stat -c %a on the result>"
+              ]
+            ],
+            "mutants": [
+              "scripts/install.sh:258 truncate after mv (KILLED, by row 7's `grep -qE '^apr [0-9]'` over empty output)",
+              "scripts/install.sh:259 delete chmod +x (SURVIVED; installed mode is 755 either way)"
+            ],
+            "failure_scenario": "A cross-filesystem `mv` that is interrupted, a wrong-architecture or glibc-mismatched asset, or a cuda asset chosen by detect_variant() on a driver-only host with no CUDA userspace: in every case apr lands on PATH broken and install.sh exits 0 having printed 'Done'. The user's next command is `apr --help`, and the installer has already told them the install succeeded."
+          }
+        },
+        {
+          "ruleId": "install-test/self-test-classifier-does-not-discriminate",
+          "level": "error",
+          "message": {
+            "text": "`--self-test` is the row the CI workflow runs FIRST, to prove the suite is not vacuous before trusting it. Its verdict is decided at line 92 by `if [ \"$mrc\" = 1 ]` - FAIL, else ok - so every exit code other than 1 is read as 'the guard removal changed the mutant's behaviour'. Truth table over {0,1,2,126,127}: four of the five print ok, including 2 (the file's own documented environment/vacuous code) and 126/127 (the mutant could not be executed at all). The other polarity is worse and is measured, not hypothesised: with the network stubbed out, the mutant's real nightly download fails, error() exits 1, and the self-test prints 'FAIL self-test mutant still rejected --nightly+--version - guard removal had no effect (test is vacuous)' and returns 1. A dead network is reported as a defect in the test's discriminating power."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/tests/install_test.sh"
+                },
+                "region": {
+                  "startLine": 92
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "for mrc in 0 1 2 126 127; do <evaluate install_test.sh:92 `if [ \"$mrc\" = 1 ]`>; done; PATH=<stub-curl>:$PATH bash scripts/tests/install_test.sh --self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "9b8d2c4d337678728aecd50e2950462f4e1394e8f41367ecf93ad8d82bec1522",
+            "precision_class": "advisory",
+            "failure_scenario": "Two symmetric failures from one classifier. (a) The mutation stops working - python3 missing, the mutant tree unwritable, sh unable to exec it - and the self-test reports ok, so the CI step that exists to prove the suite discriminates passes while proving nothing. (b) GitHub is briefly unreachable and the same step goes red with a message blaming the test suite's design, sending whoever triages it to read install_test.sh instead of the network. This repository's standing rule is that a guard running a subprocess must classify env-death separately from a code defect; this one classifies neither."
+          }
+        },
+        {
+          "ruleId": "install-test/green-over-five-of-fourteen-rows-when-github-is-unreachable",
+          "level": "error",
+          "message": {
+            "text": "install_test.sh's own header states the convention: 'Exit codes follow this repo's scripts/tests/*_test.sh convention: 0 pass, 1 a row genuinely failed, 2 environment/vacuous (no network, no curl, script missing) - an environment that cannot run the gate must never report ok.' The network branch does not follow it. With curl stubbed to exit 6, the suite prints the ENV line and then 'install_test.sh: 5 row(s), all ok' and EXITS 0: `red` is still 0, and `exit \"$red\"` is the last line. Nine of fourteen rows - every row that downloads anything, i.e. the entire point of the gate - vanish into a green. The trigger is not exotic: network_check() and six of the rows each hit https://api.github.com/repos/paiml/aprender/releases/latest UNAUTHENTICATED, 7 calls per run (measured with a logging curl shim over one instrumented full run: 22 curl invocations, 7 of them to that endpoint, 155.6 MiB of release assets), against a documented limit of 60 per hour PER IP. This reviewer's box went from used 48 / remaining 12 to used 57 / remaining 3 on that single run. The self-hosted clean-room pool shares one egress IP across the fleet, so exhaustion is a scheduling accident, and its symptom is a green run that tested five argument-parsing rows."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/tests/install_test.sh"
+                },
+                "region": {
+                  "startLine": 176
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "st=$(mktemp -d); printf '#!/bin/sh\\nexit 6\\n' > \"$st/curl\"; chmod +x \"$st/curl\"; PATH=\"$st:$PATH\" bash scripts/tests/install_test.sh; printf 'exit_code=%s\\n' \"$?\""
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "31d2ced5ce857bc9a3461661b6e8ffd51afafc053b5ef473a42703ac56bf0214",
+            "precision_class": "advisory",
+            "corroborating_commands": [
+              [
+                "bash",
+                "-c",
+                "sort <curl-shim call log from one instrumented full run> | uniq -c; curl -fsSL https://api.github.com/rate_limit | jq -c .resources.core"
+              ]
+            ],
+            "measured": {
+              "exit_code_with_no_network": 0,
+              "rows_run": 5,
+              "rows_skipped": 9,
+              "api_github_com_calls_per_run": 7,
+              "bytes_downloaded_per_run": 163128602,
+              "rate_limit_core": {
+                "limit": 60,
+                "before": {
+                  "used": 48,
+                  "remaining": 12
+                },
+                "after": {
+                  "used": 57,
+                  "remaining": 3
+                }
+              }
+            },
+            "failure_scenario": "binary-release.yml renames the stable asset. The next install-script.yml run happens while the shared runner IP is over its 60/hour unauthenticated budget (or GitHub has a five-minute blip): network_check fails, the suite exits 0, the check goes green, the PR merges, and the gate has certified a naming contract it never tested. The fix is small and the file already knows what it should be - `exit 2` on the ENV branch, and either an authenticated GITHUB_TOKEN header or a single cached tag lookup reused across rows."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "agy 1.2.4",
+          "informationUri": "https://antigravity.google/"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "Cross-vendor identity is NOT verifiable from this receipt. model_id records what was REQUESTED on argv (gemini-3.1-pro-high); neither agy's json nor its stream-json output carries the answering model. The pin is a real control against the ACCIDENTAL Claude route - `agy models` lists claude-sonnet-4-6 and claude-opus-4-6-thinking beside eleven Gemini ids - and the guard's own predicate agrees the id is not this reviewer's family: --match-arm-e-same-family gemini-3.1-pro-high exits 1, while the same predicate exits 0 for claude-sonnet-4-6. What none of that establishes is that a second vendor answered."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "scripts/check_pr_review_receipt.sh",
+                  "--match-arm-e-same-family",
+                  "gemini-3.1-pro-high"
+                ],
+                "exit_code": 1
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Availability decided by the ARTIFACT, never by .status. rc 0; .status 'SUCCESS' and .error null are recorded as diagnostics only. The three conjuncts of S3.E.4's test were each evaluated: structured_output present (rc 0), .structured_output.reviewed == true (rc 0), and `check-jsonschema --schemafile .claude/skills/pr-review/agy-review-v1.schema.json` over .structured_output exits 0 with 'ok -- validation done'. Run in a disposable git-archive tree (21,813 files, no .git, no remote) with the 33,000-byte diff and the 310-byte prompt passed as FILES; duration_seconds 185.6, num_turns 1, and `git status` in the real worktree shows nothing from the run."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "check-jsonschema",
+                  "--schemafile",
+                  ".claude/skills/pr-review/agy-review-v1.schema.json",
+                  "<(jq '.structured_output' agy.json)"
+                ],
+                "exit_code": 0
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "total_tokens is NOT the total. agy reports input 93,841 + output 19,315 = total 113,156, while thinking_tokens 16,510 and cache_read_tokens 607,219 sit OUTSIDE it - the cache reads alone are 5.4x the reported total. All five are copied into usage; S8's cost_per_actionable, if it is ever computed from this receipt, must name which numerator it used."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "jq",
+                  "-c",
+                  ".usage",
+                  "agy.json"
+                ],
+                "exit_code": 0
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Two of agy's seven findings are marked `cited` by agy and are recorded here as `asserted`. agy-review-v1.schema.json defines `source` but no excerpt field, so a cited mark from this arm cannot carry the excerpt and verified digest S1.1 requires, and supplying one would make it the primary's citation rather than agy's. Both also carry line anchors that do not resolve (install.sh#L386 in a 382-line file; install_test.sh#L312-L314 over the summary block rather than the checksum row) - the substance of both findings is correct and the primary reached the same two conclusions independently, by measurement, on this same head."
+              },
+              "properties": {
+                "grounding": "asserted",
+                "rationale": "A mark is downgraded rather than back-filled; the reason is recorded instead of the evidence being manufactured.",
+                "precision_class": "advisory"
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy/dead-code-dim",
+          "level": "warning",
+          "message": {
+            "text": "The DIM color variable is defined but never used in the installer script."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/install.sh"
+                },
+                "region": {
+                  "startLine": 47
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "reviewer": "agy 1.2.4 / requested model gemini-3.1-pro-high",
+            "reverified_by_primary": false,
+            "failure_scenario": "Dead code clutters the script and adds unnecessary maintenance overhead.",
+            "divergence_column": "agreed",
+            "primary_counterpart": "pmat/dead-code-added-by-this-diff",
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-n",
+              "DIM",
+              "scripts/install.sh"
+            ],
+            "exit_code_unavailable": "agy's output records the argv it ran but no exit code and no stdout digest, and S3.E.5 forbids the primary from re-running it; the fields S1 asks of a measured mark are recorded as unavailable rather than invented. Where the same fact also appears as a primary finding, the primary's own command, exit code and stdout digest are on that result."
+          }
+        },
+        {
+          "ruleId": "agy/dead-code-info",
+          "level": "warning",
+          "message": {
+            "text": "The info() function is defined but never called in the installer script."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/install.sh"
+                },
+                "region": {
+                  "startLine": 100
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "reviewer": "agy 1.2.4 / requested model gemini-3.1-pro-high",
+            "reverified_by_primary": false,
+            "failure_scenario": "The script includes an unused function, increasing size and maintenance surface without adding value.",
+            "divergence_column": "agreed",
+            "primary_counterpart": "pmat/dead-code-added-by-this-diff",
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-n",
+              "info()",
+              "scripts/install.sh"
+            ],
+            "exit_code_unavailable": "agy's output records the argv it ran but no exit code and no stdout digest, and S3.E.5 forbids the primary from re-running it; the fields S1 asks of a measured mark are recorded as unavailable rather than invented. Where the same fact also appears as a primary finding, the primary's own command, exit code and stdout digest are on that result."
+          }
+        },
+        {
+          "ruleId": "agy/dead-code-t-func",
+          "level": "warning",
+          "message": {
+            "text": "The t() helper function is defined but never called in the test script."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/tests/install_test.sh"
+                },
+                "region": {
+                  "startLine": 112
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "reviewer": "agy 1.2.4 / requested model gemini-3.1-pro-high",
+            "reverified_by_primary": false,
+            "failure_scenario": "Maintainers may unknowingly modify or rely on this untested dead helper, adding complexity to the test suite.",
+            "divergence_column": "agreed",
+            "primary_counterpart": "pmat/dead-code-added-by-this-diff",
+            "grounding": "measured",
+            "command": [
+              "grep",
+              "-E",
+              "-n",
+              "\\bt ",
+              "scripts/tests/install_test.sh"
+            ],
+            "exit_code_unavailable": "agy's output records the argv it ran but no exit code and no stdout digest, and S3.E.5 forbids the primary from re-running it; the fields S1 asks of a measured mark are recorded as unavailable rather than invented. Where the same fact also appears as a primary finding, the primary's own command, exit code and stdout digest are on that result."
+          }
+        },
+        {
+          "ruleId": "agy/false-success-broken-binary",
+          "level": "warning",
+          "message": {
+            "text": "The post-install verification step emits a warning when the installed binary fails to run, but still allows the script to exit 0."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/install.sh"
+                },
+                "region": {
+                  "startLine": 386
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "reviewer": "agy 1.2.4 / requested model gemini-3.1-pro-high",
+            "reverified_by_primary": false,
+            "failure_scenario": "If the downloaded binary is incompatible with the host system (e.g. glibc mismatch or missing dynamic libraries), it will crash when run. The installer catches this with `|| warn ...` but fails to exit 1, incorrectly reporting a successful installation to the user.",
+            "divergence_column": "agreed",
+            "primary_counterpart": "install/success-is-reported-for-a-broken-binary",
+            "grounding": "asserted",
+            "rationale": "The post-install verification step emits a warning when the installed binary fails to run, but still allows the script to exit 0.",
+            "agy_reported_grounding": "cited",
+            "agy_reported_source": "scripts/install.sh#L386-L387",
+            "mark_downgraded_because": "agy-review-v1.schema.json defines `source` but no excerpt field, so a cited mark from this arm cannot carry the excerpt and verified digest S1 requires. Supplying an excerpt myself would make it MY citation of agy's line reference, not agy's, so the record keeps the weaker mark and names why. agy reported scripts/install.sh line 386 and source 'scripts/install.sh#L386-L387'; the file has 382 lines, so the anchor is out of range. The construct it describes is real and is at lines 262-264. Recorded as a diagnostic, not corrected in agy's own record."
+          }
+        },
+        {
+          "ruleId": "agy/vacuous-checksum-test",
+          "level": "warning",
+          "message": {
+            "text": "The checksum mismatch test is vacuous because it only greps the script source code for the error message instead of exercising the failure path."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/tests/install_test.sh"
+                },
+                "region": {
+                  "startLine": 312
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "reviewer": "agy 1.2.4 / requested model gemini-3.1-pro-high",
+            "reverified_by_primary": false,
+            "failure_scenario": "If the checksum validation logic in the script is fundamentally broken, removed, or accidentally changed to log a warning instead of failing, the test suite will still pass, providing false confidence.",
+            "divergence_column": "agreed",
+            "primary_counterpart": "mutants/checksum-verification-is-untested-surviving-mutant",
+            "grounding": "asserted",
+            "rationale": "The checksum mismatch test is vacuous because it only greps the script source code for the error message instead of exercising the failure path.",
+            "agy_reported_grounding": "cited",
+            "agy_reported_source": "scripts/tests/install_test.sh#L312-L314",
+            "mark_downgraded_because": "agy-review-v1.schema.json defines `source` but no excerpt field, so a cited mark from this arm cannot carry the excerpt and verified digest S1 requires. Supplying an excerpt myself would make it MY citation of agy's line reference, not agy's, so the record keeps the weaker mark and names why. agy reported scripts/tests/install_test.sh line 312 and source 'scripts/tests/install_test.sh#L312-L314'; lines 312-314 are the summary and `exit \"$red\"`. The row it describes is real and is at lines 302-308. Recorded as a diagnostic, not corrected in agy's own record."
+          }
+        },
+        {
+          "ruleId": "agy/drifted-network-skip-count",
+          "level": "warning",
+          "message": {
+            "text": "The hardcoded count of network-dependent rows skipped is 6, but there are actually 9 tests executed in the network block."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/tests/install_test.sh"
+                },
+                "region": {
+                  "startLine": 177
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "reviewer": "agy 1.2.4 / requested model gemini-3.1-pro-high",
+            "reverified_by_primary": false,
+            "failure_scenario": "When the network check fails, the script outputs 'skipping the 6 network-dependent rows below', misleading developers into thinking only 6 tests were skipped when 9 tests actually were.",
+            "divergence_column": "agreed",
+            "primary_counterpart": "pmat/hardcoded-row-count-never-matched-the-code",
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "-c",
+              "awk '/Network-dependent rows/,0 { if (/^(    t_grep|    n=\\$\\(\\(n \\+ 1\\)\\))/) print $0}' scripts/tests/install_test.sh | wc -l"
+            ],
+            "exit_code_unavailable": "agy's output records the argv it ran but no exit code and no stdout digest, and S3.E.5 forbids the primary from re-running it; the fields S1 asks of a measured mark are recorded as unavailable rather than invented. Where the same fact also appears as a primary finding, the primary's own command, exit code and stdout digest are on that result."
+          }
+        },
+        {
+          "ruleId": "agy/test-suite-misses-stdin-pipe",
+          "level": "note",
+          "message": {
+            "text": "The test suite executes the installer using `sh scripts/install.sh`, completely missing the pipe execution mode (`curl ... | sh`) it intends to simulate."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/tests/install_test.sh"
+                },
+                "region": {
+                  "startLine": 196
+                }
+              }
+            }
+          ],
+          "properties": {
+            "precision_class": "advisory",
+            "reviewer": "agy 1.2.4 / requested model gemini-3.1-pro-high",
+            "reverified_by_primary": false,
+            "failure_scenario": "If a command that consumes stdin is added to the script, it will swallow the rest of the script when run via `curl | sh`, causing a critical silent failure. Running `sh script.sh` instead of piping to `sh` fails to catch this execution behavior divergence.",
+            "divergence_column": "agy_only",
+            "grounding": "asserted",
+            "rationale": "The test suite executes the installer using `sh scripts/install.sh`, completely missing the pipe execution mode (`curl ... | sh`) it intends to simulate."
+          }
+        }
+      ]
+    }
+  ]
+}

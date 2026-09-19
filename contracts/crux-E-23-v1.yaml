@@ -70,11 +70,14 @@ falsification_tests:
 
   if_fails: rule 'deterministic scores under temp=0' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CE2FBC4-EQ-001
+  type: equivalence
   property: "apr eval-bfcl scoring matches gorilla-llm/BFCL AST + exec judges within 1%"
-- type: invariant
+- id: CE2FBC4-INV-002
+  type: invariant
   property: "deterministic under temp=0 + seed"
-- type: invariant
+- id: CE2FBC4-INV-003
+  type: invariant
   property: "unknown suite name rejected with actionable error"
 
 verification_summary:

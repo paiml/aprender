@@ -96,8 +96,10 @@ fn main() {
         .points
         .iter()
         .min_by(|a, b| {
-            let dist_a = a.x.powi(2) + (1.0 - a.y).powi(2);
-            let dist_b = b.x.powi(2) + (1.0 - b.y).powi(2);
+            // APEX-001 EV-2a rule 5: squares are multiplies; `powi` is on the ban list so the
+            // rule needs no exceptions to reason about.
+            let dist_a = a.x * a.x + (1.0 - a.y) * (1.0 - a.y);
+            let dist_b = b.x * b.x + (1.0 - b.y) * (1.0 - b.y);
             dist_a.partial_cmp(&dist_b).expect("operation should succeed")
         })
         .expect("operation should succeed");

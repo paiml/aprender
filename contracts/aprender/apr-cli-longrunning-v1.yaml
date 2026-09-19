@@ -97,15 +97,18 @@ kernel_structure:
     description: Graceful shutdown, resource cleanup, exit code
 
 proof_obligations:
-- type: invariant
+- id: ACL-INV-001
+  type: invariant
   property: Graceful shutdown on SIGTERM
   formal: '∀ cmd: signal(SIGTERM) → eventually(exit) ∧ all_resources_released'
   applies_to: graceful_shutdown
-- type: invariant
+- id: ACL-INV-002
+  type: invariant
   property: No resource leaks on exit
   formal: '∀ cmd, exit: resources_held_after == ∅'
   applies_to: resource_cleanup
-- type: invariant
+- id: ACL-INV-003
+  type: invariant
   property: Per-request KV cache isolation
   formal: '∀ r1, r2: kv_cache(r1) ∩ kv_cache(r2) = ∅'
   applies_to: concurrent_isolation

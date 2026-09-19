@@ -70,11 +70,14 @@ falsification_tests:
 
   if_fails: rule 'ASHA scheduler actually prunes trials' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CD2C7BF-EQ-001
+  type: equivalence
   property: "apr sweep matches Ray Tune / Optuna search-algo + scheduler semantics for {random, tpe, asha}"
-- type: invariant
+- id: CD2C7BF-INV-002
+  type: invariant
   property: "best.metric is the optimum across completed trials"
-- type: invariant
+- id: CD2C7BF-INV-003
+  type: invariant
   property: "deterministic under --seed"
 
 verification_summary:

@@ -54,15 +54,18 @@ equations:
     - MIRI detects zero data races under any scheduling
     lean_theorem: Theorems.RaceFreedom
 proof_obligations:
-- type: ordering
+- id: TS-ORD-001
+  type: ordering
   property: Lock acquisition follows total order
   formal: 'forall t1, t2: if t1.holds(A) and t1.acquires(B) then order(A) < order(B)'
   applies_to: lock_order_invariant
-- type: soundness
+- id: TS-SND-002
+  type: soundness
   property: No data races under any scheduling
   formal: 'forall m, a1, a2: concurrent(a1, a2) and (write(a1) or write(a2)) -> synchronized(a1, a2)'
   applies_to: race_freedom
-- type: invariant
+- id: TS-INV-003
+  type: invariant
   property: Wait-for graph is always acyclic
   formal: 'forall states S: is_acyclic(wait_for_graph(S))'
   applies_to: lock_order_invariant

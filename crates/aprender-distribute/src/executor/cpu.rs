@@ -36,9 +36,16 @@ impl CpuExecutor {
     /// Creates a new CPU executor.
     ///
     /// Detects the number of available CPU cores automatically.
+    ///
+    /// Uses `std::thread::available_parallelism`, stable since Rust 1.59 and far
+    /// below this workspace's 1.91 MSRV, rather than the `num_cpus` crate. That
+    /// dependency was optional and pulled by ONE feature (`cpu`) while this file
+    /// compiles under any feature enabling `tokio`, so six sibling selections
+    /// could not link it. Falling back to 1 when the count is undeterminable
+    /// matches what `num_cpus::get()` returned in the same situation.
     #[must_use]
     pub fn new() -> Self {
-        let num_cpus = num_cpus::get();
+        let num_cpus = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
         info!("CpuExecutor initialized with {num_cpus} cores");
         Self { num_cpus }
     }

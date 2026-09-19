@@ -84,23 +84,28 @@ equations:
       - "pmat_shipped_count <= baseline"
 
 proof_obligations:
-  - type: invariant
+  - id: MSP-INV-001
+    type: invariant
     property: "No contract names a machine-specific absolute path"
     formal: "scripts/check_hardcoded_paths.sh exits 0 with count == 0"
     applies_to: contracts_name_no_machine
-  - type: invariant
+  - id: MSP-INV-002
+    type: invariant
     property: "The guard demonstrably turns RED on the pre-fix shape and stays green on portable shapes"
     formal: "The self-test case table flags 4/4 defect shapes and 0/9 portable shapes"
     applies_to: contracts_name_no_machine
-  - type: invariant
+  - id: MSP-INV-003
+    type: invariant
     property: "The guard is not vacuous"
     formal: "It exits non-zero when it scanned fewer files than its floor"
     applies_to: contracts_name_no_machine
-  - type: invariant
+  - id: MSP-INV-004
+    type: invariant
     property: "The guard is enforced per-PR, not merely present in the tree"
     formal: "ci.yml invokes check_hardcoded_paths.sh in a job that `gate` depends on"
     applies_to: contracts_name_no_machine
-  - type: bound
+  - id: MSP-BND-005
+    type: bound
     property: "Shipped machine-specific paths may not grow"
     formal: "pmat shipped_count <= scripts/hardcoded_path_shipped_baseline.txt"
     applies_to: shipped_tier_ratchets_down

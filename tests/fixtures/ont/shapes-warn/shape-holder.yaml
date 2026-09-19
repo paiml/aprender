@@ -1,0 +1,18 @@
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-18'
+  last_modified: '2026-09-18'
+  author: fixture
+  description: fixture shape-holder
+name: shape-holder
+version: "1.0.0"
+scope: fixture
+status: active
+entity:
+  type: pv-contract
+  ref: contracts/
+shape:
+  properties:
+    - {path: ont:id, minCount: 1}
+    - {path: ont:kind, in: [kernel, pattern], severity: warning}

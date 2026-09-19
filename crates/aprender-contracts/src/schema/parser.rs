@@ -25,7 +25,21 @@ pub fn parse_contract(path: &Path) -> Result<Contract, ContractError> {
 /// `cargo test -p aprender-contracts --test validate_contracts` failed 3 of its
 /// 10 tests on `main` while `pv lint contracts/` reported zero errors: the two
 /// walkers disagreed about what a contract file is.
-const NON_CONTRACT_FILENAMES: [&str; 2] = ["binding.yaml", "binding.yml"];
+/// Files under `contracts/` that are NOT contracts, and would fail to parse as
+/// one: the binding registry, and ONT-001 ONT-1's declaration of corpora this
+/// tree does NOT hold (`contracts/external-corpora.yaml`). Adding a file here is
+/// how the corpus keeps ONE definition of "a contract file" — the census, the
+/// linter and the validator all read this list.
+const NON_CONTRACT_FILENAMES: [&str; 4] = [
+    "binding.yaml",
+    "binding.yml",
+    "external-corpora.yaml",
+    // ONT-2b: Σ (`contracts/ontology.yaml`) declares what contracts may SAY; it is not one of them and has
+    // no `metadata:`. Measured before this line existed: adding Σ took `pv lint contracts/` from 1792
+    // contracts / 0 errors to 1793 / 1, i.e. the corpus failed because its own vocabulary was parsed as a
+    // member of it.
+    "ontology.yaml",
+];
 
 /// Is `path` a `.yaml` file the contract schema owns?
 ///

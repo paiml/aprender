@@ -1,0 +1,76 @@
+{
+ "train": "v0.68.1",
+ "verdict": "SHIPPED",
+ "release_commit": "1661c7138705d6b0a1f40c42bfe2f8a140c91c62",
+ "bump_pr": 3450,
+ "bump_merged": "2026-09-17T14:25Z",
+ "tagged": "2026-09-17T15:06:29Z",
+ "t2": {
+  "preflight_go_parent": "ee684e94c",
+  "full_go_release_commit": "2026-09-17T15:06:26Z"
+ },
+ "clean_room": {
+  "b2_cpu_run": "paiml/infra 35255889257",
+  "b2_gpu_run": "paiml/aprender 35268563585",
+  "attempts_on_tag": [
+   {
+    "run": 35238057841,
+    "result": "void",
+    "why": "fleet reboot 15:31Z killed the runner mid-gates"
+   },
+   {
+    "run": 35241651945,
+    "result": "B2 red",
+    "why": "overlay not inherited by a test's child cargo (infra#654)"
+   },
+   {
+    "run": 35246706906,
+    "result": "B2 red",
+    "why": "--no-fail-fast exposure: apr not on PATH, 32g OOM, CUDA tests in a CPU container (infra#656)"
+   },
+   {
+    "run": 35255889257,
+    "result": "green (cpu)",
+    "why": "b2-gpu job unreachable from paiml/infra: GPU runner groups admit paiml/aprender only (infra#658, aprender#3467)"
+   }
+  ],
+  "green_at": "2026-09-17T20:06Z"
+ },
+ "publish_preflight": {
+  "first": "R6 refused (shape, not cycle)",
+  "fix": "aprender#3469",
+  "pass_at": "2026-09-17T22:00:27Z"
+ },
+ "cascade": {
+  "tool": "publish_strict.sh",
+  "start": "2026-09-17T22:00:38Z",
+  "end": "2026-09-17T22:41:36Z",
+  "wall_s": 2458,
+  "published": 71,
+  "already_live": 3,
+  "retried_429": 11,
+  "non_429_errors": 0,
+  "attended_min": "0 (operator-authorized unattended, 2026-09-17)"
+ },
+ "post_publish_install": {
+  "intel_x86_64": "apr 0.68.1 rc=0",
+  "gx10_aarch64": "apr 0.68.1 rc=0 (attempt 1 ENV: no DNS after reboot, infra#255)",
+  "deviation": "no fleet-hosts make target exists for this row; ssh + throwaway --root"
+ },
+ "release_commit_to_tag_min": 41,
+ "release_commit_to_published_min": 496,
+ "kaizen_baseline": {
+  "cascade_wall_s": 2458,
+  "cascade_0_67_attended_s": 2520,
+  "commit_to_tag_min": 41
+ },
+ "corrections": [
+  "reported a thread cap as the OOM fix before measuring; ONE test holds 32.6 GB - measured, then 48g + 8 threads",
+  "b2-gpu first written without --features cuda: 457 tests, zero hardware tests; caught by local run, vacuity floor added",
+  "put b2-gpu in paiml/infra without checking runner-group access; job could never start",
+  "b2-gpu.yml pushed without running check_perf_concurrency_groups.sh; guard-cargo red, one CI cycle lost",
+  "driver evidence check used gh | grep -q under pipefail: SIGPIPE false RED twice",
+  "gx10 install receipt printed rc=0 on a failed install (tail masked cargo's status); rewritten with install_rc and a version match",
+  "TIERS assumed to be a dependency order; 47 violations measured (#3462)"
+ ]
+}

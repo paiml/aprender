@@ -30,15 +30,18 @@ equations:
     - key is hashable and comparable
     lean_theorem: Theorems.Insert_Idempotent
 proof_obligations:
-- type: invariant
+- id: CC1B6-INV-001
+  type: invariant
   property: Query result correctness
   formal: '∀ predicate, table, row ∈ query(predicate, table): predicate(row) = true'
   applies_to: query
-- type: invariant
+- id: CC1B6-INV-002
+  type: invariant
   property: get_or_insert idempotency
   formal: '∀ k, v1, v2: get_or_insert(k, v1); get_or_insert(k, v2) = v1'
   applies_to: insert
-- type: invariant
+- id: CC1B6-INV-003
+  type: invariant
   property: Insert then query consistency
   formal: '∀ k, v: get_or_insert(k, v); query(k) contains v'
   applies_to: all

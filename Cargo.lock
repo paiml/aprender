@@ -248,7 +248,7 @@ dependencies = [
 
 [[package]]
 name = "apr-cli"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "anyhow",
  "aprender-cgp",
@@ -321,7 +321,7 @@ dependencies = [
 
 [[package]]
 name = "apr-format"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "bincode",
  "cargo_metadata",
@@ -339,7 +339,7 @@ dependencies = [
 
 [[package]]
 name = "aprender"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "apr-cli",
  "aprender-core",
@@ -347,7 +347,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-bench-compute"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-core",
  "criterion 0.7.0",
@@ -356,7 +356,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-bench-tokenizer"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-core",
  "criterion 0.7.0",
@@ -365,7 +365,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-cbtop"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "anyhow",
  "aprender-common",
@@ -390,7 +390,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-cgp"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "anyhow",
  "aprender-gpu",
@@ -410,7 +410,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-common"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "lz4_flex 0.11.6",
  "zstd",
@@ -418,7 +418,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-compute"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "anyhow",
  "aprender-contracts-macros",
@@ -467,7 +467,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-compute-xtask"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "anyhow",
  "bashrs",
@@ -481,7 +481,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-contracts-macros",
  "criterion 0.5.1",
@@ -491,24 +491,27 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "aprender-contracts-cli"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-contracts",
  "clap",
+ "serde",
  "serde_json",
  "serde_yaml",
+ "sha2 0.10.9",
  "tempfile",
 ]
 
 [[package]]
 name = "aprender-contracts-macros"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -518,7 +521,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contrastive-data"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-contracts-macros",
  "aprender-rand",
@@ -533,7 +536,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-core"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aes-gcm",
  "alsa",
@@ -587,7 +590,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-cuda-edge"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-gpu",
  "proptest",
@@ -598,7 +601,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-cupti"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "bindgen",
  "bitflags 2.13.0",
@@ -608,7 +611,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-data"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aes-gcm",
  "aprender-test-lib",
@@ -660,7 +663,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-db"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "anyhow",
  "aprender-common",
@@ -705,7 +708,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-distribute"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-compute",
  "aprender-db",
@@ -715,7 +718,6 @@ dependencies = [
  "criterion 0.5.1",
  "crossterm 0.28.1",
  "futures",
- "num_cpus",
  "parquet",
  "pepita",
  "pollster",
@@ -736,7 +738,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-explain"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-gpu",
  "aprender-present-core",
@@ -754,7 +756,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-fft"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "criterion 0.7.0",
  "proptest",
@@ -763,7 +765,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-gemm-codegen"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -772,7 +774,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-gpu"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-common",
  "aprender-simulate",
@@ -790,7 +792,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-graph"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "anyhow",
  "aprender-compute",
@@ -811,7 +813,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-image"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "criterion 0.7.0",
  "proptest",
@@ -820,7 +822,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-mcp"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "anyhow",
  "inventory",
@@ -834,7 +836,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-monte-carlo"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender",
  "assert_cmd",
@@ -853,7 +855,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-orchestrate"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "anyhow",
  "aprender-common",
@@ -900,7 +902,7 @@ dependencies = [
  "proptest",
  "quick-xml 0.41.0",
  "reqwest 0.12.28",
- "resvg",
+ "resvg 0.47.0",
  "semver",
  "serde",
  "serde_json",
@@ -923,7 +925,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-cli"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-present-yaml",
  "clap",
@@ -936,7 +938,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-core"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-contracts-macros",
  "criterion 0.7.0",
@@ -948,7 +950,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-layout"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-present-core",
  "criterion 0.7.0",
@@ -959,7 +961,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-lib"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-contracts",
  "aprender-present-core",
@@ -988,7 +990,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-terminal"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-present-core",
  "bitvec",
@@ -1008,7 +1010,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-test"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-present-core",
  "aprender-present-test-macros",
@@ -1019,7 +1021,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-test-macros"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1028,7 +1030,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-widgets"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-present-core",
  "aprender-present-yaml",
@@ -1040,7 +1042,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-yaml"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-present-core",
  "proptest",
@@ -1050,7 +1052,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-profile"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "addr2line 0.25.1",
  "anyhow",
@@ -1102,7 +1104,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-profile-core"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "hex",
  "opentelemetry",
@@ -1113,7 +1115,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-ptx-debug"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "clap",
  "proptest",
@@ -1122,7 +1124,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-qa-certify"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "chrono",
  "clap",
@@ -1133,7 +1135,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-qa-cli"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-qa-certify",
  "aprender-qa-gen",
@@ -1152,7 +1154,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-qa-gen"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1169,7 +1171,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-qa-report"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "anyhow",
  "aprender-qa-gen",
@@ -1187,7 +1189,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-qa-runner"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "anyhow",
  "aprender-qa-gen",
@@ -1212,14 +1214,14 @@ dependencies = [
 
 [[package]]
 name = "aprender-quant"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "half",
 ]
 
 [[package]]
 name = "aprender-rag"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-common",
  "aprender-compute",
@@ -1247,7 +1249,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-rag-cli"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "anyhow",
  "aprender-rag",
@@ -1265,7 +1267,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-rand"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "criterion 0.7.0",
  "proptest",
@@ -1274,7 +1276,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-registry"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "anyhow",
  "aprender-core",
@@ -1304,7 +1306,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-serve"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "anyhow",
  "approx",
@@ -1372,7 +1374,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-shell"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-core",
  "clap",
@@ -1387,7 +1389,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-simulate"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-contracts",
  "aprender-contracts-macros",
@@ -1429,7 +1431,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-solve"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "criterion 0.7.0",
  "half",
@@ -1439,7 +1441,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-sparse"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "criterion 0.7.0",
  "proptest",
@@ -1448,7 +1450,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-tensor"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "criterion 0.7.0",
  "proptest",
@@ -1457,7 +1459,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-test-cli"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-test-lib",
  "assert_cmd",
@@ -1485,7 +1487,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-test-derive"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1495,7 +1497,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-test-js-gen"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "blake3",
  "chrono",
@@ -1511,7 +1513,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-test-lib"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-compute",
  "aprender-present-core",
@@ -1557,7 +1559,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-test-showcase"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-present-terminal",
  "aprender-test-lib",
@@ -1574,7 +1576,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "approx",
  "aprender-common",
@@ -1643,7 +1645,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-bench"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-train",
  "aprender-train-common",
@@ -1660,7 +1662,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-common"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-viz",
  "clap",
@@ -1672,7 +1674,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-distill"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-train",
  "aprender-train-common",
@@ -1693,7 +1695,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-inspect"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-train",
  "aprender-train-common",
@@ -1709,7 +1711,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-lora"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-train",
  "aprender-train-common",
@@ -1725,7 +1727,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-shell"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-train",
  "aprender-train-common",
@@ -1741,7 +1743,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-wasm"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "proptest",
  "serde",
@@ -1752,7 +1754,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-tsp"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender",
  "assert_cmd",
@@ -1767,7 +1769,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-verify"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "chrono",
  "criterion 0.5.1",
@@ -1779,7 +1781,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-verify-ml"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-compute",
  "aprender-core",
@@ -1809,7 +1811,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-viz"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "approx",
  "aprender-common",
@@ -1820,10 +1822,15 @@ dependencies = [
  "base64 0.22.1",
  "criterion 0.6.0",
  "js-sys",
+ "kurbo 0.13.1",
  "libc",
+ "libm",
  "png 0.17.16",
  "proptest",
+ "resvg 0.45.1",
  "serde",
+ "sha2 0.10.9",
+ "skrifa",
  "tempfile",
  "thiserror 2.0.18",
  "wasm-bindgen",
@@ -1832,7 +1839,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-zram"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-zram-adaptive",
  "aprender-zram-core",
@@ -1842,7 +1849,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-zram-adaptive"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-zram-core",
  "proptest",
@@ -1851,7 +1858,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-zram-cli"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-zram-adaptive",
  "aprender-zram-core",
@@ -1865,7 +1872,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-zram-core"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-gpu",
  "criterion 0.7.0",
@@ -1877,7 +1884,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-zram-generator"
-version = "0.67.0"
+version = "0.68.1"
 dependencies = [
  "aprender-zram-core",
  "clap",
@@ -5860,6 +5867,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
+name = "font-types"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b38ad915f6dadd993ced50848a8291a543bd41ca62bc10740d5e64e2ab4cfd7"
+dependencies = [
+ "bytemuck",
+]
+
+[[package]]
 name = "fontconfig-parser"
 version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7373,8 +7389,8 @@ dependencies = [
  "rayon",
  "rgb",
  "tiff",
- "zune-core",
- "zune-jpeg",
+ "zune-core 0.5.1",
+ "zune-jpeg 0.5.15",
 ]
 
 [[package]]
@@ -7386,6 +7402,12 @@ dependencies = [
  "byteorder-lite",
  "quick-error 2.0.1",
 ]
+
+[[package]]
+name = "imagesize"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edcd27d72f2f071c64249075f42e205ff93c9a4c5f6c6da53e79ed9f9832c285"
 
 [[package]]
 name = "imagesize"
@@ -7771,6 +7793,17 @@ checksum = "07293a4e297ac234359b510362495713f75ea345d5307140414f20c69ffeb087"
 dependencies = [
  "bitflags 2.13.0",
  "libc",
+]
+
+[[package]]
+name = "kurbo"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c62026ae44756f8a599ba21140f350303d4f08dcdcc71b5ad9c9bb8128c13c62"
+dependencies = [
+ "arrayvec",
+ "euclid",
+ "smallvec",
 ]
 
 [[package]]
@@ -10518,6 +10551,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "read-fonts"
+version = "0.39.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4ed38b89c2c77ff968c524145ad65fb010f38af5c7a224b53b81d47ac2daa81"
+dependencies = [
+ "bytemuck",
+ "font-types",
+]
+
+[[package]]
 name = "reborrow"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10795,6 +10838,23 @@ dependencies = [
 
 [[package]]
 name = "resvg"
+version = "0.45.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8928798c0a55e03c9ca6c4c6846f76377427d2c1e1f7e6de3c06ae57942df43"
+dependencies = [
+ "gif 0.13.3",
+ "image-webp",
+ "log",
+ "pico-args",
+ "rgb",
+ "svgtypes 0.15.3",
+ "tiny-skia 0.11.4",
+ "usvg 0.45.1",
+ "zune-jpeg 0.4.21",
+]
+
+[[package]]
+name = "resvg"
 version = "0.47.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9be183ad6a216aa96f33e4c8033b0988b8b3ea6fd2359d19af5bac4643fd8e81"
@@ -10804,10 +10864,10 @@ dependencies = [
  "log",
  "pico-args",
  "rgb",
- "svgtypes",
- "tiny-skia",
- "usvg",
- "zune-jpeg",
+ "svgtypes 0.16.1",
+ "tiny-skia 0.12.0",
+ "usvg 0.47.0",
+ "zune-jpeg 0.5.15",
 ]
 
 [[package]]
@@ -11841,6 +11901,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ee5873ec9cce0195efcb7a4e9507a04cd49aec9c83d0389df45b1ef7ba2e649"
 
 [[package]]
+name = "skrifa"
+version = "0.42.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c34617370ae968efb7161bb2beb517d9084659aae19e24b89e3db25b46e4564"
+dependencies = [
+ "bytemuck",
+ "read-fonts",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12094,11 +12164,21 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "svgtypes"
+version = "0.15.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68c7541fff44b35860c1a7a47a7cadf3e4a304c457b58f9870d9706ece028afc"
+dependencies = [
+ "kurbo 0.11.3",
+ "siphasher",
+]
+
+[[package]]
+name = "svgtypes"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "695b5790b3131dafa99b3bbfd25a216edb3d216dad9ca208d4657bfb8f2abc3d"
 dependencies = [
- "kurbo",
+ "kurbo 0.13.1",
  "siphasher",
 ]
 
@@ -12430,7 +12510,7 @@ dependencies = [
  "half",
  "quick-error 2.0.1",
  "weezl",
- "zune-jpeg",
+ "zune-jpeg 0.5.15",
 ]
 
 [[package]]
@@ -12474,6 +12554,21 @@ dependencies = [
 
 [[package]]
 name = "tiny-skia"
+version = "0.11.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83d13394d44dae3207b52a326c0c85a8bf87f1541f23b0d143811088497b09ab"
+dependencies = [
+ "arrayref",
+ "arrayvec",
+ "bytemuck",
+ "cfg-if 1.0.4",
+ "log",
+ "png 0.17.16",
+ "tiny-skia-path 0.11.4",
+]
+
+[[package]]
+name = "tiny-skia"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47ffee5eaaf5527f630fb0e356b90ebdec84d5d18d937c5e440350f88c5a91ea"
@@ -12484,7 +12579,18 @@ dependencies = [
  "cfg-if 1.0.4",
  "log",
  "png 0.18.1",
- "tiny-skia-path",
+ "tiny-skia-path 0.12.0",
+]
+
+[[package]]
+name = "tiny-skia-path"
+version = "0.11.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9c9e7fc0c2e86a30b117d0462aa261b72b7a99b7ebd7deb3a14ceda95c5bdc93"
+dependencies = [
+ "arrayref",
+ "bytemuck",
+ "strict-num",
 ]
 
 [[package]]
@@ -13495,6 +13601,33 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "usvg"
+version = "0.45.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80be9b06fbae3b8b303400ab20778c80bbaf338f563afe567cf3c9eea17b47ef"
+dependencies = [
+ "base64 0.22.1",
+ "data-url",
+ "flate2",
+ "fontdb",
+ "imagesize 0.13.0",
+ "kurbo 0.11.3",
+ "log",
+ "pico-args",
+ "roxmltree 0.20.0",
+ "rustybuzz",
+ "simplecss",
+ "siphasher",
+ "strict-num",
+ "svgtypes 0.15.3",
+ "tiny-skia-path 0.11.4",
+ "unicode-bidi",
+ "unicode-script",
+ "unicode-vo",
+ "xmlwriter",
+]
+
+[[package]]
+name = "usvg"
 version = "0.47.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d46cf96c5f498d36b7a9693bc6a7075c0bb9303189d61b2249b0dc3d309c07de"
@@ -13503,8 +13636,8 @@ dependencies = [
  "data-url",
  "flate2",
  "fontdb",
- "imagesize",
- "kurbo",
+ "imagesize 0.14.0",
+ "kurbo 0.13.1",
  "log",
  "pico-args",
  "roxmltree 0.21.1",
@@ -13512,8 +13645,8 @@ dependencies = [
  "simplecss",
  "siphasher",
  "strict-num",
- "svgtypes",
- "tiny-skia-path",
+ "svgtypes 0.16.1",
+ "tiny-skia-path 0.12.0",
  "ttf-parser",
  "unicode-bidi",
  "unicode-script",
@@ -15845,6 +15978,12 @@ dependencies = [
 
 [[package]]
 name = "zune-core"
+version = "0.4.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f423a2c17029964870cfaabb1f13dfab7d092a62a29a89264f4d36990ca414a"
+
+[[package]]
+name = "zune-core"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb8a0807f7c01457d0379ba880ba6322660448ddebc890ce29bb64da71fb40f9"
@@ -15860,9 +15999,18 @@ dependencies = [
 
 [[package]]
 name = "zune-jpeg"
+version = "0.4.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29ce2c8a9384ad323cf564b67da86e21d3cfdff87908bc1223ed5c99bc792713"
+dependencies = [
+ "zune-core 0.4.12",
+]
+
+[[package]]
+name = "zune-jpeg"
 version = "0.5.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27bc9d5b815bc103f142aa054f561d9187d191692ec7c2d1e2b4737f8dbd7296"
 dependencies = [
- "zune-core",
+ "zune-core 0.5.1",
 ]

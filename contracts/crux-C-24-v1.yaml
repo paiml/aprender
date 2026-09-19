@@ -75,11 +75,14 @@ falsification_tests:
 
   if_fails: rule 'parity with transformers.generate on small model' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CC2A2E0-EQ-001
+  type: equivalence
   property: "apr --num-beams matches HF `model.generate(num_beams=, length_penalty=, early_stopping=)` top-1"
-- type: invariant
+- id: CC2A2E0-INV-002
+  type: invariant
   property: "num_beams=1 ≡ greedy (byte-equal output)"
-- type: invariant
+- id: CC2A2E0-INV-003
+  type: invariant
   property: "beam log-prob ≥ greedy log-prob (optimality lower bound)"
 
 verification_summary:

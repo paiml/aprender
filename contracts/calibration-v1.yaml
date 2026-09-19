@@ -68,31 +68,38 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Reliability_Diagram
 proof_obligations:
-- type: bound
+- id: CAL-BND-001
+  type: bound
   property: ECE bounded
   formal: ECE ∈ [0, 1] for all valid probability-label pairs
   applies_to: all
-- type: bound
+- id: CAL-BND-002
+  type: bound
   property: MCE bounded
   formal: MCE ∈ [0, 1] for all valid probability-label pairs
   applies_to: all
-- type: invariant
+- id: CAL-INV-003
+  type: invariant
   property: MCE dominates ECE
   formal: MCE ≥ ECE for any binning
   applies_to: all
-- type: invariant
+- id: CAL-INV-004
+  type: invariant
   property: Perfect calibration zero error
   formal: perfectly calibrated ⟹ ECE = 0 ∧ MCE = 0
   applies_to: all
-- type: bound
+- id: CAL-BND-005
+  type: bound
   property: Platt output bounded
   formal: σ(Af+B) ∈ (0, 1) for all f ∈ ℝ
   applies_to: all
-- type: invariant
+- id: CAL-INV-006
+  type: invariant
   property: Isotonic monotonicity
   formal: f_i ≤ f_j ⟹ ĝ(f_i) ≤ ĝ(f_j)
   applies_to: all
-- type: bound
+- id: CAL-BND-007
+  type: bound
   property: Reliability bin bounds
   formal: confidence, accuracy ∈ [0, 1] for all bins
   applies_to: all

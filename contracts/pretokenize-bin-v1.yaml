@@ -366,15 +366,18 @@ gates:
 # ─────────────────────────────────────────────────────────────
 
 proof_obligations:
-  - type: bound
+  - id: PB-BND-001
+    type: bound
     property: "Every shard token is within vocabulary range"
     formal: "∀ t ∈ shards, t < vocab_size"
     applies_to: all
-  - type: equivalence
+  - id: PB-EQ-002
+    type: equivalence
     property: "Producer-consumer round-trip"
     formal: "ShardBatchIter(producer(corpus, tokenizer)) == producer.token_stream(corpus, tokenizer)"
     applies_to: all
-  - type: equivalence
+  - id: PB-EQ-003
+    type: equivalence
     property: "Cross-host determinism"
     formal: "producer_x86(corpus, tok) == producer_aarch64(corpus, tok)"
     applies_to: all

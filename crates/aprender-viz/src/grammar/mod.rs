@@ -41,9 +41,9 @@ mod stat;
 mod theme;
 
 pub use aes::Aes;
-pub use coord::Coord;
+pub use coord::{apply, apply_limits, Coord};
 pub use data::{DataFrame, DataValue};
-pub use facet::Facet;
+pub use facet::{panels, Facet, Panel};
 pub use geom::Geom;
 pub use ggplot::{BuiltGGPlot, GGPlot, Layer};
 pub use stat::Stat;

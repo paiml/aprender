@@ -1,0 +1,13 @@
+0.00.024.135 I cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)
+0.00.024.470 W srv  llama_server: -----------------
+0.00.024.472 W srv  llama_server: CORS is set to allow all origins ('*') and no API key is set
+0.00.024.472 W srv  llama_server: this can be a security risk (cross-origin attacks)
+0.00.024.472 W srv  llama_server: more info: https://github.com/ggml-org/llama.cpp/pull/25655
+0.00.024.472 W srv  llama_server: -----------------
+0.00.025.779 I srv    load_model: loading model '/home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf'
+0.00.470.067 W load: control-looking token: 128247 '</s>' was not control-type; this is probably a bug in the model. its type will be overridden
+0.02.568.234 I cmn          init: llama threadpool init, n_threads = 8
+0.02.599.989 I srv    load_model: initializing, n_slots = 4, n_ctx_slot = 4096, kv_unified = 'true'
+0.02.603.175 I srv  llama_server: model loaded
+0.02.603.180 I srv  llama_server: listening on http://127.0.0.1:8091
+0.02.989.585 I srv    operator(): operator(): cleaning up before exit...

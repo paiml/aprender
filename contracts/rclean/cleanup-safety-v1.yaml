@@ -44,15 +44,18 @@ equations:
     - dataset has at least 4 entries for meaningful IQR
     lean_theorem: Theorems.Outlier_Detection
 proof_obligations:
-- type: invariant
+- id: CSA7C1-INV-001
+  type: invariant
   property: Duplicate groups have matching hashes
   formal: '∀ g ∈ groups, ∀ f1, f2 ∈ g: md5(f1) = md5(f2)'
   applies_to: duplicate_detection
-- type: invariant
+- id: CSA7C1-INV-002
+  type: invariant
   property: Scan respects depth limit
   formal: '∀ f ∈ scan(root, {max_depth: d}): depth(f, root) <= d'
   applies_to: scan_completeness
-- type: invariant
+- id: CSA7C1-INV-003
+  type: invariant
   property: Outlier detection is deterministic
   formal: '∀ dataset: outliers(dataset) = outliers(dataset)'
   applies_to: outlier_detection

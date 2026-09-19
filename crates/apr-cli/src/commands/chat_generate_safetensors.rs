@@ -88,6 +88,12 @@ impl ChatSession {
             self.history.clear();
         }
 
+        /// #3367: did any turn in this session fail to generate? Read once, by
+        /// `run_repl`, to decide the command's exit code.
+        pub(super) fn had_generate_error(&self) -> bool {
+            self.had_generate_error
+        }
+
         #[allow(dead_code)]
         pub(super) fn format(&self) -> ModelFormat {
             self.format

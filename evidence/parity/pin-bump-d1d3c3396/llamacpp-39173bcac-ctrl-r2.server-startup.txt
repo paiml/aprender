@@ -1,0 +1,15 @@
+started_utc: 2026-09-15T16:41:26Z
+main: n_parallel is set to auto, using n_parallel = 4 and kv_unified = true
+system_info: n_threads = 8 (n_threads_batch = 8) / 48 | CUDA : ARCHS = 500,610,700,750,800,860,890,1200 | USE_GRAPHS = 1 | PEER_MAX_BATCH_SIZE = 128 | CPU : SSE3 = 1 | SSSE3 = 1 | AVX = 1 | AVX2 = 1 | F16C = 1 | FMA = 1 | BMI2 = 1 | AVX512 = 1 | AVX512_VBMI = 1 | AVX512_VNNI = 1 | AVX512_BF16 = 1 | LLAMAFILE = 1 | OPENMP = 1 | REPACK = 1 | 
+llama_model_load_from_file_impl: using device CUDA0 (NVIDIA GeForce RTX 4090) (0000:41:00.0) - 22774 MiB free
+llama_model_loader: loaded meta data with 29 key-value pairs and 339 tensors from /home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf (version GGUF V3 (latest))
+llama_model_loader: - kv  25:               general.quantization_version u32              = 2
+load_tensors: offloaded 29/29 layers to GPU
+load_tensors:        CUDA0 model buffer size =  4168.09 MiB
+llama_context: n_batch       = 2048
+llama_context: flash_attn    = auto
+llama_context: kv_unified    = true
+llama_kv_cache:      CUDA0 KV buffer size =   224.00 MiB
+sched_reserve:      CUDA0 compute buffer size =   304.00 MiB
+error: Validation failed: run 1 had 1 failed request(s); run 3 had 2 failed request(s) — a throughput averaged over the requests that survived is not a measurement of this runtime, it is a measurement of its survivors
+bench rc=5

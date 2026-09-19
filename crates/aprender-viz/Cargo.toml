@@ -14,10 +14,15 @@ categories = ["visualization", "graphics", "science", "wasm"]
 
 [dependencies]
 # Core SIMD/GPU acceleration
-trueno = { version = "0.67.0", path = "../aprender-compute", package = "aprender-compute", default-features = false }
+trueno = { version = "0.68.1", path = "../aprender-compute", package = "aprender-compute", default-features = false }
 
 # Shared Batuta stack utilities (display traits, formatting)
 batuta-common = { workspace = true }
+
+# Deterministic math (APEX-001 F-51, EV-2a rule 5): every transcendental on the render path
+# — tick placement, log scales — goes through pure-Rust libm, never the platform libm. NOT
+# optional: the rule covers the default render path, not just the text-path/raster features.
+libm = "0.2"
 
 # PNG encoding (pure Rust, no libpng)
 png = "0.17"
@@ -28,11 +33,21 @@ base64 = "0.22"
 # Error handling
 thiserror = "2.0"
 
+# Content manifest (EV-2a rule 4), moved from rmedia-types.
+sha2 = { workspace = true }
+
+# EV-2a rule 1: glyph outlines. Optional — see the `text-path` feature.
+skrifa = { version = "0.42", optional = true }
+kurbo = { version = "0.13", optional = true }
+
+# EV-2a rule 3: pinned rasteriser. Optional — see the `raster` feature.
+resvg = { version = "0.45", optional = true }
+
 # Optional: ML integration
-aprender = { path = "../aprender-core", version = "0.67.0", package = "aprender-core", optional = true }
+aprender = { path = "../aprender-core", version = "0.68.1", package = "aprender-core", optional = true }
 
 # Optional: Graph integration
-trueno-graph = { version = "0.67.0", path = "../aprender-graph", package = "aprender-graph", default-features = false, optional = true }
+trueno-graph = { version = "0.68.1", path = "../aprender-graph", package = "aprender-graph", default-features = false, optional = true }
 
 # Optional: Database integration
 trueno-db = { workspace = true, optional = true }
@@ -105,6 +120,17 @@ terminal = []
 # SVG output support
 svg = []
 
+# APEX-001 EV-2a. Both are NON-DEFAULT on purpose: the row's own evidence is that
+# `cargo tree -p aprender-viz` with default features is byte-identical before and after
+# this ticket, so no existing consumer pays for skrifa/kurbo/resvg.
+
+# Text rendered as glyph outlines, so an SVG carries no <text> and no font-family and does
+# not depend on a font installed on the viewing machine.
+text-path = ["dep:skrifa", "dep:kurbo"]
+
+# Rasterisation through a pinned resvg.
+raster = ["dep:resvg"]
+
 # WASM/WebAssembly support
 wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:web-sys"]
 
@@ -115,7 +141,7 @@ wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:web-sys"]
 # optional deps and gated tests/examples that no longer compiled.
 
 # All features enabled (excluding wasm which needs special build)
-full = ["gpu", "parallel", "ml", "graph", "db", "terminal", "svg"]
+full = ["gpu", "parallel", "ml", "graph", "db", "terminal", "svg", "text-path", "raster"]
 
 [lib]
 name = "trueno_viz"

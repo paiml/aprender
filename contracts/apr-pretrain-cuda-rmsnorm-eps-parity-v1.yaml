@@ -106,11 +106,13 @@ equations:
     - 'rmsnorm_eps_argument_threading holds'
 
 proof_obligations:
-- type: invariant
+- id: APCREP-INV-001
+  type: invariant
   property: kernel epsilon equals caller-provided epsilon
   formal: 'BatchedVectorizedRmsNormKernel.epsilon == eps_arg'
   applies_to: rmsnorm_eps_argument_threading
-- type: invariant
+- id: APCREP-INV-002
+  type: invariant
   property: CUDA-CPU RMSNorm pointwise parity at Qwen eps
   formal: '|cuda_y - cpu_y|_∞ < 1e-4 at eps=1e-6'
   applies_to: cuda_cpu_rmsnorm_pointwise_parity

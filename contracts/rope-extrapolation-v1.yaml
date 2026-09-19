@@ -77,36 +77,44 @@ equations:
     - indices.len() > 0
     lean_theorem: Theorems.Rotation_Matrix
 proof_obligations:
-- type: invariant
+- id: REXT-INV-001
+  type: invariant
   property: Base frequencies positive and decreasing
   formal: '∀i: freq_i > 0 ∧ (i < d/2-1 → freq_i > freq_{i+1})'
   applies_to: all
-- type: invariant
+- id: REXT-INV-002
+  type: invariant
   property: NTK identity at original length
   formal: L_new = L_orig → theta' = theta
   applies_to: all
-- type: monotonicity
+- id: REXT-MON-003
+  type: monotonicity
   property: NTK base grows with target length
   formal: L_new > L_orig → theta' > theta
   applies_to: all
-- type: invariant
+- id: REXT-INV-004
+  type: invariant
   property: Linear interpolation preserves ratios
   formal: freq'_i / freq'_j = freq_i / freq_j
   applies_to: all
-- type: bound
+- id: REXT-BND-005
+  type: bound
   property: YaRN ramp bounded [0,1]
   formal: '∀r: 0 <= s(r) <= 1'
   applies_to: all
-- type: monotonicity
+- id: REXT-MON-006
+  type: monotonicity
   property: YaRN ramp non-decreasing
   formal: r1 < r2 → s(r1) <= s(r2)
   applies_to: all
-- type: invariant
+- id: REXT-INV-007
+  type: invariant
   property: Rotation matrix orthogonality
   formal: '∀pos,i: R(pos,i)^T R(pos,i) = I (tolerance 1e-12)'
   tolerance: 1.0e-12
   applies_to: all
-- type: idempotency
+- id: REXT-IDEM-008
+  type: idempotency
   property: Rotation at position 0 is identity
   formal: R(0, i) = I for all i
   applies_to: all

@@ -674,7 +674,8 @@ equations:
 
 proof_obligations:
 
-- type: safety
+- id: CPP-SAFE-001
+  type: safety
   property: >
     OBLIG-CPP-BYTES-BOUNDARY: the crate's public API contains no path-shaped types, the
     crate performs no filesystem or network access, and its resolved NORMAL dependency
@@ -694,7 +695,8 @@ proof_obligations:
     resolved_normal_closure ⊆ allowed_deps && grep_src(fs|net|path|Path|PathBuf) == {}
   applies_to: all
 
-- type: soundness
+- id: CPP-SND-002
+  type: soundness
   property: >
     OBLIG-CPP-LEAKAGE-NOT-CONSTRUCTIBLE: a selection run on the compatibility profile
     CANNOT BE CONSTRUCTED, not merely rejected. Selection consumes
@@ -708,7 +710,8 @@ proof_obligations:
   formal: 'compile_fail(select(&PreparedDataset::<Compatibility>)) && !exists(PreparedDataset::<Compatibility>::validation_witness)'
   applies_to: all
 
-- type: classification
+- id: CPP-CLS-003
+  type: classification
   property: >
     OBLIG-CPP-BOUNDARY-VALIDATION: honest-looking JSONL bytes whose embedded
     `source_split` disagrees with the role being constructed are a TYPED error
@@ -721,7 +724,8 @@ proof_obligations:
   formal: 'row.source_split != decl.role => Err(SplitRoleMismatch{expected_role, embedded_role})'
   applies_to: all
 
-- type: soundness
+- id: CPP-SND-004
+  type: soundness
   property: >
     OBLIG-CPP-ATTESTATION-BEFORE-EXPOSURE: canonical splits are exposed to a consumer only
     after the attestation's profile, schema version, per-split hashes, dataset fingerprint
@@ -733,7 +737,8 @@ proof_obligations:
   formal: 'expose(splits) requires forall f in attested_fields: rederive(f, buffers) == attested(f)'
   applies_to: all
 
-- type: conservation
+- id: CPP-CON-005
+  type: conservation
   property: >
     OBLIG-CPP-DUP-GROUP-COALESCED: a row pair that is BOTH an exact duplicate and a
     normalized duplicate forms exactly ONE duplicate group and decrements the affected
@@ -745,7 +750,8 @@ proof_obligations:
   formal: 'forall groups g1 != g2: rows(g1) ∩ rows(g2) == {} && reduced_pool_k == |pool_k| - |affected_k|'
   applies_to: all
 
-- type: bound
+- id: CPP-BND-006
+  type: bound
   property: >
     OBLIG-CPP-CAPACITY-INVARIANT: retained sampler state never exceeds
     c * (examples + classes) and is INDEPENDENT of the budget and of how many pairs have
@@ -758,7 +764,8 @@ proof_obligations:
   formal: 'state_report().retained_bytes <= c * (examples + classes) && d(state)/d(emitted) == 0'
   applies_to: all
 
-- type: bound
+- id: CPP-BND-007
+  type: bound
   property: >
     OBLIG-CPP-KN-ADVERSARIAL: the capacity invariant holds at K ~ N — every class a
     singleton — under a fixed small budget. This is the layout the rejected O(K^2)
@@ -769,7 +776,8 @@ proof_obligations:
   formal: 'for n = [1;N], state_report().retained_bytes <= c * (N + N) and no class-pair array is allocated'
   applies_to: all
 
-- type: soundness
+- id: CPP-SND-008
+  type: soundness
   property: >
     OBLIG-CPP-LEAKY-RED: an untrusted pair record naming an identifier that is not in the
     selection is rejected with EndpointNotInSelection, and the error NAMES the offending
@@ -780,7 +788,8 @@ proof_obligations:
   formal: 'reject(leaky_sampler) && accept(honest_sampler) && error.contains(offending_id)'
   applies_to: all
 
-- type: safety
+- id: CPP-SAFE-009
+  type: safety
   property: >
     OBLIG-CPP-BUDGET-FAIL-CLOSED: every budget pathology is a typed error and none is a
     silent adjustment. hard_cap == 0 -> ZeroHardCap; resolved budget 0 -> ZeroBudget;
@@ -793,7 +802,8 @@ proof_obligations:
   formal: 'budget > hard_cap => Err(BudgetExceedsHardCap) && never silently_clamped(explicit_budget)'
   applies_to: all
 
-- type: determinism
+- id: CPP-DET-010
+  type: determinism
   property: >
     OBLIG-CPP-REPLAY-DETERMINISM: an identical replay tuple regenerates an identical pair
     sequence and an identical manifest hash, on any host and INDEPENDENT OF WORKER COUNT.
@@ -805,7 +815,8 @@ proof_obligations:
   formal: 'regenerate(record) == original && hash(record, stream) == SHA256(record_bytes || 0x1E || pair_bytes...)'
   applies_to: all
 
-- type: soundness
+- id: CPP-SND-011
+  type: soundness
   property: >
     OBLIG-CPP-SELECTION-REPLAY-STRICT: a selection manifest is rejected with a typed error
     naming the first disagreeing field if ANY of the following fails — profile
@@ -819,7 +830,8 @@ proof_obligations:
   formal: 'replay(manifest, dataset) == Ok(s) => s == select(dataset, manifest.root_seed, manifest.shots)'
   applies_to: all
 
-- type: completeness
+- id: CPP-CMP-012
+  type: completeness
   property: >
     OBLIG-CPP-LEDGER-PERSISTED: the access ledger's canonical bytes AND its hash are
     inside the selection manifest payload — the HASHED region, so the ledger cannot be
@@ -829,7 +841,8 @@ proof_obligations:
   formal: 'selection_payload.ledger_hash == SHA256(ledger.to_canonical_bytes()) && ledger_hash ∈ hashed_region'
   applies_to: all
 
-- type: completeness
+- id: CPP-CMP-013
+  type: completeness
   property: >
     OBLIG-CPP-SINGLETON-EXPLICIT: whenever a class has exactly one selected example, the
     manifest records the singleton policy, its version, and the number of affected classes
@@ -840,7 +853,8 @@ proof_obligations:
   formal: 'exists k: n_k == 1 => manifest.singleton_policy == NegativesOnly && manifest.singleton_policy_version == 1 && manifest.singleton_affected_classes == |{k : n_k == 1}|'
   applies_to: all
 
-- type: classification
+- id: CPP-CLS-014
+  type: classification
   property: >
     OBLIG-CPP-ERROR-TAXONOMY: every failure of this protocol is one of the enumerated
     typed variants of ContrastiveDataError, and none is a panic, a sentinel value, or an
@@ -871,7 +885,8 @@ proof_obligations:
   formal: 'forall fallible paths f: f returns Result<_, ContrastiveDataError> && no panic on caller input'
   applies_to: all
 
-- type: equivalence
+- id: CPP-EQ-015
+  type: equivalence
   property: >
     OBLIG-CPP-DEVIATION-DECLARED: the deviation from SetFit is stated in three clauses, in
     both the contract and every manifest, and is labeled an explicit APRENDER POLICY. It

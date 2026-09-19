@@ -64,22 +64,27 @@ equations:
       coefficient instead grouped {0,1,2,3} | {4,5}.
 
 proof_obligations:
-- type: precondition
+- id: WL-PRE-001
+  type: precondition
   property: "Cluster sizes are positive and centroids are finite"
   formal: "|A| >= 1 ∧ |B| >= 1 ∧ ∀k: isFinite(c_A[k]) ∧ isFinite(c_B[k])"
-- type: postcondition
+- id: WL-POST-002
+  type: postcondition
   property: "Merge distance is non-negative and finite"
   formal: "d(A,B) >= 0 ∧ isFinite(d(A,B))"
   requires: WARD-PRE-001
-- type: bound
+- id: WL-BND-003
+  type: bound
   property: "Coefficient reduces to 1 for singleton-singleton merges"
   formal: "sqrt(2 * 1 * 1 / (1 + 1)) = 1"
   applies_to: all
-- type: invariant
+- id: WL-INV-004
+  type: invariant
   property: "Merge distance is symmetric in its arguments"
   formal: "d(A,B) = d(B,A)"
   applies_to: all
-- type: equivalence
+- id: WL-EQ-005
+  type: equivalence
   property: "Ward partition matches scipy/sklearn reference partition"
   formal: "ward(X_ref, k=2) ≡ {1,4,5} | {0,2,3} (up to label permutation)"
   tolerance: 0.0

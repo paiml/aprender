@@ -562,6 +562,13 @@ readme-sync-check: ## Fail if README.md is not what the generator produces
 # merge-tree measurement READS A FILE ON DISK must turn the hand-edited rows
 # GREEN, which is what makes their RED load-bearing rather than incidental.
 # `--class complexity` and `--class satd` are stubs and exit 3, never 0.
+.PHONY: roadmap-aggregate roadmap-aggregate-check
+roadmap-aggregate: ## Regenerate docs/roadmaps/roadmap.yaml from docs/roadmaps/entries/ (#3296)
+	@python3 scripts/lib/roadmap_fragments.py aggregate --write
+
+roadmap-aggregate-check: ## Fail if roadmap.yaml is not what the aggregator produces, or if it is not idempotent
+	@python3 scripts/lib/roadmap_fragments.py aggregate --check
+
 .PHONY: ratchet-semantics-test
 ratchet-semantics-test: ## BSE-03: D2 ratchet polarity rows (--class readme)
 	@bash scripts/tests/ratchet_semantics_test.sh --class readme
@@ -579,6 +586,17 @@ coverage-check: coverage
 contracts:
 	@echo "== provable contracts: pv lint contracts/ =="
 	@. scripts/pv_bin.sh && "$$PV" lint contracts/ 2>&1 | tail -5
+	@echo "== census: tracked contracts/census.json == a fresh one (ONT-001 ONT-1, F-1) =="
+	@git ls-files --error-unmatch contracts/census.json >/dev/null || { echo "FAIL: contracts/census.json is not tracked, so diffing it proves nothing"; exit 1; }
+	@. scripts/pv_bin.sh && "$$PV" census contracts --format json > contracts/census.json
+	@git diff --exit-code contracts/census.json || { echo "FAIL: the tracked census differs from a fresh one — commit the regenerated contracts/census.json"; exit 1; }
+	@echo "== graph: tracked contracts/contracts.nt + shapes.ttl == a fresh extraction (ONT-001 ONT-4b, R-18) =="
+	@. scripts/pv_bin.sh && "$$PV" extract contracts --check >/dev/null
+	@echo "== README states the censused count =="
+	@bash scripts/readme_sync.sh --check
+	@echo "== provenance marks, interim (ONT-001 R-10) =="
+	@bash scripts/lint-provenance.sh --self-test
+	@bash scripts/lint-provenance.sh contracts/external-corpora.yaml
 	@echo "== contract engine tests =="
 	@cargo test -p aprender-contracts --lib 2>&1 | grep -E "test result" | tail -1
 
@@ -1162,7 +1180,7 @@ contract-validate: ## Validate all kernel contracts (schema + staleness)
 
 contract-test: ## Run contract-driven property tests
 	@echo "Running contract property tests..."
-	@PROPTEST_CASES=100 cargo test --test contract_tests
+	@PROPTEST_CASES=100 cargo test -p aprender-core --test contract_tests
 	@echo "Contract tests passed"
 
 contract-audit: ## Audit binding coverage (equations -> implementations)

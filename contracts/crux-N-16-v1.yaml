@@ -68,11 +68,14 @@ falsification_tests:
   if_fails: rule 'the O(n^2) P-matrix is not materialized' is violated — the linfa parity claim for CRUX-N-16 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
 
 proof_obligations:
-- type: invariant
+- id: CN11E28-INV-001
+  type: invariant
   property: "theta=0 reproduces the exact embedding"
-- type: invariant
+- id: CN11E28-INV-002
+  type: invariant
   property: "force computation grows as n log n, not n squared"
-- type: invariant
+- id: CN11E28-INV-003
+  type: invariant
   property: "the O(n^2) P-matrix is not materialized"
 
 kani_harnesses:

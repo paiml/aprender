@@ -172,15 +172,20 @@ falsification_tests:
   if_fails: "apr serve diverges from openai-python 1.x baseline under Langchain ChatOpenAI"
 
 proof_obligations:
-- type: equivalence
+- id: CK03C75-EQ-001
+  type: equivalence
   property: "Langchain ChatOpenAI.invoke/.stream/.bind_tools against apr serve matches openai-python 1.x reference"
-- type: invariant
+- id: CK03C75-INV-002
+  type: invariant
   property: "ChatOpenAI.invoke() returns AIMessage with non-empty string content"
-- type: invariant
+- id: CK03C75-INV-003
+  type: invariant
   property: "ChatOpenAI.stream() yields >=1 chunk and concatenation is non-empty"
-- type: invariant
+- id: CK03C75-INV-004
+  type: invariant
   property: "ChatOpenAI(...).bind_tools([fn]).invoke() produces AIMessage.tool_calls for appropriate prompts"
-- type: invariant
+- id: CK03C75-INV-005
+  type: invariant
   property: "temp=0 stream concat == invoke content (sampling determinism)"
 
 verification_summary:

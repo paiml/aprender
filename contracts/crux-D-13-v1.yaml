@@ -153,15 +153,20 @@ falsification_tests:
   if_fails: "Reference trajectory from HF not yet captured"
 
 proof_obligations:
-- type: invariant
+- id: CD1F322-INV-001
+  type: invariant
   property: "lr(0) ≈ 0 and lr(warmup_steps) == lr_max"
-- type: invariant
+- id: CD1F322-INV-002
+  type: invariant
   property: "lr is monotone non-decreasing on [0, W] and non-increasing on [W, T]"
-- type: invariant
+- id: CD1F322-INV-003
+  type: invariant
   property: "lr(total_steps) ≈ min_lr"
-- type: invariant
+- id: CD1F322-INV-004
+  type: invariant
   property: "Cosine decay is smooth (no per-step jumps > 5%)"
-- type: equivalence
+- id: CD1F322-EQ-005
+  type: equivalence
   property: "apr --lr-schedule cosine --warmup-steps W  ≅  HF get_cosine_schedule_with_warmup(optimizer, W, T) / PyTorch CosineAnnealingLR"
 
 verification_summary:

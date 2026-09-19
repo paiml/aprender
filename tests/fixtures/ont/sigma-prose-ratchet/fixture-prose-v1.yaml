@@ -1,0 +1,16 @@
+name: fixture-prose
+version: "1.0.0"
+metadata:
+  version: "1.0.0"
+  kind: kernel
+  author: PAIML Engineering
+  description: a fixture whose formal field is prose
+equations:
+  identity:
+    formal: the output preserves the input ordering
+    domain: x
+    codomain: out
+    invariants: ["len(out) = len(x)"]
+    preconditions: ["len(x) > 0"]
+    postconditions: ["len(out) = len(x)"]
+    lean_theorem: none

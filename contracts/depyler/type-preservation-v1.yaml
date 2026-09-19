@@ -83,33 +83,40 @@ equations:
     - '!source.is_empty()'
     lean_theorem: Theorems.Copy_Semantics
 proof_obligations:
-- type: precondition
+- id: TP4EBB-PRE-001
+  type: precondition
   property: Input is valid Python with resolvable types
   formal: All variables in scope have a type binding in Gamma or are inferrable
   applies_to: all
-- type: postcondition
+- id: TP4EBB-POST-002
+  type: postcondition
   property: Every Python type maps to exactly one Rust type
   formal: 'forall T_py in TypeDomain: exists! T_rs: TypeMap(T_py) = T_rs'
   applies_to: all
-- type: invariant
+- id: TP4EBB-INV-003
+  type: invariant
   property: Type map is compositional
   formal: TypeMap(Container[T]) = RustContainer[TypeMap(T)]
   applies_to: all
-- type: invariant
+- id: TP4EBB-INV-004
+  type: invariant
   property: Numeric precision bounds
   formal: '|eval_rust(e) - eval_python(e)| < epsilon for float ops; exact for int
     ops within i64 range'
   tolerance: 1.0e-15
   applies_to: all
-- type: invariant
+- id: TP4EBB-INV-005
+  type: invariant
   property: Copy trait alignment
   formal: is_copy(T_py) iff TypeMap(T_py) implements Copy in Rust
   applies_to: all
-- type: invariant
+- id: TP4EBB-INV-006
+  type: invariant
   property: Optional type preservation
   formal: TypeMap(Optional[T]) = Option<TypeMap(T)> and TypeMap(None) = ()
   applies_to: all
-- type: invariant
+- id: TP4EBB-INV-007
+  type: invariant
   property: Union type preservation
   formal: TypeMap(Union[T1,...,Tn]) = enum { V1(TypeMap(T1)), ..., Vn(TypeMap(Tn))
     }

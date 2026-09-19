@@ -93,11 +93,14 @@ falsification_tests:
       The `apr login --stdin` stdin pipe, file-mode-0600 persistence
       (FALSIFY-002), and 403 retry (FALSIFY-001) are also NOT discharged.
 proof_obligations:
-- type: equivalence
+- id: CA1045C-EQ-001
+  type: equivalence
   property: "apr pull matches `huggingface-cli login` + `hf_hub_download` retry semantics"
-- type: invariant
+- id: CA1045C-INV-002
+  type: invariant
   property: "token file is mode 0600; never logged in any code path"
-- type: invariant
+- id: CA1045C-INV-003
+  type: invariant
   property: "still-403-after-auth → exit 2 with actionable access-request URL"
 
 verification_summary:

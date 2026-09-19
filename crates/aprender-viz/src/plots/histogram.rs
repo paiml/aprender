@@ -104,21 +104,21 @@ impl Histogram {
         }
 
         match self.bin_strategy {
-            BinStrategy::Sturges => ((n as f32).log2().ceil() + 1.0) as usize,
+            BinStrategy::Sturges => (libm::log2f(n as f32).ceil() + 1.0) as usize,
             BinStrategy::Scott => {
                 let std = self.std_dev();
-                let width = 3.5 * std / (n as f32).powf(1.0 / 3.0);
+                let width = 3.5 * std / libm::powf(n as f32, 1.0 / 3.0);
                 let range = self.data_range();
                 (range / width).ceil() as usize
             }
             BinStrategy::FreedmanDiaconis => {
                 let iqr = self.iqr();
-                let width = 2.0 * iqr / (n as f32).powf(1.0 / 3.0);
+                let width = 2.0 * iqr / libm::powf(n as f32, 1.0 / 3.0);
                 let range = self.data_range();
                 if width > 0.0 {
                     (range / width).ceil() as usize
                 } else {
-                    ((n as f32).log2().ceil() + 1.0) as usize
+                    (libm::log2f(n as f32).ceil() + 1.0) as usize
                 }
             }
             BinStrategy::Fixed(bins) => bins.max(1),
@@ -140,7 +140,9 @@ impl Histogram {
             return 0.0;
         }
         let mean = self.data.iter().sum::<f32>() / self.data.len() as f32;
-        let variance = self.data.iter().map(|x| (x - mean).powi(2)).sum::<f32>()
+        // `powi(2)` is a multiply, but it is on the banned list so the ban needs no exceptions
+        // to reason about; squaring directly is also exact.
+        let variance = self.data.iter().map(|x| (x - mean) * (x - mean)).sum::<f32>()
             / (self.data.len() - 1) as f32;
         variance.sqrt()
     }

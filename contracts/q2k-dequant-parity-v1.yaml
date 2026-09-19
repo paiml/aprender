@@ -43,12 +43,14 @@ equations:
     lean_theorem: Theorems.Q2K_Dequant_Ordering
 
 proof_obligations:
-- type: invariant
+- id: QDPE762-INV-001
+  type: invariant
   property: format-path Q2_K dequant matches ggml
   formal: |
     aprender-core dequantize_q2_k on a representative block equals the ggml
     reference elementwise within 1e-6.
-- type: invariant
+- id: QDPE762-INV-002
+  type: invariant
   property: inference-path Q2_K dequant matches ggml
   formal: |
     aprender-serve dequantize_q2_k on the same block equals the ggml reference

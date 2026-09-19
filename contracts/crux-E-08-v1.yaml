@@ -144,15 +144,20 @@ falsification_tests:
   if_fails: "Missing goldens file is silently accepted — regression gate has no teeth"
 
 proof_obligations:
-- type: invariant
+- id: CE01182-INV-001
+  type: invariant
   property: "Gate emits PASS iff every golden's observed tokens == expected tokens exactly"
-- type: invariant
+- id: CE01182-INV-002
+  type: invariant
   property: "Exit code is 0 on PASS, 1 on FAIL, ≥2 on configuration error"
-- type: invariant
+- id: CE01182-INV-003
+  type: invariant
   property: "Determinism — identical (model, seed, goldens) yields identical JSON report"
-- type: invariant
+- id: CE01182-INV-004
+  type: invariant
   property: "Missing goldens.json is a hard error (no silent-pass footgun)"
-- type: equivalence
+- id: CE01182-EQ-005
+  type: equivalence
   property: "apr qa --require-golden-output  ≅  HF evals-style deterministic regression gate (exact-match, fixed seed)"
 
 verification_summary:

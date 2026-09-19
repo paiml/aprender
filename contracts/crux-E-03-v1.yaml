@@ -122,15 +122,20 @@ falsification_tests:
   if_fails: "versions block missing or empty — cannot reproduce harness results"
 
 proof_obligations:
-- type: invariant
+- id: CE04453-INV-001
+  type: invariant
   property: "results.<task>.acc present for every requested task"
-- type: invariant
+- id: CE04453-INV-002
+  type: invariant
   property: "results.<task>.acc ∈ [0.0, 1.0] for every task"
-- type: invariant
+- id: CE04453-INV-003
+  type: invariant
   property: "Llama-3-8B-Instruct MMLU ∈ [0.60, 0.72] (parity with HF/EleutherAI reference)"
-- type: invariant
+- id: CE04453-INV-004
+  type: invariant
   property: "Deterministic at temp=0.0 seed=42 (byte-identical results on two runs)"
-- type: invariant
+- id: CE04453-INV-005
+  type: invariant
   property: "versions.<task> block present and non-empty for reproducibility"
 
 verification_summary:

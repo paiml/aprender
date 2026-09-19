@@ -107,7 +107,8 @@ kernel_structure:
     description: Verify sample conservation, split disjointness, and batch completeness
 
 proof_obligations:
-- type: conservation
+- id: ADP-CON-001
+  type: conservation
   property: Split preserves all samples
   formal: "len(Train) + len(Val) + len(Test) == N, no duplicates"
   tolerance: 1e-6
@@ -115,28 +116,32 @@ proof_obligations:
   lean:
     theorem: Theorems.DataSplitDeterminism
     status: sorry
-- type: determinism
+- id: ADP-DET-002
+  type: determinism
   property: No cross-contamination
   formal: split(data, ratios, seed) == split(data, ratios, seed)
   applies_to: data_split_determinism
   lean:
     theorem: Theorems.DataSplitDeterminismPure
     status: sorry
-- type: conservation
+- id: ADP-CON-003
+  type: conservation
   property: DataLoader yields all samples
   formal: sum(batch.len()) == dataset.len()
   applies_to: streaming_data_loader
   lean:
     theorem: Theorems.StreamingDataLoader
     status: sorry
-- type: idempotency
+- id: ADP-IDEM-004
+  type: idempotency
   property: Preprocessing idempotent for special tokens
   formal: preprocess(preprocess(text)).special_token_count == preprocess(text).special_token_count
   applies_to: preprocessing_idempotency
   lean:
     theorem: Theorems.PreprocessingIdempotency
     status: sorry
-- type: invariant
+- id: ADP-INV-005
+  type: invariant
   property: Validation is read-only
   formal: hash(file_before) == hash(file_after) for validate(file)
   applies_to: data_validation

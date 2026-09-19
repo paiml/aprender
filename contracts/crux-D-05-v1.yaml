@@ -139,15 +139,20 @@ falsification_tests:
   if_fails: "--dry-run created artifacts — violates side-effect-free contract"
 
 proof_obligations:
-- type: invariant
+- id: CD039E2-INV-001
+  type: invariant
   property: "token_ids from apr --chat-template equal HF tokenizer.apply_chat_template"
-- type: invariant
+- id: CD039E2-INV-002
+  type: invariant
   property: "loss mask = 1 iff token ∈ assistant turn; 0 otherwise"
-- type: invariant
+- id: CD039E2-INV-003
+  type: invariant
   property: "--chat-template auto selects correct family template from tokenizer config"
-- type: invariant
+- id: CD039E2-INV-004
+  type: invariant
   property: "--dry-run --print-first-example emits diagnostic JSON with no side effects"
-- type: equivalence
+- id: CD039E2-EQ-005
+  type: equivalence
   property: "apr finetune + --chat-template ≡ TRL SFTTrainer with apply_chat_template formatting"
 
 # References:

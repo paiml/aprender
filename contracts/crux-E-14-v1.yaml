@@ -106,13 +106,17 @@ falsification_tests:
   if_fails: "overall_recall not equal to grid mean"
 
 proof_obligations:
-- type: invariant
+- id: CE1C9DE-INV-001
+  type: invariant
   property: "grid cardinality == context_lens × depths × repeats"
-- type: invariant
+- id: CE1C9DE-INV-002
+  type: invariant
   property: "recall ∈ [0, 1] for every cell"
-- type: equivalence
+- id: CE1C9DE-EQ-003
+  type: equivalence
   property: "apr niah heatmap matches gkamradt/LLMTest_NeedleInAHaystack reference within 5pp on a golden model"
-- type: invariant
+- id: CE1C9DE-INV-004
+  type: invariant
   property: "default needle template sha256 matches upstream reference"
 
 verification_summary:

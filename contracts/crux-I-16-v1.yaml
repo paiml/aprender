@@ -85,11 +85,14 @@ falsification_tests:
 
   if_fails: rule 'empty pipeline is identity' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CI17CE6-EQ-001
+  type: equivalence
   property: "apr guardrails run matches NeMo-Guardrails + Guardrails AI ordered-validator semantics"
-- type: invariant
+- id: CI17CE6-INV-002
+  type: invariant
   property: "reject short-circuits (no downstream side effects)"
-- type: invariant
+- id: CI17CE6-INV-003
+  type: invariant
   property: "empty pipeline is identity"
 
 verification_summary:

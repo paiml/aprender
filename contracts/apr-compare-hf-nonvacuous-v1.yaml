@@ -44,15 +44,18 @@ equations:
       - "exit non-zero on threshold failure (some fail)"
 
 proof_obligations:
-  - type: invariant
+  - id: ACHN-INV-001
+    type: invariant
     property: "PASS verdict is non-vacuous"
     formal: "verdict = PASS ⟹ total_compared > 0"
     applies_to: non_vacuous_verdict
-  - type: invariant
+  - id: ACHN-INV-002
+    type: invariant
     property: "exit 0 requires non-zero comparisons"
     formal: "exit_code = 0 ⟹ total_compared > 0"
     applies_to: exit_code_semantics
-  - type: invariant
+  - id: ACHN-INV-003
+    type: invariant
     property: "0-comparison case shows name-mapping diagnostic"
     formal: "total_compared = 0 ⟹ output contains 'name-mapping' or 'mapping issue'"
     applies_to: non_vacuous_verdict

@@ -78,33 +78,40 @@ equations:
     - k.len() == v.len()
     lean_theorem: Theorems.Attention
 proof_obligations:
-- type: invariant
+- id: ASCL-INV-001
+  type: invariant
   property: Score shape correctness
   formal: shape(Q @ K^T / √d_k) = [n, m]
   applies_to: all
-- type: invariant
+- id: ASCL-INV-002
+  type: invariant
   property: Variance preservation
   formal: Var(score_ij) ≈ 1 for unit-variance inputs
   tolerance: 0.5
   applies_to: all
-- type: bound
+- id: ASCL-BND-003
+  type: bound
   property: Score bound with QK-norm
   formal: '|score_ij| <= √d_k after QK-norm and scaling'
   applies_to: all
-- type: bound
+- id: ASCL-BND-004
+  type: bound
   property: Attention entropy non-negative
   formal: '∀i: H(attn_i) >= 0'
   applies_to: all
-- type: bound
+- id: ASCL-BND-005
+  type: bound
   property: Attention entropy upper bound
   formal: '∀i: H(attn_i) <= log(m)'
   applies_to: all
-- type: invariant
+- id: ASCL-INV-006
+  type: invariant
   property: Max-subtraction equivalence
   formal: softmax(x - max(x)) = softmax(x)
   tolerance: 1.0e-07
   applies_to: all
-- type: equivalence
+- id: ASCL-EQ-007
+  type: equivalence
   property: Scaling prevents saturation
   formal: H(softmax(QK^T/√d_k)) > H(softmax(QK^T)) for large d_k
   tolerance: 0.01

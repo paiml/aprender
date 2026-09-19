@@ -119,13 +119,17 @@ falsification_tests:
   if_fails: "apr diverges from HF run_clm.py canonical final_loss by >5%"
 
 proof_obligations:
-- type: invariant
+- id: CD20F45-INV-001
+  type: invariant
   property: "loss_mask_fraction == 1.0 for --task clm --raw-text (no instruction masking)"
-- type: invariant
+- id: CD20F45-INV-002
+  type: invariant
   property: "num_train_samples == floor(corpus_tokens / block_size)"
-- type: invariant
+- id: CD20F45-INV-003
+  type: invariant
   property: "zero-step run preserves base model bitwise"
-- type: equivalence
+- id: CD20F45-EQ-004
+  type: equivalence
   property: "apr finetune --task clm --raw-text matches HuggingFace's run_clm.py on same corpus/seed within ±5% final loss"
 
 # References:

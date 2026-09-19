@@ -51,23 +51,27 @@ equations:
     lean_theorem: Theorems.Q3K_Dequant_Formula
 
 proof_obligations:
-- type: invariant
+- id: QD-INV-001
+  type: invariant
   property: Q3_K data length not a multiple of 110 is rejected
   formal: |
     For every data with data.len() % 110 != 0: dequantize_q3_k(data) returns
     Err(InvalidShape); it never panics and never reads out of bounds.
-- type: invariant
+- id: QD-INV-002
+  type: invariant
   property: output length is exactly num_super_blocks * 256
   formal: |
     For every data with data.len() % 110 == 0: the returned Vec has length
     (data.len() / 110) * 256.
-- type: invariant
+- id: QD-INV-003
+  type: invariant
   property: golden bit-unpacking is exact
   formal: |
     For the canonical block (d=2.0, scale[0]=33, hmask all-set except byte 2,
     qs[0]=1): output[0]==2.0, output[1]==0.0, output[2]==-8.0. This pins low-bit
     extraction, high-bit recentering (both branches), and scale reconstruction.
-- type: classification
+- id: QD-CLS-004
+  type: classification
   property: get_tensor_f32 no longer rejects type 11
   formal: |
     For every GGUF tensor with qtype == GGUF_TYPE_Q3_K (11): get_tensor_f32

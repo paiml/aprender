@@ -65,7 +65,8 @@ ont_consumer_present() {
 # real measurement is the one that dies. Measured: `--write` produced no file
 # and no error until `bash -x` showed it stopping one line after `anchored=0`.
 count_anchored() { { grep -rlE '^entity:' "$REPO_ROOT/contracts" --include='*.yaml' 2>/dev/null || true; } | wc -l | tr -d ' '; }
-count_shaped()   { { grep -rlE '^shape:'  "$REPO_ROOT/contracts" --include='*.yaml' 2>/dev/null || true; } | wc -l | tr -d ' '; }
+# ONT-4c1: a contract carries ONE `shape:` (id = its stem) or a `shapes:` list of named shapes; either anchors it.
+count_shaped()   { { grep -rlE '^shapes?:' "$REPO_ROOT/contracts" --include='*.yaml' 2>/dev/null || true; } | wc -l | tr -d ' '; }
 
 # Σ lives in crates/aprender-contracts/src/ontology/ (ONT decision 4). Absent
 # directory is 0 registered, not an error — 0 is the honest reading.
@@ -110,8 +111,74 @@ count_unanchored_bindable() {
     printf '%s\n' "$n"
 }
 
+# ONT-6 (PMAT-3451): `armed_gates` is the arming declaration `pv lint` reads, not
+# a counter. `--write` restamps the counters and must carry the declaration over
+# verbatim: resetting it to [] disarms every gate (the meet declines, exit 2).
+# The array must sit on ONE line; any other shape is refused rather than
+# guessed at, because a partial read would rewrite the declaration silently.
+# No file at all prints [] - the fail-closed reading (a decline, never an accept).
+armed_gates_of() { # armed_gates_of FILE -> the one-line JSON array
+    local line
+    [ -f "$1" ] || { printf '[]'; return 0; }
+    line="$({ grep -E '"armed_gates"' "$1" || true; } | head -1)"
+    case "$line" in
+        '')
+            printf 'NO-GO: %s has no armed_gates; declare it before restamping\n' "$1" >&2
+            return 2 ;;
+        *'"armed_gates"'*:*'['*']'*)
+            printf '%s' "$line" | sed -E 's/.*"armed_gates"[[:space:]]*:[[:space:]]*(\[[^]]*\]).*/\1/' ;;
+        *)
+            printf 'NO-GO: %s spreads armed_gates over several lines; keep the array on one\n' "$1" >&2
+            return 2 ;;
+    esac
+}
+
+# ONT-4c1 (PMAT-3508): `armed_shapes` is the per-shape arming declaration (ONT-001 v4.6 §3.9). Optional — a
+# baseline without it arms every shape (ONT-4b's behaviour). When present it rides through `--write` verbatim
+# on ONE line, exactly like armed_gates; a multi-line array is refused for the same reason. Prints nothing
+# when the key is absent, so measure() can omit it.
+armed_shapes_of() { # armed_shapes_of FILE -> the one-line JSON array, or nothing
+    local line
+    [ -f "$1" ] || return 0
+    line="$({ grep -E '"armed_shapes"' "$1" || true; } | head -1)"
+    case "$line" in
+        '') return 0 ;;
+        *'"armed_shapes"'*:*'['*']'*)
+            printf '%s' "$line" | sed -E 's/.*"armed_shapes"[[:space:]]*:[[:space:]]*(\[[^]]*\]).*/\1/' ;;
+        *)
+            printf 'NO-GO: %s spreads armed_shapes over several lines; keep the array on one\n' "$1" >&2
+            return 2 ;;
+    esac
+}
+# Shapes declared in the corpus: one per `^shape:` (id = the stem) plus one per `- id:` entry under a
+# `^shapes:` list. `shapes_unarmed` = declared − armed when armed_shapes is present, else 0 (all armed). It is
+# RECORDED, not ratcheted: a new shape ships reported-first (ladder-green), so the count may rise; what the
+# baseline gives a reviewer is a diff, not a silence.
+count_shapes_declared() {
+    local n=0 f
+    while IFS= read -r f; do
+        n=$((n + $(awk 'BEGIN{c=0;inl=0} /^shape:/{c++} /^shapes:/{inl=1;next} inl&&/^[^ ]/{inl=0} inl&&/^  - id:/{c++} END{print c}' "$f")))
+    done < <(find "$REPO_ROOT/contracts" -name '*.yaml' -type f 2>/dev/null)
+    printf '%s\n' "$n"
+}
+count_shapes_unarmed() { # count_shapes_unarmed BASELINE_FILE
+    local armed declared
+    armed="$(armed_shapes_of "$1")" || return 2
+    [ -n "$armed" ] || { printf '0\n'; return 0; }
+    declared="$(count_shapes_declared)"
+    # entries = commas + 1 in a non-empty array
+    local entries
+    case "$armed" in '[]'|'[ ]') entries=0 ;; *) entries=$(( $(printf '%s' "$armed" | tr -cd ',' | wc -c) + 1 )) ;; esac
+    [ "$declared" -ge "$entries" ] && printf '%s\n' $((declared - entries)) || printf '0\n'
+}
 measure() { # prints the JSON document
-    local anchored shaped types extractors bindable consumer total
+    local anchored shaped types extractors bindable consumer total armed armed_shapes shapes_line unarmed
+    armed="$(armed_gates_of "$BASELINE")" || return 2
+    armed_shapes="$(armed_shapes_of "$BASELINE")" || return 2
+    shapes_line=""
+    [ -z "$armed_shapes" ] || shapes_line="$(printf '  "armed_shapes": %s,\n' "$armed_shapes")
+"
+    unarmed="$(count_shapes_unarmed "$BASELINE")" || return 2
     anchored="$(count_anchored)"; shaped="$(count_shaped)"
     types="$(count_entity_types)"; extractors="$(count_extractors)"
     bindable="$(count_unanchored_bindable)"
@@ -120,15 +187,16 @@ measure() { # prints the JSON document
     cat <<JSON
 {
   "_spec": "APR-RELEASE-001 §11.2 — moves only through \`make ont-ratchet\` (ONT R-6)",
-  "armed_gates": [],
-  "ont": {
+  "armed_gates": $armed,
+${shapes_line}  "ont": {
     "consumer_present": $consumer,
     "contracts_total": $total,
     "entity_types_registered": $types,
     "extractors_implemented": $extractors,
     "contracts_anchored": $anchored,
     "contracts_shaped": $shaped,
-    "unanchored_but_bindable": $bindable
+    "unanchored_but_bindable": $bindable,
+    "shapes_unarmed": $unarmed
   }
 }
 JSON
@@ -158,6 +226,34 @@ self_test() {
     row "field reads a number"          "$(field "$t/j.json" contracts_anchored)" "7"
     printf '{"ont":{"consumer_present": false}}\n' > "$t/k.json"
     row "field reads a bool"            "$(field "$t/k.json" consumer_present)" "false"
+    # ONT-6 (PMAT-3451): --write restamps the counters and must NOT reset the arming declaration.
+    printf '{\n  "armed_gates": ["validate", "audit"],\n  "ont": {}\n}\n' > "$t/armed.json"
+    BASELINE="$t/armed.json" measure > "$t/pres.json"
+    row "measure() preserves armed_gates" "$(grep -o '"armed_gates": *\[[^]]*\]' "$t/pres.json" | tr -d ' ')" '"armed_gates":["validate","audit"]'
+    # ...and so does --write, which reads and replaces the SAME file.
+    cp "$t/armed.json" "$t/w.json"
+    set +e
+    BASELINE="$t/w.json" main --write >/dev/null 2>&1
+    set -e
+    row "--write preserves armed_gates in place" "$(grep -o '"armed_gates": *\[[^]]*\]' "$t/w.json" | tr -d ' ')" '"armed_gates":["validate","audit"]'
+    # ONT-4c1 (PMAT-3508): armed_shapes rides through --write the same way, and its absence stays absent.
+    printf '{\n  "armed_gates": ["validate"],\n  "armed_shapes": ["ont-shapes-v1", "ladder-measured"],\n  "ont": {}\n}\n' > "$t/ws.json"
+    set +e
+    BASELINE="$t/ws.json" main --write >/dev/null 2>&1
+    set -e
+    row "--write preserves armed_shapes in place" "$(grep -o '"armed_shapes": *\[[^]]*\]' "$t/ws.json" | tr -d ' ')" '"armed_shapes":["ont-shapes-v1","ladder-measured"]'
+    row "--write writes shapes_unarmed"            "$(grep -c '"shapes_unarmed"' "$t/ws.json")" "1"
+    row "--write does not invent armed_shapes"     "$(grep -c '"armed_shapes"' "$t/w.json")" "0"
+    printf '{\n  "armed_gates": ["validate"],\n  "armed_shapes": [\n    "a"\n  ]\n}\n' > "$t/multis.json"
+    set +e
+    BASELINE="$t/multis.json" measure >/dev/null 2>&1
+    row "a multi-line armed_shapes is refused" "$?" "2"
+    set -e
+    printf '{\n  "armed_gates": [\n    "validate"\n  ]\n}\n' > "$t/multi.json"
+    set +e
+    BASELINE="$t/multi.json" measure >/dev/null 2>&1
+    row "a multi-line armed_gates is refused" "$?" "2"
+    set -e
     # the measurement must be valid JSON and carry every §11.2 counter
     measure > "$t/m.json"
     if command -v python3 >/dev/null 2>&1; then
@@ -219,7 +315,13 @@ main() {
         --self-test) self_test; return $? ;;
         --write)
             mkdir -p "$(dirname "$BASELINE")"
-            measure > "$BASELINE"
+            # Never `measure > "$BASELINE"`: the shell truncates the file BEFORE
+            # measure() reads armed_gates out of it, so the declaration read back
+            # empty and was rewritten as [].
+            local tmp
+            tmp="$(mktemp "$BASELINE.XXXXXX")"
+            measure > "$tmp" || { rm -f "$tmp"; return 2; }
+            mv "$tmp" "$BASELINE"
             printf 'wrote %s\n' "${BASELINE#"$REPO_ROOT"/}"
             sed -n '/"ont"/,/}/p' "$BASELINE"
             return 0 ;;

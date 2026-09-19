@@ -34,25 +34,30 @@ equations:
     - input.len() > 0
     lean_theorem: Theorems.Quantized_Dot
 proof_obligations:
-- type: invariant
+- id: MM-INV-001
+  type: invariant
   property: Output shape correctness
   formal: shape(A @ B) = (rows(A), cols(B))
   applies_to: all
-- type: associativity
+- id: MM-ASSOC-002
+  type: associativity
   property: Matmul associativity
   formal: '|(AB)C - A(BC)| < ε (within floating point)'
   tolerance: 0.0001
   applies_to: all
-- type: linearity
+- id: MM-LIN-003
+  type: linearity
   property: Matmul distributes
   formal: '|A(B+C) - AB - AC| < ε'
   tolerance: 0.0001
   applies_to: all
-- type: equivalence
+- id: MM-EQ-004
+  type: equivalence
   property: SIMD matches scalar
   tolerance: 4.0
   applies_to: simd
-- type: bound
+- id: MM-BND-005
+  type: bound
   property: Quantized error bounded
   formal: '|q_dot(a,b) - dot(dequant(a), dequant(b))| ≤ bound'
   applies_to: all

@@ -124,7 +124,8 @@ equations:
       - 'Fused kernel launch count = 1 per pair (vs 2 unfused)'
 
 proof_obligations:
-  - type: equivalence
+  - id: NBTCG-EQ-001
+    type: equivalence
     property: Numerical parity with cuBLAS backward
     formal: '|tc_backward_grad - cublas_backward_grad|_inf < 1e-3 for all projections'
     applies_to: all 7 backward projection GEMMs
@@ -133,7 +134,8 @@ proof_obligations:
       theorem: Theorems.NumericalParity
       status: sorry
 
-  - type: invariant
+  - id: NBTCG-INV-002
+    type: invariant
     property: No NaN propagation from valid inputs
     formal: 'forall m,k: is_finite(grad_out[m,:]) AND is_finite(B_nf4_dequant[:,:]) => is_finite(grad_A[m,k])'
     applies_to: all backward GEMMs
@@ -141,7 +143,8 @@ proof_obligations:
       theorem: Theorems.NoNanPropagation
       status: sorry
 
-  - type: bound
+  - id: NBTCG-BND-003
+    type: bound
     property: Kernel launch reduction
     formal: 'tc_backward_launches <= cublas_backward_launches * 0.5'
     applies_to: full backward pass (28 layers)
@@ -149,7 +152,8 @@ proof_obligations:
       theorem: Theorems.LaunchReduction
       status: sorry
 
-  - type: bound
+  - id: NBTCG-BND-004
+    type: bound
     property: DRAM traffic reduction vs separate dequant+GEMM
     formal: 'tc_backward_dram < (dequant_dram + cublas_dram) * 0.70'
     applies_to: per-layer backward
@@ -157,7 +161,8 @@ proof_obligations:
       theorem: Theorems.DramReduction
       status: sorry
 
-  - type: equivalence
+  - id: NBTCG-EQ-005
+    type: equivalence
     property: Loss convergence parity
     formal: '|tc_loss[t] - cublas_loss[t]| < 0.05 for t in [0, 100]'
     applies_to: 100-step training comparison

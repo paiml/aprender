@@ -157,15 +157,20 @@ falsification_tests:
   if_fails: "Default KV block size differs from vLLM canonical default of 16"
 
 proof_obligations:
-- type: invariant
+- id: CC0F49C-INV-001
+  type: invariant
   property: "--kv-block-size CLI flag present and honored"
-- type: invariant
+- id: CC0F49C-INV-002
+  type: invariant
   property: "Default block_size == 16 tokens"
-- type: invariant
+- id: CC0F49C-INV-003
+  type: invariant
   property: "Peak KV VRAM within 10% of ceil(L/block_size) × block_bytes"
-- type: invariant
+- id: CC0F49C-INV-004
+  type: invariant
   property: "Wasted VRAM per sequence <= (block_size - 1) × bytes_per_token"
-- type: invariant
+- id: CC0F49C-INV-005
+  type: invariant
   property: "Zero external fragmentation — admission depends only on free_blocks"
 
 verification_summary:

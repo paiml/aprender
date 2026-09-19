@@ -42,11 +42,13 @@ equations:
       - "apr list MUST NOT report zero models when cache files exist on disk"
 
 proof_obligations:
-  - type: invariant
+  - id: ALDR-INV-001
+    type: invariant
     property: "disk files visible in list output"
     formal: "∀ f ∈ disk_files: f ∈ apr_list.models"
     applies_to: disk_reconciliation
-  - type: invariant
+  - id: ALDR-INV-002
+    type: invariant
     property: "non-empty list when files present"
     formal: "|disk_files| > 0 ⟹ |apr_list.models| > 0"
     applies_to: non_empty_list_when_files_present

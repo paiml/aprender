@@ -56,20 +56,24 @@ equations:
     - params.len() > 0
     lean_theorem: Theorems.Min_Samples_Guard
 proof_obligations:
-- type: bound
+- id: DRIFT-BND-001
+  type: bound
   property: Drift score non-negative
   formal: drift_score >= 0 for all inputs
   applies_to: all
-- type: invariant
+- id: DRIFT-INV-002
+  type: invariant
   property: DriftStatus transitions correct
   formal: NoDrift if score < warn, Warning if warn <= score < drift, Drift if score
     >= drift
   applies_to: all
-- type: invariant
+- id: DRIFT-INV-003
+  type: invariant
   property: min_samples respected
   formal: '|data| < min_samples implies status = NoDrift'
   applies_to: all
-- type: invariant
+- id: DRIFT-INV-004
+  type: invariant
   property: Identical distributions yield NoDrift
   formal: mu_ref = mu_cur implies drift_score = 0 implies NoDrift
   applies_to: all

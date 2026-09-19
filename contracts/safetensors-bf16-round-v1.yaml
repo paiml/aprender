@@ -57,20 +57,24 @@ equations:
     note: "RED on the truncation bug, which dropped the only mantissa bit (low 16 bits) and produced +Inf (0x7F80)."
 
 proof_obligations:
-- type: equivalence
+- id: SBR-EQ-001
+  type: equivalence
   property: "BF16 encoding equals the half::bf16 round-to-nearest-even oracle"
   formal: "∀ finite x: f32_slice_to_bf16_bytes([x])[0..2] == half::bf16::from_f32(x).to_le_bytes()"
   applies_to: all
-- type: bound
+- id: SBR-BND-002
+  type: bound
   property: "Round-to-nearest-even error is at most half a BF16 ulp"
   formal: "|decode_bf16(bf16(x)) - x| ≤ 0.5 ulp_bf16(x) for finite x (truncation can reach a full ulp)"
   tolerance: 0.0
   applies_to: finite
-- type: invariant
+- id: SBR-INV-003
+  type: invariant
   property: "NaN preservation (no NaN -> Inf collapse)"
   formal: "x.is_nan() ⇒ decode_bf16(bf16(x)).is_nan()"
   applies_to: nan
-- type: roundtrip
+- id: SBR-RT-004
+  type: roundtrip
   property: "Already-exact BF16 values are unchanged (no spurious round-up from the bias)"
   formal: "(x.to_bits() & 0x0000_FFFF) == 0 ⇒ bf16(x) == (x.to_bits() >> 16) as u16"
   applies_to: exact

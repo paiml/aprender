@@ -116,13 +116,17 @@ falsification_tests:
   if_fails: "num_tokens_scored not uniform or not reported"
 
 proof_obligations:
-- type: invariant
+- id: CE16ADC-INV-001
+  type: invariant
   property: "sweep schema complete with ppl/bpw/size/time per quant"
-- type: invariant
+- id: CE16ADC-INV-002
+  type: invariant
   property: "K-family monotone: higher bpw → lower ppl"
-- type: equivalence
+- id: CE16ADC-EQ-003
+  type: equivalence
   property: "apr perplexity value matches llama.cpp llama-perplexity within ±0.05 on identical GGUF + wikitext2 slice"
-- type: invariant
+- id: CE16ADC-INV-004
+  type: invariant
   property: "Q4_K_M ppl uplift vs FP16 < 0.10 (quantization quality gate)"
 
 verification_summary:

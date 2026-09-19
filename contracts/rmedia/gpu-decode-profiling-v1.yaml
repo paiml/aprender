@@ -32,11 +32,13 @@ equations:
     - packet.sample_rate > 0
     lean_theorem: Theorems.Decode_Audio
 proof_obligations:
-- type: invariant
+- id: GDP690B-INV-001
+  type: invariant
   property: Decoded video frames have valid timestamps
   formal: '∀ packet: decode_video(packet).is_ok() → decode_video(packet).unwrap().pts >= 0'
   applies_to: decode_video
-- type: invariant
+- id: GDP690B-INV-002
+  type: invariant
   property: Decoded audio samples are finite
   formal: '∀ packet: decode_audio(packet).is_ok() → decode_audio(packet).unwrap().iter().all(|s| s.is_finite())'
   applies_to: decode_audio

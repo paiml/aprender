@@ -63,31 +63,38 @@ equations:
       - "AN ARM THAT MEASURED NOTHING SAYS SO (#2830, PP-066 C0-4): on a receipt whose only band is c=1 Arm A prints `REPORT ArmA scaling: c=1 only, no scaling measured`; an arm that emitted no line is a REPORT, never a PASS — the gate never turns silence into VERDICT PASS"
 
 proof_obligations:
-  - type: invariant
+  - id: PL0PG-INV-001
+    type: invariant
     property: "No reader carries a threshold"
     formal: "scripts/check_thresholds_in_matrix.sh exits 0"
     applies_to: no_reader_carries_a_threshold
-  - type: invariant
+  - id: PL0PG-INV-002
+    type: invariant
     property: "The threshold ratchet demonstrably turns RED"
     formal: "given `STRETCH = 1.50` in parity_block.py, the ratchet exits non-zero"
     applies_to: no_reader_carries_a_threshold
-  - type: invariant
+  - id: PL0PG-INV-003
+    type: invariant
     property: "The matrix passes its own header's rules"
     formal: "scripts/check_perf_matrix_schema.sh exits 0"
     applies_to: the_matrix_means_what_it_says
-  - type: invariant
+  - id: PL0PG-INV-004
+    type: invariant
     property: "The matrix checker demonstrably turns RED"
     formal: "a policy number with no author, an unresolvable inherited_from, an unknown compute class, an anonymous NA cell and a MEASURED cell with no receipt each exit non-zero"
     applies_to: the_matrix_means_what_it_says
-  - type: invariant
+  - id: PL0PG-INV-005
+    type: invariant
     property: "Every arm obeys its declared phase"
     formal: "the phase_guard_b_merge / phase_guard_b_release / phase_guard_a_merge rows discriminate"
     applies_to: every_arm_runs_at_its_declared_phase
-  - type: invariant
+  - id: PL0PG-INV-006
+    type: invariant
     property: "The self-regression ratchet fires on a regression and not on an improvement"
     formal: "self_regress_fail is RED and agg1_improve_ok is GREEN against the same seeded matrix"
     applies_to: a_ratchet_compares_quantities
-  - type: invariant
+  - id: PL0PG-INV-007
+    type: invariant
     property: "The gate is enforced per-PR, not merely present"
     formal: "ci.yml invokes perf_gate.sh --selftest in a job that `gate` depends on"
     applies_to: every_arm_runs_at_its_declared_phase

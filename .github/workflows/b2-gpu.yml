@@ -1,0 +1,94 @@
+# b2-gpu — the B2 lib tests a CPU clean-room container cannot run (APR-RELEASE-001 rule 14, #3465).
+#
+# WHY THIS LIVES HERE AND NOT IN paiml/infra
+# ------------------------------------------
+# Clean-room B2 on v0.68.1 (paiml/infra run 35246706906) went red on 96 aprender-gpu lib
+# tests: every one `CudaNotAvailable("CUDA driver not found")`, because the CPU container
+# has no driver. paiml/infra#656 made that exclusion explicit (`B2_REQUIRES_CUDA`, printed
+# `requires: cuda`, tests still COMPILED under the publish strip) on the condition that the
+# same tests run on hardware, on the same commit. The org's GPU runner groups (gpu-nodes,
+# gpu-x86) are visibility=selected -> paiml/aprender ONLY, so a job in paiml/infra queues
+# forever next to an idle yoga-gpu (measured, infra run 35255889257). The hardware half
+# therefore runs from this repository. The release driver requires BOTH runs green on the
+# tag's commit before T-4.
+#
+# WHAT IT ASSERTS
+#   1. HEAD == the commit the dispatch named (a tag or a 40-hex sha) — a run that tested
+#      another commit must not be able to end green.
+#   2. a CUDA device is visible (mechanism, not intent).
+#   3. `cargo test -p aprender-gpu --lib --features cuda --no-fail-fast --locked` exits 0.
+#      `--features cuda` is what `--workspace` unifies ON in the container; MEASURED on
+#      v0.68.1 (RTX 4090): with it 2604 passed / 12 ignored, without it 457 passed and
+#      ZERO hardware tests.
+#   4. vacuity floor: fewer than `min_tests` passed is RED (the featureless run above).
+#
+# Dispatch only. Not a required check; nothing here gates a pull request.
+name: b2-gpu
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Commit under test: a tag (v0.68.1) or a full 40-hex sha'
+        required: true
+        type: string
+      min_tests:
+        description: 'Vacuity floor: minimum passed tests (measured 2604 on v0.68.1)'
+        default: '2500'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  b2-gpu:
+    name: b2-gpu (aprender-gpu, yoga sm_89)
+    # LITERAL list with discriminating labels (scripts/check_runner_labels.sh).
+    runs-on: [self-hosted, gpu, yoga, Linux, X64, cuda, ada]
+    timeout-minutes: 90
+    # PP-19 (scripts/check_perf_concurrency_groups.sh): every consumer of yoga's GPU
+    # serialises on perf-yoga, across workflows — a release run queues behind a
+    # nightly rather than sharing the device with it.
+    concurrency:
+      group: perf-yoga
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+
+      - name: Assert the commit under test
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          head=$(git rev-parse HEAD)
+          if [[ "$REF" =~ ^[0-9a-f]{40}$ ]]; then
+            want="$REF"
+          else
+            # The tag as the REMOTE has it, not as this clone happens to.
+            want=$(git ls-remote origin "refs/tags/$REF^{}" | cut -f1)
+            [ -n "$want" ] || want=$(git ls-remote origin "refs/tags/$REF" | cut -f1)
+          fi
+          [ -n "$want" ] || { echo "::error::ref '$REF' resolves to no commit on origin"; exit 1; }
+          [ "$head" = "$want" ] || { echo "::error::HEAD $head is not $REF ($want)"; exit 1; }
+          echo "tested-sha: $head" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: A CUDA device is visible
+        run: |
+          set -euo pipefail
+          nvidia-smi -L || { echo "::error::ENV: no CUDA device visible on $(hostname)"; exit 1; }
+          nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: cargo test -p aprender-gpu --lib --features cuda
+        env:
+          MIN_TESTS: ${{ inputs.min_tests }}
+        run: |
+          set -uo pipefail
+          nice -n 19 cargo test -p aprender-gpu --lib --features cuda --no-fail-fast --locked 2>&1 | tee b2-gpu.log
+          rc=${PIPESTATUS[0]}
+          passed=$(sed -n 's/^test result: .* \([0-9][0-9]*\) passed;.*/\1/p' b2-gpu.log | awk '{t+=$1} END {print t+0}')
+          echo "b2-gpu: exit=$rc passed=$passed floor=$MIN_TESTS" | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$rc" -eq 0 ] || { echo "::error::aprender-gpu lib tests failed on hardware (exit $rc)"; exit 1; }
+          [ "$passed" -ge "$MIN_TESTS" ] || { echo "::error::VACUOUS: $passed passed < floor $MIN_TESTS — wrong features?"; exit 1; }

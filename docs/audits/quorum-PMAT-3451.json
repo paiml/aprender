@@ -1,0 +1,280 @@
+{
+  "ticket": "PMAT-3451",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "61e0f9b9f0f06c43df99cd71de004a42338e0a2c",
+  "diff_sha256": "8b14f69c2f06042c1f31fd5dcf80500415b4537176305728167d67cdcaa4c700",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 166042,
+  "author": {
+    "model": "opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly addresses ticket PMAT-3451 without introducing forbidden changes. It implements the Verdict lattice (Pass, Fail, Unknown) with Kani proofs (kani_ont_6_1..3), per-repo arming from lint-baseline.json, and the required exit vocabulary mapping (Pass=0, Fail=1, Unknown=2, Shrank=3). The explicitly forbidden behavior (opt-in flag arming its own gate) was successfully removed as requested. All operator rulings are correctly implemented.",
+      "findings": [],
+      "raw_bytes": 2214,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff review for PMAT-3451 (ONT-6: one Verdict lattice, Kani-proved; per-repo arming; exit-vocabulary mapping). Verified all ticket requirements, spec clauses §3.4, §3.9, §5 ONT-6, R-2, and operator rulings. All unit tests in provable_contracts::ontology (14 tests), CLI integration tests in ont6_lint_verdict (7 tests), pv validate on contracts/ont-verdict-lattice-v1.yaml (0 errors, 0 warnings), clippy with -D warnings, check_ont_ratchet.sh --self-test (13 tests), check_explicit_test_commands.sh, and check_tree_reader_tests.sh passed cleanly. No gates were weakened, no receipt claims were unbacked, no tests asserted opposite behavior, and no out-of-scope changes were found. Verdict: PASS.",
+      "findings": [
+        {
+          "claim": "Implements the 17-element Verdict lattice (Fail < 15 Unknown reasons < Pass) with meet = min (Kleene K3 strong conjunction), arming restricted strictly to Pass, and exit mapping (Pass 0, Fail 1 with reject:, Unknown 2 with decline: <reason>). Verified by 14 ontology unit tests and Kani proof harnesses.",
+          "file": "crates/aprender-contracts/src/ontology/verdict.rs",
+          "grounding": "measured",
+          "line": 2530
+        },
+        {
+          "claim": "Per-repo arming is declared via contracts/lint-baseline.json with 8 default armed gates (excluding reverse-coverage per operator ruling), an empty armed set declining as Unknown(Reason::NotArmed) per R-2, and monotone verification against git comparands where dropping an armed gate raises ArmedGatesShrank (exit 3).",
+          "file": "crates/aprender-contracts/src/ontology/arming.rs",
+          "grounding": "measured",
+          "line": 2120
+        },
+        {
+          "claim": "meet_exit maps the armed meet to process exit codes: Pass to 0, Fail to LintRejected (exit 1, reject:), and Unknown to LintDeclined (exit 2, decline: <reason>), while baseline shrink errors abort before execution with exit 3 (error:), verified by 7 integration tests in tests/ont6_lint_verdict.rs.",
+          "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+          "grounding": "measured",
+          "line": 580
+        },
+        {
+          "claim": "Baseline comparand resolution in pv lint uses merge-base/origin tip with fail-closed semantics for explicit refs and non-breaking NOT CHECKED fallback for untracked corporas.",
+          "file": "crates/aprender-contracts-cli/src/commands/lint_arming.rs",
+          "grounding": "cited",
+          "line": 650
+        },
+        {
+          "claim": "The kernel contract contracts/ont-verdict-lattice-v1.yaml validates with 0 errors and 0 warnings via pv validate, and all 7 end-to-end integration tests in ont6_lint_verdict pass.",
+          "file": "contracts/ont-verdict-lattice-v1.yaml",
+          "grounding": "measured",
+          "line": 317
+        },
+        {
+          "claim": "scripts/check_ont_ratchet.sh preserves armed_gates during --write via a temporary file with self-test coverage (13 self-tests ok), and complexity refactors for run_verify_gate, collect_test_fns, and print_findings_grouped retired exactly their 3 entries from scripts/complexity_baseline.txt without altering lint results.",
+          "file": "scripts/check_ont_ratchet.sh",
+          "grounding": "measured",
+          "line": 3255
+        },
+        {
+          "claim": "scripts/tree_reader_tests.txt registers aprender-contracts-cli --test ont6_lint_verdict, verified passing by check_tree_reader_tests.sh.",
+          "file": "scripts/tree_reader_tests.txt",
+          "grounding": "measured",
+          "line": 3353
+        }
+      ],
+      "raw_bytes": 8208,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff reviewed and verified against PMAT-3451 requirements and acceptance criteria. The Verdict lattice (Fail < Unknown(15 Reasons) < Pass) with K3 meet is fully implemented and tested across all 17 elements. Per-repo arming with monotone verification (exit 3 on shrink), R-2 decline on empty armed set (exit 2), and exit vocabulary mapping (Pass=0, Fail=1 reject:, Unknown=2 decline:) are faithfully integrated into pv lint and the contracts library. All tests, self-tests, and lints pass.",
+      "findings": [
+        {
+          "claim": "ont6_lint_verdict suite passes 7/7 end-to-end integration tests verifying lattice exits, monotone checks, and R-2 decline behavior",
+          "file": "crates/aprender-contracts-cli/tests/ont6_lint_verdict.rs",
+          "grounding": "measured",
+          "line": 1
+        },
+        {
+          "claim": "Ontology unit tests exhaustively verify meet laws, 17-element lattice ordering, FLEET_LABELS mapping, and arming semantics",
+          "file": "crates/aprender-contracts/src/ontology/verdict.rs",
+          "grounding": "measured",
+          "line": 2556
+        },
+        {
+          "claim": "pv validate validates contracts/ont-verdict-lattice-v1.yaml with 0 errors and 0 warnings",
+          "file": "contracts/ont-verdict-lattice-v1.yaml",
+          "grounding": "measured",
+          "line": 1
+        },
+        {
+          "claim": "pv lint against contracts/ succeeds with armed meet Pass across the default 8 armed gates",
+          "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+          "grounding": "measured",
+          "line": 575
+        },
+        {
+          "claim": "check_ont_ratchet self-test, check_explicit_test_commands, check_tree_reader_tests, and clippy with -D warnings all pass clean",
+          "file": "scripts/check_ont_ratchet.sh",
+          "grounding": "measured",
+          "line": 181
+        }
+      ],
+      "raw_bytes": 9528,
+      "err_bytes": 79,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "contracts/ont-verdict-lattice-v1.yaml",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "pv validate validates contracts/ont-verdict-lattice-v1.yaml with 0 errors and 0 warnings"
+      ]
+    },
+    {
+      "file": "contracts/ont-verdict-lattice-v1.yaml",
+      "line": 317,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The kernel contract contracts/ont-verdict-lattice-v1.yaml validates with 0 errors and 0 warnings via pv validate, and all 7 end-to-end integration tests in ont6_lint_verdict pass."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+      "line": 575,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "pv lint against contracts/ succeeds with armed meet Pass across the default 8 armed gates"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+      "line": 580,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "meet_exit maps the armed meet to process exit codes: Pass to 0, Fail to LintRejected (exit 1, reject:), and Unknown to LintDeclined (exit 2, decline: <reason>), while baseline shrink errors abort before execution with exit 3 (error:), verified by 7 integration tests in tests/ont6_lint_verdict.rs."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/lint_arming.rs",
+      "line": 650,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Baseline comparand resolution in pv lint uses merge-base/origin tip with fail-closed semantics for explicit refs and non-breaking NOT CHECKED fallback for untracked corporas."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/tests/ont6_lint_verdict.rs",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "ont6_lint_verdict suite passes 7/7 end-to-end integration tests verifying lattice exits, monotone checks, and R-2 decline behavior"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/ontology/arming.rs",
+      "line": 2120,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Per-repo arming is declared via contracts/lint-baseline.json with 8 default armed gates (excluding reverse-coverage per operator ruling), an empty armed set declining as Unknown(Reason::NotArmed) per R-2, and monotone verification against git comparands where dropping an armed gate raises ArmedGatesShrank (exit 3)."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/ontology/verdict.rs",
+      "line": 2530,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Implements the 17-element Verdict lattice (Fail < 15 Unknown reasons < Pass) with meet = min (Kleene K3 strong conjunction), arming restricted strictly to Pass, and exit mapping (Pass 0, Fail 1 with reject:, Unknown 2 with decline: <reason>). Verified by 14 ontology unit tests and Kani proof harnesses."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/ontology/verdict.rs",
+      "line": 2556,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Ontology unit tests exhaustively verify meet laws, 17-element lattice ordering, FLEET_LABELS mapping, and arming semantics"
+      ]
+    },
+    {
+      "file": "scripts/check_ont_ratchet.sh",
+      "line": 181,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "check_ont_ratchet self-test, check_explicit_test_commands, check_tree_reader_tests, and clippy with -D warnings all pass clean"
+      ]
+    },
+    {
+      "file": "scripts/check_ont_ratchet.sh",
+      "line": 3255,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "scripts/check_ont_ratchet.sh preserves armed_gates during --write via a temporary file with self-test coverage (13 self-tests ok), and complexity refactors for run_verify_gate, collect_test_fns, and print_findings_grouped retired exactly their 3 entries from scripts/complexity_baseline.txt without altering lint results."
+      ]
+    },
+    {
+      "file": "scripts/tree_reader_tests.txt",
+      "line": 3353,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "scripts/tree_reader_tests.txt registers aprender-contracts-cli --test ont6_lint_verdict, verified passing by check_tree_reader_tests.sh."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane 3: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (9528 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)"
+  ],
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=opus-5/claude"
+  }
+}

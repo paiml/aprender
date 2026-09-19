@@ -91,20 +91,24 @@ equations:
       syncs_per_layer: 6
 
 proof_obligations:
-- type: equivalence
+- id: CGB-EQ-001
+  type: equivalence
   property: Graphed backward produces same gradients as non-graphed
   formal: '|grad_graphed - grad_ungraphed| < ε for all parameters'
   tolerance: 1.0e-5
   applies_to: all
-- type: invariant
+- id: CGB-INV-002
+  type: invariant
   property: No D2H synchronization inside graph boundary
   formal: sync_count_inside_graph == 0
   applies_to: fixed_backward_loop
-- type: invariant
+- id: CGB-INV-003
+  type: invariant
   property: Gradient clipping still applied (just moved outside graph)
   formal: clipped_norm <= clip_threshold for all layers
   applies_to: fixed_backward_loop
-- type: bound
+- id: CGB-BND-004
+  type: bound
   property: Reduces sync points from 168 to 1 per backward pass
   formal: sync_count(fixed) == 1 AND sync_count(current) == 168
   applies_to: fixed_backward_loop

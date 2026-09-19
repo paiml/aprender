@@ -1,0 +1,7 @@
+rebuild start_utc=2026-09-15T22:12:26Z load=81.74 70.78 62.74
+5038776ebd1f1f75870a3290c3405c1f80ef464ebc2026dd0413ed2652e9c741  producer/apr_raw_logits.cpp
+d8ede381e9a5dd694c9a60483c9d710e56e51ea93ae26fb865178ea99dc6ecbc  producer/build.sh
+f4cdbb95c117a3265c06a68fab582af225a98e20be483e38cbfaa7b0dcef260b  producer/raw_logits_compare.cpp
+a71dde33b859f3a21c7462e3a3f56f637706d79831edc1426a78f0b1f4642611  /home/noah/src/llama.cpp-d1d3c3396/apr-raw-logits/apr_raw_logits
+c6f6f23e147b70f52745118f8bce31f275e6761aa2a23e18cecf122088614272  /home/noah/src/llama.cpp-d1d3c3396/apr-raw-logits/raw_logits_compare
+build rc=0

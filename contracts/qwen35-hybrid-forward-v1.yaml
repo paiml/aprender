@@ -61,7 +61,7 @@ equations:
     - num_layers > 0
     lean_theorem: Theorems.Hybrid_Block
   activation_magnitude:
-    formula: '||h_l||_inf <= M * ||h_0||_inf for some bound M'
+    formula: '∀l, ∀i: is_finite(h_l[i])  (no NaN, no ±Inf in any hidden-state coordinate)'
     domain: Hidden state magnitude through L layers
     invariants:
     - Magnitude bounded (no explosion)
@@ -83,34 +83,59 @@ equations:
     - grad_output.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Gradient_Flow
 proof_obligations:
-- type: invariant
+- id: QHF-INV-001
+  type: invariant
   property: Attention sublayer shape preservation
   formal: '∀x: shape(attention_sublayer(x)) = shape(x)'
   applies_to: all
-- type: invariant
+- id: QHF-INV-002
+  type: invariant
   property: GDN sublayer shape preservation
   formal: '∀x: shape(gdn_sublayer(x)) = shape(x)'
   applies_to: all
-- type: invariant
+- id: QHF-INV-003
+  type: invariant
   property: FFN sublayer shape preservation
   formal: '∀x: shape(ffn_sublayer(x)) = shape(x)'
   applies_to: all
-- type: invariant
+- id: QHF-INV-004
+  type: invariant
   property: Block outputs from exactly one attention type
   formal: '∀l: is_attention(l) XOR is_gdn(l)'
   applies_to: all
-- type: bound
+- id: QHF-BND-005
+  type: bound
   property: Activation magnitude bounded
-  formal: '∀l: ||h_l||_inf <= M for finite M'
+  formal: '∀l ∈ [0, L], ∀i: is_finite(h_l[i])  (no NaN, no +Inf, no -Inf)'
   applies_to: all
-- type: invariant
+  note: >-
+    The previous formal ('∀l: ||h_l||_inf <= M for finite M') was vacuous:
+    "some finite M" only asserts finiteness. It is restated as explicit
+    per-coordinate finiteness, which is what FALSIFY-QHF-005 ("No NaN/Inf
+    after 48 layers") tests. A quantitative growth bound is deferred until
+    the growth ratio ||h_l||_inf / ||h_0||_inf is measured on the reference
+    model; no bound is stated here.
+- id: QHF-INV-006
+  type: invariant
   property: RMSNorm precedes each sublayer
   formal: 'pre-norm architecture: norm before attention/GDN and before FFN'
   applies_to: all
-- type: conservation
+- id: QHF-CON-007
+  type: conservation
   property: Residual identity component
   formal: h_{l+1} - h_l = sublayer(norm(h_l))
   tolerance: 1.0e-06
+  applies_to: all
+- id: QHF-GPU-008
+  type: invariant
+  property: 'Every Gated DeltaNet AND attention op on the device equals an EXACT-ARITHMETIC reference per op, per layer and per token — dequantized f32 weights, f32 dots, carried by the test qwen35_cuda_the_parity_floor_is_the_cpu_references_own_activation_quantization — not the production CPU forward, which quantizes activations to Q8_K before its Q4_K matvec (measured 2.95e-3 per projection from exact on 0.8B, 2026-09-19) and so cannot be a 1e-3 oracle for a correct device path'
+  formal: '∀ l ∈ gdn_layers ∪ attn_layers, ∀ t: ‖S_l^{gpu}(t) − S_l^{exact}(t)‖_∞ ≤ 1e-3 · ‖S_l^{exact}(t)‖_∞ ∧ ‖y_l^{gpu}(t) − y_l^{exact}(t)‖_∞ ≤ 1e-3 · ‖y_l^{exact}(t)‖_∞'
+  tolerance: 1.0e-03
+  applies_to: all
+- id: QHF-GPU-009
+  type: invariant
+  property: 'End to end against the PRODUCTION CPU forward the device decodes the same token at every position and its logits stay on the CPU''s ray: identical argmax and a cosine floor, the same shape as the F2 runtime parity guard (apr-cpu-vs-gpu-output-parity-v1). The floor is a MEASURED number: on Qwen3.5-0.8B-Q4_K_M, 6-token prompt, kernel branch 1ed0adf36 (2026-09-19, RTX 4090) the per-position cosine was 0.998348…0.999636 (min 0.998348) with argmax identical at every position and relative L∞ ≤ 6.72e-2; the floor is 0.996 (the measured min with margin, the test''s COSINE_FLOOR), never loosened below the F2 catastrophic line 0.90. The sigmoid-gate mutant scores 0.7656 with a flipped argmax; the DP4A Q4K/Q6K GEMV profile through the recurrence scores 0.466…−0.246 with every argmax wrong (#3513, float MWV pinned for qwen35 in 0.68.2)'
+  formal: '∀ t ∈ positions(prompt): argmax(logits^{gpu}(t)) = argmax(logits^{cpu}(t)) ∧ cos(logits^{gpu}(t), logits^{cpu}(t)) ≥ 0.996'
   applies_to: all
 falsification_tests:
 - id: FALSIFY-QHF-001
@@ -148,6 +173,16 @@ falsification_tests:
   prediction: h_{l+1} - h_l = sublayer(norm(h_l))
   test: 'proptest: verify residual arithmetic'
   if_fails: Residual not purely additive
+- id: FALSIFY-QHF-008
+  rule: The device GDN path is measured where generation runs, on both fleet silicons
+  prediction: "`apr qa Qwen3.5-0.8B-Q4_K_M.gguf` golden_output passes on GPU and `apr run --gpu` prints no `[qwen35: Gated DeltaNet runs on the CPU` notice, on lambda (sm_89) and gx10 (sm_121)"
+  test: "bash scripts/check_model_ladder.sh — rung qwen35-0.8b-q4km, backend cuda, both required hosts (receipts under evidence/dogfood/models/<version>/)"
+  if_fails: "the GDN device kernels (causal conv1d, gated delta-rule recurrence with per-layer state, gated RMSNorm, per-head L2 norm, partial-NEOX rope) diverge from forward_qwen35.rs or never ran — at f4c0daa37 no device path existed and the rung claimed cpu only (#3090, EPIC #3477)"
+- id: FALSIFY-QHF-009
+  rule: The device path is judged per op against exact arithmetic and end to end against production, not per op against a quantized CPU
+  prediction: "qwen35_cuda_the_parity_floor_is_the_cpu_references_own_activation_quantization passes (every GDN and attention op ≤ 1e-3 relative to the dequantized-f32 exact reference; the sigmoid-gate mutant turns it RED), and on Qwen3.5-0.8B-Q4_K_M a 6-token prompt gives identical argmax at every position with per-position cosine ≥ 0.996 between the device and the production CPU logits (measured min 0.998348 at 1ed0adf36), on lambda (sm_89) and gx10 (sm_121)"
+  test: "on EACH required host (lambda sm_89, gx10 sm_121): bash scripts/model_ladder.sh --out evidence/dogfood/models/<version>/ (rung qwen35-0.8b-q4km: apr qa golden_output + gpu-cpu parity per position, argmax match ∧ cos ≥ 0.996); then bash scripts/check_model_ladder.sh reads both receipts — one host is not the fleet. The per-op exact-reference unit test lands with the #3090 kernel PR and is named in QHF-GPU-008; it is bound here once it exists on main (strict-test-binding refuses a dangling cargo test reference)"
+  if_fails: "either a device op is wrong (per-op exact check names the op) or the composed forward drifts (argmax flip or cosine below the measured floor names the position); a check that demanded device == quantized-CPU at 1e-3 could only be passed by an implementation reproducing the CPU's Q8_K activation error, which is not correctness (#3090, EPIC #3477)"
 kani_harnesses:
 - id: KANI-QHF-001
   obligation: QHF-INV-001
@@ -157,43 +192,43 @@ kani_harnesses:
   solver: cadical
   harness: verify_hybrid_block_shapes
 - id: KANI-QHF-002
-  obligation: QHF-INV-002
+  obligation: QHF-INV-004
   property: Layer type exclusivity
   bound: 48
   strategy: exhaustive
   harness: verify_layer_type_partition
 - id: KANI-QWEN35-003
-  obligation: Attention sublayer shape preservation
+  obligation: QHF-INV-001
   property: Attention sublayer shape preservation
   bound: 8
   strategy: exhaustive
 - id: KANI-QWEN35-004
-  obligation: GDN sublayer shape preservation
+  obligation: QHF-INV-002
   property: GDN sublayer shape preservation
   bound: 8
   strategy: exhaustive
 - id: KANI-QWEN35-005
-  obligation: FFN sublayer shape preservation
+  obligation: QHF-INV-003
   property: FFN sublayer shape preservation
   bound: 8
   strategy: exhaustive
 - id: KANI-QWEN35-006
-  obligation: Block outputs from exactly one attention type
+  obligation: QHF-INV-004
   property: Block outputs from exactly one attention type
   bound: 8
   strategy: exhaustive
 - id: KANI-QWEN35-007
-  obligation: Activation magnitude bounded
+  obligation: QHF-BND-005
   property: Activation magnitude bounded
   bound: 8
   strategy: stub_float
 - id: KANI-QWEN35-008
-  obligation: RMSNorm precedes each sublayer
+  obligation: QHF-INV-006
   property: RMSNorm precedes each sublayer
   bound: 8
   strategy: exhaustive
 - id: KANI-QWEN35-009
-  obligation: Residual identity component
+  obligation: QHF-CON-007
   property: Residual identity component
   bound: 8
   strategy: exhaustive
@@ -208,5 +243,5 @@ qa_gate:
   - hybrid_block
   - activation_magnitude
   - gradient_flow
-  pass_criteria: All 7 falsification tests pass
+  pass_criteria: All 9 falsification tests pass; FALSIFY-QHF-008 and FALSIFY-QHF-009 are read from the per-host ladder receipts
   falsification: Remove RMSNorm before attention to trigger gradient explosion

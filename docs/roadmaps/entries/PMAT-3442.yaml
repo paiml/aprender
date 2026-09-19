@@ -1,0 +1,17 @@
+- id: PMAT-3442
+  github_issue: 3442
+  item_type: task
+  title: 'PP-QUANT-001 Q5: upstream drift job — a new `ggml_type` id upstream opens an issue here the day it lands'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:07Z
+  updated: 2026-09-17T11:33:07Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

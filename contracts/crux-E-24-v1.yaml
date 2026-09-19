@@ -77,11 +77,14 @@ falsification_tests:
 
   if_fails: rule 'identical answer+ctx yields faithfulness near 1' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CE2FF3D-EQ-001
+  type: equivalence
   property: "apr eval-rag metric definitions match RAGAS (arXiv:2309.15217) within 1% on shared corpus"
-- type: invariant
+- id: CE2FF3D-INV-002
+  type: invariant
   property: "ragas_score ∈ [0, 1]"
-- type: invariant
+- id: CE2FF3D-INV-003
+  type: invariant
   property: "empty-ctx retrieval metrics = 0"
 
 verification_summary:

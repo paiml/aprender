@@ -46,15 +46,18 @@ equations:
     - k > 0
     lean_theorem: Theorems.Metric_Correctness
 proof_obligations:
-- type: invariant
+- id: RP2D5C-INV-001
+  type: invariant
   property: Embedding determinism
   formal: '∀ s: embed(s) = embed(s)'
   applies_to: embed_insert
-- type: invariant
+- id: RP2D5C-INV-002
+  type: invariant
   property: Retrieval score ordering
   formal: '∀ i < |R|-1: R[i].score >= R[i+1].score'
   applies_to: retrieve_rank
-- type: invariant
+- id: RP2D5C-INV-003
+  type: invariant
   property: Metric bounds
   formal: '∀ metrics m: 0.0 <= m <= 1.0'
   applies_to: metric_correctness

@@ -1,0 +1,25 @@
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-19'
+  last_modified: '2026-09-19'
+  author: fixture
+  description: fixture ladder shapes
+name: ont-ladder
+version: "1.0.0"
+scope: fixture
+status: active
+entity:
+  type: gguf
+shapes:
+  - id: ladder-measured
+    targetClass: model:Model
+    properties:
+      - {path: model:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: model:parityReceipt, minCount: 1, nodeKind: IRI, class: model:Receipt, resolves: receipt}
+      - {path: model:receiptHexMismatch, maxCount: 0}
+  - id: ladder-green
+    targetClass: model:RequiredModel
+    properties:
+      - {path: model:missingGreenHost, maxCount: 0}
+      - {path: model:parityReceipt, node: {properties: [{path: model:cc, in: ["8.9", "12.1"]}]}}

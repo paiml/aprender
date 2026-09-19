@@ -56,15 +56,18 @@ equations:
     preconditions:
     - 'data.len() > 0'
 proof_obligations:
-- type: invariant
+- id: AFLS-INV-001
+  type: invariant
   property: Leaf dependency closure is sovereign (no ML/GPU/tokenizer/framework crate)
   formal: deps*(apr-format) excludes {trueno,wgpu,cuda*,candle,tch,aprender-core}
   applies_to: all
-- type: invariant
+- id: AFLS-INV-002
+  type: invariant
   property: The leaf is std-only by design (no_std deferred)
   formal: no #![no_std]; compiles on MSRV with std default features
   applies_to: all
-- type: postcondition
+- id: AFLS-POST-003
+  type: postcondition
   property: Wrapper error seam — leaf owns its error, core From-wraps it
   formal: AprFormatError defined in leaf; impl From<AprFormatError> for AprenderError total
   applies_to: all

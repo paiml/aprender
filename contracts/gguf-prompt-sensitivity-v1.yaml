@@ -146,11 +146,13 @@ equations:
     - 'prompt_sensitivity_invariant holds (downstream consequence)'
 
 proof_obligations:
-- type: invariant
+- id: GPS-INV-001
+  type: invariant
   property: GGUF distinct-prompt output divergence
   formal: 'output(p₁) != output(p₂) for p₁ != p₂'
   applies_to: prompt_sensitivity_invariant
-- type: invariant
+- id: GPS-INV-002
+  type: invariant
   property: prompt tokens reach embedding lookup
   formal: 'embedding_lookup arg == tokenize(prompt)[i] at iteration i'
   applies_to: prompt_token_flow_invariant

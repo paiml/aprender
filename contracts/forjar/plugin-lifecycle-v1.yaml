@@ -44,15 +44,18 @@ equations:
     - schema.inputs.len() > 0
     lean_theorem: Theorems.Schema_Validation
 proof_obligations:
-- type: state_machine
+- id: PL-SM-001
+  type: state_machine
   property: Valid transitions
   formal: 'No skip, Error recoverable via reload'
   applies_to: all
-- type: precondition
+- id: PL-PRE-002
+  type: precondition
   property: Permission enforcement
   formal: operation.requires ⊆ declared
   applies_to: all
-- type: soundness
+- id: PL-SND-003
+  type: soundness
   property: Schema validation
   formal: 'required inputs present, types match'
   applies_to: all

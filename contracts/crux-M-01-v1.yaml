@@ -159,15 +159,20 @@ falsification_tests:
   if_fails: "Gate reports FAIL but cannot pinpoint the offending tensor — debugging is blocked"
 
 proof_obligations:
-- type: invariant
+- id: CM0-INV-001
+  type: invariant
   property: "Aggregate sha256(safetensors) stable across import/export round-trip"
-- type: invariant
+- id: CM0-INV-002
+  type: invariant
   property: "Per-tensor bytes equality holds for every tensor; divergences listed"
-- type: invariant
+- id: CM0-INV-003
+  type: invariant
   property: "Exit code is 0 on PASS, 1 on FAIL, >= 2 on config/I-O error"
-- type: invariant
+- id: CM0-INV-004
+  type: invariant
   property: "Determinism — identical (src, dst) yields identical JSON report"
-- type: equivalence
+- id: CM0-EQ-005
+  type: equivalence
   property: "apr qa --gate byte-identical  ≅  apr-model-qa-playbook Gate-1 (byte-for-byte safetensors round-trip)"
 
 verification_summary:

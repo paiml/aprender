@@ -66,31 +66,37 @@ equations:
     - 'input.len() > 0'
     lean_theorem: Theorems.Jit_Compilation_Correctness
 proof_obligations:
-- type: invariant
+- id: GMBP-INV-001
+  type: invariant
   property: At least one backend passes parity
   formal: 'for all models M, exists b: cosine(forward(b, M, bos), forward(cpu, M,
     bos)) >= 0.98'
   tolerance: 0.02
   applies_to: all
-- type: invariant
+- id: GMBP-INV-002
+  type: invariant
   property: Failed backend never serves inference
   formal: parity(b) < 0.98 implies b is not used for token generation
   applies_to: all
-- type: invariant
+- id: GMBP-INV-003
+  type: invariant
   property: Backend selection is deterministic
   formal: select(M, D, t1) == select(M, D, t2) for same model M and device D
   applies_to: all
-- type: equivalence
+- id: GMBP-EQ-004
+  type: equivalence
   property: wgpu matches CPU within tolerance
   formal: cosine(forward(wgpu, M, token), forward(cpu, M, token)) >= 0.98
   tolerance: 0.02
   applies_to: wgpu
-- type: equivalence
+- id: GMBP-EQ-005
+  type: equivalence
   property: NVRTC-compiled CUDA matches CPU within tolerance
   formal: cosine(forward(nvrtc, M, token), forward(cpu, M, token)) >= 0.98
   tolerance: 0.02
   applies_to: nvrtc
-- type: bound
+- id: GMBP-BND-006
+  type: bound
   property: Q4K bandwidth advantage
   formal: latency(q4k_gemv) <= latency(fp16_gemm) for M=1 on same device
   applies_to: all

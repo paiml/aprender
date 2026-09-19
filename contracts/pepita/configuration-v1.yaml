@@ -29,11 +29,13 @@ equations:
     preconditions: []
     lean_theorem: Theorems.Connection_Count
 proof_obligations:
-- type: invariant
+- id: C1F31-INV-001
+  type: invariant
   property: Connect increments count by 1
   formal: 'let n = connection_count(); connect(addr).is_ok() → connection_count() = n + 1'
   applies_to: connect
-- type: invariant
+- id: C1F31-INV-002
+  type: invariant
   property: Connection count conservation
   formal: '∀ t: connection_count(t) = connects(0..t) - disconnects(0..t)'
   applies_to: connection_count

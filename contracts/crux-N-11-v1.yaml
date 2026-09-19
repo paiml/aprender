@@ -68,11 +68,14 @@ falsification_tests:
   if_fails: rule 'the path costs fewer flops than refitting' is violated — the linfa parity claim for CRUX-N-11 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
 
 proof_obligations:
-- type: invariant
+- id: CN12E50-INV-001
+  type: invariant
   property: "LassoLars agrees with coordinate-descent Lasso along the path"
-- type: invariant
+- id: CN12E50-INV-002
+  type: invariant
   property: "the active set enters in correlation order"
-- type: invariant
+- id: CN12E50-INV-003
+  type: invariant
   property: "the path costs fewer flops than refitting"
 
 kani_harnesses:

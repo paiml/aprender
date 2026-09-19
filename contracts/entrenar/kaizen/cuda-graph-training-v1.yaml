@@ -171,15 +171,18 @@ falsification_tests:
     if_fails: Graph replay introduces numerical error
 
 proof_obligations:
-  - type: invariant
+  - id: CGT-INV-001
+    type: invariant
     property: All kernels captured in graph
     formal: "graph.node_count >= 588"
     applies_to: all
-  - type: invariant
+  - id: CGT-INV-002
+    type: invariant
     property: Graph invalidated on shape change
     formal: "seq_len != cached_seq_len => graph.recapture()"
     applies_to: all
-  - type: equivalence
+  - id: CGT-EQ-003
+    type: equivalence
     property: Graph output matches non-graph output
     formal: "|forward_graph(x) - forward_plain(x)| < eps element-wise"
     applies_to: all

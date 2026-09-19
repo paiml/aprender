@@ -282,15 +282,20 @@ falsification_tests:
     full_discharge_blocked_on: "live CUDA memory tracker emitting real peak_* accounting and operation histogram at OOM"
 
 proof_obligations:
-- type: invariant
+- id: CF1237E-INV-001
+  type: invariant
   property: "CUDA OOM produces /tmp/apr-oom-<ts>.json with all 7 required keys"
-- type: invariant
+- id: CF1237E-INV-002
+  type: invariant
   property: "peak_reserved_bytes >= peak_allocated_bytes >= 0"
-- type: invariant
+- id: CF1237E-INV-003
+  type: invariant
   property: "last_100_ops array length <= 100"
-- type: invariant
+- id: CF1237E-INV-004
+  type: invariant
   property: "OOM report file size < 10 MB"
-- type: invariant
+- id: CF1237E-INV-005
+  type: invariant
   property: "process exit code != 0 AND stderr contains OOM_REPORT path=... breadcrumb"
 
 verification_summary:

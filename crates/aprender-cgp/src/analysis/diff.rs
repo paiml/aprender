@@ -338,10 +338,14 @@ mod tests {
         }
         let elapsed = start.elapsed();
         // 100 diffs should take << 100ms
+        // DURATION ONLY UNDER `timing-gate` (#3239) — see this crate's Cargo.toml.
+        #[cfg(feature = "timing-gate")]
         assert!(
             elapsed.as_millis() < 100,
             "100 diffs took {}ms",
             elapsed.as_millis()
         );
+        #[cfg(not(feature = "timing-gate"))]
+        let _ = elapsed;
     }
 }

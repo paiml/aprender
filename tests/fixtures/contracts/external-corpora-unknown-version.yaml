@@ -1,0 +1,14 @@
+# PMAT-1098 negative fixture — a schema version the rules were never written for.
+#
+# Everything below `schema:` is a VALID v1alpha1 declaration. It is refused
+# anyway: rules that silently apply to a document they predate are how a schema
+# bump ships unvalidated, so an unrecognised version of the family fails closed
+# rather than being read as v1alpha1 (EXT-CORPORA-001).
+schema: ont.paiml.dev/external-corpora/v9
+corpora:
+  - name: provable-contracts
+    repo: paiml/provable-contracts
+    ref: main
+    head: 626868c240
+    n_files: 397
+    counted_by: gh api repos/paiml/provable-contracts/git/trees/main?recursive=1

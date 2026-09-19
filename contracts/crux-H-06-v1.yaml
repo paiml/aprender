@@ -127,13 +127,17 @@ falsification_tests:
 
   if_fails: rule 'parity with datasets.load_dataset(streaming=True) row count' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: invariant
+- id: CH04984-INV-001
+  type: invariant
   property: "Peak RSS is O(--shuffle-buffer), independent of total dataset size"
-- type: invariant
+- id: CH04984-INV-002
+  type: invariant
   property: "--take N emits exactly N NDJSON-formatted rows then EOFs"
-- type: invariant
+- id: CH04984-INV-003
+  type: invariant
   property: "Resumable cursor guarantees no duplicate and no skipped rows across restart"
-- type: equivalence
+- id: CH04984-EQ-004
+  type: equivalence
   property: "First N rows (deterministic seed) match datasets.load_dataset(..., streaming=True) row-for-row"
 
 verification_summary:

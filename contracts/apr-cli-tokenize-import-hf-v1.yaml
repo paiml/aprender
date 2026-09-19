@@ -160,15 +160,20 @@ falsification_tests:
   if_fails: "non-BPE input silently extracts garbage — operator gets a wrong-format dir that breaks downstream"
 
 proof_obligations:
-- type: invariant
+- id: ACTIH-INV-001
+  type: invariant
   property: "extraction_signature: precondition checks BPE model.type before any IO"
-- type: soundness
+- id: ACTIH-SND-002
+  type: soundness
   property: "extraction_signature: vocab.json + merges.txt counts match input byte-for-byte"
-- type: invariant
+- id: ACTIH-INV-003
+  type: invariant
   property: "vocab_size_invariant: default mode emits BPE state machine only; --include-added-tokens emits unified"
-- type: liveness
+- id: ACTIH-LIVE-004
+  type: liveness
   property: "manifest.json always records source sha256 + counts for audit trail"
-- type: termination
+- id: ACTIH-TERM-005
+  type: termination
   property: "extraction terminates on a finite-size tokenizer.json (no recursion, single pass over vocab + merges)"
 
 kani_harnesses:

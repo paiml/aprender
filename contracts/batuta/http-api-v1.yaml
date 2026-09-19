@@ -128,19 +128,23 @@ equations:
     lean_theorem: Theorems.Response_Schema
 
 proof_obligations:
-- type: invariant
+- id: HAC759-INV-001
+  type: invariant
   property: max_tokens never exceeds 1024
   formal: forall R in requests. R.max_tokens <= 1024
   applies_to: max_tokens_cap
-- type: invariant
+- id: HAC759-INV-002
+  type: invariant
   property: Thinking blocks fully stripped
   formal: forall R in responses. !R.contains("<think>")
   applies_to: thinking_block_strip
-- type: roundtrip
+- id: HAC759-RT-003
+  type: roundtrip
   property: Tool definitions survive HTTP serialization
   formal: parse(serialize(tools)) == tools
   applies_to: tool_format_fidelity
-- type: postcondition
+- id: HAC759-POST-004
+  type: postcondition
   property: Response has extractable content
   formal: parse(response).choices[0].message.content.is_some()
   applies_to: response_schema

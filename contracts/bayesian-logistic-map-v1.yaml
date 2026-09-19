@@ -71,20 +71,23 @@ equations:
     lean_theorem: Theorems.HessianSamePosterior
 
 proof_obligations:
-- type: invariant
+- id: BLM-INV-001
+  type: invariant
   property: Gradient and Hessian share one posterior and one normalization
   formal: |
     The fit gradient is Xᵀ(y − p) − λβ (un-averaged) and the Hessian is
     XᵀWX + λI (un-averaged), with the SAME λ; neither the data term nor the
     prior term carries a 1/n factor. (A 1/n on only the data term shifts the
     stationary point to precision n·λ.)
-- type: classification
+- id: BLM-CLS-002
+  type: classification
   property: Fit targets the declared precision λ, not n·λ
   formal: |
     For data with a known MAP, BayesianLogisticRegression::new(λ).fit(X, y)
     converges to β_MAP solving Xᵀ(y − p) = λβ_MAP, and is clearly distinct from
     the over-shrunk mode solving Xᵀ(y − p) = (n·λ)β.
-- type: invariant
+- id: BLM-INV-003
+  type: invariant
   property: Step scaling preserves the stationary point
   formal: |
     The update β ← β + (η/n)·∇ℓ scales the WHOLE gradient by a positive

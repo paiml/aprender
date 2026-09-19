@@ -90,31 +90,38 @@ equations:
       - "a report of 3 Pass + 1 Warn + 22 Skip clears --min-score 75 and is refused by --min-score 80"
 
 proof_obligations:
-  - type: invariant
+  - id: AVQT-INV-001
+    type: invariant
     property: "Working models pass the threshold"
     formal: "all_pass(report) AND implemented_max(report) > 0 ⟹ NOT fail_gate(report)"
     applies_to: threshold_gate_on_implemented
-  - type: invariant
+  - id: AVQT-INV-002
+    type: invariant
     property: "Fully-stubbed reports do not fail"
     formal: "implemented_max(report) == 0 ⟹ NOT fail_gate(report)"
     applies_to: threshold_gate_on_implemented
-  - type: invariant
+  - id: AVQT-INV-003
+    type: invariant
     property: "Half-implemented half-failing models do fail"
     formal: "implemented_max = 4 AND fail_count = 3 ⟹ fail_gate(report)"
     applies_to: threshold_gate_on_implemented
-  - type: invariant
+  - id: AVQT-INV-004
+    type: invariant
     property: "A healthy model is never graded F"
     formal: "ran > 0 AND fail_count == 0 ⟹ grade(report) != 'F'"
     applies_to: grade_on_measured
-  - type: invariant
+  - id: AVQT-INV-005
+    type: invariant
     property: "Grade F is earned only by a failing check"
     formal: "grade(report) == 'F' ⟺ (ran > 0 AND fail_count > 0)"
     applies_to: grade_on_measured
-  - type: invariant
+  - id: AVQT-INV-006
+    type: invariant
     property: "Grade, passed flag and human verdict never contradict"
     formal: "passed(report) ⟹ grade(report) != 'F' AND verdict(report) == VALID"
     applies_to: verdict_agreement
-  - type: invariant
+  - id: AVQT-INV-007
+    type: invariant
     property: "min_score cannot be cleared against an unmeasured score"
     formal: "pct(report) == None ⟹ NOT min_score_ok(report, n) for every n"
     applies_to: min_score_on_measured

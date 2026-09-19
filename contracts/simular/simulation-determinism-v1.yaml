@@ -43,15 +43,18 @@ equations:
     - step_id is valid (within simulation range)
     lean_theorem: Theorems.Audit_Trail
 proof_obligations:
-- type: invariant
+- id: SD-INV-001
+  type: invariant
   property: Step determinism
   formal: '∀ S, dt: step(S, dt) = step(S, dt)'
   applies_to: step_determinism
-- type: invariant
+- id: SD-INV-002
+  type: invariant
   property: Time monotonicity
   formal: '∀ n: t(n+1) > t(n)'
   applies_to: time_advancement
-- type: invariant
+- id: SD-INV-003
+  type: invariant
   property: Audit retrieval correctness
   formal: '∀ id: find_by_step_id(record_step(s).id) = Some(s)'
   applies_to: audit_trail

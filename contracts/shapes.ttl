@@ -1,0 +1,57 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix ont: <https://ont.paiml.dev/v1alpha1/> .
+
+<https://ont.paiml.dev/v1alpha1/shape/ladder-measured> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/model/Model> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/model/sha256> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^[0-9a-f]{64}$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/model/parityReceipt> ;
+        sh:minCount 1 ;
+        sh:class <https://ont.paiml.dev/v1alpha1/model/Receipt> ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/model/receiptHexMismatch> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/ladder-green> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/model/RequiredModel> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/model/missingGreenHost> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/model/parityReceipt> ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/ladder-green/node> ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/ladder-green/node> a sh:NodeShape ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/model/cc> ;
+        sh:in ( "8.9" "12.1" ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/ont-shapes-v1> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/Contract> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/id> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^[A-Za-z0-9._-]+$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/kind> ;
+        sh:in ( "schema" "pattern" "kaizen" "kernel" "model-family" "beat-benchmark" "training-loop" "registry" "pretraining-corpus" "training-precondition-gate" "tokenizer" "model-family-variant" "corpus-assembly" ) ;
+    ] ;
+.
+

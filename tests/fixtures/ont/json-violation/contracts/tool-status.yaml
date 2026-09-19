@@ -1,0 +1,33 @@
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-19'
+  last_modified: '2026-09-19'
+  author: fixture
+  description: fixture — a tool's --json output as a shaped entity (extract:json)
+name: tool-status
+version: "1.0.0"
+scope: fixture
+status: active
+entity:
+  type: json
+  ref: data/status.json
+vocabulary:
+  prefix: tool
+  root_class: tool:Status
+  nested:
+    push: tool:Push
+    findings: tool:Finding
+shape:
+  targetClass: tool:Status
+  closed: true
+  properties:
+    - {path: tool:schema, minCount: 1, maxCount: 1, in: ["tool/status-v1"]}
+    - {path: tool:ok,     minCount: 1, maxCount: 1, datatype: xsd:boolean}
+    - {path: tool:push,   minCount: 1, maxCount: 1, node: {closed: true, properties: [
+        {path: tool:state,    minCount: 1, maxCount: 1, in: [ok, failing, never]},
+        {path: tool:attempts, minCount: 1, maxCount: 1, datatype: xsd:integer}]}}
+    - {path: tool:findings, node: {closed: true, properties: [
+        {path: tool:sensor, minCount: 1, maxCount: 1, datatype: xsd:string},
+        {path: tool:open,   minCount: 1, maxCount: 1, datatype: xsd:integer}]}}
+

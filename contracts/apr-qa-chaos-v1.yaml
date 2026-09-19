@@ -150,25 +150,32 @@ falsification_tests:
   - "a cfg!(target_os = ...) guard added around the assertion, which hides exactly the broken platform"
 
 proof_obligations:
-- type: bound
+- id: AQC-BND-001
+  type: bound
   property: "Peak RSS of `apr run` on a small model stays under the 3x-model-size + 512 MB budget (F-CHAOS-001)"
   formal: "peak_rss(apr_run(M)) < 3 * size(M) + 512e6"
-- type: safety
+- id: AQC-SAFE-002
+  type: safety
   property: "Under a virtual-memory ulimit, apr exits with a memory error and never SIGSEGVs (exit != 139) (F-CHAOS-002)"
   formal: "exit_code(apr_run(M) under ulimit) != 139"
-- type: safety
+- id: AQC-SAFE-003
+  type: safety
   property: "SIGINT during inference exits promptly with status 130 and no corrupt cache (F-CHAOS-003)"
   formal: "exit_code(kill_INT(apr_run(M))) == 130"
-- type: safety
+- id: AQC-SAFE-004
+  type: safety
   property: "An existing output file blocks silent overwrite: apr convert fails without --force (F-CHAOS-004)"
   formal: "exists(out) implies exit_code(apr_convert(M, -o out)) != 0"
-- type: safety
+- id: AQC-SAFE-005
+  type: safety
   property: "A full filesystem produces a non-zero exit, not a partial corrupt output file (F-CHAOS-005)"
   formal: "full_fs implies exit_code(apr_convert(M, -o out)) != 0"
-- type: safety
+- id: AQC-SAFE-006
+  type: safety
   property: "When host RAM cannot be measured the F32 dequant gate refuses rather than admits; the probe is Some on every supported platform (F-CHAOS-006)"
   formal: "system_memory_bytes() == None implies not admitted(dequant(M))"
-- type: liveness
+- id: AQC-LIVE-007
+  type: liveness
   property: "The host RAM probe resolves on every supported platform, so the gate is armed rather than merely present (F-CHAOS-007)"
   formal: "forall os in supported_targets: system_memory_bytes() != None"
 

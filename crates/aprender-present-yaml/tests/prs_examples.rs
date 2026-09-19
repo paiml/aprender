@@ -10,16 +10,25 @@ use presentar_yaml::Scene;
 use std::fs;
 use std::path::Path;
 
+/// Resolve the `.prs` examples relative to THIS CRATE.
+///
+/// This file already anchored on `CARGO_MANIFEST_DIR` — and then walked
+/// `.parent().parent()` to the repository root and looked for `examples/prs`
+/// there. Nothing has lived at the root since APR-MONO; the examples are in the
+/// SIBLING crate, `crates/aprender-present/examples/prs/`. So the CWD-independence
+/// was right and the destination was wrong, which is why all 7 rows failed with a
+/// path that looks deliberate.
+///
+/// Dark target: `workspace-test` is `--workspace --lib` plus an explicit `--test`
+/// list that has never named this crate.
+fn prs_examples_dir() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../aprender-present/examples/prs")
+}
+
 /// Load and validate all .prs files in the examples/prs directory.
 #[test]
 fn test_all_prs_examples_valid() {
-    let examples_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("parent dir")
-        .parent()
-        .expect("workspace dir")
-        .join("examples")
-        .join("prs");
+    let examples_dir = prs_examples_dir();
 
     assert!(
         examples_dir.exists(),
@@ -76,14 +85,7 @@ mod individual_examples {
     use super::*;
 
     fn load_example(name: &str) -> Scene {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("parent dir")
-            .parent()
-            .expect("workspace dir")
-            .join("examples")
-            .join("prs")
-            .join(name);
+        let path = prs_examples_dir().join(name);
 
         let content =
             fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {name}: {e}"));
@@ -183,13 +185,7 @@ mod qa_checklist {
 
     #[test]
     fn test_all_examples_pass_qa_checklist() {
-        let examples_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("parent dir")
-            .parent()
-            .expect("workspace dir")
-            .join("examples")
-            .join("prs");
+        let examples_dir = prs_examples_dir();
 
         let mut all_issues = Vec::new();
 

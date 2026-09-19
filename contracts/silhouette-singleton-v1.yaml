@@ -50,18 +50,21 @@ equations:
     lean_theorem: Theorems.Silhouette_Singleton_Zero
 
 proof_obligations:
-- type: invariant
+- id: SS-INV-001
+  type: invariant
   property: PO-SINGLETON-ZERO singleton sample silhouette is zero
   formal: |
     For data=[[0,0],[0.1,0],[10,0]], labels=[0,0,1], the singleton cluster 1
     contributes 0 to the mean, so silhouette_score ≈ 0.6600 (sklearn parity),
     NOT the buggy 0.9933 produced by treating the singleton's a_i as 0.0.
-- type: invariant
+- id: SS-INV-002
+  type: invariant
   property: PO-ALL-SINGLETON-ZERO all-singleton clustering scores zero
   formal: |
     For any labeling where every cluster has size 1, every per-sample silhouette
     is 0, so silhouette_score = 0.0 exactly.
-- type: invariant
+- id: SS-INV-003
+  type: invariant
   property: PO-NON-SINGLETON-UNAFFECTED clusters of size >= 2 unchanged
   formal: |
     For data with all clusters of size >= 2 (e.g. well-separated pairs), the

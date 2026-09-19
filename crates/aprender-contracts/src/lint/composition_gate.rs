@@ -13,7 +13,7 @@ use crate::schema::Contract;
 use super::rules::RuleSeverity;
 
 use super::finding::LintFinding;
-use super::{GateDetail, GateResult};
+use super::{GateDetail, GateResult, Verdict};
 
 /// Stem → contract lookup, with ambiguous stems already removed.
 type Index<'a> = BTreeMap<&'a str, &'a Contract>;
@@ -98,6 +98,7 @@ pub(crate) fn run_composition_gate(
         name: "composition".into(),
         passed,
         skipped: false,
+        verdict: Verdict::from_gate(passed, false),
         duration_ms,
         detail: GateDetail::Composition {
             edges_checked,
