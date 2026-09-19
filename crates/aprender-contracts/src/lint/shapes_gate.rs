@@ -22,7 +22,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use crate::ontology::extract::pv_contract;
+use crate::ontology::extract::{self, json::ExtractError};
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};
 use crate::ontology::shapes::{self, NodeShape, Report, Severity, ShapeError};
 use crate::ontology::verdict::Reason;
@@ -39,6 +39,9 @@ pub const PLANT_ID: &str = "__pc_shape__";
 pub enum ShapesOutcome {
     /// A `shape:` block uses a component outside §3.6, or is malformed.
     Unsupported(ShapeError),
+    /// An `entity: {type: json}` contract could not be extracted — a missing `ref`, a non-JSON document, an
+    /// incomplete `vocabulary`, an unmapped nested key. The DECLARATION's fault, like `Unsupported`: exit 3.
+    ExtractFailed(ExtractError),
     /// Not one contract carries a `shape:` block.
     NoShapes { contracts_checked: usize },
     /// Shapes exist, but no node in the graph has any of their target classes.
@@ -98,8 +101,24 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
             contracts_checked: checked,
         };
     }
-    let graph = pv_contract::extract(contract_dir);
-    let (report, plant_violations) = validate_with_plant(&graph, &shapes);
+    let extraction = match extract::all(contract_dir) {
+        Ok(x) => x,
+        Err(e) => return ShapesOutcome::ExtractFailed(e),
+    };
+    let graph = extraction.graph;
+    let (mut report, plant_violations) = validate_with_plant(&graph, &shapes);
+    // A torn JSONL line is the INPUT's fault and is carried as a warning on the entity's root shape — the
+    // gate already rules that warnings alone are `Unknown{Warn}`, never a pass and never a silent drop.
+    for w in &extraction.warnings {
+        report.results.push(shapes::ValidationResult {
+            severity: Severity::Warning,
+            focus: iri("json", &w.contract),
+            shape: w.contract.clone(),
+            path: Some(w.path.clone()),
+            component: "extract:json",
+            message: w.to_string(),
+        });
+    }
     if report.focus_nodes_n == 0 {
         return ShapesOutcome::NoFocus {
             shapes_n: shapes.len(),

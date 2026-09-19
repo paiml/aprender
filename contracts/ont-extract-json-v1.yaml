@@ -1,0 +1,111 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ont-extract-json-v1 — `extract:json`: a tool's own --json output as a shaped entity (ONT-001 §3.7; aprender#3515, PMAT-3515)
+#
+# WHAT IT GOVERNS
+#   provable_contracts::ontology::extract::json  — a JSON/JSONL document plus the contract's `vocabulary:` map → RDF.
+#   provable_contracts::ontology::extract::all   — the ONE walk `pv lint --gate shapes` and `pv extract` share (R-18).
+#   provable_contracts::lint::shapes_gate        — ShapesOutcome::ExtractFailed (exit 3) and extraction warnings (Unknown{Warn}).
+#
+# WHY. paiml/infra's ARBITER-001 §14 (operator ruling 2026-09-19): every `arbiter … --json` is a contract whose CLOSED
+# shape is the interface definition. Before this row a contract with `entity: {type: json}` had no focus node and the
+# gate answered Unknown{NoFocus} — measured on infra's contracts/arbiter-status-v1.yaml. After it: Pass with the plant
+# fired, 172 triples, 0.05 s, and both of infra's plants rejected naming focus node, shape and component.
+#
+# WHOSE FAULT IS WHAT. A missing ref, a non-JSON document, an incomplete vocabulary, an unmapped nested key are the
+# DECLARATION's fault: exit 3 naming the thing. A JSONL line that does not parse is the INPUT's fault: a warning naming
+# the line, the other lines' nodes emitted, Unknown{Warn} — the fleet's ledgers ARE torn by power loss (infra §13 M-1),
+# and an extractor that dropped a whole file for one line would hide every other row.
+#
+# KIND: pattern. An extractor and its refusal rules; the shapes it feeds are ont-shapes-v1's.
+# ─────────────────────────────────────────────────────────────────────────────
+name: ont-extract-json
+version: "1.0.0"
+scope: >
+  How a JSON or JSONL document named by `entity: {type: json, ref}` becomes RDF through the contract's
+  `vocabulary: {prefix, root_class, nested}` block, what is refused by name, and what is carried as a warning.
+  Out of scope: inference of classes for unmapped keys (refused, never guessed), `resolves:` on JSON fields (a later row).
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-19'
+  last_modified: '2026-09-19'
+  author: PAIML Engineering
+  description: >
+    extract:json — root node typed root_class (+ prov:Entity), scalar keys as <prefix>:<key> literals typed
+    xsd:string|integer|boolean|double, nested objects and arrays of objects as nodes typed by the nested map, arrays
+    of scalars as repeated predicates, null absent; JSONL = one root per line; deterministic; refuses by name.
+  references:
+    - 'paiml/infra docs/specifications/arbiter.md §14 I1-0 (this row), I1-1 (the first entity), §13 M-1 (torn ledgers)'
+    - 'paiml/infra docs/specifications/paiml-ontology.md §3.6 (the subset), §3.7 (extractors), R-11, R-15, R-17, R-18'
+    - 'crates/aprender-contracts/src/ontology/extract/{json,mod}.rs, lint/shapes_gate.rs'
+
+entity:
+  type: pv-contract
+  ref: contracts/
+
+relations:
+  depends_on: [ont-shapes-v1, ont-sigma-v1]
+
+invariants:
+  - id: EXJ-INV-001
+    property: deterministic, no blank nodes
+    formal: '∀ doc: extract(doc) = extract(doc) ∧ ∀ t ∈ extract(doc): subject(t) ∈ IRI'
+    prose: false
+  - id: EXJ-INV-002
+    property: no inference — an unmapped nested key is refused by name
+    formal: 'key ∉ vocabulary.nested ∧ isObject(doc[key]) ⇒ Err(Unmapped{key})'
+    prose: false
+  - id: EXJ-INV-003
+    property: the declaration's faults exit 3, the input's faults are warnings that decline
+    formal: '(ref missing ∨ ¬json ∨ vocabulary incomplete ∨ unmapped) ⇒ exit 3; (jsonl line unparsable) ⇒ Unknown{Warn} ∧ other lines emitted'
+    prose: false
+  - id: EXJ-INV-004
+    property: literals are typed by their JSON type
+    formal: '∀ scalar v: datatype(literal(v)) = match v {bool ⇒ xsd:boolean, int ⇒ xsd:integer, float ⇒ xsd:double, string ⇒ xsd:string}'
+    prose: false
+  - id: EXJ-INV-005
+    property: the gate and pv extract read one graph
+    formal: '∀ dir: graph_gate(dir) = graph_extract(dir) ∧ graph_extract(dir) = all(dir)'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-EXJ-001
+    rule: conforming entity passes with the plant fired
+    prediction: json-ok → Pass, exit 0, focus_nodes_n = 1, pc_shape fired
+    test: cargo test -p aprender-contracts-cli --test ont_extract_json a_conforming_json_entity_passes_with_the_plant_fired_and_one_focus_node
+    if_fails: the gate never sees the JSON entity (the pre-row state, Unknown{NoFocus})
+  - id: FALSIFY-EXJ-002
+    rule: closed and in fire on a JSON entity
+    prediction: json-violation → Fail, exit 1, two violations naming ont:tool/tool-status, shape `tool-status`, the undeclared key and the value
+    test: cargo test -p aprender-contracts-cli --test ont_extract_json an_undeclared_key_and_a_value_outside_in_are_each_a_violation_naming_focus_and_shape
+    if_fails: a closed shape over a tool's output is prose
+  - id: FALSIFY-EXJ-003
+    rule: refusal by name
+    prediction: json-unmapped → exit 3 naming `findings`; json-missing-ref → exit 3 naming `data/does-not-exist.json`
+    test: cargo test -p aprender-contracts-cli --test ont_extract_json an_unmapped_nested_key_is_exit_3_naming_the_key a_missing_ref_is_exit_3_naming_the_path
+    if_fails: a declaration error reads as a corpus verdict or as silence
+  - id: FALSIFY-EXJ-004
+    rule: a torn line is carried, not hidden
+    prediction: json-torn-jsonl → Unknown{Warn}, exit 2, focus_nodes_n = 3 (the NUL-prefixed line salvaged), the warning names line 3
+    test: cargo test -p aprender-contracts-cli --test ont_extract_json a_torn_jsonl_line_declines_with_warn_naming_the_line_and_the_other_rows_are_focus_nodes
+    if_fails: one torn line hides every other row — the shape of infra §13 M-1
+  - id: FALSIFY-EXJ-005
+    rule: determinism and one graph
+    prediction: two `pv extract` runs over json-ok are byte-identical, contain the tool/Status class and the nested node, no `_:`; `--check` is exit 0 after; on json-unmapped `pv extract` is exit 3
+    test: cargo test -p aprender-contracts-cli --test ont_extract_json pv_extract_carries_the_json_entity_and_is_deterministic pv_extract_on_an_unmapped_key_is_exit_3_not_a_partial_graph
+    if_fails: the gate grades a graph contracts.nt does not record
+
+qa_gate:
+  id: F-EXJ-001
+  name: extract-json
+  description: 'A JSON/JSONL document is a shaped entity under pv lint --gate shapes, refused by name where the declaration is wrong (ONT-001 §3.7)'
+  checks:
+    - conforming_passes
+    - closed_and_in_fire
+    - refusal_by_name
+    - torn_line_carried
+    - determinism_one_graph
+  pass_criteria: 'FALSIFY-EXJ-001..005 pass; `cargo test -p aprender-contracts --lib ontology::extract::json` green (8 tests); Σ names entity type json → extractor json implemented'
+  falsification: 'remove the Unmapped arm from node() → json-unmapped passes with a guessed class → FALSIFY-EXJ-003 red; drop the staged graph in extract_jsonl → json-torn-jsonl reports focus_nodes_n 0 → FALSIFY-EXJ-004 red'

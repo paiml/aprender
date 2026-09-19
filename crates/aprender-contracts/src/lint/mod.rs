@@ -650,6 +650,7 @@ fn shapes_result(contract_dir: &Path, validation_passed: bool) -> (GateResult, V
     match shapes_gate::run_shapes_gate(contract_dir) {
         shapes_gate::ShapesOutcome::Ran { result, findings } => (*result, findings),
         shapes_gate::ShapesOutcome::Unsupported(e) => (skipped_gate("shapes", &format!("{e}")), Vec::new()),
+        shapes_gate::ShapesOutcome::ExtractFailed(e) => (skipped_gate("shapes", &format!("{e}")), Vec::new()),
         shapes_gate::ShapesOutcome::NoShapes { contracts_checked } => (
             skipped_gate("shapes", &format!("no `shape:` block in {contracts_checked} contracts — R-2: zero is a decline")),
             Vec::new(),

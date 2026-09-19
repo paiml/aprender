@@ -9,7 +9,7 @@
 use std::path::Path;
 
 use provable_contracts::lint::shapes_gate::collect_shapes;
-use provable_contracts::ontology::extract::pv_contract;
+use provable_contracts::ontology::extract;
 use provable_contracts::ontology::shapes::to_turtle;
 use sha2::{Digest, Sha256};
 
@@ -24,7 +24,17 @@ struct ExtractReport<'a> {
 
 /// `check == true` → compare and report drift, write nothing.
 pub fn run(contract_dir: &Path, check: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let graph = pv_contract::extract(contract_dir);
+    let extraction = match extract::all(contract_dir) {
+        Ok(x) => x,
+        Err(e) => {
+            eprintln!("error: {e}");
+            std::process::exit(3);
+        }
+    };
+    for w in &extraction.warnings {
+        eprintln!("warning: {w}");
+    }
+    let graph = extraction.graph;
     if graph.is_empty() {
         eprintln!("decline: no contracts under {}", contract_dir.display());
         std::process::exit(2);

@@ -1,0 +1,23 @@
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-19'
+  last_modified: '2026-09-19'
+  author: fixture
+  description: fixture — a JSONL ledger with one torn line (the power-loss form of infra §13 M-1)
+name: ledger-rows
+version: "1.0.0"
+scope: fixture
+status: active
+entity:
+  type: json
+  ref: data/ledger.jsonl
+vocabulary:
+  prefix: led
+  root_class: led:Row
+shape:
+  targetClass: led:Row
+  closed: true
+  properties:
+    - {path: led:kind, minCount: 1, maxCount: 1, in: [tick, push, would]}
+    - {path: led:tick, minCount: 1, maxCount: 1, datatype: xsd:integer}

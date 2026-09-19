@@ -218,6 +218,9 @@ fn run_single_gate(contract_dir: &Path, name: &str) -> Result<(), Box<dyn std::e
         NamedGateOutcome::Shapes(ShapesOutcome::Unsupported(e)) => {
             return Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
         }
+        NamedGateOutcome::Shapes(ShapesOutcome::ExtractFailed(e)) => {
+            return Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
+        }
         NamedGateOutcome::Shapes(ShapesOutcome::NoShapes { .. }) => {
             return Err(LintDeclined {
                 reason: provable_contracts::ontology::verdict::Reason::NoShapes,
