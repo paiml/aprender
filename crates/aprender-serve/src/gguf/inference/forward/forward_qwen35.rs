@@ -117,12 +117,7 @@ pub fn causal_conv1d(
     }
 }
 
-/// The gated delta-rule recurrence for a single token exactly as delta-net-base.cpp computes it,
-/// for a file whose Gated `DeltaNet` has one key/query head per value head
-/// (`num_k_heads == num_v_heads`, `head_k_dim == head_v_dim`) — Qwen3.5-0.8B and -2B.
-///
-/// This is [`delta_rule_recurrence_gqa`] at ratio 1; it is kept as its own entry point so the
-/// 0.8B call sites and the GPU parity tests read unchanged.
+/// The gated delta-rule recurrence for a single token exactly as delta-net-base.cpp computes it.
 pub fn delta_rule_recurrence(
     q: &[f32],
     k: &[f32],
@@ -134,119 +129,25 @@ pub fn delta_rule_recurrence(
     num_v_heads: usize,
     head_v_dim: usize,
 ) {
-    delta_rule_recurrence_gqa(
-        q,
-        k,
-        v,
-        beta,
-        gate,
-        state,
-        output,
-        num_v_heads,
-        head_v_dim,
-        num_v_heads,
-        head_v_dim,
-    );
-}
-
-/// The gated delta-rule recurrence for a single token, with **grouped** key/query heads
-/// (PMAT-3477, #3346/#3510).
-///
-/// Qwen3.5 4B and 9B carry `linear_num_value_heads = 32` against `linear_num_key_heads = 16`,
-/// and 27B carries 48 against 16, so `q` and `k` are narrower than `v`. The reference
-/// (HF `modeling_qwen3_next.py::GatedDeltaNet`, llama.cpp `delta-net-base.cpp`) expands q and
-/// k with `repeat_interleave(num_v_heads / num_k_heads, dim = heads)`:
-///
-/// > **value head `h` reads key/query head `h / (num_v_heads / num_k_heads)`** — grouped, not
-/// > strided. With `num_k_heads = 16` and `num_v_heads = 32`, value heads 0 and 1 share key
-/// > head 0, value heads 2 and 3 share key head 1, and so on.
-///
-/// OPEN, MEASURED (PMAT-3477, 2026-09-19): this mapping makes 4B/9B/27B **load and run** —
-/// the shape panic is gone and every logit is finite — but the 4B completion is not yet
-/// coherent, and a three-prompt A/B against the other candidate mapping (`h % num_k_heads`,
-/// which is what a plain `ggml_repeat` of the head axis would give) favours THAT one:
-///
-/// | prompt (4B Q4\_K\_M, `--no-gpu`, 12 tokens) | `h / ratio` (here) | `h % num_k_heads` |
-/// |---|---|---|
-/// | `The capital of France is` | `<think>META自来看似inglyigitar好莱坞erer` | `总部位于法国本土中央kaçinglyweisehood…` |
-/// | `1, 2, 3, 4, 5, 6,` | `抱歉erweiseinglyinglyinglyingly…` | `第七下一个 **.**新加坡和新舊舊…` |
-/// | `Water freezes at a temperature of` | `думанlyurahusaticallyALLYyronpan…` | `通常情况下所说的普通普通普通…` |
-///
-/// The strided column is on-topic (and "the seventh, the next one" is the right continuation
-/// of the counting prompt) and then degenerates; this column is off-topic from token 0.
-/// Neither is coherent, so at least one further 4B-specific defect remains and the mapping is
-/// NOT settled by that reading alone. What is kept here is the reference semantics — HF
-/// `repeat_interleave(dim = heads)` and llama.cpp's `convert_hf_to_gguf.py::Qwen3NextModel`,
-/// whose `in_proj_qkvz` de-interleave emits v group-major — because the local llama.cpp
-/// (39173bcac, 2026-01-15) has no `qwen35` converter to read, so the file's own v ordering
-/// could not be confirmed. Settle it against a reference implementation of `qwen35`, not
-/// against another sample of generated text.
-///
-/// Shapes (this is the contract the CUDA `DeltaRuleRecurrenceKernel` / `Qwen35CudaModel`
-/// mirror — the kernel's `num_v_heads`/`head_v_dim` pair gains `num_k_heads`/`head_k_dim` and
-/// the same `h / ratio` read):
-///
-/// | argument | length |
-/// |---|---|
-/// | `q`, `k` | `num_k_heads * head_k_dim` |
-/// | `v`, `output` | `num_v_heads * head_v_dim` |
-/// | `beta`, `gate` (dt) | `num_v_heads` — every gate is per VALUE head |
-/// | `state` | `num_v_heads * head_v_dim * head_k_dim` |
-///
-/// The recurrent state of value head `h` is `S ∈ R^(head_k_dim × head_v_dim)` laid out so that
-/// `S[i][j] = state[h * head_v_dim * head_k_dim + j * head_k_dim + i]` — memory row `j` is
-/// column `j` of `S`, `i` runs over the key dim and `j` over the value dim. Every Qwen3.5 size
-/// ships `head_k_dim == head_v_dim == 128`, so the block is square in practice; the two dims
-/// are kept distinct here so a future file with a rectangular state is a shape, not a rewrite.
-///
-/// The scale is `1/sqrt(head_k_dim)` (the query/key width, as `fla`'s
-/// `chunk_gated_delta_rule` defaults it) — identical to the previous
-/// `1/sqrt(head_v_dim)` on every file that exists today.
-///
-/// # Panics
-/// If any slice length disagrees with the table above, or if `num_v_heads` is not a positive
-/// multiple of `num_k_heads`.
-pub fn delta_rule_recurrence_gqa(
-    q: &[f32],
-    k: &[f32],
-    v: &[f32],
-    beta: &[f32],
-    gate: &[f32],
-    state: &mut [f32],
-    output: &mut [f32],
-    num_k_heads: usize,
-    head_k_dim: usize,
-    num_v_heads: usize,
-    head_v_dim: usize,
-) {
-    assert!(
-        num_k_heads > 0 && num_v_heads % num_k_heads == 0,
-        "Gated DeltaNet: num_v_heads ({num_v_heads}) must be a positive multiple of num_k_heads \
-         ({num_k_heads})"
-    );
-    assert_eq!(q.len(), num_k_heads * head_k_dim);
-    assert_eq!(k.len(), num_k_heads * head_k_dim);
+    assert_eq!(q.len(), num_v_heads * head_v_dim);
+    assert_eq!(k.len(), num_v_heads * head_v_dim);
     assert_eq!(v.len(), num_v_heads * head_v_dim);
     assert_eq!(beta.len(), num_v_heads);
     assert_eq!(gate.len(), num_v_heads);
-    assert_eq!(state.len(), num_v_heads * head_v_dim * head_k_dim);
+    assert_eq!(state.len(), num_v_heads * head_v_dim * head_v_dim);
     assert_eq!(output.len(), num_v_heads * head_v_dim);
 
-    let scale = 1.0 / (head_k_dim as f32).sqrt();
-    let heads_per_k = num_v_heads / num_k_heads;
+    let scale = 1.0 / (head_v_dim as f32).sqrt();
 
     for h in 0..num_v_heads {
-        // repeat_interleave: value head h reads key/query head h / heads_per_k.
-        let kh = h / heads_per_k;
-        let q_h = &q[kh * head_k_dim..(kh + 1) * head_k_dim];
-        let k_h = &k[kh * head_k_dim..(kh + 1) * head_k_dim];
+        let q_h = &q[h * head_v_dim..(h + 1) * head_v_dim];
+        let k_h = &k[h * head_v_dim..(h + 1) * head_v_dim];
         let v_h = &v[h * head_v_dim..(h + 1) * head_v_dim];
         let beta_val = beta[h];
         let gate_val = gate[h];
 
-        let state_stride = head_v_dim * head_k_dim;
-        let state_offset = h * state_stride;
-        let s_h = &mut state[state_offset..state_offset + state_stride];
+        let state_offset = h * head_v_dim * head_v_dim;
+        let s_h = &mut state[state_offset..state_offset + head_v_dim * head_v_dim];
 
         // 1. S_h *= exp(gate_val)
         let exp_gate = gate_val.exp();
@@ -255,14 +156,14 @@ pub fn delta_rule_recurrence_gqa(
         }
 
         // 2. delta = (v_h - S_h^T * k_h) * beta_val
-        // Note: s_h[j * head_k_dim + i] is S[i][j].
+        // Note: s_h[j * head_v_dim + i] is S[i][j].
         // So row j of s_h in memory is column j of S.
         // sum = dot(row j of s_h, k_h)
         let mut delta = vec![0.0; head_v_dim];
         for j in 0..head_v_dim {
-            let row_j = &s_h[j * head_k_dim..(j + 1) * head_k_dim];
+            let row_j = &s_h[j * head_v_dim..(j + 1) * head_v_dim];
             let mut sum = 0.0;
-            for i in 0..head_k_dim {
+            for i in 0..head_v_dim {
                 sum += row_j[i] * k_h[i];
             }
             delta[j] = (v_h[j] - sum) * beta_val;
@@ -270,18 +171,18 @@ pub fn delta_rule_recurrence_gqa(
 
         // 3. S_h += k_h * delta^T
         for j in 0..head_v_dim {
-            let row_j = &mut s_h[j * head_k_dim..(j + 1) * head_k_dim];
+            let row_j = &mut s_h[j * head_v_dim..(j + 1) * head_v_dim];
             let d_j = delta[j];
-            for i in 0..head_k_dim {
+            for i in 0..head_v_dim {
                 row_j[i] += k_h[i] * d_j;
             }
         }
 
         // 4. out_h = S_h^T * q_h * scale
         for j in 0..head_v_dim {
-            let row_j = &s_h[j * head_k_dim..(j + 1) * head_k_dim];
+            let row_j = &s_h[j * head_v_dim..(j + 1) * head_v_dim];
             let mut sum = 0.0;
-            for i in 0..head_k_dim {
+            for i in 0..head_v_dim {
                 sum += row_j[i] * q_h[i];
             }
             output[h * head_v_dim + j] = sum * scale;
@@ -440,10 +341,7 @@ impl Qwen35State {
         let convalue_dim = head_k_dim * num_k_heads * 2 + head_value_dim * num_v_heads;
         Self {
             conv_states: vec![vec![0.0; convalue_dim * 3]; num_layers],
-            // One [head_k_dim x head_value_dim] recurrent state per VALUE head — the key width
-            // is the state's row length, which is only the same as the value width because
-            // every Qwen3.5 size ships head_k_dim == head_v_dim (PMAT-3477).
-            ssm_states: vec![vec![0.0; num_v_heads * head_value_dim * head_k_dim]; num_layers],
+            ssm_states: vec![vec![0.0; num_v_heads * head_value_dim * head_value_dim]; num_layers],
             kv_cache: crate::gguf::OwnedQuantizedKVCache::new(
                 num_layers,
                 num_kv_heads * head_dim,
@@ -1028,12 +926,8 @@ impl<'a> Qwen35Model<'a> {
         self.base
             .fused_matmul_into(normed, &d.attn_gate, &mut gate)?;
 
-        // q and k are num_k_heads wide, v is num_v_heads wide: on 4B/9B (32 value heads to 16
-        // key heads) and 27B (48 to 16) the recurrence shares each key/query head across
-        // num_v_heads / num_k_heads value heads (PMAT-3477, #3346/#3510). On 0.8B and 2B the
-        // ratio is 1 and this is the pre-GQA arithmetic, unchanged.
         let mut out_h = vec![0.0; v_dim];
-        delta_rule_recurrence_gqa(
+        delta_rule_recurrence(
             &q,
             &k,
             &v,
@@ -1041,8 +935,6 @@ impl<'a> Qwen35Model<'a> {
             &dt,
             &mut cache.ssm_states[il][..],
             &mut out_h,
-            self.num_k_heads,
-            self.head_k_dim,
             self.num_v_heads,
             self.head_v_dim,
         );
@@ -1756,9 +1648,3 @@ mod qwen35_math_tests {
 #[cfg(test)]
 #[path = "forward_qwen35_contract_tests.rs"]
 mod qhf_contract_tests;
-
-/// The Gated `DeltaNet` head mapping when `num_v_heads > num_k_heads`
-/// (Qwen3.5 4B/9B/27B) — PMAT-3477, #3346/#3510.
-#[cfg(test)]
-#[path = "forward_qwen35_gqa_tests.rs"]
-mod qwen35_gqa_tests;
