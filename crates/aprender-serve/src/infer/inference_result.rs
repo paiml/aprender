@@ -915,8 +915,8 @@ fn f2_gpu_logits_via(
 ///     Backend: GPU (NVIDIA GeForce RTX 4090, 24045 MB VRAM)
 ///     Backend: wgpu (Vulkan)
 ///     Backend: CPU (wgpu unavailable: cosine 0.884 < 0.99)
-/// ~20 tok/s instead of ~400, with no stated cause even under
-/// --verbose. A silent 20x downgrade is indistinguishable from a
+/// an order of magnitude below the GPU decode rate, with no stated cause
+/// even under --verbose. A silent downgrade is indistinguishable from a
 /// decode regression, and it makes any throughput measured through
 /// it a fabrication (the Pillar-4 beat reports 0.070x and a
 /// BEAT-REGRESSION panic off exactly this state).
