@@ -1,5 +1,5 @@
 //! PMAT-3477 / aprender#3090: CPU parity for [`Qwen35CudaModel`] on the real
-//! Qwen3.5-0.8B file, at two scopes that must not be confused.
+//! Qwen3.5-0.8B file, at three scopes that must not be confused.
 //!
 //! 1. [`qwen35_cuda_gdn_ops_match_cpu_given_the_same_inputs`] — the six Gated
 //!    `DeltaNet` kernels, each fed the GPU's OWN input and compared against the
@@ -23,6 +23,15 @@
 //!    so the layer output cannot be inside 1e-3 and the GEMV kernels be what
 //!    they are today. [`LAYER_TOL`] is the measured budget, not a wish; the
 //!    kernels this ticket adds are held to [`TOL`].
+//!
+//! 3. the two WHOLE-FORWARD comparisons against the CPU's production forward
+//!    ([`qwen35_cuda_attention_layers_match_cpu_on_the_real_file`] and
+//!    [`qwen35_cuda_forward_single_matches_cpu_logits_end_to_end`]) — these
+//!    cannot be held to a tight L∞ at all, because the reference is the noisier
+//!    side (it quantizes its activation to Q8_K). They assert identical argmax
+//!    + cosine >= [`COSINE_FLOOR`] + an L∞ BUDGET. Read [`COSINE_FLOOR`] before
+//!    touching any number in this file: it carries the measurements, and the
+//!    difference between a bar and a budget is the whole point.
 //!
 //! Every comparison is **scale-relative** L∞ — `max|gpu - cpu| <= tol *
 //! max|cpu|` — and asserts `max|cpu| > 0` first. An absolute 1e-3 on these
@@ -51,16 +60,67 @@ const TOL: f32 = 1e-3;
 /// tokens and every `DeltaNet` layer: 9.8e-3 with the float GEMV pinned.
 const LAYER_TOL: f32 = 2e-2;
 
-/// Tolerance for the K and V rows an attention layer appends. They are one
-/// Q4_K/Q6_K GEMV plus a per-head RMSNorm and the partial rope away from the
-/// layer input, so they carry the GEMV budget but not the attention block's.
-const KV_TOL: f32 = 5e-3;
+/// Tolerance for the K and V rows an attention layer appends, against the
+/// EXACT-arithmetic reference ([`exact_gemv`] + the CPU's own norm and rope,
+/// which are unquantized ops). One GEMV plus a per-head RMSNorm plus the
+/// partial rope away from the layer input, with no quantized activation on
+/// either side, so this is the kernel contract [`TOL`], not a budget.
+const KV_TOL: f32 = TOL;
 
-/// Tolerance for the end-to-end logits of a whole token. Every layer's GEMV
-/// error compounds through 24 layers and the `lm_head`; this is the measured
-/// budget, and it is held together with an EXACT argmax equality, which is what
-/// a decode actually depends on.
-const LOGITS_TOL: f32 = 1e-3;
+/// THE PARITY CONTRACT FOR A WHOLE-FORWARD COMPARISON (PMAT-3477 / #3090).
+///
+/// The per-op tests above are held to [`TOL`] against an EXACT reference
+/// ([`exact_gemv`]) wherever the CPU production op quantizes its activation.
+/// The two comparisons that run the CPU's own production forward —
+/// [`qwen35_cuda_attention_layers_match_cpu_on_the_real_file`] and
+/// [`qwen35_cuda_forward_single_matches_cpu_logits_end_to_end`] — cannot be, and
+/// `qwen35_cuda_the_parity_floor_is_the_cpu_references_own_activation_quantization`
+/// says why with numbers: on the same projection the GPU float GEMV is 9.96e-8
+/// from exact arithmetic and the CPU `fused_matmul_into` is 2.95e-3, because it
+/// quantizes the ACTIVATION to Q8_K. The CPU is the noisier side, so a tight
+/// L∞ against it is not a correctness bar — it is a demand that the GPU
+/// reproduce the reference's own rounding.
+///
+/// So those two tests assert three things instead, all of which can fail:
+///
+/// 1. **identical argmax at every position** — exact, and the only property a
+///    greedy decode actually consumes;
+/// 2. **cosine >= [`COSINE_FLOOR`]** — direction, which an error that is pure
+///    GEMV rounding barely moves and a wrong kernel destroys;
+/// 3. **relative L∞ <= [`LOGITS_BUDGET`] / [`LAYER_BUDGET`]** — a budget, held
+///    as a regression tripwire. It is a reading, never a claim of exactness.
+///
+/// MEASURED, on the real 0.8B file with the float GEMV pinned — the tests print
+/// every one of these lines, so the constants below are a reading:
+///
+/// | e2e position | 0 | 1 | 2 | 3 | 4 | 5 |
+/// |---|---|---|---|---|---|---|
+/// | cosine | **0.998348** | 0.999487 | 0.998936 | 0.999510 | 0.999309 | 0.999636 |
+/// | relative L∞ | **6.721e-2** | 2.123e-2 | 3.490e-2 | 2.338e-2 | 3.065e-2 | 1.972e-2 |
+/// | argmax (both sides) | 13 | 198 | 11 | 198 | 0 | 908 |
+///
+/// and over the whole-attention-layer comparison (18 comparisons: every
+/// attention layer × three positions) the worst is layer 15 at position 0 —
+/// cosine **0.997419**, relative L∞ **4.867e-2** — with every other comparison
+/// at cosine ≥ 0.999407.
+///
+/// `COSINE_FLOOR` is the minimum over BOTH tests (0.997419) rounded DOWN to
+/// three decimals — 0.997 — minus 0.001: **0.996**. That leaves ~1.4e-3 of
+/// cosine margin under the worst comparison, and is still nowhere near what a
+/// broken kernel produces: the DP4A falsifier below reads 0.466 down to
+/// **-0.246**, so the assertion discriminates rather than decorates.
+const COSINE_FLOOR: f32 = 0.996;
+
+/// The measured end-to-end logit L∞ — 6.721e-2 relative, at position 0 —
+/// rounded UP to one significant figure. A budget on the accumulated
+/// CPU-reference activation quantization through 24 layers and the `lm_head`,
+/// not a tolerance anyone should read as accuracy: see [`COSINE_FLOOR`].
+const LOGITS_BUDGET: f32 = 7e-2;
+
+/// The same, for one whole attention layer's output hidden state: measured
+/// 4.867e-2 relative (layer 15, position 0), rounded up to one significant
+/// figure.
+const LAYER_BUDGET: f32 = 5e-2;
 
 /// A fixed three-token prompt. Any ids work for parity — what matters is that
 /// both sides see the same ones.
@@ -112,6 +172,90 @@ fn assert_rel_linf(got: &[f32], want: &[f32], tol: f32, what: &str) {
         want[at],
         got[at],
     );
+}
+
+/// Cosine similarity, accumulated in f64 so the metric itself is not the thing
+/// being measured.
+fn cosine(a: &[f32], b: &[f32]) -> f32 {
+    assert_eq!(a.len(), b.len(), "cosine: length mismatch");
+    let (mut dot, mut na, mut nb) = (0.0f64, 0.0f64, 0.0f64);
+    for (x, y) in a.iter().zip(b) {
+        dot += f64::from(*x) * f64::from(*y);
+        na += f64::from(*x) * f64::from(*x);
+        nb += f64::from(*y) * f64::from(*y);
+    }
+    assert!(
+        na > 0.0 && nb > 0.0,
+        "cosine: a zero vector — the comparison would be undefined"
+    );
+    (dot / (na.sqrt() * nb.sqrt())) as f32
+}
+
+/// The EXACT reference for one quantized projection: the weight dequantized to
+/// f32, the row dots accumulated in **f64**.
+///
+/// This is the third reference the parity contract rests on. The CPU
+/// production op (`fused_matmul_into`) is NOT it: it quantizes the activation
+/// to Q8_K and takes int8 dots, which costs ~3e-3 relative all by itself
+/// (measured in the parity-floor test). Any comparison whose reference side
+/// runs a quantized GEMV must come here instead, or it measures the reference.
+///
+/// Panics on a qtype it has no dequantizer for, rather than silently comparing
+/// against something else.
+fn exact_gemv(tensor: &crate::gguf::quantized::OwnedQuantizedTensor, x: &[f32]) -> Vec<f32> {
+    use crate::gguf::types::{GGUF_TYPE_Q4_K, GGUF_TYPE_Q5_K, GGUF_TYPE_Q6_K, GGUF_TYPE_Q8_0};
+    let w = match tensor.qtype {
+        GGUF_TYPE_Q4_K => crate::quantize::dequantize_q4_k(&tensor.data),
+        GGUF_TYPE_Q5_K => crate::quantize::dequantize_q5_k(&tensor.data),
+        GGUF_TYPE_Q6_K => crate::quantize::dequantize_q6_k(&tensor.data),
+        GGUF_TYPE_Q8_0 => crate::quantize::dequantize_q8_0(&tensor.data),
+        other => panic!("exact_gemv: no dequantizer for GGML type {other}"),
+    }
+    .expect("dequantize the projection");
+    assert_eq!(
+        x.len(),
+        tensor.in_dim,
+        "exact_gemv: the input is not in_dim wide"
+    );
+    assert!(
+        w.len() >= tensor.out_dim * tensor.in_dim,
+        "exact_gemv: the dequantized weight is short of out_dim x in_dim"
+    );
+    (0..tensor.out_dim)
+        .map(|r| {
+            let row = &w[r * tensor.in_dim..(r + 1) * tensor.in_dim];
+            row.iter()
+                .zip(x)
+                .fold(0.0f64, |s, (wv, xv)| s + f64::from(*wv) * f64::from(*xv)) as f32
+        })
+        .collect()
+}
+
+/// The whole-forward parity contract of [`COSINE_FLOOR`], applied at one
+/// position: exact argmax equality, cosine above the floor, L∞ inside the
+/// budget. Returns `(cosine, relative L∞)` so the caller can print the reading
+/// the constants were set from.
+fn assert_forward_parity(got: &[f32], want: &[f32], budget: f32, what: &str) -> (f32, f32) {
+    let cos = cosine(got, want);
+    let linf = rel_linf(got, want);
+    assert_eq!(
+        crate::gguf::ops::argmax(got),
+        crate::gguf::ops::argmax(want),
+        "{what}: the GPU and the CPU must pick the same index (gpu {} vs cpu {}, cosine \
+         {cos:.6}, relative L-inf {linf:.3e})",
+        crate::gguf::ops::argmax(got),
+        crate::gguf::ops::argmax(want),
+    );
+    assert!(
+        cos >= COSINE_FLOOR,
+        "{what}: cosine {cos:.6} is below the measured floor {COSINE_FLOOR} — the two sides \
+         point in different directions, which GEMV rounding does not do"
+    );
+    assert!(
+        linf <= budget,
+        "{what}: relative L-inf {linf:.3e} exceeds the measured budget {budget:.0e}"
+    );
+    (cos, linf)
 }
 
 /// Skip unless both the device and the model file are here.
@@ -511,11 +655,18 @@ fn qwen35_cuda_attention_layers_match_cpu_on_the_real_file() {
     gpu.pin_reference_gemv();
 
     let hidden_dim = qwen.base.config.hidden_dim;
-    let kv_row = qwen.base.config.num_kv_heads * qwen.head_dim;
+    let head_dim = qwen.head_dim;
+    let num_kv_heads = qwen.base.config.num_kv_heads;
+    let kv_row = num_kv_heads * head_dim;
+    let eps = qwen.base.config.eps;
+    let n_rot = 2 * qwen.rope_sections.iter().sum::<usize>();
+    let freq_base = qwen.base.config.rope_theta;
     let mut cpu_state = qwen.new_state(PROMPT.len() + 1);
     let mut normed = vec![0.0f32; hidden_dim];
     let mut post_normed = vec![0.0f32; hidden_dim];
     let mut compared = 0usize;
+    let mut worst_cos = 1.0f32;
+    let mut worst_linf = 0.0f32;
 
     for (pos, &token) in PROMPT.iter().enumerate() {
         let mut hidden = qwen.base.token_embedding()
@@ -543,6 +694,7 @@ fn qwen35_cuda_attention_layers_match_cpu_on_the_real_file() {
                     // positions 0..pos, and from the same hidden state.
                     let k_before = cpu_state.kv_cache.get_k(il).to_vec();
                     let v_before = cpu_state.kv_cache.get_v(il).to_vec();
+                    let hidden_in = hidden.clone();
                     assert_eq!(
                         k_before.len(),
                         pos * kv_row,
@@ -570,29 +722,71 @@ fn qwen35_cuda_attention_layers_match_cpu_on_the_real_file() {
                     let mut got = vec![0.0f32; hidden_dim];
                     dev.copy_to_host(&mut got).expect("download hidden");
 
-                    assert_rel_linf(
+                    // The CPU side here IS the production forward, which
+                    // quantizes every projection's activation to Q8_K — so the
+                    // contract is argmax + cosine + a budget, not a tight L∞.
+                    // See COSINE_FLOOR.
+                    let (cos, linf) = assert_forward_parity(
                         &got,
                         &hidden,
-                        LAYER_TOL,
+                        LAYER_BUDGET,
                         &format!("pos {pos} layer {il} hidden"),
                     );
+                    eprintln!(
+                        "[attn layer] pos {pos} layer {il}: cosine {cos:.6} relative L-inf \
+                         {linf:.3e}"
+                    );
+                    worst_cos = worst_cos.min(cos);
+                    worst_linf = worst_linf.max(linf);
 
                     // The appended row is the only one the GPU computed — the
                     // earlier rows were seeded from the CPU and would compare
                     // equal to themselves.
+                    //
+                    // The reference for it is EXACT arithmetic, not the CPU's
+                    // own cache row: K and V are one quantized GEMV off the
+                    // layer input, and the CPU's GEMV quantizes its activation
+                    // to Q8_K (parity-floor test). Comparing against the CPU row
+                    // measured that quantization and nothing else — it read
+                    // 7.6e-3 relative on a K row whose every non-GEMV op is
+                    // inside 1e-3. Built from the same layer input with
+                    // dequantized weights and f64 dots, the same row is a
+                    // kernel-contract comparison and holds at TOL.
                     let (k_after, v_after) = gpu.download_layer(il).expect("download KV");
                     assert_eq!(k_after.len(), (pos + 1) * kv_row, "K rows written");
-                    let cpu_k = cpu_state.kv_cache.get_k(il);
-                    let cpu_v = cpu_state.kv_cache.get_v(il);
+                    let mut normed_ref = vec![0.0f32; hidden_dim];
+                    crate::gguf::ops::rms_norm_into(&hidden_in, &a.attn_norm, eps, &mut normed_ref);
+                    let mut k_ref = exact_gemv(&a.attn_k, &normed_ref);
+                    crate::gguf::ops::apply_per_head_rms_norm(
+                        &mut k_ref,
+                        &a.attn_k_norm,
+                        num_kv_heads,
+                        eps,
+                    );
+                    crate::gguf::forward_qwen35::apply_partial_neox_rope(
+                        &mut k_ref,
+                        num_kv_heads,
+                        head_dim,
+                        n_rot,
+                        pos,
+                        freq_base,
+                    );
+                    let v_ref = exact_gemv(&a.attn_v, &normed_ref);
+                    eprintln!(
+                        "[attn layer] pos {pos} layer {il}: K row vs exact {:.3e}  V row vs \
+                         exact {:.3e}",
+                        rel_linf(&k_after[pos * kv_row..], &k_ref),
+                        rel_linf(&v_after[pos * kv_row..], &v_ref),
+                    );
                     assert_rel_linf(
                         &k_after[pos * kv_row..],
-                        &cpu_k[pos * kv_row..(pos + 1) * kv_row],
+                        &k_ref,
                         KV_TOL,
                         &format!("pos {pos} layer {il} K row"),
                     );
                     assert_rel_linf(
                         &v_after[pos * kv_row..],
-                        &cpu_v[pos * kv_row..(pos + 1) * kv_row],
+                        &v_ref,
                         KV_TOL,
                         &format!("pos {pos} layer {il} V row"),
                     );
@@ -607,6 +801,10 @@ fn qwen35_cuda_attention_layers_match_cpu_on_the_real_file() {
         compared,
         attention_layers * PROMPT.len(),
         "every attention layer must be compared at every position"
+    );
+    eprintln!(
+        "[attn layer] worst over {compared} comparisons: cosine {worst_cos:.6} relative L-inf \
+         {worst_linf:.3e}"
     );
 }
 
@@ -754,30 +952,40 @@ fn qwen35_cuda_attention_ops_match_cpu_given_the_same_inputs() {
             &format!("pos {pos}: decode attention + output gate"),
         );
 
-        // --- the projection GEMVs, from the GPU's own normed input. These are
-        // NOT this ticket's kernels: they are the pre-existing CPU/GPU
-        // quantization gap, measured here so the layer budget below is a
-        // reading and not a wish.
-        let mut q_full_c = vec![0.0f32; a.attn_q.out_dim];
-        qwen.base
-            .fused_matmul_into(&normed_g, &a.attn_q, &mut q_full_c)
-            .expect("cpu attn_q");
-        let mut k_c = vec![0.0f32; a.attn_k.out_dim];
-        qwen.base
-            .fused_matmul_into(&normed_g, &a.attn_k, &mut k_c)
-            .expect("cpu attn_k");
-        let mut out_c = vec![0.0f32; a.attn_output.out_dim];
-        qwen.base
-            .fused_matmul_into(&attn_out_in_g, &a.attn_output, &mut out_c)
-            .expect("cpu attn_output");
+        // --- the projection GEMVs, from the GPU's own normed input, against
+        // EXACT arithmetic (dequantized weight, f64 dots) and NOT against the
+        // CPU production op: `fused_matmul_into` quantizes its activation to
+        // Q8_K and is itself ~3e-3 from exact, so it cannot be the reference a
+        // 1e-3 bar is written against. See COSINE_FLOOR and the parity-floor
+        // test. These are not this ticket's kernels, but the float GEMV is what
+        // the constructor pins, so this is where a regression in that choice
+        // shows up first.
+        let q_full_e = exact_gemv(&a.attn_q, &normed_g);
+        let k_e = exact_gemv(&a.attn_k, &normed_g);
+        let out_e = exact_gemv(&a.attn_output, &attn_out_in_g);
+        let attn_out_g = gpu.dump_stage("attn_out");
         eprintln!(
-            "[GEMV pos {pos}] attn_q(t{}) {:.3e}  attn_k(t{}) {:.3e}  attn_output(t{}) {:.3e}",
+            "[GEMV vs exact pos {pos}] attn_q(t{}) {:.3e}  attn_k(t{}) {:.3e}  attn_output(t{}) \
+             {:.3e}",
             a.attn_q.qtype,
-            rel_linf(&q_full_g, &q_full_c),
+            rel_linf(&q_full_g, &q_full_e),
             a.attn_k.qtype,
-            rel_linf(&k_raw_g, &k_c),
+            rel_linf(&k_raw_g, &k_e),
             a.attn_output.qtype,
-            rel_linf(&gpu.dump_stage("attn_out"), &out_c),
+            rel_linf(&attn_out_g, &out_e),
+        );
+        assert_rel_linf(
+            &q_full_g,
+            &q_full_e,
+            TOL,
+            &format!("pos {pos}: attn_q GEMV"),
+        );
+        assert_rel_linf(&k_raw_g, &k_e, TOL, &format!("pos {pos}: attn_k GEMV"));
+        assert_rel_linf(
+            &attn_out_g,
+            &out_e,
+            TOL,
+            &format!("pos {pos}: attn_output GEMV"),
         );
 
         // --- rms_norm itself, on the same hidden state.
@@ -805,6 +1013,13 @@ fn qwen35_cuda_attention_ops_match_cpu_given_the_same_inputs() {
 ///
 /// No teacher forcing: after the first token the two sides diverge or they do
 /// not, and the argmax equality is what a decode actually depends on.
+///
+/// The contract is [`COSINE_FLOOR`]'s three assertions, and the restatement did
+/// NOT cost the test its teeth: skipping `gdn_sigmoid_gate_into` in
+/// `deltanet_layer_inner` (one line, reverted) turns this RED at position 0 on
+/// all three at once — argmax **220 vs 13**, cosine **0.765610** (floor 0.996),
+/// relative L∞ **1.427e0** (budget 7e-2). A gate the forward does not apply is
+/// a different token, not a rounding difference.
 #[test]
 #[serial_test::serial]
 fn qwen35_cuda_forward_single_matches_cpu_logits_end_to_end() {
@@ -818,6 +1033,8 @@ fn qwen35_cuda_forward_single_matches_cpu_logits_end_to_end() {
     gpu.pin_reference_gemv();
     let mut gpu_state = gpu.new_state().expect("device state");
     let mut cpu_state = qwen.new_state(LONG_PROMPT.len() + 1);
+    let mut worst_cos = 1.0f32;
+    let mut worst_linf = 0.0f32;
 
     for (pos, &token) in LONG_PROMPT.iter().enumerate() {
         let want = qwen
@@ -826,18 +1043,24 @@ fn qwen35_cuda_forward_single_matches_cpu_logits_end_to_end() {
         let got = gpu
             .forward_single(token, &mut gpu_state, pos)
             .expect("gpu forward");
-        assert_rel_linf(&got, &want, LOGITS_TOL, &format!("pos {pos} logits"));
-        assert_eq!(
-            crate::gguf::ops::argmax(&got),
+        let (cos, linf) =
+            assert_forward_parity(&got, &want, LOGITS_BUDGET, &format!("pos {pos} logits"));
+        eprintln!(
+            "[e2e] pos {pos}: argmax {} cosine {cos:.6} relative L-inf {linf:.3e}",
             crate::gguf::ops::argmax(&want),
-            "pos {pos}: the GPU and CPU must choose the same token"
         );
+        worst_cos = worst_cos.min(cos);
+        worst_linf = worst_linf.max(linf);
         assert_eq!(
             gpu_state.kv_len(),
             pos + 1,
             "pos {pos}: the device KV cache must have advanced"
         );
     }
+    eprintln!(
+        "[e2e] worst over {} positions: cosine {worst_cos:.6} relative L-inf {worst_linf:.3e}",
+        LONG_PROMPT.len(),
+    );
 }
 
 /// The device state is sized from the config, never from a constant.
@@ -899,7 +1122,9 @@ fn qwen35_cuda_forward_hidden_refuses_a_wrong_width() {
 /// `fused_q4k_parallel_matvec_into` quantizes the **activation** to Q8_K and
 /// takes int8 dots; the GPU float path dequantizes the weight and accumulates
 /// in f32. So ~3e-3 per projection is a property of the *reference*, not a GPU
-/// defect, and it is the floor under [`LAYER_TOL`] and [`LOGITS_TOL`]: no
+/// defect, and it is the floor under [`LAYER_TOL`], [`LAYER_BUDGET`] and
+/// [`LOGITS_BUDGET`], and the reason the two whole-forward tests assert argmax
+/// and [`COSINE_FLOOR`] instead of a tight L∞: no
 /// correct GPU implementation can be closer to this CPU than the CPU is to
 /// arithmetic.
 ///
@@ -934,21 +1159,9 @@ fn qwen35_cuda_the_parity_floor_is_the_cpu_references_own_activation_quantizatio
         .map(|i| ((i as f32) * 0.37).sin() * 1.3)
         .collect();
 
-    // the exact reference: dequantized weight, f64 accumulation
-    let w = crate::quantize::dequantize_q4_k(&a.attn_q.data).expect("dequantize the projection");
-    assert_eq!(
-        w.len(),
-        a.attn_q.out_dim * a.attn_q.in_dim,
-        "the dequantized weight must be out_dim x in_dim, row-major"
-    );
-    let exact: Vec<f32> = (0..a.attn_q.out_dim)
-        .map(|r| {
-            let row = &w[r * a.attn_q.in_dim..(r + 1) * a.attn_q.in_dim];
-            row.iter()
-                .zip(&x)
-                .fold(0.0f64, |s, (wv, xv)| s + f64::from(*wv) * f64::from(*xv)) as f32
-        })
-        .collect();
+    // the exact reference: dequantized weight, f64 accumulation — the same
+    // helper every GEMV-fed assertion in this file compares against.
+    let exact = exact_gemv(&a.attn_q, &x);
 
     let mut cpu = vec![0.0f32; a.attn_q.out_dim];
     qwen.base
@@ -971,12 +1184,106 @@ fn qwen35_cuda_the_parity_floor_is_the_cpu_references_own_activation_quantizatio
     assert!(
         cpu_err > 1e-4,
         "the CPU reference no longer quantizes its activation (cpu-vs-exact {cpu_err:.3e} <= \
-         1e-4) — the end-to-end parity budget can now come down; re-measure LOGITS_TOL"
+         1e-4) — the end-to-end parity budget can now come down; re-measure LOGITS_BUDGET and \
+         consider a tight L-inf bar again"
     );
     assert!(
         cpu_err > gpu_err * 100.0,
         "the CPU, not the GPU, must be the side that is far from arithmetic: cpu {cpu_err:.3e} \
          vs gpu {gpu_err:.3e}"
+    );
+}
+
+/// A model built the ordinary way already runs the FLOAT GEMV kernels — the pin
+/// is production behaviour, not something a test remembers to do.
+///
+/// `GpuProfile::detect` picks the DP4A variants for this device; the
+/// constructor overrides them for this architecture because DP4A is
+/// catastrophic through the recurrence (the falsifier below). If that override
+/// is ever dropped, decode silently returns garbage tokens and only this
+/// assertion says so before the parity tests do.
+#[test]
+#[serial_test::serial]
+fn qwen35_cuda_a_fresh_model_pins_the_float_gemv_variants() {
+    use crate::cuda::gpu_profile::{Q4kVariant, Q6kVariant};
+    let executor = qwen35_cuda_fixture_or_skip!();
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
+    let base = load_cpu_model(&mapped);
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+
+    let gpu = Qwen35CudaModel::new(&qwen, executor).expect("build the CUDA model");
+    assert_eq!(
+        gpu.gemv_variants(),
+        (Q4kVariant::Mwv, Q6kVariant::Mwv),
+        "Qwen35CudaModel::new must pin the float GEMV variants for this architecture"
+    );
+}
+
+/// WHY THE PIN EXISTS (PMAT-3477 / #3090): with the DP4A GEMV kernels armed,
+/// the same forward that matches the CPU token for token produces a DIFFERENT
+/// token, or a direction nowhere near the CPU's.
+///
+/// This is a falsifier, not a bug reproduction: it asserts the failure, so if a
+/// future DP4A activation-quantization change makes the path correct, this test
+/// goes RED and the pin (and the DP4A-through-recurrence ticket, 0.69.0) can be
+/// reconsidered on evidence.
+///
+/// Measured on the real 0.8B file at position 0: see the printed reading. The
+/// DeltaNet-only path is 1.656 relative away from the CPU under `HwDp4a` versus
+/// 0.000 float-vs-float; end to end the argmax is simply wrong.
+#[test]
+#[serial_test::serial]
+fn qwen35_cuda_dp4a_gemv_is_catastrophic_through_the_recurrence() {
+    use crate::cuda::gpu_profile::{Q4kVariant, Q6kVariant};
+    let executor = qwen35_cuda_fixture_or_skip!();
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
+    let base = load_cpu_model(&mapped);
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+
+    let mut gpu = Qwen35CudaModel::new(&qwen, executor).expect("build the CUDA model");
+    // The variant IS selectable from a test: the executor's profile is what
+    // every `gemv_dispatch` reads, and `gemv_variants()` reports it back.
+    gpu.executor_mut().gpu_profile.q4k = Q4kVariant::HwDp4a;
+    gpu.executor_mut().gpu_profile.q6k = Q6kVariant::HwDp4a;
+    assert_eq!(
+        gpu.gemv_variants(),
+        (Q4kVariant::HwDp4a, Q6kVariant::HwDp4a),
+        "the DP4A variants must actually be armed, else this test proves nothing"
+    );
+
+    let mut gpu_state = gpu.new_state().expect("device state");
+    let mut cpu_state = qwen.new_state(LONG_PROMPT.len() + 1);
+    let mut broken = 0usize;
+
+    for (pos, &token) in LONG_PROMPT.iter().enumerate() {
+        let want = qwen
+            .forward_single_qwen35(token, &mut cpu_state, pos)
+            .expect("cpu forward");
+        let got = gpu
+            .forward_single(token, &mut gpu_state, pos)
+            .expect("gpu forward");
+        let cos = cosine(&got, &want);
+        let (gpu_arg, cpu_arg) = (
+            crate::gguf::ops::argmax(&got),
+            crate::gguf::ops::argmax(&want),
+        );
+        eprintln!(
+            "[dp4a] pos {pos}: gpu argmax {gpu_arg} cpu argmax {cpu_arg} cosine {cos:.6} \
+             relative L-inf {:.3e}",
+            rel_linf(&got, &want),
+        );
+        if gpu_arg != cpu_arg || cos < COSINE_FLOOR {
+            broken += 1;
+        }
+    }
+
+    assert!(
+        broken > 0,
+        "the DP4A GEMV path passed the parity contract at every position — it is no longer \
+         catastrophic through the recurrence, so re-measure and revisit the pin in \
+         Qwen35CudaModel::with_max_seq_len (DP4A-through-recurrence ticket, 0.69.0)"
     );
 }
 
