@@ -767,7 +767,10 @@ A **surface** is anything the train already sweeps: the `(crate, feature)` matri
 examples (§4.2), the `apr` command registry, `contracts/`, the published docs, `.github/workflows/`,
 model files, and the three triage surfaces (§6.2). A **sweep PR** is one that writes a finding into
 a prose sink — operationally, one touching any of `.github/workflows/night.yml`,
-`docs/specifications/**`, `contracts/apr-cli-commands-v1.yaml`, `README.md`, `CLAUDE.md`, or a
+`docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md` (this spec — the sink the train writes its findings into; a
+*design* spec such as a `*-MASTER.md` is the finding's home, not a sink, and touching one is not a
+sweep — aprender#3535, three maintainer PRs red for a delta that did not exist),
+`contracts/apr-cli-commands-v1.yaml`, `README.md`, `CLAUDE.md`, or a
 known-red list anywhere.
 
 A **delta** is one of exactly four things, any one of which closes the sweep:
