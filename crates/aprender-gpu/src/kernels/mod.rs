@@ -26,6 +26,7 @@ mod bias_activation;
 mod conv1d;
 mod elementwise;
 mod fused;
+pub mod gdn;
 pub(crate) mod gemm;
 mod gemv;
 mod layernorm;
@@ -82,6 +83,10 @@ pub use elementwise::{
     TransposeKernel, // WAPR-PERF-004
 };
 pub use fused::{FusedGateUpKernel, FusedGemmBiasGeluKernel, FusedQKVKernel};
+pub use gdn::{
+    CausalConv1dSiluKernel, DeltaRuleRecurrenceKernel, GatedRmsNormKernel, GdnGatesKernel,
+    PerHeadL2NormKernel, SigmoidGateKernel,
+};
 pub use gemm::basic::tensor_core::cta64_wmma::build_cta64x128_mma_pipeline_fp16;
 pub use gemm::{
     Batched4DGemmConfig, Batched4DGemmKernel, BatchedGemmConfig, BatchedGemmKernel, GemmConfig,
