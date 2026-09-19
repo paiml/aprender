@@ -25,9 +25,12 @@ bincode = "1.3"
 # Validation
 validator = { version = "0.20", features = ["derive"] }
 thiserror = "2.0"
-# jsonschema removed from Cargo.toml to reduce Cargo.lock bloat (CB-081)
-# Re-add with: jsonschema = { version = "0.29", optional = true }
-# Code gated behind #[cfg(feature = "schema-validation")]
+# CB-081 removed jsonschema to cut Cargo.lock bloat but left the code behind
+# `schema-validation`, so that feature could not compile at all. 0.28 is ALREADY
+# in Cargo.lock (aprender-train, aprender-mcp), so re-adding at that version
+# costs zero new lock entries — which is what CB-081 was protecting. (The 0.29
+# the old note suggested would have added one.)
+jsonschema = { version = "0.28", optional = true }
 
 # Random number generation (deterministic)
 rand = "0.9"
@@ -48,9 +51,11 @@ memmap2 = "0.9"
 # Async runtime (for web visualization)
 tokio = { version = "1.0", features = ["full"], optional = true }
 
-# Web server removed from Cargo.toml to reduce Cargo.lock bloat (CB-081)
-# Re-add with: axum = { version = "0.7", features = ["ws"], optional = true }
-# Code gated behind #[cfg(feature = "web")]
+# Same story as jsonschema above: CB-081 dropped axum and left
+# `visualization/web.rs` gated behind a `web` feature that pulled only tokio.
+# axum 0.7.9 is already in Cargo.lock, and web.rs is written against the 0.7
+# API, so this re-add is both zero-bloat and zero-migration.
+axum = { version = "0.7", features = ["ws"], optional = true }
 
 # TUI (optional)
 crossterm = { version = "0.28", optional = true }
@@ -110,7 +115,7 @@ presentar-test = { path = "../aprender-present-test", package = "aprender-presen
 [features]
 default = []
 tui = ["dep:crossterm", "dep:presentar-terminal", "dep:presentar-core"]
-web = ["dep:tokio"]
+web = ["dep:tokio", "dep:axum"]
 wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:web-sys", "dep:getrandom", "dep:serde-wasm-bindgen", "dep:console_error_panic_hook"]
 full = ["tui", "web"]
 # EDD verification feature - enables extended verification tests
@@ -119,8 +124,12 @@ verification = []
 proptest = []
 # Z3 equation proofs - re-add z3 dep to enable
 z3-proofs = []
+# Private. Set by `z3-proofs` only once the `z3` dependency is re-added; it is
+# what actually gates the z3 code, so `z3-proofs` on its own reports the single
+# named refusal in edd/prover.rs instead of a cascade of unresolved imports.
+__z3-linked = []
 # JSON Schema validation - re-add jsonschema dep to enable
-schema-validation = []
+schema-validation = ["dep:jsonschema"]
 
 [lib]
 name = "simular"

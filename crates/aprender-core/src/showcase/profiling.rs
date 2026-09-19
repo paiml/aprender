@@ -275,6 +275,19 @@ impl PmatVerification {
 // Renacer Integration (feature-gated)
 // ============================================================================
 
+// `renacer` is a DEV-dependency of aprender-core — it depends on aprender, so it
+// cannot be a runtime dep without closing the cycle (see Cargo.toml). Lib code
+// therefore cannot link it, and `--features showcase-profile` produced a
+// cascade of unresolved-`renacer` errors. The feature now refuses by name, and
+// the real module is gated on the private linkage feature so the stub below
+// still compiles.
+#[cfg(feature = "showcase-profile")]
+compile_error!(
+    "feature `showcase-profile` needs `renacer`, which is a dev-dependency here \
+     because renacer depends on aprender (circular). The stub profiler is what \
+     builds without it; breaking the cycle is a prerequisite for enabling this."
+);
+
 /// Renacer-based profiler for deep GPU kernel analysis
 ///
 /// When the `showcase-profile` feature is enabled, this wraps renacer's
@@ -290,7 +303,7 @@ impl PmatVerification {
 /// // ... run GPU inference ...
 /// let hotspots = profiler.finish()?;
 /// ```
-#[cfg(feature = "showcase-profile")]
+#[cfg(feature = "__renacer-linked")]
 pub mod profiler {
     use super::{explain_component, Duration, ProfilingHotspot};
     use renacer::time_attribution::Hotspot;
@@ -341,7 +354,7 @@ pub mod profiler {
 }
 
 /// Stub module when renacer is not available
-#[cfg(not(feature = "showcase-profile"))]
+#[cfg(not(feature = "__renacer-linked"))]
 pub mod profiler {
     /// Stub config when showcase-profile is disabled
     #[derive(Debug, Clone, Default)]

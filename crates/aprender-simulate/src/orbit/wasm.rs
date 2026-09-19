@@ -129,21 +129,26 @@ impl OrbitSimulation {
     /// Step the simulation forward by days.
     #[wasm_bindgen]
     pub fn step_days(&mut self, days: f64) -> bool {
-        contract_pre_iterator!(days);
+        // `contract_pre_iterator!` asserts `input.len() > 0` — a SLICE
+        // precondition. Passing a scalar never compiled, so this site has
+        // never checked anything; `0` steps / `0.0` days are both legitimate
+        // here, so the no-arg marker form is used rather than inventing a
+        // scalar precondition the contract does not state.
+        contract_pre_iterator!();
         self.step(days * 86400.0)
     }
 
     /// Step the simulation forward by hours.
     #[wasm_bindgen]
     pub fn step_hours(&mut self, hours: f64) -> bool {
-        contract_pre_iterator!(hours);
+        contract_pre_iterator!();
         self.step(hours * 3600.0)
     }
 
     /// Run multiple steps with a given dt (for performance).
     #[wasm_bindgen]
     pub fn run_steps(&mut self, num_steps: u32, dt_seconds: f64) -> u32 {
-        contract_pre_iterator!(num_steps);
+        contract_pre_iterator!();
         let mut completed = 0;
         for _ in 0..num_steps {
             if !self.step(dt_seconds) {

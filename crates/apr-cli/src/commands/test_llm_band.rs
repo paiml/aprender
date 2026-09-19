@@ -1770,7 +1770,13 @@ async fn cool(first_lane: &mut bool, cooldown: std::time::Duration, interleaved:
         *first_lane = false;
         return;
     }
+    // Unreachable without `tokio` — `dispatch` refuses before any band runs —
+    // but the path still has to compile, and a silently-skipped cooldown would
+    // be a §5.1 protocol violation if it ever did run.
+    #[cfg(feature = "tokio")]
     tokio::time::sleep(cooldown).await;
+    #[cfg(not(feature = "tokio"))]
+    let _ = cooldown;
 }
 
 /// Run the §5.1 protocol over every requested band and write the receipts.

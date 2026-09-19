@@ -267,6 +267,10 @@ model-tests = []  # Enable heavy model/inference tests (requires models/ dir, ol
 cuda = ["trueno/cuda-monitor"]  # Enable CUDA monitoring via trueno-gpu (NVIDIA GPUs)
 cpu-only = []
 showcase-profile = []  # Renacer profiling (disabled: renacer→aprender circular dep)
+# Private. renacer is a DEV-dependency here (the cycle above), so lib code can
+# never link it; this is what actually gates the real profiler, leaving
+# `showcase-profile` to report one named refusal instead of a cascade.
+__renacer-linked = []
 showcase-zram = ["trueno-zram-core"]  # Enable trueno-zram KV cache compression for showcase benchmarks (PAR-040)
 explainable-monitor-integration = []  # Enable integration tests for aprender explainability + entrenar InferenceMonitor (GH-305)
 # Chaos engineering features (from renacer)

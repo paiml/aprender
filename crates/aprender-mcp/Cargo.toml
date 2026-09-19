@@ -35,7 +35,10 @@ native = ["dep:anyhow"]
 # stdio loop. Off by default — PR 1 wires the dep, PR 2 lands the parity test
 # (FALSIFY-MCP-009), PR 3 extends cancellation, PR 4/5 add SSE/WebSocket
 # transports. See docs/specifications/apr-mcp-server-spec.md §M5.
-pmcp-dispatcher = ["dep:pmcp"]
+# The dispatcher in server.rs uses `anyhow` (pulled by `native`) and
+# `tools::args::json_type_name`, also gated on `native`. Declared without it,
+# `--features pmcp-dispatcher` did not compile.
+pmcp-dispatcher = ["dep:pmcp", "native"]
 
 [dependencies]
 serde = { workspace = true }

@@ -218,7 +218,17 @@ default = ["server", "cli", "gpu"]
 
 # Core features
 gpu = ["trueno/gpu"]  # Enable GPU acceleration via Trueno (wgpu)
-cuda = ["dep:trueno-gpu", "dep:tracing"]  # Enable CUDA PTX generation for NVIDIA GPUs
+# Enable CUDA PTX generation for NVIDIA GPUs.
+# `gpu` and `server` are not optional here: the CUDA generate path reports
+# `crate::api::PhaseTimings` (api is `server`-gated) and the cached-weights path
+# it shares uses `DequantizedWeightCache`/`crate::gpu` (both `gpu`-gated).
+# Declared without them, `--features cuda` and `--features gpu,cuda` did not
+# compile — only the default set, which happens to carry both, ever did.
+# `cli` is here for two PURE sampling helpers — cli::inference::{argmax,
+# sample_with_temperature} — that the CUDA q4k scheduler calls. Moving those out
+# of the cli-gated module would let `cuda` drop this edge and stop pulling clap
+# and presentar-terminal; until then the declaration states what the code needs.
+cuda = ["dep:trueno-gpu", "dep:tracing", "gpu", "server", "cli"]
 kv-cache = ["dep:trueno-db"]  # KV cache for attention optimization
 apr-compression = ["dep:lz4_flex", "dep:zstd"]  # LZ4/ZSTD decompression for APR v2 (GH-35)
 

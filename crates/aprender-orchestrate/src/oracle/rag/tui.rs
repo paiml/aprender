@@ -8,14 +8,14 @@
 //! Migrated from ratatui to presentar-terminal for stack consistency.
 //! Uses Brick Architecture with Jidoka verification gates.
 
-#[cfg(feature = "presentar-terminal")]
+#[cfg(feature = "tui")]
 use std::collections::VecDeque;
-#[cfg(feature = "presentar-terminal")]
+#[cfg(feature = "tui")]
 use std::io::{self, Write};
-#[cfg(feature = "presentar-terminal")]
+#[cfg(feature = "tui")]
 use std::time::Duration;
 
-#[cfg(feature = "presentar-terminal")]
+#[cfg(feature = "tui")]
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEventKind},
@@ -23,14 +23,14 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
-#[cfg(feature = "presentar-terminal")]
+#[cfg(feature = "tui")]
 use presentar_terminal::{CellBuffer, Color, DiffRenderer, Modifiers};
 
-#[cfg(feature = "presentar-terminal")]
+#[cfg(feature = "tui")]
 use super::types::{IndexHealthMetrics, RelevanceMetrics};
 
 /// CYAN color constant (not in presentar-terminal)
-#[cfg(feature = "presentar-terminal")]
+#[cfg(feature = "tui")]
 const CYAN: Color = Color { r: 0.0, g: 1.0, b: 1.0, a: 1.0 };
 
 /// Query record for history display
@@ -49,7 +49,7 @@ pub struct QueryRecord {
 }
 
 /// TUI Dashboard state
-#[cfg(feature = "presentar-terminal")]
+#[cfg(feature = "tui")]
 pub struct OracleDashboard {
     /// Index health metrics
     pub index_health: IndexHealthMetrics,
@@ -75,7 +75,7 @@ pub struct OracleDashboard {
     height: u16,
 }
 
-#[cfg(feature = "presentar-terminal")]
+#[cfg(feature = "tui")]
 impl OracleDashboard {
     /// Create a new dashboard
     pub fn new() -> Self {
@@ -126,49 +126,56 @@ impl OracleDashboard {
         result
     }
 
+    /// Re-fit the buffer when the terminal has changed size.
+    fn sync_size(&mut self) {
+        let (w, h) = crossterm::terminal::size().unwrap_or((100, 30));
+        if w == self.width && h == self.height {
+            return;
+        }
+        self.width = w;
+        self.height = h;
+        self.buffer.resize(w, h);
+        self.renderer.reset();
+    }
+
+    /// Apply one key event. `false` means the loop should quit.
+    fn handle_key(&mut self, key: event::KeyEvent) -> bool {
+        if key.kind != KeyEventKind::Press {
+            return true;
+        }
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Esc => return false,
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.selected_component = self.selected_component.saturating_sub(1);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let max = self.index_health.docs_per_component.len().saturating_sub(1);
+                if self.selected_component < max {
+                    self.selected_component += 1;
+                }
+            }
+            // KeyCode::Char('r') would trigger a refresh — not implemented yet.
+            _ => {}
+        }
+        true
+    }
+
     /// Main event loop
     fn run_loop(&mut self, stdout: &mut io::Stdout) -> anyhow::Result<()> {
         loop {
-            // Update terminal size
-            let (w, h) = crossterm::terminal::size().unwrap_or((100, 30));
-            if w != self.width || h != self.height {
-                self.width = w;
-                self.height = h;
-                self.buffer.resize(w, h);
-                self.renderer.reset();
-            }
+            self.sync_size();
 
-            // Clear and render
             self.buffer.clear();
             self.render();
 
-            // Flush to terminal
             self.renderer.flush(&mut self.buffer, stdout)?;
             stdout.flush()?;
 
             if event::poll(self.refresh_interval)? {
-                let event = event::read()?;
-                let Event::Key(key) = event else { continue };
-                if key.kind != KeyEventKind::Press {
-                    continue;
-                }
-                match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        if self.selected_component > 0 {
-                            self.selected_component -= 1;
-                        }
+                if let Event::Key(key) = event::read()? {
+                    if !self.handle_key(key) {
+                        return Ok(());
                     }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        let max = self.index_health.docs_per_component.len().saturating_sub(1);
-                        if self.selected_component < max {
-                            self.selected_component += 1;
-                        }
-                    }
-                    KeyCode::Char('r') => {
-                        // Trigger refresh - placeholder
-                    }
-                    _ => {}
                 }
             }
         }
@@ -444,7 +451,7 @@ impl OracleDashboard {
     }
 }
 
-#[cfg(feature = "presentar-terminal")]
+#[cfg(feature = "tui")]
 impl Default for OracleDashboard {
     fn default() -> Self {
         Self::new()
@@ -604,7 +611,7 @@ mod tests {
         assert!(bar.contains("85%"));
     }
 
-    #[cfg(feature = "presentar-terminal")]
+    #[cfg(feature = "tui")]
     #[test]
     fn test_dashboard_creation() {
         let dashboard = OracleDashboard::new();
@@ -612,7 +619,7 @@ mod tests {
         assert!(dashboard.latency_samples.is_empty());
     }
 
-    #[cfg(feature = "presentar-terminal")]
+    #[cfg(feature = "tui")]
     #[test]
     fn test_dashboard_record_query() {
         let mut dashboard = OracleDashboard::new();
@@ -625,7 +632,7 @@ mod tests {
         assert_eq!(dashboard.latency_samples.len(), 1);
     }
 
-    #[cfg(feature = "presentar-terminal")]
+    #[cfg(feature = "tui")]
     #[test]
     fn test_dashboard_default() {
         let dashboard = OracleDashboard::default();
@@ -633,7 +640,7 @@ mod tests {
         assert_eq!(dashboard.selected_component, 0);
     }
 
-    #[cfg(feature = "presentar-terminal")]
+    #[cfg(feature = "tui")]
     #[test]
     fn test_dashboard_update_health() {
         let mut dashboard = OracleDashboard::new();
@@ -652,7 +659,7 @@ mod tests {
         assert_eq!(dashboard.index_health.docs_per_component.len(), 1);
     }
 
-    #[cfg(feature = "presentar-terminal")]
+    #[cfg(feature = "tui")]
     #[test]
     fn test_dashboard_latency_samples_bounded() {
         let mut dashboard = OracleDashboard::new();
@@ -666,7 +673,7 @@ mod tests {
         assert_eq!(dashboard.latency_samples.len(), 50);
     }
 
-    #[cfg(feature = "presentar-terminal")]
+    #[cfg(feature = "tui")]
     #[test]
     fn test_dashboard_query_history_bounded() {
         let mut dashboard = OracleDashboard::new();
@@ -680,7 +687,7 @@ mod tests {
         assert_eq!(dashboard.query_history.len(), 100);
     }
 
-    #[cfg(feature = "presentar-terminal")]
+    #[cfg(feature = "tui")]
     #[test]
     fn test_dashboard_query_order() {
         let mut dashboard = OracleDashboard::new();
@@ -785,7 +792,7 @@ mod tests {
         assert!(!record.success);
     }
 
-    #[cfg(feature = "presentar-terminal")]
+    #[cfg(feature = "tui")]
     #[test]
     fn test_health_color_red() {
         let dashboard = OracleDashboard::new();
@@ -793,7 +800,7 @@ mod tests {
         assert_eq!(color, Color::RED);
     }
 
-    #[cfg(feature = "presentar-terminal")]
+    #[cfg(feature = "tui")]
     #[test]
     fn test_health_color_yellow() {
         let dashboard = OracleDashboard::new();
@@ -801,7 +808,7 @@ mod tests {
         assert_eq!(color, Color::YELLOW);
     }
 
-    #[cfg(feature = "presentar-terminal")]
+    #[cfg(feature = "tui")]
     #[test]
     fn test_health_color_green() {
         let dashboard = OracleDashboard::new();

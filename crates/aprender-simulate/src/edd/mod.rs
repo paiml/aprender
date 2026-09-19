@@ -58,7 +58,7 @@ pub use gui_coverage::GuiCoverage;
 pub use loader::{EmcYaml, ExperimentYaml};
 pub use model_card::{DomainConstraint, EmcBuilder, EquationModelCard};
 pub use operations::{BullwhipEffect, KingmanFormula, LittlesLaw, SquareRootLaw};
-#[cfg(feature = "z3-proofs")]
+#[cfg(feature = "__z3-linked")]
 pub use prover::z3_impl;
 pub use prover::{ProofError, ProofResult, Z3Provable};
 pub use report::{ReportFormat, ReportGenerator};

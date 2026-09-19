@@ -53,6 +53,20 @@ impl Histogram {
         }
     }
 
+    /// Set the rendered size in pixels.
+    ///
+    /// `width`/`height` were already fields, already defaulted (800x600), and
+    /// already read by [`Histogram::to_framebuffer`] — only the setter was
+    /// missing, so `aprender-serve`'s latency histogram could not compile
+    /// against it while every sibling widget (sparkline, resource bar, ggplot)
+    /// offers the same method.
+    #[must_use]
+    pub fn dimensions(mut self, width: u32, height: u32) -> Self {
+        self.width = width;
+        self.height = height;
+        self
+    }
+
     /// Set the data.
     #[must_use]
     pub fn data(mut self, data: &[f32]) -> Self {
