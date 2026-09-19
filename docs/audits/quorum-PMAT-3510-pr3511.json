@@ -1,0 +1,224 @@
+{
+  "ticket": "PMAT-3510",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 98 commit(s); judged against origin/main",
+  "head": "22365f72455b42f4c92de9002d6fc45e31324d6f",
+  "diff_sha256": "0c5d5d23d5da1b9c0531b71c810abc737b3b216d99be6df81cf45de4bcd553f5",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 25255,
+  "author": {
+    "model": "claude-fable-5-1",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The provided diff correctly implements the \"MECHANISM HALF ONLY\" of PMAT-3510. It adds the `hosts: [..]` capability to the ladder schema without adding any actual model rungs. It accurately enforces the rule that unlisted hosts skip the rung instead of failing, outputs an `[N/A]` row in `model_ladder.sh`, and correctly ratchets vs `origin/main` to prevent dropping hosts for existing rungs. All 3 described self-test cases are present and implemented correctly. No forbidden changes (e.g., adding model files) were found.",
+      "findings": [],
+      "raw_bytes": 2901,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The PR implements the mechanism half of PMAT-3510 exactly as specified: optional per-rung `hosts: [..]` in the ladder contract, falsification tests FALSIFY-MCL-009/010, per-host skipping and origin/main ratchet ('hosts DROPPED') in check_model_ladder.sh, non-RED [N/A] receipt generation in model_ladder.sh, and 3 corresponding self-test cases (18 total). No rungs and no model files were added. No gates were weakened and no contradictions were found.",
+      "findings": [
+        {
+          "claim": "contracts/model-capability-ladder-v1.yaml documents optional hosts: [..] per rung and adds falsification tests FALSIFY-MCL-009 and FALSIFY-MCL-010 without adding any rungs or model files, matching the mechanism-only scope.",
+          "file": "contracts/model-capability-ladder-v1.yaml",
+          "grounding": "cited",
+          "line": 33
+        },
+        {
+          "claim": "scripts/check_model_ladder.sh implements the ratchet over (rung, host) pairs against origin/main, failing with 'hosts DROPPED' if a required rung loses hosts.",
+          "file": "scripts/check_model_ladder.sh",
+          "grounding": "cited",
+          "line": 64
+        },
+        {
+          "claim": "scripts/check_model_ladder.sh skips a rung when the host is not listed in the rung's hosts: list without marking it as a failure.",
+          "file": "scripts/check_model_ladder.sh",
+          "grounding": "cited",
+          "line": 97
+        },
+        {
+          "claim": "scripts/model_ladder.sh extracts hosts: into the ladder pipeline and logs an [N/A] row with not_listed_host: true, continuing without incrementing RED.",
+          "file": "scripts/model_ladder.sh",
+          "grounding": "cited",
+          "line": 107
+        },
+        {
+          "claim": "scripts/lib/model_ladder_cases adds 3 self-test cases (green-rung-listed-one-host, red-dropped-host-on-rung, red-listed-host-absent), bringing the total to 18 cases, testing both skipping on unlisted hosts and ratcheting against dropped hosts.",
+          "file": "scripts/lib/model_ladder_cases/green-rung-listed-one-host/expected_rc",
+          "grounding": "cited",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 4971,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff fully implements the mechanism half of PMAT-3510 / PR #3511 without adding unwanted model files or size rungs. It adds optional per-rung `hosts: [..]` support, enforces ratchet floor verification against origin/main ('hosts DROPPED'), handles [N/A] rows in model_ladder.sh without RED counts, and includes the 3 self-test cases matching specification.",
+      "findings": [
+        {
+          "claim": "FALSIFY-MCL-009 and FALSIFY-MCL-010 test definitions added specifying per-rung host scoping and ratchet floor behavior",
+          "file": "contracts/model-capability-ladder-v1.yaml",
+          "grounding": "cited",
+          "line": 175
+        },
+        {
+          "claim": "Ratchet check enforces that required (rung, host) pairs cannot be dropped vs origin/main ('hosts DROPPED')",
+          "file": "scripts/check_model_ladder.sh",
+          "grounding": "cited",
+          "line": 66
+        },
+        {
+          "claim": "Receipt validation skips rung evaluation when host is not listed in r.hosts",
+          "file": "scripts/check_model_ladder.sh",
+          "grounding": "cited",
+          "line": 97
+        },
+        {
+          "claim": "model_ladder.sh records [N/A] row with not_listed_host: true without marking RED or failing execution on unlisted hosts",
+          "file": "scripts/model_ladder.sh",
+          "grounding": "cited",
+          "line": 111
+        }
+      ],
+      "raw_bytes": 3558,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "contracts/model-capability-ladder-v1.yaml",
+      "line": 33,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "contracts/model-capability-ladder-v1.yaml documents optional hosts: [..] per rung and adds falsification tests FALSIFY-MCL-009 and FALSIFY-MCL-010 without adding any rungs or model files, matching the mechanism-only scope."
+      ]
+    },
+    {
+      "file": "contracts/model-capability-ladder-v1.yaml",
+      "line": 175,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "FALSIFY-MCL-009 and FALSIFY-MCL-010 test definitions added specifying per-rung host scoping and ratchet floor behavior"
+      ]
+    },
+    {
+      "file": "scripts/check_model_ladder.sh",
+      "line": 64,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "scripts/check_model_ladder.sh implements the ratchet over (rung, host) pairs against origin/main, failing with 'hosts DROPPED' if a required rung loses hosts."
+      ]
+    },
+    {
+      "file": "scripts/check_model_ladder.sh",
+      "line": 66,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Ratchet check enforces that required (rung, host) pairs cannot be dropped vs origin/main ('hosts DROPPED')"
+      ]
+    },
+    {
+      "file": "scripts/check_model_ladder.sh",
+      "line": 97,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "Receipt validation skips rung evaluation when host is not listed in r.hosts",
+        "scripts/check_model_ladder.sh skips a rung when the host is not listed in the rung's hosts: list without marking it as a failure."
+      ]
+    },
+    {
+      "file": "scripts/lib/model_ladder_cases/green-rung-listed-one-host/expected_rc",
+      "line": 1,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "scripts/lib/model_ladder_cases adds 3 self-test cases (green-rung-listed-one-host, red-dropped-host-on-rung, red-listed-host-absent), bringing the total to 18 cases, testing both skipping on unlisted hosts and ratcheting against dropped hosts."
+      ]
+    },
+    {
+      "file": "scripts/model_ladder.sh",
+      "line": 107,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "scripts/model_ladder.sh extracts hosts: into the ladder pipeline and logs an [N/A] row with not_listed_host: true, continuing without incrementing RED."
+      ]
+    },
+    {
+      "file": "scripts/model_ladder.sh",
+      "line": 111,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "model_ladder.sh records [N/A] row with not_listed_host: true without marking RED or failing execution on unlisted hosts"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane 1: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (2901 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)"
+  ],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-fable-5-1/claude"
+  }
+}
