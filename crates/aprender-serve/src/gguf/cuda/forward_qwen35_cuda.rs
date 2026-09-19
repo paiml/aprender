@@ -30,7 +30,7 @@
 //! kinds, the output norm and the `lm_head`.
 //!
 //! Every state buffer is sized from the config
-//! (`num_v_heads * head_v_dim * head_v_dim`, `conv_dim * (conv_kernel - 1)`,
+//! (`num_v_heads * head_v_dim * head_k_dim`, `conv_dim * (conv_kernel - 1)`,
 //! `max_seq_len * num_kv_heads * head_dim`) — never from a constant.
 
 use super::{OwnedQuantizedTensor, RealizarError, Result};
@@ -108,7 +108,7 @@ pub struct Qwen35CudaState {
     kv: Vec<Option<(GpuBuffer<f32>, GpuBuffer<f32>)>>,
     /// `conv_dim * (conv_kernel - 1)`.
     conv_len: usize,
-    /// `num_v_heads * head_v_dim * head_v_dim`.
+    /// `num_v_heads * head_v_dim * head_k_dim`.
     ssm_len: usize,
     /// `num_kv_heads * head_dim` — one KV cache row.
     kv_row: usize,
@@ -358,19 +358,29 @@ impl<'a> Qwen35CudaModel<'a> {
         }
     }
 
-    /// The delta rule reads q, k and v with one head stride, so a file whose key
-    /// heads differ from its value heads cannot run this kernel — refuse rather
-    /// than index past a head.
-    fn check_head_symmetry(d: Qwen35CudaDims) -> Result<()> {
-        if d.head_k_dim == d.head_v_dim && d.num_k_heads == d.num_v_heads {
+    /// The delta rule maps value head `h` onto key head `h % num_k_heads`, so the
+    /// ONLY shape it cannot serve is one whose value heads are not a whole number
+    /// of key-head groups (PMAT-3477, #3346/#3510).
+    ///
+    /// This used to refuse every `num_k_heads != num_v_heads` file outright, which
+    /// is what kept Qwen3.5-4B/9B (32 value heads against 16 key heads) and -27B
+    /// (48 against 16) off the GPU. `head_k_dim != head_v_dim` is likewise no
+    /// longer a refusal: the kernel sizes the state row from the key dim and the
+    /// row count from the value dim.
+    /// Renamed from `check_head_symmetry`: it no longer asks for symmetry, and a
+    /// predicate whose name outlives what it tests is the next reader's wrong
+    /// diagnosis.
+    fn check_head_grouping(d: Qwen35CudaDims) -> Result<()> {
+        if d.num_k_heads > 0 && d.num_v_heads % d.num_k_heads == 0 {
             return Ok(());
         }
         Err(RealizarError::UnsupportedOperation {
             operation: "qwen35_cuda_deltanet".to_string(),
             reason: format!(
-                "the delta-rule kernel indexes q/k/v with one head stride: \
-                 head_k_dim {} != head_v_dim {} or num_k_heads {} != num_v_heads {}",
-                d.head_k_dim, d.head_v_dim, d.num_k_heads, d.num_v_heads
+                "the delta rule maps value head h onto key head h % num_k_heads, so \
+                 num_v_heads must be a positive multiple of num_k_heads: num_k_heads {} \
+                 does not divide num_v_heads {}",
+                d.num_k_heads, d.num_v_heads
             ),
         })
     }
@@ -500,7 +510,7 @@ impl<'a> Qwen35CudaModel<'a> {
         max_seq_len: usize,
     ) -> Result<Self> {
         let dims = Self::dims_of(model);
-        Self::check_head_symmetry(dims)?;
+        Self::check_head_grouping(dims)?;
         if max_seq_len == 0 {
             return Err(RealizarError::InvalidShape {
                 reason: "qwen35_cuda: max_seq_len must be at least 1".to_string(),
@@ -605,7 +615,11 @@ impl<'a> Qwen35CudaModel<'a> {
         max_seq_len: usize,
     ) -> Result<Qwen35CudaState> {
         let conv_len = (dims.conv_dim * (dims.conv_kernel - 1)) as usize;
-        let ssm_len = (dims.num_v_heads * dims.head_v_dim * dims.head_v_dim) as usize;
+        // The recurrent state of one value head is [head_v_dim rows x head_k_dim],
+        // laid out `s[j * head_k_dim + i] == S[i][j]` — the CPU reference's own
+        // layout. Sizing it from head_v_dim twice was only right because every
+        // file so far ships head_k_dim == head_v_dim (PMAT-3477).
+        let ssm_len = (dims.num_v_heads * dims.head_v_dim * dims.head_k_dim) as usize;
         let kv_row = (dims.num_kv_heads * dims.attn_head_dim) as usize;
         let mut conv = Vec::with_capacity(layers.len());
         let mut ssm = Vec::with_capacity(layers.len());
@@ -1288,6 +1302,8 @@ impl<'a> Qwen35CudaModel<'a> {
             &s.dt,
             &state.ssm[il],
             &s.out_h,
+            d.num_k_heads,
+            d.head_k_dim,
             d.num_v_heads,
             d.head_v_dim,
         )?;

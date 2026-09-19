@@ -269,8 +269,9 @@ impl CudaKernels {
                 PerHeadL2NormKernel::new(*head_dim, *num_heads, *epsilon).emit_ptx()
             },
             KernelType::GdnGates { num_heads } => GdnGatesKernel::new(*num_heads).emit_ptx(),
-            KernelType::GdnDeltaRule { num_v_heads, head_v_dim } => {
-                DeltaRuleRecurrenceKernel::new(*num_v_heads, *head_v_dim).emit_ptx()
+            KernelType::GdnDeltaRule { num_v_heads, head_v_dim, num_k_heads, head_k_dim } => {
+                DeltaRuleRecurrenceKernel::new(*num_k_heads, *head_k_dim, *num_v_heads, *head_v_dim)
+                    .emit_ptx()
             },
             KernelType::GdnGatedRmsNorm { head_dim, num_heads, epsilon } => {
                 GatedRmsNormKernel::new(*head_dim, *num_heads, *epsilon).emit_ptx()
