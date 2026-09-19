@@ -781,7 +781,7 @@ commands:
     description: "Provable-contracts CLI (also ships as the standalone pv binary)"
     requires_model: false
     side_effects: [filesystem]
-    subcommands: [audit, book, census, certify, check-parity, codegen, coq, coverage, diff, equations, explain, extract-pytorch, flux, fuzz, generate, graph, infer, invariants, kaizen, kani, lean, lean-status, lint, migrate, mirai, pipeline, probar, proof-status, query, roofline, scaffold, score, status, tla, unlock, validate, verify-bindings, verify-pipeline, verify-structure]
+    subcommands: [audit, book, census, certify, check-parity, codegen, coq, coverage, diff, equations, explain, extract, extract-pytorch, flux, fuzz, generate, graph, infer, invariants, kaizen, kani, lean, lean-status, lint, migrate, mirai, pipeline, probar, proof-status, query, roofline, scaffold, score, status, tla, unlock, validate, verify-bindings, verify-pipeline, verify-structure]
 
 # ── Falsification Conditions ──
 

@@ -123,20 +123,30 @@
     // #3477: the driver's gate plan for a CPU-only architecture
     // ========================================================================
 
-    /// The GPU gates of a CPU-only architecture skip with the #3090 reason, and
-    /// a skip does not taint the report.
+    /// The GPU gates of a CPU-only architecture skip with a reason, and a skip
+    /// does not taint the report.
     ///
     /// Before #3477 the Capability Match FAIL routed every later gate through
     /// "Skipped due to capability match failure" and `apr qa` exited 5 on a
     /// model `apr run` serves correctly. A declined backend is a skip with a
     /// reason, not a failure of the model.
+    ///
+    /// #3477 second pass: this test used to REQUIRE the string `#3090`, which
+    /// pinned the claim "the GPU does not implement Gated DeltaNet" into a gate
+    /// report. That claim is withdrawn — #3090 shipped the GPU forward — so the
+    /// assertion is inverted: citing it here is now the defect.
     #[test]
-    fn gpu_gates_skip_with_the_3090_reason_on_a_cpu_only_architecture() {
+    fn gpu_gates_skip_on_a_cpu_only_architecture_without_citing_the_shipped_gpu_forward() {
         let (skip, reason) = gpu_gate_skip(true, false, "Skipped by --skip-gpu-speedup");
         assert!(skip, "a GPU gate cannot run when the GPU declined the arch");
         assert!(
-            reason.contains("#3090"),
-            "the skip must cite why the GPU declined: {reason}"
+            reason.contains("declined"),
+            "the skip must say the GPU declined this architecture: {reason}"
+        );
+        assert!(
+            !reason.contains("#3090"),
+            "#3090 IS the Gated DeltaNet GPU forward and it exists — citing it as the reason a \
+             GPU gate could not run republishes the withdrawn refusal: {reason}"
         );
         let gate = GateResult::skipped("gpu_speedup", reason);
         assert!(
@@ -147,6 +157,37 @@
             !reason.contains("capability match failure"),
             "the capability gate PASSED on the CPU rung: {reason}"
         );
+    }
+
+    /// The GPU gates a HYBRID file skips are skipped for the instrument, never
+    /// for the backend.
+    ///
+    /// #3477: `gpu_speedup` and `gpu_state_isolation` measure through the dense
+    /// `OwnedQuantizedModelCuda`, which has no hybrid path — so they skip even
+    /// though the GPU serves this model and Golden Output judges its GPU text.
+    /// The reason must say so, because "GPU declined" here would be read as
+    /// `apr run --gpu` falling back to the CPU, which is the bug #3090 closed.
+    #[test]
+    fn a_hybrid_gpu_gate_skips_for_the_instrument_not_for_the_backend() {
+        let (skip, reason) = hybrid_gpu_gate_skip(true, false, "Skipped by --skip-gpu-speedup");
+        assert!(skip, "the dense CUDA loader has no hybrid path");
+        assert!(
+            reason.contains("runs on the GPU (#3090)"),
+            "the skip must affirm the GPU runs this model: {reason}"
+        );
+        assert!(
+            reason.contains("OwnedQuantizedModelCuda"),
+            "the skip must name the missing instrument: {reason}"
+        );
+        assert!(
+            !reason.contains("declined"),
+            "nothing declined this architecture — the gate lacks an instrument: {reason}"
+        );
+        // A non-hybrid file keeps the user's own flag verbatim, so the predicate
+        // is not simply skipping everything.
+        let (skip, reason) = hybrid_gpu_gate_skip(false, false, "Skipped by --skip-gpu-speedup");
+        assert!(!skip, "a dense model still runs its GPU gates");
+        assert_eq!(reason, "Skipped by --skip-gpu-speedup");
     }
 
     /// A GPU-capable architecture keeps the user's own skip flags verbatim —
@@ -165,14 +206,28 @@
     /// The dense-loader gates (Ollama parity, cross-format parity) build the
     /// model with `OwnedQuantizedModel::from_mapped`, which refuses Gated
     /// DeltaNet — that refusal is what aborted the whole run. They skip with a
-    /// reason naming both issues.
+    /// reason naming both forwards.
+    ///
+    /// #3477 second pass: the reason must cite both issues as the two forwards
+    /// that EXIST (CPU #3091, GPU #3090) and blame the loader. It previously
+    /// ended "GPU declined (#3090)", so `apr qa` printed a withdrawn refusal on
+    /// two gates of every qwen35 run even after the GPU forward shipped.
     #[test]
-    fn dense_loader_gates_skip_on_a_cpu_only_architecture() {
+    fn dense_loader_gates_skip_on_the_loader_not_on_a_backend() {
         let (skip, reason) = dense_gate_skip(true, false, "Skipped by --skip-ollama");
         assert!(skip);
         assert!(
             reason.contains("#3091") && reason.contains("#3090"),
-            "the skip must cite the CPU forward and the declined GPU: {reason}"
+            "the skip must cite both forwards: {reason}"
+        );
+        assert!(
+            !reason.contains("declined"),
+            "neither backend declined this model — the dense loader has no hybrid path, and \
+             saying otherwise republishes the refusal #3090 lifted: {reason}"
+        );
+        assert!(
+            reason.contains("from_mapped"),
+            "the skip must name the instrument that cannot run: {reason}"
         );
         let (skip, reason) = dense_gate_skip(false, false, "Skipped by --skip-ollama");
         assert!(!skip);

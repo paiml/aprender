@@ -24,6 +24,10 @@ scope: >
   Out of scope: resolving applied identifiers against code (ONT-3a), subsumption (ONT-4d), shapes (ONT-4b).
 status: active
 
+# ONT-4: the sigma gate emits into ONT-6's lattice — a typed relation, true of the code, checked by the relations gate.
+relations:
+  depends_on: [ont-verdict-lattice-v1]
+
 metadata:
   version: "1.0.0"
   kind: pattern

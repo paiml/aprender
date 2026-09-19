@@ -242,16 +242,17 @@ fn run_gguf_inference(
         )?;
         (tokens, false) // CPU-only path; GPU MoE wiring is M32d follow-up
     } else if is_qwen35 {
-        if !config.no_gpu && cfg!(feature = "cuda") {
-            eprintln!("[qwen35: Gated DeltaNet runs on the CPU; the GPU backend does not implement it yet (#3090)]");
-        }
-        let tokens = crate::gguf::forward_qwen35::run_qwen35_generate(
+        // #3477: the hybrid now has a GPU forward (#3090), so `apr run --gpu`
+        // routes to it and reports CUDA; the CPU forward (#3091) serves
+        // `--no-gpu`, a build without cuda, and any GPU failure — the last of
+        // which is printed, never silent.
+        crate::gguf::forward_qwen35::run_qwen35_generate_dispatch(
             &mapped,
             &model,
             &input_tokens,
             &gen_config,
-        )?;
-        (tokens, false)
+            config.no_gpu,
+        )?
     } else {
         run_gguf_generate(model, &input_tokens, &gen_config, config)?
     };

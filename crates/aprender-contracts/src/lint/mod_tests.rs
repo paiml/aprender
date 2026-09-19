@@ -10,9 +10,9 @@ fn lint_passes_on_real_contracts() {
     let config = LintConfig::new(&dir, None, 0.0);
     let report = run_lint(&config);
     assert!(report.passed, "lint should pass: {report:?}");
-    // 10 gates: validate, audit, score, verify, enforce, enforcement-level,
-    // reverse-coverage, duplicate-stems (PV-DUP-001), composition, sigma (ONT-2b).
-    assert_eq!(report.gates.len(), 10);
+    // 12 gates: validate, audit, score, verify, enforce, enforcement-level, reverse-coverage,
+    // duplicate-stems (PV-DUP-001), composition, sigma (ONT-2b), relations (ONT-4), shapes (ONT-4b).
+    assert_eq!(report.gates.len(), 12);
 }
 
 #[test]
@@ -162,7 +162,7 @@ fn lint_validation_failure_skips_audit_and_score() {
     let report = run_lint(&config);
     assert!(!report.passed);
     // validate should fail, all subsequent gates should be skipped
-    assert_eq!(report.gates.len(), 10);
+    assert_eq!(report.gates.len(), 12);
     assert!(!report.gates[0].passed); // validate failed
     assert!(report.gates[1].skipped); // audit skipped
     assert!(report.gates[2].skipped); // score skipped
@@ -360,11 +360,16 @@ fn every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus() {
         Verdict::Pass,
         "the repo corpus passes its armed meet"
     );
-    // `run_lint` arms the DEFAULT set (the 8), so both gates outside it are reported and excluded. The repo's
-    // own `lint-baseline.json` arms `sigma` as well — that is a per-repo declaration, not the default.
+    // `run_lint` arms the DEFAULT set (the 8), so the three gates outside it are reported and excluded. The repo's
+    // own `lint-baseline.json` arms `sigma` and `relations` as well — per-repo declarations, not the default.
     assert_eq!(
         report.not_armed,
-        vec!["reverse-coverage".to_string(), "sigma".to_string()]
+        vec![
+            "reverse-coverage".to_string(),
+            "sigma".to_string(),
+            "relations".to_string(),
+            "shapes".to_string()
+        ]
     );
 }
 

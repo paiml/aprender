@@ -21,8 +21,12 @@
 //     MoE parity support is #3367 (`apr chat` had the identical defect,
 //     #3368).
 //   * For Qwen3.5 (Gated DeltaNet + gated full attention), no GPU forward
-//     exists at all (#3090), so GPU==CPU is unmeasurable BY CONSTRUCTION — no
-//     run of this command could ever produce a number.
+//     existed at all when this was written (#3090), so GPU==CPU was
+//     unmeasurable BY CONSTRUCTION — no run of this command could produce a
+//     number. #3477 (operator ruling 2026-09-19) built that GPU forward
+//     (`Qwen35CudaModel`), so the ONE spelling the runtime dispatches is now
+//     measured; the undispatched spellings still reach no forward and are
+//     still refused.
 //
 // A tool that cannot measure something must say so. Falling through to the
 // dense loop produced a red row that named the MODEL, which is the exact class
@@ -119,10 +123,11 @@ impl ParityRefusal {
 ///   * `unsupported_architecture_reason(..)` — the predicate `apr check` and
 ///     `apr ptx-map` already share so they cannot drift (GH-704 / #2399).
 ///
-/// The Qwen3.5 arm additionally matches the architecture TAG, because a
+/// The hybrid arm additionally matches the architecture TAG, because a
 /// header-only read must refuse even if the tensor scan is inconclusive; the
 /// spelling set is the one `ArchConstraints` uses
-/// (`crates/aprender-serve/src/gguf/arch_constraints_fallback.rs`).
+/// (`crates/aprender-serve/src/gguf/arch_constraints_fallback.rs`) MINUS the
+/// one spelling the runtime actually dispatches, which #3477 admits.
 #[cfg(feature = "inference")]
 #[allow(dead_code)]
 pub(crate) fn parity_refusal_for<'n>(
@@ -148,6 +153,16 @@ pub(crate) fn parity_refusal_for<'n>(
                      run/serve route this architecture through the MoE forward and parity does not yet",
             issue: "#3367",
         });
+    }
+
+    // #3477 (operator ruling 2026-09-19): the architecture the runtime
+    // dispatches to the hybrid forward now HAS a GPU forward
+    // (`Qwen35CudaModel`, #3090) as well as the CPU one (#3091), so parity can
+    // compare the two and must stop refusing it. `hybrid_forward_handles` is
+    // realizar's own dispatch predicate — the same one `apr qa` and
+    // `apr ptx-map` ask — so this cannot drift from what `apr run` does.
+    if realizar::gguf::hybrid_forward_handles(architecture) {
+        return None;
     }
 
     let hybrid_tag = matches!(

@@ -250,6 +250,45 @@ impl CudaKernels {
     fn generate_norm_rope_ptx(kernel_type: &KernelType) -> Option<String> {
         Self::generate_rmsnorm_ptx(kernel_type)
             .or_else(|| Self::generate_rope_residual_ptx(kernel_type))
+            .or_else(|| Self::generate_gdn_ptx(kernel_type))
+    }
+
+    /// PMAT-3477 (#3090): PTX for the nine Gated `DeltaNet` / Qwen3.5 attention
+    /// kernels (sm_70 default).
+    fn generate_gdn_ptx(kernel_type: &KernelType) -> Option<String> {
+        use trueno_gpu::kernels::gdn::{
+            CausalConv1dSiluKernel, DecodeAttention256Kernel, DeltaRuleRecurrenceKernel,
+            GatedRmsNormKernel, GdnGatesKernel, PartialNeoxRopeKernel, PerHeadL2NormKernel,
+            SigmoidGateKernel, SplitInterleavedKernel,
+        };
+        let ptx = match kernel_type {
+            KernelType::GdnCausalConv1dSilu { channels, kernel_size } => {
+                CausalConv1dSiluKernel::new(*channels, *kernel_size).emit_ptx()
+            },
+            KernelType::GdnPerHeadL2Norm { head_dim, num_heads, epsilon } => {
+                PerHeadL2NormKernel::new(*head_dim, *num_heads, *epsilon).emit_ptx()
+            },
+            KernelType::GdnGates { num_heads } => GdnGatesKernel::new(*num_heads).emit_ptx(),
+            KernelType::GdnDeltaRule { num_v_heads, head_v_dim, num_k_heads, head_k_dim } => {
+                DeltaRuleRecurrenceKernel::new(*num_k_heads, *head_k_dim, *num_v_heads, *head_v_dim)
+                    .emit_ptx()
+            },
+            KernelType::GdnGatedRmsNorm { head_dim, num_heads, epsilon } => {
+                GatedRmsNormKernel::new(*head_dim, *num_heads, *epsilon).emit_ptx()
+            },
+            KernelType::GdnSigmoidGate { n } => SigmoidGateKernel::new(*n).emit_ptx(),
+            KernelType::GdnSplitInterleaved { num_heads, head_dim } => {
+                SplitInterleavedKernel::new(*num_heads, *head_dim).emit_ptx()
+            },
+            KernelType::GdnPartialNeoxRope { num_heads, head_dim, n_rot } => {
+                PartialNeoxRopeKernel::new(*num_heads, *head_dim, *n_rot).emit_ptx()
+            },
+            KernelType::GdnDecodeAttention { num_heads, num_kv_heads, head_dim } => {
+                DecodeAttention256Kernel::new(*num_heads, *num_kv_heads, *head_dim).emit_ptx()
+            },
+            _ => return None,
+        };
+        Some(ptx)
     }
 
     /// Generate PTX for activation, fusion, and miscellaneous kernels

@@ -2,19 +2,20 @@
   "schema": "apr-model-ladder-receipt/v1",
   "host": "gx10",
   "version": "0.68.1",
-  "sha": "927587272",
+  "sha": "a6f54e84c",
   "isa": "aarch64",
   "gpu": "NVIDIA GB10",
   "cc": "12.1",
-  "date": "2026-09-18T14:36Z",
-  "apr_version": "apr 0.68.1 (927587272)",
-  "executed": 4,
-  "red": 0,
+  "date": "2026-09-19T09:40Z",
+  "apr_version": "apr 0.68.1 (a6f54e84c)",
+  "executed": 8,
+  "red": 5,
   "rungs": [
     {
       "id": "qwen2-1.5b-q4km",
       "present": true,
       "sha_ok": true,
+      "sha256": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
       "required": true,
       "qa_rc": 0,
       "capability_match": {
@@ -45,6 +46,7 @@
       "id": "qwen3-1.7b-q4km",
       "present": true,
       "sha_ok": true,
+      "sha256": "b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897",
       "required": true,
       "qa_rc": 0,
       "capability_match": {
@@ -75,6 +77,7 @@
       "id": "qwen3-8b-q4km",
       "present": true,
       "sha_ok": true,
+      "sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
       "required": false,
       "qa_rc": 0,
       "capability_match": {
@@ -105,6 +108,7 @@
       "id": "qwen35-0.8b-q4km",
       "present": true,
       "sha_ok": true,
+      "sha256": "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517",
       "required": true,
       "qa_rc": 0,
       "capability_match": {
@@ -122,9 +126,114 @@
           "ran": true,
           "fallback": false,
           "rc": 0
+        },
+        "cuda": {
+          "ran": true,
+          "fallback": true,
+          "rc": 0
         }
       },
-      "green": true
+      "green": false
+    },
+    {
+      "id": "qwen35-2b-q4km",
+      "present": true,
+      "sha_ok": true,
+      "sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+      "required": true,
+      "qa_rc": 5,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "Architecture 'qwen35': CPU-only \u2014 Gated DeltaNet runs on the CPU (#3091); the GPU backend has no SSM kernels (#3090), GPU gates skipped"
+      },
+      "golden_output": {
+        "passed": false,
+        "skipped": false,
+        "message": "golden_output_cpu: Empty output"
+      },
+      "backends": {
+        "cpu": {
+          "ran": true,
+          "fallback": false,
+          "rc": 0
+        },
+        "cuda": {
+          "ran": true,
+          "fallback": true,
+          "rc": 0
+        }
+      },
+      "green": false
+    },
+    {
+      "id": "qwen35-4b-q4km",
+      "present": true,
+      "sha_ok": true,
+      "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+      "required": true,
+      "qa_rc": 101,
+      "capability_match": null,
+      "golden_output": null,
+      "backends": {
+        "cpu": {
+          "ran": false,
+          "fallback": false,
+          "rc": 101
+        },
+        "cuda": {
+          "ran": false,
+          "fallback": true,
+          "rc": 101
+        }
+      },
+      "green": false
+    },
+    {
+      "id": "qwen35-9b-q4km",
+      "present": true,
+      "sha_ok": true,
+      "sha256": "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8",
+      "required": true,
+      "qa_rc": 101,
+      "capability_match": null,
+      "golden_output": null,
+      "backends": {
+        "cpu": {
+          "ran": false,
+          "fallback": false,
+          "rc": 101
+        },
+        "cuda": {
+          "ran": false,
+          "fallback": true,
+          "rc": 101
+        }
+      },
+      "green": false
+    },
+    {
+      "id": "qwen35-27b-q4km",
+      "present": true,
+      "sha_ok": true,
+      "sha256": "84b5f7f112156d63836a01a69dc3f11a6ba63b10a23b8ca7a7efaf52d5a2d806",
+      "required": true,
+      "qa_rc": 101,
+      "capability_match": null,
+      "golden_output": null,
+      "backends": {
+        "cpu": {
+          "ran": false,
+          "fallback": false,
+          "rc": 101
+        },
+        "cuda": {
+          "ran": false,
+          "fallback": true,
+          "rc": 101
+        }
+      },
+      "green": false
     }
   ]
 }

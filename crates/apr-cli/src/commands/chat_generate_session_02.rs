@@ -283,9 +283,14 @@ impl ChatSession {
             Ok(decoded)
         }
 
-        /// CPU generation for one GGUF chat turn: the Qwen3.5 hybrid forward (#3091), which the
-        /// dense `OwnedQuantizedModel` loader refuses, or the dense model. Returns the prompt
-        /// followed by the generated tokens.
+        /// Generation for one GGUF chat turn that the cached dense CUDA model did not serve:
+        /// the Qwen3.5 hybrid forward, which the dense `OwnedQuantizedModel` loader refuses,
+        /// or the dense CPU model. Returns the prompt followed by the generated tokens.
+        ///
+        /// #3477: the hybrid branch goes through the same serve entry point `apr run` uses
+        /// (`run_qwen35_generate_dispatch`), so `apr chat` without `--cpu` gets the GPU
+        /// forward (#3090) and its fallbacks are printed by the runtime, not re-implemented
+        /// here. `force_cpu` is the chat spelling of `--no-gpu`.
         fn generate_gguf_cpu_tokens(
             mapped: &realizar::gguf::MappedGGUFModel,
             prompt_tokens: &[u32],
@@ -294,18 +299,22 @@ impl ChatSession {
         ) -> Result<Vec<u32>, String> {
             use realizar::gguf::OwnedQuantizedModel;
 
-            if mapped.model.architecture() == Some("qwen35") {
+            if realizar::gguf::hybrid_forward_handles(
+                mapped.model.architecture().unwrap_or_default(),
+            ) {
                 let base = realizar::gguf::forward_qwen35::Qwen35Model::create_base_model(
                     &mapped.model,
                     mapped.data(),
                 )
                 .map_err(|e| format!("Failed to load the Qwen3.5 base model: {e}"))?;
-                return realizar::gguf::forward_qwen35::run_qwen35_generate(
+                return realizar::gguf::forward_qwen35::run_qwen35_generate_dispatch(
                     mapped,
                     &base,
                     prompt_tokens,
                     gen_config,
+                    config.force_cpu,
                 )
+                .map(|(tokens, _used_gpu)| tokens)
                 .map_err(|e| format!("Qwen3.5 generate failed: {e}"));
             }
 

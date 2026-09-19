@@ -79,6 +79,14 @@ pub struct QuantizedGGUFTransformerLayer {
 ///
 /// Takes tensor names rather than a `GGUFModel` so the predicate is directly
 /// testable and callable from any crate that has already parsed the header.
+///
+/// #3477 (operator ruling 2026-09-19, GPU support for Qwen3.5 is required):
+/// the hybrid forward now exists on BOTH backends for the architecture
+/// [`hybrid_forward_handles`] names — `forward_qwen35` on the CPU (#3091) and
+/// `Qwen35CudaModel` on the GPU (#3090) — so this predicate no longer refuses
+/// it. Every other SSM architecture keeps its refusal, reworded: the old
+/// sentence claimed the CPU cannot run Gated DeltaNet, which has not been true
+/// since #3091.
 pub fn unsupported_architecture_reason<'n>(
     architecture: &str,
     tensor_names: impl IntoIterator<Item = &'n str>,
@@ -86,15 +94,86 @@ pub fn unsupported_architecture_reason<'n>(
     let ssm_tensor = tensor_names
         .into_iter()
         .find(|name| name.contains("ssm_") || name.contains("ssm."));
-    if let Some(tensor_name) = ssm_tensor {
-        return Some(format!(
-            "Architecture '{architecture}' uses SSM/Gated Delta Net layers (detected tensor '{tensor_name}'). \
-             NEITHER the CPU nor the GPU backend implements Gated DeltaNet/SSM layers yet. \
-             Tracking issues: #3090 (GPU) and #3091 (CPU). \
-             Use a standard transformer model (e.g., Qwen2.5, LLaMA, Mistral) or wait for SSM support in a future release."
-        ));
+    let tensor_name = ssm_tensor?;
+    if hybrid_forward_handles(architecture) {
+        return None;
     }
-    None
+    Some(format!(
+        "Architecture '{architecture}' uses SSM/Gated Delta Net layers (detected tensor '{tensor_name}'). \
+         There is no CPU or GPU forward for architecture '{architecture}' with SSM tensors. \
+         Tracking issues: #3090 (GPU) and #3091 (CPU) — both implement the Qwen3.5 hybrid ('qwen35'), not this architecture. \
+         Use a standard transformer model (e.g., Qwen2.5, LLaMA, Mistral) or wait for SSM support in a future release."
+    ))
+}
+
+/// Is this the architecture string the hybrid (Gated `DeltaNet` + gated
+/// attention) forward handles?
+///
+/// This is the ONE spelling set the runtime dispatches on: `inference_result.rs`
+/// compares the GGUF architecture to the literal `"qwen35"` and, on a match,
+/// builds `forward_qwen35::Qwen35Model` (CPU, #3091), which
+/// `cuda::forward_qwen35_cuda::Qwen35CudaModel` wraps on the GPU (#3090).
+/// `apr qa`'s capability gate, `apr parity`'s refusal and `apr ptx-map` all ask
+/// THIS function rather than keeping private copies, so a tool can no longer
+/// admit a spelling the runtime refuses (or refuse one it serves).
+///
+/// Deliberately exact, not case-insensitive and not a spelling family:
+/// `qwen3_5` / `qwen3.5` reach no forward, so calling them handled would have
+/// the tooling promise a load `apr run` cannot perform.
+#[must_use]
+pub fn hybrid_forward_handles(architecture: &str) -> bool {
+    architecture == "qwen35"
+}
+
+/// Why the DENSE loader ([`QuantizedGGUFTransformer::from_gguf`]) cannot load
+/// this file, even though the hybrid forward can run it.
+///
+/// #3477: lifting the SSM refusal from [`unsupported_architecture_reason`] would
+/// otherwise let `apr check`-style callers walk into the dense tensor lookups
+/// with a Qwen3.5 GGUF and fail on a missing `blk.0.attn_q.weight` — the cryptic
+/// surface the GH-704 refusal was introduced to replace. The dense loader is not
+/// the hybrid path, so it refuses with a message that names the path that IS.
+pub(crate) fn dense_loader_refusal<'n>(
+    architecture: &str,
+    tensor_names: impl IntoIterator<Item = &'n str>,
+) -> Option<String> {
+    if !hybrid_forward_handles(architecture) {
+        return None;
+    }
+    let tensor_name = tensor_names
+        .into_iter()
+        .find(|name| name.contains("ssm_") || name.contains("ssm."))?;
+    Some(format!(
+        "Architecture '{architecture}' is the Qwen3.5 hybrid (Gated Delta Net, detected tensor '{tensor_name}'): \
+         it runs through `Qwen35Model` (realizar::gguf::forward_qwen35, CPU #3091) or `Qwen35CudaModel` (GPU #3090), \
+         NOT through the dense QuantizedGGUFTransformer loader, whose per-layer tensor names this file does not carry. \
+         Load it with `apr run` / `apr chat`, which dispatch this architecture to the hybrid forward."
+    ))
+}
+
+/// The GPU-quant refusal for a hybrid (Gated `DeltaNet`) GGUF, or `None`.
+///
+/// The tensor set and the whitelist both live in `dtype.rs` beside
+/// `gpu_unsupported_quant_qtype`, the single source of truth this delegates to
+/// (PMAT-785); this is only the public, header-level entry point the tools call.
+///
+/// Answers from the header alone — `(tensor name, GGML type)` pairs — so a
+/// caller refuses BEFORE uploading a single weight. `None` for every
+/// architecture the hybrid forward does not handle: the dense quant gate
+/// already speaks for those.
+pub fn hybrid_gpu_quant_refusal<'n>(
+    architecture: &str,
+    tensors: impl IntoIterator<Item = (&'n str, u32)>,
+) -> Option<String> {
+    if !hybrid_forward_handles(architecture) {
+        return None;
+    }
+    let (name, qtype) = super::loader::hybrid_gpu_unsupported_quant_tensor(tensors)?;
+    Some(format!(
+        "Architecture '{architecture}': tensor '{name}' has GGML type {qtype}, which has no verified GPU GEMV kernel. \
+         The GPU weight upload would decode it as Q4_K and produce garbage logits (PMAT-781/783/785). \
+         Run this model on the CPU (`apr run --no-gpu`), or requantize to Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K."
+    ))
 }
 
 /// Quantized GGUF Transformer for fused inference
@@ -168,6 +247,18 @@ impl<'a> QuantizedGGUFTransformer<'a> {
         // The predicate lives in `unsupported_architecture_reason` so read-only
         // tools (apr ptx-map) refuse the same files with the same words (#2399).
         if let Some(reason) = unsupported_architecture_reason(
+            &config.architecture,
+            model.tensors.iter().map(|t| t.name.as_str()),
+        ) {
+            return Err(crate::RealizarError::FormatError { reason });
+        }
+
+        // #3477: the hybrid architectures are no longer refused by the shared
+        // predicate — `apr run` serves them through `Qwen35Model` /
+        // `Qwen35CudaModel`. THIS loader is still the dense one, so it refuses
+        // them here with a message that names the path that does load them,
+        // rather than falling through to a missing `blk.0.attn_q.weight`.
+        if let Some(reason) = dense_loader_refusal(
             &config.architecture,
             model.tensors.iter().map(|t| t.name.as_str()),
         ) {
@@ -813,29 +904,54 @@ mod tensor_byte_size_tests {
 
 #[cfg(test)]
 mod unsupported_architecture_tests {
-    use super::unsupported_architecture_reason;
+    use super::{
+        dense_loader_refusal, hybrid_forward_handles, hybrid_gpu_quant_refusal,
+        unsupported_architecture_reason,
+    };
 
-    // dogfood-0.63.0 #2399 finding 2: the SSM refusal must be answerable from
-    // tensor names alone, so read-only tools get the same verdict `from_gguf`
-    // gives. Qwen3.5 names its Gated Delta Net weights `blk.N.ssm_*`.
+    // #3477 (operator ruling 2026-09-19): the hybrid forward now exists on both
+    // backends for `qwen35` — `forward_qwen35` (CPU, #3091) and
+    // `Qwen35CudaModel` (GPU, #3090). The shared predicate must stop refusing
+    // it, or every tool that asks it (apr qa, apr parity, apr ptx-map) keeps
+    // contradicting the runtime.
     #[test]
-    fn qwen35_gated_delta_net_tensors_are_refused() {
+    fn qwen35_gated_delta_net_tensors_are_admitted() {
+        assert_eq!(
+            unsupported_architecture_reason(
+                "qwen35",
+                [
+                    "token_embd.weight",
+                    "blk.0.ssm_conv1d.weight",
+                    "blk.0.attn_q.weight",
+                ],
+            ),
+            None,
+            "the hybrid forward runs qwen35 on both backends (#3090/#3091)"
+        );
+        assert_eq!(
+            unsupported_architecture_reason("qwen35", ["blk.0.ssm.a"]),
+            None,
+            "the dotted `ssm.` spelling is the same architecture"
+        );
+    }
+
+    // dogfood-0.63.0 #2399 finding 2: the SSM refusal must still be answerable
+    // from tensor names alone for the architectures NO forward handles, so
+    // read-only tools get the same verdict `from_gguf` gives.
+    #[test]
+    fn an_ssm_architecture_with_no_forward_is_still_refused() {
         let reason = unsupported_architecture_reason(
-            "qwen35",
+            "mamba",
             [
                 "token_embd.weight",
                 "blk.0.ssm_conv1d.weight",
                 "blk.0.attn_q.weight",
             ],
         )
-        .expect("a GGUF carrying ssm_ tensors must be refused");
+        .expect("an SSM architecture with no forward must be refused");
         assert!(
-            reason.contains("qwen35") && reason.contains("SSM/Gated Delta Net"),
+            reason.contains("mamba") && reason.contains("SSM/Gated Delta Net"),
             "refusal must name the architecture and the reason, got: {reason}"
-        );
-        assert!(
-            reason.contains("NEITHER the CPU nor the GPU backend implements"),
-            "must mention both backends"
         );
         assert!(reason.contains("#3090"), "must mention GPU #3090");
         assert!(reason.contains("#3091"), "must mention CPU #3091");
@@ -843,14 +959,100 @@ mod unsupported_architecture_tests {
             reason.contains("blk.0.ssm_conv1d.weight"),
             "must mention tensor name"
         );
+        // #3091 gave the CPU a Gated DeltaNet forward and #3090 the GPU one;
+        // the old sentence claimed neither backend implements it at all.
+        assert!(
+            !reason.contains("NEITHER the CPU nor the GPU"),
+            "the 'neither backend implements Gated DeltaNet' claim is false since #3091: {reason}"
+        );
+        // The dotted spelling (`blk.0.ssm.a`) is the other form seen in the wild.
+        assert!(
+            unsupported_architecture_reason("mamba", ["blk.0.ssm.a"]).is_some(),
+            "`ssm.` spelling must be refused too"
+        );
     }
 
-    // The dotted spelling (`blk.0.ssm.a`) is the other form seen in the wild.
+    // The admission mirrors the runtime dispatch, which compares the GGUF
+    // architecture to the literal "qwen35" (infer/inference_result.rs). A
+    // spelling the runtime does not dispatch must keep the refusal, or the
+    // tooling would promise a load `apr run` cannot perform.
     #[test]
-    fn dotted_ssm_tensor_names_are_refused() {
+    fn unsupported_architecture_handled_set_is_the_runtime_dispatch_literal() {
+        assert!(hybrid_forward_handles("qwen35"));
+        for other in ["qwen3_5", "qwen3.5", "QWEN35", "mamba", "qwen2", "llama"] {
+            assert!(
+                !hybrid_forward_handles(other),
+                "'{other}' reaches no hybrid forward"
+            );
+            assert!(
+                unsupported_architecture_reason(other, ["blk.0.ssm_a"]).is_some(),
+                "'{other}' carries SSM tensors and has no forward — it must be refused"
+            );
+        }
+    }
+
+    // The DENSE loader is not the hybrid path: it must refuse qwen35 with a
+    // message naming the path that does load it, instead of falling through to
+    // a missing `blk.0.attn_q.weight`.
+    #[test]
+    fn unsupported_architecture_dense_loader_still_refuses_the_hybrid() {
+        let reason = dense_loader_refusal("qwen35", ["token_embd.weight", "blk.0.ssm_a"])
+            .expect("the dense loader cannot load a hybrid GGUF");
         assert!(
-            unsupported_architecture_reason("qwen35", ["blk.0.ssm.a"]).is_some(),
-            "`ssm.` spelling must be refused too"
+            reason.contains("Qwen35Model") && reason.contains("forward_qwen35"),
+            "the refusal must name the loader that DOES work: {reason}"
+        );
+        assert!(
+            !reason.contains("NEITHER the CPU nor the GPU"),
+            "the dense loader's limits are not the runtime's: {reason}"
+        );
+        assert_eq!(
+            dense_loader_refusal("qwen2", ["blk.0.attn_q.weight"]),
+            None,
+            "a dense model must still load through the dense loader"
+        );
+        assert_eq!(
+            dense_loader_refusal("mamba", ["blk.0.ssm_a"]),
+            None,
+            "an architecture no forward handles is refused by the shared predicate, not here"
+        );
+    }
+
+    // PMAT-781/783/785: the hybrid GPU upload decodes an unrecognized GGML type
+    // as Q4_K. The dense quant gate cannot see the Gated DeltaNet tensors (the
+    // qwen35 base model carries an empty layer list), so the header-level gate
+    // has to judge them by name.
+    #[test]
+    fn unsupported_architecture_hybrid_quant_gate_judges_the_deltanet_tensors() {
+        let reason = hybrid_gpu_quant_refusal(
+            "qwen35",
+            [
+                ("token_embd.weight", 12u32),
+                ("blk.0.ssm_alpha.weight", 11), // Q3_K: no GPU GEMV kernel
+                ("blk.0.ffn_down.weight", 12),
+            ],
+        )
+        .expect("a Q3_K DeltaNet projection has no GPU kernel — it must be refused");
+        assert!(
+            reason.contains("blk.0.ssm_alpha.weight") && reason.contains("11"),
+            "the refusal must name the tensor and its GGML type: {reason}"
+        );
+        assert_eq!(
+            hybrid_gpu_quant_refusal(
+                "qwen35",
+                [
+                    ("blk.0.attn_qkv.weight", 8u32),
+                    ("blk.0.ssm_alpha.weight", 12),
+                    ("blk.0.ssm_out.weight", 14),
+                ],
+            ),
+            None,
+            "Q8_0/Q4_K/Q6_K all have verified GPU GEMV kernels"
+        );
+        assert_eq!(
+            hybrid_gpu_quant_refusal("qwen2", [("blk.0.attn_q.weight", 11u32)]),
+            None,
+            "a dense model is judged by the dense quant gate, not this one"
         );
     }
 

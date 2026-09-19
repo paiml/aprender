@@ -18529,3 +18529,70 @@ roadmap:
   - orch-basis:release
   - P0
   notes: null
+- id: PMAT-3487
+  github_issue: 3487
+  item_type: task
+  title: 'ONT-4: typed relations — a contract''s relations: block (refines · supersedes · contradicts · depends_on) is a gate: role in Σ with Contract→Contract domain/range, every target resolves, acyclic roles have no cycle, contradicts is symmetric; pv lint --gate relations, armed; Σ gains supersedes and contradicts naming this gate as reader (R-11); legacy metadata.depends_on measured as legacy_unresolved_depends_on and ratcheted, never rewritten (R-5); relations_n==0 → Unknown{NoRelations} (R-2)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-18T15:04:36Z
+  updated: 2026-09-18T15:04:36Z
+  spec: null
+  acceptance_criteria:
+  - '`pv lint contracts/ --gate relations --format json` is Pass at exit 0 on the real corpus with relations_n=3 (the ONT-001 §5 ONT-4 probe''s predicate); `pv lint contracts/` (all gates, relations armed) is Pass at exit 0.'
+  - 'Σ declares supersedes (acyclic) and contradicts (symmetric), both Contract→Contract, and readers.roles names lint/relations_gate.rs.'
+  - 'tests/fixtures/ont/relations-{ok,dangling,cycle,domain,malformed,legacy,legacy-rise} each witness one rule: 4 relations accepted with contradicts read both ways (relations_n=5); dangling → PV-ONT-008 naming contract, role, target; a→b→c→a → PV-ONT-009 naming the path; binds in relations → PV-ONT-006; undeclared role + non-list → PV-ONT-005 + 007; legacy hold passes, rise → PV-ONT-010; sigma-ok (no typed relation) → exit 2 decline.'
+  - 'metadata.depends_on is NOT rewritten: 354 legacy edges counted, 8 unresolved recorded as ont.legacy_unresolved_depends_on in lint-baseline.json and ratcheted shrink-only.'
+  - 'Two mutations each turn a test RED: the acyclic check skipped (the cycle test), the symmetric closure dropped (the four-relations test).'
+  - 'cargo test -p aprender-contracts --lib (1588) and -p aprender-contracts-cli (260) pass; clippy -D warnings clean on both crates; make contracts green; census regenerated (1795) and the README count synced.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null
+- id: PMAT-3500
+  github_issue: 3500
+  item_type: task
+  title: 'ONT-4b: pv extract (pv-contract) → contracts/contracts.nt (deterministic N-Triples, no blank nodes, R-15); in-house shapes validator over the SHACL-Core subset of §3.6 exactly (unsupported component → exit 3); shape: block on contracts; pv lint --gate shapes with pc_shape planted every run, shapes_n/focus_nodes_n declines (R-2), a corpus violation naming focus node and shape; contracts/shapes.ttl exported; the first shape targets ont:Contract from the ONT contracts so the whole corpus is focus nodes; shapes armed'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-18T20:17:28Z
+  updated: 2026-09-18T20:17:28Z
+  spec: docs/specifications/paiml-ontology.md
+  acceptance_criteria:
+  - 'The spec''s ONT-4b probe text passes verbatim minus `merged`: contracts.nt tracked with no `_:`, shapes.ttl tracked, `pv lint contracts/ --gate shapes --format json` → Pass with shapes_n>0, focus_nodes_n>0 (1731 at acab2e754) and pc_shape=fired at the top level of the report.'
+  - 'ontology/shapes.rs implements §3.6''s subset exactly and refuses every other component at parse by name (targetNode, qualifiedValueShape, languageIn, a sequence path, or/and/not, a second node level): `cargo test -p aprender-contracts --lib ontology::shapes` 10/10.'
+  - 'Two extractions are byte-identical and carry no blank node; `pv extract --check` exits 1 on drift and `make contracts` runs it (R-18).'
+  - 'The exit vocabulary holds on fixtures: Pass 0; a corpus violation 1 naming focus node and shape (PV-ONT-011); NoShapes, NoFocus, PositiveControlFailed and Warn each 2 with the reason; an unsupported component 3: `cargo test -p aprender-contracts-cli --test ont4b_shapes_gate` 11/11.'
+  - 'Two mutations from the spec: minCount removed from ont:id → exit 2 decline: PositiveControlFailed; a kind outside the list on one contract → exit 1 naming that contract and the shape.'
+  - 'shapes is armed (11 armed gates), Σ marks pv-contract/pv_contract implemented, contracts_shaped=1, census 1796 with the README synced; lib 1610 and cli 271 tests pass; clippy -D warnings clean.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null
+- id: PMAT-3515
+  github_issue: 3515
+  item_type: task
+  title: ONT-001 §3.7 extract:json — JSON/JSONL + vocabulary map → RDF, so a tool's --json output is a shaped entity (ARBITER I1-0)
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-19T07:20:01Z
+  updated: 2026-09-19T07:55:00Z
+  spec: null
+  acceptance_criteria:
+  - '(1) crates/aprender-contracts/src/ontology/extract/json.rs (new): `applies(doc)` (entity.type == json); `extract_into(g, stem, doc, root)` reads `entity.ref` relative to `root` and the contract''s `vocabulary: {prefix, root_class, nested}` — root node `iri(prefix, stem)` typed `expand(root_class)` + prov:Entity, scalar keys as `expand("<prefix>:<key>")` literals (bool → xsd:boolean, integer → xsd:integer via u64/i64, other numbers → xsd:double, string → xsd:string), nested objects and arrays of objects as nodes `<stem>.<key>[.<i>]` typed by `nested`, arrays of scalars as repeated predicates, null absent; `.jsonl` = one root per non-empty line with leading NULs trimmed, a line that does not parse is a `Warning{contract,path,line,why}`, no parsable line is `NotJson`. `ExtractError` = RefUnreadable | NotJson | VocabularyIncomplete | Unmapped, each Display naming the contract and the thing. 8 unit tests. (2) extract/mod.rs: `Extraction{graph, warnings, entities_extracted}` and `all(contract_dir)` = pv_contract::extract + every json entity, the ONE walk. (3) rdf.rs: XSD_BOOLEAN, XSD_DOUBLE, Term::boolean/double/signed. (4) lint/shapes_gate.rs: `ShapesOutcome::ExtractFailed(ExtractError)`; the gate uses `extract::all`, and each extraction warning is a Severity::Warning ValidationResult (component "extract:json") so warnings-only is Unknown{Warn}. lint/mod.rs maps ExtractFailed to a skipped gate; cli commands/lint.rs maps it to exit 3 (SigmaMalformed path); commands/extract_rdf.rs uses `extract::all`, prints warnings, exits 3 on an error. (5) contracts/ontology.yaml: entity type `json` → extractor `json`, both implemented: true; contracts/ont-extract-json-v1.yaml (pattern; EXJ-INV-001..005, FALSIFY-EXJ-001..005, qa_gate F-EXJ-001); contracts/contracts.nt refreshed by `pv extract` (9243 triples, --check exit 0). (6) tests/fixtures/ont/json-{ok,violation,unmapped,missing-ref,torn-jsonl}/ (contracts/ + data/) and crates/aprender-contracts-cli/tests/ont_extract_json.rs: 7 tests — Pass exit 0 focus 1 plant fired; Fail exit 1 two violations naming ont:tool/tool-status, shape `tool-status`, `(closed)` + ont:tool/surprise and `broken is not one of`; exit 3 naming `findings`; exit 3 naming `data/does-not-exist.json`; exit 2 Unknown(Warn) focus 3 warnings 1 `line 3 unparsable`; `pv extract` byte-identical twice with the tool/Status class and the nested node and no `_:`, --check exit 0; `pv extract` on json-unmapped exit 3. Measured on paiml/infra contracts/arbiter-status-v1.yaml: Pass, 172 triples, plant_violations 8, 0.05 s; both infra plants rejected. sigma/shapes/relations gates Pass on the corpus; clippy -D warnings clean; 1618 lib tests + all cli suites green. Refs paiml/aprender#3515, paiml/infra#704, paiml/infra#701 (§14 I1-0)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
