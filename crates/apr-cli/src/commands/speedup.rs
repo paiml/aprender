@@ -1,3 +1,4 @@
+
 /// The throughput floor the gate applies, in tok/s.
 ///
 /// An explicit `--assert-tps N` IS the threshold, verbatim. The format-aware
