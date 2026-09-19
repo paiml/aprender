@@ -831,6 +831,7 @@ include!("benchmark.rs");
 include!("bench_safetensors.rs");
 include!("bench_moe.rs");
 include!("bench_04.rs");
+include!("bench_moe_regression_tests.rs");
 
 // ── PARITY-001: the bench receipt's provenance fields ───────────────────────
 //

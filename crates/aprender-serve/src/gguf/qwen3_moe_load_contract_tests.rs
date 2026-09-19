@@ -18,6 +18,7 @@ mod moe_load_contract_tests {
         create_f32_embedding_data, create_f32_norm_weights, create_q4_0_data, create_q4_k_data,
         create_q4_k_data_2d, create_q6_k_data, GGUFBuilder,
     };
+    use super::super::regression_fixtures::{build_qwen3_moe_gguf, expert_bytes};
     use super::*;
     use crate::gguf::types::{GGUF_TYPE_Q4_0, GGUF_TYPE_Q5_K, GGUF_TYPE_Q8_0};
     use crate::gguf::{GGUFModel, QuantizedGGUFTransformer};
@@ -28,107 +29,6 @@ mod moe_load_contract_tests {
     const NUM_EXPERTS: usize = 2;
     const HEADS: usize = 4;
 
-    /// Byte payload for a stacked expert tensor of `n` elements at `qtype`.
-    ///
-    /// Sizes mirror `QuantizedGGUFTransformer::tensor_byte_size`'s non-2D
-    /// branch, so the fixture's declared dims and its bytes agree and
-    /// `resolve_qtype`'s truncation fallback never fires (which would
-    /// silently rewrite the qtype under test).
-    fn expert_bytes(qtype: u32, n: usize) -> Vec<u8> {
-        match qtype {
-            GGUF_TYPE_Q4_K => create_q4_k_data(n),
-            GGUF_TYPE_Q6_K => create_q6_k_data(n),
-            GGUF_TYPE_Q4_0 => create_q4_0_data(n),
-            other => panic!("fixture has no byte layout for qtype {other}"),
-        }
-    }
-
-    fn add_expert_tensor(b: GGUFBuilder, name: &str, dims: &[u64], qtype: u32) -> GGUFBuilder {
-        let n: usize = dims.iter().map(|&d| d as usize).product();
-        let bytes = expert_bytes(qtype, n);
-        match qtype {
-            GGUF_TYPE_Q4_K => b.add_q4_k_tensor(name, dims, &bytes),
-            GGUF_TYPE_Q6_K => b.add_q6_k_tensor(name, dims, &bytes),
-            GGUF_TYPE_Q4_0 => b.add_q4_0_tensor(name, dims, &bytes),
-            other => panic!("fixture cannot add qtype {other}"),
-        }
-    }
-
-    /// A minimal single-layer `qwen3moe` GGUF whose three expert tensors all
-    /// carry `expert_qtype`. Everything else (attention, norms, embedding,
-    /// F32 router) is exactly what the real Qwen3-Coder file carries, so the
-    /// ONLY variable between the accept and refuse cases is the expert qtype.
-    fn build_qwen3_moe_gguf(expert_qtype: u32) -> Vec<u8> {
-        let arch = "qwen3moe";
-        let expert_dims = [NUM_EXPERTS as u64, INTERMEDIATE as u64, HIDDEN as u64];
-        let router_data = vec![0.0f32; NUM_EXPERTS * HIDDEN];
-
-        let b = GGUFBuilder::new()
-            .architecture(arch)
-            .hidden_dim(arch, HIDDEN as u32)
-            .num_layers(arch, 1)
-            .num_heads(arch, HEADS as u32)
-            .num_kv_heads(arch, HEADS as u32)
-            .context_length(arch, 256)
-            .rope_freq_base(arch, 10000.0)
-            .rms_epsilon(arch, 1e-6)
-            .ffn_hidden_dim(arch, INTERMEDIATE as u32)
-            .add_u32("qwen3moe.expert_count", NUM_EXPERTS as u32)
-            .add_u32("qwen3moe.expert_used_count", 1)
-            .add_f32_tensor(
-                "token_embd.weight",
-                &[VOCAB as u64, HIDDEN as u64],
-                &create_f32_embedding_data(VOCAB, HIDDEN),
-            )
-            .add_f32_tensor(
-                "blk.0.attn_norm.weight",
-                &[HIDDEN as u64],
-                &create_f32_norm_weights(HIDDEN),
-            )
-            .add_q4_k_tensor(
-                "blk.0.attn_q.weight",
-                &[HIDDEN as u64, HIDDEN as u64],
-                &create_q4_k_data_2d(HIDDEN, HIDDEN),
-            )
-            .add_q4_k_tensor(
-                "blk.0.attn_k.weight",
-                &[HIDDEN as u64, HIDDEN as u64],
-                &create_q4_k_data_2d(HIDDEN, HIDDEN),
-            )
-            .add_q4_k_tensor(
-                "blk.0.attn_v.weight",
-                &[HIDDEN as u64, HIDDEN as u64],
-                &create_q4_k_data_2d(HIDDEN, HIDDEN),
-            )
-            .add_q4_k_tensor(
-                "blk.0.attn_output.weight",
-                &[HIDDEN as u64, HIDDEN as u64],
-                &create_q4_k_data_2d(HIDDEN, HIDDEN),
-            )
-            .add_f32_tensor(
-                "blk.0.ffn_norm.weight",
-                &[HIDDEN as u64],
-                &create_f32_norm_weights(HIDDEN),
-            )
-            // Router is F32 in every shipped Qwen3-MoE file; the forward
-            // reinterprets these bytes as `&[f32]`.
-            .add_f32_tensor(
-                "blk.0.ffn_gate_inp.weight",
-                &[NUM_EXPERTS as u64, HIDDEN as u64],
-                &router_data,
-            );
-
-        let b = add_expert_tensor(b, "blk.0.ffn_gate_exps.weight", &expert_dims, expert_qtype);
-        let b = add_expert_tensor(b, "blk.0.ffn_up_exps.weight", &expert_dims, expert_qtype);
-        let b = add_expert_tensor(b, "blk.0.ffn_down_exps.weight", &expert_dims, expert_qtype);
-
-        b.add_f32_tensor(
-            "output_norm.weight",
-            &[HIDDEN as u64],
-            &create_f32_norm_weights(HIDDEN),
-        )
-        .build()
-    }
 
     fn dummy_ref(qtype: u32, byte_size: usize) -> QuantizedTensorRef {
         QuantizedTensorRef {

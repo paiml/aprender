@@ -169,6 +169,14 @@ impl GGUFBuilder {
     // Tensor Helpers
     // =========================================================================
 
+    /// Add a raw tensor with an explicit type ID
+    #[must_use]
+    pub fn add_raw_tensor(mut self, name: &str, dims: &[u64], qtype: u32, data: &[u8]) -> Self {
+        self.tensors
+            .push((name.to_string(), dims.to_vec(), qtype, data.to_vec()));
+        self
+    }
+
     /// Add an F32 tensor
     #[must_use]
     pub fn add_f32_tensor(mut self, name: &str, dims: &[u64], data: &[f32]) -> Self {
