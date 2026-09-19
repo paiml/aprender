@@ -243,5 +243,5 @@ qa_gate:
   - hybrid_block
   - activation_magnitude
   - gradient_flow
-  pass_criteria: All 8 falsification tests pass; FALSIFY-QHF-008 is read from the per-host ladder receipts
+  pass_criteria: All 9 falsification tests pass; FALSIFY-QHF-008 and FALSIFY-QHF-009 are read from the per-host ladder receipts
   falsification: Remove RMSNorm before attention to trigger gradient explosion
