@@ -90,6 +90,7 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         pathonly_devdeps_baseline.txt)           printf 'set\n' ;;   # (manifest,alias) pairs whose src/ uses a publish-stripped dev-dep (scripts/check_pathonly_devdeps_unused_in_src.sh, #3305/#3306)
         roadmap_uncited_completion_baseline.txt) printf 'set\n' ;;
         shell_lint_baseline.txt)                 printf 'count\n' ;;
+        pmat_unpinned_baseline.txt)              printf 'count\n' ;;   # G-10b (PMAT-1063): unpinned analyser references, measured by check_pmat_pinned.sh
         cb200_baseline.txt)                      printf 'count\n' ;;   # mirrors .pmat-gates.toml [tdg] baseline (PMAT-937)
         test_fixture_path_baseline.txt)          printf 'count\n' ;;
         tracked_ignored_baseline.txt)            printf 'count\n' ;;
