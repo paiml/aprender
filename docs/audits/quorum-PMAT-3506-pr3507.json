@@ -1,0 +1,84 @@
+{
+  "ticket": "PMAT-3506",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 98 commit(s); judged against origin/main",
+  "head": "99f67252274874343132184a0a1ba7b22d8eed37",
+  "diff_sha256": "a4695a783595b65e39e0c4b8a4700a3f9ab6ced686d6d48e45b6bdb2a40b28a9",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 4097,
+  "author": {
+    "model": "claude-fable-5-1",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff accurately implements PMAT-3506 with a single-file change to scripts/model_ladder.sh. It adds the measured 'sha256' field ($got) to both the sha256 mismatch JSON row and the measured rung JSON row emitted via python3/json.dumps, while keeping 'sha_ok' and absent rows unchanged. No gates are weakened and no unrelated changes are introduced. Verdict: PASS.",
+      "findings": [],
+      "raw_bytes": 2011,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements PMAT-3506 exactly as specified in a single-file change to scripts/model_ladder.sh. It adds the measured 'sha256' field ($got) to both the sha256 mismatch JSON row and the measured rung JSON row emitted via python3/json.dumps, preserves 'sha_ok' in both rows, leaves absent rows untouched without sha256, modifies no existing receipts, and weakens no gates. No refutations found. Verdict: PASS.",
+      "findings": [],
+      "raw_bytes": 2102,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff accurately implements PMAT-3506 with a single-file change to scripts/model_ladder.sh. It adds the measured 'sha256' field ($got) to both the sha256 mismatch JSON row and the measured rung JSON row emitted via python3/json.dumps, while keeping 'sha_ok' and absent rows unchanged. No gates are weakened and no unrelated changes are introduced. Verdict: PASS.",
+      "findings": [],
+      "raw_bytes": 2005,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-fable-5-1/claude"
+  }
+}
