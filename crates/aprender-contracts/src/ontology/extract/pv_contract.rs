@@ -129,10 +129,22 @@ fn emit_entity_properties(
         };
         g.insert(
             subject.to_string(),
-            crate::ontology::shapes::expand(&format!("{ty}:{key}")),
+            entity_predicate(ty, key),
             Term::string(v),
         );
     }
+}
+
+/// The predicate IRI for one entity property: `<ONT_BASE><entityType>/<key>`.
+///
+/// Spelled here rather than left to `expand("<ty>:<key>")` because the equality is the whole rule and two
+/// independent readers took the prefixed form for a literal IRI (quorum PMAT-3529, rounds 2 and 3). It IS what
+/// `expand` produces — §3.6's prefix rule maps any unregistered `p:name` into `<ONT_BASE>p/name` — and
+/// [`tests::the_predicate_is_the_expansion_of_the_prefixed_form`] pins the two together, so a change to either
+/// side is a failing test and not a silent divergence.
+#[must_use]
+pub fn entity_predicate(entity_type: &str, key: &str) -> String {
+    format!("{}{entity_type}/{key}", crate::ontology::rdf::ONT_BASE)
 }
 
 /// A YAML scalar as a string: strings as they are, numbers and booleans by their YAML spelling. Mappings and
@@ -174,6 +186,23 @@ mod tests {
         // no evidence: block → no evidenceLevel triple; a shape's minCount over it is real
         assert!(g.objects(&s, &ont("evidenceLevel")).is_empty());
         assert!(!g.to_ntriples().contains("_:"));
+    }
+
+    /// The prefixed form and the IRI are the SAME predicate — §3.6's rule maps any unregistered `p:name` into
+    /// `<ONT_BASE>p/name`. Pinned here because a shape writes `path: study:scale` while the extractor writes the
+    /// IRI, and a reader who does not know the rule sees two different things (quorum PMAT-3529, rounds 2/3).
+    #[test]
+    fn the_predicate_is_the_expansion_of_the_prefixed_form() {
+        assert_eq!(
+            entity_predicate("study", "scale"),
+            crate::ontology::shapes::expand("study:scale")
+        );
+        assert_eq!(
+            entity_predicate("study", "scale"),
+            "https://ont.paiml.dev/v1alpha1/study/scale"
+        );
+        // …and never the bare ont: local, which another entity type's `scale` would share.
+        assert_ne!(entity_predicate("study", "scale"), ont("scale"));
     }
 
     #[test]
