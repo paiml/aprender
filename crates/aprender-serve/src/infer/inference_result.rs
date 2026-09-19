@@ -854,30 +854,153 @@ fn f2_gpu_batched_logits(
     Ok(per_pos)
 }
 
+/// The three ways the F2 check declines to judge at all, in one place. `None` means
+/// "nothing to validate — assume the GPU is fine"; `Some((kv_dim, num_layers, probe))`
+/// is a probe with at least one REAL position (≥1) in it.
+///
+/// `SKIP_PARITY_GATE=1` bypasses both this F2 check and the cosine parity gate. A
+/// single-token probe (context-less BOS) has NO real position to validate — the pos0
+/// distribution is a benign near-tie, and the load-time parity gate is the primary
+/// defense there.
+#[cfg(feature = "cuda")]
+fn f2_probe_to_judge(
+    cuda_model: &crate::gguf::OwnedQuantizedModelCuda,
+    probe_context: &[u32],
+) -> Option<(usize, usize, Vec<u32>)> {
+    if std::env::var("SKIP_PARITY_GATE")
+        .map(|v| v == "1")
+        .unwrap_or(false)
+    {
+        return None;
+    }
+    let (kv_dim, num_layers, probe) = gpu_probe(cuda_model.model(), probe_context)?;
+    if probe.len() < 2 {
+        return None;
+    }
+    Some((kv_dim, num_layers, probe))
+}
+
+/// Run the probe through whichever prefill path the engine resolved (#3413 C).
+#[cfg(feature = "cuda")]
+fn f2_gpu_logits_via(
+    cuda_model: &mut crate::gguf::OwnedQuantizedModelCuda,
+    via: F2ProbePath,
+    probe: &[u32],
+    decode_token: u32,
+    kv_dim: usize,
+    num_layers: usize,
+) -> std::result::Result<Vec<Vec<f32>>, String> {
+    match via {
+        F2ProbePath::Batched => {
+            f2_gpu_batched_logits(cuda_model, probe, decode_token, kv_dim, num_layers)
+        },
+        F2ProbePath::Serial => {
+            f2_gpu_serial_logits(cuda_model, probe, decode_token, kv_dim, num_layers)
+        },
+    }
+}
+
+/// FALSIFY-CUDA-SILENT-FALLBACK-001: never discard this error.
+///
+/// Every OTHER rejection in this validator explains itself (see the
+/// F2 divergence branch, and the BOS-unknown skip), but this one used
+/// `Err(_)` and returned a bare `false`. The caller
+/// (gguf_gpu_generate.rs:303) can only turn that into
+/// `Err(Box::new(model))` for CPU fallback — the reason has nowhere
+/// to go and is lost.
+///
+/// Observed 2026-07-27 on an RTX 4090: CUDA initialises fine and the
+/// run still ends on CPU, with the only clue being the backend
+/// cascade —
+///     Backend: GPU (NVIDIA GeForce RTX 4090, 24045 MB VRAM)
+///     Backend: wgpu (Vulkan)
+///     Backend: CPU (wgpu unavailable: cosine 0.884 < 0.99)
+/// ~20 tok/s instead of ~400, with no stated cause even under
+/// --verbose. A silent 20x downgrade is indistinguishable from a
+/// decode regression, and it makes any throughput measured through
+/// it a fabrication (the Pillar-4 beat reports 0.070x and a
+/// BEAT-REGRESSION panic off exactly this state).
+///
+/// Unconditional, not verbose-gated: the user is about to silently
+/// receive a 20x slower backend, which they need to know regardless
+/// of verbosity.
+///
+/// #3413 C: the message now carries the path that failed, because a
+/// batched-prefill failure and a decode failure are different faults.
+#[cfg(feature = "cuda")]
+fn f2_report_forward_failure(msg: &str, via: F2ProbePath) {
+    eprintln!("{msg} [{}]", via.as_str());
+}
+
+/// #3413 C: re-measure the probe on the FP16 HGEMM prefill with FP8 turned OFF.
+/// A precision fallback, not a backend fallback — printed, never silent. `None`
+/// when the FP16 forward itself failed, in which case the FP8 report stands.
+#[cfg(feature = "cuda")]
+fn f2_remeasure_without_fp8(
+    cuda_model: &mut crate::gguf::OwnedQuantizedModelCuda,
+    probe: &[u32],
+    decode_token: u32,
+    kv_dim: usize,
+    num_layers: usize,
+    cpu_logits_per_pos: &[Vec<f32>],
+    via: F2ProbePath,
+) -> Option<F2PositionReport> {
+    cuda_model.executor.gpu_profile.fp8_prefill = false;
+    cuda_model.executor.gpu_profile.fp8_decode = false;
+    cuda_model.executor.reset_kv_cache_gpu();
+    let out = match f2_gpu_batched_logits(cuda_model, probe, decode_token, kv_dim, num_layers) {
+        Ok(v) => {
+            let report = f2_multi_position_report(cpu_logits_per_pos, &v);
+            if report.accepted {
+                eprintln!(
+                    "note: FP16 prefill passes (min cosine {:.4}); FP8 stays OFF for this model",
+                    report.min_cosine_real,
+                );
+            }
+            Some(report)
+        },
+        Err(msg) => {
+            eprintln!("{msg} [{} retry without FP8]", via.as_str());
+            None
+        },
+    };
+    cuda_model.executor.reset_kv_cache_gpu();
+    out
+}
+
+/// The F2 verdict itself, once a report exists.
+#[cfg(feature = "cuda")]
+fn f2_accept_or_reject(
+    report: &F2PositionReport,
+    via: F2ProbePath,
+    real_positions: usize,
+) -> bool {
+    if !report.accepted {
+        eprintln!("{}", f2_divergence_msg(report, via));
+        return false;
+    }
+    // #2405: the GPU was ACCEPTED — this line reports a benign near-tie on a
+    // successful run and says nothing the user can act on, so it is a
+    // developer trace, not user output.
+    if report.pos0_argmax_flip && crate::dev_trace::dev_trace_enabled() {
+        eprintln!(
+            "pos0 argmax flip (benign BOS near-tie) ignored; all {real_positions} real positions match (min cosine {:.4} >= {F2_GATE_COSINE_MIN}) via {} — accepting GPU path",
+            report.min_cosine_real,
+            via.as_str(),
+        );
+    }
+    true
+}
+
 #[cfg(feature = "cuda")]
 fn validate_gpu_first_token(
     cuda_model: &mut crate::gguf::OwnedQuantizedModelCuda,
     _gen_config: &crate::gguf::QuantizedGenerateConfig,
     probe_context: &[u32],
 ) -> bool {
-    // SKIP_PARITY_GATE=1 bypasses both this F2 check and the cosine parity gate.
-    if std::env::var("SKIP_PARITY_GATE")
-        .map(|v| v == "1")
-        .unwrap_or(false)
-    {
-        return true;
-    }
-
-    let Some((kv_dim, num_layers, probe)) = gpu_probe(cuda_model.model(), probe_context) else {
+    let Some((kv_dim, num_layers, probe)) = f2_probe_to_judge(cuda_model, probe_context) else {
         return true;
     };
-
-    // A single-token probe (context-less BOS) has NO real position (≥1) to validate
-    // — the pos0 distribution is a benign near-tie. The load-time parity gate is the
-    // primary defense there; skip the per-position F2 check.
-    if probe.len() < 2 {
-        return true;
-    }
 
     // CPU reference: forward the whole probe (plus one greedy decode step),
     // KEEPING THE LOGITS AT EVERY POSITION.
@@ -902,46 +1025,13 @@ fn validate_gpu_first_token(
     );
 
     cuda_model.executor.reset_kv_cache_gpu();
-    let gpu_result = match via {
-        F2ProbePath::Batched => {
-            f2_gpu_batched_logits(cuda_model, &probe, decode_token, kv_dim, num_layers)
-        },
-        F2ProbePath::Serial => {
-            f2_gpu_serial_logits(cuda_model, &probe, decode_token, kv_dim, num_layers)
-        },
-    };
+    let gpu_result =
+        f2_gpu_logits_via(cuda_model, via, &probe, decode_token, kv_dim, num_layers);
     let gpu_logits_per_pos = match gpu_result {
         Ok(v) => v,
         Err(msg) => {
             cuda_model.executor.reset_kv_cache_gpu();
-            // FALSIFY-CUDA-SILENT-FALLBACK-001: never discard this error.
-            //
-            // Every OTHER rejection in this validator explains itself (see the
-            // F2 divergence branch below, and the BOS-unknown skip above), but
-            // this one used `Err(_)` and returned a bare `false`. The caller
-            // (gguf_gpu_generate.rs:303) can only turn that into
-            // `Err(Box::new(model))` for CPU fallback — the reason has nowhere
-            // to go and is lost.
-            //
-            // Observed 2026-07-27 on an RTX 4090: CUDA initialises fine and the
-            // run still ends on CPU, with the only clue being the backend
-            // cascade —
-            //     Backend: GPU (NVIDIA GeForce RTX 4090, 24045 MB VRAM)
-            //     Backend: wgpu (Vulkan)
-            //     Backend: CPU (wgpu unavailable: cosine 0.884 < 0.99)
-            // ~20 tok/s instead of ~400, with no stated cause even under
-            // --verbose. A silent 20x downgrade is indistinguishable from a
-            // decode regression, and it makes any throughput measured through
-            // it a fabrication (the Pillar-4 beat reports 0.070x and a
-            // BEAT-REGRESSION panic off exactly this state).
-            //
-            // Unconditional, not verbose-gated: the user is about to silently
-            // receive a 20x slower backend, which they need to know regardless
-            // of verbosity.
-            //
-            // #3413 C: the message now carries the path that failed, because a
-            // batched-prefill failure and a decode failure are different faults.
-            eprintln!("{msg} [{}]", via.as_str());
+            f2_report_forward_failure(&msg, via);
             return false; // GPU forward failed — fail closed.
         },
     };
@@ -964,41 +1054,20 @@ fn validate_gpu_first_token(
             "note: FP8 batched prefill scored min cosine {:.4} vs CPU (floor {F2_GATE_COSINE_MIN}) — re-measuring on the FP16 prefill path",
             report.min_cosine_real,
         );
-        cuda_model.executor.gpu_profile.fp8_prefill = false;
-        cuda_model.executor.gpu_profile.fp8_decode = false;
-        cuda_model.executor.reset_kv_cache_gpu();
-        match f2_gpu_batched_logits(cuda_model, &probe, decode_token, kv_dim, num_layers) {
-            Ok(v) => {
-                report = f2_multi_position_report(&cpu_logits_per_pos, &v);
-                if report.accepted {
-                    eprintln!(
-                        "note: FP16 prefill passes (min cosine {:.4}); FP8 stays OFF for this model",
-                        report.min_cosine_real,
-                    );
-                }
-            },
-            Err(msg) => eprintln!("{msg} [{} retry without FP8]", via.as_str()),
+        if let Some(fp16) = f2_remeasure_without_fp8(
+            cuda_model,
+            &probe,
+            decode_token,
+            kv_dim,
+            num_layers,
+            &cpu_logits_per_pos,
+            via,
+        ) {
+            report = fp16;
         }
-        cuda_model.executor.reset_kv_cache_gpu();
     }
 
-    if report.accepted {
-        // #2405: the GPU was ACCEPTED — this line reports a benign near-tie on a
-        // successful run and says nothing the user can act on, so it is a
-        // developer trace, not user output.
-        if report.pos0_argmax_flip && crate::dev_trace::dev_trace_enabled() {
-            eprintln!(
-                "pos0 argmax flip (benign BOS near-tie) ignored; all {} real positions match (min cosine {:.4} >= {F2_GATE_COSINE_MIN}) via {} — accepting GPU path",
-                cpu_logits_per_pos.len().saturating_sub(1),
-                report.min_cosine_real,
-                via.as_str(),
-            );
-        }
-        true
-    } else {
-        eprintln!("{}", f2_divergence_msg(&report, via));
-        false
-    }
+    f2_accept_or_reject(&report, via, cpu_logits_per_pos.len().saturating_sub(1))
 }
 
 /// #3413 C: retry the batched probe with FP8 prefill off iff the miss is inside the

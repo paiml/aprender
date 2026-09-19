@@ -179,15 +179,26 @@ struct SingleGateFinding<'a> {
     file: &'a str,
 }
 
-/// ONT-2b: `--gate <name>` runs ONE gate and reports only it, mapping its verdict through ONT-6's lattice —
-/// Pass 0 · Fail 1 `reject:` · no Σ 2 `decline:` (R-2, zero is a decline) · malformed Σ 3 `error:`.
-fn run_single_gate(contract_dir: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+/// ONT-2b: resolve `--gate <name>` to a (result, findings) pair, mapping every
+/// non-running outcome through ONT-6's lattice — Fail 1 `reject:` · no Σ 2
+/// `decline:` (R-2, zero is a decline) · malformed Σ 3 `error:`.
+#[allow(clippy::type_complexity)]
+fn single_gate_outcome(
+    contract_dir: &Path,
+    name: &str,
+) -> Result<
+    (
+        Box<provable_contracts::lint::GateResult>,
+        Vec<provable_contracts::lint::finding::LintFinding>,
+    ),
+    Box<dyn std::error::Error>,
+> {
     use provable_contracts::lint::{
         relations_gate::RelationsOutcome, shapes_gate::ShapesOutcome, sigma_gate::SigmaOutcome,
         NamedGateOutcome, NAMED_GATES,
     };
 
-    let (result, findings) = match provable_contracts::lint::run_named_gate(contract_dir, name) {
+    let out = match provable_contracts::lint::run_named_gate(contract_dir, name) {
         NamedGateOutcome::UnknownGate => {
             return Err(crate::contract_walk::UnknownGate {
                 asked: name.to_string(),
@@ -244,6 +255,13 @@ fn run_single_gate(contract_dir: &Path, name: &str) -> Result<(), Box<dyn std::e
         | NamedGateOutcome::Shapes(ShapesOutcome::Ran { result, findings })
         | NamedGateOutcome::Ran { result, findings } => (result, findings),
     };
+    Ok(out)
+}
+
+/// ONT-2b: `--gate <name>` runs ONE gate and reports only it, mapping its verdict through ONT-6's lattice —
+/// Pass 0 · Fail 1 `reject:` · no Σ 2 `decline:` (R-2, zero is a decline) · malformed Σ 3 `error:`.
+fn run_single_gate(contract_dir: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let (result, findings) = single_gate_outcome(contract_dir, name)?;
 
     let report = SingleGateReport {
         gate: &result.name,
