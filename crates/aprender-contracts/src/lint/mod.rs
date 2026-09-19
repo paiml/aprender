@@ -217,6 +217,24 @@ pub enum GateExtra {
         by_shape: Vec<String>,
         /// Triples in the extracted graph.
         triples: usize,
+        /// ONT-4c1 (§3.9 per-shape arming): shapes that feed the verdict, in corpus order.
+        armed_shapes: Vec<String>,
+        /// Shapes computed and reported but not armed — their violations are in `unarmed_violations`.
+        not_armed_shapes: Vec<String>,
+        /// Violations from unarmed shapes (named in the findings as warnings; never in the meet).
+        unarmed_violations: usize,
+        /// Focus nodes each extractor produced: `pv-contract`, `gguf`, `apr-model`.
+        by_entity_type: std::collections::BTreeMap<String, usize>,
+        /// The extractor positive controls: `gguf` (corrupt magic refused), `apr-model` (lying header refused).
+        pc_extract: std::collections::BTreeMap<String, String>,
+        /// Ladder receipt files read under `evidence/dogfood/models/`.
+        receipts: usize,
+        /// Receipt rows whose `sha256` equals a rung's.
+        witnesses: usize,
+        /// Receipt rows whose `sha256` differs from the rung's.
+        hex_mismatches: usize,
+        /// Receipt rows without a `sha256` (never a witness).
+        unmeasured_rows: usize,
     },
 }
 
@@ -243,6 +261,9 @@ pub struct LintReport {
     /// The `armed_gates` monotone check, as the CLI measured it; `None` when nothing checked it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub armed_monotone: Option<String>,
+    /// ONT-4c1: the `armed_shapes` monotone check, as the CLI measured it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub armed_shapes_monotone: Option<String>,
 }
 
 /// One armed gate's contribution to [`LintReport::verdict`].
@@ -537,6 +558,7 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
         armed_gates: Vec::new(),
         not_armed: Vec::new(),
         armed_monotone: None,
+        armed_shapes_monotone: None,
     };
     // The default set. `pv lint` re-arms from the corpus's `lint-baseline.json` (ONT-001 §3.9): a gate a flag
     // ran but the declaration does not arm is printed and excluded, like every other unarmed gate.
@@ -659,8 +681,12 @@ fn shapes_result(contract_dir: &Path, validation_passed: bool) -> (GateResult, V
             skipped_gate("shapes", &format!("{shapes_n} shape(s), no focus node")),
             Vec::new(),
         ),
-        shapes_gate::ShapesOutcome::PositiveControlFailed { shapes_n, focus_nodes_n } => (
-            skipped_gate("shapes", &format!("the planted focus node drew no violation ({shapes_n} shape(s), {focus_nodes_n} focus node(s)) — the shapes cannot fire")),
+        shapes_gate::ShapesOutcome::NoReceipts { shapes_n, dir } => (
+            skipped_gate("shapes", &format!("{shapes_n} shape(s) resolve receipts and the tree holds none under {dir}/ — R-2: unmeasured is a decline")),
+            Vec::new(),
+        ),
+        shapes_gate::ShapesOutcome::PositiveControlFailed { shapes_n, focus_nodes_n, which } => (
+            skipped_gate("shapes", &format!("positive control {which} did not fire ({shapes_n} shape(s), {focus_nodes_n} focus node(s)) — the gate cannot reject")),
             Vec::new(),
         ),
     }

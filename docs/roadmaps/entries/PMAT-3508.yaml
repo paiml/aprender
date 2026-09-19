@@ -1,0 +1,20 @@
+- id: PMAT-3508
+  github_issue: 3508
+  item_type: task
+  title: 'ONT-4c1: model receipts as focus nodes — extract:gguf + extract:apr-model over the model:* vocabulary; the ladder rungs as model:Model; resolves: receipt over the tracked ladder receipts (apr-model-ladder-receipt/v1, a row without sha256 is not a witness); per-shape arming (armed_shapes[] in lint-baseline.json, absent = all armed, monotone); shapes ladder-measured (armed) and ladder-green (computed and reported, armed by the 0.68.2 bump)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-19T09:19:25Z
+  updated: 2026-09-19T09:19:25Z
+  spec: null
+  acceptance_criteria:
+  - ONT-001 v4.6 §5 ONT-4c1 (infra f593fa54). Depends on ONT-4b (bound, infra#700) and ONT-2b. Merge after the re-measured 0.68.1 ladder receipts with sha256 are tracked on main (aprender-ba). No ci.yml change; own PR on main with quorum artifact, behind the GDN kernel PR.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null

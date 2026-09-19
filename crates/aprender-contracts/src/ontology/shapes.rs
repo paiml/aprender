@@ -181,13 +181,56 @@ pub fn parse_shape(stem: &str, doc: &serde_yaml::Value) -> Result<Option<NodeSha
             what: "`shape:` is not a mapping".into(),
         });
     };
-    let default_target = doc
-        .get("entity")
+    parse_node_shape(stem, map, default_target(doc), 0).map(Some)
+}
+
+/// Every shape a contract declares: its `shape:` block (id = the stem) and each entry of its `shapes:` list
+/// (id = the entry's own `id`, required, so a contract may hold several shapes that are armed one by one —
+/// ONT-4c1's `ladder-measured` and `ladder-green`). An entry without `id`, or an `id` that repeats within the
+/// contract, is malformed.
+pub fn parse_shapes(stem: &str, doc: &serde_yaml::Value) -> Result<Vec<NodeShape>, ShapeError> {
+    let mut out = Vec::new();
+    if let Some(s) = parse_shape(stem, doc)? {
+        out.push(s);
+    }
+    let Some(list) = doc.get("shapes") else {
+        return Ok(out);
+    };
+    let seq = list.as_sequence().ok_or_else(|| ShapeError::Malformed {
+        shape: stem.to_string(),
+        what: "`shapes:` is not a list".into(),
+    })?;
+    for (i, entry) in seq.iter().enumerate() {
+        let map = entry.as_mapping().ok_or_else(|| ShapeError::Malformed {
+            shape: stem.to_string(),
+            what: format!("shapes[{i}] is not a mapping"),
+        })?;
+        let id = map
+            .get("id")
+            .and_then(serde_yaml::Value::as_str)
+            .ok_or_else(|| ShapeError::Malformed {
+                shape: stem.to_string(),
+                what: format!("shapes[{i}] has no `id`"),
+            })?;
+        if out.iter().any(|s| s.id == id) {
+            return Err(ShapeError::Malformed {
+                shape: stem.to_string(),
+                what: format!("shape id `{id}` repeats"),
+            });
+        }
+        let mut body = map.clone();
+        body.remove(serde_yaml::Value::String("id".into()));
+        out.push(parse_node_shape(id, &body, default_target(doc), 0)?);
+    }
+    Ok(out)
+}
+
+fn default_target(doc: &serde_yaml::Value) -> Option<String> {
+    doc.get("entity")
         .and_then(|e| e.get("type"))
         .and_then(serde_yaml::Value::as_str)
         .filter(|t| *t == "pv-contract")
-        .map(|_| ont("Contract"));
-    parse_node_shape(stem, map, default_target, 0).map(Some)
+        .map(|_| ont("Contract"))
 }
 
 fn parse_node_shape(
@@ -444,14 +487,25 @@ fn validate_focus(graph: &Graph, shape: &NodeShape, focus: &str, out: &mut Vec<V
         }
         if let Some(max) = p.max_count {
             if values.len() > max {
+                // name the values (up to five): a `maxCount 0` on a materialized edge — `missingGreenHost`,
+                // `receiptHexMismatch` (ONT-4c1) — is only actionable when the message says WHICH host, WHICH file
+                let named: Vec<String> = values
+                    .iter()
+                    .take(5)
+                    .map(|v| match v {
+                        Term::Iri(i) => short(i),
+                        Term::Literal { value, .. } => value.clone(),
+                    })
+                    .collect();
                 push(
                     p.severity,
                     Some(&p.path),
                     "maxCount",
                     format!(
-                        "has {} value(s) of {}, maxCount is {max}",
+                        "has {} value(s) of {}, maxCount is {max}: {}",
                         values.len(),
-                        short(&p.path)
+                        short(&p.path),
+                        named.join(", ")
                     ),
                 );
             }

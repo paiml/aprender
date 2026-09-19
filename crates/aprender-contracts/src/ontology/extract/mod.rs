@@ -1,8 +1,9 @@
 //! ONT-001 §3.7 — extractors: how each entity type becomes RDF. Every extractor is pure Rust, deterministic
 //! (R-15), and registered in Σ `extractors[]` with its reader gate (R-11). ONT-4b implements `pv_contract`; `json`
 //! (aprender#3515, for infra's ARBITER-001 §14) reads a tool's own `--json` output through the vocabulary map its
-//! contract carries; the rest are declared in Σ and arrive with their rows (ONT-4b2: code, lean; ONT-4c: readme,
-//! llm_context, apr_model, csv).
+//! contract carries; ONT-4c1 (aprender#3508) implements `gguf` and `apr_model` — the model receipts — and joins
+//! the tracked ladder receipts to the rungs (`resolves: receipt`, [`crate::ontology::receipts`]); the rest are
+//! declared in Σ and arrive with their rows (ONT-4b2: code, lean; ONT-4c: readme, llm_context, csv).
 //!
 //! [`all`] is the ONE walk the shapes gate and `pv extract` share, so what the gate grades and what
 //! `contracts.nt` records are the same graph (R-18: files are canonical, the graph is derived — from one place).
@@ -10,53 +11,72 @@
 use std::path::Path;
 
 use crate::ontology::rdf::Graph;
+use crate::ontology::receipts;
 
+pub mod apr_model;
+pub mod gguf;
 pub mod json;
 pub mod pv_contract;
 
 /// Every extractor's output over `contract_dir`, plus the input-side warnings the extractors chose to carry
-/// rather than hide (a torn JSONL line).
+/// rather than hide (a torn JSONL line), plus what the model extractors and the receipt resolver counted.
 #[derive(Debug, Clone, Default)]
 pub struct Extraction {
     pub graph: Graph,
     pub warnings: Vec<json::Warning>,
     /// Contracts whose `entity.type` this build extracts, by stem.
     pub entities_extracted: Vec<String>,
+    /// ONT-4c1: the ladder rungs and GGUF files, and the files this extractor refused.
+    pub gguf: gguf::GgufStats,
+    /// ONT-4c1: the `.apr` files read, and the files this extractor refused.
+    pub apr_model: apr_model::AprStats,
+    /// ONT-4c1: the tracked ladder receipts, as read.
+    pub receipts: Vec<receipts::Receipt>,
+    /// ONT-4c1: witnesses, hex mismatches, unmeasured rows, green / missing hosts.
+    pub resolve: receipts::ResolveStats,
 }
 
-/// The corpus as `pv_contract` sees it, then every `entity: {type: json}` contract's document (relative to the
-/// contract dir's parent — the repo root, the same base `ont:file` uses). `Err` is a declaration's fault.
-pub fn all(contract_dir: &Path) -> Result<Extraction, json::ExtractError> {
+/// What a walk could not do. Every variant is the DECLARATION's fault (exit 3), never a corpus verdict.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExtractFailure {
+    /// An `entity: {type: json}` contract could not be extracted.
+    Json(json::ExtractError),
+    /// A ladder receipt under `evidence/dogfood/models/` is unreadable or carries a foreign schema.
+    Receipt(receipts::ReceiptError),
+}
+
+impl std::fmt::Display for ExtractFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Json(e) => write!(f, "{e}"),
+            Self::Receipt(e) => write!(f, "receipt {e}"),
+        }
+    }
+}
+
+impl std::error::Error for ExtractFailure {}
+
+/// The corpus as `pv_contract` sees it; then every `entity: {type: json}` contract's document (relative to the
+/// contract dir's parent — the repo root, the same base `ont:file` uses); then the `gguf` and `apr-model`
+/// entities and the ladder receipts joined to the rungs. `Err` is a declaration's fault.
+pub fn all(contract_dir: &Path) -> Result<Extraction, ExtractFailure> {
     let mut out = Extraction {
         graph: pv_contract::extract(contract_dir),
         ..Extraction::default()
     };
     let root = contract_dir.parent().unwrap_or(contract_dir);
-    let sigma_path = contract_dir.join("ontology.yaml");
-    let mut files = Vec::new();
-    crate::lint::collect_yaml_files(contract_dir, &mut files);
-    files.sort();
-    for file in &files {
-        if file == &sigma_path {
-            continue;
-        }
-        let Ok(raw) = std::fs::read_to_string(file) else {
-            continue;
-        };
-        let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&raw) else {
-            continue;
-        };
+    for (stem, _rel, doc) in pv_contract::documents(contract_dir) {
         if !json::applies(&doc) {
             continue;
         }
-        let stem = file
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or_default()
-            .to_string();
-        let mut warnings = json::extract_into(&mut out.graph, &stem, &doc, root)?;
+        let mut warnings =
+            json::extract_into(&mut out.graph, &stem, &doc, root).map_err(ExtractFailure::Json)?;
         out.warnings.append(&mut warnings);
         out.entities_extracted.push(stem);
     }
+    out.gguf = gguf::extract(contract_dir, &mut out.graph);
+    out.apr_model = apr_model::extract(contract_dir, &mut out.graph);
+    out.receipts = receipts::read_all(root).map_err(ExtractFailure::Receipt)?;
+    out.resolve = receipts::resolve(&mut out.graph, &out.gguf.rungs, &out.receipts);
     Ok(out)
 }

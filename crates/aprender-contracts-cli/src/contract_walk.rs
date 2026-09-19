@@ -32,7 +32,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use provable_contracts::lint::collect_yaml_files;
-use provable_contracts::ontology::arming::ArmedGatesShrank;
+use provable_contracts::ontology::arming::{ArmedGatesShrank, ArmedShapesShrank};
 use provable_contracts::ontology::verdict::Reason;
 use provable_contracts::schema::{parse_contract, Contract};
 
@@ -237,6 +237,7 @@ pub fn exit_code_for(err: &(dyn std::error::Error + 'static)) -> i32 {
     {
         ZERO_CONTRACTS_EXIT
     } else if err.downcast_ref::<ArmedGatesShrank>().is_some()
+        || err.downcast_ref::<ArmedShapesShrank>().is_some()
         || err.downcast_ref::<SigmaMalformed>().is_some()
     {
         ARMED_GATES_SHRANK_EXIT

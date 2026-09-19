@@ -250,6 +250,7 @@ mod tests {
             armed_gates: vec![],
             not_armed: vec![],
             armed_monotone: None,
+            armed_shapes_monotone: None,
         };
         let path = record_snapshot(&trend, &report, 107).unwrap();
         assert!(path.exists());
@@ -372,6 +373,7 @@ mod tests {
             armed_gates: vec![],
             not_armed: vec![],
             armed_monotone: None,
+            armed_shapes_monotone: None,
         };
         assert!((extract_mean_score(&report) - 0.0).abs() < f64::EPSILON);
     }
