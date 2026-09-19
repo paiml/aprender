@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.68.2] - 2026-09-19
+
+0.68.2 is an interrupt release for Qwen3 and Qwen3.5 (EPIC #3477). Dense Qwen3 produced garbage on CUDA in 0.68.1 because two fast paths dropped the per-head QK-norm — the manual decode graph never recorded the kernel (#3413 A) and the batched prefill never applied it (#3413 B) — and the CPU-vs-GPU guard could not see either because it probed a path generation does not use (#3413 C). All three are fixed and the guard now judges the real prefill path; a fourth finding (FP8 batched prefill fails parity on QK-norm models, #3483) is mitigated by routing those models to the serial prefill with FP8 off. Qwen3.5 real-world files (unsloth UD-IQ2_XXS / IQ4_XS) load and run on the CPU (#3432, #3091), and `apr qa` certifies a CPU-only architecture instead of aborting. Qwen3.5 now also runs on the GPU: the hybrid Gated DeltaNet layers execute on CUDA (#3090, #3517) — nine device kernels in crates/aprender-gpu/src/kernels/gdn/ with host-reference tests, and the device forward is held to the CPU forward per layer against exact arithmetic (QHF-GPU-008) and end to end on argmax and a cosine floor (QHF-GPU-009), with no silent CPU fallback (QE2E-DEV-008). The dense sizes 4B/9B/27B were wrong on every backend because the loader read a bare `block_count` key that no GGUF carries and every file got 24 layers (#3346); the loader now reads `{arch}.block_count`, and the Gated DeltaNet GQA head mapping (32 or 48 value heads over 16 key heads) is the ggml tiled order llama.cpp converts to, on the CPU and in the CUDA kernel (#3527, #3510) — Qwen3.5 0.8B/2B/4B/9B/27B all answer the golden set on CPU and CUDA on both fleet GPUs. This replaces the 2026-09-18 plan to carry #3090 to 0.69.0 as a dated non-goal; on 2026-09-19 the operator ruled that GPU support up to 27B is required for this release (35B is tracked for post-0.70). The model-capability ladder (contracts/model-capability-ladder-v1.yaml) is green on lambda (sm_89) and gx10 (sm_121) at the cut, including the five Qwen3.5 rungs on cuda (receipts: evidence/dogfood/models/0.68.2/{lambda,gx10}.json); Qwen3-8B's optional rung stays optional pending the golden thinking-budget harness fix (#3486).
+
+### Added
+
+- feat(ont): ONT-6 — one Verdict lattice, Kani-proved; per-repo arming; exit-vocabulary mapping (PMAT-3451) (#3463)
+- feat(ont): ONT-2b — Σ with entity_types and extractors, and a symbol-level check on formal: (PMAT-3471) (#3472)
+- feat(dogfood): model capability ladder — T-2 proves every (architecture, backend, silicon) triple per host; RED at 4a538ddef on both GPUs (#3477) (#3479)
+
+### Fixed
+- fix(guard): R-2 close-issue guard now fails closed on the #3400 landmine (#3497)
+
+- fix(publish): preflight R6 judges the cycle, not the shape (0.68.1 T-4 stop, #3468) (#3469)
+- fix(ladder): a rung that claims only the CPU is not asked whether the GPU can run it (#3477) (#3481)
+
+### Changed
+- ci(pack): workspace-test as a 3-shard matrix across intel/gx10/yoga with a fan-in check; explicit commands shard; mini-m4 gets its first lane (PACK-001) (#3488)
+- PMAT-3487 / ONT-4: typed relations — a contract's relations: block (refines · supersedes · contradicts · depends_on) is a gate; pv lint --gate relations, armed; legacy metadata.depends_on counted (354 edges, 8 unresolved) and ratcheted, never rewritten (#3489)
+- PMAT-3500 / ONT-4b: pv extract (pv-contract) → contracts.nt; the in-house shapes validator over the SHACL-Core subset of §3.6; pv lint --gate shapes with the plant fired every run (#3501)
+- contracts(qwen35-gpu): GDN-on-device obligations + cuda claimed on the Qwen3.5 ladder rung — RED until #3090's path is measured on both hosts (#3477) (#3502)
+- docs(audit): PMAT-3477 receipt — #3090 GPU required, not a non-goal (decision 2026-09-19) (#3503)
+- ci: ONT-4/ONT-4b gate tests were dark — wire relations + shapes gate tests into CI (#3477) (#3504)
+- ladder: receipt rung rows carry the measured sha256 beside sha_ok (ONT-4c1) (#3506) (#3507)
+- ladder: per-rung hosts: mechanism + four required dense Qwen3.5 rungs 2B/4B/9B/27B with measured sha256 (#3510) (#3511)
+- contracts(qwen35-gpu): QHF-GPU-008 judged against exact arithmetic, QHF-GPU-009 end-to-end argmax + cosine floor vs production (#3090) (#3514)
+- ONT-001 §3.7: extract:json — a tool's own --json output is a shaped entity under pv lint --gate shapes (Refs PMAT-3515) (#3516)
+- PMAT-3477: Qwen3.5 (Gated DeltaNet hybrid) runs on CUDA — nine device kernels, Qwen35CudaModel, refusal sites lifted, apr run/chat/qa route to the GPU (#3090) (#3517)
+- ci: guard_tree reads GitHub with the job token, not the runner's shared operator login (infra#721) (#3520)
+- evidence(ladder): 0.68.1 receipts re-measured at main a6f54e84c on both hosts — eight rungs with sha256, RED by construction on Qwen3.5 (#3510) (#3523)
+- PMAT-3477: Qwen3.5 4B/9B/27B on CPU and CUDA — block_count loader fix + Gated DeltaNet GQA (tiled head mapping) (#3527)
+- PMAT-3477: CB-200 back under its baseline — 5 definitions lifted to grade B by extraction, no behaviour change (0.68.2 T-2 preflight) (#3533)
+- PMAT-3477: apr parity measures the Qwen3.5 hybrid on CPU vs CUDA (C14) — hybrid arm, measured threshold basis, K-quant resolver (#3534)
+
+- APEX-2b: extended-Wilkinson tick placement (Talbot, Lin & Hanrahan 2010) with a CRAN-golden set that catches the paper's own erratum — NEW crates/aprender-viz/src/breaks.rs (pub fn extended, extended_loose; Q_DEFAULT, W_DEFAULT=[0.25,0.2,0.5,0.05] per the reference code, not the prose), tests/breaks_golden.rs (44 tests: 36 goldens, 6 properties, anti-vacuity floor, W_DEFAULT-swap mutation), fixtures/breaks/{manifest.json, README.md (R transcription, verbatim), generate.py}; EDITS Cargo.toml (+libm), src/lib.rs (+pub mod breaks), Cargo.lock; no renderer change, no new rendering dep (#3259)
+- APEX-2a: deterministic render — svg_identical from SVG bytes on X64+ARM64; NEW viz manifest.rs/text.rs/render_determinism.rs (EV-2b breaks as ticks), ci determinism+compare jobs, libm-ban-live.sh; EDITS .clippy.toml (libm bans), breaks.rs powi->sq, svg/lib/scale/plots (#3273)
+- release: 0.68.1 (#3450)
+- PMAT-3445: no tag while the milestone being cut holds an open item — check_milestone_cut.sh at the freeze and before the tag (#3455)
+- ci(b2-gpu): aprender-gpu lib tests on hardware at the tag (0.68.1 chain, rule 14) (#3467)
+- docs(release): v0.68.1 cascade dry-run receipt (T-4, committed before the first upload) (#3470)
+- docs(release): v0.68.1 SHIPPED — cascade timestamps, install receipts, ledger record, audit interval (#3473)
+- docs(spec): APR-RELEASE-001 revision 2026-09-17 — fan-out by construction, B2 split, unattended cascade; 0.68.1 SHIPPED (#3474)
+- ledger: clean-room chain at -j8 — 3877 s → 1474 s on v0.68.1, same tests, peak RSS at the 48g ceiling (#3475 lever a) (#3476)
+- PMAT-3477: 0.68.2 — Qwen3 CUDA QK-norm restored in the graph and the batched prefill, FP8 prefill gated for QK-norm models, F2 guard judges the real prefill path; Qwen3.5 real IQ files load and run; apr qa certifies CPU-only qwen35 (#3413, #3432, #3091) (#3484)
+
 ## [0.68.1] - 2026-09-17
 
 **The crates.io release of the 0.68 line.** `v0.68.0` is a GitHub-only release (tag and binaries stand; `install.sh` verified on x86_64 and aarch64) — its clean-room on the tag passed A0–B1 for the first time ever on a tag and stopped at B2: lib tests in `aprender-core` and `aprender-test-showcase` named path-only dev-dependencies that `cargo publish` deletes (#3425). 0.68.1 carries that fix — the tests moved out of `src/` to targets the published crates do not carry, all 72 lib-test binaries build in published form — plus the two infra gate repairs that made the chain provable (infra#650 tag ref materialized, infra#652 A1 `[patch.crates-io]` overlay at the tag). Everything else is 0.68.0: Qwen 3.5 on the CPU, the one-line installer, the release-train gates.
