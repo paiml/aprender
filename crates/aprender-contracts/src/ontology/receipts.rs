@@ -452,7 +452,9 @@ mod tests {
 
     #[test]
     fn hosts_scope_the_green_requirement_and_absence_means_every_host_with_a_receipt() {
-        let scoped = rung("a", "aaaa", &["gx10"], true);
+        // listed on lambda ONLY: gx10's red receipt must not count against it — the arm that goes RED when
+        // `hosts:` is ignored (measured: an `if true` in resolve() left the earlier gx10-listed version green)
+        let scoped = rung("a", "aaaa", &["lambda"], true);
         let open = rung("a", "aaaa", &[], true);
         let lambda_green = receipt("lambda", "8.9", OK);
         let gx10_fallback = receipt(
@@ -469,14 +471,13 @@ mod tests {
             &[scoped],
             &[lambda_green.clone(), gx10_fallback.clone()],
         );
-        assert_eq!(st.missing_green_hosts, 1, "gx10 is listed and not green");
-        let s = iri("model", "aaaa");
         assert_eq!(
-            g.objects(&s, &model("missingGreenHost"))[0]
-                .as_literal()
-                .map(|l| l.0),
-            Some("gx10")
+            st.missing_green_hosts, 0,
+            "gx10 is not listed, so its red receipt is not this rung's"
         );
+        assert_eq!(st.green_on, 1, "lambda, the one listed host, is green");
+        let s = iri("model", "aaaa");
+        assert!(g.objects(&s, &model("missingGreenHost")).is_empty());
         let mut g = Graph::new();
         let st = resolve(&mut g, &[open], &[lambda_green, gx10_fallback]);
         assert_eq!(st.green_on, 1);
