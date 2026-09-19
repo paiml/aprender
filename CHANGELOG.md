@@ -38,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ci: guard_tree reads GitHub with the job token, not the runner's shared operator login (infra#721) (#3520)
 - evidence(ladder): 0.68.1 receipts re-measured at main a6f54e84c on both hosts — eight rungs with sha256, RED by construction on Qwen3.5 (#3510) (#3523)
 - PMAT-3477: Qwen3.5 4B/9B/27B on CPU and CUDA — block_count loader fix + Gated DeltaNet GQA (tiled head mapping) (#3527)
+- PMAT-3477: CB-200 back under its baseline — 5 definitions lifted to grade B by extraction, no behaviour change (0.68.2 T-2 preflight) (#3533)
+- PMAT-3477: apr parity measures the Qwen3.5 hybrid on CPU vs CUDA (C14) — hybrid arm, measured threshold basis, K-quant resolver (#3534)
 
 - APEX-2b: extended-Wilkinson tick placement (Talbot, Lin & Hanrahan 2010) with a CRAN-golden set that catches the paper's own erratum — NEW crates/aprender-viz/src/breaks.rs (pub fn extended, extended_loose; Q_DEFAULT, W_DEFAULT=[0.25,0.2,0.5,0.05] per the reference code, not the prose), tests/breaks_golden.rs (44 tests: 36 goldens, 6 properties, anti-vacuity floor, W_DEFAULT-swap mutation), fixtures/breaks/{manifest.json, README.md (R transcription, verbatim), generate.py}; EDITS Cargo.toml (+libm), src/lib.rs (+pub mod breaks), Cargo.lock; no renderer change, no new rendering dep (#3259)
 - APEX-2a: deterministic render — svg_identical from SVG bytes on X64+ARM64; NEW viz manifest.rs/text.rs/render_determinism.rs (EV-2b breaks as ticks), ci determinism+compare jobs, libm-ban-live.sh; EDITS .clippy.toml (libm bans), breaks.rs powi->sq, svg/lib/scale/plots (#3273)
