@@ -1,0 +1,31 @@
+{
+ "packages": [
+  {
+   "name": "testlib",
+   "dependencies": [],
+   "features": {
+    "browser": [],
+    "default": []
+   }
+  },
+  {
+   "name": "cli",
+   "dependencies": [
+    {
+     "name": "testlib",
+     "kind": null,
+     "features": [],
+     "rename": "probar"
+    }
+   ],
+   "features": {
+    "default": [
+     "browser"
+    ],
+    "browser": [
+     "probar/browser"
+    ]
+   }
+  }
+ ]
+}

@@ -1616,6 +1616,15 @@ jobs:
         run: bash scripts/check_lockfile_current.sh
       - name: "lockfile guard must still turn RED (case table)"
         run: bash scripts/check_lockfile_current.sh --self-test
+      # #3242: a sibling crate must not be able to arm a test target that is
+      # gated on a RUNNER CAPABILITY. It lives here, not in guard-tree, because
+      # it reads `cargo metadata` -- and ci.yml runs `guard_tree.sh --no-cargo`,
+      # so a cargo-reading guard placed there would never be dispatched.
+      # `--no-deps` means no build: the cost is a manifest parse, not a compile.
+      - name: "a sibling must not arm a capability-gated test target (#3242)"
+        run: bash scripts/check_feature_gated_test_leak.sh
+      - name: "feature-leak guard must still turn RED (case table)"
+        run: bash scripts/check_feature_gated_test_leak.sh --self-test
       # #2640: the SAME defect class as the two steps above, one level up. The
       # dogfood release runner existed as two 1170-line copies whose divergence
       # was, in every hunk, a pin for a release verifier that one copy had and
