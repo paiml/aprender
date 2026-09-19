@@ -375,8 +375,13 @@ impl CudaExecutor {
     }
 
     /// The gated delta-rule recurrence for one token
-    /// (`delta_rule_recurrence`). `state` is `[num_v_heads * D * D]` and is
-    /// updated in place; `output` is `[num_v_heads * D]`.
+    /// (`delta_rule_recurrence_gqa`).
+    ///
+    /// `q` and `k` are `[num_k_heads * head_k_dim]`, `v` and `output` are
+    /// `[num_v_heads * head_v_dim]`, `beta` and `gate` are per VALUE head, and
+    /// `state` is `[num_v_heads * head_v_dim * head_k_dim]`, updated in place.
+    /// Value head `h` reads key/query head `h % num_k_heads` — the tiled order
+    /// the GGUF conversion writes (PMAT-3477, #3346/#3510).
     ///
     /// # Errors
     /// PTX compilation or kernel launch failure, or a null device pointer.
@@ -390,16 +395,25 @@ impl CudaExecutor {
         gate: &GpuBuffer<f32>,
         state: &GpuBuffer<f32>,
         output: &GpuBuffer<f32>,
+        num_k_heads: u32,
+        head_k_dim: u32,
         num_v_heads: u32,
         head_v_dim: u32,
     ) -> Result<(), GpuError> {
-        let kernel =
-            trueno_gpu::kernels::gdn::DeltaRuleRecurrenceKernel::new(num_v_heads, head_v_dim);
+        let kernel = trueno_gpu::kernels::gdn::DeltaRuleRecurrenceKernel::new(
+            num_k_heads,
+            head_k_dim,
+            num_v_heads,
+            head_v_dim,
+        );
         let kernel_type = KernelType::GdnDeltaRule {
             num_v_heads,
             head_v_dim,
+            num_k_heads,
+            head_k_dim,
         };
-        let cache_key = format!("gdn_delta_rule_{num_v_heads}_{head_v_dim}");
+        let cache_key =
+            format!("gdn_delta_rule_{num_v_heads}_{head_v_dim}_{num_k_heads}_{head_k_dim}");
         let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
         let (gx, _, _) = kernel.grid();
         let (bx, _, _) = kernel.block();
