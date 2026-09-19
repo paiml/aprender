@@ -128,8 +128,14 @@ proof_obligations:
   applies_to: all
 - id: QHF-GPU-008
   type: invariant
-  property: 'Gated DeltaNet on the device equals the CPU forward, per layer and per token: the recurrent state S_l(t) and the layer output y_l(t) agree'
-  formal: '∀ l ∈ gdn_layers, ∀ t: ‖S_l^{gpu}(t) − S_l^{cpu}(t)‖_∞ ≤ 1e-3 ∧ ‖y_l^{gpu}(t) − y_l^{cpu}(t)‖_∞ ≤ 1e-3'
+  property: 'Gated DeltaNet on the device equals an EXACT-ARITHMETIC reference per op, per layer and per token — dequantized f32 weights, f32 dots — not the production CPU forward, which quantizes activations to Q8_K before its Q4_K matvec (measured 2.95e-3 per projection from exact on 0.8B, 2026-09-19) and so cannot be a 1e-3 oracle for a correct device path'
+  formal: '∀ l ∈ gdn_layers, ∀ t: ‖S_l^{gpu}(t) − S_l^{exact}(t)‖_∞ ≤ 1e-3 · ‖S_l^{exact}(t)‖_∞ ∧ ‖y_l^{gpu}(t) − y_l^{exact}(t)‖_∞ ≤ 1e-3 · ‖y_l^{exact}(t)‖_∞'
+  tolerance: 1.0e-03
+  applies_to: all
+- id: QHF-GPU-009
+  type: invariant
+  property: 'End to end against the PRODUCTION CPU forward the device decodes the same token at every position and its logits stay on the CPU''s ray: identical argmax and a cosine floor, the same shape as the F2 runtime parity guard (apr-cpu-vs-gpu-output-parity-v1). The floor is a MEASURED number: 0.999 is the expected value at 2026-09-19 and is replaced by the value the 0.68.2 receipt records, never loosened below the F2 catastrophic line 0.90'
+  formal: '∀ t ∈ positions(prompt): argmax(logits^{gpu}(t)) = argmax(logits^{cpu}(t)) ∧ cos(logits^{gpu}(t), logits^{cpu}(t)) ≥ 0.999'
   tolerance: 1.0e-03
   applies_to: all
 falsification_tests:
@@ -173,6 +179,11 @@ falsification_tests:
   prediction: "`apr qa Qwen3.5-0.8B-Q4_K_M.gguf` golden_output passes on GPU and `apr run --gpu` prints no `[qwen35: Gated DeltaNet runs on the CPU` notice, on lambda (sm_89) and gx10 (sm_121)"
   test: "bash scripts/check_model_ladder.sh — rung qwen35-0.8b-q4km, backend cuda, both required hosts (receipts under evidence/dogfood/models/<version>/)"
   if_fails: "the GDN device kernels (causal conv1d, gated delta-rule recurrence with per-layer state, gated RMSNorm, per-head L2 norm, partial-NEOX rope) diverge from forward_qwen35.rs or never ran — at f4c0daa37 no device path existed and the rung claimed cpu only (#3090, EPIC #3477)"
+- id: FALSIFY-QHF-009
+  rule: The device path is judged per op against exact arithmetic and end to end against production, not per op against a quantized CPU
+  prediction: "qwen35_cuda_the_parity_floor_is_the_cpu_references_own_activation_quantization passes (every GDN and attention op ≤ 1e-3 relative to the dequantized-f32 exact reference; the sigmoid-gate mutant turns it RED), and on Qwen3.5-0.8B-Q4_K_M a 6-token prompt gives identical argmax at every position with per-position cosine ≥ 0.999 between the device and the production CPU logits, on lambda (sm_89) and gx10 (sm_121)"
+  test: "cargo test -p aprender-serve --features cuda qwen35_cuda_the_parity_floor -- --nocapture && apr qa Qwen3.5-0.8B-Q4_K_M.gguf --json (gpu-cpu parity gate, per position: argmax match ∧ cos ≥ 0.999)"
+  if_fails: "either a device op is wrong (per-op exact check names the op) or the composed forward drifts (argmax flip or cosine below the measured floor names the position); a check that demanded device == quantized-CPU at 1e-3 could only be passed by an implementation reproducing the CPU's Q8_K activation error, which is not correctness (#3090, EPIC #3477)"
 kani_harnesses:
 - id: KANI-QHF-001
   obligation: QHF-INV-001
