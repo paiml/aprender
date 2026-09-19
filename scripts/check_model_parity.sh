@@ -65,12 +65,30 @@ PY
 # bash-run workflow. rc=3 is NOT tolerated silently: the caller measures the file
 # and still fails, because a registry that disagrees with its artifact is the
 # defect, and tolerating it is what let this sit.
+#
+# Several vendor files can share the logical name (Qwen3.5-0.8B ships as IQ4_XS,
+# Q4_K_M and UD-IQ2_XXS side by side). "first in sort order" picked IQ4_XS, whose
+# GGML type has no GPU GEMV kernel, so C14 reported UNMEASURED-TOOL for a model
+# whose Q4_K_M twin — the ladder's own rung file — it could have measured (#3477).
+# The K-quant file is preferred when present; the pick is a preference among the
+# files the name matches, never a widening of the match.
+prefer_measurable() {
+    local k
+    k=$(grep -i -m1 'Q4_K_M' || true)
+    printf '%s' "$k"
+}
 resolve_model_file() {
-    local dir="$1" name="$2" hit
-    hit=$(ls "$dir"/"$name"*.gguf 2>/dev/null | head -1 || true)
-    if [ -n "$hit" ]; then printf '%s' "$hit"; return 0; fi
-    hit=$(find "$dir" -maxdepth 1 -iname "$name*.gguf" 2>/dev/null | sort | head -1 || true)
-    if [ -n "$hit" ]; then printf '%s' "$hit"; return 3; fi
+    local dir="$1" name="$2" hits hit
+    hits=$(ls "$dir"/"$name"*.gguf 2>/dev/null || true)
+    if [ -n "$hits" ]; then
+        hit=$(printf '%s\n' "$hits" | prefer_measurable); [ -n "$hit" ] || hit=$(printf '%s\n' "$hits" | head -1)
+        printf '%s' "$hit"; return 0
+    fi
+    hits=$(find "$dir" -maxdepth 1 -iname "$name*.gguf" 2>/dev/null | sort || true)
+    if [ -n "$hits" ]; then
+        hit=$(printf '%s\n' "$hits" | prefer_measurable); [ -n "$hit" ] || hit=$(printf '%s\n' "$hits" | head -1)
+        printf '%s' "$hit"; return 3
+    fi
     return 1
 }
 
@@ -175,6 +193,17 @@ PY
     row 0 "exact-case model resolves (rc 0, the ordinary path)"                 resolve_model_file "$MD" qwen2-0.5b-instruct
     row 3 "MIXED-CASE model resolves and is flagged rc=3, never silent UNMEASURED (#3325)" resolve_model_file "$MD" qwen3.5-0.8b
     row 1 "a model genuinely absent on this host is rc=1 (UNMEASURED is correct there)"    resolve_model_file "$MD" no-such-model
+    # #3477: three vendor files share the logical name; sort order put IQ4_XS first and
+    # C14 reported UNMEASURED-TOOL for a model whose Q4_K_M twin it could measure.
+    : > "$MD/Qwen3.5-0.8B-IQ4_XS.gguf"; : > "$MD/Qwen3.5-0.8B-UD-IQ2_XXS.gguf"
+    row 3 "among IQ4_XS / Q4_K_M / UD-IQ2_XXS the K-quant file is picked, not the first in sort order" resolve_model_file "$MD" qwen3.5-0.8b
+    picked=$(resolve_model_file "$MD" qwen3.5-0.8b || true)
+    case "$picked" in *Q4_K_M.gguf) row 0 "the picked file IS the Q4_K_M twin" true ;; *) row 0 "the picked file IS the Q4_K_M twin (got: $picked)" false ;; esac
+    # #3477: the CPU-vs-llama.cpp leg row is keyed `<name>@cpu-vs-llama.cpp` and stays
+    # fail-closed (no min_cosine); the bare name is the GPU-vs-CPU row `apr parity`
+    # produces, judged against the shipped thresholds file, not a fixture.
+    row 2 "the CPU-vs-llama.cpp leg row stays fail-closed under its own key (I4)"       env PARITY_THRESHOLDS="$ROOT/evidence/parity/thresholds.yaml" bash "$0" --judge "$L/qwen2.5-coder-7b-instruct-q4_k_m.json" --model qwen3.5-0.8b@cpu-vs-llama.cpp
+    row 0 "the shipped GPU-vs-CPU qwen3.5-0.8b row carries a measured basis and judges a good record" env PARITY_THRESHOLDS="$ROOT/evidence/parity/thresholds.yaml" bash "$0" --judge "$L/qwen2.5-coder-7b-instruct-q4_k_m.json" --model qwen3.5-0.8b
 
     # PMAT-1098: `apr parity` REFUSES architectures its dense CPU-vs-GPU loop cannot
     # route (MoE -> #3367, Qwen3.5 -> #3090) with exit 12 and one stderr line. That is
