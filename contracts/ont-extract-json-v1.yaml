@@ -46,6 +46,22 @@ metadata:
 relations:
   depends_on: [ont-shapes-v1, ont-sigma-v1]
 
+equations:
+  extract_json:
+    formula: "extract(doc, V) = { (root, rdf:type, V.root_class) } ∪ { (root, V.prefix:k, lit(v)) | (k, v) ∈ doc, scalar(v) } ∪ ⋃ { extract(doc[k], V.nested[k]) | (k, v) ∈ doc, object(v) ∨ objects(v) }"
+    domain: "one JSON document (or one JSONL line) named by `entity: {type: json, ref}` and the contract's vocabulary V = {prefix, root_class, nested}"
+    codomain: "a set of triples with IRI subjects only — or Err naming the ref, the byte offset, the missing vocabulary field or the unmapped nested key"
+    invariants:
+      - "no blank node: every subject is an IRI derived from the ref and the path to the node"
+      - "an unmapped nested key is refused, never typed by guess (EXJ-INV-002)"
+      - "null produces no triple; an array of scalars is the predicate repeated"
+    preconditions:
+      - "the document parses as JSON, or as JSONL where every line that parses is a root"
+    postconditions:
+      - "two extractions of the same document are byte-identical (EXJ-INV-001)"
+      - "a JSONL line that does not parse is a warning naming the line, and the other lines' nodes are emitted (EXJ-INV-003)"
+    lean_theorem: none — L4 not declared
+
 invariants:
   - id: EXJ-INV-001
     property: deterministic, no blank nodes
