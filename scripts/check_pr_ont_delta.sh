@@ -176,6 +176,9 @@ trailer'
 # and §11.1 says so verbatim. A design spec that IS the finding's home is not
 # "writing a finding into a prose sink"; whether the sentence or the row moves
 # is a §11.1 amendment, and the row below is the falsifying case either way.
+# sweep_reason takes a FILE of changed paths, one per line (the same shape main() hands it from
+# --changed), and reads the paths out of it — so each row writes its one path into a temp file and
+# passes the FILE. Quorum round 2 misread this as passing the temp path itself; --self-test is the measurement.
 predicate_row() { # predicate_row NAME WANT CHANGED_PATH  (want: 0 = sweep, 1 = not a sweep)
     local name="$1" want="$2" path="$3" tmp rc
     tmp="$(mktemp -d)"
