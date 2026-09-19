@@ -1,0 +1,144 @@
+{
+ "ticket": "PMAT-3477",
+ "pr": 3527,
+ "head": "c58062517",
+ "width": 3,
+ "executor": "agy",
+ "mode": "plan (read-only review)",
+ "dispatched_by": "orchestrator directly via agy-lane.sh (paiml-agy-delegate hit the opus session rate limit 429 at 11:5xZ)",
+ "agreed": true,
+ "lanes": [
+  {
+   "lane": 1,
+   "conversation_id": "bc6a9c8e-842a-4d0c-b486-a64165ac5559",
+   "status": "SUCCESS",
+   "verdict": "PASS",
+   "findings": [
+    {
+     "file": "crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs",
+     "line": 1277,
+     "claim": "GQA head mapping applied consistently to CPU recurrence (h % num_k_heads), PTX (ctx.rem_u32), state sizing (nv * Dv * Dk), and conv1d/l2norm/gate widths."
+    },
+    {
+     "file": "crates/aprender-serve/src/gguf/cuda/forward_qwen35_cuda_tests.rs",
+     "line": 942,
+     "claim": "Tests are not vacuous. The new 4B test fails on first argmax diverge if h/ratio is used. Layer test verifies the count strictly (fails on 24). The old 0.8B tests pass on 24 and h/ratio only because 0.8B config has exactly 24 layers and ratio=1."
+    },
+    {
+     "file": "crates/aprender-serve/src/gguf/qwen35_load.rs",
+     "line": 61,
+     "claim": "Silent fallback for block_count removed and replaced with a clean error (fail closed). Refusal site check_head_grouping properly opened for divisible heads but kept closed for indivisible configs (and num_k_heads=0)."
+    },
+    {
+     "file": "crates/aprender-serve/src/cuda/kernel_type.rs",
+     "line": 589,
+     "claim": "GdnDeltaRule appends new fields rather than reordering, protecting the line-keyed baseline. Complexity and literal ratchets passed cleanly in CI emulation."
+    }
+   ]
+  },
+  {
+   "lane": 2,
+   "conversation_id": "2acc7232-ef48-49bb-a5e3-f7ac6f597793",
+   "status": "SUCCESS",
+   "verdict": "PASS",
+   "findings": [
+    {
+     "file": "crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs",
+     "line": 1277,
+     "claim": "CPU Gated DeltaNet GQA recurrence correctly implements tiled head mapping h % num_k_heads and transposed state layout [num_v_heads * head_v_dim * head_k_dim]."
+    },
+    {
+     "file": "crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs",
+     "line": 451,
+     "claim": "Qwen35State recurrent state allocation correctly sizes ssm_states with head_k_dim row length per value head."
+    },
+    {
+     "file": "crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs",
+     "line": 987,
+     "claim": "Causal conv1d, per-head L2 normalization, and gate projections correctly use q,k = nk*Dk and v,gate,out = nv*Dv."
+    },
+    {
+     "file": "crates/aprender-gpu/src/kernels/gdn/delta_rule.rs",
+     "line": 145,
+     "claim": "PTX delta-rule kernel emits rem.u32(h, nk) when nk != nv, optimizes to identity when nk == nv, and indexes state with Dk stride."
+    },
+    {
+     "file": "crates/aprender-serve/src/gguf/cuda/forward_qwen35_cuda.rs",
+     "line": 373,
+     "claim": "check_head_grouping replaces check_head_symmetry, failing closed on indivisible head groupings while admitting 4B/9B/27B and rectangular states."
+    },
+    {
+     "file": "crates/aprender-serve/src/gguf/cuda/forward_qwen35_cuda.rs",
+     "line": 622,
+     "claim": "CUDA recurrent state buffer is correctly sized from num_v_heads * head_v_dim * head_k_dim instead of squaring head_v_dim."
+    },
+    {
+     "file": "crates/aprender-serve/src/gguf/qwen35_load.rs",
+     "line": 1901,
+     "claim": "load_qwen35_layers reads arch-prefixed block_count and fails closed with InvalidShape error instead of silent fallback to 24 layers."
+    },
+    {
+     "file": "crates/aprender-serve/src/cuda/kernel_type.rs",
+     "line": 592,
+     "claim": "KernelType::GdnDeltaRule appends new fields to preserve line 236 referenced in claim_literal_baseline.txt."
+    },
+    {
+     "file": "crates/aprender-serve/src/gguf/inference/forward/forward_qwen35_gqa_tests.rs",
+     "line": 1555,
+     "claim": "Test qwen35_gqa_recurrence_tiles_q_and_k_over_the_value_heads explicitly checks assert_ne against repeat_interleave (h / ratio), proving non-vacuity."
+    },
+    {
+     "file": "crates/aprender-serve/src/gguf/qwen35_load.rs",
+     "line": 1941,
+     "claim": "Test qwen35_layer_count_is_read_from_the_arch_prefixed_block_count asserts declared != 24 on the 4B model, proving non-vacuity against the 24-layer fallback."
+    }
+   ]
+  },
+  {
+   "lane": 3,
+   "conversation_id": "6471c971-a62d-4f70-b0bd-f3e15d8597bb",
+   "status": "SUCCESS",
+   "verdict": "PASS",
+   "findings": [
+    {
+     "file": "crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs",
+     "line": 254,
+     "claim": "GQA head mapping (h % num_k_heads) is correctly and consistently implemented across CPU recurrence, PTX kernel, state sizing [num_v_heads * Dk * Dv], and tensor widths."
+    },
+    {
+     "file": "crates/aprender-gpu/src/kernels/gdn/delta_rule.rs",
+     "line": 129,
+     "claim": "DeltaRuleRecurrenceKernel in PTX emits rem.u32(h, nk) for grouped heads and maps key/value head offsets and rectangular state sizing correctly."
+    },
+    {
+     "file": "crates/aprender-serve/src/gguf/qwen35_load.rs",
+     "line": 78,
+     "claim": "load_qwen35_layers fails closed on missing {arch}.block_count and eliminates silent 24-layer fallback."
+    },
+    {
+     "file": "crates/aprender-serve/src/gguf/inference/forward/forward_qwen35_gqa_tests.rs",
+     "line": 172,
+     "claim": "Non-vacuous anti-vacuity assertions verify that repeat_interleave (h / ratio) and 24-layer fallback fail tests."
+    },
+    {
+     "file": "crates/aprender-serve/src/gguf/cuda/forward_qwen35_cuda.rs",
+     "line": 373,
+     "claim": "check_head_grouping accurately admits divisible GQA head ratios (16/16, 16/32, 16/48) and rectangular state while properly refusing indivisible head counts."
+    }
+   ]
+  }
+ ],
+ "void": [
+  {
+   "lane": 3,
+   "conversation_id": "7acae5cd-87be-434c-8e7c-cffc02c9491b",
+   "reason": "BLIND: tried to run the cuda test suite and timed out; relaunched read-only"
+  }
+ ],
+ "sibling_read_check": "lanes ran in separate self-contained clones under .claude/worktrees; no shared $WORK verdict file",
+ "orchestrator_rerun": {
+  "cargo test -p aprender-gpu --lib --features cuda delta_rule": "9 passed",
+  "cargo test -p aprender-serve --lib --features cuda qwen35_cuda": "16 passed",
+  "apr run --gpu 4B/9B": "\"**Paris**.\" on the CUDA backend line"
+ }
+}
