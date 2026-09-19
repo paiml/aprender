@@ -335,6 +335,79 @@ impl<'a> LintConfig<'a> {
     }
 }
 
+/// Run one gate and record it, or record it as skipped when gate 1 (validate) failed.
+///
+/// Every gate after validate repeats the same `if validation_passed { run } else
+/// { skipped_gate(name, "validation failed") }` shape; this is that shape, once.
+fn push_gate<F>(
+    gates: &mut Vec<GateResult>,
+    all_findings: &mut Vec<LintFinding>,
+    run: F,
+    name: &str,
+    validation_passed: bool,
+) where
+    F: FnOnce() -> (GateResult, Vec<LintFinding>),
+{
+    let (result, mut findings) = if validation_passed {
+        run()
+    } else {
+        (skipped_gate(name, "validation failed"), Vec::new())
+    };
+    gates.push(result);
+    all_findings.append(&mut findings);
+}
+
+/// Per-contract timing: measure how long each contract's findings take to process,
+/// sorted by duration descending.
+fn per_contract_timings(
+    contracts: &[(String, crate::schema::Contract)],
+    binding: Option<&crate::binding::BindingRegistry>,
+) -> Vec<(String, u64)> {
+    let mut contract_timings: Vec<(String, u64)> = Vec::with_capacity(contracts.len());
+    for (stem, contract) in contracts {
+        let ct_start = Instant::now();
+        // Validate
+        let _ = crate::schema::validate_contract(contract);
+        // Audit
+        let _ = crate::audit::audit_contract(contract);
+        // Score
+        let _ = crate::scoring::score_contract(contract, binding, stem);
+        let ct_ms = u64::try_from(ct_start.elapsed().as_micros() / 1000).unwrap_or(0);
+        contract_timings.push((format!("{stem}.yaml"), ct_ms));
+    }
+    // Sort by duration descending
+    contract_timings.sort_by_key(|b| std::cmp::Reverse(b.1));
+    contract_timings
+}
+
+/// Cache: store findings per-contract for future runs.
+fn store_findings_in_cache(
+    root: &std::path::Path,
+    config: &LintConfig,
+    contracts: &[(String, crate::schema::Contract)],
+    all_findings: &[LintFinding],
+    stats: &mut cache::CacheStats,
+) {
+    let rule_cfg = format!("{:?}{:?}", config.severity_overrides, config.strict);
+    for (stem, _) in contracts {
+        stats.total += 1;
+        let yaml_path = config.contract_dir.join(format!("{stem}.yaml"));
+        let yaml_content = std::fs::read_to_string(&yaml_path).unwrap_or_default();
+        let hash = cache::content_hash(&yaml_content, &rule_cfg);
+        if cache::cache_get(root, &hash).is_some() {
+            stats.hits += 1;
+        } else {
+            stats.misses += 1;
+            let contract_findings: Vec<_> = all_findings
+                .iter()
+                .filter(|f| f.contract_stem.as_deref() == Some(stem.as_str()))
+                .cloned()
+                .collect();
+            let _ = cache::cache_put(root, &hash, &contract_findings);
+        }
+    }
+}
+
 /// Run all lint gates across a contract directory.
 #[allow(clippy::too_many_lines)]
 pub fn run_lint(config: &LintConfig) -> LintReport {
@@ -359,96 +432,98 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
     gates.push(validate_result);
 
     // Gate 2: audit (skip if validation failed)
-    if validation_passed {
-        let (audit_result, mut audit_findings) = run_audit_gate(&contracts);
-        gates.push(audit_result);
-        all_findings.append(&mut audit_findings);
-    } else {
-        gates.push(skipped_gate("audit", "validation failed"));
-    }
+    push_gate(
+        &mut gates,
+        &mut all_findings,
+        || run_audit_gate(&contracts),
+        "audit",
+        validation_passed,
+    );
 
     // Gate 3: score (skip if validation failed)
-    if validation_passed {
-        let (score_result, mut score_findings) =
-            run_score_gate(&contracts, binding.as_ref(), config.min_score);
-        gates.push(score_result);
-        all_findings.append(&mut score_findings);
-    } else {
-        gates.push(skipped_gate("score", "validation failed"));
-    }
+    push_gate(
+        &mut gates,
+        &mut all_findings,
+        || run_score_gate(&contracts, binding.as_ref(), config.min_score),
+        "score",
+        validation_passed,
+    );
 
     // Gate 4: verify (source code fulfillment)
-    if validation_passed {
-        let project_root = config.contract_dir.parent().unwrap_or(config.contract_dir);
-        let (verify_result, mut verify_findings) = run_verify_gate(&contracts, project_root);
-        gates.push(verify_result);
-        all_findings.append(&mut verify_findings);
-    } else {
-        gates.push(skipped_gate("verify", "validation failed"));
-    }
+    push_gate(
+        &mut gates,
+        &mut all_findings,
+        || {
+            let project_root = config.contract_dir.parent().unwrap_or(config.contract_dir);
+            run_verify_gate(&contracts, project_root)
+        },
+        "verify",
+        validation_passed,
+    );
 
     // Gate 5: enforce (equations must have preconditions/postconditions)
-    if validation_passed {
-        let (enforce_result, mut enforce_findings) = run_enforce_gate(&contracts);
-        gates.push(enforce_result);
-        all_findings.append(&mut enforce_findings);
-    } else {
-        gates.push(skipped_gate("enforce", "validation failed"));
-    }
+    push_gate(
+        &mut gates,
+        &mut all_findings,
+        || run_enforce_gate(&contracts),
+        "enforce",
+        validation_passed,
+    );
 
     // Gate 6: enforcement level (Section 17, Gap 1 + Gap 5 level lock)
-    if validation_passed {
-        let min_level = config
-            .min_level
-            .unwrap_or(crate::schema::EnforcementLevel::Standard);
-        let (level_result, mut level_findings) = run_enforcement_level_gate(&contracts, min_level);
-        gates.push(level_result);
-        all_findings.append(&mut level_findings);
-    } else {
-        gates.push(skipped_gate("enforcement-level", "validation failed"));
-    }
+    push_gate(
+        &mut gates,
+        &mut all_findings,
+        || {
+            let min_level = config
+                .min_level
+                .unwrap_or(crate::schema::EnforcementLevel::Standard);
+            run_enforcement_level_gate(&contracts, min_level)
+        },
+        "enforcement-level",
+        validation_passed,
+    );
 
     // Gate 7: reverse coverage (optional — skip if no binding or crate dir)
-    if validation_passed {
-        if let (Some(bp), Some(cd)) = (config.binding_path, config.crate_dir) {
-            let (rev_result, mut rev_findings) = run_reverse_coverage_gate(bp, cd);
-            gates.push(rev_result);
-            all_findings.append(&mut rev_findings);
-        } else {
-            gates.push(skipped_gate(
-                "reverse-coverage",
-                "no --binding or --crate-dir provided",
-            ));
-        }
-    } else {
-        gates.push(skipped_gate("reverse-coverage", "validation failed"));
-    }
+    push_gate(
+        &mut gates,
+        &mut all_findings,
+        || match (config.binding_path, config.crate_dir) {
+            (Some(bp), Some(cd)) => run_reverse_coverage_gate(bp, cd),
+            _ => (
+                skipped_gate("reverse-coverage", "no --binding or --crate-dir provided"),
+                Vec::new(),
+            ),
+        },
+        "reverse-coverage",
+        validation_passed,
+    );
 
     // Gate 8: duplicate stems (PV-DUP-001). Must run BEFORE composition — it tells
     // the composition gate which stems are unresolvable, which is the difference
     // between a defined verdict and one decided by `read_dir` order.
     let duplicates = duplicate_stems::scan_duplicate_stems(config.contract_dir);
     let ambiguous = duplicate_stems::ambiguous_stems(&duplicates);
-    if validation_passed {
-        let project_root = config.contract_dir.parent().unwrap_or(config.contract_dir);
-        let baseline = duplicate_stems::read_baseline(project_root);
-        let (dup_result, mut dup_findings) =
-            duplicate_stems::run_duplicate_stem_gate(&duplicates, &baseline);
-        gates.push(dup_result);
-        all_findings.append(&mut dup_findings);
-    } else {
-        gates.push(skipped_gate("duplicate-stems", "validation failed"));
-    }
+    push_gate(
+        &mut gates,
+        &mut all_findings,
+        || {
+            let project_root = config.contract_dir.parent().unwrap_or(config.contract_dir);
+            let baseline = duplicate_stems::read_baseline(project_root);
+            duplicate_stems::run_duplicate_stem_gate(&duplicates, &baseline)
+        },
+        "duplicate-stems",
+        validation_passed,
+    );
 
     // Gate 9: composition (assumes/guarantees chain verification)
-    if validation_passed {
-        let (comp_result, mut comp_findings) =
-            composition_gate::run_composition_gate(&contracts, &ambiguous);
-        gates.push(comp_result);
-        all_findings.append(&mut comp_findings);
-    } else {
-        gates.push(skipped_gate("composition", "validation failed"));
-    }
+    push_gate(
+        &mut gates,
+        &mut all_findings,
+        || composition_gate::run_composition_gate(&contracts, &ambiguous),
+        "composition",
+        validation_passed,
+    );
 
     // Gate 10: sigma (ONT-2b). R-8: a new gate is COMPUTED everywhere and armed per repo — so it runs here as
     // well as under `--gate sigma`, or `armed_gates` could name a gate no run ever computes.
@@ -471,38 +546,27 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
 
     // Gate 9: strict test-binding (Issue #1510, opt-in via --strict-test-binding)
     if config.strict_test_binding {
-        if validation_passed {
-            let project_root = config.contract_dir.parent().unwrap_or(config.contract_dir);
-            let (binding_result, mut binding_findings) =
+        push_gate(
+            &mut gates,
+            &mut all_findings,
+            || {
+                let project_root = config.contract_dir.parent().unwrap_or(config.contract_dir);
                 strict_test_binding::run_strict_test_binding_gate(
                     &contracts,
                     project_root,
                     config.strict,
-                );
-            gates.push(binding_result);
-            all_findings.append(&mut binding_findings);
-        } else {
-            gates.push(skipped_gate("strict-test-binding", "validation failed"));
-        }
+                )
+            },
+            "strict-test-binding",
+            validation_passed,
+        );
     }
 
     all_findings.append(&mut validate_findings);
 
     // Per-contract timing: measure how long each contract's findings take to process
     if validation_passed {
-        for (stem, contract) in &contracts {
-            let ct_start = Instant::now();
-            // Validate
-            let _ = crate::schema::validate_contract(contract);
-            // Audit
-            let _ = crate::audit::audit_contract(contract);
-            // Score
-            let _ = crate::scoring::score_contract(contract, binding.as_ref(), stem);
-            let ct_ms = u64::try_from(ct_start.elapsed().as_micros() / 1000).unwrap_or(0);
-            contract_timings.push((format!("{stem}.yaml"), ct_ms));
-        }
-        // Sort by duration descending
-        contract_timings.sort_by_key(|b| std::cmp::Reverse(b.1));
+        contract_timings = per_contract_timings(&contracts, binding.as_ref());
     }
 
     // Stale suppression detection (PV-SUP-001, Section 17 Gap 2)
@@ -518,24 +582,7 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
 
     // Cache: store findings per-contract for future runs
     if let Some(ref root) = cache_root {
-        let rule_cfg = format!("{:?}{:?}", config.severity_overrides, config.strict);
-        for (stem, _) in &contracts {
-            stats.total += 1;
-            let yaml_path = config.contract_dir.join(format!("{stem}.yaml"));
-            let yaml_content = std::fs::read_to_string(&yaml_path).unwrap_or_default();
-            let hash = cache::content_hash(&yaml_content, &rule_cfg);
-            if cache::cache_get(root, &hash).is_some() {
-                stats.hits += 1;
-            } else {
-                stats.misses += 1;
-                let contract_findings: Vec<_> = all_findings
-                    .iter()
-                    .filter(|f| f.contract_stem.as_deref() == Some(stem.as_str()))
-                    .cloned()
-                    .collect();
-                let _ = cache::cache_put(root, &hash, &contract_findings);
-            }
-        }
+        store_findings_in_cache(root, config, &contracts, &all_findings, &mut stats);
     }
 
     // Apply suppressions, severity overrides, strict mode, and severity filter
