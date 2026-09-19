@@ -75,6 +75,38 @@ ladder:
       backends: [cpu, cuda]
       required: true
       note: "hybrid Gated DeltaNet — cuda claimed since 2026-09-19 (operator: GPU is required for 0.68.2; #3090 on PMAT-3477-gdn-gpu). RED by construction until that path passes apr qa Golden Output GPU on both hosts; the cpu half went green at f4c0daa37"
+    - id: qwen35-2b-q4km
+      family: qwen3.5
+      arch: qwen35
+      gguf: Qwen3.5-2B-Q4_K_M.gguf
+      sha256: aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223
+      backends: [cpu, cuda]
+      required: true
+      note: "hybrid Gated DeltaNet, dense FFN — #3510 (operator 2026-09-19: every dense size through 27B is a 0.68.2 requirement). RED by construction until the per-size CPU reference and the #3090 device path pass apr qa Golden Output on both hosts"
+    - id: qwen35-4b-q4km
+      family: qwen3.5
+      arch: qwen35
+      gguf: Qwen3.5-4B-Q4_K_M.gguf
+      sha256: 00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4
+      backends: [cpu, cuda]
+      required: true
+      note: "hybrid Gated DeltaNet, dense FFN — #3510 (operator 2026-09-19: every dense size through 27B is a 0.68.2 requirement). RED by construction until the per-size CPU reference and the #3090 device path pass apr qa Golden Output on both hosts"
+    - id: qwen35-9b-q4km
+      family: qwen3.5
+      arch: qwen35
+      gguf: Qwen3.5-9B-Q4_K_M.gguf
+      sha256: 03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8
+      backends: [cpu, cuda]
+      required: true
+      note: "hybrid Gated DeltaNet, dense FFN — #3510 (operator 2026-09-19: every dense size through 27B is a 0.68.2 requirement). RED by construction until the per-size CPU reference and the #3090 device path pass apr qa Golden Output on both hosts; the 9B descriptor is known wrong (#3346)"
+    - id: qwen35-27b-q4km
+      family: qwen3.5
+      arch: qwen35
+      gguf: Qwen3.5-27B-Q4_K_M.gguf
+      sha256: 84b5f7f112156d63836a01a69dc3f11a6ba63b10a23b8ca7a7efaf52d5a2d806
+      backends: [cpu, cuda]
+      required: true
+      note: "hybrid Gated DeltaNet, dense FFN — #3510 (operator 2026-09-19: every dense size through 27B is a 0.68.2 requirement). RED by construction until the per-size CPU reference and the #3090 device path pass apr qa Golden Output on both hosts; Q4_K_M 16.7 GB fits the 4090 with KV room only at short context"
 
 equations:
   rung_green:
