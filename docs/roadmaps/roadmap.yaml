@@ -18579,3 +18579,20 @@ roadmap:
   - orch:fable
   - orch-basis:state
   notes: null
+- id: PMAT-3515
+  github_issue: 3515
+  item_type: task
+  title: ONT-001 §3.7 extract:json — JSON/JSONL + vocabulary map → RDF, so a tool's --json output is a shaped entity (ARBITER I1-0)
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-19T07:20:01Z
+  updated: 2026-09-19T07:55:00Z
+  spec: null
+  acceptance_criteria:
+  - '(1) crates/aprender-contracts/src/ontology/extract/json.rs (new): `applies(doc)` (entity.type == json); `extract_into(g, stem, doc, root)` reads `entity.ref` relative to `root` and the contract''s `vocabulary: {prefix, root_class, nested}` — root node `iri(prefix, stem)` typed `expand(root_class)` + prov:Entity, scalar keys as `expand("<prefix>:<key>")` literals (bool → xsd:boolean, integer → xsd:integer via u64/i64, other numbers → xsd:double, string → xsd:string), nested objects and arrays of objects as nodes `<stem>.<key>[.<i>]` typed by `nested`, arrays of scalars as repeated predicates, null absent; `.jsonl` = one root per non-empty line with leading NULs trimmed, a line that does not parse is a `Warning{contract,path,line,why}`, no parsable line is `NotJson`. `ExtractError` = RefUnreadable | NotJson | VocabularyIncomplete | Unmapped, each Display naming the contract and the thing. 8 unit tests. (2) extract/mod.rs: `Extraction{graph, warnings, entities_extracted}` and `all(contract_dir)` = pv_contract::extract + every json entity, the ONE walk. (3) rdf.rs: XSD_BOOLEAN, XSD_DOUBLE, Term::boolean/double/signed. (4) lint/shapes_gate.rs: `ShapesOutcome::ExtractFailed(ExtractError)`; the gate uses `extract::all`, and each extraction warning is a Severity::Warning ValidationResult (component "extract:json") so warnings-only is Unknown{Warn}. lint/mod.rs maps ExtractFailed to a skipped gate; cli commands/lint.rs maps it to exit 3 (SigmaMalformed path); commands/extract_rdf.rs uses `extract::all`, prints warnings, exits 3 on an error. (5) contracts/ontology.yaml: entity type `json` → extractor `json`, both implemented: true; contracts/ont-extract-json-v1.yaml (pattern; EXJ-INV-001..005, FALSIFY-EXJ-001..005, qa_gate F-EXJ-001); contracts/contracts.nt refreshed by `pv extract` (9243 triples, --check exit 0). (6) tests/fixtures/ont/json-{ok,violation,unmapped,missing-ref,torn-jsonl}/ (contracts/ + data/) and crates/aprender-contracts-cli/tests/ont_extract_json.rs: 7 tests — Pass exit 0 focus 1 plant fired; Fail exit 1 two violations naming ont:tool/tool-status, shape `tool-status`, `(closed)` + ont:tool/surprise and `broken is not one of`; exit 3 naming `findings`; exit 3 naming `data/does-not-exist.json`; exit 2 Unknown(Warn) focus 3 warnings 1 `line 3 unparsable`; `pv extract` byte-identical twice with the tool/Status class and the nested node and no `_:`, --check exit 0; `pv extract` on json-unmapped exit 3. Measured on paiml/infra contracts/arbiter-status-v1.yaml: Pass, 172 triples, plant_violations 8, 0.05 s; both infra plants rejected. sigma/shapes/relations gates Pass on the corpus; clippy -D warnings clean; 1618 lib tests + all cli suites green. Refs paiml/aprender#3515, paiml/infra#704, paiml/infra#701 (§14 I1-0)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

@@ -41,10 +41,8 @@ metadata:
     - 'paiml/infra docs/specifications/paiml-ontology.md §3.6 (the subset), §3.7 (extractors), R-11, R-15, R-17, R-18'
     - 'crates/aprender-contracts/src/ontology/extract/{json,mod}.rs, lint/shapes_gate.rs'
 
-entity:
-  type: pv-contract
-  ref: contracts/
-
+# No `entity:` block on purpose: the ONT ratchet (§11.2, scripts/check_ont_ratchet.sh) holds anchored contracts at
+# ONE until ONT-1 lands the consumer of `entity:`; this contract governs code and needs no anchor to say so.
 relations:
   depends_on: [ont-shapes-v1, ont-sigma-v1]
 
