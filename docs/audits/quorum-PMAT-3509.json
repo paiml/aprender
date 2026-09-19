@@ -3,12 +3,12 @@
   "base": "origin/main",
   "base_resolved": "origin/main",
   "base_note": "no origin/origin/main exists; judged against the local ref",
-  "head": "f5dd5d7f6f6cd7b0ea5a045db9b505ae9c088928",
-  "diff_sha256": "7838d6c1c739bc0ac08620c7e13aaa6a17029c98b027c4b63f0d844ffc72d52d",
+  "head": "a6927091a2e29fdaa0de49757d88eed7298795cd",
+  "diff_sha256": "38b78103e05e00180cefa3caa0867f88229594a1445d7449e332cee4bdc216b8",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "file",
-  "prompt_bytes": 1472738,
+  "prompt_bytes": 1479309,
   "author": {
     "model": "claude-fable-5-1",
     "family": "claude",
@@ -20,9 +20,9 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "All acceptance criteria from PMAT-3509 are successfully implemented and verified. The `extract:code` and `extract:lean` tools properly run within `extract::all` and include positive controls. 16 W3C SHACL-Core cases are correctly vendored and tested, while the remaining 16 are accounted for in the `NOT_VENDORED` list (totaling 32). The `tests/oracle` crate is properly detached from the workspace using its own `[workspace]` directive, pins `shacl` to `=0.3.21`, and operates via a `Makefile` that avoids `cd` to comply with `.ONESHELL`. The `sh:in` validation now correctly checks term equality using `InEntry` and formats its error message exactly as required (`<path>: <term> is not one of [<terms>]`). The `contracts/ont-code-symbols-v1.yaml` ships unarmed and the CLI test `ont4b2_code_lean_w3c` is wired properly. No regressions or omitted features were found.",
+      "summary": "Reviewed diff against ticket PMAT-3509 (ONT-4b2). Verified extract:code syn module-tree walk and extract:lean in-tree theorem extraction into contracts.nt under symbol/ and world/ roots. Verified 32 W3C SHACL-Core cases accounted for (16 vendored and run by shapes gate, 16 in NOT_VENDORED with explicit non-subset reasons). Verified tests/oracle scratch crate and make oracle / make oracle-check writing differential.json with 0 disagreements. Ran cargo test -p aprender-contracts-cli --test ont4b2_code_lean_w3c (8/8 passed), make oracle-check (PASS), and scripts/check_ont_ratchet.sh --check (PASS). Found no refutations.",
       "findings": [],
-      "raw_bytes": 3172,
+      "raw_bytes": 2612,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -36,16 +36,25 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff successfully implements the ticket's requirements. `extract:code` and `extract:lean` emit to `contracts.nt` under `symbol/` and `world/`. The 32 W3C cases are accounted for. The oracle scratch crate tests correctly with `differential.json` and uses `Unknown{Differential}` on disagreement.",
+      "summary": "Reviewed diff against ticket PMAT-3509 (ONT-4b2). Verified `extract:code` and `extract:lean` into `contracts.nt`. Verified 32 W3C SHACL-Core cases are accounted for (16 vendored + 16 NOT_VENDORED). Verified `tests/oracle` scratch crate and `make oracle` writing `differential.json` with the `Unknown{Differential}` handling on disagreement. No refutations found.",
       "findings": [
         {
-          "claim": "the_table_of_ont_0_is_accounted_for_case_by_case asserts CASES + NOT_VENDORED == 32 with no id twice",
+          "claim": "make oracle writes differential.json and avoids cd because Makefile is .ONESHELL",
+          "file": "Makefile",
+          "grounding": "cited"
+        },
+        {
+          "claim": "16 vendored cases and 16 NOT_VENDORED cases account for 32 W3C SHACL-Core cases",
           "file": "crates/aprender-contracts/src/ontology/w3c.rs",
-          "grounding": "cited",
-          "line": 600
+          "grounding": "cited"
+        },
+        {
+          "claim": "Unknown{Differential} is used on disagreement",
+          "file": "crates/aprender-contracts/src/ontology/w3c.rs",
+          "grounding": "cited"
         }
       ],
-      "raw_bytes": 2374,
+      "raw_bytes": 2997,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -59,10 +68,10 @@
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Reviewed diff against ticket PMAT-3509 (ONT-4b2). Verified extract:code syn module-tree walk and extract:lean in-tree theorem extraction into contracts.nt under symbol/ and world/ roots. Verified 32 W3C SHACL-Core cases accounted for (16 vendored and run by shapes gate, 16 in NOT_VENDORED with explicit non-subset reasons). Verified tests/oracle scratch crate and make oracle / make oracle-check writing differential.json with 0 disagreements. Ran cargo test -p aprender-contracts-cli --test ont4b2_code_lean_w3c (8/8 passed), make oracle-check (PASS), and scripts/check_ont_ratchet.sh --check (PASS). Found no refutations.",
+      "summary": "Reviewed the diff for ticket PMAT-3509 (ONT-4b2). The diff implements code extraction via syn module-tree walk and Lean extraction, accounts for the 32 SHACL-Core cases (16 vendored and passing, 16 explicitly excluded by node-shape FORM reasons), sets up the out-of-workspace oracle crate and make oracle differential verification gate, and updates all census/README contract counts correctly. All verification tests and make oracle-check execute and pass clean.",
       "findings": [],
-      "raw_bytes": 2637,
-      "err_bytes": 100,
+      "raw_bytes": 2247,
+      "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
@@ -75,13 +84,24 @@
   "dissent": [],
   "dedup": [
     {
-      "file": "crates/aprender-contracts/src/ontology/w3c.rs",
-      "line": 600,
+      "file": "Makefile",
+      "line": null,
       "lanes_agreeing": [
         2
       ],
       "claims": [
-        "the_table_of_ont_0_is_accounted_for_case_by_case asserts CASES + NOT_VENDORED == 32 with no id twice"
+        "make oracle writes differential.json and avoids cd because Makefile is .ONESHELL"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/ontology/w3c.rs",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "16 vendored cases and 16 NOT_VENDORED cases account for 32 W3C SHACL-Core cases",
+        "Unknown{Differential} is used on disagreement"
       ]
     }
   ],
