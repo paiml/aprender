@@ -1,0 +1,56 @@
+==============================================================================
+DISCRIMINATOR 1 — is there a warm-up TREND in the ordered apr series?
+==============================================================================
+
+A 33292383055 04:23
+  apr ordered   : 111.80  96.78  96.41  99.01 111.43 105.62 139.95
+  rank vs index :      6      2      1      3      5      4      7
+  Spearman rho=+0.393  exact one-tailed permutation p=0.198  (n=7, 5040 perms)
+  argmax at trial 7 of 7 ; argmin at trial 3
+  first-half mean 101.66  vs  second-half mean 119.00
+
+B 33298580389 07:10
+  apr ordered   :  90.47 107.42 142.71 132.88 124.47 106.76 117.86
+  rank vs index :      1      3      7      6      5      2      4
+  Spearman rho=+0.179  exact one-tailed permutation p=0.357  (n=7, 5040 perms)
+  argmax at trial 3 of 7 ; argmin at trial 1
+  first-half mean 113.53  vs  second-half mean 116.36
+
+POOLED (Fisher) over both runs: X2=5.303 df=4  p=0.445
+
+==============================================================================
+DISPERSION — apr vs the incumbent, SAME box, SAME run, minutes apart
+==============================================================================
+  A 33292383055 04:23    apr     n=7 min=  96.41 max= 139.95 median= 105.62 range= 41.2%  CV=14.00%
+  A 33292383055 04:23    ollama  n=5 min= 100.85 max= 182.90 median= 182.35 range= 45.0%  CV=22.13%
+
+  B 33298580389 07:10    apr     n=7 min=  90.47 max= 142.71 median= 117.86 range= 44.3%  CV=15.02%
+  B 33298580389 07:10    ollama  n=5 min= 181.14 max= 183.12 median= 182.28 range=  1.1%  CV= 0.41%
+
+==============================================================================
+BETWEEN-RUN REPRODUCIBILITY (the decisive comparison)
+==============================================================================
+  apr    median run A=105.6  run B=117.9   -> moved 11.6%
+  ollama median run A=182.3  run B=182.3   -> moved 0.0%
+
+==============================================================================
+LEVERAGE — what each trial actually measures: dt = t384 - t128 (ms)
+  rate = 256 / (dt/1000);  so dt = 256000/rate
+==============================================================================
+  A 33292383055 04:23
+    dt(ms):    2290    2645    2655    2586    2298    2424    1829
+    dt spread = 826 ms across the whole series
+  B 33298580389 07:10
+    dt(ms):    2830    2383    1794    1927    2057    2398    2172
+    dt spread = 1036 ms across the whole series
+
+  Sensitivity at the observed median (dt ~ 2200 ms):
+    a  50 ms perturbation in EITHER of the two cold processes ->   2.3% swing in the reported tok/s
+    a 100 ms perturbation in EITHER of the two cold processes ->   4.5% swing in the reported tok/s
+    a 200 ms perturbation in EITHER of the two cold processes ->   9.1% swing in the reported tok/s
+    a 300 ms perturbation in EITHER of the two cold processes ->  13.6% swing in the reported tok/s
+    a 500 ms perturbation in EITHER of the two cold processes ->  22.7% swing in the reported tok/s
+
+  ollama parity (182.3 tok/s) would need dt = 1404 ms
+  observed apr medians need dt = 2424 / 2171 ms
+  -> the ENTIRE 0.579x->0.90x gap is 864 ms of wall clock
