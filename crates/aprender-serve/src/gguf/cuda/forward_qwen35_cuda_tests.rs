@@ -1040,13 +1040,19 @@ fn qwen35_cuda_forward_single_matches_cpu_logits_end_to_end() {
         let want = qwen
             .forward_single_qwen35(token, &mut cpu_state, pos)
             .expect("cpu forward");
+        // Wall time of ONE device token, printed and never asserted on: a
+        // timing assertion in a correctness test is a flake, but the reading is
+        // what says whether a sync change cost or bought anything (#3090).
+        let t0 = std::time::Instant::now();
         let got = gpu
             .forward_single(token, &mut gpu_state, pos)
             .expect("gpu forward");
+        let gpu_ms = t0.elapsed().as_secs_f64() * 1e3;
         let (cos, linf) =
             assert_forward_parity(&got, &want, LOGITS_BUDGET, &format!("pos {pos} logits"));
         eprintln!(
-            "[e2e] pos {pos}: argmax {} cosine {cos:.6} relative L-inf {linf:.3e}",
+            "[e2e] pos {pos}: argmax {} cosine {cos:.6} relative L-inf {linf:.3e} \
+             forward_single {gpu_ms:.3} ms",
             crate::gguf::ops::argmax(&want),
         );
         worst_cos = worst_cos.min(cos);
@@ -1168,8 +1174,12 @@ fn qwen35_cuda_the_parity_floor_is_the_cpu_references_own_activation_quantizatio
         .fused_matmul_into(&x, &a.attn_q, &mut cpu)
         .expect("cpu attn_q");
 
+    // NOT `pin_reference_gemv()`: the constructor pins the float variants for
+    // every model of this architecture, and a test that re-pins measures its
+    // own call instead of production behaviour (#3090 review). The pin itself
+    // is asserted by `qwen35_cuda_a_fresh_model_pins_the_float_gemv_variants`;
+    // if it ever stops holding, the first assertion below turns red here too.
     let mut gpu = Qwen35CudaModel::new(&qwen, executor).expect("build the CUDA model");
-    gpu.pin_reference_gemv();
     let got = gpu
         .attn_q_gemv_of_host_input(il, &x)
         .expect("gpu attn_q GEMV");

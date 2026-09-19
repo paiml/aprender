@@ -248,6 +248,15 @@ pub struct Qwen35CudaModel<'a> {
     state: Qwen35CudaState,
     scratch: Qwen35CudaScratch,
     attn_scratch: Qwen35AttnScratch,
+    /// The final `output_norm` gamma, device-resident — `base.output_norm_weight()`.
+    output_norm: GpuBuffer<f32>,
+    /// The `lm_head` (`output.weight`) in the executor's quantized weight cache.
+    lm_head: CudaQuantWeight,
+    /// `[hidden_dim]`, the output norm's result. Feeds the `lm_head` GEMV and is
+    /// never read by the host.
+    out_normed: GpuBuffer<f32>,
+    /// `[vocab_size]`, the logits — the ONE buffer a token's forward downloads.
+    logits_buf: GpuBuffer<f32>,
     dims: Qwen35CudaDims,
     /// Positions the device KV caches hold.
     max_seq_len: usize,
@@ -529,13 +538,26 @@ impl<'a> Qwen35CudaModel<'a> {
             });
         }
 
-        // `hidden_to_logits` reads the final norm out of the rmsnorm cache and
-        // the lm_head out of the quantized weight cache, both by fixed name.
+        // The tail (output norm + lm_head) runs HERE, on the device buffer the
+        // layers left the hidden state in — not through `hidden_to_logits`,
+        // which would take the hidden state down to the host and put it back.
+        // The gamma is ours; the lm_head goes in the executor's weight cache
+        // under the name its own path also expects.
+        let output_norm =
+            Self::upload_f32(&executor, "output_norm", model.base.output_norm_weight())?;
         executor
             .preload_output_norm(model.base.output_norm_weight())
             .map_err(|e| gpu_err("qwen35_cuda_upload", &e))?;
-        let lm_head = model.base.lm_head_weight();
-        Self::upload_quant(&mut executor, "output.weight", lm_head)?;
+        let lm_head =
+            Self::upload_quant(&mut executor, "output.weight", model.base.lm_head_weight())?;
+        if lm_head.n != dims.vocab_size || lm_head.k != dims.hidden_dim {
+            return Err(RealizarError::InvalidShape {
+                reason: format!(
+                    "qwen35_cuda: the lm_head is {}x{}, the config says vocab {} x hidden {}",
+                    lm_head.n, lm_head.k, dims.vocab_size, dims.hidden_dim
+                ),
+            });
+        }
 
         // The DP4A GEMV kernels quantize the activation into
         // `workspace.q8_activation_buf`, which `init_workspace` sizes from
@@ -555,6 +577,8 @@ impl<'a> Qwen35CudaModel<'a> {
 
         let scratch = Self::build_scratch(&executor, dims)?;
         let attn_scratch = Self::build_attn_scratch(&executor, dims)?;
+        let out_normed = Self::zeros(&executor, dims.hidden_dim as usize)?;
+        let logits_buf = Self::zeros(&executor, dims.vocab_size as usize)?;
         let state = Self::build_state(&executor, &layers, dims, max_seq_len)?;
         Ok(Self {
             model,
@@ -563,6 +587,10 @@ impl<'a> Qwen35CudaModel<'a> {
             state,
             scratch,
             attn_scratch,
+            output_norm,
+            lm_head,
+            out_normed,
+            logits_buf,
             dims,
             max_seq_len,
         })
@@ -1038,7 +1066,14 @@ impl<'a> Qwen35CudaModel<'a> {
         )?;
         ex.residual_add_into(hidden, &s.ffn_down, hidden, d.hidden_dim)?;
 
-        ex.sync_stream()?;
+        // NO sync here (#3090 review). Every op above is enqueued on the one
+        // stream this model uses, so the next layer's first kernel is already
+        // ordered after this layer's last one; a sync inside the per-token loop
+        // only stalls the host. The bookkeeping below is a host-side counter of
+        // rows the stream has been ASKED to write, which no device read
+        // observes — the syncs that matter are the ones in front of a host read
+        // (`download_layer`, `dump_stage`, the logits download).
+        //
         // The row is written: the cache now holds `position + 1` rows.
         state.kv_len = state.kv_len.max(position + 1);
         Ok(())
@@ -1315,7 +1350,9 @@ impl<'a> Qwen35CudaModel<'a> {
         )?;
         ex.residual_add_into(hidden, &s.ffn_down, hidden, d.hidden_dim)?;
 
-        ex.sync_stream()
+        // NO sync here — see `attention_layer_inner`. Stream order IS the
+        // dependency; the host only has to wait where it reads.
+        Ok(())
     }
 
     /// Run one token at `position` through every layer of both kinds, the
@@ -1366,26 +1403,42 @@ impl<'a> Qwen35CudaModel<'a> {
                 CudaLayer::Attention(_) => self.attention_layer(state, il, &dev, position)?,
             }
         }
+        // The tail stays on the device (#3090 review). `hidden_to_logits` would
+        // sync, copy `dev` to the host and upload it again; the hidden state is
+        // already where the output norm wants it, so run the norm into
+        // `out_normed` and the lm_head GEMV into `logits_buf` on the same
+        // stream. The CPU reference applies no lm_head bias (`lm_head_bias` is
+        // None for this architecture — `forward_single_qwen35` goes straight
+        // from `rms_norm_into` to `fused_matmul_into`), so neither does this.
+        let d = self.dims;
+        self.executor
+            .rmsnorm_into(
+                &dev,
+                &self.output_norm,
+                &self.out_normed,
+                d.hidden_dim,
+                d.eps,
+            )
+            .map_err(|e| gpu_err("qwen35_cuda_lm_head", &e))?;
+        self.executor
+            .gemv_dispatch(
+                self.lm_head.qtype,
+                self.lm_head.ptr,
+                &self.out_normed,
+                &self.logits_buf,
+                self.lm_head.n,
+                self.lm_head.k,
+            )
+            .map_err(|e| gpu_err("qwen35_cuda_lm_head", &e))?;
+
+        // The ONE sync of the whole token, in front of the ONE download.
         self.executor
             .sync_stream()
             .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
-
-        let mut hidden = vec![0.0f32; hidden_dim];
-        dev.copy_to_host(&mut hidden)
+        let mut logits = vec![0.0f32; d.vocab_size as usize];
+        self.logits_buf
+            .copy_to_host(&mut logits)
             .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
-
-        // output rms_norm + lm_head, through the executor's own path (it reads
-        // "output_norm.gamma" and "output.weight", both preloaded in `new`).
-        let mut logits = vec![0.0f32; self.dims.vocab_size as usize];
-        self.executor
-            .hidden_to_logits(
-                &hidden,
-                &mut logits,
-                self.dims.hidden_dim,
-                self.dims.vocab_size,
-                self.dims.eps,
-            )
-            .map_err(|e| gpu_err("qwen35_cuda_lm_head", &e))?;
 
         state.kv_len = state.kv_len.max(position + 1);
         Ok(logits)
