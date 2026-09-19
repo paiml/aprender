@@ -1,0 +1,46 @@
+PREFILL-CPU (#2787) — batched CPU prefill, raw measurement data.
+
+NOT a §4.4-conformant perf-gate receipt and not a cell measurement. This is a
+before/after on ONE host for ONE change, taken with a purpose-built harness
+(crates/aprender-serve/examples/perf_cpu_prefill_repro.rs), not with
+scripts/perf_gate.sh. It does not move any cell in scripts/perf-matrix.yaml,
+which was not modified.
+
+HOST      lambda / noah-Lambda-Vector, AMD Ryzen Threadripper 7960X, 48 threads,
+          x86_64 with avx2+fma+avx512f+avx512_vnni. The box was under other
+          load throughout: 1-min load average went 13.1 -> 50.0 across the
+          interleaved run (and per-replicate load is stamped in the .stderr.txt),
+          which is why the arms are interleaved and why every replicate is
+          printed rather than a median. One batched replicate (rep 2) shows a
+          decode collapse to 2.856 tok/s from that load; its PREFILL was still
+          40.566 tok/s. Nothing is dropped.
+MODEL     /home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf
+          (the W1 model; sha256 509287f78cb4... per evidence/perf-054)
+SHAPE     513-token prompt, 128 generated, greedy (temperature 0), c=1.
+          W1's shape; NOT W1's prompt corpus — the prompt here is a fixed
+          repeated English sentence tokenized by the model's own vocabulary,
+          truncated to exactly 513 tokens.
+
+FILES
+  baseline-origin-main.csv/.stderr.txt
+      origin/main a866988e4, before the change. The harness called
+      forward_single_with_cache in a loop directly — the code path that shipped.
+      Columns: rep,prefill_tok,prefill_s,prefill_tok_s,decode_tok,decode_s,
+               decode_tok_s,ratio,t_req_s
+  chunk-sweep.txt
+      APR_PREFILL_CHUNK sweep that chose PREFILL_CHUNK = 128.
+  w1-interleaved.csv/.stderr.txt
+      After the change. ONE binary, two arms selected by APR_BATCHED_PREFILL
+      (1 = batched, 0 = the per-token loop), interleaved batched/per-token x3.
+      Columns: arm,rep,<as above>. The header line repeats because each
+      replicate is a separate process invocation.
+
+OUTPUT EQUIVALENCE
+      w1-interleaved.stderr.txt prints all 128 generated token ids for every
+      run. All six runs — 3 batched, 3 per-token — emitted ONE distinct id
+      vector, and it is the same vector the pre-change baseline emitted
+      (first ids 15678, 5562, 1393, 279, 19415, 29436, 82, 264, ...).
+      Checked as: grep 'generated ids' w1-interleaved.stderr.txt \
+                  | sed 's/^\[[a-z]*\] //' | sort -u | wc -l   ->  1
+
+APR_LAYER_TRACE was unset; grep -c 'CB-006-OUT' over the run log returns 0.

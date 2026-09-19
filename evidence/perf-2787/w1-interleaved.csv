@@ -1,0 +1,12 @@
+arm,rep,prefill_tok,prefill_s,prefill_tok_s,decode_tok,decode_s,decode_tok_s,ratio,t_req_s
+batched,0,513,17.4828,29.343,128,15.2393,8.399,3.4935,32.722
+arm,rep,prefill_tok,prefill_s,prefill_tok_s,decode_tok,decode_s,decode_tok_s,ratio,t_req_s
+pertoken,0,513,91.1838,5.626,128,20.7108,6.180,0.9103,111.895
+arm,rep,prefill_tok,prefill_s,prefill_tok_s,decode_tok,decode_s,decode_tok_s,ratio,t_req_s
+batched,0,513,12.2418,41.906,128,14.7737,8.664,4.8367,27.015
+arm,rep,prefill_tok,prefill_s,prefill_tok_s,decode_tok,decode_s,decode_tok_s,ratio,t_req_s
+pertoken,0,513,55.8550,9.185,128,14.2406,8.988,1.0218,70.096
+arm,rep,prefill_tok,prefill_s,prefill_tok_s,decode_tok,decode_s,decode_tok_s,ratio,t_req_s
+batched,0,513,12.6461,40.566,128,44.8162,2.856,14.2032,57.462
+arm,rep,prefill_tok,prefill_s,prefill_tok_s,decode_tok,decode_s,decode_tok_s,ratio,t_req_s
+pertoken,0,513,51.9752,9.870,128,13.6006,9.411,1.0487,65.576
