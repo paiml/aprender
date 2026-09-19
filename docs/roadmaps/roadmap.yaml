@@ -18605,6 +18605,25 @@ roadmap:
   - orch:fable
   - orch-basis:state
   notes: null
+- id: PMAT-3509
+  github_issue: 3509
+  item_type: task
+  title: 'ONT-4b2: extract:code (syn module-tree walk over the bound symbols) and extract:lean (the in-tree theorems) into contracts.nt under the symbol/ and world/ roots; 32 vendored W3C SHACL-Core cases run by the shapes gate (w3c_cases_passed); tests/oracle/ scratch crate + make oracle writing tests/oracle/differential.json (release gate only, R-13); Unknown{Differential} on disagreement'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-19T11:07:51Z
+  updated: 2026-09-19T11:07:51Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null
 - id: PMAT-3515
   github_issue: 3515
   item_type: task
