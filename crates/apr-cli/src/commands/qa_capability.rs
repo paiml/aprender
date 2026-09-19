@@ -392,6 +392,35 @@ pub(crate) fn cpu_only_architecture(_path: &Path) -> bool {
     false
 }
 
+/// Is the model at `path` a hybrid the DENSE GGUF loader refuses?
+///
+/// #3477: `cpu_only_architecture` answers "which backend", which for `qwen35` on
+/// a cuda build is now BOTH (#3090 GPU, #3091 CPU). A separate question survives
+/// it: a gate built on `OwnedQuantizedModel::from_mapped` — Ollama parity,
+/// cross-format parity, GPU speedup, GPU state isolation — still cannot run,
+/// because that loader has no hybrid path on either rung. Those gates SKIP with
+/// that reason; they must not FAIL, and they must not be answered with a number
+/// measured on some other model shape.
+#[cfg(feature = "inference")]
+pub(crate) fn hybrid_loader_architecture(path: &Path) -> bool {
+    let Ok(data) = std::fs::read(path) else {
+        return false;
+    };
+    if data.len() < 4 || &data[0..4] != b"GGUF" {
+        return false;
+    }
+    let Some((arch, _)) = extract_gguf_arch_and_tensors(&data) else {
+        return false;
+    };
+    cpu_forward_handles(&arch)
+}
+
+/// Without `inference` there is no loader to speak for.
+#[cfg(not(feature = "inference"))]
+pub(crate) fn hybrid_loader_architecture(_path: &Path) -> bool {
+    false
+}
+
 /// Extract the architecture string and the tensor table from GGUF metadata.
 ///
 /// Uses aprender's GGUF reader to parse metadata without loading tensors.
