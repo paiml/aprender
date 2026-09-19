@@ -454,7 +454,21 @@ Clippy's lint set is **not monotonic**: the #2370 tree is clean on 1.93/1.96/1.9
 
 ## CI/CD (`.github/workflows/`)
 
-- **ci.yml**: check, fmt, clippy, test, coverage (Codecov), mutation testing, security audit, docs, bashrs
+- **ci.yml**: check, fmt, clippy, test, coverage (Codecov), mutation testing, security audit, docs, bashrs.
+  **`workspace-test` is a 3-shard matrix (PACK-001, 2026-09-18):** `workspace-test-shard (N/3)`
+  runs the lib tests with `cargo nextest … --partition hash:N/3` and the explicit integration
+  fragments with `scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d --shard N/3`;
+  the once-only steps (GPU crates, compute, quick tier, guards) run on shard 1 and the
+  examples build on shard 3. The check-run named `workspace-test` is the fan-in job — that
+  is what branch protection requires and what `gate` needs; it is red unless every shard
+  passed. Each shard owns its registry and target parent (`PR_OR_REF-sN`). Measured: the
+  lib phase 775 s → 353 s per shard; when the fleet is saturated and all three shards land on
+  one box the run can be SLOWER than the old serial job, so read merge-queue entry times, not
+  the design. A new `tests/*.rs` target is still dark until a fragment under
+  `ci/explicit-test-commands.d/` names it; the shards pick fragments up automatically.
+  **`mac-check`** runs on mini-m4 (workspace check + apr-cli lib tests, `aprender-profile`
+  excluded: it is a `compile_error!` on non-Linux by design). Not in `gate` until it has been
+  green on real PRs.
 - **benchmark.yml**: criterion benchmarks on PR/weekly, auto PR comments
 - **security.yml**: cargo-audit, cargo-deny (license/banned crates), cargo-outdated (weekly)
 - **dependabot.yml**: weekly Rust deps, monthly GH Actions

@@ -1,0 +1,151 @@
+{
+  "ticket": "PMAT-3477",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 93 commit(s); judged against origin/main",
+  "head": "eefc52cad69569bf091f56ac2ae3eab238bb8201",
+  "diff_sha256": "3d6b12adae79713d62161da8964c50c186bcde04e025758ca565c8f1fa49cd8d",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 2867,
+  "author": {
+    "model": "claude-fable-5-1",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff correctly implements PMAT-3477 by adding CI-section notes for the 3-shard workspace-test matrix, its fan-in check, and the new mini-m4 mac-check lane. No requirements are violated.",
+      "findings": [
+        {
+          "claim": "workspace-test is a 3-shard matrix (PACK-001, 2026-09-18)",
+          "file": "CLAUDE.md",
+          "grounding": "cited",
+          "line": 458
+        },
+        {
+          "claim": "The check-run named workspace-test is the fan-in job",
+          "file": "CLAUDE.md",
+          "grounding": "cited",
+          "line": 461
+        },
+        {
+          "claim": "mac-check runs on mini-m4",
+          "file": "CLAUDE.md",
+          "grounding": "cited",
+          "line": 468
+        }
+      ],
+      "raw_bytes": 2421,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff for ticket PMAT-3477 (PR #3494) adds a concise, accurate note to CLAUDE.md under '## CI/CD (.github/workflows/)' documenting the PACK-001 CI architecture: the 3-shard workspace-test matrix (partitioned nextest lib tests and explicit command sharding, shard 1 running once-only steps, shard 3 building examples), the fan-in workspace-test check required for gate and branch protection, isolated per-shard cargo cache directories (PR_OR_REF-sN), and the new mini-m4 mac-check lane. The changes strictly match what the ticket requested, weaken no gates, modify no unrequested files, and introduce no contradictions.",
+      "findings": [],
+      "raw_bytes": 2532,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff satisfies ticket PMAT-3477 by adding accurate and concise documentation to CLAUDE.md under the CI/CD section for PACK-001 (the 3-shard workspace-test matrix with fan-in check) and the mini-m4 mac-check lane. No unnecessary changes or weakened gates were found.",
+      "findings": [
+        {
+          "claim": "CLAUDE.md CI/CD section updated to document the 3-shard workspace-test matrix (PACK-001) with fan-in check and the mini-m4 mac-check lane.",
+          "file": "CLAUDE.md",
+          "grounding": "cited",
+          "line": 457
+        }
+      ],
+      "raw_bytes": 2260,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "CLAUDE.md",
+      "line": 457,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "CLAUDE.md CI/CD section updated to document the 3-shard workspace-test matrix (PACK-001) with fan-in check and the mini-m4 mac-check lane."
+      ]
+    },
+    {
+      "file": "CLAUDE.md",
+      "line": 458,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "workspace-test is a 3-shard matrix (PACK-001, 2026-09-18)"
+      ]
+    },
+    {
+      "file": "CLAUDE.md",
+      "line": 461,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The check-run named workspace-test is the fan-in job"
+      ]
+    },
+    {
+      "file": "CLAUDE.md",
+      "line": 468,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "mac-check runs on mini-m4"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-fable-5-1/claude"
+  }
+}
