@@ -76,7 +76,7 @@ RUNGS=$(python3 - "$LADDER" <<'PY'
 import sys, yaml
 d = yaml.safe_load(open(sys.argv[1]))
 for r in d["ladder"]["rungs"]:
-    print("|".join([r["id"], r["gguf"], r["sha256"], ",".join(r["backends"]), "1" if r.get("required") else "0"]))
+    print("|".join([r["id"], r["gguf"], r["sha256"], ",".join(r["backends"]), "1" if r.get("required") else "0", ",".join(r.get("hosts") or [])]))
 PY
 ) || { echo "decline: ladder unreadable" >&2; exit 2; }
 [ -n "$RUNGS" ] || { echo "decline: ladder has no rungs" >&2; exit 2; }
@@ -104,8 +104,15 @@ EXECUTED=0; RED=0
 printf -- '--- model capability ladder on %s (%s, cc %s) apr=%s sha=%s version=%s ---\n' \
   "$HOST" "${GPU_NAME:-no-gpu}" "${GPU_CC:-?}" "$APR" "$SHA" "$VERSION"
 
-while IFS='|' read -r -t 5 rid rfile rsha rbackends rreq; do
+while IFS='|' read -r -t 5 rid rfile rsha rbackends rreq rhosts; do
   [ -n "$rid" ] || continue
+  # A rung that lists hosts: is a claim only on those hosts (a 122B file fits gx10's unified memory and no
+  # 24 GB card). Elsewhere it is neither absent nor passed: recorded as not listed, never counted RED.
+  if [ -n "$rhosts" ] && ! grep -qE "(^|,)${HOST}(,|$)" <<< "$rhosts"; then
+    printf '  [N/A   ] %-22s not listed for %s (hosts: %s)\n' "$rid" "$HOST" "$rhosts"
+    printf '{"id":"%s","present":false,"required":false,"not_listed_host":true}\n' "$rid" >> "$ROWS"
+    continue
+  fi
   path=$(find_model "$rfile") || {
     printf '  [ABSENT] %-22s %s not in any model dir\n' "$rid" "$rfile"
     printf '{"id":"%s","present":false,"required":%s}\n' "$rid" "$([ "$rreq" = 1 ] && echo true || echo false)" >> "$ROWS"
