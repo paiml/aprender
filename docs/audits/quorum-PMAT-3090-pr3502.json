@@ -1,0 +1,134 @@
+{
+  "ticket": "PMAT-3090",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 97 commit(s); judged against origin/main",
+  "head": "757fdf3fafeb86f993ca6f1c706fb2252d52b371",
+  "diff_sha256": "d42ed226f683eff26ffaa48e9e68495b60d7b057cdbb2901055e9ae634839130",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 6255,
+  "author": {
+    "model": "claude-fable-5-1",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff exactly implements the requirements stated in PMAT-3090. It adds the required QHF-GPU-008 and QE2E-DEV-008 contracts, updates the qwen35-0.8b-q4km ladder rung to claim the 'cuda' backend, and correctly updates the qa_gate pass criteria without weakening any gates. No non-requested changes or implementation of kernels were found, fulfilling the 'CONTRACTS half only' constraint.",
+      "findings": [],
+      "raw_bytes": 2025,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff accurately and exclusively implements the contract changes mandated by PMAT-3090. Proof obligations QHF-GPU-008 and QE2E-DEV-008, corresponding falsifiers FALSIFY-QHF-008 and FALSIFY-QE2E-008, QA gate pass criteria updates to 8 tests, and ladder rung backends [cpu, cuda] for qwen35-0.8b-q4km are correctly added across contracts/model-capability-ladder-v1.yaml, contracts/qwen35-e2e-verification-v1.yaml, and contracts/qwen35-hybrid-forward-v1.yaml without kernel modifications or gate weakening.",
+      "findings": [],
+      "raw_bytes": 2279,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff strictly implements the contract additions specified in ticket PMAT-3090: adds QHF-GPU-008 (device GDN state/output == CPU, tolerance 1e-3), QE2E-DEV-008 (device decoding without silent CPU fallback), updates capability ladder rung qwen35-0.8b-q4km backends to [cpu, cuda], and adjusts both QA gate pass criteria from 7 to 8 tests without modifying kernel code or weakening any verification gate.",
+      "findings": [
+        {
+          "claim": "Rung qwen35-0.8b-q4km backends updated from [cpu] to [cpu, cuda] with required: true, marking the ladder claim RED by construction until GPU kernels pass.",
+          "file": "contracts/model-capability-ladder-v1.yaml",
+          "grounding": "cited",
+          "line": 73
+        },
+        {
+          "claim": "Proof obligation QE2E-DEV-008 and falsification test FALSIFY-QE2E-008 added to enforce device decoding without silent CPU fallback, updating gate pass criteria to all 8 falsification tests.",
+          "file": "contracts/qwen35-e2e-verification-v1.yaml",
+          "grounding": "cited",
+          "line": 156
+        },
+        {
+          "claim": "Proof obligation QHF-GPU-008 and falsification test FALSIFY-QHF-008 added to enforce device GDN recurrent state and output parity with CPU forward (L-inf <= 1e-3), updating gate pass criteria to all 8 falsification tests.",
+          "file": "contracts/qwen35-hybrid-forward-v1.yaml",
+          "grounding": "cited",
+          "line": 129
+        }
+      ],
+      "raw_bytes": 3834,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "contracts/model-capability-ladder-v1.yaml",
+      "line": 73,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Rung qwen35-0.8b-q4km backends updated from [cpu] to [cpu, cuda] with required: true, marking the ladder claim RED by construction until GPU kernels pass."
+      ]
+    },
+    {
+      "file": "contracts/qwen35-e2e-verification-v1.yaml",
+      "line": 156,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Proof obligation QE2E-DEV-008 and falsification test FALSIFY-QE2E-008 added to enforce device decoding without silent CPU fallback, updating gate pass criteria to all 8 falsification tests."
+      ]
+    },
+    {
+      "file": "contracts/qwen35-hybrid-forward-v1.yaml",
+      "line": 129,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Proof obligation QHF-GPU-008 and falsification test FALSIFY-QHF-008 added to enforce device GDN recurrent state and output parity with CPU forward (L-inf <= 1e-3), updating gate pass criteria to all 8 falsification tests."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-fable-5-1/claude"
+  }
+}

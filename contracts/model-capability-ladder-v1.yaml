@@ -30,7 +30,9 @@ five_whys:
   root_cause: "Capability was asserted per binary, never measured per (architecture, backend, silicon). The ladder makes that triple the unit of evidence and the receipt the thing T-2 reads."
 
 # THE LADDER. One rung per (family, arch, quant). `required: true` rungs must be
-# present and green on every required host before T-2 is green; an absent
+# present and green on every required host before T-2 is green (a rung may
+# carry `hosts: [..]` to claim only the hosts whose memory holds it — #3510:
+# 122B-A10B fits GB10's unified memory and no 24 GB card); an absent
 # required rung on a host is a FAIL for that host, not a SKIP (a host that does
 # not hold the model has not measured it). `backends` is what the RELEASE claims
 # for that arch; a claimed backend that falls back is RED.
@@ -70,9 +72,41 @@ ladder:
       arch: qwen35
       gguf: Qwen3.5-0.8B-Q4_K_M.gguf
       sha256: bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517
-      backends: [cpu]
+      backends: [cpu, cuda]
       required: true
-      note: "hybrid Gated DeltaNet — cpu only until #3090; `apr qa` capability_match RED at 4a538ddef because of the second refusal site (#3432)"
+      note: "hybrid Gated DeltaNet — cuda claimed since 2026-09-19 (operator: GPU is required for 0.68.2; #3090 on PMAT-3477-gdn-gpu). RED by construction until that path passes apr qa Golden Output GPU on both hosts; the cpu half went green at f4c0daa37"
+    - id: qwen35-2b-q4km
+      family: qwen3.5
+      arch: qwen35
+      gguf: Qwen3.5-2B-Q4_K_M.gguf
+      sha256: aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223
+      backends: [cpu, cuda]
+      required: true
+      note: "hybrid Gated DeltaNet, dense FFN — #3510 (operator 2026-09-19: every dense size through 27B is a 0.68.2 requirement). RED by construction until the per-size CPU reference and the #3090 device path pass apr qa Golden Output on both hosts"
+    - id: qwen35-4b-q4km
+      family: qwen3.5
+      arch: qwen35
+      gguf: Qwen3.5-4B-Q4_K_M.gguf
+      sha256: 00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4
+      backends: [cpu, cuda]
+      required: true
+      note: "hybrid Gated DeltaNet, dense FFN — #3510 (operator 2026-09-19: every dense size through 27B is a 0.68.2 requirement). RED by construction until the per-size CPU reference and the #3090 device path pass apr qa Golden Output on both hosts"
+    - id: qwen35-9b-q4km
+      family: qwen3.5
+      arch: qwen35
+      gguf: Qwen3.5-9B-Q4_K_M.gguf
+      sha256: 03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8
+      backends: [cpu, cuda]
+      required: true
+      note: "hybrid Gated DeltaNet, dense FFN — #3510 (operator 2026-09-19: every dense size through 27B is a 0.68.2 requirement). RED by construction until the per-size CPU reference and the #3090 device path pass apr qa Golden Output on both hosts; the 9B descriptor is known wrong (#3346)"
+    - id: qwen35-27b-q4km
+      family: qwen3.5
+      arch: qwen35
+      gguf: Qwen3.5-27B-Q4_K_M.gguf
+      sha256: 84b5f7f112156d63836a01a69dc3f11a6ba63b10a23b8ca7a7efaf52d5a2d806
+      backends: [cpu, cuda]
+      required: true
+      note: "hybrid Gated DeltaNet, dense FFN — #3510 (operator 2026-09-19: every dense size through 27B is a 0.68.2 requirement). RED by construction until the per-size CPU reference and the #3090 device path pass apr qa Golden Output on both hosts; Q4_K_M 16.7 GB fits the 4090 with KV room only at short context"
 
 equations:
   rung_green:
@@ -170,6 +204,16 @@ falsification_tests:
     prediction: "pv validate accepts this file"
     test: "pv validate contracts/model-capability-ladder-v1.yaml"
     if_fails: "schema drift"
+  - id: FALSIFY-MCL-009
+    rule: "A rung that lists hosts: is a claim only there"
+    prediction: "a rung with hosts: [gx10] absent from lambda's receipt is skip, not FAIL (case green-rung-listed-one-host, rc 0); the same rung absent from gx10's receipt is FAIL (case red-listed-host-absent, rc 1)"
+    test: "bash scripts/check_model_ladder.sh --self-test --case green-rung-listed-one-host && bash scripts/check_model_ladder.sh --self-test --case red-listed-host-absent"
+    if_fails: "a size that fits one host could never be required anywhere, or would be required where it cannot load"
+  - id: FALSIFY-MCL-010
+    rule: "hosts: is a floor like rungs and backends"
+    prediction: "narrowing a rung from every host at origin/main to hosts: [gx10] makes the gate exit 1 with 'hosts DROPPED'"
+    test: "bash scripts/check_model_ladder.sh --self-test --case red-dropped-host-on-rung"
+    if_fails: "a required (rung, host) pair could be dropped by adding a key instead of removing one"
 
 qa_gate:
   id: F-MCL-001

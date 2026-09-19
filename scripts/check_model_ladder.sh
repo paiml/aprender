@@ -61,6 +61,14 @@ if main_p and os.path.exists(main_p):
         for rid, mb in mr.items():
             if rid not in hr: print(f"FAIL  rung DROPPED vs origin/main: {rid} — the ladder may grow, never shrink"); rc = 1
             elif not mb <= hr[rid]: print(f"FAIL  backends DROPPED on {rid} vs origin/main: {sorted(mb - hr[rid])}"); rc = 1
+        # per-rung hosts: is a floor too. A rung listed for every host at origin/main (no hosts: key) may not
+        # be narrowed to one host — that is dropping a required (rung, host) pair by another spelling.
+        def hostset(r, allh): return set(r.get("hosts") or allh)
+        allh = {h["id"] for h in L.get("hosts", []) if h.get("required")}
+        mrh = {r["id"]: hostset(r, allh) for r in M.get("rungs", []) if r.get("required")}
+        for r in rungs:
+            if r.get("required") and r["id"] in mrh and not mrh[r["id"]] <= hostset(r, allh):
+                print(f"FAIL  hosts DROPPED on {r['id']} vs origin/main: {sorted(mrh[r['id']] - hostset(r, allh))} — a rung may gain hosts, never lose one"); rc = 1
         mh = {h["id"] for h in M.get("hosts", []) if h.get("required")}
         for hid in mh - {h["id"] for h in hosts}:
             print(f"FAIL  required host DROPPED vs origin/main: {hid}"); rc = 1
@@ -86,6 +94,9 @@ for h in hosts:
         rid = r["id"]; req = bool(r.get("required"))
         x = by.get(rid)
         tag = "required" if req else "optional"
+        listed = r.get("hosts")
+        if listed and h["id"] not in listed:
+            print(f"skip  {h['id']:7} {rid:22} not listed for this host (hosts: {','.join(listed)}) — not a claim here, not a pass either"); continue
         if x is None or not x.get("present"):
             if req: print(f"FAIL  {h['id']:7} {rid:22} ABSENT — a required rung the host does not hold is unmeasured, not passed"); rc = 1
             else:   print(f"skip  {h['id']:7} {rid:22} absent ({tag})")
