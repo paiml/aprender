@@ -115,7 +115,7 @@ while IFS='|' read -r -t 5 rid rfile rsha rbackends rreq; do
   got=$(sha256sum "$path" | cut -d' ' -f1)
   if [ "$got" != "$rsha" ]; then
     printf '  [FAIL  ] %-22s sha256 mismatch (%s… vs ladder %s…) — a different file is a different measurement\n' "$rid" "${got:0:12}" "${rsha:0:12}"
-    printf '{"id":"%s","present":true,"sha_ok":false,"required":%s}\n' "$rid" "$([ "$rreq" = 1 ] && echo true || echo false)" >> "$ROWS"
+    printf '{"id":"%s","present":true,"sha_ok":false,"sha256":"%s","required":%s}\n' "$rid" "$got" "$([ "$rreq" = 1 ] && echo true || echo false)" >> "$ROWS"
     RED=$((RED + 1)); continue
   fi
   if [ "$DRY" = 1 ]; then printf '  [DRY   ] %-22s %s\n' "$rid" "$path"; continue; fi
@@ -164,9 +164,13 @@ PY
     be_json="$be_json\"$b\":{\"ran\":$ran,\"fallback\":$fb,\"rc\":$run_rc}"
   done
   be_json="$be_json}"
-  row=$(python3 - "$rid" "$qa_row" "$be_json" "$qa_rc" "$rreq" <<'PY'
+  # The receipt carries the MEASURED file hash beside sha_ok (ONT-4c1): a resolver that joins the ladder
+  # contract to this receipt compares two measurements (contract rung.sha256 == receipt rung.sha256) and can
+  # name a mismatch, instead of trusting the receipt's own claim that it checked. Same reason the ONT ledger
+  # carries merged_sha, not merged: true.
+  row=$(python3 - "$rid" "$qa_row" "$be_json" "$qa_rc" "$rreq" "$got" <<'PY'
 import json, sys
-rid, qa, be, qa_rc, req = sys.argv[1], json.loads(sys.argv[2]), json.loads(sys.argv[3]), int(sys.argv[4]), sys.argv[5] == "1"
+rid, qa, be, qa_rc, req, sha = sys.argv[1], json.loads(sys.argv[2]), json.loads(sys.argv[3]), int(sys.argv[4]), sys.argv[5] == "1", sys.argv[6]
 cap = qa.get("capability_match", {})
 # `passed` is already normalised (skipped ⇒ passed=False) by the gate() reader above, but the
 # judge must not depend on that: a skipped gate counts only when no GPU backend is claimed.
@@ -174,7 +178,7 @@ cap_ok = (cap.get("passed", False) and not cap.get("skipped", False)) \
          or (cap.get("skipped", False) and not ({"cuda", "gpu"} & set(be)))
 green = cap_ok and qa.get("golden_output", {}).get("passed", False) \
         and all(v["ran"] and not v["fallback"] for v in be.values())
-print(json.dumps({"id": rid, "present": True, "sha_ok": True, "required": req, "qa_rc": qa_rc,
+print(json.dumps({"id": rid, "present": True, "sha_ok": True, "sha256": sha, "required": req, "qa_rc": qa_rc,
                   "capability_match": qa.get("capability_match"), "golden_output": qa.get("golden_output"),
                   "backends": be, "green": green}))
 PY
