@@ -573,4 +573,38 @@ pub enum KernelType {
         k: u32,
         n: u32,
     },
+    /// PMAT-3477 (#3090): fused causal depthwise conv1d + SiLU, one decode step.
+    GdnCausalConv1dSilu { channels: u32, kernel_size: u32 },
+    /// PMAT-3477 (#3090): per-head L2 normalisation of Gated `DeltaNet` q/k, in place.
+    GdnPerHeadL2Norm {
+        head_dim: u32,
+        num_heads: u32,
+        epsilon: f32,
+    },
+    /// PMAT-3477 (#3090): the Gated `DeltaNet` per-head `dt`/`beta` gates.
+    GdnGates { num_heads: u32 },
+    /// PMAT-3477 (#3090): the gated delta-rule recurrence, one token.
+    GdnDeltaRule { num_v_heads: u32, head_v_dim: u32 },
+    /// PMAT-3477 (#3090): gated RMSNorm — the Gated `DeltaNet` output norm.
+    GdnGatedRmsNorm {
+        head_dim: u32,
+        num_heads: u32,
+        epsilon: f32,
+    },
+    /// PMAT-3477 (#3090): `x *= sigmoid(gate)`, the full-attention output gate.
+    GdnSigmoidGate { n: u32 },
+    /// PMAT-3477 (#3090): de-interleave the joint `[q | gate]` Q projection.
+    GdnSplitInterleaved { num_heads: u32, head_dim: u32 },
+    /// PMAT-3477 (#3090): partial NEOX RoPE over the first `n_rot` dimensions.
+    GdnPartialNeoxRope {
+        num_heads: u32,
+        head_dim: u32,
+        n_rot: u32,
+    },
+    /// PMAT-3477 (#3090): single-query decode attention, `head_dim <= 256`.
+    GdnDecodeAttention {
+        num_heads: u32,
+        num_kv_heads: u32,
+        head_dim: u32,
+    },
 }

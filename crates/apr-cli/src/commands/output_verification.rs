@@ -1,4 +1,3 @@
-
 /// Gate 1: Metadata Plausibility Validation (Bug 210, GH-222)
 ///
 /// Validates that model hyperparameters (rope_theta, max_position_embeddings, rms_norm_eps)
@@ -85,7 +84,11 @@ fn run_metadata_plausibility_gate(path: &Path, config: &QaConfig) -> Result<Gate
 /// Return plausible rope_theta range for an architecture family.
 fn rope_theta_range(arch: Option<&str>) -> (f64, f64, &'static str) {
     match arch {
-        Some("qwen2" | "qwen2.5" | "qwen") => (100_000.0, f64::MAX, "expected ~1000000.0 (100x too low, will produce garbage)"),
+        Some("qwen2" | "qwen2.5" | "qwen") => (
+            100_000.0,
+            f64::MAX,
+            "expected ~1000000.0 (100x too low, will produce garbage)",
+        ),
         Some("llama" | "llama2" | "llama3") => (1000.0, 10_000_000.0, "expected 10000-500000"),
         _ => (100.0, 100_000_000.0, "outside plausible range [100, 100M]"),
     }
@@ -112,7 +115,10 @@ fn check_rope_theta(
     if theta_f64 >= min && theta_f64 <= max {
         *checks_passed += 1;
     } else {
-        violations.push(format!("rope_theta={theta} for {} — {msg}", arch.unwrap_or("unknown")));
+        violations.push(format!(
+            "rope_theta={theta} for {} — {msg}",
+            arch.unwrap_or("unknown")
+        ));
     }
 }
 
@@ -477,16 +483,18 @@ fn validate_gpu_golden_output(
     config: &QaConfig,
 ) -> Result<Option<String>> {
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
-    // #3432 / #3477: Qwen3.5 (Gated DeltaNet) runs on the CPU only — the runtime
-    // (`realizar::infer::run_inference`) routes `qwen35` around the dense loader,
-    // and the Capability Match gate reports the GPU capability as declined
-    // (#3090). Loading it through `OwnedQuantizedModel::from_mapped` here turned a
-    // declined GPU rung into a hard `Validation failed` that aborted every later
-    // gate. A declined backend is a skip with a reason, not an abort.
-    if mapped.model.architecture() == Some("qwen35") {
+    // #3432 / #3477: the Qwen3.5 hybrid never reaches this dense-loader gate —
+    // `golden_gate_for` routes it to `run_golden_output_gate_runtime`, which goes
+    // through `realizar::run_inference` and therefore through the hybrid's own
+    // GPU forward (#3090). Loading it through `OwnedQuantizedModel::from_mapped`
+    // here would turn that into a hard `Validation failed` aborting every later
+    // gate, so the guard stays as a fail-safe and says where the GPU output IS
+    // judged rather than claiming it is not.
+    if realizar::gguf::hybrid_forward_handles(mapped.model.architecture().unwrap_or_default()) {
         note_gpu_golden_skip(
             config,
-            "GPU golden output skipped: Gated DeltaNet runs on the CPU only (#3090)",
+            "GPU golden output for the Gated DeltaNet hybrid is judged by the runtime rung \
+             (run_inference → Qwen35CudaModel, #3090), not by the dense loader",
         );
         return Ok(None);
     }
@@ -525,7 +533,7 @@ fn note_gpu_golden_skip(config: &QaConfig, message: &str) {
 }
 
 /// #3477: golden generation for a GGUF the dense loader refuses but the runtime
-/// serves on the CPU (Qwen3.5 Gated DeltaNet, #3091).
+/// serves (Qwen3.5 Gated DeltaNet — CPU #3091, GPU #3090).
 ///
 /// `golden_output_gguf_cpu` builds the model with
 /// `OwnedQuantizedModel::from_mapped`; for `qwen35` that call returns the
@@ -535,12 +543,18 @@ fn note_gpu_golden_skip(config: &QaConfig, message: &str) {
 /// dispatches `qwen35` to `forward_qwen35` — so the gate certifies the backend
 /// that actually serves the model rather than re-implementing the dispatch.
 ///
+/// The GPU is NOT disabled here: since #3090 the runtime routes the hybrid to
+/// `Qwen35CudaModel` on a cuda build with a device, so this gate judges the GPU's
+/// output — which is the point of #3477. On a CPU-only build or host the same
+/// call serves CPU tokens and the gate judges those. Either way the backend
+/// under judgement is the backend a user gets.
+///
 /// The golden prompts are already ChatML, so they are tokenized here and passed
 /// via `with_input_tokens` to bypass `prepare_tokens`' chat-template auto-wrap
 /// (the same reason `golden_output_apr` does it). Stop tokens come from the
 /// model's own EOS, which `run_gguf_inference` merges in.
 #[cfg(feature = "inference")]
-fn golden_output_cpu_runtime(path: &Path, prompt: &str, max_tokens: usize) -> Result<String> {
+fn golden_output_runtime(path: &Path, prompt: &str, max_tokens: usize) -> Result<String> {
     use realizar::gguf::MappedGGUFModel;
     use realizar::{run_inference, InferenceConfig};
 
@@ -558,27 +572,26 @@ fn golden_output_cpu_runtime(path: &Path, prompt: &str, max_tokens: usize) -> Re
         .with_input_tokens(prompt_tokens)
         .with_max_tokens(max_tokens)
         .with_temperature(0.0)
-        .with_top_k(1)
-        .without_gpu();
+        .with_top_k(1);
     let result = run_inference(&infer_config)
-        .map_err(|e| CliError::ValidationFailed(format!("CPU generation failed: {e}")))?;
+        .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?;
     Ok(result.text)
 }
 
-/// Gate 1 for a CPU-only architecture: the same golden cases, run on the CPU
-/// forward that serves the model.
+/// Gate 1 for an architecture the dense loader refuses: the same golden cases,
+/// run through the runtime entry point on whichever backend serves the model.
 ///
 /// This gate is the point of #3477: `apr qa` must be able to say PASS about the
-/// backend that runs the model. The GPU half is not attempted at all — the GPU
-/// declined this architecture (#3090) and its gates skip with that reason.
+/// backend that runs the model — and since #3090 that backend is the GPU.
 #[cfg(feature = "inference")]
-fn run_golden_output_gate_cpu_only(path: &Path, config: &QaConfig) -> Result<GateResult> {
+fn run_golden_output_gate_runtime(path: &Path, config: &QaConfig) -> Result<GateResult> {
     let start = Instant::now();
 
     if !config.json && config.verbose {
         println!(
             "{}",
-            "Running golden output test on the CPU forward (#3091)...".yellow()
+            "Running golden output test through the runtime entry point (GPU #3090 / CPU #3091)..."
+                .yellow()
         );
     }
 
@@ -587,10 +600,10 @@ fn run_golden_output_gate_cpu_only(path: &Path, config: &QaConfig) -> Result<Gat
     let golden_max_tokens = config.max_tokens.max(512);
 
     for (prompt, expected_patterns) in &test_cases {
-        let output_text = golden_output_cpu_runtime(path, prompt, golden_max_tokens)?;
+        let output_text = golden_output_runtime(path, prompt, golden_max_tokens)?;
         let answer_text = strip_thinking_blocks(&output_text);
         if let OutputVerification::Fail { reason } =
-            verify_output(&answer_text, "golden_output_cpu", expected_patterns)
+            verify_output(&answer_text, "golden_output_runtime", expected_patterns)
         {
             return Ok(GateResult::failed(
                 "golden_output",
@@ -605,8 +618,13 @@ fn run_golden_output_gate_cpu_only(path: &Path, config: &QaConfig) -> Result<Gat
     Ok(GateResult::passed(
         "golden_output",
         &format!(
-            "{} golden test cases passed on the CPU forward (#3091); GPU declined (#3090)",
-            test_cases.len()
+            "{} golden test cases passed through the runtime entry point ({})",
+            test_cases.len(),
+            if cfg!(feature = "cuda") {
+                "GPU hybrid forward, #3090"
+            } else {
+                "CPU hybrid forward, #3091"
+            }
         ),
         Some(test_cases.len() as f64),
         Some(test_cases.len() as f64),
@@ -616,7 +634,7 @@ fn run_golden_output_gate_cpu_only(path: &Path, config: &QaConfig) -> Result<Gat
 
 /// Without `inference` there is no runtime to certify.
 #[cfg(not(feature = "inference"))]
-fn run_golden_output_gate_cpu_only(path: &Path, config: &QaConfig) -> Result<GateResult> {
+fn run_golden_output_gate_runtime(path: &Path, config: &QaConfig) -> Result<GateResult> {
     let _ = (path, config);
     Ok(GateResult::skipped(
         "golden_output",

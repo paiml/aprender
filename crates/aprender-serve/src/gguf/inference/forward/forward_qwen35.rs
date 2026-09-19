@@ -851,7 +851,11 @@ impl<'a> Qwen35Model<'a> {
         Ok(logits)
     }
 
-    fn forward_deltanet(
+    /// One Gated `DeltaNet` layer, in place on `hidden`.
+    ///
+    /// `pub(crate)` (PMAT-3477, #3090) so the GPU model's per-layer parity test can
+    /// drive the CPU reference layer by layer with teacher forcing. No logic change.
+    pub(crate) fn forward_deltanet(
         &self,
         d: &Qwen35OwnedDeltaNetLayer,
         hidden: &mut [f32],
@@ -982,7 +986,12 @@ impl<'a> Qwen35Model<'a> {
         Ok(())
     }
 
-    fn forward_attention(
+    /// One full-attention layer, in place on `hidden`.
+    ///
+    /// `pub(crate)` (PMAT-3477, #3090) so the GPU parity test can advance the CPU
+    /// reference across the interleaved attention layers while it compares the
+    /// `DeltaNet` ones. No logic change.
+    pub(crate) fn forward_attention(
         &self,
         a: &Qwen35OwnedAttentionLayer,
         hidden: &mut [f32],
@@ -1167,6 +1176,351 @@ pub fn run_qwen35_generate(
         logits = qwen.forward_single_qwen35(next, &mut state, tokens.len() - 1)?;
     }
     Ok(tokens)
+}
+
+/// Why a Qwen3.5 run served its tokens from the CPU forward.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Qwen35CpuReason {
+    /// The caller asked for the CPU (`--no-gpu` / `force_cpu`).
+    Requested,
+    /// This binary was built without the `cuda` feature, so there is no GPU
+    /// backend to route to — the hybrid forward itself exists on both (#3090).
+    NoCudaBackend,
+}
+
+/// Which backend serves a Qwen3.5 (Gated `DeltaNet`) GGUF.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Qwen35Route {
+    /// `Qwen35CudaModel::forward_single` (#3090).
+    Gpu,
+    /// `Qwen35Model::forward_single_qwen35` (#3091).
+    Cpu(Qwen35CpuReason),
+}
+
+/// Pure: which backend a Qwen3.5 GGUF is routed to.
+///
+/// Split out from the dispatcher so the decision is falsifiable on a host with
+/// no GPU and in a build without `cuda`: `cuda_backend` is the caller's
+/// `cfg!(feature = "cuda")`, not a device probe (a device that is present but
+/// unusable is a *fallback*, which is printed — see
+/// [`run_qwen35_generate_dispatch`] — never a silent re-route).
+#[must_use]
+pub fn qwen35_route(no_gpu: bool, cuda_backend: bool) -> Qwen35Route {
+    if no_gpu {
+        Qwen35Route::Cpu(Qwen35CpuReason::Requested)
+    } else if cuda_backend {
+        Qwen35Route::Gpu
+    } else {
+        Qwen35Route::Cpu(Qwen35CpuReason::NoCudaBackend)
+    }
+}
+
+/// The one-line notice a route owes the user, or `None` when it owes none.
+///
+/// #3477: the GPU case used to print `[qwen35: Gated DeltaNet runs on the CPU;
+/// the GPU backend does not implement it yet (#3090)]` — which is now false: the
+/// hybrid runs on the GPU. What a user still needs told is the case where they
+/// asked for the GPU and this *binary* cannot give them one. Asking for the CPU
+/// explicitly is not news.
+#[must_use]
+pub fn qwen35_route_notice(route: Qwen35Route) -> Option<&'static str> {
+    match route {
+        Qwen35Route::Cpu(Qwen35CpuReason::NoCudaBackend) => Some(
+            "[qwen35: this binary has no CUDA backend (built without --features cuda); \
+             the Gated DeltaNet forward runs on the CPU (#3091)]",
+        ),
+        Qwen35Route::Gpu | Qwen35Route::Cpu(Qwen35CpuReason::Requested) => None,
+    }
+}
+
+/// The prefix of the loud, never-silent CPU fallback for the hybrid GPU path.
+pub const QWEN35_GPU_FALLBACK_PREFIX: &str = "warning: GPU (CUDA) qwen35 path rejected";
+
+/// Generate with the Qwen3.5 hybrid on the backend the caller asked for,
+/// returning `(tokens, used_gpu)` (#3090/#3091).
+///
+/// The GPU is attempted whenever it was requested and this build has a CUDA
+/// backend; a failure to build the model, a failure inside the forward, or a
+/// rejection by the F2 CPU-parity guard falls back to the CPU forward **with the
+/// reason printed** — an unannounced backend downgrade is the defect class
+/// `QWEN35_GPU_FALLBACK_PREFIX` exists to make impossible.
+///
+/// # Errors
+/// Only a CPU-forward failure: the GPU path never propagates its error, it falls
+/// back.
+pub fn run_qwen35_generate_dispatch(
+    mapped: &crate::gguf::MappedGGUFModel,
+    base: &OwnedQuantizedModel,
+    input_tokens: &[u32],
+    gen_config: &crate::gguf::QuantizedGenerateConfig,
+    no_gpu: bool,
+) -> Result<(Vec<u32>, bool)> {
+    let route = qwen35_route(no_gpu, cfg!(feature = "cuda"));
+    if let Some(notice) = qwen35_route_notice(route) {
+        eprintln!("{notice}");
+    }
+    #[cfg(feature = "cuda")]
+    if route == Qwen35Route::Gpu {
+        match run_qwen35_generate_gpu(mapped, base, input_tokens, gen_config) {
+            Ok(tokens) => return Ok((tokens, true)),
+            Err(reason) => {
+                eprintln!("{QWEN35_GPU_FALLBACK_PREFIX}, falling back to CPU: {reason}");
+            },
+        }
+    }
+    let tokens = run_qwen35_generate(mapped, base, input_tokens, gen_config)?;
+    Ok((tokens, false))
+}
+
+/// Positions the F2 hybrid guard forwards on both backends before it will let
+/// the GPU serve a token. Same cap as the dense guard's `gpu_probe`.
+#[cfg(feature = "cuda")]
+const QWEN35_F2_PROBE_MAX: usize = 64;
+
+/// The GPU twin of [`run_qwen35_generate`]: build the hybrid on CUDA, prove it
+/// against its own CPU forward, then decode.
+///
+/// `Err` is a fallback reason, never a user-visible failure — the caller prints
+/// it and runs the CPU forward.
+#[cfg(feature = "cuda")]
+fn run_qwen35_generate_gpu(
+    mapped: &crate::gguf::MappedGGUFModel,
+    base: &OwnedQuantizedModel,
+    input_tokens: &[u32],
+    gen_config: &crate::gguf::QuantizedGenerateConfig,
+) -> std::result::Result<Vec<u32>, String> {
+    if input_tokens.is_empty() {
+        return Err("the prompt is empty".to_string());
+    }
+    let qwen = Qwen35Model::from_model_and_layers(base, &mapped.model, mapped.data())
+        .map_err(|e| format!("the hybrid layers would not load: {e}"))?;
+
+    let mut executor = crate::cuda::CudaExecutor::new(0)
+        .map_err(|e| format!("CUDA initialization failed: {e}"))?;
+    let device_name = executor
+        .device_name()
+        .unwrap_or_else(|_| "Unknown GPU".to_string());
+    let vram_mb = executor.memory_info().unwrap_or((0, 0)).1 / (1024 * 1024);
+
+    let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
+    let mut gpu =
+        crate::gguf::cuda::Qwen35CudaModel::with_max_seq_len(&qwen, executor, max_seq_len)
+            .map_err(|e| format!("the CUDA model would not build: {e}"))?;
+
+    // Unconditional, like every other backend-selection line on this path: the
+    // user must be able to tell a GPU run from a CPU one without --verbose.
+    eprintln!(
+        "Backend: GPU (CUDA, {device_name}, {vram_mb} MB VRAM) [qwen35 hybrid forward, #3090]"
+    );
+
+    if !f2_validate_qwen35(&mut gpu, &qwen, input_tokens) {
+        return Err("the F2 CPU-parity guard rejected the GPU path".to_string());
+    }
+    qwen35_gpu_decode(&mut gpu, input_tokens, gen_config)
+}
+
+/// Prefill + decode on the GPU, with the token choice
+/// [`run_qwen35_generate`] makes, from a state that has never seen the guard's
+/// probe.
+#[cfg(feature = "cuda")]
+fn qwen35_gpu_decode(
+    gpu: &mut crate::gguf::cuda::Qwen35CudaModel<'_>,
+    input_tokens: &[u32],
+    gen_config: &crate::gguf::QuantizedGenerateConfig,
+) -> std::result::Result<Vec<u32>, String> {
+    use rand::SeedableRng;
+    let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
+    let mut state = gpu
+        .new_state()
+        .map_err(|e| format!("the decode state would not allocate: {e}"))?;
+    let mut rng = rand::rngs::StdRng::seed_from_u64(gen_config.seed);
+
+    let mut logits = Vec::new();
+    for (pos, &token) in input_tokens.iter().enumerate() {
+        logits = gpu
+            .forward_single(token, &mut state, pos)
+            .map_err(|e| format!("the GPU forward failed at prompt position {pos}: {e}"))?;
+    }
+    let mut tokens = input_tokens.to_vec();
+    for _ in 0..gen_config.max_tokens {
+        let next = if gen_config.temperature == 0.0 || gen_config.top_k == 1 {
+            crate::gguf::ops::argmax(&logits)
+        } else {
+            OwnedQuantizedModel::sample_topk_seeded(
+                &logits,
+                gen_config.temperature,
+                gen_config.top_k,
+                gen_config.top_p,
+                &mut rng,
+            )
+        };
+        tokens.push(next);
+        if gen_config.stop_tokens.contains(&next) || tokens.len() >= max_seq_len {
+            break;
+        }
+        let pos = tokens.len() - 1;
+        logits = gpu
+            .forward_single(next, &mut state, pos)
+            .map_err(|e| format!("the GPU forward failed at decode position {pos}: {e}"))?;
+    }
+    Ok(tokens)
+}
+
+/// The F2 runtime guard for the hybrid: forward the real prompt through BOTH
+/// backends and accept the GPU only if every real position agrees.
+///
+/// The dense `validate_gpu_first_token` cannot serve here — its CPU reference is
+/// `forward_single_with_cache` and its GPU probe `forward_gpu_resident`, neither
+/// of which exists for this architecture. The decision itself is shared:
+/// `f2_multi_position_report` with its floors (0.95 / 0.98 / 0.90), so the
+/// hybrid is judged by the same rule as every other GPU path. The probe path is
+/// [`F2ProbePath::Serial`] because there is no batched prefill for the hybrid —
+/// `qwen35_gpu_decode` prefills token by token, so the serial probe IS the path
+/// the run takes.
+///
+/// Both states are throwaway: the guard allocates its own, and the generation
+/// that follows allocates another.
+#[cfg(feature = "cuda")]
+fn f2_validate_qwen35(
+    gpu: &mut crate::gguf::cuda::Qwen35CudaModel<'_>,
+    cpu: &Qwen35Model<'_>,
+    probe_context: &[u32],
+) -> bool {
+    // Same escape hatch as the dense gate, and the same one `apr parity` uses.
+    if std::env::var("SKIP_PARITY_GATE").is_ok_and(|v| v == "1") {
+        return true;
+    }
+    let probe = &probe_context[probe_context.len().saturating_sub(QWEN35_F2_PROBE_MAX)..];
+    // A one-token probe has no REAL position (≥1) to judge; position 0 is the
+    // context-less near-tie the dense gate excludes for the same reason.
+    if probe.len() < 2 {
+        return true;
+    }
+    let Some(cpu_per_pos) = f2_qwen35_cpu_reference(cpu, probe) else {
+        return true; // the CPU forward itself failed: nothing to judge against.
+    };
+    let decode_token = cpu_per_pos
+        .get(probe.len().saturating_sub(1))
+        .map_or(0, |l| crate::infer::argmax_u32(l));
+    let gpu_per_pos = match f2_qwen35_gpu_logits(gpu, probe, decode_token) {
+        Ok(v) => v,
+        Err(msg) => {
+            eprintln!("{msg}");
+            return false; // fail closed.
+        },
+    };
+    let report = crate::infer::f2_multi_position_report(&cpu_per_pos, &gpu_per_pos);
+    if report.accepted {
+        true
+    } else {
+        eprintln!(
+            "{}",
+            crate::infer::f2_divergence_msg(&report, crate::infer::F2ProbePath::Serial)
+        );
+        false
+    }
+}
+
+/// CPU logits at every probe position plus one greedy decode step — the
+/// reference half of [`f2_validate_qwen35`].
+#[cfg(feature = "cuda")]
+fn f2_qwen35_cpu_reference(cpu: &Qwen35Model<'_>, probe: &[u32]) -> Option<Vec<Vec<f32>>> {
+    let mut state = cpu.new_state(probe.len() + 2);
+    let mut per_pos: Vec<Vec<f32>> = Vec::with_capacity(probe.len() + 1);
+    for (pos, &tok) in probe.iter().enumerate() {
+        per_pos.push(cpu.forward_single_qwen35(tok, &mut state, pos).ok()?);
+    }
+    let last = per_pos.last()?;
+    let next = crate::infer::argmax_u32(last);
+    per_pos.push(
+        cpu.forward_single_qwen35(next, &mut state, probe.len())
+            .ok()?,
+    );
+    Some(per_pos)
+}
+
+/// GPU logits for the same positions, from a fresh device state.
+#[cfg(feature = "cuda")]
+fn f2_qwen35_gpu_logits(
+    gpu: &mut crate::gguf::cuda::Qwen35CudaModel<'_>,
+    probe: &[u32],
+    decode_token: u32,
+) -> std::result::Result<Vec<Vec<f32>>, String> {
+    let steps = probe.len() + 1;
+    let mut state = gpu
+        .new_state()
+        .map_err(|e| format!("F2 qwen35 probe: the device state would not allocate: {e}"))?;
+    let mut per_pos: Vec<Vec<f32>> = Vec::with_capacity(steps);
+    for (pos, tok) in probe
+        .iter()
+        .copied()
+        .chain(std::iter::once(decode_token))
+        .enumerate()
+    {
+        match gpu.forward_single(tok, &mut state, pos) {
+            Ok(logits) => per_pos.push(logits),
+            Err(e) => return Err(crate::infer::gpu_forward_failure_msg(pos, steps, &e)),
+        }
+    }
+    Ok(per_pos)
+}
+
+#[cfg(test)]
+mod qwen35_route_tests {
+    use super::{qwen35_route, qwen35_route_notice, Qwen35CpuReason, Qwen35Route};
+
+    // #3090/#3477: with a CUDA build and no --no-gpu, the hybrid goes to the GPU.
+    // This is the whole point of the ticket; if it ever reads Cpu again, `apr run
+    // --gpu` is silently serving CPU tokens.
+    #[test]
+    fn a_cuda_build_that_was_not_told_otherwise_routes_to_the_gpu() {
+        assert_eq!(qwen35_route(false, true), Qwen35Route::Gpu);
+        assert_eq!(qwen35_route_notice(Qwen35Route::Gpu), None);
+    }
+
+    #[test]
+    fn no_gpu_wins_over_a_present_cuda_backend() {
+        assert_eq!(
+            qwen35_route(true, true),
+            Qwen35Route::Cpu(Qwen35CpuReason::Requested)
+        );
+        // The user asked for this: it is not news.
+        assert_eq!(
+            qwen35_route_notice(Qwen35Route::Cpu(Qwen35CpuReason::Requested)),
+            None
+        );
+    }
+
+    // A binary without the cuda feature still runs the model — but the user who
+    // asked for a GPU must be told why they did not get one.
+    #[test]
+    fn a_build_without_cuda_says_so() {
+        let route = qwen35_route(false, false);
+        assert_eq!(route, Qwen35Route::Cpu(Qwen35CpuReason::NoCudaBackend));
+        let notice = qwen35_route_notice(route).expect("the no-backend case owes a notice");
+        assert!(
+            notice.contains("no CUDA backend"),
+            "the notice must name the missing backend, not the architecture: {notice}"
+        );
+        assert!(
+            !notice.contains("#3090"),
+            "#3090 is the GPU forward, which now exists — citing it here is the \
+             withdrawn 'the GPU does not implement it' notice: {notice}"
+        );
+    }
+
+    // Both CPU reasons are reachable from the routing function, so neither arm
+    // of the notice is dead code.
+    #[test]
+    fn every_cpu_reason_is_produced_by_the_router() {
+        for (no_gpu, cuda, want) in [
+            (true, true, Qwen35CpuReason::Requested),
+            (true, false, Qwen35CpuReason::Requested),
+            (false, false, Qwen35CpuReason::NoCudaBackend),
+        ] {
+            assert_eq!(qwen35_route(no_gpu, cuda), Qwen35Route::Cpu(want));
+        }
+    }
 }
 
 #[cfg(test)]
