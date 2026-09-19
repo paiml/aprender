@@ -18,6 +18,8 @@ pub const RDF_TYPE: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
 pub const PROV_ENTITY: &str = "http://www.w3.org/ns/prov#Entity";
 pub const XSD_STRING: &str = "http://www.w3.org/2001/XMLSchema#string";
 pub const XSD_INTEGER: &str = "http://www.w3.org/2001/XMLSchema#integer";
+pub const XSD_BOOLEAN: &str = "http://www.w3.org/2001/XMLSchema#boolean";
+pub const XSD_DOUBLE: &str = "http://www.w3.org/2001/XMLSchema#double";
 
 /// A term: an IRI or a typed literal. There is no blank-node variant, by construction.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -40,6 +42,29 @@ impl Term {
     }
     #[must_use]
     pub fn integer(n: u64) -> Self {
+        Self::Literal {
+            value: n.to_string(),
+            datatype: XSD_INTEGER.to_string(),
+        }
+    }
+    #[must_use]
+    pub fn boolean(b: bool) -> Self {
+        Self::Literal {
+            value: b.to_string(),
+            datatype: XSD_BOOLEAN.to_string(),
+        }
+    }
+    /// A double, written the way `serde_json` prints it so two extractions agree byte for byte.
+    #[must_use]
+    pub fn double(x: f64) -> Self {
+        Self::Literal {
+            value: x.to_string(),
+            datatype: XSD_DOUBLE.to_string(),
+        }
+    }
+    /// A signed integer (JSON allows them; the shapes' `xsd:integer` does too).
+    #[must_use]
+    pub fn signed(n: i64) -> Self {
         Self::Literal {
             value: n.to_string(),
             datatype: XSD_INTEGER.to_string(),

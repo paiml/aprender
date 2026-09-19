@@ -128,8 +128,7 @@ agents:
 # Each entry names the extractor that reads it. `implemented: false` is the honest state until ONT-4b/4c build them;
 # an entry naming NO extractor, or one extractors[] does not declare, is exit 3.
 entity_types:
-  - {name: pv-contract, extractor: pv_contract, implemented: true}
-  - {name: json, extractor: json, implemented: true}
+  - {name: pv-contract, extractor: pv_contract, implemented: false}
   - {name: code, extractor: code, implemented: false}
   - {name: lean, extractor: lean, implemented: false}
   - {name: readme, extractor: readme, implemented: false}
@@ -138,8 +137,7 @@ entity_types:
   - {name: csv, extractor: csv, implemented: false}
 
 extractors:
-  - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: true}
-  - {name: json, reader: ontology/extract/json.rs, implemented: true}
+  - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: false}
   - {name: code, reader: ontology/extract/code.rs, implemented: false}
   - {name: lean, reader: ontology/extract/lean.rs, implemented: false}
   - {name: readme, reader: ontology/extract/readme.rs, implemented: false}
