@@ -323,14 +323,29 @@ fn the_repo_corpus_reports_the_ladder_rungs_as_focus_nodes_with_the_controls_fir
         "{}",
         show(&r)
     );
-    // Reported, not armed — and not the ONLY reported shape: ONT-4b2 ships `bound-symbols-resolve` and
-    // `lean-statements-grounded` unarmed beside it (§3.9 reported-first), so this asserts membership,
-    // not that the list has one entry. The fixture test above keeps the exact-list form: there the tree
-    // is the fixture's, and one reported shape is a fact about it.
-    let reported: Vec<&str> = v["not_armed_shapes"]
+    // ladder-green is COMPUTED and REPORTED on the real corpus whatever its arming: the row ships it
+    // unarmed, the 0.68.2 bump arms it (§3.9), and ONT-4b2 ships two more shapes unarmed beside it —
+    // so this asserts that the gate reports it (a `by_shape` entry) and knows it (armed or not), never
+    // which side of the arming line it is on. The fixture test above keeps the exact-list form: there
+    // the tree is the fixture's, and one unarmed shape is a fact about it.
+    let known: Vec<&str> = ["armed_shapes", "not_armed_shapes"]
+        .iter()
+        .flat_map(|k| {
+            v[*k]
+                .as_array()
+                .map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>())
+                .unwrap_or_default()
+        })
+        .collect();
+    assert!(known.contains(&"ladder-green"), "{}", show(&r));
+    let by_shape: Vec<&str> = v["by_shape"]
         .as_array()
         .map(|a| a.iter().filter_map(|x| x.as_str()).collect())
         .unwrap_or_default();
-    assert!(reported.contains(&"ladder-green"), "{}", show(&r));
+    assert!(
+        by_shape.iter().any(|s| s.starts_with("ladder-green=")),
+        "{}",
+        show(&r)
+    );
     assert!(v["receipts"].as_u64().unwrap_or(0) >= 1, "{}", show(&r));
 }
