@@ -578,11 +578,14 @@ fn check_lexical(
     if let Some(allowed) = &p.r#in {
         let ok = allowed.iter().any(|a| a == lexical || expand(a) == lexical);
         if !ok {
+            // The PATH is in the message, not only in the result's `path` field: a reader who gets one line
+            // ("quadratic is not one of …") cannot act on it without being told which property said it, and a
+            // shape with nine properties produces nine indistinguishable lines (measured on apex's EV-21).
             push(
                 p.severity,
                 path,
                 "in",
-                format!("{lexical} is not one of {allowed:?}"),
+                format!("{}: {lexical} is not one of {allowed:?}", short(&p.path)),
             );
         }
     }
@@ -592,7 +595,7 @@ fn check_lexical(
                 p.severity,
                 path,
                 "pattern",
-                format!("{lexical:?} does not match /{src}/"),
+                format!("{}: {lexical:?} does not match /{src}/", short(&p.path)),
             );
         }
     }
@@ -602,7 +605,7 @@ fn check_lexical(
             p.severity,
             path,
             "minLength",
-            format!("length {len} is below minLength"),
+            format!("{}: length {len} is below minLength", short(&p.path)),
         );
     }
     if p.max_length.is_some_and(|m| len > m) {
@@ -610,7 +613,7 @@ fn check_lexical(
             p.severity,
             path,
             "maxLength",
-            format!("length {len} is above maxLength"),
+            format!("{}: length {len} is above maxLength", short(&p.path)),
         );
     }
 }
