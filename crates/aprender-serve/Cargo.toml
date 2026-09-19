@@ -168,6 +168,7 @@ serde = { version = "1", features = ["derive"] }
 serde_yaml_ng = "0.10"
 
 [dev-dependencies]
+serde_yaml_ng = "0.10"
 # Contract trait enforcement (Section 23)
 provable-contracts = { path = "../aprender-contracts", package = "aprender-contracts" }
 

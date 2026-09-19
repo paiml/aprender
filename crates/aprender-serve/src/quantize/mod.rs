@@ -66,6 +66,8 @@ pub mod activation;
 pub mod bsum_precompute;
 pub mod contract_tests;
 pub mod dequant;
+#[cfg(test)]
+mod dispatch_contract_tests;
 pub mod encode;
 pub mod format_trait;
 pub mod fused_gate_up;
