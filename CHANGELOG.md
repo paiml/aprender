@@ -38,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ci: guard_tree reads GitHub with the job token, not the runner's shared operator login (infra#721) (#3520)
 - evidence(ladder): 0.68.1 receipts re-measured at main a6f54e84c on both hosts — eight rungs with sha256, RED by construction on Qwen3.5 (#3510) (#3523)
 - PMAT-3477: Qwen3.5 4B/9B/27B on CPU and CUDA — block_count loader fix + Gated DeltaNet GQA (tiled head mapping) (#3527)
+- pv contradicted itself about metadata:, and entity.properties was read by nothing — both apex-measured defects fixed (Refs PMAT-3529) (#3530)
+- PMAT-3508 / ONT-4c1: model receipts as focus nodes — extract:gguf + extract:apr-model, the ladder rungs as model:Model, resolves: receipt over the tracked ladder receipts by measured sha256, and arming per shape: ladder-measured armed, ladder-green reported until the bump arms it (#3526)
 - PMAT-3477: CB-200 back under its baseline — 5 definitions lifted to grade B by extraction, no behaviour change (0.68.2 T-2 preflight) (#3533)
 - PMAT-3477: apr parity measures the Qwen3.5 hybrid on CPU vs CUDA (C14) — hybrid arm, measured threshold basis, K-quant resolver (#3534)
 - ONT-4b2: extract:code + extract:lean as focus nodes; 16 of the ONT-0 table's 32 W3C SHACL-Core cases vendored in the gate, 16 accounted for by excluding form; the pinned oracle differential out of it (Refs PMAT-3509) (#3528)
