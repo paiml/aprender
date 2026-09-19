@@ -1,0 +1,20 @@
+# vendored: tests/core/property/minCount-001.ttl
+id: property/minCount-001
+label: "Test of sh:minCount at property shape 001"
+prefix: "http://datashapes.org/sh/tests/core/property/minCount-001.test#"
+targeting: "sh:targetClass ex:Person plus sh:targetNode ex:ValidResource (already a Person) → targetClass ex:Person"
+shapes:
+  - id: PersonShape
+    targetClass: ex:Person
+    properties:
+      - {path: ex:firstName, datatype: xsd:string, minCount: 1}
+data: |
+  ex:InvalidPerson rdf:type ex:Person .
+  ex:Person rdf:type rdfs:Class .
+  ex:Person rdfs:subClassOf rdfs:Resource .
+  ex:ValidResource rdf:type ex:Person .
+  ex:ValidResource ex:firstName "John" .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidPerson, path: ex:firstName, component: minCount}

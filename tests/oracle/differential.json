@@ -1,0 +1,31 @@
+{
+  "cases": 17,
+  "corpus": {
+    "agree": true,
+    "oracle_violations": 103,
+    "pv_violations": 103,
+    "ran": true
+  },
+  "detail": [],
+  "disagreements": 0,
+  "oracle": "shacl 0.3.21 (pinned, out of gate — ONT-0, R-13)",
+  "schema": "ont-oracle-differential/v1",
+  "w3c": {
+    "node/closed-002": "agree",
+    "property/class-001": "agree",
+    "property/datatype-001": "agree",
+    "property/datatype-002": "agree",
+    "property/datatype-ill-formed": "agree",
+    "property/in-001": "agree",
+    "property/maxCount-001": "agree",
+    "property/maxCount-002": "agree",
+    "property/maxLength-001": "agree",
+    "property/minCount-001": "agree",
+    "property/minCount-002": "agree",
+    "property/minLength-001": "agree",
+    "property/node-001": "agree",
+    "property/node-002": "agree",
+    "property/pattern-001": "agree",
+    "targets/targetClass-001": "agree"
+  }
+}

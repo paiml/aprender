@@ -1,0 +1,24 @@
+# vendored: tests/core/property/datatype-002.ttl
+id: property/datatype-002
+label: "Test of sh:datatype at property shape 002"
+prefix: "http://datashapes.org/sh/tests/core/property/datatype-002.test#"
+targeting: "sh:targetNode → rdf:type ex:Focus + targetClass"
+shapes:
+  - id: TestShape
+    targetClass: ex:Focus
+    properties:
+      - {path: ex:value, datatype: xsd:string}
+data: |
+  ex:InvalidInstance1 rdf:type ex:Focus .
+  ex:InvalidInstance2 rdf:type ex:Focus .
+  ex:ValidInstance1 rdf:type ex:Focus .
+  ex:ValidInstance2 rdf:type ex:Focus .
+  ex:InvalidInstance1 ex:value "A"@en .
+  ex:InvalidInstance2 ex:value 42 .
+  ex:ValidInstance1 ex:value "A" .
+  ex:ValidInstance2 ex:value "B"^^xsd:string .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidInstance1, path: ex:value, component: datatype}
+    - {focus: ex:InvalidInstance2, path: ex:value, component: datatype}

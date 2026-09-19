@@ -1,0 +1,23 @@
+# vendored: tests/core/targets/targetClass-001.ttl
+id: targets/targetClass-001
+label: "Test of sh:targetClass 001"
+prefix: "http://datashapes.org/sh/tests/core/targets/targetClass-001.test#"
+targeting: "sh:targetClass ex:MyClass as written; ex:ValidInstance2 carries no rdf:type and is no focus node"
+shapes:
+  - id: MyShape
+    targetClass: ex:MyClass
+    properties:
+      - {path: ex:myProperty, maxCount: 1}
+data: |
+  ex:InvalidInstance1 rdf:type ex:MyClass .
+  ex:InvalidInstance1 ex:myProperty "A" .
+  ex:InvalidInstance1 ex:myProperty "B" .
+  ex:MyClass rdf:type rdfs:Class .
+  ex:ValidInstance1 rdf:type ex:MyClass .
+  ex:ValidInstance1 ex:myProperty "A" .
+  ex:ValidInstance2 ex:myProperty "A" .
+  ex:ValidInstance2 ex:myProperty "B" .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidInstance1, path: ex:myProperty, component: maxCount}
