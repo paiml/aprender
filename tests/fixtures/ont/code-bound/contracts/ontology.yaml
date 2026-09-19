@@ -1,0 +1,7 @@
+version: 1
+concepts:
+  - {name: Contract, doc: a contract}
+  - {name: Symbol, doc: a Rust symbol}
+extractors:
+  - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: true}
+  - {name: code, reader: ontology/extract/code.rs, implemented: true}

@@ -262,6 +262,7 @@ fn json_report_carries_the_lattice() {
             // reported and excluded — the DEFAULT set is still the eight ONT-6 ruled. ONT-4's gate likewise.
             serde_json::Value::String("sigma".into()),
             serde_json::Value::String("relations".into()),
+            serde_json::Value::String("shapes".into()),
         ]),
         "{}",
         show(&r)
@@ -314,9 +315,10 @@ fn repo_baseline_arms_the_eight_ruled_gates_and_every_later_row_that_armed_one()
             "duplicate-stems",
             "composition",
             "sigma",
-            "relations"
+            "relations",
+            "shapes"
         ]
         .to_vec(),
-        "the ruled 8 plus the gates later rows armed (ONT-2b: sigma; ONT-4: relations)"
+        "the ruled 8 plus the gates later rows armed (ONT-2b: sigma; ONT-4: relations; ONT-4b: shapes)"
     );
 }

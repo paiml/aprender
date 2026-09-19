@@ -35,12 +35,16 @@
 
 mod backend;
 mod forward;
+/// PMAT-3477 (#3090): Qwen3.5's Gated `DeltaNet` block on the GPU.
+mod forward_qwen35_cuda;
 mod generation;
 mod speculative;
 mod weights;
 
 // Re-export types for public API
 pub use backend::CudaBackend;
+// PMAT-3477 (#3090): the Gated DeltaNet GPU model and its device state.
+pub use forward_qwen35_cuda::{Qwen35CudaModel, Qwen35CudaState};
 // PMAT-072: Step-wise batched decode state for lock-releasing scheduler
 pub use generation::BatchedDecodeState;
 
@@ -318,6 +322,88 @@ impl OwnedQuantizedModelCuda {
         Ok(model)
     }
 
+    /// The four dimensions every weight-cache warmup entry point takes, read
+    /// once from the model config: (layers, hidden, intermediate, vocab).
+    fn cache_warmup_dims(&self) -> (usize, u32, u32, u32) {
+        (
+            self.model.config.num_layers,
+            self.model.config.hidden_dim as u32,
+            self.model.config.intermediate_dim as u32,
+            self.model.config.vocab_size as u32,
+        )
+    }
+
+    /// PMAT-037: Eagerly warm FP16 weight cache for HGEMM prefill.
+    /// Five-Whys root cause: FP16 cache lazily populated on first inference
+    /// request (303ms cold-start), inflating TTFT P50 from 25ms to 50.9ms.
+    /// Pre-populating at model init moves cost to startup (one-time).
+    /// PMAT-067: Skip FP16 cache when FP8 is active — saves ~1.5 GB VRAM.
+    /// PMAT-400: Skip FP16 cache on unified memory (cc>=120) — saves 61 GB for 32B model.
+    /// PMAT-409: Override with `FORCE_FP16_CACHE=1` for 7B on GB10 (2.9 GB, restores prefill perf).
+    fn warmup_fp16_cache_if_enabled(&mut self) {
+        let skip_fp16_unified = self.executor.gpu_profile.cc >= 120
+            && std::env::var("FORCE_FP16_CACHE").as_deref() != Ok("1");
+        if std::env::var("HGEMM_PREFILL").as_deref() == Ok("0")
+            || self.executor.gpu_profile.fp8_prefill
+            || skip_fp16_unified
+        {
+            return;
+        }
+        let (num_layers, hidden_dim, intermediate_dim, vocab_size) = self.cache_warmup_dims();
+        if let Err(e) = self.executor.ensure_cublas() {
+            eprintln!("[PMAT-037] cuBLAS init failed (non-fatal): {e}");
+        } else if let Err(e) =
+            self.executor
+                .warmup_hgemm_cache(num_layers, hidden_dim, intermediate_dim, vocab_size)
+        {
+            eprintln!("[PMAT-037] FP16 cache warmup failed (non-fatal): {e}");
+        }
+    }
+
+    /// PMAT-053/067: FP8 E4M3 weight cache warmup (auto-enabled on sm_89+).
+    /// GH-286: Skip if `--no-fp8-cache` (saves ~1.5 GB RSS).
+    fn warmup_fp8_cache_if_enabled(&mut self) {
+        let no_fp8 = std::env::var("REALIZR_NO_FP8_CACHE").as_deref() == Ok("1");
+        if !self.executor.gpu_profile.fp8_prefill || no_fp8 {
+            return;
+        }
+        let (num_layers, hidden_dim, intermediate_dim, vocab_size) = self.cache_warmup_dims();
+        if let Err(e) =
+            self.executor
+                .warmup_fp8_cache(num_layers, hidden_dim, intermediate_dim, vocab_size)
+        {
+            eprintln!("[PMAT-053] FP8 cache warmup failed (non-fatal): {e}");
+        }
+    }
+
+    /// PMAT-091: Interleaved Q4K weight cache warmup (W4A16 WMMA GEMM).
+    fn warmup_interleaved_cache_if_enabled(&mut self) {
+        if !self.executor.gpu_profile.w4a16_interleaved {
+            return;
+        }
+        let (num_layers, hidden_dim, intermediate_dim, vocab_size) = self.cache_warmup_dims();
+        if let Err(e) = self.executor.warmup_interleaved_cache(
+            num_layers,
+            hidden_dim,
+            intermediate_dim,
+            vocab_size,
+        ) {
+            eprintln!("[PMAT-091] Interleaved cache warmup failed (non-fatal): {e}");
+        }
+    }
+
+    /// GH-181: Reinitialize workspace after cache warmup (FP8/FP16/interleaved).
+    /// Cache allocations can relocate workspace buffers, causing the parity
+    /// gate's forward pass to read stale pointers (cosine -0.28 on RTX 4060).
+    fn reinit_workspace_after_warmup(&mut self) {
+        let hidden_dim = self.model.config.hidden_dim;
+        let intermediate_dim = self.model.config.intermediate_dim;
+        self.executor.force_workspace_reinit();
+        if let Err(e) = self.executor.init_workspace(hidden_dim, intermediate_dim) {
+            eprintln!("[GH-181] Workspace reinit failed (non-fatal): {e}");
+        }
+    }
+
     /// GH-199/PARITY-GATE: Preload GPU weights and verify correctness.
     /// Extracted to reduce cognitive complexity of `with_max_seq_len`.
     fn preload_and_verify(mut self) -> std::result::Result<Self, CudaInitError> {
@@ -333,78 +419,10 @@ impl OwnedQuantizedModelCuda {
             });
         }
 
-        // PMAT-037: Eagerly warm FP16 weight cache for HGEMM prefill.
-        // Five-Whys root cause: FP16 cache lazily populated on first inference
-        // request (303ms cold-start), inflating TTFT P50 from 25ms to 50.9ms.
-        // Pre-populating at model init moves cost to startup (one-time).
-        // PMAT-067: Skip FP16 cache when FP8 is active — saves ~1.5 GB VRAM.
-        // PMAT-400: Skip FP16 cache on unified memory (cc>=120) — saves 61 GB for 32B model.
-        // PMAT-409: Override with FORCE_FP16_CACHE=1 for 7B on GB10 (2.9 GB, restores prefill perf).
-        let skip_fp16_unified = self.executor.gpu_profile.cc >= 120
-            && std::env::var("FORCE_FP16_CACHE").as_deref() != Ok("1");
-        if std::env::var("HGEMM_PREFILL").as_deref() != Ok("0")
-            && !self.executor.gpu_profile.fp8_prefill
-            && !skip_fp16_unified
-        {
-            let num_layers = self.model.config.num_layers;
-            let hidden_dim = self.model.config.hidden_dim as u32;
-            let intermediate_dim = self.model.config.intermediate_dim as u32;
-            let vocab_size = self.model.config.vocab_size as u32;
-            if let Err(e) = self.executor.ensure_cublas() {
-                eprintln!("[PMAT-037] cuBLAS init failed (non-fatal): {e}");
-            } else if let Err(e) = self.executor.warmup_hgemm_cache(
-                num_layers,
-                hidden_dim,
-                intermediate_dim,
-                vocab_size,
-            ) {
-                eprintln!("[PMAT-037] FP16 cache warmup failed (non-fatal): {e}");
-            }
-        }
-
-        // PMAT-053/067: FP8 E4M3 weight cache warmup (auto-enabled on sm_89+)
-        // GH-286: Skip if --no-fp8-cache (saves ~1.5 GB RSS)
-        let no_fp8 = std::env::var("REALIZR_NO_FP8_CACHE").as_deref() == Ok("1");
-        if self.executor.gpu_profile.fp8_prefill && !no_fp8 {
-            let num_layers = self.model.config.num_layers;
-            let hidden_dim = self.model.config.hidden_dim as u32;
-            let intermediate_dim = self.model.config.intermediate_dim as u32;
-            let vocab_size = self.model.config.vocab_size as u32;
-            if let Err(e) =
-                self.executor
-                    .warmup_fp8_cache(num_layers, hidden_dim, intermediate_dim, vocab_size)
-            {
-                eprintln!("[PMAT-053] FP8 cache warmup failed (non-fatal): {e}");
-            }
-        }
-
-        // PMAT-091: Interleaved Q4K weight cache warmup (W4A16 WMMA GEMM)
-        if self.executor.gpu_profile.w4a16_interleaved {
-            let num_layers = self.model.config.num_layers;
-            let hidden_dim = self.model.config.hidden_dim as u32;
-            let intermediate_dim = self.model.config.intermediate_dim as u32;
-            let vocab_size = self.model.config.vocab_size as u32;
-            if let Err(e) = self.executor.warmup_interleaved_cache(
-                num_layers,
-                hidden_dim,
-                intermediate_dim,
-                vocab_size,
-            ) {
-                eprintln!("[PMAT-091] Interleaved cache warmup failed (non-fatal): {e}");
-            }
-        }
-
-        // GH-181: Reinitialize workspace after cache warmup (FP8/FP16/interleaved).
-        // Cache allocations can relocate workspace buffers, causing the parity
-        // gate's forward pass to read stale pointers (cosine -0.28 on RTX 4060).
-        {
-            let hidden_dim = self.model.config.hidden_dim;
-            let intermediate_dim = self.model.config.intermediate_dim;
-            self.executor.force_workspace_reinit();
-            if let Err(e) = self.executor.init_workspace(hidden_dim, intermediate_dim) {
-                eprintln!("[GH-181] Workspace reinit failed (non-fatal): {e}");
-            }
-        }
+        self.warmup_fp16_cache_if_enabled();
+        self.warmup_fp8_cache_if_enabled();
+        self.warmup_interleaved_cache_if_enabled();
+        self.reinit_workspace_after_warmup();
 
         // PARITY-GATE: Jidoka — stop-the-line if GPU diverges from CPU.
         // Run ONE token through both backends and compare logits.
@@ -438,6 +456,142 @@ impl OwnedQuantizedModelCuda {
         }
 
         Ok(self)
+    }
+
+    /// Bring a freshly created executor up to the model's shape: the GPU-resident KV
+    /// cache (PAR-018/PAR-021), Flash Decoding (PAR-118), the RoPE settings
+    /// (PAR-060 / CORRECTNESS-011) and the early kernel-module preload (GH-129).
+    ///
+    /// Only the KV cache is fatal — the rest degrade loudly and keep a working path.
+    fn configure_executor(
+        executor: &mut crate::cuda::CudaExecutor,
+        model: &OwnedQuantizedModel,
+        max_seq_len: usize,
+    ) -> std::result::Result<(), RealizarError> {
+        // PAR-018: Initialize GPU-resident KV cache for attention acceleration
+        // This avoids ~66 MB CPU→GPU transfer per token for TinyLlama
+        let num_layers = model.layers.len();
+        let num_heads = model.config.num_heads;
+        let num_kv_heads = model.config.num_kv_heads; // PAR-021 GQA support
+        let head_dim = model.config.hidden_dim / num_heads;
+
+        executor
+            .init_kv_cache_gpu(num_layers, num_heads, num_kv_heads, head_dim, max_seq_len)
+            .map_err(|e| RealizarError::UnsupportedOperation {
+                operation: "init_kv_cache_gpu".to_string(),
+                reason: format!("GPU KV cache initialization failed: {e}"),
+            })?;
+
+        // PAR-118: Initialize Flash Decoding for split-K attention acceleration.
+        // Five-Whys: batched_incremental_attention uses Grid=(num_heads,M,1) Block=(32,1,1)
+        // = only 896 threads on RTX 4090 for 7B (28 heads). Flash Decoding splits KV cache
+        // into chunks processed in parallel, achieving 1.5-2x decode speedup.
+        // NOTE: flash_decode_enabled is used by BOTH the graphed decode path
+        // (flash_decoding_graphed in attention.rs) and the batched path (batched.rs).
+        // The batched path uses threshold 1024 to avoid triggering during normal prefill.
+        if let Err(e) = executor.init_flash_decoding(num_heads, head_dim, max_seq_len, 1) {
+            if verbose() {
+                eprintln!(
+                    "[PAR-118] Flash Decoding init failed: {e}, falling back to sequential attention"
+                );
+            }
+            // Non-fatal: sequential attention still works, just slower
+        }
+
+        // PAR-060: Set RoPE theta for position embeddings
+        if verbose() {
+            eprintln!(
+                "[PAR-060] Setting rope_theta = {} for GPU path",
+                model.config.rope_theta
+            );
+        }
+        executor.set_rope_theta(model.config.rope_theta);
+
+        // CORRECTNESS-011: Set rope_type for correct RoPE style (NORM vs NEOX)
+        if verbose() {
+            eprintln!(
+                "[CORRECTNESS-011] Setting rope_type = {} for GPU path (0=NORM, 2=NEOX)",
+                model.config.rope_type
+            );
+        }
+        executor.set_rope_type(model.config.rope_type);
+
+        // GH-129: Pre-load ALL kernel modules BEFORE heavy GPU allocations.
+        // Five-Whys root cause: PTX JIT compilation requires GPU memory for the
+        // JIT compiler itself. On Jetson (unified memory), weight upload consumes
+        // ~1 GB, leaving less for JIT. Moving kernel preload here (before weight
+        // upload) ensures JIT runs with maximum available GPU memory.
+        let hidden_dim = model.config.hidden_dim as u32;
+        let intermediate_dim = model.config.intermediate_dim as u32;
+        let vocab_size = model.config.vocab_size as u32;
+        match executor.preload_modules_for_capture(
+            num_layers,
+            hidden_dim,
+            intermediate_dim,
+            vocab_size,
+        ) {
+            Ok(()) => eprintln!(
+                "[GH-129] Early kernel preload: {} modules compiled",
+                executor.module_count()
+            ),
+            Err(e) => {
+                eprintln!("[GH-129] Early kernel preload failed: {e}");
+            },
+        }
+
+        Ok(())
+    }
+
+    /// PMAT-399 / X1-KVALLOC (#2774): auto-size max_batch AFTER the weights
+    /// and the FP8/FP16 prefill cache are resident.
+    ///
+    /// This ran BEFORE `preload_and_verify`, where `memory_info()` still
+    /// reports an essentially empty card, so the budget overstated free VRAM
+    /// by the entire model. Measured on lambda-4090 with
+    /// `qwen2.5-coder-7b-instruct-q4_k_m` at `--context-length 4096`: 4.4 GB
+    /// of Q4_K weights plus a 6.7 GB FP8 prefill cache are invisible at the
+    /// old call site, so `compute_max_batch_for_memory` returned its clamp
+    /// ceiling of 32 and the scheduler advertised `max_batch=32`. Measured
+    /// after this move, the same server advertises `max_batch=12` and serves
+    /// c=4/8/16 at 100% 200s with a 20471 MiB peak of 24564 MiB.
+    /// `CUDA_MAX_BATCH` is the ADMISSION ceiling,
+    /// and X1-KVALLOC's allocation floor is the admitted batch -- so an
+    /// admission ceiling computed against fictional VRAM is still an OOM,
+    /// one clamp further out. Both ends have to be measured against the
+    /// same device state.
+    ///
+    /// PP-LLAMA-001 §10 / §12 kill criterion: the sizing INPUTS are captured
+    /// BEFORE `set_var`, and the source is recorded. The env-var transport
+    /// is what erased the distinction — after load, an operator ceiling and
+    /// a loader-computed one were the same string in the same variable, so
+    /// no receipt could say which one the server enforced.
+    fn apply_max_batch_sizing(
+        &mut self,
+        num_layers: usize,
+        num_kv_heads: usize,
+        head_dim: usize,
+        max_seq_len: usize,
+    ) {
+        let mut sizing =
+            self.executor
+                .compute_max_batch_sizing(num_layers, num_kv_heads, head_dim, max_seq_len);
+        match std::env::var("CUDA_MAX_BATCH")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+        {
+            Some(operator_ceiling) => {
+                // The measured inputs are kept: they are what makes an operator
+                // ceiling of 4 over a card that would have sized 11 visible.
+                sizing.resolved = operator_ceiling;
+                sizing.source = crate::cuda::gpu_profile::MAX_BATCH_SOURCE_ENV;
+            },
+            None => {
+                // GH-611: Suppressed — was noisy in non-verbose mode
+                // Store for scheduler to pick up
+                std::env::set_var("CUDA_MAX_BATCH", sizing.resolved.to_string());
+            },
+        }
+        self.max_batch_sizing = Some(sizing);
     }
 
     /// Create a GPU-accelerated inference engine with a custom maximum sequence length.
@@ -511,82 +665,17 @@ impl OwnedQuantizedModelCuda {
             .unwrap_or_else(|_| "Unknown GPU".to_string());
         let memory_info = executor.memory_info().unwrap_or((0, 0));
 
-        // PAR-018: Initialize GPU-resident KV cache for attention acceleration
-        // This avoids ~66 MB CPU→GPU transfer per token for TinyLlama
+        // These three are read again after `model` is moved into `Self`, to size
+        // the KV-cache budget below.
         let num_layers = model.layers.len();
-        let num_heads = model.config.num_heads;
         let num_kv_heads = model.config.num_kv_heads; // PAR-021 GQA support
-        let head_dim = model.config.hidden_dim / num_heads;
+        let head_dim = model.config.hidden_dim / model.config.num_heads;
 
-        if let Err(e) =
-            executor.init_kv_cache_gpu(num_layers, num_heads, num_kv_heads, head_dim, max_seq_len)
-        {
+        if let Err(error) = Self::configure_executor(&mut executor, &model, max_seq_len) {
             return Err(CudaInitError {
-                error: RealizarError::UnsupportedOperation {
-                    operation: "init_kv_cache_gpu".to_string(),
-                    reason: format!("GPU KV cache initialization failed: {e}"),
-                },
+                error,
                 model: Box::new(model),
             });
-        }
-
-        // PAR-118: Initialize Flash Decoding for split-K attention acceleration.
-        // Five-Whys: batched_incremental_attention uses Grid=(num_heads,M,1) Block=(32,1,1)
-        // = only 896 threads on RTX 4090 for 7B (28 heads). Flash Decoding splits KV cache
-        // into chunks processed in parallel, achieving 1.5-2x decode speedup.
-        // NOTE: flash_decode_enabled is used by BOTH the graphed decode path
-        // (flash_decoding_graphed in attention.rs) and the batched path (batched.rs).
-        // The batched path uses threshold 1024 to avoid triggering during normal prefill.
-        if let Err(e) = executor.init_flash_decoding(num_heads, head_dim, max_seq_len, 1) {
-            if verbose() {
-                eprintln!(
-                    "[PAR-118] Flash Decoding init failed: {e}, falling back to sequential attention"
-                );
-            }
-            // Non-fatal: sequential attention still works, just slower
-        }
-
-        // PAR-060: Set RoPE theta for position embeddings
-        if verbose() {
-            eprintln!(
-                "[PAR-060] Setting rope_theta = {} for GPU path",
-                model.config.rope_theta
-            );
-        }
-        executor.set_rope_theta(model.config.rope_theta);
-
-        // CORRECTNESS-011: Set rope_type for correct RoPE style (NORM vs NEOX)
-        if verbose() {
-            eprintln!(
-                "[CORRECTNESS-011] Setting rope_type = {} for GPU path (0=NORM, 2=NEOX)",
-                model.config.rope_type
-            );
-        }
-        executor.set_rope_type(model.config.rope_type);
-
-        // GH-129: Pre-load ALL kernel modules BEFORE heavy GPU allocations.
-        // Five-Whys root cause: PTX JIT compilation requires GPU memory for the
-        // JIT compiler itself. On Jetson (unified memory), weight upload consumes
-        // ~1 GB, leaving less for JIT. Moving kernel preload here (before weight
-        // upload) ensures JIT runs with maximum available GPU memory.
-        {
-            let hidden_dim = model.config.hidden_dim as u32;
-            let intermediate_dim = model.config.intermediate_dim as u32;
-            let vocab_size = model.config.vocab_size as u32;
-            match executor.preload_modules_for_capture(
-                num_layers,
-                hidden_dim,
-                intermediate_dim,
-                vocab_size,
-            ) {
-                Ok(()) => eprintln!(
-                    "[GH-129] Early kernel preload: {} modules compiled",
-                    executor.module_count()
-                ),
-                Err(e) => {
-                    eprintln!("[GH-129] Early kernel preload failed: {e}");
-                },
-            }
         }
 
         // PAR-083: Pre-allocate embedding buffer (hidden_dim f32s) to avoid per-token malloc.
@@ -610,52 +699,9 @@ impl OwnedQuantizedModelCuda {
         let cuda_model = cuda_model.preload_and_verify()?;
 
         // PMAT-399 / X1-KVALLOC (#2774): auto-size max_batch AFTER the weights
-        // and the FP8/FP16 prefill cache are resident.
-        //
-        // This ran BEFORE `preload_and_verify`, where `memory_info()` still
-        // reports an essentially empty card, so the budget overstated free VRAM
-        // by the entire model. Measured on lambda-4090 with
-        // `qwen2.5-coder-7b-instruct-q4_k_m` at `--context-length 4096`: 4.4 GB
-        // of Q4_K weights plus a 6.7 GB FP8 prefill cache are invisible at the
-        // old call site, so `compute_max_batch_for_memory` returned its clamp
-        // ceiling of 32 and the scheduler advertised `max_batch=32`. Measured
-        // after this move, the same server advertises `max_batch=12` and serves
-        // c=4/8/16 at 100% 200s with a 20471 MiB peak of 24564 MiB.
-        // `CUDA_MAX_BATCH` is the ADMISSION ceiling,
-        // and X1-KVALLOC's allocation floor is the admitted batch -- so an
-        // admission ceiling computed against fictional VRAM is still an OOM,
-        // one clamp further out. Both ends have to be measured against the
-        // same device state.
-        //
-        // PP-LLAMA-001 §10 / §12 kill criterion: the sizing INPUTS are captured
-        // BEFORE `set_var`, and the source is recorded. The env-var transport
-        // is what erased the distinction — after load, an operator ceiling and
-        // a loader-computed one were the same string in the same variable, so
-        // no receipt could say which one the server enforced.
+        // and the FP8/FP16 prefill cache are resident — see `apply_max_batch_sizing`.
         let mut cuda_model = cuda_model;
-        let mut sizing = cuda_model.executor.compute_max_batch_sizing(
-            num_layers,
-            num_kv_heads,
-            head_dim,
-            max_seq_len,
-        );
-        match std::env::var("CUDA_MAX_BATCH")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-        {
-            Some(operator_ceiling) => {
-                // The measured inputs are kept: they are what makes an operator
-                // ceiling of 4 over a card that would have sized 11 visible.
-                sizing.resolved = operator_ceiling;
-                sizing.source = crate::cuda::gpu_profile::MAX_BATCH_SOURCE_ENV;
-            },
-            None => {
-                // GH-611: Suppressed — was noisy in non-verbose mode
-                // Store for scheduler to pick up
-                std::env::set_var("CUDA_MAX_BATCH", sizing.resolved.to_string());
-            },
-        }
-        cuda_model.max_batch_sizing = Some(sizing);
+        cuda_model.apply_max_batch_sizing(num_layers, num_kv_heads, head_dim, max_seq_len);
 
         Ok(cuda_model)
     }

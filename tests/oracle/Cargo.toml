@@ -1,0 +1,22 @@
+# ONT-001 R-13 / ONT-0: the out-of-gate differential oracle. A SCRATCH CRATE, deliberately OUTSIDE the
+# workspace (`[workspace]` below detaches it), so `cargo tree -p aprender-contracts -e normal,build,dev`
+# never reaches `shacl` and F-20/F-22 hold. `make oracle` runs it; no PR check does (R-13: release gate only).
+#
+# The pin is exact (`=0.3.21`), the version ONT-0's ledger measured and verdicted ORACLE.
+[package]
+name = "ont-oracle"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+shacl = { version = "=0.3.21", default-features = false }
+rudof_rdf = { version = "=0.3.21", default-features = false }
+serde_json = "1"
+serde_yaml = "0.9"
+
+[[bin]]
+name = "ont-oracle"
+path = "src/main.rs"

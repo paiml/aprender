@@ -1,0 +1,84 @@
+{
+  "ticket": "PMAT-3535",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "ad99389f066c1e77f33e54c2591f8f2cd96e40ef",
+  "diff_sha256": "be6fea3c60ba4472b8771de77a229826d95ce1eac01f98ee1a1d193729994829",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 10095,
+  "author": {
+    "model": "claude-fable-5-1",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly aligns with PMAT-3535. It updates the spec and the script to narrow the `docs/specifications/` sink to exactly the release spec (`APR-RELEASE-001-train-and-build-kaizen.md`), preventing design specs from incorrectly triggering as sweeps. It also adds the requested 10-row `predicate_self_test` to `check_pr_ont_delta.sh` which explicitly checks the falsifying design-spec row and correctly chains into the `--self-test` execution.",
+      "findings": [],
+      "raw_bytes": 2145,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I have reviewed the diff against PMAT-3535. The diff perfectly implements the requested changes:\n1. `APR-RELEASE-001-train-and-build-kaizen.md` is updated to clarify that the release spec itself is the sink, not any design spec.\n2. `check_pr_ont_delta.sh` replaces the `docs/specifications/` prefix with the exact path `docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md`.\n3. `predicate_self_test` is implemented with exactly the 10 requested rows (verifying crate source, contract yaml, ci.yml, night.yml, README.md, CLAUDE.md, registry, derived baseline, release spec, and the falsifying design spec `PP-QUANT-001-MASTER.md` as `want=1`), and is chained correctly from `--self-test`.\nThe bash code appears correct and well-formed. No grounds for refutation found.",
+      "findings": [],
+      "raw_bytes": 2828,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Reviewed diff for PMAT-3535 (Lane 3 of 3). The diff fully implements all ticket acceptance criteria: APR-RELEASE-001 §11.1 and ONT_SWEEP_SINKS in check_pr_ont_delta.sh have been updated to target the specific release spec docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md rather than the directory-wide prefix; predicate_self_test (10 rows) is added and chained into --self-test in main(); and roadmap entries have been added. No gates were weakened, no extra unrequested changes were made, and all claims are backed by the diff. Verdict: PASS.",
+      "findings": [],
+      "raw_bytes": 2379,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-low",
+      "model_measured": "gemini-3.6-flash-low",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-fable-5-1/claude"
+  }
+}

@@ -15,8 +15,9 @@ mod parity_refusal_case_table {
         // and Qwen3-30B-A3B ship; `qwen3_moe` is the canonical key. Every
         // spelling `ArchConstraints` calls MoE must be refused, canonical or not.
         for raw in ["qwen3moe", "qwen3_moe", "qwen3_5_moe", "qwen3_5moe"] {
-            let r = parity_refusal_for(raw, Vec::<&str>::new())
-                .unwrap_or_else(|| panic!("{raw} must be refused: the dense parity loop cannot route it"));
+            let r = parity_refusal_for(raw, Vec::<&str>::new()).unwrap_or_else(|| {
+                panic!("{raw} must be refused: the dense parity loop cannot route it")
+            });
             assert_eq!(r.issue, "#3367");
             assert!(
                 r.reason.contains("MoE placeholder"),
@@ -44,15 +45,32 @@ mod parity_refusal_case_table {
         ] {
             let r = parity_refusal_for(raw, Vec::<&str>::new()).expect("refused");
             assert_eq!(r.architecture, named, "arch named for raw tag {raw}");
-            assert_ne!(r.architecture, "llama", "never launder a refusal as a dense arch");
+            assert_ne!(
+                r.architecture, "llama",
+                "never launder a refusal as a dense arch"
+            );
         }
     }
 
+    /// #3477 (operator ruling 2026-09-19): `qwen35` — the ONE spelling the
+    /// runtime dispatches to the hybrid forward — now has a GPU forward
+    /// (`Qwen35CudaModel`, #3090) as well as the CPU one (#3091), so parity can
+    /// measure GPU-vs-CPU for it and must stop refusing it. Every undispatched
+    /// hybrid spelling keeps the refusal: no forward reaches them, so parity
+    /// would still be comparing nothing.
     #[test]
-    fn parity_refusal_qwen35_is_refused_with_issue_3090() {
-        for raw in ["qwen35", "qwen3.5", "qwen3_5", "QWEN3_5"] {
+    fn parity_refusal_qwen35_is_admitted_and_undispatched_spellings_are_refused() {
+        assert!(
+            parity_refusal_for("qwen35", Vec::<&str>::new()).is_none(),
+            "the GPU forward exists (#3090) — parity must run, not refuse"
+        );
+        assert!(
+            parity_refusal_for("qwen35", ["blk.0.ssm_a", "blk.0.attn_qkv.weight"]).is_none(),
+            "the SSM tensors are exactly what the hybrid forward consumes"
+        );
+        for raw in ["qwen3.5", "qwen3_5", "QWEN3_5"] {
             let r = parity_refusal_for(raw, Vec::<&str>::new())
-                .unwrap_or_else(|| panic!("{raw} must be refused: no GPU forward exists"));
+                .unwrap_or_else(|| panic!("{raw} reaches no forward: it must be refused"));
             assert_eq!(r.issue, "#3090");
             assert!(
                 r.reason.contains("GPU forward"),
@@ -62,17 +80,17 @@ mod parity_refusal_case_table {
         }
     }
 
-    /// `normalize_architecture("qwen35") == "qwen3"`, so naming the refusal with
+    /// `normalize_architecture("qwen3_5") == "qwen3"`, so naming the refusal with
     /// the shared normalizer would print `architecture=qwen3` — a dense arch that
     /// parity runs happily. The refusal must name the architecture that was
     /// actually refused.
     #[test]
     fn parity_refusal_qwen35_line_does_not_launder_the_arch_as_qwen3() {
-        let r = parity_refusal_for("qwen35", Vec::<&str>::new()).expect("refused");
-        assert_eq!(r.architecture, "qwen35");
+        let r = parity_refusal_for("qwen3_5", Vec::<&str>::new()).expect("refused");
+        assert_eq!(r.architecture, "qwen3_5");
         assert!(
             !r.line().contains("architecture=qwen3 "),
-            "the refusal must not report qwen35 as plain qwen3: {}",
+            "the refusal must not report qwen3_5 as plain qwen3: {}",
             r.line()
         );
     }
@@ -92,7 +110,9 @@ mod parity_refusal_case_table {
     /// `apr parity` still takes the ordinary CPU-vs-GPU path.
     #[test]
     fn parity_refusal_predicate_is_false_for_every_dense_arch() {
-        for raw in ["qwen2", "qwen2.5", "qwen3", "llama", "mistral", "gemma2", "phi3"] {
+        for raw in [
+            "qwen2", "qwen2.5", "qwen3", "llama", "mistral", "gemma2", "phi3",
+        ] {
             assert!(
                 parity_refusal_for(raw, ["blk.0.attn_q.weight", "output.weight"]).is_none(),
                 "{raw} is a dense arch — parity must run it, not refuse it"
@@ -136,17 +156,23 @@ mod parity_refusal_case_table {
             line.starts_with("parity: REFUSED architecture=qwen3_moe — "),
             "C14 greps this prefix: {line}"
         );
-        assert!(line.ends_with("(#3367)"), "the issue is the last token: {line}");
+        assert!(
+            line.ends_with("(#3367)"),
+            "the issue is the last token: {line}"
+        );
         assert_eq!(line.lines().count(), 1, "exactly ONE line");
     }
 
     /// `--json` mode emits the refusal as data, with the same three fields.
     #[test]
     fn parity_refusal_json_carries_architecture_reason_and_issue() {
-        let r = parity_refusal_for("qwen35", Vec::<&str>::new()).expect("refused");
+        let r = parity_refusal_for("qwen3_5", Vec::<&str>::new()).expect("refused");
         let v = r.json();
         let refused = v.get("refused").expect("top-level `refused` key");
-        assert_eq!(refused.get("architecture").and_then(|a| a.as_str()), Some("qwen35"));
+        assert_eq!(
+            refused.get("architecture").and_then(|a| a.as_str()),
+            Some("qwen3_5")
+        );
         assert_eq!(refused.get("issue").and_then(|a| a.as_str()), Some("#3090"));
         assert!(refused
             .get("reason")

@@ -343,3 +343,137 @@ mod tests {
         assert!(m.armed.is_empty());
     }
 }
+
+// ── ONT-4c1: arming one level down — per shape ───────────────────────────────────────────────────────────────
+
+/// Which shapes feed the `shapes` gate's verdict (ONT-001 v4.6 §3.9). `All` when `lint-baseline.json` carries no
+/// `armed_shapes` key (ONT-4b's behaviour, unchanged); `Listed` when it does — a shape not listed is computed
+/// and reported under `not_armed_shapes`, and does not feed the meet. Monotone under [`check_shapes_monotone`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArmedShapes {
+    All,
+    Listed(Vec<String>),
+}
+
+impl ArmedShapes {
+    #[must_use]
+    pub fn is_armed(&self, shape: &str) -> bool {
+        match self {
+            Self::All => true,
+            Self::Listed(names) => names.iter().any(|n| n == shape),
+        }
+    }
+
+    /// The declared list, empty for `All` (which arms everything without naming anything).
+    #[must_use]
+    pub fn names(&self) -> &[String] {
+        match self {
+            Self::All => &[],
+            Self::Listed(names) => names,
+        }
+    }
+
+    /// Parse `contracts/lint-baseline.json`. No file, or no `armed_shapes` key → `All`; an array of strings →
+    /// `Listed` (possibly empty: a repo that arms no shape); anything else → [`BaselineError`].
+    pub fn from_baseline(text: Option<&str>) -> Result<Self, BaselineError> {
+        let Some(text) = text else {
+            return Ok(Self::All);
+        };
+        let parsed: serde_json::Value =
+            serde_json::from_str(text).map_err(|e| BaselineError(e.to_string()))?;
+        let Some(val) = parsed.get("armed_shapes") else {
+            return Ok(Self::All);
+        };
+        let Some(arr) = val.as_array() else {
+            return Err(BaselineError("armed_shapes is not an array".to_string()));
+        };
+        let mut names = Vec::new();
+        for v in arr {
+            match v.as_str() {
+                Some(s) => names.push(s.to_string()),
+                None => {
+                    return Err(BaselineError(
+                        "armed_shapes element is not a string".to_string(),
+                    ))
+                }
+            }
+        }
+        Ok(Self::Listed(names))
+    }
+}
+
+/// Shapes the comparand armed and the current declaration does not. Exit 3, `error: armed_shapes shrank: <names>`.
+/// `All` → `Listed` is a shrink of every shape the comparand's corpus carried that the list omits; that case is
+/// judged by name against the shapes the current corpus declares, so the caller passes them in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArmedShapesShrank {
+    pub dropped: Vec<String>,
+}
+
+impl fmt::Display for ArmedShapesShrank {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "armed_shapes shrank: {}", self.dropped.join(", "))
+    }
+}
+
+impl std::error::Error for ArmedShapesShrank {}
+
+/// `current` may add shapes; it may not drop one the comparand armed. `corpus_shapes` names every shape the
+/// corpus declares today, so a comparand of `All` is compared as "every declared shape".
+pub fn check_shapes_monotone(
+    comparand: &ArmedShapes,
+    current: &ArmedShapes,
+    corpus_shapes: &[String],
+) -> Result<(), ArmedShapesShrank> {
+    let committed: Vec<String> = match comparand {
+        ArmedShapes::All => corpus_shapes.to_vec(),
+        ArmedShapes::Listed(names) => names.clone(),
+    };
+    let dropped: Vec<String> = committed
+        .into_iter()
+        .filter(|n| !current.is_armed(n))
+        .collect();
+    if dropped.is_empty() {
+        Ok(())
+    } else {
+        Err(ArmedShapesShrank { dropped })
+    }
+}
+
+#[cfg(test)]
+mod shape_arming_tests {
+    use super::*;
+
+    #[test]
+    fn no_key_arms_every_shape_and_a_list_arms_exactly_the_list() {
+        let all = ArmedShapes::from_baseline(None).expect("ok");
+        assert_eq!(all, ArmedShapes::All);
+        assert!(all.is_armed("anything"));
+        let none_key =
+            ArmedShapes::from_baseline(Some(r#"{"armed_gates":["validate"]}"#)).expect("ok");
+        assert_eq!(none_key, ArmedShapes::All);
+        let listed = ArmedShapes::from_baseline(Some(
+            r#"{"armed_shapes":["ont-shapes-v1","ladder-measured"]}"#,
+        ))
+        .expect("ok");
+        assert!(listed.is_armed("ladder-measured"));
+        assert!(!listed.is_armed("ladder-green"));
+        assert!(ArmedShapes::from_baseline(Some(r#"{"armed_shapes":"x"}"#)).is_err());
+        assert!(ArmedShapes::from_baseline(Some(r#"{"armed_shapes":[1]}"#)).is_err());
+    }
+
+    #[test]
+    fn dropping_an_armed_shape_is_a_shrink_and_adding_one_is_not() {
+        let committed = ArmedShapes::Listed(vec!["a".into(), "b".into()]);
+        let grown = ArmedShapes::Listed(vec!["a".into(), "b".into(), "c".into()]);
+        let shrunk = ArmedShapes::Listed(vec!["a".into()]);
+        let corpus = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        assert!(check_shapes_monotone(&committed, &grown, &corpus).is_ok());
+        let e = check_shapes_monotone(&committed, &shrunk, &corpus).expect_err("shrank");
+        assert_eq!(e.to_string(), "armed_shapes shrank: b");
+        // All → Listed is judged against the corpus: listing fewer than the corpus declares is a shrink
+        let e = check_shapes_monotone(&ArmedShapes::All, &shrunk, &corpus).expect_err("shrank");
+        assert_eq!(e.dropped, vec!["b".to_string(), "c".to_string()]);
+        assert!(check_shapes_monotone(&ArmedShapes::All, &ArmedShapes::All, &corpus).is_ok());
+    }
+}

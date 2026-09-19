@@ -84,7 +84,7 @@ pub(crate) mod format_factory;
 pub use batch_scheduler::*;
 pub use config::*;
 #[cfg(feature = "cuda")]
-pub use cuda::{BatchedDecodeState, CudaBackend, CudaInitError};
+pub use cuda::{BatchedDecodeState, CudaBackend, CudaInitError, Qwen35CudaModel, Qwen35CudaState};
 #[cfg(feature = "cuda")]
 pub use cuda_model::*;
 pub use model::*;

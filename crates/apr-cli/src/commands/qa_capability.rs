@@ -81,8 +81,8 @@ pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult>
         ));
     }
 
-    // Parse GGUF to get architecture string and tensor names
-    let Some((arch, tensor_names)) = extract_gguf_arch_and_tensors(&data) else {
+    // Parse GGUF to get architecture string and tensor (name, GGML type) pairs
+    let Some((arch, tensors)) = extract_gguf_arch_and_tensors(&data) else {
         let duration = start.elapsed();
         return Ok(GateResult::passed(
             "capability_match",
@@ -101,12 +101,19 @@ pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult>
     // `ssm_gate_result`.
     #[cfg(feature = "inference")]
     {
-        let tensor_refs: Vec<&str> = tensor_names.iter().map(|s| s.as_str()).collect();
+        let tensor_refs: Vec<&str> = tensors.iter().map(|(n, _)| n.as_str()).collect();
         let backend = if cfg!(feature = "cuda") {
             Backend::Gpu
         } else {
             Backend::Cpu
         };
+        // #3477 / PMAT-781/783/785: the hybrid's Gated DeltaNet projections are
+        // invisible to the dense construction-time quant gate (the qwen35 base
+        // model carries an empty layer list), so the GPU rung judges them here,
+        // from the header, before anything is uploaded.
+        if let Some(result) = hybrid_quant_gate_result(&arch, &tensors, backend, start.elapsed()) {
+            return Ok(result);
+        }
         if let Some(result) = ssm_gate_result(&arch, tensor_refs, backend, start.elapsed()) {
             return Ok(result);
         }
@@ -200,8 +207,8 @@ pub(crate) enum CapabilityVerdict {
     Declined(String),
 }
 
-/// Is this the architecture string the CPU runtime dispatches to the Qwen3.5
-/// (Gated DeltaNet) forward?
+/// Is this the architecture string the runtime dispatches to the Qwen3.5
+/// (Gated DeltaNet) hybrid forward?
 ///
 /// #3091: `infer/inference_result.rs` compares the GGUF architecture to the
 /// literal `"qwen35"` and, on a match, builds the model with
@@ -209,46 +216,59 @@ pub(crate) enum CapabilityVerdict {
 /// mirrors that comparison exactly: admitting a spelling the runtime does not
 /// dispatch (`qwen3_5`, `qwen3.5`) would have `apr qa` promise a load that
 /// `apr run` refuses — the very drift #3091 is about, with the sign flipped.
+///
+/// #3477: the comparison is no longer COPIED here. `realizar` exposes it as
+/// `gguf::hybrid_forward_handles`, and `apr parity` / `apr ptx-map` ask the same
+/// function, so the three tools cannot drift from the runtime or from each
+/// other.
 #[cfg(feature = "inference")]
 pub(crate) fn cpu_forward_handles(arch: &str) -> bool {
-    arch == "qwen35"
+    realizar::gguf::hybrid_forward_handles(arch)
 }
 
 /// Verdict for a GGUF carrying SSM / Gated DeltaNet tensors.
 ///
 /// `realizar::gguf::unsupported_architecture_reason` stays the single predicate
-/// for "does this file carry SSM tensors" (`apr ptx-map` and the parity refusal
-/// depend on it answering yes for qwen35, #3090). What changed in #3091 is the
-/// CPU half of its verdict: the CPU forward now runs Gated DeltaNet, so this
-/// gate re-judges that one case per backend instead of repeating the
-/// "NEITHER backend" sentence the runtime has outgrown.
+/// for "is there any forward for this SSM file", and since #3477 it answers NO
+/// REFUSAL for the hybrid the runtime dispatches — both backends implement it
+/// (CPU #3091, GPU #3090). The per-backend judgement left here is about THIS
+/// BINARY: a build without the `cuda` feature has no GPU backend linked in at
+/// all, so it cannot certify one.
 #[cfg(feature = "inference")]
 pub(crate) fn hybrid_ssm_verdict<'n>(
     arch: &str,
     tensor_names: impl IntoIterator<Item = &'n str>,
     backend: Backend,
 ) -> CapabilityVerdict {
+    // #3477: the hybrid is judged FIRST, because the shared predicate no longer
+    // refuses it — falling through would admit it on a non-cuda build's GPU
+    // backend, which does not exist.
+    if cpu_forward_handles(arch) {
+        return match backend {
+            Backend::Cpu => CapabilityVerdict::Admitted,
+            Backend::Gpu if cfg!(feature = "cuda") => CapabilityVerdict::Admitted,
+            Backend::Gpu => CapabilityVerdict::Declined(format!(
+                "Architecture '{arch}': the Gated DeltaNet GPU forward exists (#3090), but this \
+                 binary has no CUDA backend — it was built without `--features cuda`. The CPU \
+                 forward runs it here (#3091)."
+            )),
+        };
+    }
     let Some(reason) = realizar::gguf::unsupported_architecture_reason(arch, tensor_names) else {
         return CapabilityVerdict::Admitted;
     };
-    if !cpu_forward_handles(arch) {
-        return CapabilityVerdict::Declined(reason);
-    }
-    match backend {
-        Backend::Cpu => CapabilityVerdict::Admitted,
-        Backend::Gpu => CapabilityVerdict::Declined(format!(
-            "Architecture '{arch}': Gated DeltaNet runs on the CPU only — the GPU backend has no \
-             SSM kernels (#3090). Run it with `apr run --no-gpu` (CPU forward: #3091)."
-        )),
-    }
+    CapabilityVerdict::Declined(reason)
 }
 
 /// The Capability Match message for an architecture only the CPU rung certifies.
+///
+/// #3477: reachable only on a build WITHOUT `cuda` — the GPU forward for the
+/// hybrid exists (#3090); what a non-cuda binary lacks is the backend itself.
 #[cfg(feature = "inference")]
 pub(crate) fn cpu_only_pass_message(arch: &str) -> String {
     format!(
-        "Architecture '{arch}': CPU-only — Gated DeltaNet runs on the CPU (#3091); the GPU \
-         backend has no SSM kernels (#3090), GPU gates skipped"
+        "Architecture '{arch}': CPU-only in this binary — Gated DeltaNet runs on the CPU (#3091) \
+         and on the GPU (#3090), but this build has no CUDA backend, GPU gates skipped"
     )
 }
 
@@ -283,6 +303,39 @@ pub(crate) fn ssm_gate_result<'n>(
             duration,
         ));
     }
+    Some(GateResult::failed(
+        "capability_match",
+        &reason,
+        Some(1.0),
+        Some(0.0),
+        duration,
+    ))
+}
+
+/// The Capability Match FAIL for a hybrid GGUF whose Gated DeltaNet weights
+/// carry a quant type with no GPU GEMV kernel, or `None`.
+///
+/// PMAT-781/783/785: the GPU weight upload decodes an unrecognized GGML type as
+/// Q4_K, so such a file would produce garbage logits rather than an error. The
+/// dense construction-time gate (`OwnedQuantizedModel::has_gpu_unsupported_quant`)
+/// cannot catch it for the hybrid — the `OwnedQuantizedModel` built for `qwen35`
+/// has an EMPTY layer list, the DeltaNet weights living in `Qwen35Model` — so
+/// the verdict is taken from the header here. Only the GPU rung asks: the CPU
+/// forward decodes every quant type correctly.
+#[cfg(feature = "inference")]
+pub(crate) fn hybrid_quant_gate_result(
+    arch: &str,
+    tensors: &[(String, u32)],
+    backend: Backend,
+    duration: Duration,
+) -> Option<GateResult> {
+    if backend != Backend::Gpu {
+        return None;
+    }
+    let reason = realizar::gguf::hybrid_gpu_quant_refusal(
+        arch,
+        tensors.iter().map(|(n, q)| (n.as_str(), *q)),
+    )?;
     Some(GateResult::failed(
         "capability_match",
         &reason,
@@ -327,10 +380,10 @@ pub(crate) fn cpu_only_architecture(path: &Path) -> bool {
     if data.len() < 4 || &data[0..4] != b"GGUF" {
         return false;
     }
-    let Some((arch, tensor_names)) = extract_gguf_arch_and_tensors(&data) else {
+    let Some((arch, tensors)) = extract_gguf_arch_and_tensors(&data) else {
         return false;
     };
-    is_cpu_only_architecture(&arch, tensor_names.iter().map(String::as_str))
+    is_cpu_only_architecture(&arch, tensors.iter().map(|(n, _)| n.as_str()))
 }
 
 /// Without the `inference` feature there is no runtime to speak for.
@@ -339,13 +392,49 @@ pub(crate) fn cpu_only_architecture(_path: &Path) -> bool {
     false
 }
 
-/// Extract the architecture string from GGUF metadata.
+/// Is the model at `path` a hybrid the DENSE GGUF loader refuses?
+///
+/// #3477: `cpu_only_architecture` answers "which backend", which for `qwen35` on
+/// a cuda build is now BOTH (#3090 GPU, #3091 CPU). A separate question survives
+/// it: a gate built on `OwnedQuantizedModel::from_mapped` — Ollama parity,
+/// cross-format parity, GPU speedup, GPU state isolation — still cannot run,
+/// because that loader has no hybrid path on either rung. Those gates SKIP with
+/// that reason; they must not FAIL, and they must not be answered with a number
+/// measured on some other model shape.
+#[cfg(feature = "inference")]
+pub(crate) fn hybrid_loader_architecture(path: &Path) -> bool {
+    let Ok(data) = std::fs::read(path) else {
+        return false;
+    };
+    if data.len() < 4 || &data[0..4] != b"GGUF" {
+        return false;
+    }
+    let Some((arch, _)) = extract_gguf_arch_and_tensors(&data) else {
+        return false;
+    };
+    cpu_forward_handles(&arch)
+}
+
+/// Without `inference` there is no loader to speak for.
+#[cfg(not(feature = "inference"))]
+pub(crate) fn hybrid_loader_architecture(_path: &Path) -> bool {
+    false
+}
+
+/// Extract the architecture string and the tensor table from GGUF metadata.
 ///
 /// Uses aprender's GGUF reader to parse metadata without loading tensors.
-fn extract_gguf_arch_and_tensors(data: &[u8]) -> Option<(String, Vec<String>)> {
+/// #3477: the GGML type travels with the name, because the hybrid GPU quant
+/// gate judges `(name, type)` pairs — reading the names alone was what let an
+/// unsupported-quant DeltaNet tensor through.
+fn extract_gguf_arch_and_tensors(data: &[u8]) -> Option<(String, Vec<(String, u32)>)> {
     let reader = aprender::format::gguf::reader::GgufReader::from_bytes(data.to_vec()).ok()?;
     let arch = reader.architecture()?;
-    let tensors = reader.tensors.into_iter().map(|t| t.name).collect();
+    let tensors = reader
+        .tensors
+        .into_iter()
+        .map(|t| (t.name, t.dtype))
+        .collect();
     Some((arch, tensors))
 }
 
@@ -369,26 +458,95 @@ mod qa_capability_ssm_tests {
         );
     }
 
-    // The GPU has no Gated DeltaNet kernels (#3090) — that refusal stands, and
-    // must not be re-worded into the old "NEITHER backend" claim.
+    // #3477 (operator ruling 2026-09-19): the GPU forward for the hybrid exists
+    // (`Qwen35CudaModel`, #3090), so a binary built WITH `cuda` must admit it
+    // on the GPU backend. A binary built WITHOUT `cuda` has no GPU backend
+    // linked in at all — that is the only thing left to decline, and the reason
+    // must say so rather than claiming the kernels do not exist.
     #[test]
-    fn qwen35_ssm_model_is_declined_on_gpu() {
-        let CapabilityVerdict::Declined(reason) =
-            hybrid_ssm_verdict("qwen35", ["blk.0.ssm_a"], Backend::Gpu)
-        else {
-            panic!("the GPU has no Gated DeltaNet kernels (#3090) — it must decline");
+    fn qwen35_ssm_model_is_admitted_on_gpu_under_cuda() {
+        let verdict = hybrid_ssm_verdict("qwen35", ["blk.0.ssm_a"], Backend::Gpu);
+        if cfg!(feature = "cuda") {
+            assert_eq!(
+                verdict,
+                CapabilityVerdict::Admitted,
+                "the GPU runs qwen35 since #3090 — the capability gate must admit it"
+            );
+            return;
+        }
+        let CapabilityVerdict::Declined(reason) = verdict else {
+            panic!("a binary without the cuda feature has no GPU backend to certify");
         };
+        assert!(
+            reason.contains("no CUDA backend"),
+            "the reason must be this BINARY's missing backend, not missing kernels: {reason}"
+        );
         assert!(
             reason.contains("#3090"),
             "must cite the GPU issue: {reason}"
         );
         assert!(
-            reason.contains("CPU"),
-            "must point the user at the backend that does run it: {reason}"
-        );
-        assert!(
             !reason.contains("NEITHER the CPU nor the GPU"),
             "the CPU claim is false since #3091: {reason}"
+        );
+        assert!(
+            !reason.contains("the GPU backend has no"),
+            "the GPU backend HAS Gated DeltaNet kernels since #3090: {reason}"
+        );
+    }
+
+    // #3477 / PMAT-781/783/785: a Gated DeltaNet projection carrying a quant
+    // type with no GPU GEMV kernel must FAIL the GPU rung loudly. The dense
+    // construction-time gate cannot see these tensors at all (the qwen35 base
+    // model has an empty layer list), so before this the file went to the GPU
+    // and was decoded as Q4_K.
+    #[test]
+    fn qwen35_with_a_gpu_unsupported_quant_fails_the_gpu_rung() {
+        let tensors = vec![
+            ("token_embd.weight".to_string(), 12u32),
+            ("blk.0.ssm_beta.weight".to_string(), 11), // Q3_K: no GPU kernel
+        ];
+        let result = super::hybrid_quant_gate_result(
+            "qwen35",
+            &tensors,
+            Backend::Gpu,
+            std::time::Duration::from_millis(1),
+        )
+        .expect("a Q3_K DeltaNet projection has no GPU GEMV kernel");
+        assert!(
+            !result.passed,
+            "the GPU rung must FAIL, not warn: {result:?}"
+        );
+        assert!(
+            result.message.contains("blk.0.ssm_beta.weight"),
+            "the message must name the tensor: {}",
+            result.message
+        );
+        // The CPU decodes every quant type correctly — it must not be failed.
+        assert!(
+            super::hybrid_quant_gate_result(
+                "qwen35",
+                &tensors,
+                Backend::Cpu,
+                std::time::Duration::from_millis(1)
+            )
+            .is_none(),
+            "the CPU forward runs any quant type — only the GPU rung asks"
+        );
+        // A hybrid whose projections are all GPU-eligible passes through.
+        let ok = vec![
+            ("blk.0.attn_qkv.weight".to_string(), 8u32),
+            ("blk.0.ssm_out.weight".to_string(), 12),
+        ];
+        assert!(
+            super::hybrid_quant_gate_result(
+                "qwen35",
+                &ok,
+                Backend::Gpu,
+                std::time::Duration::from_millis(1)
+            )
+            .is_none(),
+            "Q8_0/Q4_K have verified GPU kernels — this model is GPU-eligible"
         );
     }
 
@@ -405,17 +563,19 @@ mod qa_capability_ssm_tests {
                 panic!("'{arch}' is not dispatched to forward_qwen35 — it must be declined");
             };
             assert!(
-                reason.contains("NEITHER the CPU nor the GPU"),
-                "an undispatched hybrid keeps the original refusal: {reason}"
+                reason.contains("no CPU or GPU forward for architecture"),
+                "an undispatched hybrid keeps the refusal: {reason}"
             );
         }
     }
 
-    // #3477: the GPU declining is not the end of the gate. The runtime serves
-    // this model on the CPU (`apr run` → `forward_qwen35`), so `apr qa` must be
-    // able to say PASS about the backend that runs it and skip the GPU gates —
-    // the FAIL turned 8 of 12 gates into "Skipped due to capability match
-    // failure" and exited 5 on a model that generates correct text.
+    // #3477: on a cuda build the gate no longer stops here at all — the GPU
+    // forward exists (#3090), so the hybrid falls through to the ordinary
+    // per-op GPU check like any other architecture. On a build without `cuda`
+    // there is no GPU backend to certify, and the CPU rung still carries the
+    // report (the earlier FAIL turned 8 of 12 gates into "Skipped due to
+    // capability match failure" and exited 5 on a model that generates correct
+    // text).
     #[test]
     fn qwen35_on_the_gpu_backend_is_a_cpu_only_pass() {
         let result = super::ssm_gate_result(
@@ -423,8 +583,15 @@ mod qa_capability_ssm_tests {
             ["token_embd.weight", "blk.0.ssm_a"],
             Backend::Gpu,
             std::time::Duration::from_millis(1),
-        )
-        .expect("a hybrid SSM model is never simply admitted on the GPU");
+        );
+        if cfg!(feature = "cuda") {
+            assert!(
+                result.is_none(),
+                "the GPU runs qwen35 (#3090) — the per-op GPU check must run, not a CPU-only PASS: {result:?}"
+            );
+            return;
+        }
+        let result = result.expect("without cuda there is no GPU backend to certify");
         assert!(
             result.passed && !result.skipped,
             "the CPU rung certifies this model, so the gate PASSES: {result:?}"
@@ -436,7 +603,7 @@ mod qa_capability_ssm_tests {
         );
         assert!(
             result.message.contains("#3091") && result.message.contains("#3090"),
-            "the message must cite the CPU forward and the missing GPU kernels: {}",
+            "the message must cite both forwards: {}",
             result.message
         );
         assert!(
@@ -474,9 +641,11 @@ mod qa_capability_ssm_tests {
     // must answer no, or a GPU-capable model would lose its GPU gates.
     #[test]
     fn only_a_gpu_declined_cpu_running_architecture_is_cpu_only() {
-        assert!(
+        assert_eq!(
             super::is_cpu_only_architecture("qwen35", ["blk.0.ssm_a"]),
-            "the GPU declines qwen35 (#3090) and the CPU runs it (#3091)"
+            !cfg!(feature = "cuda"),
+            "#3477: with cuda the GPU runs qwen35 (#3090) so its GPU gates must NOT be skipped; \
+             without cuda this binary has no GPU backend and the CPU rung carries the report"
         );
         assert!(
             !super::is_cpu_only_architecture("qwen2", ["blk.0.attn_q.weight"]),

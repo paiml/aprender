@@ -126,7 +126,28 @@ jobs:
   # mounts, same env) but moves the pull into a step the workflow controls,
   # giving us up to ~13 minutes of retry headroom before declaring the
   # registry unreachable. Mirrored in the `mutants` job below.
-  workspace-test:
+  # PACK-001 (2026-09-18): the 13-minute nextest run and the 10-minute explicit
+  # integration list were ONE serial job, so five gx10 + three yoga clean-room
+  # runners sat idle while a merge-queue entry waited on a single box (measured
+  # over 24 h: intel 15 / gx10 6 / yoga 5 of 27 workspace-tests; gx10 mean 16 min,
+  # intel 18, intel worst 51 under contention). This job is now a 3-way matrix:
+  # nextest `--partition hash:N/3` splits the lib tests by stable hash, and the
+  # explicit-command runner takes every 3rd fragment (`--shard N/3`). The once-only
+  # steps (GPU crates, compute, quick tier, guards) run on shard 1. Each shard
+  # owns its cargo state (registry + target parent keyed by PR_OR_REF-sN, see the
+  # env below): the test-binary compile is therefore repeated per shard, and it is
+  # cheap because codegen comes from the shared sccache (measured ~1 min on a warm
+  # cache vs 13 min of test execution, which is the part that now runs 3-wide).
+  # The check-run every consumer reads -- branch protection, `gate`, the BSE-17
+  # reuse lookup by check_name -- is the fan-in job `workspace-test` below, which
+  # fails unless every shard passed.
+  workspace-test-shard:
+    name: workspace-test-shard (${{ matrix.shard }}/${{ matrix.shards }})
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+        shards: [3]
     # PMAT-3138 (#3138): arch-neutral -- intel, yoga OR gx10. Measured 2026-09-12 on
     # gx10 with this image and env, --no-fail-fast: step 1 (59k tests) 10.6 min vs
     # 34.5 on intel, step 2 (102 tree readers) 6.7 vs 27.4, the over-the-cap
@@ -157,7 +178,16 @@ jobs:
       # of a path this job already spelled five times (PMAT-1077).
       SCCACHE_HOST_DIR: /home/noah/data/sccache
       IMAGE: localhost:5000/sovereign-ci:stable
-      PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
+      # Per-SHARD, not per-PR: the first full-tier run (35361149112) put two
+      # shards on the same host and both unpacked the same registry mount at
+      # once -- "failed to unpack package aws-runtime" from `cargo metadata`,
+      # exit 102 in 60 s. The registry (`cargo-ci/registry/<PR_OR_REF>`) and
+      # the target parent (`targets/aprender-ci/<PR_OR_REF>/run-<id>`) both key
+      # on this value, so suffixing it isolates a shard's whole cargo state and
+      # keeps the reclaim planner's `run-<id>` naming intact under each parent.
+      PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}-s${{ matrix.shard }}
+      SHARD: ${{ matrix.shard }}
+      SHARDS: ${{ matrix.shards }}
     steps:
       - name: Pre-checkout ownership restore (EACCES self-heal)
         # Five-whys: the end-of-job "Fix file ownership" step is
@@ -482,12 +512,13 @@ jobs:
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
+            -e SHARD -e SHARDS \
             -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             "$IMAGE" \
-            cargo nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
+            cargo nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --partition "hash:${SHARD}/${SHARDS}"
       - name: "GPU crates on their default features (per-package resolve, no device needed)"
-        if: steps.tier.outputs.tier == 'full'
+        if: steps.tier.outputs.tier == 'full' && matrix.shard == 1
         # aprender-gpu + aprender-cuda-edge, un-darked from the required check (T0 of the
         # NVIDIA CUDA Rust spec, #3062). A per-package resolve keeps `cuda` OFF (see the
         # comment on the workspace line above); the `driver`/`kernels`/`memory`/`ptx` tests
@@ -511,7 +542,7 @@ jobs:
             "$IMAGE" \
             cargo nextest run --profile ci -p aprender-gpu -p aprender-cuda-edge --lib
       - name: Compute tests (tolerate SIGSEGV at exit — all tests pass but harness crashes on cleanup)
-        if: steps.tier.outputs.tier == 'full'
+        if: steps.tier.outputs.tier == 'full' && matrix.shard == 1
         run: |
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
@@ -598,13 +629,43 @@ jobs:
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
+            -e SHARD -e SHARDS \
             "$IMAGE" \
-            bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d
+            bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d --shard "${SHARD}/${SHARDS}"
+      # PACK-001: the examples build used to be fragment 350 of the explicit
+      # list. Measured on the first sharded full-tier run (35361149112, shard 1
+      # on yoga): 489 s of that shard's 794 s integration phase was this ONE
+      # command, so round-robin sharding could never balance it -- a shard that
+      # drew it was the long pole regardless. It is its own step on shard 3
+      # (whose fragment share is the lightest), so the three shards finish
+      # together. Not a fragment because it is a build, not a test target, and
+      # no wiring reader (check_model_tests_wired, check_beats_gated) names it.
+      - name: Build every example (workspace, keep-going)
+        if: steps.tier.outputs.tier == 'full' && matrix.shard == 3
+        timeout-minutes: 40
+        run: |
+          set -euo pipefail
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            -e SHARD -e SHARDS \
+            "$IMAGE" \
+            cargo build --examples --workspace --keep-going
       # BSE-17 quick tier, part 1: the selected crates' unit and integration
       # targets (default features) under the same image and mounts as the full
       # tier. Empty selection (a scripts/docs PR) skips this step; part 2 still runs.
       - name: "Quick tier: lib + integration tests of the selected crates (BSE-17)"
-        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.crates != ''
+        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1 && steps.tier.outputs.crates != ''
         # 20, not 60 (PMAT-1098, #3084). A quick tier that is ALLOWED an hour is
         # not a quick tier, and 60 is the number that let part 2 burn 55 minutes
         # (run 34449608126) before dying at the cap under fleet load on #3063
@@ -671,7 +732,7 @@ jobs:
       # reads this exclude list out of this file and drops their targets), so the
       # exclusion removes nothing the filterset asks for.
       - name: "Quick tier: every test target that reads the tree (BSE-17)"
-        if: steps.tier.outputs.tier == 'quick'
+        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1
         # 45, not 20. Measured 2026-09-11 under train load, this PR's own runs never fit 20: run 34542045481 on
         # yoga-build2 compiled 811 crates in ~9 min (cold per-run target dir, warm shared sccache) and was part way
         # through 65,266 tests at the cap; attempt 2 on intel-clean-room-15 timed out at 20 min too. The ~6 min
@@ -732,7 +793,7 @@ jobs:
       # --locked: a quick tier that silently rewrites Cargo.lock would be a
       # different dependency graph from the one the PR is proposing.
       - name: "Quick tier: cargo check --workspace (over-the-cap integration, BSE-17 rule (i))"
-        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1'
+        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1' && matrix.shard == 1
         timeout-minutes: 20
         env:
           REASON: ${{ steps.tier.outputs.reason }}
@@ -767,6 +828,7 @@ jobs:
           printf 'workspace-test REUSED: %s\n' "${{ steps.tier.outputs.reason }}"
           printf 'cited PR head: %s\n' "${{ steps.tier.outputs.cite }}"
       - name: Build.rs crate-root escape check (v0.31.1 yank guard)
+        if: matrix.shard == 1
         # Static Poka-Yoke: flags build.rs files that panic on files outside
         # CARGO_MANIFEST_DIR, which break `cargo install` from crates.io.
         # See scripts/check_build_rs_paths.sh for the full rationale.
@@ -778,6 +840,7 @@ jobs:
             "$IMAGE" \
             bash scripts/check_build_rs_paths.sh
       - name: apr-format leaf sovereignty guard (#2231)
+        if: matrix.shard == 1
         # Poka-Yoke: prove the extracted `apr-format` leaf pulls no ML/GPU/
         # tokenizer/framework crate (so consumers `cargo add apr-format` without
         # aprender-core + trueno/wgpu). Discriminating: PASSES on apr-format +
@@ -804,6 +867,61 @@ jobs:
             -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
             "$IMAGE" \
             bash -c 'chown -R 1000:1000 /workspace || true; chown -R 1000:1000 /usr/local/cargo/registry || true; chown -R 1000:1000 /workspace/target || true'
+
+  # PACK-001: the check-run named `workspace-test`. Branch protection requires
+  # this context, `gate` needs it, and the BSE-17 reuse lookup reads it by
+  # check_name on the PR head -- so the name stays on ONE job that fans the
+  # shards in. `if: always()` so a failed shard still produces a red check here
+  # instead of a skipped one (a skipped required check blocks nothing and says
+  # nothing). Every non-success matrix result is named.
+  workspace-test:
+    needs: [workspace-test-shard]
+    if: always()
+    runs-on: [self-hosted, Linux, clean-room]
+    timeout-minutes: 10
+    steps:
+      - name: Every shard passed
+        env:
+          SHARD_RESULT: ${{ needs.workspace-test-shard.result }}
+        run: |
+          set -euo pipefail
+          printf 'workspace-test-shard matrix result: %s\n' "$SHARD_RESULT"
+          case "$SHARD_RESULT" in
+            success) echo "workspace-test: all shards green" ;;
+            *) echo "::error::workspace-test: shard matrix result is '$SHARD_RESULT' (a cancelled or skipped shard is not a pass)"; exit 1 ;;
+          esac
+
+  # PACK-001: mini-m4 had taken ZERO jobs in the 24 h measured -- nothing in any
+  # workflow named macOS. The multiplatform dogfood requires a mini receipt at
+  # post-publish and the three macOS-only defect classes on record (#2567 aarch64
+  # scalar GEMV, #2568 an OOM guard that reads /proc/meminfo, #2572 a metal-only
+  # dep) were each found only by building there. This lane is the cheap version:
+  # a locked workspace check plus the CLI's lib tests, on the pinned toolchain
+  # (rust-toolchain.toml; rustup on mini holds 1.93.0). No docker on macOS, so
+  # the runner's own persistent target dir is used and nothing is bind-mounted.
+  # Not in `gate`'s needs yet: first-green proof on a real PR before it may block.
+  mac-check:
+    runs-on: [self-hosted, macOS, ARM64, apple-silicon, m4, mini]
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain is the pinned one
+        run: |
+          set -euo pipefail
+          rustup show active-toolchain
+          cargo --version
+      # First run on mini (PR #3488, 2026-09-18) found the first macOS-only fact
+      # in two minutes: crates/aprender-profile/src/main.rs is a compile_error!
+      # on non-Linux by design ("renacer requires Linux (ptrace syscall
+      # tracing)"). That crate is excluded here on purpose; any OTHER crate that
+      # fails to check on macOS is a finding this lane exists to surface.
+      - name: cargo check --workspace --all-targets --locked (minus the Linux-only profiler)
+        run: cargo check --workspace --all-targets --locked --exclude aprender-profile
+      - name: apr-cli lib tests (nextest, ci profile)
+        run: cargo nextest run --profile ci -p apr-cli --lib
 
   # Poka-yoke (aprender#2269): fail fast if ANY self-hosted job omits a
   # discriminating runner label, so a bare [self-hosted, X64, Linux] selector
@@ -935,6 +1053,15 @@ jobs:
       # --event/--branch, check_hardcoded_paths --full-if-capable) keep their
       # own steps below: an argument is a claim this runner cannot derive.
       - name: Every cargo-free guard runs, and every failure is reported
+        # infra#721: the guards that read GitHub (check_silicon_coverage.sh's job
+        # ledger, check_roadmap_completion_is_cited.sh's `gh pr view`) used the
+        # runner's /opt/ci-gh login -- the SAME 5,000/h quota as every agent
+        # session on the operator's account. When three sessions drained it at
+        # 07:50Z on 2026-09-19, check_silicon_coverage went NO-GO ("job ledger is
+        # EMPTY") on merge-queue run 35430069580 and evicted #3488. GH_TOKEN wins
+        # over the config-dir login in gh, and github.token's 1,000/h is per job.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: bash scripts/guard_tree.sh --no-cargo
       # scripts/tests/guard_tree_test.sh is guard_tree.sh's OWN case table
       # (BSE-01, PMAT-1062) -- it proves guard_tree.sh's no-fail-fast

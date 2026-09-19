@@ -1,0 +1,77 @@
+{
+  "schema": "apr-model-ladder-receipt/v1",
+  "host": "lambda",
+  "version": "0.68.1",
+  "sha": "deadbee",
+  "isa": "x86_64",
+  "gpu": "fixture GPU",
+  "cc": "8.9",
+  "date": "2026-09-19",
+  "apr_version": "0.68.1",
+  "executed": 2,
+  "red": 0,
+  "rungs": [
+    {
+      "id": "rung-a",
+      "present": true,
+      "sha_ok": true,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "required": true,
+      "qa_rc": 0,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "ok"
+      },
+      "golden_output": {
+        "passed": true,
+        "skipped": false,
+        "message": "ok"
+      },
+      "backends": {
+        "cpu": {
+          "ran": true,
+          "fallback": false,
+          "rc": 0
+        },
+        "cuda": {
+          "ran": true,
+          "fallback": false,
+          "rc": 0
+        }
+      },
+      "green": true
+    },
+    {
+      "id": "rung-b",
+      "present": true,
+      "sha_ok": true,
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "required": true,
+      "qa_rc": 0,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "ok"
+      },
+      "golden_output": {
+        "passed": true,
+        "skipped": false,
+        "message": "ok"
+      },
+      "backends": {
+        "cpu": {
+          "ran": true,
+          "fallback": false,
+          "rc": 0
+        },
+        "cuda": {
+          "ran": true,
+          "fallback": false,
+          "rc": 0
+        }
+      },
+      "green": true
+    }
+  ]
+}
