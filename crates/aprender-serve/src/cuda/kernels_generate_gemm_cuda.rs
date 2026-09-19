@@ -288,6 +288,40 @@ impl CudaKernels {
     fn generate_norm_rope_ptx(kernel_type: &KernelType, target: &str) -> Option<String> {
         Self::generate_rmsnorm_ptx(kernel_type, target)
             .or_else(|| Self::generate_rope_residual_ptx(kernel_type, target))
+            .or_else(|| Self::generate_gdn_ptx(kernel_type, target))
+    }
+
+    /// PMAT-3477 (#3090): PTX for the six Gated `DeltaNet` kernels.
+    ///
+    /// Its own function rather than an arm of `generate_rmsnorm_ptx` so neither
+    /// match grows past the complexity ceiling.
+    fn generate_gdn_ptx(kernel_type: &KernelType, target: &str) -> Option<String> {
+        use trueno_gpu::kernels::gdn::{
+            CausalConv1dSiluKernel, DeltaRuleRecurrenceKernel, GatedRmsNormKernel, GdnGatesKernel,
+            PerHeadL2NormKernel, SigmoidGateKernel,
+        };
+        let ptx = match kernel_type {
+            KernelType::GdnCausalConv1dSilu { channels, kernel_size } => {
+                CausalConv1dSiluKernel::new(*channels, *kernel_size).emit_ptx_for_target(target)
+            },
+            KernelType::GdnPerHeadL2Norm { head_dim, num_heads, epsilon } => {
+                PerHeadL2NormKernel::new(*head_dim, *num_heads, *epsilon).emit_ptx_for_target(target)
+            },
+            KernelType::GdnGates { num_heads } => {
+                GdnGatesKernel::new(*num_heads).emit_ptx_for_target(target)
+            },
+            KernelType::GdnDeltaRule { num_v_heads, head_v_dim } => {
+                DeltaRuleRecurrenceKernel::new(*num_v_heads, *head_v_dim).emit_ptx_for_target(target)
+            },
+            KernelType::GdnGatedRmsNorm { head_dim, num_heads, epsilon } => {
+                GatedRmsNormKernel::new(*head_dim, *num_heads, *epsilon).emit_ptx_for_target(target)
+            },
+            KernelType::GdnSigmoidGate { n } => {
+                SigmoidGateKernel::new(*n).emit_ptx_for_target(target)
+            },
+            _ => return None,
+        };
+        Some(ptx)
     }
 
     /// Generate PTX for activation, fusion, and miscellaneous kernels

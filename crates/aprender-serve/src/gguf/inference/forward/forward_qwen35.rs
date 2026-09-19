@@ -851,7 +851,11 @@ impl<'a> Qwen35Model<'a> {
         Ok(logits)
     }
 
-    fn forward_deltanet(
+    /// One Gated `DeltaNet` layer, in place on `hidden`.
+    ///
+    /// `pub(crate)` (PMAT-3477, #3090) so the GPU model's per-layer parity test can
+    /// drive the CPU reference layer by layer with teacher forcing. No logic change.
+    pub(crate) fn forward_deltanet(
         &self,
         d: &Qwen35OwnedDeltaNetLayer,
         hidden: &mut [f32],
@@ -982,7 +986,12 @@ impl<'a> Qwen35Model<'a> {
         Ok(())
     }
 
-    fn forward_attention(
+    /// One full-attention layer, in place on `hidden`.
+    ///
+    /// `pub(crate)` (PMAT-3477, #3090) so the GPU parity test can advance the CPU
+    /// reference across the interleaved attention layers while it compares the
+    /// `DeltaNet` ones. No logic change.
+    pub(crate) fn forward_attention(
         &self,
         a: &Qwen35OwnedAttentionLayer,
         hidden: &mut [f32],
