@@ -1,0 +1,208 @@
+{
+  "ticket": "PMAT-3090",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 101 commit(s); judged against origin/main",
+  "head": "72c4864eeed111635f0398605cb7efc7cb9fe114",
+  "diff_sha256": "9cff835aae6cf6f48d37b5f020fe986fc7ebd6f49dfc41620ca884c16e9031f4",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 7180,
+  "author": {
+    "model": "claude-fable-5-1",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff exactly matches the requirements of PMAT-3090. It modifies only the specified contract file to update the GPU forward parity invariants. QHF-GPU-008 is properly restated for exact-arithmetic comparison for GDN and attention, QHF-GPU-009 introduces the end-to-end production CPU parity guard (argmax and cosine floor) without a tolerance field, and FALSIFY-QHF-009 correctly orchestrates the ladder receipts without referencing a dangling cargo test.",
+      "findings": [
+        {
+          "claim": "PR edits ONE file, contracts/qwen35-hybrid-forward-v1.yaml, with no code changes.",
+          "file": "contracts/qwen35-hybrid-forward-v1.yaml",
+          "grounding": "cited",
+          "line": 1
+        },
+        {
+          "claim": "QHF-GPU-008 requires every GDN and attention op per layer per token <= 1e-3 relative vs the exact reference, and names the test in the property.",
+          "file": "contracts/qwen35-hybrid-forward-v1.yaml",
+          "grounding": "cited",
+          "line": 131
+        },
+        {
+          "claim": "NEW QHF-GPU-009 specifies end-to-end vs production CPU with identical argmax and cosine >= 0.996 (measured 0.998348), cites DP4A failure #3513, and carries no tolerance field.",
+          "file": "contracts/qwen35-hybrid-forward-v1.yaml",
+          "grounding": "cited",
+          "line": 136
+        },
+        {
+          "claim": "NEW FALSIFY-QHF-009 specifies its test runs on EACH required host through scripts/model_ladder.sh receipts read by check_model_ladder.sh, and avoids binding the dangling cargo test.",
+          "file": "contracts/qwen35-hybrid-forward-v1.yaml",
+          "grounding": "cited",
+          "line": 181
+        }
+      ],
+      "raw_bytes": 4151,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff strictly conforms to ticket PMAT-3090. Only contracts/qwen35-hybrid-forward-v1.yaml is modified with zero code changes. QHF-GPU-008 is restated to evaluate device GDN and attention ops against an exact-arithmetic f32 reference (relative tolerance <= 1e-3) rather than the quantized CPU forward, naming the carrying test qwen35_cuda_the_parity_floor_is_the_cpu_references_own_activation_quantization. QHF-GPU-009 introduces an end-to-end production CPU invariant requiring identical argmax at every position and cosine >= 0.996 (measured 0.998348 min with margin at 1ed0adf36, citing DP4A profile failure as #3513) with no tolerance field. FALSIFY-QHF-009 enforces multi-host model ladder receipts (lambda sm_89, gx10 sm_121) while adhering to strict-test-binding. No gates are weakened and no refutations were found.",
+      "findings": [
+        {
+          "claim": "QHF-GPU-008 restates the invariant to compare device GDN and attention ops per layer and per token against an exact f32 arithmetic reference (<= 1e-3 relative), naming the carrying test qwen35_cuda_the_parity_floor_is_the_cpu_references_own_activation_quantization in the property.",
+          "file": "contracts/qwen35-hybrid-forward-v1.yaml",
+          "grounding": "cited",
+          "line": 131
+        },
+        {
+          "claim": "QHF-GPU-009 is added as an invariant specifying end-to-end parity against the production CPU forward with identical argmax at every position and per-position cosine >= 0.996 (measured min 0.998348 on 0.8B at 1ed0adf36), citing DP4A recurrence failure as #3513, and carries no tolerance field.",
+          "file": "contracts/qwen35-hybrid-forward-v1.yaml",
+          "grounding": "cited",
+          "line": 135
+        },
+        {
+          "claim": "FALSIFY-QHF-009 is added requiring testing on EACH required host (lambda sm_89, gx10 sm_121) via scripts/model_ladder.sh receipts verified by check_model_ladder.sh, binding only commands on main to obey strict-test-binding.",
+          "file": "contracts/qwen35-hybrid-forward-v1.yaml",
+          "grounding": "cited",
+          "line": 181
+        }
+      ],
+      "raw_bytes": 5161,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff strictly matches all PMAT-3090 requirements: contract restatements for QHF-GPU-008, addition of QHF-GPU-009 (with no tolerance field), and addition of FALSIFY-QHF-009 in contracts/qwen35-hybrid-forward-v1.yaml. No code changes or forbidden modifications are present.",
+      "findings": [
+        {
+          "claim": "QHF-GPU-008 is restated to require every Gated DeltaNet and attention op to equal an exact-arithmetic reference per op, per layer, per token (tolerance 1.0e-03 relative), naming the carrying test qwen35_cuda_the_parity_floor_is_the_cpu_references_own_activation_quantization.",
+          "file": "contracts/qwen35-hybrid-forward-v1.yaml",
+          "grounding": "cited",
+          "line": 131
+        },
+        {
+          "claim": "New invariant QHF-GPU-009 is added requiring identical argmax at every position and per-position cosine >= 0.996 against production CPU forward, with no tolerance field.",
+          "file": "contracts/qwen35-hybrid-forward-v1.yaml",
+          "grounding": "cited",
+          "line": 135
+        },
+        {
+          "claim": "New falsification test FALSIFY-QHF-009 is added, specifying test execution via scripts/model_ladder.sh and scripts/check_model_ladder.sh receipts across required hosts (lambda sm_89, gx10 sm_121), adhering to strict-test-binding constraints.",
+          "file": "contracts/qwen35-hybrid-forward-v1.yaml",
+          "grounding": "cited",
+          "line": 181
+        }
+      ],
+      "raw_bytes": 3786,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "contracts/qwen35-hybrid-forward-v1.yaml",
+      "line": 1,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "PR edits ONE file, contracts/qwen35-hybrid-forward-v1.yaml, with no code changes."
+      ]
+    },
+    {
+      "file": "contracts/qwen35-hybrid-forward-v1.yaml",
+      "line": 131,
+      "lanes_agreeing": [
+        1,
+        2,
+        3
+      ],
+      "claims": [
+        "QHF-GPU-008 is restated to require every Gated DeltaNet and attention op to equal an exact-arithmetic reference per op, per layer, per token (tolerance 1.0e-03 relative), naming the carrying test qwen35_cuda_the_parity_floor_is_the_cpu_references_own_activation_quantization.",
+        "QHF-GPU-008 requires every GDN and attention op per layer per token <= 1e-3 relative vs the exact reference, and names the test in the property.",
+        "QHF-GPU-008 restates the invariant to compare device GDN and attention ops per layer and per token against an exact f32 arithmetic reference (<= 1e-3 relative), naming the carrying test qwen35_cuda_the_parity_floor_is_the_cpu_references_own_activation_quantization in the property."
+      ]
+    },
+    {
+      "file": "contracts/qwen35-hybrid-forward-v1.yaml",
+      "line": 135,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "New invariant QHF-GPU-009 is added requiring identical argmax at every position and per-position cosine >= 0.996 against production CPU forward, with no tolerance field.",
+        "QHF-GPU-009 is added as an invariant specifying end-to-end parity against the production CPU forward with identical argmax at every position and per-position cosine >= 0.996 (measured min 0.998348 on 0.8B at 1ed0adf36), citing DP4A recurrence failure as #3513, and carries no tolerance field."
+      ]
+    },
+    {
+      "file": "contracts/qwen35-hybrid-forward-v1.yaml",
+      "line": 136,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "NEW QHF-GPU-009 specifies end-to-end vs production CPU with identical argmax and cosine >= 0.996 (measured 0.998348), cites DP4A failure #3513, and carries no tolerance field."
+      ]
+    },
+    {
+      "file": "contracts/qwen35-hybrid-forward-v1.yaml",
+      "line": 181,
+      "lanes_agreeing": [
+        1,
+        2,
+        3
+      ],
+      "claims": [
+        "FALSIFY-QHF-009 is added requiring testing on EACH required host (lambda sm_89, gx10 sm_121) via scripts/model_ladder.sh receipts verified by check_model_ladder.sh, binding only commands on main to obey strict-test-binding.",
+        "NEW FALSIFY-QHF-009 specifies its test runs on EACH required host through scripts/model_ladder.sh receipts read by check_model_ladder.sh, and avoids binding the dangling cargo test.",
+        "New falsification test FALSIFY-QHF-009 is added, specifying test execution via scripts/model_ladder.sh and scripts/check_model_ladder.sh receipts across required hosts (lambda sm_89, gx10 sm_121), adhering to strict-test-binding constraints."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": true,
+    "disarmed": true,
+    "note": "auto-merge was armed from an earlier round; disarmed before lanes launched"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-fable-5-1/claude"
+  }
+}
