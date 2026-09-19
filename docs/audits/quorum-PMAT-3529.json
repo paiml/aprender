@@ -1,0 +1,214 @@
+{
+  "ticket": "PMAT-3529",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "e1b93b8c2bf42ea5fe3a800fed7ca3b943bf09da",
+  "diff_sha256": "a347c04f008c3586f1968f45cc23587a45050392ace20ce9e44e28b12e80765e",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 45561,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff accurately matches the specifications in PMAT-3529. The sigma schema parses the opaque `metadata` block without applying its own rules to it, keeping `pv validate` and `pv lint` from contradicting each other. It includes tests verifying that an unclaimed metadata block still exits with a 3. In the pv_contract extractor, entity properties correctly use the `<entityType>:<k>` prefix to ensure scope isolation between different types, skipping any properties if `entity.type` is missing or the value is a nested mapping/sequence. Furthermore, lexical validation violations (in, pattern, minLength, maxLength) have been explicitly updated to prepend the `path` string on the error messages. All ticket requirements are backed by matching tests and fixtures.",
+      "findings": [
+        {
+          "claim": "The SAME contracts/ontology.yaml passes pv validate AND pv lint --gate sigma, and removing claim brings exit 3 back naming the key",
+          "file": "crates/aprender-contracts-cli/tests/ont_entity_properties.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 77
+        },
+        {
+          "claim": "entity.properties.<k> becomes the predicate <entityType>:<k> (IRI: ONT_BASE + <entityType>/<k>) on the contract node",
+          "file": "crates/aprender-contracts/src/ontology/extract/pv_contract.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 146
+        },
+        {
+          "claim": "The predicate IRI carries the entity type as its vocabulary segment and NEVER the bare ont:scale",
+          "file": "crates/aprender-contracts/src/ontology/extract/pv_contract.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 204
+        },
+        {
+          "claim": "No entity.type means no property triples, and nested mappings/sequences are not emitted",
+          "file": "crates/aprender-contracts/src/ontology/extract/pv_contract.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 268
+        },
+        {
+          "claim": "A lexical violation names its PATH in the message (in, pattern, minLength, maxLength)",
+          "file": "crates/aprender-contracts/src/ontology/shapes.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 585
+        }
+      ],
+      "raw_bytes": 5389,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements all requirements of PMAT-3529. Sigma now carries the metadata block as opaque YAML, requiring it to be claimed in `readers` to satisfy the anti-decoration rule. Entity properties are extracted as `<entityType>:<k>` scoped correctly to avoid leaking across types, while nested mappings and sequences are safely ignored. Lexical violations (in, pattern, minLength, maxLength) now correctly prepend the property path to their error messages for clarity. All tests and falsifiers from the ticket have been correctly verified.",
+      "findings": [
+        {
+          "claim": "The SAME contracts/ontology.yaml passes `pv validate` AND `pv lint --gate sigma`",
+          "file": "crates/aprender-contracts-cli/tests/ont_entity_properties.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 77
+        },
+        {
+          "claim": "entity.properties.<k> becomes the predicate <entityType>:<k> (IRI: ONT_BASE + <entityType>/<k>) on the contract node",
+          "file": "crates/aprender-contracts/src/ontology/extract/pv_contract.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 146
+        },
+        {
+          "claim": "The predicate IRI carries the entity type as its vocabulary segment and NEVER the bare ont:scale",
+          "file": "crates/aprender-contracts/src/ontology/extract/pv_contract.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 204
+        },
+        {
+          "claim": "No entity.type means no property triples; nested mappings and sequences are not emitted",
+          "file": "crates/aprender-contracts/src/ontology/extract/pv_contract.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 268
+        },
+        {
+          "claim": "A lexical violation names its PATH in the message (in, pattern, minLength, maxLength)",
+          "file": "crates/aprender-contracts/src/ontology/shapes.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 585
+        }
+      ],
+      "raw_bytes": 4857,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff accurately and completely implements all requirements of ticket PMAT-3529 with zero scope creep, no weakened gates, and fully backed test coverage:\n1. `Sigma` in `crates/aprender-contracts/src/ontology/sigma.rs` supports an optional, opaque `metadata` block and adds `\"metadata\"` to `READABLE_KEYS`. Unclaimed metadata blocks continue to trigger exit 3 (anti-decoration rule preserved).\n2. `emit_entity_properties` in `crates/aprender-contracts/src/ontology/extract/pv_contract.rs` extracts scalar values from `entity.properties.<k>` into `<ONT_BASE><entityType>/<k>` triples. When no `entity.type` is present or for complex nested/listed structures, no triples are emitted.\n3. `check_lexical` in `crates/aprender-contracts/src/ontology/shapes.rs` updates error formatting for `in`, `pattern`, `minLength`, and `maxLength` violations to prefix the message with `short(&p.path)`.\n4. CLI integration test `ont_entity_properties.rs`, unit tests, explicit test command, tree reader script list, and EV-21 fixtures validate all specified falsifier scenarios and behavior.",
+      "findings": [],
+      "raw_bytes": 3541,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-low",
+      "model_measured": "gemini-3.6-flash-low",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-contracts-cli/tests/ont_entity_properties.rs",
+      "line": 77,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "The SAME contracts/ontology.yaml passes `pv validate` AND `pv lint --gate sigma`",
+        "The SAME contracts/ontology.yaml passes pv validate AND pv lint --gate sigma, and removing claim brings exit 3 back naming the key"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/ontology/extract/pv_contract.rs",
+      "line": 146,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "entity.properties.<k> becomes the predicate <entityType>:<k> (IRI: ONT_BASE + <entityType>/<k>) on the contract node"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/ontology/extract/pv_contract.rs",
+      "line": 204,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "The predicate IRI carries the entity type as its vocabulary segment and NEVER the bare ont:scale"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/ontology/extract/pv_contract.rs",
+      "line": 268,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "No entity.type means no property triples, and nested mappings/sequences are not emitted",
+        "No entity.type means no property triples; nested mappings and sequences are not emitted"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/ontology/shapes.rs",
+      "line": 585,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "A lexical violation names its PATH in the message (in, pattern, minLength, maxLength)"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": true,
+    "disarmed": true,
+    "note": "auto-merge was armed from an earlier round; disarmed before lanes launched"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

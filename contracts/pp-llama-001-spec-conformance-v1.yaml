@@ -76,6 +76,7 @@ proof_obligations:
     type: invariant
     property: "The guard is not vacuous"
     formal: "a spec whose §6 table parses to zero rows exits non-zero"
+    prose: true
     applies_to: one_spec_and_never_vacuous
   - id: PL0SC-INV-004
     type: invariant

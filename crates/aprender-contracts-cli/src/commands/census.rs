@@ -32,11 +32,17 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use provable_contracts::lint::collect_yaml_files;
 use provable_contracts::schema::parse_contract;
+/// The declaration's shape, defined ONCE — in the schema module, beside the
+/// `pv validate` rules that check it (PMAT-1098). It used to be declared here,
+/// which made `pv census` and `pv validate` two readers each holding half of
+/// what the file is; `EXT-CORPORA-009` now validates THROUGH this struct, so a
+/// declaration pv calls valid is one this command can count, by construction.
+pub use provable_contracts::schema::{parse_external_corpora_str, ExternalCorpus};
 
 use crate::contract_walk::{ParseErrors, ZeroContracts};
 
@@ -90,32 +96,6 @@ impl Default for Timing {
             n_runs: TIMING_RUNS,
         }
     }
-}
-
-/// One `contracts/external-corpora.yaml` entry, copied into the census verbatim.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ExternalCorpus {
-    pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub repo: Option<String>,
-    #[serde(default, rename = "ref", skip_serializing_if = "Option::is_none")]
-    pub git_ref: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub head: Option<String>,
-    pub n_files: usize,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mark: Option<String>,
-    /// The command that produced `n_files`. Never run here: a census must be
-    /// reproducible offline, and a network read would make two runs disagree.
-    pub counted_by: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ExternalCorpora {
-    #[serde(default)]
-    corpora: Vec<ExternalCorpus>,
 }
 
 /// The counts ONT-1 owes, in the order `contracts/census.json` carries them.
@@ -252,7 +232,7 @@ fn declared_external(root: &Path) -> Result<Vec<ExternalCorpus>, Box<dyn std::er
         return Ok(Vec::new());
     }
     let text = std::fs::read_to_string(&path)?;
-    let parsed: ExternalCorpora = serde_yaml::from_str(&text)
+    let parsed = parse_external_corpora_str(&text)
         .map_err(|e| format!("{} does not parse: {e}", path.display()))?;
     let mut corpora = parsed.corpora;
     corpora.sort_by(|a, b| a.name.cmp(&b.name));

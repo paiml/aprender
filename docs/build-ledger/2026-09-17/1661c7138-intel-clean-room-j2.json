@@ -1,0 +1,31 @@
+{
+ "sha": "1661c7138705d6b0a1f40c42bfe2f8a140c91c62",
+ "tag": "v0.68.1",
+ "host": "intel",
+ "job": "clean-room (aprender)",
+ "run": "paiml/infra 35255889257",
+ "date": "2026-09-17",
+ "config": {
+  "CARGO_BUILD_JOBS": 3,
+  "B2_JOBS": 2,
+  "B2_TEST_THREADS": 8,
+  "CONTAINER_MEMORY": "48g"
+ },
+ "gates_s": {
+  "A0": 3,
+  "A1": 9,
+  "A2": 279,
+  "A3": 422,
+  "A4": 5,
+  "B0": 275,
+  "B1": 420,
+  "B2": 2055,
+  "B3": 328,
+  "B4": 81
+ },
+ "chain_s": 3877,
+ "b2_compile_before_first_test_s": 1208,
+ "tests_passed": 79936,
+ "peak_rss_mb": null,
+ "verdict": "green"
+}

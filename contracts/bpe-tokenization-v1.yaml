@@ -86,6 +86,7 @@ proof_obligations:
   type: monotonicity
   property: Encoding length bounded by input bytes
   formal: len(encode(text)) <= len(bytes(text)) — at most one token per byte
+  prose: true
   applies_to: all
 - id: BTB5D7-INV-006
   type: invariant

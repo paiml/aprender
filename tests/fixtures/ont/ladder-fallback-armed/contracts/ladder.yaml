@@ -1,0 +1,17 @@
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-19'
+  last_modified: '2026-09-19'
+  author: fixture
+  description: fixture ladder
+name: ladder
+version: "1.0.0"
+scope: fixture
+status: active
+entity:
+  type: gguf
+ladder:
+  rungs:
+    - {id: rung-a, arch: qwen2, gguf: a.gguf, sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, backends: [cpu, cuda], required: true}
+    - {id: rung-b, arch: qwen3, gguf: b.gguf, sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, backends: [cpu, cuda], required: true}

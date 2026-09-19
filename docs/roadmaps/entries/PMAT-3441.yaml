@@ -1,0 +1,17 @@
+- id: PMAT-3441
+  github_issue: 3441
+  item_type: task
+  title: 'PP-QUANT-001 Q3: tier-0 scalar dequant for 35/35 live ggml types — every unsupported-type refusal becomes a sl'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:07Z
+  updated: 2026-09-17T11:33:07Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

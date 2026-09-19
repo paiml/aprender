@@ -108,6 +108,7 @@ proof_obligations:
   type: equivalence
   property: Byte-identity of the extracted F32 save path against the golden oracle
   formal: save_leaf(F32_model, pinned) == golden_v1.apr bytes (f16 writes excepted — IEEE-RNE bug-fix)
+  prose: true
   tolerance: 0.0
   applies_to: all
 - id: AFE-INV-002

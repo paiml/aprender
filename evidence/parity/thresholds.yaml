@@ -33,7 +33,13 @@ models:
   # Nothing measured on the first population bounds the second, so reusing the
   # number would be a threshold with a borrowed basis, which is the defect
   # #2971 closed.
-  qwen3.5-0.8b:
+  # KEY (#3477): this row is the CPU-vs-llama.cpp leg and is keyed as such. It
+  # used to sit under the bare model name, which `judge()` also reaches for the
+  # GPU-vs-CPU record `apr parity` now produces for the hybrid (#3517, #3527) —
+  # so C14 read a CPU-comparator row for a GPU comparison and failed closed on a
+  # number that was absent for a different reason. The GPU-vs-CPU row for the
+  # bare name is further down, with its own measured basis.
+  qwen3.5-0.8b@cpu-vs-llama.cpp:
     compute_class: cpu
     host: intel                      # scripts/perf-matrix.yaml:138-143 — the only cpu-class host with a runner
     comparator: 'llama.cpp [X], CPU build, pin 39173bcac (scripts/llama_pin.toml)'
@@ -62,3 +68,53 @@ models:
       qwen35 GGUF for the known-bad half — #3303's open question, still with no decider.
     n: null                          # no run
     measured_by: null                # no command has been run against this row
+
+  # ── the GPU leg, PMAT-3477 / #3090 / #3517 / #3527: `apr parity` on the Qwen3.5 hybrid ──
+  # The same comparison as `default` (one implementation, CPU vs CUDA, the 78-token
+  # corpus prompt, min cosine over >= 64 positions) on a DIFFERENT population — a
+  # hybrid Gated-DeltaNet/attention model whose CPU forward quantizes activations
+  # (Q8_K) where the dense path does not — so it gets its own number and its own
+  # measured basis rather than borrowing 0.98 (the #2971 rule). 0.99 is the good
+  # floor (0.998971) rounded DOWN to two decimals; the known-bad half sits at 0.466
+  # and below, so the number discriminates rather than decorates.
+  #
+  # basis (n=5 per pair on lambda, the runs are bit-identical so stdev 0; gx10 rows
+  # are the peer session's runs at the same head, apr 2bbce5be9 cuda):
+  #   known-good  qwen3.5-0.8b-q4_k_m @ lambda (RTX 4090, sm_89, x86_64)   0.998971 x5, stdev 0
+  #   known-good  qwen3.5-9b-q4_k_m   @ lambda                              0.999254 x5, stdev 0
+  #   known-good  qwen3.5-0.8b-q4_k_m @ gx10   (GB10, sm_121, aarch64)      0.999176 x3, stdev 0
+  #   known-good  qwen3.5-9b-q4_k_m   @ gx10                                0.999351 x3, stdev 0
+  #   (argmax is NOT part of this rule: CPU and GPU argmax differ at 1-4 near-tie
+  #   positions per record on both hosts — lambda 0.8b 1/78, 9b 3/78; gx10 0.8b 4/78,
+  #   9b 2/78, every one at cosine >= 0.9994 and KL <= 0.012 — exactly as the dense
+  #   known-good records do (qwen2.5-coder-0.5b 2/78, 7b 2/78): the #2350/#2359
+  #   coin-flip class, which an argmax rule would turn into a host-dependent verdict)
+  #   known-bad   the DP4A GEMV routed through the DeltaNet recurrence (#3513), the
+  #               kernel variant `GpuProfile::detect` would pick on sm_89 — measured by
+  #               crates/aprender-serve/src/gguf/cuda/forward_qwen35_cuda_tests.rs
+  #               `qwen35_cuda_dp4a_gemv_is_catastrophic_through_the_recurrence`
+  #               on lambda: cosine 0.466 down to -0.246; on gx10 (peer session, same
+  #               head, 16:03Z): +0.179 down to -0.765 with the GPU argmax stuck at one
+  #               token at every position (the model pins the float GEMV for exactly
+  #               this reason; the test is the standing falsifier on both hosts)
+  #   margin: 0.998971 - 0.99 = 0.008971 under the lower good floor; 0.99 - 0.466 = 0.524 over the higher bad ceiling
+  qwen3.5-0.8b:
+    compute_class: gpu
+    min_cosine: 0.99
+    basis: >-
+      measured 2026-09-19 at apr 2bbce5be9 (cuda): known-good qwen3.5-0.8b-q4_k_m @ lambda 0.998971 x5 stdev 0
+      and @ gx10 0.999176 x3 stdev 0; known-good qwen3.5-9b-q4_k_m @ lambda 0.999254 x5 and @ gx10 0.999351 x3; known-bad
+      the DP4A GEMV through the recurrence (#3513) at cosine 0.466 to -0.246 on lambda and 0.179 to -0.765
+      on gx10 (forward_qwen35_cuda_tests.rs, the standing falsifier). 0.99 separates them with 0.008971 margin
+      under the lower good floor and 0.524 over the higher bad ceiling.
+    n: 5
+    measured_by: 'apr parity ./Qwen3.5-0.8B-Q4_K_M.gguf --prompt "$PROMPT" --json (scripts/check_model_parity.sh --manifest)'
+  qwen3.5-9b:
+    compute_class: gpu
+    min_cosine: 0.99
+    basis: >-
+      measured 2026-09-19 at apr 2bbce5be9 (cuda): the same four known-good readings as qwen3.5-0.8b
+      (lambda 0.999254 x5 stdev 0, gx10 0.999351 x3 for this model) against the same known-bad
+      (DP4A through the recurrence, cosine 0.466 to -0.246 on lambda, 0.179 to -0.765 on gx10); margin 0.009254 under the good floor.
+    n: 5
+    measured_by: 'apr parity ./Qwen3.5-9B-Q4_K_M.gguf --prompt "$PROMPT" --json (scripts/check_model_parity.sh --manifest)'

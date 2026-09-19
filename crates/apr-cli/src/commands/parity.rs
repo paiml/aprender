@@ -468,7 +468,11 @@ fn format_cosine(cos: f32) -> String {
     }
 }
 
+include!("parity_refusal.rs");
 include!("spc_color.rs");
 include!("parity_03.rs");
 include!("parity_spc_tests.rs");
 include!("parity_diagnose_tests.rs");
+include!("parity_refusal_tests.rs");
+include!("parity_hybrid.rs");
+include!("parity_hybrid_tests.rs");

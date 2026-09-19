@@ -712,12 +712,40 @@ BEFORE=$("$APR" list 2>&1 | wc -l)
 # pull, list, rm cycle should be consistent
 ```
 
-### P6. GPU/CPU Parity (if GPU available)
+### P6. Model capability ladder — GPU/CPU per ARCHITECTURE (F-MCL-001)
+
+Contract: `contracts/model-capability-ladder-v1.yaml`. Born from #3477: 0.68.1 shipped
+dense Qwen3 producing garbage on CUDA on **both** fleet GPUs; the parity guard fell back
+to CPU so `apr run` looked fine, `apr qa` was the only surface that said "gibberish",
+and no release step ran `apr qa` on a Qwen3. The old P6 here ("compare `apr run
+--device cpu` vs `--device gpu`") picked ONE model and checked that text came out —
+the fallback path produces correct text, so it could never fail.
+
+The unit of evidence is the triple **(architecture, backend, silicon)**, one ladder
+rung per (arch, quant), one receipt per required host:
+
 ```bash
+# on EVERY required host (ladder.hosts: lambda sm_89, gx10 sm_121):
 . scripts/apr_bin.sh || exit 1
-"$APR" gpu 2>&1 | head -3
-# If GPU present: compare apr run --device cpu vs --device gpu
+bash scripts/model_ladder.sh          # apr qa cap+golden per rung, + apr run per claimed
+                                      # backend, RED on any "falling back to CPU" line
+# writes evidence/dogfood/models/<version>/<host>.json — commit it
+# then, anywhere:
+bash scripts/check_model_ladder.sh    # the declared gate: every required rung green on
+                                      # every required host, receipts fresh for this cut
+bash scripts/check_model_ladder.sh --self-test   # the 13-case discrimination table
 ```
+
+Rules the gate enforces (each has a RED case in `scripts/lib/model_ladder_cases/`):
+- a **Skipped** `apr qa` gate is NOT passed even though `--json` marks it `passed:true`;
+- a claimed backend that **fell back** is RED even when the tokens are right;
+- a required rung the host does not hold is **ABSENT = FAIL**, not SKIP;
+- a receipt with `executed=0`, a stale version, or a missing host is RED;
+- the ladder at `origin/main` is a floor: rungs, hosts and backends may be added, never removed.
+
+Missing receipt is **FAIL, not DEFER** — a dev build measures this; no crates.io needed.
+At 4a538ddef the gate is RED on both hosts (qwen3 cuda fallback #3413; qwen35
+capability_match #3432) — that is its first-green proof of red-capability.
 
 ### P7. NaN/Inf Sentinel (FALSIFY-QA-004)
 ```bash

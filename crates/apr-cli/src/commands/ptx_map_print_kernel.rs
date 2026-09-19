@@ -1,4 +1,3 @@
-
 /// Print the kernel table
 fn print_kernel_table(steps: &[KernelStep], kernel_filter: Option<&str>) {
     print_table_header();
@@ -139,7 +138,10 @@ fn print_json(steps: &[KernelStep], info: &ModelInfo, prefill: bool) {
 
 /// Main entry point for ptx-map command
 #[allow(clippy::fn_params_excessive_bools)]
-#[provable_contracts_macros::contract("apr-cli-command-safety-v1", equation = "read_only_no_side_effects")]
+#[provable_contracts_macros::contract(
+    "apr-cli-command-safety-v1",
+    equation = "read_only_no_side_effects"
+)]
 pub fn run(
     model_path: &Path,
     kernel_filter: Option<&str>,
@@ -157,6 +159,14 @@ pub fn run(
             eprintln!("Scope: PTX kernel DISPATCH map — verifies kernel launch configuration");
             eprintln!("(See also: apr parity for GPU/CPU output correctness comparison)");
             eprintln!();
+        }
+
+        // #3477: a hybrid (Gated DeltaNet) model runs on both backends, but its
+        // kernels have no rows in this table. Say so and stop, rather than
+        // refusing a model that runs or printing a dense map it never launches.
+        if let Some(note) = hybrid_kernel_map_note_for_model(model_path) {
+            println!("{note}");
+            return Ok(());
         }
 
         let info = extract_model_info(model_path)?;

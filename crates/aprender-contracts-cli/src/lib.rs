@@ -122,6 +122,10 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             let as_json = json || matches!(format, cli::CensusFormat::Json);
             commands::census::run(&contract_dir, as_json)
         }
+        Commands::Extract {
+            contract_dir,
+            check,
+        } => commands::extract_rdf::run(&contract_dir, check),
         Commands::Coverage {
             contract_dir,
             binding,
@@ -199,6 +203,8 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             explain,
             watch,
             strict_test_binding,
+            armed_baseline_ref,
+            gate,
             ..
         } => {
             if let Some(ref rule_id) = explain {
@@ -228,6 +234,8 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
                 min_level.as_deref(),
                 watch,
                 strict_test_binding,
+                armed_baseline_ref.as_deref(),
+                gate.as_deref(),
             )
         }
         Commands::Score {
