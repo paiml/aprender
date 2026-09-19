@@ -126,6 +126,12 @@ proof_obligations:
   formal: h_{l+1} - h_l = sublayer(norm(h_l))
   tolerance: 1.0e-06
   applies_to: all
+- id: QHF-GPU-008
+  type: invariant
+  property: 'Gated DeltaNet on the device equals the CPU forward, per layer and per token: the recurrent state S_l(t) and the layer output y_l(t) agree'
+  formal: '∀ l ∈ gdn_layers, ∀ t: ‖S_l^{gpu}(t) − S_l^{cpu}(t)‖_∞ ≤ 1e-3 ∧ ‖y_l^{gpu}(t) − y_l^{cpu}(t)‖_∞ ≤ 1e-3'
+  tolerance: 1.0e-03
+  applies_to: all
 falsification_tests:
 - id: FALSIFY-QHF-001
   rule: Attention sublayer shape
@@ -162,6 +168,11 @@ falsification_tests:
   prediction: h_{l+1} - h_l = sublayer(norm(h_l))
   test: 'proptest: verify residual arithmetic'
   if_fails: Residual not purely additive
+- id: FALSIFY-QHF-008
+  rule: The device GDN path is measured where generation runs, on both fleet silicons
+  prediction: "`apr qa Qwen3.5-0.8B-Q4_K_M.gguf` golden_output passes on GPU and `apr run --gpu` prints no `[qwen35: Gated DeltaNet runs on the CPU` notice, on lambda (sm_89) and gx10 (sm_121)"
+  test: "bash scripts/check_model_ladder.sh — rung qwen35-0.8b-q4km, backend cuda, both required hosts (receipts under evidence/dogfood/models/<version>/)"
+  if_fails: "the GDN device kernels (causal conv1d, gated delta-rule recurrence with per-layer state, gated RMSNorm, per-head L2 norm, partial-NEOX rope) diverge from forward_qwen35.rs or never ran — at f4c0daa37 no device path existed and the rung claimed cpu only (#3090, EPIC #3477)"
 kani_harnesses:
 - id: KANI-QHF-001
   obligation: QHF-INV-001
@@ -222,5 +233,5 @@ qa_gate:
   - hybrid_block
   - activation_magnitude
   - gradient_flow
-  pass_criteria: All 7 falsification tests pass
+  pass_criteria: All 8 falsification tests pass; FALSIFY-QHF-008 is read from the per-host ladder receipts
   falsification: Remove RMSNorm before attention to trigger gradient explosion

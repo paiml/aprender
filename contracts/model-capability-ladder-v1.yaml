@@ -70,9 +70,9 @@ ladder:
       arch: qwen35
       gguf: Qwen3.5-0.8B-Q4_K_M.gguf
       sha256: bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517
-      backends: [cpu]
+      backends: [cpu, cuda]
       required: true
-      note: "hybrid Gated DeltaNet — cpu only until #3090; `apr qa` capability_match RED at 4a538ddef because of the second refusal site (#3432)"
+      note: "hybrid Gated DeltaNet — cuda claimed since 2026-09-19 (operator: GPU is required for 0.68.2; #3090 on PMAT-3477-gdn-gpu). RED by construction until that path passes apr qa Golden Output GPU on both hosts; the cpu half went green at f4c0daa37"
 
 equations:
   rung_green:
