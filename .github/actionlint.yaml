@@ -19,3 +19,8 @@ self-hosted-runner:
     - gb10
     - ada
     - perf-solo
+    # PACK-001: the mac lane (mini-m4's org-runner labels)
+    - macOS
+    - apple-silicon
+    - m4
+    - mini

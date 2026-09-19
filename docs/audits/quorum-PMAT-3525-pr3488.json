@@ -1,0 +1,182 @@
+{
+  "ticket": "PMAT-3525",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 102 commit(s); judged against origin/main",
+  "head": "77b2696ad028576fdf58251117bf180b3f215c65",
+  "diff_sha256": "5f5907b81e1148da750f7ad3a40774913cf61f9675a234ffe5cdd49284114551",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 19677,
+  "author": {
+    "model": "claude-fable-5-1",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements the requested ticket (PACK-001) by introducing a `workspace-test-shard` matrix job (fanned into a single `workspace-test` status check) and a new `mac-check` lane running on the specified Apple Silicon runners. \n\nThe sharding logic correctly leverages `cargo nextest run --partition hash:N/M` for Rust tests and implements a round-robin partitioning algorithm for the explicit shell-script tests. The round-robin Bash algorithm is exact (modulo math is correct and assigns each script to exactly one shard). \n\nFurthermore, the implementation strictly abides by the CI best practices mandated in the rules:\n- **Self-Testing Scripts**: The added explicit shard parsing and assignment logic in `ci_run_explicit_test_commands.sh` comes with a battery of self-tests in `check_explicit_test_commands.sh` that correctly validates its behavior on exact string outputs, verifying both expected inclusion and exclusion.\n- **Anti-vacuity**: The script rigorously validates `N <= M` and strictly enforces that a shard selecting 0 commands results in a failure (exit 2) instead of a silent vacuous pass, ensuring test coverage guarantees.\n- **Strict Shell over Heavy Runtimes**: The matrix scheduling and round-robin partitioning logic is implemented purely in bash without relying on heavy scripting runtimes, maintaining pipeline simplicity.\n\nNo regressions, violations of the ticket, or weakening of gates were found. The diff does precisely what the brief outlines while correctly enforcing all required system guarantees.",
+      "findings": [],
+      "raw_bytes": 4393,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff fulfills all requirements of ticket PMAT-3525 (PACK-001 shard workspace-test + mini lane, PR #3488). It splits workspace-test into a 3-way matrix job with isolated cargo states per shard, partitions nextest tests and explicit integration tests, maintains the required fan-in check job workspace-test ensuring no gates are weakened, moves example building to shard 3 to balance shard duration, adds the mac-check mini-m4 workflow job, updates actionlint runner labels, and introduces comprehensive self-tests for explicit test runner sharding. No unrequested changes or gate weakenings were found.",
+      "findings": [
+        {
+          "claim": "Implements 3-way matrix sharding for workspace-test-shard, partitioning nextest with --partition hash:${SHARD}/${SHARDS} and explicit test commands with --shard ${SHARD}/${SHARDS}",
+          "file": ".github/workflows/ci.yml",
+          "grounding": "cited",
+          "line": 144
+        },
+        {
+          "claim": "Creates workspace-test fan-in job that verifies every shard passed (needs.workspace-test-shard.result == 'success') and fails fast on cancelled or failed shards",
+          "file": ".github/workflows/ci.yml",
+          "grounding": "cited",
+          "line": 877
+        },
+        {
+          "claim": "Adds mac-check job targeting [self-hosted, macOS, ARM64, apple-silicon, m4, mini] running locked workspace check and apr-cli lib tests",
+          "file": ".github/workflows/ci.yml",
+          "grounding": "cited",
+          "line": 903
+        },
+        {
+          "claim": "Adds --shard N/M round-robin sharding to explicit test command runner with strict validation and anti-vacuity refusal on empty selection",
+          "file": "scripts/ci_run_explicit_test_commands.sh",
+          "grounding": "cited",
+          "line": 98
+        },
+        {
+          "claim": "Adds self-test assertions validating --shard behavior, output separation, and refusal cases",
+          "file": "scripts/check_explicit_test_commands.sh",
+          "grounding": "cited",
+          "line": 169
+        },
+        {
+          "claim": "Registers mini-m4 runner labels (macOS, apple-silicon, m4, mini) in actionlint.yaml",
+          "file": ".github/actionlint.yaml",
+          "grounding": "cited",
+          "line": 22
+        }
+      ],
+      "raw_bytes": 5127,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-3525 (PACK-001): Shards workspace-test into a 3-way matrix and adds the macOS mini-m4 verification lane.\n\nKey changes verified:\n1. `.github/workflows/ci.yml`:\n   - Converted `workspace-test` into `workspace-test-shard` matrix (shards 1..3).\n   - Partitioned lib unit tests via `cargo nextest run ... --partition hash:${SHARD}/${SHARDS}`.\n   - Partitioned explicit integration test list via `ci_run_explicit_test_commands.sh --shard ${SHARD}/${SHARDS}`.\n   - Isolated per-shard cargo registry and target directory mounts via `PR_OR_REF: ...-s${{ matrix.shard }}` to avoid concurrent host file locks.\n   - Preserved once-only steps (GPU crates, compute tests, quick tier, poka-yoke guards) on shard 1.\n   - Shifted workspace example builds (`cargo build --examples --workspace --keep-going`) from the serial fragment list to shard 3 for balance.\n   - Added fan-in `workspace-test` job (`if: always()`) verifying all shards completed with `success`.\n   - Added `mac-check` job on `[self-hosted, macOS, ARM64, apple-silicon, m4, mini]` running locked workspace check and `apr-cli` lib tests.\n2. `.github/actionlint.yaml`: Added `macOS`, `apple-silicon`, `m4`, and `mini` runner labels.\n3. `scripts/ci_run_explicit_test_commands.sh` & `scripts/check_explicit_test_commands.sh`: Implemented `--shard N/M` round-robin partitioning with strict input validation, anti-vacuity guard against zero command selection, and self-tests covering valid partitions and refusal modes.\n\nNo regressions, weakened gates, or forbidden changes detected.",
+      "findings": [],
+      "raw_bytes": 4428,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": ".github/actionlint.yaml",
+      "line": 22,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Registers mini-m4 runner labels (macOS, apple-silicon, m4, mini) in actionlint.yaml"
+      ]
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "line": 144,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Implements 3-way matrix sharding for workspace-test-shard, partitioning nextest with --partition hash:${SHARD}/${SHARDS} and explicit test commands with --shard ${SHARD}/${SHARDS}"
+      ]
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "line": 877,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Creates workspace-test fan-in job that verifies every shard passed (needs.workspace-test-shard.result == 'success') and fails fast on cancelled or failed shards"
+      ]
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "line": 903,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Adds mac-check job targeting [self-hosted, macOS, ARM64, apple-silicon, m4, mini] running locked workspace check and apr-cli lib tests"
+      ]
+    },
+    {
+      "file": "scripts/check_explicit_test_commands.sh",
+      "line": 169,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Adds self-test assertions validating --shard behavior, output separation, and refusal cases"
+      ]
+    },
+    {
+      "file": "scripts/ci_run_explicit_test_commands.sh",
+      "line": 98,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Adds --shard N/M round-robin sharding to explicit test command runner with strict validation and anti-vacuity refusal on empty selection"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-fable-5-1/claude"
+  }
+}
