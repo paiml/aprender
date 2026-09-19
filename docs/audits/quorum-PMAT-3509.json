@@ -1,0 +1,102 @@
+{
+  "ticket": "PMAT-3509",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "f5dd5d7f6f6cd7b0ea5a045db9b505ae9c088928",
+  "diff_sha256": "7838d6c1c739bc0ac08620c7e13aaa6a17029c98b027c4b63f0d844ffc72d52d",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 1472738,
+  "author": {
+    "model": "claude-fable-5-1",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "All acceptance criteria from PMAT-3509 are successfully implemented and verified. The `extract:code` and `extract:lean` tools properly run within `extract::all` and include positive controls. 16 W3C SHACL-Core cases are correctly vendored and tested, while the remaining 16 are accounted for in the `NOT_VENDORED` list (totaling 32). The `tests/oracle` crate is properly detached from the workspace using its own `[workspace]` directive, pins `shacl` to `=0.3.21`, and operates via a `Makefile` that avoids `cd` to comply with `.ONESHELL`. The `sh:in` validation now correctly checks term equality using `InEntry` and formats its error message exactly as required (`<path>: <term> is not one of [<terms>]`). The `contracts/ont-code-symbols-v1.yaml` ships unarmed and the CLI test `ont4b2_code_lean_w3c` is wired properly. No regressions or omitted features were found.",
+      "findings": [],
+      "raw_bytes": 3172,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements the ticket's requirements. `extract:code` and `extract:lean` emit to `contracts.nt` under `symbol/` and `world/`. The 32 W3C cases are accounted for. The oracle scratch crate tests correctly with `differential.json` and uses `Unknown{Differential}` on disagreement.",
+      "findings": [
+        {
+          "claim": "the_table_of_ont_0_is_accounted_for_case_by_case asserts CASES + NOT_VENDORED == 32 with no id twice",
+          "file": "crates/aprender-contracts/src/ontology/w3c.rs",
+          "grounding": "cited",
+          "line": 600
+        }
+      ],
+      "raw_bytes": 2374,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Reviewed diff against ticket PMAT-3509 (ONT-4b2). Verified extract:code syn module-tree walk and extract:lean in-tree theorem extraction into contracts.nt under symbol/ and world/ roots. Verified 32 W3C SHACL-Core cases accounted for (16 vendored and run by shapes gate, 16 in NOT_VENDORED with explicit non-subset reasons). Verified tests/oracle scratch crate and make oracle / make oracle-check writing differential.json with 0 disagreements. Ran cargo test -p aprender-contracts-cli --test ont4b2_code_lean_w3c (8/8 passed), make oracle-check (PASS), and scripts/check_ont_ratchet.sh --check (PASS). Found no refutations.",
+      "findings": [],
+      "raw_bytes": 2637,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-low",
+      "model_measured": "gemini-3.6-flash-low",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-contracts/src/ontology/w3c.rs",
+      "line": 600,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "the_table_of_ont_0_is_accounted_for_case_by_case asserts CASES + NOT_VENDORED == 32 with no id twice"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-fable-5-1/claude"
+  }
+}
