@@ -18647,3 +18647,20 @@ roadmap:
   - orch:fable
   - orch-basis:state
   notes: null
+- id: PMAT-3535
+  github_issue: 3535
+  item_type: task
+  title: '§11.1 + check_pr_ont_delta: the docs/specifications sink is the release spec, not every design spec — three maintainer PRs red for a delta that does not exist; predicate self-test with the falsifying design-spec row (Refs aprender#3535)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-19T18:35:25Z
+  updated: 2026-09-19T18:35:25Z
+  spec: null
+  acceptance_criteria:
+  - 'aprender-ba measured #3499/#3420/#3424 red on ont-delta; the guard is faithful to a sentence that names the whole directory. Sentence and ONT_SWEEP_SINKS move together; predicate_self_test lands with ''a DESIGN spec is not a sweep'' at want=1.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
