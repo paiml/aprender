@@ -1,0 +1,199 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ont-verdict-lattice-v1 — the ONE verdict lattice every gate reports into
+# (ONT-001 §3.4 + §3.9, row ONT-6; issue #3451; ticket PMAT-3451)
+#
+# WHAT IT GOVERNS
+#   provable_contracts::ontology::verdict — Verdict {Fail, Unknown(Reason), Pass},
+#   Reason (15, §3.4 order), meet, arm, exit_code, decline_line, from_gate,
+#   from_shapes_report, from_label / FLEET_LABELS.
+#   provable_contracts::ontology::arming — ArmedGates, DEFAULT_ARMED,
+#   check_monotone / ArmedGatesShrank, meet_armed.
+#   `pv lint` — per-gate `verdict`, the armed meet as the exit, the
+#   `armed_gates` monotone check (exit 3).
+#
+# PROOF LADDER, STATED HONESTLY
+#   * L2 — unit tests enumerate all 17 elements (17² meet pairs, 17³ for
+#          associativity) and the integration test spawns `pv lint`.
+#   * L3 — the three Kani harnesses below are REAL #[kani::proof] fns in
+#          verdict.rs and were EXECUTED on lambda-labs with Kani 0.67.0
+#          (2026-09-17, VERIFICATION SUCCESSFUL x3; kani_ont_6_2 FAILED against
+#          the RED arm, kani_ont_6_3 FAILED at unwind 16). No aprender CI lane
+#          runs `cargo kani`: CI re-checks this rung through the L2 tests only.
+#   * L4 — not declared. There is no Lean theorem for this lattice.
+# ─────────────────────────────────────────────────────────────────────────────
+metadata:
+  version: 1.0.0
+  created: '2026-09-17'
+  last_modified: '2026-09-17'
+  author: PAIML Engineering
+  kind: kernel
+  description: >
+    ONT-001 verdict lattice — Fail < Unknown(Reason) < Pass with meet = min (Kleene K3 strong
+    conjunction); only Pass arms; per-repo armed gates, monotone against the committed comparand
+  references:
+  - 'paiml/infra docs/specifications/paiml-ontology.md §3.4 (the lattice), §3.9 (per-repo arming), §5 ONT-6, R-2 (zero is a decline)'
+  - 'Kleene (1952) Introduction to Metamathematics — strong three-valued conjunction'
+  - 'crates/aprender-contracts/src/ontology/verdict.rs — Verdict, Reason, FLEET_LABELS, kani_proofs'
+  - 'crates/aprender-contracts/src/ontology/arming.rs — ArmedGates, check_monotone, meet_armed'
+  - 'crates/aprender-contracts-cli/src/commands/lint_arming.rs — the comparand resolution'
+equations:
+  meet:
+    formula: meet(a, b) = min(a, b) under Fail < Unknown(NotRun) < … < Unknown(Prose) < Pass
+    domain: a, b ∈ V, |V| = 17 (Fail, 15 Unknown reasons in §3.4 order, Pass)
+    codomain: meet(a, b) ∈ V
+    invariants:
+    - meet(a, b) = meet(b, a) (commutative)
+    - meet(meet(a, b), c) = meet(a, meet(b, c)) (associative)
+    - meet(a, a) = a (idempotent)
+    - meet(a, Pass) = a (Pass is the identity)
+    - meet(a, Fail) = Fail (Fail absorbs)
+    - meet(a, b) ≤ a ∧ meet(a, b) ≤ b
+    preconditions:
+    - a and b are elements of V (the type admits nothing else)
+    postconditions:
+    - result == std::cmp::min(a, b)
+    - result <= a && result <= b
+    lean_theorem: none — L4 not declared
+  arm:
+    formula: arm(v) ⇔ v = Pass
+    domain: v ∈ V
+    codomain: bool
+    invariants:
+    - arm(v) ⇒ v = Pass
+    - v = Unknown(r) ⇒ ¬arm(v) for every reason r
+    preconditions:
+    - v is an element of V
+    postconditions:
+    - result == (v == Verdict::Pass)
+    lean_theorem: none — L4 not declared
+  exit:
+    formula: 'exit(Pass) = 0, exit(Fail) = 1, exit(Unknown(r)) = 2 with stderr `decline: r`'
+    domain: v ∈ V
+    codomain: '{0, 1, 2}'
+    invariants:
+    - exit(v) = 2 ⇔ decline_line(v) is Some
+    preconditions:
+    - v is an element of V
+    postconditions:
+    - result ∈ {0, 1, 2}
+    lean_theorem: none — L4 not declared
+  armed_meet:
+    formula: armed_meet(G, A) = ⋀_{g ∈ A} verdict_G(g), verdict_G(g) = Unknown(NotRun) for g ∉ G; A = ∅ ⇒ Unknown(NotArmed)
+    domain: G a run's (gate, verdict) results; A the armed gate names
+    codomain: V
+    invariants:
+    - A = ∅ ⇒ armed_meet = Unknown(NotArmed) (R-2 — zero is a decline, never an accept)
+    - a gate outside A never lowers the meet
+    - dropping a gate the comparand armed is ArmedGatesShrank (exit 3), never a smaller meet
+    preconditions:
+    - A is read from <contract_dir>/lint-baseline.json (absent file or key → the default 8)
+    postconditions:
+    - result ≤ verdict_G(g) for every g ∈ A
+    lean_theorem: none — L4 not declared
+proof_obligations:
+- id: ONT6-INV-001
+  type: invariant
+  property: meet is a bounded meet-semilattice operation on the 17 elements
+  formal: '∀a b c ∈ V: a∧b = b∧a ∧ (a∧b)∧c = a∧(b∧c) ∧ a∧a = a ∧ a∧Pass = a ∧ a∧Fail = Fail ∧ a∧b ≤ a'
+  applies_to: all
+- id: ONT6-INV-002
+  type: invariant
+  property: only Pass arms
+  formal: '∀v ∈ V: arm(v) ⇒ v = Pass'
+  applies_to: all
+- id: ONT6-INV-003
+  type: invariant
+  property: every fleet label maps to exactly one element, and no label is listed twice
+  formal: '∀(l, v) ∈ FLEET_LABELS: from_label(l) = Some(v) ∧ |{(l′, _) : l′ = l}| = 1'
+  applies_to: all
+- id: ONT6-POST-004
+  type: postcondition
+  property: the process exit is the element's class, and an Unknown prints its reason
+  formal: 'exit(Pass)=0 ∧ exit(Fail)=1 ∧ ∀r: exit(Unknown(r))=2 ∧ decline_line(Unknown(r)) = "decline: r"'
+  applies_to: all
+- id: ONT6-INV-005
+  type: invariant
+  property: an empty armed set declines (R-2) and an unarmed gate is excluded from the meet
+  formal: 'armed_meet(G, ∅) = Unknown(NotArmed) ∧ ∀g ∉ A: armed_meet(G, A) = armed_meet(G \ {g}, A)'
+  applies_to: all
+- id: ONT6-INV-006
+  type: invariant
+  property: armed_gates is monotone against the committed comparand
+  formal: 'comparand ⊄ current ⇒ exit 3, stderr "error: armed_gates shrank: <comparand \ current>"'
+  applies_to: all
+verification_summary:
+  total_obligations: 6
+  l2_property_tested: 6
+  l3_kani_proved: 3
+  l4_lean_proved: 0
+  l4_sorry_count: 0
+  l4_not_applicable: 6
+falsification_tests:
+- id: FALSIFY-ONT6-001
+  rule: meet laws, exhaustively
+  prediction: every law of ONT6-INV-001 holds over all 17² pairs and 17³ triples
+  test: cargo test -p aprender-contracts --lib ontology::verdict::tests::meet_laws_exhaustive
+  if_fails: meet is not min over the declared order — e.g. it keeps the left Unknown's reason, which breaks commutativity
+- id: FALSIFY-ONT6-002
+  rule: only Pass arms
+  prediction: arm(v) is true for Pass and false for Fail and all 15 Unknowns
+  test: cargo test -p aprender-contracts --lib ontology::verdict::tests::only_pass_arms
+  if_fails: an Unknown arms a merge — the vacuous-pass shape ONT R-2 exists to refuse
+- id: FALSIFY-ONT6-003
+  rule: fleet labels are a function
+  prediction: each FLEET_LABELS entry maps to exactly one element and an unlisted spelling is None
+  test: cargo test -p aprender-contracts --lib ontology::verdict::tests::every_fleet_label_maps_to_exactly_one_element
+  if_fails: a label is shadowed or guessed, so two tools read one word as two verdicts
+- id: FALSIFY-ONT6-004
+  rule: exit mapping
+  prediction: 'Pass 0, Fail 1, every Unknown 2 with the line `decline: <reason>`'
+  test: cargo test -p aprender-contracts --lib ontology::verdict::tests::exit_mapping_and_decline_line
+  if_fails: the exit and the printed word drift apart
+- id: FALSIFY-ONT6-005
+  rule: R-2 at the arming layer
+  prediction: an explicitly empty armed set is Unknown(NotArmed), never Pass
+  test: cargo test -p aprender-contracts --lib ontology::arming::tests::empty_armed_set_declines_r2
+  if_fails: zero armed gates reads as an accept
+- id: FALSIFY-ONT6-006
+  rule: pv lint end to end
+  prediction: 'control corpus exit 0 with the armed meet printed; empty armed set exit 2 `decline: NotArmed`; a broken contract exit 1 `reject:`; a dropped committed gate exit 3; an unreadable explicit comparand exit 1'
+  test: cargo test -p aprender-contracts-cli --test ont6_lint_verdict
+  if_fails: pv lint reports a verdict it did not compute from the armed gates
+kani_harnesses_note: >
+  EXECUTED 2026-09-17 on lambda-labs, Kani 0.67.0: `cargo kani -p aprender-contracts --harness <name>` for
+  each harness below, VERIFICATION SUCCESSFUL x3. Local evidence only — no aprender CI lane runs cargo kani.
+kani_harnesses:
+- id: KANI-ONT-6-1
+  obligation: ONT6-INV-001
+  property: meet commutative, associative, idempotent; Pass identity; Fail absorbing; meet below both operands
+  bound: 20
+  strategy: exhaustive
+  solver: cadical
+  harness: kani_ont_6_1
+- id: KANI-ONT-6-2
+  obligation: ONT6-INV-002
+  property: arm(v) implies v == Pass
+  bound: 20
+  strategy: exhaustive
+  solver: cadical
+  harness: kani_ont_6_2
+- id: KANI-ONT-6-3
+  obligation: ONT6-INV-003
+  property: every fleet label maps to exactly one element
+  bound: 30
+  strategy: exhaustive
+  solver: cadical
+  harness: kani_ont_6_3
+qa_gate:
+  id: F-ONT6-001
+  name: ONT-001 verdict lattice
+  description: One verdict lattice, per-repo arming, exit-vocabulary mapping (ONT-6)
+  checks:
+  - meet_laws
+  - only_pass_arms
+  - fleet_labels_are_a_function
+  - exit_mapping
+  - empty_armed_set_declines
+  - armed_gates_monotone
+  pass_criteria: All 6 falsification tests pass; the 3 Kani harnesses report VERIFICATION SUCCESSFUL where cargo kani runs
+  falsification: 'arm(Unknown) = true, or meet keeping the left Unknown reason, or check_monotone ignored — each turns a named test RED (measured 2026-09-17)'

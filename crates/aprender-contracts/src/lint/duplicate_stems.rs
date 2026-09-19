@@ -47,7 +47,7 @@ use std::time::Instant;
 use super::rules::RuleSeverity;
 
 use super::finding::LintFinding;
-use super::{GateDetail, GateExtra, GateResult};
+use super::{GateDetail, GateExtra, GateResult, Verdict};
 
 /// Path of the ratchet baseline, relative to the project root.
 pub const BASELINE_REL_PATH: &str = "scripts/contract_duplicate_stem_baseline.txt";
@@ -184,6 +184,7 @@ pub(crate) fn run_duplicate_stem_gate(
         name: "duplicate-stems".into(),
         passed,
         skipped: false,
+        verdict: Verdict::from_gate(passed, false),
         duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(0),
         detail: GateDetail::Validate {
             contracts: implicated_files,

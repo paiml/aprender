@@ -29,6 +29,7 @@ invariants:
 - id: QKN-LOAD-003
   property: QK norm weights are optional (None for non-Qwen3 architectures)
   formal: apr_try_load_f32 returns Option<Vec<f32>> — None is valid
+  prose: true
   description: 'Loading uses apr_try_load_f32 (returns Option), not apr_load_f32_tensor (returns Result). Missing QK norm
     tensors produce None, not an error. This preserves backward compatibility with Qwen2, LLaMA, GPT-2, etc.
 

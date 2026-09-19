@@ -333,6 +333,7 @@ proof_obligations:
   property: The argv the MCP tool spawns is accepted by the CLI that receives it
   formal: 'for all m, p — Cli::try_parse_from(["apr"] ++ serve_argv(m,p)) yields
     Commands::Serve{command ServeCommands::Run} with file = m and port = p'
+  prose: true
   applies_to: aprender_mcp::tools::serve::serve_argv, apr_cli::Cli
   discharged_by: FALSIFY-MCP-SERVE-2606-005, FALSIFY-MCP-SERVE-2606-007
   notes: >-

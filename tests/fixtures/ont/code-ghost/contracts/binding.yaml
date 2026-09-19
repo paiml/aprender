@@ -1,0 +1,13 @@
+version: 1.0.0
+target_crate: kern
+bindings:
+- contract: softmax-kernel-v1.yaml
+  equation: softmax
+  module_path: kern::nn::functional
+  function: softmax
+  status: implemented
+- contract: softmax-kernel-v1.yaml
+  equation: ghost
+  module_path: kern::nn::functional
+  function: no_such_function
+  status: implemented

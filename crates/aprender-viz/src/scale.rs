@@ -130,10 +130,13 @@ impl LogScale {
 
 impl Scale<f32, f32> for LogScale {
     fn scale(&self, value: f32) -> f32 {
-        let log_base = self.base.ln();
-        let log_min = self.domain_min.ln() / log_base;
-        let log_max = self.domain_max.ln() / log_base;
-        let log_val = value.max(f32::MIN_POSITIVE).ln() / log_base;
+        // APEX-001 EV-2a rule 5: pure-Rust libm, never the platform's. `f32::ln` dispatches to
+        // whatever libm the host linked, and a one-ulp difference here moves every tick on the
+        // axis — which is exactly what the two-host determinism job compares.
+        let log_base = libm::logf(self.base);
+        let log_min = libm::logf(self.domain_min) / log_base;
+        let log_max = libm::logf(self.domain_max) / log_base;
+        let log_val = libm::logf(value.max(f32::MIN_POSITIVE)) / log_base;
 
         let t = (log_val - log_min) / (log_max - log_min);
         self.range_min + t * (self.range_max - self.range_min)

@@ -672,3 +672,43 @@ scheduling chance, and it costs ~3× (gx10 10.6 min vs intel 34.5 for step 1).
 ### Still open
 
 - clean-room (aprender) on `v0.68.0` → assets check → preflight → dry-run receipt → STOP and report.
+
+## Interval — 10:00Z (2026-09-17) — clean-room through B1, B2 red, ruling: v0.68.0 GitHub-only, 0.68.1 to crates.io
+
+### What moved
+
+- **infra#650** (tag ref materialized) and **infra#652** (A1 overlays `[patch.crates-io]` for all 79 members at the tag; 24/24 rows, both mutation polarities; A1 on the real tag 101→0 in 7 s) merged 08:17Z / 08:53Z. Re-dispatched clean-room on `v0.68.0` (run 35202211338): **A0, A1, A2, B0, B1 PASSED — first time ever on a tag**; **B2 FAILED**: `aprender-core (lib test)` — 19 × `cannot find module or crate entrenar`. Mechanism: PMAT-955 keeps sibling dev-deps path-only (a versioned one would create a crates.io publish cycle), `cargo publish` deletes them, so the published crate's own lib tests do not compile. Identical at `v0.67.0`: standing, shipped over once. #3307's class.
+- **Operator ruling (10:0xZ)**: `v0.68.0` is **GitHub-only** — tag and 16 binaries stand, `install.sh` verified on x86_64 + aarch64, no crates.io publish, one release-note line pointing at 0.68.1 (done). **0.68.1** is the crates.io release and carries the B2 fix. No dry-run on 0.68.0. T-2 preflight on main BEFORE the bump (§4 as amended), then cut 0.68.1, clean-room on its tag through B2 and past it, dry-run receipt, stop for the attended cascade.
+- **B2 exposure fixed in one ticket — #3425**: measured with B2's own shape (A0 strip + A1 overlay, `cargo test --lib --workspace --no-run`): two crates, `aprender-core` (19 sites/14 tests, `entrenar`) and `aprender-test-showcase` (3 sites/100 tests, `jugar-probar`); tests moved out of `src/` to targets the published crate does not carry (contract_tests fragment 390; new fragment 410 for the showcase target); after: all 72 lib-test binaries build in published form, 0 failures. Three other path-only pairs triaged as not B2 exposure and recorded in the baseline.
+- Learning filed (memory): a gate never green on its own target is not a gate — first-green proof on a real target before it may block (infra#621's assert and A1 both stopped this train on first real use).
+
+### Still open
+
+- #3425 → T-2 preflight on main (GO receipt for the parent sha) → bump PR 0.68.1 → T-1 → T-2 → T-3 (tag, clean-room on the tag, assets, installer rows) → dry-run receipt → STOP for the operator.
+
+## 2026-09-17T15:30Z → 22:55Z — 0.68.1 train: T-3 clean-room chain → T-4 cascade → SHIPPED (session b59147ae)
+
+```
+APR-RELEASE-001 | did=TRAIN | train=v0.68.1 | verdict=SHIPPED
+fanout:  shards 2 (B2-cpu intel, B2-gpu yoga) hosts intel,yoga | commit→tag 41 min | ratchet p95 [U] (1 record) | serial fallbacks 1 (whole chain serial; P0·Fan-out is 0.69's first PR)
+nightly: NIGHTLY-RED cuda-nightly.yml (gx10 leg, red since 09-12) #3096 (0.70); witness for PP-26 = lambda sm_89
+train:   step reached T-4 | skip reason none | attended min 0 (operator-authorized unattended, 2026-09-17)
+build:   row none | PR aprender#3467 #3469 #3470, infra#654 #656 #658 | records added 1
+gate:    p95 ci/gate [U] | max PRs/train [U] | queue p95 [U]
+pack:    gx10 dark 15:31Z→22:50Z (no default route/DNS after the fleet reboot; 3 of 4 runner units crash-looping) — unclogged via the declared NM profile, infra#255 | verdict P0-UNDERUTILIZED for that window
+scope:   §1.5 0.68 Qwen 3.5 merged yes | blocker none
+queue:   open PRs [U] | WIP cap 13 | group size 3
+pins:    lambda resolves pmat 3.40.2 vs baselines recorded under 3.40.1 (check_baseline_ratchets + complexity ratchet FAIL(instrument) locally; CI unaffected)
+tree:    release commit 1661c7138 == tag v0.68.1; gate fixes on main 49c52cc05
+stops:   (1) run 35238057841 void — fleet reboot; (2) B2 child-cargo overlay → infra#654; (3) B2 full exposure ×3 → infra#656; (4) b2-gpu unreachable from paiml/infra → infra#658 + aprender#3467; (5) preflight R6 shape-not-cycle → aprender#3469. All gate-side; tag never moved.
+next:    0.69 — first PR is P0·Fan-out (rule 14); no scope work before it lands
+```
+
+Cascade: `publish_strict.sh`, 22:00:38Z → 22:41:36Z (2458 s; 0.67 attended was 08:01→08:43Z), 71 published + 3 facades already
+live = 74/74, 11 crates retried on HTTP 429 only, zero other errors. Records: `docs/audits/release/v0.68.1/`,
+`docs/build-ledger/2026-09-17/1661c7138-lambda-release-train-v0.68.1.json`.
+
+Filed for 0.69: #3462 (TIERS is not a dependency order — 47 violations), #3464 #3465 #3466 (test hygiene the chain exposed),
+#3468 (closed by #3469; the tag-independent preflight rows belong in the PR guard set), infra#255 (gx10 boot-time route assert).
+Learning: every one of the six stops was a gate meeting its real target for the first time (rule 15). `--no-fail-fast` turned
+three serial 1-hour discoveries into one.

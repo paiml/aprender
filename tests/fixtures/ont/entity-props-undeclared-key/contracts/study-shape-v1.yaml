@@ -1,0 +1,28 @@
+# apex EV-21 (FALSIFY-ONT-021/021b): the researcher degrees of freedom live in the contract, because the
+# contract IS the pre-registration. The shape targets ont:Contract and constrains them by path.
+name: study-shape
+version: "1.0.0"
+status: active
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-19'
+  last_modified: '2026-09-19'
+  author: fixture
+  description: a pre-registered study's closed degrees of freedom
+entity:
+  type: study
+  ref: study-shape-v1
+  properties:
+    scale: linear
+    denominator: population-100k
+    vintage: '2026-09-12'
+    subgroup: none
+shape:
+  targetClass: ont:Contract
+  closed: true
+  ignoredProperties: [ont:id, ont:file, ont:name, ont:version, ont:status, ont:kind, ont:entityType, ont:entityRef]
+  properties:
+    - {path: study:scale, minCount: 1, maxCount: 1, in: [linear, log10, log2, sqrt, logit]}
+    - {path: study:denominator, minCount: 1, maxCount: 1, in: [population-100k, count]}
+    - {path: study:vintage, minCount: 1, maxCount: 1, pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"}

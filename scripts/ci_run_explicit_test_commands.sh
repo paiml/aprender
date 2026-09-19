@@ -91,12 +91,38 @@ parse() {
     printf '%s\n' "${cmds[@]}"
 }
 
+# run DIR [N/M] -- runs the commands in order; with N/M only every M-th command
+# starting at the N-th (round-robin over the sorted list), so M shards cover the
+# list exactly once between them (PACK-001). N and M are validated; a shard that
+# selects zero commands is a refusal, not a pass.
 run() {
-    local dir=$1 out cmd i=0 total rc
+    local dir=$1 shard=${2:-1/1} out cmd i=0 total rc n m k=0 sel=0
     local -a cmds
+    if ! [[ "$shard" =~ ^([1-9][0-9]*)/([1-9][0-9]*)$ ]]; then
+        printf 'REFUSE --shard must look like N/M, got %s\n' "$shard" >&2; return 2
+    fi
+    n=${BASH_REMATCH[1]}; m=${BASH_REMATCH[2]}
+    if [ "$n" -gt "$m" ]; then printf 'REFUSE --shard %s: N exceeds M\n' "$shard" >&2; return 2; fi
     out=$(parse "$dir") || return $?
     mapfile -t cmds <<< "$out"
     total=${#cmds[@]}
+    # parse() already refuses an empty directory; this is the belt for a future
+    # parse that prints nothing: a here-string of "" still yields one empty element.
+    if [ "$total" -eq 0 ] || [ -z "${cmds[0]}" ]; then
+        printf 'REFUSE %s parsed to zero commands -- nothing to run is not a pass\n' "$dir" >&2; return 2
+    fi
+    if [ "$m" -gt 1 ]; then
+        local -a mine=()
+        for cmd in "${cmds[@]}"; do
+            k=$((k + 1)); sel=$(( (k - 1) % m + 1 ))
+            if [ "$sel" -eq "$n" ]; then mine+=("$cmd"); fi
+        done
+        if [ "${#mine[@]}" -eq 0 ]; then
+            printf 'REFUSE shard %s selects 0 of %s command(s) -- more shards than commands is not a pass\n' "$shard" "$total" >&2; return 2
+        fi
+        printf 'shard %s: %s of %s command(s)\n' "$shard" "${#mine[@]}" "$total"
+        cmds=("${mine[@]}"); total=${#cmds[@]}
+    fi
     for cmd in "${cmds[@]}"; do
         i=$((i + 1))
         printf '::group::[%s/%s] %s\n' "$i" "$total" "$cmd"
@@ -114,7 +140,10 @@ run() {
 
 case "${1:-}" in
     --list) parse "${2:-$DEFAULT_DIR}" ;;
-    --run) run "${2:-$DEFAULT_DIR}" ;;
+    --run)
+        dir=${2:-$DEFAULT_DIR}; shard=1/1
+        case "${3:-}" in --shard) shard=${4:?--shard needs N/M} ;; "") ;; *) printf 'usage: %s --run [DIR] [--shard N/M]\n' "$0" >&2; exit 2 ;; esac
+        run "$dir" "$shard" ;;
     -h|--help) sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//' ;;
-    *) printf 'usage: %s --list|--run [DIR]\n' "$0" >&2; exit 2 ;;
+    *) printf 'usage: %s --list|--run [DIR] [--shard N/M]\n' "$0" >&2; exit 2 ;;
 esac

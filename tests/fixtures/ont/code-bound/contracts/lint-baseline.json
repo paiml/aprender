@@ -1,0 +1,5 @@
+{
+  "armed_gates": ["validate"],
+  "armed_shapes": ["fixture-contract-id"],
+  "ont": {}
+}

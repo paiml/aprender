@@ -1,4 +1,3 @@
-
 /// GH-321: Convert GGML qtype to APR dtype string using unified enum.
 ///
 /// FAILS on an unrecognized qtype. This used to be
@@ -46,6 +45,150 @@ fn apr_qtype_to_dtype(qtype: u32) -> Result<&'static str> {
 #[must_use]
 pub(crate) fn gpu_unsupported_quant_qtype(qtype: u32) -> bool {
     !matches!(qtype, 0 | 2 | 3 | 6 | 8 | 12 | 13 | 14)
+}
+
+/// #3477 / PMAT-781/783/785: the quantized projections the Qwen3.5 hybrid
+/// (Gated `DeltaNet` + gated attention) forward uploads, by tensor-name stem.
+///
+/// The first five are the Gated `DeltaNet` weights `Qwen35CudaModel::new`
+/// uploads (`attn_qkv`, `ssm_alpha`, `ssm_beta`, `attn_gate`, `ssm_out`); the
+/// rest are the attention-layer and FFN projections the same forward reaches.
+/// `ssm_conv1d` / `ssm_a` / `ssm_dt_bias` / the norms are NOT here: they are
+/// loaded as f32 vectors, never through a GEMV kernel.
+pub(crate) const HYBRID_GPU_PROJECTIONS: [&str; 12] = [
+    "attn_qkv",
+    "ssm_alpha",
+    "ssm_beta",
+    "attn_gate",
+    "ssm_out",
+    "attn_q",
+    "attn_k",
+    "attn_v",
+    "attn_output",
+    "ffn_gate",
+    "ffn_up",
+    "ffn_down",
+];
+
+/// Is this tensor one of the hybrid forward's quantized projections?
+///
+/// Matched on the dot-delimited stem (`blk.0.ssm_alpha.weight` → `ssm_alpha`)
+/// so `attn_q` cannot swallow `attn_q_norm` and `ssm_out` cannot swallow
+/// `ssm_out_something`: a substring test over these names is wrong in both
+/// directions (`attn_q` ⊂ `attn_qkv`).
+fn is_hybrid_gpu_projection(name: &str) -> bool {
+    name.split('.')
+        .any(|part| HYBRID_GPU_PROJECTIONS.contains(&part))
+}
+
+/// The first hybrid projection whose GGML type has no verified GPU GEMV kernel.
+///
+/// The dense gate [`OwnedQuantizedModel::has_gpu_unsupported_quant`] CANNOT see
+/// these tensors: for `qwen35` the `OwnedQuantizedModel` it inspects is the base
+/// built by `Qwen35Model::create_base_model`, whose `layers` is deliberately
+/// EMPTY (the hybrid weights live in `Qwen35Model::layers`), so the dense gate
+/// judges the lm_head and nothing else. Answering from `(name, GGML type)`
+/// pairs makes this gate runnable straight off the GGUF header — before a byte
+/// is uploaded — and testable without a model.
+///
+/// Same policy as the dense gate: anything outside
+/// [`gpu_unsupported_quant_qtype`]'s whitelist would hit the GPU upload's
+/// `resolve_qtype().unwrap_or(Q4K)` and be silently decoded as Q4_K
+/// (PMAT-781/783). `transformer::hybrid_gpu_quant_refusal` is the public
+/// wording of this verdict.
+pub(crate) fn hybrid_gpu_unsupported_quant_tensor<'n>(
+    tensors: impl IntoIterator<Item = (&'n str, u32)>,
+) -> Option<(String, u32)> {
+    tensors
+        .into_iter()
+        .find(|&(name, qtype)| is_hybrid_gpu_projection(name) && gpu_unsupported_quant_qtype(qtype))
+        .map(|(name, qtype)| (name.to_string(), qtype))
+}
+
+#[cfg(test)]
+mod hybrid_gpu_unsupported_quant_tests {
+    use super::{hybrid_gpu_unsupported_quant_tensor, is_hybrid_gpu_projection};
+
+    /// Every Gated `DeltaNet` projection is judged, not just the dense ones.
+    /// Before #3477 the only quant gate was `has_gpu_unsupported_quant`, which
+    /// for qwen35 inspects an EMPTY layer list — so a Q3_K `ssm_alpha` reached
+    /// the GPU upload and was decoded as Q4_K (PMAT-781/783).
+    #[test]
+    fn every_deltanet_projection_is_gpu_unsupported_quant_checked() {
+        for stem in ["attn_qkv", "ssm_alpha", "ssm_beta", "attn_gate", "ssm_out"] {
+            let name = format!("blk.7.{stem}.weight");
+            assert_eq!(
+                hybrid_gpu_unsupported_quant_tensor([(name.as_str(), 10u32)]),
+                Some((name.clone(), 10)),
+                "{stem}: Q2_K has no GPU GEMV kernel"
+            );
+            assert_eq!(
+                hybrid_gpu_unsupported_quant_tensor([(name.as_str(), 12u32)]),
+                None,
+                "{stem}: Q4_K does have one"
+            );
+        }
+    }
+
+    /// A tensor the hybrid forward never sends through a GEMV kernel must not
+    /// veto the GPU: `ssm_conv1d` / `ssm_a` / the norms are f32 vectors, and an
+    /// f32 tensor is whitelisted anyway — but a name-keyed gate that matched
+    /// them would refuse on any future non-f32 storage for no reason.
+    #[test]
+    fn non_projection_tensors_are_not_gpu_unsupported_quant_vetoes() {
+        for name in [
+            "blk.0.ssm_conv1d.weight",
+            "blk.0.ssm_a",
+            "blk.0.ssm_dt_bias",
+            "blk.0.ssm_norm.weight",
+            "blk.0.attn_norm.weight",
+            "token_embd.weight",
+        ] {
+            assert!(
+                !is_hybrid_gpu_projection(name),
+                "{name} is not a GEMV projection"
+            );
+            assert_eq!(hybrid_gpu_unsupported_quant_tensor([(name, 11u32)]), None);
+        }
+    }
+
+    /// The stem match is exact per dot-delimited part: `attn_q` is a PREFIX of
+    /// `attn_qkv` and `attn_q_norm`, so a `contains` test would both mis-name
+    /// the offending tensor and drag a per-head norm into the projection set.
+    #[test]
+    fn gpu_unsupported_quant_stems_match_whole_name_parts_only() {
+        assert!(is_hybrid_gpu_projection("blk.0.attn_qkv.weight"));
+        assert!(is_hybrid_gpu_projection("blk.0.attn_q.weight"));
+        assert!(!is_hybrid_gpu_projection("blk.0.attn_q_norm.weight"));
+        assert!(!is_hybrid_gpu_projection("blk.0.ssm_outer.weight"));
+    }
+
+    /// The FIRST offending tensor is reported, and a clean model returns None.
+    #[test]
+    fn gpu_unsupported_quant_reports_the_first_offender() {
+        assert_eq!(
+            hybrid_gpu_unsupported_quant_tensor([
+                ("blk.0.attn_qkv.weight", 8u32),
+                ("blk.0.ssm_beta.weight", 15),
+                ("blk.1.ssm_out.weight", 7),
+            ]),
+            Some(("blk.0.ssm_beta.weight".to_string(), 15)),
+            "Q8_K (15) is the first tensor without a kernel"
+        );
+        assert_eq!(
+            hybrid_gpu_unsupported_quant_tensor([
+                ("blk.0.attn_qkv.weight", 8u32),
+                ("blk.0.ssm_beta.weight", 13),
+                ("blk.0.ffn_down.weight", 14),
+                ("output.weight", 12),
+            ]),
+            None
+        );
+        assert_eq!(
+            hybrid_gpu_unsupported_quant_tensor(Vec::<(&str, u32)>::new()),
+            None
+        );
+    }
 }
 
 /// GH-321: Convert APR dtype string to byte using unified enum.
@@ -109,6 +252,14 @@ impl OwnedQuantizedModel {
     /// (`OwnedQuantizedModelCuda::with_max_seq_len` → `check_quant_gpu_capability`)
     /// is protected by this single check, so an unsupported-quant model routes
     /// to CPU (loud) or errors rather than shipping GPU garbage.
+    ///
+    /// #3477 — what this gate CANNOT see: the Qwen3.5 hybrid. Its
+    /// `OwnedQuantizedModel` is the base built by
+    /// `Qwen35Model::create_base_model`, whose `layers` is deliberately empty
+    /// (the Gated DeltaNet weights live in `Qwen35Model::layers`), so the loop
+    /// below inspects the lm_head alone. The hybrid tensors are judged by the
+    /// header-level [`hybrid_gpu_unsupported_quant_tensor`] against the same
+    /// whitelist; do not read a `false` here as "this hybrid model is GPU-safe".
     #[must_use]
     pub(crate) fn has_gpu_unsupported_quant(&self) -> bool {
         if gpu_unsupported_quant_qtype(self.lm_head_weight.qtype) {
@@ -186,9 +337,7 @@ impl OwnedQuantizedModel {
             let offset = tensor_data_bytes.len() as u64;
             let size = data.len() as u64;
 
-            tensor_index_bytes.extend(write_apr_tensor_entry(
-                name, dtype, shape, offset, size,
-            ));
+            tensor_index_bytes.extend(write_apr_tensor_entry(name, dtype, shape, offset, size));
 
             tensor_data_bytes.extend_from_slice(data);
         }

@@ -411,6 +411,17 @@ pub enum KernelType {
         num_heads: u32,
         epsilon: f32,
     },
+    /// #3413 B: Batched per-head QK RMSNorm (Qwen3 prefill).
+    ///
+    /// Grid (num_heads, batch, 1): block (seq_idx, head_idx) normalizes
+    /// `input[(seq_idx * num_heads + head_idx) * head_dim ..][..head_dim]`.
+    /// `batch` is a grid dimension only — the PTX does not depend on it.
+    BatchedPerHeadRmsNorm {
+        head_dim: u32,
+        num_heads: u32,
+        batch: u32,
+        epsilon: f32,
+    },
     /// PAR-114: Batched RoPE kernel
     BatchedRope {
         num_heads: u32,
@@ -561,5 +572,46 @@ pub enum KernelType {
     Q4KDequantFp16 {
         k: u32,
         n: u32,
+    },
+    /// PMAT-3477 (#3090): fused causal depthwise conv1d + SiLU, one decode step.
+    GdnCausalConv1dSilu { channels: u32, kernel_size: u32 },
+    /// PMAT-3477 (#3090): per-head L2 normalisation of Gated `DeltaNet` q/k, in place.
+    GdnPerHeadL2Norm {
+        head_dim: u32,
+        num_heads: u32,
+        epsilon: f32,
+    },
+    /// PMAT-3477 (#3090): the Gated `DeltaNet` per-head `dt`/`beta` gates.
+    GdnGates { num_heads: u32 },
+    /// PMAT-3477 (#3090, #3346/#3510): the gated delta-rule recurrence, one token.
+    /// `num_k_heads`/`head_k_dim` are APPENDED (never reordered — a line-keyed guard
+    /// baseline points into this file); value head `h` reads key head `h % num_k_heads`.
+    GdnDeltaRule {
+        num_v_heads: u32,
+        head_v_dim: u32,
+        num_k_heads: u32,
+        head_k_dim: u32,
+    },
+    /// PMAT-3477 (#3090): gated RMSNorm — the Gated `DeltaNet` output norm.
+    GdnGatedRmsNorm {
+        head_dim: u32,
+        num_heads: u32,
+        epsilon: f32,
+    },
+    /// PMAT-3477 (#3090): `x *= sigmoid(gate)`, the full-attention output gate.
+    GdnSigmoidGate { n: u32 },
+    /// PMAT-3477 (#3090): de-interleave the joint `[q | gate]` Q projection.
+    GdnSplitInterleaved { num_heads: u32, head_dim: u32 },
+    /// PMAT-3477 (#3090): partial NEOX RoPE over the first `n_rot` dimensions.
+    GdnPartialNeoxRope {
+        num_heads: u32,
+        head_dim: u32,
+        n_rot: u32,
+    },
+    /// PMAT-3477 (#3090): single-query decode attention, `head_dim <= 256`.
+    GdnDecodeAttention {
+        num_heads: u32,
+        num_kv_heads: u32,
+        head_dim: u32,
     },
 }

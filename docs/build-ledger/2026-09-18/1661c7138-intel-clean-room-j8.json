@@ -1,0 +1,33 @@
+{
+ "sha": "1661c7138705d6b0a1f40c42bfe2f8a140c91c62",
+ "tag": "v0.68.1",
+ "host": "intel",
+ "job": "clean-room (aprender)",
+ "run": "paiml/infra 35311857025",
+ "date": "2026-09-18",
+ "config": {
+  "CARGO_BUILD_JOBS": 8,
+  "B2_JOBS": 8,
+  "B2_TEST_THREADS": 8,
+  "CONTAINER_MEMORY": "48g"
+ },
+ "gates_s": {
+  "A0": 2,
+  "A1": 9,
+  "A2": 93,
+  "A3": 125,
+  "A4": 3,
+  "B0": 89,
+  "B1": 139,
+  "B2": 766,
+  "B3": 206,
+  "B4": 42
+ },
+ "chain_s": 1474,
+ "b2_compile_before_first_test_s": 248,
+ "tests_passed": 79936,
+ "peak_rss_mb": 49152,
+ "peak_rss_note": "memory.peak == memory.max (48 GiB): the container ran AT its ceiling; the true peak is >= the cap and unknown. No OOM kill (run green). Next measurement: 64g to read the real peak, then set the ceiling from it.",
+ "verdict": "green",
+ "basis": "aprender#3475 lever (a), infra#663"
+}

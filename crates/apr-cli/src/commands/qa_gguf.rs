@@ -1,4 +1,3 @@
-
 /// Check if model is GGUF format (for Ollama parity gate).
 fn is_gguf_format(path: &Path) -> bool {
     #[cfg(feature = "inference")]
@@ -18,6 +17,122 @@ fn is_gguf_format(path: &Path) -> bool {
         let _ = path;
         false
     }
+}
+
+/// Skip reason for a gate that needs the GPU on an architecture the GPU declined.
+///
+/// #3477: the `(#3090)` citation is gone. #3090 is the Gated DeltaNet GPU
+/// forward, which now EXISTS — citing it as the reason a GPU gate skipped
+/// survived as a stale claim long after the refusal it named was lifted. This
+/// arm is reached only when `is_cpu_only_architecture` finds a real (CPU runs,
+/// GPU declines) pair, so it must speak for that pair and nothing else.
+const GPU_DECLINED_SKIP: &str =
+    "The GPU backend declined this architecture; the CPU forward carries the report";
+
+/// Skip reason for a gate built on the dense GGUF loader
+/// (`OwnedQuantizedModel::from_mapped`), which refuses Gated DeltaNet.
+///
+/// #3477: this string used to end "GPU declined (#3090)", which is now FALSE —
+/// the hybrid has a GPU forward and the Golden Output and Throughput gates above
+/// are measured on it. The reason a dense-loader gate still cannot run is the
+/// loader, on BOTH rungs; saying anything about the GPU's capability here is the
+/// withdrawn claim this ticket exists to delete.
+const DENSE_LOADER_SKIP: &str =
+    "Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this \
+     gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path";
+
+/// Skip decision for a GPU-dependent gate (GPU speedup, PTX parity, GPU state
+/// isolation).
+///
+/// #3477: on a CPU-only architecture these gates skip with the reason the GPU
+/// declined, instead of the old "Skipped due to capability match failure" that
+/// followed a FAILED Gate 0. A reasoned skip does not taint the report; the
+/// FAIL did, and `apr qa` exited 5 on a model `apr run` serves correctly.
+fn gpu_gate_skip(cpu_only: bool, skip: bool, reason: &'static str) -> (bool, &'static str) {
+    if cpu_only {
+        (true, GPU_DECLINED_SKIP)
+    } else {
+        (skip, reason)
+    }
+}
+
+/// Skip decision for a gate that builds the model through the dense GGUF loader
+/// (Ollama parity measures our side with it; cross-format parity compares it
+/// against SafeTensors). That loader is exactly what raised the
+/// "NEITHER the CPU nor the GPU backend implements ..." abort.
+fn dense_gate_skip(cpu_only: bool, skip: bool, reason: &'static str) -> (bool, &'static str) {
+    if cpu_only {
+        (true, DENSE_LOADER_SKIP)
+    } else {
+        (skip, reason)
+    }
+}
+
+/// Skip reason for a GPU gate whose measurement is taken through the dense
+/// `OwnedQuantizedModelCuda`, which has no hybrid path.
+///
+/// #3477: NOT "the GPU declined" — the GPU runs this architecture (#3090) and
+/// the Golden Output gate above judges its output. What is missing is this
+/// gate's own instrument.
+const HYBRID_DENSE_GPU_SKIP: &str =
+    "Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense \
+     OwnedQuantizedModelCuda, which has no hybrid path";
+
+/// Skip decision for a GPU gate on a hybrid file.
+fn hybrid_gpu_gate_skip(hybrid: bool, skip: bool, reason: &'static str) -> (bool, &'static str) {
+    if hybrid {
+        (true, HYBRID_DENSE_GPU_SKIP)
+    } else {
+        (skip, reason)
+    }
+}
+
+/// Golden output for this architecture: a file the dense loader refuses goes
+/// through the runtime entry point — which since #3477 serves `qwen35` on the
+/// GPU (#3090) when one is present, so this gate judges the GPU's output.
+fn golden_gate_for(
+    cpu_only: bool,
+    hybrid: bool,
+    path: &Path,
+    config: &QaConfig,
+) -> Result<GateResult> {
+    if cpu_only || hybrid {
+        run_golden_output_gate_runtime(path, config)
+    } else {
+        run_golden_output_gate(path, config)
+    }
+}
+
+/// Throughput for this architecture, same split as `golden_gate_for`.
+fn throughput_gate_for(
+    cpu_only: bool,
+    hybrid: bool,
+    path: &Path,
+    config: &QaConfig,
+) -> Result<GateResult> {
+    if cpu_only || hybrid {
+        run_throughput_gate_runtime(path, config)
+    } else {
+        run_throughput_gate(path, config)
+    }
+}
+
+/// Skip decision for the cross-format parity gate.
+///
+/// It loads the GGUF side with the dense loader, so a CPU-only architecture
+/// skips for the same reason the Ollama parity gate does.
+fn format_parity_skip(
+    capability_match_failed: bool,
+    cpu_only: bool,
+    config: &QaConfig,
+) -> (bool, &str) {
+    if capability_match_failed {
+        return (true, "Skipped due to capability match failure");
+    }
+    if cpu_only {
+        return (true, DENSE_LOADER_SKIP);
+    }
+    format_parity_skip_status(config)
 }
 
 fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
@@ -84,6 +199,14 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
         .find(|g| g.name == "capability_match")
         .map_or(false, |g| !g.passed);
 
+    // #3477: an architecture the GPU declines (#3090) but the CPU forward runs
+    // (qwen35, #3091) certifies on the CPU rung — the CPU gates run for real and
+    // only the GPU/dense-loader gates skip, each with its own reason.
+    let cpu_only = super::qa_capability::cpu_only_architecture(path);
+    // #3477: and independently of which backend runs it — the dense loader has
+    // no hybrid path, so every gate built on it skips with that reason.
+    let hybrid = super::qa_capability::hybrid_loader_architecture(path);
+
     let get_skip = |skip: bool, reason: &'static str| -> (bool, &'static str) {
         if capability_match_failed {
             (true, "Skipped due to capability match failure")
@@ -92,11 +215,17 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
         }
     };
 
+    // The CPU gates run for real on a CPU-only architecture — through the same
+    // entry point `apr run` uses, because the dense loader refuses the model.
     let (s, r) = get_skip(config.skip_golden, "Skipped by --skip-golden");
-    dispatch_gate(&mut gates, config.json, s, "golden_output", r, || run_golden_output_gate(path, config))?;
+    dispatch_gate(&mut gates, config.json, s, "golden_output", r, || {
+        golden_gate_for(cpu_only, hybrid, path, config)
+    })?;
 
     let (s, r) = get_skip(config.skip_throughput, "Skipped by --skip-throughput");
-    dispatch_gate(&mut gates, config.json, s, "throughput", r, || run_throughput_gate(path, config))?;
+    dispatch_gate(&mut gates, config.json, s, "throughput", r, || {
+        throughput_gate_for(cpu_only, hybrid, path, config)
+    })?;
 
     let is_ollama_fmt = is_gguf_format(path);
     let orig_skip_ollama = config.skip_ollama || !is_ollama_fmt;
@@ -106,26 +235,39 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
         "Skipped by --skip-ollama"
     };
     let (s, r) = get_skip(orig_skip_ollama, orig_reason_ollama);
-    dispatch_gate(&mut gates, config.json, s, "ollama_parity", r, || run_ollama_parity_gate(path, config))?;
+    let (s, r) = dense_gate_skip(cpu_only || hybrid, s, r);
+    dispatch_gate(&mut gates, config.json, s, "ollama_parity", r, || {
+        run_ollama_parity_gate(path, config)
+    })?;
 
     let (s, r) = get_skip(config.skip_gpu_speedup, "Skipped by --skip-gpu-speedup");
-    dispatch_gate(&mut gates, config.json, s, "gpu_speedup", r, || run_gpu_speedup_gate(path, config))?;
+    let (s, r) = gpu_gate_skip(cpu_only, s, r);
+    let (s, r) = hybrid_gpu_gate_skip(hybrid, s, r);
+    dispatch_gate(&mut gates, config.json, s, "gpu_speedup", r, || {
+        run_gpu_speedup_gate(path, config)
+    })?;
 
-    let (skip_format, format_skip_reason) = format_parity_skip_status(config);
-    // get_skip expects &'static str, but format_skip_reason is &str.
-    // So we just inline the check.
-    let (s, r) = if capability_match_failed {
-        (true, "Skipped due to capability match failure")
-    } else {
-        (skip_format, format_skip_reason)
-    };
-    dispatch_gate(&mut gates, config.json, s, "format_parity", r, || run_format_parity_gate(path, config))?;
+    // get_skip expects &'static str, but the format-parity reason is &str, so
+    // the three-way decision lives in its own function.
+    let (s, r) = format_parity_skip(capability_match_failed, cpu_only || hybrid, config);
+    dispatch_gate(&mut gates, config.json, s, "format_parity", r, || {
+        run_format_parity_gate(path, config)
+    })?;
 
+    // PTX parity reads the GGUF config only — no dense loader, so the hybrid
+    // runs it for real (#3477).
     let (s, r) = get_skip(config.skip_ptx_parity, "Skipped by --skip-ptx-parity");
-    dispatch_gate(&mut gates, config.json, s, "ptx_parity", r, || run_ptx_parity_gate(path, config))?;
+    let (s, r) = gpu_gate_skip(cpu_only, s, r);
+    dispatch_gate(&mut gates, config.json, s, "ptx_parity", r, || {
+        run_ptx_parity_gate(path, config)
+    })?;
 
     let (s, r) = get_skip(config.skip_gpu_state, "Skipped by --skip-gpu-state");
-    dispatch_gate(&mut gates, config.json, s, "gpu_state_isolation", r, || run_gpu_state_isolation_gate(path, config))?;
+    let (s, r) = gpu_gate_skip(cpu_only, s, r);
+    let (s, r) = hybrid_gpu_gate_skip(hybrid, s, r);
+    dispatch_gate(&mut gates, config.json, s, "gpu_state_isolation", r, || {
+        run_gpu_state_isolation_gate(path, config)
+    })?;
 
     // Gate 9: Performance regression detection (auto-discovers previous report)
     dispatch_regression_gate(path, &mut gates, config)?;
@@ -433,12 +575,14 @@ fn run_classifier_head_gate(path: &Path, config: &QaConfig) -> Result<GateResult
     };
 
     // Look for classifier head tensor patterns
-    let classifier_patterns = ["score.weight", "classifier.weight", "classification_head.weight"];
+    let classifier_patterns = [
+        "score.weight",
+        "classifier.weight",
+        "classification_head.weight",
+    ];
     let classifier_tensor = report.tensors.iter().find(|t| {
         let name_lower = t.name.to_lowercase();
-        classifier_patterns
-            .iter()
-            .any(|p| name_lower.contains(p))
+        classifier_patterns.iter().any(|p| name_lower.contains(p))
     });
 
     let duration = start.elapsed();

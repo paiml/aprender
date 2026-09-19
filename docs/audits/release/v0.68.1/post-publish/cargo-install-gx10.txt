@@ -1,0 +1,9 @@
+host=gx10-a5b5 arch=aarch64 cargo=cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+start=2026-09-17T22:52:15Z
+  Installing <throwaway-root>/bin/apr-corpus-ingest
+   Installed package `apr-cli v0.68.1` (executables `apr`, `apr-corpus-ingest`)
+warning: be sure to add `<throwaway-root>/bin` to your PATH to be able to run the installed binaries
+install_rc=0
+version=apr 0.68.1 (v0.68.1+no-git)
+end=2026-09-17T22:54:06Z
+rc=0

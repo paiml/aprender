@@ -69,6 +69,7 @@ proof_obligations:
   type: invariant
   property: Emitted output is valid POSIX sh
   formal: 'For all ast in BashAst: parse(emit_purified(ast)) = Ok(_) — output always re-parseable'
+  prose: true
   applies_to: all
 - id: ER-INV-003
   type: invariant

@@ -1,0 +1,139 @@
+{
+  "ticket": "PMAT-3524",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 101 commit(s); judged against origin/main",
+  "head": "4e0d1c69339e73cde472fe26d5770d91cefe2abd",
+  "diff_sha256": "a2856fc0604d0912503b77c2e7c5ecd1ba295bb27d41e9c5d03d092144f18ced",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 10505,
+  "author": {
+    "model": "claude-fable-5-1",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly aligns with PMAT-3524. It strictly replaces the `gx10.json` and `lambda.json` files with the new model ladder receipts generated at `a6f54e84c`. Exactly 8 rungs are present in both files, all have `present: true`, `sha_ok: true`, and the measured `sha256` field added. Furthermore, the receipts correctly reflect the red-by-construction state on main for Qwen3.5 models (with CUDA fallbacks indicated, and 4b/9b/27b exiting with code 101). No other files are touched.",
+      "findings": [],
+      "raw_bytes": 2222,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff strictly adheres to PMAT-3524: touches only evidence/dogfood/models/0.68.1/{gx10,lambda}.json to update model ladder receipts for commit a6f54e84c with all 8 rungs present, sha_ok=true, measured sha256 hashes recorded, and Qwen3.5 rungs red-by-construction as expected on main. No gates or forbidden files were modified.",
+      "findings": [
+        {
+          "claim": "gx10.json updated to main a6f54e84c with 8 rungs, sha_ok=true, measured sha256 digests, and red Qwen3.5 rungs",
+          "file": "evidence/dogfood/models/0.68.1/gx10.json",
+          "fix": "None needed",
+          "grounding": "cited",
+          "line": 5
+        },
+        {
+          "claim": "lambda.json updated to main a6f54e84c with 8 rungs, sha_ok=true, measured sha256 digests, and red Qwen3.5 rungs",
+          "file": "evidence/dogfood/models/0.68.1/lambda.json",
+          "fix": "None needed",
+          "grounding": "cited",
+          "line": 5
+        }
+      ],
+      "raw_bytes": 2855,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PR touches only evidence/dogfood/models/0.68.1/{gx10,lambda}.json, updating both model ladder receipts to main a6f54e84c with 8 rungs, sha_ok=true, measured sha256 hashes, and red Qwen3.5 rungs as mandated by PMAT-3524. No gates or forbidden files were touched.",
+      "findings": [
+        {
+          "claim": "gx10.json receipt updated for commit a6f54e84c with 8 rungs, sha256 digests, and expected red statuses for Qwen3.5 rungs",
+          "file": "evidence/dogfood/models/0.68.1/gx10.json",
+          "fix": "None needed",
+          "grounding": "cited",
+          "line": 5
+        },
+        {
+          "claim": "lambda.json receipt updated for commit a6f54e84c with 8 rungs, sha256 digests, and expected red statuses for Qwen3.5 rungs",
+          "file": "evidence/dogfood/models/0.68.1/lambda.json",
+          "fix": "None needed",
+          "grounding": "cited",
+          "line": 5
+        }
+      ],
+      "raw_bytes": 2765,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "evidence/dogfood/models/0.68.1/gx10.json",
+      "line": 5,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "gx10.json receipt updated for commit a6f54e84c with 8 rungs, sha256 digests, and expected red statuses for Qwen3.5 rungs",
+        "gx10.json updated to main a6f54e84c with 8 rungs, sha_ok=true, measured sha256 digests, and red Qwen3.5 rungs"
+      ]
+    },
+    {
+      "file": "evidence/dogfood/models/0.68.1/lambda.json",
+      "line": 5,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "lambda.json receipt updated for commit a6f54e84c with 8 rungs, sha256 digests, and expected red statuses for Qwen3.5 rungs",
+        "lambda.json updated to main a6f54e84c with 8 rungs, sha_ok=true, measured sha256 digests, and red Qwen3.5 rungs"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-fable-5-1/claude"
+  }
+}
