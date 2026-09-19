@@ -128,9 +128,14 @@ proof_obligations:
   applies_to: all
 - id: QHF-GPU-008
   type: invariant
-  property: 'Gated DeltaNet on the device equals the CPU forward, per layer and per token: the recurrent state S_l(t) and the layer output y_l(t) agree'
-  formal: '∀ l ∈ gdn_layers, ∀ t: ‖S_l^{gpu}(t) − S_l^{cpu}(t)‖_∞ ≤ 1e-3 ∧ ‖y_l^{gpu}(t) − y_l^{cpu}(t)‖_∞ ≤ 1e-3'
+  property: 'Every Gated DeltaNet AND attention op on the device equals an EXACT-ARITHMETIC reference per op, per layer and per token — dequantized f32 weights, f32 dots, carried by the test qwen35_cuda_the_parity_floor_is_the_cpu_references_own_activation_quantization — not the production CPU forward, which quantizes activations to Q8_K before its Q4_K matvec (measured 2.95e-3 per projection from exact on 0.8B, 2026-09-19) and so cannot be a 1e-3 oracle for a correct device path'
+  formal: '∀ l ∈ gdn_layers ∪ attn_layers, ∀ t: ‖S_l^{gpu}(t) − S_l^{exact}(t)‖_∞ ≤ 1e-3 · ‖S_l^{exact}(t)‖_∞ ∧ ‖y_l^{gpu}(t) − y_l^{exact}(t)‖_∞ ≤ 1e-3 · ‖y_l^{exact}(t)‖_∞'
   tolerance: 1.0e-03
+  applies_to: all
+- id: QHF-GPU-009
+  type: invariant
+  property: 'End to end against the PRODUCTION CPU forward the device decodes the same token at every position and its logits stay on the CPU''s ray: identical argmax and a cosine floor, the same shape as the F2 runtime parity guard (apr-cpu-vs-gpu-output-parity-v1). The floor is a MEASURED number: on Qwen3.5-0.8B-Q4_K_M, 6-token prompt, kernel branch 1ed0adf36 (2026-09-19, RTX 4090) the per-position cosine was 0.998348…0.999636 (min 0.998348) with argmax identical at every position and relative L∞ ≤ 6.72e-2; the floor is 0.996 (the measured min with margin, the test''s COSINE_FLOOR), never loosened below the F2 catastrophic line 0.90. The sigmoid-gate mutant scores 0.7656 with a flipped argmax; the DP4A Q4K/Q6K GEMV profile through the recurrence scores 0.466…−0.246 with every argmax wrong (#3513, float MWV pinned for qwen35 in 0.68.2)'
+  formal: '∀ t ∈ positions(prompt): argmax(logits^{gpu}(t)) = argmax(logits^{cpu}(t)) ∧ cos(logits^{gpu}(t), logits^{cpu}(t)) ≥ 0.996'
   applies_to: all
 falsification_tests:
 - id: FALSIFY-QHF-001
@@ -173,6 +178,11 @@ falsification_tests:
   prediction: "`apr qa Qwen3.5-0.8B-Q4_K_M.gguf` golden_output passes on GPU and `apr run --gpu` prints no `[qwen35: Gated DeltaNet runs on the CPU` notice, on lambda (sm_89) and gx10 (sm_121)"
   test: "bash scripts/check_model_ladder.sh — rung qwen35-0.8b-q4km, backend cuda, both required hosts (receipts under evidence/dogfood/models/<version>/)"
   if_fails: "the GDN device kernels (causal conv1d, gated delta-rule recurrence with per-layer state, gated RMSNorm, per-head L2 norm, partial-NEOX rope) diverge from forward_qwen35.rs or never ran — at f4c0daa37 no device path existed and the rung claimed cpu only (#3090, EPIC #3477)"
+- id: FALSIFY-QHF-009
+  rule: The device path is judged per op against exact arithmetic and end to end against production, not per op against a quantized CPU
+  prediction: "qwen35_cuda_the_parity_floor_is_the_cpu_references_own_activation_quantization passes (every GDN and attention op ≤ 1e-3 relative to the dequantized-f32 exact reference; the sigmoid-gate mutant turns it RED), and on Qwen3.5-0.8B-Q4_K_M a 6-token prompt gives identical argmax at every position with per-position cosine ≥ 0.996 between the device and the production CPU logits (measured min 0.998348 at 1ed0adf36), on lambda (sm_89) and gx10 (sm_121)"
+  test: "on EACH required host (lambda sm_89, gx10 sm_121): bash scripts/model_ladder.sh --out evidence/dogfood/models/<version>/ (rung qwen35-0.8b-q4km: apr qa golden_output + gpu-cpu parity per position, argmax match ∧ cos ≥ 0.996); then bash scripts/check_model_ladder.sh reads both receipts — one host is not the fleet. The per-op exact-reference unit test lands with the #3090 kernel PR and is named in QHF-GPU-008; it is bound here once it exists on main (strict-test-binding refuses a dangling cargo test reference)"
+  if_fails: "either a device op is wrong (per-op exact check names the op) or the composed forward drifts (argmax flip or cosine below the measured floor names the position); a check that demanded device == quantized-CPU at 1e-3 could only be passed by an implementation reproducing the CPU's Q8_K activation error, which is not correctness (#3090, EPIC #3477)"
 kani_harnesses:
 - id: KANI-QHF-001
   obligation: QHF-INV-001
@@ -233,5 +243,5 @@ qa_gate:
   - hybrid_block
   - activation_magnitude
   - gradient_flow
-  pass_criteria: All 8 falsification tests pass; FALSIFY-QHF-008 is read from the per-host ladder receipts
+  pass_criteria: All 9 falsification tests pass; FALSIFY-QHF-008 and FALSIFY-QHF-009 are read from the per-host ladder receipts
   falsification: Remove RMSNorm before attention to trigger gradient explosion
