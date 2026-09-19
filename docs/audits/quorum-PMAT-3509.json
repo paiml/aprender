@@ -1,0 +1,253 @@
+{
+  "ticket": "PMAT-3509",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "3329c7cde4f704673d06df5bb50ba2b4e5cf7271",
+  "diff_sha256": "d51c86448753916fb6e1c76e6a021045be8c49591161c73c1474de8398e3bd72",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 1480188,
+  "author": {
+    "model": "claude-fable-5-1",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I have reviewed the diff completely. The diff implements all features asked by the PMAT-3509 ticket and fulfills all the acceptance criteria. `tests/oracle` is a detached workspace crate executing the SHACL standard check. `ShapesOutcome::Differential` successfully captures W3C case validation disagreements and delegates `Verdict::Unknown(Reason::Differential)`. The syn-based module tree extraction runs exactly as stated. The 32 cases are accounted for (16 vendored and 16 NOT_VENDORED). No refutations found.",
+      "findings": [
+        {
+          "claim": "make oracle writing tests/oracle/differential.json (release gate only, R-13); Unknown{Differential} on disagreement",
+          "file": "crates/aprender-contracts-cli/src/ontology/w3c.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "extract:code (syn module-tree walk over the bound symbols) and extract:lean (the in-tree theorems) into contracts.nt under the symbol/ and world/ roots",
+          "file": "crates/aprender-contracts/src/ontology/extract/code.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "the ONT-0 table's 32 W3C SHACL-Core cases accounted for one by one — 16 vendored and run by the shapes gate (w3c_cases_passed), 16 NOT vendored because their FORM (a constraint on the node shape itself) is outside the subset",
+          "file": "crates/aprender-contracts/src/ontology/w3c.rs",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 3960,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements the requested ticket PMAT-3509 (ONT-4b2). The syn module-tree walk over bound symbols (extract:code) and the in-tree theorems (extract:lean) are extracted into contracts.nt under the symbol/ and world/ roots. The ONT-0 table's 32 W3C SHACL-Core cases are accounted for, with 16 vendored cases run by the shapes gate and 16 explicitly listed as NOT_VENDORED because their FORM falls outside the subset. The tests/oracle/ scratch crate is created and make oracle successfully writes to tests/oracle/differential.json with proper handling for Unknown{Differential} upon disagreement.",
+      "findings": [
+        {
+          "claim": "extract:code and extract:lean walk and emit to contracts.nt under symbol/ and world/ roots",
+          "file": "contracts/contracts.nt",
+          "grounding": "cited"
+        },
+        {
+          "claim": "tests/oracle/ scratch crate + make oracle writing tests/oracle/differential.json",
+          "file": "Makefile",
+          "grounding": "cited"
+        },
+        {
+          "claim": "16 NOT vendored because their FORM (a constraint on the node shape itself) is outside the subset",
+          "file": "crates/aprender-contracts/src/ontology/w3c.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "Unknown{Differential} on disagreement",
+          "file": "crates/aprender-contracts-cli/tests/ont4b2_code_lean_w3c.rs",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 3840,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I have reviewed the prompt brief for PMAT-3509 (ONT-4b2) in full.\n\n### Summary of Audit:\n1. **`extract:code` & `extract:lean`**:\n   - `extract:code` performs a `syn` module-tree walk over bound symbols, outputting `sym:*` terms into `contracts.nt` under the `symbol/` IRI root.\n   - `extract:lean` extracts in-tree Lean 4 theorems into `contracts.nt` under the `world/` IRI root.\n\n2. **W3C SHACL-Core Accounting**:\n   - The 32 W3C SHACL-Core cases are fully accounted for: 16 vendored and executed under the shapes gate, and 16 non-vendored with explicit non-supported shape FORM reasons documented.\n\n3. **Oracle Scratch Crate & Differential Gate**:\n   - Out-of-workspace scratch crate created in `tests/oracle/`.\n   - Makefile targets `oracle` and `oracle-check` generate and diff `tests/oracle/differential.json`.\n   - Returns `Unknown{Differential}` on disagreement.\n\n4. **Ratchet & Census Integrity**:\n   - Ratchet check updated and verified. Contract census count properly incremented to 1799 across all tracking files (`README.md`, `contracts/census.json`, `contracts/contracts.nt`).\n\nNo refutations, weakened quality gates, unbacked receipt claims, or forbidden scope additions were found.\n\nVerdict: **PASS**",
+      "findings": [
+        {
+          "claim": "extract:code syn module-tree walk over bound symbols generates sym:* terms under symbol/ root in contracts.nt",
+          "file": "crates/aprender-contracts/src/ontology/extract/code.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 1
+        },
+        {
+          "claim": "extract:lean extracts in-tree theorems into contracts.nt under world/ root",
+          "file": "crates/aprender-contracts/src/ontology/extract/lean.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 1
+        },
+        {
+          "claim": "32 W3C SHACL-Core cases accounted for (16 vendored, 16 NOT_VENDORED with explicit FORM reasons)",
+          "file": "crates/aprender-contracts/src/ontology/w3c.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 470
+        },
+        {
+          "claim": "tests/oracle scratch crate decoupled from workspace, Makefile oracle target generates differential.json and checks for disagreements emitting Unknown{Differential}",
+          "file": "tests/oracle/src/main.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 5706,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-low",
+      "model_measured": "gemini-3.6-flash-low",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "Makefile",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "tests/oracle/ scratch crate + make oracle writing tests/oracle/differential.json"
+      ]
+    },
+    {
+      "file": "contracts/contracts.nt",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "extract:code and extract:lean walk and emit to contracts.nt under symbol/ and world/ roots"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/ontology/w3c.rs",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "make oracle writing tests/oracle/differential.json (release gate only, R-13); Unknown{Differential} on disagreement"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/tests/ont4b2_code_lean_w3c.rs",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Unknown{Differential} on disagreement"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/ontology/extract/code.rs",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "extract:code (syn module-tree walk over the bound symbols) and extract:lean (the in-tree theorems) into contracts.nt under the symbol/ and world/ roots"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/ontology/extract/code.rs",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "extract:code syn module-tree walk over bound symbols generates sym:* terms under symbol/ root in contracts.nt"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/ontology/extract/lean.rs",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "extract:lean extracts in-tree theorems into contracts.nt under world/ root"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/ontology/w3c.rs",
+      "line": null,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "16 NOT vendored because their FORM (a constraint on the node shape itself) is outside the subset",
+        "the ONT-0 table's 32 W3C SHACL-Core cases accounted for one by one — 16 vendored and run by the shapes gate (w3c_cases_passed), 16 NOT vendored because their FORM (a constraint on the node shape itself) is outside the subset"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/ontology/w3c.rs",
+      "line": 470,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "32 W3C SHACL-Core cases accounted for (16 vendored, 16 NOT_VENDORED with explicit FORM reasons)"
+      ]
+    },
+    {
+      "file": "tests/oracle/src/main.rs",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "tests/oracle scratch crate decoupled from workspace, Makefile oracle target generates differential.json and checks for disagreements emitting Unknown{Differential}"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-fable-5-1/claude"
+  }
+}

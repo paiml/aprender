@@ -26,7 +26,7 @@
 //! focus node and the shape that fired, so a corpus violation is a line a person can act on. Severity is
 //! `Violation` unless the property shape says `severity: warning`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ontology::rdf::{ont, Graph, Term, RDF_TYPE};
 
@@ -68,6 +68,39 @@ pub enum Severity {
     Violation,
 }
 
+/// `xsd:string`, spelled once.
+pub const XSD_STRING_IRI: &str = "http://www.w3.org/2001/XMLSchema#string";
+
+/// One entry of a `sh:in` list, as a TERM: its lexical form and the datatype the YAML scalar gave it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InEntry {
+    pub lexical: String,
+    pub datatype: String,
+}
+
+impl InEntry {
+    /// Does `value` (a literal's lexical form and datatype) equal this term?
+    #[must_use]
+    pub fn matches_literal(&self, value: &str, datatype: &str) -> bool {
+        self.lexical == value && self.datatype == datatype
+    }
+    /// Does `iri` equal this entry, taken as an IRI (prefixed or written in full)?
+    #[must_use]
+    pub fn matches_iri(&self, iri: &str) -> bool {
+        self.lexical == iri || expand(&self.lexical) == iri
+    }
+}
+
+impl std::fmt::Display for InEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.datatype == XSD_STRING_IRI {
+            write!(f, "{:?}", self.lexical)
+        } else {
+            write!(f, "{:?}^^{}", self.lexical, short(&self.datatype))
+        }
+    }
+}
+
 /// One `properties[]` entry: a single-predicate path and its constraints.
 #[derive(Debug, Clone)]
 pub struct PropertyShape {
@@ -77,7 +110,7 @@ pub struct PropertyShape {
     pub datatype: Option<String>,
     pub class: Option<String>,
     pub node_kind: Option<NodeKind>,
-    pub r#in: Option<Vec<String>>,
+    pub r#in: Option<Vec<InEntry>>,
     pub pattern: Option<(String, regex::Regex)>,
     pub min_length: Option<usize>,
     pub max_length: Option<usize>,
@@ -348,6 +381,12 @@ fn parse_property(
         shape,
         pm.get("nodeKind").and_then(serde_yaml::Value::as_str),
     )?;
+    // `sh:in` is TERM equality (SHACL §4.5.1), and a term carries its datatype. The YAML scalar's own type is
+    // what gives it one: `in: [true]` is `"true"^^xsd:boolean`, `in: [1]` is `xsd:integer`, `in: [a, b]` is
+    // `xsd:string`. This used to collapse every entry to its lexical form and compare strings, so a shape
+    // `in: ["true"]` accepted `"true"^^xsd:boolean` — which the pinned oracle refuses, and which `make oracle`
+    // caught on this row's own shapes (490 results of difference on the real corpus). An entry that expands to
+    // an IRI still matches an IRI value, because a `sh:in` over `nodeKind: IRI` is a list of IRIs.
     let r#in = match pm.get("in") {
         None => None,
         Some(v) => Some(
@@ -355,10 +394,26 @@ fn parse_property(
                 .ok_or_else(|| malformed("`in` is not a list".into()))?
                 .iter()
                 .map(|x| match x {
-                    serde_yaml::Value::String(s) => s.clone(),
-                    serde_yaml::Value::Number(n) => n.to_string(),
-                    serde_yaml::Value::Bool(b) => b.to_string(),
-                    _ => String::new(),
+                    serde_yaml::Value::String(s) => InEntry {
+                        lexical: s.clone(),
+                        datatype: XSD_STRING_IRI.to_string(),
+                    },
+                    serde_yaml::Value::Number(n) => InEntry {
+                        lexical: n.to_string(),
+                        datatype: if n.is_f64() {
+                            format!("{XSD_NS}double")
+                        } else {
+                            format!("{XSD_NS}integer")
+                        },
+                    },
+                    serde_yaml::Value::Bool(b) => InEntry {
+                        lexical: b.to_string(),
+                        datatype: format!("{XSD_NS}boolean"),
+                    },
+                    _ => InEntry {
+                        lexical: String::new(),
+                        datatype: XSD_STRING_IRI.to_string(),
+                    },
                 })
                 .collect(),
         ),
@@ -440,13 +495,82 @@ fn parse_severity(shape: &str, v: Option<&str>) -> Result<Severity, ShapeError> 
     }
 }
 
+/// `rdfs:subClassOf`.
+pub const RDFS_SUBCLASS_OF: &str = "http://www.w3.org/2000/01/rdf-schema#subClassOf";
+
+/// The SHACL instance relation: `node rdf:type T` for some `T` that is `class` or an `rdfs:subClassOf`-ancestor
+/// of it (SHACL §2.1.1, the W3C `class-001` cases). A graph without `subClassOf` triples — every graph the
+/// extractors emit today — reduces to a direct `rdf:type` test.
+#[must_use]
+pub fn is_instance(graph: &Graph, node: &str, class: &str) -> bool {
+    graph
+        .objects(node, RDF_TYPE)
+        .iter()
+        .filter_map(|t| t.as_iri())
+        .any(|t| t == class || is_subclass_of(graph, t, class))
+}
+
+/// `sub rdfs:subClassOf* class`, cycle-safe.
+fn is_subclass_of(graph: &Graph, sub: &str, class: &str) -> bool {
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    let mut stack = vec![sub.to_string()];
+    while let Some(c) = stack.pop() {
+        if !seen.insert(c.clone()) {
+            continue;
+        }
+        for sup in graph.objects(&c, RDFS_SUBCLASS_OF) {
+            if let Some(s) = sup.as_iri() {
+                if s == class {
+                    return true;
+                }
+                stack.push(s.to_string());
+            }
+        }
+    }
+    false
+}
+
+/// The focus nodes of a class: its instances under [`is_instance`] (subclass instances included), in byte order.
+/// One pass: the classes at or below `class` (the inverse `subClassOf` closure), then every `rdf:type` triple
+/// whose object is one of them.
+#[must_use]
+pub fn instances_closed(graph: &Graph, class: &str) -> Vec<String> {
+    let mut subs: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for t in graph.iter() {
+        if t.predicate == RDFS_SUBCLASS_OF {
+            if let Some(sup) = t.object.as_iri() {
+                subs.entry(sup).or_default().push(t.subject.as_str());
+            }
+        }
+    }
+    let mut at_or_below: BTreeSet<&str> = BTreeSet::new();
+    let mut stack = vec![class];
+    while let Some(c) = stack.pop() {
+        if !at_or_below.insert(c) {
+            continue;
+        }
+        if let Some(children) = subs.get(c) {
+            stack.extend(children.iter().copied());
+        }
+    }
+    let out: BTreeSet<String> = graph
+        .iter()
+        .filter(|t| {
+            t.predicate == RDF_TYPE && t.object.as_iri().is_some_and(|o| at_or_below.contains(o))
+        })
+        .map(|t| t.subject.clone())
+        .collect();
+    out.into_iter().collect()
+}
+
 /// Validate `graph` against `shapes`. Focus nodes of a shape are the instances of its target class.
 #[must_use]
 pub fn validate(graph: &Graph, shapes: &[NodeShape]) -> Report {
     let mut report = Report::default();
     let mut focus_seen: BTreeSet<String> = BTreeSet::new();
     for shape in shapes {
-        for focus in graph.instances_of(&shape.target_class) {
+        for focus in instances_closed(graph, &shape.target_class) {
+            let focus = focus.as_str();
             focus_seen.insert(focus.to_string());
             validate_focus(graph, shape, focus, &mut report.results);
         }
@@ -549,14 +673,24 @@ fn check_value(
     if let Some(inner) = &p.node {
         match v.as_iri() {
             Some(i) => {
+                // One `sh:NodeConstraintComponent` result per VALUE that fails the nested shape, on the outer
+                // path, with the nested findings as its detail (SHACL §4.6.2; W3C property/node-001, -002).
                 let mut nested = Vec::new();
                 validate_focus(graph, inner, i, &mut nested);
-                for r in nested {
+                let violations: Vec<String> = nested
+                    .iter()
+                    .filter(|r| r.severity == Severity::Violation)
+                    .map(|r| r.message.clone())
+                    .collect();
+                if !violations.is_empty() {
                     push(
-                        r.severity,
-                        r.path.as_deref(),
+                        p.severity,
+                        Some(&p.path),
                         "node",
-                        format!("value {i}: {}", r.message),
+                        format!(
+                            "value {i} fails the nested shape: {}",
+                            violations.join("; ")
+                        ),
                     );
                 }
             }
@@ -568,6 +702,68 @@ fn check_value(
             ),
         }
     }
+}
+
+/// Is `value` a well-formed lexical form of the XSD `datatype`? A literal typed `xsd:byte` with the lexical
+/// form `300` (or `c`) is ill-formed and violates `sh:datatype` (SHACL §4.1.2; W3C `datatype-ill-formed`). The
+/// types checked are the ones the corpus and the vendored cases use; any other datatype is taken as
+/// well-formed, because refusing what is not understood would be a verdict about a value never measured.
+#[must_use]
+pub fn well_formed(value: &str, datatype: &str) -> bool {
+    let Some(local) = datatype.strip_prefix(XSD_NS) else {
+        return true;
+    };
+    let int_in = |lo: i128, hi: i128| value.parse::<i128>().is_ok_and(|n| n >= lo && n <= hi);
+    match local {
+        "string" | "anyURI" => true,
+        "boolean" => matches!(value, "true" | "false" | "1" | "0"),
+        "integer" => value.parse::<i128>().is_ok(),
+        "long" => int_in(i128::from(i64::MIN), i128::from(i64::MAX)),
+        "int" => int_in(i128::from(i32::MIN), i128::from(i32::MAX)),
+        "short" => int_in(i128::from(i16::MIN), i128::from(i16::MAX)),
+        "byte" => int_in(i128::from(i8::MIN), i128::from(i8::MAX)),
+        "nonNegativeInteger" => int_in(0, i128::MAX),
+        "positiveInteger" => int_in(1, i128::MAX),
+        "nonPositiveInteger" => int_in(i128::MIN, 0),
+        "negativeInteger" => int_in(i128::MIN, -1),
+        "unsignedLong" => int_in(0, i128::from(u64::MAX)),
+        "unsignedInt" => int_in(0, i128::from(u32::MAX)),
+        "unsignedShort" => int_in(0, i128::from(u16::MAX)),
+        "unsignedByte" => int_in(0, i128::from(u8::MAX)),
+        "decimal" => {
+            !value.is_empty()
+                && value
+                    .strip_prefix(['+', '-'])
+                    .unwrap_or(value)
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || c == '.')
+                && value.chars().filter(|c| *c == '.').count() <= 1
+                && value.chars().any(|c| c.is_ascii_digit())
+        }
+        "double" | "float" => {
+            matches!(value, "INF" | "-INF" | "NaN") || value.parse::<f64>().is_ok()
+        }
+        "date" => is_date(value),
+        "dateTime" => value
+            .split_once('T')
+            .is_some_and(|(d, t)| is_date(d) && t.len() >= 8 && t.as_bytes()[2] == b':'),
+        _ => true,
+    }
+}
+
+/// `YYYY-MM-DD` with an optional timezone suffix.
+fn is_date(s: &str) -> bool {
+    let core = s.split(['Z', '+']).next().unwrap_or(s);
+    let core = if core.len() > 10 { &core[..10] } else { core };
+    let b = core.as_bytes();
+    b.len() == 10
+        && b[4] == b'-'
+        && b[7] == b'-'
+        && [0, 1, 2, 3, 5, 6, 8, 9]
+            .iter()
+            .all(|&i| b[i].is_ascii_digit())
+        && (1..=12).contains(&core[5..7].parse::<u8>().unwrap_or(0))
+        && (1..=31).contains(&core[8..10].parse::<u8>().unwrap_or(0))
 }
 
 /// `nodeKind`, `datatype`, `class` — the constraints about what KIND of term the value is.
@@ -594,7 +790,13 @@ fn check_kind_and_type(
     }
     if let Some(dt) = &p.datatype {
         match v.as_literal() {
-            Some((_, actual)) if actual == dt => {}
+            Some((value, actual)) if actual == dt && well_formed(value, dt) => {}
+            Some((value, actual)) if actual == dt => push(
+                p.severity,
+                path,
+                "datatype",
+                format!("\"{value}\" is not a well-formed {}", short(dt)),
+            ),
             _ => push(
                 p.severity,
                 path,
@@ -604,9 +806,7 @@ fn check_kind_and_type(
         }
     }
     if let Some(class) = &p.class {
-        let ok = v
-            .as_iri()
-            .is_some_and(|i| graph.instances_of(class).contains(&i));
+        let ok = v.as_iri().is_some_and(|i| is_instance(graph, i, class));
         if !ok {
             push(
                 p.severity,
@@ -630,16 +830,29 @@ fn check_lexical(
         Term::Literal { value, .. } => value.as_str(),
     };
     if let Some(allowed) = &p.r#in {
-        let ok = allowed.iter().any(|a| a == lexical || expand(a) == lexical);
+        let ok = match v {
+            Term::Iri(i) => allowed.iter().any(|a| a.matches_iri(i)),
+            Term::Literal { value, datatype } => {
+                allowed.iter().any(|a| a.matches_literal(value, datatype))
+            }
+        };
         if !ok {
             // The PATH is in the message, not only in the result's `path` field: a reader who gets one line
             // ("quadratic is not one of …") cannot act on it without being told which property said it, and a
             // shape with nine properties produces nine indistinguishable lines (measured on apex's EV-21).
+            // The value and the list are TERMS (ONT-4b2: `sh:in` is term equality, so `"1"^^xsd:integer` and
+            // `"1"` are different entries), rendered as terms, not as bare lexical forms.
+            let listed: Vec<String> = allowed.iter().map(ToString::to_string).collect();
             push(
                 p.severity,
                 path,
                 "in",
-                format!("{}: {lexical} is not one of {allowed:?}", short(&p.path)),
+                format!(
+                    "{}: {} is not one of [{}]",
+                    short(&p.path),
+                    term_short(v),
+                    listed.join(", ")
+                ),
             );
         }
     }
@@ -669,6 +882,18 @@ fn check_lexical(
             "maxLength",
             format!("{}: length {len} is above maxLength", short(&p.path)),
         );
+    }
+}
+
+/// A term as a message says it: `"ok"` for an xsd:string literal, `"300"^^xsd:byte` for any other typed one,
+/// `ont:id` for an IRI. The datatype is shown only when it carries information — `sh:in` is term equality, so
+/// a message that hid the datatype would name two different terms the same way.
+#[must_use]
+pub fn term_short(v: &Term) -> String {
+    match v {
+        Term::Iri(i) => short(i),
+        Term::Literal { value, datatype } if datatype == XSD_STRING_IRI => format!("{value:?}"),
+        Term::Literal { value, datatype } => format!("{value:?}^^{}", short(datatype)),
     }
 }
 
@@ -762,7 +987,18 @@ fn turtle_property(p: &PropertyShape) -> String {
         ));
     }
     if let Some(list) = &p.r#in {
-        let items: Vec<String> = list.iter().map(|v| format!("\"{v}\"")).collect();
+        // Typed, because `sh:in` is term equality: an untyped `"true"` is an xsd:string and would not match
+        // the xsd:boolean the extractor writes — the difference `make oracle` measures.
+        let items: Vec<String> = list
+            .iter()
+            .map(|v| {
+                if v.datatype == XSD_STRING_IRI {
+                    format!("\"{}\"", v.lexical)
+                } else {
+                    format!("\"{}\"^^<{}>", v.lexical, v.datatype)
+                }
+            })
+            .collect();
         line(format!("sh:in ( {} )", items.join(" ")));
     }
     if let Some((src, _)) = &p.pattern {

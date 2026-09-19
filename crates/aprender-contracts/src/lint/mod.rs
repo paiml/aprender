@@ -235,6 +235,15 @@ pub enum GateExtra {
         hex_mismatches: usize,
         /// Receipt rows without a `sha256` (never a witness).
         unmeasured_rows: usize,
+        /// ONT-4b2: vendored W3C SHACL-Core cases that passed this run, and how many are vendored.
+        w3c_cases_passed: usize,
+        w3c_cases_n: usize,
+        /// ONT-4b2: bound Rust symbols the `syn` walk resolved / could not resolve.
+        symbols_resolved: usize,
+        symbols_unresolved: usize,
+        /// ONT-4b2: Lean theorems extracted, and contract `lean_theorem:` references naming none of them.
+        lean_statements: usize,
+        lean_refs_unresolved: usize,
     },
 }
 
@@ -736,6 +745,17 @@ fn shapes_result(contract_dir: &Path, validation_passed: bool) -> (GateResult, V
             skipped_gate("shapes", &format!("positive control {which} did not fire ({shapes_n} shape(s), {focus_nodes_n} focus node(s)) — the gate cannot reject")),
             Vec::new(),
         ),
+        shapes_gate::ShapesOutcome::Differential { shapes_n, focus_nodes_n, passed, n, failed } => {
+            let mut g = skipped_gate(
+                "shapes",
+                &format!(
+                    "W3C SHACL-Core differential: {passed} of {n} vendored case(s) pass; failed: {} ({shapes_n} shape(s), {focus_nodes_n} focus node(s)) — the validator disagrees with the standard, so no corpus verdict",
+                    failed.join(" | ")
+                ),
+            );
+            g.verdict = Verdict::Unknown(crate::ontology::verdict::Reason::Differential);
+            (g, Vec::new())
+        }
     }
 }
 

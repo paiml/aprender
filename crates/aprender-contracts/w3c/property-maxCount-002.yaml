@@ -1,0 +1,20 @@
+# vendored: tests/core/property/maxCount-002.ttl
+id: property/maxCount-002
+label: "Test of sh:maxCount at property shape 002"
+prefix: "http://datashapes.org/sh/tests/core/property/maxCount-002.test#"
+targeting: "sh:targetNode → rdf:type ex:Focus + targetClass"
+shapes:
+  - id: TestShape
+    targetClass: ex:Focus
+    properties:
+      - {path: owl:versionInfo, maxCount: 0}
+data: |
+  ex:InvalidResource rdf:type ex:Focus .
+  ex:ValidResource rdf:type ex:Focus .
+  ex:InvalidResource rdf:type rdfs:Resource .
+  ex:InvalidResource owl:versionInfo "1.0" .
+  ex:ValidResource rdf:type rdfs:Resource .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidResource, path: owl:versionInfo, component: maxCount}
