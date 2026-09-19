@@ -60,6 +60,8 @@ aprender-contracts-cli	--lib	contract_walk
 aprender-contracts-cli	--test	cli_integration
 aprender-contracts-cli	--test	ground_truth
 aprender-contracts-cli	--test	ont2b_sigma_gate
+aprender-contracts-cli	--test	ont4_relations_gate
+aprender-contracts-cli	--test	ont4b_shapes_gate
 aprender-contracts-cli	--test	ont6_lint_verdict
 aprender-contracts-cli	--test	pv_surface_gate
 aprender-contracts-cli	--test	pvl_zero_contracts
