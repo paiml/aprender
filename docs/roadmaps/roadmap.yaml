@@ -18848,3 +18848,20 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE (hand-entered; pmat work add derived neither spec: nor acceptance_criteria: — defect paiml-mcp-agent-toolkit#1414). Spec: docs/specifications/ruling-receipts-under-contract.md (operator ruling 2026-09-20). Done when: contracts/parity-receipt-v1.yaml with its shape on origin/main; extract:parity-receipt implemented; pv lint --gate shapes --path evidence/ in the required check; PR body shows 7 older receipts RED before back-fill and 0 after, plant violation = 1, mutation RED, pc_shape fired; check_parity_receipt.sh folded into the shape or its remainder listed under not_expressible; ONT-4c3 bound with the parity receipt as focus node; verdict rendered on a fleet host once the pv pin lands, else checkout-only: true. Sigma parent bound: json. Back-fill denominator: 7. STOP: subset-insufficient; shared-file-touched without the guard label; any threshold typed into the shape instead of resolved from thresholds.yaml.'
+- id: PMAT-3610
+  github_issue: 3610
+  item_type: task
+  title: 'shapes gate reported Pass over ZERO focus nodes: per-shape vacuity, not a global total'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-21T00:00:00Z
+  updated: 2026-09-21T00:00:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from gh#3610 done_when; see paiml-mcp-agent-toolkit#1414). The defect: NoFocus asked the question GLOBALLY (report.focus_nodes_n == 0), which is only ever true for a lone contract. In a DIRECTORY one empty shape is invisible — the others carry the total above zero, the empty one contributes no violations, and the aggregate reports Pass WHILE LISTING IT IN armed_shapes, which is the tool s claim about what it measured. Done when: vacuity is computed per-shape before any verdict is formed; an ARMED shape at zero declines (exit 2, Unknown(NoFocus), named in declines[]); an UNARMED shape at zero is REPORTED in declines[] and does not refuse; a vacuous shape appears in NEITHER armed_shapes NOR not_armed_shapes, because filing a vacuity as a policy choice is how it hid. BOTH VENUES: the lone-contract case already declined correctly, so a fix proved only there proves nothing. pass/fail/decline must stay distinct (0/1/2) and all three must still emit a parseable report with by_shape, since downstream captures stdout regardless of exit code. STOP: do not refuse whenever anything is empty — that breaks the unarmed direction.'
