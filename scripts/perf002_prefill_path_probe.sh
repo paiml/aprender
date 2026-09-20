@@ -32,22 +32,49 @@
 # finds sm_89 in a marker knows the run could not have exercised the path.
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT" || exit 2
-
-. scripts/apr_bin.sh || exit 1
-BIN="$APR"
-
-MODEL="${APR_MODELS:-"$HOME/models"}/${PERF002_MODEL:-qwen2.5-coder-1.5b-instruct-q4_k_m.gguf}"
-PORT="${PERF002_PORT:-8474}"
+# THE OUTPUT DIRECTORY AND THE MARKER COME FIRST, BEFORE ANYTHING THAT CAN FAIL.
+#
+# "A marker on every exit path" is a claim this file makes about itself, and the
+# first draft did not honour it: `cd "$ROOT" || exit 2` and
+# `. scripts/apr_bin.sh || exit 1` both bailed BEFORE write_marker() was even
+# defined, so the two most likely early failures — a moved checkout and an
+# unattributable binary — produced silence. A missing marker is supposed to mean
+# "the lane did not run at all"; those two made it mean "the lane ran and could
+# not speak", which is the distinction the marker exists to preserve.
+#
 # A FIXED world-writable default path is both a symlink surface and a collision
 # between two runs on one box; CI always sets PERF002_OUT.
 OUT="${PERF002_OUT:-"$(mktemp -d -t perf002-prefill.XXXXXX)"}"
+mkdir -p "$OUT" || {
+    printf 'perf002-prefill: cannot create %s; no marker is possible\n' "$OUT" >&2
+    exit 2
+}
 LOG="$OUT/server.log"
 SAMPLES="$OUT/samples.json"
 REPORT="$OUT/decomposition.json"
 MARKER="$OUT/marker.json"
-mkdir -p "$OUT"
+
+# The minimal marker, written without python and without the repo: it has to
+# work when the failure IS the repo. json.dump-compatible, same field names, and
+# `status` is one of the same vocabulary. The full writer below supersedes it on
+# every path that gets that far.
+bail_marker() { # $1 = reason
+    printf '{\n  "cc": null,\n  "commit": null,\n  "exit": 2,\n  "host": "%s",\n  "reason": "%s",\n  "refused_rule": null,\n  "sha256": null,\n  "slope_ms_per_token": null,\n  "started_utc": "%s",\n  "status": "UNMEASURABLE"\n}\n' \
+        "$(hostname -s 2>/dev/null || hostname)" "$1" \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$MARKER"
+    printf 'perf002-prefill: %s\n' "$1" >&2
+    exit 2
+}
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" \
+    || bail_marker "cannot resolve the repo root from \$BASH_SOURCE"
+cd "$ROOT" || bail_marker "cannot cd to the repo root $ROOT"
+
+. scripts/apr_bin.sh || bail_marker "apr_bin.sh could not attribute an apr binary to this tree"
+BIN="$APR"
+
+MODEL="${APR_MODELS:-"$HOME/models"}/${PERF002_MODEL:-qwen2.5-coder-1.5b-instruct-q4_k_m.gguf}"
+PORT="${PERF002_PORT:-8474}"
 
 # The ladder. At least 4 distinct lengths so `bimodal` has two points per mode
 # to have a spread at all, and the top rung sits at the 513 tokens §9 #1 was
@@ -129,7 +156,7 @@ PY
 
 fail_unmeasured() {
     printf 'perf002-prefill: %s\n' "$1" >&2
-    write_marker 2 UNMEASURED "$1"
+    write_marker 2 UNMEASURABLE "$1"
     exit 2
 }
 
@@ -235,7 +262,7 @@ case "$rc" in
     0) write_marker 0 MECHANISM_CONFIRMED "" ;;
     1) write_marker 1 PREDICTION_KILLED \
         "§10's registered prediction for §9 #1 did not hold (see $REPORT)" ;;
-    *) write_marker "$rc" UNMEASURED "the probe could not decide (see $REPORT)" ;;
+    *) write_marker "$rc" UNMEASURABLE "the probe could not decide (see $REPORT)" ;;
 esac
 
 printf 'perf002-prefill: exit %d (0=confirmed 1=prediction killed 2=unmeasurable)\n' "$rc"

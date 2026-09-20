@@ -81,3 +81,16 @@ verification:
 - Executed direct; review is the quorum. `goal.sh set` not run.
 - The gx10 run uses `APR_BIN` pointing at a CUDA build made in the probe's own worktree, because `apr_bin.sh` attributes a binary to the tree it was BUILT in and the forjar-managed `~/.cargo/bin/apr` — same commit, `0.68.2 (338f1d49)` — was built in the runner's `_work` checkout. The forjar-declared path was not touched.
 - §9 #1's size is not re-measured (see above). This row confirms the MECHANISM only, which is what it asks for.
+
+## Round 2 — quorum r1 found two true defects, both mine
+
+`NOT AGREED: lane 1=PASS, lane 2=FAIL, lane 3=PASS`. The failing lane was right on both counts.
+
+1. **The marker was NOT written on every exit path**, while the file's own header said it was. `cd "$ROOT" || exit 2` and `. scripts/apr_bin.sh || exit 1` both bail BEFORE `write_marker()` is defined — so the two most likely early failures (a moved checkout, an unattributable binary) produced silence, and a missing marker is supposed to mean "the lane did not run at all" rather than "it ran and could not speak". This is the same shape as every "a guard that reports what it did not measure" finding I cleared this week, in my own file, asserted in a comment I wrote.
+   Fixed: `OUT`/`MARKER` and a python-free `bail_marker` are established first, before anything that can fail. Measured after: running the script from a non-repo directory exits 2 and writes `{"status": "UNMEASURABLE", "reason": "apr_bin.sh could not attribute an apr binary to this tree", ...}` where it previously wrote nothing.
+2. **`UNMEASURED` vs `UNMEASURABLE`.** The header documents exit 2 as `UNMEASURABLE`; `write_marker` wrote `UNMEASURED`. The sibling `perf041` writes `UNMEASURED`, which is where the word came from, but this row's text says `UNMEASURABLE` and a marker a downstream checker reads must not use two vocabularies for one state. Now consistently `UNMEASURABLE`.
+
+verification (round 2):
+  cmd=cd /tmp/<scratch> && bash p.sh  claimed_exit=2  rerun_exit=2  log_path=docs/audits/impl-PMAT-3556-receipt.md  sha256=0   # marker written where the first draft wrote nothing; status UNMEASURABLE, reason names apr_bin.sh
+  cmd=grep -c UNMEASURED scripts/perf002_prefill_path_probe.sh  claimed_exit=0  rerun_exit=0  log_path=docs/audits/impl-PMAT-3556-receipt.md  sha256=0   # 0
+  cmd=bash -n scripts/perf002_prefill_path_probe.sh; bashrs lint  claimed_exit=0  rerun_exit=0  log_path=docs/audits/impl-PMAT-3556-receipt.md  sha256=0   # parses; 0 errors
