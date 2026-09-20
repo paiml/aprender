@@ -78,15 +78,20 @@ pr_list_json() {
         return 0
     fi
     local -a gh_cmd=(gh pr list --limit 200 --json
-        number,mergeStateStatus,autoMergeRequest,headRefName,isDraft)
+        number,mergeStateStatus,autoMergeRequest,headRefName,isDraft,files)
     if [ -n "$REPO" ]; then
         gh_cmd+=(--repo "$REPO")
     fi
     "${gh_cmd[@]}"
 }
 
-# select_dirty -> "NUMBER<TAB>HEADREF" for every DIRTY PR, restricted to --pr
-# when given. `.number` must be BOUND before it is used inside index(): in
+# select_dirty -> "NUMBER<TAB>HEADREF" for every DIRTY PR THAT TOUCHES
+# docs/roadmaps/roadmap.yaml, restricted to --pr when given. The file predicate
+# is the script's whole purpose: the by-ID driver resolves the roadmap class and
+# nothing else, so a DIRTY PR whose conflict is elsewhere is not this tool's
+# business and must never be selected -- not even when named with --pr.
+# Measured 2026-09-20: without it, --list-only returned 14 on a board where 8
+# touched the roadmap. `.number` must be BOUND before it is used inside index(): in
 # `$want | index(.number|tostring)` the `.` is $want (the array), which is why
 # the first version died with `Cannot index array with string "number"`.
 select_dirty() {
@@ -97,6 +102,7 @@ select_dirty() {
         printf '%s' "$json" | jq -r --argjson want "$want" '
             .[]
             | select(.mergeStateStatus == "DIRTY")
+            | select(any(.files[]?; .path == "docs/roadmaps/roadmap.yaml"))
             | . as $p
             | select($want | index($p.number | tostring))
             | [$p.number, $p.headRefName] | @tsv'
@@ -104,6 +110,7 @@ select_dirty() {
         printf '%s' "$json" | jq -r '
             .[]
             | select(.mergeStateStatus == "DIRTY")
+            | select(any(.files[]?; .path == "docs/roadmaps/roadmap.yaml"))
             | [.number, .headRefName] | @tsv'
     fi
 }
@@ -243,7 +250,7 @@ fixture_apply_setup() { # fixture_apply_setup ID
     local main_head
     main_head=$(git -C "$repo" rev-parse HEAD)
     git -C "$repo" push -q origin main
-    printf '[{"number": 104, "mergeStateStatus": "DIRTY", "headRefName": "feat/pr-104", "isDraft": false, "autoMergeRequest": null}]\n' > "$repo/prs.json"
+    printf '[{"number": 104, "mergeStateStatus": "DIRTY", "headRefName": "feat/pr-104", "isDraft": false, "autoMergeRequest": null, "files": [{"path": "docs/roadmaps/roadmap.yaml"}]}]\n' > "$repo/prs.json"
     printf '%s\n' "$origin" > "$td/fa_origin_$t"
     printf '%s\n' "$repo" > "$td/fa_repo_$t"
     printf '%s\n' "$pr_head" > "$td/fa_pr_head_$t"
