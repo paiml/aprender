@@ -1,0 +1,104 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-20'
+  author: PAIML Engineering
+  description: "The release train's tag step cannot be reached without a clean milestone. v0.68.1 was tagged 2026-09-17T15:06:29Z by an autopilot copy living outside the repository, six minutes after #3455 merged the milestone gate; `grep -c check_milestone_cut autopilot.sh` was 0. The spec required the read and no code path that cuts a tag made it. This contract is the property that the requirement and the mechanism are the same object: the gate call lives INSIDE cut_tag(), ahead of `git tag`, and a guard runs that function against each gate outcome and asserts on whether a tag was cut."
+  kind: pattern
+  references:
+    - "scripts/release/autopilot.sh — cut_tag(); the gate call precedes `git tag` inside it"
+    - "scripts/check_milestone_cut.sh — the gate (#3445, #3455); exit 0 clean, 1 open items, 2 cannot judge"
+    - "scripts/check_tag_step_gated.sh — the behavioural guard and its mutants"
+    - "docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md — §4 T-0/T-3"
+    - "docs/specifications/06x-release-schedule.md — §4 steps 1 and 4"
+    - "contracts/release-schedule-06x-v1.yaml — milestone_settled_at_cut, the schedule-level statement of the same rule"
+
+five_whys:
+  symptom: "v0.68.1 was tagged while nothing had read its milestone, six minutes after the gate that would have read it merged."
+  why_1: "The script that cuts the tag was not in the repository — it was a per-train copy under /mnt/nvme-raid0/agent-wt/, so merging a gate into the repo could not reach it."
+  why_2: "The gate was wired into specifications and into CI, and the tag is cut by neither: the one caller that matters was the one surface nobody enumerated."
+  why_3: "A rule landed without its enforcer in the same change, so the enforcer's absence was invisible from the rule's side."
+  why_4: "The only evidence that the gate ran would have been a log line, and a missing log line reads as 'nothing to report' rather than as 'the gate did not run'."
+  why_5: "Nothing could refuse the tag: `git tag` was reachable from a code path that made no claim about the milestone at all."
+  root_cause: "The requirement lived in prose and the tag lived in an unversioned script, so there was no object in which both could be false together. The remedy is that the gate call is structurally inside the function that tags, and a guard proves by execution — not by grep — that no gate outcome other than 0 reaches `git tag`."
+
+equations:
+  tag_requires_clean_milestone:
+    formula: "cut_tag(v, t, mc) reaches `git tag` iff check_milestone_cut.sh(v) exited 0; rc 1 and rc 2 both die before it"
+    domain: "the gate's exit codes {0, 1, 2+}"
+    codomain: "a tag is cut, or the train stops with a STOP line naming which code refused it"
+    invariants:
+      - "rc 1 (the milestone holds open items) cuts no tag and publishes nothing"
+      - "rc 2 (the gate could not judge) cuts no tag — Unknown is not a pass"
+      - "the gate call precedes `git tag` inside one function, so removing it is a diff to that function and not to a distant caller"
+
+  guard_is_behavioural_not_textual:
+    formula: "check_tag_step_gated.sh extracts cut_tag() from the autopilot, runs it against a stubbed gate once per outcome, and asserts on the presence of a GIT-TAG in the transcript"
+    domain: "scripts/release/autopilot.sh and three mutants of it"
+    codomain: "PASS only when rc 0 tags and rc 1 and rc 2 do not"
+    invariants:
+      - "a guard that greps for the gate's NAME is satisfied by a comment; this one is not"
+      - "a mutant with the gate call deleted is RED"
+      - "a mutant whose gate verdict is discarded with `|| true` is RED"
+      - "a subject with no cut_tag() is ENV (rc 2), never a pass"
+
+proof_obligations:
+  - id: TSMG-INV-001
+    type: invariant
+    property: "No gate outcome other than 0 reaches `git tag`"
+    formal: "scripts/check_tag_step_gated.sh exit 0"
+    applies_to: tag_requires_clean_milestone
+  - id: TSMG-INV-002
+    type: invariant
+    property: "The guard still fails on the defect it names"
+    formal: "scripts/check_tag_step_gated.sh --self-test exit 0 — three mutants killed and the real subject green"
+    applies_to: guard_is_behavioural_not_textual
+  - id: TSMG-INV-003
+    type: invariant
+    property: "The autopilot that cuts the tag is in the repository and reviewed"
+    formal: "test -f scripts/release/autopilot.sh"
+    applies_to: tag_requires_clean_milestone
+
+falsification_tests:
+  - id: FALSIFY-TSMG-001
+    rule: "The tag path is in the repository"
+    prediction: "scripts/release/autopilot.sh is a regular file"
+    test: "test -f scripts/release/autopilot.sh"
+    if_fails: "The tag is cut by a script no pull request has ever reviewed — the v0.68.1 condition, restored"
+
+  - id: FALSIFY-TSMG-002
+    rule: "The tag step names the milestone gate"
+    prediction: "cut_tag() in the autopilot calls scripts/check_milestone_cut.sh"
+    test: "awk '/^cut_tag\\(\\) \\{/,/^\\}/' scripts/release/autopilot.sh | grep -q 'check_milestone_cut\\.sh'"
+    if_fails: "`grep -c check_milestone_cut autopilot.sh` is 0 again, which is exactly what was true when v0.68.1 was tagged"
+
+  - id: FALSIFY-TSMG-003
+    rule: "The gate call precedes `git tag` inside cut_tag()"
+    prediction: "In cut_tag(), the check_milestone_cut.sh line is at a lower line number than the `git tag` line"
+    test: "b=$(awk '/^cut_tag\\(\\) \\{/,/^\\}/' scripts/release/autopilot.sh); g=$(printf '%s\\n' \"$b\" | grep -n 'check_milestone_cut\\.sh' | head -1 | cut -d: -f1); t=$(printf '%s\\n' \"$b\" | grep -n 'git tag -a' | head -1 | cut -d: -f1); [ -n \"$g\" ] && [ -n \"$t\" ] && [ \"$g\" -lt \"$t\" ]"
+    if_fails: "A gate that runs after the tag is a receipt, not a gate"
+
+  - id: FALSIFY-TSMG-004
+    rule: "No gate outcome other than 0 reaches `git tag`"
+    prediction: "The guard runs cut_tag() against a stubbed gate at rc 0, 1 and 2 and exits 0"
+    test: "bash scripts/check_tag_step_gated.sh"
+    if_fails: "A tag can be cut while the milestone holds open items, or while the gate could not judge at all"
+
+  - id: FALSIFY-TSMG-005
+    rule: "The guard can still fail on the defect it names"
+    prediction: "Three mutants — gate call deleted, gate verdict discarded, cut_tag() removed — are each RED, and the real subject is GREEN"
+    test: "bash scripts/check_tag_step_gated.sh --self-test"
+    if_fails: "The guard is theater: it would have passed the tree that tagged v0.68.1"
+
+  - id: FALSIFY-TSMG-006
+    rule: "The gate it calls is itself present and self-testing"
+    prediction: "scripts/check_milestone_cut.sh is a regular file — the repo invokes guards as `bash scripts/...`, so the executable bit is not the property (guard_tree.sh says so of its whole universe)"
+    test: "test -f scripts/check_milestone_cut.sh"
+    if_fails: "cut_tag() calls a script that is not there; every cut becomes rc 2 and the train stops — fail-closed, but the gate is gone"
+
+qa_gate:
+  id: F-TSMG-001
+  name: "The release train's tag step cannot be reached without a clean milestone"
+  description: "The gate call lives inside cut_tag() ahead of `git tag`, and check_tag_step_gated.sh proves by execution that rc 1 and rc 2 both refuse the tag. guard_tree.sh's universe is `git ls-files 'scripts/check_*.sh'`, so the guard runs in the guard-tree job, which `ci / gate` reads through needs.guard-tree.result."
+  checks:
+    - "tag_requires_clean_milestone"
+    - "guard_is_behavioural_not_textual"

@@ -107,11 +107,31 @@ if run_step dogfood; then
 fi
 
 # 3. tag + release (binary-release.yml fires on release: published, from the TAG's workflow file)
+# cut_tag <version> <tag> <commit> -- PMAT-3459. The milestone gate lives INSIDE the
+# function that tags, ahead of `git tag`, so the tag cannot be cut without it: there is
+# no path through cut_tag() that reaches `git tag` with the gate unsatisfied. v0.68.1
+# was tagged 15:06:29Z by a copy of this script that read no milestone at all, six
+# minutes after #3455 merged the gate (`grep -c check_milestone_cut autopilot.sh` = 0).
+# Fail-closed on BOTH non-zero codes, and they are different failures:
+#   1 = the milestone holds open item(s)      -> no tag, no publish
+#   2 = the gate could not judge (Unknown)    -> no tag. Never a silent pass.
+# scripts/check_tag_step_gated.sh runs this function against stubs and requires each
+# of those three paths, plus a gate-call-removed MUTANT, to behave as stated.
+cut_tag() {
+    local v=$1 t=$2 mc=$3 rc=0
+    bash "$REPO_ROOT/scripts/check_milestone_cut.sh" "$v" >> "$LOG" 2>&1 || rc=$?
+    case "$rc" in
+        0) say "MILESTONE-GATE $v clean at the cut (check_milestone_cut.sh rc=0)" ;;
+        1) die "milestone $v still holds open item(s) -- no tag, no publish (check_milestone_cut.sh rc=1)" ;;
+        *) die "milestone $v could not be judged (check_milestone_cut.sh rc=$rc) -- no tag; Unknown is not a pass" ;;
+    esac
+    git tag -a "$t" -m "aprender $t" "$mc" >> "$LOG" 2>&1 || die "tag failed"
+    git push origin "$t" >> "$LOG" 2>&1 || die "tag push failed"
+}
 if run_step tag; then
   git rev-parse -q --verify "refs/tags/$T" > /dev/null && die "tag $T already exists locally"
   [ -f "$AP/release_notes.md" ] || die "no $AP/release_notes.md (prepare_bump.sh writes it from CHANGELOG [$V])"
-  git tag -a "$T" -m "aprender $T" "$MC" >> "$LOG" 2>&1 || die "tag failed"
-  git push origin "$T" >> "$LOG" 2>&1 || die "tag push failed"
+  cut_tag "$V" "$T" "$MC"
   say "TAGGED $T at $MC"
   gh release create "$T" --repo $REPO --verify-tag --title "aprender $V" --notes-file "$AP/release_notes.md" >> "$LOG" 2>&1 || die "gh release create failed"
   say "RELEASED $(gh release view "$T" --repo $REPO --json url -q .url)"
