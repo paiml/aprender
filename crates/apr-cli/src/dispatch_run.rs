@@ -12,6 +12,9 @@ fn dispatch_run(
     task: Option<&str>,
     format: &str,
     no_gpu: bool,
+    // #3602: threaded, not re-derived — `dispatch.rs` classifies it once with
+    // `registry::Request::wanted()`.
+    accel_forced: bool,
     offline: bool,
     benchmark: bool,
     verbose: bool,
@@ -66,6 +69,7 @@ fn dispatch_run(
         task,
         format,
         no_gpu,
+        accel_forced,
         offline,
         benchmark,
         verbose,

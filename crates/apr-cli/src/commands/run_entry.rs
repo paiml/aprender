@@ -18,6 +18,11 @@ pub(crate) fn run(
     task: Option<&str>,
     output_format: &str,
     no_gpu: bool,
+    // #3602: the user EXPLICITLY asked for an accelerator (`--gpu`, `--backend
+    // cuda|wgpu|gpu`, `--gpu-layers all|n`), classified by
+    // `crate::registry::Request::wanted` rather than re-derived here — two
+    // spellings of one rule is how they drift apart.
+    accel_forced: bool,
     offline: bool,
     benchmark: bool,
     verbose: bool,
@@ -128,6 +133,18 @@ pub(crate) fn run(
         print_roofline_profile(&result, max_tokens);
     }
 
+    // #3602: reconcile what was ASKED FOR with what RAN, before any success
+    // output. `--gpu` on a model whose GPU attempt is rejected at runtime used
+    // to print a result and exit 0 — measured on an RTX 4090 at 33.6 s wall,
+    // `used_gpu: false`, exit 0, with nothing on any stream saying the GPU had
+    // been refused. `accel.rs` already states the rule this restores ("a silent
+    // CPU fallback is exactly that override wearing a performance number") and
+    // `registry::after_generation` already implements it, unit-tested, with no
+    // production caller. This is that call.
+    if let Some(note) = reconcile_accelerator(accel_forced, &result)? {
+        eprintln!("{note}");
+    }
+
     print_run_output(
         &result,
         source,
@@ -135,9 +152,34 @@ pub(crate) fn run(
         max_tokens,
         benchmark,
         stream,
+        accel_forced,
     )?;
 
     Ok(())
+}
+
+/// Compare the accelerator the user ASKED for against the one that RAN.
+///
+/// Delegates the decision to [`crate::registry::after_generation`], which is
+/// where it is recorded (R-0b, #3002/#3042) and unit-tested: a FORCED
+/// accelerator that fell to CPU is a refusal (exit 14, no output), a DEFAULT
+/// selection that fell to CPU returns a corrective line to print.
+///
+/// `announced` is `Some("gpu")` exactly when the user forced one. The
+/// `Wanted::Default` case passes `None` and so never reconciles: nothing in the
+/// run path calls `registry::announce`, so there is no recorded announcement to
+/// compare against, and inventing one here would be asserting a selection this
+/// process never made. Wiring `announce` is the larger REG-8 job — see the PR.
+///
+/// # Errors
+/// [`crate::error::CliError::BackendUnavailable`] when an accelerator was
+/// forced and the generation ran on CPU.
+fn reconcile_accelerator(
+    accel_forced: bool,
+    result: &super::run::RunResult,
+) -> Result<Option<String>> {
+    let announced = if accel_forced { Some("gpu") } else { None };
+    crate::registry::after_generation(accel_forced, announced, result.used_gpu)
 }
 
 /// F-CLIPARITY-01 / PMAT-386: Chrome trace JSON output.
@@ -355,17 +397,18 @@ fn print_run_output(
     max_tokens: usize,
     benchmark: bool,
     stream: bool,
+    accel_forced: bool,
 ) -> Result<()> {
     // --stream takes precedence — emit JSONL stream. This implies json-style
     // structured output regardless of --format. (--stream --json is the same
     // as --stream alone.)
     if stream && !benchmark {
-        return print_stream_output(result, source, max_tokens);
+        return print_stream_output(result, source, max_tokens, accel_forced);
     }
 
     // GH-240/GH-250: JSON output mode with accurate token counts
     if output_format == "json" && !benchmark {
-        let json = build_final_json(result, source, max_tokens);
+        let json = build_final_json(result, source, max_tokens, accel_forced);
         println!(
             "{}",
             serde_json::to_string_pretty(&json).unwrap_or_default()
@@ -397,7 +440,12 @@ fn print_run_output(
 }
 
 /// Build the terminal JSON blob shared by `--json` and `--stream` final events.
-fn build_final_json(result: &RunResult, source: &str, max_tokens: usize) -> serde_json::Value {
+fn build_final_json(
+    result: &RunResult,
+    source: &str,
+    max_tokens: usize,
+    accel_forced: bool,
+) -> serde_json::Value {
     let tokens_generated = result.tokens_generated.unwrap_or(0);
     let tok_per_sec = result.tok_per_sec.unwrap_or_else(|| {
         if result.duration_secs > 0.0 {
@@ -418,6 +466,22 @@ fn build_final_json(result: &RunResult, source: &str, max_tokens: usize) -> serd
         "inference_time_ms": (result.duration_secs * 1000.0 * 100.0).round() / 100.0,
         "used_gpu": result.used_gpu.unwrap_or(false),
         "cached": result.cached,
+        // #3602: `used_gpu: false` alone collapses two different outcomes — "no
+        // accelerator was asked for" and "one was asked for, attempted, and
+        // REFUSED at runtime". A consumer cannot tell a CPU run from a rejected
+        // GPU run, which is how a 33.6 s fallback was read as a GPU timing.
+        //
+        // `requested` is what the USER asked for, `ran` is what executed, and
+        // `fell_back` is true only when those disagree. The rejection's REASON
+        // (e.g. `cosine 0.4153` at a named position) is on stderr but not yet
+        // here: it is produced inside realizar's F2 gate and no channel carries
+        // it to the CLI. Adding one is the #3606-shaped follow-up named in the
+        // PR — NOT silently approximated with a guess.
+        "backend": {
+            "requested": if accel_forced { "gpu" } else { "default" },
+            "ran": if result.used_gpu == Some(true) { "gpu" } else { "cpu" },
+            "fell_back": accel_forced && result.used_gpu == Some(false),
+        },
     })
 }
 
@@ -436,11 +500,16 @@ fn build_final_json(result: &RunResult, source: &str, max_tokens: usize) -> serd
 /// only when no tokenizer could be resolved for the model; the token id is
 /// always present and exact, and the terminal `final` event always carries the
 /// authoritative full text.
-fn print_stream_output(result: &RunResult, source: &str, max_tokens: usize) -> Result<()> {
+fn print_stream_output(
+    result: &RunResult,
+    source: &str,
+    max_tokens: usize,
+    accel_forced: bool,
+) -> Result<()> {
     use std::io::Write;
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
-    write_stream_output(&mut out, result, source, max_tokens)?;
+    write_stream_output(&mut out, result, source, max_tokens, accel_forced)?;
     out.flush()?;
     Ok(())
 }
@@ -452,6 +521,7 @@ pub(crate) fn write_stream_output<W: std::io::Write>(
     result: &RunResult,
     source: &str,
     max_tokens: usize,
+    accel_forced: bool,
 ) -> std::io::Result<()> {
     if let Some(tokens) = result.generated_tokens.as_deref() {
         let texts = result.token_texts.as_deref().unwrap_or(&[]);
@@ -466,7 +536,7 @@ pub(crate) fn write_stream_output<W: std::io::Write>(
         }
     }
 
-    let mut final_blob = build_final_json(result, source, max_tokens);
+    let mut final_blob = build_final_json(result, source, max_tokens, accel_forced);
     if let Some(obj) = final_blob.as_object_mut() {
         obj.insert(
             "event".to_string(),

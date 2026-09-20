@@ -199,6 +199,22 @@ or drop `--backend`."
                 return Some(Err(e));
             }
 
+            // #3602: classify the request ONCE, with the same tested
+            // classifier the registry uses. `after_generation` refuses to
+            // report a forced accelerator that fell to CPU as success; before
+            // this it had no production caller at all, so `apr run --gpu` on a
+            // model the GPU gate rejects printed a result and exited 0.
+            let accel_forced = matches!(
+                crate::registry::Request {
+                    gpu: *gpu,
+                    no_gpu: *no_gpu,
+                    backend: backend.as_deref(),
+                    layers_want_accelerator: false,
+                }
+                .wanted(),
+                crate::registry::Wanted::Kind(_) | crate::registry::Wanted::AnyAccelerator
+            );
+
             // GH-326: --gpu overrides --no-gpu when both specified
             let effective_no_gpu = if *gpu {
                 false
@@ -233,6 +249,7 @@ or drop `--backend`."
                 task.as_deref(),
                 effective_format,
                 effective_no_gpu,
+                accel_forced,
                 *offline,
                 *benchmark,
                 *verbose || cli.verbose,
