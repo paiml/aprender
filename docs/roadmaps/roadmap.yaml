@@ -18690,6 +18690,27 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3539
+  github_issue: 3539
+  item_type: task
+  title: 'book-contracts.yml: delete the three rust-cache steps — their save step deletes the shared registry/src; cache-bin false was never the fix'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T07:19:32Z
+  updated: 2026-09-20T07:19:32Z
+  spec: null
+  acceptance_criteria:
+  - '.github/workflows/book-contracts.yml: the three `Swatinem/rust-cache@v2` steps (jobs chapter-examples-compile, chapter-examples-run, book-integration-tests — all `[self-hosted, Linux, X64, clean-room]`), each with `workspaces: "."` and `cache-bin: "false"`, are DELETED. `grep -c "uses: Swatinem/rust-cache"` goes 3 → 0'
+  - 'each is replaced by a comment naming the mechanism rather than the old mitigation: cache-bin skips cleanBin alone, the save step also runs cleanRegistry unconditionally and deletes ${CARGO_HOME}/registry/src, and only a job-private CARGO_HOME would make the action safe (--target-dir, --root and a fresh $HOME do not, since cargo reads sources from $CARGO_HOME whatever the target dir is)'
+  - 'each comment states in those words that THE CI-REAPER IS NOT THE ONLY CAUSE OF THAT MESSAGE — aprender#2822 attributes it to the reaper; in the measured case the reaper had last run 27 minutes earlier and its next run logged swept=0 — and names the two commands that check the clock (`journalctl -u ci-reaper.service`, and a grep for `Post Run Swatinem/rust-cache` over the runners'' _diag/Worker_*.log)'
+  - 'measured: paiml/infra main''s machines/clean-room/shared-home-guard/check.sh over the changed file prints no VIOLATION (it printed three before), and no other aprender workflow produces a BLOCK under that guard'
+  - 'exactly two files change: .github/workflows/book-contracts.yml and this roadmap entry (docs/roadmaps/entries/PMAT-3539.yaml). No source, no test, no ci.yml'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-3556
   github_issue: 3556
   item_type: task
