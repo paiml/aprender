@@ -10,7 +10,7 @@
 //!
 //! `meet = min` is Kleene's strong conjunction (K3). Exit mapping: Pass→0, Fail→1, Unknown→2 with a
 //! `decline: <reason>` line. Proof obligations, all discharged by the `#[cfg(kani)]` harnesses below and
-//! exhaustively by the unit tests over the 17 elements:
+//! exhaustively by the unit tests over the 18 elements:
 //!
 //! - KANI-ONT-6-1 — meet laws: commutative, associative, idempotent, Pass is the identity, Fail absorbs,
 //!   and the meet is below both operands.
@@ -38,11 +38,16 @@ pub enum Reason {
     Advisory,
     ExtractorMissing,
     Prose,
+    /// PMAT-3577: an extractor matched a different number of focus nodes than the tree's committed
+    /// denominator says it holds. Distinct from [`Self::ExtractorMissing`] (an extractor that does not
+    /// exist): here one RAN and silently saw the wrong corpus, which reports the same "no violations"
+    /// as seeing all of it. Never `Pass`, never a fabricated `Fail`.
+    ExtractorMiss,
 }
 
 impl Reason {
     /// Every reason, in lattice order.
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 16] = [
         Self::NotRun,
         Self::Skip,
         Self::Report,
@@ -58,6 +63,7 @@ impl Reason {
         Self::Advisory,
         Self::ExtractorMissing,
         Self::Prose,
+        Self::ExtractorMiss,
     ];
 }
 
@@ -77,7 +83,7 @@ pub enum Verdict {
 }
 
 impl Verdict {
-    /// The 17 elements: Fail, the 15 Unknowns in order, Pass.
+    /// The 18 elements: Fail, the 16 Unknowns in order, Pass.
     #[must_use]
     pub fn all() -> Vec<Self> {
         let mut v = vec![Self::Fail];
@@ -200,12 +206,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn seventeen_elements_in_lattice_order() {
+    fn eighteen_elements_in_lattice_order() {
         let all = Verdict::all();
-        assert_eq!(all.len(), 17);
+        assert_eq!(all.len(), 18);
         assert!(
             all.windows(2).all(|w| w[0] < w[1]),
-            "Fail < Unknown(NotRun) < … < Unknown(Prose) < Pass"
+            "Fail < Unknown(NotRun) < … < Unknown(ExtractorMiss) < Pass"
         );
     }
 
@@ -268,7 +274,7 @@ mod tests {
         assert_eq!(Verdict::Unknown(Reason::Skip).to_string(), "Unknown(Skip)");
         let spellings: std::collections::HashSet<String> =
             Verdict::all().iter().map(ToString::to_string).collect();
-        assert_eq!(spellings.len(), 17, "no two elements share a spelling");
+        assert_eq!(spellings.len(), 18, "no two elements share a spelling");
         assert_eq!(
             serde_json::to_string(&Verdict::Unknown(Reason::NotArmed))
                 .ok()

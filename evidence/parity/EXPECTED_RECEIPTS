@@ -1,0 +1,10 @@
+# PMAT-3577 / #3577 — the expected number of apr-parity-receipt/v2 focus nodes under evidence/parity/**.
+#
+# Produced by the committed predicate: bash scripts/parity_receipt_denominator.sh
+# The extractor must reproduce this count exactly. A mismatch is Unknown{ExtractorMiss}, exit 2 — never
+# Pass, never a fabricated Fail. An extractor that silently matches fewer files than exist reports the same
+# "no violations" as one that matches all of them, which is the vacuity hole this file closes.
+#
+# ADDING A RECEIPT? Update this number in the same commit. If you do not, the gate stops you — that is the
+# falsifier working, not the gate being wrong.
+7

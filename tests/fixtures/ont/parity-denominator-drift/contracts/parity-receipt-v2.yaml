@@ -1,0 +1,210 @@
+# ──────────────────────────────────────────────
+# parity-receipt-v2 — the logit-parity receipt under contract (ONT-001 §3.7, §5 ONT-4c3; issue #3577, PMAT-3577)
+#
+# WHY THIS EXISTS. Until this contract, the logit-parity records under `evidence/parity/**` had NO validator of
+# any kind. Not a weak one — none. That is why seven of them sat in the tree carrying no comparator for months
+# and nothing noticed: there was nothing that could have noticed. The operator ruling that opened this row said
+# "receipts are the only artifact family in the tree with no shape"; measured, that turned out to be literally
+# true of this family.
+#
+# TWO FAMILIES SHARE THE WORD "PARITY", AND THIS CONTRACT GOVERNS EXACTLY ONE.
+#   · LOGIT parity (this contract): `apr parity --json`, apr-CPU vs apr-CUDA, one cosine per position.
+#   · THROUGHPUT parity (NOT this contract): apr vs llama.cpp tok/s, `lanes[]`, `decode_tok_per_sec`, the #2696
+#     cross-class defect. Validated by `scripts/check_parity_receipt.sh` over `scripts/lib/bench_receipt.py
+#     --parity`, which this row deliberately DOES NOT TOUCH.
+# The ruling's item 6 said to fold `check_parity_receipt.sh` into this shape. Measured before acting: its
+# fixtures require `instrument`, `protocol_ref` and `lanes`, and a logit record has never carried one of them;
+# its callers are the dogfood and perf-claim paths. Folding would have deleted the validator for #2696 — the
+# published-apr-takes-the-CPU-path-and-reports-0.099x case — from a family nobody was watching. ONE VALIDATOR
+# PER ARTIFACT FAMILY, and the discriminator is the artifact's required keys, never its filename.
+#
+# WHAT IS ARMED. Nothing here, yet. Arming is per shape and lives in `contracts/lint-baseline.json`
+# `armed_shapes[]`, a SHARED file this row is forbidden to touch (decision 7). These three shapes are therefore
+# COMPUTED AND REPORTED, exactly as `ladder-green` was at ONT-4c1, and arming them is a named follow-up that
+# carries the `touches-shared-contracts` label. Reported is not nothing: the gate prints every violation, and
+# the back-fill's RED→GREEN is read off that report.
+#
+# THE COUNT IS PINNED. A shape over an extractor is only as honest as the extractor's reach, and an extractor
+# that matches nothing reports the same "no violations" as one that matches everything. So
+# `evidence/parity/EXPECTED_RECEIPTS` holds the expected focus-node count, produced by the INDEPENDENT committed
+# predicate `scripts/parity_receipt_denominator.sh` (a different implementation of the same question — an
+# extractor checked against a number the extractor produced proves nothing). A mismatch, or a refused record, is
+# `Unknown{ExtractorMiss}` and exit 2: never `Pass`, never a fabricated `Fail`.
+#
+# NO THRESHOLD IS TYPED HERE. `thresholdSource` is `resolves:` — the extractor resolves the path and
+# materialises `thresholdSourceMissing` when it does not exist. The threshold VALUE is read from
+# `evidence/parity/thresholds.yaml` by whoever judges; typing one into a shape is this row's STOP condition.
+#
+# Σ PARENT: `json` (measured — `contracts/ontology.yaml` entity_types carries `{name: json, extractor: json,
+# implemented: true}`). It should move under a shared `Receipt` class once quorum and dispatch receipts join the
+# graph, so the three families inherit common shapes; R-19 materialisation makes that free. NOT in this row.
+#
+# KIND: pattern. Vocabulary, an extractor and shapes over a graph; the proof is the gate's own case table.
+# ──────────────────────────────────────────────
+name: parity-receipt-v2
+version: "2.0.0"
+scope: >
+  How a logit-parity record under evidence/parity/** becomes a parity:ParityReceipt focus node, and the three
+  shapes over it: the fields every receipt must carry, and the two comparator shapes that differ by kind. Out of
+  scope: throughput parity receipts (scripts/check_parity_receipt.sh, a different artifact family), quorum and
+  dispatch receipts (the next entity type), and the threshold VALUES, which are resolved from thresholds.yaml
+  and never written here.
+status: active
+
+metadata:
+  version: "2.0.0"
+  kind: pattern
+  created: '2026-09-20'
+  last_modified: '2026-09-20'
+  author: PAIML Engineering
+  description: >
+    The logit-parity records are focus nodes; every receipt states its comparator, and a receipt that compares
+    apr against itself says so and why rather than implying an oracle it never had. The extractor's reach is
+    pinned by a committed denominator so a silent miss cannot read as a clean corpus.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md §3.6 (the implemented SHACL subset), §3.7, §5 ONT-4c3'
+    - 'aprender#3577 (this row), #3576, #3574/#3575 (the v2 layout), #3269 (ONT-4c3), #3567 (the pv pin)'
+    - 'crates/aprender-contracts/src/ontology/extract/parity_receipt.rs — the extractor and its case table'
+    - 'scripts/parity_receipt_denominator.sh — the independent predicate; evidence/parity/EXPECTED_RECEIPTS'
+    - 'evidence/parity/thresholds.yaml — where a threshold is resolved from, never typed into a shape'
+    - 'contracts/parity-receipt-v1.yaml — the retired layout these seven records were migrated from'
+
+entity:
+  # The entity type this contract's shapes govern (Σ: contracts/ontology.yaml entity_types). It is NOT
+  # `json`: an `entity: {type: json}` contract must name a document with `entity.ref`, and these two carry
+  # shapes over an extractor rather than reading one tool's --json output.
+  type: parity-receipt
+
+relations:
+  depends_on: [ont-shapes-v1, ont-relations-v1, ont-sigma-v1, parity-receipt-v1]
+
+shapes:
+  # Every receipt, whatever its comparator. `closed` with an EMPTY ignoredProperties is a statement about
+  # `parity_receipt.rs::emit`: it writes these properties and no others. An ignoredProperties list is a place
+  # for drift to hide, and after the migration there is one layout, so it is not needed.
+  - id: parity-receipt-complete
+    targetClass: parity:ParityReceipt
+    closed: true
+    ignoredProperties: []
+    properties:
+      - {path: parity:file, minCount: 1, maxCount: 1}
+      - {path: parity:host, minCount: 1, maxCount: 1}
+      - {path: parity:backend, minCount: 1, maxCount: 1, in: [cpu, cuda, wgpu, metal]}
+      - {path: parity:aprVersion, minCount: 1, maxCount: 1}
+      - {path: parity:generatedAt, minCount: 1, maxCount: 1}
+      # `unmeasured` is minCount 1 ON PURPOSE: an empty list is a completeness claim, and a completeness claim
+      # must be written deliberately (["none"]) rather than arrived at by leaving the key off.
+      - {path: parity:unmeasured, minCount: 1}
+      - {path: parity:partiallyReceipted, minCount: 1, maxCount: 1, datatype: xsd:boolean}
+      - {path: parity:thresholdSource, minCount: 1, maxCount: 1, resolves: path}
+      - {path: parity:thresholdSourceMissing, maxCount: 0}
+      # PATTERN, AND DELIBERATELY NO minCount. Six of the seven back-filled records never recorded a model
+      # hash. Hashing the file on the host today and attaching it to a receipt about 2026-09-06 would be a
+      # claim about a different world wearing a witness's clothes. Absent means no measurement, never a match
+      # (ONT-4c1); `partiallyReceipted: true` plus an `unmeasured` entry carries the honesty instead.
+      - {path: parity:modelSha256, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: parity:comparator, minCount: 1, maxCount: 1, nodeKind: IRI, class: parity:Comparator,
+         node: {properties: [{path: parity:kind, minCount: 1, maxCount: 1,
+                              in: [llama_cpp, transformers, self]}]}}
+
+  # The comparator split. The implemented subset has no `sh:or`, so the two cases are two shapes over two
+  # subclasses the extractor assigns by `comparator.kind` — which is what "two shapes over one sh:node" means
+  # here. Neither is `closed`: the base shape above owns closure.
+  - id: parity-comparator-self
+    targetClass: parity:SelfComparedReceipt
+    properties:
+      # A self-comparison must SAY WHY it has no oracle. This is the field that was missing from all seven.
+      - {path: parity:comparator, node: {properties: [{path: parity:reason, minCount: 1},
+                                                      {path: parity:comparatorSha, maxCount: 0}]}}
+  - id: parity-comparator-oracle
+    targetClass: parity:OracleComparedReceipt
+    properties:
+      # An oracle arm is a claim about another binary; it names which one, or it is not an oracle arm.
+      - {path: parity:comparator, node: {properties: [{path: parity:comparatorSha, minCount: 1}]}}
+
+equations:
+  focus:
+    formula: "receipt(f) ⇔ f ∈ evidence/parity/**/*.json ∧ f.schema = 'apr-parity-receipt/v2'"
+    domain: "every *.json under evidence/parity/, walked in byte order"
+    codomain: "a parity:SelfComparedReceipt node when comparator.kind = self, else a parity:OracleComparedReceipt"
+    invariants:
+      - "a file with no v2 schema but a top-level metrics[] or parity is an UNMIGRATED record: refused by name, never skipped"
+      - "a file that is neither is skipped and counted — skipping is visible, not silent"
+    preconditions:
+      - "evidence/parity/EXPECTED_RECEIPTS holds the count the independent predicate measures"
+    postconditions:
+      - "two extractions are byte-identical (R-15)"
+    lean_theorem: none — L4 not declared
+  reach:
+    formula: "|focus nodes| ≠ EXPECTED_RECEIPTS ⇒ Unknown{ExtractorMiss} ∧ exit = 2"
+    domain: "one shapes run over the committed tree"
+    codomain: "a verdict, or a decline that names both numbers"
+    invariants:
+      - "a miss is never Pass and never a fabricated Fail: the gate declines and says which two numbers disagree"
+      - "an ABSENT denominator is a different fault from a broken one and is not folded in here"
+    preconditions:
+      - "the denominator is produced by scripts/parity_receipt_denominator.sh, not by the extractor"
+    postconditions:
+      - "adding a receipt without updating the denominator declines"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: PRC-INV-001
+    property: a receipt with no comparator fails the complete shape
+    formal: '|comparator(r)| = 0 ⇒ Fail(parity-receipt-complete, r)'
+    prose: false
+  - id: PRC-INV-002
+    property: a self-comparison without a stated reason fails
+    formal: 'kind(r) = self ∧ |reason(r)| = 0 ⇒ Fail(parity-comparator-self, r)'
+    prose: false
+  - id: PRC-INV-003
+    property: a self-comparison may not name a comparator sha
+    formal: 'kind(r) = self ∧ |comparatorSha(r)| ≥ 1 ⇒ Fail(parity-comparator-self, r)'
+    prose: false
+  - id: PRC-INV-004
+    property: an oracle arm names the binary it measured against
+    formal: 'kind(r) ≠ self ∧ |comparatorSha(r)| = 0 ⇒ Fail(parity-comparator-oracle, r)'
+    prose: false
+  - id: PRC-INV-005
+    property: a threshold_source that names no file is rejected, and no threshold value is read from the shape
+    formal: '¬exists(thresholdSource(r)) ⇒ |thresholdSourceMissing(r)| = 1 ⇒ Fail(parity-receipt-complete, r)'
+    prose: false
+  - id: PRC-INV-006
+    property: the extractor's reach equals the committed denominator or the gate declines
+    formal: '|focus| ≠ EXPECTED_RECEIPTS ⇒ verdict = Unknown(ExtractorMiss)'
+    prose: false
+  - id: PRC-INV-007
+    property: an unmigrated legacy record is refused, never skipped
+    formal: 'legacy(f) ∧ ¬schema(f) ⇒ f ∈ errors ∧ f ∉ skipped'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-PRC-001
+    rule: the extractor's classification
+    prediction: >
+      a v2 record becomes one focus node typed by comparator kind; an unmigrated legacy record is refused BY NAME
+      and is not counted as skipped; an unrelated document (props-*, thresholds) is skipped and counted
+    test: cargo test -p aprender-contracts --lib ontology::extract::parity_receipt
+    if_fails: a record the graph cannot see reads as a clean corpus
+  - id: FALSIFY-PRC-002
+    rule: the pinned reach
+    prediction: >
+      committed 2 / found 1, committed 0 / found 1, and a narrowed walk each report ExtractorMiss naming both
+      numbers; committed 1 / found 1 does not; an ABSENT denominator is not a miss
+    test: cargo test -p aprender-contracts --lib ontology::extract::parity_receipt
+    if_fails: an extractor that saw the wrong corpus grades it anyway
+  - id: FALSIFY-PRC-003
+    rule: the independent predicate agrees with the extractor
+    prediction: >
+      scripts/parity_receipt_denominator.sh measures the same 7 the extractor matches, refuses a planted legacy
+      record, disagrees when a receipt is added without a bump, and agrees again when it is bumped — both directions
+    test: bash scripts/parity_receipt_denominator.sh --self-test && bash scripts/parity_receipt_denominator.sh
+    if_fails: the denominator is a number the extractor produced and proves nothing
+  - id: FALSIFY-PRC-004
+    rule: the shapes discriminate
+    prediction: >
+      removing `comparator` from a fixture copy raises exactly one violation naming the focus node and the
+      property; widening `in:` to accept `oracle` turns the mutation RED; the seven back-filled records raise
+      zero violations and the same seven raise seven before the back-fill
+    test: cargo test -p aprender-contracts-cli --test ont4c3_parity_receipts
+    if_fails: the shape decorates the corpus instead of grading it

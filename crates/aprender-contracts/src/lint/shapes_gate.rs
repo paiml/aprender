@@ -59,6 +59,16 @@ pub enum ShapesOutcome {
     NoFocus { shapes_n: usize },
     /// A shape resolves receipts and the tree holds none under `evidence/dogfood/models/`.
     NoReceipts { shapes_n: usize, dir: String },
+    /// PMAT-3577 — `extract:parity-receipt` matched a different number of focus nodes than
+    /// `evidence/parity/EXPECTED_RECEIPTS` says the tree holds, or it refused a record by name. An
+    /// extractor that silently sees the wrong corpus reports the same "no violations" as one that sees
+    /// all of it, so this is `Unknown{ExtractorMiss}` — never `Pass`, never a fabricated `Fail`.
+    ExtractorMiss {
+        shapes_n: usize,
+        expected: usize,
+        found: usize,
+        refused: Vec<String>,
+    },
     /// A positive control did not fire.
     PositiveControlFailed {
         shapes_n: usize,
@@ -146,6 +156,36 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
         Ok(x) => x,
         Err(e) => return ShapesOutcome::ExtractFailed(e),
     };
+    // PMAT-3577: the count is pinned before anything is graded. A miss here is not a corpus verdict.
+    if let Some((expected, found)) = extraction.parity.extractor_miss() {
+        return ShapesOutcome::ExtractorMiss {
+            shapes_n: shapes.len(),
+            expected,
+            found,
+            refused: extraction
+                .parity
+                .errors
+                .iter()
+                .map(ToString::to_string)
+                .collect(),
+        };
+    }
+    if !extraction.parity.errors.is_empty() {
+        return ShapesOutcome::ExtractorMiss {
+            shapes_n: shapes.len(),
+            expected: extraction
+                .parity
+                .expected
+                .unwrap_or(extraction.parity.records),
+            found: extraction.parity.records,
+            refused: extraction
+                .parity
+                .errors
+                .iter()
+                .map(ToString::to_string)
+                .collect(),
+        };
+    }
     let graph = extraction.graph;
     let needs_receipts = shapes.iter().any(|s| {
         s.properties

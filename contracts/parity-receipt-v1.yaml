@@ -1,0 +1,87 @@
+# ──────────────────────────────────────────────
+# parity-receipt-v1 — the RETIRED logit-parity layout (ONT-001 §5 ONT-4c3; issue #3577, PMAT-3577)
+#
+# WHAT THIS IS. The layout the seven logit-parity records carried from 2026-09-06 until #3577 migrated them:
+# the bare `apr parity --json` document, with the readings and the judgment mixed at one level.
+#
+#   {"model": "./m.gguf", "tokens": 78, "passed": 78, "failed": 0, "parity": true, "metrics": [ … ]}
+#
+# It is recorded rather than deleted because a version nobody wrote down is a version somebody re-invents. The
+# fork was real and cost real time: an extractor keyed to one layout silently skips the other, and skipping is
+# indistinguishable from passing — which is how a record can sit in the tree for months with no comparator and
+# no shape able to say so.
+#
+# STATUS: superseded by parity-receipt-v2, WITH NO INSTANCES IN THE TREE. All seven records were migrated to v2
+# in the same commit as the comparator back-fill (#3577), so this contract declares no shape: a shape whose
+# target class nothing instantiates passes vacuously, and a vacuous pass is worth less than no shape at all.
+# The enforcement that replaces it is stronger and lives where it can fire — `extract:parity-receipt` REFUSES
+# an unmigrated record BY NAME (a file with no v2 `schema` but a top-level `metrics[]` or `parity`), and
+# `scripts/parity_receipt_denominator.sh` refuses it independently. A returning v1 record is an error naming the
+# file, not a silent skip.
+#
+# WHAT V2 CHANGED, and why each:
+#   · `schema` — v1 had none, so nothing could tell a parity record from any other JSON in the directory.
+#   · raw readings separated from the judgment (`raw` vs `result`) — the #3574 layout. `raw` is the original
+#     document byte for byte, so the migration is a relabel and the measurement is never restated.
+#   · `comparator {kind, comparator_sha, reason}` — the field whose absence this row exists to make impossible.
+#     All seven were self-comparisons (apr-CPU vs apr-CUDA) that implied an oracle they never had.
+#   · `partially_receipted`, `unmeasured[]` — an empty completeness claim now has to be written deliberately.
+#   · `host`, `backend`, `apr_version`, `generated_at`, `threshold_source` — recovered from committed evidence
+#     (each record's `provenance.record` names the RECORD.md it was quoted from), never invented.
+#   · `cell.model_sha256` — carried ONLY by the one record that recorded it at measurement time. The other six
+#     say so in `unmeasured` instead of being back-filled from a hash taken today.
+#
+# KIND: pattern (historical). No shape, by construction — see STATUS.
+# ──────────────────────────────────────────────
+name: parity-receipt-v1
+version: "1.0.0"
+scope: >
+  The retired logit-parity record layout, recorded so the fork it caused is documented and a returning instance
+  is recognisable. Out of scope: everything live — the shapes, the extractor and the denominator are
+  parity-receipt-v2's.
+status: superseded
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-20'
+  last_modified: '2026-09-20'
+  author: PAIML Engineering
+  description: >
+    The pre-#3577 logit-parity layout: no schema, readings and judgment at one level, no comparator. Superseded
+    by parity-receipt-v2, with no instances in the tree; an unmigrated instance is refused by name by the
+    extractor and by the committed denominator predicate rather than by a shape that would pass vacuously.
+  references:
+    - 'aprender#3577 (the migration and the back-fill), #3576, #3269 (ONT-4c3)'
+    - 'contracts/parity-receipt-v2.yaml — the live contract'
+    - 'crates/aprender-contracts/src/ontology/extract/parity_receipt.rs — refuses an unmigrated record by name'
+    - 'scripts/parity_receipt_denominator.sh — refuses one independently'
+    - 'evidence/parity/l0-1/{lambda,gx10}/RECORD.md, evidence/parity/l0-1b/gx10/n5/DETERMINISM.md — the provenance the back-fill quotes'
+
+entity:
+  # The entity type this contract's shapes govern (Σ: contracts/ontology.yaml entity_types). It is NOT
+  # `json`: an `entity: {type: json}` contract must name a document with `entity.ref`, and these two carry
+  # shapes over an extractor rather than reading one tool's --json output.
+  type: parity-receipt
+
+relations:
+  depends_on: [ont-sigma-v1]
+
+invariants:
+  - id: PRC1-INV-001
+    property: the retired layout has no instances in the committed tree
+    formal: '∀ f ∈ evidence/parity/**/*.json: schema(f) = "apr-parity-receipt/v2" ∨ ¬legacy(f)'
+    prose: false
+  - id: PRC1-INV-002
+    property: a returning instance is refused by name, by two independent readers
+    formal: 'legacy(f) ∧ ¬schema(f) ⇒ f ∈ errors(extract:parity-receipt) ∧ exit(denominator.sh) ≠ 0'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-PRC1-001
+    rule: no instance survives
+    prediction: >
+      planting a v1-layout record under evidence/parity/ makes both the extractor and the denominator predicate
+      refuse it by name, and removing it makes both pass again — both directions
+    test: cargo test -p aprender-contracts --lib ontology::extract::parity_receipt && bash scripts/parity_receipt_denominator.sh --self-test
+    if_fails: the retired layout returns and nothing says so
