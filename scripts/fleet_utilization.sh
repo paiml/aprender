@@ -50,7 +50,10 @@ JSON
 JSON
 )
   out=$(render "$runners" "$jobs"); err=0
-  chk() { if printf '%s\n' "$out" | grep -qF "$2"; then echo "ok    $1"; else echo "FAIL  $1: wanted [$2]"; err=1; fi; }
+  # No producer process (PMAT-3629): `printf | grep -q` under pipefail reads a MATCH as
+  # FAIL when grep closes the pipe before printf's write completes (EPIPE). A
+  # here-string has no writer to kill. The padded row below keeps this honest.
+  chk() { if grep -qF -- "$2" <<<"$out"; then echo "ok    $1"; else echo "FAIL  $1: wanted [$2]"; err=1; fi; }
   chk "intel: 3 runners, 2 busy, 1 aprender = 33%"   "$(printf 'intel\t3\t2\t1\t33%%\t80%%')"
   chk "gx10: 2 runners, 1 busy, 1 aprender = 50%"    "$(printf 'gx10\t2\t1\t1\t50%%\t80%%')"
   chk "yoga: 2 runners, 1 busy, 1 aprender = 50%"    "$(printf 'yoga\t2\t1\t1\t50%%\t50%%')"
