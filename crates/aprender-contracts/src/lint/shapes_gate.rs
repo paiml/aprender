@@ -57,6 +57,20 @@ pub enum ShapesOutcome {
     NoShapes { contracts_checked: usize },
     /// Shapes exist, but no node in the graph has any of their target classes.
     NoFocus { shapes_n: usize },
+    /// #3610 — an ARMED shape graded ZERO focus nodes while others graded some.
+    ///
+    /// [`Self::NoFocus`] asks the question GLOBALLY (`report.focus_nodes_n == 0`), which is only
+    /// ever true for a lone contract. In a DIRECTORY one empty shape is invisible: the others carry
+    /// the total above zero, the empty one contributes no violations, and the aggregate reports
+    /// `Pass` while listing it in `armed_shapes` — the tool claiming it measured what it did not.
+    /// Measured on pv 0.68.2: a `type: jsonl` contract whose rows violate its own `sh:pattern`
+    /// passed exactly this way. `by_shape` already carried `<shape>=0` and nothing read it.
+    VacuousArmedShape {
+        shapes_n: usize,
+        focus_nodes_n: usize,
+        /// The armed shapes that graded nothing, in corpus order.
+        vacuous: Vec<String>,
+    },
     /// A shape resolves receipts and the tree holds none under `evidence/dogfood/models/`.
     NoReceipts { shapes_n: usize, dir: String },
     /// A positive control did not fire.
@@ -153,6 +167,24 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
             .any(|p| p.resolves.as_deref() == Some("receipt"))
     });
 
+    // #3610: the per-shape reach, computed BEFORE any verdict. `by_shape` has carried this number
+    // all along and nothing ever read it for the one question it answers: did this shape grade
+    // anything at all?
+    let focus_of: Vec<(String, usize)> = shapes
+        .iter()
+        .map(|s| {
+            (
+                s.id.clone(),
+                shapes::instances_closed(&graph, &s.target_class).len(),
+            )
+        })
+        .collect();
+    let vacuous_armed: Vec<String> = focus_of
+        .iter()
+        .filter(|(id, n)| *n == 0 && arming.is_armed(id))
+        .map(|(id, _)| id.clone())
+        .collect();
+
     let (mut report, plant_violations) = validate_with_plant(&graph, &shapes, &arming);
     // A torn JSONL line is the INPUT's fault and is carried as a warning on the entity's root shape — the
     // gate already rules that warnings alone are `Unknown{Warn}`, never a pass and never a silent drop.
@@ -176,6 +208,15 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
         &pc_extract,
     ) {
         return d;
+    }
+    // #3610: an armed shape that graded nothing cannot contribute to a verdict, and a verdict that
+    // counts it as clean is a Pass over an unasked question. Refuse, naming every such shape.
+    if !vacuous_armed.is_empty() {
+        return ShapesOutcome::VacuousArmedShape {
+            shapes_n: shapes.len(),
+            focus_nodes_n: report.focus_nodes_n,
+            vacuous: vacuous_armed,
+        };
     }
     // ONT-4b2: the vendored W3C cases, every run. A validator that fails the standard's own case for a form
     // it claims has no standing to grade the corpus.
@@ -206,13 +247,7 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
     } else {
         Verdict::Pass
     };
-    let mut by_shape: Vec<String> = shapes
-        .iter()
-        .map(|s| {
-            let n = shapes::instances_closed(&graph, &s.target_class).len();
-            format!("{}={}", s.id, n)
-        })
-        .collect();
+    let mut by_shape: Vec<String> = focus_of.iter().map(|(id, n)| format!("{id}={n}")).collect();
     by_shape.sort();
     let (armed_names, not_armed): (Vec<String>, Vec<String>) = shapes
         .iter()
@@ -265,6 +300,15 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
             triples: graph.len(),
             armed_shapes: armed_names,
             not_armed_shapes: not_armed,
+            // Every shape that graded NOTHING, armed or not. The armed case returned above, so
+            // what reaches here is the unarmed ones: they did not affect the verdict and the reader
+            // still needs to know the gate looked at nothing for them. A field that can only ever
+            // be empty is decoration, which is the defect one layer up from this one.
+            declines: focus_of
+                .iter()
+                .filter(|(_, n)| *n == 0)
+                .map(|(id, _)| id.clone())
+                .collect(),
             unarmed_violations: counted.unarmed_violations,
             by_entity_type,
             pc_extract,

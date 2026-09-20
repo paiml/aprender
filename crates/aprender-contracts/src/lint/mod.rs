@@ -221,6 +221,16 @@ pub enum GateExtra {
         armed_shapes: Vec<String>,
         /// Shapes computed and reported but not armed — their violations are in `unarmed_violations`.
         not_armed_shapes: Vec<String>,
+        /// #3610: shapes that graded ZERO focus nodes, named — the reach the gate did not have.
+        ///
+        /// A separate list from `not_armed_shapes` on purpose. "Not armed by policy" and "armed and
+        /// measured nothing" are different facts, and folding the second into the first would file a
+        /// vacuity as a deliberate choice — which is how the defect hid in the first place. These
+        /// An ARMED shape at zero does not reach here at all — the run declines, because
+        /// `armed_shapes` is the tool's claim about what it MEASURED and a shape that graded
+        /// nothing has no place in it. What this list carries is the UNARMED ones: they did not
+        /// affect the verdict, and a reader still needs to know the gate looked at nothing for them.
+        declines: Vec<String>,
         /// Violations from unarmed shapes (named in the findings as warnings; never in the meet).
         unarmed_violations: usize,
         /// Focus nodes each extractor produced: `pv-contract`, `gguf`, `apr-model`.
@@ -731,6 +741,10 @@ fn shapes_result(contract_dir: &Path, validation_passed: bool) -> (GateResult, V
         shapes_gate::ShapesOutcome::ExtractFailed(e) => (skipped_gate("shapes", &format!("{e}")), Vec::new()),
         shapes_gate::ShapesOutcome::NoShapes { contracts_checked } => (
             skipped_gate("shapes", &format!("no `shape:` block in {contracts_checked} contracts — R-2: zero is a decline")),
+            Vec::new(),
+        ),
+        shapes_gate::ShapesOutcome::VacuousArmedShape { shapes_n, focus_nodes_n, vacuous } => (
+            skipped_gate("shapes", &format!("{} ARMED shape(s) graded ZERO focus nodes ({shapes_n} shape(s), {focus_nodes_n} focus node(s) in total): {} — an armed shape that measured nothing cannot be counted as clean, and `armed_shapes` is the tool's claim about what it MEASURED (#3610)", vacuous.len(), vacuous.join(", "))),
             Vec::new(),
         ),
         shapes_gate::ShapesOutcome::NoFocus { shapes_n } => (

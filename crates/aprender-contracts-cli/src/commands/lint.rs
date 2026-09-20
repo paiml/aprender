@@ -283,6 +283,26 @@ fn decide_shapes_gate(
             reason: Reason::NoShapes,
         }
         .into()),
+        ShapesOutcome::VacuousArmedShape {
+            shapes_n,
+            focus_nodes_n,
+            vacuous,
+        } => {
+            eprintln!(
+                "shapes: {} ARMED shape(s) graded ZERO focus nodes and cannot be counted as clean \
+                 ({shapes_n} shape(s), {focus_nodes_n} focus node(s) in total): {}",
+                vacuous.len(),
+                vacuous.join(", ")
+            );
+            eprintln!(
+                "shapes: `armed_shapes` is the tool's claim about what it MEASURED; a shape that \
+                 graded nothing has no place in it (#3610)"
+            );
+            Err(LintDeclined {
+                reason: Reason::NoFocus,
+            }
+            .into())
+        }
         ShapesOutcome::NoFocus { .. } => Err(LintDeclined {
             reason: Reason::NoFocus,
         }
