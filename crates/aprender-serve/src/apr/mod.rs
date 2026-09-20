@@ -407,3 +407,10 @@ impl TensorEntry {
 include!("metadata.rs");
 include!("tokenizer_loading.rs");
 include!("special_tokens.rs");
+
+// PMAT-3430 Q1-c: the characterization snapshot for the four remaining
+// id-or-name admission boundaries (infer, this module's `from_binary` dtype
+// arm, special_tokens, dequant). This `mod` line is the only non-test edit.
+#[cfg(test)]
+#[path = "boundary_characterization_tests.rs"]
+mod boundary_characterization_tests;

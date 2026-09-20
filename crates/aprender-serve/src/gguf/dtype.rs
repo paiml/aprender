@@ -526,3 +526,10 @@ impl OwnedQuantizedModel {
 
 include!("embedding.rs");
 include!("loader_apr_quantized.rs");
+
+// PMAT-3430 Q1-c: the characterization snapshot for this module's two admission
+// boundaries. A child module, so it reaches the private fns without widening
+// anything. This `mod` line is the only non-test edit Phase 1 makes here.
+#[cfg(test)]
+#[path = "dtype_characterization_tests.rs"]
+mod dtype_characterization_tests;

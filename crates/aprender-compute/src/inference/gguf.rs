@@ -437,3 +437,10 @@ mod tests {
         assert_eq!(file.tensors.len(), 0);
     }
 }
+
+// PMAT-3430 Q1-c: the characterization snapshot for compute's one id boundary
+// and its block geometry. A child module, so it reaches the private `from_u32`
+// without widening it. This `mod` line is the only non-test edit Phase 1 makes.
+#[cfg(test)]
+#[path = "gguf_characterization_tests.rs"]
+mod gguf_characterization_tests;

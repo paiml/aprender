@@ -477,3 +477,9 @@ pub fn export_tensors_to_gguf<W: Write>(
 #[cfg(test)]
 #[path = "types_tests.rs"]
 mod tests;
+
+// PMAT-3430 Q1-c: the characterization snapshot for core's ONE exhaustive
+// match over GgmlType. This `mod` line is the only non-test edit Phase 1 makes.
+#[cfg(test)]
+#[path = "byte_size_characterization_tests.rs"]
+mod byte_size_characterization_tests;
