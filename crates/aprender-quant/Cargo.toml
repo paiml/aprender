@@ -15,7 +15,14 @@ name = "trueno_quant"
 [dependencies]
 half = "2.4"
 
+[dev-dependencies]
+# PMAT-3430: tests/ggml_traits_fixture.rs reads the upstream-extracted fixture.
+# DEV-only, so the published crate still ships with `half` as its one dependency.
+serde_json = { workspace = true }
+
 [lints.rust]
+# PMAT-3430: ggml_type.rs carries a #[cfg(kani)] harness (KANI-GGMLT-001).
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
 unsafe_op_in_unsafe_fn = "warn"
 missing_docs = "warn"
 rust_2018_idioms = "warn"
