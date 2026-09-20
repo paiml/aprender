@@ -141,19 +141,34 @@ pub(crate) fn run(
     // CPU fallback is exactly that override wearing a performance number") and
     // `registry::after_generation` already implements it, unit-tested, with no
     // production caller. This is that call.
-    if let Some(note) = reconcile_accelerator(accel_forced, &result)? {
-        eprintln!("{note}");
-    }
+    let reconciled = reconcile_accelerator(accel_forced, &result);
 
-    print_run_output(
-        &result,
-        source,
-        output_format,
-        max_tokens,
-        benchmark,
-        stream,
-        accel_forced,
-    )?;
+    // DELIBERATE DEVIATION FROM `after_generation`'s CONTRACT, named rather than
+    // quiet. That contract says the caller "must print NO output" on a forced
+    // refusal, so a CPU result can never be read as a GPU success. #3602 item 1
+    // requires the rejection to be visible in `--json`, and those two pull
+    // opposite ways.
+    //
+    // Resolved by asking what the "no output" rule protects: a reader mistaking
+    // the fallback for success. A structured document carrying
+    // `"backend": {"fell_back": true}` beside exit 14 cannot be misread that
+    // way, while a human-formatted success blob can. So the MACHINE surfaces
+    // still emit and the HUMAN surface stays silent — the half of the contract
+    // that was doing the protecting is kept, and a `--json` consumer stops
+    // having to infer a refusal from an exit code alone.
+    let machine_surface = stream || output_format == "json";
+    if reconciled.is_ok() || machine_surface {
+        print_run_output(
+            &result,
+            source,
+            output_format,
+            max_tokens,
+            benchmark,
+            stream,
+            accel_forced,
+        )?;
+    }
+    reconciled?;
 
     Ok(())
 }
@@ -165,21 +180,32 @@ pub(crate) fn run(
 /// accelerator that fell to CPU is a refusal (exit 14, no output), a DEFAULT
 /// selection that fell to CPU returns a corrective line to print.
 ///
-/// `announced` is `Some("gpu")` exactly when the user forced one. The
-/// `Wanted::Default` case passes `None` and so never reconciles: nothing in the
-/// run path calls `registry::announce`, so there is no recorded announcement to
-/// compare against, and inventing one here would be asserting a selection this
-/// process never made. Wiring `announce` is the larger REG-8 job — see the PR.
+/// **This wires the FORCED half only, and says so rather than carrying a branch
+/// that cannot run.** Under `forced = true`, `after_generation` returns either
+/// `Err` (the refusal) or `Ok(None)`; its corrective-line branch requires
+/// `forced == false` *and* a non-`cpu` announcement, so it is unreachable from
+/// here by construction.
+///
+/// That case is deliberately not wired. Nothing in the run path calls
+/// `registry::announce`, so there is no recorded announcement for a default
+/// selection to be compared against, and manufacturing one would assert a
+/// choice this process never made. Wiring `announce` is the larger REG-8 job.
+///
+/// An earlier draft of this function returned `Result<Option<String>>` and the
+/// caller did `if let Some(note) = …`. A quorum lane caught that the `Some` arm
+/// could never execute — **a branch with no reachable caller, which is the exact
+/// defect this PR exists to fix, reproduced one layer down while fixing it.**
 ///
 /// # Errors
 /// [`crate::error::CliError::BackendUnavailable`] when an accelerator was
 /// forced and the generation ran on CPU.
-fn reconcile_accelerator(
-    accel_forced: bool,
-    result: &super::run::RunResult,
-) -> Result<Option<String>> {
-    let announced = if accel_forced { Some("gpu") } else { None };
-    crate::registry::after_generation(accel_forced, announced, result.used_gpu)
+fn reconcile_accelerator(accel_forced: bool, result: &super::run::RunResult) -> Result<()> {
+    if !accel_forced {
+        return Ok(());
+    }
+    let _unreachable_here: Option<String> =
+        crate::registry::after_generation(true, Some("gpu"), result.used_gpu)?;
+    Ok(())
 }
 
 /// F-CLIPARITY-01 / PMAT-386: Chrome trace JSON output.

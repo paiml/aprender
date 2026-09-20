@@ -1,0 +1,196 @@
+{
+  "ticket": "PMAT-3602",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "51fb7d146d673c66cb7af65b3cc69521df43ec1b",
+  "diff_sha256": "6305a5e2dd8384fec0a8e21a266ccdf554997c9fac30381ff3c543bb34851937",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 26565,
+  "author": {
+    "model": "Opus 5 (1M context)",
+    "family": "claude",
+    "source": "measured"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "The diff fails to implement the required acceptance criteria. The author added `fell_back: true` logic to `build_final_json` to surface GPU rejections in `--json`, but the control flow in `run_entry.rs` completely bypasses it. `reconcile_accelerator` returns an `Err` on a forced GPU rejection, which the `?` operator immediately propagates, causing an early exit before `print_run_output` (and thus `build_final_json`) is ever reached. The added JSON fields and the corrective line `eprintln!` are entirely unreachable dead code.",
+      "findings": [
+        {
+          "claim": "The GPU rejection is NOT surfaced in `--json` as required by the ticket (Item 1). Because `reconcile_accelerator(accel_forced, &result)?` is placed before `print_run_output`, a rejected GPU run (which returns an `Err`) early-returns and exits. Thus `print_run_output` and `build_final_json` are skipped entirely. The `fell_back: true` logic added to `build_final_json` is unreachable dead code and will never be emitted in production.",
+          "file": "crates/apr-cli/src/commands/run_entry.rs",
+          "grounding": "cited",
+          "line": 136
+        },
+        {
+          "claim": "The corrective line `eprintln!(\"{note}\");` is dead code and will never execute. `reconcile_accelerator` returns `Err` on forced fallback, `Ok(None)` on unforced GPU failure (because `announced` is passed as `None`), and `Ok(None)` on success. There is no code path where it returns `Ok(Some(note))`, so the `if let Some(note)` block is unreachable.",
+          "file": "crates/apr-cli/src/commands/run_entry.rs",
+          "grounding": "cited",
+          "line": 136
+        }
+      ],
+      "raw_bytes": 5302,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "NO-VERDICT",
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": [],
+      "raw_bytes": 2027,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "transport_status": "SUCCESS",
+      "transport_error": "",
+      "salvageable": "/home/noah/.gemini/antigravity-cli/brain/ebf9365c-17a8-4501-ab68-9bf618438f56 (1631982 bytes)",
+      "carried_verdict": "",
+      "blind_reason": "",
+      "agy_exit": "",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Review for PMAT-3602: PASS. The diff correctly wires `registry::after_generation` into the `apr run` execution path via `run_entry::reconcile_accelerator`, resolving the defect where forced GPU runs falling back to CPU silently exited 0. `dispatch.rs` classifies request forcing once using `registry::Request::wanted()`, `run_entry::run` halts with `CliError::BackendUnavailable` (exit 14) upon forced GPU fallback, `--json` / `--stream` output includes explicit backend metadata (`requested`, `ran`, `fell_back`), and all 6 new two-way falsification tests pass. No gates were weakened, no out-of-scope changes were introduced, and roadmap aggregation is idempotent.",
+      "findings": [
+        {
+          "claim": "The 6 falsification unit tests in run_tests_accel_reconcile.rs verify both refusal on forced fallback and non-refusal on healthy GPU, plain CPU, and unrecorded backend runs.",
+          "command": "target/debug/deps/apr_cli-1cda494bb083e322 a_forced_accelerator an_unforced_cpu a_backend_that_did_not_report the_json_distinguishes a_successful_gpu",
+          "file": "crates/apr-cli/src/commands/run_tests_accel_reconcile.rs",
+          "grounding": "measured",
+          "line": 44,
+          "output": "running 8 tests\ntest commands::run::tests::a_backend_that_did_not_report_is_not_treated_as_a_fallback ... ok\ntest commands::run::tests::a_forced_accelerator_that_actually_ran_on_gpu_says_nothing ... ok\ntest commands::run::tests::an_unforced_cpu_run_is_not_a_fallback ... ok\ntest commands::run::tests::a_forced_accelerator_that_ran_on_cpu_is_refused ... ok\ntest commands::run::tests::a_successful_gpu_run_is_not_labelled_a_fallback ... ok\ntest commands::run::tests::the_json_distinguishes_a_deliberate_cpu_run_from_a_rejected_gpu_run ... ok\ntest registry::tests::a_forced_accelerator_that_fell_to_cpu_at_runtime_is_refused_never_reported_as_success ... ok\ntest registry::tests::a_forced_accelerator_on_a_build_without_one_is_feature_disabled_never_cpu ... ok\n\ntest result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 7293 filtered out; finished in 0.12s"
+        },
+        {
+          "claim": "Stream output and JSON serialization tests pass with the updated accel_forced parameter in build_final_json and write_stream_output.",
+          "command": "target/debug/deps/apr_cli-1cda494bb083e322 stream_output build_final_json",
+          "file": "crates/apr-cli/src/commands/run_tests_stream_output.rs",
+          "grounding": "measured",
+          "line": 22,
+          "output": "running 4 tests\ntest commands::run::tests::build_final_json_matches_legacy_json_shape ... ok\ntest commands::run::tests::stream_output_none_tokens_emits_only_final ... ok\ntest commands::run::tests::stream_output_no_tokens_emits_only_final ... ok\ntest commands::run::tests::stream_output_emits_n_plus_one_json_lines ... ok\n\ntest result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 7297 filtered out; finished in 0.00s"
+        },
+        {
+          "claim": "Roadmap fragment docs/roadmaps/entries/PMAT-3602.yaml aggregates cleanly and idempotently into roadmap.yaml.",
+          "command": "make roadmap-aggregate-check",
+          "file": "docs/roadmaps/entries/PMAT-3602.yaml",
+          "grounding": "measured",
+          "line": 1,
+          "output": "ok  roadmap.yaml == aggregate(48 fragment(s)), idempotent"
+        }
+      ],
+      "raw_bytes": 8373,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [
+    {
+      "lane": 1,
+      "verdict": "FAIL",
+      "summary": "The diff fails to implement the required acceptance criteria. The author added `fell_back: true` logic to `build_final_json` to surface GPU rejections in `--json`, but the control flow in `run_entry.rs` completely bypasses it. `reconcile_accelerator` returns an `Err` on a forced GPU rejection, which the `?` operator immediately propagates, causing an early exit before `print_run_output` (and thus `build_final_json`) is ever reached. The added JSON fields and the corrective line `eprintln!` are entirely unreachable dead code.",
+      "findings": [
+        {
+          "claim": "The GPU rejection is NOT surfaced in `--json` as required by the ticket (Item 1). Because `reconcile_accelerator(accel_forced, &result)?` is placed before `print_run_output`, a rejected GPU run (which returns an `Err`) early-returns and exits. Thus `print_run_output` and `build_final_json` are skipped entirely. The `fell_back: true` logic added to `build_final_json` is unreachable dead code and will never be emitted in production.",
+          "file": "crates/apr-cli/src/commands/run_entry.rs",
+          "grounding": "cited",
+          "line": 136
+        },
+        {
+          "claim": "The corrective line `eprintln!(\"{note}\");` is dead code and will never execute. `reconcile_accelerator` returns `Err` on forced fallback, `Ok(None)` on unforced GPU failure (because `announced` is passed as `None`), and `Ok(None)` on success. There is no code path where it returns `Ok(Some(note))`, so the `if let Some(note)` block is unreachable.",
+          "file": "crates/apr-cli/src/commands/run_entry.rs",
+          "grounding": "cited",
+          "line": 136
+        }
+      ]
+    },
+    {
+      "lane": 2,
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": []
+    }
+  ],
+  "dedup": [
+    {
+      "file": "crates/apr-cli/src/commands/run_entry.rs",
+      "line": 136,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The GPU rejection is NOT surfaced in `--json` as required by the ticket (Item 1). Because `reconcile_accelerator(accel_forced, &result)?` is placed before `print_run_output`, a rejected GPU run (which returns an `Err`) early-returns and exits. Thus `print_run_output` and `build_final_json` are skipped entirely. The `fell_back: true` logic added to `build_final_json` is unreachable dead code and will never be emitted in production.",
+        "The corrective line `eprintln!(\"{note}\");` is dead code and will never execute. `reconcile_accelerator` returns `Err` on forced fallback, `Ok(None)` on unforced GPU failure (because `announced` is passed as `None`), and `Ok(None)` on success. There is no code path where it returns `Ok(Some(note))`, so the `if let Some(note)` block is unreachable."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/run_tests_accel_reconcile.rs",
+      "line": 44,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The 6 falsification unit tests in run_tests_accel_reconcile.rs verify both refusal on forced fallback and non-refusal on healthy GPU, plain CPU, and unrecorded backend runs."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/run_tests_stream_output.rs",
+      "line": 22,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Stream output and JSON serialization tests pass with the updated accel_forced parameter in build_final_json and write_stream_output."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/entries/PMAT-3602.yaml",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Roadmap fragment docs/roadmaps/entries/PMAT-3602.yaml aggregates cleanly and idempotently into roadmap.yaml."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 2: no verdict object found in lane file (status=SUCCESS) salvageable=/home/noah/.gemini/antigravity-cli/brain/ebf9365c-17a8-4501-ab68-9bf618438f56 (1631982 bytes) [UNREVIEWED CLAIM MATERIAL — never a PASS]"
+  ],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=Opus 5 (1M context)/claude"
+  }
+}

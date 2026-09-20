@@ -36,6 +36,16 @@
 // | asked for nothing, ran on GPU | false | `Some(true)` | silent pass |
 // | backend did not report | true | `None` | silent pass — absent is not false |
 //
+// **Round 1 of the AD-04 quorum turned this PR FAIL on two counts, both correct,
+// and both are fixed here.** (1) `reconcile_accelerator(...)?` ran BEFORE
+// `print_run_output`, so a rejected `--gpu` run early-returned and `--json`
+// emitted nothing at all — the surface the ticket names. (2) the caller's
+// `if let Some(note)` arm was UNREACHABLE: `announced` was `Some("gpu")` exactly
+// when `forced` was true, and `after_generation`'s corrective-line branch needs
+// `forced == false`. A branch with no reachable caller — the very defect this PR
+// fixes, reproduced one layer down while fixing it. Lane 1 (gemini-3.1-pro-high)
+// found both; lane 3 passed the PR without seeing either.
+//
 // The last row is deliberate. `used_gpu: None` means the engine did not report,
 // which is not evidence that it fell back; refusing on it would turn every
 // non-reporting path into a hard error. Absence is Unknown, never Fail.
@@ -71,10 +81,8 @@ fn a_forced_accelerator_that_ran_on_cpu_is_refused() {
 #[test]
 fn a_forced_accelerator_that_actually_ran_on_gpu_says_nothing() {
     let result = gpu_result(Some(true));
-    let note = reconcile_accelerator(true, &result).expect("a real GPU run must not refuse");
-    assert_eq!(
-        note, None,
-        "nothing needs saying when the GPU was asked for and the GPU ran"
+    reconcile_accelerator(true, &result).expect(
+        "nothing needs saying when the GPU was asked for and the GPU ran",
     );
 }
 
@@ -84,12 +92,8 @@ fn a_forced_accelerator_that_actually_ran_on_gpu_says_nothing() {
 #[test]
 fn an_unforced_cpu_run_is_not_a_fallback() {
     let result = gpu_result(Some(false));
-    let note =
-        reconcile_accelerator(false, &result).expect("a plain CPU run must not refuse");
-    assert_eq!(
-        note, None,
-        "no accelerator was requested, so there is nothing to reconcile"
-    );
+    reconcile_accelerator(false, &result)
+        .expect("no accelerator was requested, so there is nothing to reconcile");
 }
 
 /// Absent is Unknown, never Fail: a backend that did not report `used_gpu` has
@@ -97,9 +101,8 @@ fn an_unforced_cpu_run_is_not_a_fallback() {
 #[test]
 fn a_backend_that_did_not_report_is_not_treated_as_a_fallback() {
     let result = gpu_result(None);
-    let note = reconcile_accelerator(true, &result)
-        .expect("an unreported backend must not be read as a CPU fallback");
-    assert_eq!(note, None, "used_gpu: None is Unknown, not false");
+    reconcile_accelerator(true, &result)
+        .expect("used_gpu: None is Unknown, not false — not a CPU fallback");
 }
 
 /// `used_gpu: false` alone collapses "ran on CPU deliberately" and "was refused
