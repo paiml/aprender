@@ -1,0 +1,17 @@
+- id: PMAT-3225
+  github_issue: null
+  item_type: task
+  title: 'APR-RELEASE-001 §5 P0·Instrument: make build-report — 1092 ledger records committed, nothing reads them'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-14T13:33:54Z
+  updated: 2026-09-14T13:33:54Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
