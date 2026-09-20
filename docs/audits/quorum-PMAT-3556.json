@@ -3,12 +3,12 @@
   "base": "origin/main",
   "base_resolved": "origin/main",
   "base_note": "no origin/origin/main exists; judged against the local ref",
-  "head": "c9f03accd5e468cc3c4b82d3001a67b7d1def1b8",
-  "diff_sha256": "e148035855ddb7559950f4cc4b51295b8c47a148d702aecd1e8511ff4d42c3f0",
+  "head": "797fef0d42e0c6720bdfd7fbe1c8d2d2d706ecc9",
+  "diff_sha256": "5e356d92f1758149d5f675fe6706671963da3e202670ea790106723e5e3793bf",
   "width": 3,
   "executor": "agy",
-  "prompt_mode": "inline",
-  "prompt_bytes": 89606,
+  "prompt_mode": "file",
+  "prompt_bytes": 100821,
   "author": {
     "model": "claude-opus-5",
     "family": "claude",
@@ -20,35 +20,35 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff correctly implements all requirements of PMAT-3556 without violating any constraints. It provides the prefill probe driver and decider, enforces the five mandatory refusals in `decompose()`, runs the selftest prior to measurement, discards warm-up requests, and reads TTFT off the SSE stream. The bash driver guarantees marker creation on every exit path via `bail_marker` prior to `cd` and `apr_bin.sh`, and exit codes map correctly to their statuses. The restriction on modifying `crates/aprender-serve/**` and `.github/workflows/cuda-nightly.yml` is honored, and the previous quorum failure related to committing `lanes.pids` is addressed appropriately by adding the `.lanes/` directory to `.gitignore`.",
+      "summary": "The diff implements all the requirements of PMAT-3556 perfectly. It includes the probe driver and decider scripts with the required 5 mandatory refusals, reads TTFT, discards warmup, uses unique nonces, creates bail_marker for early paths, properly reports \"UNMEASURABLE\", ignores .lanes/, updates roadmaps and updates the status to LANDED. No forbidden files are modified.",
       "findings": [
         {
-          "claim": "The bash driver establishes `bail_marker` prior to `cd` and `apr_bin.sh` resolving, ensuring the marker is written on every early exit path. The exit 2 marker maps to the correct `UNMEASURABLE` vocabulary.",
-          "file": "scripts/perf002_prefill_path_probe.sh",
-          "grounding": "cited"
-        },
-        {
-          "claim": "The `decompose()` decider implements the four mandatory refusals (`too_few_distinct_x`, `negative_slope`, `r2_below_bound`, and `bimodal`) plus the fifth `implausibly_fast` harness guard. These refusals name themselves and appropriately map to exit 2.",
-          "file": "scripts/perf002_prefill_path_probe.py",
-          "grounding": "cited"
-        },
-        {
-          "claim": "Row 2's status cell is updated to **LANDED** and documents the mechanism confirmation, successfully discharging the expiry as required.",
-          "file": "docs/specifications/PP-LLAMA-001-MASTER.md",
-          "grounding": "cited"
-        },
-        {
-          "claim": "The transient `quorum-*.json.lanes/` directory containing `lanes.pids` is explicitly ignored, correctly addressing the file tracking defect caught by Lane 2 in the previous quorum round without committing the file.",
+          "claim": "The transient quorum-*.json.lanes/ directory containing lanes.pids is explicitly ignored.",
           "file": ".gitignore",
           "grounding": "cited"
         },
         {
-          "claim": "No files under `crates/aprender-serve/**` or `.github/workflows/cuda-nightly.yml` were modified, perfectly honoring the ticket's negative constraint.",
+          "claim": "The bash driver establishes bail_marker prior to cd and apr_bin.sh resolving, ensuring the marker is written on every early exit path. The exit 2 marker maps to the correct UNMEASURABLE vocabulary.",
+          "file": "scripts/perf002_prefill_path_probe.sh",
+          "grounding": "cited"
+        },
+        {
+          "claim": "The decompose() decider implements the four mandatory refusals (too_few_distinct_x, negative_slope, r2_below_bound, and bimodal) plus the fifth implausibly_fast harness guard.",
+          "file": "scripts/perf002_prefill_path_probe.py",
+          "grounding": "cited"
+        },
+        {
+          "claim": "Row 2's status cell is updated to LANDED and documents the mechanism confirmation.",
+          "file": "docs/specifications/PP-LLAMA-001-MASTER.md",
+          "grounding": "cited"
+        },
+        {
+          "claim": "No files under crates/aprender-serve/** or .github/workflows/cuda-nightly.yml were modified.",
           "file": "scripts/perf002_prefill_path_probe.sh",
           "grounding": "asserted"
         }
       ],
-      "raw_bytes": 5416,
+      "raw_bytes": 4201,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -62,10 +62,21 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "I have reviewed the diff against the PMAT-3556 ticket requirements and the receipt. \n\nThe python decider (`scripts/perf002_prefill_path_probe.py`) correctly implements all five refusals (`too_few_distinct_x`, `negative_slope`, `r2_below_bound`, `bimodal`, and `implausibly_fast`), mapping them to exit 2 without making defect claims. The `--selftest` covers all 8 specified cases and succeeds.\n\nThe bash driver (`scripts/perf002_prefill_path_probe.sh`) establishes `OUT` and `MARKER` immediately alongside a python-free `bail_marker` to ensure the marker is written on all logical early exit paths (like failing to `cd` or source `apr_bin.sh`). The exit codes and marker vocabulary correctly use `UNMEASURABLE` for exit 2. TTFT is measured from the SSE stream, warm-ups are discarded, and unique nonces are used.\n\nAdditionally, the previous Lane 2 failure regarding `lanes.pids` has been resolved by adding the transient `.lanes/` directory to `.gitignore`. No forbidden files were modified.\n\nThe diff fulfills all acceptance criteria.",
-      "findings": [],
-      "raw_bytes": 3342,
-      "err_bytes": 0,
+      "summary": "The diff implements all requirements of PMAT-3556, adding perf002_prefill_path_probe.sh and perf002_prefill_path_probe.py with mandatory refusals, properly handling early failure paths via bail_marker, using UNMEASURABLE consistently, and updating roadmap entries and spec cells as required. No restricted files were modified.",
+      "findings": [
+        {
+          "claim": "The transient `quorum-*.json.lanes/` directory is explicitly ignored, correctly addressing the file tracking defect caught by Lane 2.",
+          "file": ".gitignore",
+          "grounding": "cited"
+        },
+        {
+          "claim": "Row 2's status cell is updated to **LANDED** and its expiry is discharged as required.",
+          "file": "docs/specifications/PP-LLAMA-001-MASTER.md",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 2747,
+      "err_bytes": 100,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
@@ -86,8 +97,8 @@
           "grounding": "cited"
         }
       ],
-      "raw_bytes": 3134,
-      "err_bytes": 100,
+      "raw_bytes": 3226,
+      "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
@@ -103,10 +114,12 @@
       "file": ".gitignore",
       "line": null,
       "lanes_agreeing": [
-        1
+        1,
+        2
       ],
       "claims": [
-        "The transient `quorum-*.json.lanes/` directory containing `lanes.pids` is explicitly ignored, correctly addressing the file tracking defect caught by Lane 2 in the previous quorum round without committing the file."
+        "The transient `quorum-*.json.lanes/` directory is explicitly ignored, correctly addressing the file tracking defect caught by Lane 2.",
+        "The transient quorum-*.json.lanes/ directory containing lanes.pids is explicitly ignored."
       ]
     },
     {
@@ -123,10 +136,12 @@
       "file": "docs/specifications/PP-LLAMA-001-MASTER.md",
       "line": null,
       "lanes_agreeing": [
-        1
+        1,
+        2
       ],
       "claims": [
-        "Row 2's status cell is updated to **LANDED** and documents the mechanism confirmation, successfully discharging the expiry as required."
+        "Row 2's status cell is updated to **LANDED** and its expiry is discharged as required.",
+        "Row 2's status cell is updated to LANDED and documents the mechanism confirmation."
       ]
     },
     {
@@ -136,7 +151,7 @@
         1
       ],
       "claims": [
-        "The `decompose()` decider implements the four mandatory refusals (`too_few_distinct_x`, `negative_slope`, `r2_below_bound`, and `bimodal`) plus the fifth `implausibly_fast` harness guard. These refusals name themselves and appropriately map to exit 2."
+        "The decompose() decider implements the four mandatory refusals (too_few_distinct_x, negative_slope, r2_below_bound, and bimodal) plus the fifth implausibly_fast harness guard."
       ]
     },
     {
@@ -146,8 +161,8 @@
         1
       ],
       "claims": [
-        "No files under `crates/aprender-serve/**` or `.github/workflows/cuda-nightly.yml` were modified, perfectly honoring the ticket's negative constraint.",
-        "The bash driver establishes `bail_marker` prior to `cd` and `apr_bin.sh` resolving, ensuring the marker is written on every early exit path. The exit 2 marker maps to the correct `UNMEASURABLE` vocabulary."
+        "No files under crates/aprender-serve/** or .github/workflows/cuda-nightly.yml were modified.",
+        "The bash driver establishes bail_marker prior to cd and apr_bin.sh resolving, ensuring the marker is written on every early exit path. The exit 2 marker maps to the correct UNMEASURABLE vocabulary."
       ]
     }
   ],
