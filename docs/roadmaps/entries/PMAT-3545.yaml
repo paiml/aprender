@@ -1,0 +1,17 @@
+- id: PMAT-3545
+  github_issue: 3545
+  item_type: task
+  title: 'apr devices told every user CUDA was unavailable on a cuda build: trueno/cuda missing from the feature'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-09-21T00:00:00Z
+  updated: 2026-09-21T00:00:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from gh#3545 done_when; see paiml-mcp-agent-toolkit#1414). The shipped -cuda asset ran CUDA correctly and told every new user cuda unavailable reason=NotCompiled on the first screen they saw. Two flags decided one fact: apr-cli/cuda enabled realizar/cuda (so inference ran on the GPU) but NOT trueno/cuda — and trueno s backend registry is what devices reads, so default_factories() had no CudaFactory and the registry emitted missing_entry(Cuda) = Source::NotCompiled. Done when: the cuda feature includes trueno/cuda, and a test RED-turns if it is removed again. Falsifier is two-sided: a cuda build must not report not-compiled, AND a non-cuda build must STILL report not-compiled even where a GPU is physically present — a fix that made devices optimistic fails the second arm. NOTE: the issue s own query asks for compiled-in, which would be false even after a correct fix — Source::CompiledIn means linked into the binary, while the CUDA driver is reached via Source::Dlopen(path). The test asserts != not-compiled and the issue s query needs correcting rather than satisfying. Measured on lambda RTX 4090: before = unavailable/not-compiled, after = ready/dlopen.'
