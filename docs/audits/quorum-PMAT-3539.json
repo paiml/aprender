@@ -1,0 +1,84 @@
+{
+  "ticket": "PMAT-3539",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "21d77dee545386f022c2faa973861700c79b9be7",
+  "diff_sha256": "c890d2a899ac56534fef82ba98f373a30d403da6c23f3a07bce5aa8c4685879f",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 19292,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff precisely fulfills PMAT-3539 with no deviations. It deletes the three `Swatinem/rust-cache@v2` steps in `.github/workflows/book-contracts.yml` and replaces them with the detailed comments explaining why `cache-bin` was insufficient, including the exact `journalctl` and `grep` commands requested. Exactly four files are modified as per the invariant: the workflow file (with all deletions confined there) and the three purely additive roadmap/audit artifacts.",
+      "findings": [],
+      "raw_bytes": 2264,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff precisely implements PMAT-3539. It deletes the three `Swatinem/rust-cache@v2` steps in `.github/workflows/book-contracts.yml` and replaces them with the required detailed comments explaining the exact mechanism of `cleanRegistry` unconditionally deleting `${CARGO_HOME}/registry/src`. It includes the explicit statement `THE CI-REAPER IS NOT THE ONLY CAUSE OF THAT MESSAGE` and the required `journalctl` and `grep` diagnostic commands. All deletions are correctly confined to the `.github/workflows/book-contracts.yml` file, with the remaining three updated files (`docs/roadmaps/entries/PMAT-3539.yaml`, `docs/roadmaps/roadmap.yaml`, `docs/audits/quorum-PMAT-3539.json`) being purely additive as specified. No source, test, or unrelated CI files were modified.",
+      "findings": [],
+      "raw_bytes": 2904,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff for PMAT-3539 has been thoroughly reviewed against all acceptance criteria and rules.\n\nKey checks performed:\n1. Deletion verification: The three `Swatinem/rust-cache@v2` steps in `.github/workflows/book-contracts.yml` (in jobs `chapter-examples-compile`, `chapter-examples-run`, and `book-integration-tests`) are deleted.\n2. Comment verification: Each step is replaced with comments detailing the mechanism of `cleanRegistry` unconditionally deleting `${CARGO_HOME}/registry/src`, stating \"THE CI-REAPER IS NOT THE ONLY CAUSE OF THAT MESSAGE\", and including the two explicit diagnostic commands (`journalctl -u ci-reaper.service` and `grep` over runner logs).\n3. Confinement & Invariants: All deletions in the diff occur exclusively in `.github/workflows/book-contracts.yml`. The modifications to `docs/roadmaps/entries/PMAT-3539.yaml`, `docs/roadmaps/roadmap.yaml`, and `docs/audits/quorum-PMAT-3539.json` are purely additive.\n4. Scope: No source code, tests, or extraneous files are modified or weakened.\n\nVerdict: PASS.",
+      "findings": [],
+      "raw_bytes": 3427,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-low",
+      "model_measured": "gemini-3.6-flash-low",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

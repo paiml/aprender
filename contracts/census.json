@@ -9,10 +9,10 @@
   "by_kind": {
     "beat-benchmark": 24,
     "corpus-assembly": 1,
-    "kernel": 362,
+    "kernel": 363,
     "model-family": 28,
     "model-family-variant": 1,
-    "pattern": 87,
+    "pattern": 86,
     "pretraining-corpus": 2,
     "registry": 519,
     "schema": 766,
@@ -29,7 +29,7 @@
     "class": 2,
     "instance": 1
   },
-  "id_set_sha256": "39eb736d97392dd28dae8cb4e36cc154b7728522b8f6ca4de4508f4abd20e5e3",
+  "id_set_sha256": "51cfc1e6cf27aa5cb6d9345e918a19863f13aa4728b4eba15bfa69bc6002bfb1",
   "declared_external": [
     {
       "name": "provable-contracts",
