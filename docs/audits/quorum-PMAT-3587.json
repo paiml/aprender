@@ -1,0 +1,163 @@
+{
+  "ticket": "PMAT-3587",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "0981864480f7087175b062bd19b272b0de6ca08a",
+  "diff_sha256": "428d6936d2f8478c7de2da67b93566df08a18f2f43eb78ba6314027eff16a772",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 12302,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements the 'nextest [profile.ci] key (#3626)' half of PMAT-3587 exactly as requested. It correctly sets `fail-fast = false` under `[profile.ci]` in `.config/nextest.toml` and adds a robust guard script (`scripts/check_nextest_ci_profile_no_fail_fast.sh`) to prevent regression. The guard script incorporates a rigorous `--self-test` mechanism testing every polarity and correctly exits with code 2 for environment failures (missing file or unparseable TOML), enforcing anti-vacuity. Using `tomllib` in Python is a sound technical choice to avoid error-prone regex/string searching on the TOML format. The script passes `bash -n` and `shellcheck -S error`. There are no weakened gates, missing roadmap updates, or contrary testing assertions.",
+      "findings": [],
+      "raw_bytes": 3657,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "As Lane 2 reviewer, I examined the diff against ticket PMAT-3587 and attempted to refute the change. The diff implements exactly what the ticket specifies without weakening gates or introducing extraneous modifications:\n1. `.config/nextest.toml`: Sets `fail-fast = false` under `[profile.ci]` so nextest does not cancel remaining tests when a failure occurs.\n2. `scripts/check_nextest_ci_profile_no_fail_fast.sh`: Adds an anti-vacuous guard using Python's `tomllib` to enforce `fail-fast = false` under `[profile.ci]`, passing a 10-row self-test table covering all polarities and failure modes.\n3. `docs/roadmaps/entries/PMAT-3587.yaml` and `docs/roadmaps/roadmap.yaml`: Adds ticket PMAT-3587 roadmap tracking.\n\nNo gates are weakened, no tests refute the ticket, and the implementation adheres to requirements. Verdict is PASS.",
+      "findings": [
+        {
+          "claim": "The guard script scripts/check_nextest_ci_profile_no_fail_fast.sh structurally checks .config/nextest.toml using tomllib to ensure [profile.ci].fail-fast = false, and passes its complete 10-row self-test matrix covering true, false, absent keys, profile scoping, comments, non-boolean values, unparseable TOML, and missing files.",
+          "command": "scripts/check_nextest_ci_profile_no_fail_fast.sh --self-test",
+          "file": "scripts/check_nextest_ci_profile_no_fail_fast.sh",
+          "grounding": "measured",
+          "line": 57,
+          "output": "=== nextest [profile.ci] fail-fast guard: case table ===\nok    row 1  rc=0  fail-fast = false under [profile.ci] -> PASS\nok    row 2  rc=1  fail-fast = true under [profile.ci] -> RED\nok    row 3  rc=1  key ABSENT under [profile.ci] -> RED (nextest default is ON)\nok    row 4  rc=1  false under a DIFFERENT profile only -> RED\nok    row 5  rc=1  no [profile.ci] at all -> RED\nok    row 6  rc=1  false in a COMMENT, true in the key -> RED (not a substring test)\nok    row 7  rc=1  the string \"false\" (a string, not a bool) -> RED\nok    row 8  rc=2  unparseable TOML -> ENV rc=2, never a pass\nok    row 9  rc=2  missing file -> ENV rc=2, never a pass\nok    row 10 rc=0  the real .config/nextest.toml is GREEN\nSELF-TEST PASSED: 10 rows"
+        },
+        {
+          "claim": ".config/nextest.toml explicitly configures fail-fast = false under [profile.ci], satisfying the nextest profile configuration requirement of ticket PMAT-3587.",
+          "file": ".config/nextest.toml",
+          "grounding": "cited",
+          "line": 28
+        },
+        {
+          "claim": "docs/roadmaps/entries/PMAT-3587.yaml and docs/roadmaps/roadmap.yaml record ticket PMAT-3587 with status planned and its acceptance criteria notes.",
+          "file": "docs/roadmaps/entries/PMAT-3587.yaml",
+          "grounding": "cited",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 7505,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "As Lane 3 reviewer, I judged the diff against PMAT-3587 and attempted to refute it. All changes adhere strictly to the ticket requirements:\n1. `.config/nextest.toml` sets `fail-fast = false` under `[profile.ci]`, ensuring nextest does not cancel queued tests or discard verdicts on failure.\n2. `scripts/check_nextest_ci_profile_no_fail_fast.sh` introduces a guard script using `tomllib` with a 10-row self-test verifying edge cases (bool false vs string \"false\", comment tricks, profile scoping, missing keys, parse errors, missing files).\n3. `docs/roadmaps/entries/PMAT-3587.yaml` and `docs/roadmaps/roadmap.yaml` register ticket PMAT-3587.\n\nNo gate was weakened, no assertions violate the ticket, and no out-of-scope modifications were introduced. Verdict is PASS.",
+      "findings": [
+        {
+          "claim": "The guard script scripts/check_nextest_ci_profile_no_fail_fast.sh correctly implements structural TOML validation and passes its 10-row self-test suite covering true, false, absent, string, comment, missing file, and invalid TOML cases.",
+          "command": "/tmp/test_pmat_3587/check_nextest_ci_profile_no_fail_fast.sh --self-test",
+          "file": "scripts/check_nextest_ci_profile_no_fail_fast.sh",
+          "grounding": "measured",
+          "line": 57,
+          "output": "=== nextest [profile.ci] fail-fast guard: case table ===\nok    row 1  rc=0  fail-fast = false under [profile.ci] -> PASS\nok    row 2  rc=1  fail-fast = true under [profile.ci] -> RED\nok    row 3  rc=1  key ABSENT under [profile.ci] -> RED (nextest default is ON)\nok    row 4  rc=1  false under a DIFFERENT profile only -> RED\nok    row 5  rc=1  no [profile.ci] at all -> RED\nok    row 6  rc=1  false in a COMMENT, true in the key -> RED (not a substring test)\nok    row 7  rc=1  the string \"false\" (a string, not a bool) -> RED\nok    row 8  rc=2  unparseable TOML -> ENV rc=2, never a pass\nok    row 9  rc=2  missing file -> ENV rc=2, never a pass\nok    row 10 rc=0  the real .config/nextest.toml is GREEN\nSELF-TEST PASSED: 10 rows"
+        },
+        {
+          "claim": ".config/nextest.toml explicitly sets fail-fast = false under [profile.ci] as required by PMAT-3587.",
+          "file": ".config/nextest.toml",
+          "grounding": "cited",
+          "line": 28
+        },
+        {
+          "claim": "docs/roadmaps/entries/PMAT-3587.yaml and docs/roadmaps/roadmap.yaml properly add the tracking entry for ticket PMAT-3587 with acceptance notes.",
+          "file": "docs/roadmaps/entries/PMAT-3587.yaml",
+          "grounding": "cited",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 7100,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": ".config/nextest.toml",
+      "line": 28,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        ".config/nextest.toml explicitly configures fail-fast = false under [profile.ci], satisfying the nextest profile configuration requirement of ticket PMAT-3587.",
+        ".config/nextest.toml explicitly sets fail-fast = false under [profile.ci] as required by PMAT-3587."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/entries/PMAT-3587.yaml",
+      "line": 1,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "docs/roadmaps/entries/PMAT-3587.yaml and docs/roadmaps/roadmap.yaml properly add the tracking entry for ticket PMAT-3587 with acceptance notes.",
+        "docs/roadmaps/entries/PMAT-3587.yaml and docs/roadmaps/roadmap.yaml record ticket PMAT-3587 with status planned and its acceptance criteria notes."
+      ]
+    },
+    {
+      "file": "scripts/check_nextest_ci_profile_no_fail_fast.sh",
+      "line": 57,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "The guard script scripts/check_nextest_ci_profile_no_fail_fast.sh correctly implements structural TOML validation and passes its 10-row self-test suite covering true, false, absent, string, comment, missing file, and invalid TOML cases.",
+        "The guard script scripts/check_nextest_ci_profile_no_fail_fast.sh structurally checks .config/nextest.toml using tomllib to ensure [profile.ci].fail-fast = false, and passes its complete 10-row self-test matrix covering true, false, absent keys, profile scoping, comments, non-boolean values, unparseable TOML, and missing files."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
