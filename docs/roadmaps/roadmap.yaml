@@ -18848,3 +18848,20 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE (hand-entered; pmat work add derived neither spec: nor acceptance_criteria: — defect paiml-mcp-agent-toolkit#1414). Spec: docs/specifications/ruling-receipts-under-contract.md (operator ruling 2026-09-20). Done when: contracts/parity-receipt-v1.yaml with its shape on origin/main; extract:parity-receipt implemented; pv lint --gate shapes --path evidence/ in the required check; PR body shows 7 older receipts RED before back-fill and 0 after, plant violation = 1, mutation RED, pc_shape fired; check_parity_receipt.sh folded into the shape or its remainder listed under not_expressible; ONT-4c3 bound with the parity receipt as focus node; verdict rendered on a fleet host once the pv pin lands, else checkout-only: true. Sigma parent bound: json. Back-fill denominator: 7. STOP: subset-insufficient; shared-file-touched without the guard label; any threshold typed into the shape instead of resolved from thresholds.yaml.'
+- id: PMAT-3587
+  github_issue: 3587
+  item_type: task
+  title: 'nextest fail-fast discards verdicts: one failure hid 15 unmeasured commands and the shard read as ''1 failure'', not ''1 failure + 15 Unknown'''
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-20T12:37:48Z
+  updated: 2026-09-20T12:37:48Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from issue #3587 "What lands"; minted on the PR branch so the AD-04 quorum can run -- pmat work status refuses a missing item). Two halves: the explicit-command runner (#3616, merged) and the nextest [profile.ci] key (#3626). Lands: 1. **--no-fail-fast on the shard.** The cost is runner minutes on an already-red shard; the benefit is that a red run still measures everything else it was going to measure — which is exactly when you most want the data. 2. **The reducer reports ran / skipped / total** in the shard receipt. The skipped count is a **number**, never an absence. 3. **A receipt with skipped > 0 is Unknown, not Fail and not Pass** — it names what was not measured, per doctrine 4. '
