@@ -3,12 +3,12 @@
   "base": "origin/main",
   "base_resolved": "origin/main",
   "base_note": "no origin/origin/main exists; judged against the local ref",
-  "head": "b756ef0681ce1c18f4f22ce5ff89486e33207f87",
-  "diff_sha256": "fce599337c7e14162467ccec19a142200d7616c4cffab1db9aba2ab0cb40f12c",
+  "head": "fb4dfdbce28b5140776723ca51e133286cb653fa",
+  "diff_sha256": "f727831ff5fccef0555e6e0b6c7a82df9bd01b4b67eb6849703fd54eb78a3ac9",
   "width": 3,
   "executor": "agy",
-  "prompt_mode": "inline",
-  "prompt_bytes": 68280,
+  "prompt_mode": "file",
+  "prompt_bytes": 102963,
   "author": {
     "model": "claude-opus-5",
     "family": "claude",
@@ -20,12 +20,24 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff implements everything requested by PMAT-3556 accurately. It correctly introduces the prefill path probe and the python decider with the mandatory refusals, guarding against harness errors. The self-test includes all required fixtures and assertions. The decider correctly maps all refusals to UNMEASURABLE (exit 2) without falsely asserting a defect claim. TTFT is measured off the SSE stream, warm-up requests are discarded, and a unique nonce prevents prefix cache hits. No edits were made to restricted files, exactly matching the ticket requirements.",
-      "findings": [],
-      "raw_bytes": 2493,
+      "summary": "The diff correctly implements all requirements of PMAT-3556. The Python decider implements the five refusals, mapping them to UNMEASURABLE (exit 2) and reporting per-mode fits for the bimodal case as required. The driver measures TTFT off the SSE stream, issues a unique nonce per sample, discards warm-up requests, and establishes OUT/MARKER with a python-free bail_marker before any step that can fail early. The marker vocabulary consistently uses UNMEASURABLE. No forbidden files were modified. The dissenting claims from Lane 2 are contradicted by the actual diff, which explicitly handles the defects observed in the previous draft.",
+      "findings": [
+        {
+          "claim": "The probe writes a marker on every exit path via `bail_marker` and `write_marker`, properly covering early failures of `cd` and `apr_bin.sh` before they can occur without a marker.",
+          "file": "scripts/perf002_prefill_path_probe.sh",
+          "grounding": "cited"
+        },
+        {
+          "claim": "The string passed to write_marker for exit 2 is UNMEASURABLE, which matches the documented exit codes.",
+          "file": "scripts/perf002_prefill_path_probe.sh",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 3577,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
+      "grounding_check": "parity",
       "model": "gemini-3.1-pro-high",
       "model_measured": "gemini-3.1-pro-high",
       "model_source": "measured",
@@ -35,25 +47,18 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "FAIL",
-      "summary": "The diff implements the driver and decider for the prefill probe, but fails to ensure the marker is written on all exit paths (it bails out early if `cd` or `apr_bin.sh` fail). Additionally, it writes `UNMEASURED` as the status for exit 2 instead of the ticket-mandated `UNMEASURABLE`.",
+      "summary": "The diff correctly implements all criteria from PMAT-3556, including the prefill probe driver and decider, mandatory refusals mapped to exit 2 (UNMEASURABLE), proper marker generation, SSE TTFT timing, and the required documentation/receipt updates. However, it accidentally includes a transient PID file (`lanes.pids`) in the commit.",
       "findings": [
         {
-          "claim": "marker written on EVERY exit path",
-          "file": "scripts/perf002_prefill_path_probe.sh",
-          "fix": "Use a `trap` to ensure the marker is written on all exits, or explicitly call `write_marker` before these early `exit`s.",
+          "claim": "The diff commits a temporary process ID file (lanes.pids), which the ticket does not ask for and which should not be tracked in version control.",
+          "file": "docs/audits/quorum-PMAT-3556.json.lanes/lanes.pids",
+          "fix": "Remove docs/audits/quorum-PMAT-3556.json.lanes/lanes.pids from the commit.",
           "grounding": "cited",
-          "line": 36
-        },
-        {
-          "claim": "exit 2 UNMEASURABLE",
-          "file": "scripts/perf002_prefill_path_probe.sh",
-          "fix": "Change the string passed to `write_marker` from `UNMEASURED` to `UNMEASURABLE` to match the ticket's specified status name.",
-          "grounding": "cited",
-          "line": 136
+          "line": 2
         }
       ],
-      "raw_bytes": 4056,
-      "err_bytes": 100,
+      "raw_bytes": 2705,
+      "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
@@ -66,7 +71,7 @@
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Review of PMAT-3556 diff: Verified complete alignment with ticket PMAT-3556 requirements. The diff adds scripts/perf002_prefill_path_probe.sh, scripts/perf002_prefill_path_probe.py, roadmap entry PMAT-3556, and audit receipt docs/audits/impl-PMAT-3556-receipt.md. Python selftest passed cleanly with 8/8 cases verified (including all refusal rules and anti-vacuity check). Bash script is syntactically clean. No forbidden files under crates/aprender-serve/** or .github/workflows/cuda-nightly.yml were touched. Verdict is PASS.",
+      "summary": "Review of PMAT-3556 (Lane 3 of 3): Verified complete compliance with PMAT-3556 ticket requirements and receipt details. Added scripts/perf002_prefill_path_probe.sh, scripts/perf002_prefill_path_probe.py, roadmap entry PMAT-3556, updated PP-LLAMA-001-MASTER.md, and audit receipt docs/audits/impl-PMAT-3556-receipt.md. Python selftest passed cleanly with 8/8 cases verified. Early failure paths in the bash driver write markers properly prior to sourcing or changing directories, using UNMEASURABLE for exit 2. No forbidden files under crates/aprender-serve/** or .github/workflows/cuda-nightly.yml were touched. Verdict is PASS.",
       "findings": [
         {
           "claim": "scripts/perf002_prefill_path_probe.py passes all 8 selftest cases, verifying all 5 refusal rules (too_few_distinct_x, negative_slope, r2_below_bound, bimodal, implausibly_fast), anti-vacuity, control pass, and slope recovery.",
@@ -75,22 +80,23 @@
           "grounding": "measured"
         },
         {
-          "claim": "scripts/perf002_prefill_path_probe.sh passes bash syntax validation (bash -n clean) and properly handles marker generation, selftest pre-run enforcement, server setup, SSE TTFT timing, and exit codes.",
+          "claim": "scripts/perf002_prefill_path_probe.sh passes syntax validation, establishes bail_marker prior to repo resolution or apr_bin sourcing, and ensures UNMEASURABLE is consistently reported on exit 2.",
           "file": "scripts/perf002_prefill_path_probe.sh",
           "fix": "None needed.",
           "grounding": "measured"
         },
         {
-          "claim": "The diff implements all requirements specified in PMAT-3556 ticket and receipt without violating constraints or touching forbidden files.",
+          "claim": "The diff satisfies all acceptance criteria of PMAT-3556 without editing restricted files or violating refutation doctrines.",
           "file": "docs/audits/impl-PMAT-3556-receipt.md",
           "fix": "None needed.",
           "grounding": "cited"
         }
       ],
-      "raw_bytes": 5775,
+      "raw_bytes": 4382,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
+      "grounding_check": "parity",
       "model": "gemini-3.6-flash-low",
       "model_measured": "gemini-3.6-flash-low",
       "model_source": "measured",
@@ -101,21 +107,14 @@
     {
       "lane": 2,
       "verdict": "FAIL",
-      "summary": "The diff implements the driver and decider for the prefill probe, but fails to ensure the marker is written on all exit paths (it bails out early if `cd` or `apr_bin.sh` fail). Additionally, it writes `UNMEASURED` as the status for exit 2 instead of the ticket-mandated `UNMEASURABLE`.",
+      "summary": "The diff correctly implements all criteria from PMAT-3556, including the prefill probe driver and decider, mandatory refusals mapped to exit 2 (UNMEASURABLE), proper marker generation, SSE TTFT timing, and the required documentation/receipt updates. However, it accidentally includes a transient PID file (`lanes.pids`) in the commit.",
       "findings": [
         {
-          "claim": "marker written on EVERY exit path",
-          "file": "scripts/perf002_prefill_path_probe.sh",
-          "fix": "Use a `trap` to ensure the marker is written on all exits, or explicitly call `write_marker` before these early `exit`s.",
+          "claim": "The diff commits a temporary process ID file (lanes.pids), which the ticket does not ask for and which should not be tracked in version control.",
+          "file": "docs/audits/quorum-PMAT-3556.json.lanes/lanes.pids",
+          "fix": "Remove docs/audits/quorum-PMAT-3556.json.lanes/lanes.pids from the commit.",
           "grounding": "cited",
-          "line": 36
-        },
-        {
-          "claim": "exit 2 UNMEASURABLE",
-          "file": "scripts/perf002_prefill_path_probe.sh",
-          "fix": "Change the string passed to `write_marker` from `UNMEASURED` to `UNMEASURABLE` to match the ticket's specified status name.",
-          "grounding": "cited",
-          "line": 136
+          "line": 2
         }
       ]
     }
@@ -128,7 +127,17 @@
         3
       ],
       "claims": [
-        "The diff implements all requirements specified in PMAT-3556 ticket and receipt without violating constraints or touching forbidden files."
+        "The diff satisfies all acceptance criteria of PMAT-3556 without editing restricted files or violating refutation doctrines."
+      ]
+    },
+    {
+      "file": "docs/audits/quorum-PMAT-3556.json.lanes/lanes.pids",
+      "line": 2,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The diff commits a temporary process ID file (lanes.pids), which the ticket does not ask for and which should not be tracked in version control."
       ]
     },
     {
@@ -145,40 +154,20 @@
       "file": "scripts/perf002_prefill_path_probe.sh",
       "line": null,
       "lanes_agreeing": [
+        1,
         3
       ],
       "claims": [
-        "scripts/perf002_prefill_path_probe.sh passes bash syntax validation (bash -n clean) and properly handles marker generation, selftest pre-run enforcement, server setup, SSE TTFT timing, and exit codes."
-      ]
-    },
-    {
-      "file": "scripts/perf002_prefill_path_probe.sh",
-      "line": 36,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "marker written on EVERY exit path"
-      ]
-    },
-    {
-      "file": "scripts/perf002_prefill_path_probe.sh",
-      "line": 136,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "exit 2 UNMEASURABLE"
+        "The probe writes a marker on every exit path via `bail_marker` and `write_marker`, properly covering early failures of `cd` and `apr_bin.sh` before they can occur without a marker.",
+        "The string passed to write_marker for exit 2 is UNMEASURABLE, which matches the documented exit codes.",
+        "scripts/perf002_prefill_path_probe.sh passes syntax validation, establishes bail_marker prior to repo resolution or apr_bin sourcing, and ensures UNMEASURABLE is consistently reported on exit 2."
       ]
     }
   ],
   "uncovered": [],
   "coverage_source": "lanes",
   "partial": false,
-  "partial_reasons": [
-    "lane 1: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (2493 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)",
-    "lane 3: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (5775 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)"
-  ],
+  "partial_reasons": [],
   "auto_merge": {
     "checked": true,
     "was_armed": false,
