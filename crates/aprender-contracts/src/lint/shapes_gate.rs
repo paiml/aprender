@@ -165,10 +165,26 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
             )
         })
         .collect();
-    let vacuous_armed: Vec<String> = focus_of
+    // TWO sets, because they answer two different questions and conflating them
+    // was the defect a quorum lane caught here (#3610 round 1, found independently
+    // by two lanes).
+    //
+    // `vacuous_armed` decides the VERDICT: only an ARMED shape that graded nothing
+    // can refuse, because an unarmed one never fed the verdict in the first place.
+    //
+    // `vacuous_any` decides the LISTS. The criterion is that a vacuous shape appears
+    // in NEITHER `armed_shapes` NOR `not_armed_shapes` — and filtering the partition
+    // by `vacuous_armed` left every UNARMED vacuity sitting in `not_armed_shapes`,
+    // filed as a policy choice, which is precisely how the original defect hid.
+    let vacuous_any: Vec<String> = focus_of
         .iter()
-        .filter(|(id, n)| *n == 0 && arming.is_armed(id))
+        .filter(|(_, n)| *n == 0)
         .map(|(id, _)| id.clone())
+        .collect();
+    let vacuous_armed: Vec<String> = vacuous_any
+        .iter()
+        .filter(|id| arming.is_armed(id))
+        .cloned()
         .collect();
 
     let (mut report, plant_violations) = validate_with_plant(&graph, &shapes, &arming);
@@ -244,7 +260,7 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
     let (armed_names, not_armed): (Vec<String>, Vec<String>) = shapes
         .iter()
         .map(|s| s.id.clone())
-        .filter(|id| !vacuous_armed.contains(id))
+        .filter(|id| !vacuous_any.contains(id))
         .partition(|id| arming.is_armed(id));
     let by_entity_type: BTreeMap<String, usize> = [
         (
@@ -293,15 +309,13 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
             triples: graph.len(),
             armed_shapes: armed_names,
             not_armed_shapes: not_armed,
-            // Every shape that graded NOTHING, armed or not. The armed case returned above, so
-            // what reaches here is the unarmed ones: they did not affect the verdict and the reader
-            // still needs to know the gate looked at nothing for them. A field that can only ever
-            // be empty is decoration, which is the defect one layer up from this one.
-            declines: focus_of
-                .iter()
-                .filter(|(_, n)| *n == 0)
-                .map(|(id, _)| id.clone())
-                .collect(),
+            // Every shape that graded NOTHING, armed or not — this is the ONLY list a
+            // vacuity appears in. An armed vacuity also drove the verdict to
+            // `Unknown(NoFocus)` above (nothing returns early there; the verdict is set
+            // and the run continues, so both armed and unarmed vacuities reach here).
+            // A field that can only ever be empty is decoration, which is the defect one
+            // layer up from this one.
+            declines: vacuous_any.clone(),
             unarmed_violations: counted.unarmed_violations,
             by_entity_type,
             pc_extract,

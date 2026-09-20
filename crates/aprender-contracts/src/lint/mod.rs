@@ -225,11 +225,20 @@ pub enum GateExtra {
         ///
         /// A separate list from `not_armed_shapes` on purpose. "Not armed by policy" and "armed and
         /// measured nothing" are different facts, and folding the second into the first would file a
-        /// vacuity as a deliberate choice — which is how the defect hid in the first place. These
-        /// An ARMED shape at zero does not reach here at all — the run declines, because
-        /// `armed_shapes` is the tool's claim about what it MEASURED and a shape that graded
-        /// nothing has no place in it. What this list carries is the UNARMED ones: they did not
-        /// affect the verdict, and a reader still needs to know the gate looked at nothing for them.
+        /// vacuity as a deliberate choice — which is how the defect hid in the first place.
+        ///
+        /// **This carries EVERY shape that graded zero, armed or unarmed**, and it is the only list
+        /// any of them appears in: a vacuity is in neither `armed_shapes` (the tool's claim about
+        /// what it MEASURED) nor `not_armed_shapes` (a policy choice it never made).
+        ///
+        /// The two differ in what they do to the verdict, not in whether they are listed here. An
+        /// ARMED vacuity drives the verdict to `Unknown(NoFocus)` and the run declines; an UNARMED
+        /// one leaves the verdict alone, because it never fed it. Both are named, because a reader
+        /// needs to know the gate looked at nothing for them either way.
+        ///
+        /// An earlier draft of this comment said an armed vacuity "does not reach here at all",
+        /// which was false — nothing returns early at the verdict, and both kinds reach this field.
+        /// A quorum lane caught the sentence; the code beside it had the matching bug.
         declines: Vec<String>,
         /// Violations from unarmed shapes (named in the findings as warnings; never in the meet).
         unarmed_violations: usize,

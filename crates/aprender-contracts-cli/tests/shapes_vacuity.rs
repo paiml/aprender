@@ -170,6 +170,22 @@ fn an_unarmed_shape_that_graded_nothing_is_reported_not_refused() {
         "a shape that graded nothing has no place in armed_shapes\n{}",
         r.all()
     );
+    // THE HALF THIS TEST WAS MISSING. The criterion is "neither list", and only
+    // the armed sibling above checked both — so an UNARMED vacuity could sit in
+    // `not_armed_shapes`, filed as a deliberate policy choice, which is exactly
+    // how the original defect hid. It did: the partition filtered on
+    // `vacuous_armed`, and two quorum lanes found it independently while this
+    // test stayed green.
+    assert!(
+        !extra["not_armed_shapes"]
+            .as_array()
+            .expect("not_armed_shapes")
+            .iter()
+            .any(|s| s.as_str() == Some("empty-shape")),
+        "an UNARMED shape that graded nothing must not be filed under \
+         not_armed_shapes either — `declines` is the only list it belongs in\n{}",
+        r.all()
+    );
 }
 
 #[test]
