@@ -743,10 +743,6 @@ fn shapes_result(contract_dir: &Path, validation_passed: bool) -> (GateResult, V
             skipped_gate("shapes", &format!("no `shape:` block in {contracts_checked} contracts — R-2: zero is a decline")),
             Vec::new(),
         ),
-        shapes_gate::ShapesOutcome::VacuousArmedShape { shapes_n, focus_nodes_n, vacuous } => (
-            skipped_gate("shapes", &format!("{} ARMED shape(s) graded ZERO focus nodes ({shapes_n} shape(s), {focus_nodes_n} focus node(s) in total): {} — an armed shape that measured nothing cannot be counted as clean, and `armed_shapes` is the tool's claim about what it MEASURED (#3610)", vacuous.len(), vacuous.join(", "))),
-            Vec::new(),
-        ),
         shapes_gate::ShapesOutcome::NoFocus { shapes_n } => (
             skipped_gate("shapes", &format!("{shapes_n} shape(s), no focus node")),
             Vec::new(),

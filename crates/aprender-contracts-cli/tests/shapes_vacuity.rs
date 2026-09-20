@@ -87,14 +87,53 @@ fn an_armed_shape_that_graded_nothing_refuses_in_a_directory() {
         "a vacuous armed shape must DECLINE, not pass and not fail\n{}",
         r.all()
     );
+    // THE REFUSAL IS THE EXIT CODE; THE REPORT IS THE EVIDENCE. Downstream consumers (infra's SLK
+    // gate) capture stdout and parse it REGARDLESS of exit code, because pv already exits non-zero
+    // on Fail. A refusal that printed only a bare `decline:` line would read to them as "no
+    // by_shape" and score UNMEASURED — indistinguishable, from their side, from a broken pv.
+    let extra = r.extra();
     assert!(
-        r.stderr.contains("empty-shape"),
-        "the decline must NAME the shape that graded nothing\n{}",
+        !extra.is_null(),
+        "stdout must still parse as JSON on the exit-2 path\n{}",
+        r.all()
+    );
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&r.stdout).expect("json")["verdict"].as_str(),
+        Some("Unknown(NoFocus)"),
+        "the report must carry the declining verdict\n{}",
         r.all()
     );
     assert!(
-        r.stderr.contains("ZERO focus nodes"),
-        "the decline must say what happened\n{}",
+        extra["by_shape"]
+            .as_array()
+            .expect("by_shape")
+            .iter()
+            .any(|s| s.as_str() == Some("empty-shape=0")),
+        "by_shape must NAME the zero-focus shape on the exit-2 path — it is the evidence\n{}",
+        r.all()
+    );
+    assert_eq!(
+        extra["declines"][0].as_str(),
+        Some("empty-shape"),
+        "the refusal must name the shape in declines\n{}",
+        r.all()
+    );
+    assert!(
+        !extra["armed_shapes"]
+            .as_array()
+            .expect("armed_shapes")
+            .iter()
+            .any(|s| s.as_str() == Some("empty-shape")),
+        "a shape that graded nothing has no place in armed_shapes\n{}",
+        r.all()
+    );
+    assert!(
+        !extra["not_armed_shapes"]
+            .as_array()
+            .expect("not_armed_shapes")
+            .iter()
+            .any(|s| s.as_str() == Some("empty-shape")),
+        "nor in not_armed_shapes: filing a vacuity as a policy choice is how it hid\n{}",
         r.all()
     );
 }
@@ -172,4 +211,19 @@ fn the_three_answers_remain_distinct() {
         (0, 1, 2),
         "pass / fail / decline must differ"
     );
+    // Every one of the three must also PRINT its report — a consumer that captures stdout and
+    // parses it regardless of exit code must get a document in all three cases, not two.
+    for fixture in ["json-ok", "json-violation", "shapes-one-empty"] {
+        let r = shapes_on(fixture);
+        assert!(
+            !r.extra().is_null(),
+            "{fixture} did not emit a parseable report\n{}",
+            r.all()
+        );
+        assert!(
+            r.extra()["by_shape"].is_array(),
+            "{fixture}: extra.by_shape must be present whatever the exit code\n{}",
+            r.all()
+        );
+    }
 }

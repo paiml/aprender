@@ -45,6 +45,34 @@ shapes: `armed_shapes` is the tool's claim about what it MEASURED; a shape that 
         nothing has no place in it (#3610)
 ```
 
+## The refusal carries its evidence: full JSON, then exit 2
+
+`slk-session-gate.sh` and the SLK bridge's self-test **capture stdout and parse it regardless of the
+exit code** — pv already exits non-zero on `Fail`, so capture-then-parse is their normal path. A
+refusal that printed only a bare `decline:` line would read to them as *no `by_shape`* and score
+**UNMEASURED** — indistinguishable, from their side, from a broken pv. **So the fix would have turned
+their gate grey on the same day it turned ours red.**
+
+The refusal therefore declines through the **ordinary result path** rather than short-circuiting:
+
+```
+$ pv lint tests/fixtures/ont/shapes-one-empty/contracts --gate shapes --format json ; echo $?
+{ … "verdict": "Unknown(NoFocus)", "extra": {
+      "by_shape":         ["empty-shape=0", "tool-status=1"],
+      "declines":         ["empty-shape"],
+      "armed_shapes":     ["tool-status"],
+      "not_armed_shapes": [] } }
+decline: NoFocus          # stderr
+2
+```
+
+**The refusal is the exit code; the report is the evidence.** A refusal that suppresses its own
+evidence is the same defect as a gate that swallows a decline, seen from the other side.
+
+Note `not_armed_shapes: []` — the vacuous shape is in **neither** list. `armed_shapes` is the claim
+about what was measured and `not_armed_shapes` means *not armed by policy*; filing a vacuity as a
+policy choice is how the defect hid in the first place.
+
 ## Why the unarmed row exists
 
 Without it the fix would be *"refuse whenever anything is empty"*, which is a different tool. An

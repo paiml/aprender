@@ -57,20 +57,6 @@ pub enum ShapesOutcome {
     NoShapes { contracts_checked: usize },
     /// Shapes exist, but no node in the graph has any of their target classes.
     NoFocus { shapes_n: usize },
-    /// #3610 — an ARMED shape graded ZERO focus nodes while others graded some.
-    ///
-    /// [`Self::NoFocus`] asks the question GLOBALLY (`report.focus_nodes_n == 0`), which is only
-    /// ever true for a lone contract. In a DIRECTORY one empty shape is invisible: the others carry
-    /// the total above zero, the empty one contributes no violations, and the aggregate reports
-    /// `Pass` while listing it in `armed_shapes` — the tool claiming it measured what it did not.
-    /// Measured on pv 0.68.2: a `type: jsonl` contract whose rows violate its own `sh:pattern`
-    /// passed exactly this way. `by_shape` already carried `<shape>=0` and nothing read it.
-    VacuousArmedShape {
-        shapes_n: usize,
-        focus_nodes_n: usize,
-        /// The armed shapes that graded nothing, in corpus order.
-        vacuous: Vec<String>,
-    },
     /// A shape resolves receipts and the tree holds none under `evidence/dogfood/models/`.
     NoReceipts { shapes_n: usize, dir: String },
     /// A positive control did not fire.
@@ -209,15 +195,6 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
     ) {
         return d;
     }
-    // #3610: an armed shape that graded nothing cannot contribute to a verdict, and a verdict that
-    // counts it as clean is a Pass over an unasked question. Refuse, naming every such shape.
-    if !vacuous_armed.is_empty() {
-        return ShapesOutcome::VacuousArmedShape {
-            shapes_n: shapes.len(),
-            focus_nodes_n: report.focus_nodes_n,
-            vacuous: vacuous_armed,
-        };
-    }
     // ONT-4b2: the vendored W3C cases, every run. A validator that fails the standard's own case for a form
     // it claims has no standing to grade the corpus.
     let w3c_run = w3c::run_all();
@@ -240,7 +217,19 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
         &extraction.apr_model,
     );
     let passed = counted.violations == 0;
-    let verdict = if !passed {
+    // #3610: an armed shape that graded nothing cannot contribute to a verdict, and a verdict that
+    // counts it as clean is a Pass over an unasked question.
+    //
+    // THE REFUSAL IS THE EXIT CODE; THE REPORT IS THE EVIDENCE. This declines through the ordinary
+    // result path rather than short-circuiting, so stdout still carries the full JSON — `verdict`,
+    // `by_shape` naming the zero-focus shape, `declines` — and `meet_exit` turns Unknown into
+    // exit 2. Downstream consumers (infra's SLK gate) capture stdout and parse it REGARDLESS of the
+    // exit code, because pv already exits non-zero on Fail; a refusal that printed only a bare
+    // `decline:` line would read to them as "no by_shape" and score UNMEASURED — the same defect as
+    // a gate swallowing a decline, seen from the other side.
+    let verdict = if !vacuous_armed.is_empty() {
+        Verdict::Unknown(Reason::NoFocus)
+    } else if !passed {
         Verdict::Fail
     } else if counted.warnings > 0 {
         Verdict::Unknown(Reason::Warn)
@@ -249,9 +238,13 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
     };
     let mut by_shape: Vec<String> = focus_of.iter().map(|(id, n)| format!("{id}={n}")).collect();
     by_shape.sort();
+    // A shape that graded nothing appears in NEITHER list: `armed_shapes` is the tool's claim about
+    // what it MEASURED, and `not_armed_shapes` means "not armed by policy". Filing a vacuity as a
+    // policy choice is how this defect hid, so it is named in `declines` only.
     let (armed_names, not_armed): (Vec<String>, Vec<String>) = shapes
         .iter()
         .map(|s| s.id.clone())
+        .filter(|id| !vacuous_armed.contains(id))
         .partition(|id| arming.is_armed(id));
     let by_entity_type: BTreeMap<String, usize> = [
         (
