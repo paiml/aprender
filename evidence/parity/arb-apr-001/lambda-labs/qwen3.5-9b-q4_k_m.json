@@ -35,6 +35,7 @@
     "verdict": "PASS"
   },
   "unmeasured": [
+    "NO ORACLE ARM: this is self-consistency (apr CPU vs apr CUDA), not parity against the pinned llama.cpp comparator, which cannot load qwen35 at the current pin.",
     "The decide lane's binary on this host is the DEFAULT-FEATURES build (default = [\"cli\"], no CUDA), so the lane runs the CPU arm of this cell. This receipt measures both arms of the cell and finds them in agreement; it does not measure the lane's binary.",
     "apr serve cannot load qwen35 at all (aprender#3571), so no serve-path receipt exists for this cell.",
     "Batched/serving shape is unmeasured: every gate we own is single-stream (aprender#3555)."
@@ -931,5 +932,14 @@
         "verdict": "Pass"
       }
     ]
-  }
+  },
+  "comparator": {
+    "kind": "self",
+    "what": "apr's own CPU arm vs apr's own CUDA arm (apr parity). NOT a comparison against the pinned oracle.",
+    "comparator_sha": null,
+    "why_no_llama_cpp_arm": "llama.cpp at scripts/llama_pin.toml build_commit CANNOT LOAD qwen35 \u2014 it exits 1 with \"unknown model architecture: 'qwen35'\" and `grep -rn qwen35 src/` in the pinned checkout returns 0 hits (documented in evidence/parity/thresholds.yaml under qwen3.5-0.8b@cpu-vs-llama.cpp). An oracle arm is therefore unavailable for this cell at the current pin, not merely unmeasured.",
+    "consequence": "Two of our own implementations agreeing does not exclude both being wrong. This cell is PARTIALLY RECEIPTED.",
+    "what_would_complete_it": "a comparator pin that can load qwen35 \u2014 a decision with a named cost, since bumping the pin invalidates every ratio measured against the old one (scripts/llama_pin.toml states this rule)."
+  },
+  "partially_receipted": true
 }
