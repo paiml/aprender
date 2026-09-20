@@ -145,15 +145,20 @@ falsification_tests:
   if_fails: "Tokenization diverges from datasets + tokenizer reference"
 
 proof_obligations:
-- type: invariant
+- id: CD0C911-INV-001
+  type: invariant
   property: "every output record has {input_ids, attention_mask, labels} with equal lengths"
-- type: invariant
+- id: CD0C911-INV-002
+  type: invariant
   property: "byte-identical output under fixed seed (determinism)"
-- type: invariant
+- id: CD0C911-INV-003
+  type: invariant
   property: "train/validation/test splits preserved with matching row counts"
-- type: invariant
+- id: CD0C911-INV-004
+  type: invariant
   property: "len(input_ids) ≤ max_length for every record (truncation honored)"
-- type: equivalence
+- id: CD0C911-EQ-005
+  type: equivalence
   property: "apr data prepare hf://<slug> ≡ datasets.load_dataset + tokenizer.map on first row"
 
 # References:

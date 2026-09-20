@@ -1,0 +1,198 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-roadmap-fragments-v1 — docs/roadmaps/roadmap.yaml is a GENERATED
+# aggregate of docs/roadmaps/entries/, and the generator is a pure function
+# (PMAT-3296, #3296; five-whys #3294)
+#
+# WHAT IT GOVERNS
+#   The aggregation only. Out of scope: which ids are minted (the PP-066
+#   minter rule), id uniqueness in the parsed tree (apr-roadmap-ids-unique-v1),
+#   and the additive-diff rule (apr-roadmap-additive-diff-v1). This contract
+#   does not restate those; it depends on them.
+#
+# THE DEFECT IT EXISTS FOR
+#   Every PR wrote roadmap.yaml, so the Amdahl serial fraction on the merge
+#   path was 1: N pull requests contended on one file however disjoint their
+#   code. `.gitattributes` declared `merge=roadmap`, but that driver is CUSTOM
+#   and registered per-invocation by scripts/ci_resolve_dirty.sh, so GitHub's
+#   merge-queue server never ran it. Measured on batch #3295: the textual
+#   merge placed PMAT-3226 after PMAT-3229 and check_roadmap_sorted.sh went
+#   RED while all nine inputs were individually sorted and green.
+#
+# PROOF LADDER, STATED HONESTLY
+#   * L1 — the generator and its case table exist (roadmap_fragments.py).
+#   * L2 — falsification MEASURED: `--selftest` 12/12 (2026-09-15), including
+#          a registered mutation (forcing append-only placement must turn the
+#          sorted-slot row RED, and does) and idempotence/determinism rows.
+#          Live twin: three consecutive `make roadmap-aggregate` runs over the
+#          real 879-entry file are byte-identical to each other AND to the
+#          committed file.
+#   * L3/L4 — NOT APPLICABLE: a generator over a YAML data file, not a math
+#          kernel. No self-exemption.
+# ─────────────────────────────────────────────────────────────────────────────
+name: apr-roadmap-fragments
+version: "1.0.0"
+scope: >
+  scripts/lib/roadmap_fragments.py aggregate, over docs/roadmaps/entries/ and
+  docs/roadmaps/roadmap.yaml. Out of scope: id minting, parsed-tree
+  uniqueness, and the additive-diff rule, each of which has its own contract.
+status: active
+
+metadata:
+  kind: pattern     # a generator over a YAML data file, not a math kernel.
+                    # Set EXPLICITLY so `pv validate`'s `kernel` default never
+                    # silently applies.
+  version: "1.0.0"
+  created: '2026-09-15'
+  last_modified: '2026-09-15'
+  author: PAIML Engineering
+  references:
+    - 'scripts/lib/roadmap_fragments.py — the generator: aggregate [--write|--check] · --selftest (12 rows)'
+    - 'Makefile — roadmap-aggregate, roadmap-aggregate-check'
+    - 'scripts/check_roadmap_sorted.sh — the ordering rule the aggregator targets'
+    - 'scripts/lib/roadmap_merge.py — parse_id is IMPORTED from here, so guard and generator cannot drift'
+    - 'paiml/aprender#3296 — the change; #3294 — the five-whys; #3295 — the measured ejection'
+  description: >
+    A ticket writes docs/roadmaps/entries/<ID>.yaml. Unique filename by
+    construction means pull requests are pairwise disjoint on the roadmap, so
+    the conflict rate is 0 by proof rather than by luck. roadmap.yaml is the
+    aggregate, regenerated post-merge on main. Ordering becomes the
+    aggregator's job rather than the merge's.
+
+equations:
+
+  aggregate_is_a_pure_function:
+    formula: |
+      aggregate(base, F) = preamble(base) ++ concat(order(entries(base) \ ids(F) ∪ F))
+      aggregate(aggregate(base, F), F) = aggregate(base, F)          [idempotent]
+      aggregate(base, F) = aggregate(base, permute(F))               [deterministic]
+    domain: 'a roadmap text and a set of fragment (id, block) pairs'
+    codomain: 'a roadmap text'
+    invariants:
+    - 'IDEMPOTENCE IS LOAD-BEARING: `make roadmap-aggregate` runs post-merge on main, so a generator that is not a pure function churns a commit on every merge. The first cut read the LIVE roadmap.yaml as its base and raised `duplicate id` on its own output — it failed on run one.'
+    - 'SUPERSESSION IS THE EDIT PATH, NOT A COROLLARY OF IDEMPOTENCE. A fragment supersedes a base entry of the same id. That is what makes docs/roadmaps/entries/ the ONLY way to change an existing PMAT-NNNN entry, which is in turn what lets the gate forbid every PR write to roadmap.yaml. Restoring the duplicate-id refusal would re-open the base as an edit surface and silently undo the gate.'
+    - 'DETERMINISM: fragment order on disk (readdir order) must not reach the output.'
+    preconditions:
+    - 'no two fragments claim one id — the filesystem guarantees this, and the generator still refuses it'
+    postconditions:
+    - 'zero fragments reproduce the base BYTE FOR BYTE (selftest row 1, and 17,785 lines of real data)'
+
+  placement_is_the_sorted_slot:
+    formula: |
+      index(e) = min { i | entry i shares e's prefix ∧ numeral(i) > numeral(e) }
+                 else |entries|          (unseen prefix, or a legacy id)
+      numerals compare NUMERICALLY: PMAT-90 < PMAT-100
+    domain: 'an id with a PREFIX-NUMBER shape, else the legacy case'
+    codomain: 'an insertion index'
+    invariants:
+    - 'THE GUARD AND THE GENERATOR SHARE ONE PARSER: parse_id is imported from roadmap_merge.py, never restated, so check_roadmap_sorted.sh and this cannot disagree about which ids are sortable.'
+    - 'LEGACY IDS ARE EXEMPT and append; the same rule roadmap_merge.py enforces.'
+    preconditions:
+    - 'the base already satisfies check_roadmap_sorted.sh'
+    postconditions:
+    - 'check_roadmap_sorted.sh is rc=0 on the aggregate'
+
+  a_fragment_is_self_contained:
+    formula: |
+      ∀ f ∈ entries/ : yaml.safe_load(f) is a one-item sequence of one mapping
+      split(monolith) ⟹ ∀ e : safe_load(fragment(e)) = the mapping the monolith carried
+    domain: 'a fragment file read in isolation'
+    codomain: 'bool'
+    invariants:
+    - 'ANCHORS DO NOT SURVIVE A SPLIT: roadmap.yaml carries `created: &id001 …` on one entry aliased by 17 LATER ones (roadmap_diff.py names this as real data its block parser cannot resolve). A fragment carrying `*id001` is unparseable YAML, so split() inlines the literal and proves the mapping is unchanged, per entry, before writing anything.'
+    - 'THIS IS WHY THE BASE IS NOT REWRITTEN: inlining that anchor in place is a pure re-serialisation and check_roadmap_diff_additive.sh correctly refuses it (measured: reserialised=18, "bytes differ, no field actually changed").'
+    preconditions: []
+    postconditions:
+    - 'split() raises rather than writing a fragment whose mapping differs'
+
+proof_obligations:
+  - id: RMFR-OB-001
+    statement: "aggregate is idempotent and deterministic, and zero fragments reproduce the base byte for byte."
+    discharged_by: falsification_tests[0]
+  - id: RMFR-OB-002
+    statement: "A fragment lands at the slot check_roadmap_sorted.sh demands, numerals compared numerically."
+    discharged_by: falsification_tests[1]
+  - id: RMFR-OB-003
+    statement: "Every fragment parses alone and carries the mapping the monolith carried."
+    discharged_by: falsification_tests[2]
+  - id: RMFR-OB-004
+    statement: >-
+      A fragment supersedes a base entry of the same id, so entries/ is the only
+      edit path for an existing entry. Refusing that as a duplicate re-opens
+      roadmap.yaml as an edit surface and silently undoes the gate that forbids
+      PR writes to it.
+    discharged_by: falsification_tests[0]
+  - id: RMFR-OB-005
+    statement: >-
+      The 52 ids that cannot be filenames (44 prose, 8 PREFIX-N with a prose
+      suffix) stay in the base and are therefore IMMUTABLE once PR writes to
+      roadmap.yaml are forbidden. This is a stated scope boundary, not an
+      exemption: no write path exists for them at all, which is stronger than
+      one that is gated. Re-iding them is refused by
+      check_roadmap_diff_additive.sh as delete+add (measured 2026-09-15:
+      "deleted: 1 base id(s) missing at head"), so it needs that guard to learn
+      a re-id operation first — tracked separately, NOT waived here.
+    discharged_by: falsification_tests[3]
+
+falsification_tests:
+
+  - id: RMFR-F-001
+    rule: aggregate is a pure function
+    prediction: >-
+      Zero fragments reproduce the base byte for byte (row 1);
+      aggregate(aggregate(x)) equals aggregate(x) (row 6c); reversing the
+      fragment list does not change the bytes (row 6d); a fragment supersedes
+      a base entry of the same id in place (row 6); two fragments claiming one
+      id are refused (row 6b).
+    test: 'python3 scripts/lib/roadmap_fragments.py --selftest'
+    if_fails: >-
+      the post-merge `make roadmap-aggregate` on main churns a commit on every
+      merge, or silently drops an entry
+    mutation: >-
+      restore the first cut, which took the live roadmap.yaml as its base
+      without dropping superseded ids: row 6c must turn RED. Live twin: three
+      consecutive `make roadmap-aggregate` over the real 879-entry file are
+      byte-identical to each other and to the committed file.
+
+  - id: RMFR-F-002
+    rule: placement is the sorted slot
+    prediction: >-
+      PMAT-200 lands between PMAT-100 and PMAT-300 (row 2); PMAT-90 lands
+      BEFORE PMAT-100, since numerals compare numerically and not as strings
+      (row 5); an unseen prefix and a legacy id append (rows 4, 5).
+    test: 'python3 scripts/lib/roadmap_fragments.py --selftest && bash scripts/check_roadmap_sorted.sh'
+    if_fails: >-
+      the aggregate is unsorted and check_roadmap_sorted.sh turns RED on main
+      — the #3295 shape, now produced by the generator instead of by a merge
+    mutation: >-
+      force insertion_index to return len(entries) (append-only): row 2 must
+      turn RED. This mutation is REGISTERED IN THE CASE TABLE as row 12 and
+      runs on every invocation, so row 2's green is load-bearing.
+
+  - id: RMFR-F-003
+    rule: a fragment is self-contained
+    prediction: >-
+      split() over the real roadmap yields 879 fragments, each parsing alone
+      and each carrying the same mapping the monolith did; the round trip is
+      SEMANTICALLY equal, and byte-different only on the 18 anchor lines.
+    test: 'python3 -c "import sys;sys.path.insert(0,\".\");from scripts.lib import roadmap_fragments as rf;rf.split(open(\"docs/roadmaps/roadmap.yaml\").read())"'
+    if_fails: >-
+      17 fragments ship as unparseable YAML and the aggregate cannot be rebuilt
+    mutation: >-
+      remove the ANCHOR_USE_RE substitution from self_contain(): split() must
+      raise, because `created: *id001` does not resolve in isolation.
+
+  - id: RMFR-F-004
+    rule: the non-fragmentable base entries are immutable, and that is measured
+    prediction: >-
+      Of 879 entries: 780 are filename-safe AND PREFIX-N (fragmentable today),
+      47 are filename-safe legacy ids, 44 are prose, 8 are PREFIX-N carrying a
+      prose suffix. 780+47+44+8 = 879, no remainder. The 52 that are not
+      filename-safe have no fragment path and no PR write path.
+    test: 'python3 scripts/lib/roadmap_fragments.py --selftest'
+    if_fails: >-
+      the gate assumes an id shape the data does not have, and a PR that should
+      be refused is admitted — or one that should pass is blocked
+    mutation: >-
+      relax the filename-safety regex to accept a slash: the count moves off 52
+      and the `Push completed work to origin/main (5 commits)` id — a real
+      roadmap id containing a path separator — becomes a would-be filename.

@@ -1,0 +1,751 @@
+label	pos	token_id	tensor	layer	layer_type	llama_l2	apr_l2	cos	max_abs_diff	rel_l2	status	note
+orig	4	33075	model.input_embed	-1	-	0.581084	0.581084	1.000000	0.000000	0.000000	measured	token_embd=Q6_K; ggufpy-vs-llama cos=1.000000000 max_abs=0.000e+00 rel_l2=0.000e+00; apr-vs-ggufpy cos=1.000000000 max_abs=0.000e+00 rel_l2=0.000e+00
+orig	4	33075	attn_norm-0	0	linear_gated_deltanet	39.976763	39.976763	1.000000	0.000000	0.000000	measured	
+orig	4	33075	conv_output_silu-0	0	linear_gated_deltanet	8.980871	8.976318	0.999994	0.005455	0.003376	measured	
+orig	4	33075	q_conv_predelta-0	0	linear_gated_deltanet	3.999992	3.999992	0.999984	0.005054	0.005648	measured	
+orig	4	33075	k_conv_predelta-0	0	linear_gated_deltanet	3.999961	3.999961	0.999981	0.004557	0.006095	measured	
+orig	4	33075	v_conv_predelta-0	0	linear_gated_deltanet	6.266846	6.265131	0.999999	0.002656	0.001091	measured	
+orig	4	33075	a_softplus-0	0	linear_gated_deltanet	12.665071	12.664976	1.000000	0.000592	0.000048	measured	
+orig	4	33075	gate-0	0	linear_gated_deltanet	5.821327	5.820856	1.000000	0.000766	0.000132	measured	
+orig	4	33075	beta_sigmoid-0	0	linear_gated_deltanet	1.724259	1.724242	1.000000	0.000062	0.000060	measured	
+orig	4	33075	state_predelta-0	0	linear_gated_deltanet	4.894909	4.891319	0.999992	0.004240	0.004118	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.002887 max_abs=1.006770e+00 rel_l2=1.411653
+orig	4	33075	new_state-0	0	linear_gated_deltanet	5.240117	5.236677	0.999993	0.005249	0.003793	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.003851 max_abs=1.136021e+00 rel_l2=1.411024
+orig	4	33075	attn_output-0	0	linear_gated_deltanet	0.108728	0.108685	0.999999	0.000068	0.001509	measured	
+orig	4	33075	z-0	0	linear_gated_deltanet	40.724086	40.724087	1.000000	0.000002	0.000000	measured	
+orig	4	33075	final_output-0	0	linear_gated_deltanet	5.285454	5.285855	0.999997	0.002730	0.002259	measured	
+orig	4	33075	linear_attn_out-0	0	linear_gated_deltanet	1.499101	1.500449	0.999413	0.004960	0.034282	measured	
+orig	4	33075	attn_residual-0	0	linear_gated_deltanet	1.517869	1.518774	0.999427	0.004960	0.033858	measured	
+orig	4	33075	attn_post_norm-0	0	linear_gated_deltanet	30.367985	30.342488	0.999255	0.117110	0.038605	measured	
+orig	4	33075	ffn_out-0	0	linear_gated_deltanet	0.669201	0.667052	0.998166	0.004823	0.060557	measured	
+orig	4	33075	l_out-0	0	linear_gated_deltanet	1.476802	1.473622	0.999299	0.006082	0.037471	measured	
+orig	4	33075	attn_norm-1	1	linear_gated_deltanet	44.283926	44.280999	0.999256	0.189577	0.038564	measured	
+orig	4	33075	conv_output_silu-1	1	linear_gated_deltanet	7.389527	7.356459	0.999481	0.071978	0.032464	measured	
+orig	4	33075	q_conv_predelta-1	1	linear_gated_deltanet	3.999989	3.999989	0.999515	0.034467	0.031145	measured	
+orig	4	33075	k_conv_predelta-1	1	linear_gated_deltanet	3.999993	3.999994	0.999335	0.027746	0.036480	measured	
+orig	4	33075	v_conv_predelta-1	1	linear_gated_deltanet	4.147775	4.125319	0.999798	0.028405	0.020757	measured	
+orig	4	33075	a_softplus-1	1	linear_gated_deltanet	8.327609	8.271423	0.999985	0.043710	0.008673	measured	
+orig	4	33075	gate-1	1	linear_gated_deltanet	8.361691	8.293557	0.999971	0.077617	0.011155	measured	
+orig	4	33075	beta_sigmoid-1	1	linear_gated_deltanet	1.560731	1.578465	0.999933	0.016090	0.016283	measured	
+orig	4	33075	state_predelta-1	1	linear_gated_deltanet	4.167202	4.148534	0.999502	0.019566	0.031793	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.001775 max_abs=1.770336e+00 rel_l2=1.409797
+orig	4	33075	new_state-1	1	linear_gated_deltanet	3.977568	3.960247	0.999688	0.017723	0.025306	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.004353 max_abs=1.768805e+00 rel_l2=1.408063
+orig	4	33075	attn_output-1	1	linear_gated_deltanet	0.028847	0.028757	0.999916	0.000198	0.013286	measured	
+orig	4	33075	z-1	1	linear_gated_deltanet	61.214354	61.003012	0.999646	0.173453	0.026773	measured	
+orig	4	33075	final_output-1	1	linear_gated_deltanet	2.456275	2.469006	0.999678	0.024242	0.025964	measured	
+orig	4	33075	linear_attn_out-1	1	linear_gated_deltanet	0.707612	0.705237	0.998905	0.003730	0.046844	measured	
+orig	4	33075	attn_residual-1	1	linear_gated_deltanet	1.831757	1.827714	0.999404	0.006558	0.034549	measured	
+orig	4	33075	attn_post_norm-1	1	linear_gated_deltanet	31.563268	31.544958	0.999166	0.135049	0.040824	measured	
+orig	4	33075	ffn_out-1	1	linear_gated_deltanet	0.772237	0.773787	0.997767	0.007011	0.066921	measured	
+orig	4	33075	l_out-1	1	linear_gated_deltanet	1.613484	1.599216	0.999001	0.007521	0.045377	measured	
+orig	4	33075	attn_norm-2	2	linear_gated_deltanet	45.163193	45.147301	0.998953	0.209156	0.045758	measured	
+orig	4	33075	conv_output_silu-2	2	linear_gated_deltanet	11.656525	11.491056	0.999206	0.181082	0.042035	measured	
+orig	4	33075	q_conv_predelta-2	2	linear_gated_deltanet	3.999982	3.999982	0.999102	0.052195	0.042376	measured	
+orig	4	33075	k_conv_predelta-2	2	linear_gated_deltanet	3.999984	3.999983	0.998688	0.039894	0.051225	measured	
+orig	4	33075	v_conv_predelta-2	2	linear_gated_deltanet	4.631265	4.561048	0.999407	0.069447	0.037377	measured	
+orig	4	33075	a_softplus-2	2	linear_gated_deltanet	7.616426	7.300577	0.999902	0.178679	0.043680	measured	
+orig	4	33075	gate-2	2	linear_gated_deltanet	5.528885	5.274924	0.999807	0.159082	0.049785	measured	
+orig	4	33075	beta_sigmoid-2	2	linear_gated_deltanet	1.894907	1.909406	0.999686	0.027291	0.026287	measured	
+orig	4	33075	state_predelta-2	2	linear_gated_deltanet	5.882182	5.873958	0.999381	0.042483	0.035196	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.003693 max_abs=2.042007e+00 rel_l2=1.410613
+orig	4	33075	new_state-2	2	linear_gated_deltanet	5.669647	5.647830	0.999256	0.039518	0.038691	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.005103 max_abs=2.033794e+00 rel_l2=1.407889
+orig	4	33075	attn_output-2	2	linear_gated_deltanet	0.071301	0.071412	0.999876	0.000623	0.015865	measured	
+orig	4	33075	z-2	2	linear_gated_deltanet	78.334293	78.647619	0.999644	0.217003	0.027035	measured	
+orig	4	33075	final_output-2	2	linear_gated_deltanet	3.405539	3.375954	0.999217	0.056884	0.040353	measured	
+orig	4	33075	linear_attn_out-2	2	linear_gated_deltanet	0.819593	0.823525	0.997636	0.011877	0.069095	measured	
+orig	4	33075	attn_residual-2	2	linear_gated_deltanet	2.061823	2.050520	0.998978	0.011367	0.045413	measured	
+orig	4	33075	attn_post_norm-2	2	linear_gated_deltanet	33.929951	33.814822	0.998563	0.222610	0.053635	measured	
+orig	4	33075	ffn_out-2	2	linear_gated_deltanet	1.363629	1.347224	0.998079	0.011293	0.062774	measured	
+orig	4	33075	l_out-2	2	linear_gated_deltanet	1.970860	1.943021	0.999043	0.009616	0.045680	measured	
+orig	4	33075	attn_norm-3	3	full_attention	44.032224	44.019910	0.999068	0.213472	0.043160	measured	
+orig	4	33075	attn_pregate-3	3	full_attention	23.991020	23.998583	0.999129	0.079381	0.041756	measured	
+orig	4	33075	attn_gated-3	3	full_attention	2.964933	2.927655	0.998709	0.039266	0.052044	measured	
+orig	4	33075	attn_output-3	3	full_attention	0.723013	0.702870	0.996997	0.006954	0.081330	measured	
+orig	4	33075	attn_residual-3	3	full_attention	2.012910	1.984945	0.998755	0.011670	0.051462	measured	
+orig	4	33075	attn_post_norm-3	3	full_attention	37.060715	36.978326	0.998594	0.214251	0.053012	measured	
+orig	4	33075	ffn_out-3	3	full_attention	1.025927	1.015880	0.997196	0.009119	0.075157	measured	
+orig	4	33075	l_out-3	3	full_attention	1.953744	1.938585	0.998724	0.014265	0.050920	measured	
+orig	4	33075	attn_norm-4	4	linear_gated_deltanet	46.735120	46.670798	0.998667	0.365216	0.051625	measured	
+orig	4	33075	conv_output_silu-4	4	linear_gated_deltanet	15.819729	15.512376	0.998774	0.380937	0.052751	measured	
+orig	4	33075	q_conv_predelta-4	4	linear_gated_deltanet	3.999994	3.999994	0.997874	0.086610	0.065206	measured	
+orig	4	33075	k_conv_predelta-4	4	linear_gated_deltanet	3.999992	3.999991	0.998370	0.056447	0.057099	measured	
+orig	4	33075	v_conv_predelta-4	4	linear_gated_deltanet	8.976970	8.924714	0.999258	0.119957	0.038855	measured	
+orig	4	33075	a_softplus-4	4	linear_gated_deltanet	4.471153	4.163483	0.999892	0.173667	0.070264	measured	
+orig	4	33075	gate-4	4	linear_gated_deltanet	4.821582	4.492046	0.999959	0.267140	0.068909	measured	
+orig	4	33075	beta_sigmoid-4	4	linear_gated_deltanet	2.462793	2.470484	0.999544	0.046396	0.030412	measured	
+orig	4	33075	state_predelta-4	4	linear_gated_deltanet	28.661334	28.787706	0.999910	0.110463	0.014160	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.003447 max_abs=1.391769e+01 rel_l2=1.414890
+orig	4	33075	new_state-4	4	linear_gated_deltanet	28.936207	29.051739	0.999856	0.109321	0.017451	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.003454 max_abs=1.379993e+01 rel_l2=1.414591
+orig	4	33075	attn_output-4	4	linear_gated_deltanet	0.391478	0.393476	0.999968	0.001577	0.009468	measured	
+orig	4	33075	z-4	4	linear_gated_deltanet	80.631566	79.844756	0.999584	0.279543	0.030302	measured	
+orig	4	33075	final_output-4	4	linear_gated_deltanet	2.636392	2.723948	0.995565	0.124189	0.101324	measured	
+orig	4	33075	linear_attn_out-4	4	linear_gated_deltanet	0.843135	0.853401	0.995806	0.014779	0.092943	measured	
+orig	4	33075	attn_residual-4	4	linear_gated_deltanet	2.138304	2.140704	0.998365	0.029044	0.057229	measured	
+orig	4	33075	attn_post_norm-4	4	linear_gated_deltanet	35.394143	35.287250	0.998069	0.339514	0.062126	measured	
+orig	4	33075	ffn_out-4	4	linear_gated_deltanet	1.037720	1.034257	0.996210	0.019623	0.086979	measured	
+orig	4	33075	l_out-4	4	linear_gated_deltanet	1.904035	1.898093	0.998386	0.014268	0.056819	measured	
+orig	4	33075	attn_norm-5	5	linear_gated_deltanet	44.912757	44.884460	0.998257	0.333060	0.059033	measured	
+orig	4	33075	conv_output_silu-5	5	linear_gated_deltanet	15.591751	15.212187	0.999223	0.309357	0.045922	measured	
+orig	4	33075	q_conv_predelta-5	5	linear_gated_deltanet	3.999997	3.999997	0.998819	0.041911	0.048602	measured	
+orig	4	33075	k_conv_predelta-5	5	linear_gated_deltanet	3.999992	3.999992	0.998626	0.040669	0.052422	measured	
+orig	4	33075	v_conv_predelta-5	5	linear_gated_deltanet	7.173376	7.072849	0.999780	0.076799	0.025096	measured	
+orig	4	33075	a_softplus-5	5	linear_gated_deltanet	2.848878	2.588142	0.999463	0.173567	0.096702	measured	
+orig	4	33075	gate-5	5	linear_gated_deltanet	2.155348	1.969461	0.999317	0.118660	0.093197	measured	
+orig	4	33075	beta_sigmoid-5	5	linear_gated_deltanet	2.668086	2.639013	0.999916	0.023625	0.016864	measured	
+orig	4	33075	state_predelta-5	5	linear_gated_deltanet	10.701198	10.696582	0.999843	0.037926	0.017712	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.003336 max_abs=3.250097e+00 rel_l2=1.411548
+orig	4	33075	new_state-5	5	linear_gated_deltanet	11.057562	11.009163	0.999775	0.051616	0.021601	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.002975 max_abs=3.257301e+00 rel_l2=1.409021
+orig	4	33075	attn_output-5	5	linear_gated_deltanet	0.106684	0.105335	0.999911	0.001131	0.018334	measured	
+orig	4	33075	z-5	5	linear_gated_deltanet	63.613640	63.517691	0.999427	0.227216	0.033855	measured	
+orig	4	33075	final_output-5	5	linear_gated_deltanet	2.077577	2.091629	0.995784	0.058778	0.092383	measured	
+orig	4	33075	linear_attn_out-5	5	linear_gated_deltanet	0.689671	0.687423	0.995769	0.011070	0.091900	measured	
+orig	4	33075	attn_residual-5	5	linear_gated_deltanet	2.148925	2.140794	0.998475	0.014738	0.055256	measured	
+orig	4	33075	attn_post_norm-5	5	linear_gated_deltanet	33.907859	33.901407	0.998044	0.240543	0.062539	measured	
+orig	4	33075	ffn_out-5	5	linear_gated_deltanet	0.909874	0.905627	0.996331	0.010013	0.085594	measured	
+orig	4	33075	l_out-5	5	linear_gated_deltanet	1.989181	1.976832	0.998474	0.014339	0.055421	measured	
+orig	4	33075	attn_norm-6	6	linear_gated_deltanet	42.341088	42.339804	0.998308	0.303744	0.058174	measured	
+orig	4	33075	conv_output_silu-6	6	linear_gated_deltanet	9.095801	8.917934	0.998612	0.105877	0.055719	measured	
+orig	4	33075	q_conv_predelta-6	6	linear_gated_deltanet	3.999984	3.999982	0.998193	0.051963	0.060120	measured	
+orig	4	33075	k_conv_predelta-6	6	linear_gated_deltanet	3.999973	3.999972	0.998140	0.039386	0.060988	measured	
+orig	4	33075	v_conv_predelta-6	6	linear_gated_deltanet	3.615901	3.524317	0.999061	0.074061	0.049719	measured	
+orig	4	33075	a_softplus-6	6	linear_gated_deltanet	4.490837	4.278728	0.999682	0.135848	0.053257	measured	
+orig	4	33075	gate-6	6	linear_gated_deltanet	1.805055	1.688620	0.998938	0.095422	0.078412	measured	
+orig	4	33075	beta_sigmoid-6	6	linear_gated_deltanet	2.649329	2.668401	0.999816	0.032817	0.020561	measured	
+orig	4	33075	state_predelta-6	6	linear_gated_deltanet	4.685349	4.665427	0.999346	0.027199	0.036326	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.014912 max_abs=1.824203e+00 rel_l2=1.400649
+orig	4	33075	new_state-6	6	linear_gated_deltanet	5.019206	4.976822	0.999045	0.047953	0.044328	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.013536 max_abs=1.818736e+00 rel_l2=1.398692
+orig	4	33075	attn_output-6	6	linear_gated_deltanet	0.029845	0.029373	0.999680	0.000345	0.029663	measured	
+orig	4	33075	z-6	6	linear_gated_deltanet	69.287593	68.630591	0.999525	0.227511	0.032115	measured	
+orig	4	33075	final_output-6	6	linear_gated_deltanet	2.501412	2.482654	0.997461	0.063811	0.071390	measured	
+orig	4	33075	linear_attn_out-6	6	linear_gated_deltanet	0.596588	0.601598	0.994457	0.009199	0.106062	measured	
+orig	4	33075	attn_residual-6	6	linear_gated_deltanet	2.131198	2.122218	0.998334	0.015046	0.057752	measured	
+orig	4	33075	attn_post_norm-6	6	linear_gated_deltanet	34.624244	34.648988	0.998077	0.250260	0.062034	measured	
+orig	4	33075	ffn_out-6	6	linear_gated_deltanet	1.046840	1.035045	0.996744	0.012172	0.081028	measured	
+orig	4	33075	l_out-6	6	linear_gated_deltanet	2.344706	2.322516	0.998556	0.023637	0.054318	measured	
+orig	4	33075	attn_norm-7	7	full_attention	36.883874	36.901322	0.998592	0.230821	0.053081	measured	
+orig	4	33075	attn_pregate-7	7	full_attention	25.199226	25.116252	0.999086	0.319273	0.042820	measured	
+orig	4	33075	attn_gated-7	7	full_attention	3.637809	3.596626	0.998604	0.025023	0.053741	measured	
+orig	4	33075	attn_output-7	7	full_attention	0.696690	0.693343	0.997253	0.006086	0.074104	measured	
+orig	4	33075	attn_residual-7	7	full_attention	2.238601	2.214622	0.998359	0.019214	0.057975	measured	
+orig	4	33075	attn_post_norm-7	7	full_attention	32.863036	32.877596	0.997959	0.224302	0.063912	measured	
+orig	4	33075	ffn_out-7	7	full_attention	0.766061	0.765856	0.995300	0.010293	0.096940	measured	
+orig	4	33075	l_out-7	7	full_attention	2.124827	2.100388	0.998412	0.017263	0.057206	measured	
+orig	4	33075	attn_norm-8	8	linear_gated_deltanet	41.087433	41.079315	0.998137	0.313637	0.061042	measured	
+orig	4	33075	conv_output_silu-8	8	linear_gated_deltanet	8.538241	8.440357	0.998620	0.090329	0.053480	measured	
+orig	4	33075	q_conv_predelta-8	8	linear_gated_deltanet	3.999987	3.999987	0.998323	0.042568	0.057915	measured	
+orig	4	33075	k_conv_predelta-8	8	linear_gated_deltanet	3.999963	3.999961	0.997646	0.051796	0.068611	measured	
+orig	4	33075	v_conv_predelta-8	8	linear_gated_deltanet	4.045520	4.010460	0.998905	0.085540	0.047403	measured	
+orig	4	33075	a_softplus-8	8	linear_gated_deltanet	2.493593	2.323284	0.999354	0.106889	0.076605	measured	
+orig	4	33075	gate-8	8	linear_gated_deltanet	1.098181	1.017365	0.999299	0.049855	0.081945	measured	
+orig	4	33075	beta_sigmoid-8	8	linear_gated_deltanet	2.630441	2.645855	0.999926	0.016074	0.013549	measured	
+orig	4	33075	state_predelta-8	8	linear_gated_deltanet	8.654016	8.574876	0.999498	0.150642	0.032826	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.000604 max_abs=3.619074e+00 rel_l2=1.407337
+orig	4	33075	new_state-8	8	linear_gated_deltanet	8.839772	8.765192	0.999427	0.152995	0.034761	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.001726 max_abs=3.727335e+00 rel_l2=1.407045
+orig	4	33075	attn_output-8	8	linear_gated_deltanet	0.094078	0.090633	0.999855	0.002692	0.040258	measured	
+orig	4	33075	z-8	8	linear_gated_deltanet	64.041072	63.671850	0.999397	0.320406	0.035093	measured	
+orig	4	33075	final_output-8	8	linear_gated_deltanet	1.973448	2.058921	0.957373	0.560831	0.301368	measured	
+orig	4	33075	linear_attn_out-8	8	linear_gated_deltanet	0.508108	0.519581	0.993309	0.006266	0.119139	measured	
+orig	4	33075	attn_residual-8	8	linear_gated_deltanet	2.203404	2.186128	0.998070	0.017915	0.062374	measured	
+orig	4	33075	attn_post_norm-8	8	linear_gated_deltanet	31.646157	31.685227	0.997523	0.264522	0.070441	measured	
+orig	4	33075	ffn_out-8	8	linear_gated_deltanet	0.637116	0.631828	0.992450	0.022002	0.122656	measured	
+orig	4	33075	l_out-8	8	linear_gated_deltanet	2.100616	2.083298	0.997808	0.020452	0.066451	measured	
+orig	4	33075	attn_norm-9	9	linear_gated_deltanet	40.282193	40.276150	0.997386	0.473342	0.072294	measured	
+orig	4	33075	conv_output_silu-9	9	linear_gated_deltanet	6.976137	6.978278	0.997696	0.093794	0.067895	measured	
+orig	4	33075	q_conv_predelta-9	9	linear_gated_deltanet	3.999988	3.999988	0.997039	0.109779	0.076959	measured	
+orig	4	33075	k_conv_predelta-9	9	linear_gated_deltanet	3.999919	3.999918	0.997093	0.049114	0.076247	measured	
+orig	4	33075	v_conv_predelta-9	9	linear_gated_deltanet	3.511029	3.519149	0.998520	0.062813	0.054519	measured	
+orig	4	33075	a_softplus-9	9	linear_gated_deltanet	2.692014	2.566635	0.997830	0.162689	0.079415	measured	
+orig	4	33075	gate-9	9	linear_gated_deltanet	0.655267	0.571975	0.997806	0.071863	0.141375	measured	
+orig	4	33075	beta_sigmoid-9	9	linear_gated_deltanet	2.021011	2.013074	0.999702	0.033358	0.024679	measured	
+orig	4	33075	state_predelta-9	9	linear_gated_deltanet	4.586134	4.625751	0.999589	0.022401	0.030053	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.002060 max_abs=1.626906e+00 rel_l2=1.418871
+orig	4	33075	new_state-9	9	linear_gated_deltanet	4.472695	4.501253	0.999326	0.024799	0.037376	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.002552 max_abs=1.361197e+00 rel_l2=1.416924
+orig	4	33075	attn_output-9	9	linear_gated_deltanet	0.017770	0.017443	0.999040	0.000440	0.047150	measured	
+orig	4	33075	z-9	9	linear_gated_deltanet	57.793975	57.848356	0.999100	0.302659	0.042450	measured	
+orig	4	33075	final_output-9	9	linear_gated_deltanet	1.655149	1.601975	0.992726	0.057690	0.122935	measured	
+orig	4	33075	linear_attn_out-9	9	linear_gated_deltanet	0.451007	0.437670	0.991201	0.007059	0.133988	measured	
+orig	4	33075	attn_residual-9	9	linear_gated_deltanet	2.226393	2.202238	0.997747	0.022085	0.067640	measured	
+orig	4	33075	attn_post_norm-9	9	linear_gated_deltanet	31.402724	31.366623	0.997075	0.329905	0.076452	measured	
+orig	4	33075	ffn_out-9	9	linear_gated_deltanet	0.612727	0.601430	0.993370	0.007788	0.115566	measured	
+orig	4	33075	l_out-9	9	linear_gated_deltanet	2.150560	2.124718	0.997659	0.022386	0.069065	measured	
+orig	4	33075	attn_norm-10	10	linear_gated_deltanet	38.915231	38.890274	0.997229	0.485436	0.074420	measured	
+orig	4	33075	conv_output_silu-10	10	linear_gated_deltanet	5.954857	5.925905	0.997447	0.075824	0.071442	measured	
+orig	4	33075	q_conv_predelta-10	10	linear_gated_deltanet	3.999996	3.999996	0.997865	0.044562	0.065347	measured	
+orig	4	33075	k_conv_predelta-10	10	linear_gated_deltanet	3.999919	3.999921	0.996572	0.046351	0.082798	measured	
+orig	4	33075	v_conv_predelta-10	10	linear_gated_deltanet	2.148999	2.079796	0.998295	0.075824	0.065860	measured	
+orig	4	33075	a_softplus-10	10	linear_gated_deltanet	4.231990	4.063615	0.998879	0.106453	0.061116	measured	
+orig	4	33075	gate-10	10	linear_gated_deltanet	1.322360	1.265083	0.998620	0.051085	0.067210	measured	
+orig	4	33075	beta_sigmoid-10	10	linear_gated_deltanet	2.787303	2.762884	0.999882	0.027323	0.017624	measured	
+orig	4	33075	state_predelta-10	10	linear_gated_deltanet	2.059034	2.055690	0.997357	0.069880	0.072660	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.028532 max_abs=7.337488e-01 rel_l2=1.392761
+orig	4	33075	new_state-10	10	linear_gated_deltanet	2.446313	2.406494	0.996440	0.069501	0.085264	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.021243 max_abs=7.376473e-01 rel_l2=1.387774
+orig	4	33075	attn_output-10	10	linear_gated_deltanet	0.010622	0.010544	0.997099	0.000608	0.076249	measured	
+orig	4	33075	z-10	10	linear_gated_deltanet	67.423620	67.827178	0.999481	0.295057	0.032858	measured	
+orig	4	33075	final_output-10	10	linear_gated_deltanet	1.755251	1.748228	0.994722	0.051597	0.102619	measured	
+orig	4	33075	linear_attn_out-10	10	linear_gated_deltanet	0.495753	0.502584	0.994006	0.023369	0.111096	measured	
+orig	4	33075	attn_residual-10	10	linear_gated_deltanet	2.216332	2.184020	0.997615	0.024144	0.070091	measured	
+orig	4	33075	attn_post_norm-10	10	linear_gated_deltanet	31.729546	31.731027	0.997144	0.364992	0.075577	measured	
+orig	4	33075	ffn_out-10	10	linear_gated_deltanet	0.660820	0.645685	0.992441	0.012857	0.123681	measured	
+orig	4	33075	l_out-10	10	linear_gated_deltanet	2.296154	2.253581	0.997406	0.028123	0.073723	measured	
+orig	4	33075	attn_norm-11	11	full_attention	36.894510	36.981396	0.997351	0.436883	0.072911	measured	
+orig	4	33075	attn_pregate-11	11	full_attention	31.028954	31.442664	0.998733	0.898680	0.052392	measured	
+orig	4	33075	attn_gated-11	11	full_attention	2.723991	2.710368	0.997907	0.034443	0.064738	measured	
+orig	4	33075	attn_output-11	11	full_attention	0.458478	0.455656	0.994026	0.010166	0.109148	measured	
+orig	4	33075	attn_residual-11	11	full_attention	2.305686	2.268605	0.997078	0.029947	0.077519	measured	
+orig	4	33075	attn_post_norm-11	11	full_attention	32.634124	32.619877	0.996456	0.461291	0.084169	measured	
+orig	4	33075	ffn_out-11	11	full_attention	0.594629	0.598165	0.986337	0.032455	0.165904	measured	
+orig	4	33075	l_out-11	11	full_attention	2.314922	2.278632	0.996721	0.033016	0.081858	measured	
+orig	4	33075	attn_norm-12	12	linear_gated_deltanet	44.782336	44.704062	0.996181	0.618941	0.087334	measured	
+orig	4	33075	conv_output_silu-12	12	linear_gated_deltanet	10.671708	10.524726	0.998064	0.096767	0.063309	measured	
+orig	4	33075	q_conv_predelta-12	12	linear_gated_deltanet	3.999987	3.999986	0.996663	0.098558	0.081700	measured	
+orig	4	33075	k_conv_predelta-12	12	linear_gated_deltanet	3.999978	3.999978	0.997850	0.059799	0.065569	measured	
+orig	4	33075	v_conv_predelta-12	12	linear_gated_deltanet	5.596008	5.525286	0.999137	0.077247	0.043162	measured	
+orig	4	33075	a_softplus-12	12	linear_gated_deltanet	1.881522	1.654885	0.999196	0.134925	0.126188	measured	
+orig	4	33075	gate-12	12	linear_gated_deltanet	0.811328	0.720765	0.998842	0.070035	0.120491	measured	
+orig	4	33075	beta_sigmoid-12	12	linear_gated_deltanet	1.970961	1.957856	0.999718	0.023722	0.024566	measured	
+orig	4	33075	state_predelta-12	12	linear_gated_deltanet	10.900255	10.917012	0.999518	0.077800	0.031107	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.001105 max_abs=4.704242e+00 rel_l2=1.414519
+orig	4	33075	new_state-12	12	linear_gated_deltanet	11.147318	11.160450	0.999478	0.079385	0.032350	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.000772 max_abs=4.807760e+00 rel_l2=1.414500
+orig	4	33075	attn_output-12	12	linear_gated_deltanet	0.209890	0.212386	0.999830	0.003428	0.022024	measured	
+orig	4	33075	z-12	12	linear_gated_deltanet	73.333380	72.809791	0.999221	0.311996	0.039972	measured	
+orig	4	33075	final_output-12	12	linear_gated_deltanet	1.777892	1.785419	0.990385	0.118479	0.139030	measured	
+orig	4	33075	linear_attn_out-12	12	linear_gated_deltanet	0.393402	0.389561	0.991426	0.005903	0.130677	measured	
+orig	4	33075	attn_residual-12	12	linear_gated_deltanet	2.423795	2.383946	0.996913	0.031627	0.079638	measured	
+orig	4	33075	attn_post_norm-12	12	linear_gated_deltanet	33.515492	33.392913	0.996296	0.479530	0.085989	measured	
+orig	4	33075	ffn_out-12	12	linear_gated_deltanet	0.637362	0.619589	0.989628	0.010283	0.144716	measured	
+orig	4	33075	l_out-12	12	linear_gated_deltanet	2.439881	2.402088	0.996899	0.030891	0.079664	measured	
+orig	4	33075	attn_norm-13	13	linear_gated_deltanet	42.495978	42.385150	0.996335	0.552283	0.085542	measured	
+orig	4	33075	conv_output_silu-13	13	linear_gated_deltanet	9.490730	9.375633	0.997753	0.283579	0.067723	measured	
+orig	4	33075	q_conv_predelta-13	13	linear_gated_deltanet	3.999959	3.999959	0.997179	0.123053	0.075118	measured	
+orig	4	33075	k_conv_predelta-13	13	linear_gated_deltanet	3.999913	3.999912	0.997044	0.046933	0.076896	measured	
+orig	4	33075	v_conv_predelta-13	13	linear_gated_deltanet	3.714583	3.668150	0.999230	0.047496	0.040946	measured	
+orig	4	33075	a_softplus-13	13	linear_gated_deltanet	4.450737	4.125359	0.999563	0.222538	0.078450	measured	
+orig	4	33075	gate-13	13	linear_gated_deltanet	1.341654	1.196798	0.999558	0.109814	0.111562	measured	
+orig	4	33075	beta_sigmoid-13	13	linear_gated_deltanet	2.541843	2.550562	0.999864	0.017589	0.016886	measured	
+orig	4	33075	state_predelta-13	13	linear_gated_deltanet	3.317743	3.272262	0.998489	0.027367	0.056293	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.005883 max_abs=5.459355e-01 rel_l2=1.400416
+orig	4	33075	new_state-13	13	linear_gated_deltanet	3.871427	3.851715	0.998392	0.040329	0.056790	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.007404 max_abs=5.653822e-01 rel_l2=1.405386
+orig	4	33075	attn_output-13	13	linear_gated_deltanet	0.012217	0.012371	0.999067	0.000153	0.045246	measured	
+orig	4	33075	z-13	13	linear_gated_deltanet	59.037369	58.861966	0.998673	0.378601	0.051518	measured	
+orig	4	33075	final_output-13	13	linear_gated_deltanet	1.794641	1.827068	0.995428	0.034844	0.098162	measured	
+orig	4	33075	linear_attn_out-13	13	linear_gated_deltanet	0.531757	0.537435	0.995670	0.006338	0.094162	measured	
+orig	4	33075	attn_residual-13	13	linear_gated_deltanet	2.627130	2.596009	0.997142	0.033690	0.076088	measured	
+orig	4	33075	attn_post_norm-13	13	linear_gated_deltanet	34.405371	34.293849	0.996667	0.466748	0.081583	measured	
+orig	4	33075	ffn_out-13	13	linear_gated_deltanet	0.757123	0.744062	0.992282	0.012970	0.124365	measured	
+orig	4	33075	l_out-13	13	linear_gated_deltanet	2.716829	2.682431	0.996895	0.038418	0.079324	measured	
+orig	4	33075	attn_norm-14	14	linear_gated_deltanet	42.746004	42.720662	0.996599	0.567921	0.082452	measured	
+orig	4	33075	conv_output_silu-14	14	linear_gated_deltanet	14.629358	14.550478	0.999257	0.145313	0.038833	measured	
+orig	4	33075	q_conv_predelta-14	14	linear_gated_deltanet	3.999998	3.999998	0.998508	0.059226	0.054629	measured	
+orig	4	33075	k_conv_predelta-14	14	linear_gated_deltanet	3.999753	3.999744	0.997535	0.078139	0.070211	measured	
+orig	4	33075	v_conv_predelta-14	14	linear_gated_deltanet	6.174256	6.038599	0.999288	0.124708	0.043312	measured	
+orig	4	33075	a_softplus-14	14	linear_gated_deltanet	2.418129	2.137501	0.999204	0.180732	0.121963	measured	
+orig	4	33075	gate-14	14	linear_gated_deltanet	0.978871	0.856769	0.999615	0.077698	0.127407	measured	
+orig	4	33075	beta_sigmoid-14	14	linear_gated_deltanet	2.642210	2.644115	0.999825	0.027499	0.018749	measured	
+orig	4	33075	state_predelta-14	14	linear_gated_deltanet	4.560967	4.485600	0.998380	0.039176	0.058821	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.009613 max_abs=1.103331e+00 rel_l2=1.395821
+orig	4	33075	new_state-14	14	linear_gated_deltanet	5.317234	5.237930	0.997981	0.056957	0.064806	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.013520 max_abs=1.497587e+00 rel_l2=1.394187
+orig	4	33075	attn_output-14	14	linear_gated_deltanet	0.027846	0.027596	0.999584	0.000389	0.030085	measured	
+orig	4	33075	z-14	14	linear_gated_deltanet	70.352795	70.408618	0.999173	0.268492	0.040704	measured	
+orig	4	33075	final_output-14	14	linear_gated_deltanet	2.865785	2.853250	0.997431	0.058532	0.071663	measured	
+orig	4	33075	linear_attn_out-14	14	linear_gated_deltanet	0.840554	0.841334	0.996274	0.007524	0.086372	measured	
+orig	4	33075	attn_residual-14	14	linear_gated_deltanet	2.978640	2.939157	0.997106	0.042093	0.076727	measured	
+orig	4	33075	attn_post_norm-14	14	linear_gated_deltanet	37.234472	37.177416	0.997043	0.513567	0.076853	measured	
+orig	4	33075	ffn_out-14	14	linear_gated_deltanet	1.520238	1.493906	0.996139	0.043714	0.088818	measured	
+orig	4	33075	l_out-14	14	linear_gated_deltanet	3.803655	3.735643	0.997783	0.049301	0.068377	measured	
+orig	4	33075	attn_norm-15	15	full_attention	38.797551	38.811284	0.997843	0.465221	0.065696	measured	
+orig	4	33075	attn_pregate-15	15	full_attention	61.905266	60.326822	0.999555	1.645067	0.038966	measured	
+orig	4	33075	attn_gated-15	15	full_attention	3.991927	4.011750	0.999123	0.028131	0.042276	measured	
+orig	4	33075	attn_output-15	15	full_attention	0.764801	0.764105	0.996680	0.007386	0.081449	measured	
+orig	4	33075	attn_residual-15	15	full_attention	3.865371	3.796275	0.997621	0.049096	0.070651	measured	
+orig	4	33075	attn_post_norm-15	15	full_attention	38.418711	38.415389	0.997450	0.509179	0.071410	measured	
+orig	4	33075	ffn_out-15	15	full_attention	2.080444	2.093197	0.996351	0.030019	0.085903	measured	
+orig	4	33075	l_out-15	15	full_attention	4.379093	4.337792	0.997465	0.060071	0.071488	measured	
+orig	4	33075	attn_norm-16	16	linear_gated_deltanet	48.862275	48.847257	0.997351	0.634024	0.072774	measured	
+orig	4	33075	conv_output_silu-16	16	linear_gated_deltanet	17.308156	17.308815	0.999075	0.105164	0.043003	measured	
+orig	4	33075	q_conv_predelta-16	16	linear_gated_deltanet	3.999999	3.999999	0.998275	0.075228	0.058733	measured	
+orig	4	33075	k_conv_predelta-16	16	linear_gated_deltanet	3.999991	3.999992	0.998005	0.078378	0.063168	measured	
+orig	4	33075	v_conv_predelta-16	16	linear_gated_deltanet	8.773758	8.767238	0.999551	0.067676	0.029976	measured	
+orig	4	33075	a_softplus-16	16	linear_gated_deltanet	6.677714	6.347416	0.999798	0.212736	0.053203	measured	
+orig	4	33075	gate-16	16	linear_gated_deltanet	3.010980	2.851187	0.999891	0.103985	0.054986	measured	
+orig	4	33075	beta_sigmoid-16	16	linear_gated_deltanet	2.441207	2.413643	0.999756	0.027598	0.024686	measured	
+orig	4	33075	state_predelta-16	16	linear_gated_deltanet	12.576560	12.588485	0.998569	0.123366	0.053540	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.013612 max_abs=1.814096e+00 rel_l2=1.405221
+orig	4	33075	new_state-16	16	linear_gated_deltanet	12.798502	12.789405	0.998577	0.123609	0.053337	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.014243 max_abs=1.857020e+00 rel_l2=1.403607
+orig	4	33075	attn_output-16	16	linear_gated_deltanet	0.139402	0.137517	0.999679	0.002080	0.028587	measured	
+orig	4	33075	z-16	16	linear_gated_deltanet	70.915280	69.701621	0.998875	0.523256	0.050045	measured	
+orig	4	33075	final_output-16	16	linear_gated_deltanet	3.815661	3.849248	0.997470	0.051245	0.071990	measured	
+orig	4	33075	linear_attn_out-16	16	linear_gated_deltanet	0.894927	0.895913	0.996002	0.007868	0.089473	measured	
+orig	4	33075	attn_residual-16	16	linear_gated_deltanet	4.640347	4.601832	0.997573	0.061413	0.069882	measured	
+orig	4	33075	attn_post_norm-16	16	linear_gated_deltanet	39.848506	39.803107	0.997329	0.577884	0.073059	measured	
+orig	4	33075	ffn_out-16	16	linear_gated_deltanet	1.443469	1.447833	0.994154	0.026511	0.108337	measured	
+orig	4	33075	l_out-16	16	linear_gated_deltanet	4.823923	4.799823	0.997342	0.060993	0.072898	measured	
+orig	4	33075	attn_norm-17	17	linear_gated_deltanet	52.164791	52.110572	0.997213	0.672552	0.074624	measured	
+orig	4	33075	conv_output_silu-17	17	linear_gated_deltanet	37.558268	37.688664	0.999685	0.351288	0.025397	measured	
+orig	4	33075	q_conv_predelta-17	17	linear_gated_deltanet	4.000000	4.000000	0.999292	0.023824	0.037622	measured	
+orig	4	33075	k_conv_predelta-17	17	linear_gated_deltanet	4.000000	4.000000	0.998476	0.043608	0.055201	measured	
+orig	4	33075	v_conv_predelta-17	17	linear_gated_deltanet	12.810718	12.826977	0.999627	0.078505	0.027345	measured	
+orig	4	33075	a_softplus-17	17	linear_gated_deltanet	5.607928	5.398934	0.999656	0.202755	0.045287	measured	
+orig	4	33075	gate-17	17	linear_gated_deltanet	1.496468	1.423279	0.999600	0.055430	0.056153	measured	
+orig	4	33075	beta_sigmoid-17	17	linear_gated_deltanet	2.876334	2.847896	0.999945	0.019758	0.014343	measured	
+orig	4	33075	state_predelta-17	17	linear_gated_deltanet	16.909867	16.903110	0.998817	0.102378	0.048628	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.013427 max_abs=2.451715e+00 rel_l2=1.404406
+orig	4	33075	new_state-17	17	linear_gated_deltanet	17.357325	17.336296	0.998895	0.095716	0.047005	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.014283 max_abs=2.394941e+00 rel_l2=1.403227
+orig	4	33075	attn_output-17	17	linear_gated_deltanet	0.164788	0.169182	0.999504	0.005288	0.041575	measured	
+orig	4	33075	z-17	17	linear_gated_deltanet	76.834258	75.254900	0.998851	0.431874	0.051713	measured	
+orig	4	33075	final_output-17	17	linear_gated_deltanet	4.348707	4.369197	0.997479	0.090893	0.071332	measured	
+orig	4	33075	linear_attn_out-17	17	linear_gated_deltanet	1.181624	1.181718	0.996965	0.010423	0.077915	measured	
+orig	4	33075	attn_residual-17	17	linear_gated_deltanet	5.272297	5.254772	0.997629	0.060848	0.068823	measured	
+orig	4	33075	attn_post_norm-17	17	linear_gated_deltanet	40.219168	40.163769	0.997251	0.515160	0.074106	measured	
+orig	4	33075	ffn_out-17	17	linear_gated_deltanet	1.955425	1.941184	0.996965	0.016114	0.077967	measured	
+orig	4	33075	l_out-17	17	linear_gated_deltanet	5.671053	5.639001	0.997767	0.061118	0.066872	measured	
+orig	4	33075	attn_norm-18	18	linear_gated_deltanet	54.733760	54.694803	0.997722	0.525180	0.067476	measured	
+orig	4	33075	conv_output_silu-18	18	linear_gated_deltanet	36.007195	36.291944	0.999710	0.401199	0.025446	measured	
+orig	4	33075	q_conv_predelta-18	18	linear_gated_deltanet	3.999999	4.000000	0.999009	0.045838	0.044512	measured	
+orig	4	33075	k_conv_predelta-18	18	linear_gated_deltanet	4.000000	4.000000	0.999177	0.024840	0.040576	measured	
+orig	4	33075	v_conv_predelta-18	18	linear_gated_deltanet	15.658583	15.646478	0.999720	0.097770	0.023685	measured	
+orig	4	33075	a_softplus-18	18	linear_gated_deltanet	8.393996	8.139085	0.999810	0.176801	0.035937	measured	
+orig	4	33075	gate-18	18	linear_gated_deltanet	2.161561	2.105696	0.999799	0.038838	0.032555	measured	
+orig	4	33075	beta_sigmoid-18	18	linear_gated_deltanet	3.114824	3.101673	0.999957	0.020743	0.010174	measured	
+orig	4	33075	state_predelta-18	18	linear_gated_deltanet	22.405908	22.349010	0.998909	0.154858	0.046713	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.001045 max_abs=5.979266e+00 rel_l2=1.411681
+orig	4	33075	new_state-18	18	linear_gated_deltanet	22.749263	22.662846	0.998985	0.149025	0.045135	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.001400 max_abs=5.908761e+00 rel_l2=1.410542
+orig	4	33075	attn_output-18	18	linear_gated_deltanet	0.323529	0.326065	0.999673	0.002671	0.026847	measured	
+orig	4	33075	z-18	18	linear_gated_deltanet	83.272676	82.311155	0.999218	0.386237	0.040973	measured	
+orig	4	33075	final_output-18	18	linear_gated_deltanet	5.040729	4.959066	0.996282	0.258843	0.087050	measured	
+orig	4	33075	linear_attn_out-18	18	linear_gated_deltanet	1.417487	1.392037	0.996332	0.016628	0.086758	measured	
+orig	4	33075	attn_residual-18	18	linear_gated_deltanet	6.113364	6.079489	0.997848	0.065353	0.065662	measured	
+orig	4	33075	attn_post_norm-18	18	linear_gated_deltanet	41.983905	41.891577	0.997565	0.485549	0.069744	measured	
+orig	4	33075	ffn_out-18	18	linear_gated_deltanet	1.840834	1.830559	0.996571	0.026058	0.082769	measured	
+orig	4	33075	l_out-18	18	linear_gated_deltanet	6.506452	6.489525	0.997923	0.072844	0.064420	measured	
+orig	4	33075	attn_norm-19	19	full_attention	39.380791	39.329328	0.998009	0.422978	0.063076	measured	
+orig	4	33075	attn_pregate-19	19	full_attention	31.191929	31.524577	0.997421	0.347068	0.072980	measured	
+orig	4	33075	attn_gated-19	19	full_attention	6.164853	6.128079	0.999347	0.065565	0.036529	measured	
+orig	4	33075	attn_output-19	19	full_attention	1.207800	1.212776	0.994332	0.053243	0.106766	measured	
+orig	4	33075	attn_residual-19	19	full_attention	6.430243	6.387147	0.997772	0.072440	0.066867	measured	
+orig	4	33075	attn_post_norm-19	19	full_attention	41.011951	40.979301	0.997503	0.493391	0.070645	measured	
+orig	4	33075	ffn_out-19	19	full_attention	2.069381	2.068187	0.994753	0.041709	0.102409	measured	
+orig	4	33075	l_out-19	19	full_attention	6.660052	6.630971	0.997412	0.067112	0.071916	measured	
+orig	4	33075	attn_norm-20	20	linear_gated_deltanet	51.990312	51.922174	0.997367	0.475217	0.072531	measured	
+orig	4	33075	conv_output_silu-20	20	linear_gated_deltanet	25.434203	25.516858	0.999381	0.163490	0.035385	measured	
+orig	4	33075	q_conv_predelta-20	20	linear_gated_deltanet	3.999999	4.000000	0.999136	0.028951	0.041561	measured	
+orig	4	33075	k_conv_predelta-20	20	linear_gated_deltanet	4.000000	4.000000	0.998923	0.044768	0.046410	measured	
+orig	4	33075	v_conv_predelta-20	20	linear_gated_deltanet	12.320459	12.305614	0.999602	0.132853	0.028235	measured	
+orig	4	33075	a_softplus-20	20	linear_gated_deltanet	8.684976	8.358194	0.999622	0.251888	0.046295	measured	
+orig	4	33075	gate-20	20	linear_gated_deltanet	3.907589	3.772023	0.999687	0.110133	0.042523	measured	
+orig	4	33075	beta_sigmoid-20	20	linear_gated_deltanet	3.214317	3.194395	0.999938	0.021316	0.012706	measured	
+orig	4	33075	state_predelta-20	20	linear_gated_deltanet	16.862630	16.901486	0.998720	0.150961	0.050704	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.018059 max_abs=5.555989e+00 rel_l2=1.403001
+orig	4	33075	new_state-20	20	linear_gated_deltanet	17.590011	17.596991	0.998770	0.150492	0.049600	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.014543 max_abs=5.549269e+00 rel_l2=1.404171
+orig	4	33075	attn_output-20	20	linear_gated_deltanet	0.318489	0.330923	0.999659	0.009296	0.047259	measured	
+orig	4	33075	z-20	20	linear_gated_deltanet	88.258552	87.361261	0.999241	0.326686	0.040066	measured	
+orig	4	33075	final_output-20	20	linear_gated_deltanet	5.934470	5.952463	0.997057	0.182897	0.076891	measured	
+orig	4	33075	linear_attn_out-20	20	linear_gated_deltanet	1.964839	1.920493	0.997717	0.065099	0.070513	measured	
+orig	4	33075	attn_residual-20	20	linear_gated_deltanet	7.503989	7.448956	0.997859	0.071038	0.065604	measured	
+orig	4	33075	attn_post_norm-20	20	linear_gated_deltanet	40.618604	40.598239	0.997405	0.449944	0.072030	measured	
+orig	4	33075	ffn_out-20	20	linear_gated_deltanet	1.888667	1.857061	0.994700	0.036721	0.103451	measured	
+orig	4	33075	l_out-20	20	linear_gated_deltanet	7.639369	7.594000	0.997504	0.075373	0.070690	measured	
+orig	4	33075	attn_norm-21	21	linear_gated_deltanet	52.722806	52.645962	0.997281	0.529601	0.073709	measured	
+orig	4	33075	conv_output_silu-21	21	linear_gated_deltanet	40.152204	40.579813	0.999602	0.464775	0.030298	measured	
+orig	4	33075	q_conv_predelta-21	21	linear_gated_deltanet	4.000000	4.000000	0.999422	0.034221	0.034005	measured	
+orig	4	33075	k_conv_predelta-21	21	linear_gated_deltanet	3.999999	3.999999	0.998731	0.033829	0.050375	measured	
+orig	4	33075	v_conv_predelta-21	21	linear_gated_deltanet	10.946232	11.018547	0.999543	0.165427	0.031047	measured	
+orig	4	33075	a_softplus-21	21	linear_gated_deltanet	8.216137	7.753889	0.999620	0.248137	0.062311	measured	
+orig	4	33075	gate-21	21	linear_gated_deltanet	1.697579	1.603912	0.999614	0.056443	0.061435	measured	
+orig	4	33075	beta_sigmoid-21	21	linear_gated_deltanet	2.876171	2.856057	0.999840	0.034511	0.019139	measured	
+orig	4	33075	state_predelta-21	21	linear_gated_deltanet	12.651506	12.751026	0.998743	0.072406	0.050947	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.005540 max_abs=1.973190e+00 rel_l2=1.415849
+orig	4	33075	new_state-21	21	linear_gated_deltanet	13.341237	13.401092	0.998951	0.069396	0.046121	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.005822 max_abs=1.971478e+00 rel_l2=1.413258
+orig	4	33075	attn_output-21	21	linear_gated_deltanet	0.252074	0.251780	0.999876	0.001396	0.015813	measured	
+orig	4	33075	z-21	21	linear_gated_deltanet	82.174412	81.264114	0.998652	0.446302	0.052815	measured	
+orig	4	33075	final_output-21	21	linear_gated_deltanet	4.027137	4.019061	0.995355	0.132631	0.096304	measured	
+orig	4	33075	linear_attn_out-21	21	linear_gated_deltanet	1.222115	1.239562	0.996270	0.014911	0.088152	measured	
+orig	4	33075	attn_residual-21	21	linear_gated_deltanet	8.123897	8.091511	0.997651	0.077294	0.068523	measured	
+orig	4	33075	attn_post_norm-21	21	linear_gated_deltanet	41.051897	40.961388	0.997138	0.456590	0.075608	measured	
+orig	4	33075	ffn_out-21	21	linear_gated_deltanet	1.962347	1.971413	0.995412	0.021010	0.096124	measured	
+orig	4	33075	l_out-21	21	linear_gated_deltanet	8.485362	8.462796	0.997371	0.085682	0.072469	measured	
+orig	4	33075	attn_norm-22	22	linear_gated_deltanet	46.933715	46.871709	0.997188	0.491084	0.074962	measured	
+orig	4	33075	conv_output_silu-22	22	linear_gated_deltanet	25.642160	25.750923	0.999615	0.215178	0.028140	measured	
+orig	4	33075	q_conv_predelta-22	22	linear_gated_deltanet	4.000000	4.000000	0.999291	0.035447	0.037655	measured	
+orig	4	33075	k_conv_predelta-22	22	linear_gated_deltanet	3.999955	3.999955	0.998935	0.027035	0.046159	measured	
+orig	4	33075	v_conv_predelta-22	22	linear_gated_deltanet	5.974215	5.976602	0.999528	0.045981	0.030726	measured	
+orig	4	33075	a_softplus-22	22	linear_gated_deltanet	14.029776	13.431049	0.999591	0.414463	0.051036	measured	
+orig	4	33075	gate-22	22	linear_gated_deltanet	5.337333	5.148235	0.999728	0.126600	0.042196	measured	
+orig	4	33075	beta_sigmoid-22	22	linear_gated_deltanet	3.026504	3.015961	0.999904	0.028121	0.014255	measured	
+orig	4	33075	state_predelta-22	22	linear_gated_deltanet	6.168513	6.213145	0.998731	0.072338	0.051077	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.007803 max_abs=1.676731e+00 rel_l2=1.413791
+orig	4	33075	new_state-22	22	linear_gated_deltanet	6.460173	6.449115	0.999033	0.051676	0.043972	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.006851 max_abs=1.648330e+00 rel_l2=1.408155
+orig	4	33075	attn_output-22	22	linear_gated_deltanet	0.078998	0.077513	0.999656	0.001471	0.032053	measured	
+orig	4	33075	z-22	22	linear_gated_deltanet	77.697953	77.623527	0.998389	0.486929	0.056740	measured	
+orig	4	33075	final_output-22	22	linear_gated_deltanet	5.954970	5.860473	0.994190	0.468163	0.108105	measured	
+orig	4	33075	linear_attn_out-22	22	linear_gated_deltanet	1.599334	1.631081	0.995297	0.020026	0.099938	measured	
+orig	4	33075	attn_residual-22	22	linear_gated_deltanet	8.987769	8.986923	0.997662	0.088192	0.068385	measured	
+orig	4	33075	attn_post_norm-22	22	linear_gated_deltanet	41.139228	41.057967	0.997252	0.450022	0.074084	measured	
+orig	4	33075	ffn_out-22	22	linear_gated_deltanet	2.658264	2.671512	0.996248	0.027404	0.086982	measured	
+orig	4	33075	l_out-22	22	linear_gated_deltanet	9.711775	9.730186	0.997478	0.094363	0.071114	measured	
+orig	4	33075	attn_norm-23	23	full_attention	40.439102	40.371653	0.997399	0.431529	0.072083	measured	
+orig	4	33075	attn_pregate-23	23	full_attention	108.971064	108.754106	0.999816	0.234154	0.019284	measured	
+orig	4	33075	attn_gated-23	23	full_attention	15.450248	15.484189	0.998159	0.326495	0.060792	measured	
+orig	4	33075	attn_output-23	23	full_attention	3.849569	3.843271	0.997037	0.057762	0.076940	measured	
+orig	4	33075	attn_residual-23	23	full_attention	9.379812	9.401787	0.997142	0.093606	0.075728	measured	
+orig	4	33075	attn_post_norm-23	23	full_attention	37.973512	37.971462	0.996834	0.391036	0.079567	measured	
+orig	4	33075	ffn_out-23	23	full_attention	9.149363	9.245185	0.998658	0.117648	0.053127	measured	
+orig	4	33075	l_out-23	23	full_attention	11.943910	12.030376	0.997303	0.117646	0.074060	measured	
+orig	4	33075	result_norm	-1	-	127.390857	127.245638	0.996809	1.453360	0.079854	measured	
+orig	4	33075	result_output	-1	-	1355.811555	1324.483456	0.996538	1.063350	0.085424	measured	
+orig	28	1452	model.input_embed	-1	-	0.797134	0.797134	1.000000	0.000000	0.000000	measured	token_embd=Q6_K; ggufpy-vs-llama cos=1.000000000 max_abs=0.000e+00 rel_l2=0.000e+00; apr-vs-ggufpy cos=1.000000000 max_abs=0.000e+00 rel_l2=0.000e+00
+orig	28	1452	attn_norm-0	0	linear_gated_deltanet	39.255701	39.255701	1.000000	0.000000	0.000000	measured	
+orig	28	1452	conv_output_silu-0	0	linear_gated_deltanet	8.407233	8.410352	0.999993	0.006892	0.003828	measured	
+orig	28	1452	q_conv_predelta-0	0	linear_gated_deltanet	3.999985	3.999985	0.999980	0.003935	0.006386	measured	
+orig	28	1452	k_conv_predelta-0	0	linear_gated_deltanet	3.999944	3.999944	0.999978	0.003186	0.006705	measured	
+orig	28	1452	v_conv_predelta-0	0	linear_gated_deltanet	6.307056	6.312358	0.999999	0.004647	0.001846	measured	
+orig	28	1452	a_softplus-0	0	linear_gated_deltanet	9.515885	9.515744	1.000000	0.000189	0.000023	measured	
+orig	28	1452	gate-0	0	linear_gated_deltanet	6.127755	6.127730	1.000000	0.000044	0.000008	measured	
+orig	28	1452	beta_sigmoid-0	0	linear_gated_deltanet	2.059375	2.059381	1.000000	0.000039	0.000040	measured	
+orig	28	1452	state_predelta-0	0	linear_gated_deltanet	10.579678	10.583454	0.999990	0.014568	0.004474	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.005007 max_abs=2.310695e+00 rel_l2=1.410920
+orig	28	1452	new_state-0	0	linear_gated_deltanet	10.652855	10.657127	0.999990	0.015734	0.004495	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.004844 max_abs=2.317495e+00 rel_l2=1.411067
+orig	28	1452	attn_output-0	0	linear_gated_deltanet	0.206382	0.206561	0.999999	0.000180	0.001459	measured	
+orig	28	1452	z-0	0	linear_gated_deltanet	40.811014	40.811014	1.000000	0.000001	0.000000	measured	
+orig	28	1452	final_output-0	0	linear_gated_deltanet	4.577937	4.575999	0.999991	0.007558	0.004327	measured	
+orig	28	1452	linear_attn_out-0	0	linear_gated_deltanet	1.187300	1.188212	0.999230	0.008934	0.039255	measured	
+orig	28	1452	attn_residual-0	0	linear_gated_deltanet	1.178311	1.179034	0.999218	0.008934	0.039555	measured	
+orig	28	1452	attn_post_norm-0	0	linear_gated_deltanet	32.075777	32.017319	0.999098	0.150582	0.042476	measured	
+orig	28	1452	ffn_out-0	0	linear_gated_deltanet	0.853740	0.849247	0.998234	0.008093	0.059510	measured	
+orig	28	1452	l_out-0	0	linear_gated_deltanet	1.198832	1.197514	0.998830	0.016699	0.048359	measured	
+orig	28	1452	attn_norm-1	1	linear_gated_deltanet	44.227862	44.156925	0.998776	0.541276	0.049471	measured	
+orig	28	1452	conv_output_silu-1	1	linear_gated_deltanet	9.100353	9.122474	0.999604	0.097981	0.028284	measured	
+orig	28	1452	q_conv_predelta-1	1	linear_gated_deltanet	3.999992	3.999992	0.999461	0.034441	0.032846	measured	
+orig	28	1452	k_conv_predelta-1	1	linear_gated_deltanet	3.999993	3.999994	0.999285	0.028207	0.037803	measured	
+orig	28	1452	v_conv_predelta-1	1	linear_gated_deltanet	4.883987	4.917905	0.999751	0.057625	0.023426	measured	
+orig	28	1452	a_softplus-1	1	linear_gated_deltanet	2.788133	2.737845	0.999607	0.085431	0.033129	measured	
+orig	28	1452	gate-1	1	linear_gated_deltanet	3.184885	3.127984	0.999570	0.103453	0.034120	measured	
+orig	28	1452	beta_sigmoid-1	1	linear_gated_deltanet	2.887426	2.891590	0.999993	0.006958	0.004086	measured	
+orig	28	1452	state_predelta-1	1	linear_gated_deltanet	5.378870	5.370055	0.999334	0.039899	0.036494	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.005074 max_abs=1.740772e+00 rel_l2=1.409466
+orig	28	1452	new_state-1	1	linear_gated_deltanet	6.585857	6.609633	0.999248	0.037651	0.039017	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.004052 max_abs=1.740169e+00 rel_l2=1.413896
+orig	28	1452	attn_output-1	1	linear_gated_deltanet	0.044292	0.044984	0.999670	0.000837	0.030246	measured	
+orig	28	1452	z-1	1	linear_gated_deltanet	69.242697	68.981006	0.999592	0.224021	0.028748	measured	
+orig	28	1452	final_output-1	1	linear_gated_deltanet	2.554422	2.565864	0.998421	0.065914	0.056503	measured	
+orig	28	1452	linear_attn_out-1	1	linear_gated_deltanet	0.980409	0.979598	0.997939	0.008558	0.064175	measured	
+orig	28	1452	attn_residual-1	1	linear_gated_deltanet	1.530881	1.528118	0.998633	0.010849	0.052268	measured	
+orig	28	1452	attn_post_norm-1	1	linear_gated_deltanet	35.731935	35.665369	0.998499	0.199384	0.054766	measured	
+orig	28	1452	ffn_out-1	1	linear_gated_deltanet	1.071404	1.066558	0.996918	0.017356	0.078464	measured	
+orig	28	1452	l_out-1	1	linear_gated_deltanet	1.585131	1.578042	0.998173	0.011855	0.060480	measured	
+orig	28	1452	attn_norm-2	2	linear_gated_deltanet	45.454469	45.491466	0.998083	0.369012	0.061945	measured	
+orig	28	1452	conv_output_silu-2	2	linear_gated_deltanet	15.126052	15.126488	0.999550	0.137284	0.030013	measured	
+orig	28	1452	q_conv_predelta-2	2	linear_gated_deltanet	3.999976	3.999976	0.999078	0.037711	0.042936	measured	
+orig	28	1452	k_conv_predelta-2	2	linear_gated_deltanet	3.999982	3.999983	0.999219	0.032008	0.039518	measured	
+orig	28	1452	v_conv_predelta-2	2	linear_gated_deltanet	4.390344	4.449087	0.999331	0.068072	0.039181	measured	
+orig	28	1452	a_softplus-2	2	linear_gated_deltanet	2.319935	2.272686	0.999751	0.065467	0.030030	measured	
+orig	28	1452	gate-2	2	linear_gated_deltanet	1.890610	1.844573	0.999771	0.058770	0.032233	measured	
+orig	28	1452	beta_sigmoid-2	2	linear_gated_deltanet	1.423329	1.458494	0.999422	0.051577	0.042359	measured	
+orig	28	1452	state_predelta-2	2	linear_gated_deltanet	7.848966	7.766479	0.999243	0.043884	0.040102	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.008846 max_abs=1.953182e+00 rel_l2=1.400566
+orig	28	1452	new_state-2	2	linear_gated_deltanet	7.895686	7.830762	0.999117	0.047208	0.042650	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.008746 max_abs=1.954086e+00 rel_l2=1.402239
+orig	28	1452	attn_output-2	2	linear_gated_deltanet	0.081105	0.082218	0.999776	0.001291	0.025322	measured	
+orig	28	1452	z-2	2	linear_gated_deltanet	82.657008	83.362454	0.999549	0.318503	0.031337	measured	
+orig	28	1452	final_output-2	2	linear_gated_deltanet	3.683980	3.712285	0.998683	0.076478	0.052082	measured	
+orig	28	1452	linear_attn_out-2	2	linear_gated_deltanet	0.808822	0.812011	0.997011	0.007394	0.077569	measured	
+orig	28	1452	attn_residual-2	2	linear_gated_deltanet	1.856659	1.851756	0.998313	0.012753	0.058071	measured	
+orig	28	1452	attn_post_norm-2	2	linear_gated_deltanet	36.291444	36.279571	0.997889	0.282826	0.064973	measured	
+orig	28	1452	ffn_out-2	2	linear_gated_deltanet	1.323963	1.306715	0.996955	0.023933	0.078618	measured	
+orig	28	1452	l_out-2	2	linear_gated_deltanet	1.757320	1.765113	0.998038	0.022344	0.062942	measured	
+orig	28	1452	attn_norm-3	3	full_attention	43.736567	43.725360	0.998077	0.475489	0.062009	measured	
+orig	28	1452	attn_pregate-3	3	full_attention	22.382898	22.407140	0.999262	0.120778	0.038463	measured	
+orig	28	1452	attn_gated-3	3	full_attention	2.901499	2.833870	0.998503	0.032333	0.058890	measured	
+orig	28	1452	attn_output-3	3	full_attention	0.726854	0.715928	0.997323	0.006958	0.074153	measured	
+orig	28	1452	attn_residual-3	3	full_attention	1.893261	1.896836	0.998046	0.018911	0.062608	measured	
+orig	28	1452	attn_post_norm-3	3	full_attention	37.172339	37.081240	0.997798	0.253585	0.066328	measured	
+orig	28	1452	ffn_out-3	3	full_attention	1.057305	1.061098	0.995322	0.012636	0.096965	measured	
+orig	28	1452	l_out-3	3	full_attention	1.828338	1.842714	0.998038	0.014702	0.063380	measured	
+orig	28	1452	attn_norm-4	4	linear_gated_deltanet	46.599416	46.564586	0.997899	0.380147	0.064804	measured	
+orig	28	1452	conv_output_silu-4	4	linear_gated_deltanet	17.599099	17.527564	0.999232	0.193610	0.039334	measured	
+orig	28	1452	q_conv_predelta-4	4	linear_gated_deltanet	3.999995	3.999995	0.999256	0.032378	0.038579	measured	
+orig	28	1452	k_conv_predelta-4	4	linear_gated_deltanet	3.999992	3.999992	0.998776	0.049178	0.049470	measured	
+orig	28	1452	v_conv_predelta-4	4	linear_gated_deltanet	8.932968	8.948536	0.999590	0.113753	0.028717	measured	
+orig	28	1452	a_softplus-4	4	linear_gated_deltanet	2.789036	2.707612	0.999979	0.062842	0.029899	measured	
+orig	28	1452	gate-4	4	linear_gated_deltanet	2.554374	2.473579	0.999980	0.061057	0.032230	measured	
+orig	28	1452	beta_sigmoid-4	4	linear_gated_deltanet	1.731735	1.740774	0.999846	0.018796	0.018374	measured	
+orig	28	1452	state_predelta-4	4	linear_gated_deltanet	29.911262	30.002820	0.999792	0.088471	0.020635	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.000597 max_abs=1.302500e+01 rel_l2=1.415957
+orig	28	1452	new_state-4	4	linear_gated_deltanet	29.972973	30.061701	0.999790	0.076584	0.020753	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.000632 max_abs=1.300453e+01 rel_l2=1.415860
+orig	28	1452	attn_output-4	4	linear_gated_deltanet	0.347847	0.344988	0.999943	0.002826	0.013443	measured	
+orig	28	1452	z-4	4	linear_gated_deltanet	80.856251	80.833110	0.999526	0.209383	0.030778	measured	
+orig	28	1452	final_output-4	4	linear_gated_deltanet	2.354371	2.367694	0.997812	0.042570	0.066574	measured	
+orig	28	1452	linear_attn_out-4	4	linear_gated_deltanet	0.654648	0.657163	0.996518	0.010025	0.083703	measured	
+orig	28	1452	attn_residual-4	4	linear_gated_deltanet	2.029207	2.041513	0.998116	0.014533	0.061865	measured	
+orig	28	1452	attn_post_norm-4	4	linear_gated_deltanet	35.694290	35.742249	0.997737	0.291791	0.067329	measured	
+orig	28	1452	ffn_out-4	4	linear_gated_deltanet	1.009171	1.022362	0.995445	0.010944	0.096955	measured	
+orig	28	1452	l_out-4	4	linear_gated_deltanet	1.826797	1.852621	0.998040	0.012027	0.064615	measured	
+orig	28	1452	attn_norm-5	5	linear_gated_deltanet	44.190183	44.208214	0.997811	0.321097	0.066183	measured	
+orig	28	1452	conv_output_silu-5	5	linear_gated_deltanet	14.012886	13.931050	0.999560	0.118905	0.030144	measured	
+orig	28	1452	q_conv_predelta-5	5	linear_gated_deltanet	3.999998	3.999997	0.999176	0.040801	0.040589	measured	
+orig	28	1452	k_conv_predelta-5	5	linear_gated_deltanet	3.999993	3.999993	0.999418	0.030011	0.034122	measured	
+orig	28	1452	v_conv_predelta-5	5	linear_gated_deltanet	7.585654	7.579411	0.999905	0.032538	0.013782	measured	
+orig	28	1452	a_softplus-5	5	linear_gated_deltanet	0.371222	0.362923	0.999082	0.016827	0.047899	measured	
+orig	28	1452	gate-5	5	linear_gated_deltanet	0.234030	0.215467	0.998702	0.021334	0.093173	measured	
+orig	28	1452	beta_sigmoid-5	5	linear_gated_deltanet	1.905474	1.889537	0.999926	0.013960	0.014704	measured	
+orig	28	1452	state_predelta-5	5	linear_gated_deltanet	11.197569	11.230195	0.999791	0.039285	0.020700	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.003138 max_abs=3.348983e+00 rel_l2=1.414052
+orig	28	1452	new_state-5	5	linear_gated_deltanet	11.647510	11.658337	0.999802	0.038932	0.019918	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.002878 max_abs=3.368070e+00 rel_l2=1.412833
+orig	28	1452	attn_output-5	5	linear_gated_deltanet	0.112352	0.112345	0.999943	0.000533	0.010641	measured	
+orig	28	1452	z-5	5	linear_gated_deltanet	65.929379	65.826108	0.999342	0.306570	0.036274	measured	
+orig	28	1452	final_output-5	5	linear_gated_deltanet	2.589564	2.610452	0.997509	0.059993	0.071318	measured	
+orig	28	1452	linear_attn_out-5	5	linear_gated_deltanet	0.666172	0.680019	0.996191	0.007115	0.090601	measured	
+orig	28	1452	attn_residual-5	5	linear_gated_deltanet	2.051675	2.086558	0.998168	0.013505	0.063367	measured	
+orig	28	1452	attn_post_norm-5	5	linear_gated_deltanet	34.105104	34.187093	0.997681	0.221685	0.068230	measured	
+orig	28	1452	ffn_out-5	5	linear_gated_deltanet	0.906682	0.922101	0.993479	0.017462	0.116421	measured	
+orig	28	1452	l_out-5	5	linear_gated_deltanet	2.127851	2.154763	0.997853	0.015422	0.067148	measured	
+orig	28	1452	attn_norm-6	6	linear_gated_deltanet	41.604371	41.708928	0.997536	0.358294	0.070334	measured	
+orig	28	1452	conv_output_silu-6	6	linear_gated_deltanet	14.099188	14.072962	0.999585	0.092649	0.028840	measured	
+orig	28	1452	q_conv_predelta-6	6	linear_gated_deltanet	3.999992	3.999992	0.999389	0.033256	0.034966	measured	
+orig	28	1452	k_conv_predelta-6	6	linear_gated_deltanet	3.999974	3.999974	0.999333	0.025625	0.036521	measured	
+orig	28	1452	v_conv_predelta-6	6	linear_gated_deltanet	3.504129	3.526114	0.999586	0.025961	0.029526	measured	
+orig	28	1452	a_softplus-6	6	linear_gated_deltanet	1.697335	1.649004	0.999922	0.043413	0.031032	measured	
+orig	28	1452	gate-6	6	linear_gated_deltanet	0.771634	0.753839	0.999947	0.015251	0.025191	measured	
+orig	28	1452	beta_sigmoid-6	6	linear_gated_deltanet	1.681736	1.677361	0.999928	0.012121	0.012293	measured	
+orig	28	1452	state_predelta-6	6	linear_gated_deltanet	6.197017	6.167948	0.999148	0.034709	0.041448	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.010044 max_abs=1.715602e+00 rel_l2=1.403797
+orig	28	1452	new_state-6	6	linear_gated_deltanet	6.215157	6.190049	0.999152	0.035229	0.041290	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.009941 max_abs=1.718966e+00 rel_l2=1.404327
+orig	28	1452	attn_output-6	6	linear_gated_deltanet	0.028684	0.028482	0.999666	0.000330	0.026703	measured	
+orig	28	1452	z-6	6	linear_gated_deltanet	70.361288	69.736479	0.999540	0.224635	0.031483	measured	
+orig	28	1452	final_output-6	6	linear_gated_deltanet	1.993861	1.977438	0.996762	0.057363	0.080563	measured	
+orig	28	1452	linear_attn_out-6	6	linear_gated_deltanet	0.587201	0.589028	0.995995	0.005867	0.089687	measured	
+orig	28	1452	attn_residual-6	6	linear_gated_deltanet	2.197337	2.222037	0.997970	0.015196	0.065049	measured	
+orig	28	1452	attn_post_norm-6	6	linear_gated_deltanet	34.028445	34.107239	0.997580	0.284632	0.069691	measured	
+orig	28	1452	ffn_out-6	6	linear_gated_deltanet	0.907149	0.917132	0.993791	0.010448	0.112587	measured	
+orig	28	1452	l_out-6	6	linear_gated_deltanet	2.325278	2.341883	0.997965	0.016967	0.064420	measured	
+orig	28	1452	attn_norm-7	7	full_attention	36.067991	36.080498	0.997944	0.275650	0.064135	measured	
+orig	28	1452	attn_pregate-7	7	full_attention	22.145646	21.927351	0.998746	0.427334	0.050791	measured	
+orig	28	1452	attn_gated-7	7	full_attention	4.145553	4.168179	0.998690	0.036863	0.051613	measured	
+orig	28	1452	attn_output-7	7	full_attention	0.781416	0.782197	0.996643	0.008507	0.081986	measured	
+orig	28	1452	attn_residual-7	7	full_attention	2.315317	2.331084	0.997929	0.018153	0.064937	measured	
+orig	28	1452	attn_post_norm-7	7	full_attention	32.542887	32.626440	0.997387	0.266286	0.072435	measured	
+orig	28	1452	ffn_out-7	7	full_attention	0.794341	0.802058	0.994093	0.010528	0.109650	measured	
+orig	28	1452	l_out-7	7	full_attention	2.330582	2.338146	0.998106	0.021968	0.061730	measured	
+orig	28	1452	attn_norm-8	8	linear_gated_deltanet	41.186224	41.226079	0.997822	0.410253	0.066039	measured	
+orig	28	1452	conv_output_silu-8	8	linear_gated_deltanet	11.402135	11.446232	0.999459	0.101387	0.033183	measured	
+orig	28	1452	q_conv_predelta-8	8	linear_gated_deltanet	3.999987	3.999987	0.998859	0.075023	0.047764	measured	
+orig	28	1452	k_conv_predelta-8	8	linear_gated_deltanet	3.999964	3.999964	0.999058	0.035487	0.043406	measured	
+orig	28	1452	v_conv_predelta-8	8	linear_gated_deltanet	3.494088	3.525267	0.998500	0.101387	0.055727	measured	
+orig	28	1452	a_softplus-8	8	linear_gated_deltanet	0.978473	1.036015	0.999817	0.045743	0.062013	measured	
+orig	28	1452	gate-8	8	linear_gated_deltanet	0.464311	0.489331	0.999878	0.018436	0.056213	measured	
+orig	28	1452	beta_sigmoid-8	8	linear_gated_deltanet	2.093700	2.102511	0.999974	0.009196	0.008307	measured	
+orig	28	1452	state_predelta-8	8	linear_gated_deltanet	10.349153	10.284430	0.999410	0.114213	0.034813	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.005236 max_abs=3.640207e+00 rel_l2=1.406103
+orig	28	1452	new_state-8	8	linear_gated_deltanet	10.342510	10.279606	0.999393	0.112087	0.035272	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.005818 max_abs=3.642789e+00 rel_l2=1.405812
+orig	28	1452	attn_output-8	8	linear_gated_deltanet	0.118484	0.120814	0.999808	0.002182	0.027906	measured	
+orig	28	1452	z-8	8	linear_gated_deltanet	65.008490	65.392523	0.999599	0.225703	0.029011	measured	
+orig	28	1452	final_output-8	8	linear_gated_deltanet	2.439713	2.462045	0.997620	0.052064	0.069911	measured	
+orig	28	1452	linear_attn_out-8	8	linear_gated_deltanet	0.469370	0.475562	0.994811	0.010440	0.103390	measured	
+orig	28	1452	attn_residual-8	8	linear_gated_deltanet	2.345499	2.356968	0.998053	0.019125	0.062745	measured	
+orig	28	1452	attn_post_norm-8	8	linear_gated_deltanet	31.484594	31.551667	0.997487	0.290152	0.071006	measured	
+orig	28	1452	ffn_out-8	8	linear_gated_deltanet	0.634417	0.639524	0.993946	0.007811	0.110776	measured	
+orig	28	1452	l_out-8	8	linear_gated_deltanet	2.321957	2.331593	0.998220	0.016635	0.059925	measured	
+orig	28	1452	attn_norm-9	9	linear_gated_deltanet	39.856989	39.866710	0.997889	0.327106	0.064980	measured	
+orig	28	1452	conv_output_silu-9	9	linear_gated_deltanet	9.664678	9.580930	0.999369	0.101179	0.036430	measured	
+orig	28	1452	q_conv_predelta-9	9	linear_gated_deltanet	3.999991	3.999991	0.998916	0.029357	0.046565	measured	
+orig	28	1452	k_conv_predelta-9	9	linear_gated_deltanet	3.999892	3.999892	0.999174	0.025439	0.040650	measured	
+orig	28	1452	v_conv_predelta-9	9	linear_gated_deltanet	3.791232	3.756702	0.999143	0.097853	0.042213	measured	
+orig	28	1452	a_softplus-9	9	linear_gated_deltanet	1.798454	1.803829	0.999982	0.010094	0.006778	measured	
+orig	28	1452	gate-9	9	linear_gated_deltanet	0.420273	0.420384	0.999969	0.002567	0.007873	measured	
+orig	28	1452	beta_sigmoid-9	9	linear_gated_deltanet	1.049473	1.064177	0.999906	0.010477	0.019653	measured	
+orig	28	1452	state_predelta-9	9	linear_gated_deltanet	5.269375	5.280402	0.999179	0.026537	0.040624	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.006919 max_abs=1.065086e+00 rel_l2=1.410788
+orig	28	1452	new_state-9	9	linear_gated_deltanet	5.194131	5.199773	0.999177	0.026630	0.040598	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.007053 max_abs=1.062672e+00 rel_l2=1.409983
+orig	28	1452	attn_output-9	9	linear_gated_deltanet	0.026331	0.026404	0.999484	0.000516	0.032288	measured	
+orig	28	1452	z-9	9	linear_gated_deltanet	60.624255	60.768044	0.999593	0.183250	0.028663	measured	
+orig	28	1452	final_output-9	9	linear_gated_deltanet	2.110731	2.103713	0.997251	0.033198	0.074101	measured	
+orig	28	1452	linear_attn_out-9	9	linear_gated_deltanet	0.583477	0.580318	0.996543	0.005558	0.083099	measured	
+orig	28	1452	attn_residual-9	9	linear_gated_deltanet	2.476781	2.481578	0.998334	0.017864	0.057810	measured	
+orig	28	1452	attn_post_norm-9	9	linear_gated_deltanet	31.416398	31.464847	0.997917	0.260586	0.064618	measured	
+orig	28	1452	ffn_out-9	9	linear_gated_deltanet	0.593541	0.590934	0.994393	0.013514	0.105758	measured	
+orig	28	1452	l_out-9	9	linear_gated_deltanet	2.483553	2.497021	0.998507	0.016034	0.055054	measured	
+orig	28	1452	attn_norm-10	10	linear_gated_deltanet	39.175053	39.168694	0.998287	0.283873	0.058525	measured	
+orig	28	1452	conv_output_silu-10	10	linear_gated_deltanet	8.610428	8.562344	0.999236	0.111488	0.039382	measured	
+orig	28	1452	q_conv_predelta-10	10	linear_gated_deltanet	3.999997	3.999997	0.999359	0.028339	0.035818	measured	
+orig	28	1452	k_conv_predelta-10	10	linear_gated_deltanet	3.999916	3.999918	0.999089	0.024968	0.042691	measured	
+orig	28	1452	v_conv_predelta-10	10	linear_gated_deltanet	1.914972	1.924809	0.998860	0.025964	0.048145	measured	
+orig	28	1452	a_softplus-10	10	linear_gated_deltanet	3.414835	3.401318	0.999993	0.012787	0.005379	measured	
+orig	28	1452	gate-10	10	linear_gated_deltanet	1.071626	1.066142	0.999966	0.009421	0.009729	measured	
+orig	28	1452	beta_sigmoid-10	10	linear_gated_deltanet	2.143553	2.166863	0.999885	0.018472	0.018723	measured	
+orig	28	1452	state_predelta-10	10	linear_gated_deltanet	4.445173	4.435969	0.998357	0.065738	0.057309	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.010472 max_abs=8.192525e-01 rel_l2=1.405334
+orig	28	1452	new_state-10	10	linear_gated_deltanet	4.424791	4.419077	0.998348	0.065669	0.057450	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.010755 max_abs=8.120026e-01 rel_l2=1.405680
+orig	28	1452	attn_output-10	10	linear_gated_deltanet	0.020998	0.021119	0.999703	0.000138	0.025102	measured	
+orig	28	1452	z-10	10	linear_gated_deltanet	72.764572	72.348623	0.999824	0.151942	0.019586	measured	
+orig	28	1452	final_output-10	10	linear_gated_deltanet	2.271013	2.256537	0.998014	0.029456	0.063144	measured	
+orig	28	1452	linear_attn_out-10	10	linear_gated_deltanet	0.652434	0.648250	0.997498	0.005426	0.070798	measured	
+orig	28	1452	attn_residual-10	10	linear_gated_deltanet	2.547386	2.559162	0.998562	0.015968	0.053949	measured	
+orig	28	1452	attn_post_norm-10	10	linear_gated_deltanet	31.660382	31.677551	0.998298	0.217690	0.058363	measured	
+orig	28	1452	ffn_out-10	10	linear_gated_deltanet	0.670406	0.668062	0.996316	0.016912	0.085756	measured	
+orig	28	1452	l_out-10	10	linear_gated_deltanet	2.491230	2.513984	0.998649	0.015686	0.053012	measured	
+orig	28	1452	attn_norm-11	11	full_attention	35.711173	35.696456	0.998587	0.233367	0.053148	measured	
+orig	28	1452	attn_pregate-11	11	full_attention	20.911179	21.281532	0.998422	0.774522	0.059378	measured	
+orig	28	1452	attn_gated-11	11	full_attention	2.812370	2.816163	0.998741	0.030726	0.050224	measured	
+orig	28	1452	attn_output-11	11	full_attention	0.476734	0.470494	0.996525	0.011006	0.083844	measured	
+orig	28	1452	attn_residual-11	11	full_attention	2.559334	2.572061	0.998560	0.017449	0.054030	measured	
+orig	28	1452	attn_post_norm-11	11	full_attention	32.818820	32.838842	0.998313	0.249644	0.058099	measured	
+orig	28	1452	ffn_out-11	11	full_attention	0.701222	0.700983	0.996458	0.006791	0.084147	measured	
+orig	28	1452	l_out-11	11	full_attention	2.500524	2.511861	0.998616	0.017469	0.052932	measured	
+orig	28	1452	attn_norm-12	12	linear_gated_deltanet	45.284335	45.284903	0.998468	0.322088	0.055353	measured	
+orig	28	1452	conv_output_silu-12	12	linear_gated_deltanet	12.967484	12.871988	0.999468	0.096272	0.033311	measured	
+orig	28	1452	q_conv_predelta-12	12	linear_gated_deltanet	3.999994	3.999994	0.999526	0.020676	0.030794	measured	
+orig	28	1452	k_conv_predelta-12	12	linear_gated_deltanet	3.999975	3.999975	0.999110	0.044810	0.042183	measured	
+orig	28	1452	v_conv_predelta-12	12	linear_gated_deltanet	4.155427	4.164490	0.999159	0.090065	0.041104	measured	
+orig	28	1452	a_softplus-12	12	linear_gated_deltanet	0.379488	0.393756	0.999890	0.012715	0.040515	measured	
+orig	28	1452	gate-12	12	linear_gated_deltanet	0.352179	0.364341	0.999994	0.012056	0.034727	measured	
+orig	28	1452	beta_sigmoid-12	12	linear_gated_deltanet	1.130413	1.160334	0.999825	0.018439	0.032563	measured	
+orig	28	1452	state_predelta-12	12	linear_gated_deltanet	12.644675	12.647237	0.999484	0.070908	0.032142	measured	apr [h][j][i] transposed to [h][i][j]: cos=-0.000001 max_abs=4.962249e+00 rel_l2=1.414357
+orig	28	1452	new_state-12	12	linear_gated_deltanet	12.670370	12.671485	0.999488	0.070949	0.032003	measured	apr [h][j][i] transposed to [h][i][j]: cos=-0.000233 max_abs=4.966080e+00 rel_l2=1.414441
+orig	28	1452	attn_output-12	12	linear_gated_deltanet	0.169898	0.173732	0.999795	0.003592	0.030461	measured	
+orig	28	1452	z-12	12	linear_gated_deltanet	82.395550	82.208930	0.999770	0.200226	0.021555	measured	
+orig	28	1452	final_output-12	12	linear_gated_deltanet	2.334597	2.304196	0.998940	0.029763	0.047568	measured	
+orig	28	1452	linear_attn_out-12	12	linear_gated_deltanet	0.594149	0.584071	0.998496	0.007091	0.056967	measured	
+orig	28	1452	attn_residual-12	12	linear_gated_deltanet	2.706843	2.711730	0.998749	0.017411	0.050106	measured	
+orig	28	1452	attn_post_norm-12	12	linear_gated_deltanet	34.007687	34.061615	0.998573	0.235694	0.053492	measured	
+orig	28	1452	ffn_out-12	12	linear_gated_deltanet	0.707804	0.711471	0.996527	0.008008	0.083715	measured	
+orig	28	1452	l_out-12	12	linear_gated_deltanet	2.672929	2.681078	0.998744	0.015647	0.050290	measured	
+orig	28	1452	attn_norm-13	13	linear_gated_deltanet	43.300501	43.315468	0.998611	0.267963	0.052711	measured	
+orig	28	1452	conv_output_silu-13	13	linear_gated_deltanet	15.496231	15.406577	0.999738	0.077156	0.023540	measured	
+orig	28	1452	q_conv_predelta-13	13	linear_gated_deltanet	3.999971	3.999971	0.999596	0.027121	0.028433	measured	
+orig	28	1452	k_conv_predelta-13	13	linear_gated_deltanet	3.999879	3.999881	0.999463	0.021730	0.032767	measured	
+orig	28	1452	v_conv_predelta-13	13	linear_gated_deltanet	3.251142	3.272173	0.999507	0.035293	0.032146	measured	
+orig	28	1452	a_softplus-13	13	linear_gated_deltanet	1.662979	1.706558	0.999994	0.042359	0.026427	measured	
+orig	28	1452	gate-13	13	linear_gated_deltanet	0.275180	0.282901	0.999930	0.005480	0.030510	measured	
+orig	28	1452	beta_sigmoid-13	13	linear_gated_deltanet	1.410549	1.438616	0.999867	0.017546	0.025828	measured	
+orig	28	1452	state_predelta-13	13	linear_gated_deltanet	6.005654	6.036768	0.999048	0.040406	0.044060	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.010337 max_abs=9.978719e-01 rel_l2=1.410535
+orig	28	1452	new_state-13	13	linear_gated_deltanet	6.009188	6.036346	0.999076	0.039180	0.043332	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.010394 max_abs=1.060882e+00 rel_l2=1.410027
+orig	28	1452	attn_output-13	13	linear_gated_deltanet	0.019755	0.020086	0.999705	0.000332	0.029700	measured	
+orig	28	1452	z-13	13	linear_gated_deltanet	65.815061	65.871124	0.999696	0.170918	0.024665	measured	
+orig	28	1452	final_output-13	13	linear_gated_deltanet	2.326542	2.346911	0.998877	0.023852	0.048397	measured	
+orig	28	1452	linear_attn_out-13	13	linear_gated_deltanet	0.621439	0.632558	0.997890	0.004550	0.067939	measured	
+orig	28	1452	attn_residual-13	13	linear_gated_deltanet	2.863501	2.876622	0.998866	0.016219	0.047948	measured	
+orig	28	1452	attn_post_norm-13	13	linear_gated_deltanet	35.115014	35.168828	0.998749	0.212874	0.050073	measured	
+orig	28	1452	ffn_out-13	13	linear_gated_deltanet	0.795444	0.797339	0.997580	0.007728	0.069700	measured	
+orig	28	1452	l_out-13	13	linear_gated_deltanet	2.861224	2.874735	0.998871	0.017311	0.047863	measured	
+orig	28	1452	attn_norm-14	14	linear_gated_deltanet	42.577155	42.584421	0.998773	0.261793	0.049545	measured	
+orig	28	1452	conv_output_silu-14	14	linear_gated_deltanet	16.272959	16.187970	0.999800	0.087789	0.020614	measured	
+orig	28	1452	q_conv_predelta-14	14	linear_gated_deltanet	3.999998	3.999998	0.999741	0.017690	0.022774	measured	
+orig	28	1452	k_conv_predelta-14	14	linear_gated_deltanet	3.999710	3.999710	0.999355	0.026460	0.035903	measured	
+orig	28	1452	v_conv_predelta-14	14	linear_gated_deltanet	4.810190	4.752109	0.999458	0.087789	0.034867	measured	
+orig	28	1452	a_softplus-14	14	linear_gated_deltanet	0.635550	0.650826	0.999973	0.009902	0.025164	measured	
+orig	28	1452	gate-14	14	linear_gated_deltanet	0.169000	0.173833	0.999967	0.003775	0.029775	measured	
+orig	28	1452	beta_sigmoid-14	14	linear_gated_deltanet	1.927491	1.940530	0.999942	0.014842	0.012741	measured	
+orig	28	1452	state_predelta-14	14	linear_gated_deltanet	8.195853	8.174463	0.999053	0.051851	0.043532	measured	apr [h][j][i] transposed to [h][i][j]: cos=-0.000663 max_abs=1.771785e+00 rel_l2=1.412837
+orig	28	1452	new_state-14	14	linear_gated_deltanet	8.185884	8.150806	0.999071	0.053561	0.043231	measured	apr [h][j][i] transposed to [h][i][j]: cos=-0.000778 max_abs=1.741920e+00 rel_l2=1.411736
+orig	28	1452	attn_output-14	14	linear_gated_deltanet	0.035155	0.035379	0.999903	0.000232	0.015337	measured	
+orig	28	1452	z-14	14	linear_gated_deltanet	78.629463	78.702039	0.999787	0.205575	0.020657	measured	
+orig	28	1452	final_output-14	14	linear_gated_deltanet	3.336660	3.367627	0.998448	0.037581	0.056734	measured	
+orig	28	1452	linear_attn_out-14	14	linear_gated_deltanet	1.028063	1.045671	0.997834	0.008312	0.068550	measured	
+orig	28	1452	attn_residual-14	14	linear_gated_deltanet	3.094137	3.118725	0.998604	0.023472	0.053649	measured	
+orig	28	1452	attn_post_norm-14	14	linear_gated_deltanet	37.450973	37.489729	0.998587	0.280971	0.053203	measured	
+orig	28	1452	ffn_out-14	14	linear_gated_deltanet	1.384845	1.385076	0.997785	0.013717	0.066565	measured	
+orig	28	1452	l_out-14	14	linear_gated_deltanet	3.554282	3.582128	0.998724	0.023658	0.051326	measured	
+orig	28	1452	attn_norm-15	15	full_attention	38.256446	38.261508	0.998753	0.251960	0.049942	measured	
+orig	28	1452	attn_pregate-15	15	full_attention	33.037457	31.776895	0.998790	1.240341	0.061507	measured	
+orig	28	1452	attn_gated-15	15	full_attention	4.666203	4.677447	0.999567	0.034317	0.029556	measured	
+orig	28	1452	attn_output-15	15	full_attention	0.885615	0.884890	0.997728	0.007760	0.067383	measured	
+orig	28	1452	attn_residual-15	15	full_attention	3.669841	3.698903	0.998648	0.026661	0.052808	measured	
+orig	28	1452	attn_post_norm-15	15	full_attention	38.999352	39.038168	0.998598	0.280898	0.052994	measured	
+orig	28	1452	ffn_out-15	15	full_attention	1.532345	1.529213	0.996670	0.018111	0.081555	measured	
+orig	28	1452	l_out-15	15	full_attention	3.954875	3.978035	0.998511	0.030548	0.055049	measured	
+orig	28	1452	attn_norm-16	16	linear_gated_deltanet	48.593065	48.640420	0.998504	0.380940	0.054733	measured	
+orig	28	1452	conv_output_silu-16	16	linear_gated_deltanet	23.659428	23.638876	0.999827	0.077158	0.018602	measured	
+orig	28	1452	q_conv_predelta-16	16	linear_gated_deltanet	3.999999	3.999999	0.999737	0.015876	0.022916	measured	
+orig	28	1452	k_conv_predelta-16	16	linear_gated_deltanet	3.999992	3.999992	0.999496	0.020440	0.031744	measured	
+orig	28	1452	v_conv_predelta-16	16	linear_gated_deltanet	8.842318	8.876782	0.999845	0.061125	0.018046	measured	
+orig	28	1452	a_softplus-16	16	linear_gated_deltanet	2.302001	2.273438	0.999923	0.034017	0.017486	measured	
+orig	28	1452	gate-16	16	linear_gated_deltanet	0.846800	0.836200	0.999883	0.013852	0.019683	measured	
+orig	28	1452	beta_sigmoid-16	16	linear_gated_deltanet	2.003868	2.012192	0.999927	0.014514	0.012781	measured	
+orig	28	1452	state_predelta-16	16	linear_gated_deltanet	15.880363	15.849802	0.999032	0.092341	0.044006	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.013970 max_abs=1.763124e+00 rel_l2=1.402950
+orig	28	1452	new_state-16	16	linear_gated_deltanet	16.001905	15.978656	0.999038	0.092260	0.043866	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.013623 max_abs=1.850591e+00 rel_l2=1.403527
+orig	28	1452	attn_output-16	16	linear_gated_deltanet	0.195459	0.198262	0.999754	0.002873	0.026550	measured	
+orig	28	1452	z-16	16	linear_gated_deltanet	87.745838	88.095920	0.999787	0.247643	0.021063	measured	
+orig	28	1452	final_output-16	16	linear_gated_deltanet	4.472676	4.499241	0.998664	0.061916	0.052191	measured	
+orig	28	1452	linear_attn_out-16	16	linear_gated_deltanet	1.145305	1.156240	0.997800	0.009112	0.067335	measured	
+orig	28	1452	attn_residual-16	16	linear_gated_deltanet	4.406195	4.435891	0.998544	0.039660	0.054562	measured	
+orig	28	1452	attn_post_norm-16	16	linear_gated_deltanet	39.666277	39.746873	0.998439	0.365564	0.055970	measured	
+orig	28	1452	ffn_out-16	16	linear_gated_deltanet	1.734499	1.742752	0.997586	0.013742	0.069808	measured	
+orig	28	1452	l_out-16	16	linear_gated_deltanet	4.767054	4.794171	0.998529	0.043150	0.054691	measured	
+orig	28	1452	attn_norm-17	17	linear_gated_deltanet	52.243414	52.273059	0.998491	0.470864	0.054953	measured	
+orig	28	1452	conv_output_silu-17	17	linear_gated_deltanet	49.898690	49.582474	0.999938	0.252689	0.012793	measured	
+orig	28	1452	q_conv_predelta-17	17	linear_gated_deltanet	4.000000	4.000000	0.999888	0.012873	0.014989	measured	
+orig	28	1452	k_conv_predelta-17	17	linear_gated_deltanet	4.000000	4.000000	0.999635	0.033267	0.027032	measured	
+orig	28	1452	v_conv_predelta-17	17	linear_gated_deltanet	11.990321	11.946067	0.999706	0.089422	0.024471	measured	
+orig	28	1452	a_softplus-17	17	linear_gated_deltanet	0.357026	0.346790	0.999669	0.012990	0.038275	measured	
+orig	28	1452	gate-17	17	linear_gated_deltanet	0.068185	0.066756	0.999551	0.002257	0.036314	measured	
+orig	28	1452	beta_sigmoid-17	17	linear_gated_deltanet	2.034477	2.047369	0.999968	0.011125	0.010215	measured	
+orig	28	1452	state_predelta-17	17	linear_gated_deltanet	20.563852	20.576895	0.999265	0.082860	0.038353	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.010819 max_abs=2.560780e+00 rel_l2=1.406989
+orig	28	1452	new_state-17	17	linear_gated_deltanet	20.469334	20.484825	0.999234	0.085772	0.039165	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.011004 max_abs=2.571760e+00 rel_l2=1.406944
+orig	28	1452	attn_output-17	17	linear_gated_deltanet	0.298744	0.298369	0.999891	0.002184	0.014814	measured	
+orig	28	1452	z-17	17	linear_gated_deltanet	86.656407	86.753941	0.999724	0.266455	0.023536	measured	
+orig	28	1452	final_output-17	17	linear_gated_deltanet	4.297524	4.363791	0.997094	0.178724	0.078355	measured	
+orig	28	1452	linear_attn_out-17	17	linear_gated_deltanet	1.154806	1.173954	0.996331	0.012020	0.087947	measured	
+orig	28	1452	attn_residual-17	17	linear_gated_deltanet	5.164568	5.198550	0.998489	0.046542	0.055538	measured	
+orig	28	1452	attn_post_norm-17	17	linear_gated_deltanet	40.444471	40.540924	0.998302	0.374907	0.058389	measured	
+orig	28	1452	ffn_out-17	17	linear_gated_deltanet	1.369788	1.383134	0.994736	0.020902	0.103564	measured	
+orig	28	1452	l_out-17	17	linear_gated_deltanet	5.395547	5.432819	0.998375	0.050232	0.057624	measured	
+orig	28	1452	attn_norm-18	18	linear_gated_deltanet	54.551327	54.575401	0.998352	0.479115	0.057419	measured	
+orig	28	1452	conv_output_silu-18	18	linear_gated_deltanet	44.680126	44.532833	0.999924	0.102848	0.012724	measured	
+orig	28	1452	q_conv_predelta-18	18	linear_gated_deltanet	4.000000	4.000000	0.999738	0.022870	0.022875	measured	
+orig	28	1452	k_conv_predelta-18	18	linear_gated_deltanet	4.000000	4.000000	0.999808	0.014308	0.019590	measured	
+orig	28	1452	v_conv_predelta-18	18	linear_gated_deltanet	15.220509	15.193196	0.999733	0.088625	0.023138	measured	
+orig	28	1452	a_softplus-18	18	linear_gated_deltanet	0.940340	0.899804	0.999554	0.045522	0.052081	measured	
+orig	28	1452	gate-18	18	linear_gated_deltanet	0.214515	0.206323	0.999531	0.009176	0.048589	measured	
+orig	28	1452	beta_sigmoid-18	18	linear_gated_deltanet	2.865975	2.864850	0.999993	0.007060	0.003764	measured	
+orig	28	1452	state_predelta-18	18	linear_gated_deltanet	27.333154	27.304905	0.999377	0.130967	0.035307	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.006819 max_abs=6.588075e+00 rel_l2=1.408655
+orig	28	1452	new_state-18	18	linear_gated_deltanet	27.559701	27.527940	0.999364	0.132851	0.035675	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.006595 max_abs=6.603757e+00 rel_l2=1.408730
+orig	28	1452	attn_output-18	18	linear_gated_deltanet	0.566056	0.562916	0.999885	0.004623	0.016086	measured	
+orig	28	1452	z-18	18	linear_gated_deltanet	101.003620	101.153333	0.999699	0.232325	0.024602	measured	
+orig	28	1452	final_output-18	18	linear_gated_deltanet	4.013559	4.047293	0.998584	0.053270	0.054098	measured	
+orig	28	1452	linear_attn_out-18	18	linear_gated_deltanet	1.332286	1.345757	0.998855	0.010983	0.049140	measured	
+orig	28	1452	attn_residual-18	18	linear_gated_deltanet	5.927184	5.965297	0.998626	0.049668	0.052974	measured	
+orig	28	1452	attn_post_norm-18	18	linear_gated_deltanet	41.146319	41.240700	0.998399	0.351477	0.056704	measured	
+orig	28	1452	ffn_out-18	18	linear_gated_deltanet	1.671576	1.722544	0.993817	0.066374	0.116930	measured	
+orig	28	1452	l_out-18	18	linear_gated_deltanet	6.287492	6.322887	0.998107	0.090189	0.061954	measured	
+orig	28	1452	attn_norm-19	19	full_attention	39.085492	39.101692	0.998211	0.520064	0.059835	measured	
+orig	28	1452	attn_pregate-19	19	full_attention	31.141500	30.864367	0.999093	0.307088	0.043336	measured	
+orig	28	1452	attn_gated-19	19	full_attention	7.203417	7.257161	0.999467	0.081513	0.033617	measured	
+orig	28	1452	attn_output-19	19	full_attention	1.336447	1.357163	0.995559	0.058756	0.096226	measured	
+orig	28	1452	attn_residual-19	19	full_attention	6.590671	6.661816	0.998251	0.061709	0.060431	measured	
+orig	28	1452	attn_post_norm-19	19	full_attention	40.312200	40.428078	0.997984	0.383529	0.063657	measured	
+orig	28	1452	ffn_out-19	19	full_attention	2.257748	2.334834	0.994709	0.031479	0.110040	measured	
+orig	28	1452	l_out-19	19	full_attention	6.535829	6.639323	0.997403	0.066392	0.074340	measured	
+orig	28	1452	attn_norm-20	20	linear_gated_deltanet	51.514426	51.574635	0.997334	0.502584	0.073071	measured	
+orig	28	1452	conv_output_silu-20	20	linear_gated_deltanet	31.957707	31.731640	0.999786	0.132816	0.021799	measured	
+orig	28	1452	q_conv_predelta-20	20	linear_gated_deltanet	4.000000	4.000000	0.999688	0.018617	0.024991	measured	
+orig	28	1452	k_conv_predelta-20	20	linear_gated_deltanet	4.000000	4.000000	0.999665	0.048742	0.025879	measured	
+orig	28	1452	v_conv_predelta-20	20	linear_gated_deltanet	12.224931	12.209485	0.999747	0.091439	0.022524	measured	
+orig	28	1452	a_softplus-20	20	linear_gated_deltanet	4.087710	3.989580	0.999667	0.137490	0.035025	measured	
+orig	28	1452	gate-20	20	linear_gated_deltanet	1.954868	1.904072	0.999713	0.067270	0.035131	measured	
+orig	28	1452	beta_sigmoid-20	20	linear_gated_deltanet	2.809216	2.807639	0.999949	0.016261	0.010095	measured	
+orig	28	1452	state_predelta-20	20	linear_gated_deltanet	21.237737	21.266317	0.999172	0.148795	0.040733	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.014244 max_abs=5.574081e+00 rel_l2=1.405050
+orig	28	1452	new_state-20	20	linear_gated_deltanet	21.692433	21.716258	0.999208	0.125849	0.039842	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.013404 max_abs=5.571372e+00 rel_l2=1.405475
+orig	28	1452	attn_output-20	20	linear_gated_deltanet	0.500253	0.498299	0.999874	0.002066	0.016322	measured	
+orig	28	1452	z-20	20	linear_gated_deltanet	103.856241	103.682873	0.999557	0.324293	0.029772	measured	
+orig	28	1452	final_output-20	20	linear_gated_deltanet	7.028427	7.184131	0.998710	0.153626	0.055936	measured	
+orig	28	1452	linear_attn_out-20	20	linear_gated_deltanet	2.690564	2.697749	0.998984	0.011939	0.045214	measured	
+orig	28	1452	attn_residual-20	20	linear_gated_deltanet	7.974269	8.052008	0.998104	0.063745	0.062639	measured	
+orig	28	1452	attn_post_norm-20	20	linear_gated_deltanet	39.278887	39.532128	0.997616	0.375929	0.069579	measured	
+orig	28	1452	ffn_out-20	20	linear_gated_deltanet	1.760541	1.845393	0.991779	0.040744	0.139847	measured	
+orig	28	1452	l_out-20	20	linear_gated_deltanet	8.154450	8.237889	0.997724	0.099746	0.068581	measured	
+orig	28	1452	attn_norm-21	21	linear_gated_deltanet	51.447151	51.684755	0.997518	0.635164	0.070772	measured	
+orig	28	1452	conv_output_silu-21	21	linear_gated_deltanet	50.747812	50.604805	0.999931	0.175442	0.012097	measured	
+orig	28	1452	q_conv_predelta-21	21	linear_gated_deltanet	4.000000	4.000000	0.999872	0.015050	0.016015	measured	
+orig	28	1452	k_conv_predelta-21	21	linear_gated_deltanet	4.000000	4.000000	0.999795	0.015364	0.020239	measured	
+orig	28	1452	v_conv_predelta-21	21	linear_gated_deltanet	11.045683	11.061913	0.999839	0.050658	0.018001	measured	
+orig	28	1452	a_softplus-21	21	linear_gated_deltanet	4.056125	4.048269	0.999826	0.057277	0.018752	measured	
+orig	28	1452	gate-21	21	linear_gated_deltanet	0.827607	0.832790	0.999750	0.014825	0.023293	measured	
+orig	28	1452	beta_sigmoid-21	21	linear_gated_deltanet	2.780343	2.784408	0.999977	0.010815	0.006972	measured	
+orig	28	1452	state_predelta-21	21	linear_gated_deltanet	15.844961	15.920098	0.999343	0.065072	0.036656	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.004453 max_abs=1.807056e+00 rel_l2=1.414411
+orig	28	1452	new_state-21	21	linear_gated_deltanet	16.110311	16.204927	0.999345	0.064621	0.036763	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.004060 max_abs=1.828467e+00 rel_l2=1.415490
+orig	28	1452	attn_output-21	21	linear_gated_deltanet	0.386876	0.392951	0.999901	0.004404	0.021170	measured	
+orig	28	1452	z-21	21	linear_gated_deltanet	94.332312	94.744124	0.999514	0.276432	0.031537	measured	
+orig	28	1452	final_output-21	21	linear_gated_deltanet	4.357764	4.398635	0.998166	0.051381	0.061560	measured	
+orig	28	1452	linear_attn_out-21	21	linear_gated_deltanet	1.271047	1.292545	0.997856	0.010471	0.068167	measured	
+orig	28	1452	attn_residual-21	21	linear_gated_deltanet	8.689445	8.770266	0.998026	0.089850	0.063811	measured	
+orig	28	1452	attn_post_norm-21	21	linear_gated_deltanet	40.011552	40.308367	0.997582	0.420541	0.070187	measured	
+orig	28	1452	ffn_out-21	21	linear_gated_deltanet	1.849694	1.908635	0.994428	0.024560	0.111868	measured	
+orig	28	1452	l_out-21	21	linear_gated_deltanet	8.835047	8.922891	0.997786	0.104229	0.067613	measured	
+orig	28	1452	attn_norm-22	22	linear_gated_deltanet	46.658316	46.814573	0.997703	0.593538	0.067976	measured	
+orig	28	1452	conv_output_silu-22	22	linear_gated_deltanet	33.415687	33.157394	0.999902	0.209425	0.015948	measured	
+orig	28	1452	q_conv_predelta-22	22	linear_gated_deltanet	3.999999	4.000000	0.999652	0.051971	0.026368	measured	
+orig	28	1452	k_conv_predelta-22	22	linear_gated_deltanet	3.999962	3.999962	0.999678	0.016749	0.025365	measured	
+orig	28	1452	v_conv_predelta-22	22	linear_gated_deltanet	6.746067	6.748359	0.999783	0.065391	0.020863	measured	
+orig	28	1452	a_softplus-22	22	linear_gated_deltanet	9.271658	9.150968	0.999967	0.101807	0.015330	measured	
+orig	28	1452	gate-22	22	linear_gated_deltanet	3.819842	3.784869	0.999958	0.034638	0.012941	measured	
+orig	28	1452	beta_sigmoid-22	22	linear_gated_deltanet	2.951219	2.955530	0.999994	0.006182	0.003765	measured	
+orig	28	1452	state_predelta-22	22	linear_gated_deltanet	8.265599	8.255168	0.999574	0.023975	0.029191	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.008704 max_abs=2.223780e+00 rel_l2=1.407157
+orig	28	1452	new_state-22	22	linear_gated_deltanet	8.434581	8.427293	0.999575	0.025897	0.029157	measured	apr [h][j][i] transposed to [h][i][j]: cos=0.008442 max_abs=2.245863e+00 rel_l2=1.407623
+orig	28	1452	attn_output-22	22	linear_gated_deltanet	0.149402	0.148730	0.999809	0.001243	0.020017	measured	
+orig	28	1452	z-22	22	linear_gated_deltanet	90.099429	90.255126	0.999637	0.238347	0.027026	measured	
+orig	28	1452	final_output-22	22	linear_gated_deltanet	6.673035	6.725504	0.998544	0.119135	0.054738	measured	
+orig	28	1452	linear_attn_out-22	22	linear_gated_deltanet	1.711582	1.730649	0.996111	0.016432	0.089377	measured	
+orig	28	1452	attn_residual-22	22	linear_gated_deltanet	9.232487	9.320630	0.997834	0.116486	0.066823	measured	
+orig	28	1452	attn_post_norm-22	22	linear_gated_deltanet	41.179756	41.397468	0.997568	0.546732	0.070125	measured	
+orig	28	1452	ffn_out-22	22	linear_gated_deltanet	2.521995	2.579836	0.996337	0.032270	0.089554	measured	
+orig	28	1452	l_out-22	22	linear_gated_deltanet	9.387295	9.455366	0.997572	0.148756	0.070310	measured	
+orig	28	1452	attn_norm-23	23	full_attention	40.566660	40.655605	0.997670	0.641628	0.068368	measured	
+orig	28	1452	attn_pregate-23	23	full_attention	105.287048	105.502509	0.999933	0.164661	0.011747	measured	
+orig	28	1452	attn_gated-23	23	full_attention	13.590449	13.694934	0.998993	0.106528	0.045702	measured	
+orig	28	1452	attn_output-23	23	full_attention	3.687261	3.724854	0.998498	0.028521	0.056022	measured	
+orig	28	1452	attn_residual-23	23	full_attention	9.064967	9.143366	0.997491	0.120234	0.071671	measured	
+orig	28	1452	attn_post_norm-23	23	full_attention	38.133699	38.233236	0.997313	0.582567	0.073452	measured	
+orig	28	1452	ffn_out-23	23	full_attention	8.115948	8.138834	0.999260	0.133866	0.038615	measured	
+orig	28	1452	l_out-23	23	full_attention	10.962609	11.154545	0.997911	0.080966	0.067514	measured	
+orig	28	1452	result_norm	-1	-	130.402781	130.205453	0.997569	0.964606	0.069691	measured	
+orig	28	1452	result_output	-1	-	1637.501952	1639.512946	0.998672	0.822689	0.051583	measured	

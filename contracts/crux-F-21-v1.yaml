@@ -133,15 +133,20 @@ falsification_tests:
   if_fails: "overall duration inconsistent with per-gate durations"
 
 proof_obligations:
-- type: invariant
+- id: CF2F56E-INV-001
+  type: invariant
   property: "exactly 8 gates with canonical names always present"
-- type: invariant
+- id: CF2F56E-INV-002
+  type: invariant
   property: "every gate has status ∈ {PASS,FAIL,SKIPPED} and duration_ms >= 0"
-- type: invariant
+- id: CF2F56E-INV-003
+  type: invariant
   property: "exit code 0 ⇔ every gate is PASS"
-- type: invariant
+- id: CF2F56E-INV-004
+  type: invariant
   property: "--require-golden-output promotes SKIPPED golden_output to FAIL"
-- type: equivalence
+- id: CF2F56E-EQ-005
+  type: equivalence
   property: "pytest-style PASS/FAIL/SKIPPED semantics with per-test duration reporting match pytorch/pytest test runner behavior"
   competitor: pytorch
   reference: "https://docs.pytest.org/en/stable/reference/exit-codes.html; aprender CLAUDE.md §Tool Priorities; contracts/apr-model-qa-v1.yaml v1.1.0"

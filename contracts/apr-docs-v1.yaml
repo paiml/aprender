@@ -142,11 +142,14 @@ falsification_tests:
   if_fails: Onboarding docs send readers to files deleted by APR-MONO
 
 proof_obligations:
-- type: invariant
+- id: AD-INV-001
+  type: invariant
   property: "README install command matches actual binary"
-- type: invariant
+- id: AD-INV-002
+  type: invariant
   property: "docs/BEATS.md states the same beat_threshold the contract enforces"
-- type: invariant
+- id: AD-INV-003
+  type: invariant
   property: "documented file paths resolve in the tree"
 
 kani_harnesses:

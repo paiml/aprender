@@ -130,15 +130,20 @@ falsification_tests:
   if_fails: "apr --private does not match huggingface_hub reference visibility state"
 
 proof_obligations:
-- type: invariant
+- id: CG01132-INV-001
+  type: invariant
   property: "--private creates repo with private: true"
-- type: invariant
+- id: CG01132-INV-002
+  type: invariant
   property: "anonymous GET on private repo returns 401 or 404 (never 200)"
-- type: invariant
+- id: CG01132-INV-003
+  type: invariant
   property: "owner with HF_TOKEN can read the private repo"
-- type: invariant
+- id: CG01132-INV-004
+  type: invariant
   property: "private repo is absent from unauthenticated /api/models listing"
-- type: equivalence
+- id: CG01132-EQ-005
+  type: equivalence
   property: "apr publish --private produces identical visibility state to huggingface_hub.HfApi.create_repo(private=True)"
   competitor: huggingface
   reference: "https://huggingface.co/docs/hub/repositories-settings#private-repos; https://huggingface.co/docs/huggingface_hub/package_reference/hf_api#huggingface_hub.HfApi.create_repo"

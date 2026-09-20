@@ -1,0 +1,1315 @@
+name	op	type	ne_at_first_sight
+model.input_embed	GET_ROWS	f32	1024x1x1x1
+norm-0	RMS_NORM	f32	1024x1x1x1
+attn_norm-0	MUL	f32	1024x1x1x1
+cache_r_l0 (reshaped)	RESHAPE	f32	18432x1x1x1
+cache_r_l0 (reshaped) (view)	VIEW	f32	18432x1x1x1
+cache_r_l0 (reshaped) (view) (view)	SCALE	f32	18432x1x1x1
+ (view)	VIEW	i32	1x1x1x1
+conv_states-0	GET_ROWS	f32	18432x1x1x1
+node_9	GET_ROWS	f32	18432x0x1x1
+cache_r_l0 (view)	VIEW	f32	18432x0x1x1
+cache_r_l0 (view) (copy of )	CPY	f32	18432x0x1x1
+conv_states_reshaped-0	RESHAPE	f32	3x6144x1x1
+node_13	MUL_MAT	f32	6144x1x1x1
+linear_attn_qkv_mixed-0	RESHAPE	f32	6144x1x1x1
+qkv_mixed_transposed-0	TRANSPOSE	f32	1x6144x1x1
+conv_input-0	CONCAT	f32	4x6144x1x1
+conv_state_last-0	VIEW	f32	3x6144x1x1
+conv_state_update-0	VIEW	f32	18432x1x1x1
+conv_state_update-0 (copy of conv_state_last-0)	CPY	f32	18432x1x1x1
+cache_s_l0 (reshaped)	RESHAPE	f32	262144x1x1x1
+cache_s_l0 (reshaped) (view)	VIEW	f32	262144x1x1x1
+cache_s_l0 (reshaped) (view) (view)	SCALE	f32	262144x1x1x1
+node_23	GET_ROWS	f32	262144x1x1x1
+node_24	GET_ROWS	f32	262144x0x1x1
+cache_s_l0 (view)	VIEW	f32	262144x0x1x1
+cache_s_l0 (view) (copy of )	CPY	f32	262144x0x1x1
+conv_output_raw-0	SSM_CONV	f32	6144x1x1x1
+conv_output_silu-0	SILU	f32	6144x1x1x1
+q_conv-0	VIEW	f32	128x16x1x1
+node_30	RMS_NORM	f32	128x16x1x1
+q_conv_predelta-0	SCALE	f32	128x16x1x1
+k_conv-0	VIEW	f32	128x16x1x1
+node_33	RMS_NORM	f32	128x16x1x1
+k_conv_predelta-0	SCALE	f32	128x16x1x1
+v_conv_predelta-0	VIEW	f32	128x16x1x1
+node_36	MUL_MAT	f32	16x1x1x1
+alpha-0	RESHAPE	f32	16x1x1x1
+node_38	ADD	f32	16x1x1x1
+a_softplus-0	SOFTPLUS	f32	16x1x1x1
+gate-0	MUL	f32	16x1x1x1
+gate-0 (reshaped)	RESHAPE	f32	1x16x1x1
+node_42	MUL_MAT	f32	16x1x1x1
+beta-0	RESHAPE	f32	1x16x1x1
+beta_sigmoid-0	SIGMOID	f32	1x16x1x1
+state_predelta-0	RESHAPE	f32	128x128x16x1
+node_46	GATED_DELTA_NET	f32	2048x129x1x1
+new_state-0	VIEW	f32	128x128x16x1
+cache_s_l0 (view) (copy of new_state-0)	CPY	f32	262144x1x1x1
+attn_output-0	VIEW	f32	128x16x1x1
+node_52	MUL	f32	128x16x1x1
+z-0	MUL_MAT	f32	2048x1x1x1
+z-0 (reshaped)	RESHAPE	f32	128x16x1x1
+node_55	SILU	f32	128x16x1x1
+node_56	MUL	f32	128x16x1x1
+final_output-0	RESHAPE	f32	2048x1x1x1
+linear_attn_out-0	MUL_MAT	f32	1024x1x1x1
+linear_attn_out-0 (reshaped)	RESHAPE	f32	1024x1x1x1
+attn_residual-0	ADD	f32	1024x1x1x1
+attn_post_norm-0	MUL	f32	1024x1x1x1
+ffn_gate-0	MUL_MAT	f32	3584x1x1x1
+ffn_up-0	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-0	SWIGLU	f32	3584x1x1x1
+ffn_out-0	MUL_MAT	f32	1024x1x1x1
+l_out-0	ADD	f32	1024x1x1x1
+norm-1	RMS_NORM	f32	1024x1x1x1
+attn_norm-1	MUL	f32	1024x1x1x1
+cache_r_l1 (reshaped)	RESHAPE	f32	18432x1x1x1
+cache_r_l1 (reshaped) (view)	VIEW	f32	18432x1x1x1
+cache_r_l1 (reshaped) (view) (view)	SCALE	f32	18432x1x1x1
+conv_states-1	GET_ROWS	f32	18432x1x1x1
+node_74	GET_ROWS	f32	18432x0x1x1
+cache_r_l1 (view)	VIEW	f32	18432x0x1x1
+cache_r_l1 (view) (copy of )	CPY	f32	18432x0x1x1
+conv_states_reshaped-1	RESHAPE	f32	3x6144x1x1
+node_78	MUL_MAT	f32	6144x1x1x1
+linear_attn_qkv_mixed-1	RESHAPE	f32	6144x1x1x1
+qkv_mixed_transposed-1	TRANSPOSE	f32	1x6144x1x1
+conv_input-1	CONCAT	f32	4x6144x1x1
+conv_state_last-1	VIEW	f32	3x6144x1x1
+conv_state_update-1	VIEW	f32	18432x1x1x1
+conv_state_update-1 (copy of conv_state_last-1)	CPY	f32	18432x1x1x1
+cache_s_l1 (reshaped)	RESHAPE	f32	262144x1x1x1
+cache_s_l1 (reshaped) (view)	VIEW	f32	262144x1x1x1
+cache_s_l1 (reshaped) (view) (view)	SCALE	f32	262144x1x1x1
+node_88	GET_ROWS	f32	262144x1x1x1
+node_89	GET_ROWS	f32	262144x0x1x1
+cache_s_l1 (view)	VIEW	f32	262144x0x1x1
+cache_s_l1 (view) (copy of )	CPY	f32	262144x0x1x1
+conv_output_raw-1	SSM_CONV	f32	6144x1x1x1
+conv_output_silu-1	SILU	f32	6144x1x1x1
+q_conv-1	VIEW	f32	128x16x1x1
+node_95	RMS_NORM	f32	128x16x1x1
+q_conv_predelta-1	SCALE	f32	128x16x1x1
+k_conv-1	VIEW	f32	128x16x1x1
+node_98	RMS_NORM	f32	128x16x1x1
+k_conv_predelta-1	SCALE	f32	128x16x1x1
+v_conv_predelta-1	VIEW	f32	128x16x1x1
+node_101	MUL_MAT	f32	16x1x1x1
+alpha-1	RESHAPE	f32	16x1x1x1
+node_103	ADD	f32	16x1x1x1
+a_softplus-1	SOFTPLUS	f32	16x1x1x1
+gate-1	MUL	f32	16x1x1x1
+gate-1 (reshaped)	RESHAPE	f32	1x16x1x1
+node_107	MUL_MAT	f32	16x1x1x1
+beta-1	RESHAPE	f32	1x16x1x1
+beta_sigmoid-1	SIGMOID	f32	1x16x1x1
+state_predelta-1	RESHAPE	f32	128x128x16x1
+node_111	GATED_DELTA_NET	f32	2048x129x1x1
+new_state-1	VIEW	f32	128x128x16x1
+cache_s_l1 (view) (copy of new_state-1)	CPY	f32	262144x1x1x1
+attn_output-1	VIEW	f32	128x16x1x1
+node_117	MUL	f32	128x16x1x1
+z-1	MUL_MAT	f32	2048x1x1x1
+z-1 (reshaped)	RESHAPE	f32	128x16x1x1
+node_120	SILU	f32	128x16x1x1
+node_121	MUL	f32	128x16x1x1
+final_output-1	RESHAPE	f32	2048x1x1x1
+linear_attn_out-1	MUL_MAT	f32	1024x1x1x1
+linear_attn_out-1 (reshaped)	RESHAPE	f32	1024x1x1x1
+attn_residual-1	ADD	f32	1024x1x1x1
+attn_post_norm-1	MUL	f32	1024x1x1x1
+ffn_gate-1	MUL_MAT	f32	3584x1x1x1
+ffn_up-1	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-1	SWIGLU	f32	3584x1x1x1
+ffn_out-1	MUL_MAT	f32	1024x1x1x1
+l_out-1	ADD	f32	1024x1x1x1
+norm-2	RMS_NORM	f32	1024x1x1x1
+attn_norm-2	MUL	f32	1024x1x1x1
+cache_r_l2 (reshaped)	RESHAPE	f32	18432x1x1x1
+cache_r_l2 (reshaped) (view)	VIEW	f32	18432x1x1x1
+cache_r_l2 (reshaped) (view) (view)	SCALE	f32	18432x1x1x1
+conv_states-2	GET_ROWS	f32	18432x1x1x1
+node_139	GET_ROWS	f32	18432x0x1x1
+cache_r_l2 (view)	VIEW	f32	18432x0x1x1
+cache_r_l2 (view) (copy of )	CPY	f32	18432x0x1x1
+conv_states_reshaped-2	RESHAPE	f32	3x6144x1x1
+node_143	MUL_MAT	f32	6144x1x1x1
+linear_attn_qkv_mixed-2	RESHAPE	f32	6144x1x1x1
+qkv_mixed_transposed-2	TRANSPOSE	f32	1x6144x1x1
+conv_input-2	CONCAT	f32	4x6144x1x1
+conv_state_last-2	VIEW	f32	3x6144x1x1
+conv_state_update-2	VIEW	f32	18432x1x1x1
+conv_state_update-2 (copy of conv_state_last-2)	CPY	f32	18432x1x1x1
+cache_s_l2 (reshaped)	RESHAPE	f32	262144x1x1x1
+cache_s_l2 (reshaped) (view)	VIEW	f32	262144x1x1x1
+cache_s_l2 (reshaped) (view) (view)	SCALE	f32	262144x1x1x1
+node_153	GET_ROWS	f32	262144x1x1x1
+node_154	GET_ROWS	f32	262144x0x1x1
+cache_s_l2 (view)	VIEW	f32	262144x0x1x1
+cache_s_l2 (view) (copy of )	CPY	f32	262144x0x1x1
+conv_output_raw-2	SSM_CONV	f32	6144x1x1x1
+conv_output_silu-2	SILU	f32	6144x1x1x1
+q_conv-2	VIEW	f32	128x16x1x1
+node_160	RMS_NORM	f32	128x16x1x1
+q_conv_predelta-2	SCALE	f32	128x16x1x1
+k_conv-2	VIEW	f32	128x16x1x1
+node_163	RMS_NORM	f32	128x16x1x1
+k_conv_predelta-2	SCALE	f32	128x16x1x1
+v_conv_predelta-2	VIEW	f32	128x16x1x1
+node_166	MUL_MAT	f32	16x1x1x1
+alpha-2	RESHAPE	f32	16x1x1x1
+node_168	ADD	f32	16x1x1x1
+a_softplus-2	SOFTPLUS	f32	16x1x1x1
+gate-2	MUL	f32	16x1x1x1
+gate-2 (reshaped)	RESHAPE	f32	1x16x1x1
+node_172	MUL_MAT	f32	16x1x1x1
+beta-2	RESHAPE	f32	1x16x1x1
+beta_sigmoid-2	SIGMOID	f32	1x16x1x1
+state_predelta-2	RESHAPE	f32	128x128x16x1
+node_176	GATED_DELTA_NET	f32	2048x129x1x1
+new_state-2	VIEW	f32	128x128x16x1
+cache_s_l2 (view) (copy of new_state-2)	CPY	f32	262144x1x1x1
+attn_output-2	VIEW	f32	128x16x1x1
+node_182	MUL	f32	128x16x1x1
+z-2	MUL_MAT	f32	2048x1x1x1
+z-2 (reshaped)	RESHAPE	f32	128x16x1x1
+node_185	SILU	f32	128x16x1x1
+node_186	MUL	f32	128x16x1x1
+final_output-2	RESHAPE	f32	2048x1x1x1
+linear_attn_out-2	MUL_MAT	f32	1024x1x1x1
+linear_attn_out-2 (reshaped)	RESHAPE	f32	1024x1x1x1
+attn_residual-2	ADD	f32	1024x1x1x1
+attn_post_norm-2	MUL	f32	1024x1x1x1
+ffn_gate-2	MUL_MAT	f32	3584x1x1x1
+ffn_up-2	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-2	SWIGLU	f32	3584x1x1x1
+ffn_out-2	MUL_MAT	f32	1024x1x1x1
+l_out-2	ADD	f32	1024x1x1x1
+norm-3	RMS_NORM	f32	1024x1x1x1
+attn_norm-3	MUL	f32	1024x1x1x1
+Qcur_full-3	MUL_MAT	f32	4096x1x1x1
+Qcur_reshaped-3	VIEW	f32	256x8x1x1
+Qcur_normed-3	MUL	f32	256x8x1x1
+Qcur-3	ROPE	f32	256x8x1x1
+Vcur-3	MUL_MAT	f32	512x1x1x1
+Kcur-3	MUL_MAT	f32	512x1x1x1
+Kcur-3 (reshaped)	RESHAPE	f32	256x2x1x1
+Kcur_normed-3	MUL	f32	256x2x1x1
+Kcur-3 (view)	VIEW	f32	512x1x1x1
+cache_k_l3 (view)	SET_ROWS	f16	512x256x1x1
+Vcur-3 (view)	VIEW	f32	512x1x1x1
+cache_v_l3 (view)	SET_ROWS	f16	512x256x1x1
+Qcur-3 (view)	VIEW	f32	256x8x1x1
+Qcur-3 (view) (permuted)	PERMUTE	f32	256x1x8x1
+cache_k_l3 (view) (permuted)	PERMUTE	f16	256x256x2x1
+cache_v_l3 (view) (permuted)	PERMUTE	f16	256x256x2x1
+node_222	FLASH_ATTN_EXT	f32	256x8x1x1
+attn_pregate-3	RESHAPE	f32	2048x1x1x1
+Qcur_full-3 (view)	VIEW	f32	256x8x1x1
+gate_reshaped-3	CONT	f32	2048x1x1x1
+gate_sigmoid-3	SIGMOID	f32	2048x1x1x1
+attn_gated-3	MUL	f32	2048x1x1x1
+attn_output-3	MUL_MAT	f32	1024x1x1x1
+attn_residual-3	ADD	f32	1024x1x1x1
+attn_post_norm-3	MUL	f32	1024x1x1x1
+ffn_gate-3	MUL_MAT	f32	3584x1x1x1
+ffn_up-3	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-3	SWIGLU	f32	3584x1x1x1
+ffn_out-3	MUL_MAT	f32	1024x1x1x1
+l_out-3	ADD	f32	1024x1x1x1
+norm-4	RMS_NORM	f32	1024x1x1x1
+attn_norm-4	MUL	f32	1024x1x1x1
+cache_r_l4 (reshaped)	RESHAPE	f32	18432x1x1x1
+cache_r_l4 (reshaped) (view)	VIEW	f32	18432x1x1x1
+cache_r_l4 (reshaped) (view) (view)	SCALE	f32	18432x1x1x1
+conv_states-4	GET_ROWS	f32	18432x1x1x1
+node_243	GET_ROWS	f32	18432x0x1x1
+cache_r_l4 (view)	VIEW	f32	18432x0x1x1
+cache_r_l4 (view) (copy of )	CPY	f32	18432x0x1x1
+conv_states_reshaped-4	RESHAPE	f32	3x6144x1x1
+node_247	MUL_MAT	f32	6144x1x1x1
+linear_attn_qkv_mixed-4	RESHAPE	f32	6144x1x1x1
+qkv_mixed_transposed-4	TRANSPOSE	f32	1x6144x1x1
+conv_input-4	CONCAT	f32	4x6144x1x1
+conv_state_last-4	VIEW	f32	3x6144x1x1
+conv_state_update-4	VIEW	f32	18432x1x1x1
+conv_state_update-4 (copy of conv_state_last-4)	CPY	f32	18432x1x1x1
+cache_s_l4 (reshaped)	RESHAPE	f32	262144x1x1x1
+cache_s_l4 (reshaped) (view)	VIEW	f32	262144x1x1x1
+cache_s_l4 (reshaped) (view) (view)	SCALE	f32	262144x1x1x1
+node_257	GET_ROWS	f32	262144x1x1x1
+node_258	GET_ROWS	f32	262144x0x1x1
+cache_s_l4 (view)	VIEW	f32	262144x0x1x1
+cache_s_l4 (view) (copy of )	CPY	f32	262144x0x1x1
+conv_output_raw-4	SSM_CONV	f32	6144x1x1x1
+conv_output_silu-4	SILU	f32	6144x1x1x1
+q_conv-4	VIEW	f32	128x16x1x1
+node_264	RMS_NORM	f32	128x16x1x1
+q_conv_predelta-4	SCALE	f32	128x16x1x1
+k_conv-4	VIEW	f32	128x16x1x1
+node_267	RMS_NORM	f32	128x16x1x1
+k_conv_predelta-4	SCALE	f32	128x16x1x1
+v_conv_predelta-4	VIEW	f32	128x16x1x1
+node_270	MUL_MAT	f32	16x1x1x1
+alpha-4	RESHAPE	f32	16x1x1x1
+node_272	ADD	f32	16x1x1x1
+a_softplus-4	SOFTPLUS	f32	16x1x1x1
+gate-4	MUL	f32	16x1x1x1
+gate-4 (reshaped)	RESHAPE	f32	1x16x1x1
+node_276	MUL_MAT	f32	16x1x1x1
+beta-4	RESHAPE	f32	1x16x1x1
+beta_sigmoid-4	SIGMOID	f32	1x16x1x1
+state_predelta-4	RESHAPE	f32	128x128x16x1
+node_280	GATED_DELTA_NET	f32	2048x129x1x1
+new_state-4	VIEW	f32	128x128x16x1
+cache_s_l4 (view) (copy of new_state-4)	CPY	f32	262144x1x1x1
+attn_output-4	VIEW	f32	128x16x1x1
+node_286	MUL	f32	128x16x1x1
+z-4	MUL_MAT	f32	2048x1x1x1
+z-4 (reshaped)	RESHAPE	f32	128x16x1x1
+node_289	SILU	f32	128x16x1x1
+node_290	MUL	f32	128x16x1x1
+final_output-4	RESHAPE	f32	2048x1x1x1
+linear_attn_out-4	MUL_MAT	f32	1024x1x1x1
+linear_attn_out-4 (reshaped)	RESHAPE	f32	1024x1x1x1
+attn_residual-4	ADD	f32	1024x1x1x1
+attn_post_norm-4	MUL	f32	1024x1x1x1
+ffn_gate-4	MUL_MAT	f32	3584x1x1x1
+ffn_up-4	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-4	SWIGLU	f32	3584x1x1x1
+ffn_out-4	MUL_MAT	f32	1024x1x1x1
+l_out-4	ADD	f32	1024x1x1x1
+norm-5	RMS_NORM	f32	1024x1x1x1
+attn_norm-5	MUL	f32	1024x1x1x1
+cache_r_l5 (reshaped)	RESHAPE	f32	18432x1x1x1
+cache_r_l5 (reshaped) (view)	VIEW	f32	18432x1x1x1
+cache_r_l5 (reshaped) (view) (view)	SCALE	f32	18432x1x1x1
+conv_states-5	GET_ROWS	f32	18432x1x1x1
+node_308	GET_ROWS	f32	18432x0x1x1
+cache_r_l5 (view)	VIEW	f32	18432x0x1x1
+cache_r_l5 (view) (copy of )	CPY	f32	18432x0x1x1
+conv_states_reshaped-5	RESHAPE	f32	3x6144x1x1
+node_312	MUL_MAT	f32	6144x1x1x1
+linear_attn_qkv_mixed-5	RESHAPE	f32	6144x1x1x1
+qkv_mixed_transposed-5	TRANSPOSE	f32	1x6144x1x1
+conv_input-5	CONCAT	f32	4x6144x1x1
+conv_state_last-5	VIEW	f32	3x6144x1x1
+conv_state_update-5	VIEW	f32	18432x1x1x1
+conv_state_update-5 (copy of conv_state_last-5)	CPY	f32	18432x1x1x1
+cache_s_l5 (reshaped)	RESHAPE	f32	262144x1x1x1
+cache_s_l5 (reshaped) (view)	VIEW	f32	262144x1x1x1
+cache_s_l5 (reshaped) (view) (view)	SCALE	f32	262144x1x1x1
+node_322	GET_ROWS	f32	262144x1x1x1
+node_323	GET_ROWS	f32	262144x0x1x1
+cache_s_l5 (view)	VIEW	f32	262144x0x1x1
+cache_s_l5 (view) (copy of )	CPY	f32	262144x0x1x1
+conv_output_raw-5	SSM_CONV	f32	6144x1x1x1
+conv_output_silu-5	SILU	f32	6144x1x1x1
+q_conv-5	VIEW	f32	128x16x1x1
+node_329	RMS_NORM	f32	128x16x1x1
+q_conv_predelta-5	SCALE	f32	128x16x1x1
+k_conv-5	VIEW	f32	128x16x1x1
+node_332	RMS_NORM	f32	128x16x1x1
+k_conv_predelta-5	SCALE	f32	128x16x1x1
+v_conv_predelta-5	VIEW	f32	128x16x1x1
+node_335	MUL_MAT	f32	16x1x1x1
+alpha-5	RESHAPE	f32	16x1x1x1
+node_337	ADD	f32	16x1x1x1
+a_softplus-5	SOFTPLUS	f32	16x1x1x1
+gate-5	MUL	f32	16x1x1x1
+gate-5 (reshaped)	RESHAPE	f32	1x16x1x1
+node_341	MUL_MAT	f32	16x1x1x1
+beta-5	RESHAPE	f32	1x16x1x1
+beta_sigmoid-5	SIGMOID	f32	1x16x1x1
+state_predelta-5	RESHAPE	f32	128x128x16x1
+node_345	GATED_DELTA_NET	f32	2048x129x1x1
+new_state-5	VIEW	f32	128x128x16x1
+cache_s_l5 (view) (copy of new_state-5)	CPY	f32	262144x1x1x1
+attn_output-5	VIEW	f32	128x16x1x1
+node_351	MUL	f32	128x16x1x1
+z-5	MUL_MAT	f32	2048x1x1x1
+z-5 (reshaped)	RESHAPE	f32	128x16x1x1
+node_354	SILU	f32	128x16x1x1
+node_355	MUL	f32	128x16x1x1
+final_output-5	RESHAPE	f32	2048x1x1x1
+linear_attn_out-5	MUL_MAT	f32	1024x1x1x1
+linear_attn_out-5 (reshaped)	RESHAPE	f32	1024x1x1x1
+attn_residual-5	ADD	f32	1024x1x1x1
+attn_post_norm-5	MUL	f32	1024x1x1x1
+ffn_gate-5	MUL_MAT	f32	3584x1x1x1
+ffn_up-5	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-5	SWIGLU	f32	3584x1x1x1
+ffn_out-5	MUL_MAT	f32	1024x1x1x1
+l_out-5	ADD	f32	1024x1x1x1
+norm-6	RMS_NORM	f32	1024x1x1x1
+attn_norm-6	MUL	f32	1024x1x1x1
+cache_r_l6 (reshaped)	RESHAPE	f32	18432x1x1x1
+cache_r_l6 (reshaped) (view)	VIEW	f32	18432x1x1x1
+cache_r_l6 (reshaped) (view) (view)	SCALE	f32	18432x1x1x1
+conv_states-6	GET_ROWS	f32	18432x1x1x1
+node_373	GET_ROWS	f32	18432x0x1x1
+cache_r_l6 (view)	VIEW	f32	18432x0x1x1
+cache_r_l6 (view) (copy of )	CPY	f32	18432x0x1x1
+conv_states_reshaped-6	RESHAPE	f32	3x6144x1x1
+node_377	MUL_MAT	f32	6144x1x1x1
+linear_attn_qkv_mixed-6	RESHAPE	f32	6144x1x1x1
+qkv_mixed_transposed-6	TRANSPOSE	f32	1x6144x1x1
+conv_input-6	CONCAT	f32	4x6144x1x1
+conv_state_last-6	VIEW	f32	3x6144x1x1
+conv_state_update-6	VIEW	f32	18432x1x1x1
+conv_state_update-6 (copy of conv_state_last-6)	CPY	f32	18432x1x1x1
+cache_s_l6 (reshaped)	RESHAPE	f32	262144x1x1x1
+cache_s_l6 (reshaped) (view)	VIEW	f32	262144x1x1x1
+cache_s_l6 (reshaped) (view) (view)	SCALE	f32	262144x1x1x1
+node_387	GET_ROWS	f32	262144x1x1x1
+node_388	GET_ROWS	f32	262144x0x1x1
+cache_s_l6 (view)	VIEW	f32	262144x0x1x1
+cache_s_l6 (view) (copy of )	CPY	f32	262144x0x1x1
+conv_output_raw-6	SSM_CONV	f32	6144x1x1x1
+conv_output_silu-6	SILU	f32	6144x1x1x1
+q_conv-6	VIEW	f32	128x16x1x1
+node_394	RMS_NORM	f32	128x16x1x1
+q_conv_predelta-6	SCALE	f32	128x16x1x1
+k_conv-6	VIEW	f32	128x16x1x1
+node_397	RMS_NORM	f32	128x16x1x1
+k_conv_predelta-6	SCALE	f32	128x16x1x1
+v_conv_predelta-6	VIEW	f32	128x16x1x1
+node_400	MUL_MAT	f32	16x1x1x1
+alpha-6	RESHAPE	f32	16x1x1x1
+node_402	ADD	f32	16x1x1x1
+a_softplus-6	SOFTPLUS	f32	16x1x1x1
+gate-6	MUL	f32	16x1x1x1
+gate-6 (reshaped)	RESHAPE	f32	1x16x1x1
+node_406	MUL_MAT	f32	16x1x1x1
+beta-6	RESHAPE	f32	1x16x1x1
+beta_sigmoid-6	SIGMOID	f32	1x16x1x1
+state_predelta-6	RESHAPE	f32	128x128x16x1
+node_410	GATED_DELTA_NET	f32	2048x129x1x1
+new_state-6	VIEW	f32	128x128x16x1
+cache_s_l6 (view) (copy of new_state-6)	CPY	f32	262144x1x1x1
+attn_output-6	VIEW	f32	128x16x1x1
+node_416	MUL	f32	128x16x1x1
+z-6	MUL_MAT	f32	2048x1x1x1
+z-6 (reshaped)	RESHAPE	f32	128x16x1x1
+node_419	SILU	f32	128x16x1x1
+node_420	MUL	f32	128x16x1x1
+final_output-6	RESHAPE	f32	2048x1x1x1
+linear_attn_out-6	MUL_MAT	f32	1024x1x1x1
+linear_attn_out-6 (reshaped)	RESHAPE	f32	1024x1x1x1
+attn_residual-6	ADD	f32	1024x1x1x1
+attn_post_norm-6	MUL	f32	1024x1x1x1
+ffn_gate-6	MUL_MAT	f32	3584x1x1x1
+ffn_up-6	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-6	SWIGLU	f32	3584x1x1x1
+ffn_out-6	MUL_MAT	f32	1024x1x1x1
+l_out-6	ADD	f32	1024x1x1x1
+norm-7	RMS_NORM	f32	1024x1x1x1
+attn_norm-7	MUL	f32	1024x1x1x1
+Qcur_full-7	MUL_MAT	f32	4096x1x1x1
+Qcur_reshaped-7	VIEW	f32	256x8x1x1
+Qcur_normed-7	MUL	f32	256x8x1x1
+Qcur-7	ROPE	f32	256x8x1x1
+Vcur-7	MUL_MAT	f32	512x1x1x1
+Kcur-7	MUL_MAT	f32	512x1x1x1
+Kcur-7 (reshaped)	RESHAPE	f32	256x2x1x1
+Kcur_normed-7	MUL	f32	256x2x1x1
+Kcur-7 (view)	VIEW	f32	512x1x1x1
+cache_k_l7 (view)	SET_ROWS	f16	512x256x1x1
+Vcur-7 (view)	VIEW	f32	512x1x1x1
+cache_v_l7 (view)	SET_ROWS	f16	512x256x1x1
+Qcur-7 (view)	VIEW	f32	256x8x1x1
+Qcur-7 (view) (permuted)	PERMUTE	f32	256x1x8x1
+cache_k_l7 (view) (permuted)	PERMUTE	f16	256x256x2x1
+cache_v_l7 (view) (permuted)	PERMUTE	f16	256x256x2x1
+node_456	FLASH_ATTN_EXT	f32	256x8x1x1
+attn_pregate-7	RESHAPE	f32	2048x1x1x1
+Qcur_full-7 (view)	VIEW	f32	256x8x1x1
+gate_reshaped-7	CONT	f32	2048x1x1x1
+gate_sigmoid-7	SIGMOID	f32	2048x1x1x1
+attn_gated-7	MUL	f32	2048x1x1x1
+attn_output-7	MUL_MAT	f32	1024x1x1x1
+attn_residual-7	ADD	f32	1024x1x1x1
+attn_post_norm-7	MUL	f32	1024x1x1x1
+ffn_gate-7	MUL_MAT	f32	3584x1x1x1
+ffn_up-7	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-7	SWIGLU	f32	3584x1x1x1
+ffn_out-7	MUL_MAT	f32	1024x1x1x1
+l_out-7	ADD	f32	1024x1x1x1
+norm-8	RMS_NORM	f32	1024x1x1x1
+attn_norm-8	MUL	f32	1024x1x1x1
+cache_r_l8 (reshaped)	RESHAPE	f32	18432x1x1x1
+cache_r_l8 (reshaped) (view)	VIEW	f32	18432x1x1x1
+cache_r_l8 (reshaped) (view) (view)	SCALE	f32	18432x1x1x1
+conv_states-8	GET_ROWS	f32	18432x1x1x1
+node_477	GET_ROWS	f32	18432x0x1x1
+cache_r_l8 (view)	VIEW	f32	18432x0x1x1
+cache_r_l8 (view) (copy of )	CPY	f32	18432x0x1x1
+conv_states_reshaped-8	RESHAPE	f32	3x6144x1x1
+node_481	MUL_MAT	f32	6144x1x1x1
+linear_attn_qkv_mixed-8	RESHAPE	f32	6144x1x1x1
+qkv_mixed_transposed-8	TRANSPOSE	f32	1x6144x1x1
+conv_input-8	CONCAT	f32	4x6144x1x1
+conv_state_last-8	VIEW	f32	3x6144x1x1
+conv_state_update-8	VIEW	f32	18432x1x1x1
+conv_state_update-8 (copy of conv_state_last-8)	CPY	f32	18432x1x1x1
+cache_s_l8 (reshaped)	RESHAPE	f32	262144x1x1x1
+cache_s_l8 (reshaped) (view)	VIEW	f32	262144x1x1x1
+cache_s_l8 (reshaped) (view) (view)	SCALE	f32	262144x1x1x1
+node_491	GET_ROWS	f32	262144x1x1x1
+node_492	GET_ROWS	f32	262144x0x1x1
+cache_s_l8 (view)	VIEW	f32	262144x0x1x1
+cache_s_l8 (view) (copy of )	CPY	f32	262144x0x1x1
+conv_output_raw-8	SSM_CONV	f32	6144x1x1x1
+conv_output_silu-8	SILU	f32	6144x1x1x1
+q_conv-8	VIEW	f32	128x16x1x1
+node_498	RMS_NORM	f32	128x16x1x1
+q_conv_predelta-8	SCALE	f32	128x16x1x1
+k_conv-8	VIEW	f32	128x16x1x1
+node_501	RMS_NORM	f32	128x16x1x1
+k_conv_predelta-8	SCALE	f32	128x16x1x1
+v_conv_predelta-8	VIEW	f32	128x16x1x1
+node_504	MUL_MAT	f32	16x1x1x1
+alpha-8	RESHAPE	f32	16x1x1x1
+node_506	ADD	f32	16x1x1x1
+a_softplus-8	SOFTPLUS	f32	16x1x1x1
+gate-8	MUL	f32	16x1x1x1
+gate-8 (reshaped)	RESHAPE	f32	1x16x1x1
+node_510	MUL_MAT	f32	16x1x1x1
+beta-8	RESHAPE	f32	1x16x1x1
+beta_sigmoid-8	SIGMOID	f32	1x16x1x1
+state_predelta-8	RESHAPE	f32	128x128x16x1
+node_514	GATED_DELTA_NET	f32	2048x129x1x1
+new_state-8	VIEW	f32	128x128x16x1
+cache_s_l8 (view) (copy of new_state-8)	CPY	f32	262144x1x1x1
+attn_output-8	VIEW	f32	128x16x1x1
+node_520	MUL	f32	128x16x1x1
+z-8	MUL_MAT	f32	2048x1x1x1
+z-8 (reshaped)	RESHAPE	f32	128x16x1x1
+node_523	SILU	f32	128x16x1x1
+node_524	MUL	f32	128x16x1x1
+final_output-8	RESHAPE	f32	2048x1x1x1
+linear_attn_out-8	MUL_MAT	f32	1024x1x1x1
+linear_attn_out-8 (reshaped)	RESHAPE	f32	1024x1x1x1
+attn_residual-8	ADD	f32	1024x1x1x1
+attn_post_norm-8	MUL	f32	1024x1x1x1
+ffn_gate-8	MUL_MAT	f32	3584x1x1x1
+ffn_up-8	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-8	SWIGLU	f32	3584x1x1x1
+ffn_out-8	MUL_MAT	f32	1024x1x1x1
+l_out-8	ADD	f32	1024x1x1x1
+norm-9	RMS_NORM	f32	1024x1x1x1
+attn_norm-9	MUL	f32	1024x1x1x1
+cache_r_l9 (reshaped)	RESHAPE	f32	18432x1x1x1
+cache_r_l9 (reshaped) (view)	VIEW	f32	18432x1x1x1
+cache_r_l9 (reshaped) (view) (view)	SCALE	f32	18432x1x1x1
+conv_states-9	GET_ROWS	f32	18432x1x1x1
+node_542	GET_ROWS	f32	18432x0x1x1
+cache_r_l9 (view)	VIEW	f32	18432x0x1x1
+cache_r_l9 (view) (copy of )	CPY	f32	18432x0x1x1
+conv_states_reshaped-9	RESHAPE	f32	3x6144x1x1
+node_546	MUL_MAT	f32	6144x1x1x1
+linear_attn_qkv_mixed-9	RESHAPE	f32	6144x1x1x1
+qkv_mixed_transposed-9	TRANSPOSE	f32	1x6144x1x1
+conv_input-9	CONCAT	f32	4x6144x1x1
+conv_state_last-9	VIEW	f32	3x6144x1x1
+conv_state_update-9	VIEW	f32	18432x1x1x1
+conv_state_update-9 (copy of conv_state_last-9)	CPY	f32	18432x1x1x1
+cache_s_l9 (reshaped)	RESHAPE	f32	262144x1x1x1
+cache_s_l9 (reshaped) (view)	VIEW	f32	262144x1x1x1
+cache_s_l9 (reshaped) (view) (view)	SCALE	f32	262144x1x1x1
+node_556	GET_ROWS	f32	262144x1x1x1
+node_557	GET_ROWS	f32	262144x0x1x1
+cache_s_l9 (view)	VIEW	f32	262144x0x1x1
+cache_s_l9 (view) (copy of )	CPY	f32	262144x0x1x1
+conv_output_raw-9	SSM_CONV	f32	6144x1x1x1
+conv_output_silu-9	SILU	f32	6144x1x1x1
+q_conv-9	VIEW	f32	128x16x1x1
+node_563	RMS_NORM	f32	128x16x1x1
+q_conv_predelta-9	SCALE	f32	128x16x1x1
+k_conv-9	VIEW	f32	128x16x1x1
+node_566	RMS_NORM	f32	128x16x1x1
+k_conv_predelta-9	SCALE	f32	128x16x1x1
+v_conv_predelta-9	VIEW	f32	128x16x1x1
+node_569	MUL_MAT	f32	16x1x1x1
+alpha-9	RESHAPE	f32	16x1x1x1
+node_571	ADD	f32	16x1x1x1
+a_softplus-9	SOFTPLUS	f32	16x1x1x1
+gate-9	MUL	f32	16x1x1x1
+gate-9 (reshaped)	RESHAPE	f32	1x16x1x1
+node_575	MUL_MAT	f32	16x1x1x1
+beta-9	RESHAPE	f32	1x16x1x1
+beta_sigmoid-9	SIGMOID	f32	1x16x1x1
+state_predelta-9	RESHAPE	f32	128x128x16x1
+node_579	GATED_DELTA_NET	f32	2048x129x1x1
+new_state-9	VIEW	f32	128x128x16x1
+cache_s_l9 (view) (copy of new_state-9)	CPY	f32	262144x1x1x1
+attn_output-9	VIEW	f32	128x16x1x1
+node_585	MUL	f32	128x16x1x1
+z-9	MUL_MAT	f32	2048x1x1x1
+z-9 (reshaped)	RESHAPE	f32	128x16x1x1
+node_588	SILU	f32	128x16x1x1
+node_589	MUL	f32	128x16x1x1
+final_output-9	RESHAPE	f32	2048x1x1x1
+linear_attn_out-9	MUL_MAT	f32	1024x1x1x1
+linear_attn_out-9 (reshaped)	RESHAPE	f32	1024x1x1x1
+attn_residual-9	ADD	f32	1024x1x1x1
+attn_post_norm-9	MUL	f32	1024x1x1x1
+ffn_gate-9	MUL_MAT	f32	3584x1x1x1
+ffn_up-9	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-9	SWIGLU	f32	3584x1x1x1
+ffn_out-9	MUL_MAT	f32	1024x1x1x1
+l_out-9	ADD	f32	1024x1x1x1
+norm-10	RMS_NORM	f32	1024x1x1x1
+attn_norm-10	MUL	f32	1024x1x1x1
+cache_r_l10 (reshaped)	RESHAPE	f32	18432x1x1x1
+cache_r_l10 (reshaped) (view)	VIEW	f32	18432x1x1x1
+cache_r_l10 (reshaped) (view) (view)	SCALE	f32	18432x1x1x1
+conv_states-10	GET_ROWS	f32	18432x1x1x1
+node_607	GET_ROWS	f32	18432x0x1x1
+cache_r_l10 (view)	VIEW	f32	18432x0x1x1
+cache_r_l10 (view) (copy of )	CPY	f32	18432x0x1x1
+conv_states_reshaped-10	RESHAPE	f32	3x6144x1x1
+node_611	MUL_MAT	f32	6144x1x1x1
+linear_attn_qkv_mixed-10	RESHAPE	f32	6144x1x1x1
+qkv_mixed_transposed-10	TRANSPOSE	f32	1x6144x1x1
+conv_input-10	CONCAT	f32	4x6144x1x1
+conv_state_last-10	VIEW	f32	3x6144x1x1
+conv_state_update-10	VIEW	f32	18432x1x1x1
+conv_state_update-10 (copy of conv_state_last-10)	CPY	f32	18432x1x1x1
+cache_s_l10 (reshaped)	RESHAPE	f32	262144x1x1x1
+cache_s_l10 (reshaped) (view)	VIEW	f32	262144x1x1x1
+cache_s_l10 (reshaped) (view) (view)	SCALE	f32	262144x1x1x1
+node_621	GET_ROWS	f32	262144x1x1x1
+node_622	GET_ROWS	f32	262144x0x1x1
+cache_s_l10 (view)	VIEW	f32	262144x0x1x1
+cache_s_l10 (view) (copy of )	CPY	f32	262144x0x1x1
+conv_output_raw-10	SSM_CONV	f32	6144x1x1x1
+conv_output_silu-10	SILU	f32	6144x1x1x1
+q_conv-10	VIEW	f32	128x16x1x1
+node_628	RMS_NORM	f32	128x16x1x1
+q_conv_predelta-10	SCALE	f32	128x16x1x1
+k_conv-10	VIEW	f32	128x16x1x1
+node_631	RMS_NORM	f32	128x16x1x1
+k_conv_predelta-10	SCALE	f32	128x16x1x1
+v_conv_predelta-10	VIEW	f32	128x16x1x1
+node_634	MUL_MAT	f32	16x1x1x1
+alpha-10	RESHAPE	f32	16x1x1x1
+node_636	ADD	f32	16x1x1x1
+a_softplus-10	SOFTPLUS	f32	16x1x1x1
+gate-10	MUL	f32	16x1x1x1
+gate-10 (reshaped)	RESHAPE	f32	1x16x1x1
+node_640	MUL_MAT	f32	16x1x1x1
+beta-10	RESHAPE	f32	1x16x1x1
+beta_sigmoid-10	SIGMOID	f32	1x16x1x1
+state_predelta-10	RESHAPE	f32	128x128x16x1
+node_644	GATED_DELTA_NET	f32	2048x129x1x1
+new_state-10	VIEW	f32	128x128x16x1
+cache_s_l10 (view) (copy of new_state-10)	CPY	f32	262144x1x1x1
+attn_output-10	VIEW	f32	128x16x1x1
+node_650	MUL	f32	128x16x1x1
+z-10	MUL_MAT	f32	2048x1x1x1
+z-10 (reshaped)	RESHAPE	f32	128x16x1x1
+node_653	SILU	f32	128x16x1x1
+node_654	MUL	f32	128x16x1x1
+final_output-10	RESHAPE	f32	2048x1x1x1
+linear_attn_out-10	MUL_MAT	f32	1024x1x1x1
+linear_attn_out-10 (reshaped)	RESHAPE	f32	1024x1x1x1
+attn_residual-10	ADD	f32	1024x1x1x1
+attn_post_norm-10	MUL	f32	1024x1x1x1
+ffn_gate-10	MUL_MAT	f32	3584x1x1x1
+ffn_up-10	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-10	SWIGLU	f32	3584x1x1x1
+ffn_out-10	MUL_MAT	f32	1024x1x1x1
+l_out-10	ADD	f32	1024x1x1x1
+norm-11	RMS_NORM	f32	1024x1x1x1
+attn_norm-11	MUL	f32	1024x1x1x1
+Qcur_full-11	MUL_MAT	f32	4096x1x1x1
+Qcur_reshaped-11	VIEW	f32	256x8x1x1
+Qcur_normed-11	MUL	f32	256x8x1x1
+Qcur-11	ROPE	f32	256x8x1x1
+Vcur-11	MUL_MAT	f32	512x1x1x1
+Kcur-11	MUL_MAT	f32	512x1x1x1
+Kcur-11 (reshaped)	RESHAPE	f32	256x2x1x1
+Kcur_normed-11	MUL	f32	256x2x1x1
+Kcur-11 (view)	VIEW	f32	512x1x1x1
+cache_k_l11 (view)	SET_ROWS	f16	512x256x1x1
+Vcur-11 (view)	VIEW	f32	512x1x1x1
+cache_v_l11 (view)	SET_ROWS	f16	512x256x1x1
+Qcur-11 (view)	VIEW	f32	256x8x1x1
+Qcur-11 (view) (permuted)	PERMUTE	f32	256x1x8x1
+cache_k_l11 (view) (permuted)	PERMUTE	f16	256x256x2x1
+cache_v_l11 (view) (permuted)	PERMUTE	f16	256x256x2x1
+node_690	FLASH_ATTN_EXT	f32	256x8x1x1
+attn_pregate-11	RESHAPE	f32	2048x1x1x1
+Qcur_full-11 (view)	VIEW	f32	256x8x1x1
+gate_reshaped-11	CONT	f32	2048x1x1x1
+gate_sigmoid-11	SIGMOID	f32	2048x1x1x1
+attn_gated-11	MUL	f32	2048x1x1x1
+attn_output-11	MUL_MAT	f32	1024x1x1x1
+attn_residual-11	ADD	f32	1024x1x1x1
+attn_post_norm-11	MUL	f32	1024x1x1x1
+ffn_gate-11	MUL_MAT	f32	3584x1x1x1
+ffn_up-11	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-11	SWIGLU	f32	3584x1x1x1
+ffn_out-11	MUL_MAT	f32	1024x1x1x1
+l_out-11	ADD	f32	1024x1x1x1
+norm-12	RMS_NORM	f32	1024x1x1x1
+attn_norm-12	MUL	f32	1024x1x1x1
+cache_r_l12 (reshaped)	RESHAPE	f32	18432x1x1x1
+cache_r_l12 (reshaped) (view)	VIEW	f32	18432x1x1x1
+cache_r_l12 (reshaped) (view) (view)	SCALE	f32	18432x1x1x1
+conv_states-12	GET_ROWS	f32	18432x1x1x1
+node_711	GET_ROWS	f32	18432x0x1x1
+cache_r_l12 (view)	VIEW	f32	18432x0x1x1
+cache_r_l12 (view) (copy of )	CPY	f32	18432x0x1x1
+conv_states_reshaped-12	RESHAPE	f32	3x6144x1x1
+node_715	MUL_MAT	f32	6144x1x1x1
+linear_attn_qkv_mixed-12	RESHAPE	f32	6144x1x1x1
+qkv_mixed_transposed-12	TRANSPOSE	f32	1x6144x1x1
+conv_input-12	CONCAT	f32	4x6144x1x1
+conv_state_last-12	VIEW	f32	3x6144x1x1
+conv_state_update-12	VIEW	f32	18432x1x1x1
+conv_state_update-12 (copy of conv_state_last-12)	CPY	f32	18432x1x1x1
+cache_s_l12 (reshaped)	RESHAPE	f32	262144x1x1x1
+cache_s_l12 (reshaped) (view)	VIEW	f32	262144x1x1x1
+cache_s_l12 (reshaped) (view) (view)	SCALE	f32	262144x1x1x1
+node_725	GET_ROWS	f32	262144x1x1x1
+node_726	GET_ROWS	f32	262144x0x1x1
+cache_s_l12 (view)	VIEW	f32	262144x0x1x1
+cache_s_l12 (view) (copy of )	CPY	f32	262144x0x1x1
+conv_output_raw-12	SSM_CONV	f32	6144x1x1x1
+conv_output_silu-12	SILU	f32	6144x1x1x1
+q_conv-12	VIEW	f32	128x16x1x1
+node_732	RMS_NORM	f32	128x16x1x1
+q_conv_predelta-12	SCALE	f32	128x16x1x1
+k_conv-12	VIEW	f32	128x16x1x1
+node_735	RMS_NORM	f32	128x16x1x1
+k_conv_predelta-12	SCALE	f32	128x16x1x1
+v_conv_predelta-12	VIEW	f32	128x16x1x1
+node_738	MUL_MAT	f32	16x1x1x1
+alpha-12	RESHAPE	f32	16x1x1x1
+node_740	ADD	f32	16x1x1x1
+a_softplus-12	SOFTPLUS	f32	16x1x1x1
+gate-12	MUL	f32	16x1x1x1
+gate-12 (reshaped)	RESHAPE	f32	1x16x1x1
+node_744	MUL_MAT	f32	16x1x1x1
+beta-12	RESHAPE	f32	1x16x1x1
+beta_sigmoid-12	SIGMOID	f32	1x16x1x1
+state_predelta-12	RESHAPE	f32	128x128x16x1
+node_748	GATED_DELTA_NET	f32	2048x129x1x1
+new_state-12	VIEW	f32	128x128x16x1
+cache_s_l12 (view) (copy of new_state-12)	CPY	f32	262144x1x1x1
+attn_output-12	VIEW	f32	128x16x1x1
+node_754	MUL	f32	128x16x1x1
+z-12	MUL_MAT	f32	2048x1x1x1
+z-12 (reshaped)	RESHAPE	f32	128x16x1x1
+node_757	SILU	f32	128x16x1x1
+node_758	MUL	f32	128x16x1x1
+final_output-12	RESHAPE	f32	2048x1x1x1
+linear_attn_out-12	MUL_MAT	f32	1024x1x1x1
+linear_attn_out-12 (reshaped)	RESHAPE	f32	1024x1x1x1
+attn_residual-12	ADD	f32	1024x1x1x1
+attn_post_norm-12	MUL	f32	1024x1x1x1
+ffn_gate-12	MUL_MAT	f32	3584x1x1x1
+ffn_up-12	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-12	SWIGLU	f32	3584x1x1x1
+ffn_out-12	MUL_MAT	f32	1024x1x1x1
+l_out-12	ADD	f32	1024x1x1x1
+norm-13	RMS_NORM	f32	1024x1x1x1
+attn_norm-13	MUL	f32	1024x1x1x1
+cache_r_l13 (reshaped)	RESHAPE	f32	18432x1x1x1
+cache_r_l13 (reshaped) (view)	VIEW	f32	18432x1x1x1
+cache_r_l13 (reshaped) (view) (view)	SCALE	f32	18432x1x1x1
+conv_states-13	GET_ROWS	f32	18432x1x1x1
+node_776	GET_ROWS	f32	18432x0x1x1
+cache_r_l13 (view)	VIEW	f32	18432x0x1x1
+cache_r_l13 (view) (copy of )	CPY	f32	18432x0x1x1
+conv_states_reshaped-13	RESHAPE	f32	3x6144x1x1
+node_780	MUL_MAT	f32	6144x1x1x1
+linear_attn_qkv_mixed-13	RESHAPE	f32	6144x1x1x1
+qkv_mixed_transposed-13	TRANSPOSE	f32	1x6144x1x1
+conv_input-13	CONCAT	f32	4x6144x1x1
+conv_state_last-13	VIEW	f32	3x6144x1x1
+conv_state_update-13	VIEW	f32	18432x1x1x1
+conv_state_update-13 (copy of conv_state_last-13)	CPY	f32	18432x1x1x1
+cache_s_l13 (reshaped)	RESHAPE	f32	262144x1x1x1
+cache_s_l13 (reshaped) (view)	VIEW	f32	262144x1x1x1
+cache_s_l13 (reshaped) (view) (view)	SCALE	f32	262144x1x1x1
+node_790	GET_ROWS	f32	262144x1x1x1
+node_791	GET_ROWS	f32	262144x0x1x1
+cache_s_l13 (view)	VIEW	f32	262144x0x1x1
+cache_s_l13 (view) (copy of )	CPY	f32	262144x0x1x1
+conv_output_raw-13	SSM_CONV	f32	6144x1x1x1
+conv_output_silu-13	SILU	f32	6144x1x1x1
+q_conv-13	VIEW	f32	128x16x1x1
+node_797	RMS_NORM	f32	128x16x1x1
+q_conv_predelta-13	SCALE	f32	128x16x1x1
+k_conv-13	VIEW	f32	128x16x1x1
+node_800	RMS_NORM	f32	128x16x1x1
+k_conv_predelta-13	SCALE	f32	128x16x1x1
+v_conv_predelta-13	VIEW	f32	128x16x1x1
+node_803	MUL_MAT	f32	16x1x1x1
+alpha-13	RESHAPE	f32	16x1x1x1
+node_805	ADD	f32	16x1x1x1
+a_softplus-13	SOFTPLUS	f32	16x1x1x1
+gate-13	MUL	f32	16x1x1x1
+gate-13 (reshaped)	RESHAPE	f32	1x16x1x1
+node_809	MUL_MAT	f32	16x1x1x1
+beta-13	RESHAPE	f32	1x16x1x1
+beta_sigmoid-13	SIGMOID	f32	1x16x1x1
+state_predelta-13	RESHAPE	f32	128x128x16x1
+node_813	GATED_DELTA_NET	f32	2048x129x1x1
+new_state-13	VIEW	f32	128x128x16x1
+cache_s_l13 (view) (copy of new_state-13)	CPY	f32	262144x1x1x1
+attn_output-13	VIEW	f32	128x16x1x1
+node_819	MUL	f32	128x16x1x1
+z-13	MUL_MAT	f32	2048x1x1x1
+z-13 (reshaped)	RESHAPE	f32	128x16x1x1
+node_822	SILU	f32	128x16x1x1
+node_823	MUL	f32	128x16x1x1
+final_output-13	RESHAPE	f32	2048x1x1x1
+linear_attn_out-13	MUL_MAT	f32	1024x1x1x1
+linear_attn_out-13 (reshaped)	RESHAPE	f32	1024x1x1x1
+attn_residual-13	ADD	f32	1024x1x1x1
+attn_post_norm-13	MUL	f32	1024x1x1x1
+ffn_gate-13	MUL_MAT	f32	3584x1x1x1
+ffn_up-13	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-13	SWIGLU	f32	3584x1x1x1
+ffn_out-13	MUL_MAT	f32	1024x1x1x1
+l_out-13	ADD	f32	1024x1x1x1
+norm-14	RMS_NORM	f32	1024x1x1x1
+attn_norm-14	MUL	f32	1024x1x1x1
+cache_r_l14 (reshaped)	RESHAPE	f32	18432x1x1x1
+cache_r_l14 (reshaped) (view)	VIEW	f32	18432x1x1x1
+cache_r_l14 (reshaped) (view) (view)	SCALE	f32	18432x1x1x1
+conv_states-14	GET_ROWS	f32	18432x1x1x1
+node_841	GET_ROWS	f32	18432x0x1x1
+cache_r_l14 (view)	VIEW	f32	18432x0x1x1
+cache_r_l14 (view) (copy of )	CPY	f32	18432x0x1x1
+conv_states_reshaped-14	RESHAPE	f32	3x6144x1x1
+node_845	MUL_MAT	f32	6144x1x1x1
+linear_attn_qkv_mixed-14	RESHAPE	f32	6144x1x1x1
+qkv_mixed_transposed-14	TRANSPOSE	f32	1x6144x1x1
+conv_input-14	CONCAT	f32	4x6144x1x1
+conv_state_last-14	VIEW	f32	3x6144x1x1
+conv_state_update-14	VIEW	f32	18432x1x1x1
+conv_state_update-14 (copy of conv_state_last-14)	CPY	f32	18432x1x1x1
+cache_s_l14 (reshaped)	RESHAPE	f32	262144x1x1x1
+cache_s_l14 (reshaped) (view)	VIEW	f32	262144x1x1x1
+cache_s_l14 (reshaped) (view) (view)	SCALE	f32	262144x1x1x1
+node_855	GET_ROWS	f32	262144x1x1x1
+node_856	GET_ROWS	f32	262144x0x1x1
+cache_s_l14 (view)	VIEW	f32	262144x0x1x1
+cache_s_l14 (view) (copy of )	CPY	f32	262144x0x1x1
+conv_output_raw-14	SSM_CONV	f32	6144x1x1x1
+conv_output_silu-14	SILU	f32	6144x1x1x1
+q_conv-14	VIEW	f32	128x16x1x1
+node_862	RMS_NORM	f32	128x16x1x1
+q_conv_predelta-14	SCALE	f32	128x16x1x1
+k_conv-14	VIEW	f32	128x16x1x1
+node_865	RMS_NORM	f32	128x16x1x1
+k_conv_predelta-14	SCALE	f32	128x16x1x1
+v_conv_predelta-14	VIEW	f32	128x16x1x1
+node_868	MUL_MAT	f32	16x1x1x1
+alpha-14	RESHAPE	f32	16x1x1x1
+node_870	ADD	f32	16x1x1x1
+a_softplus-14	SOFTPLUS	f32	16x1x1x1
+gate-14	MUL	f32	16x1x1x1
+gate-14 (reshaped)	RESHAPE	f32	1x16x1x1
+node_874	MUL_MAT	f32	16x1x1x1
+beta-14	RESHAPE	f32	1x16x1x1
+beta_sigmoid-14	SIGMOID	f32	1x16x1x1
+state_predelta-14	RESHAPE	f32	128x128x16x1
+node_878	GATED_DELTA_NET	f32	2048x129x1x1
+new_state-14	VIEW	f32	128x128x16x1
+cache_s_l14 (view) (copy of new_state-14)	CPY	f32	262144x1x1x1
+attn_output-14	VIEW	f32	128x16x1x1
+node_884	MUL	f32	128x16x1x1
+z-14	MUL_MAT	f32	2048x1x1x1
+z-14 (reshaped)	RESHAPE	f32	128x16x1x1
+node_887	SILU	f32	128x16x1x1
+node_888	MUL	f32	128x16x1x1
+final_output-14	RESHAPE	f32	2048x1x1x1
+linear_attn_out-14	MUL_MAT	f32	1024x1x1x1
+linear_attn_out-14 (reshaped)	RESHAPE	f32	1024x1x1x1
+attn_residual-14	ADD	f32	1024x1x1x1
+attn_post_norm-14	MUL	f32	1024x1x1x1
+ffn_gate-14	MUL_MAT	f32	3584x1x1x1
+ffn_up-14	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-14	SWIGLU	f32	3584x1x1x1
+ffn_out-14	MUL_MAT	f32	1024x1x1x1
+l_out-14	ADD	f32	1024x1x1x1
+norm-15	RMS_NORM	f32	1024x1x1x1
+attn_norm-15	MUL	f32	1024x1x1x1
+Qcur_full-15	MUL_MAT	f32	4096x1x1x1
+Qcur_reshaped-15	VIEW	f32	256x8x1x1
+Qcur_normed-15	MUL	f32	256x8x1x1
+Qcur-15	ROPE	f32	256x8x1x1
+Vcur-15	MUL_MAT	f32	512x1x1x1
+Kcur-15	MUL_MAT	f32	512x1x1x1
+Kcur-15 (reshaped)	RESHAPE	f32	256x2x1x1
+Kcur_normed-15	MUL	f32	256x2x1x1
+Kcur-15 (view)	VIEW	f32	512x1x1x1
+cache_k_l15 (view)	SET_ROWS	f16	512x256x1x1
+Vcur-15 (view)	VIEW	f32	512x1x1x1
+cache_v_l15 (view)	SET_ROWS	f16	512x256x1x1
+Qcur-15 (view)	VIEW	f32	256x8x1x1
+Qcur-15 (view) (permuted)	PERMUTE	f32	256x1x8x1
+cache_k_l15 (view) (permuted)	PERMUTE	f16	256x256x2x1
+cache_v_l15 (view) (permuted)	PERMUTE	f16	256x256x2x1
+node_924	FLASH_ATTN_EXT	f32	256x8x1x1
+attn_pregate-15	RESHAPE	f32	2048x1x1x1
+Qcur_full-15 (view)	VIEW	f32	256x8x1x1
+gate_reshaped-15	CONT	f32	2048x1x1x1
+gate_sigmoid-15	SIGMOID	f32	2048x1x1x1
+attn_gated-15	MUL	f32	2048x1x1x1
+attn_output-15	MUL_MAT	f32	1024x1x1x1
+attn_residual-15	ADD	f32	1024x1x1x1
+attn_post_norm-15	MUL	f32	1024x1x1x1
+ffn_gate-15	MUL_MAT	f32	3584x1x1x1
+ffn_up-15	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-15	SWIGLU	f32	3584x1x1x1
+ffn_out-15	MUL_MAT	f32	1024x1x1x1
+l_out-15	ADD	f32	1024x1x1x1
+norm-16	RMS_NORM	f32	1024x1x1x1
+attn_norm-16	MUL	f32	1024x1x1x1
+cache_r_l16 (reshaped)	RESHAPE	f32	18432x1x1x1
+cache_r_l16 (reshaped) (view)	VIEW	f32	18432x1x1x1
+cache_r_l16 (reshaped) (view) (view)	SCALE	f32	18432x1x1x1
+conv_states-16	GET_ROWS	f32	18432x1x1x1
+node_945	GET_ROWS	f32	18432x0x1x1
+cache_r_l16 (view)	VIEW	f32	18432x0x1x1
+cache_r_l16 (view) (copy of )	CPY	f32	18432x0x1x1
+conv_states_reshaped-16	RESHAPE	f32	3x6144x1x1
+node_949	MUL_MAT	f32	6144x1x1x1
+linear_attn_qkv_mixed-16	RESHAPE	f32	6144x1x1x1
+qkv_mixed_transposed-16	TRANSPOSE	f32	1x6144x1x1
+conv_input-16	CONCAT	f32	4x6144x1x1
+conv_state_last-16	VIEW	f32	3x6144x1x1
+conv_state_update-16	VIEW	f32	18432x1x1x1
+conv_state_update-16 (copy of conv_state_last-16)	CPY	f32	18432x1x1x1
+cache_s_l16 (reshaped)	RESHAPE	f32	262144x1x1x1
+cache_s_l16 (reshaped) (view)	VIEW	f32	262144x1x1x1
+cache_s_l16 (reshaped) (view) (view)	SCALE	f32	262144x1x1x1
+node_959	GET_ROWS	f32	262144x1x1x1
+node_960	GET_ROWS	f32	262144x0x1x1
+cache_s_l16 (view)	VIEW	f32	262144x0x1x1
+cache_s_l16 (view) (copy of )	CPY	f32	262144x0x1x1
+conv_output_raw-16	SSM_CONV	f32	6144x1x1x1
+conv_output_silu-16	SILU	f32	6144x1x1x1
+q_conv-16	VIEW	f32	128x16x1x1
+node_966	RMS_NORM	f32	128x16x1x1
+q_conv_predelta-16	SCALE	f32	128x16x1x1
+k_conv-16	VIEW	f32	128x16x1x1
+node_969	RMS_NORM	f32	128x16x1x1
+k_conv_predelta-16	SCALE	f32	128x16x1x1
+v_conv_predelta-16	VIEW	f32	128x16x1x1
+node_972	MUL_MAT	f32	16x1x1x1
+alpha-16	RESHAPE	f32	16x1x1x1
+node_974	ADD	f32	16x1x1x1
+a_softplus-16	SOFTPLUS	f32	16x1x1x1
+gate-16	MUL	f32	16x1x1x1
+gate-16 (reshaped)	RESHAPE	f32	1x16x1x1
+node_978	MUL_MAT	f32	16x1x1x1
+beta-16	RESHAPE	f32	1x16x1x1
+beta_sigmoid-16	SIGMOID	f32	1x16x1x1
+state_predelta-16	RESHAPE	f32	128x128x16x1
+node_982	GATED_DELTA_NET	f32	2048x129x1x1
+new_state-16	VIEW	f32	128x128x16x1
+cache_s_l16 (view) (copy of new_state-16)	CPY	f32	262144x1x1x1
+attn_output-16	VIEW	f32	128x16x1x1
+node_988	MUL	f32	128x16x1x1
+z-16	MUL_MAT	f32	2048x1x1x1
+z-16 (reshaped)	RESHAPE	f32	128x16x1x1
+node_991	SILU	f32	128x16x1x1
+node_992	MUL	f32	128x16x1x1
+final_output-16	RESHAPE	f32	2048x1x1x1
+linear_attn_out-16	MUL_MAT	f32	1024x1x1x1
+linear_attn_out-16 (reshaped)	RESHAPE	f32	1024x1x1x1
+attn_residual-16	ADD	f32	1024x1x1x1
+attn_post_norm-16	MUL	f32	1024x1x1x1
+ffn_gate-16	MUL_MAT	f32	3584x1x1x1
+ffn_up-16	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-16	SWIGLU	f32	3584x1x1x1
+ffn_out-16	MUL_MAT	f32	1024x1x1x1
+l_out-16	ADD	f32	1024x1x1x1
+norm-17	RMS_NORM	f32	1024x1x1x1
+attn_norm-17	MUL	f32	1024x1x1x1
+cache_r_l17 (reshaped)	RESHAPE	f32	18432x1x1x1
+cache_r_l17 (reshaped) (view)	VIEW	f32	18432x1x1x1
+cache_r_l17 (reshaped) (view) (view)	SCALE	f32	18432x1x1x1
+conv_states-17	GET_ROWS	f32	18432x1x1x1
+node_1010	GET_ROWS	f32	18432x0x1x1
+cache_r_l17 (view)	VIEW	f32	18432x0x1x1
+cache_r_l17 (view) (copy of )	CPY	f32	18432x0x1x1
+conv_states_reshaped-17	RESHAPE	f32	3x6144x1x1
+node_1014	MUL_MAT	f32	6144x1x1x1
+linear_attn_qkv_mixed-17	RESHAPE	f32	6144x1x1x1
+qkv_mixed_transposed-17	TRANSPOSE	f32	1x6144x1x1
+conv_input-17	CONCAT	f32	4x6144x1x1
+conv_state_last-17	VIEW	f32	3x6144x1x1
+conv_state_update-17	VIEW	f32	18432x1x1x1
+conv_state_update-17 (copy of conv_state_last-17)	CPY	f32	18432x1x1x1
+cache_s_l17 (reshaped)	RESHAPE	f32	262144x1x1x1
+cache_s_l17 (reshaped) (view)	VIEW	f32	262144x1x1x1
+cache_s_l17 (reshaped) (view) (view)	SCALE	f32	262144x1x1x1
+node_1024	GET_ROWS	f32	262144x1x1x1
+node_1025	GET_ROWS	f32	262144x0x1x1
+cache_s_l17 (view)	VIEW	f32	262144x0x1x1
+cache_s_l17 (view) (copy of )	CPY	f32	262144x0x1x1
+conv_output_raw-17	SSM_CONV	f32	6144x1x1x1
+conv_output_silu-17	SILU	f32	6144x1x1x1
+q_conv-17	VIEW	f32	128x16x1x1
+node_1031	RMS_NORM	f32	128x16x1x1
+q_conv_predelta-17	SCALE	f32	128x16x1x1
+k_conv-17	VIEW	f32	128x16x1x1
+node_1034	RMS_NORM	f32	128x16x1x1
+k_conv_predelta-17	SCALE	f32	128x16x1x1
+v_conv_predelta-17	VIEW	f32	128x16x1x1
+node_1037	MUL_MAT	f32	16x1x1x1
+alpha-17	RESHAPE	f32	16x1x1x1
+node_1039	ADD	f32	16x1x1x1
+a_softplus-17	SOFTPLUS	f32	16x1x1x1
+gate-17	MUL	f32	16x1x1x1
+gate-17 (reshaped)	RESHAPE	f32	1x16x1x1
+node_1043	MUL_MAT	f32	16x1x1x1
+beta-17	RESHAPE	f32	1x16x1x1
+beta_sigmoid-17	SIGMOID	f32	1x16x1x1
+state_predelta-17	RESHAPE	f32	128x128x16x1
+node_1047	GATED_DELTA_NET	f32	2048x129x1x1
+new_state-17	VIEW	f32	128x128x16x1
+cache_s_l17 (view) (copy of new_state-17)	CPY	f32	262144x1x1x1
+attn_output-17	VIEW	f32	128x16x1x1
+node_1053	MUL	f32	128x16x1x1
+z-17	MUL_MAT	f32	2048x1x1x1
+z-17 (reshaped)	RESHAPE	f32	128x16x1x1
+node_1056	SILU	f32	128x16x1x1
+node_1057	MUL	f32	128x16x1x1
+final_output-17	RESHAPE	f32	2048x1x1x1
+linear_attn_out-17	MUL_MAT	f32	1024x1x1x1
+linear_attn_out-17 (reshaped)	RESHAPE	f32	1024x1x1x1
+attn_residual-17	ADD	f32	1024x1x1x1
+attn_post_norm-17	MUL	f32	1024x1x1x1
+ffn_gate-17	MUL_MAT	f32	3584x1x1x1
+ffn_up-17	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-17	SWIGLU	f32	3584x1x1x1
+ffn_out-17	MUL_MAT	f32	1024x1x1x1
+l_out-17	ADD	f32	1024x1x1x1
+norm-18	RMS_NORM	f32	1024x1x1x1
+attn_norm-18	MUL	f32	1024x1x1x1
+cache_r_l18 (reshaped)	RESHAPE	f32	18432x1x1x1
+cache_r_l18 (reshaped) (view)	VIEW	f32	18432x1x1x1
+cache_r_l18 (reshaped) (view) (view)	SCALE	f32	18432x1x1x1
+conv_states-18	GET_ROWS	f32	18432x1x1x1
+node_1075	GET_ROWS	f32	18432x0x1x1
+cache_r_l18 (view)	VIEW	f32	18432x0x1x1
+cache_r_l18 (view) (copy of )	CPY	f32	18432x0x1x1
+conv_states_reshaped-18	RESHAPE	f32	3x6144x1x1
+node_1079	MUL_MAT	f32	6144x1x1x1
+linear_attn_qkv_mixed-18	RESHAPE	f32	6144x1x1x1
+qkv_mixed_transposed-18	TRANSPOSE	f32	1x6144x1x1
+conv_input-18	CONCAT	f32	4x6144x1x1
+conv_state_last-18	VIEW	f32	3x6144x1x1
+conv_state_update-18	VIEW	f32	18432x1x1x1
+conv_state_update-18 (copy of conv_state_last-18)	CPY	f32	18432x1x1x1
+cache_s_l18 (reshaped)	RESHAPE	f32	262144x1x1x1
+cache_s_l18 (reshaped) (view)	VIEW	f32	262144x1x1x1
+cache_s_l18 (reshaped) (view) (view)	SCALE	f32	262144x1x1x1
+node_1089	GET_ROWS	f32	262144x1x1x1
+node_1090	GET_ROWS	f32	262144x0x1x1
+cache_s_l18 (view)	VIEW	f32	262144x0x1x1
+cache_s_l18 (view) (copy of )	CPY	f32	262144x0x1x1
+conv_output_raw-18	SSM_CONV	f32	6144x1x1x1
+conv_output_silu-18	SILU	f32	6144x1x1x1
+q_conv-18	VIEW	f32	128x16x1x1
+node_1096	RMS_NORM	f32	128x16x1x1
+q_conv_predelta-18	SCALE	f32	128x16x1x1
+k_conv-18	VIEW	f32	128x16x1x1
+node_1099	RMS_NORM	f32	128x16x1x1
+k_conv_predelta-18	SCALE	f32	128x16x1x1
+v_conv_predelta-18	VIEW	f32	128x16x1x1
+node_1102	MUL_MAT	f32	16x1x1x1
+alpha-18	RESHAPE	f32	16x1x1x1
+node_1104	ADD	f32	16x1x1x1
+a_softplus-18	SOFTPLUS	f32	16x1x1x1
+gate-18	MUL	f32	16x1x1x1
+gate-18 (reshaped)	RESHAPE	f32	1x16x1x1
+node_1108	MUL_MAT	f32	16x1x1x1
+beta-18	RESHAPE	f32	1x16x1x1
+beta_sigmoid-18	SIGMOID	f32	1x16x1x1
+state_predelta-18	RESHAPE	f32	128x128x16x1
+node_1112	GATED_DELTA_NET	f32	2048x129x1x1
+new_state-18	VIEW	f32	128x128x16x1
+cache_s_l18 (view) (copy of new_state-18)	CPY	f32	262144x1x1x1
+attn_output-18	VIEW	f32	128x16x1x1
+node_1118	MUL	f32	128x16x1x1
+z-18	MUL_MAT	f32	2048x1x1x1
+z-18 (reshaped)	RESHAPE	f32	128x16x1x1
+node_1121	SILU	f32	128x16x1x1
+node_1122	MUL	f32	128x16x1x1
+final_output-18	RESHAPE	f32	2048x1x1x1
+linear_attn_out-18	MUL_MAT	f32	1024x1x1x1
+linear_attn_out-18 (reshaped)	RESHAPE	f32	1024x1x1x1
+attn_residual-18	ADD	f32	1024x1x1x1
+attn_post_norm-18	MUL	f32	1024x1x1x1
+ffn_gate-18	MUL_MAT	f32	3584x1x1x1
+ffn_up-18	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-18	SWIGLU	f32	3584x1x1x1
+ffn_out-18	MUL_MAT	f32	1024x1x1x1
+l_out-18	ADD	f32	1024x1x1x1
+norm-19	RMS_NORM	f32	1024x1x1x1
+attn_norm-19	MUL	f32	1024x1x1x1
+Qcur_full-19	MUL_MAT	f32	4096x1x1x1
+Qcur_reshaped-19	VIEW	f32	256x8x1x1
+Qcur_normed-19	MUL	f32	256x8x1x1
+Qcur-19	ROPE	f32	256x8x1x1
+Vcur-19	MUL_MAT	f32	512x1x1x1
+Kcur-19	MUL_MAT	f32	512x1x1x1
+Kcur-19 (reshaped)	RESHAPE	f32	256x2x1x1
+Kcur_normed-19	MUL	f32	256x2x1x1
+Kcur-19 (view)	VIEW	f32	512x1x1x1
+cache_k_l19 (view)	SET_ROWS	f16	512x256x1x1
+Vcur-19 (view)	VIEW	f32	512x1x1x1
+cache_v_l19 (view)	SET_ROWS	f16	512x256x1x1
+Qcur-19 (view)	VIEW	f32	256x8x1x1
+Qcur-19 (view) (permuted)	PERMUTE	f32	256x1x8x1
+cache_k_l19 (view) (permuted)	PERMUTE	f16	256x256x2x1
+cache_v_l19 (view) (permuted)	PERMUTE	f16	256x256x2x1
+node_1158	FLASH_ATTN_EXT	f32	256x8x1x1
+attn_pregate-19	RESHAPE	f32	2048x1x1x1
+Qcur_full-19 (view)	VIEW	f32	256x8x1x1
+gate_reshaped-19	CONT	f32	2048x1x1x1
+gate_sigmoid-19	SIGMOID	f32	2048x1x1x1
+attn_gated-19	MUL	f32	2048x1x1x1
+attn_output-19	MUL_MAT	f32	1024x1x1x1
+attn_residual-19	ADD	f32	1024x1x1x1
+attn_post_norm-19	MUL	f32	1024x1x1x1
+ffn_gate-19	MUL_MAT	f32	3584x1x1x1
+ffn_up-19	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-19	SWIGLU	f32	3584x1x1x1
+ffn_out-19	MUL_MAT	f32	1024x1x1x1
+l_out-19	ADD	f32	1024x1x1x1
+norm-20	RMS_NORM	f32	1024x1x1x1
+attn_norm-20	MUL	f32	1024x1x1x1
+cache_r_l20 (reshaped)	RESHAPE	f32	18432x1x1x1
+cache_r_l20 (reshaped) (view)	VIEW	f32	18432x1x1x1
+cache_r_l20 (reshaped) (view) (view)	SCALE	f32	18432x1x1x1
+conv_states-20	GET_ROWS	f32	18432x1x1x1
+node_1179	GET_ROWS	f32	18432x0x1x1
+cache_r_l20 (view)	VIEW	f32	18432x0x1x1
+cache_r_l20 (view) (copy of )	CPY	f32	18432x0x1x1
+conv_states_reshaped-20	RESHAPE	f32	3x6144x1x1
+node_1183	MUL_MAT	f32	6144x1x1x1
+linear_attn_qkv_mixed-20	RESHAPE	f32	6144x1x1x1
+qkv_mixed_transposed-20	TRANSPOSE	f32	1x6144x1x1
+conv_input-20	CONCAT	f32	4x6144x1x1
+conv_state_last-20	VIEW	f32	3x6144x1x1
+conv_state_update-20	VIEW	f32	18432x1x1x1
+conv_state_update-20 (copy of conv_state_last-20)	CPY	f32	18432x1x1x1
+cache_s_l20 (reshaped)	RESHAPE	f32	262144x1x1x1
+cache_s_l20 (reshaped) (view)	VIEW	f32	262144x1x1x1
+cache_s_l20 (reshaped) (view) (view)	SCALE	f32	262144x1x1x1
+node_1193	GET_ROWS	f32	262144x1x1x1
+node_1194	GET_ROWS	f32	262144x0x1x1
+cache_s_l20 (view)	VIEW	f32	262144x0x1x1
+cache_s_l20 (view) (copy of )	CPY	f32	262144x0x1x1
+conv_output_raw-20	SSM_CONV	f32	6144x1x1x1
+conv_output_silu-20	SILU	f32	6144x1x1x1
+q_conv-20	VIEW	f32	128x16x1x1
+node_1200	RMS_NORM	f32	128x16x1x1
+q_conv_predelta-20	SCALE	f32	128x16x1x1
+k_conv-20	VIEW	f32	128x16x1x1
+node_1203	RMS_NORM	f32	128x16x1x1
+k_conv_predelta-20	SCALE	f32	128x16x1x1
+v_conv_predelta-20	VIEW	f32	128x16x1x1
+node_1206	MUL_MAT	f32	16x1x1x1
+alpha-20	RESHAPE	f32	16x1x1x1
+node_1208	ADD	f32	16x1x1x1
+a_softplus-20	SOFTPLUS	f32	16x1x1x1
+gate-20	MUL	f32	16x1x1x1
+gate-20 (reshaped)	RESHAPE	f32	1x16x1x1
+node_1212	MUL_MAT	f32	16x1x1x1
+beta-20	RESHAPE	f32	1x16x1x1
+beta_sigmoid-20	SIGMOID	f32	1x16x1x1
+state_predelta-20	RESHAPE	f32	128x128x16x1
+node_1216	GATED_DELTA_NET	f32	2048x129x1x1
+new_state-20	VIEW	f32	128x128x16x1
+cache_s_l20 (view) (copy of new_state-20)	CPY	f32	262144x1x1x1
+attn_output-20	VIEW	f32	128x16x1x1
+node_1222	MUL	f32	128x16x1x1
+z-20	MUL_MAT	f32	2048x1x1x1
+z-20 (reshaped)	RESHAPE	f32	128x16x1x1
+node_1225	SILU	f32	128x16x1x1
+node_1226	MUL	f32	128x16x1x1
+final_output-20	RESHAPE	f32	2048x1x1x1
+linear_attn_out-20	MUL_MAT	f32	1024x1x1x1
+linear_attn_out-20 (reshaped)	RESHAPE	f32	1024x1x1x1
+attn_residual-20	ADD	f32	1024x1x1x1
+attn_post_norm-20	MUL	f32	1024x1x1x1
+ffn_gate-20	MUL_MAT	f32	3584x1x1x1
+ffn_up-20	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-20	SWIGLU	f32	3584x1x1x1
+ffn_out-20	MUL_MAT	f32	1024x1x1x1
+l_out-20	ADD	f32	1024x1x1x1
+norm-21	RMS_NORM	f32	1024x1x1x1
+attn_norm-21	MUL	f32	1024x1x1x1
+cache_r_l21 (reshaped)	RESHAPE	f32	18432x1x1x1
+cache_r_l21 (reshaped) (view)	VIEW	f32	18432x1x1x1
+cache_r_l21 (reshaped) (view) (view)	SCALE	f32	18432x1x1x1
+conv_states-21	GET_ROWS	f32	18432x1x1x1
+node_1244	GET_ROWS	f32	18432x0x1x1
+cache_r_l21 (view)	VIEW	f32	18432x0x1x1
+cache_r_l21 (view) (copy of )	CPY	f32	18432x0x1x1
+conv_states_reshaped-21	RESHAPE	f32	3x6144x1x1
+node_1248	MUL_MAT	f32	6144x1x1x1
+linear_attn_qkv_mixed-21	RESHAPE	f32	6144x1x1x1
+qkv_mixed_transposed-21	TRANSPOSE	f32	1x6144x1x1
+conv_input-21	CONCAT	f32	4x6144x1x1
+conv_state_last-21	VIEW	f32	3x6144x1x1
+conv_state_update-21	VIEW	f32	18432x1x1x1
+conv_state_update-21 (copy of conv_state_last-21)	CPY	f32	18432x1x1x1
+cache_s_l21 (reshaped)	RESHAPE	f32	262144x1x1x1
+cache_s_l21 (reshaped) (view)	VIEW	f32	262144x1x1x1
+cache_s_l21 (reshaped) (view) (view)	SCALE	f32	262144x1x1x1
+node_1258	GET_ROWS	f32	262144x1x1x1
+node_1259	GET_ROWS	f32	262144x0x1x1
+cache_s_l21 (view)	VIEW	f32	262144x0x1x1
+cache_s_l21 (view) (copy of )	CPY	f32	262144x0x1x1
+conv_output_raw-21	SSM_CONV	f32	6144x1x1x1
+conv_output_silu-21	SILU	f32	6144x1x1x1
+q_conv-21	VIEW	f32	128x16x1x1
+node_1265	RMS_NORM	f32	128x16x1x1
+q_conv_predelta-21	SCALE	f32	128x16x1x1
+k_conv-21	VIEW	f32	128x16x1x1
+node_1268	RMS_NORM	f32	128x16x1x1
+k_conv_predelta-21	SCALE	f32	128x16x1x1
+v_conv_predelta-21	VIEW	f32	128x16x1x1
+node_1271	MUL_MAT	f32	16x1x1x1
+alpha-21	RESHAPE	f32	16x1x1x1
+node_1273	ADD	f32	16x1x1x1
+a_softplus-21	SOFTPLUS	f32	16x1x1x1
+gate-21	MUL	f32	16x1x1x1
+gate-21 (reshaped)	RESHAPE	f32	1x16x1x1
+node_1277	MUL_MAT	f32	16x1x1x1
+beta-21	RESHAPE	f32	1x16x1x1
+beta_sigmoid-21	SIGMOID	f32	1x16x1x1
+state_predelta-21	RESHAPE	f32	128x128x16x1
+node_1281	GATED_DELTA_NET	f32	2048x129x1x1
+new_state-21	VIEW	f32	128x128x16x1
+cache_s_l21 (view) (copy of new_state-21)	CPY	f32	262144x1x1x1
+attn_output-21	VIEW	f32	128x16x1x1
+node_1287	MUL	f32	128x16x1x1
+z-21	MUL_MAT	f32	2048x1x1x1
+z-21 (reshaped)	RESHAPE	f32	128x16x1x1
+node_1290	SILU	f32	128x16x1x1
+node_1291	MUL	f32	128x16x1x1
+final_output-21	RESHAPE	f32	2048x1x1x1
+linear_attn_out-21	MUL_MAT	f32	1024x1x1x1
+linear_attn_out-21 (reshaped)	RESHAPE	f32	1024x1x1x1
+attn_residual-21	ADD	f32	1024x1x1x1
+attn_post_norm-21	MUL	f32	1024x1x1x1
+ffn_gate-21	MUL_MAT	f32	3584x1x1x1
+ffn_up-21	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-21	SWIGLU	f32	3584x1x1x1
+ffn_out-21	MUL_MAT	f32	1024x1x1x1
+l_out-21	ADD	f32	1024x1x1x1
+norm-22	RMS_NORM	f32	1024x1x1x1
+attn_norm-22	MUL	f32	1024x1x1x1
+cache_r_l22 (reshaped)	RESHAPE	f32	18432x1x1x1
+cache_r_l22 (reshaped) (view)	VIEW	f32	18432x1x1x1
+cache_r_l22 (reshaped) (view) (view)	SCALE	f32	18432x1x1x1
+conv_states-22	GET_ROWS	f32	18432x1x1x1
+node_1309	GET_ROWS	f32	18432x0x1x1
+cache_r_l22 (view)	VIEW	f32	18432x0x1x1
+cache_r_l22 (view) (copy of )	CPY	f32	18432x0x1x1
+conv_states_reshaped-22	RESHAPE	f32	3x6144x1x1
+node_1313	MUL_MAT	f32	6144x1x1x1
+linear_attn_qkv_mixed-22	RESHAPE	f32	6144x1x1x1
+qkv_mixed_transposed-22	TRANSPOSE	f32	1x6144x1x1
+conv_input-22	CONCAT	f32	4x6144x1x1
+conv_state_last-22	VIEW	f32	3x6144x1x1
+conv_state_update-22	VIEW	f32	18432x1x1x1
+conv_state_update-22 (copy of conv_state_last-22)	CPY	f32	18432x1x1x1
+cache_s_l22 (reshaped)	RESHAPE	f32	262144x1x1x1
+cache_s_l22 (reshaped) (view)	VIEW	f32	262144x1x1x1
+cache_s_l22 (reshaped) (view) (view)	SCALE	f32	262144x1x1x1
+node_1323	GET_ROWS	f32	262144x1x1x1
+node_1324	GET_ROWS	f32	262144x0x1x1
+cache_s_l22 (view)	VIEW	f32	262144x0x1x1
+cache_s_l22 (view) (copy of )	CPY	f32	262144x0x1x1
+conv_output_raw-22	SSM_CONV	f32	6144x1x1x1
+conv_output_silu-22	SILU	f32	6144x1x1x1
+q_conv-22	VIEW	f32	128x16x1x1
+node_1330	RMS_NORM	f32	128x16x1x1
+q_conv_predelta-22	SCALE	f32	128x16x1x1
+k_conv-22	VIEW	f32	128x16x1x1
+node_1333	RMS_NORM	f32	128x16x1x1
+k_conv_predelta-22	SCALE	f32	128x16x1x1
+v_conv_predelta-22	VIEW	f32	128x16x1x1
+node_1336	MUL_MAT	f32	16x1x1x1
+alpha-22	RESHAPE	f32	16x1x1x1
+node_1338	ADD	f32	16x1x1x1
+a_softplus-22	SOFTPLUS	f32	16x1x1x1
+gate-22	MUL	f32	16x1x1x1
+gate-22 (reshaped)	RESHAPE	f32	1x16x1x1
+node_1342	MUL_MAT	f32	16x1x1x1
+beta-22	RESHAPE	f32	1x16x1x1
+beta_sigmoid-22	SIGMOID	f32	1x16x1x1
+state_predelta-22	RESHAPE	f32	128x128x16x1
+node_1346	GATED_DELTA_NET	f32	2048x129x1x1
+new_state-22	VIEW	f32	128x128x16x1
+cache_s_l22 (view) (copy of new_state-22)	CPY	f32	262144x1x1x1
+attn_output-22	VIEW	f32	128x16x1x1
+node_1352	MUL	f32	128x16x1x1
+z-22	MUL_MAT	f32	2048x1x1x1
+z-22 (reshaped)	RESHAPE	f32	128x16x1x1
+node_1355	SILU	f32	128x16x1x1
+node_1356	MUL	f32	128x16x1x1
+final_output-22	RESHAPE	f32	2048x1x1x1
+linear_attn_out-22	MUL_MAT	f32	1024x1x1x1
+linear_attn_out-22 (reshaped)	RESHAPE	f32	1024x1x1x1
+attn_residual-22	ADD	f32	1024x1x1x1
+attn_post_norm-22	MUL	f32	1024x1x1x1
+ffn_gate-22	MUL_MAT	f32	3584x1x1x1
+ffn_up-22	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-22	SWIGLU	f32	3584x1x1x1
+ffn_out-22	MUL_MAT	f32	1024x1x1x1
+l_out-22	ADD	f32	1024x1x1x1
+norm-23	RMS_NORM	f32	1024x1x1x1
+attn_norm-23	MUL	f32	1024x1x1x1
+Qcur_full-23	MUL_MAT	f32	4096x1x1x1
+Qcur_reshaped-23	VIEW	f32	256x8x1x1
+Qcur_normed-23	MUL	f32	256x8x1x1
+Qcur-23	ROPE	f32	256x8x1x1
+Vcur-23	MUL_MAT	f32	512x1x1x1
+Kcur-23	MUL_MAT	f32	512x1x1x1
+Kcur-23 (reshaped)	RESHAPE	f32	256x2x1x1
+Kcur_normed-23	MUL	f32	256x2x1x1
+Kcur-23 (view)	VIEW	f32	512x1x1x1
+cache_k_l23 (view)	SET_ROWS	f16	512x256x1x1
+Vcur-23 (view)	VIEW	f32	512x1x1x1
+cache_v_l23 (view)	SET_ROWS	f16	512x256x1x1
+Qcur-23 (view)	VIEW	f32	256x8x1x1
+Qcur-23 (view) (permuted)	PERMUTE	f32	256x1x8x1
+cache_k_l23 (view) (permuted)	PERMUTE	f16	256x256x2x1
+cache_v_l23 (view) (permuted)	PERMUTE	f16	256x256x2x1
+node_1392	FLASH_ATTN_EXT	f32	256x8x1x1
+attn_pregate-23	RESHAPE	f32	2048x1x1x1
+Qcur_full-23 (view)	VIEW	f32	256x8x1x1
+gate_reshaped-23	CONT	f32	2048x1x1x1
+gate_sigmoid-23	SIGMOID	f32	2048x1x1x1
+attn_gated-23	MUL	f32	2048x1x1x1
+attn_output-23	MUL_MAT	f32	1024x1x1x1
+attn_residual-23	ADD	f32	1024x1x1x1
+attn_post_norm-23	MUL	f32	1024x1x1x1
+ffn_gate-23	MUL_MAT	f32	3584x1x1x1
+ffn_up-23	MUL_MAT	f32	3584x1x1x1
+ffn_swiglu-23	SWIGLU	f32	3584x1x1x1
+ffn_out-23	MUL_MAT	f32	1024x1x1x1
+l_out-23	ADD	f32	1024x1x1x1
+norm	RMS_NORM	f32	1024x1x1x1
+h_nextn	MUL	f32	1024x1x1x1
+result_norm	GET_ROWS	f32	1024x1x1x1
+result_output	MUL_MAT	f32	248320x1x1x1

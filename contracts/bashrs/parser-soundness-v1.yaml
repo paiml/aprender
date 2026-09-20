@@ -67,28 +67,34 @@ equations:
     - '!source.is_empty()'
     lean_theorem: Theorems.Semantic_Analyze
 proof_obligations:
-- type: soundness
+- id: PS-SND-001
+  type: soundness
   property: Parser accepts all valid POSIX sh
   formal: 'For all s in POSIX_SH_GRAMMAR: parse(lex(s)) = Ok(_)'
   applies_to: all
-- type: soundness
+- id: PS-SND-002
+  type: soundness
   property: Parser accepts all valid bash
   formal: 'For all s in BASH_GRAMMAR: parse(lex(s)) = Ok(_)'
   applies_to: all
-- type: soundness
+- id: PS-SND-003
+  type: soundness
   property: Parser rejects invalid syntax with error
   formal: 'For all s not in BASH_GRAMMAR: parse(lex(s)) = Err(ParseError) (never panic)'
   applies_to: all
-- type: invariant
+- id: PS-INV-004
+  type: invariant
   property: Span fidelity
   formal: 'For all stmt in parse(lex(s)).statements: stmt.span.start_line >= 1 and
     stmt.span corresponds to source location'
   applies_to: all
-- type: invariant
+- id: PS-INV-005
+  type: invariant
   property: Deterministic parsing
   formal: parse(lex(s)) is identical across invocations for the same input s
   applies_to: all
-- type: bound
+- id: PS-BND-006
+  type: bound
   property: Lexer termination
   formal: '|lex(s)| <= C * |s| for some constant C (token count bounded by source
     length)'

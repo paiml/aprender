@@ -77,7 +77,8 @@ falsification_tests:
   if_fails: "a dirty, untagged, off-main or NO-GO tree can be uploaded to an immutable registry"
 
 proof_obligations:
-- type: invariant
+- id: ACP-INV-001
+  type: invariant
   property: "default features produce no cyclic dep chain on crates.io"
 
 kani_harnesses:

@@ -22,20 +22,24 @@ equations:
     - k.len() == v.len()
     lean_theorem: Theorems.Flash_Attention
 proof_obligations:
-- type: equivalence
+- id: FA-EQ-001
+  type: equivalence
   property: Matches standard attention
   formal: '|FlashAttn(Q,K,V) - StdAttn(Q,K,V)| < ε'
   tolerance: 1.0e-05
   applies_to: all
-- type: invariant
+- id: FA-INV-002
+  type: invariant
   property: Online softmax correctness
   formal: Tiled softmax = full softmax
   applies_to: all
-- type: invariant
+- id: FA-INV-003
+  type: invariant
   property: Tile coverage
   formal: All (i,j) pairs processed exactly once
   applies_to: all
-- type: conservation
+- id: FA-CON-004
+  type: conservation
   property: Attention weight conservation
   formal: Each output row is weighted mean of V rows
   applies_to: all

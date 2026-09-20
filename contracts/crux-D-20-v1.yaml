@@ -63,11 +63,14 @@ falsification_tests:
 
   if_fails: rule 'config round-trips rope_scaling exactly' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CD2-EQ-001
+  type: equivalence
   property: "apr --rope-scaling matches HF config rope_scaling for {linear, dynamic, ntk, yarn}"
-- type: invariant
+- id: CD2-INV-002
+  type: invariant
   property: "factor=1.0 is identity (byte-equal logits)"
-- type: invariant
+- id: CD2-INV-003
+  type: invariant
   property: "config round-trip preserves rope_scaling block"
 
 verification_summary:

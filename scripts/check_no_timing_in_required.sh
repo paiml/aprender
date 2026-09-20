@@ -64,6 +64,13 @@ REQUIRED_WORKFLOWS="
 .github/workflows/ci.yml
 .github/workflows/pr-gate.yml
 "
+# ci/explicit-test-commands.d/*.cmd are not workflows, but ci.yml's REQUIRED
+# workspace-test job executes every one of them (PMAT-3313). A release-time guard
+# placed in a fragment runs in a required check exactly as if ci.yml named it.
+for frag in ci/explicit-test-commands.d/*.cmd; do
+    [ -f "$frag" ] && REQUIRED_WORKFLOWS="$REQUIRED_WORKFLOWS
+$frag"
+done
 
 rc=0
 printf -- '--- no timing gate in a required check ------------------------------\n'

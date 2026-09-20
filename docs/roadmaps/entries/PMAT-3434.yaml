@@ -1,0 +1,17 @@
+- id: PMAT-3434
+  github_issue: 3434
+  item_type: task
+  title: 'PP-TENSOR-001 T2: sentinel ban — `qtype: 0` + `byte_size: 0` may not be constructed; 0 is F32'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:06Z
+  updated: 2026-09-17T11:33:06Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

@@ -7,6 +7,175 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.68.2] - 2026-09-19
+
+0.68.2 is an interrupt release for Qwen3 and Qwen3.5 (EPIC #3477). Dense Qwen3 produced garbage on CUDA in 0.68.1 because two fast paths dropped the per-head QK-norm — the manual decode graph never recorded the kernel (#3413 A) and the batched prefill never applied it (#3413 B) — and the CPU-vs-GPU guard could not see either because it probed a path generation does not use (#3413 C). All three are fixed and the guard now judges the real prefill path; a fourth finding (FP8 batched prefill fails parity on QK-norm models, #3483) is mitigated by routing those models to the serial prefill with FP8 off. Qwen3.5 real-world files (unsloth UD-IQ2_XXS / IQ4_XS) load and run on the CPU (#3432, #3091), and `apr qa` certifies a CPU-only architecture instead of aborting. Qwen3.5 now also runs on the GPU: the hybrid Gated DeltaNet layers execute on CUDA (#3090, #3517) — nine device kernels in crates/aprender-gpu/src/kernels/gdn/ with host-reference tests, and the device forward is held to the CPU forward per layer against exact arithmetic (QHF-GPU-008) and end to end on argmax and a cosine floor (QHF-GPU-009), with no silent CPU fallback (QE2E-DEV-008). The dense sizes 4B/9B/27B were wrong on every backend because the loader read a bare `block_count` key that no GGUF carries and every file got 24 layers (#3346); the loader now reads `{arch}.block_count`, and the Gated DeltaNet GQA head mapping (32 or 48 value heads over 16 key heads) is the ggml tiled order llama.cpp converts to, on the CPU and in the CUDA kernel (#3527, #3510) — Qwen3.5 0.8B/2B/4B/9B/27B all answer the golden set on CPU and CUDA on both fleet GPUs. This replaces the 2026-09-18 plan to carry #3090 to 0.69.0 as a dated non-goal; on 2026-09-19 the operator ruled that GPU support up to 27B is required for this release (35B is tracked for post-0.70). The model-capability ladder (contracts/model-capability-ladder-v1.yaml) is green on lambda (sm_89) and gx10 (sm_121) at the cut, including the five Qwen3.5 rungs on cuda (receipts: evidence/dogfood/models/0.68.2/{lambda,gx10}.json); Qwen3-8B's optional rung stays optional pending the golden thinking-budget harness fix (#3486).
+
+### Added
+
+- feat(ont): ONT-6 — one Verdict lattice, Kani-proved; per-repo arming; exit-vocabulary mapping (PMAT-3451) (#3463)
+- feat(ont): ONT-2b — Σ with entity_types and extractors, and a symbol-level check on formal: (PMAT-3471) (#3472)
+- feat(dogfood): model capability ladder — T-2 proves every (architecture, backend, silicon) triple per host; RED at 4a538ddef on both GPUs (#3477) (#3479)
+
+### Fixed
+- fix(guard): R-2 close-issue guard now fails closed on the #3400 landmine (#3497)
+
+- fix(publish): preflight R6 judges the cycle, not the shape (0.68.1 T-4 stop, #3468) (#3469)
+- fix(ladder): a rung that claims only the CPU is not asked whether the GPU can run it (#3477) (#3481)
+
+### Changed
+- ci(pack): workspace-test as a 3-shard matrix across intel/gx10/yoga with a fan-in check; explicit commands shard; mini-m4 gets its first lane (PACK-001) (#3488)
+- PMAT-3487 / ONT-4: typed relations — a contract's relations: block (refines · supersedes · contradicts · depends_on) is a gate; pv lint --gate relations, armed; legacy metadata.depends_on counted (354 edges, 8 unresolved) and ratcheted, never rewritten (#3489)
+- PMAT-3500 / ONT-4b: pv extract (pv-contract) → contracts.nt; the in-house shapes validator over the SHACL-Core subset of §3.6; pv lint --gate shapes with the plant fired every run (#3501)
+- contracts(qwen35-gpu): GDN-on-device obligations + cuda claimed on the Qwen3.5 ladder rung — RED until #3090's path is measured on both hosts (#3477) (#3502)
+- docs(audit): PMAT-3477 receipt — #3090 GPU required, not a non-goal (decision 2026-09-19) (#3503)
+- ci: ONT-4/ONT-4b gate tests were dark — wire relations + shapes gate tests into CI (#3477) (#3504)
+- ladder: receipt rung rows carry the measured sha256 beside sha_ok (ONT-4c1) (#3506) (#3507)
+- ladder: per-rung hosts: mechanism + four required dense Qwen3.5 rungs 2B/4B/9B/27B with measured sha256 (#3510) (#3511)
+- contracts(qwen35-gpu): QHF-GPU-008 judged against exact arithmetic, QHF-GPU-009 end-to-end argmax + cosine floor vs production (#3090) (#3514)
+- ONT-001 §3.7: extract:json — a tool's own --json output is a shaped entity under pv lint --gate shapes (Refs PMAT-3515) (#3516)
+- PMAT-3477: Qwen3.5 (Gated DeltaNet hybrid) runs on CUDA — nine device kernels, Qwen35CudaModel, refusal sites lifted, apr run/chat/qa route to the GPU (#3090) (#3517)
+- ci: guard_tree reads GitHub with the job token, not the runner's shared operator login (infra#721) (#3520)
+- evidence(ladder): 0.68.1 receipts re-measured at main a6f54e84c on both hosts — eight rungs with sha256, RED by construction on Qwen3.5 (#3510) (#3523)
+- PMAT-3477: Qwen3.5 4B/9B/27B on CPU and CUDA — block_count loader fix + Gated DeltaNet GQA (tiled head mapping) (#3527)
+- pv contradicted itself about metadata:, and entity.properties was read by nothing — both apex-measured defects fixed (Refs PMAT-3529) (#3530)
+- PMAT-3508 / ONT-4c1: model receipts as focus nodes — extract:gguf + extract:apr-model, the ladder rungs as model:Model, resolves: receipt over the tracked ladder receipts by measured sha256, and arming per shape: ladder-measured armed, ladder-green reported until the bump arms it (#3526)
+- PMAT-3477: CB-200 back under its baseline — 5 definitions lifted to grade B by extraction, no behaviour change (0.68.2 T-2 preflight) (#3533)
+- PMAT-3477: apr parity measures the Qwen3.5 hybrid on CPU vs CUDA (C14) — hybrid arm, measured threshold basis, K-quant resolver (#3534)
+- §11.1 + check_pr_ont_delta: the docs/specifications sink is the release spec, not every design spec — three maintainer PRs were red for a delta that did not exist; the predicate gets its self-test (Refs PMAT-3535) (#3536)
+- ONT-4b2: extract:code + extract:lean as focus nodes; 16 of the ONT-0 table's 32 W3C SHACL-Core cases vendored in the gate, 16 accounted for by excluding form; the pinned oracle differential out of it (Refs PMAT-3509) (#3528)
+
+- APEX-2b: extended-Wilkinson tick placement (Talbot, Lin & Hanrahan 2010) with a CRAN-golden set that catches the paper's own erratum — NEW crates/aprender-viz/src/breaks.rs (pub fn extended, extended_loose; Q_DEFAULT, W_DEFAULT=[0.25,0.2,0.5,0.05] per the reference code, not the prose), tests/breaks_golden.rs (44 tests: 36 goldens, 6 properties, anti-vacuity floor, W_DEFAULT-swap mutation), fixtures/breaks/{manifest.json, README.md (R transcription, verbatim), generate.py}; EDITS Cargo.toml (+libm), src/lib.rs (+pub mod breaks), Cargo.lock; no renderer change, no new rendering dep (#3259)
+- APEX-2a: deterministic render — svg_identical from SVG bytes on X64+ARM64; NEW viz manifest.rs/text.rs/render_determinism.rs (EV-2b breaks as ticks), ci determinism+compare jobs, libm-ban-live.sh; EDITS .clippy.toml (libm bans), breaks.rs powi->sq, svg/lib/scale/plots (#3273)
+- release: 0.68.1 (#3450)
+- PMAT-3445: no tag while the milestone being cut holds an open item — check_milestone_cut.sh at the freeze and before the tag (#3455)
+- ci(b2-gpu): aprender-gpu lib tests on hardware at the tag (0.68.1 chain, rule 14) (#3467)
+- docs(release): v0.68.1 cascade dry-run receipt (T-4, committed before the first upload) (#3470)
+- docs(release): v0.68.1 SHIPPED — cascade timestamps, install receipts, ledger record, audit interval (#3473)
+- docs(spec): APR-RELEASE-001 revision 2026-09-17 — fan-out by construction, B2 split, unattended cascade; 0.68.1 SHIPPED (#3474)
+- ledger: clean-room chain at -j8 — 3877 s → 1474 s on v0.68.1, same tests, peak RSS at the 48g ceiling (#3475 lever a) (#3476)
+- PMAT-3477: 0.68.2 — Qwen3 CUDA QK-norm restored in the graph and the batched prefill, FP8 prefill gated for QK-norm models, F2 guard judges the real prefill path; Qwen3.5 real IQ files load and run; apr qa certifies CPU-only qwen35 (#3413, #3432, #3091) (#3484)
+
+## [0.68.1] - 2026-09-17
+
+**The crates.io release of the 0.68 line.** `v0.68.0` is a GitHub-only release (tag and binaries stand; `install.sh` verified on x86_64 and aarch64) — its clean-room on the tag passed A0–B1 for the first time ever on a tag and stopped at B2: lib tests in `aprender-core` and `aprender-test-showcase` named path-only dev-dependencies that `cargo publish` deletes (#3425). 0.68.1 carries that fix — the tests moved out of `src/` to targets the published crates do not carry, all 72 lib-test binaries build in published form — plus the two infra gate repairs that made the chain provable (infra#650 tag ref materialized, infra#652 A1 `[patch.crates-io]` overlay at the tag). Everything else is 0.68.0: Qwen 3.5 on the CPU, the one-line installer, the release-train gates.
+
+### Fixed
+
+- fix(publish): lib tests in aprender-core and aprender-test-showcase named path-only dev-deps that cargo publish deletes — clean-room B2 red on v0.68.0 (#3425)
+
+### Changed
+
+- refactor(parity): the refusal call site pushed run to B- — CB-200 back to the 601 baseline (#3415)
+- audit: 2026-09-17 07:00Z — T-2 pass 3, the 602nd site removed (#3415), rulings applied, T-4 stops at the dry-run (#3417)
+- audit: 2026-09-17 08:25Z — T-2 GO, v0.68.0 tagged with 16 assets, clean-room stop on an infra clone defect fixed and re-dispatched (#3419)
+- audit: 2026-09-17 10:00Z — clean-room through B1 on v0.68.0, B2 fixed, v0.68.0 GitHub-only, 0.68.1 to crates.io (#3426)
+
+## [0.68.0] - 2026-09-16
+
+**Qwen 3.5 runs on the CPU.** Qwen3.5 / Qwen3.8 hybrid GGUFs (Gated DeltaNet + attention) load and generate through `apr run` and `apr chat` (#3114, closes #3091), backed by a reproducible llama.cpp `d1d3c3396` raw-logit reference and a three-PR parity evidence series (#3354, #3355, #3356): strict greedy equality is a near-tie under a margin gate, with every divergence llama.cpp's choice at realizar's rank 2 within 0.19 logits; Q8_K activations and f16 KV parity is 0.69 work (#3208). **One-line install.** `curl -LsSf https://raw.githubusercontent.com/paiml/aprender/main/scripts/install.sh | sh` resolves the release asset for the host, verifies its sha256 and puts `apr` on PATH (#3366). The release train itself hardened: the crates.io cascade refuses unless `clean-room.yml` is green on exactly the tag commit (#3335, #3357); the merge queue gained the unwedge rules (#3361, #3403) and the roadmap became fragment-per-entry so PRs stop colliding on one file (#3297, #3352); the `apr chat` exit code is honest on a failed generation (#3396); and a MoE loader refuses an unsupported expert quantization at load instead of at the first token (#3405, 0.69).
+
+**Known limitations.** On Blackwell (GB10, sm_121) a batched CUDA decode at c=16 loses slot invariance at token 31 while c≤8 stays invariant (#3096, 0.70); the release-phase PP-26 witness is taken on RTX 4090 (sm_89), where all bands are invariant to 128 tokens. `apr devices` on a CUDA build can still print `cuda unavailable reason=NotCompiled` while `apr serve --gpu-layers all` runs on the GPU (registry label, filed for 0.69).
+
+### Added
+
+- feat(qwen35): Qwen3.5 / Qwen3.8 hybrid GGUFs run on the CPU — apr run + apr chat (#3091) (#3114)
+- feat(install): apr install.sh (curl one-liner) + path-scoped CI test suite (#3366)
+- feat(registry): R-0a — BackendRegistry probes and enumerates cpu/cuda/wgpu at startup and `apr devices` prints every kind as a line (PMAT-989, #2904) (#3004)
+- feat(crux): linfa and burn become CRUX competitors — category N, 17 contracts, registry edit + mutation proof (#3169)
+- feat(release): T-5 reconcile guards — check_pr_closes_issue.sh + check_reconcile.sh (APR-RELEASE-001 §6, kaizen) (#3200)
+- feat(ont): §11.2's five counters become measurable — and an anchor with no consumer is refused, not counted (#3280)
+- feat(ont): ONT-1 — `pv census`, the consumer whose absence made anchoring decoration (#3281)
+- feat(release): cascade refuses to publish unless clean-room is green on exactly the tag commit (#3335)
+- feat(registry): S3a — apr-cli resolves a backend against the registry, and a forced accelerator never downgrades to cpu (#3342)
+- feat(contracts): bind 5 of the 6 qwen35-e2e equations to real implementations — the 6th is named, not hidden (#3348)
+- feat(release): the cascade gate reads the structured tested-sha, and still refuses everything else (#3357)
+
+### Fixed
+
+- fix(moe): the loader knew the expert qtype and said nothing until the first token — load-time contract (#3341) (#3405)
+- fix(install): delete the dead proptest test-profile spec, and document why the rest cannot go today (#2575)
+- fix(security): wasmtime 43 -> 47.0.4 -- the real fix for RUSTSEC-2026-0269, and it needed ZERO source changes (#2807)
+- fix(beat): the ollama decode floor was calibrated on sm_89 and is now asserted on sm_121 (#2835) (#2838)
+- fix(cgp): a binary on PATH is not a device on the bus — Coverage Nightly was red on an environment fact (#2848)
+- fix(I-24): parity_block.py — a zero or empty COMPARATOR band is a named refusal, never a ZeroDivisionError traceback; case table both polarities wired into guard-runner-labels (PMAT-972, #2887, #2735) (#3006)
+- fix(C0-4): perf_gate.sh — an Arm A that measured nothing on a c=1-only receipt says so (REPORT ArmA scaling: c=1 only, no scaling measured) and the gate never turns an arm's silence into VERDICT PASS; selftest rows both polarities (PMAT-978, #2893, #2830) (#3007)
+- fix(I-25): --workload is bound to the prompt corpus — receipt.workload only with corpus_sha256 of a prompts file whose _meta.corpus equals the label; --workload W1 --profile short is refused with one line (PMAT-973, #2888, #2756) (#3008)
+- fix(I-26): spec_conformance.sh — a §12 expiry is the Expires marker, never the first date in the cell; rows past expiry are RED (the §4 andon); derived_expiries.json regenerated (row 1 → 2026-09-19) (PMAT-974, #2889) (#3009)
+- fix(C0-2): pin sovereign-ci.yml by sha; CB-2100 reachability finding filed (#3029) — PMAT-976 (#3031)
+- fix(pv): an empty corpus is refused with exit 2, never reported as PASS (PVL-1, PMAT-1099) (#3093)
+- fix(resolve_base): a main push whose HEAD is behind the tip is a push shape too — main red on 6157d1924 (#3201)
+- fix(cgp): FALSIFY-CGP-043 reported the runner's hardware, not the code — it needs nsys and clean-room has none (#3210)
+- fix(ci): the never-install policy had a detector nothing called — book.yml compiled bashrs 7.4.0 against a 7.0.1 pin, on every book build (#3214)
+- fix(pin): the pv pin called a runner fault a pinning defect — the classifier existed and nothing asked it (#3216)
+- fix(R-2): the closes-issue guard judged no PR body — and half of what it would have flagged were sibling PRs (#3220)
+- fix(ci): the sovereign-ci pin was two commits behind the one that makes gx10 work (#3225)
+- fix(test): coverage-nightly is red every night on one ETXTBSY race — a lock that could not close the window it was written for (#3227)
+- fix(guard): a pipe into grep -q under pipefail reports the producer's SIGPIPE, not grep's verdict (#3228)
+- fix(ci): a bind-mount source the reaper deleted mid-job gets recreated by the daemon, as root (#3232)
+- fix(mcp): sync the in-crate contract copy — it carries a kind: line the root one does not (#3238)
+- fix(git): a resolution that is always the same is a merge driver nobody wrote (#3256)
+- fix(features): the last two struct-drift selections — depth_slice and stream_options (#3265)
+- fix(distribute): drop num_cpus for std::thread::available_parallelism — the 7 selections the tokio gate leaves red (#3266)
+- fix(P0): the two green-only-together fixes, landed together — each was blocking the other (#3277)
+- fix(tools): pin pmat 3.40.1 and CB-200 back to 602 — the fleet converged 2026-09-14; re-measuring under 3.40.1 read 603 (PMAT-3300) (#3301)
+- fix(publish): aprender-compute used four dev-deps that cargo publish deletes — clean-room red 8/8 (#3307)
+- fix(git): a merge driver declared after a branch was cut never fires on it (#3309)
+- fix(guard): a full disk was reported as "the integrity check is theater" (#3319)
+- fix(C14): a host holding the model reported UNMEASURED, because the glob had case (#3326)
+- fix(guard): check_silicon_coverage reads evidence per axis workflow — a global RUN_CAP and an empty event page scored unread windows as UNCOVERED/NO-GO (#3339)
+- fix(test): the H1 SIMD speedup assertion fails a required check in a debug build (#3360)
+- fix(chat): a failed generation printed as an assistant turn exited 0 (#3367) (#3396)
+
+### Changed
+
+- perf(beat): run the speed lane on perf-solo and make it name its own runner (Refs PERF-031) (#2720)
+- measure(perf): PERF-062 band ladder at HEAD — ordered streams remove the corruption (#2789) (#2802)
+- audit: post-publish dogfood aprender 0.65.2 — NO-GO: README says CPU-only, plain install compiles the wgpu backend (Refs PMAT-246) (#3010)
+- roadmap: dedupe twelve duplicated ids; PMAT-1060 README CPU-only claim vs wgpu default, for 0.65.3 (Refs PMAT-1060) (#3027)
+- review(release-process): the v0.1 draft grilled against the measured fleet — 19 of 21 named artifacts do not exist, and the CUDA gate cannot fail (PMAT-1092) (#3056)
+- YOGA-NIGHTLY-001 R-3/R-4/R-6: the sm_89 axis, and the assertion that lets it go red (#3060)
+- ci(fleet): workspace-test runs on any clean-room box — gx10 measured 3–4× faster than intel; four aarch64-only reds fixed; tree-reader step builds 20 packages, not 686 binaries (PMAT-3138) (#3139)
+- docs(roadmap): PMAT-3161 — 14 published crates offer Apache-2.0 with no LICENSE-APACHE in the tree (#3162)
+- dogfood(examples): G3.EX learns needs-data — 173 examples that need a model or tokenizer the repo does not ship were reading as defects (#3163)
+- docs(release): APR-RELEASE-001 spec + PMAT-1098 receipt for session 1 — the 0.67.0 train (#3164)
+- docs(roadmap): five defects the linfa/burn sweep tripped over, four of them in the tooling doing the sweeping (#3175)
+- PMAT-1098: the release gate went red a third time — #3068's fleet check carried a DET002 and a SEC010 that no PR check ran (#3198)
+- PMAT-1098: the release's bashrs gate runs on every PR — it stopped the 0.67.0 train three times on findings no PR check saw (#3196) (#3199)
+- evidence(perf-060): land the stranded intel + mini c=1 calibration — T-5 called the branch dead, it holds the only measurement of what mini can do (#3211)
+- docs(ledger): the 0.67.0 T-5 reconcile receipt, measured — and three findings about the predicates themselves (#3212)
+- ci(quorum): `present` was pinned to X64 for no reason and starved the pool workspace-test needs (#3221)
+- ONT-2a: andon — L4/L5 print self-declared until grounded (#3224)
+- ci: bump actions/upload-artifact from 4 to 7 (#3237)
+- ci(book): a vanished dep-info file reported as a book that does not build (#3241)
+- ci(unwedge): the zombie aggregator that cost 8.5 hours has no containment that outlives a session (#3244)
+- docs(spec): APR-RELEASE-001 — feature matrix, examples, debt tax, continuous triage, decision procedure, ontology kaizen (§11), and the chain of reasoning (§12) (#3268)
+- APEX-2c: facet and coord are honoured by the renderer — NEW crates/aprender-viz/tests/facet_coord_render.rs (10 tests); EDITS grammar/facet.rs (+panels, +Panel), grammar/coord.rs (+apply, +apply_limits, f32→f64), grammar/ggplot.rs (BuiltGGPlot gains facet; per-panel render path; compute_data_ranges decomposed), grammar/data.rs (get_f32 row-aligned, +get_f32_present), grammar/mod.rs (re-exports), error.rs (+2 variants); BREAKING: Coord is f64 and get_f32 returns Vec<Option<f32>>; no new crate, no new dependency, no CI change (#3270)
+- triage(branches): 35 branches that never had a PR — commit count is the wrong instrument (#3278)
+- batch-1: nine collision-free CI/guard PRs as ONE queue entry (#3250 #3253 #3257 #3267 #3272 #3285 #3288 #3289 #3290) (#3295)
+- roadmap fragments (§1): one file per ticket, so the merge path has no shared mutable file (#3297)
+- ci(silicon): promote x86_64-cuda-sm89 to required — main is RED because the ada-yoga leg has run (#3299)
+- ci(nightly): shift every cron ~5h early so the nightlies actually run at night (#3302)
+- docs(run): §7 report — clean-room root-caused, 11 PRs unstranded (#3310)
+- ci: 355 contract tests were dark, and the target that ran them was broken (#3312)
+- contracts(0.68): 14 obligations had no id, and 4 proofs pointed at nothing (#3316)
+- contracts: 3,612 obligations had no id, so nothing could cite them (#3320)
+- test(contracts): discharge all 5 gated-delta-net obligations — the ignore reason was stale (#3322)
+- evidence(parity): the CPU leg exists as a structure — both sides refuse qwen35, measured (#3323)
+- pv: ProofObligation carries an id, and --check-ids proves a consumer reads it (#3327)
+- pin(llama.cpp): 39173bcac -> d1d3c3396 — the old pin predates Qwen3.5 support (#3331)
+- contracts(qwen35): QHF-BND-005 was vacuous, QE2E-ORD-003 false below one super-block, param equation had no lm_head (#3333)
+- docs(audits): PR #3041 split plan — 63 of 96 files already on main (#3334)
+- ci: the 4000-char explicit test line becomes fragments, one .cmd file per command, so adding a test target stops conflicting (#3336)
+- pv: an obligation that does not apply says so in the schema — typed N/A with a reason and an owner (#3340)
+- PR3: a roadmap edit without its fragment is refused — the contention #3297 removed cannot come back (#3352)
+- evidence(parity): a reproducible llama.cpp d1d3c3396 CPU raw-logit reference for Qwen3.5-0.8B (#3354)
+- evidence(parity): apr's Qwen3.5 CPU forward vs the d1d3c3396 reference — 78 positions, per-token prefill, 5 prompts (#3355)
+- evidence(parity): with ggml's arithmetic emulated, apr's Qwen3.5 CPU forward is BIT-IDENTICAL to scalar llama.cpp (#3356)
+- ci(unwedge): a run may not hold a concurrency group after its head is superseded, or while capacity sits idle (#3361)
+- ci(unwedge): rule 3 — a merge_group run whose queue group is gone is cancelled; arming refuses --auto unless guard-tree is green on the current head (#3292, #3358) (#3403)
+- ci(mini): workflow_dispatch probe of the PR job set on mini-m4 — measured neutral list for the rust-neutral label (MINI doctrine, #3205) (#3404)
+
 ## [0.67.0] - 2026-09-12
 
 0.67.0 is the first train of the 06x schedule (docs/specifications/06x-release-schedule.md, epic #3078): a release every 2–3 days whose PR tier is one build graph and whose CI runs on all three self-hosted boxes. Correctness: every Q5_K tensor decoded wrong on the CPU path, in `apr import` and in the CUDA GEMV — all three readers had invented a layout; the oracle is now gguf-py on a real block (#3110, #3113). Qwen3.5/Qwen3.8 hybrid GGUFs are refused honestly on both backends instead of promising a CPU fallback (#3099; the CPU forward itself ships in 0.68 behind the parity gate, #3091). aarch64: NEON LZ4 read unwritten output at offsets 16..63 (#3103) and the ARM-only clippy errors that kept gx10 out of `ci / lint` are gone (#3112). Fleet: arch-neutral jobs run on any clean-room box — intel, yoga, gx10 (#3104); every self-hosted job checks the box's toolset before spending an hour (#3088); guard-cargo/guard-tree fit the 20-minute budget with seven nightly-class steps moved to guards-nightly.yml (#3094); advisory gpu-quick (gx10) and cuda-unit (yoga) PR jobs (#3095); the quick tier is one nextest invocation, 55 min → ~6 min, and the merge queue mirrors the PR (#3089); tree-reader modules cut quick-tier seconds 93 % → 58 %, the 2-h mutant arm sweep is input-gated, and DIRTY roadmap conflicts merge by id (#3115). Release integrity: four apr binaries on every tag ({cuda,cpu} × {x86_64,aarch64}) verified by `check_release_assets.sh` (#3092); every workspace example must build AND run before a tag, plus apr-cookbook and release-notes gates (#3122); a low-priority nightly coverage run on yoga toward the 95 % target (#3123). Dark targets: the quick tier runs every integration target of a touched crate, which surfaced 77 vacuous spec_checklist rows (#3131), 20 stale aprender-serve rows (GH-438 dtype bytes, PMAT-855 byte glyphs, GH-213 load-time truncation, CRUX-C-34 health codes, GGUF v2 support) and one wall-clock benchmark posing as a test — now behind `bench-gates`. Triage: every open issue and PR carries a milestone and a type + priority label (#3102, #3125). Release assets: the CUDA `apr` binaries are built inside rust:1.93.0-bullseye on gx10/yoga for a glibc 2.31 floor — the native v0.66.0 x86_64 asset needed GLIBC_2.43 and did not start on Ubuntu 22.04 — and the CUDA lane moves its assets through the REST API because the self-hosted boxes carry no gh (#3072, #3074, #3086).

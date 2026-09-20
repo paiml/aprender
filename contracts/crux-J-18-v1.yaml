@@ -76,9 +76,11 @@ falsification_tests:
   if_fails: CRUX-J-18 default invariant — plaintext-on-disk must NOT be default
 
 proof_obligations:
-- type: invariant
+- id: CJ14DC8-INV-001
+  type: invariant
   property: "OS keychain is default"
-- type: invariant
+- id: CJ14DC8-INV-002
+  type: invariant
   property: "plaintext is opt-in"
 
 verification_summary:

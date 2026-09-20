@@ -1,0 +1,31 @@
+# ONT-6b: no `metadata.kind` and all four kernel blocks present, so the default
+# is applied and NOTHING it caused fails. 666 of aprender's contracts are this
+# shape. The text must not appear: the rule is "the fact that explains the
+# verdict is printed WITH it", and a passing contract has no verdict to explain.
+metadata:
+  version: 1.0.0
+  description: ONT-6b fixture — no metadata.kind, every kernel block present
+  references:
+  - 'ONT-001 ONT-6b, infra#751'
+equations:
+  identity:
+    formula: f(x) = x
+    invariants:
+    - Output equals input
+    preconditions:
+    - 'x is finite'
+proof_obligations:
+- id: I-ONT6B-001
+  type: invariant
+  property: identity preserves its argument
+falsification_tests:
+- id: FALSIFY-ONT6B-001
+  rule: identity
+  prediction: f(x) returns x for every finite x
+  if_fails: the implementation is not the identity
+kani_harnesses:
+- id: KANI-ONT6B-001
+  obligation: identity preserves its argument
+  bound: 8
+  strategy: bounded_int
+  solver: cadical

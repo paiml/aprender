@@ -1,0 +1,40 @@
+   Compiling aprender-present-core v0.67.0 (/mnt/nvme-raid0/agent-wt/obs-3091/crates/aprender-present-core)
+   Compiling aprender-compute v0.67.0 (/mnt/nvme-raid0/agent-wt/obs-3091/crates/aprender-compute)
+warning: aprender-present-core@0.67.0: [contract] Assertions: 18 preconditions, 12 postconditions from YAML
+warning: aprender-present-core@0.67.0: [contract] provable-contracts binding.yaml not found at /mnt/nvme-raid0/agent-wt/obs-3091/crates/aprender-present-core/../../../../../provable-contracts/contracts/presentar/binding.yaml; skipping
+warning: aprender-contracts@0.67.0: [contract] Assertions: 1447 preconditions, 474 postconditions from YAML
+warning: aprender-compute@0.67.0: provable-contracts binding.yaml not found at /mnt/nvme-raid0/agent-wt/obs-3091/crates/aprender-compute/../../../provable-contracts/contracts/trueno/binding.yaml; CONTRACT_* env vars will not be set (CI/crates.io build)
+   Compiling aprender-serve v0.67.0 (/mnt/nvme-raid0/agent-wt/obs-3091/crates/aprender-serve)
+warning: aprender-serve@0.67.0: [PMAT-228] architecture-requirements-v1.yaml not found; using hand-written arch_requirements.rs fallback
+warning: aprender-serve@0.67.0: [GH-323] arch-constraints-v1.yaml not found; using fallback arch_constraints.rs
+warning: aprender-serve@0.67.0: provable-contracts binding.yaml not found at /mnt/nvme-raid0/agent-wt/obs-3091/crates/aprender-serve/../../../provable-contracts/contracts/realizar/binding.yaml; CONTRACT_* env vars will not be set (CI/crates.io build)
+warning: aprender-serve@0.67.0: [contract] Assertions: 0 preconditions, 0 postconditions from YAML
+   Compiling aprender-present-terminal v0.67.0 (/mnt/nvme-raid0/agent-wt/obs-3091/crates/aprender-present-terminal)
+   Compiling aprender-test-lib v0.67.0 (/mnt/nvme-raid0/agent-wt/obs-3091/crates/aprender-test-lib)
+warning: duplicated attribute
+   --> crates/aprender-serve/src/api/effective_config.rs:878:5
+    |
+878 |     #[test]
+    |     ^^^^^^^
+    |
+    = note: `#[warn(duplicate_macro_attributes)]` on by default
+
+warning: `aprender-serve` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 29.23s
+     Running unittests src/lib.rs (/mnt/nvme-raid0/targets/obs-3091/debug/deps/realizar-f22e8988df685202)
+
+running 11 tests
+test quantize::ggml_vecdot_emul::tests::emulated_matvec_refuses_bad_shapes_and_unported_qtypes ... ok
+test quantize::ggml_vecdot_emul::tests::scalar_fixtures_share_inputs_weights_and_q8_k_with_the_native_ones ... ok
+test quantize::ggml_vecdot_emul::tests::scalar_switch_value_selects_every_qtype_with_scalar_arithmetic ... ok
+test quantize::ggml_vecdot_emul::tests::switch_values_parse_or_are_refused ... ok
+test quantize::ggml_vecdot_emul::tests::quantize_row_q8_k_is_bit_exact_vs_ggml_c ... ok
+test quantize::ggml_vecdot_emul::tests::fixture_generator_reproduces_the_c_harness_bytes ... ok
+test quantize::ggml_vecdot_emul::tests::q8_0_quantize_and_dot_are_bit_exact_vs_ggml_c ... ok
+test quantize::ggml_vecdot_emul::tests::scalar_q8_0_ref_quantize_and_dot_are_bit_exact_vs_scalar_ggml_c ... ok
+test quantize::ggml_vecdot_emul::tests::scalar_vec_dot_k_quants_are_bit_exact_vs_scalar_ggml_c ... ok
+test quantize::ggml_vecdot_emul::tests::vec_dot_k_quants_are_bit_exact_vs_ggml_c_generic ... ok
+test quantize::ggml_vecdot_emul::tests::emulated_matvec_row_r_is_the_vec_dot_of_row_r ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 15859 filtered out; finished in 0.00s
+

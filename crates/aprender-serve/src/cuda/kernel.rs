@@ -10,7 +10,28 @@ impl CudaKernels {
             .or_else(|| Self::attention_kernel_name(kernel_type))
             .or_else(|| Self::norm_rope_kernel_name(kernel_type))
             .or_else(|| Self::activation_misc_kernel_name(kernel_type))
+            .or_else(|| Self::gdn_kernel_name(kernel_type))
             .unwrap_or("unknown")
+    }
+
+    /// PMAT-3477 (#3090): Gated `DeltaNet` kernel names.
+    ///
+    /// Kept as its own arm rather than folded into `activation_misc_kernel_name`
+    /// so neither function's complexity grows past the gate's ceiling.
+    fn gdn_kernel_name(kernel_type: &KernelType) -> Option<&'static str> {
+        let name = match kernel_type {
+            KernelType::GdnCausalConv1dSilu { .. } => "gdn_causal_conv1d_silu",
+            KernelType::GdnPerHeadL2Norm { .. } => "gdn_per_head_l2_norm",
+            KernelType::GdnGates { .. } => "gdn_gates",
+            KernelType::GdnDeltaRule { .. } => "gdn_delta_rule_recurrence",
+            KernelType::GdnGatedRmsNorm { .. } => "gdn_gated_rmsnorm",
+            KernelType::GdnSigmoidGate { .. } => "gdn_sigmoid_gate",
+            KernelType::GdnSplitInterleaved { .. } => "gdn_split_interleaved_q_gate",
+            KernelType::GdnPartialNeoxRope { .. } => "gdn_partial_neox_rope",
+            KernelType::GdnDecodeAttention { .. } => "gdn_decode_attention",
+            _ => return None,
+        };
+        Some(name)
     }
 
     /// GEMM kernel names (matrix-matrix multiplication)
@@ -121,6 +142,7 @@ impl CudaKernels {
             KernelType::BatchedFusedResidualRmsNorm { .. } => "batched_fused_residual_rmsnorm",
             KernelType::PreciseRmsNorm { .. } => "rmsnorm_precise",
             KernelType::PerHeadRmsNorm { .. } => "per_head_rmsnorm",
+            KernelType::BatchedPerHeadRmsNorm { .. } => "batched_per_head_rmsnorm",
             KernelType::FusedResidualRmsNorm { .. } => "fused_residual_rmsnorm",
             KernelType::FusedRmsNormQ4KGemv { .. } => "fused_rmsnorm_q4k_gemv",
             KernelType::FusedRmsNormGateUpSwigluQ4K { .. } => "fused_rmsnorm_gate_up_swiglu_q4k",

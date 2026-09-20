@@ -68,11 +68,14 @@ falsification_tests:
   if_fails: rule 'jl_min_dim matches the sklearn oracle exactly' is violated — the linfa parity claim for CRUX-N-13 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
 
 proof_obligations:
-- type: invariant
+- id: CN112BC-INV-001
+  type: invariant
   property: "the JL tail bound holds"
-- type: invariant
+- id: CN112BC-INV-002
+  type: invariant
   property: "the sparse matrix is never densely materialized"
-- type: invariant
+- id: CN112BC-INV-003
+  type: invariant
   property: "jl_min_dim matches the sklearn oracle exactly"
 
 kani_harnesses:

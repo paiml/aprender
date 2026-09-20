@@ -96,11 +96,14 @@ falsification_tests:
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     full_discharge_blocked_on: end-to-end exit-code-2 + stderr-scheme-list test via CLI integration harness
 proof_obligations:
-- type: equivalence
+- id: CA1693D-EQ-001
+  type: equivalence
   property: "apr pull s3://... matches `aws s3 cp` byte-identical + ETag-verified"
-- type: invariant
+- id: CA1693D-INV-002
+  type: invariant
   property: "credentials are pulled from standard env/config — no aprender-specific auth"
-- type: invariant
+- id: CA1693D-INV-003
+  type: invariant
   property: "interrupted download resumes; a completed pull is idempotent"
 
 verification_summary:

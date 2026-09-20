@@ -54,7 +54,8 @@ falsification_tests:
   if_fails: Broken SVG renders incorrectly
 
 proof_obligations:
-- type: invariant
+- id: HS-INV-001
+  type: invariant
   property: "all text centered within parent rectangles"
 
 kani_harnesses:

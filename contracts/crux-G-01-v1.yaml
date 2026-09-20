@@ -133,15 +133,20 @@ falsification_tests:
   if_fails: "apr publish diverges from huggingface_hub.upload_file on /tree state"
 
 proof_obligations:
-- type: invariant
+- id: CG0-INV-001
+  type: invariant
   property: "files ≤ 5 GiB use plain JSON commit path (not NDJSON/LFS/Xet)"
-- type: invariant
+- id: CG0-INV-002
+  type: invariant
   property: "post-upload /tree/main lists the file (no silent no-op)"
-- type: invariant
+- id: CG0-INV-003
+  type: invariant
   property: "remote sha256 == local sha256 byte-for-byte"
-- type: invariant
+- id: CG0-INV-004
+  type: invariant
   property: "missing HF_TOKEN exits non-zero with actionable error"
-- type: equivalence
+- id: CG0-EQ-005
+  type: equivalence
   property: "apr publish produces identical /tree/main state to huggingface_hub.HfApi.upload_file on the same inputs"
   competitor: huggingface
   reference: "https://huggingface.co/docs/huggingface_hub/guides/upload (HfApi.upload_file); https://huggingface.co/docs/hub/api"

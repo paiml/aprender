@@ -55,8 +55,32 @@ RC_DEFECT=1
 RC_ENV=2
 
 fail=0
+env_fail=0
 note()  { printf '  %s\n' "$*"; }
 bad()   { printf '  FAIL: %s\n' "$*"; fail=1; }
+# INFRA is not FAIL. A control that could not BUILD its fixture has measured
+# nothing, and saying FAIL there accuses working code -- on 2026-09-15 an ENOSPC
+# on gx10 made this script report "the integrity check is theater" while
+# sha256sum had never run (#3317). Environment death exits RC_ENV, never
+# RC_DEFECT, so a caller can tell "the guard says no" from "the guard could not
+# look".
+infra() { printf '  INFRA: %s\n' "$*"; env_fail=1; }
+
+# mk_tmp <-d|""> <varname> -- assigns a VERIFIED temp path, or reports INFRA.
+# `mktemp` failing leaves an EMPTY variable, and every path built from it then
+# collapses to an absolute path under / -- which is how a failed fixture turned
+# into a verdict about integrity instead of about the disk.
+mk_tmp() {
+    local flag="$1" __name="$2" __v __rc=0
+    __v="$(mktemp $flag 2>/dev/null)" || __rc=$?
+    if [ "$__rc" -ne 0 ] || [ -z "$__v" ] || { [ "$flag" = "-d" ] && [ ! -d "$__v" ]; }; then
+        infra "mktemp $flag failed (rc=$__rc) -- cannot build a fixture, so this control measured NOTHING."
+        infra "  free on \$TMPDIR (${TMPDIR:-/tmp}): $(df -h "${TMPDIR:-/tmp}" 2>/dev/null | awk 'NR==2{print $4" of "$2" ("$5" used)"}')"
+        return 1
+    fi
+    printf -v "$__name" '%s' "$__v"
+    return 0
+}
 head2() { printf '\n== %s\n' "$*"; }
 
 # ---------------------------------------------------------------------------
@@ -101,7 +125,7 @@ netns_available() {
 
 run_offline() {
     local cachedir rc=0
-    cachedir="$(mktemp -d)"
+    mk_tmp -d cachedir || return "$RC_ENV"
     unshare -r -n env XDG_CACHE_HOME="$cachedir" "$@" >/dev/null 2>&1 || rc=$?
     rm -rf "${cachedir:?}"
     return "$rc"
@@ -115,7 +139,7 @@ run_offline() {
 self_test_ref_regex() {
     head2 "positive control 1/4: \$ref classification case table"
     local tmp rc=0 got want line
-    tmp="$(mktemp)"
+    mk_tmp "" tmp || return 0
 
     # must-be-flagged (off-host or off-file), then must-NOT-be-flagged (local)
     local -a remote_cases=(
@@ -159,7 +183,7 @@ self_test_ref_regex() {
 self_test_corrupt_schema() {
     head2 "positive control 2/4: an edited schema must fail the manifest"
     local tmp rc=0
-    tmp="$(mktemp -d)"
+    mk_tmp -d tmp || return 0
     mkdir -p "$tmp/schemas"
     cp "$INTOTO_SCHEMA" "$SARIF_SCHEMA" "$tmp/schemas/"
     cp "$MANIFEST" "$tmp/schemas/"
@@ -179,7 +203,7 @@ self_test_corrupt_schema() {
 self_test_empty_manifest() {
     head2 "positive control 3/4: a manifest that lists nothing must not pass"
     local tmp rc=0 n
-    tmp="$(mktemp)"
+    mk_tmp "" tmp || return 0
     : > "$tmp"
     n="$(grep -c . "$tmp" || true)"
     if [ "${n:-0}" -ge 2 ]; then
@@ -195,7 +219,7 @@ self_test_empty_manifest() {
 self_test_validator_rejects() {
     head2 "positive control 4/4: the validator must reject a malformed document"
     local tmp rc=0 vrc=0
-    tmp="$(mktemp -d)"
+    mk_tmp -d tmp || return 0
     # Structurally plausible, semantically wrong: legacy statement type, empty
     # subject, no predicateType. Nothing here is a parse error.
     cat > "$tmp/malformed.json" <<'BAD'
@@ -364,7 +388,19 @@ main() {
                 printf '     uv tool install %s\n' "'check-jsonschema==0.38.0'"
                 exit "$RC_ENV"
             fi
-            if positive_controls; then
+            pc_rc=0
+            positive_controls || pc_rc=$?
+            # env_fail is judged FIRST and unconditionally. A control that could
+            # not build its fixture returns 0 so it never accuses the code -- so
+            # without this ordering the run would report PASS having measured
+            # nothing, which is the vacuous-green class this guard exists to
+            # refuse. Measured: TMPDIR unwritable produced "SELF-TEST PASS".
+            if [ "$env_fail" -ne 0 ]; then
+                printf '\nSELF-TEST INFRA: a control could not build its fixture; nothing was measured.\n'
+                printf '            This is NOT a pass and NOT a schema defect (#3317).\n'
+                exit "$RC_ENV"
+            fi
+            if [ "$pc_rc" -eq 0 ]; then
                 printf '\nSELF-TEST PASS: every positive control fired.\n'
                 exit 0
             fi
@@ -400,6 +436,12 @@ main() {
     run_case_table "SARIF 2.1.0"          "$SARIF_SCHEMA"  "$FIXTURES/sarif"  || true
 
     printf '\n'
+    if [ "$env_fail" -ne 0 ]; then
+        printf 'INFRA: this host could not build the fixtures (see INFRA lines above),\n'
+        printf '       so the schemas were NOT verified either way. This is not a schema\n'
+        printf '       defect and must not be triaged as one (#3317).\n'
+        exit "$RC_ENV"
+    fi
     if [ "$fail" -ne 0 ]; then
         printf 'FAIL: vendored schemas did not verify. See FAIL lines above.\n'
         exit "$RC_DEFECT"

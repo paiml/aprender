@@ -1,5 +1,6 @@
 pub mod audit;
 pub mod book;
+pub mod census;
 pub mod certify;
 pub mod check_parity;
 pub mod codegen;
@@ -9,6 +10,7 @@ pub mod diff;
 pub mod equations;
 pub mod explain;
 pub mod extract;
+pub mod extract_rdf;
 pub mod flux;
 pub mod fuzz;
 pub mod generate;

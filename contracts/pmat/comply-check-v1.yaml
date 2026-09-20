@@ -44,15 +44,18 @@ equations:
     - all_fail => score == 0.0
     lean_theorem: Theorems.Aggregate_Score
 proof_obligations:
-- type: postcondition
+- id: CC-POST-001
+  type: postcondition
   property: Overall pass consistency
   formal: overall_pass = true <=> all non-skipped gates passed
   applies_to: all
-- type: invariant
+- id: CC-INV-002
+  type: invariant
   property: Score bounded
   formal: 0.0 <= score <= 1.0
   applies_to: all
-- type: precondition
+- id: CC-PRE-003
+  type: precondition
   property: Valid project path
   formal: ProjectPath contains Cargo.toml
   applies_to: all

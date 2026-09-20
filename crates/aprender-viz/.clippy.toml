@@ -22,3 +22,67 @@ reason = "Use .expect() with descriptive message or proper error handling with ?
 [[disallowed-methods]]
 path = "core::result::Result::unwrap"
 reason = "Use .expect() with descriptive message or proper error handling with ?. Cloudflare-class defect risk."
+
+# ── APEX-001 EV-2a rule 5: deterministic math ───────────────────────────────────────────
+#
+# Every transcendental on the render path goes through the pure-Rust `libm` crate. The std
+# methods below dispatch to whatever libm the host linked, and the two are not required to
+# agree to the last ulp — which is precisely what the two-host determinism job measures.
+#
+# THREE THINGS ABOUT THIS LIST ARE MEASURED, NOT ASSUMED:
+#
+#  1. This file governs `aprender-viz`, the repository-root `.clippy.toml` does NOT. Clippy
+#     reads exactly one config — the nearest — so a ban written at the root is read only for
+#     crates that have no config of their own. Verified by planting a root ban and observing
+#     no lint here.
+#
+#  2. The f32 entries are not decoration. Every transcendental call site in this crate is
+#     f32 (the scale and plot code is f32 throughout), so a list naming only the f64 methods
+#     — as APEX-001 originally wrote it — catches ZERO call sites. Measured: f64-only found
+#     0, adding the f32 twins found 13.
+#
+#  3. The `f64::ln` spelling is the only one that works. `<f64>::ln`, `std::f64::ln` and
+#     `core::f64::ln` all resolve WITHOUT warning and ban nothing;
+#     `std::primitive::f64::ln` at least warns. A wrong spelling here is a silent no-op, so
+#     `scripts/ci/libm-ban-live.sh` plants a violation and asserts clippy fails.
+#
+# `sqrt` is deliberately absent: IEEE-754 requires it to be correctly rounded, so it is
+# bit-identical everywhere and needs no replacement.
+
+[[disallowed-methods]]
+path = "f32::ln"
+reason = "APEX-001 EV-2a rule 5: use libm::logf — platform libm is not bit-reproducible."
+[[disallowed-methods]]
+path = "f32::log10"
+reason = "APEX-001 EV-2a rule 5: use libm::log10f."
+[[disallowed-methods]]
+path = "f32::log2"
+reason = "APEX-001 EV-2a rule 5: use libm::log2f."
+[[disallowed-methods]]
+path = "f32::exp"
+reason = "APEX-001 EV-2a rule 5: use libm::expf."
+[[disallowed-methods]]
+path = "f32::powf"
+reason = "APEX-001 EV-2a rule 5: use libm::powf."
+[[disallowed-methods]]
+path = "f32::powi"
+reason = "APEX-001 EV-2a rule 5: multiply directly, so the ban needs no exceptions."
+
+[[disallowed-methods]]
+path = "f64::ln"
+reason = "APEX-001 EV-2a rule 5: use libm::log."
+[[disallowed-methods]]
+path = "f64::log10"
+reason = "APEX-001 EV-2a rule 5: use libm::log10."
+[[disallowed-methods]]
+path = "f64::log2"
+reason = "APEX-001 EV-2a rule 5: use libm::log2."
+[[disallowed-methods]]
+path = "f64::exp"
+reason = "APEX-001 EV-2a rule 5: use libm::exp."
+[[disallowed-methods]]
+path = "f64::powf"
+reason = "APEX-001 EV-2a rule 5: use libm::pow."
+[[disallowed-methods]]
+path = "f64::powi"
+reason = "APEX-001 EV-2a rule 5: multiply directly, so the ban needs no exceptions."

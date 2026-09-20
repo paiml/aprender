@@ -65,19 +65,39 @@ ont_consumer_present() {
 # real measurement is the one that dies. Measured: `--write` produced no file
 # and no error until `bash -x` showed it stopping one line after `anchored=0`.
 count_anchored() { { grep -rlE '^entity:' "$REPO_ROOT/contracts" --include='*.yaml' 2>/dev/null || true; } | wc -l | tr -d ' '; }
-count_shaped()   { { grep -rlE '^shape:'  "$REPO_ROOT/contracts" --include='*.yaml' 2>/dev/null || true; } | wc -l | tr -d ' '; }
+# ONT-4c1: a contract carries ONE `shape:` (id = its stem) or a `shapes:` list of named shapes; either anchors it.
+count_shaped()   { { grep -rlE '^shapes?:' "$REPO_ROOT/contracts" --include='*.yaml' 2>/dev/null || true; } | wc -l | tr -d ' '; }
 
-# Σ lives in crates/aprender-contracts/src/ontology/ (ONT decision 4). Absent
-# directory is 0 registered, not an error — 0 is the honest reading.
+# Σ IS THE REGISTRY, so Σ is what these two count (ONT-4b2, 2026-09-19). They used to grep the RUST for
+# `EntityType::` and `impl Extractor` — two forms this codebase has never used: the entity types are Σ's
+# `entity_types:` list and the extractors are free functions in `ontology/extract/`, declared in Σ's
+# `extractors:` with `implemented:`. So both counters measured 0 while the baseline carried 1 and 1 from an
+# older tree, and every `--write` since would have "ratcheted" a number nobody had measured. The names mean
+# what Σ declares; that is now what they read. An absent Σ is 0 registered, not an error — 0 is the honest
+# reading, and the rows in --self-test pin both directions.
 count_entity_types() {
-    local d="$REPO_ROOT/crates/aprender-contracts/src/ontology"
-    [ -d "$d" ] || { printf '0\n'; return 0; }
-    { grep -rhoE '^[[:space:]]*EntityType::[A-Za-z]+' "$d" 2>/dev/null || true; } | sort -u | wc -l | tr -d ' '
+    local f="$REPO_ROOT/contracts/ontology.yaml"
+    [ -f "$f" ] || { printf '0\n'; return 0; }
+    { sed -n '/^entity_types:/,/^[a-z_]*:/p' "$f" | grep -cE '^[[:space:]]*-[[:space:]]*\{name:' || true; } | tr -d ' '
 }
 count_extractors() {
-    local d="$REPO_ROOT/crates/aprender-contracts/src/ontology"
-    [ -d "$d" ] || { printf '0\n'; return 0; }
-    { grep -rlE 'impl[[:space:]]+Extractor' "$d" 2>/dev/null || true; } | wc -l | tr -d ' '
+    local f="$REPO_ROOT/contracts/ontology.yaml"
+    [ -f "$f" ] || { printf '0\n'; return 0; }
+    { sed -n '/^extractors:/,/^[a-z_]*:/p' "$f" | grep -cE 'implemented:[[:space:]]*true' || true; } | tr -d ' '
+}
+
+# Keys under `ont` that OTHER gates own and this script does not measure: `formal_prose` (the sigma gate's
+# prose-debt ratchet) and `legacy_unresolved_depends_on` (the relations gate's, PV-ONT-010). Both are read
+# from this file by `lint/{sigma,relations}_gate.rs` and neither is computed here — so `--write` used to
+# DELETE them, disarming two shrink-only ratchets in the act of updating a third. They ride through verbatim,
+# the same rule `armed_gates` and `armed_shapes` already follow: what this script does not measure, it does
+# not get to drop.
+foreign_ont_keys() { # foreign_ont_keys FILE -> `    "k": v,` lines, in file order
+    [ -f "$1" ] || return 0
+    local key
+    for key in formal_prose legacy_unresolved_depends_on; do
+        { grep -E "\"$key\"[[:space:]]*:" "$1" || true; } | head -1 | sed 's/^[[:space:]]*/    /; s/,\{0,1\}[[:space:]]*$/,/'
+    done
 }
 
 # ONT R-5, verbatim: "Only contracts that *should* be anchored (kernel-kind with
@@ -110,8 +130,74 @@ count_unanchored_bindable() {
     printf '%s\n' "$n"
 }
 
+# ONT-6 (PMAT-3451): `armed_gates` is the arming declaration `pv lint` reads, not
+# a counter. `--write` restamps the counters and must carry the declaration over
+# verbatim: resetting it to [] disarms every gate (the meet declines, exit 2).
+# The array must sit on ONE line; any other shape is refused rather than
+# guessed at, because a partial read would rewrite the declaration silently.
+# No file at all prints [] - the fail-closed reading (a decline, never an accept).
+armed_gates_of() { # armed_gates_of FILE -> the one-line JSON array
+    local line
+    [ -f "$1" ] || { printf '[]'; return 0; }
+    line="$({ grep -E '"armed_gates"' "$1" || true; } | head -1)"
+    case "$line" in
+        '')
+            printf 'NO-GO: %s has no armed_gates; declare it before restamping\n' "$1" >&2
+            return 2 ;;
+        *'"armed_gates"'*:*'['*']'*)
+            printf '%s' "$line" | sed -E 's/.*"armed_gates"[[:space:]]*:[[:space:]]*(\[[^]]*\]).*/\1/' ;;
+        *)
+            printf 'NO-GO: %s spreads armed_gates over several lines; keep the array on one\n' "$1" >&2
+            return 2 ;;
+    esac
+}
+
+# ONT-4c1 (PMAT-3508): `armed_shapes` is the per-shape arming declaration (ONT-001 v4.6 §3.9). Optional — a
+# baseline without it arms every shape (ONT-4b's behaviour). When present it rides through `--write` verbatim
+# on ONE line, exactly like armed_gates; a multi-line array is refused for the same reason. Prints nothing
+# when the key is absent, so measure() can omit it.
+armed_shapes_of() { # armed_shapes_of FILE -> the one-line JSON array, or nothing
+    local line
+    [ -f "$1" ] || return 0
+    line="$({ grep -E '"armed_shapes"' "$1" || true; } | head -1)"
+    case "$line" in
+        '') return 0 ;;
+        *'"armed_shapes"'*:*'['*']'*)
+            printf '%s' "$line" | sed -E 's/.*"armed_shapes"[[:space:]]*:[[:space:]]*(\[[^]]*\]).*/\1/' ;;
+        *)
+            printf 'NO-GO: %s spreads armed_shapes over several lines; keep the array on one\n' "$1" >&2
+            return 2 ;;
+    esac
+}
+# Shapes declared in the corpus: one per `^shape:` (id = the stem) plus one per `- id:` entry under a
+# `^shapes:` list. `shapes_unarmed` = declared − armed when armed_shapes is present, else 0 (all armed). It is
+# RECORDED, not ratcheted: a new shape ships reported-first (ladder-green), so the count may rise; what the
+# baseline gives a reviewer is a diff, not a silence.
+count_shapes_declared() {
+    local n=0 f
+    while IFS= read -r f; do
+        n=$((n + $(awk 'BEGIN{c=0;inl=0} /^shape:/{c++} /^shapes:/{inl=1;next} inl&&/^[^ ]/{inl=0} inl&&/^  - id:/{c++} END{print c}' "$f")))
+    done < <(find "$REPO_ROOT/contracts" -name '*.yaml' -type f 2>/dev/null)
+    printf '%s\n' "$n"
+}
+count_shapes_unarmed() { # count_shapes_unarmed BASELINE_FILE
+    local armed declared
+    armed="$(armed_shapes_of "$1")" || return 2
+    [ -n "$armed" ] || { printf '0\n'; return 0; }
+    declared="$(count_shapes_declared)"
+    # entries = commas + 1 in a non-empty array
+    local entries
+    case "$armed" in '[]'|'[ ]') entries=0 ;; *) entries=$(( $(printf '%s' "$armed" | tr -cd ',' | wc -c) + 1 )) ;; esac
+    [ "$declared" -ge "$entries" ] && printf '%s\n' $((declared - entries)) || printf '0\n'
+}
 measure() { # prints the JSON document
-    local anchored shaped types extractors bindable consumer total
+    local anchored shaped types extractors bindable consumer total armed armed_shapes shapes_line unarmed
+    armed="$(armed_gates_of "$BASELINE")" || return 2
+    armed_shapes="$(armed_shapes_of "$BASELINE")" || return 2
+    shapes_line=""
+    [ -z "$armed_shapes" ] || shapes_line="$(printf '  "armed_shapes": %s,\n' "$armed_shapes")
+"
+    unarmed="$(count_shapes_unarmed "$BASELINE")" || return 2
     anchored="$(count_anchored)"; shaped="$(count_shaped)"
     types="$(count_entity_types)"; extractors="$(count_extractors)"
     bindable="$(count_unanchored_bindable)"
@@ -120,15 +206,17 @@ measure() { # prints the JSON document
     cat <<JSON
 {
   "_spec": "APR-RELEASE-001 §11.2 — moves only through \`make ont-ratchet\` (ONT R-6)",
-  "armed_gates": [],
-  "ont": {
+  "armed_gates": $armed,
+${shapes_line}  "ont": {
     "consumer_present": $consumer,
     "contracts_total": $total,
     "entity_types_registered": $types,
     "extractors_implemented": $extractors,
     "contracts_anchored": $anchored,
     "contracts_shaped": $shaped,
-    "unanchored_but_bindable": $bindable
+    "unanchored_but_bindable": $bindable,
+$(foreign_ont_keys "$BASELINE")
+    "shapes_unarmed": $unarmed
   }
 }
 JSON
@@ -158,6 +246,34 @@ self_test() {
     row "field reads a number"          "$(field "$t/j.json" contracts_anchored)" "7"
     printf '{"ont":{"consumer_present": false}}\n' > "$t/k.json"
     row "field reads a bool"            "$(field "$t/k.json" consumer_present)" "false"
+    # ONT-6 (PMAT-3451): --write restamps the counters and must NOT reset the arming declaration.
+    printf '{\n  "armed_gates": ["validate", "audit"],\n  "ont": {}\n}\n' > "$t/armed.json"
+    BASELINE="$t/armed.json" measure > "$t/pres.json"
+    row "measure() preserves armed_gates" "$(grep -o '"armed_gates": *\[[^]]*\]' "$t/pres.json" | tr -d ' ')" '"armed_gates":["validate","audit"]'
+    # ...and so does --write, which reads and replaces the SAME file.
+    cp "$t/armed.json" "$t/w.json"
+    set +e
+    BASELINE="$t/w.json" main --write >/dev/null 2>&1
+    set -e
+    row "--write preserves armed_gates in place" "$(grep -o '"armed_gates": *\[[^]]*\]' "$t/w.json" | tr -d ' ')" '"armed_gates":["validate","audit"]'
+    # ONT-4c1 (PMAT-3508): armed_shapes rides through --write the same way, and its absence stays absent.
+    printf '{\n  "armed_gates": ["validate"],\n  "armed_shapes": ["ont-shapes-v1", "ladder-measured"],\n  "ont": {}\n}\n' > "$t/ws.json"
+    set +e
+    BASELINE="$t/ws.json" main --write >/dev/null 2>&1
+    set -e
+    row "--write preserves armed_shapes in place" "$(grep -o '"armed_shapes": *\[[^]]*\]' "$t/ws.json" | tr -d ' ')" '"armed_shapes":["ont-shapes-v1","ladder-measured"]'
+    row "--write writes shapes_unarmed"            "$(grep -c '"shapes_unarmed"' "$t/ws.json")" "1"
+    row "--write does not invent armed_shapes"     "$(grep -c '"armed_shapes"' "$t/w.json")" "0"
+    printf '{\n  "armed_gates": ["validate"],\n  "armed_shapes": [\n    "a"\n  ]\n}\n' > "$t/multis.json"
+    set +e
+    BASELINE="$t/multis.json" measure >/dev/null 2>&1
+    row "a multi-line armed_shapes is refused" "$?" "2"
+    set -e
+    printf '{\n  "armed_gates": [\n    "validate"\n  ]\n}\n' > "$t/multi.json"
+    set +e
+    BASELINE="$t/multi.json" measure >/dev/null 2>&1
+    row "a multi-line armed_gates is refused" "$?" "2"
+    set -e
     # the measurement must be valid JSON and carry every §11.2 counter
     measure > "$t/m.json"
     if command -v python3 >/dev/null 2>&1; then
@@ -168,6 +284,25 @@ self_test() {
     for c in entity_types_registered extractors_implemented contracts_anchored contracts_shaped unanchored_but_bindable consumer_present; do
         grep -q "\"$c\"" "$t/m.json" && row "counter present: $c" ok ok || row "counter present: $c" missing ok
     done
+    # ONT-4b2: the two counters read Σ, and a key another gate owns survives --write.
+    printf 'schema: ont-sigma-v1\nentity_types:\n  - {name: a, extractor: a, implemented: true}\n  - {name: b, extractor: b, implemented: false}\nextractors:\n  - {name: a, reader: x.rs, implemented: true}\n  - {name: b, reader: y.rs, implemented: false}\nreaders:\n  concepts: x\n' > "$t/sigma.yaml"
+    mkdir -p "$t/repo/contracts"
+    cp "$t/sigma.yaml" "$t/repo/contracts/ontology.yaml"
+    row "entity types counted from Σ, not from a Rust form nobody writes" "$(REPO_ROOT="$t/repo" count_entity_types)" 2
+    row "extractors counted from Σ's implemented: true" "$(REPO_ROOT="$t/repo" count_extractors)" 1
+    printf '{\n  "armed_gates": ["validate"],\n  "ont": {\n    "formal_prose": 1464,\n    "legacy_unresolved_depends_on": 8\n  }\n}\n' > "$t/foreign.json"
+    BASELINE="$t/foreign.json" measure > "$t/f.json"
+    row "measure() keeps formal_prose (the sigma gate reads it)" "$(grep -c '"formal_prose": 1464' "$t/f.json")" 1
+    row "measure() keeps legacy_unresolved_depends_on (the relations gate reads it)" "$(grep -c '"legacy_unresolved_depends_on": 8' "$t/f.json")" 1
+    cp "$t/foreign.json" "$t/fw.json"
+    set +e
+    BASELINE="$t/fw.json" main --write >/dev/null 2>&1
+    set -e
+    row "--write keeps both foreign keys in place" "$(grep -cE '"formal_prose"|"legacy_unresolved_depends_on"' "$t/fw.json")" 2
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c "import json,sys;json.load(open('$t/f.json'))" >/dev/null 2>&1 \
+            && row "measure() with foreign keys is valid JSON" ok ok || row "measure() with foreign keys is valid JSON" bad ok
+    fi
     # THE DECIDING ROW: with no consumer, a rise in contracts_anchored is refused.
     printf '{"ont":{"consumer_present": false,"contracts_anchored": 0}}\n' > "$t/base.json"
     local rc
@@ -219,7 +354,13 @@ main() {
         --self-test) self_test; return $? ;;
         --write)
             mkdir -p "$(dirname "$BASELINE")"
-            measure > "$BASELINE"
+            # Never `measure > "$BASELINE"`: the shell truncates the file BEFORE
+            # measure() reads armed_gates out of it, so the declaration read back
+            # empty and was rewritten as [].
+            local tmp
+            tmp="$(mktemp "$BASELINE.XXXXXX")"
+            measure > "$tmp" || { rm -f "$tmp"; return 2; }
+            mv "$tmp" "$BASELINE"
             printf 'wrote %s\n' "${BASELINE#"$REPO_ROOT"/}"
             sed -n '/"ont"/,/}/p' "$BASELINE"
             return 0 ;;

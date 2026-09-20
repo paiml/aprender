@@ -40,11 +40,13 @@ equations:
     - row_count(v2) = row_count(v1)
     lean_theorem: Theorems.SqliteMigration
 proof_obligations:
-- type: roundtrip
+- id: CR12D0-RT-001
+  type: roundtrip
   property: LZ4 compress/decompress identity
   formal: decompress(compress(x)) = x for all x
   applies_to: all
-- type: conservation
+- id: CR12D0-CON-002
+  type: conservation
   property: Migration preserves all rows
   formal: row_count(v1) = row_count(v2)
   applies_to: all

@@ -60,11 +60,13 @@ equations:
     - 'LoRA B zero-initialized (standard init) for the identity check'
 
 proof_obligations:
-- type: invariant
+- id: CLFBP-INV-001
+  type: invariant
   property: zero-adapter LoRA forward equals the plain forward on bias models
   formal: 'B=0 ∧ use_bias ⇒ |CE(forward_with_lora) - CE(forward)| < 1e-4'
   applies_to: lora_zero_delta_identity
-- type: invariant
+- id: CLFBP-INV-002
+  type: invariant
   property: bias application preserves LoRA gradient flow
   formal: 'use_bias ⇒ train_step moves lora_b ∧ overfit-one-batch loss strictly decreases'
   applies_to: lora_zero_delta_identity

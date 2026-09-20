@@ -132,7 +132,8 @@ kernel_structure:
     description: Verify output integrity, tensor count, and format compliance
 
 proof_obligations:
-- type: roundtrip
+- id: AMLFAFF-RT-001
+  type: roundtrip
   property: Import/export roundtrip preserves model
   formal: import(export(model, fmt)).config == model.config
   tolerance: 1e-6
@@ -140,35 +141,40 @@ proof_obligations:
   lean:
     theorem: Theorems.ExportRoundtrip
     status: sorry
-- type: invariant
+- id: AMLFAFF-INV-002
+  type: invariant
   property: Cache is content-addressed
   formal: pull(source1) == pull(source2) iff source1.hash == source2.hash
   applies_to: pull_cache_integrity
   lean:
     theorem: Theorems.PullCacheIntegrity
     status: sorry
-- type: bound
+- id: AMLFAFF-BND-003
+  type: bound
   property: Quantization compresses
   formal: file_size(quantize(m, s)) < file_size(m)
   applies_to: quantize_precision_bound
   lean:
     theorem: Theorems.QuantizePrecisionBound
     status: sorry
-- type: conservation
+- id: AMLFAFF-CON-004
+  type: conservation
   property: Merge preserves tensor count
   formal: merge(models).tensors.len() == models[0].tensors.len()
   applies_to: merge_weight_conservation
   lean:
     theorem: Theorems.MergeWeightConservation
     status: sorry
-- type: invariant
+- id: AMLFAFF-INV-005
+  type: invariant
   property: Import never modifies source
   formal: hash(path_before) == hash(path_after) for import(path)
   applies_to: import_format_detection
   lean:
     theorem: Theorems.ImportFormatDetection
     status: sorry
-- type: determinism
+- id: AMLFAFF-DET-006
+  type: determinism
   property: Format detection is deterministic
   formal: detect_format(bytes) == detect_format(bytes) for all byte sequences
   applies_to: import_format_detection

@@ -41,6 +41,8 @@ mod config;
 mod cuda;
 #[cfg(feature = "cuda")]
 mod cuda_model;
+/// #3432: the one ggml `type_traits` table (block size + bytes per block).
+pub mod ggml_type_table;
 mod inference;
 mod inference_types;
 mod io;
@@ -51,6 +53,7 @@ mod owned;
 #[cfg(feature = "cuda")]
 pub mod parity;
 mod quantized;
+pub mod qwen35_load;
 pub mod qwen3_moe_load;
 mod runtime;
 mod transformer;
@@ -81,7 +84,7 @@ pub(crate) mod format_factory;
 pub use batch_scheduler::*;
 pub use config::*;
 #[cfg(feature = "cuda")]
-pub use cuda::{BatchedDecodeState, CudaBackend, CudaInitError};
+pub use cuda::{BatchedDecodeState, CudaBackend, CudaInitError, Qwen35CudaModel, Qwen35CudaState};
 #[cfg(feature = "cuda")]
 pub use cuda_model::*;
 pub use model::*;
@@ -120,3 +123,7 @@ mod io_tests;
 mod quantized_tests;
 #[cfg(test)]
 mod tests;
+
+/// Qwen3.5 / Qwen3.8 hybrid (Gated `DeltaNet` + gated attention) CPU forward (#3091).
+#[path = "inference/forward/forward_qwen35.rs"]
+pub mod forward_qwen35;

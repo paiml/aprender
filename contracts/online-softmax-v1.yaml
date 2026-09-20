@@ -32,44 +32,54 @@ equations:
     - x.len() > 0
     lean_theorem: Theorems.Standard_Softmax
 proof_obligations:
-- type: loop_invariant
+- id: OS-LINV-001
+  type: loop_invariant
   property: Running max tracks true max of elements seen
   formal: '∀k ≤ i: m_i ≥ x_k ∧ m_i = max(x_1, ..., x_i)'
   applies_to_phase: online_scan
-- type: loop_invariant
+- id: OS-LINV-002
+  type: loop_invariant
   property: Running sum_exp is correct partial sum
   formal: d_i = Σ_{j=1}^{i} exp(x_j - m_i)
   applies_to_phase: online_scan
-- type: loop_variant
+- id: OS-LVAR-003
+  type: loop_variant
   property: Remaining elements decreases each iteration
   formal: V(state) = n - i, V ≥ 0, V strictly decreasing
   applies_to_phase: online_scan
-- type: old_state
+- id: OS-OLD-004
+  type: old_state
   property: Normalizer update preserves equivalence to full recomputation
   formal: d_i = old(d_{i-1}) · exp(old(m_{i-1}) - m_i) + exp(x_i - m_i)
-- type: equivalence
+- id: OS-EQ-005
+  type: equivalence
   property: Online matches standard softmax
   formal: '|online_softmax(x) - standard_softmax(x)| < ε element-wise'
   tolerance: 1.0e-05
   applies_to: all
-- type: invariant
+- id: OS-INV-006
+  type: invariant
   property: Output sums to 1
   formal: '|Σ σ(x)_i - 1.0| < ε'
   tolerance: 1.0e-06
   applies_to: all
-- type: invariant
+- id: OS-INV-007
+  type: invariant
   property: All outputs strictly positive
   formal: σ(x)_i > 0 for all i
   applies_to: all
-- type: monotonicity
+- id: OS-MON-008
+  type: monotonicity
   property: Order preservation
   formal: x_i > x_j ⟹ σ(x)_i > σ(x)_j
   applies_to: all
-- type: invariant
+- id: OS-INV-009
+  type: invariant
   property: Shift invariance
   formal: softmax(x + c) = softmax(x) for any scalar c
   applies_to: all
-- type: invariant
+- id: OS-INV-010
+  type: invariant
   property: Two-pass (not three)
   formal: 'Reads scores array exactly twice: once for online max+sum, once for normalize'
   applies_to: all

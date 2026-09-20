@@ -1,0 +1,581 @@
+# mini-probe — STEP (1) PROBE of the MINI doctrine change (APR-RELEASE-001).
+#
+# WHY THIS EXISTS
+# ---------------
+# Operator ruling 2026-09-16: mini-m4 is a general, OS-NEUTRAL pull-request
+# runner, not a macOS-only side lane. The ruling's own step (1) is a PROBE, and
+# this file is it:
+#
+#   "workflow_dispatch the full PR job set on mini-m4 against a sha green on
+#    intel; diff verdict + duration per job; the matching set becomes the
+#    measured 'neutral' list."
+#
+# So this workflow MEASURES, it does not gate. Nothing here is a required check,
+# nothing is wired into `ci / gate`, every probe job is `continue-on-error: true`,
+# and it runs ONLY when a human dispatches it. Its output — one TSV row per job,
+# `job / verdict / duration_s / first_error_line` — is the evidence for the later
+# `rust-neutral` label PR, which is the change that actually lets these jobs land
+# on mini. Until that evidence exists the label would be a guess.
+#
+# WHAT IT MEASURES, AND WHAT IT CANNOT
+# ------------------------------------
+# The neutral set is READ FROM ci.yml, not restated here: the jobs whose
+# `runs-on:` is `[self-hosted, Linux, clean-room]` and whose comment says
+# "arch-neutral: intel, yoga or gx10 (#3100)" — guard-tree, guard-cargo,
+# vendored-schemas, pr-review-shadow, pr-review-sign, mutants, gate — plus
+# workspace-test. Each probe job below extracts THAT job's steps from the
+# checked-out `.github/workflows/ci.yml` at `inputs.ref` and runs them in order,
+# host-native. Extraction rather than transcription is deliberate: a hand-copied
+# 170-step list is stale the day after it is written, and a probe that measures a
+# stale copy of CI measures nothing.
+#
+# A step that CANNOT exist on Darwin is recorded, never substituted:
+#   * SKIP(container)  — the step is `docker run/pull/image` against
+#                        localhost:5000/sovereign-ci:stable, a linux amd64+arm64
+#                        image. There is no Docker on mini and no registry; the
+#                        probe does NOT re-run the inner command host-native,
+#                        because that would be a different environment reported
+#                        under the same name.
+#   * SKIP(tool:<name>) — the step died because a binary is absent (gsed,
+#                        gtimeout, gsha256sum, … — mini has `shasum` and BSD
+#                        userland). That is paiml/infra#645's job, NOT a defect in
+#                        the job, and the probe must tell the two apart: a missing
+#                        GNU tool is a SKIP, a failed assertion is a FAIL.
+#   * SKIP(expr)       — the step's text interpolates a workflow expression the
+#                        probe cannot evaluate (a PR number, needs.*.result).
+#   * SKIP(cond)       — the step carries an `if:` that is false, or unevaluatable,
+#                        outside a pull_request event.
+#   * SKIP(write)      — the step mutates the world (a branch push, a PR comment).
+#                        A probe publishes nothing.
+# The values above appear in the per-STEP detail artifact. The per-JOB row uses
+# exactly the four verdicts the ruling asked for — PASS | FAIL | SKIP(container) |
+# SKIP(tool:<name>) — aggregated by this precedence:
+#   FAIL (any step failed) > SKIP(tool:…) (any step lost a binary) >
+#   SKIP(container) (nothing was executable and the reason was the container) >
+#   PASS.
+#
+# RUNS-ON SHAPE: a LITERAL list, and why not fromJSON
+# ---------------------------------------------------
+# `scripts/check_runner_labels.sh` greps `^\s*runs-on:.*self-hosted` and requires
+# a discriminating label on that same line. The `runs-on:` + fromJSON shape used
+# near `gpu-quick` in ci.yml HIDES a job from that guard — ci.yml says so in its
+# own comment. So every job here spells a LITERAL list containing `apple-silicon`,
+# which is both a discriminating label the guard accepts and a real label mini-m4
+# carries (`self-hosted, macOS, ARM64, apple-silicon, m4, mini`).
+# `inputs.runner_label` (default `mini`) narrows it to one box without removing
+# the literal. Per the ruling, this workflow never names clean-room, cuda, or any
+# guard-labelled runner.
+#
+# ONE COPY OF THE RUNNER
+# ----------------------
+# GitHub Actions supports no YAML anchors, so a second job would be a second copy
+# of the ~150-line planner+runner, and the copies would drift. Every probed job is
+# therefore a leg of ONE matrix — workspace-test included, held behind
+# `inputs.include_workspace_test` at the step level because a job-level `if:`
+# cannot read `matrix`.
+#
+# REFERENCES
+#   aprender#3205  — the mini ticket (macos-arm64 leg on mini-m4)
+#   aprender#3402  — the rust-neutral label this probe's output justifies
+#   paiml/infra#645 — GNU tool gaps on mini (a SKIP(tool:) here is that ticket)
+#   APR-RELEASE-001 — release doctrine; this is step (1) PROBE only
+#
+# DISPATCH IT BY HAND:
+#   gh workflow run mini-probe.yml -f ref=c1cd0d02d -f runner_label=mini
+# The reference sha green on intel is origin/main c1cd0d02d (merged through the
+# queue, every job green). NOTE: the workflow FILE runs from the dispatching
+# branch; `inputs.ref` is only what gets checked out and tested.
+---
+name: mini-probe
+
+# `"on":` is quoted deliberately. Every other workflow here spells it bare, and a
+# bare `on` is a BOOLEAN in YAML 1.1 — `yaml.safe_load(...)["on"]` raises
+# KeyError and the reader has to know to look under the key `True`. This file's
+# acceptance check reads it by name, and a workflow whose trigger is unreadable
+# to the tooling that audits it is the same defect class as a guard nothing runs.
+"on":
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "sha/branch to CHECK OUT and test (the workflow file itself runs from the dispatching branch)"
+        required: false
+        default: "main"
+      runner_label:
+        description: "one-box label appended to [self-hosted, macOS, ARM64, apple-silicon]"
+        required: false
+        default: "mini"
+      include_workspace_test:
+        description: "also probe workspace-test (mini has 16 GiB; intel peak RSS must be <= 24 GB first)"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mini-probe-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ── one leg per ci.yml job in the neutral set ──────────────────────────────
+  # `fail-fast: false` so one red leg never hides the measurement of the others:
+  # the whole point is the DIFF across jobs.
+  probe:
+    name: "probe / ${{ matrix.job }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          - guard-tree
+          - guard-cargo
+          - vendored-schemas
+          - pr-review-shadow
+          - pr-review-sign
+          - mutants
+          - workspace-test
+    runs-on: [self-hosted, macOS, ARM64, apple-silicon, "${{ inputs.runner_label }}"]
+    continue-on-error: true
+    timeout-minutes: 90
+    env:
+      PROBE_JOB: ${{ matrix.job }}
+      PROBE_REF: ${{ inputs.ref }}
+    steps:
+      - name: Checkout the tree under test
+        if: matrix.job != 'workspace-test' || inputs.include_workspace_test == 'true'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: "This leg was not dispatched (workspace-test is opt-in)"
+        if: matrix.job == 'workspace-test' && inputs.include_workspace_test != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/probe"
+          # No row: a job that did not run has no verdict. The summary renders it
+          # as "not dispatched", which is not a PASS and not a SKIP.
+          echo "include_workspace_test=false — workspace-test was not probed" \
+            > "${RUNNER_TEMP}/probe/not-dispatched-workspace-test.txt"
+
+      - name: "Plan + run this ci.yml job's steps, host-native"
+        if: matrix.job != 'workspace-test' || inputs.include_workspace_test == 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          # mini's /bin/bash is 3.2 and its userland is BSD. Homebrew's bash 5.3
+          # and the user cargo toolchain are what a Rust job needs to SEE; putting
+          # them on PATH is the host's equivalent of the container's toolchain. No
+          # step is rewritten — this changes what `bash` and `cargo` resolve to,
+          # nothing else.
+          export PATH="/opt/homebrew/bin:${HOME}/.cargo/bin:${PATH}"
+          echo "bash    : $(command -v bash) — $(bash --version 2>/dev/null | head -1)"
+          echo "python3 : $(command -v python3) — $(python3 --version 2>&1)"
+          echo "cargo   : $(command -v cargo || echo ABSENT) — $(cargo --version 2>/dev/null || true)"
+          echo "uname   : $(uname -srm)"
+
+          PROBE_OUT="${RUNNER_TEMP}/probe"
+          rm -rf "${PROBE_OUT:?}"
+          mkdir -p "${PROBE_OUT}/plan" "${PROBE_OUT}/logs"
+
+          ROW="${PROBE_OUT}/row-${PROBE_JOB}.tsv"
+          DETAIL="${PROBE_OUT}/detail-${PROBE_JOB}.tsv"
+          : > "$DETAIL"
+
+          # ── extract this job's steps from the checked-out ci.yml ────────────
+          python3 - "${GITHUB_WORKSPACE}/.github/workflows/ci.yml" "$PROBE_JOB" "${PROBE_OUT}/plan" <<'PYEOF'
+          """Emit one plan file set per step of ci.yml's <job>, classified.
+
+          Stdlib only: mini's python3 is 3.9 from the Xcode CLT and has no PyYAML.
+          The parser is indentation-based and tied to ci.yml's canonical layout
+          (jobs at 2 spaces, steps at 6, step keys at 8, block scalars at 10). If
+          that layout changes this exits non-zero and the job's row becomes FAIL
+          with "plan extraction failed" — it never silently plans nothing.
+          """
+          import json
+          import os
+          import re
+          import sys
+
+          EXPR_OPEN = "$" + "{{"  # never spell it literally: Actions interpolates
+          # that token anywhere in this file, comments and heredocs included.
+
+          WRITE_RE = re.compile(
+              r"\bgit\s+push\b"
+              r"|\bgh\s+pr\s+(comment|merge|edit|close)\b"
+              r"|\bgh\s+api\s+-X\s+(POST|PATCH|DELETE)\b"
+              r"|pr_review_shadow_publish\.sh(\s|\\\n)+--pr"
+          )
+          CONTAINER_RE = re.compile(r"\bdocker\s+(run|pull|image|build|exec)\b")
+          TRUE_IFS = ("always()", "!cancelled()", "success()")
+
+
+          def job_block(lines, job):
+              start = None
+              for i, line in enumerate(lines):
+                  if line == "  %s:" % job:
+                      start = i
+                      break
+              if start is None:
+                  raise SystemExit("plan: job not found in ci.yml: %s" % job)
+              end = len(lines)
+              for i in range(start + 1, len(lines)):
+                  line = lines[i]
+                  if line.strip() and line.startswith("  ") and not line.startswith("   "):
+                      end = i
+                      break
+              return lines[start + 1:end]
+
+
+          def mapping_at(body, header, indent):
+              out = {}
+              pad = " " * indent
+              for i, line in enumerate(body):
+                  if line == header:
+                      for nxt in body[i + 1:]:
+                          if not nxt.strip():
+                              continue
+                          if not nxt.startswith(pad) or nxt[indent:indent + 1] == " ":
+                              break
+                          key, _, val = nxt.strip().partition(":")
+                          out[key.strip()] = val.strip()
+                      break
+              return out
+
+
+          def steps_of(body):
+              first = None
+              for i, line in enumerate(body):
+                  if line == "    steps:":
+                      first = i
+                      break
+              if first is None:
+                  return []
+              raw, cur = [], None
+              for line in body[first + 1:]:
+                  if line.startswith("      - "):
+                      if cur is not None:
+                          raw.append(cur)
+                      cur = ["        " + line[8:]]
+                  elif cur is not None:
+                      cur.append(line)
+              if cur is not None:
+                  raw.append(cur)
+              out = []
+              for item in raw:
+                  st = {"name": None, "run": None, "uses": None, "if": None,
+                        "env": {}, "shell": None}
+                  i = 0
+                  while i < len(item):
+                      m = re.match(r"^        ([a-zA-Z_-]+):(.*)$", item[i])
+                      if not m:
+                          i += 1
+                          continue
+                      key, rest = m.group(1), m.group(2).strip()
+                      if key == "run":
+                          if rest in ("|", "|-", ">", ">-"):
+                              blk, j = [], i + 1
+                              while j < len(item) and (not item[j].strip()
+                                                       or item[j].startswith("          ")):
+                                  blk.append(item[j][10:] if len(item[j]) > 10 else "")
+                                  j += 1
+                              st["run"] = "\n".join(blk).rstrip()
+                              i = j
+                              continue
+                          st["run"] = rest
+                      elif key == "env":
+                          j = i + 1
+                          while j < len(item) and (not item[j].strip()
+                                                   or item[j].startswith("          ")):
+                              mm = re.match(r"^          ([A-Za-z_][A-Za-z0-9_]*):(.*)$",
+                                            item[j])
+                              if mm:
+                                  st["env"][mm.group(1)] = mm.group(2).strip()
+                              j += 1
+                          i = j
+                          continue
+                      elif key in ("name", "uses", "if", "shell"):
+                          st[key] = rest.strip("'\"") if key in ("name", "uses") else rest
+                      i += 1
+                  out.append(st)
+              return out
+
+
+          def classify(st):
+              cmd = st["run"] or ""
+              if st["uses"]:
+                  return "SKIP(action)", st["uses"]
+              if not cmd.strip():
+                  return "SKIP(action)", "no run: block"
+              if CONTAINER_RE.search(cmd):
+                  return "SKIP(container)", "docker + sovereign-ci image"
+              if WRITE_RE.search(cmd):
+                  return "SKIP(write)", "mutates the world"
+              if EXPR_OPEN in cmd or EXPR_OPEN in json.dumps(st["env"]):
+                  return "SKIP(expr)", "workflow expression"
+              if st["if"] and st["if"].strip("'\"") not in TRUE_IFS:
+                  return "SKIP(cond)", st["if"][:60]
+              return "RUN", ""
+
+
+          def shq(val):
+              return "'" + val.replace("'", "'\\''") + "'"
+
+
+          def main():
+              path, job, plan = sys.argv[1], sys.argv[2], sys.argv[3]
+              lines = open(path, encoding="utf-8").read().split("\n")
+              body = job_block(lines, job)
+              jobenv = mapping_at(body, "    env:", 6)
+              # A job-level env value that is itself a workflow expression cannot be
+              # resolved here; it is DROPPED and named on stderr rather than guessed.
+              dropped = sorted(k for k, v in jobenv.items() if EXPR_OPEN in v)
+              prelude = ["export %s=%s" % (k, shq(v.strip("'\"")))
+                         for k, v in sorted(jobenv.items()) if EXPR_OPEN not in v]
+              steps = steps_of(body)
+              if not steps:
+                  raise SystemExit("plan: no steps parsed for %s" % job)
+              index = []
+              for n, st in enumerate(steps, start=1):
+                  verdict, why = classify(st)
+                  idx = "%03d" % n
+                  name = st["name"] or st["uses"] or "(unnamed)"
+                  for suffix, val in (("class", verdict), ("why", why), ("name", name)):
+                      with open(os.path.join(plan, idx + "." + suffix), "w") as fh:
+                          fh.write(val + "\n")
+                  # ci.yml's default shell on Linux is `bash -e`; a step that spells
+                  # `shell: bash` additionally gets pipefail. Honour both.
+                  with open(os.path.join(plan, idx + ".shell"), "w") as fh:
+                      fh.write(("bash-pipefail" if st["shell"] else "bash") + "\n")
+                  if verdict == "RUN":
+                      senv = ["export %s=%s" % (k, shq(v.strip("'\"")))
+                              for k, v in sorted(st["env"].items())]
+                      with open(os.path.join(plan, idx + ".cmd"), "w") as fh:
+                          fh.write("\n".join(prelude + senv + [st["run"], ""]))
+                  index.append((idx, verdict, why, name))
+              with open(os.path.join(plan, "plan.tsv"), "w") as fh:
+                  for row in index:
+                      fh.write("\t".join(row) + "\n")
+              sys.stderr.write(
+                  "plan: %s -> %d steps; job env dropped (expressions): %s\n"
+                  % (job, len(index), ",".join(dropped) or "none"))
+
+
+          main()
+          PYEOF
+          plan_rc=$?
+          if [ "$plan_rc" -ne 0 ]; then
+            printf '%s\tFAIL\t0\tplan extraction failed (rc=%s) — ci.yml layout changed?\n' \
+              "$PROBE_JOB" "$plan_rc" > "$ROW"
+            cat "$ROW"
+            exit 0
+          fi
+          cp "${PROBE_OUT}/plan/plan.tsv" "${PROBE_OUT}/plan-${PROBE_JOB}.tsv"
+
+          # ── run the plan, in ci.yml's order ─────────────────────────────────
+          n_ran=0; n_pass=0; n_fail=0; n_container=0; n_other=0
+          tool_missing=""; first_err=""
+          job_start=$(date +%s)
+
+          # Iterate the INDEX column only and read each step's fields from its own
+          # plan file. `IFS=$'\t' read -r idx klass why name` looks right and is
+          # not: tab is IFS whitespace, so bash COLLAPSES the empty `why` of a RUN
+          # row and every step name arrived empty — the group headers and the
+          # detail rows were anonymous, and the first_error_line named no step.
+          cut -f1 "${PROBE_OUT}/plan/plan.tsv" > "${PROBE_OUT}/plan/index.txt"
+          while IFS= read -r idx; do
+            klass="$(cat "${PROBE_OUT}/plan/${idx}.class")"
+            name="$(cat "${PROBE_OUT}/plan/${idx}.name")"
+            why="$(cat "${PROBE_OUT}/plan/${idx}.why")"
+            if [ "$klass" != "RUN" ]; then
+              printf '%s\t%s\t%s\t0\t%s\t%s\n' "$PROBE_JOB" "$idx" "$klass" "$name" "$why" >> "$DETAIL"
+              if [ "$klass" = "SKIP(container)" ]; then
+                n_container=$((n_container + 1))
+              else
+                n_other=$((n_other + 1))
+              fi
+              continue
+            fi
+            cmd="${PROBE_OUT}/plan/${idx}.cmd"
+            log="${PROBE_OUT}/logs/${idx}.log"
+            shell_kind="$(cat "${PROBE_OUT}/plan/${idx}.shell")"
+            echo "::group::${idx} ${name}"
+            step_start=$(date +%s)
+            # </dev/null: the loop's stdin is the index, and a step that reads
+            # stdin would eat the rest of the plan.
+            if [ "$shell_kind" = "bash-pipefail" ]; then
+              bash --noprofile --norc -eo pipefail "$cmd" > "$log" 2>&1 < /dev/null
+            else
+              bash --noprofile --norc -e "$cmd" > "$log" 2>&1 < /dev/null
+            fi
+            step_rc=$?
+            step_dur=$(( $(date +%s) - step_start ))
+            tail -40 "$log" || true
+            echo "::endgroup::"
+            n_ran=$((n_ran + 1))
+            if [ "$step_rc" -eq 0 ]; then
+              n_pass=$((n_pass + 1))
+              printf '%s\t%s\tPASS\t%s\t%s\t\n' "$PROBE_JOB" "$idx" "$step_dur" "$name" >> "$DETAIL"
+              continue
+            fi
+            # A lost binary is paiml/infra#645's finding, not this job's failure.
+            missing="$(grep -aoE '[A-Za-z0-9_.+-]+: command not found' "$log" | head -1 | sed 's/: command not found//')"
+            if [ -z "$missing" ]; then
+              missing="$(grep -aoE 'command not found: [A-Za-z0-9_.+-]+' "$log" | head -1 | sed 's/command not found: //')"
+            fi
+            if [ -n "$missing" ]; then
+              if [ -z "$tool_missing" ]; then tool_missing="$missing"; fi
+              printf '%s\t%s\tSKIP(tool:%s)\t%s\t%s\t\n' "$PROBE_JOB" "$idx" "$missing" "$step_dur" "$name" >> "$DETAIL"
+              continue
+            fi
+            n_fail=$((n_fail + 1))
+            line="$(grep -aEm1 '(::error|^error|[Ee]rror:|FAIL|✗)' "$log")"
+            if [ -z "$line" ]; then line="$(grep -a . "$log" | tail -1)"; fi
+            line="$(printf '%s' "$line" | tr '\t\n' '  ' | cut -c1-200)"
+            if [ -z "$first_err" ]; then first_err="${idx} ${name}: ${line}"; fi
+            printf '%s\t%s\tFAIL\t%s\t%s\t%s\n' "$PROBE_JOB" "$idx" "$step_dur" "$name" "$line" >> "$DETAIL"
+          done < "${PROBE_OUT}/plan/index.txt"
+
+          job_dur=$(( $(date +%s) - job_start ))
+
+          if [ "$n_fail" -gt 0 ]; then
+            verdict="FAIL"
+          elif [ -n "$tool_missing" ]; then
+            verdict="SKIP(tool:${tool_missing})"
+          elif [ "$n_ran" -eq 0 ] && [ "$n_container" -gt 0 ]; then
+            verdict="SKIP(container)"
+          elif [ "$n_ran" -eq 0 ]; then
+            verdict="FAIL"
+            first_err="no executable step in the plan (${n_other} skipped, 0 container) — probe defect"
+          else
+            verdict="PASS"
+          fi
+
+          printf '%s\t%s\t%s\t%s\n' "$PROBE_JOB" "$verdict" "$job_dur" "$first_err" > "$ROW"
+          echo "ran=${n_ran} pass=${n_pass} fail=${n_fail} container=${n_container} other_skip=${n_other}"
+          cat "$ROW"
+
+      - name: Row + per-step detail leave the runner (always)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mini-probe-${{ matrix.job }}
+          path: ${{ runner.temp }}/probe/
+          retention-days: 30
+          if-no-files-found: warn
+
+  # ── gate, the aggregator ──────────────────────────────────────────────────
+  # ci.yml's `gate` reads `needs.*.result` and nothing else, so its probe is the
+  # same predicate over the probe's ROWS. It cannot read `needs.probe.result`:
+  # every probe leg is `continue-on-error: true`, which reports success even for a
+  # red leg — reading it would be a gate that cannot fail.
+  probe-gate:
+    name: "probe / gate"
+    needs: [probe]
+    if: always()
+    runs-on: [self-hosted, macOS, ARM64, apple-silicon, "${{ inputs.runner_label }}"]
+    continue-on-error: true
+    timeout-minutes: 22
+    steps:
+      - name: Collect the probe rows
+        uses: actions/download-artifact@v4
+        with:
+          pattern: mini-probe-*
+          merge-multiple: true
+          path: rows
+
+      - name: "Apply ci.yml gate's predicate to the probe rows"
+        shell: bash
+        run: |
+          set -uo pipefail
+          export PATH="/opt/homebrew/bin:${PATH}"
+          PROBE_OUT="${RUNNER_TEMP}/probe"
+          rm -rf "${PROBE_OUT:?}"
+          mkdir -p "$PROBE_OUT"
+          start=$(date +%s)
+          verdict_of() {
+            if [ ! -f "rows/row-$1.tsv" ]; then
+              echo "ABSENT"
+              return
+            fi
+            cut -f2 "rows/row-$1.tsv" | head -1
+          }
+          fail=""
+          for req in guard-tree guard-cargo; do
+            v="$(verdict_of "$req")"
+            echo "gate reads ${req}: ${v}"
+            if [ "$v" != "PASS" ]; then fail="${fail}${req}=${v} "; fi
+          done
+          wt="$(verdict_of workspace-test)"
+          echo "gate reads workspace-test: ${wt} (ABSENT == not dispatched)"
+          case "$wt" in
+            PASS|ABSENT|SKIP\(container\)) ;;
+            *) fail="${fail}workspace-test=${wt} " ;;
+          esac
+          mu="$(verdict_of mutants)"
+          echo "gate reads mutants: ${mu} (only an explicit FAIL blocks, as in ci.yml)"
+          if [ "$mu" = "FAIL" ]; then fail="${fail}mutants=FAIL "; fi
+          # `ci` is the reusable sovereign-ci workflow: containerised jobs this
+          # probe does not reach. Stated, never silently treated as green.
+          echo "gate reads ci: UNPROBED (reusable sovereign-ci workflow, containerised)"
+          dur=$(( $(date +%s) - start ))
+          if [ -n "$fail" ]; then
+            printf 'gate\tFAIL\t%s\t%s\n' "$dur" "$fail" > "${PROBE_OUT}/row-gate.tsv"
+          else
+            printf 'gate\tPASS\t%s\t\n' "$dur" > "${PROBE_OUT}/row-gate.tsv"
+          fi
+          cat "${PROBE_OUT}/row-gate.tsv"
+
+      - name: Row leaves the runner (always)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mini-probe-gate
+          path: ${{ runner.temp }}/probe/
+          retention-days: 30
+          if-no-files-found: warn
+
+  # ── the measurement itself ────────────────────────────────────────────────
+  summary:
+    name: "probe / summary"
+    needs: [probe, probe-gate]
+    if: always()
+    runs-on: [self-hosted, macOS, ARM64, apple-silicon, "${{ inputs.runner_label }}"]
+    timeout-minutes: 20
+    steps:
+      # The DISPATCHING branch, not inputs.ref: scripts/mini_probe_summary.sh is
+      # new in this pull request and does not exist at the reference sha.
+      - name: Checkout the dispatching branch (for the renderer)
+        uses: actions/checkout@v7
+
+      - name: Collect every row
+        uses: actions/download-artifact@v4
+        with:
+          pattern: mini-probe-*
+          merge-multiple: true
+          path: rows
+
+      - name: Render the table
+        shell: bash
+        run: |
+          set -uo pipefail
+          export PATH="/opt/homebrew/bin:${PATH}"
+          bash scripts/mini_probe_summary.sh rows --tsv mini-probe-summary.tsv \
+            > "${RUNNER_TEMP}/summary.md"
+          rc=$?
+          cat "${RUNNER_TEMP}/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          cat "${RUNNER_TEMP}/summary.md"
+          exit "$rc"
+
+      - name: Upload the measured neutral list
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mini-probe-summary
+          path: |
+            mini-probe-summary.tsv
+            rows/
+          retention-days: 90
+          if-no-files-found: warn

@@ -1,0 +1,22 @@
+schema: ont-sigma-v1
+concepts:
+  Contract: {doc: "a pv contract file"}
+  Code: {doc: "a Rust item"}
+roles:
+  binds: {domain: Contract, range: Code, doc: "the contract governs this code"}
+symbols:
+  - {name: "∀", kind: operator}
+  - {name: len, kind: function}
+entity_types:
+  - {name: pv-contract, extractor: pv_contract, implemented: false}
+extractors:
+  - {name: pv_contract, reader: "", implemented: false}
+not_expressible:
+  - {key: taste, reader: ontology/sigma.rs}
+readers:
+  concepts: ontology/sigma.rs
+  roles: lint/sigma_gate.rs
+  symbols: lint/sigma_symbols.rs
+  entity_types: lint/sigma_gate.rs
+  extractors: ontology/sigma.rs
+  not_expressible: ontology/sigma.rs

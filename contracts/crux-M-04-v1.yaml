@@ -143,15 +143,20 @@ falsification_tests:
   if_fails: "Cross-format gate is non-deterministic — violates playbook Jidoka"
 
 proof_obligations:
-- type: invariant
+- id: CM04C8A-INV-001
+  type: invariant
   property: "All three formats produce identical tokens at (prompt, seed) under temp=0, top_k=1"
-- type: invariant
+- id: CM04C8A-INV-002
+  type: invariant
   property: "first_diff_idx surfaces the earliest divergent position (LAYOUT root-cause pin)"
-- type: invariant
+- id: CM04C8A-INV-003
+  type: invariant
   property: "Missing format is a hard error (exit >= 2), never silent skip"
-- type: invariant
+- id: CM04C8A-INV-004
+  type: invariant
   property: "Determinism — identical inputs yield identical JSON"
-- type: equivalence
+- id: CM04C8A-EQ-005
+  type: equivalence
   property: "apr qa --gate cross-format  ≅  apr-model-qa-playbook Gate-4 (tri-format token parity)"
 
 verification_summary:

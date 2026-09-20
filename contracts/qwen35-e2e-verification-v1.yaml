@@ -20,8 +20,10 @@ metadata:
   - kv-cache-sizing-v1
 equations:
   model_parameter_count:
-    formula: P = V*d + L*(d_attn + d_ffn + d_norm) + d_final
-    domain: V=vocab, d=hidden, L=layers, d_attn/d_ffn/d_norm=per-layer params
+    formula: P = V*d + L*(d_attn + d_ffn + d_norm) + d_final + V*d
+    domain: V=vocab, d=hidden, L=layers, d_attn/d_ffn/d_norm=per-layer params;
+      the trailing V*d is the untied lm_head (contracts/model-families/qwen3_5.yaml
+      constraints.tied_embeddings = false)
     invariants:
     - Total ≈ 9.05B for Qwen3.5-9B
     - Embedding dominates for large V
@@ -86,34 +88,75 @@ equations:
     - indices.len() > 0
     lean_theorem: Theorems.Contract_Composition
 proof_obligations:
-- type: invariant
+- id: QE2E-INV-001
+  type: invariant
   property: Parameter count matches architecture
   formal: P(Qwen3.5-9B) ∈ [9.0B, 9.2B]
   applies_to: all
-- type: bound
+  note: >-
+    #3091: the 9B instantiation is NOT proved, and is not asserted anywhere. This
+    contract's own model_parameter_count formula, evaluated on the in-tree
+    constants (contracts/model-families/qwen3_5.yaml size_variants.9b: V=248320,
+    d=4096, L=32, n_h=16, d_k=256, intermediate_dim=12288, untied lm_head), sums to
+    8,208,535,552 = 8.209B -- outside [9.0B, 9.2B]. That descriptor's
+    tensor_template states no Gated DeltaNet tensors, so the ~0.8B difference has no
+    in-tree shape to come from, and whether the range or the descriptor is wrong is
+    open. qe2e_inv_001_parameter_sum_matches_tensor_inventory discharges the
+    model_parameter_count EQUATION (the config-derived sum equals the measured
+    tensor inventory) on the real Qwen3.5 layer structures; the range instantiation
+    stays unproved rather than being widened to fit.
+- id: QE2E-BND-002
+  type: bound
   property: FLOPs bounded by 2P
-  formal: F <= 2 * P + O(seq_len * d * L)
+  formal: F(s) <= 2*P + 4*L_attn*d_kv*s
   applies_to: all
-- type: ordering
+  note: >-
+    ont-delta (#3091): tightened from 'F <= 2 * P + O(seq_len * d * L)'. An O()
+    with no constant states no bound at all -- every F satisfies it, so no input
+    could falsify the obligation and FALSIFY-QE2E-002 had nothing to assert. The
+    constant is now named: s = cached positions, L_attn = full-attention layers
+    (a Gated DeltaNet layer carries a fixed-size recurrent state, so its cost does
+    not grow with s), d_kv = num_kv_heads * head_dim, and QK^T and A*V each cost
+    2*d_kv per cached position per such layer. The slope is asserted as an
+    EQUALITY by qe2e_bnd_002_flops_bounded_by_2p_plus_attention_term, so the
+    constant cannot be lowered either.
+- id: QE2E-ORD-003
+  type: ordering
   property: Quantization memory ordering
-  formal: M(Q4K) < M(Q6K) < M(F16) < M(F32)
+  formal: n % 256 == 0 → M(Q4K, n) < M(Q6K, n) < M(F16, n) < M(F32, n)
   applies_to: all
-- type: monotonicity
+  note: >-
+    Precondition n % 256 == 0 (n = element count, a whole number of K-quant
+    super-blocks). K-quant encoders pad to whole 256-element super-blocks, so
+    the unconditional ordering is false for small tensors: one Q6K block is
+    210 bytes vs 2n bytes of F16, failing for n <= 105; one Q4K block is 144
+    bytes, failing M(Q4K) < M(F16) for n <= 72. At whole super-blocks the
+    per-element sizes are 0.5625 < 0.8203 < 2 < 4 bytes.
+- id: QE2E-MON-004
+  type: monotonicity
   property: Throughput increases with bandwidth
   formal: bw1 < bw2 → tok_s(bw1) <= tok_s(bw2)
   applies_to: all
-- type: bound
+- id: QE2E-BND-005
+  type: bound
   property: Verification coverage at 100%
   formal: coverage(qwen35_contracts) = 1.0
   applies_to: all
-- type: invariant
+- id: QE2E-INV-006
+  type: invariant
   property: Compositional proof structure
   formal: '∀l: shape(block_l(x)) = shape(x)'
   applies_to: all
-- type: conservation
+- id: QE2E-CON-007
+  type: conservation
   property: 'End-to-end shape: tokens in → logits out'
   formal: shape(model(tokens)) = [seq_len, V]
   tolerance: 0.0
+  applies_to: all
+- id: QE2E-DEV-008
+  type: liveness
+  property: 'The selected device decoded the hybrid model — no silent CPU fallback for the GDN layers'
+  formal: '∀ h ∈ required_hosts: fallback(cuda, h) = ⊥ ∧ ran(cuda, h) ∧ notice_cpu_only(h) = ⊥'
   applies_to: all
 falsification_tests:
 - id: FALSIFY-QE2E-001
@@ -124,17 +167,17 @@ falsification_tests:
 - id: FALSIFY-QE2E-002
   rule: FLOPs estimate
   prediction: 2P FLOPs per forward token
-  test: Deterministic with Qwen3.5-9B constants
+  test: qe2e_bnd_002_flops_bounded_by_2p_plus_attention_term
   if_fails: Missing layer in FLOP count
 - id: FALSIFY-QE2E-003
   rule: Memory ordering
   prediction: Q4K < Q6K < F16 < F32 memory
-  test: proptest with random tensor dimensions
+  test: qe2e_ord_003_quantization_memory_ordering
   if_fails: Quantization byte formula wrong
 - id: FALSIFY-QE2E-004
   rule: Throughput roofline
   prediction: tok/s bounded by bandwidth and compute
-  test: proptest with random hardware specs
+  test: qe2e_mon_004_throughput_is_monotone_in_bandwidth
   if_fails: Roofline formula error
 - id: FALSIFY-QE2E-005
   rule: Coverage completeness
@@ -144,13 +187,18 @@ falsification_tests:
 - id: FALSIFY-QE2E-006
   rule: Compositional proof structure
   prediction: 'Each block preserves shape: shape(block_l(x)) = shape(x)'
-  test: 'proptest: verify shape(block(x)) = shape(x) for random blocks'
+  test: qe2e_inv_006_every_block_preserves_d_model
   if_fails: Block l breaks shape invariant
 - id: FALSIFY-QE2E-007
   rule: End-to-end shape conservation
   prediction: tokens → [seq_len, d] → ... → [seq_len, V]
-  test: 'proptest: trace shapes through mock pipeline'
+  test: qe2e_con_007_tokens_in_logits_out_shape
   if_fails: Shape break in layer composition
+- id: FALSIFY-QE2E-008
+  rule: The device decoded
+  prediction: "`apr run --gpu` on Qwen3.5-0.8B-Q4_K_M prints neither `falling back to CPU` nor `[qwen35: Gated DeltaNet runs on the CPU` on either required host, and the ladder receipt's rungs[qwen35-0.8b-q4km].backends.cuda is {ran: true, fallback: false}"
+  test: "bash scripts/check_model_ladder.sh"
+  if_fails: "the release claims a cuda backend for qwen35 that the binary does not run — the exact silent-fallback class 0.68.1 shipped for dense Qwen3 (#3413)"
 kani_harnesses:
 - id: KANI-QE2E-001
   obligation: QE2E-INV-001
@@ -160,43 +208,43 @@ kani_harnesses:
   solver: cadical
   harness: verify_parameter_count
 - id: KANI-QE2E-002
-  obligation: QE2E-ORD-001
+  obligation: QE2E-ORD-003
   property: Quantization memory ordering
   bound: 4
   strategy: bounded_int
   harness: verify_quant_ordering
 - id: KANI-QWEN35-003
-  obligation: Parameter count matches architecture
+  obligation: QE2E-INV-001
   property: Parameter count matches architecture
   bound: 8
   strategy: exhaustive
 - id: KANI-QWEN35-004
-  obligation: FLOPs bounded by 2P
+  obligation: QE2E-BND-002
   property: FLOPs bounded by 2P
   bound: 8
   strategy: stub_float
 - id: KANI-QWEN35-005
-  obligation: Quantization memory ordering
+  obligation: QE2E-ORD-003
   property: Quantization memory ordering
   bound: 8
   strategy: exhaustive
 - id: KANI-QWEN35-006
-  obligation: Throughput increases with bandwidth
+  obligation: QE2E-MON-004
   property: Throughput increases with bandwidth
   bound: 8
   strategy: exhaustive
 - id: KANI-QWEN35-007
-  obligation: Verification coverage at 100%
+  obligation: QE2E-BND-005
   property: Verification coverage at 100%
   bound: 8
   strategy: exhaustive
 - id: KANI-QWEN35-008
-  obligation: Compositional proof structure
+  obligation: QE2E-INV-006
   property: Compositional proof structure
   bound: 8
   strategy: exhaustive
 - id: KANI-QWEN35-009
-  obligation: 'End-to-end shape: tokens in → logits out'
+  obligation: QE2E-CON-007
   property: 'End-to-end shape: tokens in → logits out'
   bound: 8
   strategy: exhaustive
@@ -211,5 +259,5 @@ qa_gate:
   - throughput_model
   - verification_ladder
   - contract_composition
-  pass_criteria: All 7 falsification tests pass + 100% obligation coverage
+  pass_criteria: All 8 falsification tests pass; FALSIFY-QE2E-008 is read from the per-host ladder receipts + 100% obligation coverage
   falsification: Remove one layer from parameter count to break total

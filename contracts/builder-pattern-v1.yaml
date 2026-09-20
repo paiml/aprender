@@ -19,7 +19,8 @@ equations:
     - "Err(BuilderError) names the missing field(s)"
     lean_theorem: Theorems.Builder_Pattern
 proof_obligations:
-- type: invariant
+- id: BP-INV-001
+  type: invariant
   property: builder-pattern correctness
 falsification_tests:
 - id: FALSIFY-GEN-001

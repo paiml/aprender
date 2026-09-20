@@ -247,15 +247,20 @@ falsification_tests:
       exits non-zero on unknown names (requires wiring the resolver
       into the show command path).
 proof_obligations:
-- type: invariant
+- id: CA08D43-INV-001
+  type: invariant
   property: "apr ls --json emits a JSON array where every element has {name, size_bytes, sha256, quant} with correct types"
-- type: invariant
+- id: CA08D43-INV-002
+  type: invariant
   property: "apr show NAME --json emits {arch, params, tensor_histogram, size_bytes} and exits non-zero for unknown NAME"
-- type: invariant
+- id: CA08D43-INV-003
+  type: invariant
   property: "apr rm NAME is atomic: registry index and filesystem are updated together or not at all"
-- type: invariant
+- id: CA08D43-INV-004
+  type: invariant
   property: "apr rm NAME --dry-run prints the removal plan without mutating registry state"
-- type: invariant
+- id: CA08D43-INV-005
+  type: invariant
   property: "sha256 values reported by apr ls match on-disk file digests"
 
 verification_summary:

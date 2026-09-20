@@ -80,22 +80,26 @@ equations:
     lean_theorem: Theorems.Budget_Invariant
 
 proof_obligations:
-- type: classification
+- id: CUMA-CLS-001
+  type: classification
   property: device_class autodetection covers all currently-shipping NVIDIA architectures
   formal: |
     For every supported compute capability cc in {52, 60, 70, 75, 80, 86, 89, 90, 100, 110, 120, 121},
     device_class(cc, ua=1) returns the documented value (UnifiedMemory only for cc >= 100).
-- type: invariant
+- id: CUMA-INV-002
+  type: invariant
   property: legacy MANAGED_MEMORY=1 env var continues to force managed allocation
   formal: |
     For all (cc, ua, env_override="1"): allocator_dispatch selects cuMemAllocManaged,
     regardless of device_class. Existing scripts that set MANAGED_MEMORY=1 do not break.
-- type: invariant
+- id: CUMA-INV-003
+  type: invariant
   property: cuMemFree works for both managed and device pointers
   formal: |
     For every GpuBuffer b, Drop(b) calls cuMemFree(b.ptr) unconditionally.
     The allocator path (cuMemAlloc vs cuMemAllocManaged) is invisible to the freer.
-- type: bound
+- id: CUMA-BND-004
+  type: bound
   property: GpuBuffer::new on GB10 succeeds for any size that fits in MemAvailable - working_set_reserve
   formal: |
     Let R = 8 GB (working set reserve for student F32 + activations + JIT).

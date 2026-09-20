@@ -85,33 +85,40 @@ equations:
     - capacity > 0
     lean_theorem: Theorems.Correctness_Under_Batching
 proof_obligations:
-- type: bound
+- id: CB-BND-001
+  type: bound
   property: Token budget respected
   formal: sum(num_new_tokens) <= max_batch_tokens per step
   applies_to: all
-- type: monotonicity
+- id: CB-MON-002
+  type: monotonicity
   property: Computed tokens monotonic
   formal: num_computed_tokens(r, t) <= num_computed_tokens(r, t+1)
   applies_to: all
-- type: equivalence
+- id: CB-EQ-003
+  type: equivalence
   property: Chunked prefill equivalence
   formal: '|chunked_kv - full_kv| < 1e-5'
   tolerance: 1e-5
   applies_to: all
-- type: bound
+- id: CB-BND-004
+  type: bound
   property: Decode degradation bounded
   formal: per_req_decode(c) / per_req_decode(1) >= 0.50 for c <= 8
   applies_to: all
-- type: invariant
+- id: CB-INV-005
+  type: invariant
   property: No starvation
   formal: '∀ r in waiting: wait_time(r) < max_wait_bound'
   applies_to: all
-- type: equivalence
+- id: CB-EQ-006
+  type: equivalence
   property: Correctness under batching
   formal: '|batched_output - single_output| < 1e-3'
   tolerance: 1e-3
   applies_to: all
-- type: invariant
+- id: CB-INV-007
+  type: invariant
   property: No empty outputs
   formal: '∀ r in completed: output_tokens(r) > 0'
   applies_to: all

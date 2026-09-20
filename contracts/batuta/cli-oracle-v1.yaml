@@ -93,19 +93,23 @@ equations:
     - SQLite DB path is writable
     lean_theorem: Theorems.Index_Freshness
 proof_obligations:
-- type: invariant
+- id: CO-INV-001
+  type: invariant
   property: RAG results are sorted by score descending
   formal: '∀ i < j: results[i].score >= results[j].score'
   applies_to: rag_query_correctness
-- type: invariant
+- id: CO-INV-002
+  type: invariant
   property: Empty query returns empty results
   formal: 'query = "" → results.len() = 0'
   applies_to: rag_query_correctness
-- type: invariant
+- id: CO-INV-003
+  type: invariant
   property: Stale index produces warning not error
   formal: 'stale(index) → (warn_emitted ∧ results.is_some())'
   applies_to: index_freshness
-- type: invariant
+- id: CO-INV-004
+  type: invariant
   property: Format code exits 1 when no code
   formal: '--format code ∧ no_code → exit(1) ∧ stderr.contains("No code available")'
   applies_to: dispatch_correctness

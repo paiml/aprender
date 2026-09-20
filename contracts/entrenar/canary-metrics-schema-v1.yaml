@@ -59,19 +59,23 @@ equations:
     lean_theorem: Theorems.Domain_Loss
 
 proof_obligations:
-  - type: invariant
+  - id: CMS-INV-001
+    type: invariant
     property: All required top-level fields present
     formal: canary in result AND backend in result AND host in result AND timestamp in result AND config in result AND metrics in result
     applies_to: all
-  - type: invariant
+  - id: CMS-INV-002
+    type: invariant
     property: Config has training parameters
     formal: model in config AND batch_size in config AND seq_len in config AND steps in config AND lr in config AND seed in config
     applies_to: all
-  - type: bound
+  - id: CMS-BND-003
+    type: bound
     property: Throughput is positive
     formal: metrics.tokens_per_sec > 0.0
     applies_to: standard_canaries
-  - type: bound
+  - id: CMS-BND-004
+    type: bound
     property: Loss is finite and non-negative
     formal: 0.0 <= metrics.final_loss < 100.0
     applies_to: all

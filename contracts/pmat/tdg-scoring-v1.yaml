@@ -46,19 +46,23 @@ equations:
     - score < 60.0 => result == F
     lean_theorem: Theorems.Letter_Grade
 proof_obligations:
-- type: bound
+- id: TS1401-BND-001
+  type: bound
   property: TDG score bounded
   formal: 0.0 <= calculate_weighted_tdg(m) <= 100.0 for all valid FileMetrics m
   applies_to: all
-- type: invariant
+- id: TS1401-INV-002
+  type: invariant
   property: Weights sum to unity
   formal: w_test + w_doc + w_grade = 1.0
   applies_to: all
-- type: monotonicity
+- id: TS1401-MON-003
+  type: monotonicity
   property: Score monotonic in coverage
   formal: coverage(a) > coverage(b) => TdgScore(a) >= TdgScore(b) (other metrics equal)
   applies_to: all
-- type: precondition
+- id: TS1401-PRE-004
+  type: precondition
   property: Valid input metrics
   formal: total_lines > 0 and total_items >= 0 and complexity_grade in valid set
   applies_to: all

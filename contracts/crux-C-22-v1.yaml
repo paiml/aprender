@@ -142,11 +142,14 @@ falsification_tests:
     full_discharge_blocked_on: "Python HF reference parity run against `tests/fixtures/logits_row.npy` (requires transformers, fixture, and `apr debug sample --typical` CLI wiring)"
 
 proof_obligations:
-- type: equivalence
+- id: CC2914D-EQ-001
+  type: equivalence
   property: "apr --typical matches HF `TypicalLogitsWarper` and llama.cpp `--typical` on identical logits"
-- type: invariant
+- id: CC2914D-INV-002
+  type: invariant
   property: "p=1.0 is mathematically identity; verified by byte-equal tokens"
-- type: invariant
+- id: CC2914D-INV-003
+  type: invariant
   property: "filtered distribution renormalizes to sum=1.0 ± 1e-6"
 
 verification_summary:

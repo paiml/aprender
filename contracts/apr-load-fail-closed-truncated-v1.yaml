@@ -57,20 +57,23 @@ status: enforced
 date: 2026-06-22
 
 proof_obligations:
-  - type: invariant
+  - id: ALFCT-INV-001
+    type: invariant
     property: >
       TRUNCATED-DETECT: OwnedQuantizedTensor::is_truncated() is true iff the tensor
       declares real dimensions (in_dim>0 && out_dim>0) but has no data — the signature
       of a tensor whose bytes ran past the model file. A fully-loaded tensor is never
       flagged (no false positive).
-  - type: invariant
+  - id: ALFCT-INV-002
+    type: invariant
     property: >
       LOAD-FAIL-CLOSED: OwnedQuantizedModel::from_mapped runs validate_quantized_tensors
       over every quantized weight (each layer's qkv/attn_output/ffn_up/ffn_down/ffn_gate
       + lm_head) and returns Err(InvalidShape) if any is truncated, so a truncated GGUF
       is rejected at load instead of producing garbage at inference. A well-formed model
       loads unchanged.
-  - type: invariant
+  - id: ALFCT-INV-003
+    type: invariant
     property: >
       OBLIG-GGUF-LOAD-NANINF (PMAT-895): validate_quantized_tensors also scans each
       quantized weight's f16 scale field(s) per block (quant_scale_first_nonfinite) and
@@ -83,7 +86,8 @@ proof_obligations:
       F-DATA-QUALITY-002 NaN/Inf guarantee into the quantized load path; llama.cpp /
       Ollama load such a model by default, so apr fails closed where they do not.
 
-  - type: invariant
+  - id: ALFCT-INV-004
+    type: invariant
     property: >
       INSPECT-FAIL-CLOSED-TRUNCATED (#2569): format::tensors::list_tensors returns
       Err(FormatError) naming the first tensor whose declared extent
@@ -94,14 +98,16 @@ proof_obligations:
       header cannot wrap u64 into a small end offset. A tensor whose last byte is the
       file's last byte fits (end == file_len is accepted); an intact model of any size
       lists unchanged, so the check raises no false positive.
-  - type: invariant
+  - id: ALFCT-INV-005
+    type: invariant
     property: >
       STATS-FAIL-CLOSED (#2569): when compute_stats is requested and a tensor's data
       cannot be read, list_tensors returns Err naming the tensor and its dtype rather than
       leaving mean/std/min/max as None. Rendering None prints an em-dash, which is
       byte-for-byte what a run WITHOUT --stats prints, so "could not compute" and "you did
       not ask" were indistinguishable on the only surface that reports them.
-  - type: invariant
+  - id: ALFCT-INV-006
+    type: invariant
     property: >
       TUNE-PARAMS-MEASURED (#2570): apr tune's model parameter count is the sum of the
       declared tensor shapes read out of the model header, never a function of the file's

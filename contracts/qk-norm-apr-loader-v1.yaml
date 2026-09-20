@@ -29,6 +29,7 @@ invariants:
 - id: QKN-LOAD-003
   property: QK norm weights are optional (None for non-Qwen3 architectures)
   formal: apr_try_load_f32 returns Option<Vec<f32>> — None is valid
+  prose: true
   description: 'Loading uses apr_try_load_f32 (returns Option), not apr_load_f32_tensor (returns Result). Missing QK norm
     tensors produce None, not an error. This preserves backward compatibility with Qwen2, LLaMA, GPT-2, etc.
 
@@ -42,15 +43,18 @@ invariants:
 
     '
 proof_obligations:
-- type: invariant
+- id: QNAL-INV-001
+  type: invariant
   property: Non-regression for non-QK-norm models
   formal: Qwen2, LLaMA, GPT-2 output unchanged (weights = None, no norm applied)
   applies_to: all
-- type: invariant
+- id: QNAL-INV-002
+  type: invariant
   property: Weight shape matches head_dim
   formal: len(q_norm_weight) == hidden_dim / num_heads
   applies_to: all
-- type: equivalence
+- id: QNAL-EQ-003
+  type: equivalence
   property: APR loader matches SafeTensors loader
   formal: APR path loads same QK norm weights as safetensors_infer_convert.rs path
   tolerance: 0.0

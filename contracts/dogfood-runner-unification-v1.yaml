@@ -388,86 +388,113 @@ falsification_tests:
   mutation: 'inject a partial VP-01 fix (strip leading redirections before tokenising); the VP-01 row must turn RED naming promotion (observed 2026-08-23, engagement proven: mutated scan rc=1 vs pristine rc=0 on the same probe)'
 
 proof_obligations:
-- type: invariant
+- id: DRU-INV-001
+  type: invariant
   property: 'Exactly one tracked dogfood.sh exists, at scripts/dogfood.sh (F-DOG1-001)'
   formal: '|{ p in git ls-files : basename(p) = "dogfood.sh" }| = 1'
-- type: invariant
+- id: DRU-INV-002
+  type: invariant
   property: 'No verifier in V = {pv, pmat, apr} appears in command position unpinned in the runner or its pin library (F-DOG1-002)'
   formal: 'forall f in S, bare(f) = {}'
-- type: soundness
+- id: DRU-SND-003
+  type: soundness
   property: 'The bare-invocation tokeniser flags every must-flag form and no must-not-flag form (F-DOG1-003)'
   formal: 'flag(must_flag) = must_flag and flag(must_not_flag) = {}'
-- type: determinism
+- id: DRU-DET-004
+  type: determinism
   property: 'The PMAT_BIN pin selects the built artifact when the crate under test is pmat, and PATH otherwise (F-DOG1-004)'
   formal: 'verifier_pin_pmat("pmat", b) = b for executable b; verifier_pin_pmat(c, b) = "pmat" for c != "pmat"'
-- type: determinism
+- id: DRU-DET-005
+  type: determinism
   property: 'The pv pin never resolves to a PATH pv (F-DOG1-005)'
   formal: 'verifier_pin_pv() != command -v pv, given a decoy first on PATH'
-- type: completeness
+- id: DRU-CMP-006
+  type: completeness
   property: 'Every declared gate produces exactly one receipt row, and a declared-but-missing script produces FAIL (F-DOG1-006)'
   formal: 'forall g in G, exists exactly one row(g); not exists(g) => row(g) = FAIL'
-- type: bound
+- id: DRU-BND-007
+  type: bound
   property: 'An absent or empty gate declaration is a FAIL, never a vacuous pass (F-DOG1-007)'
   formal: 'G = {} or G undefined => dogfood-gates = FAIL'
-- type: bound
+- id: DRU-BND-008
+  type: bound
   property: 'The user-scope shim is at most 70 lines, invokes no gate, and matches the reviewed reference byte for byte (F-DOG1-008)'
   formal: 'lines(U) <= 70 and gate_names(U) = {} and U = reference'
-- type: safety
+- id: DRU-SAFE-009
+  type: safety
   property: 'The shim fails closed and loudly when the canonical checkout is absent (F-DOG1-009)'
   formal: 'exit(U | no checkout) != 0 and "REVISIT TRIGGER" in stderr(U)'
-- type: invariant
+- id: DRU-INV-010
+  type: invariant
   property: 'Exactly one prose description of the protocol is reachable, and it is the repo copy (F-DOG1-010)'
   formal: 'exists(repo SKILL.md with explicit name) and not exists(user-scope SKILL.md)'
-- type: soundness
+- id: DRU-SND-011
+  type: soundness
   property: 'A command substitution is command position at any quoting depth (F-DOG1-011)'
   formal: 'unpinned("X=\"$(pmat v)\"") = {pmat} and unpinned("X=''$(pmat v)''") = {}'
-- type: invariant
+- id: DRU-INV-012
+  type: invariant
   property: 'Each pin is invoked before the first use of its result, and the runner assigns neither pinned variable (F-DOG1-012)'
   formal: 'call(pin) < use(pin) for pin in {pmat, pv}; no PMAT_BIN=<non-empty> or PV=<non-empty> in the runner'
-- type: soundness
+- id: DRU-SND-013
+  type: soundness
   property: 'A PATH probe of a pinned verifier, and a verifier name in a for-list, are both unpinned resolutions (F-DOG1-013)'
   formal: 'unpinned("command -v pmat") = {pmat}; unpinned("command -v \"$PMAT_BIN\"") = {}'
-- type: safety
+- id: DRU-SAFE-014
+  type: safety
   property: 'The runner starts when invoked by a relative path against another crate (F-DOG1-014)'
   formal: 'exit(bash scripts/dogfood.sh <other-crate>) != 2'
-- type: safety
+- id: DRU-SAFE-015
+  type: safety
   property: 'Exercising the pv pin leaves Cargo.lock byte-identical (F-DOG1-015)'
   formal: 'lock_after = lock_before, modulo [[patch.unused]] injected by host-local [patch.crates-io] overrides'
-- type: completeness
+- id: DRU-CMP-016
+  type: completeness
   property: 'The shim gate extraction covers mid-line and dynamically named call sites (F-DOG1-016)'
   formal: 'gate_calls("true; mark x PASS") != {} and gate_calls("mark \"$n\" FAIL") != {}'
 
-- type: invariant
+- id: DRU-INV-017
+  type: invariant
   property: 'Both pins EXPORT their result and resolve BEFORE the first discovered gate executes; a child process of the runner observes PMAT_BIN and PV (F-DOG1-017)'
   formal: 'forall g in discovered_gates: env(g) contains PMAT_BIN, PV; resolve_time(pins) < exec_time(g)'
-- type: soundness
+- id: DRU-SND-018
+  type: soundness
   property: 'verifier_pin_pmat accepts only an artifact that answers --version; missing/mute/directory artifacts leave the pin EMPTY with rc=1 when the crate is pmat (F-DOG1-018)'
   formal: 'crate = pmat and not behaves(built) => PMAT_BIN = "" and rc = 1'
-- type: soundness
+- id: DRU-SND-019
+  type: soundness
   property: 'verifier_pin_pv is repo-root-anchored, clears the PV_BIN environment channel, and surfaces pv_bin.sh diagnostics on failure (F-DOG1-019)'
   formal: 'resolve(pv) independent of cwd within repo; PV_BIN not in env(source(pv_bin.sh)); rc = 1 => diagnostics on stderr'
-- type: soundness
+- id: DRU-SND-020
+  type: soundness
   property: 'Every probe whose empty output means PASS fails on rc != 0 — empty-and-zero is the only PASS shape (F-DOG1-020); no verdict-bearing pipe feeds an early-exit consumer under pipefail (F-DOG1-021)'
   formal: 'probe_rc != 0 => verdict in {WARN(did-not-run), FAIL}; verdict_channel(marker) = herestring'
-- type: invariant
+- id: DRU-INV-021
+  type: invariant
   property: 'Every gate name the runner can emit appears in every receipt with an explicit outcome; no version- or capability-conditional vanish (F-DOG1-022)'
   formal: 'forall g in gate_names(runner): exists row in receipt with row.gate = g'
-- type: invariant
+- id: DRU-INV-022
+  type: invariant
   property: 'Each gate iterates the universe its name claims: find_up for root-kept files, recursive discovery for contracts/, component-accurate failure attribution (F-DOG1-023)'
   formal: 'universe(gate) = universe(gate.name); fail(discovery) names the failing component'
-- type: invariant
+- id: DRU-INV-023
+  type: invariant
   property: 'A receipt exists iff it is complete and parseable: absolute anchor, SHA-stamped, .partial + atomic rename; runner artefact dirs (.dogfood/.pmat/.pv) are gitignored so a run never dirties the tree its next run measures (F-DOG1-024)'
   formal: 'exists(receipt-*.json) => parseable and complete; mutates(run, tracked_files) = {}'
-- type: invariant
+- id: DRU-INV-024
+  type: invariant
   property: 'Every diagnosis names the cause it observed, and every count this contract or its referenced audit states is reproducible from an extraction the text names (F-DOG1-025; DIV-1/DIV-2 corrections)'
   formal: 'note(cause) = observed_cause; forall n in stated_counts: reproducible(n, named_extraction)'
-- type: invariant
+- id: DRU-INV-025
+  type: invariant
   property: 'The guard scan universe equals the executed gate set, both derived from one parser (F-DOG1-026)'
   formal: 'scope(guard) = plan(runner) = parse(package.metadata.dogfood)'
-- type: soundness
+- id: DRU-SND-026
+  type: soundness
   property: 'pin_audit admits the fail-closed call shapes and rejects every spelling of direct assignment; legal declarators stay legal (F-DOG1-027)'
   formal: 'call_shapes subset accepted; assign(PMAT_BIN|PV, nonempty) => REJECT'
-- type: invariant
+- id: DRU-INV-027
+  type: invariant
   property: 'Every known tokeniser gap is an executable fixture asserting current behaviour exactly, so it can neither widen nor close silently (F-DOG1-028)'
   formal: 'forall g in known_gaps: assert(behaviour(g) = recorded(g)); change(g) => RED'
 kani_harnesses:

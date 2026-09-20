@@ -200,13 +200,17 @@ falsification_tests:
 
   if_fails: rule 'trace-derived peak agrees with NVML within 10%' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: invariant
+- id: CF0DF45-INV-001
+  type: invariant
   property: "Output file is valid Chrome Trace Event Format JSON (perfetto.dev loadable)"
-- type: invariant
+- id: CF0DF45-INV-002
+  type: invariant
   property: "Every alloc event pairs with exactly one free event of identical addr"
-- type: invariant
+- id: CF0DF45-INV-003
+  type: invariant
   property: "Timestamps are monotone non-decreasing per (pid, tid) stream"
-- type: equivalence
+- id: CF0DF45-EQ-004
+  type: equivalence
   property: "Trace-derived peak memory agrees with NVML nvmlDeviceGetMemoryInfo() within 10%"
 
 verification_summary:

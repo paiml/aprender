@@ -43,11 +43,13 @@ equations:
       - "This invariant holds in EVERY workspace crate that enumerates wgpu adapters: aprender-compute (wgpu 27), aprender-db and aprender-graph (wgpu 22), aprender-distribute (wgpu 23); Backends::PRIMARY excludes GL in all of those wgpu versions"
 
 proof_obligations:
-  - type: invariant
+  - id: AWAEEG-INV-001
+    type: invariant
     property: "OBLIG-WGPU-ADAPTER-ENUMERATION-EXCLUDES-GLES: enumeration mask never includes GLES"
     formal: "gpu_backends() ∩ Backends::GL = ∅"
     applies_to: enumeration_mask_excludes_gles
-  - type: invariant
+  - id: AWAEEG-INV-002
+    type: invariant
     property: "Real platform GPU backend is still enumerable"
     formal: "real_backend(platform) ⊆ gpu_backends()"
     applies_to: enumeration_mask_excludes_gles

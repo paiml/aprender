@@ -1,0 +1,135 @@
+{
+  "ticket": "PMAT-3090",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 97 commit(s); judged against origin/main",
+  "head": "30eb3bce6249ad32810dba7937aa35460646aecc",
+  "diff_sha256": "dcade14efd5f1a803989db0c212bd152320a5a6b82e36ae8ef0cb2a9eefefe3f",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 4023,
+  "author": {
+    "model": "claude-fable-5-1",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements all requirements specified in PMAT-3090. It modifies row 6 and the Gaps entry of `docs/audits/impl-PMAT-3477-receipt.md` to document the operator decision of 2026-09-19, adds the required proofs regarding the `apr qa` Golden Output on lambda/gx10 and PR #3502 (QHF-GPU-008/QE2E-DEV-008), and explicitly notes that PR #3498 is disarmed and requires a CHANGELOG update before re-arming. The diff strictly modifies only this one Markdown file, respecting the 'no code' constraint.",
+      "findings": [
+        {
+          "claim": "Updates row 6 to document the operator decision superseding the dated non-goal",
+          "file": "docs/audits/impl-PMAT-3477-receipt.md",
+          "grounding": "cited",
+          "line": 17
+        },
+        {
+          "claim": "Updates the Gaps entry to state the proof and note PR #3498 is disarmed",
+          "file": "docs/audits/impl-PMAT-3477-receipt.md",
+          "grounding": "cited",
+          "line": 71
+        }
+      ],
+      "raw_bytes": 2958,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff satisfies PMAT-3090 completely: docs-only update touching exactly one file (docs/audits/impl-PMAT-3477-receipt.md), updating row 6 and the Gaps section with Noah's 2026-09-19 operator decision ('GPU required — build #3090 now'), recording the proof requirements (apr qa Golden Output GPU on lambda sm_89 and gx10 sm_121, qwen35 cuda ladder rung green, QHF-GPU-008 / QE2E-DEV-008 from PR #3502), and noting that bump PR #3498 is disarmed and its CHANGELOG [0.68.2] paragraph must be rewritten. No code modified, no gates weakened, no unrequested changes.",
+      "findings": [],
+      "raw_bytes": 2393,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff strictly implements the ticket PMAT-3090 requirements: it is docs-only, modifies exactly one file (docs/audits/impl-PMAT-3477-receipt.md), updates row 6 and the Gaps section to supersede the dated non-goal with the operator decision of 2026-09-19, specifies the proof requirements across both ladder hosts and the capability ladder, and notes the disarming of bump PR #3498. No gates were weakened, no code was added, and no unintended modifications were made.",
+      "findings": [
+        {
+          "claim": "Row 6 of the acceptance table is updated to reflect the 2026-09-19 operator decision superseding the dated non-goal: '| 6 | #3090 disposition | — | direct (issue comment 2026-09-18: dated non-goal) — SUPERSEDED 2026-09-19: Noah selected \"GPU required — build #3090 now\"; the GDN CUDA path is built on `PMAT-3477-gdn-gpu` and 0.68.2 waits for it | operator decision 2026-09-19 |'",
+          "file": "docs/audits/impl-PMAT-3477-receipt.md",
+          "grounding": "cited",
+          "line": 17
+        },
+        {
+          "claim": "The Gaps section entry for #3090 GDN GPU is updated with the proof criteria (apr qa Golden Output GPU on lambda sm_89 + gx10 sm_121, qwen35-0.8b-q4km cuda rung green, QHF-GPU-008 / QE2E-DEV-008 from #3502) and disarming status of bump PR #3498 with CHANGELOG [0.68.2] rewrite requirement: '- #3090 GDN GPU: was a dated non-goal (issue comment 2026-09-18). Superseded 2026-09-19 — Noah selected \"GPU required — build #3090 now\". Open until the Gated DeltaNet CUDA path passes `apr qa` Golden Output GPU on both ladder hosts (lambda sm_89, gx10 sm_121) and the qwen35-0.8b-q4km rung of `contracts/model-capability-ladder-v1.yaml` is green for cuda (QHF-GPU-008 / QE2E-DEV-008, #3502). The bump PR #3498 is disarmed until then, and its CHANGELOG `[0.68.2]` paragraph (which still says \"#3090 … is a dated non-goal carried to 0.69.0\") must be rewritten before it re-arms.'",
+          "file": "docs/audits/impl-PMAT-3477-receipt.md",
+          "grounding": "cited",
+          "line": 71
+        }
+      ],
+      "raw_bytes": 5144,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "docs/audits/impl-PMAT-3477-receipt.md",
+      "line": 17,
+      "lanes_agreeing": [
+        1,
+        3
+      ],
+      "claims": [
+        "Row 6 of the acceptance table is updated to reflect the 2026-09-19 operator decision superseding the dated non-goal: '| 6 | #3090 disposition | — | direct (issue comment 2026-09-18: dated non-goal) — SUPERSEDED 2026-09-19: Noah selected \"GPU required — build #3090 now\"; the GDN CUDA path is built on `PMAT-3477-gdn-gpu` and 0.68.2 waits for it | operator decision 2026-09-19 |'",
+        "Updates row 6 to document the operator decision superseding the dated non-goal"
+      ]
+    },
+    {
+      "file": "docs/audits/impl-PMAT-3477-receipt.md",
+      "line": 71,
+      "lanes_agreeing": [
+        1,
+        3
+      ],
+      "claims": [
+        "The Gaps section entry for #3090 GDN GPU is updated with the proof criteria (apr qa Golden Output GPU on lambda sm_89 + gx10 sm_121, qwen35-0.8b-q4km cuda rung green, QHF-GPU-008 / QE2E-DEV-008 from #3502) and disarming status of bump PR #3498 with CHANGELOG [0.68.2] rewrite requirement: '- #3090 GDN GPU: was a dated non-goal (issue comment 2026-09-18). Superseded 2026-09-19 — Noah selected \"GPU required — build #3090 now\". Open until the Gated DeltaNet CUDA path passes `apr qa` Golden Output GPU on both ladder hosts (lambda sm_89, gx10 sm_121) and the qwen35-0.8b-q4km rung of `contracts/model-capability-ladder-v1.yaml` is green for cuda (QHF-GPU-008 / QE2E-DEV-008, #3502). The bump PR #3498 is disarmed until then, and its CHANGELOG `[0.68.2]` paragraph (which still says \"#3090 … is a dated non-goal carried to 0.69.0\") must be rewritten before it re-arms.'",
+        "Updates the Gaps entry to state the proof and note PR #3498 is disarmed"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-fable-5-1/claude"
+  }
+}

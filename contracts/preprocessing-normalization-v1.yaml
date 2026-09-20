@@ -45,27 +45,33 @@ equations:
     - input.len() > 0
     lean_theorem: Theorems.Robust_Scaler
 proof_obligations:
-- type: invariant
+- id: PP-INV-001
+  type: invariant
   property: StandardScaler zero mean
   formal: '|mean(Z_j)| < ε for each feature j'
   applies_to: all
-- type: invariant
+- id: PP-INV-002
+  type: invariant
   property: StandardScaler unit variance
   formal: '|std(Z_j) - 1| < ε for each feature j where σ_j > ε'
   applies_to: all
-- type: bound
+- id: PP-BND-003
+  type: bound
   property: MinMaxScaler bounded
   formal: X_scaled ∈ [min, max] for training data
   applies_to: all
-- type: invariant
+- id: PP-INV-004
+  type: invariant
   property: MinMaxScaler extremes
   formal: scaled(x_min) = min, scaled(x_max) = max
   applies_to: all
-- type: invariant
+- id: PP-INV-005
+  type: invariant
   property: StandardScaler inverse
   formal: inverse_transform(transform(X)) ≈ X
   applies_to: all
-- type: invariant
+- id: PP-INV-006
+  type: invariant
   property: OBLIG-SCALER-F64-ACCUM mean and variance accumulate in f64
   formal: 'StandardScaler.fit accumulates the per-feature mean and the sum-of-squared
     deviations in float64 (numpy/sklearn semantics) so that on large-magnitude data

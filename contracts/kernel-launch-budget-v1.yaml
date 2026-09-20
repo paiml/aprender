@@ -40,19 +40,23 @@ equations:
     - input.len() > 0
     lean_theorem: Theorems.Bsum_Budget
 proof_obligations:
-- type: invariant
+- id: KL-INV-001
+  type: invariant
   property: Per-token formula
   formal: kernel_launches(L) = 12 * L + 2 for all L >= 1
   applies_to: all
-- type: invariant
+- id: KL-INV-002
+  type: invariant
   property: Decomposition sum
   formal: 2 + 5 + 1 + 1 + 1 + 2 = 12
   applies_to: all
-- type: monotonicity
+- id: KL-MON-003
+  type: monotonicity
   property: Launch count monotonic
   formal: L1 < L2 => kernel_launches(L1) < kernel_launches(L2)
   applies_to: all
-- type: equivalence
+- id: KL-EQ-004
+  type: equivalence
   property: SIMD kernel equivalence
   tolerance: 0.0
   applies_to: simd

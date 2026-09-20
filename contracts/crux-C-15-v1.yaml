@@ -231,13 +231,17 @@ falsification_tests:
     full_discharge_blocked_on: "apr run --tp --pp surface emitting .distributed.{tp,pp,world_size} in --json output"
 
 proof_obligations:
-- type: equivalence
+- id: CC1FF13-EQ-001
+  type: equivalence
   property: "TP=N, PP=M output ≡ TP=1, PP=1 at temp=0 top_k=1 (byte-identical tokens)"
-- type: invariant
+- id: CC1FF13-INV-002
+  type: invariant
   property: "num_heads % TP == 0 AND num_layers % PP == 0 enforced at startup"
-- type: bound
+- id: CC1FF13-BND-003
+  type: bound
   property: "TP scaling efficiency >= 70% (TP=2 >= 1.4×, TP=4 >= 2.8×)"
-- type: invariant
+- id: CC1FF13-INV-004
+  type: invariant
   property: "--json output reports .distributed.{tp, pp, world_size}"
 
 verification_summary:

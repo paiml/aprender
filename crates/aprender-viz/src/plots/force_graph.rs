@@ -532,7 +532,7 @@ mod tests {
         let (x1, y1) = positions[1];
 
         // Calculate distance
-        let dist = ((x1 - x0).powi(2) + (y1 - y0).powi(2)).sqrt();
+        let dist = (((x1 - x0) * (x1 - x0)) + ((y1 - y0) * (y1 - y0))).sqrt();
 
         // Unconnected nodes should be far apart
         assert!(dist > 100.0, "Unconnected nodes should repel: dist={dist}");
@@ -565,13 +565,13 @@ mod tests {
         let pos_conn = graph_connected.positions();
         let pos_disc = graph_disconnected.positions();
 
-        let dist_conn = ((pos_conn[1].0 - pos_conn[0].0).powi(2)
-            + (pos_conn[1].1 - pos_conn[0].1).powi(2))
-        .sqrt();
+        let dist_conn = (((pos_conn[1].0 - pos_conn[0].0) * (pos_conn[1].0 - pos_conn[0].0))
+            + ((pos_conn[1].1 - pos_conn[0].1) * (pos_conn[1].1 - pos_conn[0].1)))
+            .sqrt();
 
-        let dist_disc = ((pos_disc[1].0 - pos_disc[0].0).powi(2)
-            + (pos_disc[1].1 - pos_disc[0].1).powi(2))
-        .sqrt();
+        let dist_disc = (((pos_disc[1].0 - pos_disc[0].0) * (pos_disc[1].0 - pos_disc[0].0))
+            + ((pos_disc[1].1 - pos_disc[0].1) * (pos_disc[1].1 - pos_disc[0].1)))
+            .sqrt();
 
         // Connected nodes should be closer than disconnected
         assert!(

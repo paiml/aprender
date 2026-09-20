@@ -48,7 +48,7 @@ use crate::schema::Contract;
 
 use super::finding::LintFinding;
 use super::rules::RuleSeverity;
-use super::{GateDetail, GateResult};
+use super::{GateDetail, GateResult, Verdict};
 
 /// Which field of a `falsification_tests[]` entry a binding claim was read from.
 ///
@@ -254,6 +254,7 @@ pub(crate) fn run_strict_test_binding_gate(
             name: "strict-test-binding".into(),
             passed: gate_passed,
             skipped: false,
+            verdict: Verdict::from_gate(gate_passed, false),
             duration_ms: duration,
             detail: GateDetail::Verify {
                 total_refs,

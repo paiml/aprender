@@ -1,0 +1,85 @@
+tree llama.cpp=d1d3c3396 host=mac-server nproc=32
+bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517  /home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf
+e6796dc1e57917920a2021896d74a35ae3f63bd12cb8dc1f63f2e2b178ba0eaa  /tmp/ref3303/prompt.txt
+5ef2b60ac1761efcd0584cfdcf67363e2c7ebaf1b08a6bcb19cf9d933af403e3  /home/noah/src/llama.cpp-d1d3c3396/apr-raw-logits/apr_raw_logits
+f05cd87aef3bbe8396606f91334c974ddcb4f59d68186c35611405f74bbdd4ce  /home/noah/parity-ref/apr-3091-subject/compare_raw_logits.py
+1d5eaf129545aa6087cd6c49792f9774b61caa874fccefdd79e6164afa15bb93  /home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396/qwen35-0.8b-q4km-d1d3c3396.rawlogits.bin
+f6f792649014dcef6eec1afaf96852a293cc95c6cfceb1c88d62e16ee36c0252  /home/noah/parity-ref/apr-3091-subject/apr-intel-run1.bin
+run batched-regress start_utc=19:20:16Z load=41.43 42.53 44.11
+run batched-regress rc=0 end_utc=19:20:20Z load=41.39 42.50 44.10 bytes=77476172
+0.02.834.068 I cmn          init: llama threadpool init, n_threads = 8
+apr_raw_logits: n_pos=78 n_vocab=248320 add_bos=0 mode=batched out=/home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396-per-token/batched-regress.bin
+apr_raw_logits: token_ids=760,3841,13477,37550,33075,888,279,15217,5388,1345,279,12433,21250,34227,36165,23497,883,31108,4649,5638,11,4098,23122,11,15167,47410,11,9966,1452,6326,61369,11,321,279,26984,314,638,37309,290,42903,3808,2943,94408,17882,26,1396,13901,557,47193,11,1396,1898,557,21197,11,321,279,1830,9202,440,264,50802,314,50614,39663,22188,7123,421,995,310,1440,1518,279,4722,1362,381,35883,13
+1d5eaf129545aa6087cd6c49792f9774b61caa874fccefdd79e6164afa15bb93  /home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396-per-token/batched-regress.bin
+batched-regress vs committed reference cmp rc=0
+run per-token-run1 start_utc=19:20:21Z load=41.39 42.50 44.10
+run per-token-run1 rc=0 end_utc=19:20:26Z load=40.48 42.29 44.02 bytes=77476172
+0.02.798.823 I cmn          init: llama threadpool init, n_threads = 8
+apr_raw_logits: n_pos=78 n_vocab=248320 add_bos=0 mode=per-token out=/home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396-per-token/per-token-run1.bin
+apr_raw_logits: token_ids=760,3841,13477,37550,33075,888,279,15217,5388,1345,279,12433,21250,34227,36165,23497,883,31108,4649,5638,11,4098,23122,11,15167,47410,11,9966,1452,6326,61369,11,321,279,26984,314,638,37309,290,42903,3808,2943,94408,17882,26,1396,13901,557,47193,11,1396,1898,557,21197,11,321,279,1830,9202,440,264,50802,314,50614,39663,22188,7123,421,995,310,1440,1518,279,4722,1362,381,35883,13
+2401c11005e08bfac946a1de57af84338cc64a0d8e9a95d0941a6023b81bebc4  /home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396-per-token/per-token-run1.bin
+run per-token-run2 start_utc=19:20:27Z load=40.48 42.29 44.02
+run per-token-run2 rc=0 end_utc=19:20:32Z load=39.11 41.94 43.88 bytes=77476172
+0.02.662.208 I cmn          init: llama threadpool init, n_threads = 8
+apr_raw_logits: n_pos=78 n_vocab=248320 add_bos=0 mode=per-token out=/home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396-per-token/per-token-run2.bin
+apr_raw_logits: token_ids=760,3841,13477,37550,33075,888,279,15217,5388,1345,279,12433,21250,34227,36165,23497,883,31108,4649,5638,11,4098,23122,11,15167,47410,11,9966,1452,6326,61369,11,321,279,26984,314,638,37309,290,42903,3808,2943,94408,17882,26,1396,13901,557,47193,11,1396,1898,557,21197,11,321,279,1830,9202,440,264,50802,314,50614,39663,22188,7123,421,995,310,1440,1518,279,4722,1362,381,35883,13
+2401c11005e08bfac946a1de57af84338cc64a0d8e9a95d0941a6023b81bebc4  /home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396-per-token/per-token-run2.bin
+run per-token-run3 start_utc=19:20:32Z load=39.11 41.94 43.88
+run per-token-run3 rc=0 end_utc=19:20:38Z load=41.02 42.29 43.99 bytes=77476172
+0.02.884.798 I cmn          init: llama threadpool init, n_threads = 8
+apr_raw_logits: n_pos=78 n_vocab=248320 add_bos=0 mode=per-token out=/home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396-per-token/per-token-run3.bin
+apr_raw_logits: token_ids=760,3841,13477,37550,33075,888,279,15217,5388,1345,279,12433,21250,34227,36165,23497,883,31108,4649,5638,11,4098,23122,11,15167,47410,11,9966,1452,6326,61369,11,321,279,26984,314,638,37309,290,42903,3808,2943,94408,17882,26,1396,13901,557,47193,11,1396,1898,557,21197,11,321,279,1830,9202,440,264,50802,314,50614,39663,22188,7123,421,995,310,1440,1518,279,4722,1362,381,35883,13
+2401c11005e08bfac946a1de57af84338cc64a0d8e9a95d0941a6023b81bebc4  /home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396-per-token/per-token-run3.bin
+per-token run1 vs run2 cmp rc=0
+per-token run1 vs run3 cmp rc=0
+== A-per-token-vs-batched: ref=per-token-run1.bin sub=qwen35-0.8b-q4km-d1d3c3396.rawlogits.bin
+A-per-token-vs-batched cmp rc=1 (0 = byte-identical)
+A-per-token-vs-batched compare rc=0
+summary	n_positions	78
+summary	n_vocab	248320
+summary	min_cosine	0.998197
+summary	min_cosine_pos	34
+summary	mean_cosine	0.999243
+summary	median_cosine	0.999304
+summary	positions_below_0_98	[]
+summary	n_below_0_98	0
+summary	argmax_mismatches	[2, 21, 36, 77]
+summary	n_argmax_mismatches	4
+summary	max_abs_diff	1.168524
+summary	max_abs_diff_pos	2
+== B-per-token-vs-apr: ref=per-token-run1.bin sub=apr-intel-run1.bin
+B-per-token-vs-apr cmp rc=1 (0 = byte-identical)
+B-per-token-vs-apr compare rc=0
+summary	n_positions	78
+summary	n_vocab	248320
+summary	min_cosine	0.994599
+summary	min_cosine_pos	4
+summary	mean_cosine	0.998995
+summary	median_cosine	0.999282
+summary	positions_below_0_98	[]
+summary	n_below_0_98	0
+summary	argmax_mismatches	[21, 28, 73, 77]
+summary	n_argmax_mismatches	4
+summary	max_abs_diff	1.434902
+summary	max_abs_diff_pos	2
+== C-batched-vs-apr: ref=qwen35-0.8b-q4km-d1d3c3396.rawlogits.bin sub=apr-intel-run1.bin
+C-batched-vs-apr cmp rc=1 (0 = byte-identical)
+C-batched-vs-apr compare rc=0
+summary	n_positions	78
+summary	n_vocab	248320
+summary	min_cosine	0.995905
+summary	min_cosine_pos	4
+summary	mean_cosine	0.998989
+summary	median_cosine	0.999175
+summary	positions_below_0_98	[]
+summary	n_below_0_98	0
+summary	argmax_mismatches	[2, 28, 36, 73]
+summary	n_argmax_mismatches	4
+summary	max_abs_diff	1.342222
+summary	max_abs_diff_pos	2
+4ea0bcc5a975b60f167fdadcc90ad47af3e4c5a9531a53999ad57805e6b11102  /home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396-per-token/A-per-token-vs-batched.tsv
+fea8ed26faaee7655dbb8fd1eb341a58996d881355b23b5e1ca2186890cea865  /home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396-per-token/B-per-token-vs-apr.tsv
+40c81bd72a58ce03ade4c316955b48538a00e3b478cf6f116816979c132d1d15  /home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396-per-token/C-batched-vs-apr.tsv
+fa65a1381eab3a3507d6382ec819c894a987adb4e4292cfe89e243f7bf8378d6  /home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396-per-token/A-per-token-vs-batched.json
+bbe9c3974a0f67de0eb3373df4d725912779a6539d923aa33069c1f977a76119  /home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396-per-token/B-per-token-vs-apr.json
+3b58b5d7153acc66fb9c0d2d52684149f1aa7a461139ea60e11e7073c421c4c6  /home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396-per-token/C-batched-vs-apr.json

@@ -48,20 +48,24 @@ equations:
     - '!expected_type.is_empty()'
     lean_theorem: Theorems.Validate_Input_Type
 proof_obligations:
-- type: invariant
+- id: RDD33C-INV-001
+  type: invariant
   property: Expansion determinism
   formal: '∀ inputs: expand(id, r, m, inputs, deps) = expand(id, r, m, inputs, deps)'
   applies_to: all
-- type: bound
+- id: RDD33C-BND-002
+  type: bound
   property: Integer bounds enforced
   formal: '∀ n, decl: decl.min ≤ n ≤ decl.max ⟹ Ok(_); n < decl.min ∨ n > decl.max
     ⟹ Err(_)'
   applies_to: all
-- type: invariant
+- id: RDD33C-INV-003
+  type: invariant
   property: Path validation
   formal: '∀ s: validate_input_type(''path'', s) = Ok(_) ⟹ s.starts_with(''/'')'
   applies_to: all
-- type: invariant
+- id: RDD33C-INV-004
+  type: invariant
   property: External deps placement
   formal: Only first resource in expansion receives external_depends_on
   applies_to: all

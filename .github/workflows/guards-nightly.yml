@@ -41,7 +41,16 @@ on:
     # 02:47Z -- an off-minute, and a slot no other nightly holds: cuda-nightly
     # 01:30 (10 min), silicon-nightly 03:30, qwen-story-daily 04:17. A run of
     # this job measured ~27 min of steps, so it lands clear of all three.
-    - cron: '47 2 * * *'
+    # SHIFTED so it actually runs at night (#3292). GitHub dispatches
+    # schedule events 3h51m-6h49m late on this account (28 runs, 10
+    # workflows, 3 nights, zero on time), so a 02:47 cron fired mid-
+    # morning and the nightly tier occupied 06:49-14:14 UTC — the
+    # working day, competing with PR traffic for the same runners.
+    # Cron is set ~5h EARLY so the delayed dispatch lands near 02:47 UTC.
+    # This is CALIBRATION AGAINST A MOVING TARGET: the delay varies by
+    # ~3h and is growing. The durable fix is a fleet-side timer calling
+    # `gh workflow run` (#3292); until then, re-measure before trusting.
+    - cron: '47 21 * * *'   # 21:47 UTC -> lands ~02:47 UTC
   workflow_dispatch:
 
 # One at a time. Two of these jobs would share $GUARD_CARGO_HOME for the same
@@ -98,24 +107,22 @@ jobs:
       # names a step; each must appear VERBATIM as a `- name:` in this file.
       # Fail-closed: an empty manifest, a missing file or an unreadable line is
       # a failure, never a pass.
+      # EXTRACTED to scripts/check_guards_nightly_manifest.sh (PMAT-3234). The
+      # inline version matched `grep -Fq -- "- name: $name"` — the BARE spelling —
+      # while a step name containing a colon-space must be QUOTED in YAML, and one
+      # of them is. So the matcher looked for `- name: Test-tier...` and the file
+      # said `- name: "Test-tier...`, and this lane went RED naming a step that
+      # runs on every nightly as one the workflow does not run.
+      #
+      # Logic that lives in a `run:` block cannot be unit-tested and cannot carry a
+      # case table; that is why the defect survived. The script matches on the
+      # PARSED name, so all three YAML quotings of one string are one step, and it
+      # ships 7 rows in both directions (a genuinely absent step still fails, and a
+      # manifest that parsed almost nothing is refused rather than passed).
+      - name: Manifest-vs-workflow case table (PMAT-3234, both directions)
+        run: bash scripts/check_guards_nightly_manifest.sh --self-test
       - name: Every step the manifest says moved here must exist here
-        run: |
-          set -euo pipefail
-          manifest=scripts/guards_nightly_manifest.txt
-          [ -s "$manifest" ] || { echo "FAIL: $manifest missing or empty"; exit 1; }
-          n=0; bad=0
-          while IFS=$'\t' read -r secs name; do
-            case "${secs:-}" in ''|'#'*) continue ;; esac
-            [ -n "${name:-}" ] || { echo "FAIL: manifest line has no step name: $secs"; bad=1; continue; }
-            n=$((n + 1))
-            if ! grep -Fq -- "- name: $name" .github/workflows/guards-nightly.yml; then
-              echo "FAIL: manifest names a step this workflow does not run: $name"
-              bad=1
-            fi
-          done < <(grep -vE '^[[:space:]]*(#|$)' "$manifest")
-          [ "$n" -ge 5 ] || { echo "FAIL (vacuity): only $n manifest entries parsed"; exit 1; }
-          [ "$bad" -eq 0 ] || exit 1
-          echo "ok  $n manifest entries, every one a step in this workflow"
+        run: bash scripts/check_guards_nightly_manifest.sh
       # THE COMPARAND, FETCHED ONCE, BEFORE ANY GUARD THAT NEEDS IT -- the
       # SATD step below measures its ceiling on origin/main with the HEAD-built
       # suite, and a depth-1 checkout has no such ref until this runs.

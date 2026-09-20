@@ -166,15 +166,20 @@ falsification_tests:
     full_discharge_blocked_on: "BLOCKER-UPSTREAM-MISSING — no stable per-token log-probs extraction path for arbitrary GGUF/APR models in-tree; classifier holds on synthetic inputs but cannot be exercised against live inference until `apr eval --task perplexity --corpus <path>` wiring lands (separate ticket)"
 
 proof_obligations:
-- type: invariant
+- id: CE01902-INV-001
+  type: invariant
   property: "ppl >= 1.0 and finite (no NaN/Inf)"
-- type: invariant
+- id: CE01902-INV-002
+  type: invariant
   property: "JSON output emits ppl, mean_nll, num_tokens, log_probs_path keys"
-- type: invariant
+- id: CE01902-INV-003
+  type: invariant
   property: "ill-formed inputs (empty/NaN/Inf/positive log-prob) produce distinct Outcome variants"
-- type: invariant
+- id: CE01902-INV-004
+  type: invariant
   property: "ppl monotone in mean NLL (order-preserving under exp)"
-- type: invariant
+- id: CE01902-INV-005
+  type: invariant
   property: "--log-probs-file CLI flag reaches the classifier layer"
 
 verification_summary:

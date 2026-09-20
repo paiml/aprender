@@ -137,6 +137,13 @@ fn try_init_gguf_cuda(
     mapped: &realizar::gguf::MappedGGUFModel,
 ) -> Result<(Option<realizar::gguf::OwnedQuantizedModelCuda>, bool), crate::error::CliError> {
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
+    // #3091: Qwen3.5/Qwen3.8 hybrids have a CPU forward but no GPU one yet (#3090). Skip the
+    // CUDA attempt instead of failing it, so chat does not report a load error for a model
+    // it can run.
+    if mapped.model.architecture() == Some("qwen35") {
+        eprintln!("[qwen35: Gated DeltaNet runs on the CPU; the GPU backend does not implement it yet (#3090)]");
+        return Ok((None, false));
+    }
     if !OwnedQuantizedModelCuda::is_available() {
         return Ok((None, false));
     }

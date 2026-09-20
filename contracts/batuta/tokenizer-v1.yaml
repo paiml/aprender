@@ -113,19 +113,23 @@ equations:
     lean_theorem: Theorems.Roundtrip
 
 proof_obligations:
-- type: invariant
+- id: T-INV-001
+  type: invariant
   property: Deterministic encoding
   formal: encode(T) == encode(T) (idempotent)
   applies_to: deterministic_encode
-- type: postcondition
+- id: T-POST-002
+  type: postcondition
   property: Empty input produces empty output
   formal: encode("").len() == 0
   applies_to: empty_input
-- type: invariant
+- id: T-INV-003
+  type: invariant
   property: Token IDs within vocabulary bounds
   formal: forall id in encode(T). id < vocab_size
   applies_to: vocab_size_bound
-- type: invariant
+- id: T-INV-004
+  type: invariant
   property: Thread-safe concurrent access
   formal: parallel(encode) == sequential(encode)
   applies_to: thread_safety

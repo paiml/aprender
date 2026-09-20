@@ -95,7 +95,8 @@ equations:
     - 'every route the banner names answers on an AprTransformer server — none 404s and none reports "No model available"'
 
 proof_obligations:
-  - type: invariant
+  - id: ASMBC-INV-001
+    type: invariant
     property: >
       BACKEND-COVERAGE (DISCHARGED — aprender#2609): on an AppState whose only
       resident model is an AprTransformer, every routed generation endpoint —
@@ -106,7 +107,8 @@ proof_obligations:
       may return a body containing "No model available" while
       AppState::model_loaded() is true. The chain each handler walks is the same
       order /generate walks: CUDA (cfg), quantized, APR, dense.
-  - type: invariant
+  - id: ASMBC-INV-002
+    type: invariant
     property: >
       ONE-CONDITION-ONE-STATUS (DISCHARGED — aprender#2609): a request to ANY
       mounted route on a server with no usable model at all resolves through
@@ -121,7 +123,8 @@ proof_obligations:
       surface, not a route list: the probe enumerates GENERATION_ROUTES and the
       observed statuses are compared to each other, so one route disagreeing with
       the rest fails even if its own status is defensible in isolation.
-  - type: invariant
+  - id: ASMBC-INV-003
+    type: invariant
     property: >
       BANNER-IS-THE-ROUTE-TABLE (DISCHARGED — aprender#2609): no startup banner may
       restate the route surface. serve_model and serve_demo print
@@ -131,7 +134,8 @@ proof_obligations:
       drift; there is now one. Corollary, asserted over the whole advertised list:
       every route the banner names answers on an AprTransformer server — none 404s
       and none reports "No model available".
-  - type: invariant
+  - id: ASMBC-INV-004
+    type: invariant
     property: >
       OLLAMA-FRAME-SURVIVES-THE-STATUS (DISCHARGED — aprender#2609): /api/chat and
       /api/generate propagate the upstream generation status while keeping the
@@ -142,7 +146,8 @@ proof_obligations:
       NDJSON is JSON, and collapsing a stream into a single {"error":...} object would
       leave an Ollama client with no terminal `done:true` at all — the malformed
       stream chat_response_to_parts exists to prevent.
-  - type: invariant
+  - id: ASMBC-INV-005
+    type: invariant
     property: >
       ERROR-NAMES-THE-CALLED-ROUTE (DISCHARGED — aprender#2609): an
       unavailable-model body names the route the client actually called.
@@ -150,7 +155,8 @@ proof_obligations:
       answered "No model available: /realize/embed needs a loaded model", pointing
       the caller at a route they never touched; every embedding route now passes its
       own name into embed_inputs.
-  - type: invariant
+  - id: ASMBC-INV-006
+    type: invariant
     property: >
       HIDDEN-STATE-PARITY: all three embedding backends return the same quantity —
       the final-layer hidden state after the output norm and before lm_head, the
@@ -161,7 +167,8 @@ proof_obligations:
       a constant. AprTransformer::forward_with_cache is defined as
       forward_hidden_with_cache + project_lm_head, so the embedding path cannot
       drift from the generation path by one being updated and the other not.
-  - type: invariant
+  - id: ASMBC-INV-007
+    type: invariant
     property: >
       CONTEXT-CEILING: AprTransformer::forward_hidden_states rejects a sequence
       longer than the model's context_length with ContextLimitExceeded before

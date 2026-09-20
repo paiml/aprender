@@ -1,0 +1,154 @@
+{
+  "ticket": "PMAT-3500",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "a4edfc1701ae9cc5c808865b24070a04a8fed4f1",
+  "diff_sha256": "2a0d726375990da209e35c3a4f5cb7f8888b508851d178b5ee43b6905dbadd38",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 1743894,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements ticket PMAT-3500 without violating any constraints. `pv extract` correctly extracts deterministic N-Triples (`contracts/contracts.nt`) and `contracts/shapes.ttl`. The SHACL-Core subset is parsed accurately according to §3.6, with unsupported components raising an error. The `shapes` gate correctly plants a positive control `pc_shape` and asserts that `plant_violations >= 1` in order to pass, thereby guaranteeing that shapes are actively evaluated. The first shape effectively targets `ont:Contract` because its `entity.type` is `pv-contract`, mapping to the default target class. No tests weaken gates or assert opposites of the ticket.",
+      "findings": [],
+      "raw_bytes": 2672,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements the requested functionality according to PMAT-3500 and the refutation doctrine. `ontology/shapes.rs` correctly defines `ShapeError::Unsupported` and explicitly refuses unrecognized keys in the shape object mapping rather than silently bypassing them. `pv extract` emits N-Triples where IRIs are correctly percent-encoded via `percent_encode` within `rdf.rs`. The positive control plant asserts exactly 1 violation via tests matching the actual corpus validation output. Furthermore, `ont:file` avoids an unnecessary `maxCount` constraint in `ont-shapes-v1.yaml`, preventing reporting overlaps with the existing duplicate-stems gate. Verdict is PASS.",
+      "findings": [
+        {
+          "claim": "ontology/shapes.rs explicitly rejects unsupported SHACL keywords at parse rather than ignoring them silently",
+          "file": "crates/aprender-contracts/src/ontology/shapes.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 0
+        },
+        {
+          "claim": "pv extract produces NTriples with percent-encoded IRIs",
+          "file": "crates/aprender-contracts/src/ontology/rdf.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 0
+        },
+        {
+          "claim": "The positive control (the plant) draws exactly 1 violation in the shapes gate",
+          "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 0
+        },
+        {
+          "claim": "ont:file maxCount is NOT constrained in ont-shapes-v1.yaml to avoid duplicate reporting",
+          "file": "contracts/ont-shapes-v1.yaml",
+          "fix": "",
+          "grounding": "cited",
+          "line": 0
+        }
+      ],
+      "raw_bytes": 4215,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Reviewed the brief completely. PMAT-3500 implementation fulfills all specified requirements (ONT-4b: pv extract -> contracts.nt, in-house SHACL-Core shapes validator, gate exit vocabulary, positive control plant pc_shape, and exports). No refutations found.",
+      "findings": [],
+      "raw_bytes": 1915,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-low",
+      "model_measured": "gemini-3.6-flash-low",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "contracts/ont-shapes-v1.yaml",
+      "line": 0,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "ont:file maxCount is NOT constrained in ont-shapes-v1.yaml to avoid duplicate reporting"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+      "line": 0,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The positive control (the plant) draws exactly 1 violation in the shapes gate"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/ontology/rdf.rs",
+      "line": 0,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "pv extract produces NTriples with percent-encoded IRIs"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/ontology/shapes.rs",
+      "line": 0,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "ontology/shapes.rs explicitly rejects unsupported SHACL keywords at parse rather than ignoring them silently"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

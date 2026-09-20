@@ -14,7 +14,8 @@ equations:
     - max_iterations > 0
     lean_theorem: Theorems.Iterator
 proof_obligations:
-- type: invariant
+- id: I-INV-001
+  type: invariant
   property: iterator correctness
 falsification_tests:
 - id: FALSIFY-GEN-001

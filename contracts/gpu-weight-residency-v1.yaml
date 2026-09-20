@@ -41,24 +41,29 @@ equations:
     - batch_size > 0
     lean_theorem: Theorems.Throughput_Target
 proof_obligations:
-- type: invariant
+- id: GWR-INV-001
+  type: invariant
   property: All weights resident in VRAM after startup
   formal: gpu_memory_used ≥ model_bytes after Benchmark::new()
   applies_to: all
-- type: bound
+- id: GWR-BND-002
+  type: bound
   property: GPU throughput reaches target
   formal: tok/s(apr GPU) ≥ 180 on RTX 4090 with Qwen2.5-1.5B Q4K
   applies_to: all
-- type: invariant
+- id: GWR-INV-003
+  type: invariant
   property: Zero PCIe transfers during inference
   formal: cudaMemcpy count during forward() = 0 for weight tensors
   applies_to: all
-- type: equivalence
+- id: GWR-EQ-004
+  type: equivalence
   property: Output parity with CPU path
   formal: argmax(logits_gpu) == argmax(logits_cpu) for greedy decoding
   tolerance: 0.0001
   applies_to: all
-- type: invariant
+- id: GWR-INV-005
+  type: invariant
   property: 'PMAT-394: Grace Blackwell unified memory — cuMemAllocManaged eager, not
     lazy'
   formal: cuMemAllocManaged on CUDA 13.0/GB10 allocates physical pages immediately

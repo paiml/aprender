@@ -1,0 +1,18 @@
+- id: PMAT-3231
+  github_issue: null
+  item_type: task
+  title: 'Branch triage: 35 branches that never had a PR, classified by path residue against main'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-14T17:40:00Z
+  updated: 2026-09-14T17:40:00Z
+  spec: docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:triage
+  notes: 'docs/audits/branch-triage-2026-09-14.md — 24 DELETE, 11 REVIEW; commit count
+    is the wrong instrument under squash-merge, path residue is the right one'

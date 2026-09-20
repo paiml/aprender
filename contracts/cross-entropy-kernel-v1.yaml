@@ -38,7 +38,8 @@ equations:
     - x.len() > 0
     lean_theorem: Theorems.Log_Softmax
 proof_obligations:
-- type: invariant
+- id: CE-INV-001
+  type: invariant
   property: Non-negativity
   formal: CE(targets, logits) >= 0
   applies_to: all
@@ -52,7 +53,8 @@ proof_obligations:
     - Mathlib.Analysis.SpecialFunctions.Log.Basic
     - Mathlib.Analysis.SpecialFunctions.ExpDeriv
     notes: Requires non-negative targets; log_softmax ≤ 0 gives -sum(t·ls) ≥ 0
-- type: bound
+- id: CE-BND-002
+  type: bound
   property: Log-softmax bounded above by zero
   formal: log_softmax(x)_i <= 0 for all i
   applies_to: all
@@ -67,7 +69,8 @@ proof_obligations:
     - Mathlib.Analysis.SpecialFunctions.Log.Basic
     - Mathlib.Analysis.SpecialFunctions.ExpDeriv
     notes: exp(xᵢ) ≤ Σ exp(xⱼ), so log(exp(xᵢ)) ≤ log(Σ exp(xⱼ))
-- type: equivalence
+- id: CE-EQ-003
+  type: equivalence
   property: LogSoftmax + NLL equals CrossEntropy
   formal: '|CE(t, x) - (-sum(t_i * log_softmax(x)_i))| < eps'
   tolerance: 1.0e-06
@@ -83,11 +86,13 @@ proof_obligations:
       The fused and separate (log_softmax then NLL) evaluations compute the same
       real expression; the contract's 1e-6 tolerance is the residual float rounding
       between the two computation orders.
-- type: bound
+- id: CE-BND-004
+  type: bound
   property: Finite output for finite inputs
   formal: CE is finite when logits and targets are finite
   applies_to: all
-- type: equivalence
+- id: CE-EQ-005
+  type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd

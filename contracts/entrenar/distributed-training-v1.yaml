@@ -357,11 +357,13 @@ qa_gate:
 
     '
 proof_obligations:
-- type: invariant
+- id: DTEC6C-INV-001
+  type: invariant
   property: g_avg computed identically on all workers (deterministic order)
   formal: g_avg computed identically on all workers (deterministic order)
   applies_to: all
-- type: invariant
+- id: DTEC6C-INV-002
+  type: invariant
   property: AdamW moments (m, v) identical across workers
   formal: AdamW moments (m, v) identical across workers
   applies_to: all

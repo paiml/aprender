@@ -1,0 +1,2 @@
+# self-check pos 4: callback result_output == per-token bin row: True
+# self-check pos 28: callback result_output == per-token bin row: True

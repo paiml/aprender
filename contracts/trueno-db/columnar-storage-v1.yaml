@@ -41,15 +41,18 @@ equations:
     - WASM runtime is available
     lean_theorem: Theorems.WASM_Parity
 proof_obligations:
-- type: invariant
+- id: CSEE4E-INV-001
+  type: invariant
   property: Query completeness and soundness
   formal: '∀ p, store: Q(p) = {r ∈ store | p(r)}'
   applies_to: query_correctness
-- type: invariant
+- id: CSEE4E-INV-002
+  type: invariant
   property: Insert-get consistency
   formal: '∀ K, V: get(insert(s, K, V), K) = Some(V)'
   applies_to: insert_get_consistency
-- type: invariant
+- id: CSEE4E-INV-003
+  type: invariant
   property: WASM-native parity
   formal: '∀ p: query_wasm(p) = query_native(p)'
   applies_to: wasm_parity

@@ -90,6 +90,34 @@ architectures:
     tied_embeddings: false
     has_qk_norm: true
     default_eps: 1.0e-06
+  qwen3_moe:
+    aliases:
+    - qwen3_5_moe
+    - qwen3moe
+    - qwen3_5moe
+    norm_type: RmsNorm
+    activation: Silu
+    positional_encoding: Rope
+    mlp_type: SwiGlu
+    weight_layout: Linear
+    has_bias: false
+    tied_embeddings: false
+    has_qk_norm: true
+    is_moe: true
+    default_eps: 1.0e-06
+  qwen35:
+    aliases:
+    - qwen3_5
+    - qwen3.5
+    norm_type: RmsNorm
+    activation: Silu
+    positional_encoding: Rope
+    mlp_type: SwiGlu
+    weight_layout: Linear
+    has_bias: false
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-06
   mistral:
     aliases: []
     norm_type: RmsNorm
@@ -195,18 +223,6 @@ architectures:
     tied_embeddings: true
     has_qk_norm: false
     default_eps: 1.0e-05
-  qwen3_5:
-    aliases:
-    - qwen3.5
-    norm_type: RmsNorm
-    activation: Silu
-    positional_encoding: Rope
-    mlp_type: SwiGlu
-    weight_layout: Linear
-    has_bias: false
-    tied_embeddings: false
-    has_qk_norm: false
-    default_eps: 1.0e-06
   falcon_h1:
     aliases:
     - falcon-h1
@@ -401,11 +417,13 @@ qa_gate:
   - validation
   - falsification
 proof_obligations:
-- type: invariant
+- id: ACD33B-INV-001
+  type: invariant
   property: Every GGUF general.architecture value maps to exactly one constraint set
   formal: Every GGUF general.architecture value maps to exactly one constraint set
   applies_to: all
-- type: invariant
+- id: ACD33B-INV-002
+  type: invariant
   property: Enum fields are exhaustive over the defined enum variants
   formal: Enum fields are exhaustive over the defined enum variants
   applies_to: all

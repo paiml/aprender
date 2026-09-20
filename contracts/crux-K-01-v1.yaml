@@ -191,15 +191,20 @@ falsification_tests:
 
   if_fails: rule 'failures emit probe name + HTTP status for triage' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: invariant
+- id: CK0-INV-001
+  type: invariant
   property: "scripts/openai_smoke.py exists and exits 0 against a ready apr serve"
-- type: invariant
+- id: CK0-INV-002
+  type: invariant
   property: "Sync, async, and streaming chat.completions.create all return non-empty content"
-- type: invariant
+- id: CK0-INV-003
+  type: invariant
   property: "client.embeddings.create returns a list-of-numbers embedding with length > 0"
-- type: invariant
+- id: CK0-INV-004
+  type: invariant
   property: "Tool-use round-trip: first call tool_calls (finish_reason=tool_calls), second call content (finish_reason=stop)"
-- type: invariant
+- id: CK0-INV-005
+  type: invariant
   property: "Smoke-script failures emit {probe_name, http_status} to stderr before non-zero exit"
 
 verification_summary:

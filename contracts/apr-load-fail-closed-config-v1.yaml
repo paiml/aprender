@@ -34,7 +34,8 @@ status: enforced
 date: 2026-06-23
 
 proof_obligations:
-  - type: invariant
+  - id: ALFCC-INV-001
+    type: invariant
     property: >
       OBLIG-APR-VOCAB-EMBED-CONSISTENT: when the .apr metadata declares both
       vocab_size and hidden_size, AprV2Model::validate_config_consistency (called from
@@ -46,7 +47,8 @@ proof_obligations:
       of bounds in the embedding table (or logits target the wrong vocabulary) and inference
       would produce garbage, so apr fails closed at load. A model whose embedding rows match
       the declared vocab_size loads unchanged (no false positive).
-  - type: invariant
+  - id: ALFCC-INV-002
+    type: invariant
     property: >
       OBLIG-APR-WEIGHT-SHAPE-MATCHES-CONFIG: when the .apr metadata declares both
       vocab_size and hidden_size, AprV2Model::validate_config_consistency returns

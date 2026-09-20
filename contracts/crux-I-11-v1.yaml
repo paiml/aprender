@@ -121,13 +121,17 @@ falsification_tests:
   if_fails: "unsupported schema keyword silently dropped instead of surfacing as HTTP 400"
 
 proof_obligations:
-- type: invariant
+- id: CI13AED-INV-001
+  type: invariant
   property: "Output validates against supplied JSONSchema (parse + validate both succeed)"
-- type: invariant
+- id: CI13AED-INV-002
+  type: invariant
   property: "Enum constraints enforced across repeated sampling"
-- type: invariant
+- id: CI13AED-INV-003
+  type: invariant
   property: "Unsupported schema keywords rejected with HTTP 400 (no silent drop)"
-- type: equivalence
+- id: CI13AED-EQ-004
+  type: equivalence
   property: "apr serve response_format=json_schema matches vLLM guided_json behavior on golden user-record and color-enum schemas"
   reference: "https://docs.vllm.ai/en/latest/features/structured_outputs.html"
 

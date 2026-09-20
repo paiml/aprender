@@ -51,19 +51,23 @@ equations:
     - grade is valid LetterGrade variant
     lean_theorem: Theorems.MqsGrade
 proof_obligations:
-- type: bound
+- id: MS-BND-001
+  type: bound
   property: MQS score bounded
   formal: 0.0 <= mqs(e, p) <= 100.0
   applies_to: all
-- type: determinism
+- id: MS-DET-002
+  type: determinism
   property: MQS deterministic
   formal: mqs(e, p) = mqs(e, p) always
   applies_to: all
-- type: monotonicity
+- id: MS-MON-003
+  type: monotonicity
   property: Grade monotonic
   formal: score1 > score2 => grade(score1) >= grade(score2)
   applies_to: all
-- type: conservation
+- id: MS-CON-004
+  type: conservation
   property: Weights sum to unity
   formal: sum(weights) = 1.0
   applies_to: all

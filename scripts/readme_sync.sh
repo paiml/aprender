@@ -67,7 +67,29 @@ USAGE
 # The measurement. One instrument, shared with check_readme_claims.sh's
 # measured_contract_count(): find over contracts/, *.yaml, any depth.
 measured_contract_count() {
-    find "$REPO_ROOT/contracts" -name '*.yaml' | wc -l | tr -d ' '
+    # ONT-001 ONT-1 (F-1): the count is the census's `n_files` — the number the
+    # gate actually validates — not a `find`, which counts 51 files `pv lint`
+    # never walks (kaizen/, legacy/, pipelines/, publish-manifests/, binding.yaml,
+    # external-corpora.yaml). A README printing a number no gate measures is the
+    # drift this script exists to end; the generator and the guard now read the
+    # same file.
+    local census="$REPO_ROOT/contracts/census.json" n
+    [ -s "$census" ] || {
+        printf 'FAIL readme_sync: %s is missing or empty — run `make contracts`. The count is UNMEASURED, which is a failure, not a zero.\n' "$census" >&2
+        return 1
+    }
+    n=$(jq -r '.n_files // empty' "$census" 2>/dev/null || true)
+    case "$n" in
+        '' | *[!0-9]*)
+            printf 'FAIL readme_sync: %s carries no numeric .n_files\n' "$census" >&2
+            return 1
+            ;;
+    esac
+    [ "$n" -gt 0 ] || {
+        printf 'FAIL readme_sync: the census reports 0 contracts. A zero count is a broken measurement, not a README to regenerate.\n' >&2
+        return 1
+    }
+    printf '%s' "$n"
 }
 
 render_block() { # render_block <count>
@@ -152,7 +174,7 @@ case "$mode" in
             printf 'FAIL readme_sync: %s of %s block(s) carry the measured count %s after the rewrite.\n' "$after" "$n" "$count" >&2
             exit 1
         fi
-        printf 'ok    readme_sync: %s CONTRACT_COUNT block(s) now state %s (find contracts/ -name "*.yaml")\n' "$n" "$count"
+        printf 'ok    readme_sync: %s CONTRACT_COUNT block(s) now state %s (contracts/census.json .n_files)\n' "$n" "$count"
         exit 0
         ;;
 esac

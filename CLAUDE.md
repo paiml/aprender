@@ -61,7 +61,7 @@ and `src/format/…` paths this file still advertised. Counts it cannot check, y
 - Compute spend > 1hr on non-lambda-vector hosts (lambda-vector is pre-authorized per `feedback_compute_pre_authorized.md`)
 - Destructive ops: `git push --force`, `gh release delete`, dropping branches/tags on main, `cargo yank`
 - Modifying CI workflows (`.github/workflows/*.yml`)
-- Crates.io publish cascade (always ask before `make publish`)
+- ~~Crates.io publish cascade (always ask before `make publish`)~~ **WITHDRAWN** — T-4 is unattended under standing operator authorization (APR-RELEASE-001 rev. 2026-09-17 §T-4; 0.68.1 and 0.68.2 both shipped that way with `attended_min 0`; operator, 2026-09-20, verbatim: *"tell agent to auto-publish and never wait for me"*). The pre-publish gates ARE the authorization: dogfood GO on the release commit, release assets verified, clean-room green on the tag, publish preflight R1–R6, and the `--check` dry-run, which is a receipt and not a stop. `cargo yank` remains a check-in.
 - Architectural pivots (changing model architecture, retraining from scratch, switching tokenizers)
 - Anything contradicting an explicit user instruction earlier in the session
 
@@ -420,9 +420,10 @@ make coverage                           # Coverage report (disables mold linker,
 For the workspace-wide number, reproduce CI's `workspace-test` nextest command (see
 Build Commands) and read its `Summary` line — 80,604 tests on 2026-08-12. Only a
 subset of integration targets is wired into CI: `.github/workflows/ci.yml` runs `--lib`
-across the workspace, plus ONE explicit line listing the individual `--test` targets
-(beats, `cli_commands`, `monorepo_invariants`, `readme_contract`, …). A new
-`tests/*.rs` file is dark until it is added to that line.
+across the workspace, plus the explicit commands in `ci/explicit-test-commands.d/` —
+one `NNN-<slug>.cmd` file per command, run in sorted order (beats, `cli_commands`,
+`monorepo_invariants`, `readme_contract`, …). A new `tests/*.rs` file is dark until
+a fragment names it; take a free ordinal between two others, never renumber.
 
 Mutation testing: `cargo mutants --no-times --timeout 300 --in-place -- --all-features` (or via CI).
 
@@ -682,7 +683,7 @@ in-tree as `crates/aprender-compute` and has no independent version to wait on.
 
 - **SSC canary eval**: 90% accuracy, SHIP gate PASS — classifier ready to ship
 - **entrenar cuBLAS integration**: GEMM parity verified between CPU and GPU paths
-- **Blackwell (GB10) training**: Blocked by JIT pre-warming bug in custom PTX kernels. Must use fused NF4 kernel path (15.5 tok/s) until trueno 0.4.36 ships with pre-compiled kernels
+- **Blackwell (GB10) training**: Blocked by JIT pre-warming bug in custom PTX kernels. Must use fused NF4 kernel path until trueno 0.4.36 ships with pre-compiled kernels
 - **apr-cli inference NOT affected**: `apr run` / `apr serve` use cuBLAS (GPU) or trueno SIMD (CPU) — pre-compiled, no custom PTX involved
 - **Trained model (LoRA adapter)**: Architecture-independent safetensors — works on any GPU or CPU via standard PEFT loading
 - **Key tickets**: trueno#200 (Blackwell JIT), trueno#203 (pre-compiled kernels), entrenar#300 (cuBLAS backward)

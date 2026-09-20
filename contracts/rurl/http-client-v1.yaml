@@ -167,31 +167,38 @@ equations:
     - tier label accurately identifies which tier matched
     lean_theorem: Theorems.MultiTierRouting
 proof_obligations:
-- type: invariant
+- id: HC-INV-001
+  type: invariant
   property: URL parsing allocates zero heap memory
   formal: for-all input, components of UrlView::parse(input) are subslices of input
   applies_to: url_validation
-- type: completeness
+- id: HC-CMP-002
+  type: completeness
   property: Every RuntimeError variant has a source mapping
   formal: for-all e in {io::Error, VarError, parse_error} exists v in RuntimeError mapping(e) = v
   applies_to: error_propagation
-- type: bound
+- id: HC-BND-003
+  type: bound
   property: LRU cache never exceeds capacity
   formal: for-all ops in Seq<Put|Get> cache.len() <= cache.capacity() after each op
   applies_to: lru_cache_eviction
-- type: invariant
+- id: HC-INV-004
+  type: invariant
   property: All RFC 1918 private IP ranges are blocked
   formal: for-all ip in {10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 169.254.0.0/16} validate_redirect_target("http://{ip}") = Err(_)
   applies_to: ssrf_prevention
-- type: determinism
+- id: HC-DET-005
+  type: determinism
   property: Multi-tier routing is deterministic
   formal: for-all uri rewrite_url(uri) = rewrite_url(uri) (same input, same output)
   applies_to: multi_tier_routing
-- type: invariant
+- id: HC-INV-006
+  type: invariant
   property: HTTP requests conform to RFC 9112 message format
   formal: for-all (method, path, host, body) output of build_request contains required headers and terminates with \r\n\r\n
   applies_to: request_construction
-- type: roundtrip
+- id: HC-RT-007
+  type: roundtrip
   property: Content-Length matches actual body byte length
   formal: for-all body Content-Length header value = body.as_bytes().len()
   applies_to: request_construction

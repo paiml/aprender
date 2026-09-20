@@ -432,3 +432,137 @@ fn test_transformer_layer_batched_m8() {
 }
 
 include!("batched_tests_workspace.rs");
+
+// ========================================================================
+// #3413 B: batched per-head QK RMSNorm (Qwen3 prefill)
+// ========================================================================
+
+/// Host reference for per-head RMSNorm over `batch * num_heads` rows.
+fn ref_batched_per_head_rmsnorm(
+    x: &[f32],
+    gamma: &[f32],
+    head_dim: usize,
+    num_heads: usize,
+    batch: usize,
+    eps: f32,
+) -> Vec<f32> {
+    let mut out = vec![0.0f32; x.len()];
+    for seq in 0..batch {
+        for head in 0..num_heads {
+            let base = (seq * num_heads + head) * head_dim;
+            let row = &x[base..base + head_dim];
+            let mean_sq: f32 = row.iter().map(|v| v * v).sum::<f32>() / head_dim as f32;
+            let scale = 1.0f32 / (mean_sq + eps).sqrt();
+            for j in 0..head_dim {
+                out[base + j] = row[j] * scale * gamma[j];
+            }
+        }
+    }
+    out
+}
+
+/// Deterministic, shape-varying input: RMSNorm is scale-invariant, so a row that
+/// is merely a multiple of row 0 could not falsify a missing `blockIdx.y` offset.
+fn qk_norm_fixture(n: usize) -> Vec<f32> {
+    (0..n)
+        .map(|i| {
+            let h = (i as u64).wrapping_mul(2_654_435_761) % 977;
+            (h as f32) / 100.0 - 4.5
+        })
+        .collect()
+}
+
+/// #3413 B: `batched_qkv_rope_phase` applied no QK-norm, so the prompt's K was
+/// cached un-normed and decode produced garbage. This is the falsifier for the
+/// `(seq_idx * num_heads + head_idx) * head_dim` offset: every element of every
+/// sequence must match the host reference, and gamma must carry no batch stride.
+#[test]
+#[serial_test::serial]
+fn test_3413_batched_per_head_rmsnorm_matches_host_reference() {
+    if !CudaExecutor::is_available() {
+        return;
+    }
+    let mut executor = crate::cuda_executor_or_skip!(0);
+
+    let head_dim: usize = 64;
+    let num_heads: usize = 4;
+    let batch: usize = 3;
+    let eps = 1e-6f32;
+    let n = batch * num_heads * head_dim;
+
+    let x = qk_norm_fixture(n);
+    let gamma: Vec<f32> = (0..head_dim).map(|j| 0.5 + j as f32 * 0.01).collect();
+
+    let x_gpu = GpuBuffer::from_host(&executor.context, &x).expect("upload x");
+    let gamma_gpu = GpuBuffer::from_host(&executor.context, &gamma).expect("upload gamma");
+    let out_gpu = GpuBuffer::<f32>::new(&executor.context, n).expect("alloc out");
+
+    executor
+        .batched_per_head_rmsnorm_into(
+            &x_gpu,
+            &gamma_gpu,
+            &out_gpu,
+            head_dim as u32,
+            num_heads as u32,
+            batch as u32,
+            eps,
+        )
+        .expect("batched_per_head_rmsnorm_into");
+    executor.stream.synchronize().expect("sync");
+
+    let mut got = vec![0.0f32; n];
+    out_gpu.copy_to_host(&mut got).expect("download");
+
+    let want = ref_batched_per_head_rmsnorm(&x, &gamma, head_dim, num_heads, batch, eps);
+    for (i, (g, w)) in got.iter().zip(want.iter()).enumerate() {
+        let seq = i / (num_heads * head_dim);
+        let head = (i / head_dim) % num_heads;
+        assert!(
+            (g - w).abs() <= 1e-5 * (1.0 + w.abs()),
+            "#3413 B: seq={seq} head={head} lane={} got {g} want {w}",
+            i % head_dim
+        );
+    }
+}
+
+/// trueno#243 / #3413 A: a kernel on a graph path that does not record itself is
+/// dropped from the manually rebuilt graph.
+#[test]
+#[serial_test::serial]
+fn test_3413_batched_per_head_rmsnorm_is_recorded_into_the_manual_graph() {
+    if !CudaExecutor::is_available() {
+        return;
+    }
+    let mut executor = crate::cuda_executor_or_skip!(0);
+
+    let head_dim: usize = 64;
+    let num_heads: usize = 4;
+    let batch: usize = 3;
+    let n = batch * num_heads * head_dim;
+    let x = GpuBuffer::<f32>::new(&executor.context, n).expect("x");
+    let gamma = GpuBuffer::<f32>::new(&executor.context, head_dim).expect("gamma");
+
+    executor.begin_graph_recording();
+    let before = executor.graph_recorded_kernels.len();
+    executor
+        .batched_per_head_rmsnorm_into(
+            &x,
+            &gamma,
+            &x,
+            head_dim as u32,
+            num_heads as u32,
+            batch as u32,
+            1e-6,
+        )
+        .expect("batched_per_head_rmsnorm_into");
+    let after = executor.graph_recorded_kernels.len();
+    executor.graph_recording = false;
+    executor.graph_recorded_kernels.clear();
+
+    assert_eq!(
+        after - before,
+        1,
+        "#3413: batched_per_head_rmsnorm_into must record itself while \
+         graph_recording is set, or the replayed graph runs without QK-norm"
+    );
+}

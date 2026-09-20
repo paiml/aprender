@@ -39,6 +39,47 @@ fn read_repl_line() -> Result<Option<String>, CliError> {
     Ok(Some(input.trim().to_string()))
 }
 
+/// Render one assistant turn from a generation result — and the ONE place a generation
+/// failure is recorded on the session.
+///
+/// #3367: `echo hey | apr chat model.gguf` hit a generate error, printed it as an
+/// assistant turn (`Assistant: [Error: GGUF generate failed: ...]`) and exited **0**, so
+/// a gate keyed on the return code read a failed generation as a pass. The error text is
+/// still returned unchanged — an interactive user must keep seeing it — but the failure
+/// is no longer invisible to the caller: `had_generate_error` is what
+/// [`session_exit_result`] turns into a non-zero exit at session end.
+///
+/// Mid-session behaviour is deliberately unchanged. The REPL's existing convention is
+/// that only I/O errors abort the loop (`read_repl_line()?`); a generation error prints
+/// and the conversation continues. This records the failure instead of aborting on it.
+#[cfg_attr(not(feature = "inference"), allow(dead_code))]
+fn render_assistant_turn(result: Result<String, String>, had_generate_error: &mut bool) -> String {
+    match result {
+        Ok(text) => text,
+        Err(e) => {
+            *had_generate_error = true;
+            format!("[Error: {}]", e)
+        }
+    }
+}
+
+/// The exit-code decision at session end (#3367).
+///
+/// A session in which any turn failed to generate exits non-zero, with
+/// [`CliError::InferenceFailed`] — exit **8** per `error.rs`, the code `main` already
+/// maps a command `Err` to. Nothing else about the session changes.
+#[cfg_attr(not(feature = "inference"), allow(dead_code))]
+fn session_exit_result(had_generate_error: bool) -> Result<(), CliError> {
+    if had_generate_error {
+        return Err(CliError::InferenceFailed(
+            "chat session ended after a failed generation (#3367); the [Error: ...] turn(s) \
+             above are not model output"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Generate a response, update history, and print (inference mode).
 #[cfg(feature = "inference")]
 fn generate_and_print(session: &mut ChatSession, input: &str, config: &ChatConfig) {
@@ -83,7 +124,9 @@ fn run_repl(path: &Path, config: &ChatConfig) -> Result<(), CliError> {
     }
 
     println!("{}", "Goodbye!".cyan());
-    Ok(())
+    // #3367: the session's verdict, not the loop's. Every turn was printed as it
+    // happened; this is only the exit code catching up with what was printed.
+    session_exit_result(session.had_generate_error())
 }
 
 #[cfg(feature = "inference")]

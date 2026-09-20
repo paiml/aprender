@@ -75,11 +75,14 @@ falsification_tests:
 
   if_fails: rule 'gradient sums both paths (matches PyTorch reference)' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CD2C9E6-EQ-001
+  type: equivalence
   property: "apr tied-weights semantics match PyTorch `model.tie_weights()` (gradient accumulation + param count)"
-- type: invariant
+- id: CD2C9E6-INV-002
+  type: invariant
   property: "tie=true: data_ptr(lm_head.weight) == data_ptr(embed_tokens.weight)"
-- type: invariant
+- id: CD2C9E6-INV-003
+  type: invariant
   property: "tie=true reduces trainable params by exactly V*H"
 
 verification_summary:

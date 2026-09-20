@@ -41,11 +41,11 @@ futures-intrusive = { version = "0.5", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 # Native CUDA monitoring via trueno-gpu (TRUENO-SPEC-010)
-trueno-gpu = { version = "0.67.0", path = "../aprender-gpu", optional = true, package = "aprender-gpu" }
+trueno-gpu = { version = "0.68.2", path = "../aprender-gpu", optional = true, package = "aprender-gpu" }
 # PMAT-336: Provable contracts compile-time enforcement
 provable-contracts-macros = { workspace = true }
 # P1a: Sovereign GEMM microkernel codegen (compile-time shape specialization)
-trueno-gemm-codegen = { version = "0.67.0", path = "../aprender-gemm-codegen", package = "aprender-gemm-codegen" }
+trueno-gemm-codegen = { version = "0.68.2", path = "../aprender-gemm-codegen", package = "aprender-gemm-codegen" }
 # Tracing/profiling support (renacer integration)
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"], optional = true }
@@ -98,13 +98,13 @@ tokio = { version = "1", features = ["macros", "rt"] }
 serde_json = "1.0"
 nalgebra = "0.34"  # For eigendecomposition benchmark comparison
 # Simulation testing framework (TRUENO-SPEC-012)
-simular = { path = "../aprender-simulate", package = "aprender-simulate" }
+simular = { workspace = true }
 regex = "1.11"  # For PTX/WGSL pattern validation in falsification tests
 # GPU edge-case test framework (TCE-001)
-trueno-cuda-edge = { path = "../aprender-cuda-edge", package = "aprender-cuda-edge" }
+trueno-cuda-edge = { workspace = true }
 # Sparse and solver crates for contract tests
-trueno-sparse = { path = "../aprender-sparse", package = "aprender-sparse" }
-trueno-solve = { path = "../aprender-solve", package = "aprender-solve" }
+trueno-sparse = { workspace = true }
+trueno-solve = { workspace = true }
 # ML-tuner showcase (SHOWCASE-BRICK-001): aprender RandomForest, DEV-only to avoid the
 # compute→core layer inversion. Path dev-dep cycle is legal + dropped on publish.
 aprender = { path = "../aprender-core", package = "aprender-core", default-features = false }

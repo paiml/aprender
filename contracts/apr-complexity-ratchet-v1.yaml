@@ -57,27 +57,33 @@ equations:
       - "nested at 7/21 is the near-miss control that says the detector is not simply reporting everything it sees"
 
 proof_obligations:
-  - type: invariant
+  - id: ACR-INV-001
+    type: invariant
     property: "No function may be over a threshold without a row, and no recorded number may rise"
     formal: "scripts/check_complexity_ratchet.sh exits 0"
     applies_to: complexity_may_only_fall
-  - type: invariant
+  - id: ACR-INV-002
+    type: invariant
     property: "A repaired function's row must be deleted in the same commit"
     formal: "the STALE finding is emitted for a baselined key absent from the current scan, and it fails the guard"
     applies_to: complexity_may_only_fall
-  - type: invariant
+  - id: ACR-INV-003
+    type: invariant
     property: "The guard can turn RED on every finding it claims to make"
     formal: "--selftest carries must-fire and must-not-fire rows for NEW, GROWN (both metrics) and STALE, and exits non-zero if any fails"
     applies_to: guard_is_not_vacuous
-  - type: invariant
+  - id: ACR-INV-004
+    type: invariant
     property: "The thresholds are the pre-commit hook's, not a dial"
     formal: "MAX_CYCLOMATIC=30 and MAX_COGNITIVE=25 appear in the guard, matching PMAT_MAX_CYCLOMATIC_COMPLEXITY / PMAT_MAX_COGNITIVE_COMPLEXITY"
     applies_to: complexity_may_only_fall
-  - type: invariant
+  - id: ACR-INV-005
+    type: invariant
     property: "The baseline may only shrink against a ref a pull request cannot rewrite"
     formal: "baseline_ratchet_check with kind keyed2, and the baseline is classified in check_baseline_ratchets.sh"
     applies_to: baseline_is_shrink_only
-  - type: invariant
+  - id: ACR-INV-006
+    type: invariant
     property: "The guard is enforced per-PR, not merely present in the tree"
     formal: "ci.yml invokes it in guard-runner-labels, which `gate` lists in its needs"
     applies_to: complexity_may_only_fall

@@ -1,0 +1,6 @@
+# pre-commit complexity gate refused gen_input (ggml_emul_fixtures.c, cognitive 32) and main (logits_gap.py, cognitive 31);
+# both were decomposed with the same arithmetic and generator consumption order, then rerun and compared to the first outputs.
+intel 2026-09-15T21:35:35Z load=36.06 44.59 40.73: bash build_and_run.sh rc=0 (ggml_emul_fixtures.c 80518776...77b29aaf -> bf56215b6b82e976628d99f2bccfea12113a6f5d956229ac6d2820b932be80ad)
+  cmp fixtures.tsv fixtures.v1.tsv rc=0 ; cmp fixtures.rs.txt fixtures.v1.rs.txt rc=0 ; cmp fixtures.bin fixtures.v1.bin rc=0   (d10f6ca1 / 54d88cd6 / c36cea69 unchanged)
+lambda: logits_gap.py ea30daa6...eee7f42e -> d17958680159126ee105cc2812e186213a3fe166336c8eb6ae720d50257fc1af, rerun for orig p1 p2 p3 p4 (rc 0 each)
+  cmp /tmp/emul3091/cmp2/gap-<p>.tsv cmp/gap-<p>.tsv rc=0 for all 5
