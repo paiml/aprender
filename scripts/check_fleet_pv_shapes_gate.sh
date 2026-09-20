@@ -69,7 +69,10 @@ judge() {
         printf 'UNMEASURED runner=%s reason=no-pin pin=%s -- this runner was never converged (infra#708); the shapes gate is not measured here, and this row is not a pass\n' "$RUNNER" "$PV_PIN"
         return 0
     fi
-    pin=$(tr -d '[:space:]' < "$PV_PIN")
+    # Quorum lane 1 (gemini-3.1-pro-high) on #3633, MEASURED: `tr -d '[:space:]'` without the
+    # outer brackets is a literal set on busybox/POSIX tr and turns 0.65.2-rc1 into 0.65.2-r1;
+    # GNU tr is merely lenient. No tr: bash strips the class itself, portably.
+    pin=$(<"$PV_PIN"); pin=${pin//[[:space:]]/}
     if ! PV_BIN=$(resolve_fleet_pv); then
         printf 'FAIL runner=%s pin=%s candidates=%s -- the pin declares the tool and none of the fleet paths has it; the box disagrees with its own declaration (forjar drift)\n' "$RUNNER" "$pin" "$FLEET_PV_CANDIDATES" >&2
         return 1
@@ -96,8 +99,14 @@ v = d.get("verdict"); pc = d.get("pc_shape"); planted = d.get("plant_violations"
 corpus = d.get("by_entity_type", {}); n = d.get("focus_nodes_n", 0); tri = d.get("triples", 0)
 armed = ",".join(d.get("armed_shapes", []) or []) or "-"
 row = f"verdict={v} focus_nodes={n} triples={tri} armed={armed} corpus={json.dumps(corpus, separators=(',',':'))} planted={planted} pc_shape={pc}"
-if pc != "fired" or not isinstance(planted, int) or planted < 1:
-    print("FAIL " + row + " -- pv's own planted-violation control did not fire; a checker that fires on nothing cannot report Pass"); sys.exit(1)
+# pv's own planted-violation control is NOT a ticket requirement (quorum lane 1 on #3633
+# called it creep). It is REPORTED in the row whenever pv emits it, and it gates only when
+# pv emits it AND says the checker did not fire -- a checker that fires on nothing cannot
+# report Pass. A pv that does not emit the field is an unreported control, not a failure.
+if "pc_shape" in d and (pc != "fired" or not isinstance(planted, int) or planted < 1):
+    print("FAIL " + row + " -- pv reports its planted-violation control did NOT fire; a checker that fires on nothing cannot report Pass"); sys.exit(1)
+if "pc_shape" not in d:
+    row += " control=unreported"
 if v != "Pass":
     print("FAIL " + row); sys.exit(1)
 print("PASS " + row); sys.exit(0)
@@ -120,13 +129,14 @@ if [ "${1:-}" = "--self-test" ]; then
     bad=0; n=0
     ok()  { n=$((n+1)); printf 'ok    row %-2s %s\n' "$n" "$*"; }
     nok() { n=$((n+1)); printf 'FAIL  row %-2s %s\n' "$n" "$*" >&2; bad=1; }
-    mkpv() { # mkpv <path> <mode: capable|old> <verdict for lint json: Pass|Fail> [pc_shape] [version]
-        local p=$1 mode=$2 verdict=$3 pc=${4:-fired} v=${5:-0.68.2}
+    mkpv() { # mkpv <path> <mode: capable|old> <verdict for lint json: Pass|Fail> [pc_shape|omit] [version]
+        local p=$1 mode=$2 verdict=$3 pc=${4:-fired} v=${5:-0.68.2} pcfield
+        if [ "$pc" = omit ]; then pcfield=""; else pcfield="\"pc_shape\":\"$pc\","; fi
         cat > "$p" <<STUB
 #!/usr/bin/env bash
 case "\$1" in
   --version) echo "pv $v (stub)";;
-  lint) case "\$2" in --help) [ "$mode" = capable ] && echo "--gate <G>  gate to run" || echo "(no gate flag)";; *) printf '{"verdict":"$verdict","pc_shape":"$pc","plant_violations":3,"focus_nodes_n":7,"triples":40,"armed_shapes":["ont-shapes-v1"],"by_entity_type":{"code":5}}';; esac;;
+  lint) case "\$2" in --help) [ "$mode" = capable ] && echo "--gate <G>  gate to run" || echo "(no gate flag)";; *) printf '{"verdict":"$verdict",${pcfield}"plant_violations":3,"focus_nodes_n":7,"triples":40,"armed_shapes":["ont-shapes-v1"],"by_entity_type":{"code":5}}';; esac;;
   extract) [ "$mode" = capable ] && exit 0 || { echo "unrecognized subcommand" >&2; exit 2; };;
 esac
 STUB
@@ -160,7 +170,7 @@ STUB
     # 6. pv's own control silent (pc_shape != fired) -> RED even with verdict=Pass
     mkpv "$d/pv_silent" capable Pass silent
     out=$(FLEET_PV_BIN="$d/pv_silent" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" bash "$0" 2>&1); rc=$?
-    [ "$rc" -eq 1 ] && grep -q 'planted-violation control did not fire' <<<"$out" && ok "verdict=Pass but pc_shape not fired -> RED (a checker firing on nothing cannot pass)" || nok "expected RED on silent control, got rc=$rc: $out"
+    [ "$rc" -eq 1 ] && grep -qi 'planted-violation control did not fire' <<<"$out" && ok "verdict=Pass but pc_shape not fired -> RED (a checker firing on nothing cannot pass)" || nok "expected RED on silent control, got rc=$rc: $out"
 
     # 7. resolution order: first candidate absent, second present -> resolved, PASS names it
     mkpv "$d/pv_second" capable Pass
@@ -171,6 +181,16 @@ STUB
     mkpv "$d/pv_stale" capable Pass fired 0.65.2
     out=$(FLEET_PV_BIN="$d/pv_stale" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" bash "$0" 2>&1); rc=$?
     [ "$rc" -eq 1 ] && grep -q 'NOT the pinned one' <<<"$out" && ok "binary 0.65.2 under pin 0.68.2 -> RED, named as a pin mismatch (before any lint)" || nok "expected pin-mismatch RED, got rc=$rc: $out"
+
+    # 9. pv omits pc_shape entirely -> PASS with control=unreported in the row (not a false negative)
+    mkpv "$d/pv_nopc" capable Pass omit
+    out=$(FLEET_PV_BIN="$d/pv_nopc" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" bash "$0" 2>&1); rc=$?
+    [ "$rc" -eq 0 ] && grep -q '^PASS .*control=unreported' <<<"$out" && ok "pv without a pc_shape field -> PASS, row says control=unreported" || nok "expected PASS with control=unreported, got rc=$rc: $out"
+
+    # 10. a pin with surrounding whitespace and a suffix survives the strip intact (the tr finding)
+    printf '  0.68.2-rc1 \n' > "$d/pin-rc"; mkpv "$d/pv_rc" capable Pass fired 0.68.2-rc1
+    out=$(FLEET_PV_BIN="$d/pv_rc" FLEET_PV_PIN="$d/pin-rc" FLEET_PV_CONTRACTS="$d/contracts" bash "$0" 2>&1); rc=$?
+    [ "$rc" -eq 0 ] && grep -q 'pin=0.68.2-rc1 ' <<<"$out" && ok "pin '  0.68.2-rc1 \\n' strips to 0.68.2-rc1 -- no tr, no busybox class bug" || nok "expected pin=0.68.2-rc1, got rc=$rc: $out"
 
     [ "$bad" -eq 0 ] && { printf 'SELF-TEST PASSED: %s rows\n' "$n"; exit 0; }
     printf 'SELF-TEST FAILED\n' >&2; exit 1
