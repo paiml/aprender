@@ -49,15 +49,28 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "."
-          # cache-bin false: these run on the shared clean-room runners, where all 16
-          # listeners share ONE $CARGO_HOME. rust-cache's POST step PRUNES ~/.cargo/bin,
-          # so one job here deletes the fleet toolchain out from under the other fifteen
-          # (infra#208, #320, #381 -- it has happened three times in a day). infra's
-          # shared-cargo-home-guard BLOCKs on this exact step.
-          cache-bin: "false"
+      # NO rust-cache: cache-bin false was never the fix.
+      #
+      # It skips cleanBin and NOTHING else. rust-cache's save step also runs
+      # cleanRegistry, unconditionally, deleting ${CARGO_HOME}/registry/src -- the
+      # extracted crate sources every OTHER job on the box is compiling from.
+      # All 16 clean-room listeners share ONE HOME. Measured on intel
+      # 2026-09-19 (infra#775): eight save steps in 100 minutes, every crate
+      # directory reborn the second one of them finished, and an infra cargo
+      # kani build killed mid-crate with `could not parse/generate dep info ...
+      # No such file or directory` -- the aprender#2822 signature.
+      #
+      # THE CI-REAPER IS NOT THE ONLY CAUSE OF THAT MESSAGE. aprender#2822
+      # attributes it to the reaper; in the measured case the reaper had last
+      # run 27 minutes earlier and its next run logged swept=0. Check the clock
+      # before naming it: `journalctl -u ci-reaper.service` and a grep for
+      # `Post Run Swatinem/rust-cache` over the runners' _diag/Worker_*.log.
+      #
+      # On a persistent runner ~/.cargo persists by itself, so the restore was a
+      # no-op and the save was the whole effect. Only a job-private CARGO_HOME
+      # would make the action safe: --target-dir, cargo install --root and a fresh HOME
+      # do not, since cargo reads sources from ${CARGO_HOME} whatever the target
+      # dir is. infra's shared-cargo-home-guard BLOCKs the action here now.
       - name: Build all 27 chapter examples
         run: |
           for ch in ch01_hello_apr ch02_tensors ch03_apr_format ch04_supervised \
@@ -80,15 +93,28 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "."
-          # cache-bin false: these run on the shared clean-room runners, where all 16
-          # listeners share ONE $CARGO_HOME. rust-cache's POST step PRUNES ~/.cargo/bin,
-          # so one job here deletes the fleet toolchain out from under the other fifteen
-          # (infra#208, #320, #381 -- it has happened three times in a day). infra's
-          # shared-cargo-home-guard BLOCKs on this exact step.
-          cache-bin: "false"
+      # NO rust-cache: cache-bin false was never the fix.
+      #
+      # It skips cleanBin and NOTHING else. rust-cache's save step also runs
+      # cleanRegistry, unconditionally, deleting ${CARGO_HOME}/registry/src -- the
+      # extracted crate sources every OTHER job on the box is compiling from.
+      # All 16 clean-room listeners share ONE HOME. Measured on intel
+      # 2026-09-19 (infra#775): eight save steps in 100 minutes, every crate
+      # directory reborn the second one of them finished, and an infra cargo
+      # kani build killed mid-crate with `could not parse/generate dep info ...
+      # No such file or directory` -- the aprender#2822 signature.
+      #
+      # THE CI-REAPER IS NOT THE ONLY CAUSE OF THAT MESSAGE. aprender#2822
+      # attributes it to the reaper; in the measured case the reaper had last
+      # run 27 minutes earlier and its next run logged swept=0. Check the clock
+      # before naming it: `journalctl -u ci-reaper.service` and a grep for
+      # `Post Run Swatinem/rust-cache` over the runners' _diag/Worker_*.log.
+      #
+      # On a persistent runner ~/.cargo persists by itself, so the restore was a
+      # no-op and the save was the whole effect. Only a job-private CARGO_HOME
+      # would make the action safe: --target-dir, cargo install --root and a fresh HOME
+      # do not, since cargo reads sources from ${CARGO_HOME} whatever the target
+      # dir is. infra's shared-cargo-home-guard BLOCKs the action here now.
       - name: Run all 27 chapter examples
         run: |
           PASS=0; FAIL=0
@@ -118,15 +144,28 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "."
-          # cache-bin false: these run on the shared clean-room runners, where all 16
-          # listeners share ONE $CARGO_HOME. rust-cache's POST step PRUNES ~/.cargo/bin,
-          # so one job here deletes the fleet toolchain out from under the other fifteen
-          # (infra#208, #320, #381 -- it has happened three times in a day). infra's
-          # shared-cargo-home-guard BLOCKs on this exact step.
-          cache-bin: "false"
+      # NO rust-cache: cache-bin false was never the fix.
+      #
+      # It skips cleanBin and NOTHING else. rust-cache's save step also runs
+      # cleanRegistry, unconditionally, deleting ${CARGO_HOME}/registry/src -- the
+      # extracted crate sources every OTHER job on the box is compiling from.
+      # All 16 clean-room listeners share ONE HOME. Measured on intel
+      # 2026-09-19 (infra#775): eight save steps in 100 minutes, every crate
+      # directory reborn the second one of them finished, and an infra cargo
+      # kani build killed mid-crate with `could not parse/generate dep info ...
+      # No such file or directory` -- the aprender#2822 signature.
+      #
+      # THE CI-REAPER IS NOT THE ONLY CAUSE OF THAT MESSAGE. aprender#2822
+      # attributes it to the reaper; in the measured case the reaper had last
+      # run 27 minutes earlier and its next run logged swept=0. Check the clock
+      # before naming it: `journalctl -u ci-reaper.service` and a grep for
+      # `Post Run Swatinem/rust-cache` over the runners' _diag/Worker_*.log.
+      #
+      # On a persistent runner ~/.cargo persists by itself, so the restore was a
+      # no-op and the save was the whole effect. Only a job-private CARGO_HOME
+      # would make the action safe: --target-dir, cargo install --root and a fresh HOME
+      # do not, since cargo reads sources from ${CARGO_HOME} whatever the target
+      # dir is. infra's shared-cargo-home-guard BLOCKs the action here now.
       - name: Run book_contracts tests
         run: cargo test -p aprender-core --test book_contracts
 

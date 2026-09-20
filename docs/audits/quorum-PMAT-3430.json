@@ -1,0 +1,171 @@
+{
+  "ticket": "PMAT-3430",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 118 commit(s); judged against origin/main",
+  "head": "9bbcaa42b7ada310dcdbb5900b9e42fe6e86acd6",
+  "diff_sha256": "351e341eb58c9acff059a06e525b9f83fd54cc87bd02d92e9f8c62e94858b84b",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 96474,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements PMAT-3430 by adding the `GgmlType` enum and the 43-row `TRAITS` table in `aprender-quant` (which sits below `aprender-core` and `aprender-compute`). \n\n1. **Ticket Match**: It introduces precisely 35 live variants and 8 removed variants as documented, extracted directly from the upstream `llama.cpp` using the newly added C probe (`scripts/extract_ggml_traits.sh`).\n2. **Strict Verification**: The implementation is backed by robust compilation-time assertions (in `aprender-quant/src/lib.rs` and `ggml_type.rs`), integration tests ensuring that the `TRAITS` table identically matches the checked-in fixture, and Kani property-based tests verifying absence of panics across the entire ID space.\n3. **Receipt Validation**: The claims in the receipt (`docs/audits/impl-PMAT-3430-m1-leaf-receipt.md`) exactly align with the diff. All test mutations predicted in the receipt are enforced by tests like `falsify_ggml_001` and `traits_table_equals_the_upstream_fixture_row_for_row`.\n4. **No Unrequested Changes**: There is no behavioral drift or weakening of gates. Legacy values are kept but strictly bound to the `TRAITS` oracle at compile time.\n\nNo findings refute the implementation.",
+      "findings": [],
+      "raw_bytes": 3807,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Lane 2 verdict: PASS. PMAT-3430 (PP-QUANT-001 M1) introduces the leaf `#[repr(u32)] GgmlType` enum with 35 live variants (and 8 removed ids distinguishable via `try_from_id`), dense `TRAITS[43]` table in `crates/aprender-quant/src/ggml_type.rs` below core/compute, upstream-extracted fixture `fixtures/ggml_traits.json`, extraction tooling and self-test suite, monorepo pin invariants, contract `contracts/ggml-type-v1.yaml`, and CI wiring. All 8 fixture tests, 19 quant crate unit tests, 3 monorepo falsification invariant tests, the 7-case extractor self-test, and `check_explicit_test_commands.sh` pass cleanly with zero warnings under clippy and shellcheck. No gates were weakened, all receipt claims are grounded in the diff, and no unrequested behavior changes were introduced.",
+      "findings": [],
+      "raw_bytes": 2848,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Lane 3 of 3 review PASS for PMAT-3430 (PP-QUANT-001 M1).\n\nThe diff was rigorously checked against ticket PMAT-3430 and all requirements:\n1. Implements `#[repr(u32)] GgmlType` with 35 live variants corresponding to upstream ggml IDs 0..=42 in `crates/aprender-quant/src/ggml_type.rs`.\n2. Implements `TRAITS[43]` dense table covering all 43 slots (35 live and 8 removed), located in `crates/aprender-quant` (`trueno_quant`), strictly below `aprender-compute`, `aprender-core`, and `aprender-serve` in the dependency hierarchy.\n3. Oracle-derived fixture: verified against `scripts/llama_pin.toml` (`build_commit = \"d1d3c3396\"`), extracted from upstream checkout `/home/noah/src/llama.cpp-d1d3c3396` via `scripts/extract_ggml_traits.sh` and compiled probe. Re-running the extractor independently reproduced `crates/aprender-quant/fixtures/ggml_traits.json` byte-for-byte.\n4. Contract & Formal Verification: `contracts/ggml-type-v1.yaml` validated clean with `pv validate` (0 errors, 0 warnings). The Kani harness `verify_ggml_type_id_space` verified successfully via `cargo kani` (100/100 checks passed, 0 failures).\n5. All test suites pass: `cargo test -p aprender-quant` (28/28 passed), `cargo test -p aprender-core --test monorepo_invariants falsify_ggml` (3/3 passed), `scripts/extract_ggml_traits_selftest.sh` (7/7 cases passed), `scripts/check_explicit_test_commands.sh` (49 fragments ok).\n6. Linting & syntax: `cargo clippy -p aprender-quant --tests` (0 warnings), `bash -n` and `shellcheck -S error` (0 errors), `ruff check` (clean).\n7. Receipt verification: all claims in `docs/audits/impl-PMAT-3430-m1-leaf-receipt.md` are grounded by the diff and measurements. No gates were weakened, no tests assert opposite of ticket, and no out-of-scope modifications were introduced.",
+      "findings": [
+        {
+          "claim": "GgmlType is defined as #[repr(u32)] with exactly 35 live variants matching active ggml tensor type IDs 0..=42 in the pinned comparator commit.",
+          "file": "crates/aprender-quant/src/ggml_type.rs",
+          "fix": "Verified enum definition with #[repr(u32)] and 35 live variants matching upstream ggml IDs 0..=42.",
+          "grounding": "cited",
+          "line": 140
+        },
+        {
+          "claim": "TRAITS is a dense 43-row table indexed by ggml ID (35 live + 8 Removed) with exact block size, byte size, and family classifications.",
+          "file": "crates/aprender-quant/src/ggml_type.rs",
+          "fix": "Verified pub const TRAITS: [QuantTraits; 43] dense array with 0 blck_size/type_size on all 8 removed entries.",
+          "grounding": "cited",
+          "line": 198
+        },
+        {
+          "claim": "Compile-time const assertions prevent drift between legacy K-quant constants and TRAITS.",
+          "file": "crates/aprender-quant/src/lib.rs",
+          "fix": "Verified const assertions for Q4_K, Q5_K, and Q6_K block size and byte constants against TRAITS table.",
+          "grounding": "cited",
+          "line": 115
+        },
+        {
+          "claim": "Integration test suite in ggml_traits_fixture.rs executes 8 tests verifying row-for-row equivalence with upstream fixture, family flags, and backwards compatibility.",
+          "file": "crates/aprender-quant/tests/ggml_traits_fixture.rs",
+          "fix": "Ran `cargo test -p aprender-quant --test ggml_traits_fixture` (8 passed, 0 failed).",
+          "grounding": "measured",
+          "line": 42
+        },
+        {
+          "claim": "Monorepo invariants falsify_ggml_001, falsify_ggml_002, and falsify_ggml_003 pass and enforce pin synchronization and extractor self-testing.",
+          "file": "crates/aprender-core/tests/monorepo_invariants.rs",
+          "fix": "Ran `cargo test -p aprender-core --test monorepo_invariants falsify_ggml` (3 passed, 0 failed).",
+          "grounding": "measured",
+          "line": 920
+        }
+      ],
+      "raw_bytes": 8345,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-core/tests/monorepo_invariants.rs",
+      "line": 920,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Monorepo invariants falsify_ggml_001, falsify_ggml_002, and falsify_ggml_003 pass and enforce pin synchronization and extractor self-testing."
+      ]
+    },
+    {
+      "file": "crates/aprender-quant/src/ggml_type.rs",
+      "line": 140,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "GgmlType is defined as #[repr(u32)] with exactly 35 live variants matching active ggml tensor type IDs 0..=42 in the pinned comparator commit."
+      ]
+    },
+    {
+      "file": "crates/aprender-quant/src/ggml_type.rs",
+      "line": 198,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "TRAITS is a dense 43-row table indexed by ggml ID (35 live + 8 Removed) with exact block size, byte size, and family classifications."
+      ]
+    },
+    {
+      "file": "crates/aprender-quant/src/lib.rs",
+      "line": 115,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Compile-time const assertions prevent drift between legacy K-quant constants and TRAITS."
+      ]
+    },
+    {
+      "file": "crates/aprender-quant/tests/ggml_traits_fixture.rs",
+      "line": 42,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Integration test suite in ggml_traits_fixture.rs executes 8 tests verifying row-for-row equivalence with upstream fixture, family flags, and backwards compatibility."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
