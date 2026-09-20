@@ -30,7 +30,7 @@ fn an_unmeasured_stage_contributes_nothing_and_is_not_zero() {
     assert_eq!(t.measured_sum_ms(), 150.0);
     assert_eq!(t.measured(), ["load_ms", "prefill_ms"]);
     t.close(200.0);
-    assert_eq!(t.unattributed_ms, 50.0);
+    assert_eq!(t.unattributed_ms, Some(50.0));
 
     let mut z = StageTimings {
         load_ms: Some(100.0),
@@ -61,7 +61,9 @@ fn the_books_close_exactly_so_a_tolerance_is_about_attribution_not_arithmetic() 
             ..StageTimings::default()
         };
         t.close(wall);
-        let diff = (t.measured_sum_ms() + t.unattributed_ms - t.wall_ms).abs();
+        let diff = (t.measured_sum_ms() + t.unattributed_ms.expect("closed")
+            - t.wall_ms.expect("closed"))
+        .abs();
         assert!(
             diff < 1e-9,
             "books did not close at wall={wall}: off by {diff}"
@@ -75,7 +77,7 @@ fn a_run_that_measured_nothing_attributes_the_whole_wall_clock_to_nobody() {
     // which is a finding. It must not say "14 s, all of it decode".
     let mut t = StageTimings::default();
     t.close(14_060.0);
-    assert_eq!(t.unattributed_ms, 14_060.0);
+    assert_eq!(t.unattributed_ms, Some(14_060.0));
     assert!(t.measured().is_empty());
 }
 
@@ -97,9 +99,9 @@ fn the_guard_halves_are_inside_validate_and_never_double_counted() {
         "the halves must not be re-added"
     );
     t.close(1200.0);
-    assert_eq!(t.unattributed_ms, 200.0);
+    assert_eq!(t.unattributed_ms, Some(200.0));
     assert!(
-        t.unattributed_ms >= 0.0,
+        t.unattributed_ms.expect("closed") >= 0.0,
         "double counting drives the residual negative"
     );
     assert!(t.measured().contains(&"validate_ref_ms"));
@@ -141,4 +143,27 @@ fn a_malformed_or_foreign_plant_never_fails_a_run() {
     // And a well-formed plant for a DIFFERENT stage is not this stage's delay.
     assert!(with_delay(Some("decode:500"), || planted_delay("h2d")).is_none());
     assert!(with_delay(Some("decode:500"), || planted_delay("decode")).is_some());
+}
+
+
+/// #3598 quorum round 1, lane 1: a report that was never `close`d must say so, not print zeros.
+///
+/// Uninstrumented generate paths return `InferenceResult::default()`, which carries a
+/// `StageTimings::default()`. With `wall_ms: f64` that reported `wall_ms: 0.0` and
+/// `unattributed_ms: 0.0` — a run that took no time and attributed all of it — which is the
+/// absent-is-not-zero rule broken in the two fields that close the books.
+#[test]
+fn an_unclosed_report_has_no_wall_clock_and_no_residual() {
+    let t = StageTimings::default();
+    assert!(!t.is_closed(), "a default report was never closed");
+    assert_eq!(t.wall_ms, None, "absent, not 0.0 — nothing measured the wall clock");
+    assert_eq!(t.unattributed_ms, None, "no wall clock means no residual to state");
+
+    // And the control: once closed, both are present, so `None` means UNCLOSED and not
+    // "closed with nothing in it".
+    let mut c = StageTimings::default();
+    c.close(1234.0);
+    assert!(c.is_closed());
+    assert_eq!(c.wall_ms, Some(1234.0));
+    assert_eq!(c.unattributed_ms, Some(1234.0), "no stages measured ⇒ all of it unattributed");
 }

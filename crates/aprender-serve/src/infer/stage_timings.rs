@@ -53,12 +53,20 @@ pub struct StageTimings {
     pub decode_ms: Option<f64>,
     /// Tokens actually generated — the denominator any rate here is computed against.
     pub tokens_out: usize,
-    /// `wall − Σ(measured stages)`. Always present; see the module note.
-    pub unattributed_ms: f64,
+    /// `wall − Σ(measured stages)`, set by [`StageTimings::close`].
+    ///
+    /// `Option`, for the same reason every stage is: **an un-closed report must not read as a run
+    /// whose whole duration was attributed.** A quorum lane found the original `f64` here — an
+    /// uninstrumented path returns `InferenceResult::default()`, never calls `close`, and so
+    /// reported `unattributed_ms: 0.0` and `wall_ms: 0.0`, which is indistinguishable from a run
+    /// that took no time and attributed all of it. That is precisely the absent-is-not-zero rule
+    /// this module exists to enforce, broken in the two fields that close the books.
+    pub unattributed_ms: Option<f64>,
     /// Which generate path produced these numbers, so a reader knows which fields could be measured.
     pub backend: String,
-    /// Total wall clock for the run, measured once at the outermost boundary.
-    pub wall_ms: f64,
+    /// Total wall clock for the run, measured once at the outermost boundary by
+    /// [`StageTimings::close`]. `None` until then — see `unattributed_ms`.
+    pub wall_ms: Option<f64>,
 }
 
 impl StageTimings {
@@ -86,8 +94,16 @@ impl StageTimings {
     /// asserts — a tolerance is then a statement about how much is UNATTRIBUTED, not about whether
     /// the arithmetic works.
     pub fn close(&mut self, wall_ms: f64) {
-        self.wall_ms = wall_ms;
-        self.unattributed_ms = wall_ms - self.measured_sum_ms();
+        self.wall_ms = Some(wall_ms);
+        self.unattributed_ms = Some(wall_ms - self.measured_sum_ms());
+    }
+
+    /// Were the books ever closed? `false` means this report came off a path that never called
+    /// [`StageTimings::close`] — so it has no wall clock and no residual, and a consumer must say
+    /// "not measured" rather than print zeros.
+    #[must_use]
+    pub fn is_closed(&self) -> bool {
+        self.wall_ms.is_some()
     }
 
     /// The names of the stages this run could measure, in order — for the report.

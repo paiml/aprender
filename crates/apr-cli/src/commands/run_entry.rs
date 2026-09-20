@@ -390,9 +390,14 @@ fn print_run_output(
         println!(
             "Completed in {:.2}s {}",
             result.duration_secs,
-            // PMAT-3598 row 1, done_when 4: this suffix is about the MODEL FILE, not the run.
-            // `(cached)` on a run that demonstrably executed read as "this result was cached",
-            // which is a claim nothing here measures.
+            // #3598 done_when 4, quoted so this is not re-raised as scope creep (a quorum lane
+            // read it that way): "The `(cached)` suffix on `Completed in N s` states what was
+            // cached or is removed — it currently prints on runs that demonstrably executed."
+            // #3542 adds: "Worth rewording in the same change."
+            //
+            // The suffix is about the MODEL FILE, not the run. `(cached)` on a run that
+            // demonstrably executed reads as "this result was cached", which is a claim nothing
+            // here measures.
             if result.cached {
                 "(model already local)".dimmed()
             } else {
@@ -458,8 +463,11 @@ fn merge_stage_fields(json: &mut serde_json::Value, stages: &realizar::infer::st
     obj.insert("prefill_ms".into(), ms(stages.prefill_ms));
     obj.insert("decode_ms".into(), ms(stages.decode_ms));
     obj.insert("tokens_out".into(), serde_json::json!(stages.tokens_out));
-    obj.insert("unattributed_ms".into(), ms(Some(stages.unattributed_ms)));
-    obj.insert("wall_ms".into(), ms(Some(stages.wall_ms)));
+    // NOT `Some(...)`: an uninstrumented generate path returns a default report that never had
+    // `close()` called on it, and wrapping in `Some` printed `0.0` for both — a run that took no
+    // time and attributed all of it. Absent is NOT MEASURED here exactly as it is for every stage.
+    obj.insert("unattributed_ms".into(), ms(stages.unattributed_ms));
+    obj.insert("wall_ms".into(), ms(stages.wall_ms));
     obj.insert("stages_measured".into(), serde_json::json!(stages.measured()));
     obj.insert("backend".into(), serde_json::json!(stages.backend));
 }
