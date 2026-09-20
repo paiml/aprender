@@ -263,6 +263,8 @@ mod activations;
 mod attention;
 mod bound_dispatch;
 mod core;
+/// PMAT-3477 (#3090): wrappers for the six Gated `DeltaNet` device kernels.
+mod gdn_ops;
 mod gemm;
 /// PMAT-291: Transformer layer graph builder for Qwen2.5 architecture
 mod graph_builder;

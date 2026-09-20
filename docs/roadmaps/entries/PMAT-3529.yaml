@@ -1,0 +1,25 @@
+- id: PMAT-3529
+  github_issue: 3529
+  item_type: task
+  title: 'pv contradicts itself about metadata: (validate requires it, the sigma gate refuses it); entity.properties is read by nothing; and a lexical violation does not name its path — Σ accepts an opaque metadata block, extract:pv-contract emits entity.properties.<k> as <entityType>:<k>, and in/pattern/minLength/maxLength name the property they fired on, with apex''s two EV-21 falsifiers as fixtures'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-19T12:20:38Z
+  updated: 2026-09-19T12:36:52Z
+  spec: null
+  acceptance_criteria:
+  - 'The SAME contracts/ontology.yaml passes `pv validate` AND `pv lint --gate sigma`: Σ carries `metadata` as opaque YAML (no Σ rule reads a field of it), it joins READABLE_KEYS so `readers:` must claim it, and removing that claim brings exit 3 back naming the key — measured by a CLI leg that runs both subcommands on one fixture.'
+  - 'entity.properties.<k> becomes the predicate <entityType>:<k> (IRI: ONT_BASE + <entityType>/<k>) on the contract node, so a shape over the entity''s own properties has focus predicates: apex''s EV-21 falsifiers through the CLI — entity-props-ok Pass, entity-props-bad-value Fail (in) naming the property and the value, entity-props-undeclared-key Fail (closed) naming the undeclared property.'
+  - 'The predicate IRI carries the entity type as its vocabulary segment: entity.properties.scale of an entity typed `study` is https://ont.paiml.dev/v1alpha1/study/scale — which is what `study:scale` expands to — and NEVER the bare https://ont.paiml.dev/v1alpha1/scale, so a shape over one entity type cannot constrain another type''s `scale`. Both directions asserted in a unit test. (Rendering is unchanged and separate: `short()` prints every ONT_BASE IRI with the `ont:` prefix, so messages read `ont:study/scale`, exactly as they already read `ont:model/parityReceipt`.)'
+  - 'No entity.type means no property triples — there is no vocabulary segment and inventing one would be an inference; nested mappings and sequences are not emitted at v1alpha1, because the subset has no path expressions and a predicate no shape can reach is decoration. One unit test each.'
+  - 'A lexical violation names its PATH in the message (in, pattern, minLength, maxLength), not only in the result''s path field. Without it the two falsifiers above cannot name the property at all, and a shape with nine properties emits nine lines a reader cannot tell apart.'
+  - 'No regression on the real corpus: pv lint contracts --gate sigma Pass, --gate shapes Pass over 1731 focus nodes, pv extract contracts --check 0, aprender-contracts lib green, ont2b_sigma_gate / ont4_relations_gate / ont4b_shapes_gate green, clippy -D warnings clean.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null

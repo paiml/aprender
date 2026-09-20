@@ -578,11 +578,16 @@ struct ArchEntry {
 
 /// GH-323: Read arch-constraints-v1.yaml and generate `arch_constraints_generated.rs`.
 fn generate_arch_constraints_file() {
+    // The contract lives IN THIS MONOREPO (APR-MONO merged provable-contracts
+    // into the root contracts/). This used to read ../../../provable-contracts/…
+    // — a pre-monorepo SIBLING checkout — so a dev box that still had the
+    // archived repo generated the table from a stale April file, while a clean
+    // clone (CI) fell back to arch_constraints_fallback.rs; the two disagreed
+    // on is_moe and four apr-cli parity_refusal tests failed only on dev boxes
+    // (T-2 coverage row, 2026-09-18, EPIC #3477). One source, in-tree.
     let yaml_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
-        .join("..")
-        .join("provable-contracts")
         .join("contracts")
         .join("arch-constraints-v1.yaml");
 

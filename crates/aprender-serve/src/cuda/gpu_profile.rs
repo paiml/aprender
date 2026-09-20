@@ -1053,3 +1053,124 @@ mod pp_llama_report_serialisation_tests {
         );
     }
 }
+
+/// #3413 / #3477: the per-model FP8 / prefill-path decision, kept in its own
+/// block so the baselined lines above it do not move (claim-literal ratchet).
+impl GpuProfile {
+    /// #3413 / #3477: FP8 batched prefill is broken for models with per-head QK
+    /// RMSNorm (Qwen3 family) and is switched off for them at model init.
+    ///
+    /// Measured 2026-09-18 on RTX 4090 (sm_89), `apr run --gpu`, CPU-vs-GPU F2
+    /// probe through the batched prefill path (#3413 C):
+    ///   Qwen3-8B-Q4_K_M   FP8 batched prefill → cosine −0.0972 at the post-prompt
+    ///                     decode step, garbage; identical with the CUDA graph on
+    ///                     or off. FP16 (HGEMM) batched prefill → "Paris".
+    ///   Qwen3-1.7B-Q4_K_M FP8 → 2 of 4 prompts reject at cosine 0.8718 / 0.8759
+    ///                     (below the 0.90 catastrophic floor, one with the SAME
+    ///                     argmax). FP16 → 4 of 4 pass.
+    ///   qwen2.5-1.5b      (QKV bias, no QK-norm) → 4 of 4 pass under FP8.
+    /// The defect is the FP8 GEMM feeding the per-head norm, not the norm; its
+    /// root cause is #3483. Until then a QK-norm model takes the SERIAL prefill
+    /// (per-token `forward_gpu_resident`, byte-correct in the same matrix, no
+    /// prefill weight cache — the FP16 HGEMM cache is 2× the FP8 one and put
+    /// Qwen3-8B + `apr qa`'s CPU twin over 24 GB: `CUDA_ERROR_OUT_OF_MEMORY` in
+    /// `prefill_all_layers_gpu`) with FP8 off, which is what GB10 (cc ≥ 120)
+    /// already does by default. `FP8_PREFILL=1` forces FP8 back for A/B testing,
+    /// and an explicit `BATCHED_PREFILL` keeps its own answer. Returns `true`
+    /// when it changed anything, so the caller can print why.
+    pub fn disable_fp8_for_qk_norm(
+        &mut self,
+        has_qk_norm: bool,
+        forced_fp8: Option<&str>,
+        forced_batched: Option<&str>,
+    ) -> bool {
+        if !has_qk_norm || forced_fp8 == Some("1") {
+            return false;
+        }
+        let mut changed = false;
+        if self.fp8_prefill || self.fp8_decode {
+            self.fp8_prefill = false;
+            self.fp8_decode = false;
+            changed = true;
+        }
+        if forced_batched.is_none() && self.prefill_path.path == PrefillPath::Batched {
+            self.prefill_path = PrefillPathChoice {
+                path: PrefillPath::Serial,
+                reason: "qk-norm model (#3413/#3483)",
+                cc: self.cc,
+            };
+            changed = true;
+        }
+        changed
+    }
+}
+
+#[cfg(test)]
+mod pmat3477_fp8_qk_norm_tests {
+    use super::*;
+
+    fn profile(fp8: bool) -> GpuProfile {
+        GpuProfile {
+            q4k: Q4kVariant::HwDp4a,
+            q6k: Q6kVariant::Legacy,
+            mwv_warps: 4,
+            prefill_path: select_prefill_path(89, None),
+            hgemm_decode: false,
+            fused_gate_up: true,
+            fp8_prefill: fp8,
+            fp8_decode: fp8,
+            w4a16_interleaved: false,
+            sm_target: "sm_89".to_string(),
+            cc: 89,
+        }
+    }
+
+    // The measured case: a QK-norm model on sm_89 loses FP8 (Qwen3-8B under FP8
+    // batched prefill scored cosine −0.0972 vs CPU) AND takes the serial prefill
+    // (the FP16 batched cache OOMed 8B beside apr qa's CPU twin on 24 GB).
+    #[test]
+    fn qk_norm_model_gets_serial_prefill_without_fp8() {
+        let mut p = profile(true);
+        assert!(p.disable_fp8_for_qk_norm(true, None, None));
+        assert!(!p.fp8_prefill && !p.fp8_decode);
+        assert_eq!(p.prefill_path.path, PrefillPath::Serial);
+        assert_eq!(p.prefill_path.reason, "qk-norm model (#3413/#3483)");
+    }
+
+    // A model without QK-norm (the qwen2.5 control: 4/4 prompts pass under
+    // FP8) keeps FP8 and the batched prefill — a model-class gate, not a fleet default.
+    #[test]
+    fn no_qk_norm_keeps_fp8_and_batched() {
+        let mut p = profile(true);
+        assert!(!p.disable_fp8_for_qk_norm(false, None, None));
+        assert!(p.fp8_prefill && p.fp8_decode);
+        assert_eq!(p.prefill_path.path, PrefillPath::Batched);
+    }
+
+    // FP8_PREFILL=1 is the A/B override and wins over the class gate entirely.
+    #[test]
+    fn forced_fp8_is_honoured() {
+        let mut p = profile(true);
+        assert!(!p.disable_fp8_for_qk_norm(true, Some("1"), None));
+        assert!(p.fp8_prefill);
+        assert_eq!(p.prefill_path.path, PrefillPath::Batched);
+    }
+
+    // An explicit BATCHED_PREFILL keeps its own answer; FP8 still goes off.
+    #[test]
+    fn explicit_batched_prefill_is_kept() {
+        let mut p = profile(true);
+        p.prefill_path = select_prefill_path(89, Some("1"));
+        assert!(p.disable_fp8_for_qk_norm(true, None, Some("1")));
+        assert!(!p.fp8_prefill);
+        assert_eq!(p.prefill_path.path, PrefillPath::Batched);
+    }
+
+    // Already serial and FP8 already off (GB10 defaults, or FP8_PREFILL=0): no change.
+    #[test]
+    fn already_serial_and_off_is_not_a_change() {
+        let mut p = profile(false);
+        p.prefill_path = select_prefill_path(121, None);
+        assert!(!p.disable_fp8_for_qk_norm(true, None, None));
+    }
+}

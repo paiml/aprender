@@ -1,0 +1,16 @@
+- id: PMAT-3574
+  github_issue: 3574
+  item_type: task
+  title: ARB-APR-3 parity receipt for the decide lane cell on lambda-labs
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-20T11:20:51Z
+  updated: 2026-09-20T11:27:22Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

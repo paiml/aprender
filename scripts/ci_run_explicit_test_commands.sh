@@ -21,15 +21,27 @@
 #   * a missing or empty directory is refused -- zero commands is broken wiring
 #   Any violation: rc 2, nothing is printed on stdout, nothing runs.
 #
-# Execution (--run), held equal to the old `&&` chain:
+# Execution (--run):
 #   * commands in order, each as `bash -c "$cmd"` with stdin from /dev/null (the
 #     old docker run had no -i; the list is fully read before anything runs)
 #   * a ::group:: header per command
-#   * FAIL-FAST: the first non-zero command ends the run with THAT exit status
+#   * NO FAIL-FAST (PMAT-3587). Every command runs. A red run still measures
+#     everything else it was going to measure, which is exactly when the data is
+#     most wanted. `--fail-fast` restores the old stop-at-first behaviour.
+#   * a RESULT line always: `RESULT ran=N skipped=S total=T failed=F`. The skipped
+#     count is a NUMBER, never an absence -- an absence reads as "nothing to
+#     report", which is indistinguishable from "passed" to every consumer.
+#
+# EXIT CODE -- the runner's own vocabulary, never a passthrough of a command's rc
+# (propagating one would let a test exiting 2 mean "commands were not run"):
+#   0  every command ran, none failed
+#   1  every command ran, F >= 1 FAILED      -- a measured failure
+#   2  UNMEASURED commands exist             -- Unknown, doctrine 4; also every
+#      refusal (bad tree, bad shard, vacuity)
 #
 # Usage:
 #   scripts/ci_run_explicit_test_commands.sh --list [DIR]
-#   scripts/ci_run_explicit_test_commands.sh --run  [DIR]
+#   scripts/ci_run_explicit_test_commands.sh --run  [DIR] [--shard N/M] [--fail-fast]
 # DIR defaults to ci/explicit-test-commands.d. The case table for this script
 # lives in scripts/check_explicit_test_commands.sh --self-test.
 set -euo pipefail
@@ -91,12 +103,38 @@ parse() {
     printf '%s\n' "${cmds[@]}"
 }
 
+# run DIR [N/M] -- runs the commands in order; with N/M only every M-th command
+# starting at the N-th (round-robin over the sorted list), so M shards cover the
+# list exactly once between them (PACK-001). N and M are validated; a shard that
+# selects zero commands is a refusal, not a pass.
 run() {
-    local dir=$1 out cmd i=0 total rc
+    local dir=$1 shard=${2:-1/1} ff=${3:-0} out cmd i=0 total rc n m k=0 sel=0 failed=0 first_fail=""
     local -a cmds
+    if ! [[ "$shard" =~ ^([1-9][0-9]*)/([1-9][0-9]*)$ ]]; then
+        printf 'REFUSE --shard must look like N/M, got %s\n' "$shard" >&2; return 2
+    fi
+    n=${BASH_REMATCH[1]}; m=${BASH_REMATCH[2]}
+    if [ "$n" -gt "$m" ]; then printf 'REFUSE --shard %s: N exceeds M\n' "$shard" >&2; return 2; fi
     out=$(parse "$dir") || return $?
     mapfile -t cmds <<< "$out"
     total=${#cmds[@]}
+    # parse() already refuses an empty directory; this is the belt for a future
+    # parse that prints nothing: a here-string of "" still yields one empty element.
+    if [ "$total" -eq 0 ] || [ -z "${cmds[0]}" ]; then
+        printf 'REFUSE %s parsed to zero commands -- nothing to run is not a pass\n' "$dir" >&2; return 2
+    fi
+    if [ "$m" -gt 1 ]; then
+        local -a mine=()
+        for cmd in "${cmds[@]}"; do
+            k=$((k + 1)); sel=$(( (k - 1) % m + 1 ))
+            if [ "$sel" -eq "$n" ]; then mine+=("$cmd"); fi
+        done
+        if [ "${#mine[@]}" -eq 0 ]; then
+            printf 'REFUSE shard %s selects 0 of %s command(s) -- more shards than commands is not a pass\n' "$shard" "$total" >&2; return 2
+        fi
+        printf 'shard %s: %s of %s command(s)\n' "$shard" "${#mine[@]}" "$total"
+        cmds=("${mine[@]}"); total=${#cmds[@]}
+    fi
     for cmd in "${cmds[@]}"; do
         i=$((i + 1))
         printf '::group::[%s/%s] %s\n' "$i" "$total" "$cmd"
@@ -104,17 +142,41 @@ run() {
         bash -c "$cmd" < /dev/null || rc=$?
         printf '::endgroup::\n'
         if [ "$rc" -ne 0 ]; then
+            failed=$((failed + 1))
+            [ -n "$first_fail" ] || first_fail="[$i/$total] exit $rc: $cmd"
             printf 'FAIL  [%s/%s] exit %s: %s\n' "$i" "$total" "$rc" "$cmd" >&2
-            printf '      fail-fast: the %s command(s) after it did not run\n' "$((total - i))" >&2
-            return "$rc"
+            if [ "$ff" -eq 1 ]; then
+                printf '      --fail-fast: the %s command(s) after it were NOT RUN -- unmeasured, not passed\n' "$((total - i))" >&2
+                break
+            fi
         fi
     done
+    # Always, on both paths: the counts are numbers a consumer can read.
+    printf 'RESULT ran=%s skipped=%s total=%s failed=%s\n' "$i" "$((total - i))" "$total" "$failed"
+    [ -n "$first_fail" ] && printf 'RESULT first-failure %s\n' "$first_fail"
+    if [ "$i" -lt "$total" ]; then
+        printf 'UNKNOWN %s of %s command(s) were not run; unmeasured is neither pass nor fail\n' "$((total - i))" "$total" >&2
+        return 2
+    fi
+    if [ "$failed" -gt 0 ]; then
+        printf 'FAIL  %s of %s explicit test command(s) failed; all %s ran\n' "$failed" "$total" "$total" >&2
+        return 1
+    fi
     printf 'PASS  %s/%s explicit test command(s) from %s\n' "$i" "$total" "$dir"
 }
 
 case "${1:-}" in
     --list) parse "${2:-$DEFAULT_DIR}" ;;
-    --run) run "${2:-$DEFAULT_DIR}" ;;
+    --run)
+        dir=${2:-$DEFAULT_DIR}; shard=1/1; ff=0; shift 2 2>/dev/null || shift $#
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                --shard) shard=${2:?--shard needs N/M}; shift 2 ;;
+                --fail-fast) ff=1; shift ;;
+                *) printf 'usage: %s --run [DIR] [--shard N/M] [--fail-fast]\n' "$0" >&2; exit 2 ;;
+            esac
+        done
+        run "$dir" "$shard" "$ff" ;;
     -h|--help) sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//' ;;
-    *) printf 'usage: %s --list|--run [DIR]\n' "$0" >&2; exit 2 ;;
+    *) printf 'usage: %s --list|--run [DIR] [--shard N/M]\n' "$0" >&2; exit 2 ;;
 esac

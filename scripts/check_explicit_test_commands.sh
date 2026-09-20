@@ -165,6 +165,19 @@ self_test() {
     row 2 "REFUSE the same command in two fragments (after trimming)" 'same command is in 010-a.cmd and 020-b.cmd' bash "$R" --list "$td/dup"
     frags "$td/ord" '010-a.cmd=echo a\n' '010-b.cmd=echo b\n'
     row 2 "REFUSE two fragments sharing an ordinal" 'ordinal 010 is shared' bash "$R" --list "$td/ord"
+    # ── sharding (PACK-001): every M-th command from the N-th; refusals, never a vacuous pass ──
+    row 0 "--shard 1/2 takes the 1st and 3rd of three commands" 'shard 1/2: 2 of 3' bash "$R" --run "$td/p" --shard 1/2
+    row 0 "--shard 2/2 takes the 2nd" 'shard 2/2: 1 of 3' bash "$R" --run "$td/p" --shard 2/2
+    # the commands themselves print: `true` nothing, `echo b` b, `echo c` c -- so the
+    # command OUTPUT lines say which commands a shard ran, independent of the runner's framing
+    fact "  ...and 1/2 ran [true, echo c] (its output lines are exactly: c)" \
+        test "$(bash "$R" --run "$td/p" --shard 1/2 2>/dev/null | grep -E '^(b|c)$' | tr -d '\n')" = "c"
+    fact "  ...and 2/2 ran [echo b] (its output lines are exactly: b) -- a command is on ONE shard" \
+        test "$(bash "$R" --run "$td/p" --shard 2/2 2>/dev/null | grep -E '^(b|c)$' | tr -d '\n')" = "b"
+    row 2 "REFUSE --shard with N > M" 'N exceeds M' bash "$R" --run "$td/p" --shard 3/2
+    row 2 "REFUSE a shard that selects zero commands (more shards than commands)" 'selects 0 of 3' bash "$R" --run "$td/p" --shard 4/4
+    row 2 "REFUSE a malformed --shard" 'must look like N/M' bash "$R" --run "$td/p" --shard x
+    row 2 "REFUSE an unknown --run option" 'usage' bash "$R" --run "$td/p" --bogus
     # ── refusals: filename shape (must-match / must-not-match, rule 7) ───
     local bad
     for bad in '10-a.cmd' '0100-a.cmd' '010-A.cmd' '010-a_b.cmd' '010-.cmd' '010-a.txt' '010a.cmd' 'README.md' '.gitkeep' '010-a.cmd.orig'; do
@@ -177,10 +190,36 @@ self_test() {
     row 2 "REFUSE a directory named like a fragment" 'not a regular file' bash "$R" --list "$td/name"
     notfact "  ...and a refused tree prints NO commands on stdout" test -n "$(bash "$R" --list "$td/name" 2>/dev/null)"
     # ── the runner: execution ────────────────────────────────────────────
+    # PMAT-3587 -- fail-fast is a VERDICT-DISCARDING default. Measured on #3581: one
+    # test failing on a missing interpreter produced "fail-fast: the 15 command(s)
+    # after it did not run", and one shard hid 8,576 tests. Fifteen unknowns became
+    # an absence, and an absence reads as "nothing to report", which is
+    # indistinguishable from "passed" to every consumer downstream.
+    #
+    # The runner's exit code is its OWN vocabulary and never a passthrough of a
+    # command's rc -- propagating one would let a test that exits 2 mean the same
+    # thing as "commands were not run":
+    #     0  every command ran, none failed
+    #     1  every command ran, F >= 1 FAILED      (a measured failure)
+    #     2  UNMEASURED commands exist             (Unknown, doctrine 4)
+    #
+    # Ticket falsifier: plant a failing command early, require the EXACT count that
+    # still ran and the EXACT count skipped.
     frags "$td/ff" "010-a.cmd=touch $td/a\n" '020-b.cmd=exit 7\n' "030-c.cmd=touch $td/c\n"
-    row 7 "FAIL-FAST: the first non-zero command's status is the step's status" 'exit 7' bash "$R" --run "$td/ff"
+    rm -f "$td/a" "$td/c"
+    row 1 "a failing command no longer stops the run (rc 1 = ran, measured failure)" 'exit 7' bash "$R" --run "$td/ff"
     fact "  ...the command before it ran" test -e "$td/a"
-    notfact "  ...the command after it did NOT run" test -e "$td/c"
+    fact "  ...and the command AFTER it ran too -- no fail-fast" test -e "$td/c"
+    row 1 "the receipt reports ran/skipped/total as NUMBERS, never an absence" 'RESULT ran=3 skipped=0 total=3 failed=1' bash "$R" --run "$td/ff"
+    notfact "  ...a command's own rc is NOT the runner's rc (7 must not leak out)" \
+        bash -c 'bash "$1" --run "$2" > /dev/null 2>&1; [ $? -eq 7 ]' _ "$R" "$td/ff"
+    # Opt-in fail-fast still exists, and it is UNKNOWN (2), not Fail: the commands it
+    # did not run are UNMEASURED, and unmeasured is neither green nor red.
+    rm -f "$td/c"
+    row 2 "--fail-fast stops early and is UNKNOWN (rc 2), not Fail" 'RESULT ran=2 skipped=1 total=3 failed=1' bash "$R" --run "$td/ff" --fail-fast
+    notfact "  ...the command after the failure did NOT run" test -e "$td/c"
+    frags "$td/allok" "010-a.cmd=echo alpha\n" "020-b.cmd=echo beta\n"
+    row 0 "all ran, none failed -> rc 0 and skipped=0" 'RESULT ran=2 skipped=0 total=2 failed=0' bash "$R" --run "$td/allok"
     frags "$td/in" "010-a.cmd=cat > $td/swallowed\n" "020-b.cmd=touch $td/after\n"
     row 0 "a command reading stdin gets /dev/null" '^PASS  2/2' bash "$R" --run "$td/in"
     fact "  ...and the next command still ran" test -e "$td/after"

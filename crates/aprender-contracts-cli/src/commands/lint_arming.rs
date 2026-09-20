@@ -18,38 +18,106 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use provable_contracts::ontology::arming::{check_monotone, ArmedGates};
+use provable_contracts::ontology::arming::{
+    check_monotone, check_shapes_monotone, ArmedGates, ArmedShapes,
+};
 
 const BASELINE: &str = "lint-baseline.json";
 const NO_COMPARAND: &str = "NOT CHECKED (no comparand)";
 
-/// What one `pv lint` run arms, and the monotone line it prints.
+/// What one `pv lint` run arms, and the monotone lines it prints.
 pub struct Arming {
     pub armed: ArmedGates,
     pub monotone: String,
+    /// ONT-4c1 (§3.9): the per-shape arming monotone line (the gate reads the declaration itself).
+    pub shapes_monotone: String,
 }
 
 /// The corpus's declared arming — the declaration alone, never the command line (§3.9) — with the monotone
-/// check against the comparand. `Err(ArmedGatesShrank)` when a committed gate was dropped.
+/// check against the comparand. `Err(ArmedGatesShrank)` when a committed gate was dropped;
+/// `Err(ArmedShapesShrank)` when a committed shape was.
 pub fn resolve(contract_dir: &Path, explicit_ref: Option<&str>) -> Result<Arming, Box<dyn Error>> {
-    let declared = ArmedGates::from_baseline(read_baseline(contract_dir)?.as_deref())?;
-    let monotone = match comparand(contract_dir, explicit_ref)? {
-        Comparand::Absent(why) => format!("{NO_COMPARAND} — {why}"),
-        Comparand::At { label, text } => {
+    let baseline = read_baseline(contract_dir)?;
+    let declared = ArmedGates::from_baseline(baseline.as_deref())?;
+    let declared_shapes = ArmedShapes::from_baseline(baseline.as_deref())?;
+    let (monotone, shapes_monotone) = match comparand(contract_dir, explicit_ref)? {
+        Comparand::Absent(why) => (
+            format!("{NO_COMPARAND} — {why}"),
+            format!("{NO_COMPARAND} — {why}"),
+        ),
+        Comparand::At {
+            label,
+            text,
+            top,
+            commit,
+            rel,
+        } => {
             let committed = ArmedGates::from_baseline(text.as_deref())
                 .map_err(|e| format!("armed_gates comparand {label}: {e}"))?;
             check_monotone(&committed, &declared)?;
-            format!(
-                "OK against {label} ({} committed, {} declared)",
-                committed.names().len(),
-                declared.names().len()
+            let committed_shapes = ArmedShapes::from_baseline(text.as_deref())
+                .map_err(|e| format!("armed_shapes comparand {label}: {e}"))?;
+            // An `All` comparand armed every shape its corpus carried; "its corpus" is every shape the
+            // current corpus declares in a contract file that already existed at the comparand — a shape
+            // in a NEW file was not armed there, and may ship reported-first.
+            let existed_then: Vec<String> = match &committed_shapes {
+                ArmedShapes::All => declared_shape_files(contract_dir)?
+                    .into_iter()
+                    .filter(|(_, file)| {
+                        // `file` is relative to the corpus dir's PARENT; the comparand wants a path
+                        // relative to the work-tree root
+                        let parent_rel = rel.rsplit_once('/').map_or("", |(p, _)| p);
+                        let path = if parent_rel.is_empty() {
+                            file.clone()
+                        } else {
+                            format!("{parent_rel}/{file}")
+                        };
+                        exists_at(&top, &commit, &path)
+                    })
+                    .map(|(id, _)| id)
+                    .collect(),
+                ArmedShapes::Listed(_) => Vec::new(),
+            };
+            check_shapes_monotone(&committed_shapes, &declared_shapes, &existed_then)?;
+            (
+                format!(
+                    "OK against {label} ({} committed, {} declared)",
+                    committed.names().len(),
+                    declared.names().len()
+                ),
+                match (&committed_shapes, &declared_shapes) {
+                    (ArmedShapes::All, ArmedShapes::All) => {
+                        format!("OK against {label} (all shapes armed there and here)")
+                    }
+                    (ArmedShapes::All, ArmedShapes::Listed(now)) => format!(
+                        "OK against {label} (all {} pre-existing shape(s) armed there, {} declared here)",
+                        existed_then.len(),
+                        now.len()
+                    ),
+                    (ArmedShapes::Listed(then), ArmedShapes::Listed(now)) => format!(
+                        "OK against {label} ({} committed, {} declared)",
+                        then.len(),
+                        now.len()
+                    ),
+                    (ArmedShapes::Listed(then), ArmedShapes::All) => format!(
+                        "OK against {label} ({} committed, all armed here)",
+                        then.len()
+                    ),
+                },
             )
         }
     };
     Ok(Arming {
         armed: declared,
         monotone,
+        shapes_monotone,
     })
+}
+
+/// `(shape id, file relative to the repository root)` for every shape the corpus declares today.
+fn declared_shape_files(contract_dir: &Path) -> Result<Vec<(String, String)>, Box<dyn Error>> {
+    provable_contracts::lint::shapes_gate::declared_shapes(contract_dir)
+        .map_err(|e| format!("shapes: {e}").into())
 }
 
 /// The declared arming without the git check (watch mode re-reads it every tick).
@@ -77,7 +145,15 @@ enum Comparand {
     Absent(String),
     /// The committed baseline text at `label` (`None`: the corpus is tracked there without a baseline,
     /// which arms the default set).
-    At { label: String, text: Option<String> },
+    At {
+        label: String,
+        text: Option<String>,
+        /// The work-tree root, the commit, and the corpus dir relative to the root — so a caller can ask
+        /// whether a given file existed at the comparand (ONT-4c1: which shapes were armed by `All`).
+        top: PathBuf,
+        commit: String,
+        rel: String,
+    },
 }
 
 fn comparand(contract_dir: &Path, explicit_ref: Option<&str>) -> Result<Comparand, Box<dyn Error>> {
@@ -131,7 +207,13 @@ fn comparand(contract_dir: &Path, explicit_ref: Option<&str>) -> Result<Comparan
     } else {
         None
     };
-    Ok(Comparand::At { label, text })
+    Ok(Comparand::At {
+        label,
+        text,
+        top,
+        commit,
+        rel,
+    })
 }
 
 /// merge-base(HEAD, origin/main), else the origin/main tip — `lib_baseline_ratchet.sh`'s order.

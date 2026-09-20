@@ -186,6 +186,22 @@ impl OwnedQuantizedModel {
                 &weight.data,
                 total_elements,
             )),
+            // PMAT-3477 / #3091: the IQ formats (block 256, row-padded like the
+            // K-quants) real unsloth GGUFs ship. Row-wise so a padded row does
+            // not leak its padding into the next row.
+            iq if crate::quantize::iq_block_bytes(iq).is_some() => {
+                let block_bytes =
+                    crate::quantize::iq_block_bytes(iq).expect("guarded by iq_block_bytes above");
+                let super_blocks_per_row = in_dim.div_ceil(QK_K);
+                let row_bytes = super_blocks_per_row * block_bytes;
+                let mut output = Vec::with_capacity(total_elements);
+                for row in 0..out_dim {
+                    let row_data = &weight.data[row * row_bytes..(row + 1) * row_bytes];
+                    let row_dequant = crate::quantize::dequantize_iq_tensor(iq, row_data)?;
+                    output.extend_from_slice(&row_dequant[..in_dim.min(row_dequant.len())]);
+                }
+                Ok(output)
+            },
             // Fail-closed + loud: an unknown type is NEVER silently reinterpreted
             // as raw f32 (that produced garbage weights). Hard-error instead.
             other => Err(RealizarError::UnsupportedOperation {
