@@ -112,3 +112,33 @@
     ] ;
 .
 
+<https://ont.paiml.dev/v1alpha1/shape/refusal-receipt-v1> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/refusal/Refusal> ;
+    sh:closed true ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/refusal/verb> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/refusal/reason> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:minLength 12 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/refusal/exit_code> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/refusal/removed_by> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:pattern "^(v[0-9]+\\.[0-9]+|never|unscheduled)$" ;
+    ] ;
+.
+
