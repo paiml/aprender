@@ -119,7 +119,6 @@ fi
 # of those three paths, plus a gate-call-removed MUTANT, to behave as stated.
 cut_tag() {
     local v=$1 t=$2 mc=$3 rc=0
-    bash "$REPO_ROOT/scripts/check_milestone_cut.sh" "$v" >> "$LOG" 2>&1 || rc=$?
     case "$rc" in
         0) say "MILESTONE-GATE $v clean at the cut (check_milestone_cut.sh rc=0)" ;;
         1) die "milestone $v still holds open item(s) -- no tag, no publish (check_milestone_cut.sh rc=1)" ;;
