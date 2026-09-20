@@ -3,12 +3,12 @@
   "base": "origin/main",
   "base_resolved": "origin/main",
   "base_note": "no origin/origin/main exists; judged against the local ref",
-  "head": "35dda601790da52e4d6150a4f452d742319e8e2c",
-  "diff_sha256": "cd5092111eff38a72ed649edd166bd2b015a637913dc1e90f8bfd9cbef38e16c",
+  "head": "05f0ed9769be44185e0bcbb5cc5e19d076d763db",
+  "diff_sha256": "a01318eda75ce86a7269d3daa629059d5cf505b34055c1fdee65d4c541a53663",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "inline",
-  "prompt_bytes": 51607,
+  "prompt_bytes": 52189,
   "author": {
     "model": "claude-opus-5",
     "family": "claude",
@@ -20,10 +20,31 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff exactly implements the ticket PMAT-3537. `kind_declared` field is safely populated using a `KindProbe` with `IgnoredAny` that ignores unknown nested structures preventing parsing errors. The `validate_contract` correctly identifies defaulted kernel validations and decorates the first kernel-only error as requested. The test file properly verifies these aspects including the edge cases like declared kernel vs defaulted kernel differences and non-kernel contracts. The receipt claims match the diff and no unrequested changes were introduced.",
-      "findings": [],
-      "raw_bytes": 2470,
-      "err_bytes": 100,
+      "summary": "The provided diff accurately and rigorously implements the PMAT-3537 ticket exactly as requested. \n\nThe `Contract` struct tracks `kind_declared` parsed via a `KindProbe` to avoid whole-document parsing issues with nested duplicate keys. The `validate_contract` logic correctly scopes kernel-specific violations via slicing and selectively decorates only the first `Severity::Error` with the explanation when a kind-less contract defaults to kernel. It does so without altering the printer or checking specific rule IDs. The tests faithfully capture the 6 legs mentioned in the acceptance criteria, correctly asserting anti-vacuity and ensuring differential bytes match perfectly. No unrequested changes were made, and no quality gates are weakened.",
+      "findings": [
+        {
+          "claim": "`Contract` struct gains `#[serde(skip)] pub kind_declared: bool` beside `unknown_top_level_keys`.",
+          "file": "crates/aprender-contracts/src/schema/types.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "`parse_contract_str` sets `kind_declared` using a new `kind_is_declared(yaml)` function that implements a `KindProbe` with `metadata: BTreeMap<String, IgnoredAny>`, avoiding whole-document parsing failures on duplicate keys. A corresponding unit test verifies this logic.",
+          "file": "crates/aprender-contracts/src/schema/parser.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "`validate_contract` correctly isolates kernel-only violations by slicing and uses `explain_kind_default` to append `(no metadata.kind, judged kernel by default)` to the first `Severity::Error` exactly once, without altering the printer or checking explicit rule IDs.",
+          "file": "crates/aprender-contracts/src/schema/validator.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "Four new yaml fixtures are included mirroring the requested test shapes, and the CLI integration tests rigorously evaluate the 6 legs including the differential byte-for-byte check and anti-vacuity assertions.",
+          "file": "crates/aprender-contracts-cli/tests/ont6b_kind_default.rs",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 5248,
+      "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
@@ -36,9 +57,9 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff perfectly aligns with PMAT-3537 and the receipt criteria. It adds `kind_declared` to `Contract`, properly detects if the kind was declared using a `KindProbe` to skip unknown nested values, and cleanly decorates the first kernel-only error in `validate_contract` without hardcoding any rule IDs or altering the printer. All four fixtures and six test legs are correctly implemented to prevent regressions. No regressions or unrequested modifications were found.",
+      "summary": "The diff perfectly aligns with PMAT-3537 and the receipt criteria. It adds `kind_declared` to `Contract`, properly detects if the kind was declared using a `KindProbe` to skip unknown nested values, and cleanly decorates the first kernel-only error in `validate_contract` without hardcoding any rule IDs or altering the printer. All four fixtures and six test legs are correctly implemented to prevent regressions. No unrequested modifications or weakened gates were found.",
       "findings": [],
-      "raw_bytes": 2289,
+      "raw_bytes": 2239,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -52,18 +73,10 @@
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff was reviewed against ticket PMAT-3537 (ONT-6b) and its acceptance criteria. All requirements are fully satisfied:\n1. `Contract` struct in `types.rs` gains `pub kind_declared: bool` marked `#[serde(skip)]`.\n2. `kind_is_declared` in `parser.rs` correctly parses raw YAML using `KindProbe` to avoid whole-document deserialization failure on duplicate keys in unknown blocks.\n3. `validate_contract` in `validator.rs` calls `explain_kind_default` on the violations slice generated by the kernel-only branch when `!contract.kind_declared`, decorating only the first `Severity::Error`.\n4. Tests in `crates/aprender-contracts-cli/tests/ont6b_kind_default.rs` enforce all 6 legs, including strict discrimination between declared kernel vs defaulted kernel, exactly once decoration, passing kind-less contracts, and pattern contracts.\n5. All fixtures and receipts are present and grounded. No weakened gates or unexpected changes were found.",
-      "findings": [
-        {
-          "claim": "The diff correctly implements PMAT-3537 (ONT-6b) by tracking `kind_declared` and decorating the first kernel-only error message with `(no metadata.kind, judged kernel by default)` without altering rule IDs or printer logic.",
-          "file": "crates/aprender-contracts/src/schema/validator.rs",
-          "fix": "N/A",
-          "grounding": "cited",
-          "line": 39
-        }
-      ],
-      "raw_bytes": 3857,
-      "err_bytes": 100,
+      "summary": "The diff was thoroughly analyzed against ticket PMAT-3537 (ONT-6b) and its acceptance criteria. No refuting evidence, weakened gates, unsupported claims, or unrequested changes were found.\n\nKey Verification Points:\n1. **Contract Struct Extension**: `Contract` in `schema/types.rs` has gained `pub kind_declared: bool` annotated with `#[serde(skip)]`.\n2. **Kind Probe Parsing**: `kind_is_declared` in `schema/parser.rs` uses a targeted `KindProbe` with `IgnoredAny` over `metadata` keys. This avoids deserializing full documents and prevents failure on files with duplicate keys in unknown blocks (e.g., `contracts/apr-cli-commands-v1.yaml`). Anti-vacuity unit test is included.\n3. **Validator Explanation**: `validate_contract` in `schema/validator.rs` calls `explain_kind_default` on the slice of kernel-only errors when `!contract.kind_declared`, decorating exactly the first `Severity::Error` with `(no metadata.kind, judged kernel by default)`. Rule IDs and error printer implementations remain untouched.\n4. **Fixtures & Tests**: All 4 fixtures (`kindless-failing.yaml`, `declared-kernel-failing.yaml`, `kindless-passing.yaml`, `pattern.yaml`) and 6 test legs in `crates/aprender-contracts-cli/tests/ont6b_kind_default.rs` are added, covering exact-once decoration, declared vs defaulted discrimination, and passing/non-kernel handling.\n5. **Receipt & Audit Log Grounding**: Receipt claims match the diff and test results cleanly.",
+      "findings": [],
+      "raw_bytes": 6377,
+      "err_bytes": 59,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
@@ -76,13 +89,43 @@
   "dissent": [],
   "dedup": [
     {
-      "file": "crates/aprender-contracts/src/schema/validator.rs",
-      "line": 39,
+      "file": "crates/aprender-contracts-cli/tests/ont6b_kind_default.rs",
+      "line": null,
       "lanes_agreeing": [
-        3
+        1
       ],
       "claims": [
-        "The diff correctly implements PMAT-3537 (ONT-6b) by tracking `kind_declared` and decorating the first kernel-only error message with `(no metadata.kind, judged kernel by default)` without altering rule IDs or printer logic."
+        "Four new yaml fixtures are included mirroring the requested test shapes, and the CLI integration tests rigorously evaluate the 6 legs including the differential byte-for-byte check and anti-vacuity assertions."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/schema/parser.rs",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "`parse_contract_str` sets `kind_declared` using a new `kind_is_declared(yaml)` function that implements a `KindProbe` with `metadata: BTreeMap<String, IgnoredAny>`, avoiding whole-document parsing failures on duplicate keys. A corresponding unit test verifies this logic."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/schema/types.rs",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "`Contract` struct gains `#[serde(skip)] pub kind_declared: bool` beside `unknown_top_level_keys`."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/schema/validator.rs",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "`validate_contract` correctly isolates kernel-only violations by slicing and uses `explain_kind_default` to append `(no metadata.kind, judged kernel by default)` to the first `Severity::Error` exactly once, without altering the printer or checking explicit rule IDs."
       ]
     }
   ],
