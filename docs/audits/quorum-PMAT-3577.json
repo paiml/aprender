@@ -1,0 +1,262 @@
+{
+  "ticket": "PMAT-3577",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "7f82e2cd3759f15fdd75ca9c22e8e6e206a40139",
+  "diff_sha256": "2b70a9f9e51ff421e62e1edc62b78adfd426915c6d93f509659e4de4b46557e5",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 659589,
+  "author": {
+    "model": "Opus 5 (1M context)",
+    "family": "claude",
+    "source": "measured"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff faithfully implements the requirements of PMAT-3577. It defines the parity-receipt-v1 and parity-receipt-v2 contracts, explicitly leaving v1 without a shape as intended. The extractor is implemented correctly in `parity_receipt.rs`. Seven legacy receipts are back-filled into the v2 envelope, and the denominator in `EXPECTED_RECEIPTS` is accurately set to 7 (acknowledging PR #3575 is not yet merged). The `check_model_parity.sh` script is appropriately updated to handle the new envelope, while the out-of-scope `check_parity_receipt.sh` is left untouched exactly as claimed. The shapes are not armed since `lint-baseline.json` is not modified. All claims in the receipt are strongly grounded in the provided diff and do not weaken any gates.",
+      "findings": [],
+      "raw_bytes": 3773,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-3577 review: PASS. The diff faithfully implements parity-receipt-v2, extract:parity-receipt, the committed denominator mechanism with EXPECTED_RECEIPTS = 7, and migrates all 7 logit-parity records to v2 with complete envelopes and provenance citing committed evidence. No gates were weakened; all controls and unit/integration tests pass cleanly.",
+      "findings": [
+        {
+          "claim": "Three shapes declared (parity-receipt-complete, parity-comparator-self, parity-comparator-oracle) and evaluated over the 7 back-filled receipts with 0 violations.",
+          "command": "cargo run -q -p aprender-contracts-cli -- lint contracts --gate shapes",
+          "file": "contracts/parity-receipt-v2.yaml",
+          "fix": "None needed",
+          "grounding": "measured",
+          "line": 85,
+          "output": "{\"passed\": true, \"verdict\": \"Pass\", \"violations\": 0, \"unarmed_violations\": 98, \"by_shape\": [\"bound-symbols-resolve=168\", \"ladder-green=7\", \"ladder-measured=8\", \"lean-statements-grounded=408\", \"ont-shapes-v1=1737\", \"parity-comparator-oracle=0\", \"parity-comparator-self=7\", \"parity-receipt-complete=7\"]}"
+        },
+        {
+          "claim": "The parity receipt extractor implements all 10 case-table behaviors (classification, rejection of legacy unmigrated records by name, denominator checking, missing threshold detection, positive control).",
+          "command": "cargo test -p aprender-contracts --lib ontology::extract::parity_receipt",
+          "file": "crates/aprender-contracts/src/ontology/extract/parity_receipt.rs",
+          "fix": "None needed",
+          "grounding": "measured",
+          "line": 113,
+          "output": "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 1671 filtered out; finished in 0.04s"
+        },
+        {
+          "claim": "The independent denominator predicate and its 4 self-test cases pass, verifying 7 receipts matching EXPECTED_RECEIPTS.",
+          "command": "bash scripts/parity_receipt_denominator.sh --self-test && bash scripts/parity_receipt_denominator.sh",
+          "file": "scripts/parity_receipt_denominator.sh",
+          "fix": "None needed",
+          "grounding": "measured",
+          "line": 28,
+          "output": "ok    a record is counted and an unrelated document is not (measured 1)\nok    an unmigrated legacy record is refused by name\nok    a receipt added without bumping the denominator disagrees\nok    bumping the denominator makes them agree\nPASS  7 receipt(s) under evidence/parity/**, and evidence/parity/EXPECTED_RECEIPTS says 7."
+        },
+        {
+          "claim": "All 9 CLI integration tests pass across the 5 test fixtures and committed tree, ensuring discrimination between PASS (0), FAIL (1), and decline (2).",
+          "command": "cargo test -p aprender-contracts-cli --test ont4c3_parity_receipts",
+          "file": "crates/aprender-contracts-cli/tests/ont4c3_parity_receipts.rs",
+          "fix": "None needed",
+          "grounding": "measured",
+          "line": 84,
+          "output": "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.19s"
+        },
+        {
+          "claim": "The release parity judge and admission tests correctly read the v2 raw envelope without breaking existing release gates.",
+          "command": "bash scripts/check_model_parity.sh --self-test",
+          "file": "scripts/check_model_parity.sh",
+          "fix": "None needed",
+          "grounding": "measured",
+          "line": 47,
+          "output": "26/26 rows"
+        }
+      ],
+      "raw_bytes": 8462,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Reviewed ticket PMAT-3577, receipt, and the full diff (659,589 bytes). Verified that:\n1. `contracts/parity-receipt-v2.yaml` defines the required 3 shapes (`parity-receipt-complete`, `parity-comparator-self`, `parity-comparator-oracle`) and `contracts/parity-receipt-v1.yaml` records the superseded layout.\n2. `extract:parity-receipt` (`crates/aprender-contracts/src/ontology/extract/parity_receipt.rs`) extracts logit-parity records into RDF focus nodes while refusing unmigrated records by name.\n3. The independent denominator predicate `scripts/parity_receipt_denominator.sh` and unit/integration tests pass cleanly.\n4. `pv lint contracts --gate shapes` and `pv extract contracts --check` pass with zero violations and zero RDF extraction drift.\n5. All 7 legacy records under `evidence/parity/**` were successfully migrated to v2 with self-comparators and threshold resolutions backed by committed evidence.\n\nNo refutations found. Verdict is PASS.",
+      "findings": [
+        {
+          "claim": "Unit tests for extract:parity-receipt pass completely with 10 passed tests.",
+          "command": "cargo test -p aprender-contracts --lib ontology::extract::parity_receipt",
+          "file": "crates/aprender-contracts/src/ontology/extract/parity_receipt_tests.rs",
+          "grounding": "measured",
+          "line": 1,
+          "output": "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 1671 filtered out; finished in 0.01s"
+        },
+        {
+          "claim": "CLI integration tests for ONT-4c3 parity receipts pass all 9 test cases covering edge conditions, missing fields, wrong corpus, and baseline contract parity.",
+          "command": "cargo test -p aprender-contracts-cli --test ont4c3_parity_receipts",
+          "file": "crates/aprender-contracts-cli/tests/ont4c3_parity_receipts.rs",
+          "grounding": "measured",
+          "line": 1,
+          "output": "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.31s"
+        },
+        {
+          "claim": "The independent parity receipt denominator script passes its self-tests and verifies that the committed tree has 7 receipts matching EXPECTED_RECEIPTS.",
+          "command": "bash scripts/parity_receipt_denominator.sh --self-test && bash scripts/parity_receipt_denominator.sh",
+          "file": "scripts/parity_receipt_denominator.sh",
+          "grounding": "measured",
+          "line": 1,
+          "output": "ok    a record is counted and an unrelated document is not (measured 1)\nok    an unmigrated legacy record is refused by name\nok    a receipt added without bumping the denominator disagrees\nok    bumping the denominator makes them agree\nPASS  7 receipt(s) under evidence/parity/**, and evidence/parity/EXPECTED_RECEIPTS says 7."
+        },
+        {
+          "claim": "The fresh RDF extraction check (pv extract contracts --check) passes with zero drift across 15,730 triples.",
+          "command": "pv extract contracts --check",
+          "file": "contracts/contracts.nt",
+          "grounding": "measured",
+          "line": 1,
+          "output": "{\n  \"triples\": 15730,\n  \"sha256\": \"70cbb4868a3ebbcb1157e15dec3c8bc865c41c0c0d648057a5840db7f1a65f4e\",\n  \"shapes_n\": 8,\n  \"written\": [],\n  \"check\": []\n}"
+        },
+        {
+          "claim": "Contract parity-receipt-v2.yaml defines three shapes (parity-receipt-complete, parity-comparator-self, parity-comparator-oracle) and pins extractor reach via EXPECTED_RECEIPTS.",
+          "file": "contracts/parity-receipt-v2.yaml",
+          "grounding": "cited",
+          "line": 85
+        }
+      ],
+      "raw_bytes": 8719,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "contracts/contracts.nt",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The fresh RDF extraction check (pv extract contracts --check) passes with zero drift across 15,730 triples."
+      ]
+    },
+    {
+      "file": "contracts/parity-receipt-v2.yaml",
+      "line": 85,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "Contract parity-receipt-v2.yaml defines three shapes (parity-receipt-complete, parity-comparator-self, parity-comparator-oracle) and pins extractor reach via EXPECTED_RECEIPTS.",
+        "Three shapes declared (parity-receipt-complete, parity-comparator-self, parity-comparator-oracle) and evaluated over the 7 back-filled receipts with 0 violations."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/tests/ont4c3_parity_receipts.rs",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "CLI integration tests for ONT-4c3 parity receipts pass all 9 test cases covering edge conditions, missing fields, wrong corpus, and baseline contract parity."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/tests/ont4c3_parity_receipts.rs",
+      "line": 84,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "All 9 CLI integration tests pass across the 5 test fixtures and committed tree, ensuring discrimination between PASS (0), FAIL (1), and decline (2)."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/ontology/extract/parity_receipt.rs",
+      "line": 113,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The parity receipt extractor implements all 10 case-table behaviors (classification, rejection of legacy unmigrated records by name, denominator checking, missing threshold detection, positive control)."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/ontology/extract/parity_receipt_tests.rs",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Unit tests for extract:parity-receipt pass completely with 10 passed tests."
+      ]
+    },
+    {
+      "file": "scripts/check_model_parity.sh",
+      "line": 47,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The release parity judge and admission tests correctly read the v2 raw envelope without breaking existing release gates."
+      ]
+    },
+    {
+      "file": "scripts/parity_receipt_denominator.sh",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The independent parity receipt denominator script passes its self-tests and verifies that the committed tree has 7 receipts matching EXPECTED_RECEIPTS."
+      ]
+    },
+    {
+      "file": "scripts/parity_receipt_denominator.sh",
+      "line": 28,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The independent denominator predicate and its 4 self-test cases pass, verifying 7 receipts matching EXPECTED_RECEIPTS."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=Opus 5 (1M context)/claude"
+  }
+}
