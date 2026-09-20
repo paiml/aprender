@@ -148,6 +148,39 @@ fn the_three_answers_are_distinct() {
 }
 
 #[test]
+fn the_entity_type_is_counted_in_by_entity_type_not_merely_registered() {
+    // ONT-001 v4.10's probe asks `by_entity_type["parity-receipt"] == 7`. Registering the entity
+    // type in Σ is not enough for that: without a key here the probe reads ABSENT, and an absent
+    // key is not zero — a consumer treating it as one measures nothing and calls it a pass. Same
+    // shape as #3610, one map over.
+    let out = Command::new(pv_bin())
+        .args(["lint", "contracts", "--gate", "shapes", "--format", "json"])
+        .current_dir(repo_root())
+        .output()
+        .expect("failed to spawn pv");
+    let v: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&out.stdout)).expect("json report");
+    let counted = &v["extra"]["by_entity_type"]["parity-receipt"];
+    assert!(
+        !counted.is_null(),
+        "by_entity_type carries no `parity-receipt` key — the probe would read ABSENT, not 7"
+    );
+    assert_eq!(
+        counted.as_u64(),
+        v["extra"]["by_shape"]
+            .as_array()
+            .expect("by_shape")
+            .iter()
+            .find_map(|s| s
+                .as_str()?
+                .strip_prefix("parity-receipt-complete=")?
+                .parse()
+                .ok()),
+        "the entity count and the shape's focus-node count must be the same number"
+    );
+}
+
+#[test]
 fn every_fixture_carries_the_real_contract_byte_for_byte() {
     // A fixture copy that drifts from `contracts/parity-receipt-v2.yaml` would let the real shape be mutated
     // while the case table stayed green — the mutation control's blind spot, closed here.

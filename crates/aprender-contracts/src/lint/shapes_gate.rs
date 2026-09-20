@@ -270,6 +270,11 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
             extraction.gguf.rungs.len() + extraction.gguf.files_read,
         ),
         ("apr-model", extraction.apr_model.files_read),
+        // ONT-4c3: registered in Σ and implemented, so it is counted here like every other entity
+        // type. Without this key a probe asking `by_entity_type["parity-receipt"]` reads ABSENT —
+        // and an absent key is not zero, so a consumer that treats it as one measures nothing and
+        // calls it a pass. The same shape as #3610, one map over.
+        ("parity-receipt", extraction.parity.records),
         ("code", extraction.code.symbols),
         ("lean", extraction.lean.statements),
     ]
