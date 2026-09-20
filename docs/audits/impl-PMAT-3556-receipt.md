@@ -107,3 +107,26 @@ The criteria now describe the PR that exists: row 2's cell, row 1's cell via the
 
 verification (round 7):
   cmd=bash scripts/spec_conformance.sh  claimed_exit=0  rerun_exit=0  log_path=docs/audits/impl-PMAT-3556-receipt.md  sha256=0   # 0; was 7 rows disagreeing this morning, 5 after row 2 alone
+
+## Round 8 — the explanatory prose tripped the parser, twice, in the same column
+
+`NOT AGREED: lane 2=FAIL`. The lane: *"by including the word `LANDED` in the explanatory text for the OPEN derived rows (13, 15, 18, 19, 21), the diff trips the `discharged = "LANDED" in cell.upper()` heuristic … `derived_expiries.json` incorrectly marks all these rows as discharged and strips their expiry dates."*
+
+**True, and verified before fixing.** All five read `discharged=True expires=None` in the regenerated file — five live obligations with no deadline, which is the exact state D2 exists to refuse, produced by the rows that were *citing* the discharge, not claiming one.
+
+Root cause is one column, not one regex. §12's last column is **`status / expires`**: the status sentence and the expiry declaration share a cell, so the parser must decide which token in free prose is a declaration. It does that by scanning, and a scan cannot tell a citation from a claim. The same cell then tripped a **second** scan the same way: with `LANDED` reworded out, `D3` fired on row 18 for *"still types the literal date 2026-09-20"* — the date in `unblocked 2026-09-20 when row 1 was discharged`, narration, not a deadline.
+
+This is a known form in this file. `I-26` (PMAT-974, S0-2) already moved ROOT rows off the scan — `EXPIRES_MARKER` beats the first date in the cell, because *"a root row narrates work before its actual expiry"* — and left `_typed_on_blocked` reading the bare `DATE` fallback. Root got a marker; blocked kept the scan. **One form variant fixed, its sibling left**, which is the shape infra's Python census records as the reason a detector needs a fixture per FORM VARIANT rather than per form.
+
+Fixed in the prose, not the parser, and deliberately:
+
+- Five citations reworded `row N LANDED` → `row N was discharged` (5 occurrences → 0). Re-derived: 13, 15, 19, 21 back to `discharged=false expires=2026-09-30`.
+- Row 18 carries **no date literal at all** and derives from 15. That is the guard's rule as fixtured — `dag_nonroot_with_date_is_red` asserts a blocked row bearing a bare date is RED — so the cell was wrong, not the check. Marker-only D3 would have contradicted that committed must-fire, and dropping the bare fallback would fire D2 on every LANDED root row whose date is in its status sentence. Narrowing it correctly means splitting the column, which is a §12 change that does not belong in a release-blocking PR.
+
+Measured after: `spec_conformance.sh` exit **0**, `33 row(s), 33 ARMED, 114 named case(s), 0 missing`; `--selftest` `42 passed, 0 broken`; row 18 `expires=2026-09-30 derived_from=15`.
+
+verification (round 8):
+  cmd=grep -c 'row [12] LANDED' docs/specifications/PP-LLAMA-001-MASTER.md  claimed_exit=1  rerun_exit=1  log_path=docs/audits/impl-PMAT-3556-receipt.md  sha256=0   # 0 occurrences, was 5
+  cmd=sed -n 370p docs/specifications/PP-LLAMA-001-MASTER.md | grep -co '[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}'  claimed_exit=1  rerun_exit=1  log_path=docs/audits/impl-PMAT-3556-receipt.md  sha256=0   # 0 dates in row 18
+  cmd=bash scripts/spec_conformance.sh  claimed_exit=0  rerun_exit=0  log_path=docs/audits/impl-PMAT-3556-receipt.md  sha256=0   # 0
+  cmd=bash scripts/spec_conformance.sh --selftest  claimed_exit=0  rerun_exit=0  log_path=docs/audits/impl-PMAT-3556-receipt.md  sha256=0   # 42 passed, 0 broken

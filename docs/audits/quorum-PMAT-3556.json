@@ -3,12 +3,12 @@
   "base": "origin/main",
   "base_resolved": "origin/main",
   "base_note": "no origin/origin/main exists; judged against the local ref",
-  "head": "5bbce18bdd12cd332e80a7db52da6afe893672af",
-  "diff_sha256": "04c5c603a1c1125722d7d7a3e4f03f74cff87d051ce073733f98b935c73025f8",
+  "head": "ce145009dd51b013505dfa62eb8f5d4e2347cead",
+  "diff_sha256": "7109357f5389d6ba05a941043751696606f90778b3813c8a3c0a3644e074ad6e",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "file",
-  "prompt_bytes": 100968,
+  "prompt_bytes": 108908,
   "author": {
     "model": "claude-opus-5",
     "family": "claude",
@@ -20,16 +20,17 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "FAIL",
-      "summary": "The diff implements the perf002_prefill_path_probe driver and decider with the mandatory refusals correctly. However, it improperly modifies row 1 and its derived rows (13, 15, 18, 19) in the specification and the derived_expiries JSON. The ticket explicitly states that these rows belong to another PR by aprender-bf and should remain open (leaving 5 rows disagreeing in spec_conformance.sh). This is a direct contradiction of the ticket.",
+      "summary": "The diff correctly implements the perf002 probe with all mandatory refusals, warm-up discards, unique nonces, and TTFT measurement off the SSE stream. It also properly writes the marker on early failure paths before any `cd` or `source`. However, it introduces a severe tracking defect: by including the word 'LANDED' in the explanatory text for the `OPEN` derived rows (13, 15, 18, 19, 21) in `PP-LLAMA-001-MASTER.md`, the diff inadvertently trips the `discharged = \"LANDED\" in cell.upper()` heuristic in `spec_conformance.py`. As a result, `evidence/parity/derived_expiries.json` incorrectly marks all these rows as `\"discharged\": true` and strips their expiry dates, which violates the ticket's explicit requirement that they remain open and tracked with their new expiry dates.",
       "findings": [
         {
-          "claim": "The diff marks row 1 as LANDED and unblocks its derived rows (13, 15, 18, 19), contradicting the ticket's explicit statement that those rows remain open and are owned by aprender-bf (\"1/13/15/18/19 remain, all tracing to row 1, which is aprender-bf's\").",
-          "file": "docs/specifications/PP-LLAMA-001-MASTER.md",
-          "fix": "Revert changes to row 1 and rows 13, 15, 18, 19 in docs/specifications/PP-LLAMA-001-MASTER.md and their corresponding entries in evidence/parity/derived_expiries.json so they remain OPEN and blocked, as required by the ticket.",
-          "grounding": "cited"
+          "claim": "The diff adds explanatory text to rows 13, 15, 18, 19, and 21 in `PP-LLAMA-001-MASTER.md` stating they were unblocked when 'row 1 LANDED'. Because `spec_conformance.py` sets discharged status based on `\"LANDED\" in cell.upper()`, this inadvertently marks all these `OPEN` rows as `\"discharged\": true` with `\"expires\": null` in `evidence/parity/derived_expiries.json`, dropping their new expiry dates (e.g., 2026-09-30).",
+          "file": "evidence/parity/derived_expiries.json",
+          "fix": "Rephrase the status cell explanations in `docs/specifications/PP-LLAMA-001-MASTER.md` to avoid the word 'LANDED' (e.g., use 'merged' or 'completed'), and then regenerate `evidence/parity/derived_expiries.json` so these rows correctly remain `discharged: false` and retain their explicit expiry dates.",
+          "grounding": "cited",
+          "line": 77
         }
       ],
-      "raw_bytes": 3410,
+      "raw_bytes": 4615,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -43,39 +44,26 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "I have reviewed the diff against the PMAT-3556 ticket. The implemented python decider correctly contains all five mandatory refusals and correctly returns 'UNMEASURABLE' (exit 2) for them, including the reporting of bimodal fits. The bash driver properly enforces these conditions, handles early-exit paths safely before 'cd' with 'bail_marker', measures TTFT correctly, and strictly correctly respects the prohibition against touching forbidden files. I could find no defects.",
+      "summary": "I reviewed the diff against the PMAT-3556 ticket requirements. The implementation successfully adds the python decider with all 5 mandatory refusals reporting themselves to exit 2 (UNMEASURABLE), rather than reporting defect claims. The bash driver enforces the early bail marker safely, reads TTFT off the SSE stream, discards warm-up, uses unique nonces, and accurately sets ONE clock securely. It completely satisfies the deliberate ticket change of scope to carry row 1's cell, and no forbidden files in the serve or workflows directories were modified. Verdict is PASS.",
       "findings": [
         {
-          "claim": "The implementation includes scripts/perf002_prefill_path_probe.sh and scripts/perf002_prefill_path_probe.py with the 5 required refusals.",
+          "claim": "The diff correctly implements the perf002_prefill_path_probe driver and decider. The Python decider enforces all five mandatory refusals (too_few_distinct_x, negative_slope, r2_below_bound, bimodal, implausibly_fast) mapping them to exit 2 (UNMEASURABLE) and providing per-mode fits when bimodal.",
           "file": "scripts/perf002_prefill_path_probe.py",
           "grounding": "cited",
           "line": 816
         },
         {
-          "claim": "The python script has a --selftest option evaluating the 8 specified cases.",
-          "file": "scripts/perf002_prefill_path_probe.py",
-          "grounding": "cited",
-          "line": 1030
-        },
-        {
-          "claim": "The bash script runs selftest before measuring and correctly maps refusals to exit 2 (UNMEASURABLE).",
+          "claim": "The bash driver correctly establishes the bail_marker early, runs the selftest before measuring, sets ONE clock (started_utc.log) securely, and properly handles the TTFT off the SSE stream with unique nonces, writing a marker with the UNMEASURABLE vocabulary on all exit paths.",
           "file": "scripts/perf002_prefill_path_probe.sh",
-          "grounding": "cited",
-          "line": 1460
+          "grounding": "cited"
         },
         {
-          "claim": "ONE clock logic matches the ticket perfectly by reading date -u into an append-only file before bail_marker.",
-          "file": "scripts/perf002_prefill_path_probe.sh",
-          "grounding": "cited",
-          "line": 1354
-        },
-        {
-          "claim": "No forbidden files (crates/aprender-serve/** or .github/workflows/cuda-nightly.yml) were modified.",
-          "file": "docs/audits/quorum-PMAT-3556.prompt.md",
-          "grounding": "asserted"
+          "claim": "The diff rightfully modifies row 1 and its derived rows. Although initially a separate scope, the updated ticket explicitly specifies: \"THIS PR ALSO CARRIES ROW 1'S CELL, and that is a deliberate change of scope from the original split.\" No forbidden files were touched.",
+          "file": "docs/roadmaps/entries/PMAT-3556.yaml",
+          "grounding": "cited"
         }
       ],
-      "raw_bytes": 4312,
+      "raw_bytes": 4734,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -89,15 +77,16 @@
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Lane 3 review of PMAT-3556 diff is complete. The implementation fully satisfies the ticket requirements: probe driver and decider scripts added with 5 mandatory refusal rules, proper SSE TTFT timing, warm-up discard, early bail_marker setup, UNMEASURABLE status consistency, and appropriate specification and roadmap updates. No restricted files under crates/aprender-serve/** or .github/workflows/cuda-nightly.yml were touched. Verdict is PASS.",
+      "summary": "Completed Lane 3 review for PMAT-3556. The diff fully satisfies all ticket requirements and acceptance criteria without violating any constraints or touching forbidden files. Refutation attempt yielded no defects or grounds for failure.",
       "findings": [
         {
-          "claim": "The diff implements all criteria of PMAT-3556: scripts/perf002_prefill_path_probe.sh driver and scripts/perf002_prefill_path_probe.py decider include all 5 mandatory refusals, read TTFT off SSE stream, discard warm-up, use unique nonces, establish bail_marker early before cd/sourcing, use UNMEASURABLE consistently, and update specs/roadmaps. No forbidden files modified.",
+          "claim": "The diff correctly implements all requirements for ticket PMAT-3556: adding the perf002 prefill-path probe driver (scripts/perf002_prefill_path_probe.sh) and python decider (scripts/perf002_prefill_path_probe.py) featuring the 5 mandatory refusals, unit selftests, proper TTFT SSE timing, warm-up handling, unique prompt nonces, early bail_marker setup, consistent UNMEASURABLE exit codes, and appropriate updates to roadmap/specs. No forbidden files under crates/aprender-serve/** or .github/workflows/cuda-nightly.yml were modified.",
           "file": "docs/audits/impl-PMAT-3556-receipt.md",
-          "grounding": "cited"
+          "grounding": "cited",
+          "line": 149
         }
       ],
-      "raw_bytes": 3073,
+      "raw_bytes": 2994,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -112,13 +101,14 @@
     {
       "lane": 1,
       "verdict": "FAIL",
-      "summary": "The diff implements the perf002_prefill_path_probe driver and decider with the mandatory refusals correctly. However, it improperly modifies row 1 and its derived rows (13, 15, 18, 19) in the specification and the derived_expiries JSON. The ticket explicitly states that these rows belong to another PR by aprender-bf and should remain open (leaving 5 rows disagreeing in spec_conformance.sh). This is a direct contradiction of the ticket.",
+      "summary": "The diff correctly implements the perf002 probe with all mandatory refusals, warm-up discards, unique nonces, and TTFT measurement off the SSE stream. It also properly writes the marker on early failure paths before any `cd` or `source`. However, it introduces a severe tracking defect: by including the word 'LANDED' in the explanatory text for the `OPEN` derived rows (13, 15, 18, 19, 21) in `PP-LLAMA-001-MASTER.md`, the diff inadvertently trips the `discharged = \"LANDED\" in cell.upper()` heuristic in `spec_conformance.py`. As a result, `evidence/parity/derived_expiries.json` incorrectly marks all these rows as `\"discharged\": true` and strips their expiry dates, which violates the ticket's explicit requirement that they remain open and tracked with their new expiry dates.",
       "findings": [
         {
-          "claim": "The diff marks row 1 as LANDED and unblocks its derived rows (13, 15, 18, 19), contradicting the ticket's explicit statement that those rows remain open and are owned by aprender-bf (\"1/13/15/18/19 remain, all tracing to row 1, which is aprender-bf's\").",
-          "file": "docs/specifications/PP-LLAMA-001-MASTER.md",
-          "fix": "Revert changes to row 1 and rows 13, 15, 18, 19 in docs/specifications/PP-LLAMA-001-MASTER.md and their corresponding entries in evidence/parity/derived_expiries.json so they remain OPEN and blocked, as required by the ticket.",
-          "grounding": "cited"
+          "claim": "The diff adds explanatory text to rows 13, 15, 18, 19, and 21 in `PP-LLAMA-001-MASTER.md` stating they were unblocked when 'row 1 LANDED'. Because `spec_conformance.py` sets discharged status based on `\"LANDED\" in cell.upper()`, this inadvertently marks all these `OPEN` rows as `\"discharged\": true` with `\"expires\": null` in `evidence/parity/derived_expiries.json`, dropping their new expiry dates (e.g., 2026-09-30).",
+          "file": "evidence/parity/derived_expiries.json",
+          "fix": "Rephrase the status cell explanations in `docs/specifications/PP-LLAMA-001-MASTER.md` to avoid the word 'LANDED' (e.g., use 'merged' or 'completed'), and then regenerate `evidence/parity/derived_expiries.json` so these rows correctly remain `discharged: false` and retain their explicit expiry dates.",
+          "grounding": "cited",
+          "line": 77
         }
       ]
     }
@@ -126,32 +116,32 @@
   "dedup": [
     {
       "file": "docs/audits/impl-PMAT-3556-receipt.md",
-      "line": null,
+      "line": 149,
       "lanes_agreeing": [
         3
       ],
       "claims": [
-        "The diff implements all criteria of PMAT-3556: scripts/perf002_prefill_path_probe.sh driver and scripts/perf002_prefill_path_probe.py decider include all 5 mandatory refusals, read TTFT off SSE stream, discard warm-up, use unique nonces, establish bail_marker early before cd/sourcing, use UNMEASURABLE consistently, and update specs/roadmaps. No forbidden files modified."
+        "The diff correctly implements all requirements for ticket PMAT-3556: adding the perf002 prefill-path probe driver (scripts/perf002_prefill_path_probe.sh) and python decider (scripts/perf002_prefill_path_probe.py) featuring the 5 mandatory refusals, unit selftests, proper TTFT SSE timing, warm-up handling, unique prompt nonces, early bail_marker setup, consistent UNMEASURABLE exit codes, and appropriate updates to roadmap/specs. No forbidden files under crates/aprender-serve/** or .github/workflows/cuda-nightly.yml were modified."
       ]
     },
     {
-      "file": "docs/audits/quorum-PMAT-3556.prompt.md",
+      "file": "docs/roadmaps/entries/PMAT-3556.yaml",
       "line": null,
       "lanes_agreeing": [
         2
       ],
       "claims": [
-        "No forbidden files (crates/aprender-serve/** or .github/workflows/cuda-nightly.yml) were modified."
+        "The diff rightfully modifies row 1 and its derived rows. Although initially a separate scope, the updated ticket explicitly specifies: \"THIS PR ALSO CARRIES ROW 1'S CELL, and that is a deliberate change of scope from the original split.\" No forbidden files were touched."
       ]
     },
     {
-      "file": "docs/specifications/PP-LLAMA-001-MASTER.md",
-      "line": null,
+      "file": "evidence/parity/derived_expiries.json",
+      "line": 77,
       "lanes_agreeing": [
         1
       ],
       "claims": [
-        "The diff marks row 1 as LANDED and unblocks its derived rows (13, 15, 18, 19), contradicting the ticket's explicit statement that those rows remain open and are owned by aprender-bf (\"1/13/15/18/19 remain, all tracing to row 1, which is aprender-bf's\")."
+        "The diff adds explanatory text to rows 13, 15, 18, 19, and 21 in `PP-LLAMA-001-MASTER.md` stating they were unblocked when 'row 1 LANDED'. Because `spec_conformance.py` sets discharged status based on `\"LANDED\" in cell.upper()`, this inadvertently marks all these `OPEN` rows as `\"discharged\": true` with `\"expires\": null` in `evidence/parity/derived_expiries.json`, dropping their new expiry dates (e.g., 2026-09-30)."
       ]
     },
     {
@@ -161,37 +151,17 @@
         2
       ],
       "claims": [
-        "The implementation includes scripts/perf002_prefill_path_probe.sh and scripts/perf002_prefill_path_probe.py with the 5 required refusals."
-      ]
-    },
-    {
-      "file": "scripts/perf002_prefill_path_probe.py",
-      "line": 1030,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "The python script has a --selftest option evaluating the 8 specified cases."
+        "The diff correctly implements the perf002_prefill_path_probe driver and decider. The Python decider enforces all five mandatory refusals (too_few_distinct_x, negative_slope, r2_below_bound, bimodal, implausibly_fast) mapping them to exit 2 (UNMEASURABLE) and providing per-mode fits when bimodal."
       ]
     },
     {
       "file": "scripts/perf002_prefill_path_probe.sh",
-      "line": 1354,
+      "line": null,
       "lanes_agreeing": [
         2
       ],
       "claims": [
-        "ONE clock logic matches the ticket perfectly by reading date -u into an append-only file before bail_marker."
-      ]
-    },
-    {
-      "file": "scripts/perf002_prefill_path_probe.sh",
-      "line": 1460,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "The bash script runs selftest before measuring and correctly maps refusals to exit 2 (UNMEASURABLE)."
+        "The bash driver correctly establishes the bail_marker early, runs the selftest before measuring, sets ONE clock (started_utc.log) securely, and properly handles the TTFT off the SSE stream with unique nonces, writing a marker with the UNMEASURABLE vocabulary on all exit paths."
       ]
     }
   ],
