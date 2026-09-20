@@ -10,10 +10,13 @@ set -uo pipefail
 V=0.68.2; MS=0.68.2; REPO=paiml/aprender; AP=/mnt/nvme-raid0/agent-wt/rel-0682-autopilot; LAST_TAG=v0.68.1
 B="$AP/bump"; BR="PMAT-3477-release-$V"; MARK='<!-- one-paragraph summary of the train: EDIT BEFORE --ship -->'
 die() { printf 'STOP %s\n' "$*" >&2; exit 1; }
-export PATH=/home/noah/.cargo/bin:$PATH
+# D4/D5/D6/D7 (PMAT-3459): $0-derived root and CARGO_HOME-relative cargo. Root resolved
+# BEFORE any cd. NOT `git rev-parse --show-toplevel` — refused on a bind-mounted tree (#3586).
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || die "cannot resolve the repo root from $0"
+export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
 
 if [ "${1:-}" != "--ship" ]; then
-  cd /home/noah/src/aprender || die "no repo"
+  cd "$REPO_ROOT" || die "no repo"
   git fetch -q origin main || die "fetch failed"
   [ -e "$B" ] && die "$B exists: review it, or 'git worktree remove' it to start over"
   git worktree add -q -b "$BR" "$B" origin/main || die "worktree add failed"
@@ -58,7 +61,7 @@ grep -qF "$MARK" CHANGELOG.md && die "CHANGELOG [$V] still carries the EDIT plac
 bash scripts/bump-version.sh --check > /dev/null 2>&1 || die "bump-version.sh --check failed"
 awk -v h="## [$V]" 'index($0, h) == 1 {f = 1; next} f && /^## \[/ {exit} f' CHANGELOG.md > "$AP/release_notes.md"
 [ -s "$AP/release_notes.md" ] || die "the CHANGELOG [$V] section is empty"
-cargo_bin() { /home/noah/.cargo/bin/cargo "$@"; }
+cargo_bin() { "${CARGO_HOME:-$HOME/.cargo}"/bin/cargo "$@"; }
 cargo_bin fmt --all -- --check > /dev/null 2>&1 || die "cargo fmt --check failed"
 cargo_bin deny check advisories > "$AP/deny.log" 2>&1 || die "cargo deny check advisories failed ($AP/deny.log)"
 cargo_bin nextest --version > /dev/null 2>&1; cargo_bin "test" --quiet --package aprender-contracts --lib > "$AP/contracts.log" 2>&1 || die "aprender-contracts lib tests failed ($AP/contracts.log)"
@@ -77,7 +80,7 @@ git push -q -u origin "$BR" || die "push failed"
 { printf 'Release bump for **%s** (06x release schedule §4.2): `bump-version.sh %s` across every workspace, and the CHANGELOG section below.\n\nWhen this merges, `rel-0682-autopilot/autopilot.sh` runs the rest of the train, fail-closed (APR-RELEASE-001 §4): T-1 deep run, pre-publish dogfood, tag + release, `clean-room.yml` dispatched on the tag with the run id recorded (T-3), all release assets checked with `scripts/check_release_assets.sh`, publish preflight, the crates.io cascade (T-4, automated per operator 2026-09-13), `install.sh --version` receipts on intel and gx10 plus the CUDA asset receipts on gx10 and yoga, and the epic and milestone close.\n\n' "$V" "$V"; cat "$AP/release_notes.md"; printf '\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n'; } > "$AP/pr_body.md"
 url=$(gh pr create --repo $REPO --base main --head "$BR" --milestone "$MS" --title "release: $V" --body-file "$AP/pr_body.md") || die "gh pr create failed"
 n=${url##*/}
-ARM=/home/noah/src/aprender/scripts/arm_pr_automerge.sh; [ -f "$ARM" ] || ARM=/mnt/nvme-raid0/agent-wt/wedge-3292/scripts/arm_pr_automerge.sh
+ARM="$REPO_ROOT/scripts/arm_pr_automerge.sh"; [ -f "$ARM" ] || ARM=/mnt/nvme-raid0/agent-wt/wedge-3292/scripts/arm_pr_automerge.sh
 armed=0; for _ in $(seq 1 30); do bash "$ARM" "$n" > "$AP/arm.log" 2>&1; rc=$?; [ $rc -eq 0 ] && { armed=1; break; }; [ $rc -eq 3 ] || break; sleep 120; done
 [ $armed = 1 ] && printf 'ARMED #%s (guard-tree green on the head)\n' "$n" || printf 'WARN not armed: %s\n' "$(tail -1 "$AP/arm.log")"
 printf 'BUMP PR #%s (%s)\nlaunch: setsid nohup %s/autopilot.sh %s > /dev/null 2>&1 < /dev/null & disown\n' "$n" "$url" "$AP" "$n"
