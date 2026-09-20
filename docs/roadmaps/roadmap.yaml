@@ -18722,3 +18722,84 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3567
+  github_issue: 3567
+  item_type: task
+  title: The fleet-pinned pv is 0.65.2 and has no 'extract' subcommand and no '
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T10:27:59Z
+  updated: 2026-09-20T10:27:59Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3568
+  github_issue: 3568
+  item_type: task
+  title: Schema-constrained decoding in apr (--json-schema or grammar) — thre
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T10:27:59Z
+  updated: 2026-09-20T10:27:59Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3569
+  github_issue: 3569
+  item_type: task
+  title: 'Decision 8: census.json becomes derived (CI computes, guard refuses PR'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T10:27:58Z
+  updated: 2026-09-20T10:27:58Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3574
+  github_issue: 3574
+  item_type: task
+  title: ARB-APR-3 parity receipt for the decide lane cell on lambda-labs
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-20T11:20:51Z
+  updated: 2026-09-20T11:27:22Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3577
+  github_issue: 3577
+  item_type: task
+  title: 'Receipts under contract: parity-receipt-v1 shape, extract:parity-receipt, back-fill 7 receipts (ONT-4c3 re-scoped)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-20T11:34:01Z
+  updated: 2026-09-20T11:34:17Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered; pmat work add derived neither spec: nor acceptance_criteria: — defect paiml-mcp-agent-toolkit#1414). Spec: docs/specifications/ruling-receipts-under-contract.md (operator ruling 2026-09-20). Done when: contracts/parity-receipt-v1.yaml with its shape on origin/main; extract:parity-receipt implemented; pv lint --gate shapes --path evidence/ in the required check; PR body shows 7 older receipts RED before back-fill and 0 after, plant violation = 1, mutation RED, pc_shape fired; check_parity_receipt.sh folded into the shape or its remainder listed under not_expressible; ONT-4c3 bound with the parity receipt as focus node; verdict rendered on a fleet host once the pv pin lands, else checkout-only: true. Sigma parent bound: json. Back-fill denominator: 7. STOP: subset-insufficient; shared-file-touched without the guard label; any threshold typed into the shape instead of resolved from thresholds.yaml.'
