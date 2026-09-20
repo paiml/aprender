@@ -1,10 +1,14 @@
 //! PMAT-3598 row 1 (#3542) — where the time went, as a thing a consumer can read.
 //!
-//! **Why this exists.** `apr run` reported one number: wall clock. On a 4B model that number was 14 s
-//! against llama.cpp's 1.8 s, and from it the mechanism was named twice and was wrong twice inside
-//! fifteen minutes — *"it is load"* died to a 2-character prompt costing 6.8 s, *"prefill at 4.7 tok/s"*
-//! died to 144→288 words costing only ~2 s. Three candidate mechanisms and one number that admits all
-//! three. **Slow is allowed; invisible is not.**
+//! **Why this exists.** `apr run` reported one number: wall clock. From that single number the
+//! mechanism behind a large time-to-first-token was named twice and was wrong twice inside fifteen
+//! minutes — *"it is load"* died to a two-character prompt costing nearly as much, and *"prefill is
+//! orders of magnitude too slow"* died to doubling the prompt costing almost nothing extra. Three
+//! candidate mechanisms and one number that admits all three. **Slow is allowed; invisible is not.**
+//!
+//! The readings are in `evidence/perf/3598/MEASUREMENT.md`, with the host, the occupancy at start
+//! and the binary that took them — a number in a doc comment is a claim nobody can re-derive, which
+//! is the defect one level up from the one this module fixes.
 //!
 //! **Every field is `Option`, and absent means NOT MEASURED — never zero.** A stage that reports `0.0`
 //! because nobody timed it is the defect this row exists to end: it reads as "free" and it is the

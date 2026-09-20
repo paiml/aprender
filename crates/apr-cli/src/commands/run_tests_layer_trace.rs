@@ -19,8 +19,7 @@
             tok_per_sec: Some(tokens as f64 / duration_secs),
             used_gpu: Some(false),
             generated_tokens: None,
-            token_texts: None,
-            ..RunResult::default()
+            token_texts: None, #[cfg(feature = "inference")] stages: realizar::infer::stage_timings::StageTimings::default(),
         }
     }
 

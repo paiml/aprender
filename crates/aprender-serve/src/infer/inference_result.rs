@@ -341,7 +341,6 @@ fn run_gguf_inference(
         format: "GGUF".to_string(),
         used_gpu,
         stages,
-        ..InferenceResult::default()
     })
 }
 
