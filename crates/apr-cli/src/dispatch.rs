@@ -209,6 +209,10 @@ or drop `--backend`."
                     gpu: *gpu,
                     no_gpu: *no_gpu,
                     backend: backend.as_deref(),
+                    // `apr run` exposes no `--gpu-layers` (see `Commands::Run`
+                    // in commands_enum.rs — it carries `gpu` and `no_gpu` and
+                    // nothing else); that flag belongs to `apr serve`. So this
+                    // is ABSENT for this surface, not a placeholder to fill in.
                     layers_want_accelerator: false,
                 }
                 .wanted(),

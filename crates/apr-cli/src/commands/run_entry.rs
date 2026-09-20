@@ -18,10 +18,12 @@ pub(crate) fn run(
     task: Option<&str>,
     output_format: &str,
     no_gpu: bool,
-    // #3602: the user EXPLICITLY asked for an accelerator (`--gpu`, `--backend
-    // cuda|wgpu|gpu`, `--gpu-layers all|n`), classified by
+    // #3602: the user EXPLICITLY asked for an accelerator, classified by
     // `crate::registry::Request::wanted` rather than re-derived here — two
-    // spellings of one rule is how they drift apart.
+    // spellings of one rule is how they drift apart. For THIS command that
+    // means `--gpu` or `--backend cuda|wgpu|gpu`; `apr run` has no
+    // `--gpu-layers` flag (that is `apr serve`'s), so the classifier's fourth
+    // input is genuinely absent here rather than stubbed.
     accel_forced: bool,
     offline: bool,
     benchmark: bool,
@@ -156,8 +158,7 @@ pub(crate) fn run(
     // still emit and the HUMAN surface stays silent — the half of the contract
     // that was doing the protecting is kept, and a `--json` consumer stops
     // having to infer a refusal from an exit code alone.
-    let machine_surface = stream || output_format == "json";
-    if reconciled.is_ok() || machine_surface {
+    if reconciled.is_ok() || emits_machine_output(stream, output_format, benchmark) {
         print_run_output(
             &result,
             source,
@@ -171,6 +172,23 @@ pub(crate) fn run(
     reconciled?;
 
     Ok(())
+}
+
+/// Does [`print_run_output`] emit a MACHINE-readable document for these flags?
+///
+/// The refusal path above needs to know this, and the first draft answered it
+/// with its own copy — `stream || output_format == "json"` — which omitted
+/// `!benchmark`. A quorum lane found the consequence: `--json --benchmark` on a
+/// refused run took the branch, matched neither machine arm inside
+/// `print_run_output`, and fell through to the HUMAN benchmark blob, printing a
+/// success rendering for a run being refused. Two spellings of one condition,
+/// drifting apart in the gap between them.
+///
+/// One spelling now. `the_machine_output_predicate_matches_print_run_output`
+/// pins it to the arms it describes over every flag combination, so a change to
+/// either side that does not change the other turns the test red.
+pub(crate) fn emits_machine_output(stream: bool, output_format: &str, benchmark: bool) -> bool {
+    !benchmark && (stream || output_format == "json")
 }
 
 /// Compare the accelerator the user ASKED for against the one that RAN.

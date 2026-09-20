@@ -150,3 +150,41 @@ fn gpu_result(used_gpu: Option<bool>) -> RunResult {
         token_texts: None,
     }
 }
+
+/// The drift guard for `emits_machine_output`. Round 2 of the quorum found
+/// `--json --benchmark` leaking a human success blob on a refused run, because
+/// the refusal path carried its own copy of the condition and dropped
+/// `!benchmark`. This pins the predicate to the arms it describes over EVERY
+/// flag combination, so the two cannot diverge again silently.
+#[test]
+fn the_machine_output_predicate_matches_print_run_output() {
+    for &stream in &[false, true] {
+        for &benchmark in &[false, true] {
+            for fmt in ["json", "text", "table"] {
+                // Transcribed from `print_run_output`'s own two early returns.
+                let stream_arm = stream && !benchmark;
+                let json_arm = fmt == "json" && !benchmark;
+                assert_eq!(
+                    emits_machine_output(stream, fmt, benchmark),
+                    stream_arm || json_arm,
+                    "predicate disagrees with print_run_output at \
+                     stream={stream} fmt={fmt} benchmark={benchmark}"
+                );
+            }
+        }
+    }
+}
+
+/// The case that leaked, called out by name so a future reader sees the bug and
+/// not just the invariant: `--json --benchmark` is NOT a machine surface.
+#[test]
+fn json_plus_benchmark_is_not_a_machine_surface() {
+    assert!(
+        !emits_machine_output(false, "json", true),
+        "--json --benchmark prints the HUMAN benchmark blob; treating it as a \
+         machine surface leaks a success rendering for a refused run"
+    );
+    assert!(emits_machine_output(false, "json", false));
+    assert!(emits_machine_output(true, "text", false));
+    assert!(!emits_machine_output(true, "json", true));
+}
