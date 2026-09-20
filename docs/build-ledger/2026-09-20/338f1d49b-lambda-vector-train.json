@@ -1,0 +1,49 @@
+{
+  "spec": "APR-RELEASE-001",
+  "section": "4",
+  "job": "release-train",
+  "host": "lambda-vector",
+  "host_class": "lambda",
+  "source": "rel-0682-autopilot/STATUS",
+  "sha": "338f1d49b3518433f1f2a906d54a2fb4502eaa89",
+  "tag": "v0.68.2",
+  "version": "0.68.2",
+  "published": true,
+  "asset_run_id": "35471383659",
+  "cleanroom_run_id": "35495206021",
+  "assets_on_release": true,
+  "preflight_pass": true,
+  "dogfood_attempts": 5,
+  "attended_minutes": 0,
+  "steps": {
+    "DEEP GO": true,
+    "DOGFOOD GO": true,
+    "TAGGED": true,
+    "CLEANROOM GREEN": true,
+    "ASSETS all present": true,
+    "PREFLIGHT PASS": true,
+    "PUBLISHED": true,
+    "INSTALL cargo": true,
+    "HOST gx10": true,
+    "HOST yoga": true,
+    "INSTALLER intel": true,
+    "INSTALLER gx10": true
+  },
+  "installer_receipts": {
+    "intel": "0",
+    "gx10": "0"
+  },
+  "pp26_witness": {
+    "host": "noah-Lambda-Vector",
+    "cc": "89",
+    "commit": "49fe9155a3672776d53b53bd9432636e2156f779",
+    "started_utc": "2026-09-17T02:10:15Z",
+    "status": "PASS",
+    "sha256": "e74c63f31b753e18fdee1e6ba3d1dce3a1282d73d62bf61cb70b29bb58919cd1",
+    "nightly_producer": "cuda-nightly.yml gx10 NIGHTLY-RED since 2026-09-12 (#3096, 0.70); release witness taken on lambda sm_89"
+  },
+  "unmeasured": [
+    "t4_wall_minutes: derive from STATUS timestamps CASCADE..PUBLISHED"
+  ],
+  "written": "2026-09-20T08:53:57.164692+00:00"
+}
