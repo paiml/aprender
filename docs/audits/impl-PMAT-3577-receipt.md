@@ -104,14 +104,16 @@ decimals (7B lambda 0.998607, 7B gx10 0.998465, 1.5B lambda 0.950827, 1.5B gx10 
 **`ONT-4c3 bound in the ONT-001 ledger` — cannot be done from this repository.** The ledger is
 `docs/specifications/paiml-ontology.md` in **paiml/infra**, where v4.8 defines ONT-4c3 as **kernel** receipts
 (`entity type kernel`, `apr-kernel-receipt/v1`, the `kernel-parity`/`kernel-timing`/`kernel-safety` shapes).
-The re-scope to parity receipts is an aprender-side ruling that the infra spec does not yet carry, so binding
+**Filed as paiml/infra#814** with both resolutions (renumber the parity row, or record the re-scope in a
+v4.9) and no preference between them — the point is that one identifier should not mean two things in two
+repositories. The re-scope is an aprender-side ruling that the infra spec does not yet carry, so binding
 it is an **infra PR**, not this one. Raised with the cop rather than left as a checked box. The kernel
 sub-row with the `gated_rmsnorm` fixture stays a follow-up either way.
 
 ## Follow-ups
 
 - Arm the three shapes in `contracts/lint-baseline.json` (`touches-shared-contracts`, group of one).
-- Bind ONT-4c3 in infra's ONT-001 ledger and record the parity/kernel re-scope there.
+- Bind ONT-4c3 in infra's ONT-001 ledger once **paiml/infra#814** decides which meaning the identifier keeps.
 - #3575 bumps `EXPECTED_RECEIPTS` to 8 when it lands, and its receipt needs the v2 envelope
   (`comparator`, `partially_receipted`, `backend`, `generated_at`) or these shapes will report it.
 - `Receipt` as a shared parent class once quorum and dispatch receipts join (NOT this row).
