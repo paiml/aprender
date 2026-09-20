@@ -255,6 +255,42 @@ impl SvgEncoder {
         self
     }
 
+    /// Add text as **glyph outlines**, from font bytes the caller pins.
+    ///
+    /// APEX-001 EV-2a rule 2. The result is a `<path>`: the emitted SVG carries no `<text>`
+    /// element and no `font-family` attribute for this string, so the shapes are in the file
+    /// rather than being a request that the viewer go and find a font. Two readers of the same
+    /// file then see the same image, and the bytes do not depend on what is installed anywhere.
+    ///
+    /// `font_bytes` is the font. There is no lookup, no fallback and no system font path — see
+    /// [`crate::text`] for why that is the whole point rather than an inconvenience.
+    ///
+    /// Coordinates are quantised to [`crate::COORD_GRID`] so an ulp of difference between two
+    /// hosts cannot reach the bytes.
+    #[cfg(feature = "text-path")]
+    #[must_use]
+    pub fn text_as_path(
+        mut self,
+        x: f64,
+        y: f64,
+        text: &str,
+        font_bytes: &[u8],
+        size_px: f64,
+        fill: Rgba,
+    ) -> Self {
+        let d = crate::text::to_path_data_at(text, font_bytes, size_px, x, y);
+        if d.is_empty() {
+            return self;
+        }
+        self.elements.push(SvgElement::Path {
+            d,
+            fill: Some(fill),
+            stroke: None,
+            stroke_width: 0.0,
+        });
+        self
+    }
+
     /// Add text with anchor.
     #[must_use]
     pub fn text_anchored(
@@ -343,49 +379,83 @@ fn rgba_to_css(color: Rgba) -> String {
     }
 }
 
+/// One emitted number, snapped to [`crate::COORD_GRID`].
+///
+/// APEX-001 EV-2a rule 5: *emitted* coordinates are quantised, so an ulp of difference between
+/// two hosts' layout arithmetic cannot reach the bytes. Every numeric attribute below goes
+/// through this, not only the ones that happen to come from a transcendental today.
+fn c(v: f32) -> String {
+    crate::format_coord(f64::from(v))
+}
+
 /// Convert an SVG element to its string representation.
 fn element_to_svg(element: &SvgElement) -> String {
     match element {
         SvgElement::Rect { x, y, width, height, fill, stroke, stroke_width } => {
             let stroke_attr = stroke
-                .map(|s| format!(r#" stroke="{}" stroke-width="{}""#, rgba_to_css(s), stroke_width))
+                .map(|s| {
+                    format!(r#" stroke="{}" stroke-width="{}""#, rgba_to_css(s), c(*stroke_width))
+                })
                 .unwrap_or_default();
             format!(
-                r#"<rect x="{x}" y="{y}" width="{width}" height="{height}" fill="{}"{stroke_attr}/>"#,
+                r#"<rect x="{}" y="{}" width="{}" height="{}" fill="{}"{stroke_attr}/>"#,
+                c(*x),
+                c(*y),
+                c(*width),
+                c(*height),
                 rgba_to_css(*fill)
             )
         }
         SvgElement::Circle { cx, cy, r, fill, stroke, stroke_width } => {
             let stroke_attr = stroke
-                .map(|s| format!(r#" stroke="{}" stroke-width="{}""#, rgba_to_css(s), stroke_width))
+                .map(|s| {
+                    format!(r#" stroke="{}" stroke-width="{}""#, rgba_to_css(s), c(*stroke_width))
+                })
                 .unwrap_or_default();
             format!(
-                r#"<circle cx="{cx}" cy="{cy}" r="{r}" fill="{}"{stroke_attr}/>"#,
+                r#"<circle cx="{}" cy="{}" r="{}" fill="{}"{stroke_attr}/>"#,
+                c(*cx),
+                c(*cy),
+                c(*r),
                 rgba_to_css(*fill)
             )
         }
         SvgElement::Line { x1, y1, x2, y2, stroke, stroke_width } => {
             format!(
-                r#"<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{}" stroke-width="{stroke_width}"/>"#,
-                rgba_to_css(*stroke)
+                r#"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="{}"/>"#,
+                c(*x1),
+                c(*y1),
+                c(*x2),
+                c(*y2),
+                rgba_to_css(*stroke),
+                c(*stroke_width)
             )
         }
         SvgElement::Polyline { points, stroke, stroke_width, fill } => {
-            let points_str: String =
-                points.iter().map(|(x, y)| format!("{x},{y}")).collect::<Vec<_>>().join(" ");
+            let points_str: String = points
+                .iter()
+                .map(|(x, y)| format!("{},{}", c(*x), c(*y)))
+                .collect::<Vec<_>>()
+                .join(" ");
             let fill_attr = fill.map(rgba_to_css).unwrap_or_else(|| "none".to_string());
             let tag = if fill.is_some() { "polygon" } else { "polyline" };
             format!(
-                r#"<{tag} points="{points_str}" fill="{fill_attr}" stroke="{}" stroke-width="{stroke_width}"/>"#,
-                rgba_to_css(*stroke)
+                r#"<{tag} points="{points_str}" fill="{fill_attr}" stroke="{}" stroke-width="{}"/>"#,
+                rgba_to_css(*stroke),
+                c(*stroke_width)
             )
         }
         SvgElement::Path { d, fill, stroke, stroke_width } => {
             let fill_attr = fill.map(rgba_to_css).unwrap_or_else(|| "none".to_string());
             let stroke_attr = stroke
-                .map(|s| format!(r#" stroke="{}" stroke-width="{}""#, rgba_to_css(s), stroke_width))
+                .map(|s| {
+                    format!(r#" stroke="{}" stroke-width="{}""#, rgba_to_css(s), c(*stroke_width))
+                })
                 .unwrap_or_default();
-            format!(r#"<path d="{d}" fill="{fill_attr}"{stroke_attr}/>"#)
+            format!(
+                r#"<path d="{}" fill="{fill_attr}"{stroke_attr}/>"#,
+                crate::quantise_path_data(d)
+            )
         }
         SvgElement::Text { x, y, text, font_size, fill, anchor } => {
             let anchor_str = match anchor {
@@ -400,13 +470,20 @@ fn element_to_svg(element: &SvgElement) -> String {
                 .replace('>', "&gt;")
                 .replace('"', "&quot;");
             format!(
-                r#"<text x="{x}" y="{y}" font-size="{font_size}" fill="{}" text-anchor="{anchor_str}" font-family="sans-serif">{escaped_text}</text>"#,
+                r#"<text x="{}" y="{}" font-size="{}" fill="{}" text-anchor="{anchor_str}" font-family="sans-serif">{escaped_text}</text>"#,
+                c(*x),
+                c(*y),
+                c(*font_size),
                 rgba_to_css(*fill)
             )
         }
         SvgElement::Image { x, y, width, height, data } => {
             format!(
-                r#"<image x="{x}" y="{y}" width="{width}" height="{height}" xlink:href="{data}"/>"#
+                r#"<image x="{}" y="{}" width="{}" height="{}" xlink:href="{data}"/>"#,
+                c(*x),
+                c(*y),
+                c(*width),
+                c(*height)
             )
         }
     }
@@ -716,5 +793,61 @@ mod tests {
         assert!(display_str.contains("</svg>"));
         assert!(display_str.contains("width=\"400\""));
         assert!(display_str.contains("height=\"300\""));
+    }
+
+    /// APEX-001 EV-2a rule 5: every number the writer emits is on the `COORD_GRID`, so two
+    /// hosts whose layout arithmetic differs in the last bits write identical bytes. Each
+    /// attribute is asserted by its exact `name="value"` form: a writer printing the raw float
+    /// would emit `7.1234567`, which still *contains* `7.123`.
+    #[test]
+    fn every_numeric_attribute_is_quantised_to_the_coord_grid() {
+        let v = 7.123_456_789_f32; // 7.1234567 as f32: 0.0004567 off the grid
+        let svg = SvgEncoder::new(100, 100)
+            .rect(v, v, v, v, Rgba::RED)
+            .rect_outlined(v, v, v, v, Rgba::RED, Rgba::BLUE, v)
+            .circle(v, v, v, Rgba::RED)
+            .circle_outlined(v, v, v, Rgba::RED, Rgba::BLUE, v)
+            .line(v, v, v, v, Rgba::RED, v)
+            .polyline(&[(v, v), (v, v)], Rgba::RED, v)
+            .text(v, v, "t", v, Rgba::RED)
+            .render();
+        assert!(!svg.contains("7.1234"), "an off-grid number reached the bytes:\n{svg}");
+        for attr in [
+            "x=\"7.123\"",
+            "y=\"7.123\"",
+            "width=\"7.123\"",
+            "height=\"7.123\"",
+            "cx=\"7.123\"",
+            "cy=\"7.123\"",
+            "r=\"7.123\"",
+            "x1=\"7.123\"",
+            "y1=\"7.123\"",
+            "x2=\"7.123\"",
+            "y2=\"7.123\"",
+            "stroke-width=\"7.123\"",
+            "font-size=\"7.123\"",
+            "points=\"7.123,7.123 7.123,7.123\"",
+        ] {
+            assert!(svg.contains(attr), "missing {attr} in:\n{svg}");
+        }
+    }
+
+    /// The property the cross-architecture compare rests on: values one ulp apart, the size of
+    /// disagreement a platform `libm` can produce, render to the same bytes.
+    #[test]
+    fn two_values_one_ulp_apart_render_to_identical_bytes() {
+        let a = 10.0_f32;
+        let b = f32::from_bits(a.to_bits() + 1);
+        assert_ne!(a, b);
+        let render = |v: f32| {
+            SvgEncoder::new(100, 100)
+                .circle(v, v, v, Rgba::RED)
+                .line(0.0, v, v, 0.0, Rgba::BLUE, v)
+                .polyline(&[(v, 0.0), (0.0, v)], Rgba::RED, 1.0)
+                .text(v, v, "t", v, Rgba::RED)
+                .render()
+        };
+        assert_eq!(render(a), render(b));
+        assert!(render(a).contains("cx=\"10\""), "{}", render(a));
     }
 }

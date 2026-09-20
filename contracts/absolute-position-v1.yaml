@@ -63,6 +63,7 @@ proof_obligations:
   type: linearity
   property: Relative-position rotation
   formal: PE(pos+k) = R(k*omega(i)) . PE(pos) — linear rotation via angle addition (sin_add/cos_add)
+  prose: true
   applies_to: sinusoidal_position
 kernel_structure:
   phases:

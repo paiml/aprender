@@ -87,6 +87,7 @@ proof_obligations:
       with_norm(Norm::None).fit_transform(["a b","a c"]) row "a b" =
       [1.0, 1.4054651, 0.0] (±1e-6); its L2 norm = 1.724915 — the divisor the
       default L2 path applies.
+    prose: true
   - id: TLN-INV-004
     type: invariant
     property: "Norm::L1 yields rows whose absolute values sum to 1 (sklearn norm='l1')"

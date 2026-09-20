@@ -102,6 +102,113 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
     }
 }
 
+/// #3477: measure decode throughput for an architecture the dense loader
+/// refuses but the runtime serves (Qwen3.5 Gated DeltaNet — GPU #3090, CPU #3091).
+///
+/// `throughput_gguf` builds the model with `OwnedQuantizedModel::from_mapped`,
+/// which refuses `qwen35`. This measures the path `apr run` actually takes —
+/// including its BACKEND: the GPU is not disabled here, so on a cuda build with
+/// a device this is the hybrid's GPU decode rate, the number a user sees.
+/// `inference_ms` excludes model load, matching what `measure_generate_throughput`
+/// times on the dense path (the model is built outside the timed closure there).
+///
+/// 128-token minimum, for the reason `measure_our_gguf_tps` already gives: each
+/// run re-prefills the prompt, so a short generation reports prefill cost as if
+/// it were decode — at the 32-token default the prompt's prefill is spread over
+/// too few tokens and the gate compares a rate that is mostly prefill (#3477).
+/// The threshold is untouched (10 tok/s for unasserted GGUF); what changes is
+/// that the number the gate compares is decode throughput.
+#[cfg(feature = "inference")]
+fn throughput_runtime(path: &Path, config: &QaConfig) -> Result<f64> {
+    use realizar::{run_inference, InferenceConfig};
+
+    let infer_config = InferenceConfig::new(path)
+        .with_prompt("Write a hello world program in Python:")
+        .with_max_tokens(config.max_tokens.max(128))
+        .with_temperature(0.0)
+        .with_top_k(1);
+
+    let run = || {
+        run_inference(&infer_config)
+            .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))
+    };
+
+    for _ in 0..config.warmup {
+        run()?;
+    }
+
+    let mut generated = 0usize;
+    let mut seconds = 0.0_f64;
+    for _ in 0..config.iterations.max(1) {
+        let result = run()?;
+        generated += result.generated_token_count;
+        seconds += result.inference_ms / 1000.0;
+    }
+
+    Ok(if seconds > 0.0 {
+        generated as f64 / seconds
+    } else {
+        0.0
+    })
+}
+
+/// Gate 2 for an architecture the dense loader refuses: the same falsifiable
+/// throughput floor, measured through the runtime entry point on whichever
+/// backend serves the model (GPU #3090 on a cuda build, else CPU #3091).
+fn run_throughput_gate_runtime(path: &Path, config: &QaConfig) -> Result<GateResult> {
+    let start = Instant::now();
+
+    if !config.json && config.verbose {
+        println!(
+            "{}",
+            "Running throughput benchmark through the runtime entry point (#3090/#3091)..."
+                .yellow()
+        );
+    }
+
+    #[cfg(feature = "inference")]
+    {
+        let tps = throughput_runtime(path, config)?;
+        let threshold = throughput_threshold(config.min_tps, realizar::format::ModelFormat::Gguf);
+        let duration = start.elapsed();
+        let backend = if cfg!(feature = "cuda") {
+            "hybrid forward, GPU #3090"
+        } else {
+            "hybrid forward, CPU #3091"
+        };
+        let message = format!(
+            "{tps:.1} tok/s {} {threshold:.0} tok/s threshold ({backend})",
+            if tps >= threshold { ">=" } else { "<" }
+        );
+        if tps >= threshold {
+            Ok(GateResult::passed(
+                "throughput",
+                &message,
+                Some(tps),
+                Some(threshold),
+                duration,
+            ))
+        } else {
+            Ok(GateResult::failed(
+                "throughput",
+                &message,
+                Some(tps),
+                Some(threshold),
+                duration,
+            ))
+        }
+    }
+
+    #[cfg(not(feature = "inference"))]
+    {
+        let _ = (path, config, start);
+        Ok(GateResult::skipped(
+            "throughput",
+            "Requires 'inference' feature",
+        ))
+    }
+}
+
 /// Compute Ollama parity letter grade from speedup ratio.
 ///
 /// Grading system (from showcase spec §Executive Summary):
@@ -133,14 +240,9 @@ fn ollama_parity_grade(ratio: f64) -> &'static str {
 /// decode-only throughput (eval_count/eval_duration), so short runs
 /// unfairly penalize our measurement.
 #[cfg(feature = "inference")]
-fn measure_our_gguf_tps(
-    path: &Path,
-    config: &QaConfig,
-    tracer: &TracerImpl,
-) -> Result<f64> {
+fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> Result<f64> {
     use realizar::gguf::{
-        GGUFModel, MappedGGUFModel, OwnedQuantizedModel,
-        QuantizedGenerateConfig,
+        GGUFModel, MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig,
     };
 
     let model_bytes = std::fs::read(path)
@@ -308,11 +410,7 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 /// Measure GPU and CPU throughput for a GGUF model, returning (cpu_tps, gpu_tps).
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
-fn measure_gpu_cpu_tps(
-    path: &Path,
-    config: &QaConfig,
-    tracer: &TracerImpl,
-) -> Result<(f64, f64)> {
+fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> Result<(f64, f64)> {
     use realizar::gguf::{
         GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
         QuantizedGenerateConfig,

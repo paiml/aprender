@@ -3,7 +3,7 @@
 //! Split from `gates.rs` to keep file sizes under the 500-line limit.
 
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use crate::schema::Contract;
@@ -11,106 +11,32 @@ use crate::schema::EnforcementLevel;
 
 use super::finding::LintFinding;
 use super::rules::RuleSeverity;
-use super::{GateDetail, GateResult};
+use super::{GateDetail, GateResult, Verdict};
 
 /// Gate 4: Source verification — do referenced test functions exist in source?
-#[allow(clippy::too_many_lines)]
 pub(crate) fn run_verify_gate(
     contracts: &[(String, Contract)],
     project_root: &Path,
 ) -> (GateResult, Vec<LintFinding>) {
     let start = Instant::now();
+    let source_tests = collect_source_tests(contracts, project_root);
+
     let mut findings = Vec::new();
     let mut total_refs = 0usize;
-    let mut missing = 0usize;
-
-    let mut source_tests = HashSet::new();
-    // Scan project directories: src/, crates/, generated/, tests/
-    for sub in &["src", "crates", "generated", "tests"] {
-        let d = project_root.join(sub);
-        if d.exists() {
-            collect_test_fns(&d, &mut source_tests);
-        }
-    }
-    // Scan workspace member directories (e.g., trueno-gpu/src/)
-    // Workspace members have their own src/ and tests/ dirs at root level
-    let effective_root = if project_root.as_os_str().is_empty() {
-        Path::new(".")
-    } else {
-        project_root
-    };
-    let root_canon = effective_root
-        .canonicalize()
-        .unwrap_or_else(|_| effective_root.to_path_buf());
-    if let Ok(entries) = std::fs::read_dir(&root_canon) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() && path.join("Cargo.toml").exists() {
-                // Skip dirs already covered (src/, crates/, etc.)
-                let name = path.file_name().unwrap_or_default();
-                if name == "src" || name == "crates" || name == "tests" {
-                    continue;
-                }
-                for sub in &["src", "tests"] {
-                    let d = path.join(sub);
-                    if d.exists() {
-                        collect_test_fns(&d, &mut source_tests);
-                    }
-                }
-            }
-        }
-    }
-    // Scan sibling repos for downstream tests (e.g., ../entrenar/src/)
-    if let Some(parent) = project_root.parent() {
-        for (stem, _) in contracts {
-            if let Some(repo) = stem.split('/').next() {
-                for sub in &["src", "crates"] {
-                    let d = parent.join(repo).join(sub);
-                    if d.exists() {
-                        collect_test_fns(&d, &mut source_tests);
-                    }
-                }
-            }
-        }
-    }
-
     for (stem, contract) in contracts {
-        for ft in &contract.falsification_tests {
-            if let Some(ref test_name) = ft.test {
-                let raw = test_name.trim().trim_matches('"');
-                let name = raw.rsplit("::").next().unwrap_or(raw);
-                if name.starts_with("test_") || name.starts_with("prop_") {
-                    total_refs += 1;
-                    if !source_tests.contains(name) {
-                        missing += 1;
-                        let is_gpu = name.contains("gpu")
-                            || name.contains("wgpu")
-                            || name.contains("cuda")
-                            || stem.contains("wgpu")
-                            || stem.contains("gpu");
-                        let sev = if is_gpu {
-                            RuleSeverity::Warning
-                        } else {
-                            RuleSeverity::Error
-                        };
-                        let note = if is_gpu {
-                            " (may require --features gpu)"
-                        } else {
-                            ""
-                        };
-                        let mut f = LintFinding::new(
-                            "PV-VER-001",
-                            sev,
-                            format!("Unfalsifiable: test `{name}` not found in src/{note}"),
-                            format!("contracts/{stem}.yaml"),
-                        );
-                        f.contract_stem = Some(stem.clone());
-                        findings.push(f);
-                    }
-                }
+        let names = contract
+            .falsification_tests
+            .iter()
+            .filter_map(|ft| referenced_test_name(ft.test.as_deref()?));
+        for name in names {
+            total_refs += 1;
+            if !source_tests.contains(name) {
+                findings.push(unfalsifiable_finding(stem, name));
             }
         }
     }
+    // One finding per missing reference, so the count IS the finding count.
+    let missing = findings.len();
 
     // Only errors fail the gate; warnings (feature-gated tests) are tolerated
     let error_count = findings
@@ -125,6 +51,7 @@ pub(crate) fn run_verify_gate(
             name: "verify".into(),
             passed,
             skipped: false,
+            verdict: Verdict::from_gate(passed, false),
             duration_ms: duration,
             detail: GateDetail::Verify {
                 total_refs,
@@ -137,31 +64,115 @@ pub(crate) fn run_verify_gate(
     )
 }
 
+/// Every `fn test_*` / `fn prop_*` name the verify gate can see: the project's own source dirs, its
+/// workspace members, and the sibling repositories contract stems name (e.g. `../entrenar/src/`).
+fn collect_source_tests(contracts: &[(String, Contract)], project_root: &Path) -> HashSet<String> {
+    let mut tests = HashSet::new();
+    scan_subdirs(
+        project_root,
+        &["src", "crates", "generated", "tests"],
+        &mut tests,
+    );
+    // Workspace members have their own src/ and tests/ dirs at root level (e.g. trueno-gpu/src/).
+    for member in workspace_members(project_root) {
+        scan_subdirs(&member, &["src", "tests"], &mut tests);
+    }
+    if let Some(parent) = project_root.parent() {
+        for (stem, _) in contracts {
+            if let Some(repo) = stem.split('/').next() {
+                scan_subdirs(&parent.join(repo), &["src", "crates"], &mut tests);
+            }
+        }
+    }
+    tests
+}
+
+fn scan_subdirs(base: &Path, subs: &[&str], tests: &mut HashSet<String>) {
+    for sub in subs {
+        let d = base.join(sub);
+        if d.exists() {
+            collect_test_fns(&d, tests);
+        }
+    }
+}
+
+/// Root-level directories holding a `Cargo.toml`, except `src`/`crates`/`tests` (already scanned).
+fn workspace_members(project_root: &Path) -> Vec<PathBuf> {
+    let effective_root = if project_root.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        project_root
+    };
+    let root_canon = effective_root
+        .canonicalize()
+        .unwrap_or_else(|_| effective_root.to_path_buf());
+    let Ok(entries) = std::fs::read_dir(&root_canon) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir() && path.join("Cargo.toml").exists())
+        .filter(|path| {
+            let name = path.file_name().unwrap_or_default();
+            !(name == "src" || name == "crates" || name == "tests")
+        })
+        .collect()
+}
+
+/// The test a `falsification_tests[].test` cites, when its last `::` segment names a `test_`/`prop_` fn.
+fn referenced_test_name(test: &str) -> Option<&str> {
+    let raw = test.trim().trim_matches('"');
+    let name = raw.rsplit("::").next().unwrap_or(raw);
+    (name.starts_with("test_") || name.starts_with("prop_")).then_some(name)
+}
+
+/// PV-VER-001 for a cited test absent from every scanned source tree. GPU-named tests are a Warning:
+/// they may exist only under `--features gpu`.
+fn unfalsifiable_finding(stem: &str, name: &str) -> LintFinding {
+    let is_gpu = name.contains("gpu")
+        || name.contains("wgpu")
+        || name.contains("cuda")
+        || stem.contains("wgpu")
+        || stem.contains("gpu");
+    let (sev, note) = if is_gpu {
+        (RuleSeverity::Warning, " (may require --features gpu)")
+    } else {
+        (RuleSeverity::Error, "")
+    };
+    let mut f = LintFinding::new(
+        "PV-VER-001",
+        sev,
+        format!("Unfalsifiable: test `{name}` not found in src/{note}"),
+        format!("contracts/{stem}.yaml"),
+    );
+    f.contract_stem = Some(stem.to_string());
+    f
+}
+
 fn collect_test_fns(dir: &Path, tests: &mut HashSet<String>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
-    for entry in entries.flatten() {
-        let path = entry.path();
+    for path in entries.flatten().map(|entry| entry.path()) {
         if path.is_dir() {
             collect_test_fns(&path, tests);
         } else if path.extension().is_some_and(|e| e == "rs") {
             if let Ok(content) = std::fs::read_to_string(&path) {
-                for line in content.lines() {
-                    if let Some(pos) = line.find("fn test_").or_else(|| line.find("fn prop_")) {
-                        let rest = &line[pos + 3..];
-                        let name: String = rest
-                            .chars()
-                            .take_while(|c| c.is_alphanumeric() || *c == '_')
-                            .collect();
-                        if !name.is_empty() {
-                            tests.insert(name);
-                        }
-                    }
-                }
+                tests.extend(content.lines().filter_map(test_fn_name));
             }
         }
     }
+}
+
+/// The name a source line declares with `fn test_…` or, failing that, `fn prop_…` — one per line.
+fn test_fn_name(line: &str) -> Option<String> {
+    let pos = line.find("fn test_").or_else(|| line.find("fn prop_"))?;
+    let name: String = line[pos + 3..]
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
+    (!name.is_empty()).then_some(name)
 }
 
 /// Gate 5: Enforce — equations MUST have preconditions, postconditions, and `lean_theorem`.
@@ -256,6 +267,7 @@ pub(crate) fn run_enforce_gate(contracts: &[(String, Contract)]) -> (GateResult,
             name: "enforce".into(),
             passed,
             skipped: false,
+            verdict: Verdict::from_gate(passed, false),
             duration_ms: duration,
             detail: GateDetail::Enforce {
                 equations_total: total_eqs,
@@ -381,6 +393,7 @@ pub(crate) fn run_enforcement_level_gate(
             name: "enforcement-level".into(),
             passed: !has_errors,
             skipped: false,
+            verdict: Verdict::from_gate(!has_errors, false),
             duration_ms: duration,
             detail: GateDetail::Skipped {
                 reason: format!("{} contracts, {} below level", contracts.len(), below),
@@ -472,6 +485,7 @@ pub(crate) fn run_reverse_coverage_gate(
             name: "reverse-coverage".into(),
             passed,
             skipped: false,
+            verdict: Verdict::from_gate(passed, false),
             duration_ms: duration,
             detail: GateDetail::ReverseCoverage {
                 total_pub_fns: report.total_pub_fns,

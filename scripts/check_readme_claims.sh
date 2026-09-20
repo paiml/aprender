@@ -256,7 +256,7 @@ check_crate_count() {
 # buys nothing, and a stream cannot be contaminated by the working tree at all.
 # ONE definition of "a contract file", the one `provable_contracts::lint`'s walker
 # applies and `pv census` (ONT-001 ONT-1) counts: *.yaml, no dotfile, not the
-# binding registry, not ONT-1's external-corpora declaration, and nothing under
+# binding registry, not ONT-1's external-corpora declaration, not ONT-2b's Σ, and nothing under
 # kaizen/, legacy/, pipelines/, publish-manifests/ or quarantine/. Reading a tar
 # listing with a SECOND definition is how the README came to state 1841 while
 # every gate measured 1790 — the on-disk reading, the two revisions and the
@@ -264,7 +264,7 @@ check_crate_count() {
 contract_files_only() {
   grep -E '\.yaml$' \
     | grep -Ev '(^|/)(kaizen|legacy|pipelines|publish-manifests|quarantine)/' \
-    | grep -Ev '(^|/)(binding\.yaml|binding\.yml|external-corpora\.yaml)$' \
+    | grep -Ev '(^|/)(binding\.yaml|binding\.yml|external-corpora\.yaml|ontology\.yaml)$' \
     | grep -Ev '(^|/)\.[^/]*$'
 }
 
@@ -516,9 +516,25 @@ case "$mode" in
     cleanup() { safe_rm_scratch "$TD" 'readme-selftest.'; }
     trap cleanup EXIT
     mc=$(measured_crate_count) || { echo "FAIL self-test: cannot measure the crate count" >&2; exit 1; }
-    cc=$(measured_contract_count)
+    # The rows below plant a README claim of `cc ± 1` and expect the verdict to
+    # read it as a lag or an overstatement. The verdict compares the claim with
+    # the MERGE TREE (`measure_contract_count_rev HEAD`, the object store), so
+    # the fixture must be built from that same instrument. It used to read
+    # contracts/census.json — a tracked artifact that lags by exactly one on any
+    # PR that adds a contract without `make contracts` — and on such a PR the
+    # planted "overstatement" `census + 1` landed ON the tree count, the verdict
+    # rightly said PASS, and row 6 went red with a message about the self-test
+    # instead of the one actionable line ("run make readme-sync"). Measured on
+    # aprender#3516, 2026-09-19: census 1796, tree 1797, row 6 rc=0 (wanted 1).
+    # One number, one instrument; the census's own lag is reported by name.
+    cc=$(measure_contract_count_rev HEAD) || { echo "FAIL self-test: cannot measure the contract count of HEAD" >&2; exit 1; }
+    census_cc=$(measured_contract_count) || census_cc=""
+    if [ "$census_cc" != "$cc" ]; then
+      printf 'FAIL  contracts/census.json .n_files=%s but HEAD carries %s contract file(s): the census is stale — run `make contracts` (pv census) and commit it. The rows below still measure the tree.\n' "${census_cc:-<unreadable>}" "$cc"
+      census_red=1
+    fi
     fx() { printf '# apr\n\n**%s** workspace crates, **%s** provable contracts.\n%s\n' "$1" "$2" "${3:-}" > "$TD/README.md"; }
-    n=0; red=0
+    n=0; red=${census_red:-0}
     row() { # row <want rc> <label> <claim> [<extra env>]
       local want=$1 label=$2 claim=$3 env=${4:-} rc=0
       n=$((n + 1))

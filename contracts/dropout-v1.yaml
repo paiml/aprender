@@ -50,6 +50,7 @@ proof_obligations:
   type: bound
   property: Drop probability in valid range
   formal: p in [0, 1) — p = 1 would cause division by zero
+  prose: true
   applies_to: all
 kernel_structure:
   phases:

@@ -67,6 +67,7 @@ proof_obligations:
   type: monotonicity
   property: Loss decreases as preferred response probability increases
   formal: dL_DPO/d(log_ratio_w) < 0 — increasing preferred log-ratio decreases loss
+  prose: true
   applies_to: all
 - id: DL-INV-003
   type: invariant

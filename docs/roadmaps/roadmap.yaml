@@ -17965,6 +17965,52 @@ roadmap:
   notes: 'llvm-cov overhead scales with instrumented branches EXECUTED, which differs
     between the compress and decompress paths; the ratio had already been widened once
     to 0.25 for this and failed anyway'
+- id: PMAT-3259
+  github_issue: 3259
+  item_type: task
+  title: 'APEX-2b: extended-Wilkinson tick placement (Talbot, Lin & Hanrahan 2010) — breaks::{extended, extended_loose, Q_DEFAULT, W_DEFAULT}, 36 CRAN goldens + 6 properties + W_DEFAULT-swap mutation (paiml/aprender#3233 half 1 of 2; apex APEX-001 row EV-2b, bound in paiml/apex#71)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T14:09:06Z
+  updated: 2026-09-17T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'The first of the two capabilities #3233 owes apex''s EV-14. NEW crates/aprender-viz/src/breaks.rs, tests/breaks_golden.rs, fixtures/breaks/{manifest.json,README.md,generate.py}; EDITS Cargo.toml (+libm), src/lib.rs (+pub mod breaks), Cargo.lock. W_DEFAULT follows the reference code, not the paper''s prose. Landed through paiml/aprender#3259.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - apex
+  - APEX-001
+  - EV-2b
+  - orch:fable
+  - orch-basis:state
+  notes: 'id is the PR number (#3259), the EV-2a precedent (PMAT-3273). The first id, PMAT-3233 from issue #3233, collided with ONT-1 PMAT-3233 landed by #3281: add/add on the fragment and the verdict artifact.'
+- id: PMAT-3273
+  github_issue: null
+  item_type: task
+  title: 'APEX-2a: deterministic render primitive — SVG byte-identical across clean-room X64 and ARM64 hosts (svg_identical ASSERTED from SVG bytes; PNG identity RECORDED as png_identical and never asserted, because its verdict decides EV-15''s manifest shape — APEX-001 v4.7): libm-only transcendentals (clippy disallowed-methods, proved live by scripts/ci/libm-ban-live.sh), every emitted coordinate on COORD_GRID=1e-3 via format_coord, text-to-path, sha256 manifest, ci.yml determinism matrix + determinism-compare.sh deciding svg_identical from SVG bytes with a self-test and a manifest_root mutant (apex APEX-001 row EV-2a, bound in paiml/apex#71; depends on EV-2b #3259)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T14:10:22Z
+  updated: 2026-09-16T14:10:22Z
+  spec: null
+  acceptance_criteria:
+  - Id allocated from the PR number (paiml/aprender#3273), GitHub's central sequence, so it cannot collide. NEW crates/aprender-viz/src/{manifest.rs,text.rs}, tests/render_determinism.rs, scripts/ci/{libm-ban-live.sh,determinism-compare.sh}; EDITS crates/aprender-viz/.clippy.toml (existing file; gains the 12-entry libm disallowed-methods list), .github/workflows/ci.yml (NEW determinism X64+ARM64 matrix job and NEW determinism-compare job which needs it; gate.needs names determinism-compare, so a failed matrix leg skips the compare and gate reads its non-success), Cargo.toml (features text-path/raster; libm non-optional), src/lib.rs (deny + quantise + format_coord), src/breaks.rs (EV-2b's four .powi(2) -> sq(x)=x*x, bit-identical, because this crate's .clippy.toml bans f64::powi), src/output/{svg.rs,png_encoder.rs}, src/error.rs, src/scale.rs, src/plots/{histogram,boxplot,force_graph}.rs, examples/{roc_pr_curves,loss_training}.rs, scripts/tree_reader_tests.txt, Cargo.lock; docs/roadmaps/roadmap.yaml regenerated from this fragment. tests/render_determinism.rs has 10 tests; its SVG fixture sits on a LogScale with EV-2b breaks::extended as the axis ticks (receipt ticks:{x:5,y:4}). Publishing aprender-viz stays operator-only.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - 'orch-basis:M>=3'
+  - apex
+  - APEX-001
+  - EV-2a
+  notes: null
 - id: PMAT-3292
   github_issue: 3292
   item_type: task
@@ -18382,6 +18428,30 @@ roadmap:
   labels:
   - kind:docs
   notes: null
+- id: PMAT-3451
+  github_issue: 3451
+  item_type: task
+  title: 'ONT-6: one Verdict lattice, Kani-proved; per-repo arming; exit-vocabulary mapping'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-17T13:19:20Z
+  updated: 2026-09-17T13:19:20Z
+  spec: docs/specifications/paiml-ontology.md
+  acceptance_criteria:
+  - 'verdict.rs: Verdict {Fail, Unknown(Reason), Pass}, 15 reasons in §3.4 order, meet = min, arm only on Pass, exit 0/1/2 with `decline: <reason>`; unit tests over all 17 elements; cargo kani --harness kani_ont_6_1/2/3 VERIFICATION SUCCESSFUL'
+  - 'arming.rs: armed_gates from <contract_dir>/lint-baseline.json (absent file or key -> the default 8, reverse-coverage unarmed by ruling); explicit [] -> Unknown(NotArmed) (R-2); check_monotone -> ArmedGatesShrank; arming is the declaration alone: a gate a flag ran but the declaration does not arm prints Unknown(NotArmed) and stays out of the meet'
+  - 'pv lint: every GateResult carries verdict; LintReport carries verdict, armed_gates, not_armed, armed_monotone; exit is the armed meet (Pass 0, Fail 1 reject:, Unknown 2 decline:); a dropped committed gate exits 3 error: armed_gates shrank; --armed-baseline-ref fails closed, the default comparand with nothing to compare prints NOT CHECKED (no comparand)'
+  - 'contracts/lint-baseline.json arms the 8; check_ont_ratchet.sh --write preserves armed_gates in place; contracts/ont-verdict-lattice-v1.yaml validates with KANI-ONT-6-1/2/3'
+  - 'operator ruling "Refactor the offenders": run_verify_gate, collect_test_fns and print_findings_grouped below cyclomatic 30 / cognitive 25 with pv lint contracts/ JSON unchanged; their three complexity_baseline.txt rows removed'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: 'ONT-001 v4.4 row ONT-6. RAH-005 binding filed in paiml/paiml-implement. Receipt: docs/audits/impl-PMAT-3451-receipt.md'
 - id: PMAT-3459
   github_issue: 3459
   item_type: task
@@ -18418,3 +18488,378 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-3465
+  github_issue: 3465
+  item_type: task
+  title: 'b2-gpu: aprender-gpu lib tests on hardware at the tag (rule 14)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T18:12:33Z
+  updated: 2026-09-17T18:12:33Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3468
+  github_issue: 3468
+  item_type: task
+  title: preflight R6 judges the cycle, not the shape
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T20:26:51Z
+  updated: 2026-09-17T20:26:51Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3471
+  github_issue: 3471
+  item_type: task
+  title: 'ONT-2b: Σ — contracts/ontology.yaml with entity_types and extractors; symbol-level check on formal:'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T20:39:42Z
+  updated: 2026-09-17T20:39:42Z
+  spec: docs/specifications/paiml-ontology.md
+  acceptance_criteria:
+  - 'Σ: contracts/ontology.yaml declares concepts, roles, 66 symbols, worlds, agents, 7 entity_types each naming a declared extractor, not_expressible, and a readers map claiming every populated key; ontology/sigma.rs loads it and refuses the four malformed-Σ classes at exit 3'
+  - '`pv lint --gate <name>` runs ONE gate and reports only it, mapping the verdict through ONT-6''s lattice: Pass 0, corpus violation 1 reject, no Σ 2 decline, malformed Σ 3 error; unknown gate names are refused'
+  - 'the sigma gate: PV-ONT-001 entity.type not in Σ, PV-ONT-002 undeclared role, PV-ONT-003 undeclared operator glyph without an explicit `prose: true`, PV-ONT-004 a rise in the formal_prose debt; both rules the real corpus cannot exercise carry fixture corpora'
+  - 'symbol-level means operator glyphs only — applied identifiers are code (ONT-3a), and grammar, arity, types and truth are not checked'
+  - 'sigma runs inside every pv lint (R-8) as the 10th gate and is armed in contracts/lint-baseline.json (nine armed); formal_prose recorded at the measured 1464 and enforced by the gate that measures it'
+  - 'contracts/ont-sigma-v1.yaml validates; census 1793; pv lint contracts/ rc 0; the ONT-2b probe passes every conjunct except `merged`'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null
+- id: PMAT-3477
+  github_issue: 3477
+  item_type: task
+  title: '0.68.2 interrupt train (#3477): Qwen3 CUDA QK-norm in graph+batched prefill (#3413), TRAITS refusal collapse (#3432/#3091), #3090 disposition, T-4 publish'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-18T10:25:51Z
+  updated: 2026-09-18T10:25:51Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:release
+  - P0
+  notes: null
+- id: PMAT-3487
+  github_issue: 3487
+  item_type: task
+  title: 'ONT-4: typed relations — a contract''s relations: block (refines · supersedes · contradicts · depends_on) is a gate: role in Σ with Contract→Contract domain/range, every target resolves, acyclic roles have no cycle, contradicts is symmetric; pv lint --gate relations, armed; Σ gains supersedes and contradicts naming this gate as reader (R-11); legacy metadata.depends_on measured as legacy_unresolved_depends_on and ratcheted, never rewritten (R-5); relations_n==0 → Unknown{NoRelations} (R-2)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-18T15:04:36Z
+  updated: 2026-09-18T15:04:36Z
+  spec: null
+  acceptance_criteria:
+  - '`pv lint contracts/ --gate relations --format json` is Pass at exit 0 on the real corpus with relations_n=3 (the ONT-001 §5 ONT-4 probe''s predicate); `pv lint contracts/` (all gates, relations armed) is Pass at exit 0.'
+  - 'Σ declares supersedes (acyclic) and contradicts (symmetric), both Contract→Contract, and readers.roles names lint/relations_gate.rs.'
+  - 'tests/fixtures/ont/relations-{ok,dangling,cycle,domain,malformed,legacy,legacy-rise} each witness one rule: 4 relations accepted with contradicts read both ways (relations_n=5); dangling → PV-ONT-008 naming contract, role, target; a→b→c→a → PV-ONT-009 naming the path; binds in relations → PV-ONT-006; undeclared role + non-list → PV-ONT-005 + 007; legacy hold passes, rise → PV-ONT-010; sigma-ok (no typed relation) → exit 2 decline.'
+  - 'metadata.depends_on is NOT rewritten: 354 legacy edges counted, 8 unresolved recorded as ont.legacy_unresolved_depends_on in lint-baseline.json and ratcheted shrink-only.'
+  - 'Two mutations each turn a test RED: the acyclic check skipped (the cycle test), the symmetric closure dropped (the four-relations test).'
+  - 'cargo test -p aprender-contracts --lib (1588) and -p aprender-contracts-cli (260) pass; clippy -D warnings clean on both crates; make contracts green; census regenerated (1795) and the README count synced.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null
+- id: PMAT-3500
+  github_issue: 3500
+  item_type: task
+  title: 'ONT-4b: pv extract (pv-contract) → contracts/contracts.nt (deterministic N-Triples, no blank nodes, R-15); in-house shapes validator over the SHACL-Core subset of §3.6 exactly (unsupported component → exit 3); shape: block on contracts; pv lint --gate shapes with pc_shape planted every run, shapes_n/focus_nodes_n declines (R-2), a corpus violation naming focus node and shape; contracts/shapes.ttl exported; the first shape targets ont:Contract from the ONT contracts so the whole corpus is focus nodes; shapes armed'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-18T20:17:28Z
+  updated: 2026-09-18T20:17:28Z
+  spec: docs/specifications/paiml-ontology.md
+  acceptance_criteria:
+  - 'The spec''s ONT-4b probe text passes verbatim minus `merged`: contracts.nt tracked with no `_:`, shapes.ttl tracked, `pv lint contracts/ --gate shapes --format json` → Pass with shapes_n>0, focus_nodes_n>0 (1731 at acab2e754) and pc_shape=fired at the top level of the report.'
+  - 'ontology/shapes.rs implements §3.6''s subset exactly and refuses every other component at parse by name (targetNode, qualifiedValueShape, languageIn, a sequence path, or/and/not, a second node level): `cargo test -p aprender-contracts --lib ontology::shapes` 10/10.'
+  - 'Two extractions are byte-identical and carry no blank node; `pv extract --check` exits 1 on drift and `make contracts` runs it (R-18).'
+  - 'The exit vocabulary holds on fixtures: Pass 0; a corpus violation 1 naming focus node and shape (PV-ONT-011); NoShapes, NoFocus, PositiveControlFailed and Warn each 2 with the reason; an unsupported component 3: `cargo test -p aprender-contracts-cli --test ont4b_shapes_gate` 11/11.'
+  - 'Two mutations from the spec: minCount removed from ont:id → exit 2 decline: PositiveControlFailed; a kind outside the list on one contract → exit 1 naming that contract and the shape.'
+  - 'shapes is armed (11 armed gates), Σ marks pv-contract/pv_contract implemented, contracts_shaped=1, census 1796 with the README synced; lib 1610 and cli 271 tests pass; clippy -D warnings clean.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null
+- id: PMAT-3508
+  github_issue: 3508
+  item_type: task
+  title: 'ONT-4c1: model receipts as focus nodes — extract:gguf + extract:apr-model over the model:* vocabulary; the ladder rungs as model:Model; resolves: receipt over the tracked ladder receipts (apr-model-ladder-receipt/v1, a row without sha256 is not a witness); per-shape arming (armed_shapes[] in lint-baseline.json, absent = all armed, monotone); shapes ladder-measured (armed) and ladder-green (computed and reported, armed by the 0.68.2 bump)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-19T09:19:25Z
+  updated: 2026-09-19T09:19:25Z
+  spec: docs/specifications/paiml-ontology.md (paiml/infra, v4.6 §5 ONT-4c1)
+  acceptance_criteria:
+  - '`pv lint contracts/ --gate shapes --format json` on this tree reports the ladder rungs as focus nodes (`by_entity_type.gguf` = the rung count), `pc_extract.gguf` and `pc_extract["apr-model"]` fired, `armed_shapes` ⊇ [ont-shapes-v1, ladder-measured], `not_armed_shapes` = [ladder-green], and `by_shape` names all three; verdict Pass once the re-measured 0.68.1 receipts (sha256 per rung, both hosts) are tracked, Fail naming every rung without a witness until then — measured, not assumed.'
+  - 'ontology/extract/{gguf,apr_model}.rs: a corrupt GGUF magic and an .apr header whose tensor count disagrees with its index (crates/apr-format/tests/fixtures/golden_v2.apr, 2 tensors, checksum recomputed) are each refused naming the file; both run in memory every gate run as the positive controls.'
+  - 'ontology/receipts.rs: one reader, schema apr-model-ladder-receipt/v1 refused by name on any other; a rung row with sha256 equal to the contract''s is a witness (model:parityReceipt), a row without sha256 is not (model:unmeasuredRow), a different hex is model:receiptHexMismatch naming file and hex; greenOn / missingGreenHost per (rung, host) with hosts: optional (absent = every host with a receipt), capability passed ∧ ¬skipped, every claimed backend ran ∧ ¬fallback.'
+  - 'Per-shape arming (v4.6 §3.9): lint-baseline.json armed_shapes[] (absent = all armed), a shape not listed is computed and reported and never in the meet; the plant must fire from an armed shape; `armed_shapes shrank` → exit 3 through the same comparand as armed_gates (an All comparand = the shapes declared in files that existed at it); check_ont_ratchet.sh carries armed_shapes through --write and records ont.shapes_unarmed.'
+  - 'tests/fixtures/ont/ladder-{green,fallback,fallback-armed,wronghex,nosha,noreceipts,badschema,lyingapr,plantunarmed}: exit 0 / 0 / 1 / 1 / 1 / 2 (decline NoCheckable naming evidence/dogfood/models) / 3 (naming lambda.json) / 1 (PV-ONT-012 naming lying.apr) / 2 (PositiveControlFailed); crates/aprender-contracts-cli/tests/ont4c1_model_receipts.rs 12 legs, wired in ci/explicit-test-commands.d/339.'
+  - 'Mutations, each RED on its own test: hosts: ignored in resolve() → hosts_scope_the_green_requirement RED; the GGUF magic check removed → PositiveControlFailed pc_extract.gguf; one sha256 changed in a tracked receipt row → ladder-measured rejects naming rung and file (measured on a copy of the real corpus with re-measured receipts); ladder-green armed on the fallback fixture → rejects naming rung and host.'
+  - 'contracts/ont-model-receipts-v1.yaml holds both shapes (shapes: list, ids ladder-measured / ladder-green); the ladder contract gains entity: {type: gguf}; Σ gguf and apr-model implemented: true; contracts.nt (model nodes, no blank node, pv extract --check 0) and shapes.ttl regenerated. No ci.yml change.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null
+- id: PMAT-3509
+  github_issue: 3509
+  item_type: task
+  title: 'ONT-4b2: extract:code (syn module-tree walk over the bound symbols) and extract:lean (the in-tree theorems) into contracts.nt under the symbol/ and world/ roots; the ONT-0 table''s 32 W3C SHACL-Core cases accounted for one by one — 16 vendored and run by the shapes gate (w3c_cases_passed), 16 NOT vendored because their FORM (a constraint on the node shape itself) is outside the subset, each with its reason; tests/oracle/ scratch crate + make oracle writing tests/oracle/differential.json (release gate only, R-13); Unknown{Differential} on disagreement'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-19T11:07:51Z
+  updated: 2026-09-19T11:07:51Z
+  spec: null
+  acceptance_criteria:
+  - 'extract:code walks the syn module tree of every crate a binding registry names and emits ont:Symbol focus nodes under the symbol/ root (resolved and unresolved counted separately: symbols_resolved / symbols_unresolved in the shapes report); extract:lean emits ont:Statement nodes under the world/ root for the in-tree theorems whose names the ONT-2a camel-case rule accepts; both run inside the one walk extract::all (R-18) and both have a positive control (pc_extract.code / pc_extract.lean) that must fire or the gate declines PositiveControlFailed.'
+  - 'crates/aprender-contracts/src/ontology/w3c.rs vendors 16 W3C SHACL-Core cases as YAML translations under crates/aprender-contracts/w3c/ and the shapes gate runs them (w3c_cases_passed / w3c_cases_n in the report, 16/16); NOT_VENDORED lists the other 16 of ONT-0''s 32 with the excluding form each (a constraint on the node shape itself, which the subset attaches only to property shapes); the_table_of_ont_0_is_accounted_for_case_by_case asserts CASES + NOT_VENDORED == 32 with no id twice. The CLI leg asserts n >= 16 because 16 is what is vendored — not 32.'
+  - 'sh:in is TERM equality (InEntry{lexical, datatype}; "1"^^xsd:integer and "1" are different entries; typed export in shapes.ttl); rdfs:subClassOf closes instance sets for targetClass; sh:datatype checks the lexical form is well-formed for the datatype; one sh:node result per failing value; the sh:in message reads `<path>: <term> is not one of [<terms>]` (the path from #3530, the terms from this row).'
+  - 'tests/oracle/ is a workspace-DETACHED crate (its own [workspace]; shacl = "=0.3.21" default-features off) run only by `make oracle` / `make oracle-check` (release gate, R-13: no third-party SHACL crate in the gate path; the workspace Cargo.lock has no rudof/oxigraph/horned/sophia/whelk); it writes tests/oracle/differential.json (TRACKED) and oracle-check diffs it; the Makefile target uses --manifest-path, never cd, because the Makefile is .ONESHELL.'
+  - 'contracts/ont-code-symbols-v1.yaml ships two shapes UNARMED (bound-symbols-resolve, lean-statements-grounded) — reported in not_armed_shapes, armed later by their own PR (§3.9 reported-first); FALSIFY-SYM-001..005 in the contract; scripts/check_ont_ratchet.sh reads entity types and extractors from Σ and preserves foreign keys; fixtures tests/fixtures/ont/{code-bound,code-ghost,lean-sorry}/; CLI test ont4b2_code_lean_w3c (8 legs) wired at ci/explicit-test-commands.d/343-….'
+  - 'Rebased onto 45decafb5 (ONT-4c1 + #3530 + #3523 + #3516): pv extract contracts --check 0; sigma / relations / shapes Pass on the tree (shapes_n=5, focus_nodes_n=2318, symbols 169 resolved / 101 unresolved, W3C 16/16); the 4c1 corpus test asserts ladder-green is computed and reported (a by_shape entry, listed in armed ∪ not_armed) without pinning which side, so it holds on the 0.68.2 bump tree that arms it; crates/facades/Cargo.lock regenerated for the syn edge; clippy 1.93 -D warnings clean on both crates; lib 1665 + the seven ONT CLI test files green.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null
+- id: PMAT-3515
+  github_issue: 3515
+  item_type: task
+  title: ONT-001 §3.7 extract:json — JSON/JSONL + vocabulary map → RDF, so a tool's --json output is a shaped entity (ARBITER I1-0)
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-19T07:20:01Z
+  updated: 2026-09-19T07:55:00Z
+  spec: null
+  acceptance_criteria:
+  - '(1) crates/aprender-contracts/src/ontology/extract/json.rs (new): `applies(doc)` (entity.type == json); `extract_into(g, stem, doc, root)` reads `entity.ref` relative to `root` and the contract''s `vocabulary: {prefix, root_class, nested}` — root node `iri(prefix, stem)` typed `expand(root_class)` + prov:Entity, scalar keys as `expand("<prefix>:<key>")` literals (bool → xsd:boolean, integer → xsd:integer via u64/i64, other numbers → xsd:double, string → xsd:string), nested objects and arrays of objects as nodes `<stem>.<key>[.<i>]` typed by `nested`, arrays of scalars as repeated predicates, null absent; `.jsonl` = one root per non-empty line with leading NULs trimmed, a line that does not parse is a `Warning{contract,path,line,why}`, no parsable line is `NotJson`. `ExtractError` = RefUnreadable | NotJson | VocabularyIncomplete | Unmapped, each Display naming the contract and the thing. 8 unit tests. (2) extract/mod.rs: `Extraction{graph, warnings, entities_extracted}` and `all(contract_dir)` = pv_contract::extract + every json entity, the ONE walk. (3) rdf.rs: XSD_BOOLEAN, XSD_DOUBLE, Term::boolean/double/signed. (4) lint/shapes_gate.rs: `ShapesOutcome::ExtractFailed(ExtractError)`; the gate uses `extract::all`, and each extraction warning is a Severity::Warning ValidationResult (component "extract:json") so warnings-only is Unknown{Warn}. lint/mod.rs maps ExtractFailed to a skipped gate; cli commands/lint.rs maps it to exit 3 (SigmaMalformed path); commands/extract_rdf.rs uses `extract::all`, prints warnings, exits 3 on an error. (5) contracts/ontology.yaml: entity type `json` → extractor `json`, both implemented: true; contracts/ont-extract-json-v1.yaml (pattern; EXJ-INV-001..005, FALSIFY-EXJ-001..005, qa_gate F-EXJ-001); contracts/contracts.nt refreshed by `pv extract` (9243 triples, --check exit 0). (6) tests/fixtures/ont/json-{ok,violation,unmapped,missing-ref,torn-jsonl}/ (contracts/ + data/) and crates/aprender-contracts-cli/tests/ont_extract_json.rs: 7 tests — Pass exit 0 focus 1 plant fired; Fail exit 1 two violations naming ont:tool/tool-status, shape `tool-status`, `(closed)` + ont:tool/surprise and `broken is not one of`; exit 3 naming `findings`; exit 3 naming `data/does-not-exist.json`; exit 2 Unknown(Warn) focus 3 warnings 1 `line 3 unparsable`; `pv extract` byte-identical twice with the tool/Status class and the nested node and no `_:`, --check exit 0; `pv extract` on json-unmapped exit 3. Measured on paiml/infra contracts/arbiter-status-v1.yaml: Pass, 172 triples, plant_violations 8, 0.05 s; both infra plants rejected. sigma/shapes/relations gates Pass on the corpus; clippy -D warnings clean; 1618 lib tests + all cli suites green. Refs paiml/aprender#3515, paiml/infra#704, paiml/infra#701 (§14 I1-0)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3529
+  github_issue: 3529
+  item_type: task
+  title: 'pv contradicts itself about metadata: (validate requires it, the sigma gate refuses it); entity.properties is read by nothing; and a lexical violation does not name its path — Σ accepts an opaque metadata block, extract:pv-contract emits entity.properties.<k> as <entityType>:<k>, and in/pattern/minLength/maxLength name the property they fired on, with apex''s two EV-21 falsifiers as fixtures'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-19T12:20:38Z
+  updated: 2026-09-19T12:36:52Z
+  spec: null
+  acceptance_criteria:
+  - 'The SAME contracts/ontology.yaml passes `pv validate` AND `pv lint --gate sigma`: Σ carries `metadata` as opaque YAML (no Σ rule reads a field of it), it joins READABLE_KEYS so `readers:` must claim it, and removing that claim brings exit 3 back naming the key — measured by a CLI leg that runs both subcommands on one fixture.'
+  - 'entity.properties.<k> becomes the predicate <entityType>:<k> (IRI: ONT_BASE + <entityType>/<k>) on the contract node, so a shape over the entity''s own properties has focus predicates: apex''s EV-21 falsifiers through the CLI — entity-props-ok Pass, entity-props-bad-value Fail (in) naming the property and the value, entity-props-undeclared-key Fail (closed) naming the undeclared property.'
+  - 'The predicate IRI carries the entity type as its vocabulary segment: entity.properties.scale of an entity typed `study` is https://ont.paiml.dev/v1alpha1/study/scale — which is what `study:scale` expands to — and NEVER the bare https://ont.paiml.dev/v1alpha1/scale, so a shape over one entity type cannot constrain another type''s `scale`. Both directions asserted in a unit test. (Rendering is unchanged and separate: `short()` prints every ONT_BASE IRI with the `ont:` prefix, so messages read `ont:study/scale`, exactly as they already read `ont:model/parityReceipt`.)'
+  - 'No entity.type means no property triples — there is no vocabulary segment and inventing one would be an inference; nested mappings and sequences are not emitted at v1alpha1, because the subset has no path expressions and a predicate no shape can reach is decoration. One unit test each.'
+  - 'A lexical violation names its PATH in the message (in, pattern, minLength, maxLength), not only in the result''s path field. Without it the two falsifiers above cannot name the property at all, and a shape with nine properties emits nine lines a reader cannot tell apart.'
+  - 'No regression on the real corpus: pv lint contracts --gate sigma Pass, --gate shapes Pass over 1731 focus nodes, pv extract contracts --check 0, aprender-contracts lib green, ont2b_sigma_gate / ont4_relations_gate / ont4b_shapes_gate green, clippy -D warnings clean.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null
+- id: PMAT-3535
+  github_issue: 3535
+  item_type: task
+  title: '§11.1 + check_pr_ont_delta: the docs/specifications sink is the release spec, not every design spec — three maintainer PRs red for a delta that does not exist; predicate self-test with the falsifying design-spec row (Refs aprender#3535)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-19T18:35:25Z
+  updated: 2026-09-19T18:35:25Z
+  spec: null
+  acceptance_criteria:
+  - 'APR-RELEASE-001 §11.1 names docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md (the release spec, where the train writes its findings) as the docs/specifications sink and says a *-MASTER.md design spec is the finding''s home, not a sink; scripts/check_pr_ont_delta.sh ONT_SWEEP_SINKS carries that exact path in place of the docs/specifications/ prefix — the spec sentence and the guard list name the same bytes.'
+  - 'predicate_self_test (10 rows) chains into --self-test: crate source, a contract yaml and ci.yml are not sweeps; night.yml, README.md, CLAUDE.md, the apr-cli-commands registry, a derived baseline and the release spec are; the row "a DESIGN spec is not a sweep" (docs/specifications/PP-QUANT-001-MASTER.md) is want=1 and goes RED (got=0) when the directory-wide sink is restored. --self-test 15 + 10 passed; bashrs lint 0 errors; this PR''s own body passes check_pr_ont_delta.sh (ont-delta: none) and check_pr_closes_issue.sh.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3537
+  github_issue: 3537
+  item_type: task
+  title: 'ONT-6b: a kind-less contract that fails a kernel-only rule says ''no metadata.kind, judged kernel by default'' on the first error the default caused'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T07:01:14Z
+  updated: 2026-09-20T07:01:14Z
+  spec: docs/specifications/paiml-ontology.md
+  acceptance_criteria:
+  - 'crates/aprender-contracts/src/schema/types.rs: `Contract` gains `#[serde(skip)] pub kind_declared: bool` — a parse artifact beside `unknown_top_level_keys`, recording whether `metadata.kind:` was WRITTEN, because `ContractKind` derives `Default = Kernel` and `#[serde(default)]` erases the difference before anything can read `Contract::kind()`'
+  - 'crates/aprender-contracts/src/schema/parser.rs: `parse_contract_str` sets it from a new `kind_is_declared(yaml)` — a `KindProbe` struct whose only field is `metadata: BTreeMap<String, IgnoredAny>`, so every other top-level value is DRAINED rather than built (a whole-document `serde_yaml::Value` parse fails on contracts/apr-cli-commands-v1.yaml and would report a declared kind as absent); an absent or non-mapping `metadata` answers false; a unit test carries the duplicate-nested-key shape with an anti-vacuity assertion that a `Value` parse really refuses it'
+  - 'crates/aprender-contracts/src/schema/validator.rs: `validate_contract` records `violations.len()` before the kernel-only branch and, when `!contract.kind_declared`, calls the new `explain_kind_default` on exactly that slice — which appends ` (no metadata.kind, judged kernel by default)` to the FIRST `Severity::Error` in it, once. New `pub const KIND_DEFAULT_EXPLANATION`. No rule id is matched anywhere and the printer is untouched'
+  - 'four fixtures under tests/fixtures/ont/kind-default/ — kindless-failing.yaml (has `references` so the first error is the kernel-only one), declared-kernel-failing.yaml (the same content plus `kind: kernel`), kindless-passing.yaml (no kind, all four kernel blocks), pattern.yaml (`kind: pattern`)'
+  - 'crates/aprender-contracts-cli/tests/ont6b_kind_default.rs: six legs — first-error, exactly-once (with an anti-vacuity assertion that the fixture yields >1 error), declared-kernel-silent, kindless-passing-silent, pattern-silent, and a differential asserting that stripping the explanation from the kind-less output reproduces the declared-kernel output BYTE-FOR-BYTE; ci/explicit-test-commands.d/344-aprender-contracts-cli-ont6b-kind-default.cmd. No ci.yml change'
+  - 'measured: the four fixtures give rc 1/1/0/0 with the explanation count 1/0/0/0; `cargo test -p aprender-contracts --lib` 1666 passed 0 failed; `cargo fmt --all -- --check` clean and clippy `-D warnings` clean on both crates'
+  - 'four planted mutations, each asserting its own perl match count BEFORE the tests run (an unapplied edit is indistinguishable from an uncaught mutant), each RED on a DIFFERENT set of legs: drop the text → first-error + once; decorate even when declared → declared-kernel + differential; decorate the LAST error → first-error; decorate warnings too → kindless-passing-silent. Tree restored and green afterwards in the same run'
+  - 'R-23: over all 1300 tracked contracts this pv and main''s pv (built at daad9f7c5, named) differ on ZERO and ZERO carry the explanation — the change is inert on the corpus; rmedia''s kind-less crates/rmedia-core/contracts/dialogue-v1.yaml (read-only git archive export at 3ff2f4d) goes from `PROVABILITY-001: Kernel contract has no kani_harnesses` to the same line plus the explanation, exit 1 on both'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3556
+  github_issue: 3556
+  item_type: task
+  title: 'PP-LLAMA-001 row 2: perf002 prefill-path probe + decompose() with mandatory refusals — discharges the 2026-09-19 expiry'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T08:40:15Z
+  updated: 2026-09-20T08:40:15Z
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'scripts/perf002_prefill_path_probe.sh (new, bash driver) + scripts/perf002_prefill_path_probe.py (new, decider), matching the perf041 idiom: apr_bin.sh-resolved binary, marker written on EVERY exit path carrying host/cc/commit/binary-sha256/started_utc/slope/refused_rule, exit 0 MECHANISM_CONFIRMED / 1 PREDICTION_KILLED / 2 UNMEASURABLE. Nothing under crates/aprender-serve/** or .github/workflows/cuda-nightly.yml (row 1 owns those)'
+  - 'decompose() carries the four MANDATORY refusals of the row — too_few_distinct_x, negative_slope, r2_below_bound, and bimodal (which REPORTS per-mode fits rather than rejecting) — plus a fifth, implausibly_fast, that guards the harness; every refusal names itself in the output and maps to exit 2, never to a defect claim'
+  - '`python3 scripts/perf002_prefill_path_probe.py --selftest` is OK on 8 cases: a fixture per refusal, a "bimodal emits two fits" assertion, an anti-vacuity leg proving the floor (not another rule) catches the harness fixture, a CONTROL proving a clean linear sweep is NOT refused, and a check that the control recovers its planted 32.650 ms/token. The driver runs the selftest BEFORE measuring and refuses to report a verdict if it fails'
+  - 'measure() reads TTFT off the SSE stream (first chunk carrying content) with max_tokens=1, issues and DISCARDS one warm-up per arm, and gives every sample a unique nonce prefix; --repeat-prompt reproduces the prefix-cache bimodality on demand'
+  - 'measured on gx10 (GB10, cc 121) at commit 338f1d49, qwen2.5-coder-1.5b-instruct-q4_k_m, ladder 64/128/256/384/513 x3: verdict MECHANISM_CONFIRMED, default arm linear at 9.042 ms/token r2 0.999947 n=15 (513 tok -> 4713/4717/4719 ms), BATCHED_PREFILL=1 measured 0.099 s at ~512 tokens (513 tok -> 123/99/98 ms) — a 48x collapse and 3.5x better than §10''s predicted 0.35 s. Slope reproduced at 9.054 and 9.042 across independent runs'
+  - 'docs/specifications/PP-LLAMA-001-MASTER.md row 2''s status cell goes from `**OPEN**, 2026-09-19` to `**LANDED** (this PR)` with the measurement — this is what DISCHARGES the row: spec_conformance.py:803 sets `discharged = "LANDED" in cell.upper()`, so the §4 andon clears only when the status cell says so, and row 1 proved the cost of the converse (its work had been on main since 2026-09-04 while its cell read OPEN)'
+  - 'THIS PR ALSO CARRIES ROW 1''S CELL, and that is a deliberate change of scope from the original split. `gate: needs: [... guard-tree ...]` (ci.yml:3040) with `ci / gate` REQUIRED, and guard-tree failing while ANY row disagrees, means row 1''s PR and row 2''s PR are green only TOGETHER: each leaves the other''s rows red, so both sit BLOCKED forever rather than merging in some order (prior art in this repo: 10.1 h, 14 queue entries, zero merges). aprender-bf''s commit `fe593abfc` is cherry-picked here with their authorship preserved, they closed #3565 pointing at this PR, and #3564 waits behind the same gate'
+  - 'row 21 is dated 2026-09-30 in the same PR: it inherited row 2''s expiry and had none of its own, so discharging row 2 raises `D2 21 — blocked only by rows that have LANDED, so nothing derives its expiry any more` plus a `D5` on the derived file. Basis matches aprender-bf''s for 13/15/19 — blocked until 2026-09-20, one full train past the 0.69.0 cut, owner may move it with a stated basis. Nothing inherits from 21'
+  - 'evidence/parity/derived_expiries.json is regenerated with `spec_conformance.sh --write` AFTER the cherry-pick is resolved, so it derives from the merged §12 rather than from either half. Measured on the combined tree: `spec_conformance.sh` exits 0, `33 row(s), 33 ARMED, 114 named case(s), 0 missing`, down from 7 rows disagreeing this morning and 5 after row 2 alone'
+  - 'the marker really is written on every exit path: OUT/MARKER and a python-free `bail_marker` are established BEFORE the `cd` and before sourcing apr_bin.sh, because both of those bail early and the first draft produced SILENCE there while the header claimed otherwise. Measured: running the script from a directory that is not the repo exits 2 and writes a marker with `status: UNMEASURABLE` and `reason: apr_bin.sh could not attribute an apr binary to this tree`'
+  - 'ONE clock for the run: `date -u` is captured to the append-only `started_utc.log` and read back BEFORE `bail_marker` is defined, so the bail path and the full writer stamp the same instant and neither calls `date` inline — a bare `date` inside `bail_marker` was DET002 in guard-cargo (`bashrs-gate: FAIL 1 … over 345 file(s)`), which is bashrs enforcing the append-only-sink guidance the sibling probe already documents'
+  - 'the marker vocabulary matches the documented exit codes: exit 2 writes `UNMEASURABLE`, not `UNMEASURED` (the sibling perf041 writes UNMEASURED; this row''s own text says UNMEASURABLE and the file is now internally consistent)'
+  - 'the probe''s header records the four harness defects that each produced a confident WRONG answer rather than an error (time_starttransfer times headers not tokens; first-request CUDA warm-up gives a negative slope; a repeated prompt measures the prefix cache; the r2 floor wrongly applied to the batched arm). §9 #1''s SIZE is deliberately NOT re-measured here — see aprender#3553'
+  - 'quorum r8 found the diff tripping the parser with its OWN explanatory prose, and the five citations are reworded rather than the parser changed. `discharged = "LANDED" in cell.upper()` is a SUBSTRING test over the whole cell, so rows 13, 15, 18, 19 and 21 saying "unblocked when row 1 LANDED" / "because row 2 LANDED" all regenerated as `discharged=true expires=null` — five LIVE obligations with no deadline, the exact state D2 exists to refuse, produced by rows citing a discharge rather than claiming one. Verified in derived_expiries.json before fixing. Now "was discharged": 5 occurrences of the scanned word to 0, and the four OPEN rows are back to `discharged=false expires=2026-09-30`'
+  - 'row 18 carries NO date literal and derives its expiry from row 15. D3 fired on the date inside "unblocked 2026-09-20 when row 1 was discharged" (narration, not a deadline) and row 18 had ALSO typed a literal 2026-10-07 while blocked by a live row 15, which is a D3 violation on its own account. The cell was wrong and the check was right: the committed must-fire `dag_nonroot_with_date_is_red` asserts a blocked row bearing a bare date is RED. Measured: 0 date literals in the cell, `expires=2026-09-30 derived_from=[15]`'
+  - 'the parser is DELIBERATELY not narrowed in this PR, and the reason is recorded rather than left implicit. Root cause is one COLUMN, not either regex: `status / expires` holds the status sentence and the expiry declaration together, so the parser must pick a declaration out of free prose and a scan cannot tell a citation from a claim. I-26 (PMAT-974, S0-2) already moved ROOT rows off that scan — EXPIRES_MARKER beats the first date, because a root row narrates work before its expiry — and left `_typed_on_blocked` reading the bare DATE fallback: one form variant fixed, its sibling left. Marker-only D3 would contradict `dag_nonroot_with_date_is_red`; dropping the bare fallback fires D2 on every LANDED root row whose date lives in its status sentence. The fix is splitting the column, a §12 change that does not belong in a release-blocking PR. Named as a follow-up in docs/audits/impl-PMAT-3556-receipt.md, Round 8'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3567
+  github_issue: 3567
+  item_type: task
+  title: The fleet-pinned pv is 0.65.2 and has no 'extract' subcommand and no '
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T10:27:59Z
+  updated: 2026-09-20T10:27:59Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3568
+  github_issue: 3568
+  item_type: task
+  title: Schema-constrained decoding in apr (--json-schema or grammar) — thre
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T10:27:59Z
+  updated: 2026-09-20T10:27:59Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3569
+  github_issue: 3569
+  item_type: task
+  title: 'Decision 8: census.json becomes derived (CI computes, guard refuses PR'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T10:27:58Z
+  updated: 2026-09-20T10:27:58Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3574
+  github_issue: 3574
+  item_type: task
+  title: ARB-APR-3 parity receipt for the decide lane cell on lambda-labs
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-20T11:20:51Z
+  updated: 2026-09-20T11:27:22Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3577
+  github_issue: 3577
+  item_type: task
+  title: 'Receipts under contract: parity-receipt-v1 shape, extract:parity-receipt, back-fill 7 receipts (ONT-4c3 re-scoped)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-20T11:34:01Z
+  updated: 2026-09-20T11:34:17Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered; pmat work add derived neither spec: nor acceptance_criteria: — defect paiml-mcp-agent-toolkit#1414). Spec: docs/specifications/ruling-receipts-under-contract.md (operator ruling 2026-09-20). Done when: contracts/parity-receipt-v1.yaml with its shape on origin/main; extract:parity-receipt implemented; pv lint --gate shapes --path evidence/ in the required check; PR body shows 7 older receipts RED before back-fill and 0 after, plant violation = 1, mutation RED, pc_shape fired; check_parity_receipt.sh folded into the shape or its remainder listed under not_expressible; ONT-4c3 bound with the parity receipt as focus node; verdict rendered on a fleet host once the pv pin lands, else checkout-only: true. Sigma parent bound: json. Back-fill denominator: 7. STOP: subset-insufficient; shared-file-touched without the guard label; any threshold typed into the shape instead of resolved from thresholds.yaml.'

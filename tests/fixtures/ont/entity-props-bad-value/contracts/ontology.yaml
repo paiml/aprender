@@ -1,0 +1,21 @@
+schema: ont-sigma-v1
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-19'
+  last_modified: '2026-09-19'
+  author: fixture
+  description: "the contract schema's own block, carried by Σ and read by neither Σ rule"
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md §4.1 (Σ) — and pv validate, which requires this block'
+concepts:
+  Contract: {doc: a pv contract file}
+entity_types:
+  - {name: study, extractor: pv_contract, implemented: true}
+extractors:
+  - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: true}
+readers:
+  concepts: ontology/sigma.rs
+  entity_types: lint/sigma_gate.rs
+  extractors: ontology/sigma.rs
+  metadata: schema/types.rs (the contract schema, not Σ)

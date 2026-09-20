@@ -1,0 +1,247 @@
+{
+  "ticket": "PMAT-3510",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 99 commit(s); judged against origin/main",
+  "head": "ccc4833875c6aa78e9b47279f17f1b9974647a60",
+  "diff_sha256": "9388575d53559eb120643ee90ff21cf29821ba33124fe074bd68d29a8a86de7a",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 28014,
+  "author": {
+    "model": "claude-fable-5-1",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff precisely implements PMAT-3510. It adds the 4 requested Qwen 3.5 rungs with `required: true` and `backends: [cpu, cuda]` without the `hosts` key. It adds the `hosts:` mechanism to both the ladder runner and judge, enforcing ratcheting against origin/main to prevent dropping (rung, host) pairs. The runner explicitly bypasses RED-counting for non-listed hosts, and the 3 requested self-test cases are correctly implemented, two of which logically fail under the origin/main judge (missing skip and ratcheting logic).",
+      "findings": [
+        {
+          "claim": "adds four REQUIRED rungs qwen35-2b/4b/9b/27b-q4km to contracts/model-capability-ladder-v1.yaml (unsloth Q4_K_M files... backends [cpu, cuda], no hosts: key)",
+          "file": "contracts/model-capability-ladder-v1.yaml",
+          "grounding": "cited",
+          "line": 78
+        },
+        {
+          "claim": "ratchets (rung, host) pairs (hosts DROPPED)",
+          "file": "scripts/check_model_ladder.sh",
+          "grounding": "cited",
+          "line": 64
+        },
+        {
+          "claim": "judge skips a rung on a host it does not list",
+          "file": "scripts/check_model_ladder.sh",
+          "grounding": "cited",
+          "line": 98
+        },
+        {
+          "claim": "runner writes an [N/A] row never counted RED",
+          "file": "scripts/model_ladder.sh",
+          "grounding": "cited",
+          "line": 110
+        },
+        {
+          "claim": "3 self-test cases... two of which FAIL under the origin/main judge",
+          "file": "scripts/lib/model_ladder_cases/green-rung-listed-one-host/ladder.yaml",
+          "grounding": "asserted",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 4006,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff satisfies PMAT-3510 completely: (1) adds the four required dense Qwen3.5 rungs (2B, 4B, 9B, 27B) with backends [cpu, cuda] and required: true without hosts: key; (2) implements optional per-rung hosts: support in contracts/model-capability-ladder-v1.yaml, scripts/check_model_ladder.sh (skip logic and anti-shrink ratchet), scripts/model_ladder.sh ([N/A] non-RED rows), and 3 discrimination self-test cases. Contains no forbidden kernel or forward code.",
+      "findings": [
+        {
+          "claim": "Adds four required rungs (qwen35-2b-q4km, qwen35-4b-q4km, qwen35-9b-q4km, qwen35-27b-q4km) with backends [cpu, cuda], required: true, and no hosts: key to contracts/model-capability-ladder-v1.yaml",
+          "file": "contracts/model-capability-ladder-v1.yaml",
+          "grounding": "cited",
+          "line": 78
+        },
+        {
+          "claim": "Adds falsification tests FALSIFY-MCL-009 (per-rung host filtering / skip) and FALSIFY-MCL-010 (ratchet preventing dropped hosts vs origin/main)",
+          "file": "contracts/model-capability-ladder-v1.yaml",
+          "grounding": "cited",
+          "line": 207
+        },
+        {
+          "claim": "Implements host floor anti-shrink ratchet in scripts/check_model_ladder.sh exiting 1 with 'hosts DROPPED on <rung> vs origin/main' when a rung's host set is narrowed",
+          "file": "scripts/check_model_ladder.sh",
+          "grounding": "cited",
+          "line": 66
+        },
+        {
+          "claim": "Judge skips rung on a host if the rung specifies hosts: and the host is not in that list",
+          "file": "scripts/check_model_ladder.sh",
+          "grounding": "cited",
+          "line": 97
+        },
+        {
+          "claim": "Runner model_ladder.sh emits hosts field and prints [N/A] row without incrementing RED when a host is not listed for a rung",
+          "file": "scripts/model_ladder.sh",
+          "grounding": "cited",
+          "line": 111
+        },
+        {
+          "claim": "Adds 3 self-test cases (green-rung-listed-one-host, red-dropped-host-on-rung, red-listed-host-absent) bringing the case suite to 18 cases, two of which fail under origin/main judge",
+          "file": "scripts/lib/model_ladder_cases/green-rung-listed-one-host/ladder.yaml",
+          "grounding": "cited",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 5186,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff conforms exactly to ticket PMAT-3510 and does nothing forbidden.\n1. Added four required rungs (qwen35-2b-q4km, qwen35-4b-q4km, qwen35-9b-q4km, qwen35-27b-q4km) to contracts/model-capability-ladder-v1.yaml with backends [cpu, cuda], required: true, and no hosts: key.\n2. Implemented the optional per-rung `hosts:` mechanism in scripts/model_ladder.sh (writing [N/A] rows) and scripts/check_model_ladder.sh (skipping unlisted hosts and enforcing anti-shrink ratcheting with 'hosts DROPPED').\n3. Added falsification tests FALSIFY-MCL-009 and FALSIFY-MCL-010 along with 3 self-test fixture cases.\n4. Diff contains no kernel or forward code.",
+      "findings": [],
+      "raw_bytes": 2591,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "contracts/model-capability-ladder-v1.yaml",
+      "line": 78,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "Adds four required rungs (qwen35-2b-q4km, qwen35-4b-q4km, qwen35-9b-q4km, qwen35-27b-q4km) with backends [cpu, cuda], required: true, and no hosts: key to contracts/model-capability-ladder-v1.yaml",
+        "adds four REQUIRED rungs qwen35-2b/4b/9b/27b-q4km to contracts/model-capability-ladder-v1.yaml (unsloth Q4_K_M files... backends [cpu, cuda], no hosts: key)"
+      ]
+    },
+    {
+      "file": "contracts/model-capability-ladder-v1.yaml",
+      "line": 207,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Adds falsification tests FALSIFY-MCL-009 (per-rung host filtering / skip) and FALSIFY-MCL-010 (ratchet preventing dropped hosts vs origin/main)"
+      ]
+    },
+    {
+      "file": "scripts/check_model_ladder.sh",
+      "line": 64,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "ratchets (rung, host) pairs (hosts DROPPED)"
+      ]
+    },
+    {
+      "file": "scripts/check_model_ladder.sh",
+      "line": 66,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Implements host floor anti-shrink ratchet in scripts/check_model_ladder.sh exiting 1 with 'hosts DROPPED on <rung> vs origin/main' when a rung's host set is narrowed"
+      ]
+    },
+    {
+      "file": "scripts/check_model_ladder.sh",
+      "line": 97,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Judge skips rung on a host if the rung specifies hosts: and the host is not in that list"
+      ]
+    },
+    {
+      "file": "scripts/check_model_ladder.sh",
+      "line": 98,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "judge skips a rung on a host it does not list"
+      ]
+    },
+    {
+      "file": "scripts/lib/model_ladder_cases/green-rung-listed-one-host/ladder.yaml",
+      "line": 1,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "3 self-test cases... two of which FAIL under the origin/main judge",
+        "Adds 3 self-test cases (green-rung-listed-one-host, red-dropped-host-on-rung, red-listed-host-absent) bringing the case suite to 18 cases, two of which fail under origin/main judge"
+      ]
+    },
+    {
+      "file": "scripts/model_ladder.sh",
+      "line": 110,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "runner writes an [N/A] row never counted RED"
+      ]
+    },
+    {
+      "file": "scripts/model_ladder.sh",
+      "line": 111,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Runner model_ladder.sh emits hosts field and prints [N/A] row without incrementing RED when a host is not listed for a rung"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-fable-5-1/claude"
+  }
+}

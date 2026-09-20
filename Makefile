@@ -590,6 +590,8 @@ contracts:
 	@git ls-files --error-unmatch contracts/census.json >/dev/null || { echo "FAIL: contracts/census.json is not tracked, so diffing it proves nothing"; exit 1; }
 	@. scripts/pv_bin.sh && "$$PV" census contracts --format json > contracts/census.json
 	@git diff --exit-code contracts/census.json || { echo "FAIL: the tracked census differs from a fresh one — commit the regenerated contracts/census.json"; exit 1; }
+	@echo "== graph: tracked contracts/contracts.nt + shapes.ttl == a fresh extraction (ONT-001 ONT-4b, R-18) =="
+	@. scripts/pv_bin.sh && "$$PV" extract contracts --check >/dev/null
 	@echo "== README states the censused count =="
 	@bash scripts/readme_sync.sh --check
 	@echo "== provenance marks, interim (ONT-001 R-10) =="
@@ -1359,3 +1361,23 @@ ont-ratchet:
 
 ont-ratchet-check:
 	@bash scripts/check_ont_ratchet.sh --check
+
+# ONT-001 §5 ONT-4b2 / R-13 — the out-of-gate SHACL differential oracle.
+#
+# NOT a PR check, by the rule that puts it here: `shacl` is 316 crates and pinned at ONE version (ONT-0's
+# ledger), so it lives in tests/oracle/ — a crate DETACHED from the workspace — and runs in the release gate
+# only. It validates the same graph twice (the pinned processor and the in-house validator) and writes
+# tests/oracle/differential.json, which is TRACKED: the row's probe reads `cases>0 and disagreements==0`, and
+# a tracked file nobody regenerated is caught by `oracle-check` diffing it.
+.PHONY: oracle oracle-check
+oracle:
+	@echo "== W3C cases + the real corpus through the pinned oracle (shacl 0.3.21, out of gate) =="
+	@. scripts/pv_bin.sh && "$$PV" lint contracts --gate shapes --format json > "$${TMPDIR:-/tmp}/pv-shapes.json" 2>/dev/null || true
+	@# No `cd`: this Makefile is .ONESHELL, so a cd on one line moves every line after it (the first form of
+	@# this target built in tests/oracle/ and then ran `$(cd tests/oracle …)` from inside it — "No such file").
+	@cargo build --release --quiet --manifest-path tests/oracle/Cargo.toml
+	@"$$(cargo metadata --no-deps --format-version 1 --manifest-path tests/oracle/Cargo.toml | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')/release/ont-oracle" . "$${TMPDIR:-/tmp}/pv-shapes.json"
+
+oracle-check: oracle
+	@git diff --exit-code tests/oracle/differential.json \
+	  || { echo "FAIL: tests/oracle/differential.json differs from a fresh run — commit it"; exit 1; }

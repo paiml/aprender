@@ -1,0 +1,35 @@
+# vendored: w3c/data-shapes@gh-pages data-shapes-test-suite/tests/core/property/class-001.ttl (tests/oracle/w3c/property/class-001.ttl)
+id: property/class-001
+label: "Test of sh:class at property shape 001"
+prefix: "http://datashapes.org/sh/tests/core/property/class-001.test#"
+targeting: "sh:targetNode → rdf:type ex:Focus + targetClass; the two data blank nodes are skolemized as ex:ValidResource2-b1 / -b2"
+shapes:
+  - id: TestShape
+    targetClass: ex:Focus
+    properties:
+      - {path: ex:testProperty, class: ex:SuperClass}
+data: |
+  ex:InvalidResource1 rdf:type ex:Focus .
+  ex:ValidResource1 rdf:type ex:Focus .
+  ex:ValidResource2 rdf:type ex:Focus .
+  ex:InvalidResource1 rdf:type rdfs:Resource .
+  ex:InvalidResource1 ex:testProperty ex:InvalidResource1 .
+  ex:InvalidResource1 ex:testProperty "A string" .
+  ex:SubClass rdf:type rdfs:Class .
+  ex:SubClass rdfs:subClassOf ex:SuperClass .
+  ex:SubClassInstance rdf:type ex:SubClass .
+  ex:SuperClass rdf:type rdfs:Class .
+  ex:SuperClassInstance rdf:type ex:SuperClass .
+  ex:ValidResource1 rdf:type rdfs:Resource .
+  ex:ValidResource1 ex:testProperty ex:SubClassInstance .
+  ex:ValidResource1 ex:testProperty ex:SuperClassInstance .
+  ex:ValidResource2 rdf:type rdfs:Resource .
+  ex:ValidResource2 ex:testProperty ex:ValidResource2-b1 .
+  ex:ValidResource2-b1 rdf:type ex:SubClass .
+  ex:ValidResource2 ex:testProperty ex:ValidResource2-b2 .
+  ex:ValidResource2-b2 rdf:type ex:SuperClass .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidResource1, path: ex:testProperty, component: class}
+    - {focus: ex:InvalidResource1, path: ex:testProperty, component: class}

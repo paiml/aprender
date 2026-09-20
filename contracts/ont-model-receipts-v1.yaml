@@ -1,0 +1,153 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ont-model-receipts-v1 — model receipts as focus nodes (ONT-001 v4.6 §5 ONT-4c1, §3.7, §3.9; issue #3508, PMAT-3508)
+#
+# WHAT IT GOVERNS
+#   provable_contracts::ontology::extract::gguf       — the model-capability ladder's rungs (and any GGUF file a
+#                                                       contract names) as `model:Model` nodes keyed by sha256.
+#   provable_contracts::ontology::extract::apr_model  — an `.apr` v2 container as a `model:Model` node; a header whose
+#                                                       tensor count disagrees with its index is refused, naming the file.
+#   provable_contracts::ontology::receipts            — `resolves: receipt`: the tracked ladder receipts
+#                                                       (evidence/dogfood/models/<version>/<host>.json, schema
+#                                                       apr-model-ladder-receipt/v1) joined to the rungs by sha256.
+#   provable_contracts::ontology::arming::ArmedShapes — arming one level down: `armed_shapes[]` in lint-baseline.json.
+#
+# THE TWO SHAPES. `ladder-measured` (ARMED at this row): every rung has ≥1 receipt row whose measured `sha256` equals
+# the contract's — a row without `sha256` is not a witness (the receipts committed before #3507 carry none), a row
+# with a different hex is a rejection naming rung, receipt file and hex. `ladder-green` (COMPUTED AND REPORTED, not
+# armed): every required rung is green on every host it lists — `green`, capability passed and not skipped, every
+# claimed backend ran without fallback — and every receipt's `cc` is one of the two silicons the release claims.
+# It is RED on this tree by construction until the GDN kernel (#3090) lands, and pv lint exits on the armed meet,
+# so arming it today would turn every PR red; the 0.68.2 bump PR arms it as its own assertion, and the ratchet
+# (`armed_shapes shrank` → exit 3) keeps it armed. Both quantifications live in receipts.rs, which the fixtures
+# under tests/fixtures/ont/ladder-* falsify; the shapes stay inside §3.6's subset (minCount, maxCount, in, node).
+#
+# THE PLANT. A bare `model:Model` node drawn every run violates `ladder-measured`'s `model:parityReceipt minCount 1`
+# and `model:sha256 minCount 1`: the positive control, drawn from an ARMED shape. Two more every run:
+# `pc_extract.gguf` (a corrupt magic is refused) and `pc_extract["apr-model"]` (a lying header is refused).
+#
+# KIND: pattern. Vocabulary, extractors and shapes over a graph; the proof is the gate's own case table.
+# ─────────────────────────────────────────────────────────────────────────────
+name: ont-model-receipts
+version: "1.0.0"
+scope: >
+  How a model becomes a focus node (a ladder rung, a GGUF file, an .apr file), how the tracked ladder receipts are
+  joined to it, and the two shapes over the join. Out of scope: per-capability receipts (0.68.3, ONT-4c3's
+  successor schema), kernel receipts (ONT-4c3), the oracle differential (ONT-4b2).
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-19'
+  last_modified: '2026-09-19'
+  author: PAIML Engineering
+  description: >
+    The model-capability ladder's rungs are model:Model focus nodes; resolves: receipt joins the tracked ladder
+    receipts to them by measured sha256; ladder-measured is armed, ladder-green is reported until the 0.68.2 bump
+    arms it; arming is per shape and monotone.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md v4.6 §3.7 (gguf, apr-model), §3.9 (per-shape arming), §5 ONT-4c1'
+    - 'contracts/model-capability-ladder-v1.yaml (the rungs), scripts/model_ladder.sh (the receipts), #3507 (sha256 per row), #3511 (hosts: per rung)'
+    - 'crates/aprender-contracts/src/ontology/{receipts.rs, arming.rs}, ontology/extract/{gguf,apr_model}.rs, lint/shapes_gate.rs'
+
+entity:
+  type: gguf
+
+relations:
+  depends_on: [ont-shapes-v1, ont-relations-v1, ont-sigma-v1, model-capability-ladder-v1]
+
+shapes:
+  - id: ladder-measured
+    targetClass: model:Model
+    properties:
+      - {path: model:sha256, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+      - {path: model:parityReceipt, minCount: 1, nodeKind: IRI, class: model:Receipt, resolves: receipt}
+      - {path: model:receiptHexMismatch, maxCount: 0}
+  - id: ladder-green
+    targetClass: model:RequiredModel
+    properties:
+      - {path: model:missingGreenHost, maxCount: 0}
+      - {path: model:parityReceipt, node: {properties: [{path: model:cc, in: ["8.9", "12.1"]}]}}
+
+equations:
+  witness:
+    formula: "witness(rung, row) ⇔ row.sha256 = rung.sha256 ∧ row.sha256 ≠ ⊥"
+    domain: "every rung of the ladder contract and every rung row of every tracked receipt with the same id"
+    codomain: "a model:parityReceipt edge, or a model:receiptHexMismatch literal, or a model:unmeasuredRow literal"
+    invariants:
+      - "a row without sha256 is neither a witness nor a mismatch: no measurement is not a match"
+      - "a row with a different hex is a mismatch naming file and hex, never silently dropped"
+    preconditions:
+      - "every receipt file under evidence/dogfood/models/ carries schema apr-model-ladder-receipt/v1"
+    postconditions:
+      - "two extractions are byte-identical (R-15)"
+    lean_theorem: none — L4 not declared
+  green:
+    formula: "green(rung, host) ⇔ ∃ witness row on host: green ∧ capability.passed ∧ ¬capability.skipped ∧ ∀ b ∈ rung.backends: ran(b) ∧ ¬fallback(b)"
+    domain: "every required rung × every host it lists (hosts: absent → every host with a tracked receipt)"
+    codomain: "a model:greenOn literal per green host; a model:missingGreenHost literal per host that is not"
+    invariants:
+      - "a skipped capability gate reports passed: true and is NOT green"
+      - "a claimed backend that fell back is NOT green, whatever the tokens said"
+    preconditions:
+      - "the rung's backends are the release's claim for that architecture"
+    postconditions:
+      - "ladder-green fires on a required rung iff some listed host is missing"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: MRC-INV-001
+    property: a rung with no measured witness fails ladder-measured
+    formal: '|parityReceipt(rung)| = 0 ⇒ Fail(ladder-measured, rung)'
+    prose: false
+  - id: MRC-INV-002
+    property: a hex mismatch fails ladder-measured naming the file
+    formal: '|receiptHexMismatch(rung)| ≥ 1 ⇒ Fail(ladder-measured, rung)'
+    prose: false
+  - id: MRC-INV-003
+    property: an unarmed shape never feeds the meet
+    formal: 'shape ∉ armed_shapes ⇒ verdict(gate) independent of results(shape)'
+    prose: false
+  - id: MRC-INV-004
+    property: arming is monotone
+    formal: 'armed_shapes(committed) ⊄ armed_shapes(declared) ⇒ exit = 3'
+    prose: false
+  - id: MRC-INV-005
+    property: the plant fires from an armed shape or the gate declines
+    formal: 'plant_violations(armed) = 0 ⇒ verdict = Unknown'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-MRC-001
+    rule: witnesses
+    prediction: an all-green two-host fixture passes with four witnesses; a row without sha256 is not one; a different hex is a mismatch naming the file
+    test: cargo test -p aprender-contracts --lib ontology::receipts
+    if_fails: sha_ok alone is trusted, or a measurement is invented
+  - id: FALSIFY-MRC-002
+    rule: green per host
+    prediction: a cuda fallback on one host is reported by the unarmed ladder-green naming that host and does not fail the gate; arming the shape on the same fixture fails it
+    test: cargo test -p aprender-contracts --lib lint::shapes_gate::tests
+    if_fails: a red rung passes, or a reported shape blocks the meet it was declared out of
+  - id: FALSIFY-MRC-003
+    rule: the extractors' positive controls
+    prediction: a corrupt GGUF magic and an .apr header whose tensor count disagrees with its index are each refused naming the file, every run
+    test: cargo test -p aprender-contracts --lib ontology::extract
+    if_fails: an extractor emits a node with holes in it
+  - id: FALSIFY-MRC-004
+    rule: the gate's answers on the CLI
+    prediction: "Pass on the real corpus with armed_shapes ⊇ [ont-shapes-v1, ladder-measured] and ladder-green in not_armed_shapes; exit 2 decline NoCheckable with the directory named when no receipt is tracked; exit 3 naming the file on a foreign receipt schema; exit 3 armed_shapes shrank when the declared list drops a committed shape"
+    test: cargo test -p aprender-contracts-cli --test ont4c1_model_receipts
+    if_fails: a decline, a reject and an error become indistinguishable to a caller
+
+qa_gate:
+  id: F-MRC-001
+  name: model-receipts
+  description: 'The ladder rungs are focus nodes, the tracked receipts are their witnesses, and arming is per shape (ONT-4c1)'
+  checks:
+    - witnesses_by_measured_sha256
+    - green_per_listed_host
+    - extractor_controls_fire
+    - unarmed_reported_never_meet
+    - arming_monotone
+  pass_criteria: All 4 falsification tests pass; `pv lint contracts/ --gate shapes` is Pass on the real corpus with by_entity_type.gguf ≥ 1, pc_extract.gguf and pc_extract["apr-model"] fired, ladder-measured armed and ladder-green reported
+  falsification: 'change one sha256 in a tracked receipt row → ladder-measured rejects naming the rung; arm ladder-green on tests/fixtures/ont/ladder-fallback → rejects naming rung and host'

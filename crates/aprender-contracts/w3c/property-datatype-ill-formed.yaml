@@ -1,0 +1,21 @@
+# vendored: tests/core/property/datatype-ill-formed.ttl (+ -data.ttl, -shapes.ttl)
+id: property/datatype-ill-formed
+label: "Test of validation report for ill-formed literals"
+prefix: "http://example.org/shacl-test/"
+targeting: "a sh:PropertyShape with sh:targetNode ex:i → a node shape targeting ex:Focus with that one property"
+shapes:
+  - id: s
+    targetClass: ex:Focus
+    properties:
+      - {path: ex:p, datatype: xsd:byte}
+data: |
+  ex:i rdf:type ex:Focus .
+  ex:i ex:p "300"^^xsd:byte .
+  ex:i ex:p "55"^^xsd:integer .
+  ex:i ex:p "c"^^xsd:byte .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:i, path: ex:p, component: datatype}
+    - {focus: ex:i, path: ex:p, component: datatype}
+    - {focus: ex:i, path: ex:p, component: datatype}

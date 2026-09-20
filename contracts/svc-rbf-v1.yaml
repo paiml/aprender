@@ -76,6 +76,7 @@ proof_obligations:
   type: invariant
   property: RBF SVC sklearn parity
   formal: OBLIG-RBF-SVC-SKLEARN-PARITY — predict(grid) agrees with pinned sklearn SVC(kernel='rbf') on >= 90% of held-out grid points
+  prose: true
   applies_to: all
 - id: SR-INV-005
   type: invariant
