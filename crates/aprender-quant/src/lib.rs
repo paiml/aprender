@@ -58,6 +58,7 @@
 #![warn(missing_docs)]
 
 mod dequantize;
+pub mod ggml_type;
 mod quantize;
 mod transpose;
 
@@ -74,6 +75,13 @@ pub use quantize::{
     quantize_q6_k_matrix,
 };
 pub use transpose::{transpose_q4k_for_matmul, transpose_q5k_for_matmul, transpose_q6k_for_matmul};
+
+// PMAT-3430: the one ggml tensor-type enum and its upstream-extracted table.
+// Re-exported at the crate root so a consumer writes `trueno_quant::GgmlType`
+// and never has to know which module it lives in.
+pub use ggml_type::{
+    GgmlFamily, GgmlType, GgmlTypeError, QuantTraits, ALL, GGML_TYPE_COUNT, TRAITS,
+};
 
 // ============================================================================
 // Constants
@@ -100,6 +108,18 @@ pub const Q6_K_BLOCK_SIZE: usize = 256;
 
 /// `Q6_K` super-block byte size
 pub const Q6_K_BLOCK_BYTES: usize = 210;
+
+// THESE SIX CONSTANTS PREDATE `TRAITS` AND SAY THE SAME THING (PMAT-3430).
+// They are kept — they are public API — but they may no longer drift from the
+// upstream-extracted table: a mismatch is a COMPILE error, not a test failure.
+const _: () = {
+    assert!(Q4_K_BLOCK_SIZE == TRAITS[GgmlType::Q4K.as_id() as usize].blck_size as usize);
+    assert!(Q4_K_BLOCK_BYTES == TRAITS[GgmlType::Q4K.as_id() as usize].type_size as usize);
+    assert!(Q5_K_BLOCK_SIZE == TRAITS[GgmlType::Q5K.as_id() as usize].blck_size as usize);
+    assert!(Q5_K_BLOCK_BYTES == TRAITS[GgmlType::Q5K.as_id() as usize].type_size as usize);
+    assert!(Q6_K_BLOCK_SIZE == TRAITS[GgmlType::Q6K.as_id() as usize].blck_size as usize);
+    assert!(Q6_K_BLOCK_BYTES == TRAITS[GgmlType::Q6K.as_id() as usize].type_size as usize);
+};
 
 // ============================================================================
 // f16 Conversion Helpers
