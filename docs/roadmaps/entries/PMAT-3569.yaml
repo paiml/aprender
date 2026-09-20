@@ -1,0 +1,16 @@
+- id: PMAT-3569
+  github_issue: 3569
+  item_type: task
+  title: 'Decision 8: census.json becomes derived (CI computes, guard refuses PR'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T10:27:58Z
+  updated: 2026-09-20T10:27:58Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
