@@ -54,14 +54,25 @@ SAMPLES="$OUT/samples.json"
 REPORT="$OUT/decomposition.json"
 MARKER="$OUT/marker.json"
 
+# ONE CLOCK for the whole run, captured before anything that can fail so the
+# bail path and the full writer stamp the same instant.
+#
+# This is the MEASUREMENT's clock, not a build stamp: a SOURCE_DATE_EPOCH-derived
+# value would make every marker look as old as the commit and any freshness gate
+# reading it would be vacuous. Captured to an append-only sink and read back,
+# per bashrs's own guidance for exactly this case — and bashrs enforces it:
+# a bare `date` inside bail_marker was DET002 in guard-cargo.
+date -u +%Y-%m-%dT%H:%M:%SZ >> "$OUT/started_utc.log"
+STARTED_UTC="$(tail -n 1 "$OUT/started_utc.log")"
+HOSTNAME_SHORT="${PERF002_HOST:-$(hostname -s 2>/dev/null || hostname)}"
+
 # The minimal marker, written without python and without the repo: it has to
 # work when the failure IS the repo. json.dump-compatible, same field names, and
 # `status` is one of the same vocabulary. The full writer below supersedes it on
 # every path that gets that far.
 bail_marker() { # $1 = reason
     printf '{\n  "cc": null,\n  "commit": null,\n  "exit": 2,\n  "host": "%s",\n  "reason": "%s",\n  "refused_rule": null,\n  "sha256": null,\n  "slope_ms_per_token": null,\n  "started_utc": "%s",\n  "status": "UNMEASURABLE"\n}\n' \
-        "$(hostname -s 2>/dev/null || hostname)" "$1" \
-        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$MARKER"
+        "$HOSTNAME_SHORT" "$1" "$STARTED_UTC" > "$MARKER"
     printf 'perf002-prefill: %s\n' "$1" >&2
     exit 2
 }
@@ -82,12 +93,6 @@ PORT="${PERF002_PORT:-8474}"
 PERF002_TOKENS="${PERF002_TOKENS:-64 128 256 384 513}"
 PERF002_REPEATS="${PERF002_REPEATS:-3}"
 
-# This is the MEASUREMENT's clock, not a build stamp: a SOURCE_DATE_EPOCH-derived
-# value would make every marker look as old as the commit and any freshness gate
-# reading it would be vacuous. Captured to an append-only sink and read back.
-date -u +%Y-%m-%dT%H:%M:%SZ >> "$OUT/started_utc.log"
-STARTED_UTC="$(tail -n 1 "$OUT/started_utc.log")"
-HOSTNAME_SHORT="${PERF002_HOST:-$(hostname -s 2>/dev/null || hostname)}"
 COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 
 # sm_121 vs sm_89 decides whether §9 #1 is even in scope, so the marker carries
