@@ -20,6 +20,7 @@
             used_gpu: Some(false),
             generated_tokens: None,
             token_texts: None,
+            ..RunResult::default()
         }
     }
 

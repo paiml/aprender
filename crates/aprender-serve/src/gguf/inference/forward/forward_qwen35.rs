@@ -1370,6 +1370,7 @@ pub fn run_qwen35_generate_dispatch(
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
     no_gpu: bool,
+    stages: &mut crate::infer::stage_timings::StageTimings,
 ) -> Result<(Vec<u32>, bool)> {
     let route = qwen35_route(no_gpu, cfg!(feature = "cuda"));
     if let Some(notice) = qwen35_route_notice(route) {
@@ -1377,13 +1378,14 @@ pub fn run_qwen35_generate_dispatch(
     }
     #[cfg(feature = "cuda")]
     if route == Qwen35Route::Gpu {
-        match run_qwen35_generate_gpu(mapped, base, input_tokens, gen_config) {
+        match run_qwen35_generate_gpu(mapped, base, input_tokens, gen_config, stages) {
             Ok(tokens) => return Ok((tokens, true)),
             Err(reason) => {
                 eprintln!("{QWEN35_GPU_FALLBACK_PREFIX}, falling back to CPU: {reason}");
             },
         }
     }
+    stages.backend = "cpu-qwen35".to_string();
     let tokens = run_qwen35_generate(mapped, base, input_tokens, gen_config)?;
     Ok((tokens, false))
 }
@@ -1404,6 +1406,7 @@ fn run_qwen35_generate_gpu(
     base: &OwnedQuantizedModel,
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
+    stages: &mut crate::infer::stage_timings::StageTimings,
 ) -> std::result::Result<Vec<u32>, String> {
     if input_tokens.is_empty() {
         return Err("the prompt is empty".to_string());
@@ -1419,9 +1422,12 @@ fn run_qwen35_generate_gpu(
     let vram_mb = executor.memory_info().unwrap_or((0, 0)).1 / (1024 * 1024);
 
     let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
-    let mut gpu =
+    // PMAT-3598 row 1: building the CUDA model is the HOST -> DEVICE transfer for this path.
+    let (built, h2d_ms) = crate::infer::stage_timings::timed("h2d", || {
         crate::gguf::cuda::Qwen35CudaModel::with_max_seq_len(&qwen, executor, max_seq_len)
-            .map_err(|e| format!("the CUDA model would not build: {e}"))?;
+    });
+    let mut gpu = built.map_err(|e| format!("the CUDA model would not build: {e}"))?;
+    stages.h2d_ms = Some(h2d_ms);
 
     // Unconditional, like every other backend-selection line on this path: the
     // user must be able to tell a GPU run from a CPU one without --verbose.
@@ -1429,10 +1435,15 @@ fn run_qwen35_generate_gpu(
         "Backend: GPU (CUDA, {device_name}, {vram_mb} MB VRAM) [qwen35 hybrid forward, #3090]"
     );
 
-    if !f2_validate_qwen35(&mut gpu, &qwen, input_tokens) {
+    let (f2_ok, validate_ms) = crate::infer::stage_timings::timed("validate", || {
+        f2_validate_qwen35(&mut gpu, &qwen, input_tokens)
+    });
+    stages.validate_ms = Some(validate_ms);
+    if !f2_ok {
         return Err("the F2 CPU-parity guard rejected the GPU path".to_string());
     }
-    qwen35_gpu_decode(&mut gpu, input_tokens, gen_config)
+    stages.backend = "cuda-qwen35".to_string();
+    qwen35_gpu_decode(&mut gpu, input_tokens, gen_config, stages)
 }
 
 /// Prefill + decode on the GPU, with the token choice
@@ -1443,6 +1454,7 @@ fn qwen35_gpu_decode(
     gpu: &mut crate::gguf::cuda::Qwen35CudaModel<'_>,
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
+    stages: &mut crate::infer::stage_timings::StageTimings,
 ) -> std::result::Result<Vec<u32>, String> {
     use rand::SeedableRng;
     let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
@@ -1451,11 +1463,22 @@ fn qwen35_gpu_decode(
         .map_err(|e| format!("the decode state would not allocate: {e}"))?;
     let mut rng = rand::rngs::StdRng::seed_from_u64(gen_config.seed);
 
+    // PMAT-3598 row 1: the prompt loop IS prefill and the generate loop IS decode. The boundary
+    // is exact here, not derived, so neither number is the other's remainder.
+    let prefill_start = std::time::Instant::now();
+    if let Some(d) = crate::infer::stage_timings::planted_delay("prefill") {
+        std::thread::sleep(d);
+    }
     let mut logits = Vec::new();
     for (pos, &token) in input_tokens.iter().enumerate() {
         logits = gpu
             .forward_single(token, &mut state, pos)
             .map_err(|e| format!("the GPU forward failed at prompt position {pos}: {e}"))?;
+    }
+    stages.prefill_ms = Some(prefill_start.elapsed().as_secs_f64() * 1000.0);
+    let decode_start = std::time::Instant::now();
+    if let Some(d) = crate::infer::stage_timings::planted_delay("decode") {
+        std::thread::sleep(d);
     }
     let mut tokens = input_tokens.to_vec();
     for _ in 0..gen_config.max_tokens {
@@ -1479,6 +1502,7 @@ fn qwen35_gpu_decode(
             .forward_single(next, &mut state, pos)
             .map_err(|e| format!("the GPU forward failed at decode position {pos}: {e}"))?;
     }
+    stages.decode_ms = Some(decode_start.elapsed().as_secs_f64() * 1000.0);
     Ok(tokens)
 }
 

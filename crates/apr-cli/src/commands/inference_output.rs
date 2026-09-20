@@ -184,6 +184,10 @@ struct InferenceOutput {
     /// Populated only when `--stream` asked for it (see
     /// [`decode_token_pieces`]) — every other mode renders the whole `text`.
     token_texts: Option<Vec<String>>,
+    /// PMAT-3598 row 1 (#3542): where the time went. Default (nothing measured, the whole wall
+    /// clock unattributed) on the non-realizar path, which is an honest statement about that path.
+    #[cfg(feature = "inference")]
+    stages: realizar::infer::stage_timings::StageTimings,
 }
 
 /// Execute inference on model
@@ -374,6 +378,7 @@ fn execute_with_realizar(
         None
     };
     Ok(InferenceOutput {
+        stages: result.stages,
         text: result.text,
         tokens_generated: Some(result.generated_token_count),
         inference_ms: Some(result.inference_ms),

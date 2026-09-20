@@ -363,7 +363,11 @@ fn print_run_output(
         return print_stream_output(result, source, max_tokens);
     }
 
-    // GH-240/GH-250: JSON output mode with accurate token counts
+    // GH-240/GH-250: JSON output mode with accurate token counts.
+    //
+    // PMAT-3598 row 1, done_when 3 — THE STREAM IS DECLARED: in `--json` mode stdout carries
+    // exactly one JSON document and nothing else; every human-facing line (`Backend:`, mmap notes,
+    // trace output) goes to stderr. A consumer pipes stdout to a parser without filtering.
     if output_format == "json" && !benchmark {
         let json = build_final_json(result, source, max_tokens);
         println!(
@@ -386,10 +390,13 @@ fn print_run_output(
         println!(
             "Completed in {:.2}s {}",
             result.duration_secs,
+            // PMAT-3598 row 1, done_when 4: this suffix is about the MODEL FILE, not the run.
+            // `(cached)` on a run that demonstrably executed read as "this result was cached",
+            // which is a claim nothing here measures.
             if result.cached {
-                "(cached)".dimmed()
+                "(model already local)".dimmed()
             } else {
-                "(downloaded)".dimmed()
+                "(model downloaded this run)".dimmed()
             }
         );
     }
@@ -408,7 +415,8 @@ fn build_final_json(result: &RunResult, source: &str, max_tokens: usize) -> serd
     });
     // GH-250: Include generated token IDs for parity checking
     let tokens_json = result.generated_tokens.as_deref().unwrap_or(&[]);
-    serde_json::json!({
+    #[allow(unused_mut)]
+    let mut json = serde_json::json!({
         "model": source,
         "text": result.text,
         "tokens": tokens_json,
@@ -418,7 +426,38 @@ fn build_final_json(result: &RunResult, source: &str, max_tokens: usize) -> serd
         "inference_time_ms": (result.duration_secs * 1000.0 * 100.0).round() / 100.0,
         "used_gpu": result.used_gpu.unwrap_or(false),
         "cached": result.cached,
-    })
+    });
+    // PMAT-3598 row 1 (#3542): the stage breakdown. `apr run` used to report ONE number — wall
+    // clock — and on a 4B model that number was 14 s while nothing could say which stage owned it.
+    // Every stage here is `null` when it was not measured, NEVER 0: a zero reads as "free" and is
+    // the cheapest possible lie. `unattributed_ms` is the remainder, always present, so the fields
+    // sum to `wall_ms` exactly and a tolerance is a statement about how much is unattributed.
+    #[cfg(feature = "inference")]
+    merge_stage_fields(&mut json, &result.stages);
+    json
+}
+
+/// Fold the measured stages into the report. Separate from [`build_final_json`] so the
+/// non-inference build has no opinion about timings it could not take.
+#[cfg(feature = "inference")]
+fn merge_stage_fields(json: &mut serde_json::Value, stages: &realizar::infer::stage_timings::StageTimings) {
+    let Some(obj) = json.as_object_mut() else {
+        return;
+    };
+    let ms = |v: Option<f64>| match v {
+        Some(x) => serde_json::json!((x * 100.0).round() / 100.0),
+        None => serde_json::Value::Null,
+    };
+    obj.insert("load_ms".into(), ms(stages.load_ms));
+    obj.insert("h2d_ms".into(), ms(stages.h2d_ms));
+    obj.insert("validate_ms".into(), ms(stages.validate_ms));
+    obj.insert("prefill_ms".into(), ms(stages.prefill_ms));
+    obj.insert("decode_ms".into(), ms(stages.decode_ms));
+    obj.insert("tokens_out".into(), serde_json::json!(stages.tokens_out));
+    obj.insert("unattributed_ms".into(), ms(Some(stages.unattributed_ms)));
+    obj.insert("wall_ms".into(), ms(Some(stages.wall_ms)));
+    obj.insert("stages_measured".into(), serde_json::json!(stages.measured()));
+    obj.insert("backend".into(), serde_json::json!(stages.backend));
 }
 
 /// Emit one JSON line per generated token plus a terminal `final` blob.
