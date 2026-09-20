@@ -45,17 +45,17 @@ proof_obligations:
   - id: TSMG-INV-001
     type: invariant
     property: "No gate outcome other than 0 reaches `git tag`"
-    formal: "scripts/check_tag_step_gated.sh exit 0"
+    formal: "∀ rc ∈ {1, 2}: cut_tag(v, t, mc) with gate(v) = rc ⇒ ¬ tagged(t) ∧ gate(v) = 0 ⇒ tagged(t)"
     applies_to: tag_requires_clean_milestone
   - id: TSMG-INV-002
     type: invariant
     property: "The guard still fails on the defect it names"
-    formal: "scripts/check_tag_step_gated.sh --self-test exit 0 — three mutants killed and the real subject green"
+    formal: "∀ m ∈ {gate_call_deleted, verdict_discarded, cut_tag_removed}: guard(m) ≠ 0 ∧ guard(subject) = 0"
     applies_to: guard_is_behavioural_not_textual
   - id: TSMG-INV-003
     type: invariant
     property: "The autopilot that cuts the tag is in the repository and reviewed"
-    formal: "test -f scripts/release/autopilot.sh"
+    formal: "scripts/release/autopilot.sh ∈ tracked(main) ∧ cut_tag ∈ autopilot.sh"
     applies_to: tag_requires_clean_milestone
 
 falsification_tests:
