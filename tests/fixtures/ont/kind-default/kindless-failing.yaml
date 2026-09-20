@@ -1,0 +1,12 @@
+# ONT-6b: a contract with NO `metadata.kind`, carrying none of the four kernel
+# blocks. `ContractKind` defaults to `Kernel`, so the kernel-only rules run and
+# the file is rejected — and until ONT-6b nothing in the output said the kind
+# was assumed. `references` is present so the metadata rules pass and the FIRST
+# error is the one the default caused.
+#
+# Real witness for this shape: rmedia `crates/rmedia-core/contracts/dialogue-v1.yaml`.
+metadata:
+  version: 1.0.0
+  description: ONT-6b fixture — no metadata.kind, no kernel blocks
+  references:
+  - 'ONT-001 ONT-6b, infra#751'
