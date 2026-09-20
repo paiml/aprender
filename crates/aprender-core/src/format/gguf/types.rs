@@ -49,35 +49,15 @@ pub enum GgufValueType {
     Float64 = 12,
 }
 
-/// GGUF tensor types (from ggml)
-#[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GgmlType {
-    /// 32-bit float
-    F32 = 0,
-    /// 16-bit float
-    F16 = 1,
-    /// 4-bit quantization (type 0)
-    Q4_0 = 2,
-    /// 4-bit quantization (type 1)
-    Q4_1 = 3,
-    /// 8-bit quantization (type 0)
-    Q8_0 = 8,
-    /// K-quant 4-bit (Q4_K) - 256-element super-blocks, 144 bytes each
-    Q4K = 12,
-    /// K-quant 6-bit (Q6_K) - 256-element super-blocks, 210 bytes each
-    Q6K = 14,
-    /// 8-bit signed integer
-    I8 = 24,
-    /// 16-bit signed integer
-    I16 = 25,
-    /// 32-bit signed integer
-    I32 = 26,
-    /// 64-bit signed integer
-    I64 = 27,
-    /// 64-bit float
-    F64 = 28,
-}
+// PMAT-3430 M1 Phase 3: the enum that used to be declared here is now the
+// workspace's ONE ggml tensor-type enum, re-exported from the leaf crate.
+//
+// core listed 12 ids. It has NO admission function and needs none: measured
+// across the crate, nothing in core turns an integer or a string into a
+// GgmlType — `format/gguf/reader.rs` keeps `dtype: u32` raw, and every
+// construction here is from a literal. So core's entire exposure to this change
+// is `GgufTensor::byte_size` below.
+pub use trueno_quant::GgmlType;
 
 /// GGUF metadata value
 #[derive(Debug, Clone)]
@@ -354,33 +334,22 @@ pub struct GgufTensor {
 }
 
 impl GgufTensor {
-    /// Calculate the byte size based on dtype and shape
+    /// Calculate the byte size based on dtype and shape.
+    ///
+    /// PMAT-3430: this was a hand-written match over core's 12 variants. It now
+    /// delegates to the upstream-extracted table, which is value-identical for
+    /// eleven of the twelve and CORRECTS the twelfth: the old arm sized `Q4_1`
+    /// at 18 bytes per 32-element block (`Q4_0 | Q4_1 => …`), where ggml says
+    /// **20** — 2 x f16 for scale and min, plus 16 nibble bytes — and core's own
+    /// other size table, `format/gguf/shape.rs`, already said 20. Two tables in
+    /// one crate disagreeing; the one that was wrong is the one nothing called.
+    ///
+    /// `tensor_bytes` keeps the rounding-up behaviour the old arm had, so a
+    /// partial block still costs a whole block.
     #[must_use]
     pub fn byte_size(&self) -> usize {
         let elements: u64 = self.shape.iter().product();
-        match self.dtype {
-            GgmlType::F32 | GgmlType::I32 => elements as usize * 4,
-            GgmlType::F16 | GgmlType::I16 => elements as usize * 2,
-            GgmlType::I8 => elements as usize,
-            GgmlType::Q4_0 | GgmlType::Q4_1 => {
-                // Block-quantized: 32 elements per block
-                // Q4_0: 2 bytes scale + 16 bytes data = 18 bytes per 32 elements
-                (elements as usize).div_ceil(32) * 18
-            }
-            GgmlType::Q8_0 => {
-                // Q8_0: 2 bytes scale + 32 bytes data = 34 bytes per 32 elements
-                (elements as usize).div_ceil(32) * 34
-            }
-            GgmlType::Q4K => {
-                // Q4_K: 256-element super-blocks, 144 bytes each
-                (elements as usize).div_ceil(256) * 144
-            }
-            GgmlType::Q6K => {
-                // Q6_K: 256-element super-blocks, 210 bytes each
-                (elements as usize).div_ceil(256) * 210
-            }
-            GgmlType::F64 | GgmlType::I64 => elements as usize * 8,
-        }
+        self.dtype.tensor_bytes(elements as usize)
     }
 }
 

@@ -36,7 +36,7 @@ use std::time::Instant;
 /// PMAT-173 / GH-321: Convert GGML quantization type to human-readable string.
 /// Uses unified `GgmlQuantType` enum — single source of truth.
 pub(crate) fn qtype_to_dtype_str(qtype: u32) -> &'static str {
-    crate::gguf::GgmlQuantType::from_id(qtype).map_or("Unknown", crate::gguf::GgmlQuantType::as_str)
+    crate::gguf::admitted_from_id(qtype).map_or("Unknown", crate::gguf::GgmlQuantType::as_str)
 }
 
 /// Configuration for inference

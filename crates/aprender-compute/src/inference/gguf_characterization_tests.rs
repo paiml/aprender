@@ -11,7 +11,7 @@
 //! agreed with exactly — so these 15 rows are the evidence that delegating to
 //! `TRAITS` is value-identical rather than merely plausible.
 
-use super::GgmlType;
+use super::{from_u32, GgmlType};
 
 /// The 15 ids compute admitted before M1, with their block geometry.
 /// (id, blck_size, type_size)
@@ -43,7 +43,7 @@ fn admitted(id: u32) -> Option<(usize, usize)> {
 #[test]
 fn from_u32_admits_exactly_fifteen_ids_over_the_whole_byte_range() {
     for id in 0u32..=255 {
-        let got = GgmlType::from_u32(id);
+        let got = from_u32(id);
         assert_eq!(
             got.is_some(),
             admitted(id).is_some(),
@@ -58,7 +58,7 @@ fn from_u32_admits_exactly_fifteen_ids_over_the_whole_byte_range() {
 #[test]
 fn block_geometry_is_unchanged_for_every_admitted_id() {
     for (id, blck, size) in ADMITTED_TODAY {
-        let t = GgmlType::from_u32(id).expect("an admitted id must construct");
+        let t = from_u32(id).expect("an admitted id must construct");
         assert_eq!(t.block_size(), blck, "qtype {id} block_size changed");
         assert_eq!(t.block_bytes(), size, "qtype {id} block_bytes changed");
     }
@@ -67,7 +67,7 @@ fn block_geometry_is_unchanged_for_every_admitted_id() {
 #[test]
 fn tensor_bytes_rounds_partial_blocks_up_exactly_as_it_did() {
     for (id, blck, size) in ADMITTED_TODAY {
-        let t = GgmlType::from_u32(id).expect("an admitted id must construct");
+        let t = from_u32(id).expect("an admitted id must construct");
         assert_eq!(t.tensor_bytes(0), 0, "qtype {id} at 0 elements");
         assert_eq!(t.tensor_bytes(blck), size, "qtype {id} at one full block");
         assert_eq!(t.tensor_bytes(blck * 4), size * 4, "qtype {id} at four blocks");

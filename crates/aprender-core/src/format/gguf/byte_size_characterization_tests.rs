@@ -39,9 +39,11 @@ fn byte_size_is_unchanged_for_all_twelve_variants() {
         // Q4_0: 2 (scale) + 16 (nibbles) = 18 bytes per 32 elements. Correct.
         (GgmlType::Q4_0, 64, 36),
         (GgmlType::Q4_0, 65, 54),
-        // Q4_1: THE ROW THAT MOVES. 18 today, 20 upstream — see the module doc.
-        (GgmlType::Q4_1, 64, 36),
-        (GgmlType::Q4_1, 96, 54),
+        // Q4_1: THE ROW THAT MOVED, in Phase 3, and the only one. 2 blocks x 20
+        // and 3 blocks x 20, where the hand-written arm gave 18 per block.
+        // Upstream ggml and core's own shape.rs both say 20.
+        (GgmlType::Q4_1, 64, 40),
+        (GgmlType::Q4_1, 96, 60),
         (GgmlType::Q8_0, 64, 68),
         (GgmlType::Q8_0, 65, 102),
         (GgmlType::Q4K, 512, 288),
@@ -66,25 +68,4 @@ fn byte_size_is_unchanged_for_all_twelve_variants() {
             "{dtype:?} at {elements} elements"
         );
     }
-}
-
-/// The disagreement, asserted directly so it cannot be fixed by accident and
-/// go unnoticed. When Phase 3 lands, this test is DELETED in the same commit
-/// that moves the row above — its whole purpose is to name a defect that
-/// exists today.
-#[test]
-fn q4_1_currently_disagrees_with_cores_own_other_size_table() {
-    // 96 elements = 3 blocks. The hand-written arm: 3 * 18 = 54.
-    // shape.rs and upstream ggml:            3 * 20 = 60.
-    assert_eq!(
-        tensor(GgmlType::Q4_1, 96).byte_size(),
-        54,
-        "Q4_1 is no longer sized at 18 bytes/block here — if this is the Phase 3 \
-         delegation, delete this test and move the row in the case table above"
-    );
-    assert_ne!(
-        tensor(GgmlType::Q4_1, 96).byte_size(),
-        60,
-        "Q4_1 now agrees with upstream; this defect is fixed and the test is obsolete"
-    );
 }

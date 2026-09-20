@@ -13,7 +13,7 @@
 /// policy this now follows: an unsupported quant must fail loudly rather than be
 /// silently decoded as something else.
 fn apr_qtype_to_dtype(qtype: u32) -> Result<&'static str> {
-    crate::gguf::GgmlQuantType::from_id(qtype)
+    crate::gguf::admitted_from_id(qtype)
         .map(crate::gguf::GgmlQuantType::as_str)
         .ok_or_else(|| RealizarError::FormatError {
             reason: format!(
@@ -194,7 +194,7 @@ mod hybrid_gpu_unsupported_quant_tests {
 /// GH-321: Convert APR dtype string to byte using unified enum.
 /// GH-191 FIX: Use GGML dtype values directly so they match TensorEntry::from_binary reader.
 fn apr_dtype_to_byte(dtype: &str) -> u8 {
-    crate::gguf::GgmlQuantType::from_str_lossy(dtype).map_or_else(
+    crate::gguf::admitted_from_name(dtype).map_or_else(
         || {
             eprintln!(
                 "WARN: Unknown dtype '{}' in dtype_to_byte, writing as F32",
