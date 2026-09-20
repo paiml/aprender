@@ -1436,7 +1436,7 @@ fn run_qwen35_generate_gpu(
     );
 
     let (f2_ok, validate_ms) = crate::infer::stage_timings::timed("validate", || {
-        f2_validate_qwen35(&mut gpu, &qwen, input_tokens)
+        f2_validate_qwen35(&mut gpu, &qwen, input_tokens, stages)
     });
     stages.validate_ms = Some(validate_ms);
     if !f2_ok {
@@ -1525,6 +1525,7 @@ fn f2_validate_qwen35(
     gpu: &mut crate::gguf::cuda::Qwen35CudaModel<'_>,
     cpu: &Qwen35Model<'_>,
     probe_context: &[u32],
+    stages: &mut crate::infer::stage_timings::StageTimings,
 ) -> bool {
     // Same escape hatch as the dense gate, and the same one `apr parity` uses.
     if std::env::var("SKIP_PARITY_GATE").is_ok_and(|v| v == "1") {
@@ -1536,13 +1537,22 @@ fn f2_validate_qwen35(
     if probe.len() < 2 {
         return true;
     }
-    let Some(cpu_per_pos) = f2_qwen35_cpu_reference(cpu, probe) else {
+    // #3604 needs to know WHICH half the 9.55 s is, so the guard reports its two forwards
+    // separately. Both are inside `validate_ms` and are excluded from the stage sum.
+    let (cpu_ref, ref_ms) =
+        crate::infer::stage_timings::timed("validate_ref", || f2_qwen35_cpu_reference(cpu, probe));
+    stages.validate_ref_ms = Some(ref_ms);
+    let Some(cpu_per_pos) = cpu_ref else {
         return true; // the CPU forward itself failed: nothing to judge against.
     };
     let decode_token = cpu_per_pos
         .get(probe.len().saturating_sub(1))
         .map_or(0, |l| crate::infer::argmax_u32(l));
-    let gpu_per_pos = match f2_qwen35_gpu_logits(gpu, probe, decode_token) {
+    let (gpu_probe, probe_ms) = crate::infer::stage_timings::timed("validate_probe", || {
+        f2_qwen35_gpu_logits(gpu, probe, decode_token)
+    });
+    stages.validate_probe_ms = Some(probe_ms);
+    let gpu_per_pos = match gpu_probe {
         Ok(v) => v,
         Err(msg) => {
             eprintln!("{msg}");

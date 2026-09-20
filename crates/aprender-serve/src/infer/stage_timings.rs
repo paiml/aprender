@@ -34,6 +34,15 @@ pub struct StageTimings {
     /// because attributing it to `prefill_ms` would report the model as twice as slow to prefill as
     /// it is, and attributing it to `load_ms` would hide that it scales with the prompt.
     pub validate_ms: Option<f64>,
+    /// The CPU reference forward inside [`Self::validate_ms`], when the guard reports its halves.
+    ///
+    /// Split out because #3604 caches the whole validation, and its before/after receipt has to
+    /// record WHICH mechanism disappeared, not merely that something got faster. "Not blocking the
+    /// fix" and "not needed in the receipt" are different claims.
+    pub validate_ref_ms: Option<f64>,
+    /// The GPU probe forward inside [`Self::validate_ms`]. Absent on any guard that times itself
+    /// as one unit — the dense path does, and says so by absence rather than by halving the total.
+    pub validate_probe_ms: Option<f64>,
     /// Processing the prompt.
     pub prefill_ms: Option<f64>,
     /// Generating the output tokens.
@@ -52,6 +61,8 @@ impl StageTimings {
     /// Sum of the stages that were actually measured. `None`s contribute nothing — they are not zero.
     #[must_use]
     pub fn measured_sum_ms(&self) -> f64 {
+        // `validate_ref_ms` and `validate_probe_ms` are INSIDE `validate_ms` and are deliberately
+        // absent here: adding them would double-count the guard and the books would not close.
         [
             self.load_ms,
             self.h2d_ms,
@@ -83,6 +94,8 @@ impl StageTimings {
             ("load_ms", self.load_ms),
             ("h2d_ms", self.h2d_ms),
             ("validate_ms", self.validate_ms),
+            ("validate_ref_ms", self.validate_ref_ms),
+            ("validate_probe_ms", self.validate_probe_ms),
             ("prefill_ms", self.prefill_ms),
             ("decode_ms", self.decode_ms),
         ] {

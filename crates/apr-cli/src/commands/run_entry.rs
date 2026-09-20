@@ -451,6 +451,10 @@ fn merge_stage_fields(json: &mut serde_json::Value, stages: &realizar::infer::st
     obj.insert("load_ms".into(), ms(stages.load_ms));
     obj.insert("h2d_ms".into(), ms(stages.h2d_ms));
     obj.insert("validate_ms".into(), ms(stages.validate_ms));
+    // The two halves of the guard, INSIDE validate_ms and never added to the sum. #3604's
+    // before/after receipt has to say which mechanism the cache removed, not just that the total fell.
+    obj.insert("validate_ref_ms".into(), ms(stages.validate_ref_ms));
+    obj.insert("validate_probe_ms".into(), ms(stages.validate_probe_ms));
     obj.insert("prefill_ms".into(), ms(stages.prefill_ms));
     obj.insert("decode_ms".into(), ms(stages.decode_ms));
     obj.insert("tokens_out".into(), serde_json::json!(stages.tokens_out));

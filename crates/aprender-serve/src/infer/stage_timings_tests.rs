@@ -80,6 +80,32 @@ fn a_run_that_measured_nothing_attributes_the_whole_wall_clock_to_nobody() {
 }
 
 #[test]
+fn the_guard_halves_are_inside_validate_and_never_double_counted() {
+    // #3604 needs the split; the books must still close. If `validate_ref_ms`/`validate_probe_ms`
+    // were summed alongside `validate_ms` the guard would be counted twice and `unattributed_ms`
+    // would go negative — a residual that lies in the other direction.
+    let mut t = StageTimings {
+        load_ms: Some(100.0),
+        validate_ms: Some(900.0),
+        validate_ref_ms: Some(800.0),
+        validate_probe_ms: Some(100.0),
+        ..StageTimings::default()
+    };
+    assert_eq!(
+        t.measured_sum_ms(),
+        1000.0,
+        "the halves must not be re-added"
+    );
+    t.close(1200.0);
+    assert_eq!(t.unattributed_ms, 200.0);
+    assert!(
+        t.unattributed_ms >= 0.0,
+        "double counting drives the residual negative"
+    );
+    assert!(t.measured().contains(&"validate_ref_ms"));
+}
+
+#[test]
 fn a_planted_delay_lands_in_its_own_stage_and_in_no_other() {
     // THE falsifier of this row. Plant 200 ms in h2d; h2d must move and the others must not.
     let plant = 200.0;

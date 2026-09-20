@@ -32,9 +32,22 @@ load. GPU `prefill_ms` is linear at ~10.3 ms/word and 126 ms at two characters, 
 llama.cpp's measured 179–189 tok/s on the same box and file. **apr's generation is not the gap; the
 gap is entirely pre-generation.**
 
+## Which half of the guard owns the time (operator-ruled addition, for #3604's receipt)
+
+`validate_ms` is reported with its two halves, both INSIDE it and excluded from the stage sum so the
+books still close:
+
+| prompt | validate_ms | **validate_ref_ms** (CPU reference forward) | validate_probe_ms (GPU probe) | wall_ms |
+|---|---|---|---|---|
+| `Hi` | 2227.8 | **2016.1 (90.5 %)** | 204.8 (9.2 %) | 5775.4 |
+| 144 words | 10135.0 | **9444.3 (93.2 %)** | 656.1 (6.5 %) | 15138.1 |
+
+**The guard is a CPU forward, not a GPU probe.** 90–93 % of it is running the prompt through the CPU
+implementation to have something to compare against. So #3604's cache removes a CPU forward, and its
+before/after receipt can say which mechanism disappeared rather than only that the total fell.
+
 **Not established here**, and deliberately left open for the 0.70 fix row: why the guard runs per
-invocation rather than once per (model, build, device); whether the CPU reference or the GPU probe
-dominates the 9.55 s (the guard is timed as one unit); and whether a cheaper equivalent guard exists.
+invocation rather than once per (model, build, device), and whether a cheaper equivalent guard exists.
 
 **The instrument's own gap.** `unattributed_ms` is a flat ~1.18 s that no stage claims. It is
 reported rather than smeared into a neighbouring stage, which is the point: a large
