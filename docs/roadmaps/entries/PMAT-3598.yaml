@@ -1,0 +1,17 @@
+- id: PMAT-3598
+  github_issue: 3598
+  item_type: task
+  title: 'apr run --json reports where inference time went: StageTimings with absent != zero'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-21T00:00:00Z
+  updated: 2026-09-21T00:00:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from gh#3542/#3598 done_when; pmat work add derives neither spec: nor acceptance_criteria: — paiml-mcp-agent-toolkit#1414). Done when: apr run --json carries per-stage timings so a slow run can be attributed without a stopwatch. DESIGN RULE, load-bearing: every field is Option and ABSENT means NOT MEASURED, never 0 — a stage that did not run must not read as a stage that took no time. unattributed_ms = wall - sum(measured) is ALWAYS present, so the residual is visible rather than implied. validate_ref_ms/validate_probe_ms are INSIDE validate_ms and excluded from measured_sum_ms(), because double-counting drives the residual negative. Falsifier: APR_STAGE_DELAY_MS=<stage>:<ms> plants a delay and the report must localise it to that stage, with a no-plant control that does not. 7 cases in stage_timings_tests.rs. Measured: validate_ms = 15.1s on qwen2.5-coder-0.5b, which is what answers gh#3602 item 2. STOP: do not report a stage as 0 when it was not instrumented.'
