@@ -1,0 +1,11 @@
+# ONT-6b: the same content as `kindless-failing.yaml`, with the kind DECLARED.
+# The same rules fire and the same errors print — and no line mentions a
+# default, because none was applied. This fixture is what makes the decorated
+# line evidence rather than decoration: before ONT-6b the two files produced
+# byte-identical output (measured 2026-09-19, pv 0.68.1).
+metadata:
+  version: 1.0.0
+  description: ONT-6b fixture — kind declared kernel, no kernel blocks
+  kind: kernel
+  references:
+  - 'ONT-001 ONT-6b, infra#751'
