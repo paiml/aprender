@@ -18488,6 +18488,23 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-3461
+  github_issue: 3459
+  item_type: task
+  title: 'Register PMAT-3459 and PMAT-3460 in the roadmap so the AD-04 quorum for PR #3461 can run (registration only; the tag-path implementation is #3599, the epic-by-number follow-up is #3460)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-20T22:53:14Z
+  updated: 2026-09-20T22:53:14Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:triage
+  notes: 'ACCEPTANCE (this row is PR #3461 itself, a roadmap-only registration): (1) docs/roadmaps/entries/PMAT-3459.yaml exists with id PMAT-3459, github_issue 3459, priority critical, and a title that transcribes issue #3459 — the release autopilot''s tag path moves into the repo and the tag step calls check_milestone_cut.sh; (2) docs/roadmaps/entries/PMAT-3460.yaml exists with id PMAT-3460, github_issue 3460, and a title that transcribes issue #3460 — check_milestone_cut.sh exempts the release epic by issue number, not title match; (3) docs/roadmaps/roadmap.yaml equals aggregate(entries/) and the diff vs origin/main is additive only (deleted=0, reserialised=0) after the merge of origin/main that picked up PMAT-3539; (4) the PR body carries keep-open for #3459, #3460 and #3080 and no sentence in it is parsed by GitHub as closing #3459 (the must-carry whose criterion is the tag, which this PR does not deliver). NOT in scope: any code, script or measurement for PMAT-3459 or PMAT-3460 — the tag path itself is PR #3599 and is judged there. A lane that finds an entry mis-transcribed, missing or invented FAILs this row.'
 - id: PMAT-3465
   github_issue: 3465
   item_type: task
