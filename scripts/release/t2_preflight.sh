@@ -11,15 +11,37 @@ export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
 # ---------------------------------------------------------------------------
 # decide <sha> <log> <dogfood_rc>
 #   Prints ONE verdict line and returns 0 GO / 1 NO-GO / 2 UNKNOWN.
-#   Extracted VERBATIM from the inline condition it replaces (PMAT-3561 step 1). This
-#   commit changes no behaviour; it exists so the case table below can show the defect
-#   RED against the code that actually runs.
+#   GO requires POSITIVE EVIDENCE the gate ran: dogfood's terminal VERDICT line, AND a
+#   row count at or above the declared gate set, AND zero failures outside the documented
+#   version-unpublished row. Any one missing is UNKNOWN with reason=<why> with exit 2 (#3561).
 # ---------------------------------------------------------------------------
 decide() {
-    local sha=$1 log=$2 rc=$3 fails
+    local sha=$1 log=$2 rc=$3 rows fails declared
+
+    # Doctrine 4: crash / missing input / never-asked are UNKNOWN with reason=<why>, exit 2 --
+    # never GO, never a fabricated FAIL. GO requires POSITIVE EVIDENCE that the gate
+    # ran, not merely the absence of complaints (#3561).
+    unknown() { printf 'UNKNOWN %s dogfood_rc=%s reason=%s\n' "$sha" "$rc" "$1"; return 2; }
+
+    [ -r "$log" ] || { unknown no-log; return; }
+
+    # 1. dogfood's own terminal VERDICT line. dogfood.sh defines mark() at line 203 and
+    #    can exit before it (the "cannot resolve this crate's identity" path and friends),
+    #    which yields a log with zero rows AND no verdict line.
+    grep -qE '^VERDICT:' "$log" || { unknown no-verdict-line; return; }
+
+    # 2. a row floor DERIVED from the declared gate set, which dogfood prints inside a
+    #    mark row -- so its absence is itself the crash signal, not a missing feature.
+    declared=$(grep -oE '[0-9]+ declared gate\(s\) discovered' "$log" | head -1 | cut -d' ' -f1)
+    [ -n "$declared" ] || { unknown no-declared-gate-count; return; }
+    rows=$(grep -cE '^[[:space:]]*\[[A-Z]+\]' "$log")
+    [ "$rows" -ge "$declared" ] || { unknown "rows=$rows<declared=$declared"; return; }
+
+    # 3. only then does the absence of failures mean anything. version-unpublished is the
+    #    one row that legitimately differs pre-bump (the version IS published).
     fails=$(grep -E '^[[:space:]]*\[FAIL\]' "$log" | grep -vcE 'version-unpublished' || true)
-    if [ "$rc" -eq 0 ] || [ "$fails" -eq 0 ]; then
-        printf 'GO %s dogfood_rc=%s fails_excluding_version_row=%s\n' "$sha" "$rc" "$fails"; return 0
+    if [ "$fails" -eq 0 ]; then
+        printf 'GO %s dogfood_rc=%s rows=%s declared=%s fails_excluding_version_row=0\n' "$sha" "$rc" "$rows" "$declared"; return 0
     fi
     printf 'NO-GO %s dogfood_rc=%s fails=%s\n' "$sha" "$rc" "$fails"; return 1
 }
