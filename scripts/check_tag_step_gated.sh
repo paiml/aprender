@@ -73,6 +73,13 @@ judge() {
     return "$bad"
 }
 
+# guard_tree.sh decides a guard "advertises --self-test" by looking for the literal
+# substring `self-test` in its OWN `--help` output (guard_tree.sh:47, advertises_self_test).
+# Without this handler the self-test below is discovered by nothing and runs nowhere --
+# a facility with a self-test and no caller. With it, guard_tree gives this guard TWO
+# rows, `[self-test]` and `[run]`, inside the guard-tree job.
+case "${1:-}" in -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;; esac
+
 if [ "${1:-}" = "--self-test" ]; then
     echo "=== the tag-gate guard must still turn RED (mutants) ==="
     d=$(mktemp -d) || exit 2
