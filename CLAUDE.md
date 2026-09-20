@@ -61,13 +61,7 @@ and `src/format/…` paths this file still advertised. Counts it cannot check, y
 - Compute spend > 1hr on non-lambda-vector hosts (lambda-vector is pre-authorized per `feedback_compute_pre_authorized.md`)
 - Destructive ops: `git push --force`, `gh release delete`, dropping branches/tags on main, `cargo yank`
 - Modifying CI workflows (`.github/workflows/*.yml`)
-- ~~Crates.io publish cascade (always ask before `make publish`)~~ — **WITHDRAWN.** T-4 is
-  **unattended under standing operator authorization**: APR-RELEASE-001 (revision 2026-09-17) §T-4
-  and 0.68.1, which shipped that way with `attended_min 0`. Reconfirmed verbatim on 2026-09-20:
-  *"tell agent to auto-publish and never wait for me."* The pre-publish gates ARE the authorization —
-  dogfood GO on the release commit, every release asset verified, clean-room green on the tag,
-  publish preflight R1–R6, and the `--check` dry-run, which is a receipt and not a stop. A train
-  that parks at a human before publish is not a train. `cargo yank` remains a check-in (destructive)
+- ~~Crates.io publish cascade (always ask before `make publish`)~~ **WITHDRAWN** — T-4 is unattended under standing operator authorization (APR-RELEASE-001 rev. 2026-09-17 §T-4; 0.68.1 and 0.68.2 both shipped that way with `attended_min 0`; operator, 2026-09-20, verbatim: *"tell agent to auto-publish and never wait for me"*). The pre-publish gates ARE the authorization: dogfood GO on the release commit, release assets verified, clean-room green on the tag, publish preflight R1–R6, and the `--check` dry-run, which is a receipt and not a stop. `cargo yank` remains a check-in.
 - Architectural pivots (changing model architecture, retraining from scratch, switching tokenizers)
 - Anything contradicting an explicit user instruction earlier in the session
 
