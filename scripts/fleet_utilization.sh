@@ -57,6 +57,14 @@ JSON
   chk "one job queued"                               "$(printf 'queued\t1')"
   chk "queued job's label set listed"                "[self-hosted,X64,clean-room]"
   chk "completed job is not counted as aprender-busy" "$(printf 'intel\t3\t2\t1\t')"
+    # PMAT-3629 positive control. The 7-line table above fits in one pipe write, so the
+    # EPIPE race only bit on a slow runner (gx10-pool3, 20:52Z, red main). Padding `out`
+    # past the 64 KiB pipe buffer makes it DETERMINISTIC: with `printf | grep -q`, grep
+    # matches the gx10 row, exits, and printf's remaining write gets EPIPE -- under
+    # pipefail that reads a MATCH as FAIL. A checker with no producer process cannot
+    # lose this race. This row must pass every time, on every host.
+    out="$out"$'\n'"$(head -c 200000 /dev/zero | tr '\0' 'x')"
+    chk "match survives an out that exceeds the pipe buffer (EPIPE control)" "$(printf 'gx10\t2\t1\t1\t50%%\t80%%')"
   exit "$err"
 fi
 
