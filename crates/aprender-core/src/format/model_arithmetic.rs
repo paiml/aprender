@@ -134,8 +134,14 @@ pub fn attention_layer_params(
         .saturating_mul(q_out)
         .saturating_add(d.saturating_mul(kv_dim).saturating_mul(2))
         .saturating_add(q_dim.saturating_mul(d));
+    // A bias vector is as wide as the projection it biases, so the q bias is
+    // q_out — doubled with the matrix for a gated family. No shipped family
+    // exercises this today (Qwen3.5 has no attention bias; Qwen2.5 has biases
+    // but is not gated, so q_out == q_dim), which is exactly how the original
+    // `q_dim` here survived a delta-0 measurement: found by the AD-04 quorum
+    // on #3350, not by any model.
     let biases = if constraints.has_bias {
-        q_dim
+        q_out
             .saturating_add(kv_dim.saturating_mul(2))
             .saturating_add(d)
     } else {

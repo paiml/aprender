@@ -333,8 +333,30 @@ fn bias_adds_exactly_the_four_projection_bias_vectors() {
     let mut constraints = qwen35_constraints();
     constraints.has_bias = true;
     let p = attention_layer_params(&size, &constraints);
-    // q_dim + 2*kv_dim + d = 4 + 4 + 4 = 12
-    assert_eq!(p.d_attn, 68 + 12);
+    // qwen35_constraints() is a GATED family, so the q projection is q_out =
+    // 2*q_dim wide and its bias vector is too: q_out + 2*kv_dim + d
+    // = 8 + 4 + 4 = 16. This test asserted 12 (a q_dim-wide bias under a
+    // q_out-wide matrix) until the quorum on #3350 read the two lines against
+    // each other; a bias narrower than its projection is not a model.
+    assert_eq!(p.d_attn, 68 + 16);
+}
+
+#[test]
+fn a_non_gated_family_with_biases_still_counts_a_q_dim_wide_q_bias() {
+    // The other polarity: where q_out == q_dim (every non-gated family), the
+    // fix above must change nothing.
+    let size = toy_size();
+    let mut constraints = qwen35_constraints();
+    constraints.attention_type = AttentionType::Gqa;
+    constraints.has_bias = true;
+    let p = attention_layer_params(&size, &constraints);
+    let without = {
+        let mut c = constraints.clone();
+        c.has_bias = false;
+        attention_layer_params(&size, &c)
+    };
+    // q_dim + 2*kv_dim + d = 4 + 4 + 4 = 12, on top of the un-doubled matrix.
+    assert_eq!(p.d_attn - without.d_attn, 12);
 }
 
 /// The premise this test used to carry — "the four DeltaNet keys do not exist
