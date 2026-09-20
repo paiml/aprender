@@ -53,7 +53,7 @@ Run inside the worktree it reads `attempted=0` and says so itself ("vacuous but 
 
 | Claim | Source | My re-run | Agrees |
 |---|---|---|---|
-| `check_build_report.sh` 16/16 | worker | 16/16, exit 0 | yes |
+| `check_build_report.sh` 35/35 | worker | 35/35, exit 0 (was written as 16/16 when the table had 16 rows; re-counted at adoption, `grep -cE '^\s+ok '` on the self-test output) | yes |
 | report runs, 1092 records | worker | 1092 valid / 1084 job / 8 skipped, 0.27 s | yes |
 | every p50/p95 | `build_report.sh` | independent python reimplementation, byte-for-byte identical on all 9 figures | yes |
 | byte-identical across runs | worker | `cmp` of two runs: identical | yes |

@@ -153,7 +153,7 @@ chk "p7 of 1..100 is 7, not 8" "7" \
 # --- 5d. both spellings of the gate required check are one check
 #         (scripts/pr_review_quorum_arm.sh: branch protection names `ci / gate`,
 #          ruleset 13878864 names a bare `gate`; both spellings are accepted there)
-chk "required set covers the bare `gate` spelling" "yes" \
+chk "required set covers the bare 'gate' spelling" "yes" \
     "$(grep -qE '"gate"' "$RPT" && echo yes || echo no)"
 
 # --- 6. the script's own case table runs ----------------------------------------------
