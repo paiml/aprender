@@ -62,8 +62,8 @@ pub enum ShapesOutcome {
     /// PMAT-3577 — `extract:parity-receipt` matched a different number of focus nodes than
     /// `evidence/parity/EXPECTED_RECEIPTS` says the tree holds, or it refused a record by name. An
     /// extractor that silently sees the wrong corpus reports the same "no violations" as one that sees
-    /// all of it, so this is `Unknown{ExtractorMiss}` — never `Pass`, never a fabricated `Fail`.
-    ExtractorMiss {
+    /// all of it, so this is `Unknown{WrongCorpus}` — never `Pass`, never a fabricated `Fail`.
+    WrongCorpus {
         shapes_n: usize,
         expected: usize,
         found: usize,
@@ -157,8 +157,8 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
         Err(e) => return ShapesOutcome::ExtractFailed(e),
     };
     // PMAT-3577: the count is pinned before anything is graded. A miss here is not a corpus verdict.
-    if let Some((expected, found)) = extraction.parity.extractor_miss() {
-        return ShapesOutcome::ExtractorMiss {
+    if let Some((expected, found)) = extraction.parity.wrong_corpus() {
+        return ShapesOutcome::WrongCorpus {
             shapes_n: shapes.len(),
             expected,
             found,
@@ -171,7 +171,7 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
         };
     }
     if !extraction.parity.errors.is_empty() {
-        return ShapesOutcome::ExtractorMiss {
+        return ShapesOutcome::WrongCorpus {
             shapes_n: shapes.len(),
             expected: extraction
                 .parity

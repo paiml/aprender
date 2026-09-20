@@ -164,32 +164,32 @@ fn the_denominator_pins_the_count_and_a_mismatch_is_reported_in_both_directions(
     std::fs::write(dir.join(EXPECTED_FILE), "# count\n2\n").expect("write");
     let mut g = Graph::new();
     let stats = extract(&dir, &mut g);
-    assert_eq!(stats.extractor_miss(), Some((2, 1)));
+    assert_eq!(stats.wrong_corpus(), Some((2, 1)));
 
     // Committed 1, found 1 — the state the gate requires.
     std::fs::write(dir.join(EXPECTED_FILE), "1\n").expect("write");
     let mut g = Graph::new();
     let stats = extract(&dir, &mut g);
-    assert_eq!(stats.extractor_miss(), None);
+    assert_eq!(stats.wrong_corpus(), None);
 
     // Committed 0, found 1 — a receipt added without updating the denominator. THE falsifier the row names.
     std::fs::write(dir.join(EXPECTED_FILE), "0\n").expect("write");
     let mut g = Graph::new();
     let stats = extract(&dir, &mut g);
-    assert_eq!(stats.extractor_miss(), Some((0, 1)));
+    assert_eq!(stats.wrong_corpus(), Some((0, 1)));
     std::fs::remove_dir_all(&dir).ok();
 }
 
 #[test]
 fn an_absent_denominator_is_not_a_mismatch_it_is_a_different_fault() {
     // "no expectation" and "a broken expectation" must not collapse into one state: the first is a missing
-    // declaration for the caller to report, the second is ExtractorMiss.
+    // declaration for the caller to report, the second is WrongCorpus.
     let stats = ParityStats {
         records: 3,
         expected: None,
         ..ParityStats::default()
     };
-    assert_eq!(stats.extractor_miss(), None);
+    assert_eq!(stats.wrong_corpus(), None);
 }
 
 #[test]
@@ -205,14 +205,14 @@ fn pointing_the_extractor_at_a_subdirectory_trips_the_denominator() {
     .expect("write");
     std::fs::write(dir.join(EXPECTED_FILE), "1\n").expect("write");
     let mut g = Graph::new();
-    assert_eq!(extract(&dir, &mut g).extractor_miss(), None);
+    assert_eq!(extract(&dir, &mut g).wrong_corpus(), None);
 
     // Same denominator, a root whose evidence/parity holds nothing: 1 expected, 0 found.
     let narrow = tempdir("subdir-narrow");
     std::fs::create_dir_all(narrow.join(EVIDENCE_DIR)).expect("mkdir");
     std::fs::write(narrow.join(EXPECTED_FILE), "1\n").expect("write");
     let mut g2 = Graph::new();
-    assert_eq!(extract(&narrow, &mut g2).extractor_miss(), Some((1, 0)));
+    assert_eq!(extract(&narrow, &mut g2).wrong_corpus(), Some((1, 0)));
     std::fs::remove_dir_all(&dir).ok();
     std::fs::remove_dir_all(&narrow).ok();
 }

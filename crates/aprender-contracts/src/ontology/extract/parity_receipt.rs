@@ -28,7 +28,7 @@
 //!
 //! **The count is pinned, because an extractor that matches nothing reports the same "no violations" as one
 //! that matches everything.** [`EXPECTED_FILE`] holds the expected focus-node count, produced by the committed
-//! predicate `scripts/parity_receipt_denominator.sh`. A mismatch is `Unknown{ExtractorMiss}`, exit 2 — never
+//! predicate `scripts/parity_receipt_denominator.sh`. A mismatch is `Unknown{WrongCorpus}`, exit 2 — never
 //! `Pass`, never a fabricated `Fail`.
 
 use std::path::{Path, PathBuf};
@@ -86,7 +86,7 @@ impl ParityStats {
     /// by the caller, and deliberately not folded in here: "no expectation" and "a broken expectation" are
     /// not the same state.
     #[must_use]
-    pub fn extractor_miss(&self) -> Option<(usize, usize)> {
+    pub fn wrong_corpus(&self) -> Option<(usize, usize)> {
         match self.expected {
             Some(n) if n != self.records => Some((n, self.records)),
             _ => None,

@@ -38,11 +38,17 @@ pub enum Reason {
     Advisory,
     ExtractorMissing,
     Prose,
-    /// PMAT-3577: an extractor matched a different number of focus nodes than the tree's committed
-    /// denominator says it holds. Distinct from [`Self::ExtractorMissing`] (an extractor that does not
-    /// exist): here one RAN and silently saw the wrong corpus, which reports the same "no violations"
-    /// as seeing all of it. Never `Pass`, never a fabricated `Fail`.
-    ExtractorMiss,
+    /// PMAT-3577: an extractor RAN and read a different corpus than the tree declares — it matched a
+    /// different number of focus nodes than the committed denominator says, or refused a record by name.
+    /// Reading the wrong corpus reports the same "no violations" as reading all of it, so it is never
+    /// `Pass` and never a fabricated `Fail`.
+    ///
+    /// NOT named `ExtractorMiss`. [`Self::ExtractorMissing`] already means the opposite thing — an
+    /// extractor that does not exist — and the two would have sat one letter apart in the same lattice,
+    /// with the shorter a PREFIX of the longer: `grep ExtractorMiss` would match both, and any substring
+    /// test over the reasons would silently merge them. That is the defect class this repository keeps
+    /// paying for; the name says what happened instead.
+    WrongCorpus,
 }
 
 impl Reason {
@@ -63,7 +69,7 @@ impl Reason {
         Self::Advisory,
         Self::ExtractorMissing,
         Self::Prose,
-        Self::ExtractorMiss,
+        Self::WrongCorpus,
     ];
 }
 
@@ -211,7 +217,7 @@ mod tests {
         assert_eq!(all.len(), 18);
         assert!(
             all.windows(2).all(|w| w[0] < w[1]),
-            "Fail < Unknown(NotRun) < … < Unknown(ExtractorMiss) < Pass"
+            "Fail < Unknown(NotRun) < … < Unknown(WrongCorpus) < Pass"
         );
     }
 

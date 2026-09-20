@@ -29,7 +29,7 @@
 # `evidence/parity/EXPECTED_RECEIPTS` holds the expected focus-node count, produced by the INDEPENDENT committed
 # predicate `scripts/parity_receipt_denominator.sh` (a different implementation of the same question — an
 # extractor checked against a number the extractor produced proves nothing). A mismatch, or a refused record, is
-# `Unknown{ExtractorMiss}` and exit 2: never `Pass`, never a fabricated `Fail`.
+# `Unknown{WrongCorpus}` and exit 2: never `Pass`, never a fabricated `Fail`.
 #
 # NO THRESHOLD IS TYPED HERE. `thresholdSource` is `resolves:` — the extractor resolves the path and
 # materialises `thresholdSourceMissing` when it does not exist. The threshold VALUE is read from
@@ -136,7 +136,7 @@ equations:
       - "two extractions are byte-identical (R-15)"
     lean_theorem: none — L4 not declared
   reach:
-    formula: "|focus nodes| ≠ EXPECTED_RECEIPTS ⇒ Unknown{ExtractorMiss} ∧ exit = 2"
+    formula: "|focus nodes| ≠ EXPECTED_RECEIPTS ⇒ Unknown{WrongCorpus} ∧ exit = 2"
     domain: "one shapes run over the committed tree"
     codomain: "a verdict, or a decline that names both numbers"
     invariants:
@@ -171,7 +171,7 @@ invariants:
     prose: false
   - id: PRC-INV-006
     property: the extractor's reach equals the committed denominator or the gate declines
-    formal: '|focus| ≠ EXPECTED_RECEIPTS ⇒ verdict = Unknown(ExtractorMiss)'
+    formal: '|focus| ≠ EXPECTED_RECEIPTS ⇒ verdict = Unknown(WrongCorpus)'
     prose: false
   - id: PRC-INV-007
     property: an unmigrated legacy record is refused, never skipped
@@ -189,7 +189,7 @@ falsification_tests:
   - id: FALSIFY-PRC-002
     rule: the pinned reach
     prediction: >
-      committed 2 / found 1, committed 0 / found 1, and a narrowed walk each report ExtractorMiss naming both
+      committed 2 / found 1, committed 0 / found 1, and a narrowed walk each report WrongCorpus naming both
       numbers; committed 1 / found 1 does not; an ABSENT denominator is not a miss
     test: cargo test -p aprender-contracts --lib ontology::extract::parity_receipt
     if_fails: an extractor that saw the wrong corpus grades it anyway

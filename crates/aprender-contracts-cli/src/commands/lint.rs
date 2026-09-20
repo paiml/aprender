@@ -287,7 +287,7 @@ fn decide_shapes_gate(
             reason: Reason::NoFocus,
         }
         .into()),
-        ShapesOutcome::ExtractorMiss {
+        ShapesOutcome::WrongCorpus {
             shapes_n,
             expected,
             found,
@@ -300,7 +300,7 @@ fn decide_shapes_gate(
                 eprintln!("shapes: refused {r}");
             }
             Err(LintDeclined {
-                reason: Reason::ExtractorMiss,
+                reason: Reason::WrongCorpus,
             }
             .into())
         }

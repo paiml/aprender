@@ -737,7 +737,7 @@ fn shapes_result(contract_dir: &Path, validation_passed: bool) -> (GateResult, V
             skipped_gate("shapes", &format!("{shapes_n} shape(s), no focus node")),
             Vec::new(),
         ),
-        shapes_gate::ShapesOutcome::ExtractorMiss { shapes_n, expected, found, refused } => (
+        shapes_gate::ShapesOutcome::WrongCorpus { shapes_n, expected, found, refused } => (
             skipped_gate("shapes", &format!("extract:parity-receipt matched {found} focus node(s) and evidence/parity/EXPECTED_RECEIPTS says {expected} ({shapes_n} shape(s)){} — an extractor that saw the wrong corpus reports the same \"no violations\" as one that saw all of it", if refused.is_empty() { String::new() } else { format!("; refused: {}", refused.join("; ")) })),
             Vec::new(),
         ),

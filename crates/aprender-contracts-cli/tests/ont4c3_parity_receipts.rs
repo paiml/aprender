@@ -8,7 +8,7 @@
 //! | `parity-green` | 0 | a complete v2 receipt: one focus node, no violation |
 //! | `parity-nocomparator` | 1 | the state all seven records were in before #3577 back-filled them |
 //! | `parity-unknownkind` | 1 | a comparator kind the shape does not accept — this is what the `sh:in` MUTATION breaks |
-//! | `parity-unmigrated` | 2 | a legacy record refused BY NAME: `Unknown{ExtractorMiss}`, never Pass |
+//! | `parity-unmigrated` | 2 | a legacy record refused BY NAME: `Unknown{WrongCorpus}`, never Pass |
 //! | `parity-denominator-drift` | 2 | 2 receipts, denominator 1 — a receipt added without bumping the count |
 //!
 //! DISCRIMINATION, in both directions. `parity-green` must PASS, so a build that declines every parity corpus

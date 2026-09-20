@@ -145,7 +145,7 @@ verify() {
         return 0
     fi
     printf 'FAIL  %s says %s; the tree holds %s.\n' "$EXPECTED_FILE" "$expected" "$measured" >&2
-    printf '      Unknown{ExtractorMiss}: update the denominator in the SAME commit as the receipt.\n' >&2
+    printf '      Unknown{WrongCorpus}: update the denominator in the SAME commit as the receipt.\n' >&2
     return 1
 }
 

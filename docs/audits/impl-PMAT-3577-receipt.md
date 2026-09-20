@@ -65,7 +65,7 @@ at ONT-4c1; arming them is a follow-up carrying the `touches-shared-contracts` l
 | **the plant** — comparator removed from one record | **exactly 1**, naming `ont:parity/comparator` and `minCount` | 0 on restore |
 | **the mutation** — `in:` widened to accept `oracle`, contract + all 5 fixtures | `ont4c3_parity_receipts` **FAILS** (`a_comparator_kind_the_shape_does_not_accept_fails`) | 8/8 on restore |
 | **the mutation, other half** — only the real contract widened | **FAILS** (`every_fixture_carries_the_real_contract_byte_for_byte`) | 8/8 on restore |
-| **an unmigrated record** (hit for real when a `git checkout` reverted the migration mid-run) | `Unknown{ExtractorMiss}`, **exit 2**, each legacy file refused by name | Pass after re-migration |
+| **an unmigrated record** (hit for real when a `git checkout` reverted the migration mid-run) | `Unknown{WrongCorpus}`, **exit 2**, each legacy file refused by name | Pass after re-migration |
 | **denominator drift** — 2 receipts, committed 1 | exit 2, "matched 2 … says 1" | — |
 | **the three answers are distinct** | `parity-green` 0 · `parity-nocomparator` 1 · `parity-unmigrated` 2 | — |
 
