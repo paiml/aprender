@@ -18690,6 +18690,30 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3537
+  github_issue: 3537
+  item_type: task
+  title: 'ONT-6b: a kind-less contract that fails a kernel-only rule says ''no metadata.kind, judged kernel by default'' on the first error the default caused'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T07:01:14Z
+  updated: 2026-09-20T07:01:14Z
+  spec: docs/specifications/paiml-ontology.md
+  acceptance_criteria:
+  - 'crates/aprender-contracts/src/schema/types.rs: `Contract` gains `#[serde(skip)] pub kind_declared: bool` — a parse artifact beside `unknown_top_level_keys`, recording whether `metadata.kind:` was WRITTEN, because `ContractKind` derives `Default = Kernel` and `#[serde(default)]` erases the difference before anything can read `Contract::kind()`'
+  - 'crates/aprender-contracts/src/schema/parser.rs: `parse_contract_str` sets it from a new `kind_is_declared(yaml)` — a `KindProbe` struct whose only field is `metadata: BTreeMap<String, IgnoredAny>`, so every other top-level value is DRAINED rather than built (a whole-document `serde_yaml::Value` parse fails on contracts/apr-cli-commands-v1.yaml and would report a declared kind as absent); an absent or non-mapping `metadata` answers false; a unit test carries the duplicate-nested-key shape with an anti-vacuity assertion that a `Value` parse really refuses it'
+  - 'crates/aprender-contracts/src/schema/validator.rs: `validate_contract` records `violations.len()` before the kernel-only branch and, when `!contract.kind_declared`, calls the new `explain_kind_default` on exactly that slice — which appends ` (no metadata.kind, judged kernel by default)` to the FIRST `Severity::Error` in it, once. New `pub const KIND_DEFAULT_EXPLANATION`. No rule id is matched anywhere and the printer is untouched'
+  - 'four fixtures under tests/fixtures/ont/kind-default/ — kindless-failing.yaml (has `references` so the first error is the kernel-only one), declared-kernel-failing.yaml (the same content plus `kind: kernel`), kindless-passing.yaml (no kind, all four kernel blocks), pattern.yaml (`kind: pattern`)'
+  - 'crates/aprender-contracts-cli/tests/ont6b_kind_default.rs: six legs — first-error, exactly-once (with an anti-vacuity assertion that the fixture yields >1 error), declared-kernel-silent, kindless-passing-silent, pattern-silent, and a differential asserting that stripping the explanation from the kind-less output reproduces the declared-kernel output BYTE-FOR-BYTE; ci/explicit-test-commands.d/344-aprender-contracts-cli-ont6b-kind-default.cmd. No ci.yml change'
+  - 'measured: the four fixtures give rc 1/1/0/0 with the explanation count 1/0/0/0; `cargo test -p aprender-contracts --lib` 1666 passed 0 failed; `cargo fmt --all -- --check` clean and clippy `-D warnings` clean on both crates'
+  - 'four planted mutations, each asserting its own perl match count BEFORE the tests run (an unapplied edit is indistinguishable from an uncaught mutant), each RED on a DIFFERENT set of legs: drop the text → first-error + once; decorate even when declared → declared-kernel + differential; decorate the LAST error → first-error; decorate warnings too → kindless-passing-silent. Tree restored and green afterwards in the same run'
+  - 'R-23: over all 1300 tracked contracts this pv and main''s pv (built at daad9f7c5, named) differ on ZERO and ZERO carry the explanation — the change is inert on the corpus; rmedia''s kind-less crates/rmedia-core/contracts/dialogue-v1.yaml (read-only git archive export at 3ff2f4d) goes from `PROVABILITY-001: Kernel contract has no kani_harnesses` to the same line plus the explanation, exit 1 on both'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-3539
   github_issue: 3539
   item_type: task

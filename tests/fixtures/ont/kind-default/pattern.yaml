@@ -1,0 +1,10 @@
+# ONT-6b: a DECLARED non-kernel kind. The kernel-only rules do not run at all,
+# so there is no finding for a default to explain and the text never appears —
+# the arm that keeps the decoration inside the kernel branch rather than in the
+# printer.
+metadata:
+  version: 1.0.0
+  description: ONT-6b fixture — kind pattern, no kernel blocks
+  kind: pattern
+  references:
+  - 'ONT-001 ONT-6b, infra#751'
