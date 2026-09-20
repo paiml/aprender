@@ -74,6 +74,7 @@ aprender-contracts-cli	--test	ont_entity_properties
 aprender-contracts-cli	--test	ont_extract_json
 aprender-contracts-cli	--test	pv_surface_gate
 aprender-contracts-cli	--test	pvl_zero_contracts
+aprender-contracts-cli	--test	shapes_vacuity
 aprender-core	--lib	format::metadata_bounds_contract_falsify
 aprender-core	--lib	format::model_family_loader
 aprender-core	--lib	format::ship_001
