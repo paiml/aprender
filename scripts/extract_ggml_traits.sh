@@ -161,14 +161,19 @@ if ! "$work/probe" > "$work/probe.tsv" 2> "$work/probe.err"; then
 fi
 
 # ------------------------------------------- header parse + cross-check + emit
-# Python does the JSON because emitting it from shell is how a fixture acquires
-# a trailing-comma bug that only the consumer notices.
-if ! python3 "$repo_root/scripts/extract_ggml_traits.py" \
-        --probe "$work/probe.tsv" \
-        --header "$src/ggml/include/ggml.h" \
-        --pin "$pin" \
-        --resolved "$resolved" \
-        --out "$out"; then
+# awk, NOT python3. This was python and `workspace-test-shard (3/3)` failed with
+# `python3: command not found`: the containerized CI job has no python. The
+# self-test that proves this classifier can FAIL has to run where CI runs, so the
+# classifier may not depend on an interpreter that is absent there.
+#
+# The emitter writes to a temp file and is moved into place only on success, so a
+# refusal (exit 7) never leaves a half-written fixture that the next reader
+# mistakes for a real extraction.
+if awk -v pin="$pin" -v resolved="$resolved" \
+       -v probe="$work/probe.tsv" -v header="$src/ggml/include/ggml.h" \
+       -f "$repo_root/scripts/extract_ggml_traits.awk" > "$work/fixture.json"; then
+    mv "$work/fixture.json" "$out"
+else
     exit 7
 fi
 

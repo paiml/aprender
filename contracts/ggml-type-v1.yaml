@@ -38,7 +38,7 @@ metadata:
   - 'ggml/include/ggml.h enum ggml_type at the pinned comparator commit (GGML_TYPE_COUNT = 43)'
   - 'ggml/src/ggml.c type_traits[GGML_TYPE_COUNT] -- .blck_size / .type_size / .type_name'
   - 'scripts/llama_pin.toml build_commit -- the oracle, by reference'
-  - 'scripts/extract_ggml_traits.sh + scripts/extract_ggml_traits.py -- the committed extraction command'
+  - 'scripts/extract_ggml_traits.sh + scripts/extract_ggml_traits.awk -- the committed extraction command'
   - 'crates/aprender-quant/fixtures/ggml_traits.json -- the checked-in fixture, recording its sha'
   - 'crates/aprender-quant/src/ggml_type.rs -- GgmlType, QuantTraits, TRAITS[43]'
   - 'GitHub #3430 (M1), #3431 (M2 reconciliation), #3421 (epic), #3563 (pin-derived artifacts, general case)'

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # extract_ggml_traits_selftest.sh — the CASE TABLE for the ggml extractor.
 #
-# scripts/extract_ggml_traits.py classifies each ggml id live-or-Removed and
+# scripts/extract_ggml_traits.awk classifies each ggml id live-or-Removed and
 # refuses to emit a fixture when that classification disagrees with the
 # compiled table. This proves that refusal FIRES, and that it fires for the
 # right reasons, on synthetic inputs — no llama.cpp checkout, no compiler, so
@@ -25,7 +25,7 @@ set -euo pipefail
 # all. Measured: it turned workspace-test-shard (3/3) red on the first run of
 # this very file.
 here=$(cd -- "$(dirname -- "$0")" && pwd)
-emitter="$here/extract_ggml_traits.py"
+emitter="$here/extract_ggml_traits.awk"
 work=$(mktemp -d)
 trap 'rm -rf "${work:?}"' EXIT
 
@@ -62,8 +62,8 @@ check() {
     ran=$((ran + 1))
     name=$1; want=$2; header=$3; probe=$4
     set +e
-    python3 "$emitter" --probe "$probe" --header "$header" \
-        --pin deadbeef --resolved deadbeefcafe --out "$work/out.json" > "$work/log" 2>&1
+    awk -v pin=deadbeef -v resolved=deadbeefcafe -v probe="$probe" -v header="$header" \
+        -f "$emitter" > "$work/out.json" 2> "$work/log"
     got=$?
     set -e
     if [ "$got" -eq "$want" ]; then
@@ -85,8 +85,11 @@ check "control: header and compiled table agree" 0 "$work/ok.h" "$work/ok.tsv"
 # Case 5, the trap: `// GGML_TYPE_Q4_0_4_8 = 3,` carries no explanation at all
 # and must STILL be Removed. The control above already contains it, so assert
 # the emitted classification rather than just the exit code.
-removed=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["removed_count"])' "$work/out.json")
-live=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["live_count"])' "$work/out.json")
+# Read the counts with sed rather than a JSON library: the fixture is emitted by
+# this same awk program, so a shape change breaks BOTH sides at once and the
+# Rust consumer (serde_json, tests/ggml_traits_fixture.rs) is the real parser.
+removed=$(sed -n 's/^[[:space:]]*"removed_count":[[:space:]]*\([0-9]*\),.*$/\1/p' "$work/out.json")
+live=$(sed -n 's/^[[:space:]]*"live_count":[[:space:]]*\([0-9]*\),.*$/\1/p' "$work/out.json")
 ran=$((ran + 1))
 if [ "$removed" = "2" ] && [ "$live" = "2" ]; then
     printf '  PASS  %-58s live %s removed %s\n' "a commented row with no 'removed' wording is Removed" "$live" "$removed"
@@ -97,7 +100,7 @@ fi
 
 # GGML_TYPE_COUNT is the sentinel, never a type.
 ran=$((ran + 1))
-names=$(python3 -c 'import json,sys; print(",".join(t["enum_name"] for t in json.load(open(sys.argv[1]))["types"]))' "$work/out.json")
+names=$(sed -n 's/^[[:space:]]*"enum_name":[[:space:]]*"\([^"]*\)",.*$/\1/p' "$work/out.json" | tr '\n' ',' | sed 's/,$//')
 case "$names" in
     *COUNT*) printf '  FAIL  %-58s %s\n' "GGML_TYPE_COUNT is not emitted as a type" "$names"; fails=$((fails + 1)) ;;
     *)       printf '  PASS  %-58s %s\n' "GGML_TYPE_COUNT is not emitted as a type" "$names" ;;
