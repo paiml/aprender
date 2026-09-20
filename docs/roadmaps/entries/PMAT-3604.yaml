@@ -1,0 +1,17 @@
+- id: PMAT-3604
+  github_issue: 3604
+  item_type: task
+  title: 'f2_validate_qwen35 runs a full CPU reference forward on EVERY call (67% of a 14s TTFT) — run it once per (model sha256, apr version, device) and receipt it'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-20T22:25:52Z
+  updated: 2026-09-20T22:25:52Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from issue #3604 done_when; minted by the cop so the AD-04 quorum for PR #3634 can run — pmat work status refused on a missing item). Done when: (1) validation runs once per (model sha256, apr version, device), later runs of the same triple read the receipt; (2) --revalidate forces fresh validation and rewrites the receipt; (3) planted receipts with wrong sha256 / wrong apr version / wrong device each re-validate, asserted end to end; (4) a missing or unreadable receipt validates — absence is never consent; (5) validate_ms in apr run --json reports cached vs fresh distinguishably (the --json field lands with #3606 StageTimings; stderr [source=receipt|fresh] until then); (6) before/after TTFT on the 144-word row on one box with GPU occupancy recorded. Only an Accepted verdict writes a receipt (Rejected/NotJudged never do). Out of scope: CPU-ref vs probe split, cheaper guard, the ~1.18 s unattributed residual. Admission: 0.69 if green by the cut, else 0.70. Refs #3596 #3598 #3080; PR #3634.'
