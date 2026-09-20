@@ -1,0 +1,202 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-20'
+  author: PAIML Engineering
+  description: |
+    ONE ggml tensor-type enum for the workspace, and ONE table of what each
+    type weighs, both extracted from upstream ggml rather than written by hand.
+
+    THE DEFECT THIS CLOSES (PMAT-3430, epic PP-QUANT-001 #3421). aprender named
+    ggml tensor types in three independent enums -- aprender-serve's
+    GgmlQuantType (16 ids), aprender-core's GgmlType (12), aprender-compute's
+    GgmlType (15) -- plus a private 13-row label table, against 35 live ids
+    upstream. Nothing compared any of them to upstream, so NVFP4 (40), Q1_0 (41)
+    and Q2_0 (42) appeared upstream with no signal in this tree at all, and the
+    byte-size tables disagreed with upstream AND with each other.
+
+    THE ORACLE (operator ruling 2026-09-20, clauses 2' / 2a / 3). Upstream ggml
+    at scripts/llama_pin.toml `build_commit`, BY REFERENCE and never as a
+    literal sha, is the reference; in-tree values are the defendant. Every row
+    of trueno_quant::TRAITS is extracted by scripts/extract_ggml_traits.sh from
+    ggml's own compiled type_traits table into
+    crates/aprender-quant/fixtures/ggml_traits.json, which records the sha it
+    read. A pin bump therefore turns the fixture RED until it is regenerated in
+    the bump's own PR.
+
+    WHY THE EXTRACTOR COMPILES A PROBE. ggml's table gives
+    `.type_size = sizeof(block_q4_1)` -- a C expression. Every in-tree table
+    that got these numbers wrong got them wrong by hand, so the extractor links
+    the pinned checkout's own libggml-base and calls ggml_type_size /
+    ggml_blck_size / ggml_type_name.
+
+    THE COMMENTED-ROW TRAP. `enum ggml_type` has 8 commented-out rows and only
+    some say "removed" -- `// GGML_TYPE_Q4_0_4_8 = 32,` says nothing. A first
+    pass that classified by comment WORDING returned 44/41/3 instead of
+    43/35/8. Membership is positional, and the classification must agree with
+    the compiled table or the extractor refuses to emit.
+  references:
+  - 'ggml/include/ggml.h enum ggml_type at the pinned comparator commit (GGML_TYPE_COUNT = 43)'
+  - 'ggml/src/ggml.c type_traits[GGML_TYPE_COUNT] -- .blck_size / .type_size / .type_name'
+  - 'scripts/llama_pin.toml build_commit -- the oracle, by reference'
+  - 'scripts/extract_ggml_traits.sh + scripts/extract_ggml_traits.py -- the committed extraction command'
+  - 'crates/aprender-quant/fixtures/ggml_traits.json -- the checked-in fixture, recording its sha'
+  - 'crates/aprender-quant/src/ggml_type.rs -- GgmlType, QuantTraits, TRAITS[43]'
+  - 'GitHub #3430 (M1), #3431 (M2 reconciliation), #3421 (epic), #3563 (pin-derived artifacts, general case)'
+
+name: ggml-type
+version: 1.0.0
+scope: aprender-quant (trueno_quant) ggml tensor-type enum and TRAITS table
+
+description: |
+  The workspace has exactly one ggml tensor-type id space, indexed by upstream
+  id, whose per-type block geometry equals upstream's at the pinned comparator
+  commit. A type's size is `type_size` bytes per `blck_size` elements; a removed
+  id is not constructible but keeps its slot; and the fixture that supplies
+  every number records the commit it was read from.
+
+equations:
+  block_geometry:
+    description: 'TRAITS[i].{blck_size,type_size} equals ggml at the pinned commit'
+    formula: |
+      For every live id i:
+        TRAITS[i].blck_size == ggml_blck_size(i)
+        TRAITS[i].type_size == ggml_type_size(i)
+        TRAITS[i].ggml_name == ggml_type_name(i)
+      For every removed id i:
+        TRAITS[i].blck_size == 0 AND TRAITS[i].type_size == 0
+    domain: 'ggml tensor-type ids 0..=42 at build_commit d1d3c3396 (35 live, 8 removed)'
+    codomain: 'elements per block (u32) and bytes per block (u32)'
+    invariants:
+    - 'TRAITS has exactly 43 rows, dense, indexed by id'
+    - 'live + removed == 43; live == 35 and removed == 8 at the current pin'
+    - 'every live row has blck_size > 0 and type_size > 0'
+    - 'name and ggml_name differ in ASCII case only (Q4_K vs q4_K)'
+    lean_theorem: Theorems.Ggml_Block_Geometry
+  tensor_bytes:
+    description: 'bytes for n elements, rounding a partial block up'
+    formula: 'tensor_bytes(t, n) = ceil(n / blck_size(t)) * type_size(t)'
+    domain: 'a live type and a non-negative element count'
+    codomain: byte count (usize)
+    invariants:
+    - 'tensor_bytes(t, blck_size(t)) == type_size(t)'
+    - 'tensor_bytes(t, 0) == 0'
+    - 'checked_tensor_bytes refuses (None) when n is not a multiple of blck_size'
+    lean_theorem: Theorems.Ggml_Tensor_Bytes
+
+proof_obligations:
+- id: GGMLT-INV-001
+  type: invariant
+  property: every TRAITS row equals the upstream fixture row for its id
+  formal: |
+    ∀ i ∈ 0..43:
+      TRAITS[i].name       ≡ fixture.types[i].enum_name ∧
+      TRAITS[i].ggml_name  ≡ fixture.types[i].ggml_name ∧
+      TRAITS[i].blck_size  ≡ fixture.types[i].blck_size ∧
+      TRAITS[i].type_size  ≡ fixture.types[i].type_size ∧
+      (TRAITS[i].family ≡ Removed) ↔ (fixture.types[i].status ≠ "live")
+- id: GGMLT-INV-002
+  type: invariant
+  property: the fixture was extracted at the pin of record
+  formal: |
+    fixture.pin_build_commit ≡ llama_pin.build_commit ∧
+    prefix(fixture.resolved_sha, llama_pin.build_commit)
+- id: GGMLT-INV-003
+  type: invariant
+  property: a removed id is distinguishable from an id that never existed
+  formal: |
+    ∀ r ∈ REMOVED_IDS:
+      from_id(r) ≡ None ∧ try_from_id(r) ≡ Err(Removed{id: r, name: TRAITS[r].name})
+    ∀ u ≥ 43: try_from_id(u) ≡ Err(Unknown{id: u})
+- id: GGMLT-EQ-004
+  type: equivalence
+  property: the 16 strings and 15 sizes the replaced enums carried are unchanged
+  formal: |
+    ∀ (id, name) ∈ SERVE_16:
+      as_str(from_id(id)) ≡ name ∧
+      from_str_lossy(name) ≡ from_str_lossy(lower(name)) ≡ Some(from_id(id))
+    ∀ (id, blck, bytes) ∈ COMPUTE_15:
+      block_size(from_id(id)) ≡ blck ∧ block_bytes(from_id(id)) ≡ bytes
+- id: GGMLT-INV-005
+  type: invariant
+  property: aprender's family column agrees with upstream's is_quantized flag
+  formal: |
+    ∀ i ∈ 0..43:
+      (TRAITS[i].family ∉ {Float, Int, Removed}) ↔ fixture.types[i].is_quantized
+
+falsification_tests:
+- id: FT-GGMLT-001
+  rule: mutating any one TRAITS row turns the fixture test RED
+  prediction: |
+    Setting TRAITS[9].type_size to 40 (gguf-py's value for Q8_1, which the C
+    static_assert refutes) fails traits_table_equals_the_upstream_fixture_row_for_row
+    AND computes_fifteen_sizes_are_unchanged. Renaming TRAITS[30].name from
+    BF16 to Bf16 fails serves_sixteen_strings_still_mean_what_they_meant.
+    Giving a removed row a live family fails two more.
+  test: cargo test -p aprender-quant --test ggml_traits_fixture
+  if_fails: 'a TRAITS row no longer matches the upstream-extracted fixture.'
+  evidence: |
+    Measured 2026-09-20, all four mutations RED and the unmutated control GREEN
+    (8 tests): M1 TRAITS[9].type_size 36->40, M2 TRAITS[30].name BF16->Bf16,
+    M3 TRAITS[4].family Removed->Affine, M4 a fake id 43 added to the fixture.
+- id: FT-GGMLT-002
+  rule: a comparator pin bump turns the fixture RED until it is regenerated
+  prediction: |
+    Rewriting the fixture's pin_build_commit to the superseded comparator
+    39173bcac fails falsify_ggml_001_traits_fixture_records_the_current_pin
+    with a message naming both shas and the regeneration command.
+  test: cargo test -p aprender-core --test monorepo_invariants falsify_ggml
+  if_fails: 'the fixture and scripts/llama_pin.toml name different commits.'
+  evidence: 'Measured 2026-09-20: RED on the mutation, GREEN on the control (3 tests).'
+- id: FT-GGMLT-003
+  rule: the extractor refuses a live/Removed classification that disagrees with ggml
+  prediction: |
+    On synthetic inputs, the emitter exits 7 when the header revives a row the
+    compiled table calls dead, when it buries a live one, when GGML_TYPE_COUNT
+    disagrees, and when a live id has type_size 0 -- and exits 0, classifying a
+    wording-free commented row as Removed, on the control.
+  test: bash scripts/extract_ggml_traits_selftest.sh
+  if_fails: 'the extractor would emit a fixture that is confidently wrong on the commented rows.'
+  evidence: |
+    7 cases, 0 failures, measured 2026-09-20. Also run in CI from
+    falsify_ggml_003_extractor_case_table_passes, which refuses a vacuous
+    (zero-case) run.
+- id: FT-GGMLT-004
+  rule: the crate's six legacy K-quant constants may not drift from TRAITS
+  prediction: |
+    Q4_K_BLOCK_BYTES != TRAITS[12].type_size is a COMPILE error (a const
+    assertion in lib.rs), not a test failure.
+  test: cargo build -p aprender-quant
+  if_fails: 'a published constant and the upstream table disagree about the same number.'
+  evidence: cargo build -p aprender-quant
+
+- id: FT-GGMLT-005
+  rule: the family column cannot claim a quantization upstream does not report
+  prediction: |
+    Giving a Float/Int id a quantized family, or a quantized id the Float
+    family, fails the_family_classification_agrees_with_upstreams_is_quantized_flag
+    with the id, the family and both flags in the message.
+  test: cargo test -p aprender-quant --test ggml_traits_fixture
+  if_fails: 'aprender''s family classification and ggml''s is_quantized disagree.'
+  evidence: |
+    Measured 2026-09-20 by mutation M3 (TRAITS[4].family Removed -> Affine),
+    which this test catches independently of the row-for-row comparison.
+
+kani_harnesses:
+- id: KANI-GGMLT-001
+  obligation: every id in range resolves consistently and no method panics
+  property: |
+    For all id: u32 with id < 43, from_id(id).is_some() == (TRAITS[id].blck_size > 0),
+    try_from_id(id) is Ok exactly when from_id is Some, and for every live type
+    tensor_bytes(blck_size) == type_size with no panic and no overflow.
+  bound: 43
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_ggml_type_id_space
+
+qa_gate:
+  id: F-GGMLT-001
+  name: ggml-type-v1 Contract
+  description: The workspace's single ggml tensor-type table must equal upstream ggml at the pinned comparator commit, row for row, with a fixture that records the commit it was read from.
+  checks:
+  - validation
+  - falsification
