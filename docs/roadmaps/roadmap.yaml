@@ -18848,3 +18848,20 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE (hand-entered; pmat work add derived neither spec: nor acceptance_criteria: — defect paiml-mcp-agent-toolkit#1414). Spec: docs/specifications/ruling-receipts-under-contract.md (operator ruling 2026-09-20). Done when: contracts/parity-receipt-v1.yaml with its shape on origin/main; extract:parity-receipt implemented; pv lint --gate shapes --path evidence/ in the required check; PR body shows 7 older receipts RED before back-fill and 0 after, plant violation = 1, mutation RED, pc_shape fired; check_parity_receipt.sh folded into the shape or its remainder listed under not_expressible; ONT-4c3 bound with the parity receipt as focus node; verdict rendered on a fleet host once the pv pin lands, else checkout-only: true. Sigma parent bound: json. Back-fill denominator: 7. STOP: subset-insufficient; shared-file-touched without the guard label; any threshold typed into the shape instead of resolved from thresholds.yaml.'
+- id: PMAT-3629
+  github_issue: 3629
+  item_type: task
+  title: 'fleet_utilization.sh --selftest: printf | grep -q under pipefail reads a MATCH as FAIL when grep closes the pipe first — red main''s guard-tree on gx10-pool3; 55 sibling sites in 31 scripts'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-20T21:34:44Z
+  updated: 2026-09-20T21:34:44Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from issue #3629 done_when; minted on the PR branch so the AD-04 quorum can run -- pmat work status refuses a missing item). Done when: scripts/fleet_utilization.sh --selftest has no pipe into grep -q; a mutation that restores the pipe AND forces EPIPE (out padded to >64 KiB so the write cannot complete before grep exits) turns the self-test RED deterministically — the positive control for the race, in the PR body the 55-site count is in the PR body from the command that produced it, and a guard refuses a new site (check_guards_are_wired.sh names it; ratchet baseline committed) main''s guard-tree green on the merge commit without rerun '
