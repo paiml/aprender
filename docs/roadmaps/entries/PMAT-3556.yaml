@@ -1,0 +1,22 @@
+- id: PMAT-3556
+  github_issue: 3556
+  item_type: task
+  title: 'PP-LLAMA-001 row 2: perf002 prefill-path probe + decompose() with mandatory refusals — discharges the 2026-09-19 expiry'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T08:40:15Z
+  updated: 2026-09-20T08:40:15Z
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'scripts/perf002_prefill_path_probe.sh (new, bash driver) + scripts/perf002_prefill_path_probe.py (new, decider), matching the perf041 idiom: apr_bin.sh-resolved binary, marker written on EVERY exit path carrying host/cc/commit/binary-sha256/started_utc/slope/refused_rule, exit 0 MECHANISM_CONFIRMED / 1 PREDICTION_KILLED / 2 UNMEASURABLE. Nothing under crates/aprender-serve/** or .github/workflows/cuda-nightly.yml (row 1 owns those)'
+  - 'decompose() carries the four MANDATORY refusals of the row — too_few_distinct_x, negative_slope, r2_below_bound, and bimodal (which REPORTS per-mode fits rather than rejecting) — plus a fifth, implausibly_fast, that guards the harness; every refusal names itself in the output and maps to exit 2, never to a defect claim'
+  - '`python3 scripts/perf002_prefill_path_probe.py --selftest` is OK on 8 cases: a fixture per refusal, a "bimodal emits two fits" assertion, an anti-vacuity leg proving the floor (not another rule) catches the harness fixture, a CONTROL proving a clean linear sweep is NOT refused, and a check that the control recovers its planted 32.650 ms/token. The driver runs the selftest BEFORE measuring and refuses to report a verdict if it fails'
+  - 'measure() reads TTFT off the SSE stream (first chunk carrying content) with max_tokens=1, issues and DISCARDS one warm-up per arm, and gives every sample a unique nonce prefix; --repeat-prompt reproduces the prefix-cache bimodality on demand'
+  - 'measured on gx10 (GB10, cc 121) at commit 338f1d49, qwen2.5-coder-1.5b-instruct-q4_k_m, ladder 64/128/256/384/513 x3: verdict MECHANISM_CONFIRMED, default arm linear at 9.042 ms/token r2 0.999947 n=15 (513 tok -> 4713/4717/4719 ms), BATCHED_PREFILL=1 measured 0.099 s at ~512 tokens (513 tok -> 123/99/98 ms) — a 48x collapse and 3.5x better than §10''s predicted 0.35 s. Slope reproduced at 9.054 and 9.042 across independent runs'
+  - 'the probe''s header records the four harness defects that each produced a confident WRONG answer rather than an error (time_starttransfer times headers not tokens; first-request CUDA warm-up gives a negative slope; a repeated prompt measures the prefix cache; the r2 floor wrongly applied to the batched arm). §9 #1''s SIZE is deliberately NOT re-measured here — see aprender#3553'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
