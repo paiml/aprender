@@ -50,8 +50,15 @@ The checkout must be AT the pinned build_commit, clean, and already built
 USAGE
 }
 
-repo_root=$(git rev-parse --show-toplevel 2>/dev/null || true)
-[ -n "$repo_root" ] || { echo "extract_ggml_traits: not in a git repo" >&2; exit 2; }
+# The repo root is this script's parent, not `git rev-parse --show-toplevel`:
+# git refuses a tree whose owner differs from the caller ("dubious ownership"),
+# which is exactly the CI container's situation, and locating our own sibling
+# files never needed to ask git anything.
+repo_root=$(cd -- "$(dirname -- "$0")/.." && pwd)
+[ -f "$repo_root/scripts/llama_pin.toml" ] || {
+    echo "extract_ggml_traits: no scripts/llama_pin.toml under '$repo_root'" >&2
+    exit 2
+}
 
 out="$repo_root/crates/aprender-quant/fixtures/ggml_traits.json"
 src="${LLAMA_SRC:-}"

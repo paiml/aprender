@@ -18,8 +18,14 @@
 # pattern was wrong five times in this repo and review caught none of them.
 set -euo pipefail
 
-root=$(git rev-parse --show-toplevel)
-emitter="$root/scripts/extract_ggml_traits.py"
+# THE ROOT COMES FROM THIS SCRIPT'S OWN PATH, NOT FROM git. `git rev-parse
+# --show-toplevel` fails inside the CI container with "detected dubious
+# ownership in repository at '/workspace'" — the bind-mounted tree is owned by
+# uid 1000 and the container runs as root — and this self-test needs no git at
+# all. Measured: it turned workspace-test-shard (3/3) red on the first run of
+# this very file.
+here=$(cd -- "$(dirname -- "$0")" && pwd)
+emitter="$here/extract_ggml_traits.py"
 work=$(mktemp -d)
 trap 'rm -rf "${work:?}"' EXIT
 
