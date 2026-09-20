@@ -105,6 +105,42 @@ fraction) and lands next, before Phases 3–4.
 | falsifier: `TRAITS` == gguf-py `GGML_QUANT_SIZES` with a named exception list | superseded by clause 3 | gguf-py is no longer consulted at all. The C table is the oracle, so Q8_1 is simply 36 and there is no exception list to rot |
 | clause 5: wrong-sized types ship with a refusal on load | **no refusal shipped** | measured: the only wrong in-tree size (F2) sits in a function with no production caller, so there is no load to refuse. Stated rather than silently skipped: if #3431's reconciliation finds a wrong size on a real load path, that type gets clause 5's treatment there |
 
+## 6a. What adding ONE contract file actually costs, measured
+
+Not planned for, and worth recording because the plan did not see it and nor did I.
+`contracts/ggml-type-v1.yaml` is one new file. It staled **three** tracked derivatives
+and tripped a **fourth** guard, and they surfaced **one per CI round**, because each was
+masked by the one before it — a failing job ends the run (#3587).
+
+| round | red | derivative | remedy |
+|---|---|---|---|
+| 1 | guard-cargo | `contracts/census.json` (1799 vs 1800) | `make contracts` (`pv census contracts`) |
+| 1 | shard (1/3) | `contracts/contracts.nt` — `the_tracked_repo_graph_is_fresh`, R-18 | `pv extract contracts` |
+| 2 | guard-cargo | README's generated `CONTRACT_COUNT` block — **invisible in round 1**, masked by the census red | `make readme-sync` |
+| 3 | guard-tree | §11.1 ont-delta: touching README.md at all reclassifies the PR as a *sweep* | an `ont-delta:` line in the PR body |
+
+The fourth is the one to notice: it is not a derivative of the contract, it is a
+consequence of the **remedy** for the third. `make readme-sync` is mandatory (guard-cargo
+refuses without it) and README.md is a §11.1 prose sink, so fixing guard-cargo is what
+made guard-tree fail. Neither guard can see the other, and nothing in either message says
+so.
+
+Two further findings that cost a round each, both mine and both the same shape — reasoning
+about an environment instead of measuring it:
+
+- **`git rev-parse --show-toplevel` fails in the container** ("dubious ownership in
+  repository at `/workspace`": the tree is uid 1000, the container is root). A script
+  locating its own siblings never needed git. Now derived from `$0`; generalised as #3586,
+  where 7 of 22 such call sites are unguarded and 15 more carry `|| pwd`, which does not
+  fail — it silently reads the wrong tree.
+- **`python3` is absent from the container.** The extractor's classifier was python and
+  its case table drove it with python3, so the one artifact proving the classifier can
+  fail could not execute where the code executes. Ported to awk; the port is proved
+  faithful by regenerating the fixture **byte-identically**, and proved portable by
+  running the case table under `env -i PATH=<coreutils only>` with no python3 on PATH.
+  I had inferred python's presence from `python3 scripts/lib/roadmap_merge.py --selftest`
+  in ci.yml — a step in a different job, on the host runner.
+
 ## 7. Not in this PR
 
 Phases 3–4: the three enums become re-exports, each crate gets its admission function
