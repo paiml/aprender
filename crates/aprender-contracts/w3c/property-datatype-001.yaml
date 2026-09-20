@@ -1,0 +1,23 @@
+# vendored: tests/core/property/datatype-001.ttl
+id: property/datatype-001
+label: "Test of sh:datatype at property shape 001"
+prefix: "http://datashapes.org/sh/tests/core/property/datatype-001.test#"
+targeting: "implicit class target (ex:TestShape is both rdfs:Class and sh:NodeShape) → targetClass ex:TestShape"
+shapes:
+  - id: TestShape
+    targetClass: ex:TestShape
+    properties:
+      - {path: ex:dateProperty, datatype: xsd:date}
+      - {path: ex:integerProperty, datatype: xsd:integer}
+data: |
+  ex:InvalidResource1 rdf:type ex:TestShape .
+  ex:InvalidResource1 ex:dateProperty "2011-01-01"^^xsd:dateTime .
+  ex:InvalidResource1 ex:integerProperty 11.1 .
+  ex:ValidResource1 rdf:type ex:TestShape .
+  ex:ValidResource1 ex:dateProperty "2011-01-01"^^xsd:date .
+  ex:ValidResource1 ex:integerProperty 11 .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidResource1, path: ex:dateProperty, component: datatype}
+    - {focus: ex:InvalidResource1, path: ex:integerProperty, component: datatype}

@@ -1,0 +1,111 @@
+{
+  "ticket": "PMAT-3477",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 92 commit(s); judged against origin/main",
+  "head": "7ecee61a2cc577382163dffed8866c11b03e14f3",
+  "diff_sha256": "20b85d9f9e007552089fc47dac10401c11fcf11cd111e295ae09a4f43c68c154",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 1913,
+  "author": {
+    "model": "claude-fable-5-1",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff accurately implements the change requested by PMAT-3477 (dogfood pv loop skips Σ). It uses `grep` to check for the `schema: ont-sigma...` line within YAML files in the `contracts` directory, and skips validation for these files. This prevents the false positive `pv validate` failure (\"missing field metadata\") on ontology definition files without weakening the gate for actual contracts. There are no unrelated changes or forbidden actions in the provided diff.",
+      "findings": [],
+      "raw_bytes": 2226,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff satisfies ticket PMAT-3477 by skipping Σ ontology schema definitions in the dogfood pv validation loop in scripts/dogfood.sh. The skip is content-addressed via schema header regex matching ('ont-sigma-v*') rather than hardcoded filenames, preserving contract validation and registry exclusions. No gates are weakened, no tests assert the opposite, and no extraneous changes are present.",
+      "findings": [
+        {
+          "claim": "scripts/dogfood.sh adds a check to skip Σ ontology schemas matching '^schema:[[:space:]]*ont-sigma-v[0-9]+[[:space:]]*$' from the pv validate loop, resolving false validation failures without weakening contract checks.",
+          "file": "scripts/dogfood.sh",
+          "grounding": "cited",
+          "line": 685
+        }
+      ],
+      "raw_bytes": 2659,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff satisfies ticket PMAT-3477 by adding a header-based filter to the dogfood pv validation loop in scripts/dogfood.sh, skipping Σ ontology schema files (e.g. ont-sigma-v*) while preserving contract validation and other registry exclusions. No gate weakening or extraneous changes were detected.",
+      "findings": [
+        {
+          "claim": "The pv validation loop in scripts/dogfood.sh inspects the YAML schema header and skips Σ ontology schema files matching '^schema:[[:space:]]*ont-sigma-v[0-9]+[[:space:]]*$', preventing false validation failures on non-contract ontology schemas.",
+          "file": "scripts/dogfood.sh",
+          "grounding": "cited",
+          "line": 685
+        }
+      ],
+      "raw_bytes": 2510,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "scripts/dogfood.sh",
+      "line": 685,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "The pv validation loop in scripts/dogfood.sh inspects the YAML schema header and skips Σ ontology schema files matching '^schema:[[:space:]]*ont-sigma-v[0-9]+[[:space:]]*$', preventing false validation failures on non-contract ontology schemas.",
+        "scripts/dogfood.sh adds a check to skip Σ ontology schemas matching '^schema:[[:space:]]*ont-sigma-v[0-9]+[[:space:]]*$' from the pv validate loop, resolving false validation failures without weakening contract checks."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-fable-5-1/claude"
+  }
+}

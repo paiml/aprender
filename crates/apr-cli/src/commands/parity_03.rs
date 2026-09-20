@@ -7,7 +7,20 @@
 fn refuse_unroutable(mapped: &realizar::gguf::MappedGGUFModel, json: bool) -> Result<()> {
     let arch = mapped.model.architecture().unwrap_or_default().to_string();
     let names: Vec<&str> = mapped.model.tensors.iter().map(|t| t.name.as_str()).collect();
-    let Some(refusal) = parity_refusal_for(&arch, names) else {
+    // #3477: a hybrid this build CAN route may still carry a quantization its
+    // GPU upload has no kernel for. Both refusals are header-only, so both
+    // happen here, before a weight is materialized.
+    let refusal = parity_refusal_for(&arch, names).or_else(|| {
+        hybrid_quant_refusal(
+            &arch,
+            mapped
+                .model
+                .tensors
+                .iter()
+                .map(|t| (t.name.as_str(), t.qtype)),
+        )
+    });
+    let Some(refusal) = refusal else {
         return Ok(());
     };
     eprintln!();
@@ -97,6 +110,24 @@ pub fn run(file: &Path, prompt: &str, _assert: bool, verbose: bool, json: bool) 
 
     let tokens = mapped.model.encode(prompt).unwrap_or_else(|| vec![1u32]);
 
+    eprintln!();
+    eprintln!("  {} {}", "Model:".white().bold(), file.display());
+    eprintln!("  {} {:?}", "Prompt:".white().bold(), prompt);
+    eprintln!(
+        "  {} {} tokens: {:?}",
+        "Tokens:".white().bold(),
+        tokens.len(),
+        &tokens[..tokens.len().min(20)],
+    );
+
+    // #3477: the Qwen3.5 hybrid is no longer refused above (#3517) because it
+    // HAS both forwards — but it is not the dense pair. `OwnedQuantizedModel::
+    // from_mapped` below would hand it straight to `dense_loader_refusal`,
+    // which is the FAIL this dispatch replaces with a measurement.
+    if parity_arm(mapped.model.architecture().unwrap_or_default()) == ParityArm::Hybrid {
+        return run_hybrid(file, &mapped, &tokens, verbose, json);
+    }
+
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
 
@@ -107,15 +138,6 @@ pub fn run(file: &Path, prompt: &str, _assert: bool, verbose: bool, json: bool) 
     let (head_dim, kv_dim, gqa_ratio) = head_geometry(hidden_dim, num_heads, kv_heads);
     let num_layers = config.num_layers;
 
-    eprintln!();
-    eprintln!("  {} {}", "Model:".white().bold(), file.display());
-    eprintln!("  {} {:?}", "Prompt:".white().bold(), prompt);
-    eprintln!(
-        "  {} {} tokens: {:?}",
-        "Tokens:".white().bold(),
-        tokens.len(),
-        &tokens[..tokens.len().min(20)],
-    );
     eprintln!(
         "  {} hidden={} heads={} kv_heads={} head_dim={} GQA={} layers={} vocab={}",
         "Arch:".white().bold(),
@@ -168,79 +190,18 @@ pub fn run(file: &Path, prompt: &str, _assert: bool, verbose: bool, json: bool) 
         print_row(&m);
 
         if verbose && m.verdict().is_fail() {
-            eprintln!(
-                "{}     {} mean_diff={:.6} rmse={:.6} oos={}/{} {}",
-                "│".dimmed(),
-                "".dimmed(),
-                m.mean_abs_diff,
-                m.rmse,
-                m.out_of_spec_count,
-                m.vocab_size,
-                "│".dimmed(),
-            );
+            print_verbose_failure(&m);
         }
 
         all_metrics.push(m);
     }
 
-    // GH-636: JSON output path — emit structured data instead of SPC table
-    if json {
-        let metrics_json: Vec<serde_json::Value> = all_metrics
-            .iter()
-            .map(|m| {
-                serde_json::json!({
-                    "position": m.position,
-                    "token_id": m.token_id,
-                    "cpu_argmax": m.cpu_argmax,
-                    "gpu_argmax": m.gpu_argmax,
-                    "max_abs_diff": m.max_abs_diff,
-                    "mean_abs_diff": m.mean_abs_diff,
-                    "cosine_similarity": m.cosine_similarity,
-                    "kl_divergence": m.kl_divergence,
-                    "sigma_level": m.sigma_level,
-                    "cpk": m.cpk(),
-                    "verdict": format!("{:?}", m.verdict()),
-                })
-            })
-            .collect();
-        let has_failures = all_metrics.iter().any(|m| m.verdict().is_fail());
-        let summary = serde_json::json!({
-            "model": file.display().to_string(),
-            "tokens": all_metrics.len(),
-            "passed": all_metrics.iter().filter(|m| !m.verdict().is_fail()).count(),
-            "failed": all_metrics.iter().filter(|m| m.verdict().is_fail()).count(),
-            "parity": !has_failures,
-            "metrics": metrics_json,
-        });
-        println!("{}", serde_json::to_string_pretty(&summary).unwrap_or_default());
-        return if has_failures {
-            Err(CliError::ValidationFailed(
-                "PARITY DISPROVEN: GPU/CPU divergence exceeds tolerance".to_string(),
-            ))
-        } else {
-            Ok(())
-        };
-    }
-
-    print_footer();
-
-    // ── Summary statistics ──────────────────────────────────────────────────
-    print_summary(&all_metrics);
-
-    // ── Auto-diagnosis ──────────────────────────────────────────────────────
-    auto_diagnose(&all_metrics, hidden_dim, num_heads, kv_heads);
-
-    // ── Exit code ───────────────────────────────────────────────────────────
-    // GH-615: Exit non-zero when parity is disproven — exit code must match display.
-    // Previously required --assert flag, but display already says "PARITY DISPROVEN".
-    let has_failures = all_metrics.iter().any(|m| m.verdict().is_fail());
-    if has_failures {
-        Err(CliError::ValidationFailed(
-            "PARITY DISPROVEN: GPU/CPU divergence exceeds tolerance".to_string(),
-        ))
-    } else {
-        Ok(())
-    }
+    // ── Report ──────────────────────────────────────────────────────────────
+    // GH-636 (JSON shape), GH-615 (exit code matches the display) and the
+    // summary/auto-diagnosis, shared verbatim with the #3477 hybrid arm
+    // (`parity_hybrid.rs`) so the C14 row cannot depend on which pair of
+    // forwards produced the metrics.
+    emit_parity_outcome(file, &all_metrics, hidden_dim, num_heads, kv_heads, json)
 }
 
 #[cfg(not(feature = "cuda"))]

@@ -1,0 +1,134 @@
+{
+  "ticket": "PMAT-3477",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 93 commit(s); judged against origin/main",
+  "head": "f657a00c75317dcd7c5345c638f40e628c783ab7",
+  "diff_sha256": "2c5f7b5f32e70964dbd9fb0fdf6068a167c2749f61cf3f7fad1e36b8a87c6c16",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 9003,
+  "author": {
+    "model": "claude-fable-5-1",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements PMAT-3477 by co-evolving the contracts to enforce the Qwen3 GPU surface. It adds explicit falsification tests and proof obligations to verify actual hardware execution (to prevent silent CPU fallbacks), strengthens the QA gates in all three YAML files, and preserves the old simulation-based test as a distinct check. No tests or gates are weakened, and all changes directly support the ticket's goals.",
+      "findings": [],
+      "raw_bytes": 2122,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff for PR #3480 (EPIC #3477 / PMAT-3477) implements contract co-evolution for the Qwen3 GPU surface cleanly and rigorously across the three affected contracts:\n1. `contracts/apr-cpu-vs-gpu-output-parity-v1.yaml`: Adds FALSIFY-CPU-GPU-015 asserting parity per architecture across all ladder rungs claiming CUDA on both required hosts (lambda sm_89 and gx10 GB10 sm_121), and introduces QA gate F-CPU-GPU-PARITY-001 requiring all 15 falsifiers and zero fallback.\n2. `contracts/qk-norm-v1.yaml`: Retargets FALSIFY-QKN-006 to test the real kernel on the generation path via ladder receipts, retains the algorithm simulation check as FALSIFY-QKN-008, clarifies KANI-QK_NOR-008 property boundaries, and strengthens the QA gate from 7 to 8 falsification tests.\n3. `contracts/qwen3-e2e-verification-v1.yaml`: Adds obligations QW3E-PAR-008 (parity invariant on required silicons) and QW3E-DEV-009 (selected device liveness / no silent fallback), adds corresponding falsifiers FALSIFY-QW3E-008 and FALSIFY-QW3E-009, and updates the QA gate from 7 to 9 falsification tests with per-host ladder receipt requirements.\n\nNo gates are weakened, no tests contradict the ticket, and all changes are strictly within the scope of PMAT-3477. Nothing refutes the diff.",
+      "findings": [],
+      "raw_bytes": 3796,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PR #3480 cleanly implements ticket PMAT-3477 ('0.68.2: contract co-evolution for the qwen3 GPU surface'). It updates contracts/apr-cpu-vs-gpu-output-parity-v1.yaml, contracts/qk-norm-v1.yaml, and contracts/qwen3-e2e-verification-v1.yaml to mandate real silicon execution verification via scripts/check_model_ladder.sh across required hosts (lambda sm_89, gx10 sm_121), strengthens QA gates, forbids silent CPU fallbacks, and separates kernel generation path verification from reference simulation proptests. No gates were weakened, all receipt assertions are backed by the diff, and the changes strictly adhere to the ticket scope.",
+      "findings": [
+        {
+          "claim": "Adds FALSIFY-CPU-GPU-015 and QA gate F-CPU-GPU-PARITY-001 enforcing that parity is checked per-architecture on real silicons (lambda, gx10) via check_model_ladder.sh with no silent CPU fallback.",
+          "file": "contracts/apr-cpu-vs-gpu-output-parity-v1.yaml",
+          "grounding": "cited",
+          "line": 569
+        },
+        {
+          "claim": "Rewrites FALSIFY-QKN-006 to require real GPU kernel execution on generation path rather than pure simulation, adds FALSIFY-QKN-008 to retain the algorithm simulation check, clarifies KANI-QK_NOR-008, and raises QA gate pass criteria from 7 to 8 tests.",
+          "file": "contracts/qk-norm-v1.yaml",
+          "grounding": "cited",
+          "line": 86
+        },
+        {
+          "claim": "Adds proof obligations QW3E-PAR-008 (GPU-CPU greedy probe parity) and QW3E-DEV-009 (device liveness/no silent fallback), adds FALSIFY-QW3E-008 and FALSIFY-QW3E-009, and updates QA gate pass criteria from 7 to 9 tests.",
+          "file": "contracts/qwen3-e2e-verification-v1.yaml",
+          "grounding": "cited",
+          "line": 124
+        }
+      ],
+      "raw_bytes": 4443,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "contracts/apr-cpu-vs-gpu-output-parity-v1.yaml",
+      "line": 569,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Adds FALSIFY-CPU-GPU-015 and QA gate F-CPU-GPU-PARITY-001 enforcing that parity is checked per-architecture on real silicons (lambda, gx10) via check_model_ladder.sh with no silent CPU fallback."
+      ]
+    },
+    {
+      "file": "contracts/qk-norm-v1.yaml",
+      "line": 86,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Rewrites FALSIFY-QKN-006 to require real GPU kernel execution on generation path rather than pure simulation, adds FALSIFY-QKN-008 to retain the algorithm simulation check, clarifies KANI-QK_NOR-008, and raises QA gate pass criteria from 7 to 8 tests."
+      ]
+    },
+    {
+      "file": "contracts/qwen3-e2e-verification-v1.yaml",
+      "line": 124,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Adds proof obligations QW3E-PAR-008 (GPU-CPU greedy probe parity) and QW3E-DEV-009 (device liveness/no silent fallback), adds FALSIFY-QW3E-008 and FALSIFY-QW3E-009, and updates QA gate pass criteria from 7 to 9 tests."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-fable-5-1/claude"
+  }
+}

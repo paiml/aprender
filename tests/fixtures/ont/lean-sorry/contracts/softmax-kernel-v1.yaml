@@ -1,0 +1,29 @@
+name: softmax-kernel
+version: "1.0.0"
+status: active
+metadata:
+  version: "1.0.0"
+  kind: kernel
+  created: '2026-09-19'
+  last_modified: '2026-09-19'
+  author: fixture
+  description: two theorems, one admitted
+equations:
+  softmax:
+    formula: "softmax(x) sums to one"
+    lean_theorem: Theorems.SoftmaxSumsToOne
+  relu:
+    formula: "relu is non-negative"
+    lean_theorem: Theorems.ReluNonneg
+  ghost:
+    formula: "a theorem the tree does not carry"
+    lean_theorem: Theorems.NothingOfTheSort
+shapes:
+  - id: fixture-contract-id
+    targetClass: ont:Contract
+    properties:
+      - {path: ont:id, minCount: 1, maxCount: 1}
+  - id: lean-statements-grounded
+    targetClass: ont:Statement
+    properties:
+      - {path: lean:sorryFree, minCount: 1, maxCount: 1, in: [true]}

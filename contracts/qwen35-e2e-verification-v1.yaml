@@ -153,6 +153,11 @@ proof_obligations:
   formal: shape(model(tokens)) = [seq_len, V]
   tolerance: 0.0
   applies_to: all
+- id: QE2E-DEV-008
+  type: liveness
+  property: 'The selected device decoded the hybrid model — no silent CPU fallback for the GDN layers'
+  formal: '∀ h ∈ required_hosts: fallback(cuda, h) = ⊥ ∧ ran(cuda, h) ∧ notice_cpu_only(h) = ⊥'
+  applies_to: all
 falsification_tests:
 - id: FALSIFY-QE2E-001
   rule: Parameter count
@@ -189,6 +194,11 @@ falsification_tests:
   prediction: tokens → [seq_len, d] → ... → [seq_len, V]
   test: qe2e_con_007_tokens_in_logits_out_shape
   if_fails: Shape break in layer composition
+- id: FALSIFY-QE2E-008
+  rule: The device decoded
+  prediction: "`apr run --gpu` on Qwen3.5-0.8B-Q4_K_M prints neither `falling back to CPU` nor `[qwen35: Gated DeltaNet runs on the CPU` on either required host, and the ladder receipt's rungs[qwen35-0.8b-q4km].backends.cuda is {ran: true, fallback: false}"
+  test: "bash scripts/check_model_ladder.sh"
+  if_fails: "the release claims a cuda backend for qwen35 that the binary does not run — the exact silent-fallback class 0.68.1 shipped for dense Qwen3 (#3413)"
 kani_harnesses:
 - id: KANI-QE2E-001
   obligation: QE2E-INV-001
@@ -249,5 +259,5 @@ qa_gate:
   - throughput_model
   - verification_ladder
   - contract_composition
-  pass_criteria: All 7 falsification tests pass + 100% obligation coverage
+  pass_criteria: All 8 falsification tests pass; FALSIFY-QE2E-008 is read from the per-host ladder receipts + 100% obligation coverage
   falsification: Remove one layer from parameter count to break total

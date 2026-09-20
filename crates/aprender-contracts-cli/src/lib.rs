@@ -122,6 +122,10 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             let as_json = json || matches!(format, cli::CensusFormat::Json);
             commands::census::run(&contract_dir, as_json)
         }
+        Commands::Extract {
+            contract_dir,
+            check,
+        } => commands::extract_rdf::run(&contract_dir, check),
         Commands::Coverage {
             contract_dir,
             binding,

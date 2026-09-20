@@ -30,7 +30,6 @@ crates/apr-cli/src/commands/oom_classifier.rs::classify_oom_schema 13 38
 crates/apr-cli/src/commands/otlp_classifier.rs::classify_genai_attributes 9 29
 crates/apr-cli/src/commands/otlp_classifier.rs::classify_trace_propagation 9 32
 crates/apr-cli/src/commands/otlp_lint.rs::run 13 28
-crates/apr-cli/src/commands/output_verification.rs::detect_gibberish 11 30
 crates/apr-cli/src/commands/pretrain.rs::drive_real 10 32
 crates/apr-cli/src/commands/pretrain.rs::run 15 29
 crates/apr-cli/src/commands/prometheus_classifier.rs::classify_text_format 10 50
@@ -495,7 +494,6 @@ crates/aprender-serve/src/gguf/inference/generate_scratch.rs::generate_with_cach
 crates/aprender-serve/src/gguf/inference/generate_scratch.rs::generate_with_scratch 13 31
 crates/aprender-serve/src/gguf/inference/generate_with.rs::generate_with_cache_adaptive 12 28
 crates/aprender-serve/src/gguf/inference/generate_with.rs::generate_with_scratch 13 31
-crates/aprender-serve/src/gguf/inference/matmul_fused.rs::fused_matmul 17 36
 crates/aprender-serve/src/gguf/metadata.rs::get_tensor_f32 15 66
 crates/aprender-serve/src/gguf/token.rs::decode 11 35
 crates/aprender-serve/src/gguf/token.rs::encode 22 60

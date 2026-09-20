@@ -371,6 +371,9 @@ fn print_armed_meet(report: &LintReport) {
     if let Some(monotone) = &report.armed_monotone {
         println!("armed_gates monotone: {monotone}");
     }
+    if let Some(monotone) = &report.armed_shapes_monotone {
+        println!("armed_shapes monotone: {monotone}");
+    }
     let result = match report.verdict {
         Verdict::Pass => green("PASS"),
         Verdict::Fail => red("FAIL"),

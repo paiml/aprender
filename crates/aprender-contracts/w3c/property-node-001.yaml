@@ -1,0 +1,43 @@
+# vendored: tests/core/property/node-001.ttl
+id: property/node-001
+label: "Test of sh:node at property shape 001"
+prefix: "http://datashapes.org/sh/tests/core/property/node-001.test#"
+targeting: "two implicit class targets (ex:Issue, ex:Person); the anonymous sh:node shape is written inline; ex:Person's `ex:datatype` (a typo in the original, not sh:datatype) constrains nothing and is dropped"
+shapes:
+  - id: Issue
+    targetClass: ex:Issue
+    properties:
+      - path: ex:assignedTo
+        class: ex:Person
+        node:
+          properties:
+            - {path: ex:email, minCount: 1, maxCount: 1}
+            - {path: ex:lastName, minCount: 1, maxCount: 1}
+      - {path: ex:submittedBy, class: ex:Person, minCount: 1}
+  - id: Person
+    targetClass: ex:Person
+    properties:
+      - {path: ex:email}
+      - {path: ex:firstName, datatype: xsd:string, minCount: 1, maxCount: 1}
+      - {path: ex:lastName, datatype: xsd:string}
+data: |
+  ex:Anon rdf:type ex:Person .
+  ex:Anon ex:firstName "Anon" .
+  ex:Issue rdf:type rdfs:Class .
+  ex:Issue rdfs:subClassOf rdfs:Resource .
+  ex:Issue_1 rdf:type ex:Issue .
+  ex:Issue_1 ex:assignedTo ex:Anon .
+  ex:Issue_1 ex:submittedBy ex:Anon .
+  ex:Issue_2 rdf:type ex:Issue .
+  ex:Issue_2 ex:assignedTo ex:JohnDoeWithEmail .
+  ex:Issue_2 ex:submittedBy ex:Anon .
+  ex:JohnDoeWithEmail rdf:type ex:Person .
+  ex:JohnDoeWithEmail ex:email "john@doe.com" .
+  ex:JohnDoeWithEmail ex:firstName "John" .
+  ex:JohnDoeWithEmail ex:lastName "Doe" .
+  ex:Person rdf:type rdfs:Class .
+  ex:Person rdfs:subClassOf rdfs:Resource .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:Issue_1, path: ex:assignedTo, component: node}
