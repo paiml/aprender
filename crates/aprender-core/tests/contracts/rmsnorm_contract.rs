@@ -167,3 +167,37 @@ fn falsify_norm_003_rmsnorm_sign_preservation() {
         );
     }
 }
+
+/// Regression for #3627 — the exact input that killed #3621's shard 1/3.
+///
+/// α²·mean(x²) = 1.91e-6 ≈ ε = 1e-6, so the ε term is not negligible and
+/// RMSNorm(αx) ≠ sign(α)·RMSNorm(x). The ε=0 theorem (`RMSNorm.rms_scale_zero_eps`,
+/// "Proved for ε=0") does not apply in this regime; the implementation is correct and
+/// the old assertion was wrong. Numbers reproduced to 6 digits independently of the
+/// CI log: y[1] = -1.414158, y_scaled[1] = -1.146122, diff 0.268 > tol 0.05.
+///
+/// This case must PASS under the ε>0 assertion and turn RED when the ε=0 one is
+/// restored — that is the mutation #3627's done_when asks for.
+#[test]
+fn regression_3627_scale_invariance_in_the_eps_dominated_regime() {
+    let data = [0.0f32, -0.159_643_08];
+    let alpha = 0.012_254_778f32;
+    let n = data.len();
+    let norm = RMSNorm::without_affine(&[n]);
+    let x = Tensor::new(&data, &[1, n]);
+    let scaled: Vec<f32> = data.iter().map(|&v| v * alpha).collect();
+    let x_scaled = Tensor::new(&scaled, &[1, n]);
+    let y = norm.forward(&x);
+    let y_scaled = norm.forward(&x_scaled);
+    let sign = alpha.signum();
+    for i in 0..n {
+        let expected = sign * y.data()[i];
+        let diff = (expected - y_scaled.data()[i]).abs();
+        let tol = if alpha.abs() < 0.1 { 0.05 } else { 1e-3 };
+        assert!(
+            diff < tol,
+            "3627 regression: sign*y[{i}]={expected} vs y_scaled[{i}]={}, diff={diff} (ε=0 assertion)",
+            y_scaled.data()[i]
+        );
+    }
+}
