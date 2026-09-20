@@ -1,0 +1,17 @@
+- id: PMAT-3637
+  github_issue: 3604
+  item_type: task
+  title: 'Register PMAT-3604 in the roadmap so the AD-04 quorum for PR #3634 can run (registration only; the implementation is PR #3634)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-20T22:39:43Z
+  updated: 2026-09-20T22:39:43Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:triage
+  notes: 'ACCEPTANCE (this row is PR #3637 itself, a roadmap-only registration): (1) docs/roadmaps/entries/PMAT-3604.yaml exists with id PMAT-3604, github_issue 3604, kind:code, and its notes transcribe issue #3604 done_when items 1-6 faithfully — every criterion present, none added, the admission rule and the out-of-scope list as the issue states them; (2) docs/roadmaps/roadmap.yaml equals aggregate(entries/) and the diff vs origin/main is additive only (deleted=0, reserialised=0); (3) the PR body carries keep-open for #3604 and touches nothing outside docs/roadmaps/. NOT in scope: any code, test or measurement of PMAT-3604 — those are PR #3634 and are judged there. A lane that finds a done_when item mis-transcribed, missing or invented FAILs this row.'

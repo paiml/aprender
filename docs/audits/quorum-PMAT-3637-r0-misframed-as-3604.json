@@ -1,0 +1,265 @@
+{
+  "ticket": "PMAT-3604",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "34f98f9d942915000ad30e28744709b25c4142be",
+  "diff_sha256": "ce73349881d800c0720ecc6e54039ed9fe4eb32f5799786167379beb3fc86876",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 5360,
+  "author": {
+    "model": "Opus 5 (1M context)",
+    "family": "claude",
+    "source": "measured"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "The diff only adds the roadmap entry for PMAT-3604 but fails to implement any of its acceptance criteria, as it contains no code changes.",
+      "findings": [
+        {
+          "claim": "The diff only adds the roadmap entry for PMAT-3604 and does not implement any of the acceptance criteria required by the ticket (such as caching validation, adding --revalidate, or writing tests), as there are no code changes.",
+          "file": "docs/roadmaps/entries/PMAT-3604.yaml",
+          "grounding": "cited",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 3634,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "The diff under review (origin/main...HEAD, commit 34f98f9d9) does not implement any of the requirements or acceptance criteria specified in ticket PMAT-3604. PMAT-3604 is a critical code task requiring f2_validate_qwen35 CPU reference forward caching and receipting across (model sha256, apr version, device), --revalidate support, falsifier test coverage, validate_ms reporting, and TTFT performance benchmarks. Instead, this diff only adds the roadmap entry for PMAT-3604 in docs/roadmaps/entries/PMAT-3604.yaml and docs/roadmaps/roadmap.yaml to allow an AD-04 quorum for PR #3634 to start. As acknowledged in the roadmap fragment itself, the implementation of PMAT-3604 is located in PR #3634, not this diff. Because this diff contains zero implementation for the ticket against which it is judged and lacks any supporting implementation receipt or tests, the diff is refuted and must FAIL.",
+      "findings": [
+        {
+          "claim": "The diff only mints a roadmap entry for PMAT-3604 and implements none of the code, tests, or acceptance criteria required by ticket PMAT-3604 ('f2_validate_qwen35 runs a full CPU reference forward on EVERY call (67% of a 14s TTFT) — run it once per (model sha256, apr version, device) and receipt it'). All 6 done_when criteria (receipt caching, --revalidate, falsifier tests for invalid receipts, missing receipt handling, validate_ms reporting, and TTFT benchmarks) are unimplemented in this diff.",
+          "command": "git diff --stat origin/main...HEAD",
+          "file": "docs/roadmaps/entries/PMAT-3604.yaml",
+          "fix": "Either review this PR under a roadmap/scaffolding task or evaluate the actual implementation from PR #3634.",
+          "grounding": "measured",
+          "line": 1,
+          "output": " docs/roadmaps/entries/PMAT-3604.yaml | 17 +++++++++++++++++\n docs/roadmaps/roadmap.yaml           | 17 +++++++++++++++++\n 2 files changed, 34 insertions(+)"
+        },
+        {
+          "claim": "The notes in the roadmap fragment explicitly state that this PR is only scaffolding for PR #3634 ('minted by the cop so the AD-04 quorum for PR #3634 can run — pmat work status refused on a missing item'), confirming that the diff does not contain the ticket's implementation.",
+          "file": "docs/roadmaps/entries/PMAT-3604.yaml",
+          "fix": "Do not evaluate this roadmap fragment against the code implementation ticket PMAT-3604, as PR #3634 contains the actual implementation.",
+          "grounding": "cited",
+          "line": 17
+        },
+        {
+          "claim": "No implementation receipt exists at docs/audits/impl-PMAT-3604-receipt.md for PMAT-3604, backing none of the performance, TTFT, or acceptance criteria claims.",
+          "command": "ls docs/audits/impl-PMAT-3604-receipt.md 2>&1",
+          "file": "docs/audits/impl-PMAT-3604-receipt.md",
+          "fix": "Provide the implementation receipt alongside the actual implementation code.",
+          "grounding": "measured",
+          "line": 1,
+          "output": "ls: cannot access 'docs/audits/impl-PMAT-3604-receipt.md': No such file or directory"
+        }
+      ],
+      "raw_bytes": 7900,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "FAIL",
+      "summary": "FAIL: The diff only mints the roadmap tracking entry in docs/roadmaps/entries/PMAT-3604.yaml and docs/roadmaps/roadmap.yaml. None of the functional implementation, tests, or performance verification required by PMAT-3604 acceptance criteria (1)-(6) are present in the diff.",
+      "findings": [
+        {
+          "claim": "The diff only adds the roadmap entry for PMAT-3604 and does not implement validation receipt caching per (model sha256, apr version, device) required by criterion (1) of PMAT-3604.",
+          "file": "docs/roadmaps/entries/PMAT-3604.yaml",
+          "fix": "Implement receipt caching in f2_validate_qwen35 keyed by (model sha256, apr version, device).",
+          "grounding": "cited",
+          "line": 17
+        },
+        {
+          "claim": "The diff does not implement the --revalidate CLI flag to force fresh validation and rewrite receipts, violating criterion (2) of PMAT-3604.",
+          "file": "docs/roadmaps/entries/PMAT-3604.yaml",
+          "fix": "Add --revalidate CLI flag and handling to force fresh validation.",
+          "grounding": "cited",
+          "line": 17
+        },
+        {
+          "claim": "The diff includes no test cases asserting re-validation when planted receipts have mismatched sha256, apr version, or device, or when receipts are missing/unreadable, violating criteria (3) and (4) of PMAT-3604.",
+          "file": "docs/roadmaps/entries/PMAT-3604.yaml",
+          "fix": "Add end-to-end tests covering mismatched and missing/unreadable receipt handling.",
+          "grounding": "cited",
+          "line": 17
+        },
+        {
+          "claim": "The diff does not implement validate_ms distinguishability / stderr [source=receipt|fresh] logging or provide before/after TTFT measurements on 144-word row with GPU occupancy, violating criteria (5) and (6) of PMAT-3604.",
+          "file": "docs/roadmaps/entries/PMAT-3604.yaml",
+          "fix": "Add validate timing reporting and attach TTFT benchmark measurements.",
+          "grounding": "cited",
+          "line": 17
+        }
+      ],
+      "raw_bytes": 5687,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [
+    {
+      "lane": 1,
+      "verdict": "FAIL",
+      "summary": "The diff only adds the roadmap entry for PMAT-3604 but fails to implement any of its acceptance criteria, as it contains no code changes.",
+      "findings": [
+        {
+          "claim": "The diff only adds the roadmap entry for PMAT-3604 and does not implement any of the acceptance criteria required by the ticket (such as caching validation, adding --revalidate, or writing tests), as there are no code changes.",
+          "file": "docs/roadmaps/entries/PMAT-3604.yaml",
+          "grounding": "cited",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "lane": 2,
+      "verdict": "FAIL",
+      "summary": "The diff under review (origin/main...HEAD, commit 34f98f9d9) does not implement any of the requirements or acceptance criteria specified in ticket PMAT-3604. PMAT-3604 is a critical code task requiring f2_validate_qwen35 CPU reference forward caching and receipting across (model sha256, apr version, device), --revalidate support, falsifier test coverage, validate_ms reporting, and TTFT performance benchmarks. Instead, this diff only adds the roadmap entry for PMAT-3604 in docs/roadmaps/entries/PMAT-3604.yaml and docs/roadmaps/roadmap.yaml to allow an AD-04 quorum for PR #3634 to start. As acknowledged in the roadmap fragment itself, the implementation of PMAT-3604 is located in PR #3634, not this diff. Because this diff contains zero implementation for the ticket against which it is judged and lacks any supporting implementation receipt or tests, the diff is refuted and must FAIL.",
+      "findings": [
+        {
+          "claim": "The diff only mints a roadmap entry for PMAT-3604 and implements none of the code, tests, or acceptance criteria required by ticket PMAT-3604 ('f2_validate_qwen35 runs a full CPU reference forward on EVERY call (67% of a 14s TTFT) — run it once per (model sha256, apr version, device) and receipt it'). All 6 done_when criteria (receipt caching, --revalidate, falsifier tests for invalid receipts, missing receipt handling, validate_ms reporting, and TTFT benchmarks) are unimplemented in this diff.",
+          "command": "git diff --stat origin/main...HEAD",
+          "file": "docs/roadmaps/entries/PMAT-3604.yaml",
+          "fix": "Either review this PR under a roadmap/scaffolding task or evaluate the actual implementation from PR #3634.",
+          "grounding": "measured",
+          "line": 1,
+          "output": " docs/roadmaps/entries/PMAT-3604.yaml | 17 +++++++++++++++++\n docs/roadmaps/roadmap.yaml           | 17 +++++++++++++++++\n 2 files changed, 34 insertions(+)"
+        },
+        {
+          "claim": "The notes in the roadmap fragment explicitly state that this PR is only scaffolding for PR #3634 ('minted by the cop so the AD-04 quorum for PR #3634 can run — pmat work status refused on a missing item'), confirming that the diff does not contain the ticket's implementation.",
+          "file": "docs/roadmaps/entries/PMAT-3604.yaml",
+          "fix": "Do not evaluate this roadmap fragment against the code implementation ticket PMAT-3604, as PR #3634 contains the actual implementation.",
+          "grounding": "cited",
+          "line": 17
+        },
+        {
+          "claim": "No implementation receipt exists at docs/audits/impl-PMAT-3604-receipt.md for PMAT-3604, backing none of the performance, TTFT, or acceptance criteria claims.",
+          "command": "ls docs/audits/impl-PMAT-3604-receipt.md 2>&1",
+          "file": "docs/audits/impl-PMAT-3604-receipt.md",
+          "fix": "Provide the implementation receipt alongside the actual implementation code.",
+          "grounding": "measured",
+          "line": 1,
+          "output": "ls: cannot access 'docs/audits/impl-PMAT-3604-receipt.md': No such file or directory"
+        }
+      ]
+    },
+    {
+      "lane": 3,
+      "verdict": "FAIL",
+      "summary": "FAIL: The diff only mints the roadmap tracking entry in docs/roadmaps/entries/PMAT-3604.yaml and docs/roadmaps/roadmap.yaml. None of the functional implementation, tests, or performance verification required by PMAT-3604 acceptance criteria (1)-(6) are present in the diff.",
+      "findings": [
+        {
+          "claim": "The diff only adds the roadmap entry for PMAT-3604 and does not implement validation receipt caching per (model sha256, apr version, device) required by criterion (1) of PMAT-3604.",
+          "file": "docs/roadmaps/entries/PMAT-3604.yaml",
+          "fix": "Implement receipt caching in f2_validate_qwen35 keyed by (model sha256, apr version, device).",
+          "grounding": "cited",
+          "line": 17
+        },
+        {
+          "claim": "The diff does not implement the --revalidate CLI flag to force fresh validation and rewrite receipts, violating criterion (2) of PMAT-3604.",
+          "file": "docs/roadmaps/entries/PMAT-3604.yaml",
+          "fix": "Add --revalidate CLI flag and handling to force fresh validation.",
+          "grounding": "cited",
+          "line": 17
+        },
+        {
+          "claim": "The diff includes no test cases asserting re-validation when planted receipts have mismatched sha256, apr version, or device, or when receipts are missing/unreadable, violating criteria (3) and (4) of PMAT-3604.",
+          "file": "docs/roadmaps/entries/PMAT-3604.yaml",
+          "fix": "Add end-to-end tests covering mismatched and missing/unreadable receipt handling.",
+          "grounding": "cited",
+          "line": 17
+        },
+        {
+          "claim": "The diff does not implement validate_ms distinguishability / stderr [source=receipt|fresh] logging or provide before/after TTFT measurements on 144-word row with GPU occupancy, violating criteria (5) and (6) of PMAT-3604.",
+          "file": "docs/roadmaps/entries/PMAT-3604.yaml",
+          "fix": "Add validate timing reporting and attach TTFT benchmark measurements.",
+          "grounding": "cited",
+          "line": 17
+        }
+      ]
+    }
+  ],
+  "dedup": [
+    {
+      "file": "docs/audits/impl-PMAT-3604-receipt.md",
+      "line": 1,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "No implementation receipt exists at docs/audits/impl-PMAT-3604-receipt.md for PMAT-3604, backing none of the performance, TTFT, or acceptance criteria claims."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/entries/PMAT-3604.yaml",
+      "line": 1,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "The diff only adds the roadmap entry for PMAT-3604 and does not implement any of the acceptance criteria required by the ticket (such as caching validation, adding --revalidate, or writing tests), as there are no code changes.",
+        "The diff only mints a roadmap entry for PMAT-3604 and implements none of the code, tests, or acceptance criteria required by ticket PMAT-3604 ('f2_validate_qwen35 runs a full CPU reference forward on EVERY call (67% of a 14s TTFT) — run it once per (model sha256, apr version, device) and receipt it'). All 6 done_when criteria (receipt caching, --revalidate, falsifier tests for invalid receipts, missing receipt handling, validate_ms reporting, and TTFT benchmarks) are unimplemented in this diff."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/entries/PMAT-3604.yaml",
+      "line": 17,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "The diff does not implement the --revalidate CLI flag to force fresh validation and rewrite receipts, violating criterion (2) of PMAT-3604.",
+        "The diff does not implement validate_ms distinguishability / stderr [source=receipt|fresh] logging or provide before/after TTFT measurements on 144-word row with GPU occupancy, violating criteria (5) and (6) of PMAT-3604.",
+        "The diff includes no test cases asserting re-validation when planted receipts have mismatched sha256, apr version, or device, or when receipts are missing/unreadable, violating criteria (3) and (4) of PMAT-3604.",
+        "The diff only adds the roadmap entry for PMAT-3604 and does not implement validation receipt caching per (model sha256, apr version, device) required by criterion (1) of PMAT-3604.",
+        "The notes in the roadmap fragment explicitly state that this PR is only scaffolding for PR #3634 ('minted by the cop so the AD-04 quorum for PR #3634 can run — pmat work status refused on a missing item'), confirming that the diff does not contain the ticket's implementation."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=Opus 5 (1M context)/claude"
+  }
+}
