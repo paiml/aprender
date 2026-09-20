@@ -208,9 +208,10 @@ fixture_merge() {
 canned_prs() { # canned_prs FILE
     cat > "$1" <<'JSON'
 [
-  {"number": 101, "mergeStateStatus": "DIRTY",  "headRefName": "feat/one",  "isDraft": false, "autoMergeRequest": null},
-  {"number": 102, "mergeStateStatus": "CLEAN",  "headRefName": "feat/two",  "isDraft": false, "autoMergeRequest": null},
-  {"number": 103, "mergeStateStatus": "DIRTY",  "headRefName": "feat/three","isDraft": false, "autoMergeRequest": null}
+  {"number": 101, "mergeStateStatus": "DIRTY",  "headRefName": "feat/one",  "isDraft": false, "autoMergeRequest": null, "files": [{"path": "docs/roadmaps/roadmap.yaml"}, {"path": "src/a.rs"}]},
+  {"number": 102, "mergeStateStatus": "CLEAN",  "headRefName": "feat/two",  "isDraft": false, "autoMergeRequest": null, "files": [{"path": "docs/roadmaps/roadmap.yaml"}]},
+  {"number": 103, "mergeStateStatus": "DIRTY",  "headRefName": "feat/three","isDraft": false, "autoMergeRequest": null, "files": [{"path": "docs/roadmaps/roadmap.yaml"}]},
+  {"number": 104, "mergeStateStatus": "DIRTY",  "headRefName": "feat/four", "isDraft": false, "autoMergeRequest": null, "files": [{"path": "crates/x/src/lib.rs"}]}
 ]
 JSON
 }
@@ -313,6 +314,27 @@ SHIM
         st_row 0 'no --pr selects both DIRTY PRs, never the CLEAN one'
     else
         st_row 1 'no --pr selects both DIRTY PRs, never the CLEAN one' "rc=$rc" "got: $out"
+    fi
+
+    # row: a DIRTY PR whose conflict is NOT in roadmap.yaml is never selected -- the
+    # by-ID driver cannot help it, and a selector broader than its purpose, run on a
+    # timer, is a machine for touching branches it cannot fix. Measured 2026-09-20:
+    # the unfiltered selector returned 14 on a board where 8 touched roadmap.yaml.
+    rc=0
+    out=$(CI_RESOLVE_DIRTY_PRS_JSON="$td/prs.json" bash "$REPO_ROOT/scripts/$PROG" \
+            --list-only 2>&1) || rc=$?
+    if [ "$rc" -eq 0 ] && ! grep -q '^104' <<< "$out"; then
+        st_row 0 'a DIRTY PR that does not touch roadmap.yaml is NEVER selected (104)'
+    else
+        st_row 1 'a DIRTY PR that does not touch roadmap.yaml is NEVER selected (104)' "rc=$rc" "got: $out"
+    fi
+    rc=0
+    out=$(CI_RESOLVE_DIRTY_PRS_JSON="$td/prs.json" bash "$REPO_ROOT/scripts/$PROG" \
+            --list-only --pr 104 2>&1) || rc=$?
+    if [ "$rc" -eq 0 ] && [ -z "$out" ]; then
+        st_row 0 '  ...even when named explicitly with --pr 104: an empty selection, not a pass-through'
+    else
+        st_row 1 '  ...even when named explicitly with --pr 104: an empty selection, not a pass-through' "rc=$rc" "got: $out"
     fi
 
     # row a: --apply pushes
