@@ -141,8 +141,8 @@
     "2": {
       "blocked_by": [],
       "derived_from": [],
-      "discharged": false,
-      "expires": "2026-09-19",
+      "discharged": true,
+      "expires": null,
       "root": true
     },
     "20": {
@@ -156,11 +156,9 @@
       "blocked_by": [
         "2"
       ],
-      "derived_from": [
-        "2"
-      ],
-      "discharged": false,
-      "expires": "2026-09-19",
+      "derived_from": [],
+      "discharged": true,
+      "expires": null,
       "root": false
     },
     "22": {
