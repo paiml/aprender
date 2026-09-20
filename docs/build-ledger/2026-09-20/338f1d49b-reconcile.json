@@ -1,0 +1,131 @@
+{
+ "spec": "APR-RELEASE-001",
+ "section": "6/T-5",
+ "job": "reconcile",
+ "host": "noah-Lambda-Vector",
+ "host_class": "lambda",
+ "sha": "f3cd6cc40f9752acfc2c736b435a493cb2835ccd",
+ "commit": "338f1d49b3518433f1f2a906d54a2fb4502eaa89",
+ "sha_note": "`sha` is what scripts/check_reconcile.sh recorded: `git rev-parse v0.68.2`, which is the ANNOTATED TAG OBJECT, not a commit. The release commit is `commit` above; the file is named for it.",
+ "tag": "v0.68.2",
+ "window": [
+  "v0.68.1",
+  "v0.68.2"
+ ],
+ "measured_at": "2026-09-20T08:53:34Z",
+ "measured_by": "bash scripts/check_reconcile.sh v0.68.2 --prev-tag v0.68.1 --json docs/build-ledger/2026-09-20/338f1d49b-reconcile.json (exit 1)",
+ "predicates": {
+  "R1": {
+   "count": 0,
+   "list": []
+  },
+  "R2": {
+   "count": 25,
+   "list": [
+    "3259",
+    "3364",
+    "3406",
+    "3407",
+    "3409",
+    "3410",
+    "3411",
+    "3412",
+    "3414",
+    "3415",
+    "3417",
+    "3419",
+    "3425",
+    "3426",
+    "3448",
+    "3450",
+    "3455",
+    "3467",
+    "3470",
+    "3473",
+    "3474",
+    "3476",
+    "3479",
+    "3481",
+    "3484"
+   ]
+  },
+  "R3": {
+   "count": 37,
+   "list": [
+    "PMAT-952-wgpu-init-deadlock",
+    "PMAT-953-stdio-write-error-clean-exit",
+    "PMAT-955-sibling-devdeps-path-only",
+    "agent/C0-3",
+    "agent/G-10-full",
+    "agent/R-0-amend",
+    "docs/pr-review-skill-spec",
+    "feat/client-tokenizer-counter",
+    "feat/prrev-001-contract",
+    "feat/prrev-002-schemas",
+    "feat/prrev-003-guard",
+    "feat/prrev-004-mutation",
+    "feat/prrev-005-skill",
+    "feat/prrev-006-wiring",
+    "feat/prrev-007-backtest",
+    "feat/prrev-008-guardfix",
+    "feat/prrev-009-dupfix",
+    "feat/prrev-010-specfix",
+    "feat/prrev-011-rebacktest",
+    "feat/prrev-rung1-shadow-lane",
+    "feat/y1-7bgarbage",
+    "feat/y6-provenance",
+    "fix/apr-cli-doctests",
+    "fix/prrev-control-cache",
+    "fix/wgpu-feature-graph-and-honest-compute-class",
+    "fix/workspace-test-timeout-headroom",
+    "perf/tokenization-mismatch-fatal",
+    "prior-art/2803",
+    "prior-art/2811",
+    "prior-art/2820",
+    "prior-art/2821",
+    "prior-art/2825",
+    "prior-art/2836",
+    "prior-art/2847",
+    "spec/performance-parity-llamacpp",
+    "split/2738-make-test-targets",
+    "split/2738-perf034-sampler-alloc"
+   ]
+  },
+  "R4": {
+   "count": 12,
+   "list": [
+    "3447",
+    "3395",
+    "3351",
+    "3350",
+    "3349",
+    "3344",
+    "3271",
+    "3248",
+    "3245",
+    "3205",
+    "3134",
+    "3001"
+   ]
+  },
+  "R5": {
+   "arrival": 58,
+   "closure": 42,
+   "ratio": 0.7241
+  }
+ },
+ "verdict": "RED \u2014 R2, R3 and R4 are non-zero. The T-5 row's acceptance is \"every predicate reads 0\"; this receipt records what was measured rather than a number that would pass it. R1 (fixed-but-open) = 0 and R5 arrival/closure = 0.7241. The three non-zero predicates are repo housekeeping across the whole 0.68.1..0.68.2 window, not defects in the released artifact: R2 = 25 merged PRs whose issues carry no closing reference, R3 = 37 remote branches with no open PR and a tip older than 14 d, R4 = 12 open PRs that are DIRTY and stale. Discharging them is the T-5 work item, tracked with the 0.68.2 train debt on #3080.",
+ "release_receipts": {
+  "published": "74/74 crates at 0.68.2 on crates.io, cascade 07:16:58Z -> 07:59:49Z, crates_behind=0, attended_min=0 (standing operator authorization 2026-09-17, reconfirmed verbatim 2026-09-20: \"tell agent to auto-publish and never wait for me\")",
+  "pre_publish_dogfood": "GO at 338f1d49b (C14 5/5 PASS on lambda RTX 4090: qwen3.5-0.8b 0.9990, qwen3.5-9b 0.9993 against a 0.99 floor; dense 0.5b/1.5b/7b >= 0.9996 against 0.98)",
+  "clean_room": "paiml/infra run 35495206021 (clean-room (aprender) on intel-clean-room-8, success) after infra#777 made the clone https-first; the 21:46Z attempt 35471384263 failed because the docker build-pool runners have no ~/.ssh and the workflow cloned over git@github.com",
+  "b2_gpu": "paiml/aprender run 35495223699 success",
+  "host_receipts": "gx10 + yoga downloaded the v0.68.2 -cuda release asset, verified sha256 and ran it (apr 0.68.2); install.sh receipts on intel + gx10. All four rc=0 at 08:48Z. The first attempt reported 4 failures that were a missing `mkdir -p $AP/receipts` in the autopilot, not host failures \u2014 fixed in the bundle.",
+  "milestone": "0.68.2 closed; epic #3477 closed"
+ },
+ "notes": [
+  "The POST-publish dogfood cannot emit GO at all right now (#3543): its `version-unpublished` row is not phase-aware, so it reports `aprender 0.68.2 is ALREADY on crates.io` as a FAIL in the one phase where that is the desired state. Its other red, `check_multiplatform_dogfood.sh`, was discharged minutes later by the host receipts above. Neither red is a train failure.",
+  "The published -cuda asset reports `cuda ... not-compiled` from `apr devices` while running CUDA correctly (P0 #3545), so the device line in the host receipts under-reports the binary it is describing.",
+  "0.68.2 published from a bundle-local publish-order.txt + publish_strict.sh because the in-tree cascade-publish.sh TIERS is not a dependency order (#3462); the fix vehicle is #3459 (move the tag path in-tree)."
+ ]
+}
