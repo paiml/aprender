@@ -387,8 +387,25 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     );
 
     println!("{}", "Building quantized inference model...".dimmed());
-    let quantized_model = OwnedQuantizedModel::from_mapped(&mapped_model)
-        .map_err(|e| CliError::ModelLoadFailed(format!("Failed to build quantized model: {e}")))?;
+    // #3571: the Qwen3.5 hybrid (Gated Delta Net) has no dense layers, so `from_mapped` refuses
+    // it by name and `apr serve` could not load the architecture the last release shipped — while
+    // `apr run` loaded it fine, because `run_gguf_inference` has carried exactly this branch since
+    // #3091. The routing gap was in ONE verb, and it was invisible because every gate we own is
+    // single-stream `apr run`: no ladder rung, parity record or dogfood row has ever asked
+    // `apr serve` to load a model (#3555).
+    let is_qwen35 = mapped_model.model.architecture() == Some("qwen35");
+    let quantized_model = if is_qwen35 {
+        realizar::gguf::forward_qwen35::Qwen35Model::create_base_model(
+            &mapped_model.model,
+            mapped_model.data(),
+        )
+        .map_err(|e| {
+            CliError::ModelLoadFailed(format!("Failed to build the Qwen3.5 base model: {e}"))
+        })?
+    } else {
+        OwnedQuantizedModel::from_mapped(&mapped_model)
+            .map_err(|e| CliError::ModelLoadFailed(format!("Failed to build quantized model: {e}")))?
+    };
 
     println!(
         "{}",
