@@ -80,6 +80,7 @@ pub fn is_contract_yaml(path: &Path) -> bool {
 pub fn parse_contract_str(yaml: &str) -> Result<Contract, ContractError> {
     let mut contract: Contract = serde_yaml::from_str(yaml)?;
     contract.unknown_top_level_keys = unknown_top_level_keys(yaml);
+    contract.kind_declared = kind_is_declared(yaml);
     contract.strict_yaml_error = strict_yaml_error(yaml);
     contract.kaizen_record = kaizen_record(yaml, contract.kind())?;
     Ok(contract)
@@ -132,6 +133,38 @@ fn unknown_top_level_keys(yaml: &str) -> Vec<String> {
         .collect()
 }
 
+/// Was `metadata.kind:` written in the document? (ONT-6b, infra#751)
+///
+/// Read from the raw mapping, not from the deserialized `Contract`: serde has
+/// already replaced an absent `kind` with [`ContractKind::Kernel`] by then, and
+/// that substitution is precisely what this has to observe.
+///
+/// Only `metadata`'s KEYS are built; every other top-level value is drained
+/// into `IgnoredAny` by the derived deserializer. This is not a style choice —
+/// the reasons `unknown_top_level_keys` gives above apply here with teeth.
+/// Deserializing the whole document into a `BTreeMap<String, serde_yaml::Value>`
+/// would FAIL on `contracts/apr-cli-commands-v1.yaml`, which defines
+/// `subcommands:` twice inside `commands:`, and the `false` returned for that
+/// reason would be this function silently reporting "no kind declared" about a
+/// file that declares one — the same shape of wrong answer ONT-6b exists to
+/// remove. Draining unknown top-level values means a duplicate key nested under
+/// one is never built and cannot derail the probe.
+///
+/// A document whose `metadata` is absent or is not a mapping answers `false` —
+/// it declared no kind, which is the truth, and the missing-`metadata` case is
+/// a parse error the caller has already surfaced.
+fn kind_is_declared(yaml: &str) -> bool {
+    use serde::de::IgnoredAny;
+    use std::collections::BTreeMap;
+
+    #[derive(serde::Deserialize)]
+    struct KindProbe {
+        metadata: BTreeMap<String, IgnoredAny>,
+    }
+
+    serde_yaml::from_str::<KindProbe>(yaml).is_ok_and(|probe| probe.metadata.contains_key("kind"))
+}
+
 /// The error a STRICT reader gets on YAML the contract schema accepted.
 ///
 /// `Contract`'s derived deserializer walks only the fields it knows and skips
@@ -164,6 +197,53 @@ equations:
 proof_obligations: []
 falsification_tests: []
 "#;
+
+    /// ONT-6b: the probe answers about `metadata.kind` and nothing else.
+    ///
+    /// The three cases that decide it, including the one that is a trap: a
+    /// document carrying a DUPLICATE key nested under an unknown top-level
+    /// block. `contracts/apr-cli-commands-v1.yaml` is that shape in the real
+    /// corpus (`subcommands:` appears 20 times under `commands:`), and a probe
+    /// that deserialized the whole document into `serde_yaml::Value` would fail
+    /// on it and report "no kind declared" about a file that declares one.
+    /// `KindProbe` drains unknown top-level values instead of building them, so
+    /// the duplicate is never constructed.
+    #[test]
+    fn kind_is_declared_reads_metadata_and_survives_a_duplicate_nested_key() {
+        assert!(
+            !kind_is_declared(MINIMAL_CONTRACT),
+            "no metadata.kind is written, so none was declared"
+        );
+        let declared = MINIMAL_CONTRACT.replace(
+            "  description: \"Test contract\"",
+            "  description: \"Test contract\"\n  kind: pattern",
+        );
+        assert!(
+            kind_is_declared(&declared),
+            "metadata.kind is written, whatever its value"
+        );
+
+        let with_duplicate =
+            format!("{declared}commands:\n  root:\n    subcommands: [a]\n    subcommands: [b]\n");
+        assert!(
+            serde_yaml::from_str::<std::collections::BTreeMap<String, serde_yaml::Value>>(
+                &with_duplicate
+            )
+            .is_err(),
+            "anti-vacuity: this fixture must be a document a whole-file Value parse REFUSES, \
+             otherwise the next assertion proves nothing"
+        );
+        assert!(
+            kind_is_declared(&with_duplicate),
+            "a duplicate key under an unknown top-level block must not make a declared kind \
+             read as absent"
+        );
+
+        assert!(
+            !kind_is_declared("not: a contract\n"),
+            "a document with no metadata declared no kind"
+        );
+    }
 
     #[test]
     fn parse_minimal_contract() {
