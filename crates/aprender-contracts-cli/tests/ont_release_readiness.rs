@@ -160,6 +160,15 @@ fn pass_row(c: &Value) -> Value {
         let id = c["id"].as_str().unwrap_or_default();
         r.insert("output_sha256".into(), format!("out:{id}").into());
     }
+    // a8's controls, coherent: T 0 and top-k 1 are the same greedy bytes; seed A twice is identical; seed B differs
+    if c["kind"] == "sampling" {
+        let out = match c["control"].as_str() {
+            Some("t0" | "topk1") => "greedy",
+            Some("seed-a" | "seed-a-again") => "sampled-a",
+            _ => "sampled-b",
+        };
+        r.insert("output_sha256".into(), out.into());
+    }
     Value::Object(r)
 }
 
@@ -363,12 +372,16 @@ fn the_green_release_passes_with_every_derived_cell_carrying_a_row() {
     assert_eq!(rel["surface"]["generating_commands"], 1);
     assert_eq!(rel["kernel_cells"], 4);
     assert_eq!(rel["tokenizer_cells"], 1);
+    assert_eq!(
+        rel["sampling_checks"], 2,
+        "gen's typed sampling args, one model arch, two hosts"
+    );
     assert_eq!(rel["crux"]["verbs"], 3, "every derived leaf verb");
     assert_eq!(rel["crux"]["mapped_verbs"], 1, "only gen has a counterpart");
     assert!(rel["crux"]["obligations"].as_u64() > Some(0));
     assert_eq!(
         v["armed_shapes"].as_array().map(Vec::len),
-        Some(15),
+        Some(16),
         "--shape arms the whole family"
     );
     let lambda = &rel["projection"]["lambda"];
@@ -1053,5 +1066,52 @@ fn a_broken_crux_harness_declines_the_gate_naming_the_model() {
         r.stderr.contains("no measured positive-control cell"),
         "{}",
         show(&r)
+    );
+}
+
+// ── S2.5: a8's sampling controls over typed `sampling` args ─────────────────────────────────────────────
+
+/// Set the output digest of `host`'s sampling control `control`.
+fn set_control(t: &Path, host: &str, control: &str, out: &str) {
+    let id = pick(t, |c| {
+        c["kind"] == "sampling" && c["host"] == host && c["control"] == control
+    });
+    edit_row(t, host, &id, |r| r["output_sha256"] = out.into());
+}
+
+#[test]
+fn each_of_a8s_sampling_controls_turns_the_gate_red_when_broken() {
+    let cases: [(&str, &str, &str); 4] = [
+        ("seed-a-again", "drifted", "seedRepeatable"),
+        ("seed-b", "sampled-a", "seedsDiffer"),
+        ("topk1", "not-greedy", "greedyAgrees"),
+        ("seed-a", "greedy", "sampledDiffers"),
+    ];
+    for (control, out, check) in cases {
+        let t = green();
+        set_control(t.path(), "lambda", control, out);
+        if check == "sampledDiffers" {
+            set_control(t.path(), "lambda", "seed-a-again", "greedy");
+            set_control(t.path(), "lambda", "seed-b", "greedy");
+        }
+        let v = assert_red_naming(&gate(t.path(), &[]), "release-sampling/0.69.1/lambda/gen");
+        assert!(v["findings"].to_string().contains(check), "{check}");
+    }
+}
+
+#[test]
+fn a_control_the_command_cannot_express_is_named_never_passed() {
+    let t = green();
+    edit(&t.path().join("surface.json"), |v| {
+        v["commands"][0]["args"]
+            .as_array_mut()
+            .expect("args")
+            .retain(|a| a["sampling_kind"] != "seed");
+    });
+    synthesize(t.path());
+    let v = assert_red_naming(&gate(t.path(), &[]), "underivable");
+    assert!(
+        v["findings"].to_string().contains("seed-a"),
+        "names the control it cannot run"
     );
 }
