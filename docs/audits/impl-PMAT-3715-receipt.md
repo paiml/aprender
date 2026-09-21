@@ -95,3 +95,22 @@ Restored → Pass, with all eight controls `fired`.
 
 - done_when 4's call sites: autopilot T-1 and `check_publish_preflight.sh` T-4. Those are aprender-f0's (#3717/#3708). This PR provides the exact invocation and exit contract they call, agreed on #3712 (issuecomment-5763344947): 0 Pass · 1 Fail · 2 decline · 3 caller error, and every non-zero STOPs.
 - done_when 5's second half, "on 0.69.1 it passes with N/N cells named". It needs the producer (#3712 `cells[]`, the memory arithmetic, and kernel and tokenizer receipts) and the model fixes. `release.cell_names` is how it will name the cells.
+
+## 6. Follow-up delta on release/0.69.1-batch-1 (base ded8a932a): a pure complexity refactor
+
+**What this delta is, and all it is.** It is not the feature above; the feature was already folded at ded8a932a.
+The cop, aprender-04, asked for it on the 0.69.1 critical path. guard_tree's complexity ratchet was RED on the
+batch against main a9502d992:
+`RED NEW crates/aprender-contracts/src/lint/shapes_gate.rs::run_shapes_gate_with cyclomatic 13 cognitive 28`
+(the cognitive limit is 25). The fix is a **pure refactor with no behaviour change**:
+- `run_shapes_gate_with` delegates to `prepare`, `order_by_family`, `needs_receipts`, `verdict_of`, `by_shape` and `by_entity_type`.
+- `prepare` keeps the original order of answers: collect-shapes error → no shapes → `armed_shapes` error → the family selection error.
+- The verdict rule (violations → Fail; warnings alone → Unknown{Warn}; else Pass) and both report maps are moved byte for byte.
+
+| measured on this delta | result |
+|---|---|
+| `bash scripts/check_complexity_ratchet.sh` | `run_shapes_gate_with` no longer listed. rc stays 1 **only** for `crates/aprender-serve/src/constrain/tests.rs::generate_intent` (cyclomatic 13, cognitive 27), which is not in this diff and not this ticket's |
+| `cargo test -p aprender-contracts --lib` | 1701 passed, 0 failed |
+| `pv lint contracts --gate shapes` | Pass, 8/8 `pc_extract` fired (release-evidence included) |
+| `cargo test -p aprender-contracts-cli --test ont_release_readiness --test ont4b_shapes_gate --test ont4c1_model_receipts --test ont4c3_parity_receipts` | 34 + 11 + 12 + 10 passed |
+| `cargo clippy -p aprender-contracts --lib --tests -- -D warnings` | clean |
