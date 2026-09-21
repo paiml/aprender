@@ -260,6 +260,13 @@ pub struct Qwen35CudaModel<'a> {
     dims: Qwen35CudaDims,
     /// Positions the device KV caches hold.
     max_seq_len: usize,
+    /// Rows per batched-prefill GEMM chunk (#3596): 512 by default, more where the
+    /// device has memory to spare (a unified-memory GB10), because every chunk
+    /// dequantizes every weight once.
+    prefill_rows: usize,
+    /// The batched prefill's attention path (#3596): cuBLAS f32 unless only flash
+    /// fits, as the capacity plan decides.
+    prefill_attention: prefill::PrefillAttention,
 }
 
 /// Map a GPU error into the crate error type with the operation that raised it.
@@ -589,7 +596,18 @@ impl<'a> Qwen35CudaModel<'a> {
         let attn_scratch = Self::build_attn_scratch(&executor, dims)?;
         let out_normed = Self::zeros(&executor, dims.hidden_dim as usize)?;
         let logits_buf = Self::zeros(&executor, dims.vocab_size as usize)?;
-        let state = Self::build_state(&executor, &layers, dims, max_seq_len)?;
+        let prefill_attention = prefill::default_prefill_attention(&executor, dims);
+        // #3596: the model's OWN state serves only the single-layer handles
+        // (`forward_attention_layer`, `upload_attention_kv`, …), never a generation —
+        // `qwen35_gpu_decode` and the F2 probe each allocate theirs. Sizing it to the
+        // request's `max_seq_len` put a second full-length KV on the device next to the
+        // decode state: 2 × 16 GiB on the 9B at 262,144 positions.
+        let state = Self::build_state(
+            &executor,
+            &layers,
+            dims,
+            max_seq_len.min(DEFAULT_MAX_SEQ_LEN),
+        )?;
         Ok(Self {
             model,
             executor,
@@ -603,6 +621,8 @@ impl<'a> Qwen35CudaModel<'a> {
             logits_buf,
             dims,
             max_seq_len,
+            prefill_rows: prefill::PREFILL_MAX_CHUNK_ROWS,
+            prefill_attention,
         })
     }
 
@@ -656,6 +676,21 @@ impl<'a> Qwen35CudaModel<'a> {
     /// Any CUDA allocation failure.
     pub fn new_state(&self) -> Result<Qwen35CudaState> {
         Self::build_state(&self.executor, &self.layers, self.dims, self.max_seq_len)
+    }
+
+    /// A fresh decode state holding `max_seq_len` positions — for a caller that
+    /// needs fewer than the model was built for (#3596: the F2 probe needs its
+    /// probe plus one decode step, not the whole request's KV).
+    ///
+    /// # Errors
+    /// A `max_seq_len` of zero, or any CUDA allocation failure.
+    pub fn new_state_with_len(&self, max_seq_len: usize) -> Result<Qwen35CudaState> {
+        if max_seq_len == 0 {
+            return Err(RealizarError::InvalidShape {
+                reason: "qwen35_cuda: a state must hold at least one position".to_string(),
+            });
+        }
+        Self::build_state(&self.executor, &self.layers, self.dims, max_seq_len)
     }
 
     /// Run `f` with the model's own state detached.
@@ -1494,6 +1529,14 @@ impl<'a> Qwen35CudaModel<'a> {
         Ok(out)
     }
 }
+
+/// PMAT-3596 (#3596): the batched (chunked) prefill — [`Qwen35CudaModel::prefill`].
+#[path = "forward_qwen35_cuda_prefill.rs"]
+mod prefill;
+pub use prefill::{
+    PrefillAttention, PREFILL_ATTENTION_ENV, PREFILL_MAX_CHUNK_ROWS, PREFILL_SCORES_BUDGET_BYTES,
+    UNIFIED_PREFILL_CHUNK_ROWS,
+};
 
 /// Per-layer CPU parity on the real Qwen3.5-0.8B file.
 #[cfg(test)]

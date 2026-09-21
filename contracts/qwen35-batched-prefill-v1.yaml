@@ -1,0 +1,106 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-09-21"
+  author: PAIML Engineering
+  kind: pattern
+  references:
+    - "paiml/aprender#3596 — batched (chunked) CUDA prefill for the Qwen3.5 hybrid"
+    - "#3596 amendments (cop, 2026-09-21T16:12:21Z): chunked form = a chunk-resident scan bitwise-identical to the per-token recurrence"
+    - "Yang et al. (2024) Gated Delta Networks — the recurrence the scan runs"
+  description: |
+    Correctness contract for Qwen35CudaModel::prefill and the pre-load capacity plan. The
+    batched prefill must leave the model where T calls of forward_single would (up to float
+    summation order in the GEMMs and the attention), the Gated DeltaNet recurrence inside it
+    must be the per-token recurrence bit for bit, and a context the device cannot hold must be
+    refused before loading, with the arithmetic.
+name: qwen35-batched-prefill
+version: "1.0.0"
+scope: "crates/aprender-serve/src/gguf/cuda/forward_qwen35_cuda_prefill.rs"
+depends_on:
+  - gated-delta-net-v1
+description: |
+  PMAT-3596: qwen35_gpu_decode looped forward_single over every prompt token: a GEMV per
+  projection per token, an lm_head per position, and full attention with one block per head
+  walking the whole cache (O(L^2) on 16 blocks). Qwen3.5-9B took 235 s for one output token on
+  a ~5.7k-token brief. The batched prefill runs every projection as one f32 SGEMM over a chunk of
+  rows, the recurrence as one chunk-resident scan, conv1d/L2/gates/RoPE as row twins of the
+  per-token kernels, and attention as QK^T -> causal softmax -> PV over the resident cache; only
+  the last row runs the lm_head.
+equations:
+  C-QBP-001:
+    description: "The chunk-resident delta-rule scan over T tokens equals T launches of the per-token recurrence kernel, bit for bit."
+    formula: "scan(S_0, x_0..x_{T-1}) == fold(per_token_step, S_0, x_0..x_{T-1})  (every output and the final state, bitwise)"
+    note: "Same f32 op chains in the same order; only operand storage moves (registers/shared instead of global). ptxas contraction is chosen per target, so the equality is measured per architecture (sm_89, sm_121)."
+  C-QBP-002:
+    description: "Conv1d over a chunk and the row twins of the L2 norm, gates and partial RoPE equal their per-token kernels applied row by row, bit for bit."
+    formula: "rows_kernel(X_0..X_{T-1}) == [per_token_kernel(X_t) for t < T]  (bitwise)"
+  C-QBP-003:
+    description: "prefill(tokens) leaves logits and every state buffer within a measured budget of T forward_single calls, with identical argmax."
+    formula: "argmax(prefill(x)) == argmax(fwd^T(x)) and cos >= 0.99999 and rel_linf(logits) <= 1e-4 and rel_linf(state) <= 1e-4"
+    note: "Measured on the real 0.8B at 64 and 600 positions (two chunks), split across two calls, and one decode step continued from each state: logits rel L-inf <= 1.6e-6, states <= 3.8e-6, cosine 1.0000000, on sm_89 and sm_121."
+  C-QBP-004:
+    description: "The capacity plan refuses a request that does not fit the measured free device memory, before loading, and classifies the refusal by what an empty device could hold."
+    formula: "need(d) = weights + kv_per_token(d) * seq + workspace + overhead; f32 iff need(f32) <= free; f16 iff f16_decode and need(f16) <= free; otherwise refuse, co_tenant iff need <= total at the cheapest holdable dtype; attention = the first of [cuBLAS f32, flash] (the environment pins one) whose plan fits, every chunk-row count of a path tried before the next path, a refusal carrying the last (smallest) plan's arithmetic"
+  C-QBP-005:
+    description: "The fused flash-attention prefill (f16 inputs, f32 accumulation and online softmax) equals exact causal GQA attention over f16-rounded inputs within 2e-3 relative, and the whole flash prefill stays within the flash budget of the per-token path."
+    formula: "rel_linf(flash(Q,K,V), attn_f64(f16(Q),f16(K),f16(V))) <= 2e-3 and argmax(prefill_flash) == argmax(fwd^T) and cos >= 0.99999 and rel_linf(logits) <= 2e-3 and rel_linf(state) <= 5e-3"
+    note: "The cop's #3596 ruling admits f16 inputs with f32 accumulation. Measured (sm_89): kernel 2.0e-5 .. 2.8e-4 vs the f16-input reference; whole prefill on the 0.8B: logits <= 1.5e-4, states <= 5.4e-4, cosine 1.0000000."
+proof_obligations:
+  - id: PO-QBP-001
+    kind: equivalence
+    statement: "The chunk scan is bitwise-equal to T per-token launches for the 0.8B, 9B and 27B head shapes."
+    discharged_by: FALSIFY-QBP-SCAN-BITWISE
+  - id: PO-QBP-002
+    kind: equivalence
+    statement: "The conv1d/L2/gates/RoPE row kernels are bitwise-equal to their per-token twins."
+    discharged_by: FALSIFY-QBP-ROWS-BITWISE
+  - id: PO-QBP-003
+    kind: equivalence
+    statement: "Batched prefill agrees with the per-token path on logits and every state buffer, in one call and split, and decode continues identically."
+    discharged_by: FALSIFY-QBP-PREFILL-EQ
+  - id: PO-QBP-005
+    kind: equivalence
+    statement: "The flash kernel matches exact attention over f16 inputs for the 0.8B, 9B and 27B head shapes, with a cached prefix, a partial block and dozens of key tiles; the flash prefill matches the per-token path within its budget."
+    discharged_by: FALSIFY-QBP-FLASH
+  - id: PO-QBP-004
+    kind: safety
+    statement: "A request that cannot fit is refused with its budget before any upload; a co-tenant-caused refusal is distinguishable from a device limit."
+    discharged_by: FALSIFY-QBP-CAPACITY-TABLE
+falsification_tests:
+  - id: FALSIFY-QBP-SCAN-BITWISE
+    rule: "Chunk scan is the per-token recurrence"
+    prediction: "Every output and the final state of one scan launch over T tokens are bitwise-equal to T per-token launches"
+    test: "cargo test -p aprender-gpu --features cuda --lib gdn_chunk_scan"
+    if_fails: "The scan reordered an accumulation, contracted differently, or mis-addressed a token row or head"
+  - id: FALSIFY-QBP-ROWS-BITWISE
+    rule: "Row twins are their per-token kernels"
+    prediction: "conv1d over a chunk, L2 rows, gates rows and RoPE rows equal row-by-row per-token launches bitwise"
+    test: "cargo test -p aprender-gpu --features cuda --lib -- gdn_conv1d_seq gdn_rows"
+    if_fails: "A row stride, a per-row position or a per-head index is wrong"
+  - id: FALSIFY-QBP-PREFILL-EQ
+    rule: "Batched prefill is the per-token path"
+    prediction: "Identical argmax, cosine >= 0.99999, logits and every state buffer within 1e-4 relative: one call, split, and after a decode step"
+    test: "cargo test -p aprender-serve --features cuda --lib qwen35_prefill"
+    if_fails: "A layer op, a KV row write, the attention base offset or the chunking is wrong"
+  - id: FALSIFY-QBP-CAPACITY-TABLE
+    rule: "Capacity refuses before loading, classified"
+    prediction: "Each case-table row yields its stated f32 / f16 / co_tenant / f16_decode_unavailable / exceeds_device verdict; the 262k-beside-a-co-tenant row takes flash only because f32 does not fit, the 20k row takes f32"
+    test: "cargo test -p aprender-serve --lib capacity:: && cargo test -p aprender-serve --features cuda --lib qwen35_prefill_attention_prefers"
+    if_fails: "The budget arithmetic or the refusal classification is wrong"
+  - id: FALSIFY-QBP-FLASH
+    rule: "Flash attention is causal attention"
+    prediction: "The kernel is within 2e-3 of an f64 reference over f16-rounded inputs, and the flash prefill within the flash budget of the per-token path"
+    test: "cargo test -p aprender-gpu --features cuda --lib gdn_flash_prefill && cargo test -p aprender-serve --features cuda --lib qwen35_flash_prefill"
+    if_fails: "A fragment layout, the causal mask, the online-softmax rescale or the GQA head mapping is wrong"
+qa_gate:
+  id: F-QBP-001
+  name: Qwen3.5 batched prefill contract
+  description: "Batched prefill equals the per-token path; the recurrence bitwise; capacity refused before loading"
+  checks:
+    - scan_bitwise
+    - rows_bitwise
+    - prefill_equivalence
+    - capacity_table
+    - flash_attention
+  pass_criteria: "All 5 falsification tests pass on every architecture the path ships on (sm_89, sm_121)"
+  falsification: "Scale the scan's output immediate by 1.0001: FALSIFY-QBP-SCAN-BITWISE must go RED (measured 2026-09-21: RED at flat index 0)"

@@ -1263,6 +1263,7 @@ pub fn run_qwen35_generate(
             reason: "run_qwen35_generate: prompt cannot be empty".to_string(),
         });
     }
+    qwen35_check_context(input_tokens.len(), base.config.context_length)?;
     let qwen = Qwen35Model::from_model_and_layers(base, &mapped.model, mapped.data())?;
     let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
     let mut state = qwen.new_state(max_seq_len);
@@ -1331,6 +1332,23 @@ pub fn qwen35_route(no_gpu: bool, cuda_backend: bool) -> Qwen35Route {
     }
 }
 
+/// The bound every other generate path checks (GH-167), which the Qwen3.5 dispatch
+/// skipped: #3596's 262k rung prefilled 263,089 positions into a model that declares
+/// 262,144, on both the GPU and the CPU route, and nothing refused it.
+///
+/// # Errors
+/// [`crate::error::RealizarError::ContextLimitExceeded`] when the prompt is longer
+/// than the model's declared `context_length`.
+pub fn qwen35_check_context(prompt_len: usize, context_length: usize) -> Result<()> {
+    if prompt_len > context_length {
+        return Err(crate::error::RealizarError::ContextLimitExceeded {
+            provided: prompt_len,
+            maximum: context_length,
+        });
+    }
+    Ok(())
+}
+
 /// The one-line notice a route owes the user, or `None` when it owes none.
 ///
 /// #3477: the GPU case used to print `[qwen35: Gated DeltaNet runs on the CPU;
@@ -1371,6 +1389,57 @@ pub fn run_qwen35_generate_dispatch(
     gen_config: &crate::gguf::QuantizedGenerateConfig,
     no_gpu: bool,
 ) -> Result<(Vec<u32>, bool)> {
+    let outcome =
+        run_qwen35_generate_dispatch_timed(mapped, base, input_tokens, gen_config, no_gpu)?;
+    Ok((outcome.tokens, outcome.used_gpu))
+}
+
+/// The prefill/decode wall-clock split of one Qwen3.5 generation (#3596, #3718).
+///
+/// `prefill_ms` is the forward over the post-template prompt up to the logits of the
+/// first generated token, and nothing else: model load, host-to-device upload, the F2
+/// guard (`validate_ms`) and tokenization are all outside it — the definition agreed
+/// for `apr run --json` with #3718 and #3606's `StageTimings`. Each field is `None`,
+/// never `0.0`, on a path that does not split the two (the CPU forward).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Qwen35PhaseTimings {
+    /// Prompt forward, to the first generated token's logits.
+    pub prefill_ms: Option<f64>,
+    /// Every generated token after the first's logits.
+    pub decode_ms: Option<f64>,
+    /// Which attention the prefill ran (#3596 ruling: printed, never silent) —
+    /// `PrefillAttention::as_str`.
+    pub prefill_attention: Option<&'static str>,
+}
+
+/// What one Qwen3.5 generation produced: the tokens, the backend that produced them,
+/// and the phase split when that backend measures one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Qwen35GenerateOutcome {
+    /// Prompt followed by the generated tokens.
+    pub tokens: Vec<u32>,
+    /// Did the CUDA forward produce them?
+    pub used_gpu: bool,
+    /// The prefill/decode split, `None` fields where not measured.
+    pub timings: Qwen35PhaseTimings,
+    /// The device-memory plan the GPU path ran under — including the KV dtype it
+    /// chose, which #3596's amendment 3 requires `--json` to print. `None` on the CPU.
+    pub capacity: Option<crate::capacity::CapacityBudget>,
+}
+
+/// [`run_qwen35_generate_dispatch`] with the phase split (#3596): the same routing,
+/// the same printed fallback, plus [`Qwen35PhaseTimings`] from the GPU path.
+///
+/// # Errors
+/// Only a CPU-forward failure, as [`run_qwen35_generate_dispatch`].
+pub fn run_qwen35_generate_dispatch_timed(
+    mapped: &crate::gguf::MappedGGUFModel,
+    base: &OwnedQuantizedModel,
+    input_tokens: &[u32],
+    gen_config: &crate::gguf::QuantizedGenerateConfig,
+    no_gpu: bool,
+) -> Result<Qwen35GenerateOutcome> {
+    qwen35_check_context(input_tokens.len(), base.config.context_length)?;
     let route = qwen35_route(no_gpu, cfg!(feature = "cuda"));
     if let Some(notice) = qwen35_route_notice(route) {
         eprintln!("{notice}");
@@ -1378,14 +1447,32 @@ pub fn run_qwen35_generate_dispatch(
     #[cfg(feature = "cuda")]
     if route == Qwen35Route::Gpu {
         match run_qwen35_generate_gpu(mapped, base, input_tokens, gen_config) {
-            Ok(tokens) => return Ok((tokens, true)),
-            Err(reason) => {
+            Ok((tokens, timings, capacity)) => {
+                return Ok(Qwen35GenerateOutcome {
+                    tokens,
+                    used_gpu: true,
+                    timings,
+                    capacity: Some(capacity),
+                })
+            },
+            // #3596: a context the GPU cannot hold is refused, not served on the CPU —
+            // at the lengths that trip this, the CPU forward takes hours (a 5.7k-token
+            // brief timed out after 3600 s), which is a stall, not a fallback.
+            Err(Qwen35GpuFailure::Refused(refusal)) => {
+                return Err(crate::error::RealizarError::CapacityRefused(refusal));
+            },
+            Err(Qwen35GpuFailure::Fallback(reason)) => {
                 eprintln!("{QWEN35_GPU_FALLBACK_PREFIX}, falling back to CPU: {reason}");
             },
         }
     }
     let tokens = run_qwen35_generate(mapped, base, input_tokens, gen_config)?;
-    Ok((tokens, false))
+    Ok(Qwen35GenerateOutcome {
+        tokens,
+        used_gpu: false,
+        timings: Qwen35PhaseTimings::default(),
+        capacity: None,
+    })
 }
 
 /// Positions the F2 hybrid guard forwards on both backends before it will let
@@ -1393,20 +1480,45 @@ pub fn run_qwen35_generate_dispatch(
 #[cfg(feature = "cuda")]
 const QWEN35_F2_PROBE_MAX: usize = 64;
 
-/// The GPU twin of [`run_qwen35_generate`]: build the hybrid on CUDA, prove it
-/// against its own CPU forward, then decode.
+/// Why the GPU path did not produce the tokens.
+#[cfg(feature = "cuda")]
+enum Qwen35GpuFailure {
+    /// A reason to run the CPU forward instead — printed, never silent.
+    Fallback(String),
+    /// The context does not fit the device (#3596): refused before loading, with the
+    /// arithmetic. NOT a fallback — see `run_qwen35_generate_dispatch_timed`.
+    Refused(Box<crate::capacity::CapacityRefusal>),
+}
+
+#[cfg(feature = "cuda")]
+impl From<String> for Qwen35GpuFailure {
+    fn from(reason: String) -> Self {
+        Self::Fallback(reason)
+    }
+}
+
+/// The GPU twin of [`run_qwen35_generate`]: plan the device memory, build the hybrid
+/// on CUDA, prove it against its own CPU forward, then decode.
 ///
-/// `Err` is a fallback reason, never a user-visible failure — the caller prints
-/// it and runs the CPU forward.
+/// A [`Qwen35GpuFailure::Fallback`] is a reason the caller prints before running the
+/// CPU forward; a [`Qwen35GpuFailure::Refused`] is a capacity refusal the caller
+/// returns as an error, decided before any weight reaches the device.
 #[cfg(feature = "cuda")]
 fn run_qwen35_generate_gpu(
     mapped: &crate::gguf::MappedGGUFModel,
     base: &OwnedQuantizedModel,
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
-) -> std::result::Result<Vec<u32>, String> {
+) -> std::result::Result<
+    (
+        Vec<u32>,
+        Qwen35PhaseTimings,
+        crate::capacity::CapacityBudget,
+    ),
+    Qwen35GpuFailure,
+> {
     if input_tokens.is_empty() {
-        return Err("the prompt is empty".to_string());
+        return Err("the prompt is empty".to_string().into());
     }
     let qwen = Qwen35Model::from_model_and_layers(base, &mapped.model, mapped.data())
         .map_err(|e| format!("the hybrid layers would not load: {e}"))?;
@@ -1416,12 +1528,65 @@ fn run_qwen35_generate_gpu(
     let device_name = executor
         .device_name()
         .unwrap_or_else(|_| "Unknown GPU".to_string());
-    let vram_mb = executor.memory_info().unwrap_or((0, 0)).1 / (1024 * 1024);
+    // #3596/#3714: discrete → cuMemGetInfo; unified (GB10) → the host's MemAvailable
+    // less a CI headroom, because there cuMemGetInfo's free excludes page cache.
+    let device_memory = crate::capacity::measure_device_memory(&executor)?;
+    let (gpu_free, gpu_total) = device_memory.plan_free_total();
+    let vram_mb = executor
+        .memory_info()
+        .map_or(0, |(_, total)| total / (1024 * 1024));
 
     let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
+    // #3596: will it fit? Decided here, from the host model and the MEASURED free
+    // memory, before a byte is uploaded — never discovered as an OOM mid-prefill.
+    // #3596 (cop ruling 2026-09-21): cuBLAS f32 attention while its plan fits — exact,
+    // and faster than flash on sm_89 — flash only when flash alone fits.
+    let attention_paths =
+        crate::gguf::cuda::Qwen35CudaModel::prefill_attention_candidates_for(&qwen, &executor);
+    // Bigger GEMM chunks on a unified-memory host (the dequant is paid per chunk); if
+    // that workspace does not fit, the default does before the next path is tried.
+    let chunk_rows_to_try: &[usize] = match device_memory {
+        crate::capacity::DeviceMemory::Unified { .. } => &[
+            crate::gguf::cuda::UNIFIED_PREFILL_CHUNK_ROWS,
+            crate::gguf::cuda::PREFILL_MAX_CHUNK_ROWS,
+        ],
+        crate::capacity::DeviceMemory::Discrete { .. } => {
+            &[crate::gguf::cuda::PREFILL_MAX_CHUNK_ROWS]
+        },
+    };
+    let planned =
+        crate::capacity::plan_first_fit(&attention_paths, chunk_rows_to_try, |attention, rows| {
+            crate::capacity::plan(&crate::capacity::CapacityInputs {
+                memory: Some(device_memory),
+                ..crate::gguf::cuda::Qwen35CudaModel::capacity_inputs(
+                    &qwen,
+                    max_seq_len,
+                    gpu_free,
+                    gpu_total,
+                    attention,
+                    rows,
+                )
+            })
+        });
+    let (attention, chunk_rows, budget) = match planned {
+        Ok(fit) => fit,
+        Err(Some(refusal)) => return Err(Qwen35GpuFailure::Refused(refusal)),
+        Err(None) => return Err("no prefill attention path to plan".to_string().into()),
+    };
+    if budget.kv_dtype != crate::capacity::KvDtype::F32 {
+        // `capacity_inputs` reports no f16 decode, so a plan cannot choose it; if that
+        // ever changes without the f16 cache existing, refuse loudly.
+        return Err(format!(
+            "the capacity plan chose a {:?} KV cache, which this build cannot allocate",
+            budget.kv_dtype
+        )
+        .into());
+    }
     let mut gpu =
         crate::gguf::cuda::Qwen35CudaModel::with_max_seq_len(&qwen, executor, max_seq_len)
             .map_err(|e| format!("the CUDA model would not build: {e}"))?;
+    gpu.set_prefill_chunk_rows(chunk_rows);
+    gpu.set_prefill_attention(attention);
 
     // Unconditional, like every other backend-selection line on this path: the
     // user must be able to tell a GPU run from a CPU one without --verbose.
@@ -1435,20 +1600,29 @@ fn run_qwen35_generate_gpu(
     let f2 =
         f2_validate_qwen35_receipted(&mut gpu, &qwen, input_tokens, mapped.data(), &device_name);
     if !f2.accepted {
-        return Err("the F2 CPU-parity guard rejected the GPU path".to_string());
+        return Err("the F2 CPU-parity guard rejected the GPU path"
+            .to_string()
+            .into());
     }
-    qwen35_gpu_decode(&mut gpu, input_tokens, gen_config)
+    let (tokens, timings) = qwen35_gpu_decode(&mut gpu, input_tokens, gen_config)?;
+    Ok((tokens, timings, budget))
 }
 
 /// Prefill + decode on the GPU, with the token choice
 /// [`run_qwen35_generate`] makes, from a state that has never seen the guard's
 /// probe.
+///
+/// The prompt goes through the batched prefill (#3596) — one chunked pass whose
+/// projections are GEMMs and whose recurrence is the chunk-resident scan — and
+/// generation continues token by token from the state it leaves, which is where the
+/// per-token loop this replaced would have left it (measured by
+/// `forward_qwen35_cuda_prefill_tests`).
 #[cfg(feature = "cuda")]
 fn qwen35_gpu_decode(
     gpu: &mut crate::gguf::cuda::Qwen35CudaModel<'_>,
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
-) -> std::result::Result<Vec<u32>, String> {
+) -> std::result::Result<(Vec<u32>, Qwen35PhaseTimings), String> {
     use rand::SeedableRng;
     let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
     let mut state = gpu
@@ -1456,12 +1630,26 @@ fn qwen35_gpu_decode(
         .map_err(|e| format!("the decode state would not allocate: {e}"))?;
     let mut rng = rand::rngs::StdRng::seed_from_u64(gen_config.seed);
 
-    let mut logits = Vec::new();
-    for (pos, &token) in input_tokens.iter().enumerate() {
-        logits = gpu
-            .forward_single(token, &mut state, pos)
-            .map_err(|e| format!("the GPU forward failed at prompt position {pos}: {e}"))?;
-    }
+    // `prefill` ends in the logits download, so this clock stops on finished work.
+    let prefill_start = std::time::Instant::now();
+    let mut logits = gpu.prefill(input_tokens, &mut state, 0).map_err(|e| {
+        format!(
+            "the GPU prefill of {} prompt tokens failed: {e}",
+            input_tokens.len()
+        )
+    })?;
+    let prefill_ms = prefill_start.elapsed().as_secs_f64() * 1000.0;
+    // Unconditional, like the Backend line: a run must show WHICH prefill it took
+    // without --verbose, or a per-token regression reads as a slow GPU.
+    let attention = gpu.prefill_attention_mode();
+    eprintln!(
+        "[qwen35] batched prefill: {} tokens in {prefill_ms:.0} ms ({:.0} tok/s, chunk {} rows, attention {})",
+        input_tokens.len(),
+        input_tokens.len() as f64 * 1000.0 / prefill_ms.max(1e-9),
+        gpu.prefill_chunk_rows(input_tokens.len()),
+        attention.as_str(),
+    );
+    let decode_start = std::time::Instant::now();
     let mut tokens = input_tokens.to_vec();
     for _ in 0..gen_config.max_tokens {
         let next = if gen_config.temperature == 0.0 || gen_config.top_k == 1 {
@@ -1484,7 +1672,12 @@ fn qwen35_gpu_decode(
             .forward_single(next, &mut state, pos)
             .map_err(|e| format!("the GPU forward failed at decode position {pos}: {e}"))?;
     }
-    Ok(tokens)
+    let timings = Qwen35PhaseTimings {
+        prefill_ms: Some(prefill_ms),
+        decode_ms: Some(decode_start.elapsed().as_secs_f64() * 1000.0),
+        prefill_attention: Some(attention.as_str()),
+    };
+    Ok((tokens, timings))
 }
 
 /// The F2 runtime guard for the hybrid: forward the real prompt through BOTH
@@ -1495,9 +1688,8 @@ fn qwen35_gpu_decode(
 /// of which exists for this architecture. The decision itself is shared:
 /// `f2_multi_position_report` with its floors (0.95 / 0.98 / 0.90), so the
 /// hybrid is judged by the same rule as every other GPU path. The probe path is
-/// [`F2ProbePath::Serial`] because there is no batched prefill for the hybrid —
-/// `qwen35_gpu_decode` prefills token by token, so the serial probe IS the path
-/// the run takes.
+/// [`F2ProbePath::Batched`] (#3596): `qwen35_gpu_decode` prefills the prompt with the
+/// batched prefill and decodes from there, so the probe does exactly that.
 ///
 /// Both states are throwaway: the guard allocates its own, and the generation
 /// that follows allocates another.
@@ -1568,7 +1760,7 @@ fn f2_validate_qwen35(
     } else {
         eprintln!(
             "{}",
-            crate::infer::f2_divergence_msg(&report, crate::infer::F2ProbePath::Serial)
+            crate::infer::f2_divergence_msg(&report, crate::infer::F2ProbePath::Batched)
         );
         F2Verdict::Rejected
     }
@@ -1733,27 +1925,59 @@ fn f2_qwen35_gpu_logits(
     decode_token: u32,
 ) -> std::result::Result<Vec<Vec<f32>>, String> {
     let steps = probe.len() + 1;
+    // #3596: the probe takes the path a real run takes — the batched prefill over the
+    // probe, then one decode step — in a state sized for exactly those `steps`
+    // positions, not the request's whole KV.
     let mut state = gpu
-        .new_state()
+        .new_state_with_len(steps)
         .map_err(|e| format!("F2 qwen35 probe: the device state would not allocate: {e}"))?;
-    let mut per_pos: Vec<Vec<f32>> = Vec::with_capacity(steps);
-    for (pos, tok) in probe
-        .iter()
-        .copied()
-        .chain(std::iter::once(decode_token))
-        .enumerate()
-    {
-        match gpu.forward_single(tok, &mut state, pos) {
-            Ok(logits) => per_pos.push(logits),
-            Err(e) => return Err(crate::infer::gpu_forward_failure_msg(pos, steps, &e)),
-        }
+    let every_position: Vec<usize> = (0..probe.len()).collect();
+    let mut per_pos = gpu
+        .prefill_logits_at(probe, &mut state, 0, &every_position)
+        .map_err(|e| crate::infer::gpu_forward_failure_msg(0, steps, &e))?;
+    match gpu.forward_single(decode_token, &mut state, probe.len()) {
+        Ok(logits) => per_pos.push(logits),
+        Err(e) => {
+            return Err(crate::infer::gpu_forward_failure_msg(
+                probe.len(),
+                steps,
+                &e,
+            ))
+        },
     }
     Ok(per_pos)
 }
 
 #[cfg(test)]
 mod qwen35_route_tests {
-    use super::{qwen35_route, qwen35_route_notice, Qwen35CpuReason, Qwen35Route};
+    use super::{
+        qwen35_check_context, qwen35_route, qwen35_route_notice, Qwen35CpuReason, Qwen35Route,
+    };
+
+    // #3596: the 262k rung's 263,089-position prompt ran on a 262,144-position model.
+    // The boundary is inclusive (a prompt of exactly `context_length` is served), as
+    // on every other generate path (GH-167).
+    #[test]
+    fn a_prompt_past_the_declared_context_is_refused_with_both_numbers() {
+        const CTX: usize = 262_144;
+        for (len, ok) in [
+            (1, true),
+            (CTX - 1, true),
+            (CTX, true),
+            (CTX + 1, false),
+            (263_089, false),
+        ] {
+            let got = qwen35_check_context(len, CTX);
+            assert_eq!(got.is_ok(), ok, "prompt of {len} against {CTX}: {got:?}");
+            if let Err(e) = got {
+                let msg = e.to_string();
+                assert!(
+                    msg.contains(&len.to_string()) && msg.contains(&CTX.to_string()),
+                    "{msg}"
+                );
+            }
+        }
+    }
 
     // #3090/#3477: with a CUDA build and no --no-gpu, the hybrid goes to the GPU.
     // This is the whole point of the ticket; if it ever reads Cpu again, `apr run
