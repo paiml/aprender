@@ -526,7 +526,7 @@ mod tests {
             #[arg(long)]
             inputs: Vec<InputFile>,
         }
-        use clap::CommandFactory;
+        use clap::{CommandFactory, Parser};
         let cmd = T::command();
         let id = |name: &str| {
             cmd.get_arguments()
@@ -537,7 +537,6 @@ mod tests {
         assert!(id("model") == TypeId::of::<ModelPath>());
         assert!(id("prompt") == TypeId::of::<PromptText>());
         assert!(id("inputs") == TypeId::of::<InputFile>());
-        use clap::Parser;
         let t = T::try_parse_from(["t", "a.apr", "--prompt", "hi", "--inputs", "x.wav"])
             .expect("parses");
         assert_eq!(t.model.as_path(), Path::new("a.apr"));
