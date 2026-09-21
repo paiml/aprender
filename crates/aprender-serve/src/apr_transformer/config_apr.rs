@@ -142,6 +142,7 @@ mod tests {
             temperature: 0.8,
             top_p: 0.95,
             top_k: 50,
+            seed: crate::apr_transformer::DEFAULT_SEED,
             repetition_penalty: 1.1,
             trace: true,
             stop_tokens: vec![],

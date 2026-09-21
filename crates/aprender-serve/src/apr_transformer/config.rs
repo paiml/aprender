@@ -194,6 +194,11 @@ impl AprKVCache {
     }
 }
 
+/// The seed a [`GenerateConfig`] samples with when its caller names none (#3760).
+///
+/// Only a sampled step reads it; greedy decoding never touches the RNG.
+pub const DEFAULT_SEED: u64 = 42;
+
 /// Configuration for text generation
 #[derive(Debug, Clone)]
 pub struct GenerateConfig {
@@ -201,6 +206,8 @@ pub struct GenerateConfig {
     pub max_tokens: usize,
     /// Temperature for sampling (0.0 = greedy)
     pub temperature: f32,
+    /// RNG seed for sampled decoding (#3760): the same seed gives the same tokens.
+    pub seed: u64,
     /// Top-p nucleus sampling threshold (optional)
     pub top_p: f32,
     /// Top-k sampling (0 = disabled)
@@ -226,7 +233,12 @@ impl Default for GenerateConfig {
     fn default() -> Self {
         Self {
             max_tokens: 32,
-            temperature: 1.0,
+            // #3760: greedy by default. The sampler used to take the argmax of the
+            // top-k/top-p survivors, so every config, this default (1.0) included,
+            // decoded greedily. It now draws, and a default of 1.0 would have turned
+            // every caller that never asked for sampling random.
+            temperature: 0.0,
+            seed: DEFAULT_SEED,
             top_p: 0.9,
             top_k: 0,
             repetition_penalty: 1.0,

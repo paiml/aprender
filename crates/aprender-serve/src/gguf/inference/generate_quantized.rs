@@ -185,71 +185,8 @@ impl OwnedQuantizedModel {
         top_p: f32,
         r: f32,
     ) -> u32 {
-        // Apply temperature
-        let scaled: Vec<f32> = logits.iter().map(|&x| x / temperature).collect();
-
-        // Get top-k indices
-        let mut indexed: Vec<(usize, f32)> = scaled.iter().copied().enumerate().collect();
-        indexed.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-        // `top_k == 0` means "disabled" in llama.cpp and Ollama, and both the
-        // Ollama-compat and OpenAI-compat surfaces pass it straight through. An
-        // unguarded `truncate(0)` empties `indexed`, so `probs` is empty and the
-        // inverse-CDF loop below falls through to `probs.last().map_or(0, ..)` —
-        // returning token 0 on EVERY step (`!!!!!!`). Guard exactly as the live
-        // MoE sampler does (infer/qwen3_moe_generate.rs:104).
-        if top_k > 0 && top_k < indexed.len() {
-            indexed.truncate(top_k);
-        }
-
-        // Top-p (nucleus): keep the smallest prefix whose cumulative softmax mass
-        // reaches `top_p`. Ported from the live MoE sampler
-        // (infer/qwen3_moe_generate.rs:109), which is where the only working
-        // implementation lived — the dense path accepted `top_p` in
-        // QuantizedGenerateConfig and then silently discarded it, so
-        // `--top-p 0.001` was byte-identical to `--top-p 1.0` on every
-        // /v1/chat/completions, /api/chat, /api/generate and `apr run` request.
-        //
-        // The `top_p > 0.0 && top_p < 1.0` guard is what keeps this a BIT-EXACT
-        // no-op at the default 1.0: the branch is not entered at all, so the
-        // candidate set and the inverse-CDF draw below are unchanged. That
-        // matters because the default config sets top_p = 1.0 (runtime.rs:51) —
-        // every existing caller must keep its current output token-for-token.
-        if top_p > 0.0 && top_p < 1.0 {
-            let max_val = indexed.first().map_or(0.0, |(_, v)| *v);
-            let exp_vals: Vec<f32> = indexed.iter().map(|(_, v)| (v - max_val).exp()).collect();
-            let total: f32 = exp_vals.iter().sum();
-            if total > 0.0 {
-                let mut cumulative = 0.0;
-                let mut cutoff = indexed.len();
-                for (i, &ev) in exp_vals.iter().enumerate() {
-                    cumulative += ev / total;
-                    if cumulative >= top_p {
-                        cutoff = i + 1;
-                        break;
-                    }
-                }
-                indexed.truncate(cutoff);
-            }
-        }
-
-        // Softmax over the filtered set
-        let max_val = indexed.first().map_or(0.0, |(_, v)| *v);
-        let exp_sum: f32 = indexed.iter().map(|(_, v)| (v - max_val).exp()).sum();
-        let probs: Vec<(usize, f32)> = indexed
-            .iter()
-            .map(|(i, v)| (*i, (v - max_val).exp() / exp_sum))
-            .collect();
-
-        // Inverse-CDF draw from the categorical distribution
-        let mut cumulative = 0.0;
-        for &(idx, prob) in &probs {
-            cumulative += prob;
-            if cumulative >= r {
-                return idx as u32;
-            }
-        }
-
-        probs.last().map_or(0, |(idx, _)| *idx as u32)
+        // #3760: the one draw every format shares (`crate::sampling::draw`).
+        crate::sampling::draw(logits, temperature, top_k, top_p, r)
     }
 
     /// Top-k sampling with temperature (entropy-seeded RNG).

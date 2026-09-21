@@ -361,6 +361,7 @@ fn test_generate_config_custom_values() {
         temperature: 1.0,
         top_p: 0.9,
         top_k: 50,
+        seed: crate::apr_transformer::DEFAULT_SEED,
         repetition_penalty: 1.1,
         trace: true,
         stop_tokens: vec![],

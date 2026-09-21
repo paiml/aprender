@@ -1036,6 +1036,10 @@ fn tok_per_sec(count: usize, ms: f64) -> f64 {
 /// PMAT-236: Accepts `PreparedTokens` (compile-time enforced chat template).
 /// Previously, this function raw-encoded prompts WITHOUT chat template,
 /// producing garbage output for instruct models.
+/// Printed when a sampled request skips the greedy-only SafeTensors CUDA decoder (#3760).
+pub const SAFETENSORS_CUDA_SAMPLING_NOTICE: &str = "[safetensors: the CUDA decoder is greedy-only; \
+     sampling (--temperature > 0 with --top-k != 1) runs on the CPU (#3760)]";
+
 fn run_safetensors_inference(
     config: &InferenceConfig,
     prepared: &PreparedTokens,
@@ -1048,13 +1052,21 @@ fn run_safetensors_inference(
     let input_tokens = prepared.tokens().to_vec();
     let input_token_count = prepared.input_count();
 
-    // PMAT-129: Try GPU path first
+    // PMAT-129: Try GPU path first.
+    //
+    // #3760: `SafeTensorsCudaModel::generate(input, max_tokens, eos_id)` is greedy-only;
+    // it takes no sampling parameters. A sampled request used to go there and silently
+    // decode greedily. It now runs on the CPU loop, which draws, and says so.
     #[cfg(feature = "cuda")]
     if !config.no_gpu {
-        if let Some(result) =
-            try_safetensors_cuda_inference(config, &input_tokens, input_token_count)
-        {
-            return result;
+        if crate::sampling::is_greedy(config.temperature, config.top_k) {
+            if let Some(result) =
+                try_safetensors_cuda_inference(config, &input_tokens, input_token_count)
+            {
+                return result;
+            }
+        } else {
+            eprintln!("{SAFETENSORS_CUDA_SAMPLING_NOTICE}");
         }
     }
 

@@ -1464,6 +1464,8 @@ fn test_generate_config_custom() {
         temperature: 0.7,
         top_p: 0.95,
         top_k: 50,
+        // #3760: the sampler draws now; no seed is plumbed from this caller.
+        seed: realizar::apr_transformer::DEFAULT_SEED,
         repetition_penalty: 1.2,
         trace: false,
         stop_tokens: vec![],

@@ -29,12 +29,19 @@ fn greedy_argmax(logits: &[f32]) -> u32 {
         .map_or(0, |(i, _)| i as u32)
 }
 
-fn greedy_decode_with_transformer(
+/// The SafeTensors CPU decode loop `apr run` takes.
+///
+/// #3760: this was `greedy_decode_with_transformer`. It never read `temperature`,
+/// `top_k`, `top_p` or `seed`, so every sampling flag on a `.safetensors` model did
+/// nothing. A greedy config still takes `greedy_argmax`, so greedy output is
+/// byte-identical; a sampled one draws through the shared `crate::sampling`.
+fn decode_with_transformer(
     transformer: &crate::safetensors::ValidatedAprTransformer,
     input_tokens: &[u32],
-    max_tokens: usize,
+    config: &InferenceConfig,
 ) -> Result<Vec<u32>> {
     use crate::apr_transformer::AprKVCache;
+    use rand::SeedableRng;
 
     let mut cache = AprKVCache::new(&transformer.config);
     let mut all_tokens = input_tokens.to_vec();
@@ -44,8 +51,15 @@ fn greedy_decode_with_transformer(
         logits = transformer.forward_with_cache(token, &mut cache, pos)?;
     }
 
-    for _ in 0..max_tokens {
-        let next_token = greedy_argmax(&logits);
+    let greedy = crate::sampling::is_greedy(config.temperature, config.top_k);
+    let top_p = config.top_p.unwrap_or(1.0);
+    let mut rng = rand::rngs::StdRng::seed_from_u64(config.seed);
+    for _ in 0..config.max_tokens {
+        let next_token = if greedy {
+            greedy_argmax(&logits)
+        } else {
+            crate::sampling::draw_seeded(&logits, config.temperature, config.top_k, top_p, &mut rng)
+        };
         // GH-330: Use model config EOS
         let stop_tokens: Vec<u32> = transformer.config.eos_token_id.into_iter().collect();
         if is_eos_token(next_token, &stop_tokens) {
@@ -89,7 +103,7 @@ fn run_safetensors_cpu_inference(
     }
 
     let infer_start = Instant::now();
-    let all_tokens = greedy_decode_with_transformer(&transformer, input_tokens, config.max_tokens)?;
+    let all_tokens = decode_with_transformer(&transformer, input_tokens, config)?;
     let inference_ms = infer_start.elapsed().as_secs_f64() * 1000.0;
 
     let generated_tokens = &all_tokens[input_token_count..];
@@ -157,7 +171,7 @@ fn run_sharded_safetensors_inference(
     let input_token_count = prepared.input_count();
 
     let infer_start = Instant::now();
-    let all_tokens = greedy_decode_with_transformer(&transformer, input_tokens, config.max_tokens)?;
+    let all_tokens = decode_with_transformer(&transformer, input_tokens, config)?;
     let inference_ms = infer_start.elapsed().as_secs_f64() * 1000.0;
 
     let generated_tokens = &all_tokens[input_token_count..];

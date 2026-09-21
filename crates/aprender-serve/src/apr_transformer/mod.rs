@@ -44,6 +44,7 @@ mod loader;
 mod q4_simd;
 pub use config::{
     AprKVCache, AprTransformerConfig, AprTransformerLayer, GenerateConfig, Q4KLayerWeights,
+    DEFAULT_SEED,
 };
 use dequant::{
     dequantize_apr_q4_native, dequantize_apr_q8_native, dequantize_q4_k_apr, dequantize_q6_k_apr,
