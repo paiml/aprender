@@ -93,7 +93,7 @@ lock_timeout() { # lock_timeout <what> -> exit 2, naming the holder from /proc/l
 # A HEADER read (`apr tensors --json`) is not GPU work, so it does not wait on the fleet lock -- a lock
 # held for an hour by a release rehearsal must not stall the inventory -- and it runs with no GPU
 # visible, so it cannot become GPU work by accident (#3763).
-apr_header() { CUDA_VISIBLE_DEVICES= "$APR" "$@"; }
+apr_header() { CUDA_VISIBLE_DEVICES="" "$APR" "$@"; }
 if [ "${HEADER_PROBE:-0}" = 1 ]; then
   apr_header "$@"; exit $?
 fi
@@ -187,25 +187,8 @@ CAND_ROWS="$WORK/candidates.jsonl"; : > "$CAND_ROWS"; INVENTORY=""
 while IFS='|' read -r -t 5 cfile cpath; do
   [ -n "$cfile" ] || continue
   apr_header tensors "$cpath" --json > "$WORK/header.json" 2> /dev/null; hrc=$?
-  row=$(python3 - "$cfile" "$hrc" "$INV_DTYPE" "$(stat -c %s "$cpath" 2> /dev/null || echo 0)" "$WORK/header.json" <<'PY'
-import collections, json, sys
-f, rc, want, size, hdr = sys.argv[1], int(sys.argv[2]), sys.argv[3].upper(), int(sys.argv[4]), sys.argv[5]
-row = {"file": f, "bytes": size}
-try:
-    if rc != 0:
-        raise ValueError(f"apr tensors exited {rc}")
-    ts = json.load(open(hdr))["tensors"]
-    c = collections.Counter(str(t["dtype"]).upper() for t in ts if len(t.get("shape") or []) >= 2)
-    if not c:
-        raise ValueError("no tensor of 2 or more dimensions")
-    top = max(c.values())
-    row.update(dtype_counts=dict(sorted(c.items())), dominant=sorted(k for k, v in c.items() if v == top),
-               member=c.get(want, 0) == top)
-except Exception as e:
-    row.update(error=str(e)[:160], member=False)
-print(json.dumps(row))
-PY
-)
+  # THE universe definition is scripts/lib/tensor_universe.py -- one place, shared with the judge and #3742
+  row=$(python3 scripts/lib/tensor_universe.py row "$cfile" "$hrc" "$WORK/header.json" "$INV_DTYPE" "$(stat -c %s "$cpath" 2> /dev/null || echo 0)")
   printf '%s\n' "$row" >> "$CAND_ROWS"
   printf '  [CAND  ] %s\n' "$(python3 -c 'import json, sys; r = json.loads(sys.argv[1]); print(r["file"], "MEMBER" if r.get("member") else "not a member", r.get("dominant") or ("UNREADABLE: " + r.get("error", "")))' "$row")"
   if grep -q '"member": true' <<< "$row"; then INVENTORY="${INVENTORY}${cfile}|${cpath}

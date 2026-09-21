@@ -57,8 +57,11 @@ judge() {
   python3 - "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" <<'PY'
 import json, os, sys, yaml
 ladder_p, main_p, rdir, version, rungs_p, rungs_main_p = sys.argv[1:7]
-sys.path.insert(0, os.environ.get("MODEL_LADDER_CELLS_LIB") or "scripts/lib")  # a mutant copy of the module, in --self-test
+# scripts/lib holds the cells module and THE Q4_K universe definition (tensor_universe, shared with the
+# producer and #3742); MODEL_LADDER_CELLS_LIB puts a mutant copy of either first, in --self-test.
+sys.path[:0] = [p for p in (os.environ.get("MODEL_LADDER_CELLS_LIB"), "scripts/lib") if p]
 import model_ladder_cells
+import tensor_universe
 try:
     L = yaml.safe_load(open(ladder_p))["ladder"]
 except Exception as e:
@@ -163,9 +166,7 @@ for h in hosts:
         cf = c.get("file")
         if c.get("error") or not c.get("dtype_counts"):
             print(f"FAIL  {h['id']:7} candidate {cf} is UNREADABLE ({c.get('error', 'no dtype histogram')}) — a file whose header was not read cannot be excluded (#3763)"); rc = 1; continue
-        counts = {str(k).upper(): int(v) for k, v in c["dtype_counts"].items()}
-        top = max(counts.values())
-        if top > 0 and counts.get(want_dtype, 0) == top:  # a tie at the top is a member: the strict side
+        if tensor_universe.is_member(c["dtype_counts"], want_dtype):  # the ONE definition (ties are members)
             members.add(cf)
     inv_files = {x.get("file") for x in inv} if want_dtype else set()
     for f in sorted(members - inv_files):
@@ -308,7 +309,6 @@ if [ "$SELF_TEST" = 1 ]; then
     mutant filename-glob      red-inventory-by-filename-glob 's/^if inv_spec.get("patterns"):/if False:/'
     mutant header-excluded    red-q4k-header-excluded     's/    for f in sorted(members - inv_files):/    for f in []:/'
     mutant header-included    red-non-q4k-in-inventory    's/    for f in sorted(inv_files - members):/    for f in []:/'
-    mutant tie-not-member     red-tie-excluded            's/if top > 0 and counts.get(want_dtype, 0) == top:/if top > 0 and counts.get(want_dtype, 0) == top and list(counts.values()).count(top) == 1:/'
     # The lock: the real producer passes both halves; each producer mutant must fail at least one.
     prod=scripts/model_ladder.sh
     if lock_audit "$prod" > "$mdir/audit.out"; then echo "ok    lock: $prod makes no GPU apr call outside apr_locked"
@@ -325,7 +325,7 @@ if [ "$SELF_TEST" = 1 ]; then
     pmutant no-lock      's/^apr_locked() { flock -E "\$LOCK_BUSY" -w "\$LOCK_WAIT" "\$GPU_LOCK" choom/apr_locked() { choom/'
     pmutant no-choom     's/ choom -n 1000 -- "\$APR" "\$@"/ "$APR" "$@"/'
     pmutant unbounded    's/ -w "\$LOCK_WAIT"//'
-    pmutant header-sees-gpu 's/^apr_header() { CUDA_VISIBLE_DEVICES= "\$APR"/apr_header() { "$APR"/'
+    pmutant header-sees-gpu 's/^apr_header() { CUDA_VISIBLE_DEVICES="" "\$APR"/apr_header() { "$APR"/'
     # The cells module (scripts/lib/model_ladder_cells.py): each rule deleted in a copy, imported through
     # MODEL_LADDER_CELLS_LIB, and the case that names the rule must go RED under the copy.
     cmutant() { # cmutant <label> <case that must kill it> <sed expression deleting the rule>
@@ -343,6 +343,15 @@ if [ "$SELF_TEST" = 1 ]; then
     cmutant prompt-short    red-cells-prompt-under-rung     's/if int(c.get("prompt_tokens") or 0) < tok:/if False:/'
     cmutant modes-evidence  red-cells-thinking-modes-disagree-with-template 's/elif want is not None and modes != want:/elif False:/'
     cmutant no-representative red-cells-arch-without-representative 's/        if not r:/        if False:/'
+    # the universe definition (tensor_universe.py): its own table, then a mutant of the shared rule
+    if python3 scripts/lib/tensor_universe.py --self-test > /dev/null; then echo "ok    tensor_universe: the definition's own case table"
+    else echo "FAIL  tensor_universe: the definition's own case table is red"; bad=$((bad+1)); fi
+    md="$mdir/u-tie"; mkdir -p "$md"
+    sed 's/    return str(dtype).upper() in dominant(/    return len(dominant({str(k).upper(): int(v) for k, v in counts.items()})) == 1 and str(dtype).upper() in dominant(/' \
+        scripts/lib/tensor_universe.py > "$md/tensor_universe.py"
+    if cmp -s scripts/lib/tensor_universe.py "$md/tensor_universe.py"; then echo "FAIL  universe mutant tie-not-member did not apply"; bad=$((bad+1))
+    elif MODEL_LADDER_CELLS_LIB="$md" bash "$SELF" --self-test --case red-tie-excluded > /dev/null 2>&1; then echo "FAIL  universe mutant tie-not-member SURVIVED case red-tie-excluded"; bad=$((bad+1))
+    else echo "ok    universe mutant tie-not-member      killed by case red-tie-excluded"; fi
     cmutant pass-beyond-fit red-cells-pass-beyond-its-arithmetic 's/                            if not fit:/                            if False:/'
     cmutant family-long     red-cells-missing-cell          's/    if arch in (long_for.get("families") or \[\]):/    if False:/'
     cmutant rungs-floor     red-cells-rung-dropped-vs-main  's/            if gone:/            if False:/'

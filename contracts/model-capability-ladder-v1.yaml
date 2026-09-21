@@ -65,7 +65,8 @@ ladder:
   inventory:
     dirs: ["~/models", "~/.apr/models", "~/.cache/apr/models"]   # depth 1, the fleet's model dirs
     candidates: ["*.gguf", "*.apr"]          # EVERY model file, by extension; its name is not evidence (#3763)
-    member_dtype: Q4_K                       # a member iff Q4_K is a most-frequent >= 2-D tensor dtype (`apr tensors --json`); ties are members
+    member_dtype: Q4_K                       # a member iff Q4_K is a most-frequent >= 2-D tensor dtype (`apr tensors --json`); ties are members.
+                                             # THE definition: scripts/lib/tensor_universe.py (producer, judge and #3742 share it)
     backends: [cuda]
   # #3712 row B (operator 2026-09-21: "MORE than enough tokens for our needs (overdo it), and our verbs are
   # dogfooded, i.e chat with and without thinking, ditto run, ditto code"). A cell is (model, host, verb,
