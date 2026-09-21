@@ -19007,3 +19007,20 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE (hand-entered from issue #3629 done_when; minted on the PR branch so the AD-04 quorum can run -- pmat work status refuses a missing item). Done when: scripts/fleet_utilization.sh --selftest has no pipe into grep -q; a mutation that restores the pipe AND forces EPIPE (out padded to >64 KiB so the write cannot complete before grep exits) turns the self-test RED deterministically — the positive control for the race, in the PR body the 55-site count is in the PR body from the command that produced it, and a guard refuses a new site (check_guards_are_wired.sh names it; ratchet baseline committed) main''s guard-tree green on the merge commit without rerun '
+- id: PMAT-3672
+  github_issue: 3672
+  item_type: task
+  title: 'apr run applies the chat template TWICE: the prompt reaches the model as an escaped user turn inside a user turn'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-21T11:00:21Z
+  updated: 2026-09-21T11:00:21Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from issue #3672 done_when, verbatim; minted on the PR branch so the AD-04 quorum can run). (1) apr run -v on Qwen2.5-0.5B-Instruct-f16.gguf with a plain prompt shows exactly one template application and no \u{200B} in formatted_prompt. (2) The prompt token count equals llama.cpp''s for the same rendered conversation (21 for the prompt above, with no system turn). (3) A test fails if the prompt is templated twice (mutation: restore the upstream wrap → RED). ROOT CAUSE (issue comment): crates/apr-cli/src/dispatch_run.rs (GH-638) pre-wrapped the prompt in hard-coded ChatML, and realizar prepare_tokens (GH-278) then applied the model''s own template again. Fix: the prompt stays raw; --chat (or the GH-638 instruct/chat source-name heuristic) reaches realizar as InferenceConfig::force_chat_template, which prepare_tokens_{gguf,safetensors,apr} OR into its single template decision.'
