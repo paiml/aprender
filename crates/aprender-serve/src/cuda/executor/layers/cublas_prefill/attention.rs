@@ -1115,6 +1115,11 @@ DONE_NORM:
         n_per_seq: u32,
         k_per_seq: u32,
     ) -> Result<(), GpuError> {
+        // #3727: every dispatch drops the held FP8 activation unless its caller armed
+        // `fp8_act_cache.share_next()` (K/V after Q, up after gate). Before, a (ptr, count)
+        // match was enough, and on a mixed-quant model each layer's FP8 ffn_down reused
+        // layer 0's SwiGLU output, because nothing FP8 ran in between to change the key.
+        self.fp8_act_cache.begin_dispatch();
         // Route order is unchanged; each predicate is named above so this function stays
         // readable and under the complexity ceiling that froze this file (#2766).
         if self.route_w4a16_wmma(qtype, weight_ptr, m) {

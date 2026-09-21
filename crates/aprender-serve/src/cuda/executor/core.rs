@@ -186,7 +186,7 @@ impl CudaExecutor {
             num_sms: context.multiprocessor_count().unwrap_or(8) as u32,
             // PMAT-027: Q8 activation cache starts invalid
             q8_activation_valid: false,
-            fp8_activation_cache_key: None,
+            fp8_act_cache: Default::default(),
             fp8_weight_scales: HashMap::new(),
             fp8_act_scale_buf: None,
             fp8_absmax_buf: None,

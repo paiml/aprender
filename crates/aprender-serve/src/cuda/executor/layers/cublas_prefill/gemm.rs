@@ -110,8 +110,7 @@ impl CudaExecutor {
             .expect("just allocated")
             .as_ptr();
 
-        let cache_key = (packed_input_ptr, input_actual_count);
-        if self.fp8_activation_cache_key == Some(cache_key) {
+        if self.fp8_act_cache.hit(packed_input_ptr, input_actual_count) {
             // PMAT-084: Reuse cached FP8 activation + dequant scale.
             // QKV phase: Q computes, K+V reuse. FFN: gate computes, up reuses.
             // 3 hits/layer × 28 layers = 84 saved absmax+convert pairs.
@@ -127,7 +126,8 @@ impl CudaExecutor {
                 absmax_ptr,
                 act_dequant_ptr,
             )?;
-            self.fp8_activation_cache_key = Some(cache_key);
+            self.fp8_act_cache
+                .record(packed_input_ptr, input_actual_count);
         }
 
         // Look up weight dequant scale (CPU float, constant per weight, no sync needed)

@@ -263,6 +263,8 @@ mod activations;
 mod attention;
 mod bound_dispatch;
 mod core;
+// #3727: PMAT-084 FP8 activation reuse, opt-in per shared-input group.
+mod fp8_activation_cache;
 /// PMAT-3477 (#3090): wrappers for the six Gated `DeltaNet` device kernels.
 mod gdn_ops;
 mod gemm;
@@ -638,8 +640,10 @@ pub struct CudaExecutor {
     // PMAT-084: FP8 activation cache — skip redundant absmax+convert when
     // multiple FP8 GEMMs share the same input (QKV phase, FFN gate+up).
     // Saves 84 kernel pairs per prefill (3 per layer × 28 layers).
-    // Key: (input_ptr, element_count). Invalidated on scratch buffer realloc.
-    fp8_activation_cache_key: Option<(u64, u32)>,
+    // #3727: reuse is opt-in (`share_next` before K, V and up); every other
+    // dispatch drops the held conversion, so a (ptr, count) that outlives its
+    // contents can no longer be reused across layers.
+    fp8_act_cache: fp8_activation_cache::Fp8ActivationCache,
     // PMAT-291: Positions side-channel for graph-based dispatch.
     // Set before execute_graph(), read by dispatch_rope and dispatch_attention.
     pub(crate) graph_dispatch_positions: Vec<u32>,

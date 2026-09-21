@@ -147,11 +147,14 @@ impl CudaExecutor {
                 hidden_buf1, q_buf, hidden_buf1_ptr, q_buf_ptr,
                 m, q_dim, hidden_dim,
             )?;
+            // #3727: K and V read the same hidden_buf1 Q just read — FP8 may reuse Q's conversion.
+            self.fp8_act_cache.share_next();
             self.batched_gemv_or_gemm(
                 layer_weights.attn_k_qtype, layer_weights.attn_k_ptr,
                 hidden_buf1, k_buf, hidden_buf1_ptr, k_buf_ptr,
                 m, kv_dim, hidden_dim,
             )?;
+            self.fp8_act_cache.share_next();
             self.batched_gemv_or_gemm(
                 layer_weights.attn_v_qtype, layer_weights.attn_v_ptr,
                 hidden_buf1, v_buf, hidden_buf1_ptr, v_buf_ptr,

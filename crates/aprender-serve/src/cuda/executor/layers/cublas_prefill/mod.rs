@@ -706,7 +706,7 @@ impl CudaExecutor {
         self.fp8_activation_scratch = Some(GpuBuffer::new(&self.context, count)?);
         self.fp8_activation_scratch_size = count;
         // PMAT-084: Reallocation invalidates cached FP8 activation data
-        self.fp8_activation_cache_key = None;
+        self.fp8_act_cache.invalidate();
         Ok(())
     }
 
