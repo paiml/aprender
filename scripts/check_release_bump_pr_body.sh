@@ -59,6 +59,12 @@ REFUSAL_ANCHOR='bash "$CLOSES_GUARD" --body'
 LADDER_ANCHOR='bash scripts/check_model_ladder.sh --version "$V"'
 IGNORED_ANCHOR='[ -z "$ignored" ] ||'
 LADDER_JUDGE="$ROOT/scripts/check_model_ladder.sh"
+# What the judge reads besides the receipts (#3712): the contract's inventory spec -- COPIED into the
+# fixture ladder, never retyped, so the fixture follows whichever inventory shape the tree's judge
+# enforces -- the producer (its GPU-lock audit reads it) and the cells module (the judge imports it).
+LADDER_CONTRACT="$ROOT/contracts/model-capability-ladder-v1.yaml"
+LADDER_PRODUCER="$ROOT/scripts/model_ladder.sh"
+LADDER_CELLS="$ROOT/scripts/lib/model_ladder_cells.py"
 # #3699 done_when 1's reason, verbatim. The row pins it: the line must name exactly the owed
 # refs AND carry this text, nothing else.
 KEEP_OPEN_REASON='cited by the CHANGELOG for context; each closes via its own PR; the release EPIC closes at T-4'
@@ -100,10 +106,11 @@ STUB
 chmod +x "$TMP/bin/kind" "$TMP/bin/gh"
 export PR_CLOSES_REF_KIND_CMD="$TMP/bin/kind"
 
-# write_receipt DIR HOST -> a green apr-model-ladder-receipt/v1 for 9.9.9 on the fixture rung
+# write_receipt DIR HOST -> a green apr-model-ladder-receipt/v2 for 9.9.9: the fixture rung's file is
+# the host's whole measured inventory, read from its header as a Q4_K member (#3712 rows A, A2)
 write_receipt() {
     mkdir -p "$1"
-    printf '{"schema":"apr-model-ladder-receipt/v1","host":"%s","version":"9.9.9","sha":"fixture","executed":1,"red":0,"rungs":[{"id":"fx-rung","present":true,"sha_ok":true,"capability_match":{"passed":true,"skipped":false},"golden_output":{"passed":true,"skipped":false},"backends":{"cpu":{"ran":true,"fallback":false,"rc":0}},"green":true}]}\n' \
+    printf '{"schema":"apr-model-ladder-receipt/v2","host":"%s","version":"9.9.9","sha":"fixture","executed":1,"red":0,"inventory":[{"file":"fx.gguf","sha256":"0000000000000000000000000000000000000000000000000000000000000000","bytes":1}],"candidates":[{"file":"fx.gguf","bytes":1,"dtype_counts":{"Q4_K":1},"dominant":["Q4_K"],"member":true}],"rungs":[{"id":"fx-rung","file":"fx.gguf","present":true,"sha_ok":true,"required":true,"capability_match":{"passed":true,"skipped":false},"golden_output":{"passed":true,"skipped":false},"backends":{"cpu":{"ran":true,"fallback":false,"rc":0}},"green":true}]}\n' \
         "$2" > "$1/$2.json"
 }
 
@@ -125,10 +132,22 @@ run_ship() {
     # origin's main, on branch release-<V>, with the CHANGELOG [9.9.9] section UNCOMMITTED
     printf '# Changelog\n\n## [Unreleased]\n\n## [9.9.8] - 2025-12-01\n\n- older\n' > "$d/seed/CHANGELOG.md"
     printf '#!/usr/bin/env bash\nexit 0\n' > "$d/seed/scripts/bump-version.sh"
-    # the bump tree's own ladder judge (a real copy) and a fixture ladder: the two required hosts
+    # the bump tree's own ladder judge and what it reads (real copies), and a fixture ladder: the two
+    # required hosts, one cpu rung naming a file, and the REAL contract's inventory spec
+    mkdir -p "$d/seed/scripts/lib"
     cp -- "$LADDER_JUDGE" "$d/seed/scripts/check_model_ladder.sh"
-    printf 'ladder:\n  hosts:\n    - {id: lambda, required: true, gpu: fixture, cc: sm_89}\n    - {id: gx10, required: true, gpu: fixture, cc: sm_121}\n  rungs:\n    - {id: fx-rung, required: true, backends: [cpu]}\n' \
-        > "$d/seed/contracts/model-capability-ladder-v1.yaml"
+    cp -- "$LADDER_PRODUCER" "$d/seed/scripts/model_ladder.sh"
+    [ -f "$LADDER_CELLS" ] && cp -- "$LADDER_CELLS" "$d/seed/scripts/lib/model_ladder_cells.py"
+    python3 - "$LADDER_CONTRACT" "$d/seed/contracts/model-capability-ladder-v1.yaml" <<'PY' || return 2
+import sys, yaml
+inv = yaml.safe_load(open(sys.argv[1]))["ladder"]["inventory"]
+yaml.safe_dump({"ladder": {
+    "hosts": [{"id": "lambda", "required": True, "gpu": "fixture", "cc": "sm_89"},
+              {"id": "gx10", "required": True, "gpu": "fixture", "cc": "sm_121"}],
+    "inventory": inv,
+    "rungs": [{"id": "fx-rung", "gguf": "fx.gguf", "required": True, "backends": ["cpu"]}]}},
+    open(sys.argv[2], "w"), sort_keys=False)
+PY
     git init -q --bare -b main "$d/origin.git" \
         && git -C "$d/seed" init -q -b main && git -C "$d/seed" add -A \
         && git -C "$d/seed" commit -q -m seed && git -C "$d/seed" push -q "$d/origin.git" main \
