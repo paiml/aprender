@@ -4,8 +4,8 @@
 # 19:03Z / 19:04Z amendments of #3739. Engine pins are the engine worker's rows.
 schema: crux-verb-correspondence/v1
 surface:
-  source: 'apr surface --json (apr-cli-surface/v1, #3745 S1), emitted by apr 0.69.0 (621a47862)'
-  sha256: a7c6b7f1b66aaae231363904456bd0a6b13d98dfdfb5c9064b5f7407076e6886
+  source: 'apr surface --json (apr-cli-surface/v1.1, #3745 S1), emitted by apr 0.69.0 (7ed033b63)'
+  sha256: 207c329715dc08211676b81e6ae6d61915393924902798747f9a0c5e7b36da2b
   leaves: 253
 engines:
 - llama.cpp
@@ -401,9 +401,7 @@ verbs:
     llamafile:
       binary: llamafile
       args:
-        --system: -sys
-        --max-tokens: -n
-        --temperature: --temp
+        <none>: --server
 - key: check
   comparators:
     llama.cpp:
@@ -438,7 +436,8 @@ verbs:
       args: {}
     llamafile:
       binary: llamafile
-      args: {}
+      args:
+        <none>: --server
 - key: compare-hf
   comparators:
     llama.cpp:
@@ -1240,13 +1239,13 @@ verbs:
 - key: mcp
   comparators:
     llama.cpp:
-      none: apr's MCP server; no engine ships an MCP server
+      none: apr's MCP server; no engine ships an MCP server. Its generation runs through the engine the `run` and `serve run` cells already compare
     ollama:
-      none: apr's MCP server; no engine ships an MCP server
+      none: apr's MCP server; no engine ships an MCP server. Its generation runs through the engine the `run` and `serve run` cells already compare
     hf:
-      none: apr's MCP server; no engine ships an MCP server
+      none: apr's MCP server; no engine ships an MCP server. Its generation runs through the engine the `run` and `serve run` cells already compare
     llamafile:
-      none: apr's MCP server; no engine ships an MCP server
+      none: apr's MCP server; no engine ships an MCP server. Its generation runs through the engine the `run` and `serve run` cells already compare
 - key: merge
   comparators:
     llama.cpp:
@@ -1352,13 +1351,13 @@ verbs:
 - key: parity
   comparators:
     llama.cpp:
-      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+      none: compares apr's OWN GPU and CPU generations (apr vs apr); the external comparison of the same prompts on the same file is the `run` cells
     ollama:
-      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+      none: compares apr's OWN GPU and CPU generations (apr vs apr); the external comparison of the same prompts on the same file is the `run` cells
     hf:
-      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+      none: compares apr's OWN GPU and CPU generations (apr vs apr); the external comparison of the same prompts on the same file is the `run` cells
     llamafile:
-      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+      none: compares apr's OWN GPU and CPU generations (apr vs apr); the external comparison of the same prompts on the same file is the `run` cells
 - key: pipeline apply
   comparators:
     llama.cpp:
@@ -2121,13 +2120,13 @@ verbs:
 - key: rosetta compare-inference
   comparators:
     llama.cpp:
-      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+      none: compares apr's inference across formats of one model (apr vs apr); the cross-engine comparison of the same file is the `run` cells
     ollama:
-      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+      none: compares apr's inference across formats of one model (apr vs apr); the cross-engine comparison of the same file is the `run` cells
     hf:
-      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+      none: compares apr's inference across formats of one model (apr vs apr); the cross-engine comparison of the same file is the `run` cells
     llamafile:
-      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+      none: compares apr's inference across formats of one model (apr vs apr); the cross-engine comparison of the same file is the `run` cells
 - key: rosetta convert
   comparators:
     llama.cpp:
@@ -2209,10 +2208,7 @@ verbs:
     llamafile:
       binary: llamafile
       args:
-        --prompt: -p
-        --max-tokens: -n
-        --temperature: --temp
-        --seed: --seed
+        <none>: --server
 - key: runs diff
   comparators:
     llama.cpp:
@@ -2271,6 +2267,7 @@ verbs:
     llamafile:
       binary: llamafile
       args:
+        <none>: --server
         --port: --port
         --context-length: -c
 - key: shard
