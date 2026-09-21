@@ -133,6 +133,32 @@ fn report_cell(backend: &str, tok_s: f64, llama: &Result<f64, String>) {
     }
 }
 
+/// One (tier, backend) cell: apr's measured throughput beside llama.cpp's,
+/// measured through the pinned llama-bench at the same offload (`ngl`), or
+/// UNMEASURED. An apr error prints and yields no cell.
+fn bench_cell(
+    tier: &ModelTier,
+    backend: &str,
+    ngl: u32,
+    apr: Result<f64, String>,
+) -> Option<BenchResult> {
+    let tok_s = match apr {
+        Ok(tok_s) => tok_s,
+        Err(e) => {
+            println!("         ❌ Error: {}", e);
+            return None;
+        },
+    };
+    let llama = llama_bench_tg64(tier.gguf_path, ngl);
+    report_cell(backend, tok_s, &llama);
+    Some(BenchResult {
+        tier: tier.name.to_string(),
+        backend: backend.to_string(),
+        apr_tok_s: tok_s,
+        llama,
+    })
+}
+
 fn benchmark_apr_gpu(
     model_path: &str,
     prompt_tokens: &[u32],
@@ -393,40 +419,14 @@ fn main() {
 
         // CPU Benchmark
         println!("\n  [CPU] Running APR CPU benchmark...");
-        match benchmark_apr_cpu(tier.gguf_path, tier.prompt_tokens, max_tokens) {
-            Ok(tok_s) => {
-                let llama = llama_bench_tg64(tier.gguf_path, 0);
-                report_cell("CPU", tok_s, &llama);
-                results.push(BenchResult {
-                    tier: tier.name.to_string(),
-                    backend: "CPU".to_string(),
-                    apr_tok_s: tok_s,
-                    llama,
-                });
-            },
-            Err(e) => {
-                println!("         ❌ Error: {}", e);
-            },
-        }
+        let apr = benchmark_apr_cpu(tier.gguf_path, tier.prompt_tokens, max_tokens);
+        results.extend(bench_cell(tier, "CPU", 0, apr));
 
         // GPU Benchmark
         if cuda_available {
             println!("\n  [GPU] Running APR GPU benchmark...");
-            match benchmark_apr_gpu(tier.gguf_path, tier.prompt_tokens, max_tokens) {
-                Ok(tok_s) => {
-                    let llama = llama_bench_tg64(tier.gguf_path, 99);
-                    report_cell("GPU", tok_s, &llama);
-                    results.push(BenchResult {
-                        tier: tier.name.to_string(),
-                        backend: "GPU".to_string(),
-                        apr_tok_s: tok_s,
-                        llama,
-                    });
-                },
-                Err(e) => {
-                    println!("         ❌ Error: {}", e);
-                },
-            }
+            let apr = benchmark_apr_gpu(tier.gguf_path, tier.prompt_tokens, max_tokens);
+            results.extend(bench_cell(tier, "GPU", 99, apr));
         }
     }
 
