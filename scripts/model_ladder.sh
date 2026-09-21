@@ -11,12 +11,16 @@
 # THE UNIVERSE IS THE INVENTORY (#3712, operator 2026-09-21: "you must ensure all
 # models Q4_K CUDA work; the end", and publishing with "most working" is a "p0 tire
 # fire"). A hand-picked ladder let a red model through by leaving it off the list, or
-# by marking it `required: false`. This run measures ladder ∪ inventory, where the
-# inventory is every file on THIS host matching the contract's `inventory.patterns`
-# (case-insensitive, depth 1) under its `inventory.dirs`. An inventory model that is
-# not already a rung is measured on the inventory's backends (cuda). The receipt
-# (schema v2) carries the measured inventory, so check_model_ladder.sh can name any
-# model this host holds that the run did not prove.
+# by marking it `required: false`. This run measures ladder ∪ inventory. The inventory
+# is read from each file's HEADER, never its name (#3712 A2, #3763; issue author: "filename
+# is not evidence of quantization"): every `inventory.candidates` file (by extension, depth
+# 1) under `inventory.dirs` is read with `apr tensors --json`, and it is a member iff
+# `inventory.member_dtype` (Q4_K) is a most-frequent dtype of its >= 2-D tensors (ties are
+# members). By-count, not by-bytes: a Q4_K_M file's large Q6_K embedding outweighs its Q4_K
+# matrices in bytes. An inventory model that is not already a rung is measured on the
+# inventory's backends (cuda). The receipt (schema v2) carries EVERY candidate with its dtype
+# histogram, so check_model_ladder.sh recomputes membership itself and can name any model
+# this host holds that the run did not prove -- or included by its name alone.
 #
 # Usage:  bash scripts/model_ladder.sh [--host <id>] [--out <dir>] [--dry-run]
 #   --host  ladder host id (default: derived from `hostname`, see host_id)
@@ -43,6 +47,9 @@ while [ $# -gt 0 ]; do
     # --lock-probe <apr args…>: one apr call through apr_locked, then exit with its rc. For the case
     # table in check_model_ladder.sh, which proves every apr call runs under the lock.
     --lock-probe) shift; LOCK_PROBE=1; break ;;
+    # --header-probe <apr args…>: one apr call through apr_header, then exit with its rc (the judge's table
+    # proves the header read cannot see a GPU)
+    --header-probe) shift; HEADER_PROBE=1; break ;;
     -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) echo "model_ladder: unknown argument '$1'" >&2; exit 2 ;;
   esac
@@ -83,6 +90,13 @@ lock_timeout() { # lock_timeout <what> -> exit 2, naming the holder from /proc/l
   echo "decline: ENV the GPU lock $GPU_LOCK was not free after ${LOCK_WAIT}s for $1 -- holder: ${holder:-unknown}. Not a model verdict." >&2
   exit 2
 }
+# A HEADER read (`apr tensors --json`) is not GPU work, so it does not wait on the fleet lock -- a lock
+# held for an hour by a release rehearsal must not stall the inventory -- and it runs with no GPU
+# visible, so it cannot become GPU work by accident (#3763).
+apr_header() { CUDA_VISIBLE_DEVICES= "$APR" "$@"; }
+if [ "${HEADER_PROBE:-0}" = 1 ]; then
+  apr_header "$@"; exit $?
+fi
 if [ "${LOCK_PROBE:-0}" = 1 ]; then
   apr_locked "$@"; rc=$?
   [ "$rc" = "$LOCK_BUSY" ] && lock_timeout "apr $*"
@@ -127,20 +141,22 @@ PY
 [ -n "$RUNGS" ] || { echo "decline: ladder has no rungs" >&2; exit 2; }
 LADDER_FILES=$(cut -d'|' -f2 <<< "$RUNGS")   # the files the rungs name; section 2 skips re-measuring them
 
-# The inventory spec (#3712). MODEL_LADDER_INVENTORY_DIRS (colon-separated) is a test seam only.
+# The inventory spec (#3712, #3763). MODEL_LADDER_INVENTORY_DIRS (colon-separated) is a test seam only.
+# A ladder that still names a filename glob (`patterns`) is refused: a name is not evidence.
 INV_SPEC=$(python3 - "$LADDER" <<'PY'
 import os, sys, yaml
 inv = yaml.safe_load(open(sys.argv[1]))["ladder"].get("inventory") or {}
 env = os.environ.get("MODEL_LADDER_INVENTORY_DIRS")
 dirs = env.split(":") if env else [os.path.expanduser(d) for d in (inv.get("dirs") or [])]
-if not dirs or not inv.get("patterns") or not inv.get("backends"):
+if inv.get("patterns") or not dirs or not inv.get("candidates") or not inv.get("member_dtype") or not inv.get("backends"):
     sys.exit(1)
-print(":".join(dirs)); print(",".join(inv["patterns"])); print(",".join(inv["backends"]))
+print(":".join(dirs)); print(",".join(inv["candidates"])); print(inv["member_dtype"]); print(",".join(inv["backends"]))
 PY
-) || { echo "decline: the ladder declares no inventory (dirs, patterns, backends) -- the universe cannot be measured" >&2; exit 2; }
-INV_DIRS=$(sed -n 1p <<< "$INV_SPEC"); INV_PATTERNS=$(sed -n 2p <<< "$INV_SPEC"); INV_BACKENDS=$(sed -n 3p <<< "$INV_SPEC")
-# INVENTORY, one per line: file|path. Measured on THIS host, never listed.
-INVENTORY=$(python3 - "$INV_DIRS" "$INV_PATTERNS" <<'PY'
+) || { echo "decline: the ladder declares no header-read inventory (dirs, candidates, member_dtype, backends; no filename patterns) -- the universe cannot be measured" >&2; exit 2; }
+INV_DIRS=$(sed -n 1p <<< "$INV_SPEC"); INV_CANDIDATES=$(sed -n 2p <<< "$INV_SPEC")
+INV_DTYPE=$(sed -n 3p <<< "$INV_SPEC"); INV_BACKENDS=$(sed -n 4p <<< "$INV_SPEC")
+# CANDIDATES, one per line: file|path -- every model file by extension. Measured on THIS host, never listed.
+CANDIDATES=$(python3 - "$INV_DIRS" "$INV_CANDIDATES" <<'PY'
 import fnmatch, os, sys
 dirs, pats = sys.argv[1].split(":"), [p.lower() for p in sys.argv[2].split(",")]
 seen = {}
@@ -154,7 +170,49 @@ for d in dirs:
 for f, p in seen.items():
     print(f + "|" + p)
 PY
-) || { echo "decline: the inventory scan failed" >&2; exit 2; }
+) || { echo "decline: the candidate scan failed" >&2; exit 2; }
+WORK=$(mktemp -d)
+# The delete is guarded (SEC011): only a path under a temp root is removed.
+_rm_work() {
+  local v="${WORK:-}"
+  case "$v" in
+    /tmp/?*|/var/folders/?*|/mnt/?*) if [ -n "$v" ] && [ "$v" != "/" ]; then rm -rf -- "$v" || :; fi ;;
+    *) return 0 ;;
+  esac
+}
+trap _rm_work EXIT
+# Read every candidate's header. CAND_ROWS gets one JSON row per candidate (histogram, dominant dtypes,
+# member, or the read error); INVENTORY is the members, file|path.
+CAND_ROWS="$WORK/candidates.jsonl"; : > "$CAND_ROWS"; INVENTORY=""
+while IFS='|' read -r -t 5 cfile cpath; do
+  [ -n "$cfile" ] || continue
+  apr_header tensors "$cpath" --json > "$WORK/header.json" 2> /dev/null; hrc=$?
+  row=$(python3 - "$cfile" "$hrc" "$INV_DTYPE" "$(stat -c %s "$cpath" 2> /dev/null || echo 0)" "$WORK/header.json" <<'PY'
+import collections, json, sys
+f, rc, want, size, hdr = sys.argv[1], int(sys.argv[2]), sys.argv[3].upper(), int(sys.argv[4]), sys.argv[5]
+row = {"file": f, "bytes": size}
+try:
+    if rc != 0:
+        raise ValueError(f"apr tensors exited {rc}")
+    ts = json.load(open(hdr))["tensors"]
+    c = collections.Counter(str(t["dtype"]).upper() for t in ts if len(t.get("shape") or []) >= 2)
+    if not c:
+        raise ValueError("no tensor of 2 or more dimensions")
+    top = max(c.values())
+    row.update(dtype_counts=dict(sorted(c.items())), dominant=sorted(k for k, v in c.items() if v == top),
+               member=c.get(want, 0) == top)
+except Exception as e:
+    row.update(error=str(e)[:160], member=False)
+print(json.dumps(row))
+PY
+)
+  printf '%s\n' "$row" >> "$CAND_ROWS"
+  printf '  [CAND  ] %s\n' "$(python3 -c 'import json, sys; r = json.loads(sys.argv[1]); print(r["file"], "MEMBER" if r.get("member") else "not a member", r.get("dominant") or ("UNREADABLE: " + r.get("error", "")))' "$row")"
+  if grep -q '"member": true' <<< "$row"; then INVENTORY="${INVENTORY}${cfile}|${cpath}
+"; fi
+done <<EOF_C
+$CANDIDATES
+EOF_C
 
 find_model() { # find_model <basename> — the inventory's copy first, then the fleet's other model dirs
   local f="$1" d p
@@ -166,22 +224,13 @@ find_model() { # find_model <basename> — the inventory's copy first, then the 
   return 1
 }
 
-WORK=$(mktemp -d)
-# The delete is guarded (SEC011): only a path under a temp root is removed.
-_rm_work() {
-  local v="${WORK:-}"
-  case "$v" in
-    /tmp/?*|/var/folders/?*|/mnt/?*) if [ -n "$v" ] && [ "$v" != "/" ]; then rm -rf -- "$v" || :; fi ;;
-    *) return 0 ;;
-  esac
-}
-trap _rm_work EXIT
 ROWS="$WORK/rows.jsonl"; : > "$ROWS"
 INV_ROWS="$WORK/inventory.jsonl"; : > "$INV_ROWS"
 EXECUTED=0; RED=0
 printf -- '--- model capability ladder on %s (%s, cc %s) apr=%s sha=%s version=%s ---\n' \
   "$HOST" "${GPU_NAME:-no-gpu}" "${GPU_CC:-?}" "$APR" "$SHA" "$VERSION"
-printf '    inventory: %s model(s) matching %s under %s\n' "$(grep -c . <<< "$INVENTORY")" "$INV_PATTERNS" "$INV_DIRS"
+printf '    inventory: %s of %s candidate file(s) (%s) under %s have %s as their dominant >= 2-D tensor dtype\n' \
+  "$(grep -c . <<< "$INVENTORY")" "$(grep -c . "$CAND_ROWS")" "$INV_CANDIDATES" "$INV_DIRS" "$INV_DTYPE"
 
 # measure <id> <file> <path> <sha> <backends(csv)> <required 0|1> <inventory_only 0|1>
 # The per-model checks, one function so a ladder rung and an inventory model cannot drift:
@@ -318,7 +367,7 @@ mkdir -p "$OUT_DIR"
 # carries the built-from sha), never by its path: a path is machine-specific
 # (check_no_shipped_machine_paths) and says nothing about what was run.
 APR_VERSION=$("$APR" --version 2>/dev/null | head -1)
-python3 - "$ROWS" "$OUT_DIR/$HOST.json" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_ROWS" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" <<'PY'
+python3 - "$ROWS" "$OUT_DIR/$HOST.json" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_ROWS" "$INV_DIRS" "$INV_CANDIDATES" "$APR_SHA" "$CAND_ROWS" "$INV_DTYPE" <<'PY'
 import json, sys, datetime, platform
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 inv = [json.loads(l) for l in open(sys.argv[11]) if l.strip()]
@@ -326,7 +375,8 @@ out = {"schema": "apr-model-ladder-receipt/v2", "host": sys.argv[3], "version": 
        "isa": platform.machine(), "gpu": sys.argv[6] or None, "cc": sys.argv[7] or None,
        "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
        "apr_version": sys.argv[10], "executed": int(sys.argv[8]), "red": int(sys.argv[9]),
-       "inventory": inv, "inventory_dirs": sys.argv[12].split(":"), "inventory_patterns": sys.argv[13].split(","),
+       "inventory": inv, "inventory_dirs": sys.argv[12].split(":"), "inventory_candidates": sys.argv[13].split(","),
+       "member_dtype": sys.argv[16], "candidates": [json.loads(l) for l in open(sys.argv[15]) if l.strip()],
        "rungs": rows}
 json.dump(out, open(sys.argv[2], "w"), indent=2); open(sys.argv[2], "a").write("\n")
 PY

@@ -11,12 +11,12 @@ ladder:
   inventory:
     backends:
     - cuda
+    candidates:
+    - '*.gguf'
+    - '*.apr'
     dirs:
     - ~/models
-    patterns:
-    - '*q4_k*.gguf'
-    - '*q4k*.apr'
-    - '*q4_k*.apr'
+    member_dtype: Q4_K
   rungs:
   - arch: qwen2
     backends:

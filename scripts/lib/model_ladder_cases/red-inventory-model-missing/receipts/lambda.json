@@ -85,5 +85,57 @@
    "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
    "bytes": 1
   }
+ ],
+ "inventory_candidates": [
+  "*.gguf",
+  "*.apr"
+ ],
+ "member_dtype": "Q4_K",
+ "candidates": [
+  {
+   "file": "c.gguf",
+   "bytes": 1,
+   "dtype_counts": {
+    "F32": 18,
+    "Q4_K": 98,
+    "Q5_K": 36,
+    "Q6_K": 17,
+    "Q8_0": 36
+   },
+   "dominant": [
+    "Q4_K"
+   ],
+   "member": true
+  },
+  {
+   "file": "q.gguf",
+   "bytes": 1,
+   "dtype_counts": {
+    "F32": 18,
+    "Q4_K": 98,
+    "Q5_K": 36,
+    "Q6_K": 17,
+    "Q8_0": 36
+   },
+   "dominant": [
+    "Q4_K"
+   ],
+   "member": true
+  },
+  {
+   "file": "Extra-Q4_K_M.gguf",
+   "bytes": 1,
+   "dtype_counts": {
+    "F32": 18,
+    "Q4_K": 98,
+    "Q5_K": 36,
+    "Q6_K": 17,
+    "Q8_0": 36
+   },
+   "dominant": [
+    "Q4_K"
+   ],
+   "member": true
+  }
  ]
 }

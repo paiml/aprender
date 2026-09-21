@@ -91,9 +91,14 @@ for r in rungs:
         print(f"FAIL  rung {r['id']} is a Q4_K rung with required: {r.get('required')!r} — no Q4_K model is optional; every one must be green on CUDA (#3712)"); rc = 1
     if is_q4k(r) and "cuda" not in (r.get("backends") or []):
         print(f"FAIL  rung {r['id']} is a Q4_K rung that does not claim cuda — every Q4_K model must be green on CUDA (#3712)"); rc = 1
-inv_backends = list((L.get("inventory") or {}).get("backends") or [])
-if not (L.get("inventory") or {}).get("patterns") or "cuda" not in inv_backends:
-    print("FAIL  the ladder declares no inventory (patterns + backends incl. cuda) — the universe cannot be the host's measured Q4_K models (#3712)"); rc = 1
+inv_spec = L.get("inventory") or {}
+inv_backends = list(inv_spec.get("backends") or [])
+want_dtype = str(inv_spec.get("member_dtype") or "").upper()
+# #3763: a file's name is not evidence of its quantization. The universe is read from the header.
+if inv_spec.get("patterns"):
+    print("FAIL  the ladder names a filename glob (inventory.patterns) — a file's name is not evidence of its quantization; its header is (#3763)"); rc = 1
+if not inv_spec.get("candidates") or not want_dtype or "cuda" not in inv_backends:
+    print("FAIL  the ladder declares no header-read inventory (candidates + member_dtype + backends incl. cuda) — the universe cannot be the host's measured Q4_K models (#3712, #3763)"); rc = 1
 # anti-shrink vs origin/main
 if main_p and os.path.exists(main_p):
     try:
@@ -146,6 +151,27 @@ for h in hosts:
         print(f"FAIL  {h['id']:7} receipt carries no measured inventory (schema {R.get('schema')!r}) — the universe is what the host HOLDS, not a list (#3712)"); rc = 1; continue
     if not inv:
         print(f"FAIL  {h['id']:7} measured inventory is EMPTY — a host holding no Q4_K model proved nothing (#3712)"); rc = 1; continue
+    # #3763: recompute every candidate's membership from its header histogram. The inventory must be
+    # EXACTLY the members: a Q4_K file left out, or a non-Q4_K file let in, went by its name.
+    cands = R.get("candidates")
+    if not want_dtype:
+        pass  # the ladder names no member_dtype: already a FAIL above, and there is nothing to recompute against
+    elif not isinstance(cands, list) or not cands:
+        print(f"FAIL  {h['id']:7} receipt lists no header-read candidates — membership cannot be recomputed, so its inventory is only a claim (#3763)"); rc = 1; continue
+    members = set()
+    for c in (cands if want_dtype else []):
+        cf = c.get("file")
+        if c.get("error") or not c.get("dtype_counts"):
+            print(f"FAIL  {h['id']:7} candidate {cf} is UNREADABLE ({c.get('error', 'no dtype histogram')}) — a file whose header was not read cannot be excluded (#3763)"); rc = 1; continue
+        counts = {str(k).upper(): int(v) for k, v in c["dtype_counts"].items()}
+        top = max(counts.values())
+        if top > 0 and counts.get(want_dtype, 0) == top:  # a tie at the top is a member: the strict side
+            members.add(cf)
+    inv_files = {x.get("file") for x in inv} if want_dtype else set()
+    for f in sorted(members - inv_files):
+        print(f"FAIL  {h['id']:7} {f} is {want_dtype} by its header but is NOT in the inventory — left out by its name? (#3763)"); rc = 1
+    for f in sorted(inv_files - members):
+        print(f"FAIL  {h['id']:7} {f} is in the inventory but its header is not {want_dtype}-dominant — let in by its name? (#3763)"); rc = 1
     good[h["id"]] = R
     by = {r.get("id"): r for r in R.get("rungs", [])}
     by_file = {x.get("file"): x for x in R.get("rungs", []) if x.get("file")}
@@ -226,7 +252,8 @@ lock_probe() {
   local prod=$1 w=$2 out rc hp bad=0
   mkdir -p "$w"; : > "$w/lock"
   printf '#!/usr/bin/env bash\nif flock -n "$FAKE_LOCK" true; then l=UNLOCKED; else l=LOCKED; fi\necho "fake-apr $1 lock=$l oom=$(cat /proc/self/oom_score_adj)"\n' > "$w/apr"
-  chmod +x "$w/apr"
+  printf '#!/usr/bin/env bash\necho "cvd=[${CUDA_VISIBLE_DEVICES-unset}]"\n' > "$w/cvd"
+  chmod +x "$w/apr" "$w/cvd"
   out=$(FAKE_LOCK="$w/lock" MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_GPU_LOCK="$w/lock" DOGFOOD_ALLOW_UNPINNED=1 APR="$w/apr" timeout 60 bash "$prod" --lock-probe qa probe 2>&1); rc=$?
   if [ "$rc" = 0 ] && grep -q 'lock=LOCKED oom=1000' <<< "$out"; then echo "ok    lock: an apr call runs holding the lock, at oom_score_adj 1000"
   else echo "FAIL  lock: the probe call did not run holding the lock at oom 1000 (rc=$rc): $out"; bad=1; fi
@@ -237,6 +264,10 @@ lock_probe() {
   kill "$hp" 2> /dev/null; wait "$hp" 2> /dev/null
   if [ "$rc" = 2 ] && grep -q 'was not free after 1s' <<< "$out" && grep -q "holder: pid $hp" <<< "$out"; then echo "ok    lock: a held lock declines (exit 2) in the bounded wait, naming the holder's pid"
   else echo "FAIL  lock: a held lock did not decline in the bounded wait naming its holder (rc=$rc): $out"; bad=1; fi
+  # the header read (not GPU work, not locked) must run with no GPU visible
+  out=$(MODEL_LADDER_ROOT="$PWD" DOGFOOD_ALLOW_UNPINNED=1 APR="$w/cvd" timeout 60 bash "$prod" --header-probe tensors probe 2>&1); rc=$?
+  if [ "$rc" = 0 ] && grep -qx 'cvd=\[\]' <<< "$out"; then echo "ok    header read: runs with CUDA_VISIBLE_DEVICES set and empty (no GPU visible)"
+  else echo "FAIL  header read: the apr_header call saw a GPU (rc=$rc): $out"; bad=1; fi
   return "$bad"
 }
 
@@ -274,6 +305,10 @@ if [ "$SELF_TEST" = 1 ]; then
     mutant q4k-required-false red-q4k-required-false 's/if is_q4k(r) and r.get("required") is not True:/if False:/'
     mutant q4k-without-cuda   red-q4k-rung-cpu-only  's/if is_q4k(r) and "cuda" not in (r.get("backends") or \[\]):/if False:/'
     mutant inventory-missing  red-inventory-model-missing 's/if x is None or not x.get("present"):  # held by the host, absent from the run/if False:/'
+    mutant filename-glob      red-inventory-by-filename-glob 's/^if inv_spec.get("patterns"):/if False:/'
+    mutant header-excluded    red-q4k-header-excluded     's/    for f in sorted(members - inv_files):/    for f in []:/'
+    mutant header-included    red-non-q4k-in-inventory    's/    for f in sorted(inv_files - members):/    for f in []:/'
+    mutant tie-not-member     red-tie-excluded            's/if top > 0 and counts.get(want_dtype, 0) == top:/if top > 0 and counts.get(want_dtype, 0) == top and list(counts.values()).count(top) == 1:/'
     # The lock: the real producer passes both halves; each producer mutant must fail at least one.
     prod=scripts/model_ladder.sh
     if lock_audit "$prod" > "$mdir/audit.out"; then echo "ok    lock: $prod makes no GPU apr call outside apr_locked"
@@ -290,6 +325,7 @@ if [ "$SELF_TEST" = 1 ]; then
     pmutant no-lock      's/^apr_locked() { flock -E "\$LOCK_BUSY" -w "\$LOCK_WAIT" "\$GPU_LOCK" choom/apr_locked() { choom/'
     pmutant no-choom     's/ choom -n 1000 -- "\$APR" "\$@"/ "$APR" "$@"/'
     pmutant unbounded    's/ -w "\$LOCK_WAIT"//'
+    pmutant header-sees-gpu 's/^apr_header() { CUDA_VISIBLE_DEVICES= "\$APR"/apr_header() { "$APR"/'
     # The cells module (scripts/lib/model_ladder_cells.py): each rule deleted in a copy, imported through
     # MODEL_LADDER_CELLS_LIB, and the case that names the rule must go RED under the copy.
     cmutant() { # cmutant <label> <case that must kill it> <sed expression deleting the rule>

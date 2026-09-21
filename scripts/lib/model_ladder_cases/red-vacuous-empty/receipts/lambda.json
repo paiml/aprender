@@ -8,5 +8,11 @@
  "executed": 0,
  "red": 0,
  "rungs": [],
- "inventory": []
+ "inventory": [],
+ "inventory_candidates": [
+  "*.gguf",
+  "*.apr"
+ ],
+ "member_dtype": "Q4_K",
+ "candidates": []
 }
