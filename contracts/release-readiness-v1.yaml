@@ -165,6 +165,8 @@ shapes:
   - id: release-readiness-v1.crux
     targetClass: release:CruxObligation
     properties:
+      # a verb whose correspondence entry declares request modes owes a :CruxCell in each (#3739 slice 4)
+      - {path: release:modeMissing, maxCount: 0}
       - {path: release:cruxCell, minCount: 1, nodeKind: IRI,
          node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [GREEN, ALL_WRONG]},
                              {path: release:fresh, minCount: 1, maxCount: 1, in: [true]}]}}

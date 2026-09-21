@@ -1115,3 +1115,31 @@ fn a_control_the_command_cannot_express_is_named_never_passed() {
         "names the control it cannot run"
     );
 }
+
+#[test]
+fn a_verb_whose_entry_declares_request_modes_owes_a_crux_cell_in_each() {
+    // the FILE says which verb has modes (#3739 slice 4); pv never names one
+    let t = green();
+    rewrite(
+        &crux_map(t.path()),
+        "    judged_by: golden\n",
+        "    judged_by: golden\n    modes: [nonstream, stream]\n",
+    );
+    let v = assert_red_naming(&gate(t.path(), &[]), "modeMissing");
+    assert!(v["findings"].to_string().contains("stream"));
+    for h in ["lambda", "gx10"] {
+        edit(&crux_receipt(t.path(), h), |v| {
+            let rows: Vec<Value> = v["cells"].as_array().expect("cells").clone();
+            let mut out = Vec::new();
+            for r in rows {
+                for m in ["nonstream", "stream"] {
+                    let mut r2 = r.clone();
+                    r2["key"]["mode"] = m.into();
+                    out.push(r2);
+                }
+            }
+            v["cells"] = Value::Array(out);
+        });
+    }
+    assert_eq!(gate(t.path(), &[]).code, 0, "a row in each declared mode");
+}

@@ -514,6 +514,10 @@
 <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.crux> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/release/CruxObligation> ;
     sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/modeMissing> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/release/cruxCell> ;
         sh:minCount 1 ;
         sh:nodeKind sh:IRI ;
