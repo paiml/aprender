@@ -53,7 +53,7 @@ Run inside the worktree it reads `attempted=0` and says so itself ("vacuous but 
 
 | Claim | Source | My re-run | Agrees |
 |---|---|---|---|
-| `check_build_report.sh` 35/35 | worker | 35/35, exit 0 (was written as 16/16 when the table had 16 rows; re-counted at adoption, `grep -cE '^\s+ok '` on the self-test output) | yes |
+| `check_build_report.sh` 42/42 | worker | 42/42, exit 0 (16/16 when first written; 35 at adoption; 42 after round-2's seven rows — host-class derivation ×3, required-set source ×4; counted with `grep -cE '^\s+ok '` on the self-test output) | yes |
 | report runs, 1092 records | worker | 1092 valid / 1084 job / 8 skipped, 0.27 s | yes |
 | every p50/p95 | `build_report.sh` | independent python reimplementation, byte-for-byte identical on all 9 figures | yes |
 | byte-identical across runs | worker | `cmp` of two runs: identical | yes |
@@ -133,5 +133,11 @@ so no goal was ever declared for PMAT-3225 and the statusline measured none.
 ## Verdict
 
 **PARTIAL(escalate)** — the row's mechanism is landed, verified and armed, and every defect found by the gate or the quorum is fixed. It is not DONE because two of the six DoD parts are open: `pv` contract `NotRun` (blocked on ONT-1), and the PR is not yet merged green on `ci / gate` + `workspace-test`.
+
+**Round 2 on `83f3f1a7d` (2 PASS / 1 FAIL), three more spec-fidelity findings from lane 1, each ruled by the board 2026-09-21 and applied here:**
+
+1. **`host` → host class, derived.** §5 amended; `build_report.sh` derives `host_class` from the runner-name prefix when a record lacks it (`intel|gx10|yoga|lambda|mini`, else `other`, null host → `other`), and the case table covers every prefix and the unknown one. 1,088 of the 1,098 committed records already carried the field from the collector; the 10 that did not are `lambda-vector` fleet-pack records and now classify as `lambda`.
+2. **`ci / gate` → the required-check SET, derived at run time.** The PRs/train equation keys on the slowest member of the set that classic protection + ruleset 13878864 name at run time (`required_checks_on_main`), and the report prints the set with its source (`derived`, or `fallback (<reason>)` when `gh` cannot answer). On this box today: `ci / gate, gate, workspace-test [derived]`, binding check `workspace-test`.
+3. **Turns 26 vs 43+45 — not a defect.** `docs/audits/impl-estimates.jsonl` records **K̂**, the estimate; this receipt records **actual** turns. Both are recorded and labelled, and their disagreement is the point of keeping both — it would be a finding only if one field claimed to be the other. Nothing changed.
 
 **Escalation resolved 2026-09-21 (adoption, quorum round 1 on `9249cb8fd`).** Lane 1 (`gemini-3.1-pro-high`) refused the diff for substituting §5's *"10 slowest test targets"* with *"10 slowest jobs"* without a spec amendment; lanes 2 and 3 passed the same diff. The board ruled **(a)**: amend §5 line 421 to per-**job** with a dated note that per-target timing waits on #3134's junit ledger, keep `build_report.sh` printing that the ledger lacks target granularity, and keep the case table verifying the job version — instrument-first, the gap recorded, no requirement silently substituted. That amendment is in this PR. The `pv` contract row was re-run at the same time and still cannot run here (ONT-1 / `pv census` schema for ledger records is not landed), so the verdict **stays PARTIAL with that reason and this PR does not close #3225.**

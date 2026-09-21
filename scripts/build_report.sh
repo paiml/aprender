@@ -56,10 +56,32 @@ def percentile(k):
 
 # jq filter: takes a slurped array of ALL valid ledger records (job records and
 # non-job records alike) on stdin and emits one JSON "model" object.
-JQ_MODEL="$JQ_PERCENTILE"'
+# host_class_of(host): the fleet is managed per CLASS (intel / gx10 / yoga /
+# lambda / mini — fleet_utilization.sh and every operator rule use it) and the
+# ledger has no per-host field worth grouping on, so §5 (amended 2026-09-21,
+# ruling on #3271 round 2) reports per host class, DERIVED from the runner
+# name's prefix. A record that already carries host_class keeps it; one that
+# does not gets it from .host; a prefix nobody declared is "other", never
+# dropped and never guessed. The case table in check_build_report.sh covers
+# each declared prefix and the unknown one.
+JQ_HOST_CLASS='
+def host_class_of(host):
+  if host == null then "other"
+  elif (host | test("^intel"))  then "intel"
+  elif (host | test("^gx10"))   then "gx10"
+  elif (host | test("^yoga"))   then "yoga"
+  elif (host | test("^lambda")) then "lambda"
+  elif (host | test("^mini"))   then "mini"
+  else "other" end;
+'
+
+JQ_MODEL="$JQ_PERCENTILE""$JQ_HOST_CLASS"'
 . as $all
 | ($all | length) as $total_valid
-| ($all | map(select(has("total_s") and (.total_s != null)))) as $jobs
+| ($all
+   | map(select(has("total_s") and (.total_s != null)))
+   | map(. + { host_class: (.host_class // host_class_of(.host)) })
+  ) as $jobs
 | ($jobs | length) as $job_count
 | ($total_valid - $job_count) as $skipped_count
 | ($jobs | map(.host_class) | unique | sort) as $host_classes
@@ -96,13 +118,15 @@ JQ_MODEL="$JQ_PERCENTILE"'
 | ($jobs | map(select(.job == "ci / gate") | .total_s)) as $ci_gate_totals
 | (if ($ci_gate_totals | length) > 0 then ($ci_gate_totals | percentile(95)) else null end) as $ci_gate_p95_s
 | (
-    # Required checks on `main`, from branch protection:
-    #   gh api repos/paiml/aprender/rules/branches/main -> ["gate", "workspace-test"]
-    # The gate is recorded under TWO job names and they are the same required check:
-    # branch protection names `ci / gate`, ruleset 13878864 names a bare `gate`
-    # (scripts/pr_review_quorum_arm.sh accepts both spellings for exactly this
-    # reason). Both are listed so the table is complete; the slowest one binds.
-    ["ci / gate", "gate", "workspace-test"]
+    # The REQUIRED-CHECK SET, not one name (§5 amended 2026-09-21, ruling on
+    # #3271 round 2). Two mechanisms answer "what is required on main" — classic
+    # branch protection and ruleset 13878864 — and they spell the gate
+    # differently (`ci / gate` vs bare `gate`); keying PRs/train on one name is
+    # the one-mechanism error. The set is DERIVED at run time by
+    # required_checks_on_main() below (protection + rulesets via gh) and passed
+    # in as $required together with where it came from; when gh cannot answer,
+    # the documented set is used and the report SAYS so. The slowest member binds.
+    $required
     | map(
         . as $rn
         | ($jobs | map(select(.job == $rn) | .total_s)) as $t
@@ -134,6 +158,8 @@ JQ_MODEL="$JQ_PERCENTILE"'
     host_table: $host_table,
     slowest_jobs: $slowest_jobs,
     ci_gate_p95_s: $ci_gate_p95_s,
+    required_checks: $required,
+    required_source: $required_source,
     required_measured: $required_measured,
     binding_job: $binding_job,
     binding_p95_s: $binding_p95_s,
@@ -215,6 +241,34 @@ build_ndjson() {
 # pipeline. Returns 0/1/2 per the exit-code contract in the file header.
 # tmp_dir is caller-owned (main() creates and cleans it via an EXIT trap) so a
 # `set -e` termination mid-report still gets the directory removed.
+# required_checks_on_main TMP -> a JSON array of required-check names on main,
+# on stdout, from BOTH mechanisms (classic protection + rulesets), with the
+# gate's second spelling added because the ledger records it under both. Writes
+# where the set came from to TMP/required.source: `derived` or
+# `fallback (<reason>)`. Returns 1 (and prints nothing) when gh cannot answer,
+# so the caller falls back to the documented set and prints that it did — a
+# report that cannot ask GitHub must not pretend it did.
+required_checks_on_main() {
+    local tmp=$1 prot rules names
+    if ! command -v gh >/dev/null 2>&1; then
+        printf 'fallback (gh not on PATH)' > "$tmp/required.source"; return 1
+    fi
+    prot=$(gh api repos/paiml/aprender/branches/main/protection \
+             --jq '.required_status_checks.contexts // [] | .[]' 2>/dev/null) || {
+        printf 'fallback (gh api branches/main/protection failed)' > "$tmp/required.source"; return 1; }
+    rules=$(gh api repos/paiml/aprender/rules/branches/main \
+             --jq '.[] | select(.type=="required_status_checks") | .parameters.required_status_checks[]?.context' 2>/dev/null) || rules=""
+    names=$(printf '%s\n%s\n' "$prot" "$rules" | sed '/^$/d' | sort -u)
+    [ -n "$names" ] || { printf 'fallback (both mechanisms returned an empty set)' > "$tmp/required.source"; return 1; }
+    # The ledger records the gate under `ci / gate` AND bare `gate`; if either
+    # spelling is required, measure both so the table is complete.
+    if printf '%s\n' "$names" | grep -qxE 'ci / gate|gate'; then
+        names=$(printf '%s\nci / gate\ngate\n' "$names" | sort -u)
+    fi
+    printf 'derived' > "$tmp/required.source"
+    printf '%s\n' "$names" | jq -R . | jq -s .
+}
+
 report() {
     local ledger=$1 format=$2 tmp=$3
 
@@ -227,8 +281,13 @@ report() {
         return 1
     fi
 
+    local required_json required_source
+    required_json=$(required_checks_on_main "$tmp") || required_json='["ci / gate", "gate", "workspace-test"]'
+    required_source=$(cat "$tmp/required.source" 2>/dev/null || printf 'fallback')
+
     local model_json
-    model_json=$(jq -s "$JQ_MODEL" "$ndjson")
+    model_json=$(jq -s --argjson required "$required_json" --arg required_source "$required_source" \
+        "$JQ_MODEL" "$ndjson")
 
     local job_count
     job_count=$(printf '%s' "$model_json" | jq -r '.job_count')
@@ -305,6 +364,9 @@ render_text() {
         printf '%s1 max PRs/train ~= 3 x 72h / p95(binding required check) = 3 x 259200 / %s = %s\n' \
             "$(printf '\xc2\xa7')" "$binding_p95_s" "$prs_per_train"
         printf '         binding check: %s (p95 %s s)\n' "$binding_job" "$binding_p95_s"
+        printf '         required set: %s [%s]\n' \
+            "$(printf '%s' "$model_json" | jq -r '.required_checks | join(", ")')" \
+            "$(printf '%s' "$model_json" | jq -r '.required_source')"
         if [ "$ci_gate_p95_s" != "null" ] && [ "$binding_job" != "ci / gate" ]; then
             printf '         NOTE: %s1 keys this on `ci / gate` (p95 %s s), which is NOT the slowest\n' \
                 "$(printf '\xc2\xa7')" "$ci_gate_p95_s"

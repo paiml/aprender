@@ -156,6 +156,56 @@ chk "p7 of 1..100 is 7, not 8" "7" \
 chk "required set covers the bare 'gate' spelling" "yes" \
     "$(grep -qE '"gate"' "$RPT" && echo yes || echo no)"
 
+# --- 5e. host class is DERIVED from the runner-name prefix when a record lacks it
+#         (§5 amended 2026-09-21, ruling on #3271 round 2: the fleet is managed
+#          per class; the ledger has no per-host field worth grouping on)
+mk_hosts() { # records WITHOUT host_class: five declared prefixes, one unknown, one null host
+    mkdir -p "$1"
+    _i=0
+    for _h in intel-clean-room-13 gx10-build yoga-build-2 lambda-vector mini-m4 mystery-host-9; do
+        _j=0
+        while [ "$_j" -lt 4 ]; do
+            printf '{"sha":"h%s%02d","host":"%s","job":"ci / gate","queue_wait_s":1,"exec_s":10,"total_s":11,"exit":0}\n' \
+                "$_i" "$_j" "$_h" > "$1/h-$_i-$_j.json"
+            _j=$((_j + 1))
+        done
+        _i=$((_i + 1))
+    done
+    # a record with no host at all
+    printf '{"sha":"nohost","job":"ci / gate","queue_wait_s":1,"exec_s":10,"total_s":11,"exit":0}\n' > "$1/nohost.json"
+}
+mk_hosts "$TMP/hosts"
+set +e
+"$RPT" --ledger "$TMP/hosts" --format json >"$TMP/hosts.json" 2>"$TMP/hosts.err"; rc_hosts=$?
+set -e
+chk "records without host_class still report (rc 0)" "0" "$rc_hosts"
+_classes=$(jq -r '[.host_table[].host_class] | sort | join(",")' "$TMP/hosts.json" 2>/dev/null)
+chk "prefixes intel/gx10/yoga/lambda/mini classified" "gx10,intel,lambda,mini,other,yoga" "$_classes"
+_other_n=$(jq -r '.host_table[] | select(.host_class=="other") | .n' "$TMP/hosts.json" 2>/dev/null)
+chk "unknown prefix AND null host both land in other" "5" "$_other_n"
+
+# --- 5f. the required-check SET is derived at run time, and the report SAYS where it came from
+#         (§5 amended 2026-09-21: two mechanisms answer "what is required"; one name is the
+#          one-mechanism error)
+_src=$(jq -r '.required_source' "$TMP/hosts.json")
+chk "required_source is derived or fallback, never absent" "yes" \
+    "$(printf '%s' "$_src" | grep -qE '^(derived|fallback \(.+\))$' && echo yes || echo no)"
+chk "text report prints the required set with its source" "yes" \
+    "$(grep -qE 'required set: .+ \[(derived|fallback \(.+\))\]' "$TMP/two.out" && echo yes || echo no)"
+# The fallback must NAME its reason. Hide gh and look for it.
+_nogh=$(mktemp -d "${TMPDIR:-/tmp}/nogh.XXXXXX")
+for _t in bash sh jq sed grep sort cat mktemp rm cp printf head tail wc date tr awk dirname basename uniq ls cut xargs env; do
+    _p=$(command -v "$_t" 2>/dev/null) && ln -sf "$_p" "$_nogh/$_t"
+done
+[ -x /usr/bin/find ] && ln -sf /usr/bin/find "$_nogh/find"
+set +e
+env -i PATH="$_nogh" HOME="${HOME:-/tmp}" TMPDIR="$TMP" bash "$RPT" --ledger "$TMP/two" --format json >"$TMP/nogh.json" 2>"$TMP/nogh.err"; rc_nogh=$?
+set -e
+chk "without gh the report still runs (rc 0)" "0" "$rc_nogh"
+chk "without gh the source names the reason" "fallback (gh not on PATH)" \
+    "$(jq -r '.required_source' "$TMP/nogh.json" 2>/dev/null)"
+rm -rf "${_nogh:?}"
+
 # --- 6. the script's own case table runs ----------------------------------------------
 set +e
 "$RPT" --self-test >"$TMP/st.out" 2>&1; rc_st=$?
