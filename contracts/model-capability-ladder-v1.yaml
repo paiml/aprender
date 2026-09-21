@@ -49,9 +49,13 @@ entity:
 # publishing with "most working" is a "p0 tire fire"):
 #   * NO Q4_K rung is optional. `required: false` on a Q4_K rung is refused by the
 #     gate, and so is a Q4_K rung whose `backends` does not claim cuda.
-#   * The universe is what each host HOLDS, not this list. `inventory` names where
-#     and what to look for; scripts/model_ladder.sh measures every match on the host
-#     (on `inventory.backends`) and writes the list into the receipt (schema v2).
+#   * The universe is what each host HOLDS, not this list, and a file's quantization is
+#     read from its HEADER, never its name (issue author, #3712 done_when 1 clarified:
+#     "filename is not evidence of quantization"; #3763). scripts/model_ladder.sh reads
+#     every `inventory.candidates` file with `apr tensors --json`, keeps those whose
+#     dominant >= 2-D tensor dtype is `member_dtype` (by count: a Q4_K_M file's big Q6_K
+#     embedding outweighs its Q4_K matrices in bytes), measures them on
+#     `inventory.backends`, and writes EVERY candidate's histogram into the receipt.
 #     An inventory model missing from the run, or not green on CUDA, is a FAIL
 #     naming it. A rung is still how a model gets a pinned sha256 and a host list.
 ladder:
@@ -60,7 +64,8 @@ ladder:
     - { id: gx10,   isa: aarch64, gpu: "GB10",     cc: sm_121, required: true }
   inventory:
     dirs: ["~/models", "~/.apr/models", "~/.cache/apr/models"]   # depth 1, the fleet's model dirs
-    patterns: ["*q4_k*.gguf", "*q4k*.gguf", "*q4_k*.apr", "*q4k*.apr"]   # case-insensitive
+    candidates: ["*.gguf", "*.apr"]          # EVERY model file, by extension; its name is not evidence (#3763)
+    member_dtype: Q4_K                       # a member iff Q4_K is a most-frequent >= 2-D tensor dtype (`apr tensors --json`); ties are members
     backends: [cuda]
   # #3712 row B (operator 2026-09-21: "MORE than enough tokens for our needs (overdo it), and our verbs are
   # dogfooded, i.e chat with and without thinking, ditto run, ditto code"). A cell is (model, host, verb,
@@ -157,7 +162,7 @@ equations:
       - "binary pinned via scripts/apr_bin.sh (built from HEAD) or DOGFOOD_ALLOW_UNPINNED=1 for the published-crate mode"
       - "every apr call runs through apr_locked: the fleet GPU lock (flock, bounded wait; a held lock is an ENV decline naming its holder) and choom -n 1000, so a measurement and never a CI job is the OOM victim (#3712; gx10 global OOM 2026-09-21 15:56:08Z killed CI containers)"
   host_receipt:
-    formula: "receipt(host) = {schema: apr-model-ladder-receipt/v2, host, version, sha, apr_sha, gpu, cc, inventory: [{file, sha256, bytes}], rungs: [{id, file, present, capability_match, golden_output, backends: {b: {ran, fallback, rc}}}]}"
+    formula: "receipt(host) = {schema: apr-model-ladder-receipt/v2, host, version, sha, apr_sha, gpu, cc, inventory: [{file, sha256, bytes}], candidates: [{file, bytes, dtype_counts, dominant, member} | {file, error}], rungs: [{id, file, present, capability_match, golden_output, backends: {b: {ran, fallback, rc}}}]}"
     domain: "evidence/dogfood/models/<version>/<host>.json, written only by scripts/model_ladder.sh"
     invariants:
       - "receipt.version equals the cargo root version of the tree it was measured on"
@@ -212,6 +217,11 @@ proof_obligations:
     property: "Every owed (model, verb, thinking, rung) cell is proved: pass where it fits, an honest refusal where it does not, and a pass on at least one required host"
     formal: "∀ host, m ∈ inventory(host), v ∈ cells.verbs, t ∈ modes(template(m)), r ∈ rungs(m): |rows(host, m, v, t, r)| = 1 ∧ (fits(m, r, total(host)) ⟹ pass(row) ∧ backend = cuda ∧ ¬fallback ∧ prompt_tokens ≥ tokens(r) ∧ answer_chars > 0 ∧ (t = on ⟹ think_closed)) ∧ (¬fits ⟹ refused(row) ∧ required_bytes(row) > total(host)) ∧ ∃ host': pass(host', m, v, t, r)"
     applies_to: gate_verdict
+  - id: MCL-INV-009
+    type: invariant
+    property: "Q4_K membership is read from each file's header and recomputed by the judge — a name is not evidence"
+    formal: "∀ host, ∀ c ∈ receipt(host).candidates: readable(c) ∧ (member(c) ⟺ counts₂D(c)[member_dtype] = max counts₂D(c)) ∧ inventory(host) = { c.file | member(c) } ∧ patterns ∉ ladder.inventory"
+    applies_to: host_receipt
   - id: MCL-INV-007
     type: invariant
     property: "The universe is the host's measured inventory — every Q4_K model it holds is in the run and green on CUDA"
@@ -300,6 +310,12 @@ falsification_tests:
     prediction: "check_model_ladder.sh --self-test: green-cells passes (20 owed on lambda, 12 pass, 8 honest refusals); a missing cell, a duplicate row, a fallback, a thinking block that never closed, a prompt under its rung, an empty answer, a co-tenant refusal, an OOM instead of a refusal, a rung that passes nowhere, thinking_modes that disagree with the template, a missing context_length (#3733), no cells, a consumer without a number, a missing context-rungs file, a dropped cells block or verb, a rung id or consumer dropped from context-rungs.json vs origin/main, an arch with no held representative, and a pass where the declared arithmetic says the cell cannot fit (the arithmetic decides what is owed, so it must be right) are each RED naming it; 11 module mutants are each killed by their case"
     test: "bash scripts/check_model_ladder.sh --self-test"
     if_fails: "a release dogfoods one verb at one short prompt with thinking off and calls the model family working"
+
+  - id: FALSIFY-MCL-017
+    rule: "The Q4_K universe is the files whose header says Q4_K, whatever their name"
+    prediction: "check_model_ladder.sh --self-test: a ladder naming a filename glob, an unreadable candidate, a Q4_K-header file left out of the inventory, a non-Q4_K file let in, a Q4_K tie left out, and a receipt with no candidates are each RED naming it; an unlabelled Q4_K file and a tie are members (green); 4 judge mutants and the no-GPU header-read producer mutant are each killed"
+    test: "bash scripts/check_model_ladder.sh --self-test"
+    if_fails: "a `q4k` name holding fp16 is measured as Q4_K, or a Q4_K file with no quant in its name is never measured"
 
 qa_gate:
   id: F-MCL-001

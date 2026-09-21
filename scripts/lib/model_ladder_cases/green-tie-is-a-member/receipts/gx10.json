@@ -1,0 +1,167 @@
+{
+ "schema": "apr-model-ladder-receipt/v2",
+ "host": "gx10",
+ "version": "1.2.3",
+ "sha": "abc1234",
+ "gpu": "x",
+ "cc": "9.0",
+ "executed": 3,
+ "red": 0,
+ "rungs": [
+  {
+   "id": "ctrl-q4km",
+   "present": true,
+   "sha_ok": true,
+   "required": true,
+   "capability_match": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "golden_output": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "backends": {
+    "cpu": {
+     "ran": true,
+     "fallback": false,
+     "rc": 0
+    },
+    "cuda": {
+     "ran": true,
+     "fallback": false,
+     "rc": 0
+    }
+   },
+   "green": true,
+   "file": "c.gguf"
+  },
+  {
+   "id": "q3-q4km",
+   "present": true,
+   "sha_ok": true,
+   "required": true,
+   "capability_match": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "golden_output": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "backends": {
+    "cpu": {
+     "ran": true,
+     "fallback": false,
+     "rc": 0
+    },
+    "cuda": {
+     "ran": true,
+     "fallback": false,
+     "rc": 0
+    }
+   },
+   "green": true,
+   "file": "q.gguf"
+  },
+  {
+   "id": "inv:tie.gguf",
+   "file": "tie.gguf",
+   "inventory_only": true,
+   "present": true,
+   "sha_ok": true,
+   "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+   "required": true,
+   "capability_match": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "golden_output": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "backends": {
+    "cuda": {
+     "ran": true,
+     "fallback": false,
+     "rc": 0
+    }
+   },
+   "green": true
+  }
+ ],
+ "inventory": [
+  {
+   "file": "c.gguf",
+   "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+   "bytes": 1
+  },
+  {
+   "file": "q.gguf",
+   "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+   "bytes": 1
+  },
+  {
+   "file": "tie.gguf",
+   "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+   "bytes": 1
+  }
+ ],
+ "inventory_candidates": [
+  "*.gguf",
+  "*.apr"
+ ],
+ "member_dtype": "Q4_K",
+ "candidates": [
+  {
+   "file": "c.gguf",
+   "bytes": 1,
+   "dtype_counts": {
+    "F32": 18,
+    "Q4_K": 98,
+    "Q5_K": 36,
+    "Q6_K": 17,
+    "Q8_0": 36
+   },
+   "dominant": [
+    "Q4_K"
+   ],
+   "member": true
+  },
+  {
+   "file": "q.gguf",
+   "bytes": 1,
+   "dtype_counts": {
+    "F32": 18,
+    "Q4_K": 98,
+    "Q5_K": 36,
+    "Q6_K": 17,
+    "Q8_0": 36
+   },
+   "dominant": [
+    "Q4_K"
+   ],
+   "member": true
+  },
+  {
+   "file": "tie.gguf",
+   "bytes": 1,
+   "dtype_counts": {
+    "F32": 4,
+    "Q4_K": 10,
+    "Q6_K": 10
+   },
+   "dominant": [
+    "Q4_K",
+    "Q6_K"
+   ],
+   "member": true
+  }
+ ]
+}
