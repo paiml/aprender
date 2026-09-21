@@ -37,7 +37,15 @@ fn run_temperature_alone_parses_to_a_sampling_top_k() {
 /// is 0, so a bare `apr run` stays greedy.
 #[test]
 fn run_explicit_top_k_one_and_default_temperature_are_greedy() {
-    let (_, top_k) = parse_run_top_k(&["apr", "run", "m.gguf", "--temperature", "0.8", "--top-k", "1"]);
+    let (_, top_k) = parse_run_top_k(&[
+        "apr",
+        "run",
+        "m.gguf",
+        "--temperature",
+        "0.8",
+        "--top-k",
+        "1",
+    ]);
     assert_eq!(top_k, 1);
     let (temperature, _) = parse_run_top_k(&["apr", "run", "m.gguf"]);
     assert_eq!(temperature, 0.0, "bare `apr run` must stay greedy");
@@ -68,6 +76,12 @@ fn run_help_default_top_k_body() {
         .iter()
         .map(|v| v.to_string_lossy().into_owned())
         .collect();
-    assert_eq!(defaults, vec![crate::commands::run::DEFAULT_TOP_K.to_string()]);
-    assert_eq!(RunOptions::default().top_k, crate::commands::run::DEFAULT_TOP_K);
+    assert_eq!(
+        defaults,
+        vec![crate::commands::run::DEFAULT_TOP_K.to_string()]
+    );
+    assert_eq!(
+        RunOptions::default().top_k,
+        crate::commands::run::DEFAULT_TOP_K
+    );
 }

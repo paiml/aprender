@@ -115,9 +115,10 @@ impl InferenceConfig {
             input_tokens: None,
             max_tokens: 32,
             temperature: 0.0, // Greedy by default
-            // #3754: greedy comes from `temperature: 0.0`. A caller who sets only a
-            // temperature samples, instead of silently staying greedy under top_k 1.
-            top_k: DEFAULT_TOP_K,
+            // PMAT-823: a default config forwards the byte-identical greedy generation
+            // config, top_k 1 included. A caller that samples names its top-k:
+            // `apr run` sends `--top-k` (default DEFAULT_TOP_K), others use `sampling_top_k`.
+            top_k: 1,
             // PMAT-823: defaults chosen so a config with no sampling flags
             // forwards to the SAME greedy QuantizedGenerateConfig as before
             // (top_p 1.0 / seed 42 / repeat_penalty 1.0 / repeat_last_n 64).
