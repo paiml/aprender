@@ -1,6 +1,7 @@
 {
   "schema": "crux-inference-prompts/v1",
   "source": "crates/apr-cli/src/commands/golden_output.rs::golden_test_cases, the same three cases given as USER MESSAGES rather than pre-rendered ChatML: each engine applies the chat template it reads from the GGUF, and that step is part of what is under test (#3672 is a template defect a pre-rendered prompt would hide). scripts/check_crux_inference_judge.sh refuses drift between the two lists.",
+  "chat": "chat-arith-2turn is the chat verb's conversation: two USER turns, judged on the FINAL reply (12 needs the first turn's 4 carried over). Every reply is recorded. Prompts without a \"verb\" belong to run.",
   "control": "golden-2plus2 is the POSITIVE CONTROL (the cop's ruling on #3739): the smallest model answers it right on every engine, so a control cell that comes back ALL_WRONG declines the run as a broken harness rather than recording a model limitation.",
   "max_tokens": 64,
   "prompts": [
@@ -22,6 +23,13 @@
       "rung": "golden",
       "messages": [{"role": "user", "content": "What is the capital of France?"}],
       "expect_any": ["Paris"]
+    },
+    {
+      "id": "chat-arith-2turn",
+      "rung": "chat",
+      "verb": "chat",
+      "messages": [{"role": "user", "content": "What is 2+2?"}, {"role": "user", "content": "Now multiply that by 3."}],
+      "expect_any": ["12"]
     }
   ]
 }
