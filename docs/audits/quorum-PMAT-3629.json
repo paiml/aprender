@@ -1,0 +1,253 @@
+{
+  "ticket": "PMAT-3629",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "352fcbd69660555c8fb8bfa0d3dbd6aaa1845320",
+  "diff_sha256": "072aed1e3d770d471bbe8f8288f9ae8e975bbcc65abd84af76564c1bb4ec3fa8",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 7183,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements PMAT-3629. It removes the `printf | grep -q` pipe from `scripts/fleet_utilization.sh`, replacing it with a here-string (`<<<`), and adds a deterministically padded test case (EPIPE control) to demonstrate that the here-string avoids the race condition. The `scripts/pipe_grep_q_baseline.txt` ratchet is correctly decremented by 1.",
+      "findings": [
+        {
+          "claim": "scripts/fleet_utilization.sh --selftest has no pipe into grep -q",
+          "command": "",
+          "file": "scripts/fleet_utilization.sh",
+          "fix": "",
+          "grounding": "cited",
+          "line": 56,
+          "output": ""
+        },
+        {
+          "claim": "a mutation that restores the pipe AND forces EPIPE ... turns the self-test RED deterministically",
+          "command": "cat << 'EOF' > test.sh\n#!/bin/bash\nset -eo pipefail\nout=$(printf 'gx10\\t2\\t1\\t1\\t50%%\\t80%%')\nerr=0\nout=\"$out\"$'\\n'\"$(head -c 200000 /dev/zero | tr '\\0' 'x')\"\nchk() { \n  if printf '%s\\n' \"$out\" | grep -qF \"$2\"; then \n    echo \"ok    $1\"\n  else \n    echo \"FAIL  $1: wanted [$2]\"\n    err=1\n  fi\n}\nchk \"gx10: 2 runners, 1 busy, 1 aprender = 50%\" \"$(printf 'gx10\\t2\\t1\\t1\\t50%%\\t80%%')\"\nexit \"$err\"\nEOF\nbash test.sh",
+          "file": "scripts/fleet_utilization.sh",
+          "fix": "",
+          "grounding": "measured",
+          "line": 68,
+          "output": "FAIL  gx10: 2 runners, 1 busy, 1 aprender = 50%: wanted [gx10\t2\t1\t1\t50%\t80%]"
+        },
+        {
+          "claim": "ratchet baseline committed",
+          "command": "",
+          "file": "scripts/pipe_grep_q_baseline.txt",
+          "fix": "",
+          "grounding": "cited",
+          "line": 4,
+          "output": ""
+        }
+      ],
+      "raw_bytes": 5259,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly removes the pipe into `grep -q` in `scripts/fleet_utilization.sh`, replacing it with a here-string. It also adds a positive control by padding the output string to >64 KiB, which correctly fails deterministically (SIGPIPE/EPIPE) when the pipe is restored under `set -o pipefail`. The `scripts/pipe_grep_q_baseline.txt` guard is also decremented by 1, fulfilling the ratchet baseline requirement. The other requirements (PR body claims, merge commit guard-tree) cannot be refuted by the diff alone. No contradictory assertions or weakening of gates were found. Verdict: PASS.",
+      "findings": [
+        {
+          "claim": "fleet_utilization.sh --selftest has no pipe into grep -q",
+          "file": "scripts/fleet_utilization.sh",
+          "grounding": "cited",
+          "line": 53
+        },
+        {
+          "claim": "a mutation that restores the pipe AND forces EPIPE ... turns the self-test RED deterministically",
+          "command": "cat << 'EOF' > test_script.sh\n#!/bin/bash\nset -o pipefail\nout=$(printf \"hello\\nworld\\n\")\nout=\"$out\"$'\\n'\"$(head -c 200000 /dev/zero | tr '\\0' 'x')\"\nprintf '%s\\n' \"$out\" | grep -qF \"world\"\necho \"exit code: $?\"\nEOF\nbash test_script.sh\n",
+          "file": "scripts/fleet_utilization.sh",
+          "grounding": "measured",
+          "line": 59,
+          "output": "exit code: 141"
+        },
+        {
+          "claim": "a guard refuses a new site (ratchet baseline committed)",
+          "file": "scripts/pipe_grep_q_baseline.txt",
+          "grounding": "cited",
+          "line": 3
+        }
+      ],
+      "raw_bytes": 5083,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements PMAT-3629 completely and correctly with zero refutations. It replaces the EPIPE-vulnerable 'printf | grep -q' under pipefail in scripts/fleet_utilization.sh with a here-string ('grep -qF -- \"$2\" <<<\"$out\"'), adds a deterministic positive control (>64 KiB padding) that fails if the pipe pattern is restored, tightens the pipe_grep_q_baseline.txt ratchet from 75 to 74, and registers the ticket in the roadmap without extraneous changes or weakened gates.",
+      "findings": [
+        {
+          "claim": "chk() in fleet_utilization.sh replaces 'printf | grep -q' with a here-string 'grep -qF -- \"$2\" <<<\"$out\"', eliminating the producer process and passing all 7 self-test checks cleanly.",
+          "command": "bash /mnt/nvme-raid0/agent-wt/grepq-3629/scripts/fleet_utilization.sh --selftest",
+          "file": "scripts/fleet_utilization.sh",
+          "grounding": "measured",
+          "line": 56,
+          "output": "ok    intel: 3 runners, 2 busy, 1 aprender = 33%\nok    gx10: 2 runners, 1 busy, 1 aprender = 50%\nok    yoga: 2 runners, 1 busy, 1 aprender = 50%\nok    one job queued\nok    queued job's label set listed\nok    completed job is not counted as aprender-busy\nok    match survives an out that exceeds the pipe buffer (EPIPE control)"
+        },
+        {
+          "claim": "Padding `out` past 64 KiB creates a deterministic positive control for the EPIPE race under pipefail; mutating chk back to 'printf | grep -q' deterministically fails the self-test.",
+          "command": "bash -c 'sed \"s/grep -qF -- \\\"\\$2\\\" <<<\\\"\\$out\\\"/printf '\\''%s\\\\\\\\n'\\'' \\\"\\$out\\\" | grep -qF \\\"\\$2\\\"/\" /mnt/nvme-raid0/agent-wt/grepq-3629/scripts/fleet_utilization.sh | bash -s -- --selftest'",
+          "file": "scripts/fleet_utilization.sh",
+          "grounding": "measured",
+          "line": 69,
+          "output": "ok    intel: 3 runners, 2 busy, 1 aprender = 33%\nok    gx10: 2 runners, 1 busy, 1 aprender = 50%\nok    yoga: 2 runners, 1 busy, 1 aprender = 50%\nok    one job queued\nok    queued job's label set listed\nok    completed job is not counted as aprender-busy\nFAIL  match survives an out that exceeds the pipe buffer (EPIPE control): wanted [gx10\t2\t1\t1\t50%\t80%]"
+        },
+        {
+          "claim": "The pipe-into-grep-q ratchet baseline was tightened from 75 to 74, matching the removal of the hazard site without weakening the gate.",
+          "command": "bash /mnt/nvme-raid0/agent-wt/grepq-3629/scripts/check_no_pipe_into_grep_q.sh",
+          "file": "scripts/pipe_grep_q_baseline.txt",
+          "grounding": "measured",
+          "line": 4,
+          "output": "=== pipe-into-grep-q sites under pipefail (measured, not remembered) ===\n  baseline 74   measured 74\n  PASS -- at the ceiling, which is not over it."
+        },
+        {
+          "claim": "The roadmap entry PMAT-3629 was properly added alongside the aggregate roadmap update, passing all roadmap validation guards.",
+          "command": "bash /mnt/nvme-raid0/agent-wt/grepq-3629/scripts/check_roadmap_ids_unique.sh",
+          "file": "docs/roadmaps/entries/PMAT-3629.yaml",
+          "grounding": "measured",
+          "line": 1,
+          "output": "PASS  936 ids in /mnt/nvme-raid0/agent-wt/grepq-3629/docs/roadmaps/roadmap.yaml, all unique (nested records included)"
+        }
+      ],
+      "raw_bytes": 8386,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "docs/roadmaps/entries/PMAT-3629.yaml",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The roadmap entry PMAT-3629 was properly added alongside the aggregate roadmap update, passing all roadmap validation guards."
+      ]
+    },
+    {
+      "file": "scripts/fleet_utilization.sh",
+      "line": 53,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "fleet_utilization.sh --selftest has no pipe into grep -q"
+      ]
+    },
+    {
+      "file": "scripts/fleet_utilization.sh",
+      "line": 56,
+      "lanes_agreeing": [
+        1,
+        3
+      ],
+      "claims": [
+        "chk() in fleet_utilization.sh replaces 'printf | grep -q' with a here-string 'grep -qF -- \"$2\" <<<\"$out\"', eliminating the producer process and passing all 7 self-test checks cleanly.",
+        "scripts/fleet_utilization.sh --selftest has no pipe into grep -q"
+      ]
+    },
+    {
+      "file": "scripts/fleet_utilization.sh",
+      "line": 59,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "a mutation that restores the pipe AND forces EPIPE ... turns the self-test RED deterministically"
+      ]
+    },
+    {
+      "file": "scripts/fleet_utilization.sh",
+      "line": 68,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "a mutation that restores the pipe AND forces EPIPE ... turns the self-test RED deterministically"
+      ]
+    },
+    {
+      "file": "scripts/fleet_utilization.sh",
+      "line": 69,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Padding `out` past 64 KiB creates a deterministic positive control for the EPIPE race under pipefail; mutating chk back to 'printf | grep -q' deterministically fails the self-test."
+      ]
+    },
+    {
+      "file": "scripts/pipe_grep_q_baseline.txt",
+      "line": 3,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "a guard refuses a new site (ratchet baseline committed)"
+      ]
+    },
+    {
+      "file": "scripts/pipe_grep_q_baseline.txt",
+      "line": 4,
+      "lanes_agreeing": [
+        1,
+        3
+      ],
+      "claims": [
+        "The pipe-into-grep-q ratchet baseline was tightened from 75 to 74, matching the removal of the hazard site without weakening the gate.",
+        "ratchet baseline committed"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (gemini-3.1-pro-high, gemini-3.7-flash-high) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)"
+  ],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
