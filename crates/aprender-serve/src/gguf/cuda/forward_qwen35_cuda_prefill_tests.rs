@@ -169,6 +169,15 @@ fn tokens(n: usize, vocab: usize, seed: u32) -> Vec<u32> {
 }
 
 fn batched_equals_per_token(model_path: &str, n: usize, attention: super::PrefillAttention) {
+    batched_equals_per_token_rows(model_path, n, attention, None);
+}
+
+fn batched_equals_per_token_rows(
+    model_path: &str,
+    n: usize,
+    attention: super::PrefillAttention,
+    chunk_rows: Option<usize>,
+) {
     super::ATTENTION_OVERRIDE.with(|c| c.set(Some(attention)));
     let b = match attention {
         super::PrefillAttention::CublasF32 => F32_BUDGET,
@@ -184,6 +193,9 @@ fn batched_equals_per_token(model_path: &str, n: usize, attention: super::Prefil
     let qwen =
         Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
     let mut gpu = Qwen35CudaModel::with_max_seq_len(&qwen, executor, n + 2).expect("gpu model");
+    if let Some(rows) = chunk_rows {
+        gpu.set_prefill_chunk_rows(rows);
+    }
     let vocab = base.config.vocab_size;
     let prompt = tokens(n, vocab, 0x3596_0100 ^ n as u32);
 
@@ -199,7 +211,7 @@ fn batched_equals_per_token(model_path: &str, n: usize, attention: super::Prefil
     // Batched, one call.
     let mut batched = gpu.new_state().expect("state");
     let rows = gpu.prefill_chunk_rows(n);
-    let passes = super::attention_rows_for(gpu.dims, n);
+    let passes = super::attention_rows_for(gpu.dims, n, gpu.prefill_rows);
     let got = gpu.prefill(&prompt, &mut batched, 0).expect("prefill");
     let what = format!(
         "{model_path} n={n} (chunk rows {rows}, attention {}, rows/pass {passes})",
@@ -274,6 +286,25 @@ fn qwen35_prefill_equals_per_token_with_many_attention_passes_0_8b() {
     super::SCORES_BUDGET_OVERRIDE.with(|c| c.set(Some(budget)));
     batched_equals_per_token(MODEL_0_8B, 600, super::PrefillAttention::CublasF32);
     super::SCORES_BUDGET_OVERRIDE.with(|c| c.set(None));
+}
+
+#[test]
+#[serial_test::serial]
+fn qwen35_prefill_equals_per_token_with_unified_memory_chunk_rows_0_8b() {
+    // The unified-memory chunk (2048 rows) covers all 600 positions in one GEMM chunk;
+    // 64 rows cuts them into ten. Both must land where the per-token path does.
+    batched_equals_per_token_rows(
+        MODEL_0_8B,
+        600,
+        super::PrefillAttention::FlashF16In,
+        Some(super::UNIFIED_PREFILL_CHUNK_ROWS),
+    );
+    batched_equals_per_token_rows(
+        MODEL_0_8B,
+        600,
+        super::PrefillAttention::FlashF16In,
+        Some(64),
+    );
 }
 
 #[test]

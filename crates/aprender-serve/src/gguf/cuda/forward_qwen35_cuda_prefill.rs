@@ -35,6 +35,12 @@ use trueno_gpu::driver::GpuBuffer;
 /// ([`attention_rows_for`]).
 pub const PREFILL_MAX_CHUNK_ROWS: usize = 512;
 
+/// Rows per GEMM chunk on a unified-memory device (GB10): the weight dequant is ~40 %
+/// of prefill GPU time there at 512 rows (nsys, #3596), and each chunk pays it once,
+/// so four times the rows pays it a quarter as often. The workspace grows by ~1 GB on
+/// the 9B, which a 119 GB unified host has.
+pub const UNIFIED_PREFILL_CHUNK_ROWS: usize = 2048;
+
 /// Bytes the attention scores of one pass of one KV group may take
 /// (`heads_per_kv × pass_rows × L × 4`).
 pub const PREFILL_SCORES_BUDGET_BYTES: usize = 1 << 30;
@@ -159,17 +165,17 @@ pub(crate) fn choose_prefill_attention(
 
 /// Rows per chunk for a prompt ending at `total_positions` — one formula for the
 /// running prefill and the pre-load capacity plan.
-fn chunk_rows_for(_d: Qwen35CudaDims, total_positions: usize) -> usize {
-    PREFILL_MAX_CHUNK_ROWS.min(total_positions.max(1))
+fn chunk_rows_for(max_rows: usize, total_positions: usize) -> usize {
+    max_rows.max(1).min(total_positions.max(1))
 }
 
 /// Query rows per attention pass: as many of the chunk's rows as keep one KV group's
 /// scores (`heads_per_kv × rows × L` floats) inside [`PREFILL_SCORES_BUDGET_BYTES`]
 /// at the longest `L` of the call.
-fn attention_rows_for(d: Qwen35CudaDims, total_positions: usize) -> usize {
+fn attention_rows_for(d: Qwen35CudaDims, total_positions: usize, max_rows: usize) -> usize {
     let hpk = (d.num_heads / d.num_kv_heads.max(1)).max(1) as usize;
     let by_scores = scores_budget_bytes() / (4 * hpk * total_positions.max(1));
-    by_scores.clamp(1, chunk_rows_for(d, total_positions))
+    by_scores.clamp(1, chunk_rows_for(max_rows, total_positions))
 }
 
 #[cfg(test)]
@@ -194,8 +200,9 @@ fn workspace_bytes_for(
     largest_projection: usize,
     total_positions: usize,
     attention: PrefillAttention,
+    max_rows: usize,
 ) -> usize {
-    let rows = chunk_rows_for(d, total_positions);
+    let rows = chunk_rows_for(max_rows, total_positions);
     let hpk = (d.num_heads / d.num_kv_heads.max(1)).max(1) as usize;
     let q_dim = (d.num_heads * d.attn_head_dim) as usize;
     let kv_dim = (d.num_kv_heads * d.attn_head_dim) as usize;
@@ -215,7 +222,7 @@ fn workspace_bytes_for(
         + 3 * inter;
     let scores = match attention {
         PrefillAttention::CublasF32 => {
-            hpk * attention_rows_for(d, total_positions) * total_positions
+            hpk * attention_rows_for(d, total_positions, max_rows) * total_positions
         },
         PrefillAttention::FlashF16In => 0,
     };
@@ -234,7 +241,13 @@ impl<'a> Qwen35CudaModel<'a> {
     /// of compiled shapes.
     #[must_use]
     pub fn prefill_chunk_rows(&self, total_positions: usize) -> usize {
-        chunk_rows_for(self.dims, total_positions)
+        chunk_rows_for(self.prefill_rows, total_positions)
+    }
+
+    /// Set the rows per GEMM chunk (the default is [`PREFILL_MAX_CHUNK_ROWS`]); the
+    /// capacity plan must have been made with the same value.
+    pub fn set_prefill_chunk_rows(&mut self, rows: usize) {
+        self.prefill_rows = rows.max(1);
     }
 
     /// Device bytes a [`Self::prefill`] of a prompt ending at `total_positions`
@@ -246,6 +259,7 @@ impl<'a> Qwen35CudaModel<'a> {
             self.largest_projection_elems(),
             total_positions,
             choose_prefill_attention(&self.executor, self.dims),
+            self.prefill_rows,
         )
     }
 
@@ -265,6 +279,7 @@ impl<'a> Qwen35CudaModel<'a> {
         gpu_free: u64,
         gpu_total: u64,
         attention: PrefillAttention,
+        chunk_rows: usize,
     ) -> crate::capacity::CapacityInputs {
         let d = Self::dims_of(model);
         let f32s = |v: &[f32]| 4 * v.len() as u64;
@@ -342,7 +357,7 @@ impl<'a> Qwen35CudaModel<'a> {
                 + 4 * d.intermediate_dim
                 + d.vocab_size,
         );
-        let workspace = workspace_bytes_for(d, largest, seq_len, attention) as u64
+        let workspace = workspace_bytes_for(d, largest, seq_len, attention, chunk_rows) as u64
             + recurrent_per_state // the decode state's conv/ssm (its KV is the KV term)
             + own_state
             + per_token_scratch;
@@ -428,7 +443,7 @@ impl<'a> Qwen35CudaModel<'a> {
         Ok(PrefillBuffers {
             rows,
             attention,
-            attn_rows: attention_rows_for(d, total_positions),
+            attn_rows: attention_rows_for(d, total_positions, self.prefill_rows),
             x: z(rows * hidden)?,
             normed: z(rows * hidden)?,
             post_normed: z(rows * hidden)?,
@@ -451,7 +466,8 @@ impl<'a> Qwen35CudaModel<'a> {
             // Flash attention never materialises a score.
             scores: z(match attention {
                 PrefillAttention::CublasF32 => {
-                    hpk * attention_rows_for(d, total_positions) * total_positions
+                    hpk * attention_rows_for(d, total_positions, self.prefill_rows)
+                        * total_positions
                 },
                 PrefillAttention::FlashF16In => 1,
             })?,
