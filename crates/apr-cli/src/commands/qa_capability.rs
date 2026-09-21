@@ -410,6 +410,28 @@ pub(crate) fn hybrid_loader_architecture(_path: &Path) -> bool {
     false
 }
 
+/// #3714: is this a Qwen3-MoE file? The dense loader BUILDS it (the MoE
+/// placeholder fills its dense FFN) but cannot FORWARD it, so its golden and
+/// throughput gates go through the runtime entry point — the routed-expert
+/// forward, CUDA (#3714) or CPU (#3367) — and every gate measured through the
+/// dense `OwnedQuantizedModel`/`OwnedQuantizedModelCuda` skips, saying so.
+///
+/// Reads ONLY the GGUF header, through the one bounded-prefix header reader
+/// (`model_header::gguf_arch_and_tensors`, #3750). Not a map: realizar's
+/// `MappedGGUFModel::from_path` maps with MAP_POPULATE + mlock, which faults
+/// in the whole 18.5 GB file to answer a one-string question (#3761).
+#[cfg(feature = "inference")]
+pub(crate) fn moe_loader_architecture(path: &Path) -> bool {
+    super::model_header::gguf_arch_and_tensors(path)
+        .is_some_and(|(a, _)| realizar::tensor_names::normalize_architecture(&a) == "qwen3_moe")
+}
+
+/// Without `inference` there is no runtime to route to.
+#[cfg(not(feature = "inference"))]
+pub(crate) fn moe_loader_architecture(_path: &Path) -> bool {
+    false
+}
+
 #[cfg(all(test, feature = "inference"))]
 mod qa_capability_ssm_tests {
     use super::{hybrid_ssm_verdict, Backend, CapabilityVerdict};

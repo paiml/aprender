@@ -467,6 +467,14 @@ pub fn run(
 }
 
 /// Dispatch a single QA gate: skip if flagged, otherwise run, then print and collect.
+///
+/// A gate whose runner returns `Err` is recorded as a FAILED row carrying the
+/// error, and the remaining gates still run (#3714 done_when 3). It used to be
+/// `runner()?`, which abandoned `run_qa` before the report existed: on a
+/// qwen3moe file the golden gate's dense CPU path errored and `apr qa --json`
+/// printed ZERO bytes and exited 5 — every gate that had already passed, and
+/// the one that failed, were lost. An error is a FAIL, never a skip and never
+/// a pass; the report is always written.
 fn dispatch_gate(
     gates: &mut Vec<GateResult>,
     json: bool,
@@ -478,7 +486,16 @@ fn dispatch_gate(
     let result = if skip {
         GateResult::skipped(name, skip_reason)
     } else {
-        runner()?
+        let start = Instant::now();
+        runner().unwrap_or_else(|e| {
+            GateResult::failed(
+                name,
+                &format!("gate errored before it could judge the model: {e}"),
+                None,
+                None,
+                start.elapsed(),
+            )
+        })
     };
     if !json {
         print_gate_result(&result);

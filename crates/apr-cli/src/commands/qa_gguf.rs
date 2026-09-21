@@ -75,6 +75,27 @@ const HYBRID_DENSE_GPU_SKIP: &str =
     "Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense \
      OwnedQuantizedModelCuda, which has no hybrid path";
 
+/// Skip reason for a gate measured through the dense `OwnedQuantizedModel` /
+/// `OwnedQuantizedModelCuda` on a Qwen3-MoE file (#3714).
+///
+/// Not "the GPU declined": the routed-expert forward runs on CUDA (#3714) and
+/// on the CPU (#3367), and the Golden Output gate judges it through the runtime
+/// entry point. What this gate lacks is its own instrument: the dense loader
+/// fills the MoE layers' FFN with a placeholder its forward cannot read.
+const MOE_DENSE_SKIP: &str =
+    "Dense-loader gate: qwen3moe runs through the routed-expert forward (CUDA #3714, CPU \
+     #3367), but this gate measures through the dense OwnedQuantizedModel, whose FFN is the \
+     MoE placeholder";
+
+/// Skip decision for a dense-instrument gate on a Qwen3-MoE file.
+fn moe_gate_skip(moe: bool, skip: bool, reason: &'static str) -> (bool, &'static str) {
+    if moe {
+        (true, MOE_DENSE_SKIP)
+    } else {
+        (skip, reason)
+    }
+}
+
 /// Skip decision for a GPU gate on a hybrid file.
 fn hybrid_gpu_gate_skip(hybrid: bool, skip: bool, reason: &'static str) -> (bool, &'static str) {
     if hybrid {
@@ -203,6 +224,10 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     // #3477: and independently of which backend runs it — the dense loader has
     // no hybrid path, so every gate built on it skips with that reason.
     let hybrid = super::qa_capability::hybrid_loader_architecture(path);
+    // #3714: a Qwen3-MoE file loads through the dense loader but only the
+    // routed-expert forward can run it — the golden and throughput gates go
+    // through the runtime entry point, and dense-instrument gates skip.
+    let moe = super::qa_capability::moe_loader_architecture(path);
 
     let get_skip = |skip: bool, reason: &'static str| -> (bool, &'static str) {
         if capability_match_failed {
@@ -216,12 +241,12 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     // entry point `apr run` uses, because the dense loader refuses the model.
     let (s, r) = get_skip(config.skip_golden, "Skipped by --skip-golden");
     dispatch_gate(&mut gates, config.json, s, "golden_output", r, || {
-        golden_gate_for(cpu_only, hybrid, path, config)
+        golden_gate_for(cpu_only, hybrid || moe, path, config)
     })?;
 
     let (s, r) = get_skip(config.skip_throughput, "Skipped by --skip-throughput");
     dispatch_gate(&mut gates, config.json, s, "throughput", r, || {
-        throughput_gate_for(cpu_only, hybrid, path, config)
+        throughput_gate_for(cpu_only, hybrid || moe, path, config)
     })?;
 
     let is_ollama_fmt = is_gguf_format(path);
@@ -233,6 +258,7 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     };
     let (s, r) = get_skip(orig_skip_ollama, orig_reason_ollama);
     let (s, r) = dense_gate_skip(cpu_only || hybrid, s, r);
+    let (s, r) = moe_gate_skip(moe, s, r);
     dispatch_gate(&mut gates, config.json, s, "ollama_parity", r, || {
         run_ollama_parity_gate(path, config)
     })?;
@@ -240,13 +266,18 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     let (s, r) = get_skip(config.skip_gpu_speedup, "Skipped by --skip-gpu-speedup");
     let (s, r) = gpu_gate_skip(cpu_only, s, r);
     let (s, r) = hybrid_gpu_gate_skip(hybrid, s, r);
+    let (s, r) = moe_gate_skip(moe, s, r);
     dispatch_gate(&mut gates, config.json, s, "gpu_speedup", r, || {
         run_gpu_speedup_gate(path, config)
     })?;
 
     // get_skip expects &'static str, but the format-parity reason is &str, so
     // the three-way decision lives in its own function.
-    let (s, r) = format_parity_skip(capability_match_failed, cpu_only || hybrid, config);
+    let (s, r) = if moe && !capability_match_failed {
+        (true, MOE_DENSE_SKIP)
+    } else {
+        format_parity_skip(capability_match_failed, cpu_only || hybrid, config)
+    };
     dispatch_gate(&mut gates, config.json, s, "format_parity", r, || {
         run_format_parity_gate(path, config)
     })?;
@@ -262,6 +293,7 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     let (s, r) = get_skip(config.skip_gpu_state, "Skipped by --skip-gpu-state");
     let (s, r) = gpu_gate_skip(cpu_only, s, r);
     let (s, r) = hybrid_gpu_gate_skip(hybrid, s, r);
+    let (s, r) = moe_gate_skip(moe, s, r);
     dispatch_gate(&mut gates, config.json, s, "gpu_state_isolation", r, || {
         run_gpu_state_isolation_gate(path, config)
     })?;

@@ -436,3 +436,31 @@
         assert!((config.min_speedup - 0.2).abs() < f64::EPSILON);
         assert!((config.min_gpu_speedup - 2.0).abs() < f64::EPSILON);
     }
+
+    /// #3714 done_when 3: a gate whose runner ERRORS becomes a FAILED row and
+    /// the gates after it still run — `apr qa` never abandons its report. The
+    /// pre-fix `runner()?` returned the error out of `run_qa`, and on a
+    /// qwen3moe file `apr qa --json` printed zero bytes.
+    #[test]
+    fn dispatch_gate_records_an_erroring_gate_as_failed_and_continues() {
+        let mut gates = Vec::new();
+        dispatch_gate(&mut gates, true, false, "golden_output", "", || {
+            Err(CliError::ValidationFailed("CPU generation failed: EMPTY data buffer".into()))
+        })
+        .expect("an erroring gate is a row, not an abort");
+        dispatch_gate(&mut gates, true, false, "throughput", "", || {
+            Ok(GateResult::passed("throughput", "ok", None, None, Duration::from_secs(1)))
+        })
+        .expect("the next gate runs");
+        assert_eq!(gates.len(), 2, "both gates are in the report");
+        let golden = &gates[0];
+        assert_eq!(golden.name, "golden_output");
+        assert!(!golden.passed, "an error is a FAIL");
+        assert!(!golden.skipped, "an error is never a skip");
+        assert!(
+            golden.message.contains("EMPTY data buffer"),
+            "the row carries the error text: {}",
+            golden.message
+        );
+        assert!(gates[1].passed);
+    }
