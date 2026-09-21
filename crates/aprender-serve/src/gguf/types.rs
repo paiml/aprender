@@ -81,147 +81,78 @@ pub const APR_TYPE_Q4: u32 = 128;
 /// GH-478: Same role as `APR_TYPE_Q4` for the 8-bit native format.
 /// Matches `aprender::format::TensorDType::Q8 = 129` (file-format value).
 pub const APR_TYPE_Q8: u32 = 129;
+// PMAT-3430 M1 Phase 4: the enum that used to be declared here is now the
+// workspace's ONE ggml tensor-type enum, re-exported from the leaf crate.
+//
+// serve's copy listed 16 ids and was the only one of the three with string
+// conversions and a Display impl. Those move into the leaf with unchanged names
+// and unchanged behaviour: `as_str` returns the same 16 GGUF spellings, and
+// `from_str_lossy` still accepts exactly the exact spelling and its all-lower
+// form (so ggml's own `q4_K` is still refused, as it always was).
+//
+// The NAME survives as an alias because roughly thirty call sites and several
+// public signatures use it, and renaming them is not what M1 is for.
+pub use trueno_quant::GgmlType;
+/// serve's historical name for the ggml tensor-type enum.
+pub use trueno_quant::GgmlType as GgmlQuantType;
 
-// ============================================================================
-// GH-321: Unified GGML Quantization Type Enum
-// ============================================================================
+/// The ids serve ACCEPTS at its parse boundaries.
+///
+/// The leaf knows all 35 live ggml types; serve knew 16 and must keep knowing
+/// exactly 16 (#3430 Q1-c). Every boundary in this crate that turns an id or a
+/// name into a type goes through [`admitted_from_id`] or [`admitted_from_name`]
+/// rather than through the leaf directly, so the set is stated once and cannot
+/// widen by accident when the enum grows.
+///
+/// A type in this list is not a promise that serve can DECODE it — `apr/dequant`
+/// narrows further, to the quantized subset it has a dequantiser for.
+pub const ADMITTED: [GgmlQuantType; 16] = [
+    GgmlQuantType::F32,
+    GgmlQuantType::F16,
+    GgmlQuantType::Q4_0,
+    GgmlQuantType::Q4_1,
+    GgmlQuantType::Q5_0,
+    GgmlQuantType::Q5_1,
+    GgmlQuantType::Q8_0,
+    GgmlQuantType::Q8_1,
+    GgmlQuantType::Q2K,
+    GgmlQuantType::Q3K,
+    GgmlQuantType::Q4K,
+    GgmlQuantType::Q5K,
+    GgmlQuantType::Q6K,
+    GgmlQuantType::IQ2XXS,
+    GgmlQuantType::IQ2XS,
+    GgmlQuantType::BF16,
+];
 
-/// GGML quantization type — single source of truth for ID<->string mapping.
-///
-/// CRITICAL (GH-438): These IDs MUST match the GGML standard (llama.cpp ggml.h).
-/// aprender's `TensorDType` IDs in the 0-31 range must also match.
-/// APR-native quantization types (AprQ4=128, AprQ8=129 in aprender) are
-/// outside this enum's scope — they are handled by `TensorEntry::from_binary`
-/// before this enum is consulted. See LAYOUT-002.
-///
-/// Replaces 6+ duplicated match statements across infer/mod.rs, gguf/dtype.rs,
-/// apr/mod.rs, apr/dequant.rs, and apr/special_tokens.rs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u32)]
-pub enum GgmlQuantType {
-    /// 32-bit float (GGML type 0)
-    F32 = 0,
-    /// 16-bit float (GGML type 1)
-    F16 = 1,
-    /// 4-bit quantization, block size 32 (GGML type 2)
-    Q4_0 = 2,
-    /// 4-bit quantization with min, block size 32 (GGML type 3)
-    Q4_1 = 3,
-    /// 5-bit quantization, block size 32 (GGML type 6)
-    Q5_0 = 6,
-    /// 5-bit quantization with min, block size 32 (GGML type 7)
-    Q5_1 = 7,
-    /// 8-bit quantization, block size 32 (GGML type 8)
-    Q8_0 = 8,
-    /// 8-bit quantization type 1 (GGML type 9)
-    Q8_1 = 9,
-    /// 2-bit K-quantization, super-block size 256 (GGML type 10)
-    Q2K = 10,
-    /// 3-bit K-quantization, super-block size 256 (GGML type 11)
-    Q3K = 11,
-    /// 4-bit K-quantization, super-block size 256 (GGML type 12)
-    Q4K = 12,
-    /// 5-bit K-quantization, super-block size 256 (GGML type 13)
-    Q5K = 13,
-    /// 6-bit K-quantization, super-block size 256 (GGML type 14)
-    Q6K = 14,
-    /// Importance-weighted 2-bit, extra-extra-small (GGML type 16)
-    IQ2XXS = 16,
-    /// Importance-weighted 2-bit, extra-small (GGML type 17)
-    IQ2XS = 17,
-    /// BFloat16 (GGML type 30)
-    BF16 = 30,
+/// Is this type one serve admits?
+#[must_use]
+pub const fn is_admitted(t: GgmlQuantType) -> bool {
+    let mut i = 0;
+    while i < ADMITTED.len() {
+        if ADMITTED[i] as u32 == t as u32 {
+            return true;
+        }
+        i += 1;
+    }
+    false
 }
 
-impl GgmlQuantType {
-    /// Convert from u32 GGML type ID. Returns `None` for unknown types.
-    #[must_use]
-    pub const fn from_id(id: u32) -> Option<Self> {
-        match id {
-            0 => Some(Self::F32),
-            1 => Some(Self::F16),
-            2 => Some(Self::Q4_0),
-            3 => Some(Self::Q4_1),
-            6 => Some(Self::Q5_0),
-            7 => Some(Self::Q5_1),
-            8 => Some(Self::Q8_0),
-            9 => Some(Self::Q8_1),
-            10 => Some(Self::Q2K),
-            11 => Some(Self::Q3K),
-            12 => Some(Self::Q4K),
-            13 => Some(Self::Q5K),
-            14 => Some(Self::Q6K),
-            16 => Some(Self::IQ2XXS),
-            17 => Some(Self::IQ2XS),
-            30 => Some(Self::BF16),
-            _ => None,
-        }
-    }
-
-    /// Convert to u32 GGML type ID.
-    #[must_use]
-    pub const fn as_id(self) -> u32 {
-        self as u32
-    }
-
-    /// Convert to u8 for APR binary format.
-    #[must_use]
-    pub const fn as_byte(self) -> u8 {
-        self as u8
-    }
-
-    /// Convert to canonical string representation.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::F32 => "F32",
-            Self::F16 => "F16",
-            Self::Q4_0 => "Q4_0",
-            Self::Q4_1 => "Q4_1",
-            Self::Q5_0 => "Q5_0",
-            Self::Q5_1 => "Q5_1",
-            Self::Q8_0 => "Q8_0",
-            Self::Q8_1 => "Q8_1",
-            Self::Q2K => "Q2_K",
-            Self::Q3K => "Q3_K",
-            Self::Q4K => "Q4_K",
-            Self::Q5K => "Q5_K",
-            Self::Q6K => "Q6_K",
-            Self::IQ2XXS => "IQ2_XXS",
-            Self::IQ2XS => "IQ2_XS",
-            Self::BF16 => "BF16",
-        }
-    }
-
-    /// Parse from string (case-insensitive). Returns `None` for unknown strings.
-    #[must_use]
-    pub fn from_str_lossy(s: &str) -> Option<Self> {
-        match s {
-            "F32" | "f32" => Some(Self::F32),
-            "F16" | "f16" => Some(Self::F16),
-            "BF16" | "bf16" => Some(Self::BF16),
-            "Q4_0" | "q4_0" => Some(Self::Q4_0),
-            "Q4_1" | "q4_1" => Some(Self::Q4_1),
-            "Q5_0" | "q5_0" => Some(Self::Q5_0),
-            "Q5_1" | "q5_1" => Some(Self::Q5_1),
-            "Q8_0" | "q8_0" => Some(Self::Q8_0),
-            "Q8_1" | "q8_1" => Some(Self::Q8_1),
-            "Q2_K" | "q2_k" => Some(Self::Q2K),
-            "Q3_K" | "q3_k" => Some(Self::Q3K),
-            "Q4_K" | "q4_k" => Some(Self::Q4K),
-            "Q5_K" | "q5_k" => Some(Self::Q5K),
-            "Q6_K" | "q6_k" => Some(Self::Q6K),
-            "IQ2_XXS" | "iq2_xxs" => Some(Self::IQ2XXS),
-            "IQ2_XS" | "iq2_xs" => Some(Self::IQ2XS),
-            _ => None,
-        }
+/// An id becomes a type only if serve admits it. The replacement for a bare
+/// `GgmlQuantType::from_id` at every parse boundary in this crate.
+#[must_use]
+pub const fn admitted_from_id(id: u32) -> Option<GgmlQuantType> {
+    match GgmlQuantType::from_id(id) {
+        Some(t) if is_admitted(t) => Some(t),
+        _ => None,
     }
 }
 
-impl std::fmt::Display for GgmlQuantType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
+/// A name becomes a type only if serve admits it. The replacement for a bare
+/// `GgmlQuantType::from_str_lossy`.
+#[must_use]
+pub fn admitted_from_name(name: &str) -> Option<GgmlQuantType> {
+    GgmlQuantType::from_str_lossy(name).filter(|t| is_admitted(*t))
 }
 
 // ============================================================================

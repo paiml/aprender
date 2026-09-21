@@ -232,7 +232,7 @@ pub fn dtype_to_ggml_qtype(dtype: &str) -> Option<u32> {
     // GH-321: Use unified GgmlQuantType enum for GGML-compatible formats.
     // APR-native Q8/Q4 are NOT GGML — different binary layout — returns None.
     // F32/F16/BF16 are not quantized — returns None.
-    crate::gguf::GgmlQuantType::from_str_lossy(dtype)
+    crate::gguf::admitted_from_name(dtype)
         .filter(|qt| {
             matches!(
                 qt,
