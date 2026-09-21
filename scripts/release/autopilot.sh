@@ -6,7 +6,7 @@
 # one argument; milestone, epic and the state dir AP are read from GitHub and the repo, never literals.
 #
 #   autopilot.sh <version> <bump-pr> [from-step] [to-step]
-#   steps: wait deep dogfood tag cleanroom assets preflight cascade install hosts close
+#   steps: wait deep dogfood models tag cleanroom assets preflight dryrun cascade install hosts close
 #   T-4 for THIS train (operator 2026-09-17): cascade DRY-RUN receipt, then STOP and report — the cascade
 #   itself is the operator's step. Default to-step is dryrun; `cascade` and later run only when named.
 #   T-1 'ci / deep' has no workflow on main, so `deep` runs the equivalent locally on the release commit.
@@ -22,7 +22,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || { echo "cannot resolve the r
 release_params "${1:-}" "$REPO_ROOT" || { echo "usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]" >&2; exit 2; }
 STATUS="$AP/STATUS"; LOG="$AP/autopilot.log"
 PR="${2:?usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]}"; FROM="${3:-wait}"; TO="${4:-dryrun}"
-STEPS=(wait deep dogfood tag cleanroom assets preflight dryrun cascade install hosts close)
+STEPS=(wait deep dogfood models tag cleanroom assets preflight dryrun cascade install hosts close)
 say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$STATUS" >> "$LOG"; }
 die() { say "STOP $*"; exit 1; }
 run_step() { # run_step <name>: true when <name> is at or after FROM and at or before TO
@@ -111,6 +111,18 @@ if run_step dogfood; then
   say "DOGFOOD GO at $MC (R5 holds at T-1)"
 fi
 
+
+# 2b. models (#3717, #3712 done_when 3): the model matrix, measured AT THIS COMMIT on BOTH hosts
+#     before any tag -- lambda here, gx10 over the operator-authorized lambda->gx10 SSH, each with an
+#     apr built from $MC and proved to be it. One red cell, an unreachable host, a failed build, a
+#     missing receipt or a judge decline is a STOP here, with no tag cut. The same judge re-reads the
+#     receipts committed in the bump at T-4 (check_publish_preflight.sh R7).
+if run_step models; then
+  bash scripts/release/models_t1.sh "$V" "$MC" "$AP/models-t1" > "$AP/models-t1.log" 2>&1; rc=$?
+  grep -E '^MODELS ' "$AP/models-t1.log" >> "$STATUS"
+  [ $rc -eq 0 ] || die "T-1 model matrix NO-GO rc=$rc: nothing is tagged ($AP/models-t1.log)"
+  say "MODELS GO at $MC on lambda and gx10"
+fi
 # 3. tag + release (binary-release.yml fires on release: published, from the TAG's workflow file)
 # cut_tag <version> <tag> <commit> -- PMAT-3459. The milestone gate lives INSIDE the
 # function that tags, ahead of `git tag`, so the tag cannot be cut without it: there is
