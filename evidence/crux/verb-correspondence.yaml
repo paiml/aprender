@@ -1,0 +1,2745 @@
+# evidence/crux/verb-correspondence.yaml (#3774, child of #3739).
+# DERIVED from the surface named below; re-derive when the surface's sha256 changes.
+# Schema agreed with aprender-97 (the shape side); columns hf and llamafile per the
+# 19:03Z / 19:04Z amendments of #3739. Engine pins are the engine worker's rows.
+schema: crux-verb-correspondence/v1
+surface:
+  source: 'apr surface --json (apr-cli-surface/v1, #3745 S1), emitted by apr 0.69.0 (621a47862)'
+  sha256: a7c6b7f1b66aaae231363904456bd0a6b13d98dfdfb5c9064b5f7407076e6886
+  leaves: 253
+engines:
+- llama.cpp
+- ollama
+- hf
+- llamafile
+rule: 'every leaf of the surface has exactly one entry; every entry states every engine, as a mapping or {none: <reason>}. A mapped engine is a required :CruxCell (#3715/#3745 S2 reads this file).'
+verbs:
+- key: attn-parity-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: attn-viz-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: audio-inspect-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: awq-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: beat-run
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: bench
+  judged_by: task
+  comparators:
+    llama.cpp:
+      binary: llama-bench
+      args:
+        --max-tokens: -n
+    ollama:
+      none: no benchmark verb; ollama's own rates come from `run --verbose` and are reported in the run cells
+    hf:
+      none: transformers ships no benchmark CLI; a hand-written timing loop would be a competing harness (PERF-009)
+    llamafile:
+      none: the llamafile pin (the engine worker's row) declares no benchmark mode; revisit if it does
+- key: canary check
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: canary create
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: cbtop
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: cgp baseline
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp bench
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp compete
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp contract generate
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp contract verify
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp diff
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp doctor
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp explain
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp profile binary
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp profile compare
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp profile cublas
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp profile kernel
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp profile library
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp profile metal
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp profile parallel
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp profile python
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp profile quant
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp profile scalar
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp profile scaling
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp profile simd
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp profile wasm
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp profile wgpu
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp roofline
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp trace
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: cgp tui
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (cgp): a sibling tool mounted under apr, not an apr inference verb'
+- key: chat
+  judged_by: golden
+  comparators:
+    llama.cpp:
+      binary: llama-cli
+      args:
+        --system: -sys
+        --max-tokens: -n
+        --temperature: --temp
+    ollama:
+      subcommand: run
+      args: {}
+    hf:
+      api: apply_chat_template+generate
+      args:
+        --max-tokens: max_new_tokens
+    llamafile:
+      binary: llamafile
+      args:
+        --system: -sys
+        --max-tokens: -n
+        --temperature: --temp
+- key: check
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: check-finite-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: code
+  judged_by: task
+  comparators:
+    llama.cpp:
+      binary: llama-server
+      args: {}
+    ollama:
+      subcommand: serve
+      args: {}
+    hf:
+      api: transformers serve
+      args: {}
+    llamafile:
+      binary: llamafile
+      args: {}
+- key: compare-hf
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: compile
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: convert
+  comparators:
+    llama.cpp:
+      none: APR-to-APR optimisation; no engine reads APR
+    ollama:
+      none: APR-to-APR optimisation; no engine reads APR
+    hf:
+      none: APR-to-APR optimisation; no engine reads APR
+    llamafile:
+      none: APR-to-APR optimisation; no engine reads APR
+- key: data audit
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: data balance
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: data decontaminate
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: data dedup
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: data split
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: data x convert
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x dedup
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x drift compare
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x drift detect
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x drift merge
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x drift report
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x drift sketch
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x fed manifest
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x fed plan
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x fed split
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x fed verify
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x filter-text
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x fim
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x head
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x import local
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x info
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x mix
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x quality check
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x quality profiles
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x quality report
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x quality score
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x registry delete
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x registry init
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x registry list
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x registry pull
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x registry push
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x registry search
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x registry show-info
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x repl
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x schema
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: data x view
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (data x): a sibling tool mounted under apr, not an apr inference verb'
+- key: dataset audio-inspect
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: ddp-metrics-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: debug embed-viz
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: decrypt
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: devices
+  judged_by: task
+  comparators:
+    llama.cpp:
+      binary: llama-cli
+      args:
+        <none>: --list-devices
+    ollama:
+      none: ollama reports devices only in its server log, not as a verb
+    hf:
+      none: device discovery is torch's, not a transformers verb
+    llamafile:
+      none: llamafile has no device-listing verb at the pin (the engine worker's row measures it)
+- key: diagnose
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: diff
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: distill
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: dry-sampling-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: embed
+  comparators:
+    llama.cpp:
+      none: embeds with an APR-format BERT bi-encoder; llama.cpp, ollama and transformers embed from their own formats, so no same-file comparison exists until apr embed reads GGUF/SafeTensors
+    ollama:
+      none: embeds with an APR-format BERT bi-encoder; llama.cpp, ollama and transformers embed from their own formats, so no same-file comparison exists until apr embed reads GGUF/SafeTensors
+    hf:
+      none: embeds with an APR-format BERT bi-encoder; llama.cpp, ollama and transformers embed from their own formats, so no same-file comparison exists until apr embed reads GGUF/SafeTensors
+    llamafile:
+      none: embeds with an APR-format BERT bi-encoder; llama.cpp, ollama and transformers embed from their own formats, so no same-file comparison exists until apr embed reads GGUF/SafeTensors
+- key: embed-viz-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: embeddings-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: encrypt
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: eval
+  judged_by: task
+  comparators:
+    llama.cpp:
+      binary: llama-perplexity
+      args:
+        --text: -f
+    ollama:
+      none: ollama exposes no perplexity or log-likelihood verb
+    hf:
+      api: AutoModelForCausalLM(labels=...).loss
+      args: {}
+    llamafile:
+      none: llamafile's release binary has no perplexity mode
+- key: experiment view
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: explain
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: explain-token-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: export
+  comparators:
+    llama.cpp:
+      none: exports APR to other formats; the comparators CONSUME the export (the GGUF under test), none of them is a competing exporter
+    ollama:
+      none: exports APR to other formats; the comparators CONSUME the export (the GGUF under test), none of them is a competing exporter
+    hf:
+      none: exports APR to other formats; the comparators CONSUME the export (the GGUF under test), none of them is a competing exporter
+    llamafile:
+      none: exports APR to other formats; the comparators CONSUME the export (the GGUF under test), none of them is a competing exporter
+- key: finetune
+  comparators:
+    llama.cpp:
+      none: trains LoRA/QLoRA adapters; llama-finetune at the pin trains full weights (its --lora only loads an adapter), ollama and llamafile do not train
+    ollama:
+      none: trains LoRA/QLoRA adapters; llama-finetune at the pin trains full weights (its --lora only loads an adapter), ollama and llamafile do not train
+    hf:
+      none: trains LoRA/QLoRA adapters; llama-finetune at the pin trains full weights (its --lora only loads an adapter), ollama and llamafile do not train
+    llamafile:
+      none: trains LoRA/QLoRA adapters; llama-finetune at the pin trains full weights (its --lora only loads an adapter), ollama and llamafile do not train
+- key: flow
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: fp8-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: gbnf-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: gptq-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: gpu
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: gpu-memtrace-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: grad-norm
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: hang-trace-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: hex
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: imatrix-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: import
+  judged_by: task
+  comparators:
+    llama.cpp:
+      none: llama.cpp imports through convert_hf_to_gguf.py, a Python script outside the pinned binaries
+    ollama:
+      subcommand: create
+      args: {}
+    hf:
+      none: HF is the SOURCE apr imports from, not a competing importer
+    llamafile:
+      none: llamafile has no import verb
+- key: inspect
+  judged_by: task
+  comparators:
+    llama.cpp:
+      binary: llama-gguf
+      args: {}
+    ollama:
+      subcommand: show
+      args: {}
+    hf:
+      api: AutoConfig.from_pretrained
+      args: {}
+    llamafile:
+      none: llamafile has no model-metadata verb
+- key: kernel parity
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: kv-timeline-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: lint
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: list
+  aliases:
+  - ls
+  judged_by: task
+  comparators:
+    llama.cpp:
+      none: llama.cpp keeps no model cache to list
+    ollama:
+      subcommand: list
+      args: {}
+    hf:
+      none: the HF cache is listed by `hf cache scan`, a huggingface_hub CLI, not transformers; not pinned by the engine row
+    llamafile:
+      none: llamafile keeps no model cache to list
+- key: manifest
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: mcp
+  comparators:
+    llama.cpp:
+      none: apr's MCP server; no engine ships an MCP server
+    ollama:
+      none: apr's MCP server; no engine ships an MCP server
+    hf:
+      none: apr's MCP server; no engine ships an MCP server
+    llamafile:
+      none: apr's MCP server; no engine ships an MCP server
+- key: merge
+  comparators:
+    llama.cpp:
+      none: merges whole models (weighted/slerp); llama-export-lora only merges a LoRA into its base
+    ollama:
+      none: merges whole models (weighted/slerp); llama-export-lora only merges a LoRA into its base
+    hf:
+      none: merges whole models (weighted/slerp); llama-export-lora only merges a LoRA into its base
+    llamafile:
+      none: merges whole models (weighted/slerp); llama-export-lora only merges a LoRA into its base
+- key: modelfile parse
+  judged_by: task
+  comparators:
+    llama.cpp:
+      none: Modelfiles are ollama's format; llama.cpp does not read them
+    ollama:
+      subcommand: create
+      args: {}
+    hf:
+      none: Modelfiles are ollama's format; transformers does not read them
+    llamafile:
+      none: Modelfiles are ollama's format; llamafile does not read them
+- key: monitor
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: nccl-diag-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: nf4-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: ollama-chat-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: ollama-tools-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: oom-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: oracle
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: otlp-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: parity
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: pipeline apply
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: pipeline plan
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: pipeline status
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: pipeline validate
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: ppl
+  comparators:
+    llama.cpp:
+      none: a perplexity-based CLASSIFIER (CRUX-E-02), not a perplexity measurement; no engine classifies
+    ollama:
+      none: a perplexity-based CLASSIFIER (CRUX-E-02), not a perplexity measurement; no engine classifies
+    hf:
+      none: a perplexity-based CLASSIFIER (CRUX-E-02), not a perplexity measurement; no engine classifies
+    llamafile:
+      none: a perplexity-based CLASSIFIER (CRUX-E-02), not a perplexity measurement; no engine classifies
+- key: pretrain
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: profile
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: prometheus-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: prune
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: ptx
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: ptx-map
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: publish
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: pull
+  judged_by: task
+  comparators:
+    llama.cpp:
+      none: llama.cpp downloads a model only as a side effect of running it (`-hf`), not as a verb
+    ollama:
+      subcommand: pull
+      args: {}
+    hf:
+      api: huggingface_hub.snapshot_download
+      args:
+        --revision: revision
+        --include: allow_patterns
+    llamafile:
+      none: llamafile has no model registry or download verb
+- key: pv audit
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv book
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv census
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv certify
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv check-parity
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv codegen
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv coq
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv coverage
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv diff
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv equations
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv explain
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv extract
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv extract-pytorch
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv flux
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv fuzz
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv generate
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv graph
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv infer
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv invariants
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv kaizen
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv kani
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv lean
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv lean-status
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv lint
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv migrate
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv mirai
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv pipeline
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv probar
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv proof-status
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv query
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv roofline
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv scaffold
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv score
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv status
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv tla
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv unlock
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv validate
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv verify-bindings
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv verify-pipeline
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: pv verify-structure
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (pv): a sibling tool mounted under apr, not an apr inference verb'
+- key: qa
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: qualify
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: quant-preservation-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: quantize
+  judged_by: task
+  comparators:
+    llama.cpp:
+      binary: llama-quantize
+      args: {}
+    ollama:
+      subcommand: create
+      args:
+        --scheme: --quantize
+    hf:
+      none: transformers quantizes through bitsandbytes/GPTQ backends, never to GGUF Q4_K, so there is no same-format output to compare
+    llamafile:
+      none: llamafile's release binary runs models; quantizing is not one of its modes
+- key: rag demo
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+- key: rag extract-frames
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+- key: rag index
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+- key: rag info
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+- key: rag query
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+- key: rag transcribe
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (rag): a sibling tool mounted under apr, not an apr inference verb'
+- key: react-trace-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: registry aliases
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: registry-quota-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: rerank
+  comparators:
+    llama.cpp:
+      none: ranks with an APR-format BERT cross-encoder; no engine reranks the same file (llama-server's /rerank needs a GGUF reranker)
+    ollama:
+      none: ranks with an APR-format BERT cross-encoder; no engine reranks the same file (llama-server's /rerank needs a GGUF reranker)
+    hf:
+      none: ranks with an APR-format BERT cross-encoder; no engine reranks the same file (llama-server's /rerank needs a GGUF reranker)
+    llamafile:
+      none: ranks with an APR-format BERT cross-encoder; no engine reranks the same file (llama-server's /rerank needs a GGUF reranker)
+- key: rm
+  aliases:
+  - remove
+  judged_by: task
+  comparators:
+    llama.cpp:
+      none: llama.cpp keeps no model cache to remove from
+    ollama:
+      subcommand: rm
+      args: {}
+    hf:
+      none: not a transformers verb (cache deletion lives in huggingface_hub, not pinned by the engine row)
+    llamafile:
+      none: llamafile keeps no model cache to remove from
+- key: rm-gc-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: rosetta chain
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: rosetta compare-inference
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: rosetta convert
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: rosetta diff-tensors
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: rosetta fingerprint
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: rosetta inspect
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: rosetta validate-stats
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: rosetta verify
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: run
+  judged_by: golden
+  comparators:
+    llama.cpp:
+      binary: llama-cli
+      args:
+        --prompt: -p
+        --max-tokens: -n
+        --temperature: --temp
+        --seed: --seed
+    ollama:
+      subcommand: run
+      args:
+        --prompt: <positional>
+    hf:
+      api: AutoModelForCausalLM.generate
+      args:
+        --max-tokens: max_new_tokens
+    llamafile:
+      binary: llamafile
+      args:
+        --prompt: -p
+        --max-tokens: -n
+        --temperature: --temp
+        --seed: --seed
+- key: runs diff
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: runs ls
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: runs show
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: serve plan
+  comparators:
+    llama.cpp:
+      none: a pre-flight capacity plan (VRAM budget, roofline); it runs no model
+    ollama:
+      none: a pre-flight capacity plan (VRAM budget, roofline); it runs no model
+    hf:
+      none: a pre-flight capacity plan (VRAM budget, roofline); it runs no model
+    llamafile:
+      none: a pre-flight capacity plan (VRAM budget, roofline); it runs no model
+- key: serve run
+  judged_by: golden
+  comparators:
+    llama.cpp:
+      binary: llama-server
+      args:
+        --port: --port
+        --context-length: -c
+    ollama:
+      subcommand: serve
+      args: {}
+    hf:
+      api: transformers serve
+      args:
+        --port: --port
+    llamafile:
+      binary: llamafile
+      args:
+        --port: --port
+        --context-length: -c
+- key: shard
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: shared-cache-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: showcase
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: sim emc-check
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+- key: sim emc-validate
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+- key: sim help
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+- key: sim list-emc
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+- key: sim render
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+- key: sim run
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+- key: sim validate
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+- key: sim verify
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+- key: sim version
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (sim): a sibling tool mounted under apr, not an apr inference verb'
+- key: stamp
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: surface
+  hidden: true
+  comparators:
+    llama.cpp:
+      none: the surface emitter itself (hidden); it prints apr's own command tree
+    ollama:
+      none: the surface emitter itself (hidden); it prints apr's own command tree
+    hf:
+      none: the surface emitter itself (hidden); it prints apr's own command tree
+    llamafile:
+      none: the surface emitter itself (hidden); it prints apr's own command tree
+- key: tensors
+  judged_by: task
+  comparators:
+    llama.cpp:
+      binary: llama-gguf
+      args: {}
+    ollama:
+      none: ollama exposes no tensor listing
+    hf:
+      api: safetensors.safe_open(...).keys
+      args: {}
+    llamafile:
+      none: llamafile has no tensor-listing verb
+- key: test llm bench
+  comparators:
+    llama.cpp:
+      none: the OpenAI-client harness the serve cells use against every engine's server; it is the instrument, not a verb with a competitor
+    ollama:
+      none: the OpenAI-client harness the serve cells use against every engine's server; it is the instrument, not a verb with a competitor
+    hf:
+      none: the OpenAI-client harness the serve cells use against every engine's server; it is the instrument, not a verb with a competitor
+    llamafile:
+      none: the OpenAI-client harness the serve cells use against every engine's server; it is the instrument, not a verb with a competitor
+- key: test tensor
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: tokenize apply
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: tokenize encode-corpus
+  judged_by: task
+  comparators:
+    llama.cpp:
+      binary: llama-tokenize
+      args: {}
+    ollama:
+      none: ollama exposes no tokenize verb or endpoint
+    hf:
+      api: AutoTokenizer
+      args: {}
+    llamafile:
+      none: llamafile tokenizes with its embedded, older llama.cpp; the llama.cpp column already tests the tokenizer at the current pin
+- key: tokenize import-hf
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: tokenize plan
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: tokenize repair-manifest
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: tokenize train
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: tool-use-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: trace
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: train apply
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: train archive
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: train cluster-status
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: train halving
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: train plan
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: train submit
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: train sweep
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: train watch
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: tree
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: tui
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: tune
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: typical-p-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: unified-search-lint
+  comparators:
+    llama.cpp:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    ollama:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    hf:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+    llamafile:
+      none: lints an externally captured artifact; it runs no model, so no engine has a counterpart
+- key: unshard
+  comparators:
+    llama.cpp:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    ollama:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    hf:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+    llamafile:
+      none: trains or transforms weights or data; CRUX compares inference behaviour (#3739), and llama.cpp, ollama and llamafile have no same-task verb
+- key: validate
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: validate-manifest
+  comparators:
+    llama.cpp:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    ollama:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    hf:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+    llamafile:
+      none: an apr-internal integrity, diagnostic or packaging verb; no inference engine has an equivalent
+- key: zram benchmark
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (zram): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (zram): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (zram): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (zram): a sibling tool mounted under apr, not an apr inference verb'
+- key: zram create
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (zram): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (zram): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (zram): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (zram): a sibling tool mounted under apr, not an apr inference verb'
+- key: zram remove
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (zram): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (zram): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (zram): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (zram): a sibling tool mounted under apr, not an apr inference verb'
+- key: zram status
+  foreign: true
+  comparators:
+    llama.cpp:
+      none: 'foreign subtree (zram): a sibling tool mounted under apr, not an apr inference verb'
+    ollama:
+      none: 'foreign subtree (zram): a sibling tool mounted under apr, not an apr inference verb'
+    hf:
+      none: 'foreign subtree (zram): a sibling tool mounted under apr, not an apr inference verb'
+    llamafile:
+      none: 'foreign subtree (zram): a sibling tool mounted under apr, not an apr inference verb'
