@@ -1,0 +1,23 @@
+{
+  "schema": "apr-kernel-receipt/v1",
+  "kernel": "gdn_decode_attention_splitk",
+  "authoring": "oxide",
+  "host": "gx10",
+  "cc": "12.1",
+  "cuda_oxide": "b9847e95",
+  "geometry": "16/4, head_dim 256",
+  "timing": "CUDA events, median of 5 x 20 launches after 3 warmup, kernel A + kernel B",
+  "parity": "PASS",
+  "rows": [
+    {"kv": "f32", "seq_len": 37, "chunk": 64, "n_splits": 1, "oxide_vs_twin_rel_max": 2.235e-7, "oxide_vs_f64_rel_max": 1.500e-7, "oxide_vs_f64_cos": 1.000000000, "oxide_vs_builder_rel_max": 1.863e-7, "oxide_us": 30.77, "builder_us": 10.22, "oxide_over_builder": 3.010, "parity": "PASS"},
+    {"kv": "f32", "seq_len": 203, "chunk": 7, "n_splits": 29, "oxide_vs_twin_rel_max": 3.745e-7, "oxide_vs_f64_rel_max": 2.859e-7, "oxide_vs_f64_cos": 1.000000000, "oxide_vs_builder_rel_max": 2.247e-7, "oxide_us": 48.59, "builder_us": 16.34, "oxide_over_builder": 2.974, "parity": "PASS"},
+    {"kv": "f32", "seq_len": 4096, "chunk": 64, "n_splits": 64, "oxide_vs_twin_rel_max": 1.999e-7, "oxide_vs_f64_rel_max": 4.352e-7, "oxide_vs_f64_cos": 1.000000000, "oxide_vs_builder_rel_max": 1.599e-7, "oxide_us": 641.14, "builder_us": 181.80, "oxide_over_builder": 3.527, "parity": "PASS"},
+    {"kv": "f32", "seq_len": 20000, "chunk": 79, "n_splits": 254, "oxide_vs_twin_rel_max": 2.313e-7, "oxide_vs_f64_rel_max": 5.360e-7, "oxide_vs_f64_cos": 1.000000000, "oxide_vs_builder_rel_max": 1.542e-7, "oxide_us": 3247.24, "builder_us": 840.64, "oxide_over_builder": 3.863, "parity": "PASS"},
+    {"kv": "f32", "seq_len": 60000, "chunk": 235, "n_splits": 256, "oxide_vs_twin_rel_max": 3.588e-7, "oxide_vs_f64_rel_max": 7.131e-7, "oxide_vs_f64_cos": 1.000000000, "oxide_vs_builder_rel_max": 1.177e-7, "oxide_us": 8425.99, "builder_us": 2283.61, "oxide_over_builder": 3.690, "parity": "PASS"},
+    {"kv": "f16", "seq_len": 37, "chunk": 64, "n_splits": 1, "oxide_vs_twin_rel_max": 2.235e-7, "oxide_vs_f64_rel_max": 1.578e-7, "oxide_vs_f64_cos": 1.000000000, "oxide_vs_builder_rel_max": 2.235e-7, "oxide_us": 30.78, "builder_us": 10.24, "oxide_over_builder": 3.006, "parity": "PASS"},
+    {"kv": "f16", "seq_len": 203, "chunk": 7, "n_splits": 29, "oxide_vs_twin_rel_max": 2.247e-7, "oxide_vs_f64_rel_max": 2.724e-7, "oxide_vs_f64_cos": 1.000000000, "oxide_vs_builder_rel_max": 2.247e-7, "oxide_us": 49.77, "builder_us": 16.47, "oxide_over_builder": 3.021, "parity": "PASS"},
+    {"kv": "f16", "seq_len": 4096, "chunk": 64, "n_splits": 64, "oxide_vs_twin_rel_max": 2.399e-7, "oxide_vs_f64_rel_max": 3.293e-7, "oxide_vs_f64_cos": 1.000000000, "oxide_vs_builder_rel_max": 2.399e-7, "oxide_us": 536.77, "builder_us": 47.06, "oxide_over_builder": 11.405, "parity": "PASS"},
+    {"kv": "f16", "seq_len": 20000, "chunk": 79, "n_splits": 254, "oxide_vs_twin_rel_max": 1.542e-7, "oxide_vs_f64_rel_max": 7.088e-7, "oxide_vs_f64_cos": 1.000000000, "oxide_vs_builder_rel_max": 1.542e-7, "oxide_us": 2789.98, "builder_us": 478.15, "oxide_over_builder": 5.835, "parity": "PASS"},
+    {"kv": "f16", "seq_len": 60000, "chunk": 235, "n_splits": 256, "oxide_vs_twin_rel_max": 1.794e-7, "oxide_vs_f64_rel_max": 5.998e-7, "oxide_vs_f64_cos": 1.000000000, "oxide_vs_builder_rel_max": 1.346e-7, "oxide_us": 7150.83, "builder_us": 1235.44, "oxide_over_builder": 5.788, "parity": "PASS"}
+  ]
+}

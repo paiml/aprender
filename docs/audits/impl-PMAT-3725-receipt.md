@@ -79,6 +79,14 @@ Method:
 - **Against f64, split-K is closer than the kernel it replaces at every rung:** split-K ≤ 1.04e-6 vs old ≤ 1.60e-5.
 - The accuracy difference is the old kernel's single running sum over up to 262k positions.
 
+**Two timing instruments disagree on gx10, so read the rungs table as an upper bound on split-K time.**
+- The rungs harness times on the host wall: 20 back-to-back launches plus one sync, through aprender-gpu's driver wrapper.
+- The oxide A/B uses CUDA events on the same device and the same builder kernels, with the cache sized to 60k rows instead of 262k.
+- At 4,096 on gx10 the event timer reads the builder pair at 182 µs (f32) and 47 µs (f16), against the harness's 264 µs and 138 µs. At 60k it reads 2284 µs (f32) and 1235 µs (f16), against 3231 µs and 1732 µs.
+- On lambda the two instruments agree within ~2% at 20k–60k (f32 20k: 247.5 vs 248.4 µs).
+- **The cause of the gx10 gap is not measured.** Per-launch host cost on the GB10's CPU and a different L2 footprint are candidates, not findings.
+- Relative to the device-event timer, the harness reads split-K HIGHER on gx10, so the gx10 speedups in the table are conservative. The ms-scale old-kernel column uses the same instrument, where a per-launch host cost would be a rounding error.
+
 **Arithmetic (an estimate from the measurements, not an e2e measurement):**
 - At 262,144 on lambda, split-K moves the 2 GiB f32 K+V of one layer in 2.34 ms, about 0.92 TB/s. The 1 GiB f16 cache moves in 1.23 ms, about 0.87 TB/s. The 4090's peak is ~1.0 TB/s.
 - Over the 9B's 8 attention layers that is ~18.8 ms (f32) or ~9.9 ms (f16) of attention per token, against ~909 ms with the old kernel.
@@ -92,7 +100,7 @@ Same buffers, same stream, CUDA events, median of 5 × 20. The builder PTX comes
 | host | parity (vs twin / vs f64 / vs builder) | oxide ÷ builder, 4k … 60k |
 |---|---|---|
 | lambda sm_89 | PASS: ≤ 3.7e-7 / ≤ 7.1e-7 / ≤ 2.3e-7, cos 1.0000000 | 3.7 (f32 4k), 2.3 (20k), 2.3 (60k); f16 3.8, 3.3, 3.1 |
-| gx10 sm_121 | GX10_ORACLE_ROW | GX10_ORACLE_RATIO |
+| gx10 sm_121 | PASS: ≤ 3.7e-7 / ≤ 7.1e-7 / ≤ 2.4e-7, cos 1.0000000 | 3.5 (f32 4k), 3.9 (20k), 3.7 (60k); f16 11.4, 5.8, 5.8. All 10 rows: 2.97–11.4 |
 
 **Mechanism, from `ptxas -v` on the oxide PTX (sm_89):**
 - The oxide kernel keeps its per-lane `q` and accumulator arrays on a **288-byte local-memory stack** (40 registers). The builder kernel holds them in 120 registers.
