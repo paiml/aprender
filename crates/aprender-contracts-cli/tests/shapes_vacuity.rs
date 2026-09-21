@@ -215,6 +215,36 @@ fn the_lone_contract_venue_still_declines_as_it_always_did() {
     );
 }
 
+/// THE ASYMMETRY, ASSERTED RATHER THAN LEFT UNSAID — found by a quorum lane (#3610 re-review).
+///
+/// `decline()` still asks `report.focus_nodes_n == 0` GLOBALLY and returns
+/// `ShapesOutcome::NoFocus` before the result path runs. That renders through `skipped_gate(...)`
+/// with no `extra`, so this venue declines with **no `by_shape` and no `declines`** — while the
+/// DIRECTORY venue, which this PR fixed, declines *with* the full report.
+///
+/// This test says so out loud. The previous version asserted only `code != 0` here, and
+/// `the_three_answers_remain_distinct` omitted this fixture from its report loop — so the two tests
+/// together asserted the report requirement for one venue and quietly not the other. That is the
+/// half-checked shape this PR exists to fix, reproduced in its own tests.
+///
+/// **Not fixed here, and the reason is scope, not convenience.** #3610's arm 1 asks that a
+/// zero-focus contract render `Unknown{NoFocus}` and never Pass; this venue already does, at
+/// exit 2. What it lacks is the *evidence document*, which needs the report built before
+/// `decline()` is consulted — a restructure of the outcome path, not a line. The consumer that
+/// motivated the report requirement (infra's SLK gate) runs pv over a DIRECTORY, which is the venue
+/// that now carries it. Filed rather than folded in.
+#[test]
+fn the_lone_contract_venue_declines_without_a_report_and_that_is_recorded() {
+    let r = shapes_on("json-missing-ref");
+    assert_ne!(r.code, 0, "{}", r.all());
+    assert!(
+        r.extra().is_null(),
+        "if this venue has GAINED a report, the asymmetry is fixed — delete this test and add \
+         `json-missing-ref` to the_three_answers_remain_distinct's loop instead of loosening it\n{}",
+        r.all()
+    );
+}
+
 #[test]
 fn the_three_answers_remain_distinct() {
     // pass / fail / decline must not collapse: a build that returned one code for everything
