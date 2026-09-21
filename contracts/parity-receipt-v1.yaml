@@ -67,6 +67,39 @@ entity:
 relations:
   depends_on: [ont-sigma-v1]
 
+equations:
+  # A `kind: pattern` contract declares no SHAPE — see STATUS, a shape over a class nothing
+  # instantiates passes vacuously — but it still ASSERTS things, and those are statable. These two
+  # are the invariants below written as the equations the corpus integrity check reads, not new
+  # claims invented to satisfy a counter: PRC1-INV-001 and PRC1-INV-002 said exactly this already.
+  no_instances:
+    formula: "legacy(f) ⇔ f ∈ evidence/parity/**/*.json ∧ ¬f.schema ∧ (f.metrics[] ∨ f.parity)"
+    domain: every *.json under evidence/parity/, walked in byte order
+    codomain: the empty set — all seven records were migrated to v2 in the #3577 commit
+    invariants:
+      - "the retired layout is recognised by ABSENCE of `schema` plus PRESENCE of a top-level
+        reading: either half alone is some other document and is not claimed here"
+      - a count of zero is asserted, not assumed — the denominator predicate measures it independently
+    preconditions:
+      - the seven records named in evidence/parity/*/RECORD.md have been migrated
+    postconditions:
+      - a v1 record reappearing under evidence/parity/ makes this equation false and is visible
+    lean_theorem: "none — L4 not declared"
+  refused_by_name:
+    formula: "legacy(f) ⇒ f ∈ errors(extract:parity-receipt) ∧ exit(parity_receipt_denominator.sh) ≠ 0"
+    domain: a planted v1-layout record
+    codomain: two independent refusals, each naming the file
+    invariants:
+      - "refused BY NAME, never skipped: a skip is indistinguishable from a pass, which is how a
+        record sat in the tree for months with no comparator and nothing able to say so"
+      - "two readers, not one: the extractor and the shell predicate share no code, so a defect in
+        either is caught by the other rather than by nobody"
+    preconditions:
+      - both readers are wired into CI — a refusal nothing runs is not a refusal
+    postconditions:
+      - removing the planted record makes both pass again, so the pair can return to green
+    lean_theorem: "none — L4 not declared"
+
 invariants:
   - id: PRC1-INV-001
     property: the retired layout has no instances in the committed tree
