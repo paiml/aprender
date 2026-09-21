@@ -106,6 +106,10 @@ mk_two() { # mk_two <dir>: 20 fast `ci / gate` + 20 slow `workspace-test`
     done
 }
 mk_two "$TMP/two"
+# The binding-check expectation below must not depend on what GitHub says
+# today: pin the required set for this row (the derive-at-run-time path has
+# its own rows in 5f, including the hidden-gh fallback).
+export BUILD_REPORT_REQUIRED_CHECKS='["ci / gate","gate","workspace-test"]'
 set +e
 "$RPT" --ledger "$TMP/two" >"$TMP/two.out" 2>&1
 set -e
@@ -153,8 +157,26 @@ chk "p7 of 1..100 is 7, not 8" "7" \
 # --- 5d. both spellings of the gate required check are one check
 #         (scripts/pr_review_quorum_arm.sh: branch protection names `ci / gate`,
 #          ruleset 13878864 names a bare `gate`; both spellings are accepted there)
-chk "required set covers the bare 'gate' spelling" "yes" \
-    "$(grep -qE '"gate"' "$RPT" && echo yes || echo no)"
+# Behavioural, not a grep of the script's own source (that row was vacuous by
+# construction — quorum round 3 on #3271, lane 1, measured): a ledger recording
+# the gate under BOTH spellings must measure both under the pinned set.
+mk_spellings() {
+    mkdir -p "$1"
+    _i=0
+    while [ "$_i" -lt 20 ]; do
+        printf '{"sha":"g%02d","host":"intel-w1","host_class":"intel","job":"gate","queue_wait_s":1,"exec_s":5,"total_s":6,"exit":0}\n' "$_i" > "$1/bare-$_i.json"
+        printf '{"sha":"c%02d","host":"intel-w1","host_class":"intel","job":"ci / gate","queue_wait_s":1,"exec_s":7,"total_s":8,"exit":0}\n' "$_i" > "$1/ci-$_i.json"
+        _i=$((_i + 1))
+    done
+}
+mk_spellings "$TMP/spellings"
+set +e
+BUILD_REPORT_REQUIRED_CHECKS='["ci / gate","gate","workspace-test"]' "$RPT" --ledger "$TMP/spellings" --format json >"$TMP/spellings.json" 2>/dev/null
+set -e
+chk "both gate spellings are MEASURED under the required set" "ci / gate,gate" \
+    "$(jq -r '[.required_measured[].job] | sort | join(",")' "$TMP/spellings.json" 2>/dev/null)"
+chk "the slower spelling binds" "ci / gate" \
+    "$(jq -r '.binding_job' "$TMP/spellings.json" 2>/dev/null)"
 
 # --- 5e. host class is DERIVED from the runner-name prefix when a record lacks it
 #         (§5 amended 2026-09-21, ruling on #3271 round 2: the fleet is managed
@@ -188,10 +210,16 @@ chk "unknown prefix AND null host both land in other" "5" "$_other_n"
 #         (§5 amended 2026-09-21: two mechanisms answer "what is required"; one name is the
 #          one-mechanism error)
 _src=$(jq -r '.required_source' "$TMP/hosts.json")
-chk "required_source is derived or fallback, never absent" "yes" \
-    "$(printf '%s' "$_src" | grep -qE '^(derived|fallback \(.+\))$' && echo yes || echo no)"
+chk "required_source is pinned/derived/fallback, never absent" "yes" \
+    "$(printf '%s' "$_src" | grep -qE '^(pinned \(BUILD_REPORT_REQUIRED_CHECKS\)|derived|fallback \(.+\))$' && echo yes || echo no)"
+# And the derive path itself, un-pinned: derived when gh answers, else a named fallback.
+set +e
+env -u BUILD_REPORT_REQUIRED_CHECKS "$RPT" --ledger "$TMP/hosts" --format json >"$TMP/derive.json" 2>/dev/null
+set -e
+chk "un-pinned, the source is derived or a named fallback" "yes" \
+    "$(jq -r '.required_source' "$TMP/derive.json" 2>/dev/null | grep -qE '^(derived|fallback \(.+\))$' && echo yes || echo no)"
 chk "text report prints the required set with its source" "yes" \
-    "$(grep -qE 'required set: .+ \[(derived|fallback \(.+\))\]' "$TMP/two.out" && echo yes || echo no)"
+    "$(grep -qE 'required set: .+ \[(pinned \(BUILD_REPORT_REQUIRED_CHECKS\)|derived|fallback \(.+\))\]' "$TMP/two.out" && echo yes || echo no)"
 # The fallback must NAME its reason. Hide gh and look for it.
 _nogh=$(mktemp -d "${TMPDIR:-/tmp}/nogh.XXXXXX")
 for _t in bash sh jq sed grep sort cat mktemp rm cp printf head tail wc date tr awk dirname basename uniq ls cut xargs env; do
@@ -199,7 +227,7 @@ for _t in bash sh jq sed grep sort cat mktemp rm cp printf head tail wc date tr 
 done
 [ -x /usr/bin/find ] && ln -sf /usr/bin/find "$_nogh/find"
 set +e
-env -i PATH="$_nogh" HOME="${HOME:-/tmp}" TMPDIR="$TMP" bash "$RPT" --ledger "$TMP/two" --format json >"$TMP/nogh.json" 2>"$TMP/nogh.err"; rc_nogh=$?
+env -i PATH="$_nogh" HOME="${HOME:-/tmp}" TMPDIR="$TMP" bash "$RPT" --ledger "$TMP/two" --format json >"$TMP/nogh.json" 2>"$TMP/nogh.err"; rc_nogh=$?   # env -i: no pin reaches it
 set -e
 chk "without gh the report still runs (rc 0)" "0" "$rc_nogh"
 chk "without gh the source names the reason" "fallback (gh not on PATH)" \

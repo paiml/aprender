@@ -250,6 +250,20 @@ build_ndjson() {
 # report that cannot ask GitHub must not pretend it did.
 required_checks_on_main() {
     local tmp=$1 prot rules names
+    # A PINNED set wins over a derived one, and says so. This exists for the
+    # case table: a self-test whose binding-check expectation depended on what
+    # branch protection says TODAY would be a network- and state-dependent
+    # guard (quorum round 3 on #3271, lane 1 — an asserted finding, and right).
+    # It is an override for tests and operators, never a default.
+    if [ -n "${BUILD_REPORT_REQUIRED_CHECKS:-}" ]; then
+        if printf '%s' "$BUILD_REPORT_REQUIRED_CHECKS" | jq -e 'type == "array" and length > 0 and all(type == "string")' >/dev/null 2>&1; then
+            printf 'pinned (BUILD_REPORT_REQUIRED_CHECKS)' > "$tmp/required.source"
+            printf '%s' "$BUILD_REPORT_REQUIRED_CHECKS" | jq -c .
+            return 0
+        fi
+        printf 'fallback (BUILD_REPORT_REQUIRED_CHECKS is not a non-empty JSON array of strings)' > "$tmp/required.source"
+        return 1
+    fi
     if ! command -v gh >/dev/null 2>&1; then
         printf 'fallback (gh not on PATH)' > "$tmp/required.source"; return 1
     fi
