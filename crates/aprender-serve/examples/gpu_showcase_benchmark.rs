@@ -316,7 +316,7 @@ fn run_warmup_and_bench(
 fn print_pmat_verification(
     apr_stats: &Stats,
     ollama_stats: &Option<Stats>,
-    llamacpp_stats: &Stats,
+    llamacpp_stats: &Option<Stats>,
 ) {
     println!();
     println!("═══════════════════════════════════════════════════════════════════════");
@@ -324,21 +324,23 @@ fn print_pmat_verification(
     println!("═══════════════════════════════════════════════════════════════════════");
     println!();
 
-    let ollama_tps = ollama_stats
-        .as_ref()
-        .map(|s| s.mean_throughput)
-        .unwrap_or(318.0);
-
-    let point_41 = apr_stats.mean_throughput >= llamacpp_stats.mean_throughput * 1.25;
     let point_42 = apr_stats.mean_throughput >= 60.0;
     let point_49 = apr_stats.cv < 0.05;
-    let ollama_2x = apr_stats.mean_throughput >= ollama_tps * 2.0;
 
-    println!(
-        "  Point 41 (≥1.25x llama.cpp):  {} ({:.1}x)",
-        if point_41 { "✓ PASS" } else { "✗ FAIL" },
-        apr_stats.mean_throughput / llamacpp_stats.mean_throughput
-    );
+    // #3773: a ratio needs a measured denominator; with none it is UNMEASURED,
+    // never a PASS or FAIL against an invented baseline.
+    match llamacpp_stats {
+        Some(l) => println!(
+            "  Point 41 (≥1.25x llama.cpp):  {} ({:.1}x)",
+            if apr_stats.mean_throughput >= l.mean_throughput * 1.25 {
+                "✓ PASS"
+            } else {
+                "✗ FAIL"
+            },
+            apr_stats.mean_throughput / l.mean_throughput
+        ),
+        None => println!("  Point 41 (≥1.25x llama.cpp):  UNMEASURED"),
+    }
     println!(
         "  Point 42 (≥60 tok/s):         {} ({:.1} tok/s)",
         if point_42 { "✓ PASS" } else { "✗ FAIL" },
@@ -349,11 +351,18 @@ fn print_pmat_verification(
         if point_49 { "✓ PASS" } else { "✗ FAIL" },
         apr_stats.cv * 100.0
     );
-    println!(
-        "  2x Ollama Target:             {} ({:.2}x)",
-        if ollama_2x { "✓ PASS" } else { "○ PENDING" },
-        apr_stats.mean_throughput / ollama_tps
-    );
+    match ollama_stats {
+        Some(o) => println!(
+            "  2x Ollama Target:             {} ({:.2}x)",
+            if apr_stats.mean_throughput >= o.mean_throughput * 2.0 {
+                "✓ PASS"
+            } else {
+                "○ PENDING"
+            },
+            apr_stats.mean_throughput / o.mean_throughput
+        ),
+        None => println!("  2x Ollama Target:             UNMEASURED"),
+    }
     println!();
 
     let all_pass = point_41 && point_42 && point_49;
@@ -460,25 +469,17 @@ fn run_benchmark() {
             bench_args.gen_tokens,
         ))
     } else {
-        // Use default Ollama baseline from spec
-        println!("Using default Ollama baseline (318 tok/s from spec)");
-        Some(Stats {
-            mean_throughput: 318.0,
-            std_throughput: 10.0,
-            mean_ttft_ms: 50.0,
-            cv: 0.03,
-            ci_95: (308.0, 328.0),
-        })
+        // #3773: this used to invent a whole Ollama `Stats` "from spec" — 318
+        // tok/s with a made-up stddev, CV and 95% CI — whenever no URL was given.
+        println!("Ollama: UNMEASURED (no --ollama-url given)");
+        None
     };
 
-    // llama.cpp baseline from spec
-    let llamacpp_stats = Stats {
-        mean_throughput: 200.0,
-        std_throughput: 10.0,
-        mean_ttft_ms: 30.0,
-        cv: 0.05,
-        ci_95: (190.0, 210.0),
-    };
+    // #3773: llama.cpp was ALWAYS an invented `Stats` (200 tok/s, CI 190–210),
+    // never measured. This example does not drive llama.cpp; the comparator is
+    // measured only by the pinned parity lane (`. scripts/llama_bin.sh`).
+    println!("llama.cpp: UNMEASURED (not driven by this example; see scripts/llama_bin.sh)");
+    let llamacpp_stats: Option<Stats> = None;
 
     // Phase 5: Print results
     println!();
@@ -586,13 +587,8 @@ fn print_results_grid(
     model_name: &str,
     apr_stats: &Stats,
     ollama_stats: &Option<Stats>,
-    llamacpp_stats: &Stats,
+    llamacpp_stats: &Option<Stats>,
 ) {
-    let ollama = ollama_stats
-        .as_ref()
-        .map(|s| s.mean_throughput)
-        .unwrap_or(318.0);
-
     // Color codes
     let green = "\x1b[32m";
     let yellow = "\x1b[33m";
@@ -625,20 +621,21 @@ fn print_results_grid(
     };
     println!("{cyan}║{reset}  {apr_color}APR CUDA{reset}          : {apr_color}{:>7.1}{reset} tok/s  {dim}[{:.0}-{:.0}]{reset}  CV={:.1}%          {cyan}║{reset}",
              apr_stats.mean_throughput, apr_stats.ci_95.0, apr_stats.ci_95.1, apr_stats.cv * 100.0);
-    println!("{cyan}║{reset}  Ollama (baseline)  : {:>7.1} tok/s                                   {cyan}║{reset}", ollama);
-    println!("{cyan}║{reset}  llama.cpp          : {:>7.1} tok/s                                   {cyan}║{reset}", llamacpp_stats.mean_throughput);
-    println!(
-        "{cyan}╠═══════════════════════════════════════════════════════════════════════╣{reset}"
-    );
-
-    // Speedup
-    let vs_ollama = apr_stats.mean_throughput / ollama;
-    let vs_llamacpp = apr_stats.mean_throughput / llamacpp_stats.mean_throughput;
-    let ollama_color = if vs_ollama >= 2.0 { green } else { yellow };
-    let llama_color = if vs_llamacpp >= 1.25 { green } else { yellow };
-
-    println!("{cyan}║{reset}  vs Ollama:    {ollama_color}{:>5.2}x{reset}                                              {cyan}║{reset}", vs_ollama);
-    println!("{cyan}║{reset}  vs llama.cpp: {llama_color}{:>5.2}x{reset}                                              {cyan}║{reset}", vs_llamacpp);
+    // #3773: a comparator row is its measured mean or UNMEASURED; a speedup is
+    // printed only against a measured one.
+    for (name, stats, bar) in [
+        ("Ollama   ", ollama_stats, 2.0),
+        ("llama.cpp", llamacpp_stats, 1.25),
+    ] {
+        match stats {
+            Some(s) => {
+                let vs = apr_stats.mean_throughput / s.mean_throughput;
+                let color = if vs >= bar { green } else { yellow };
+                println!("{cyan}║{reset}  {name}          : {:>7.1} tok/s   vs: {color}{:>5.2}x{reset}                     {cyan}║{reset}", s.mean_throughput, vs);
+            },
+            None => println!("{cyan}║{reset}  {name}          :  UNMEASURED                                  {cyan}║{reset}"),
+        }
+    }
     println!(
         "{cyan}╚═══════════════════════════════════════════════════════════════════════╝{reset}"
     );

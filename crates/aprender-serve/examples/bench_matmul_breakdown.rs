@@ -98,10 +98,7 @@ fn main() {
         ffn_down_time / layer_time * 100.0
     );
 
-    // vs Ollama
-    let ollama_total_ms = 14.05;
-    println!("\n=== vs Ollama ===");
-    println!("realizar matmuls: {:.1} ms", total_time / 1000.0);
-    println!("Ollama total:     {:.1} ms", ollama_total_ms);
-    println!("Gap: {:.2}x", total_time / 1000.0 / ollama_total_ms);
+    // #3773: the "vs Ollama" gap was computed against an asserted 14.05 ms;
+    // only the measured side is reported.
+    println!("\nrealizar matmuls: {:.1} ms", total_time / 1000.0);
 }

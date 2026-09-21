@@ -215,23 +215,8 @@ fn main() {
     println!("  Throughput: {:.1} tok/s", toks_per_sec);
     println!();
 
-    // Compare to baselines
-    let ollama_baseline = 333.0; // tok/s
-    let speedup = toks_per_sec / ollama_baseline;
-    println!(
-        "  vs Ollama ({:.0} tok/s): {:.2}x",
-        ollama_baseline, speedup
-    );
-
-    if speedup >= 2.0 {
-        println!("  ✅ Exceeds 2x Ollama parity!");
-    } else if speedup >= 1.0 {
-        println!("  ✅ Matches Ollama parity!");
-    } else {
-        println!("  ⚠️  Below Ollama baseline (optimize batch size)");
-    }
-
-    println!();
-    println!("Tip: For higher throughput, use batched inference with M=16");
-    println!("     Expected: 850+ tok/s (2.9x Ollama)");
+    // #3773: a "vs Ollama (333 tok/s)" ratio, a parity verdict and an
+    // "Expected: 850+ tok/s (2.9x Ollama)" tip were printed here against an
+    // asserted, unreceipted Ollama figure. Only the measured throughput stays.
+    println!("Tip: for higher throughput, use batched inference with M=16");
 }

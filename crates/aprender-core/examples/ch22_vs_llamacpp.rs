@@ -14,13 +14,18 @@ fn main() {
     println!("Method: bootstrap statistical comparison (probador llm load)");
     println!();
 
-    // llama.cpp b7746 benchmark data
-    let llamacpp_decode_tps = 285.0_f64; // approximate from bootstrap JSON
-    let aprender_decode_tps = 273.8_f64;
+    // #3773: both means are the bootstrap receipts this chapter's contract names
+    // (contracts/apr-book-ch22-v1.yaml benchmark_data.data_files), in
+    // paiml/candle-vs-apr. The llama.cpp figure used to read "285.0 — approximate
+    // from bootstrap JSON"; the JSON says 431.1, and 285 flattered the ratio.
+    // receipt: paiml/candle-vs-apr results/bootstrap-llama-cpp-b7746-fair-20260405-180222.json (2026-04-05) mean
+    let llamacpp_decode_tps = 431.1_f64;
+    // receipt: paiml/candle-vs-apr results/bootstrap-realizr-0.8.6-20260406-080315.json (2026-04-06) mean
+    let aprender_decode_tps = 351.97_f64;
     let ratio = aprender_decode_tps / llamacpp_decode_tps;
 
-    println!("Decode throughput (c=1):");
-    println!("  llama.cpp (b7746): ~{llamacpp_decode_tps:.0} tok/s");
+    println!("Decode throughput (c=1), historical receipts from 2026-04-05/06:");
+    println!("  llama.cpp (b7746): {llamacpp_decode_tps:.1} tok/s");
     println!("  aprender-serve:    {aprender_decode_tps:.1} tok/s");
     println!("  Ratio:             {ratio:.2}x");
     println!();

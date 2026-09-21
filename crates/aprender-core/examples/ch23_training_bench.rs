@@ -12,7 +12,9 @@ fn main() {
     println!("=== Training Benchmark: Qwen2.5-Coder-1.5B ===");
     println!();
 
-    // Results by backend (tok/s, VRAM MB)
+    // Results by backend (tok/s, VRAM MB). Historical figures, each row as
+    // published in the receipt (#3773):
+    // receipt: paiml/qwen-train-canary performance.md @ 35b73f8973 (2026-03-31)
     let backends: Vec<(&str, &str, f64, u64)> = vec![
         ("pytorch-compile", "gx10 A100", 3597.7, 34215),
         ("cuBLAS (default)", "gx10 A100", 4009.5, 49777),
@@ -29,7 +31,9 @@ fn main() {
     }
 
     // Assertions on the data
+    // receipt: paiml/qwen-train-canary performance.md @ 35b73f8973 (2026-03-31)
     let unsloth_gx10_tps = 13659.7_f64;
+    // receipt: paiml/qwen-train-canary performance.md @ 35b73f8973 (2026-03-31)
     let pytorch_compile_tps = 3597.7_f64;
     let unsloth_speedup = unsloth_gx10_tps / pytorch_compile_tps;
     println!();
@@ -41,6 +45,7 @@ fn main() {
 
     // VRAM efficiency: unsloth uses 10x less VRAM
     let unsloth_vram = 3515_u64;
+    // receipt: paiml/qwen-train-canary performance.md @ 35b73f8973 (2026-03-31)
     let pytorch_vram = 50580_u64;
     let vram_ratio = pytorch_vram as f64 / unsloth_vram as f64;
     println!(

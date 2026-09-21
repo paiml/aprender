@@ -59,12 +59,6 @@ fn main() {
         1000.0 / estimated_token_ms
     );
 
-    // Compare with target
-    let ollama_tok_s = 290.0;
-    let target_token_ms = 1000.0 / ollama_tok_s;
-    println!(
-        "\nTarget: {:.1} ms/token ({:.0} tok/s)",
-        target_token_ms, ollama_tok_s
-    );
-    println!("Gap: {:.1}x slower", estimated_token_ms / target_token_ms);
+    // #3773: the target/gap lines were derived from an asserted Ollama 290 tok/s
+    // and are removed; only the measured estimate above is reported.
 }

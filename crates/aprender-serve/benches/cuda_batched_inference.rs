@@ -8,8 +8,9 @@
 //! - Format: GGUF
 //! - Size: 1.5B parameters
 //! - Hardware: NVIDIA GPU (CUDA)
-//! - Baseline: Ollama 291 tok/s
-//! - Target: 582+ tok/s (2X Ollama)
+//! - Comparator: none in this bench. It used to print an asserted "Ollama
+//!   291 tok/s" baseline and a "2X target" from it (#3773); a comparator number
+//!   comes only from a pinned, receipted measurement.
 //!
 //! Run with:
 //!   MODEL_PATH=/path/to/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \
@@ -38,8 +39,6 @@ const MEASUREMENT_TIME_SECS: u64 = 30;
 const WARMUP_TIME_SECS: u64 = 5;
 const TOKENS_PER_ITERATION: usize = 50;
 
-/// Ollama baseline for comparison (verified with `ollama run qwen2.5-coder:1.5b --verbose`)
-const OLLAMA_BASELINE_TOKS: f64 = 291.0;
 
 #[cfg(feature = "cuda")]
 struct BenchContext {
@@ -88,8 +87,6 @@ fn setup_cuda_model() -> Option<BenchContext> {
     eprintln!("═══════════════════════════════════════════════════════════════");
     eprintln!("  Model: {}", model_path);
     eprintln!("  GPU: {}", device_name);
-    eprintln!("  Ollama Baseline: {} tok/s", OLLAMA_BASELINE_TOKS);
-    eprintln!("  2X Target: {} tok/s", OLLAMA_BASELINE_TOKS * 2.0);
     eprintln!("═══════════════════════════════════════════════════════════════");
 
     let mapped = MappedGGUFModel::from_path(&model_path).ok()?;
@@ -319,8 +316,6 @@ fn bench_cuda_batched_inference(c: &mut Criterion) {
     eprintln!("  BENCHMARK COMPLETE");
     eprintln!("═══════════════════════════════════════════════════════════════");
     eprintln!("  Model: {} (GGUF, Q4_K_M, 1.5B params)", ctx.model_name);
-    eprintln!("  Ollama Baseline: {} tok/s", OLLAMA_BASELINE_TOKS);
-    eprintln!("  2X Target: {} tok/s", OLLAMA_BASELINE_TOKS * 2.0);
     eprintln!();
     eprintln!("  Results: target/criterion/cuda_batched_inference/report/index.html");
     eprintln!("═══════════════════════════════════════════════════════════════");

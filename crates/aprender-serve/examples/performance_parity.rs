@@ -1734,26 +1734,16 @@ fn bench_apples_to_apples() -> BenchResult {
     throughputs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let median_throughput = throughputs[throughputs.len() / 2];
 
-    // Reference: llama.cpp on similar config would achieve ~100+ tok/s
-    // For M15 target of 80% parity, we need ~80 tok/s
-    // Current test model achieves lower due to lack of KV cache optimization
-    // Target adjusted for current architecture
-    let llama_cpp_reference = 50.0; // Conservative reference for small model
-    let parity_percent = (median_throughput / llama_cpp_reference) * 100.0;
-
-    // M15 target: Achieve ≥80% of llama.cpp throughput with real models
-    // With current architecture (no KV cache in generate loop), we target >15%
-    // This establishes the benchmark framework - full parity requires:
-    // 1. KV cache integration in generate loop (avoid full recompute)
-    // 2. Real GGUF model loading with optimized weights
-    // 3. Incremental decoding optimization
+    // #3773: this reported a "parity %" against an asserted llama.cpp
+    // reference of 50.0 tok/s. No llama.cpp number is measured here, so the
+    // result is the measured throughput and the parity is named UNMEASURED.
     BenchResult {
         name: "GPU-018: Apples-to-Apples".to_string(),
-        metric: "Parity".to_string(),
-        value: parity_percent.min(200.0), // Cap at 200% for display
-        unit: "%".to_string(),
-        target: 15.0, // Framework validation target (full parity requires optimization)
-        passed: parity_percent >= 15.0,
+        metric: "Throughput (parity vs llama.cpp: UNMEASURED)".to_string(),
+        value: median_throughput,
+        unit: "tok/s".to_string(),
+        target: 0.0,
+        passed: median_throughput > 0.0,
     }
 }
 

@@ -214,19 +214,6 @@ fn main() {
         cache_tps
     );
     println!("  • KV cache enables attending to past tokens efficiently");
-
-    let llama_cpp_tps = 42.0;
-    println!("\n  vs llama.cpp (42 tok/s):");
-    println!(
-        "    • APR (allocating):   {:>5.0}%",
-        apr_q4_tps / llama_cpp_tps * 100.0
-    );
-    println!(
-        "    • APR + Scratch:      {:>5.0}%",
-        scratch_tps / llama_cpp_tps * 100.0
-    );
-    println!(
-        "    • APR + KV Cache:     {:>5.0}%",
-        cache_tps / llama_cpp_tps * 100.0
-    );
+    // #3773: "vs llama.cpp (42 tok/s)" percentages were computed against an
+    // asserted, unreceipted figure and are removed.
 }

@@ -295,14 +295,9 @@ fn main() {
                         println!("  Result: {:.2} tok/s (latency={:?})", tps, latency);
                         model_found = true;
 
-                        // Calculate gap
-                        let ollama_baseline = 200.0; // Conservative estimate
-                        let gap = ollama_baseline / tps;
-                        println!("\n  Performance Gap Analysis:");
-                        println!("  - Ollama baseline: ~{:.0} tok/s", ollama_baseline);
+                        // #3773: the "gap" to an estimated Ollama 200 tok/s is
+                        // removed; only the measured side is reported.
                         println!("  - Realizar: {:.2} tok/s", tps);
-                        println!("  - Gap: {:.0}x", gap);
-                        println!("  - Target for parity: gap < 1.25x");
                     },
                     Err(e) => {
                         println!("  ERROR: {}", e);
@@ -360,19 +355,13 @@ fn main() {
                             println!("  Result: {:.2} tok/s (latency={:?})", tps, latency);
                             gpu_model_found = true;
 
-                            // Calculate gap and comparison
-                            let ollama_baseline = 200.0;
+                            // #3773: the Ollama ~200 tok/s figure and the gap
+                            // to it were asserted, not measured; removed.
                             let cpu_kv_cache = 5.25; // KV cache result from Test 2
-                            let gap = ollama_baseline / tps;
 
                             println!("\n  PARITY-002 Analysis:");
-                            println!(
-                                "  - Ollama GPU: ~{:.0} tok/s (uses FlashAttention)",
-                                ollama_baseline
-                            );
                             println!("  - Realizar KV cache (CPU): {:.2} tok/s", cpu_kv_cache);
                             println!("  - Realizar batched prefill: {:.2} tok/s", tps);
-                            println!("  - Gap to Ollama: {:.1}x", gap);
 
                             // Explain the finding
                             if tps < cpu_kv_cache {

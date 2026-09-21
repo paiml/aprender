@@ -190,8 +190,10 @@ fn run_benchmark() {
 
     // 7. Benchmark APR GPU inference
     println!("\n7. Benchmarking APR GPU inference...");
-
-    const OLLAMA_BASELINE: f64 = 291.0;
+    // #3773: no comparator column. This printed "{x}x Ollama" against an
+    // asserted 291.0 tok/s and a ✅/❌ against 582 = 2×291 — a ratio to a number
+    // nobody measured here. A comparator number comes only from a pinned,
+    // receipted measurement.
 
     for m in [8, 16, 32] {
         apr_cuda
@@ -270,13 +272,7 @@ fn run_benchmark() {
         apr_cuda.executor_mut().synchronize().ok();
         let elapsed = start.elapsed();
         let tps = (iters * m) as f64 / elapsed.as_secs_f64();
-        let vs_ollama = tps / OLLAMA_BASELINE;
-
-        let status = if tps >= 582.0 { "✅" } else { "❌" };
-        println!(
-            "   M={:2}: {:.1} tok/s ({:.2}x Ollama) {}",
-            m, tps, vs_ollama, status
-        );
+        println!("   M={:2}: {:.1} tok/s", m, tps);
     }
 
     // 7. Summary

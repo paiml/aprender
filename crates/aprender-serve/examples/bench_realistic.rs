@@ -169,10 +169,8 @@ fn main() {
         layers, per_layer_us, lm_head_us, total_per_token_us
     );
     println!("Throughput: {:.1} tok/s", tok_s);
-
-    let ollama_tok_s = 265.0;
-    println!("\nOllama CPU reference: {:.0} tok/s", ollama_tok_s);
-    println!("Gap: {:.1}x slower", ollama_tok_s / tok_s);
+    // #3773: an asserted "Ollama CPU reference: 265 tok/s" and a gap from it
+    // were printed here; only the measured throughput is reported.
 }
 
 fn quantize_to_q8k(values: &[f32]) -> (Vec<f32>, Vec<i8>) {

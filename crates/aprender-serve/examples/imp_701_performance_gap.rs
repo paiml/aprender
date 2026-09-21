@@ -9,16 +9,10 @@ use std::time::Instant;
 
 fn main() {
     println!("=== IMP-701: Performance Gap Analysis ===");
-    println!("Comparing realizar test inference to Ollama baseline\n");
-
-    // Ollama baseline from IMP-144b/IMP-146d
-    let ollama_tps = 240.1; // measured tok/s
-    let ollama_p50_ms = 207.6; // measured p50 latency
-
-    println!("Ollama Baseline (phi2:2.7b, CUDA):");
-    println!("  Throughput: {:.1} tok/s", ollama_tps);
-    println!("  P50 Latency: {:.1} ms", ollama_p50_ms);
-    println!();
+    // #3773: this example compared against an Ollama "baseline" (240.1 tok/s,
+    // 207.6 ms p50) typed in from IMP-144b/IMP-146d with no receipt, and drew a
+    // gap and a parity verdict from it. Only the measured side is reported now.
+    println!("Measuring realizar test inference\n");
 
     // Test realizar test model (simulates transformer operations)
     println!("Realizar test Transformer:");
@@ -91,14 +85,6 @@ fn main() {
     println!("  Throughput: {:.2} tok/s", test_tps);
     println!();
 
-    // Calculate gap
-    let gap = ollama_tps / test_tps;
-
-    println!("=== Performance Gap Analysis ===");
-    println!("  Ollama: {:.1} tok/s", ollama_tps);
-    println!("  Realizar (test): {:.2} tok/s", test_tps);
-    println!("  Gap: {:.1}x", gap);
-    println!();
 
     // Analysis
     println!("=== Gap Breakdown ===");
@@ -112,21 +98,4 @@ fn main() {
     println!("   - SIMD inference (trueno AVX2 for token generation)");
     println!("   - KV cache (avoid recomputation)");
     println!("   - Quantized operations (Q4_K_M like Ollama)");
-    println!();
-
-    // Falsifiable claims
-    println!("=== Falsifiable Claims ===");
-    if gap > 100.0 {
-        println!("CLAIM: Gap > 100x indicates missing GPU/SIMD optimization");
-        println!("ACTION: Integrate trueno GPU for large matrices");
-    } else if gap > 10.0 {
-        println!("CLAIM: Gap 10-100x indicates missing optimizations");
-        println!("ACTION: Add KV cache, quantized attention");
-    } else if gap > 1.25 {
-        println!("CLAIM: Gap 1.25-10x indicates tuning needed");
-        println!("ACTION: Profile and optimize hotspots");
-    } else {
-        println!("CLAIM: Gap < 1.25x = PARITY ACHIEVED!");
-        println!("STATUS: Target met");
-    }
 }

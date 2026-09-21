@@ -37,6 +37,8 @@ fn main() {
     // Performance comparison from paiml/qwen-train-canary
     println!();
     println!("Training performance (Qwen2.5-Coder-1.5B):");
+    // Historical figures (#3773):
+    // receipt: paiml/qwen-train-canary performance.md @ 35b73f8973 (2026-03-31)
     println!("  | Backend       | Host      | tok/s    | VRAM (MB) |");
     println!("  |---------------|-----------|----------|-----------|");
     println!("  | unsloth       | yoga RTX  |  6,715.7 |     3,515 |");
@@ -46,6 +48,7 @@ fn main() {
 
     // VRAM efficiency assertion
     let unsloth_vram = 3515_f64;
+    // receipt: paiml/qwen-train-canary performance.md @ 35b73f8973 (2026-03-31)
     let pytorch_vram = 50580_f64;
     let vram_savings = 1.0 - (unsloth_vram / pytorch_vram);
     println!();
