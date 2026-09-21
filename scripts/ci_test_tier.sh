@@ -497,19 +497,19 @@ self_test() {
     row 0 "  ...and docs/specifications/ is NOT docs-only (falsification_spec_v10_tests reads it)" '^tier=quick$' bash "$T" --event pull_request --diff-from "$td/d-spec.txt"
     # #3664 RENAME: a source file moved INTO docs/audits/ removes the source.
     # With rename detection on, --name-only lists only the new (docs) path.
-    mkrename() { # $1 dir -> HEAD = squash of "move crates/<leaf>/src/lib.rs to docs/audits/lib.rs" on a moved main
-        local d=$1
+    mkrename() { # $1 dir, $2 source path, $3 destination -> HEAD = squash of "git mv $2 $3" on a moved main
+        local d=$1 f=$2 t=$3
         git init -q -b main "$d"
         ( cd "$d" \
           && export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
           && export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null \
-          && mkdir -p "crates/$leaf/src" && printf 'pub fn f() {}\n' > "crates/$leaf/src/lib.rs" && git add -A && git commit -q -m base \
+          && mkdir -p "$(dirname "$f")" && printf 'pub fn f() {}\n' > "$f" && git add -A && git commit -q -m base \
           && git branch pr \
           && printf 'moved\n' > main-moved.txt && git add -A && git commit -q -m "main moved under the PR" \
-          && git checkout -q pr && mkdir -p docs/audits && git mv "crates/$leaf/src/lib.rs" docs/audits/lib.rs && git commit -q -m "the PR: a rename out of a crate" \
+          && git checkout -q pr && mkdir -p "$(dirname "$t")" && git mv "$f" "$t" && git commit -q -m "the PR: a rename out of a crate" \
           && git checkout -q main && git merge -q --squash pr && git commit -q -m "queue squash" )
     }
-    mkrename "$td/s-rename"
+    mkrename "$td/s-rename" "crates/$leaf/src/lib.rs" "docs/audits/lib.rs"
     row 0 "  (fixture) default git diff --name-only on the rename lists ONLY the new docs path -- the trap is real" '^docs/audits/lib\.rs$' git -C "$td/s-rename" diff --name-only HEAD^1 HEAD
     cap sq-rename bash "$T" --event merge_group --repo-root "$td/s-rename" --pr-head "$(qh "$td/s-rename")" --pr-head-conclusion success
     row 0 "merge_group, a crate source RENAMED into docs/audits/ -> NOT none (the removed source is a touched path)" '^tier=quick$' bash -c "$(replay sq-rename)"
