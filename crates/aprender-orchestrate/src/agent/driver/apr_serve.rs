@@ -429,9 +429,7 @@ impl LlmDriver for AprServeDriver {
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let text = response.text().await.unwrap_or_default();
-            return Err(AgentError::Driver(DriverError::Network(format!(
-                "apr serve HTTP {status}: {text}"
-            ))));
+            return Err(AgentError::Driver(serve_status_error(status, &text)));
         }
 
         let json: serde_json::Value = response
@@ -585,6 +583,20 @@ where
         }
     }
     path_lookup()
+}
+
+/// A non-2xx answer from `apr serve`. A 4xx is apr serve REFUSING the request (#3723: a
+/// thinking mode the model cannot honour, an unclosed think block, conflicting fields):
+/// asking again gets the same answer, so it is not retryable and never reported as a
+/// network fault. A timeout (408), a rate limit (429) and a 5xx stay retryable.
+fn serve_status_error(status: u16, body: &str) -> DriverError {
+    if (400..500).contains(&status) && status != 408 && status != 429 {
+        DriverError::InferenceFailed(format!(
+            "apr serve refused the request (HTTP {status}): {body}"
+        ))
+    } else {
+        DriverError::Network(format!("apr serve HTTP {status}: {body}"))
+    }
 }
 
 #[cfg(test)]

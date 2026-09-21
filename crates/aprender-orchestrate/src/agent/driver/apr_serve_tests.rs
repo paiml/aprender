@@ -480,3 +480,28 @@ fn ready_timeout_qwen3_coder_30b_real_size() {
     );
     assert!(secs <= 90, "Default scaling must not exceed reasonable max; got {secs}s");
 }
+
+// ═══ #3723: a 4xx from apr serve is a refusal, not a network fault ═══
+//
+// Measured on lambda (apr 0.69.0 bd68f0d77): `apr code --thinking on` on qwen2.5-coder
+// reported "network error: apr serve HTTP 422 …thinking on refused…" and call_with_retry
+// asked again MAX_RETRIES times (9.9 s vs 2.7 s for the same model with thinking off).
+
+#[test]
+fn a_4xx_from_apr_serve_is_a_non_retryable_refusal_that_names_itself() {
+    for status in [400, 404, 422] {
+        let e = serve_status_error(status, "thinking on refused");
+        assert!(!e.is_retryable(), "HTTP {status} must not be retried: {e}");
+        let text = e.to_string();
+        assert!(text.contains("refused the request"), "{text}");
+        assert!(text.contains("thinking on refused"), "the body must be kept: {text}");
+        assert!(!text.contains("network"), "a refusal is not a network fault: {text}");
+    }
+}
+
+#[test]
+fn a_timeout_a_rate_limit_and_a_5xx_from_apr_serve_stay_retryable() {
+    for status in [408, 429, 500, 503] {
+        assert!(serve_status_error(status, "x").is_retryable(), "HTTP {status}");
+    }
+}

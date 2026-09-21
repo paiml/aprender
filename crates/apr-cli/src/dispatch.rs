@@ -369,6 +369,9 @@ fn dispatch_code_command(args: CodeArgs<'_>) -> Result<(), CliError> {
     {
         print_code_help_and_exit();
     }
+    if let (Some(on), Some(model)) = (args.thinking, args.model.as_ref()) {
+        refuse_unsupported_code_thinking(model, on)?;
+    }
     batuta::agent::code::cmd_code(
         args.model.clone(),
         args.project.to_path_buf(),
@@ -392,6 +395,71 @@ fn dispatch_code_command(args: CodeArgs<'_>) -> Result<(), CliError> {
         args.thinking,
     )
     .map_err(|e| CliError::Aprender(e.to_string()))
+}
+
+/// #3723: `apr code --thinking` on a model file whose own chat template cannot honour
+/// that mode is refused here, by name and with `apr run`'s and `apr chat`'s exit code,
+/// before any `apr serve` is spawned for it. A file with no template, or one this
+/// cannot read, is left to the driver, which refuses the same request by name.
+#[cfg(feature = "inference")]
+fn refuse_unsupported_code_thinking(model: &std::path::Path, on: bool) -> Result<(), CliError> {
+    match realizar::chat_template::EmbeddedChatTemplate::for_model_file(model) {
+        Some(Ok(template)) => template
+            .thinking_modes()
+            .resolve(Some(on))
+            .map(|_| ())
+            .map_err(|refused| CliError::ThinkingModeUnsupported(refused.to_string())),
+        _ => Ok(()),
+    }
+}
+
+#[cfg(not(feature = "inference"))]
+fn refuse_unsupported_code_thinking(_model: &std::path::Path, _on: bool) -> Result<(), CliError> {
+    Ok(())
+}
+
+#[cfg(all(test, feature = "inference"))]
+mod code_thinking_preflight_tests {
+    use super::{refuse_unsupported_code_thinking, CliError};
+
+    /// A SafeTensors model directory whose `tokenizer_config.json` carries the inventory
+    /// template `sha` (the committed #3755 oracle fixtures).
+    fn model_with_template(sha: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../aprender-serve/tests/fixtures/chat_templates");
+        let template = std::fs::read_to_string(fixtures.join(format!("{sha}.jinja")))
+            .expect("fixture template");
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("tokenizer_config.json"),
+            serde_json::json!({ "chat_template": template }).to_string(),
+        )
+        .expect("write tokenizer_config.json");
+        let model = dir.path().join("model.safetensors");
+        std::fs::write(&model, b"").expect("write model");
+        (dir, model)
+    }
+
+    #[test]
+    fn thinking_on_is_refused_with_exit_15_before_a_server_is_spawned() {
+        // cd8e9439f057: Qwen2.5-0.5B-Instruct's template, which has no thinking mode.
+        let (_dir, model) = model_with_template("cd8e9439f057");
+        let err = refuse_unsupported_code_thinking(&model, true).expect_err("ON must be refused");
+        assert!(matches!(err, CliError::ThinkingModeUnsupported(_)), "{err:?}");
+        assert_eq!(err.exit_code_value(), 15);
+        assert!(err.to_string().contains("off only"), "{err}");
+        refuse_unsupported_code_thinking(&model, false).expect("OFF is what it offers");
+    }
+
+    #[test]
+    fn a_model_with_both_modes_passes_either_way_and_an_unreadable_file_is_left_to_the_driver() {
+        // 7f0e529032c2: the Qwen3.5 template, on and off.
+        let (_dir, model) = model_with_template("7f0e529032c2");
+        refuse_unsupported_code_thinking(&model, true).expect("on");
+        refuse_unsupported_code_thinking(&model, false).expect("off");
+        let missing = std::path::Path::new("/nonexistent/model.gguf");
+        refuse_unsupported_code_thinking(missing, true).expect("the driver decides");
+    }
 }
 
 /// #2607: render the real `apr code --help` and leave, without running the
