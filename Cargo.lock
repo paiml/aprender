@@ -265,6 +265,7 @@ dependencies = [
  "aprender-present-core",
  "aprender-present-terminal",
  "aprender-profile",
+ "aprender-quant",
  "aprender-rag-cli",
  "aprender-registry",
  "aprender-serve",
