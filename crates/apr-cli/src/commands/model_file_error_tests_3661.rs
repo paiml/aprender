@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 /// A GGUF written by aprender's own exporter, cut off inside its metadata.
 /// That is the issue's input: a real GGUF truncated mid-header.
-fn truncated_gguf(dir: &Path) -> PathBuf {
+pub(super) fn truncated_gguf(dir: &Path) -> PathBuf {
     use aprender::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
     let tensors = vec![GgufTensor {
         name: "token_embd.weight".to_string(),
@@ -43,7 +43,7 @@ fn truncated_gguf(dir: &Path) -> PathBuf {
 
 /// 4 KiB of noise named `.safetensors`, opening with the issue's own magic bytes
 /// (`8e44f12f`). Its first u64 is far past any real header length, so no format matches.
-fn random_safetensors(dir: &Path) -> PathBuf {
+pub(super) fn random_safetensors(dir: &Path) -> PathBuf {
     let mut state: u32 = 0x3661;
     let mut bytes: Vec<u8> = vec![0x8e, 0x44, 0xf1, 0x2f, 0x9d, 0x27, 0x6b, 0xb3];
     while bytes.len() < 4096 {
@@ -56,7 +56,7 @@ fn random_safetensors(dir: &Path) -> PathBuf {
 }
 
 /// A real APR v2 file cut to 32 bytes, less than its 64-byte header.
-fn truncated_apr(dir: &Path) -> PathBuf {
+pub(super) fn truncated_apr(dir: &Path) -> PathBuf {
     use aprender::format::v2::{AprV2Metadata, AprV2Writer};
     let mut writer = AprV2Writer::new(AprV2Metadata::new("truncated-3661"));
     writer.add_f32_tensor("w", vec![2, 2], &[0.0, 1.0, 2.0, 3.0]);
