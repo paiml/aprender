@@ -1,0 +1,276 @@
+{
+  "ticket": "PMAT-3462",
+  "base": "52f43da71745eedacde2f86e1903ea81d6fa34ad",
+  "base_resolved": "52f43da71745eedacde2f86e1903ea81d6fa34ad",
+  "base_note": "no origin/52f43da71745eedacde2f86e1903ea81d6fa34ad exists; judged against the local ref",
+  "head": "237c3a851d5196325e5e9472f4521908fcba41ef",
+  "diff_sha256": "47378f1ee781dea0265b7a95e4515f36fa132c07de22c0b838208755639b995a",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 68685,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements all requirements of PMAT-3462. It derives the publish order topologically from cargo metadata, completely removing the flawed hand-maintained TIERS arrays and publish-order.txt. Kahn's algorithm properly handles the root/facade sorting. The tests are extraordinarily rigorous, correctly asserting that the order is topological and validating the logic with a self-test mutation row that swaps dependent crates (row 2). The argument allowlist is strictly enforced. I found no refutations, weakened gates, or out-of-scope changes.",
+      "findings": [
+        {
+          "claim": "The diff derives the order from cargo metadata via cascade_universe.py --order, matching the acceptance criteria.",
+          "file": "scripts/cascade-publish.sh",
+          "grounding": "cited",
+          "line": 84
+        },
+        {
+          "claim": "The hand-written TIERS table is deleted from cascade-publish.sh.",
+          "file": "scripts/cascade-publish.sh",
+          "grounding": "cited",
+          "line": 34
+        },
+        {
+          "claim": "The script check_cascade_covers_all_crates.sh asserts the order is topological and includes the requested mutation row that swaps two dependent crates.",
+          "file": "scripts/check_cascade_covers_all_crates.sh",
+          "grounding": "cited",
+          "line": 173
+        },
+        {
+          "claim": "The argument allowlist is implemented in cascade-publish.sh with an explicit mutation test in check_cascade_covers_all_crates.sh to ensure unknown arguments do not fall through to the publish run.",
+          "file": "scripts/check_cascade_covers_all_crates.sh",
+          "grounding": "cited",
+          "line": 248
+        },
+        {
+          "claim": "The static publish-order.txt file is deleted, and publish_strict.sh now derives the order dynamically at the tag.",
+          "file": "scripts/release/publish_strict.sh",
+          "grounding": "cited",
+          "line": 32
+        }
+      ],
+      "raw_bytes": 4596,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff cleanly implements PMAT-3462 without introducing any regressions or deviating from the scope. It derives the publish sequence from `cargo metadata` via Kahn's algorithm in `cascade_universe.py`, completely replacing the hand-written `TIERS` array and `publish-order.txt`. The `check_cascade_covers_all_crates.sh` gate was comprehensively strengthened to assert the topological correctness of the sequence walked by the script using the new `--edges` artifact, including a perfectly matching mutation row (\"swap two dependent crates → RED\") as mandated by the ticket. Finally, the fail-safe argument allowlist was correctly integrated and tested in `cascade-publish.sh`. No unrequested behaviors, weakened gates, or false claims were found.",
+      "findings": [],
+      "raw_bytes": 2767,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
+            "outcome": "capacity",
+            "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+          },
+          {
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
+            "outcome": "capacity",
+            "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+          },
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly aligns with the PMAT-3462 ticket requirements. \n1. **Deriving publish order**: Replaced the manual `TIERS` array in `scripts/cascade-publish.sh` with `cascade_universe.py --order` and removed `publish-order.txt`.\n2. **Strict sequence validation**: `check_cascade_covers_all_crates.sh` now validates Kahn's generated order for topological consistency, ensuring proper precedence handling (`R3` edge verification and `R4` facade validation).\n3. **Allowlist constraint**: The argument parser in `cascade-publish.sh` was hardened to exclusively accept allowed commands (e.g., `--check`, `--print-order`, `--order-check`) and explicitly fail unrecognized ones, matching the cop's requested mutation testing criteria (asserted in `R5`).\n4. **Docs and advisory script**: Corrected `check_publishable_deps_publishable.sh` guidance to point out the new topological derivation process, ensuring users no longer search for a non-existent tiers table.\n\nNo contradictions or weaknesses in gates were found. All claims are provably backed by the diff logic.",
+      "findings": [],
+      "raw_bytes": 3395,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-low",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-low",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "scripts/cascade-publish.sh",
+      "line": 34,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The hand-written TIERS table is deleted from cascade-publish.sh."
+      ]
+    },
+    {
+      "file": "scripts/cascade-publish.sh",
+      "line": 84,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The diff derives the order from cargo metadata via cascade_universe.py --order, matching the acceptance criteria."
+      ]
+    },
+    {
+      "file": "scripts/check_cascade_covers_all_crates.sh",
+      "line": 173,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The script check_cascade_covers_all_crates.sh asserts the order is topological and includes the requested mutation row that swaps two dependent crates."
+      ]
+    },
+    {
+      "file": "scripts/check_cascade_covers_all_crates.sh",
+      "line": 248,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The argument allowlist is implemented in cascade-publish.sh with an explicit mutation test in check_cascade_covers_all_crates.sh to ensure unknown arguments do not fall through to the publish run."
+      ]
+    },
+    {
+      "file": "scripts/release/publish_strict.sh",
+      "line": 32,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The static publish-order.txt file is deleted, and publish_strict.sh now derives the order dynamically at the tag."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (gemini-3.1-pro-high, gemini-3.1-pro-low) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by gemini-3.1-pro-high after falling through gpt-oss-120b-medium (capacity: UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server); gpt-oss-120b-medium (capacity: UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
