@@ -1,0 +1,178 @@
+{
+  "ticket": "PMAT-3697",
+  "base": "225b2a9ab",
+  "base_resolved": "225b2a9ab",
+  "base_note": "no origin/225b2a9ab exists; judged against the local ref",
+  "head": "78b03cbdd6f9e6c990ddc57fae87057c2baa6219",
+  "diff_sha256": "f0cdc35168ef76b75c3ddeaabc71afc6bcb1b906b0bbe14b569f082da1f06661",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 43954,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I have reviewed the diff against the acceptance criteria of ticket PMAT-3697.\n\n- (a) `check_t2_preflight_verdict.sh` and `check_no_hosted_runners.sh` correctly replace their Python dependencies with `awk`. The `awk` equivalent regex handling of word boundaries in `check_no_hosted_runners.sh` is carefully implemented and explicitly tested for Unicode discrepancies, behaving as described in the PR notes. The `awk` line replacement in `check_t2_preflight_verdict.sh` functions flawlessly and handles missing target signatures appropriately.\n- (b) `check_nextest_ci_profile_no_fail_fast.sh` and `check_roadmap_ids_unique.sh` correctly retain their Python readers and utilize the new `scripts/lib/python_fleet_state.sh`. When the interpreter or required module (`PyYAML`) is missing, they exit 0 without printing a `PASS` line, instead correctly outputting the required `UNMEASURED` trace to `stderr`. Broken installations yield an `ENV` exit code (2).\n- The `lib/python_fleet_state.sh` logic aligns with prior art (`#3692 pathonly`) by emitting `reason=no-interpreter` and `reason=no-module`, staying true to the spirit of the acceptance criteria while avoiding fractured state spaces.\n- The `guard_tree.sh` changes explicitly excluded in the PR notes are correctly omitted from this diff.\n- All receipt claims (including adversarial corpus diffs and mutant behavior) are backed by the code.\n\nThe change perfectly fulfills the ticket requirements without introducing regressions or unrequested modifications.",
+      "findings": [],
+      "raw_bytes": 6043,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Lane 2 audit of diff (225b2a9ab...HEAD) for ticket PMAT-3697 complete. The diff faithfully implements all ticket acceptance criteria without scope creep or weakened gates:\n1. `scripts/lib/python_fleet_state.sh` is an option-neutral, sourced library providing `py_fleet_state` and `py_fleet_state_self_test` probes for Python interpreter & module availability.\n2. `scripts/check_t2_preflight_verdict.sh` removes Python dependency by replacing the self-test mutant splice with `awk`.\n3. `scripts/check_no_hosted_runners.sh` removes Python dependency by replacing the workflow image scanner with `awk` using POSIX ERE ASCII word boundaries.\n4. `scripts/check_nextest_ci_profile_no_fail_fast.sh` and `scripts/check_roadmap_ids_unique.sh` use `py_fleet_state` to classify missing Python/PyYAML as fleet state `UNMEASURED` (exit 0), per ticket ruling (b).\n5. All self-tests were verified and pass cleanly. No refuting evidence found. Verdict: PASS.",
+      "findings": [],
+      "raw_bytes": 3307,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.6-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.6-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements the requirements of PMAT-3697. It successfully removes the Python dependency for `check_t2_preflight_verdict.sh` and `check_no_hosted_runners.sh` by substituting them with equivalent, well-tested `awk` scripts. The deliberate edge-case differences in token boundaries for `no_hosted_runners` are explicitly documented in the ticket notes and accurately implemented. Furthermore, it cleanly integrates the new `py_fleet_state` mechanism into `check_nextest_ci_profile_no_fail_fast.sh` and `check_roadmap_ids_unique.sh` to classify the absence of a Python reader or its modules as `UNMEASURED` fleet state (exit 0) rather than a `FAIL`, fully aligning with the #3692 ruling described in the ticket. All receipts claimed in the PR notes are thoroughly backed by the diff.",
+      "findings": [],
+      "raw_bytes": 4377,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-low",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-low",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.6-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

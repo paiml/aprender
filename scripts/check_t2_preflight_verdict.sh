@@ -32,21 +32,23 @@ if [ "${1:-}" = "--self-test" ]; then
     trap cleanup EXIT
     mkdir -p "$d/scripts/release"
     # MUTANT: restore the pre-#3561 condition — absence of [FAIL] rows is read as consent.
-    python3 - "$SUBJECT" "$d/scripts/release/t2_preflight.sh" <<'PY' || exit 2
-import sys
-s = open(sys.argv[1]).read()
-a = s.index('decide() {'); b = s.index('\n}\n', a) + 3
-mutant = '''decide() {
+    cat > "$d/mutant-decide" <<'MUTANT'
+decide() {
     local sha=$1 log=$2 rc=$3 fails
-    fails=$(grep -E '^[[:space:]]*\\[FAIL\\]' "$log" | grep -vcE 'version-unpublished' || true)
+    fails=$(grep -E '^[[:space:]]*\[FAIL\]' "$log" | grep -vcE 'version-unpublished' || true)
     if [ "$rc" -eq 0 ] || [ "$fails" -eq 0 ]; then
-        printf 'GO %s dogfood_rc=%s fails_excluding_version_row=%s\\n' "$sha" "$rc" "$fails"; return 0
+        printf 'GO %s dogfood_rc=%s fails_excluding_version_row=%s\n' "$sha" "$rc" "$fails"; return 0
     fi
-    printf 'NO-GO %s dogfood_rc=%s fails=%s\\n' "$sha" "$rc" "$fails"; return 1
+    printf 'NO-GO %s dogfood_rc=%s fails=%s\n' "$sha" "$rc" "$fails"; return 1
 }
-'''
-open(sys.argv[2], 'w').write(s[:a] + mutant + s[b:])
-PY
+MUTANT
+    # Spliced over the subject's decide(): its `decide() {` line through the first line that is
+    # exactly `}`. awk, not python (#3697): a subject with no closing line is ENV, never a mutant.
+    awk -v mf="$d/mutant-decide" '
+        !done && /^decide\(\) \{$/ { while ((getline l < mf) > 0) print l; skip = 1; next }
+        skip { if ($0 == "}") { skip = 0; done = 1 }; next }
+        { print }
+        END { if (!done) exit 3 }' "$SUBJECT" > "$d/scripts/release/t2_preflight.sh" || exit 2
     bash "$d/scripts/release/t2_preflight.sh" --self-test > "$d/mut.out" 2>&1; mrc=$?
     if [ "$mrc" -eq 0 ]; then
         echo "FAIL  the pre-#3561 mutant PASSED the case table — the table does not discriminate" >&2
