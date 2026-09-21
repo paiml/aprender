@@ -72,7 +72,10 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-for t in bats jq awk minisign check-jsonschema git; do
+# --list runs no mutant; it needs only what catalogue() reads with (see
+# mutate-guard.sh, #3646).
+if [ "$LIST_ONLY" = 1 ]; then need='awk'; else need='bats jq awk minisign check-jsonschema git'; fi
+for t in $need; do
   command -v "$t" >/dev/null 2>&1 || {
     echo "$PROG: FAIL - $t is not on PATH. A mutation score that could not be measured" >&2
     echo "  must not be reported as one (S13.10: this number is a one, not a floor)." >&2

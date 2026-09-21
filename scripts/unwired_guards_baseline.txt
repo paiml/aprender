@@ -13,11 +13,6 @@ check_model_ladder.sh
 # ^ the T-2 release gate over contracts/model-capability-ladder-v1.yaml, declared in
 #   Cargo.toml [package.metadata.dogfood]; a release-time gate, not a PR gate --
 #   the same class as check_multiplatform_dogfood.sh above.
-check_pr_review_counts.sh
-# ^ dark since the receipt job left ci.yml (PRQ-013/#2982); that change's comment
-#   says guard_tree.sh runs it, but a comment naming the build tool classified it
-#   out of --no-cargo. RED on main today ("6 row(s) disagree with the tree"), so
-#   it cannot be wired until that is fixed: #3646.
 check_pr_review_receipt.sh
 # ^ NOT dark: check_pr_review_arm4.sh runs it with a receipt path (A3 on a scratch
 #   receipt, A4 on the PR's own), and pr-review-quorum.yml runs arm4 on every
