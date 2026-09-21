@@ -14,34 +14,72 @@ impl ChatSession {
                 }
             };
 
+            // #3801: a thinking turn is generated under the think-budget guard; reasoning
+            // still open at the budget is closed and answered, and the turn says so.
+            let prompt = realizar::chat_template::ChatPrompt {
+                text: formatted_prompt,
+                thinking: self.thinking,
+            };
+            let guarded = prompt.generate_with_think_budget(config.max_tokens, |context, max| {
+                let mut pass = config.clone();
+                pass.max_tokens = max;
+                self.generate_pass(context, &pass, start)
+                    .map(|(text, tokens)| realizar::chat_template::Generation { text, tokens })
+            });
+            match guarded {
+                Ok(completion) => {
+                    if completion.reasoning_truncated {
+                        println!(
+                            "{}",
+                            format!(
+                                "(the think-budget guard closed the reasoning at {} tokens: it had \
+                                 not ended, #3801)",
+                                realizar::chat_template::think_budget(config.max_tokens)
+                            )
+                            .yellow()
+                        );
+                    }
+                    clean_chat_response(&completion.text)
+                }
+                Err(e) => render_assistant_turn(Err(e), &mut self.had_generate_error),
+            }
+        }
+
+        /// One generation pass continuing `context` (the rendered prompt, and for the
+        /// think-budget guard's second pass the reasoning and its close): the completion
+        /// and how many tokens it took.
+        fn generate_pass(
+            &mut self,
+            context: &str,
+            config: &ChatConfig,
+            start: Instant,
+        ) -> Result<(String, usize), String> {
             // For GGUF, use embedded tokenizer directly (correct special token IDs)
             if self.format == ModelFormat::Gguf {
-                return self.generate_gguf_response(&formatted_prompt, config, start);
+                let (response, tokens) = self.generate_gguf_with_prompt(context, config)?;
+                let gen_time = start.elapsed();
+                let approx_tokens = response.split_whitespace().count().max(1) * 4 / 3;
+                let tps = approx_tokens as f32 / gen_time.as_secs_f32();
+                println!(
+                    "{}",
+                    format!("[{:.1}s, ~{:.0} tok/s]", gen_time.as_secs_f32(), tps).dimmed()
+                );
+                return Ok((response, tokens));
             }
 
-            let prompt_tokens = self.tokenize_prompt(&formatted_prompt, config);
-
-            let result = match self.format {
+            let prompt_tokens = self.tokenize_prompt(context, config);
+            let output_tokens = match self.format {
                 ModelFormat::Apr => self.generate_apr(&prompt_tokens, config),
                 ModelFormat::SafeTensors | ModelFormat::ShardedSafeTensors => {
                     self.generate_safetensors(&prompt_tokens, config)
                 }
                 ModelFormat::Demo => Ok(vec![]),
                 ModelFormat::Gguf => unreachable!(), // handled above
-            };
-
-            let gen_time = start.elapsed();
-
-            match result {
-                Ok(output_tokens) => {
-                    let new_tokens = Self::strip_prompt_tokens(&output_tokens, &prompt_tokens);
-                    self.print_token_stats(new_tokens, gen_time);
-                    self.debug_inspect_tokens(new_tokens, config);
-                    let raw_response = self.decode_tokens(new_tokens);
-                    clean_chat_response(&raw_response)
-                }
-                Err(e) => render_assistant_turn(Err(e), &mut self.had_generate_error),
-            }
+            }?;
+            let new_tokens = Self::strip_prompt_tokens(&output_tokens, &prompt_tokens);
+            self.print_token_stats(new_tokens, start.elapsed());
+            self.debug_inspect_tokens(new_tokens, config);
+            Ok((self.decode_tokens(new_tokens), new_tokens.len()))
         }
 
         /// Build the formatted prompt from conversation history and user input.
@@ -81,28 +119,6 @@ impl ChatSession {
             }
 
             Ok(formatted_prompt)
-        }
-
-        /// Handle the GGUF generation path, returning a cleaned response string.
-        fn generate_gguf_response(
-            &mut self,
-            formatted_prompt: &str,
-            config: &ChatConfig,
-            start: Instant,
-        ) -> String {
-            match self.generate_gguf_with_prompt(formatted_prompt, config) {
-                Ok(response) => {
-                    let gen_time = start.elapsed();
-                    let approx_tokens = response.split_whitespace().count().max(1) * 4 / 3;
-                    let tps = approx_tokens as f32 / gen_time.as_secs_f32();
-                    println!(
-                        "{}",
-                        format!("[{:.1}s, ~{:.0} tok/s]", gen_time.as_secs_f32(), tps).dimmed()
-                    );
-                    clean_chat_response(&response)
-                }
-                Err(e) => render_assistant_turn(Err(e), &mut self.had_generate_error),
-            }
         }
 
         /// Tokenize the formatted prompt using the available tokenizer.
@@ -194,7 +210,7 @@ impl ChatSession {
             &mut self,
             prompt: &str,
             config: &ChatConfig,
-        ) -> Result<String, String> {
+        ) -> Result<(String, usize), String> {
             use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
 
             // GH-224: Use cached MappedGGUFModel for tokenizer, fall back to fresh mmap
@@ -270,7 +286,7 @@ impl ChatSession {
                         }
                     }
 
-                    return Ok(mapped.model.decode(new_tokens));
+                    return Ok((mapped.model.decode(new_tokens), new_tokens.len()));
                 }
             }
 
@@ -283,8 +299,7 @@ impl ChatSession {
                 &output_tokens[..]
             };
 
-            let decoded = mapped.model.decode(new_tokens);
-            Ok(decoded)
+            Ok((mapped.model.decode(new_tokens), new_tokens.len()))
         }
 
         /// Generation for one GGUF chat turn that the cached dense CUDA model did not serve:

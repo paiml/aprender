@@ -42,6 +42,7 @@ use std::time::Instant;
 // No fallback imports — inference feature is required for chat
 
 /// Chat configuration options
+#[derive(Clone)]
 pub(crate) struct ChatConfig {
     /// Sampling temperature (0 = greedy)
     pub temperature: f32,

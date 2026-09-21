@@ -259,7 +259,7 @@ async fn try_cuda_backend(
         build_chat_response(
             request_id.to_string(),
             request.model.clone(),
-                text,
+            text,
             prompt_tokens,
             completion_tokens,
             max_tokens,
@@ -384,7 +384,7 @@ fn try_quantized_backend(
         build_chat_response(
             request_id.to_string(),
             request.model.clone(),
-                text,
+            text,
             prompt_tokens,
             completion_tokens,
             max_tokens,
@@ -497,7 +497,7 @@ fn try_apr_transformer_backend(
         build_chat_response(
             request_id.to_string(),
             request.model.clone(),
-                text,
+            text,
             prompt_tokens,
             completion_tokens,
             max_tokens,
@@ -621,7 +621,7 @@ fn registry_fallback(
         build_chat_response(
             request_id.to_string(),
             request.model.clone(),
-                text,
+            text,
             prompt_tokens,
             completion_tokens,
             max_tokens,
@@ -797,7 +797,7 @@ async fn try_apr_q4k_chat_backend(
         build_chat_response(
             request_id.to_string(),
             request.model.clone(),
-                text,
+            text,
             prompt_tokens,
             completion_tokens,
             max_tokens,
@@ -1146,7 +1146,7 @@ fn try_qwen3_moe_backend(
         build_chat_response(
             request_id.to_string(),
             request.model.clone(),
-                text,
+            text,
             prompt_token_count,
             completion_tokens,
             max_tokens,
