@@ -3,12 +3,12 @@ contract_id: F-APR-EVAL-HUMANEVAL-HARNESS-INVARIANT-001
 title: "apr eval HumanEval harness must not produce false-negatives (§69 RC1-RC4)"
 status: ACTIVE
 created: 2026-05-12
-updated: 2026-05-12
+updated: 2026-09-22
 parent_spec: docs/specifications/aprender-train/ship-two-models-spec.md
 parent_acceptance_criterion: AC-SHIP1-005
 
 metadata:
-  version: 1.1.0
+  version: 1.2.0
   kind: kernel
   description: |
     Falsifiable invariant for the `apr eval --benchmark humaneval` harness.
@@ -139,10 +139,24 @@ proof_obligations:
   - id: PO-HEH-002
     name: stderr_drain_correctness
     statement: |
-      A passing program emitting up to 64KB to stderr does not deadlock
-      execute_python_test (the stderr pipe is drained before exit).
+      A passing program does not deadlock execute_python_test however much
+      it writes to stderr: the pipe is read to EOF on its own thread WHILE
+      the child runs, and the first 64KB are kept. (v1.1 read once after
+      exit, which held only up to the 64KB pipe buffer — #3788.)
     type: safety
     discharged_by: FALSIFY-HEH-002
+
+  - id: PO-HEH-004
+    name: timeout_is_an_injected_budget
+    statement: |
+      A child still running when its ExecBudget expires is killed and
+      reported timed_out with exit_code None. Production's budget is a
+      wall-clock deadline; no test asserts on one — the behaviour tests run
+      the child to its own exit, and the timeout path is driven by a budget
+      counted in polls (#3788: a 5 s deadline killed `assert 1 == 2` at host
+      load ~50 and the test read exit_code None).
+    type: safety
+    discharged_by: FALSIFY-HEH-006
 
   - id: PO-HEH-003
     name: debug_dump_path_isolation
@@ -171,10 +185,12 @@ falsification_tests:
   - id: FALSIFY-HEH-002
     name: verbose_stderr_does_not_deadlock_on_success
     description: |
-      A passing program that emits ~10KB to stderr (200 × 50-char lines)
-      MUST NOT timeout — the stderr pipe is drained before child.wait().
+      A passing program that writes 256KB to stderr (4x the 64KB pipe
+      buffer) MUST be reported as success, with the first 64KB captured.
+      It runs under a budget that never expires, so the only way to fail
+      is a drain that stops early and leaves the child blocked.
     test: "crates/apr-cli/src/commands/eval/inference.rs::execute_python_test_diagnostics_tests::verbose_stderr_does_not_deadlock_on_success"
-    expected: result.success == true ∧ result.timed_out == false
+    expected: result.success == true ∧ result.timed_out == false ∧ len(result.stderr_capture) == 65536
     fails_if: |
       Program times out or returns false. Indicates stderr pipe is not
       being drained — RC2-variant deadlock bug.
@@ -200,6 +216,43 @@ falsification_tests:
     fails_if: |
       Sanity baseline fails — indicates broader execute_python_test
       regression.
+
+  - id: FALSIFY-HEH-005
+    name: stderr_drain_consumes_everything_and_keeps_the_cap
+    description: |
+      The drain is proven by a COUNT, not a clock: fed a 1MB stream it
+      consumes all 1048576 bytes and keeps exactly 64KB. Runs without
+      python3, so it holds in the CI container.
+    test: "crates/apr-cli/src/commands/eval/inference.rs::execute_python_test_diagnostics_tests::stderr_drain_consumes_everything_and_keeps_the_cap"
+    expected: consumed == 1048576 ∧ len(kept) == 65536
+    fails_if: |
+      The drain stops after one read (or one pipe buffer). Mutant
+      `break` after the first chunk: RED.
+
+  - id: FALSIFY-HEH-006
+    name: the_poll_loop_kills_on_the_poll_its_budget_expires
+    description: |
+      A fake child that never exits, under a budget of three polls, is
+      killed on exactly the fourth poll and reported timed out. No python3,
+      no clock; the fake panics past 1000 polls, so a loop that ignores its
+      budget fails on a count instead of hanging.
+    test: "crates/apr-cli/src/commands/eval/inference.rs::execute_python_test_diagnostics_tests::the_poll_loop_kills_on_the_poll_its_budget_expires"
+    expected: timed_out ∧ child.killed ∧ child.polls == 4
+    fails_if: |
+      The budget is not consulted (mutant: RED on the poll count) or the
+      kill is not reported (mutant `return (None, false)`: RED).
+
+  - id: FALSIFY-HEH-007
+    name: an_expired_budget_kills_the_child_and_reports_timed_out
+    description: |
+      The same path through a real python3 child that never exits: an
+      expired budget kills it and PythonExecResult says timed_out, with
+      exit_code None and no spawn_error.
+    test: "crates/apr-cli/src/commands/eval/inference.rs::execute_python_test_diagnostics_tests::an_expired_budget_kills_the_child_and_reports_timed_out"
+    expected: result.timed_out ∧ ¬result.success ∧ result.exit_code == None
+    fails_if: |
+      timed_out is lost between the poll loop and the result (mutant:
+      RED).
 
 # ─────────────────────────────────────────────────────────────
 # DIAGNOSTIC SURFACE
