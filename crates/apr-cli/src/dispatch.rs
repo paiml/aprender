@@ -117,6 +117,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             format,
             no_gpu,
             gpu,
+            revalidate,
             offline,
             benchmark,
             trace,
@@ -138,6 +139,18 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             verbose,
             backend: BackendArg { backend },
         } => {
+            // #3604: `--revalidate` reaches the F2 hybrid guard through the same
+            // env seam the guard already reads `SKIP_PARITY_GATE` from
+            // (`realizar::gguf::f2_receipt::revalidate_requested`). Chosen over
+            // threading a bool through `run_entry::run`'s 37 positional
+            // parameters and the six forward signatures that #3606 is changing
+            // at the same time; the flag is still a flag to the user, and the
+            // guard prints `--revalidate` as its reason when it fires.
+            if *revalidate {
+                // SAFETY-BY-ORDER: set before any inference thread exists; the
+                // only reader is the guard, on this process.
+                std::env::set_var("APR_F2_REVALIDATE", "1");
+            }
             // GH-614: --backend cpu forces CPU-only inference
             let backend_forces_cpu = backend.as_deref() == Some("cpu");
             if let Some(ref b) = backend {

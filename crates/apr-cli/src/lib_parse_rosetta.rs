@@ -303,6 +303,7 @@
             format: "text".to_string(),
             no_gpu: false,
             gpu: false,
+            revalidate: false,
             offline: false,
             benchmark: false,
             trace: false,
