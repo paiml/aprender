@@ -789,39 +789,10 @@ fn expected_ggml_tensor_type(quant: &str) -> Option<u32> {
     }
 }
 
+/// The ggml type table's name for `t`, or "UNKNOWN" for an id that is not a live type
+/// (removed upstream, or never assigned). Not a hand-typed copy of the table (#3662).
 fn ggml_type_name(t: u32) -> &'static str {
-    match t {
-        0 => "F32",
-        1 => "F16",
-        2 => "Q4_0",
-        3 => "Q4_1",
-        6 => "Q5_0",
-        7 => "Q5_1",
-        8 => "Q8_0",
-        9 => "Q8_1",
-        10 => "Q2_K",
-        11 => "Q3_K",
-        12 => "Q4_K",
-        13 => "Q5_K",
-        14 => "Q6_K",
-        15 => "Q8_K",
-        16 => "IQ2_XXS",
-        17 => "IQ2_XS",
-        18 => "IQ3_XXS",
-        19 => "IQ1_S",
-        20 => "IQ4_NL",
-        21 => "IQ3_S",
-        22 => "IQ2_S",
-        23 => "IQ4_XS",
-        24 => "I8",
-        25 => "I16",
-        26 => "I32",
-        27 => "I64",
-        28 => "F64",
-        29 => "IQ1_M",
-        30 => "BF16",
-        _ => "UNKNOWN",
-    }
+    trueno_quant::GgmlType::from_id(t).map_or("UNKNOWN", trueno_quant::GgmlType::as_str)
 }
 
 /// Pick the "predominant" quantization type from a tensor-type histogram.
@@ -1697,6 +1668,20 @@ mod tests {
         assert_eq!(expected_ggml_tensor_type("unknown"), None);
         assert_eq!(ggml_type_name(12), "Q4_K");
         assert_eq!(ggml_type_name(14), "Q6_K");
+    }
+
+    /// #3662: the names come from the ggml type table, not a copy of it. This table
+    /// was complete when it was hand-typed; the rows pin that the move kept it so,
+    /// and kept the "UNKNOWN" token for ids that are not live types.
+    #[test]
+    fn pm008_ggml_type_name_is_the_upstream_table() {
+        assert_eq!(ggml_type_name(10), "Q2_K");
+        assert_eq!(ggml_type_name(16), "IQ2_XXS");
+        assert_eq!(ggml_type_name(23), "IQ4_XS");
+        assert_eq!(ggml_type_name(30), "BF16");
+        assert_eq!(ggml_type_name(4), "UNKNOWN");
+        assert_eq!(ggml_type_name(5), "UNKNOWN");
+        assert_eq!(ggml_type_name(999), "UNKNOWN");
     }
 
     #[test]

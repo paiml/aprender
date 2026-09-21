@@ -18990,3 +18990,24 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE (hand-entered from issue #3627 done_when; minted on the PR branch so the AD-04 quorum can run -- pmat work status refuses a missing item). Done when: contracts/rmsnorm-kernel-v1.yaml Scale invariance obligation carries either the ε>0 formal or the α²·mean(x²) ≫ ε precondition; pv validate passes ~~regenerated with pv probar --binding~~ **WITHDRAWN 21:40Z** — b3 measured that pv probar --binding emits 7 #[ignore = "no binding available"] stubs for this contract; the tracked file''s 5 real tests were produced by the pre-monorepo external generator (20dda945b, 2026-02-18) and the header is false (class row: #3630). Instead: the tracked test is edited **directly**, the commit says so, and the file''s header is replaced by a true one (hand-maintained, contract-bound) the minimal input above ([0.0, -0.15964308], α=0.012254778) is a committed regression case that PASSES under the new assertion (i.e. the fixed test is exercised on the exact input that killed #3621), and a mutation that restores the ε=0 assertion turns it RED cargo'
+- id: PMAT-3662
+  github_issue: 3662
+  item_type: task
+  title: 'Hand-typed ggml id→name tables outside aprender-core: sliding_window_entropy.rs, validate_manifest.rs, aprender-serve model_source.rs name 11 of 35 live types; route through trueno_quant::GgmlType'
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-62
+  created: 2026-09-21T06:40:00Z
+  updated: 2026-09-21T06:40:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3662 done_when 1, verbatim: "Every non-example id→name mapping in `apr-cli` and `aprender-serve` resolves through `trueno_quant::GgmlType::from_id(id).map_or(<unknown>, GgmlType::as_str)`, or through one shared helper that does. No `12 => "Q4_K"`-shaped match arm remains outside `aprender-quant` in those two crates'' `src/`."'
+  - 'Issue #3662 done_when 2, verbatim (as amended by the filer 2026-09-21 after measuring): "A test per site feeds ids 10 (Q2_K), 16 (IQ2_XXS), 23 (IQ4_XS) and 30 (BF16) and gets the upstream names. It is RED on today''s tables where they are incomplete (sliding_window_entropy.rs, model_source.rs). validate_manifest.rs was complete when measured (amended 2026-09-21 by the filer), so its row is a parity row and passes before and after."'
+  - 'Issue #3662 done_when 3, verbatim: "Unknown ids (e.g. 4, 5, 999) still print the site''s existing unknown token, so output stays stable for ids ggml removed."'
+  - 'Issue #3662 done_when 4, verbatim: "`apr-cli` depends on the quant crate via `{ workspace = true }` (no crates.io copy)."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Found by aprender-7a (sliding_window_entropy.rs:295); the other two sites found by aprender-62 at origin/main c0ab699b0 with a scan of crates/apr-cli/src and crates/aprender-serve/src for `<id> => "Q4_K"`-shaped arms, which returns exactly three: apr-cli commands/sliding_window_entropy.rs `ggml_dtype_name` (unknown token "Unknown"; knows 11 ids), apr-cli commands/validate_manifest.rs `ggml_type_name` (unknown token "UNKNOWN"; knows ids 0-3,6-30, so it is complete today but hand-typed), aprender-serve api/model_source.rs `gguf_qtype_name` (returns None; knows 15 ids, so every IQ*, I8-I64 and F64 is None). "RED on today''s tables" is per site. validate_manifest.rs already names 10/16/23/30 correctly, so its row is a parity test over every id 0..=30 against the upstream table and is not expected to be RED. The two tables that are wrong today (sliding_window_entropy, model_source) carry the RED rows. validate_manifest.rs''s reverse name→id parser (`"iq4_xs" => Some(23)`) has case-insensitive aliases ("bfloat16") and is not an id→name mapping. It is out of scope and stays. Examples under crates/aprender-serve/examples/ are out of scope per the issue.'
