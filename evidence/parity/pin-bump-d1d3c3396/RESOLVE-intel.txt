@@ -1,0 +1,9 @@
+# scripts/llama_bin.sh on intel, #3756: nothing named, the canonical location resolves
+# measured: 2026-09-21T17:58:53Z  host: mac-server  shell: GNU bash, version 5.1.16(1)-release (x86_64-pc-linux-gnu)  sed: sed (GNU sed) 4.8
+# files: scripts/llama_bin.sh + scripts/llama_pin.toml from aprender branch PMAT-3756-llama-pin-intel-mini (the #3563(A) resolver + the portable-sed fix), copied to a scratch dir
+# command: env -u LLAMA_BENCH_PATH LLAMA_PIN_HOST=intel bash scripts/llama_bin.sh
+ok    llama.cpp pinned: /home/noah/src/llama.cpp-d1d3c3396/build/bin/llama-bench
+      build: version: 0.4.1-dev (build 2744, commit d1d3c3396)
+      cmake: GGML_CUDA=OFF CMAKE_CUDA_ARCHITECTURES=unset
+      pin expires 2026-12-01
+# rc=0

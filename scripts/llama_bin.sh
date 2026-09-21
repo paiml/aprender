@@ -408,7 +408,11 @@ llama_bin_resolve() {
     # build NUMBER (llama_pin.toml), the abbreviation LENGTH is not an identity; the
     # commit is. So the token is read out of either --version shape and matched when
     # one abbreviates the other, at git's own minimum of 7 hex digits.
-    llama_bin_got=$(printf '%s\n' "$LLAMA_BUILD" | sed -nE 's/.*commit ([0-9a-f]{7,40}).*/\1/p;t;s/.*\(([0-9a-f]{7,40})\).*/\1/p' | head -n 1)
+    # PORTABLE sed (#3756): `t` and the next command go in SEPARATE -e arguments. BSD sed
+    # (mini, macOS) reads everything after `t` to the end of an expression as the LABEL, so
+    # the one-string form `…/p;t;s/…` died there with "undefined label" and refused mini's
+    # correct build as wrong_build. GNU and BSD give identical output for this form.
+    llama_bin_got=$(printf '%s\n' "$LLAMA_BUILD" | sed -nE -e 's/.*commit ([0-9a-f]{7,40}).*/\1/p' -e 't' -e 's/.*\(([0-9a-f]{7,40})\).*/\1/p' | head -n 1)
     if ! llama_commit_match "$llama_bin_want" "$llama_bin_got"; then
         LLAMA_PIN_REASON=wrong_build
         LLAMA_PIN_RC=1
