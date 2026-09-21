@@ -1,0 +1,249 @@
+{
+  "ticket": "PMAT-3694",
+  "base": "225b2a9ab",
+  "base_resolved": "225b2a9ab",
+  "base_note": "no origin/225b2a9ab exists; judged against the local ref",
+  "head": "0aac053f21cee40962d38530ff4b9d702a6d9571",
+  "diff_sha256": "57fa4293b9139dd216c9c2c7ac1fa8941c1e030c666f3fdab9893fe250f198c9",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 36499,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff flawlessly replaces the python3 JSON parser with a robust POSIX awk implementation that strictly adheres to RFC 8259 (including meticulous UTF-8 validation). It effectively removes the stop-gap UNMEASURED (exit 3) path across the shell script and the Rust test, successfully fulfilling all acceptance criteria. The test matrix comprehensively handles duplicate keys, escaped values, nesting, non-JSON numbers, and NUL byte edge cases. No negative effects or undocumented modifications were found.",
+      "findings": [],
+      "raw_bytes": 2334,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff accurately and thoroughly addresses all PMAT-3694 ticket requirements. It successfully removes the reliance on Python and the UNMEASURED exit 3 path, replacing it with a robust, strict POSIX awk JSON parser that correctly implements UTF-8 validation and the specified edge cases (duplicate keys, NUL bytes). The self-test logic and Rust tests have been properly updated to verify these changes within a strict, python-free environment. No extraneous or forbidden behavior was introduced.",
+      "findings": [
+        {
+          "claim": "The UNMEASURED exit 3 path for missing python interpreter has been fully removed.",
+          "file": "scripts/parity_receipt_denominator.sh",
+          "grounding": "cited",
+          "line": 1
+        },
+        {
+          "claim": "A POSIX awk script is embedded to iteratively parse JSON, validate UTF-8, and record root keys/values, functioning without python.",
+          "file": "scripts/parity_receipt_denominator.sh",
+          "grounding": "cited",
+          "line": 1
+        },
+        {
+          "claim": "The Rust test's acceptance of exit 3 (UNMEASURED) is removed and replaced with a strict assert!(out.status.success()).",
+          "file": "crates/aprender-contracts-cli/tests/ont4c3_parity_receipts.rs",
+          "grounding": "cited",
+          "line": 1
+        },
+        {
+          "claim": "A missing awk classifier results in an ENV exit 2, replacing the previous unmeasured fallback.",
+          "file": "scripts/parity_receipt_denominator.sh",
+          "grounding": "cited",
+          "line": 1
+        },
+        {
+          "claim": "The self-test successfully verifies the script using a python-free path environment and a comprehensive 35-row table test to validate the awk parser's edge cases.",
+          "file": "scripts/parity_receipt_denominator.sh",
+          "grounding": "cited",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 4502,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
+            "outcome": "capacity",
+            "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+          },
+          {
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
+            "outcome": "capacity",
+            "reason": "Our servers are experiencing high traffic right now, please try again in a minute. (UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server)"
+          },
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Verified PMAT-3694 diff against ticket requirements, acceptance criteria, and notes:\n1. Python-free classify(): `scripts/parity_receipt_denominator.sh` replaces python3 `classify()` with an independent iterative RFC 8259 parser in POSIX awk under `LC_ALL=C`. It validates UTF-8 bytes (RFC 3629), decodes ASCII and `\\uXXXX` escapes, enforces numeric syntax, handles later duplicate keys winning, and guards against raw NUL byte truncation across C-string awks.\n2. Removal of UNMEASURED exit 3: Removed `PY_BIN`/`PARITY_PYTHON` and the exit 3 UNMEASURED paths from `scripts/parity_receipt_denominator.sh`. In `crates/aprender-contracts-cli/tests/ont4c3_parity_receipts.rs`, the exit 3 acceptance was removed, strictly enforcing `out.status.success()`.\n3. Corpus & Self-test: Real corpus passes with `PASS 7 receipt(s) under evidence/parity/**, and evidence/parity/EXPECTED_RECEIPTS says 7.` `--self-test` passes all 9 rows (including the 35-row classification table) across `gawk`, `mawk`, and `busybox awk`.\n4. Differential & Mutants: Differential test against python `json.load` over all 118 evidence files yielded 0 mismatches. All 6 candidate mutants (substring classifier, duplicate key ordering, UTF-8 validator bypass, trailing content, schema kind validation, and NUL precheck) were measured and verified RED.\n5. Cargo Tests & Lints: `cargo test -p aprender-contracts-cli --test ont4c3_parity_receipts` passes 9/9 tests on standard and python-free PATHs. `cargo fmt --all -- --check`, `bashrs lint`, and `check_shell_lint_ratchet.sh` pass cleanly. `docs/roadmaps/roadmap.yaml` is clean and generated via `make roadmap-aggregate`.",
+      "findings": [],
+      "raw_bytes": 4610,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-contracts-cli/tests/ont4c3_parity_receipts.rs",
+      "line": 1,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The Rust test's acceptance of exit 3 (UNMEASURED) is removed and replaced with a strict assert!(out.status.success())."
+      ]
+    },
+    {
+      "file": "scripts/parity_receipt_denominator.sh",
+      "line": 1,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "A POSIX awk script is embedded to iteratively parse JSON, validate UTF-8, and record root keys/values, functioning without python.",
+        "A missing awk classifier results in an ENV exit 2, replacing the previous unmeasured fallback.",
+        "The UNMEASURED exit 3 path for missing python interpreter has been fully removed.",
+        "The self-test successfully verifies the script using a python-free path environment and a comprehensive 35-row table test to validate the awk parser's edge cases."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (gemini-3.1-pro-high, gemini-3.7-flash-high) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by gemini-3.1-pro-high after falling through gpt-oss-120b-medium (capacity: UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server); gpt-oss-120b-medium (capacity: Our servers are experiencing high traffic right now, please try again in a minute. (UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server)) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
