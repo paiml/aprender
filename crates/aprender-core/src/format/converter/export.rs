@@ -469,3 +469,7 @@ fn shape_to_gguf(shape: &[usize]) -> Vec<u64> {
 include!("export_include.rs");
 include!("fusion.rs");
 include!("apr_export_fn.rs");
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "export_rss_tests.rs"]
+mod rss_tests;

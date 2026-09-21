@@ -21,6 +21,16 @@ fn list_tensors_gguf(data: &[u8], options: TensorListOptions) -> Result<TensorLi
     let reader = GgufReader::from_bytes(data.to_vec()).map_err(|e| AprenderError::FormatError {
         message: format!("Failed to parse GGUF: {e}"),
     })?;
+    list_tensors_gguf_reader(&reader, data.len() as u64, options)
+}
+
+/// List tensors from a parsed GGUF. `file_len` is the whole file's length, which the
+/// #2569 extent check holds every tensor to, whether `reader` holds the file or its header.
+fn list_tensors_gguf_reader(
+    reader: &GgufReader,
+    file_len: u64,
+    options: TensorListOptions,
+) -> Result<TensorListResult> {
 
     // #2569: every row below asserts that `size_bytes` of tensor data exist at a
     // declared offset. Prove that before printing it. Run over ALL tensors, ahead
@@ -34,7 +44,7 @@ fn list_tensors_gguf(data: &[u8], options: TensorListOptions) -> Result<TensorLi
             (meta.name.as_str(), meta.offset, size_bytes)
         })
         .collect();
-    check_tensor_table_fits("GGUF", data.len() as u64, reader.data_offset as u64, extents)?;
+    check_tensor_table_fits("GGUF", file_len, reader.data_offset as u64, extents)?;
 
     let mut tensors = Vec::new();
     let mut total_size = 0usize;
@@ -441,13 +451,22 @@ pub fn list_tensors(
         }
     }
 
-    // For GGUF and APR v1, read into memory and dispatch
-    let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
-    let mut data = Vec::new();
-    reader.read_to_end(&mut data)?;
+    // A GGUF listing without `--stats` is its header (#3761). The whole-file path copied a
+    // 2 GiB file into memory to print its tensor table: 4.2 GB peak, measured by the case row.
+    if !options.compute_stats && crate::format::prefix::read_prefix(path, 4)? == b"GGUF" {
+        let reader = crate::format::prefix::parse_growing_prefix(path, GgufReader::from_bytes)
+            .map_err(|e| AprenderError::FormatError {
+                message: format!("Failed to parse GGUF: {e}"),
+            })?;
+        let file_len = std::fs::metadata(path)?.len();
+        let mut result = list_tensors_gguf_reader(&reader, file_len, options)?;
+        result.file = path.display().to_string();
+        return Ok(result);
+    }
 
-    let mut result = list_tensors_from_bytes(&data, options)?;
+    // `--stats` on GGUF, and APR v1: map and dispatch. Statistics read every tensor's data.
+    let mapped = crate::bundle::MappedFile::open(path)?;
+    let mut result = list_tensors_from_bytes(mapped.as_slice(), options)?;
     result.file = path.display().to_string();
 
     Ok(result)

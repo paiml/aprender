@@ -33,7 +33,6 @@ use crate::format::AprV2DequantExt;
 use crate::format::HEADER_SIZE;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, Read};
 use std::path::Path;
 
 // ============================================================================

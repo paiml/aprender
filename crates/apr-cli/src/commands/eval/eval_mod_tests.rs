@@ -108,6 +108,26 @@ fn format_archive_size_units() {
     assert_eq!(format_archive_size(1_610_612_736), "1.5 GB");
 }
 
+// ── compute_file_hash_streamed (#3761): the same hash, chunk by chunk ──────
+
+#[test]
+fn streamed_file_hash_equals_the_whole_buffer_hash() {
+    use std::io::Write;
+    // 2.5 MiB, so the 1 MiB chunks split it three ways, one part partial
+    let bytes: Vec<u8> = (0..(5usize << 19)).map(|i| (i * 31 % 251) as u8).collect();
+    let mut f = tempfile::NamedTempFile::new().expect("temp file");
+    f.write_all(&bytes).expect("write");
+    assert_eq!(
+        compute_file_hash_streamed(f.path()).expect("stream the hash"),
+        compute_file_hash(&bytes)
+    );
+    let empty = tempfile::NamedTempFile::new().expect("temp file");
+    assert_eq!(
+        compute_file_hash_streamed(empty.path()).expect("empty"),
+        "cbf29ce484222325"
+    );
+}
+
 // ── compute_file_hash (FNV-1a) ─────────────────────────────────────────────
 
 #[test]
@@ -478,4 +498,58 @@ fn default_prompts_are_nonempty_python() {
     for p in &prompts {
         assert!(p.contains("def ") || p.contains("class "));
     }
+}
+
+/// #3761 case row: `count_safetensors_keys` reads a 2 GiB SafeTensors file's JSON header, and
+/// `verify_single_file` hashes every byte of it STREAMED; neither holds the file in memory.
+/// Measured (x86-64 debug, 2026-09-21): 25.3-27.3 MiB over three runs. A whole-file read put back
+/// into `count_safetensors_keys`, into `verify_single_file`'s header read, or into its hash:
+/// 2,115,124 / 2,114,024 / 2,114,080 KiB.
+#[cfg(target_os = "linux")]
+#[test]
+fn safetensors_readers_of_a_2_gib_file_keep_peak_rss_small() {
+    use crate::commands::model_header::rss_probe;
+    let f = rss_probe::sparse(
+        &rss_probe::safetensors(),
+        rss_probe::FIXTURE_LEN,
+        ".safetensors",
+    );
+    let hwm = rss_probe::child_peak_kb(
+        "commands::eval::eval_mod_tests::safetensors_readers_peak_rss_probe",
+        &[(EVAL_PROBE, f.path())],
+    );
+    assert!(
+        hwm < rss_probe::PEAK_RSS_BOUND_KB,
+        "peak RSS {hwm} KiB on a 2 GiB SafeTensors file (bound {} KiB): a whole-file read is back",
+        rss_probe::PEAK_RSS_BOUND_KB
+    );
+}
+
+#[cfg(target_os = "linux")]
+const EVAL_PROBE: &str = "APR_3761_EVAL_PROBE";
+
+/// Not a test on its own: with the probe variable unset it does nothing.
+#[cfg(target_os = "linux")]
+#[test]
+fn safetensors_readers_peak_rss_probe() {
+    let Some(path) = std::env::var_os(EVAL_PROBE) else {
+        return;
+    };
+    let path = std::path::Path::new(&path);
+    assert_eq!(count_safetensors_keys(path), 1);
+    let mut checks = Vec::new();
+    verify_single_file(path, &mut checks).expect("verify");
+    assert!(
+        checks
+            .iter()
+            .any(|(name, ok)| name == "1 tensors found" && *ok),
+        "{checks:?}"
+    );
+    assert!(
+        checks
+            .iter()
+            .any(|(name, _)| name.starts_with("BLAKE3 hash: ")),
+        "{checks:?}"
+    );
+    crate::commands::model_header::rss_probe::report_peak();
 }

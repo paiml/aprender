@@ -828,6 +828,10 @@ fn print_header(path: &Path, config: &BenchConfig) {
 }
 
 include!("benchmark.rs");
+
+#[cfg(all(test, feature = "inference", target_os = "linux"))]
+#[path = "bench_rss_tests.rs"]
+mod rss_tests;
 include!("bench_safetensors.rs");
 include!("bench_moe.rs");
 include!("bench_04.rs");

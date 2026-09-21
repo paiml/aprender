@@ -379,10 +379,11 @@ fn resolve_tokens(
 /// read ONCE and can also ask it how many tokens the model declares — the
 /// cross-check in `check_vocab_axis`.
 fn gguf_vocab(model: &Path) -> Option<LlamaTokenizer> {
-    let bytes = std::fs::read(model).ok()?;
-    if !bytes.starts_with(b"GGUF") {
+    // #3761: the complete header only (the vocabulary lives there), never the tensor data
+    if super::model_header::read_prefix(model, 4).ok()?.as_slice() != b"GGUF" {
         return None;
     }
+    let bytes = super::model_header::gguf_header_bytes(model).ok()?;
     LlamaTokenizer::from_gguf_bytes(&bytes).ok()
 }
 

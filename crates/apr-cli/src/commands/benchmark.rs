@@ -100,12 +100,12 @@ fn print_results(result: &BenchResult) {
 fn run_realizar_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResult> {
     use realizar::format::{detect_format, ModelFormat};
 
-    // Read first 8 bytes for format detection
-    let header_bytes = std::fs::read(path)
+    // Read first 8 bytes for format detection (#3761: it read the whole model under this comment)
+    let header_bytes = super::model_header::read_prefix(path, 8)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
 
     // Detect format
-    let format = detect_format(&header_bytes[..8.min(header_bytes.len())])
+    let format = detect_format(&header_bytes)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
 
     if !config.quiet {
@@ -156,18 +156,19 @@ fn run_gguf_benchmark(
     use_cuda: bool,
     tracer: &TracerImpl,
 ) -> Result<BenchResult> {
-    use realizar::gguf::{GGUFModel, QuantizedGenerateConfig};
+    use realizar::gguf::{MappedGGUFModel, QuantizedGenerateConfig};
 
     if !config.quiet {
         eprintln!("{}", "Loading GGUF model...".yellow());
     }
     let start = Instant::now();
 
-    // Load model for tokenization
-    let model_bytes = std::fs::read(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-    let gguf = GGUFModel::from_bytes(&model_bytes)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+    // The ONE map of the model (#3761). The tokenizer and the MoE fields come from its header,
+    // and inference runs on it. This read the whole file first, and each path then mapped it
+    // again: a map pre-faults every page (MAP_POPULATE), so two maps doubled the peak.
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to map GGUF: {e}")))?;
+    let gguf = &mapped.model;
 
     // Tokenize prompt
     let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
@@ -190,7 +191,7 @@ fn run_gguf_benchmark(
                 gguf.expert_used_count().unwrap_or(0)
             );
         }
-        return run_gguf_moe_benchmark(path, config, use_cuda, &prompt_tokens, tracer);
+        return run_gguf_moe_benchmark(&mapped, config, use_cuda, &prompt_tokens, start, tracer);
     }
 
     let gen_config = QuantizedGenerateConfig {
@@ -202,16 +203,7 @@ fn run_gguf_benchmark(
 
     #[cfg(feature = "cuda")]
     if use_cuda {
-        match run_cuda_benchmark(
-            &gguf,
-            &model_bytes,
-            &prompt_tokens,
-            &gen_config,
-            config,
-            start,
-            path,
-            tracer,
-        ) {
+        match run_cuda_benchmark(&mapped, &prompt_tokens, &gen_config, config, start, tracer) {
             Ok(result) => return Ok(result),
             Err(e) => {
                 // GH-284: Fall back to CPU on CUDA capability mismatch (e.g. missing QkNorm kernel)
@@ -223,17 +215,17 @@ fn run_gguf_benchmark(
                 }
                 let cpu_start = Instant::now();
                 return run_cpu_benchmark(
+                    &mapped,
                     &prompt_tokens,
                     &gen_config,
                     config,
                     cpu_start,
-                    path,
                     tracer,
                 );
             }
         }
     }
-    run_cpu_benchmark(&prompt_tokens, &gen_config, config, start, path, tracer)
+    run_cpu_benchmark(&mapped, &prompt_tokens, &gen_config, config, start, tracer)
 }
 
 /// Resolve prompt tokens from APR model's tokenizer, with fallbacks.
