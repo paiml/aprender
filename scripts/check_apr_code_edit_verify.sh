@@ -208,14 +208,29 @@ case "\$1" in
         printf '{"type": "result", "subtype": "success", "result": "Fixed the denominator; all tests pass."}\n' ;;
 esac
 FAKE
-# The stub keeps gpu-q's contract: take the lock and choom, then run the job.
+# The stub keeps gpu-q v3's contract: `--caps` lists prio and wait, GPUQ_WAIT
+# bounds the wait with exit 75, then it takes the lock and choom and runs the
+# job. OLD is a gpu-q without `wait`, whose wait has no bound at all.
 cat > "$BIN/gpu-q" <<'STUB'
 #!/usr/bin/env bash
+if [ "${1:-}" = "--caps" ]; then printf 'prio\nwait\n'; exit 0; fi
+[ "${1:-}" = "--prio" ] && shift 2
+[ "${1:-}" = "--" ] && shift
+if [ -n "${GPUQ_WAIT:-}" ]; then
+    exec flock -w "$GPUQ_WAIT" -E 75 "${GPUQ_LOCK:?}" choom -n 1000 -- "$@"
+fi
+exec flock "${GPUQ_LOCK:?}" choom -n 1000 -- "$@"
+STUB
+OLD="$WORK/old-gpu-q"
+mkdir -p "$OLD"
+cat > "$OLD/gpu-q" <<'STUB'
+#!/usr/bin/env bash
+if [ "${1:-}" = "--caps" ]; then exit 2; fi
 [ "${1:-}" = "--prio" ] && shift 2
 [ "${1:-}" = "--" ] && shift
 exec flock "${GPUQ_LOCK:?}" choom -n 1000 -- "$@"
 STUB
-chmod +x "$BIN/fake-apr" "$BIN/gpu-q"
+chmod +x "$BIN/fake-apr" "$BIN/gpu-q" "$OLD/gpu-q"
 printf 'not a model\n' > "$WORK/model.gguf"
 
 # harness_row NAME WANT_RC WANT_PROBE MAX_SECONDS [harness args...]
@@ -224,7 +239,7 @@ harness_row() {
     local name="$1" want_rc="$2" want_probe="$3" max_s="$4" rc=0 t0 took probe
     shift 4
     t0=$(date +%s)
-    (cd "$ROOT" && PATH="$BIN:$PATH" APR_BIN="$BIN/fake-apr" APR_GPU_LOCK="$WORK/gpu.lock" \
+    (cd "$ROOT" && PATH="${ROW_PATH:-$BIN}:$PATH" APR_BIN="$BIN/fake-apr" APR_GPU_LOCK="$WORK/gpu.lock" \
         FAKE_PROBE="$WORK/$name.probe" \
         timeout "$((max_s + 5))" bash "$HARNESS" --model "$WORK/model.gguf" --host case --out "$WORK/$name" "$@") \
         > "$WORK/$name.log" 2>&1 || rc=$?
@@ -242,11 +257,13 @@ harness_row() {
 
 harness_row h-flock-free 0 "held=yes oom=1000" 60
 harness_row h-gpuq-free 0 "held=yes oom=1000" 60 --gpu-q 1
+ROW_PATH="$OLD:$BIN" harness_row h-old-gpuq-free 0 "held=yes oom=1000" 60 --gpu-q 1
 flock "$WORK/gpu.lock" sleep 60 &
 holder=$!
 sleep 0.5
 harness_row h-flock-held 2 never-ran 30 --lock-wait 2
-harness_row h-gpuq-held 2 never-ran 30 --gpu-q 1 --lock-wait 1 --timeout 1
+harness_row h-gpuq-held 2 never-ran 30 --gpu-q 1 --lock-wait 2
+ROW_PATH="$OLD:$BIN" harness_row h-old-gpuq-held 2 never-ran 30 --gpu-q 1 --lock-wait 2
 kill "$holder" 2>/dev/null || true
 wait "$holder" 2>/dev/null || true
 
