@@ -94,6 +94,52 @@ fn test_from_bytes_with_one_f32_tensor() {
     assert!((extracted[3] - 4.0).abs() < f32::EPSILON);
 }
 
+// ========================================================================
+// #3601: get_tensor_raw byte-size table must cover every IQ/TQ ggml id,
+// not just the K-quants — real Unsloth "UD-*" dynamic quants mix these
+// into otherwise-K-quant GGUFs, and `apr inspect` needs a size for every
+// tensor it lists, not just the ones it can dequantize.
+// ========================================================================
+
+#[test]
+fn test_get_tensor_raw_sizes_every_iq_and_tq_id() {
+    // (dtype, blck_size, type_size, name) — mirrors aprender-serve's vetted
+    // GGML_TYPES (gguf/ggml_type_table.rs, #3432), which shape.rs's byte_size
+    // match must agree with.
+    let cases: [(u32, usize, usize, &str); 11] = [
+        (16, 256, 66, "IQ2_XXS"),
+        (17, 256, 74, "IQ2_XS"),
+        (18, 256, 98, "IQ3_XXS"),
+        (19, 256, 50, "IQ1_S"),
+        (20, 32, 18, "IQ4_NL"),
+        (21, 256, 110, "IQ3_S"),
+        (22, 256, 82, "IQ2_S"),
+        (23, 256, 136, "IQ4_XS"),
+        (29, 256, 56, "IQ1_M"),
+        (34, 256, 54, "TQ1_0"),
+        (35, 256, 66, "TQ2_0"),
+    ];
+
+    for (dtype, blck_size, type_size, name) in cases {
+        // One full block's worth of elements, so byte_size is exact.
+        let tensor_data = vec![0u8; type_size];
+        let data = build_synthetic_gguf_with_tensor(
+            "t.weight",
+            &[blck_size as u64],
+            dtype,
+            &tensor_data,
+            &[],
+        );
+        let reader = GgufReader::from_bytes(data).expect("parse GGUF with tensor");
+        let (raw, shape, got_dtype) = reader
+            .get_tensor_raw("t.weight")
+            .unwrap_or_else(|e| panic!("{name} (dtype {dtype}) must be sized, not refused: {e}"));
+        assert_eq!(raw.len(), type_size, "{name} byte size");
+        assert_eq!(shape, vec![blck_size]);
+        assert_eq!(got_dtype, dtype);
+    }
+}
+
 #[test]
 fn test_from_bytes_tensor_excessive_dims() {
     // n_dims > MAX_DIMS should fail

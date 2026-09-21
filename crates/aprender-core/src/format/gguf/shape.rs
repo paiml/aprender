@@ -234,7 +234,21 @@ impl GgufReader {
             13 => (num_elements / 256).checked_mul(176), // Q5_K: 256 elements = 176 bytes
             14 => (num_elements / 256).checked_mul(210), // Q6_K: 256 elements = 210 bytes
             15 => (num_elements / 256).checked_mul(292), // Q8_K: 256 elements = 292 bytes
+            // #3601: IQ-family (codebook/lattice quant) and ternary types, sized from
+            // aprender-serve's vetted `GGML_TYPES` (gguf/ggml_type_table.rs, #3432) —
+            // real Unsloth "UD-*" dynamic quants mix these into otherwise-K-quant files.
+            16 => (num_elements / 256).checked_mul(66),  // IQ2_XXS
+            17 => (num_elements / 256).checked_mul(74),  // IQ2_XS
+            18 => (num_elements / 256).checked_mul(98),  // IQ3_XXS
+            19 => (num_elements / 256).checked_mul(50),  // IQ1_S
+            20 => (num_elements / 32).checked_mul(18),   // IQ4_NL
+            21 => (num_elements / 256).checked_mul(110), // IQ3_S
+            22 => (num_elements / 256).checked_mul(82),  // IQ2_S
+            23 => (num_elements / 256).checked_mul(136), // IQ4_XS
+            29 => (num_elements / 256).checked_mul(56),  // IQ1_M
             30 => num_elements.checked_mul(2),        // BF16: 2 bytes per element
+            34 => (num_elements / 256).checked_mul(54),  // TQ1_0
+            35 => (num_elements / 256).checked_mul(66),  // TQ2_0
             _ => {
                 return Err(AprenderError::FormatError {
                     message: format!("Unsupported dtype {} for raw extraction", meta.dtype),
