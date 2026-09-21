@@ -17,7 +17,7 @@ path = "src/main.rs"
 # to crates/aprender-rag-cli/; dep now resolves via root [workspace.dependencies].
 aprender-rag = { workspace = true }
 # #3745 S1: `transcribe --model` is declared through the shared role type
-# `ModelRef`, so `apr surface` reads `apr rag transcribe --model` as a model argument.
+# `ModelPath`, so `apr surface` reads `apr rag transcribe --model` as a model argument.
 batuta-common = { workspace = true, features = ["cli-roles"] }
 clap = { version = "4.5", features = ["derive"] }
 tokio = { version = "1.49", features = ["full"] }
