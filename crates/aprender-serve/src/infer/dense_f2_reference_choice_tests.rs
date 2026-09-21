@@ -100,13 +100,28 @@ fn dense_f2_reference_choice() {
                 continue;
             };
             let a = super::f2_multi_position_report(&q8k, &gpu);
-            let b = super::f2_multi_position_report(&fp32, &gpu);
+            // The GPU was fed the Q8_K reference's greedy decode token; the FP32
+            // reference chose its own. When the two differ, the FP32 row's decode
+            // step compares logits after DIFFERENT inputs, so only the probe
+            // positions are judged for it (measured on gx10: two such rows
+            // "rejected" at the decode step only).
+            let fp32_decode = super::argmax_u32(&fp32[probe.len() - 1]);
+            let same_decode = fp32_decode == decode_token;
+            let judged = if same_decode { gpu.len() } else { probe.len() };
+            let b = super::f2_multi_position_report(&fp32[..judged], &gpu[..judged]);
             eprintln!(
-                "[dense-f2] {name} | {pname} | via {} | {} positions | vs Q8_K: {} | vs FP32: {}",
+                "[dense-f2] {name} | {pname} | via {} | {} positions | vs Q8_K: {} | vs FP32: {}{}",
                 via.as_str(),
                 gpu.len(),
                 verdict(&a),
-                verdict(&b)
+                verdict(&b),
+                if same_decode {
+                    String::new()
+                } else {
+                    format!(
+                        " (decode step excluded: FP32 chose {fp32_decode}, the GPU was fed {decode_token})"
+                    )
+                }
             );
         }
     }
