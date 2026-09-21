@@ -7,10 +7,11 @@ Measured on `PMAT-3750-qa-header-only-reads` (base `52f43da71`) with
 Verdicts:
 - **CONVERTED** — read only the header or magic now (this PR).
 - **PR-B …** — needs only the magic / header / metadata and is converted by the 0.69.1 sub-issue #3761 (#3750 PR B), which puts the APR and SafeTensors prefix readers in their format crates.
+- **PR-B STREAMED** — needs every byte, but never all of them at once; #3761 streams it.
 - **WHOLE-DATA** — consumes the tensor data or every byte (loaders, converters, validators, copies, uploads); "could stream" notes a whole-file buffer that is not needed all at once.
 - **NOT-MODEL** — reads a file that is not a model. **DOC** — a doc example, not executed code.
 
-Counts over the 99 production sites: DOC 9, NOT-MODEL 11, PR-B CONDITIONAL 1, PR-B HEADER-ONLY 12, PR-B MAGIC-ONLY 4, WHOLE-DATA 62.
+Counts over the 99 production sites: DOC 9, NOT-MODEL 11, PR-B CONDITIONAL 1, PR-B HEADER-ONLY 11, PR-B MAGIC-ONLY 4, PR-B STREAMED 1, WHOLE-DATA 62.
 
 ## Converted by this PR (the `apr qa` path, line numbers on `52f43da71`)
 
@@ -34,6 +35,38 @@ Counts over the 99 production sites: DOC 9, NOT-MODEL 11, PR-B CONDITIONAL 1, PR
 
 (13 whole-file reads and one whole-file copy.)
 
+## Measured on gx10 (done_when 3)
+
+`apr qa` on `~/models/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf` (18,556,689,568 bytes), on gx10
+(GB10, aarch64, unified memory), both binaries built there with `--features cuda`, each run under
+`flock /tmp/apr-gpu.lock choom -n 1000`, with `--json --offline --skip-golden --skip-throughput
+--skip-ollama --skip-gpu-speedup --skip-ptx-parity --skip-gpu-state --skip-format-parity`. Peak RSS
+is `/usr/bin/time -v`'s "Maximum resident set size". A second pair samples `/proc/<pid>/status`
+every 0.2 s for RssAnon (heap) and RssFile (mapped pages) apart, because the maximum sums them.
+The `--skip-contract` rows each combine two runs of the same binary and flags: max RSS from a
+`/usr/bin/time -v` run, RssAnon and RssFile from a sampled run.
+
+| binary (`apr --version`) | gates | max RSS (KiB) | peak RssAnon (KiB) | peak RssFile (KiB) | qa |
+|---|---|---|---|---|---|
+| before: `apr 0.69.0 (52f43da71)` | as above | 36,278,440 | 36,112,744 | 11,160 | passed, rc 0, 4:36 |
+| after: `apr 0.69.0 (ff89fb6aa)` | as above | 19,367,800 | 19,357,084 | 11,236 | passed, rc 0, 3:57 |
+| before: `apr 0.69.0 (52f43da71)` | as above + `--skip-contract` | 36,273,092 | 36,247,676 | 10,596 | passed, rc 0, 1:10 |
+| after: `apr 0.69.0 (ff89fb6aa)` | as above + `--skip-contract` | 46,396 | — (the run took 0.14 s, under one 0.2 s sample) | | passed, rc 0, 0:00.14 |
+
+What the numbers say:
+
+- **The capability predicates alone** (the `--skip-contract` pair, where the gates that run are
+  capability_match, metadata_plausibility and performance_regression) went from a 36.2 GB heap
+  peak to a 46,396 KiB (45.3 MiB) process peak, 1:10 to 0.14 s: two whole-file reads and a `to_vec` copy of an 18.6 GB model, then
+  none. That is done_when 1 on the real 30B, beside the sparse-fixture row in `model_header.rs`.
+- **The 19.36 GB left in the full run is heap, not a mapping** (RssFile 11 MB), and it belongs to
+  the `tensor_contract` gate: `RosettaStone::validate` → `validate_gguf` → `GgufReader::from_file`,
+  a `read_to_end` of the whole model, then a dequantization of every tensor. That gate reads every
+  tensor value (NaN/Inf/all-zero checks), so it is WHOLE-DATA by reading, but it does not need the
+  whole file resident at once. The row `gguf/reader_parsing.rs:6` below says so, and #3790
+  tracks streaming it from a map.
+- 36,278,440 − 19,367,800 = 16,910,640 KiB (16.1 GiB) less peak per `apr qa` run on this model.
+
 ## Every production site
 
 | site | function | verdict | what the bytes are used for |
@@ -52,7 +85,7 @@ Counts over the 99 production sites: DOC 9, NOT-MODEL 11, PR-B CONDITIONAL 1, PR
 | apr-cli/src/commands/embed_viz.rs:382 | gguf_vocab | PR-B HEADER-ONLY | LlamaTokenizer::from_gguf_bytes needs only the header vocabulary |
 | apr-cli/src/commands/embed_viz_lint.rs:35 | run | NOT-MODEL | an output artifact whose determinism is classified |
 | apr-cli/src/commands/eval/mod.rs:746 | count_safetensors_keys | PR-B HEADER-ONLY | SafeTensors: 8-byte length + JSON header, counts keys |
-| apr-cli/src/commands/eval/mod.rs:922 | verify_single_file | PR-B HEADER-ONLY | SafeTensors header checks; the size check needs only the file length |
+| apr-cli/src/commands/eval/mod.rs:922 | verify_single_file | PR-B STREAMED | SafeTensors header checks (bounded), plus an FNV-1a hash of EVERY byte: it needs the whole file, never all of it at once, so #3761 streams the hash in 1 MiB chunks |
 | apr-cli/src/commands/eval/mod.rs:1314 | run_encrypt | WHOLE-DATA | encrypts every byte (could stream) |
 | apr-cli/src/commands/eval/mod.rs:1399 | run_decrypt | WHOLE-DATA | decrypts every byte (could stream) |
 | apr-cli/src/commands/eval/mod.rs:1478 | derive_encryption_key | NOT-MODEL | an encryption key file |
@@ -95,7 +128,7 @@ Counts over the 99 production sites: DOC 9, NOT-MODEL 11, PR-B CONDITIONAL 1, PR
 | aprender-core/src/format/converter/tensor.rs:439 | detect_apr_quantization | PR-B HEADER-ONLY | counts tensor dtypes from the APR tensor index |
 | aprender-core/src/format/converter/tokenizer_loader.rs:482 | load_tokenizer_from_sentencepiece | NOT-MODEL | a SentencePiece tokenizer.model |
 | aprender-core/src/format/core_io.rs:173 | read_file_content | WHOLE-DATA | generic whole-content reader (callers decide) |
-| aprender-core/src/format/gguf/reader_parsing.rs:6 | from_file | WHOLE-DATA | GgufReader::from_file owns the whole file by API (importers read tensors) |
+| aprender-core/src/format/gguf/reader_parsing.rs:6 | from_file | WHOLE-DATA, could stream | GgufReader::from_file owns the whole file by API (importers read tensors). `apr qa`'s tensor_contract gate reaches it through `RosettaStone::validate`: the 19.36 GB heap peak measured above. It reads every tensor, but never needs them all at once (#3790) |
 | aprender-core/src/format/gguf/reader_parsing.rs:20 | from_file_full | WHOLE-DATA | GgufReader::from_file_full, the shard merge reads tensors |
 | aprender-core/src/format/lint/lint.rs:187 | lint_safetensors_file | PR-B HEADER-ONLY | SafeTensors metadata from the header; tensors come from the existing map |
 | aprender-core/src/format/lint/lint.rs:324 | lint_apr_v2_file | PR-B HEADER-ONLY | lints APR metadata fields |
