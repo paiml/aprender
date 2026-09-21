@@ -575,3 +575,4 @@ include!("mod_05.rs");
 include!("batch.rs");
 
 pub mod qwen3_moe_generate;
+pub mod run_report;

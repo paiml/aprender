@@ -207,6 +207,25 @@ impl Default for RunOptions {
     }
 }
 
+/// What `apr run --json` reports about the prompt and how generation ended (#3718).
+///
+/// RAH (#3716) rebuilt Qwen3.5's tokenizer from the GGUF just to learn how many
+/// prompt tokens the model saw, and could not tell a reply cut at `--max-tokens`
+/// from one that finished. Every field is `None` when the inference path did not
+/// report it, which is `null` in the JSON and never a zero that reads as measured.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct RunUsage {
+    /// Tokens actually fed to the model: after the chat template, including BOS.
+    pub prompt_tokens: Option<usize>,
+    /// Tokens the engine generated. Unlike `RunResult::tokens_generated`, never a
+    /// word-count stand-in.
+    pub completion_tokens: Option<usize>,
+    /// `"stop"` (a stop token ended it) or `"length"` (the budget did).
+    pub finish_reason: Option<&'static str>,
+    /// The model's context window, from its metadata.
+    pub context_length: Option<usize>,
+}
+
 /// Run result
 #[derive(Debug, Clone)]
 pub(crate) struct RunResult {
@@ -230,6 +249,8 @@ pub(crate) struct RunResult {
     /// could be resolved. `--stream` used to emit `"text":""` for every token
     /// because nothing ever decoded the ids one at a time.
     pub token_texts: Option<Vec<String>>,
+    /// Prompt and completion counts plus the finish reason (#3718).
+    pub usage: RunUsage,
 }
 
 /// Resolve a user-supplied model argument into a [`ModelSource`].
@@ -316,6 +337,7 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
         used_gpu: output.used_gpu,
         generated_tokens: output.generated_tokens,
         token_texts: output.token_texts,
+        usage: output.usage,
     })
 }
 

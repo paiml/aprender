@@ -1,0 +1,20 @@
+- id: PMAT-3718
+  github_issue: 3718
+  item_type: task
+  title: 'apr run --json: prompt_tokens + completion_tokens + finish_reason; serve usage and finish_reason never report a cut as a stop (#3718, RAH #3716)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-a8
+  created: 2026-09-21T16:20:00Z
+  updated: 2026-09-21T16:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3718 done_when 1, verbatim: "`apr run --json` emits `prompt_tokens` (the post-template token count actually fed to the model) and `completion_tokens`, and the numbers match the tokenizer (a case row checks a fixed prompt''s count)"'
+  - 'done_when 2, verbatim: "the same fields are in `apr serve`''s `/v1/chat/completions` `usage` object (OpenAI shape)"'
+  - 'done_when 3, verbatim: "a prompt truncated or refused for length says so in the JSON (`truncated: true` or an error), never a silent cut"'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'PENDING — filled with the measured record before the quorum.'

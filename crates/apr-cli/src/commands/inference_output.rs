@@ -184,6 +184,8 @@ struct InferenceOutput {
     /// Populated only when `--stream` asked for it (see
     /// [`decode_token_pieces`]) — every other mode renders the whole `text`.
     token_texts: Option<Vec<String>>,
+    /// Prompt and completion counts plus the finish reason (#3718).
+    usage: RunUsage,
 }
 
 /// Execute inference on model
@@ -231,6 +233,7 @@ fn execute_inference(
             used_gpu: None,
             generated_tokens: None,
             token_texts: None,
+            usage: RunUsage::default(),
         })
     }
 }
@@ -299,7 +302,8 @@ fn execute_with_realizar(
     options: &RunOptions,
     _use_mmap: bool,
 ) -> Result<InferenceOutput> {
-    use realizar::{run_inference, InferenceConfig};
+    use realizar::infer::run_inference_report;
+    use realizar::InferenceConfig;
 
     // Get prompt from options or input file
     let prompt = if let Some(ref p) = options.prompt {
@@ -343,7 +347,10 @@ fn execute_with_realizar(
     }
 
     // Run inference via realizar
-    let result = run_inference(&config).map_err(inference_error)?;
+    // #3718: the report carries what only the decode path knows (finish reason,
+    // context window); the prompt count is `input_token_count`, taken after the
+    // chat template, so it is the number the model actually read.
+    let (result, report) = run_inference_report(&config).map_err(inference_error)?;
 
     // Report performance if benchmarking
     if options.benchmark {
@@ -381,6 +388,12 @@ fn execute_with_realizar(
         used_gpu: Some(result.used_gpu),
         generated_tokens,
         token_texts,
+        usage: RunUsage {
+            prompt_tokens: Some(result.input_token_count),
+            completion_tokens: Some(result.generated_token_count),
+            finish_reason: report.finish_reason.map(|r| r.as_str()),
+            context_length: report.context_length,
+        },
     })
 }
 
