@@ -78,9 +78,9 @@ tokrow() { # tokrow <manifest> <dir> <pid> <ids csv>
 # The manifest rows carry the literal "%s" for the sha; fill it in one place.
 seal() { sed -i "s/\"%s\"/\"$SHA\"/g" "$1"; }
 
-engine_out() { # engine_out <dir> <engine> <pid> <answer> — row contract v1: {"text": ...}
-  python3 -c 'import json,sys; json.dump({"text": sys.argv[2], "reported": {"reported_by": "fixture"}}, open(sys.argv[1], "w"))' \
-    "$1/$2-$3.json" "$4"
+engine_out() { # engine_out <dir> <engine> <pid> <answer> [device] — row contract v1: {"text": ...}
+  python3 -c 'import json,sys; json.dump({"text": sys.argv[2], "reported": {"reported_by": "fixture", "device": sys.argv[3]}}, open(sys.argv[1], "w"))' \
+    "$1/$2-$3.json" "$4" "${5-cuda:0 fixture}"
 }
 detrow() { # detrow <manifest> <kind> <engine> <pid> <artifact path> [thinking] [refused]
   python3 - "$@" <<'PY'
@@ -303,6 +303,10 @@ case "$why" in
   *) broke "undeclared control: declined_because was '$why'" ;;
 esac
 
+# 9e2. every cell says whether it is the positive control (pv reads the flag, #3715).
+got=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(sorted((c["key"]["prompt_id"], c["positive_control"]) for c in r["cells"]))' "$TMP/control_all_wrong/receipt.json" 2>/dev/null)
+[ "$got" = "[('golden-2plus2', True), ('golden-paris', False)]" ] && ok "cells carry positive_control (true only on the control)" || broke "positive_control flags: '$got'"
+
 # 9f. a model whose run never measured the control prompt declines, however green:
 #     an unmeasured control proves nothing about the harness.
 d=$(newcase no_control_cell)
@@ -350,6 +354,21 @@ row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"
 row "$d/manifest.jsonl" hf $P 0 "$d/hf-$P.json" ""
 run_judge "$d"; GOT_RC=$?
 expect "hf JSON without a text field is no oracle (UNJUDGED)" "$d" 2 $P UNJUDGED
+
+# E3c. a plugin engine is held to its lane: a gpu-lane row that ran on the CPU,
+#      or a row with no reported device, cannot vouch.
+d=$(newcase hf_wrong_device)
+apr_out "$d" $P "5" gpu false; engine_out "$d" hf $P "4" "cpu"
+row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"
+row "$d/manifest.jsonl" hf $P 0 "$d/hf-$P.json" ""
+run_judge "$d"; GOT_RC=$?
+expect "hf on the CPU in the gpu lane is no oracle (UNJUDGED)" "$d" 2 $P UNJUDGED
+d=$(newcase hf_no_device)
+apr_out "$d" $P "5" gpu false; engine_out "$d" hf $P "4" ""
+row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"
+row "$d/manifest.jsonl" hf $P 0 "$d/hf-$P.json" ""
+run_judge "$d"; GOT_RC=$?
+expect "hf with no reported device is no oracle (UNJUDGED)" "$d" 2 $P UNJUDGED
 
 # E4. a DEGENERATE answer is no answer from any engine: the golden greeting's "!"
 #     pattern would otherwise score "!!!!!!!!" (token id 0, x64) as correct.

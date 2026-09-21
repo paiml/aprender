@@ -180,7 +180,10 @@ for eng in hf llamafile; do
   want "$eng" || continue
   EXT_OK[$eng]=0
   for f in "scripts/crux_engine_$eng.sh" "scripts/crux_engine_$eng.py"; do
-    [ -f "$f" ] && { EXT_SCRIPT[$eng]="$f"; break; }
+    if [ -f "$f" ]; then
+      EXT_SCRIPT[$eng]="$f"
+      break
+    fi
   done
   if [ -z "${EXT_SCRIPT[$eng]:-}" ]; then
     EXT_WHY[$eng]="engine driver scripts/crux_engine_$eng.{sh,py} is not present (the engine worker's row, #3739)"
