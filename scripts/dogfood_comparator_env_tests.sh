@@ -64,7 +64,7 @@ while read -r pkg target name; do
         printf 'FAIL  %s did not run (no "test %s ... ok" line): the filter matched nothing\n' "$name" "$name"
         rc=1
     else
-        printf 'ok    %s ran against the pinned llama-cli and passed\n' "$name"
+        printf 'ok    %s ran against the pinned llama-completion and passed\n' "$name"
     fi
 done <<< "$TESTS"
 [ "$n" -gt 0 ] || { printf 'FAIL  no comparator-consumer test is listed: a gate over nothing is not a pass\n'; exit 1; }
