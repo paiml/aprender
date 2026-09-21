@@ -28,14 +28,15 @@ use super::{gpu_err, CudaLayer, Qwen35CudaDims, Qwen35CudaModel, Qwen35CudaState
 use crate::gguf::forward_qwen35::{Qwen35Model, Qwen35OwnedLayer};
 use trueno_gpu::driver::GpuBuffer;
 
-/// Rows per chunk when the attention scores do not bound it lower.
+/// Rows per prefill chunk — every projection is ONE GEMM over this many rows, at
+/// every context length. It is NOT bounded by the attention scores: shrinking the
+/// GEMM chunk at long context multiplied the per-chunk weight dequantization (#3596,
+/// measured on GB10), so the attention splits its QUERY rows into passes instead
+/// ([`attention_rows_for`]).
 pub const PREFILL_MAX_CHUNK_ROWS: usize = 512;
 
-/// Rows per chunk never go below this, however long the context: a chunk of a few
-/// rows is back to GEMV-shaped work.
-pub const PREFILL_MIN_CHUNK_ROWS: usize = 16;
-
-/// Bytes the attention scores of one KV group may take (`heads_per_kv × T × L × 4`).
+/// Bytes the attention scores of one pass of one KV group may take
+/// (`heads_per_kv × pass_rows × L × 4`).
 pub const PREFILL_SCORES_BUDGET_BYTES: usize = 1 << 30;
 
 /// A non-owning device view: never frees what it points at.
@@ -63,6 +64,8 @@ impl std::ops::Deref for View {
 /// [`prefill`]: Qwen35CudaModel::prefill
 struct PrefillBuffers {
     rows: usize,
+    /// Query rows per attention pass (the scores are sized for this many).
+    attn_rows: usize,
     /// `[rows][hidden]` — the residual stream.
     x: GpuBuffer<f32>,
     normed: GpuBuffer<f32>,
@@ -95,10 +98,32 @@ struct PrefillBuffers {
 
 /// Rows per chunk for a prompt ending at `total_positions` — one formula for the
 /// running prefill and the pre-load capacity plan.
-fn chunk_rows_for(d: Qwen35CudaDims, total_positions: usize) -> usize {
+fn chunk_rows_for(_d: Qwen35CudaDims, total_positions: usize) -> usize {
+    PREFILL_MAX_CHUNK_ROWS.min(total_positions.max(1))
+}
+
+/// Query rows per attention pass: as many of the chunk's rows as keep one KV group's
+/// scores (`heads_per_kv × rows × L` floats) inside [`PREFILL_SCORES_BUDGET_BYTES`]
+/// at the longest `L` of the call.
+fn attention_rows_for(d: Qwen35CudaDims, total_positions: usize) -> usize {
     let hpk = (d.num_heads / d.num_kv_heads.max(1)).max(1) as usize;
-    let by_scores = PREFILL_SCORES_BUDGET_BYTES / (4 * hpk * total_positions.max(1));
-    by_scores.clamp(PREFILL_MIN_CHUNK_ROWS, PREFILL_MAX_CHUNK_ROWS)
+    let by_scores = scores_budget_bytes() / (4 * hpk * total_positions.max(1));
+    by_scores.clamp(1, chunk_rows_for(d, total_positions))
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Tests shrink the scores budget to force many attention passes per chunk at a
+    /// length a test can afford; production has no such knob.
+    static SCORES_BUDGET_OVERRIDE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+fn scores_budget_bytes() -> usize {
+    #[cfg(test)]
+    if let Some(b) = SCORES_BUDGET_OVERRIDE.with(std::cell::Cell::get) {
+        return b;
+    }
+    PREFILL_SCORES_BUDGET_BYTES
 }
 
 /// Device bytes a prefill ending at `total_positions` allocates beyond weights and
@@ -126,7 +151,7 @@ fn workspace_bytes_for(
         + 4 * q_dim // q, q_normed, attn_gate, attn_out_in
         + kv_dim
         + 3 * inter;
-    let scores = hpk * rows * total_positions;
+    let scores = hpk * attention_rows_for(d, total_positions) * total_positions;
     4 * (rows * per_row + scores + largest_projection)
 }
 
@@ -137,12 +162,9 @@ fn quant_bytes(t: &crate::gguf::OwnedQuantizedTensor) -> (u64, usize) {
 }
 
 impl<'a> Qwen35CudaModel<'a> {
-    /// Rows per prefill chunk for a prompt that ends at `total_positions`.
-    ///
-    /// The scores of one KV group are `heads_per_kv × T × L` floats and must fit
-    /// [`PREFILL_SCORES_BUDGET_BYTES`] at the LAST chunk, where `L` is largest; the
-    /// chunk size is fixed for the whole call so every chunk but the last reuses one
-    /// set of compiled shapes.
+    /// Rows per prefill chunk for a prompt that ends at `total_positions` — the GEMM
+    /// row count, fixed for the whole call so every chunk but the last reuses one set
+    /// of compiled shapes.
     #[must_use]
     pub fn prefill_chunk_rows(&self, total_positions: usize) -> usize {
         chunk_rows_for(self.dims, total_positions)
@@ -315,6 +337,7 @@ impl<'a> Qwen35CudaModel<'a> {
         );
         Ok(PrefillBuffers {
             rows,
+            attn_rows: attention_rows_for(d, total_positions),
             x: z(rows * hidden)?,
             normed: z(rows * hidden)?,
             post_normed: z(rows * hidden)?,
@@ -334,7 +357,7 @@ impl<'a> Qwen35CudaModel<'a> {
             attn_gate: z(rows * q_dim)?,
             k_raw: z(rows * kv_dim)?,
             attn_out_in: z(rows * q_dim)?,
-            scores: z(hpk * rows * total_positions)?,
+            scores: z(hpk * attention_rows_for(d, total_positions) * total_positions)?,
             ffn_gate: z(rows * inter)?,
             ffn_up: z(rows * inter)?,
             ffn_act: z(rows * inter)?,
@@ -793,6 +816,7 @@ impl<'a> Qwen35CudaModel<'a> {
             b.attn_out_in.as_ptr(),
             b.scores.as_ptr(),
             rows,
+            b.attn_rows as u32,
             pos32,
             d.num_heads,
             d.num_kv_heads,
