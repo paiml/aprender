@@ -49,10 +49,19 @@
 # interpreter, no python3) is ENV rc=2 naming the interpreter and the runner --
 # never rc=1, never "no violations".
 #
+# A RUNNER WITHOUT THE TOOL IS FLEET STATE, NOT RED (#3692). #3644 put this guard in
+# guard-tree's population, and on the intel hosts the rc 2 above redded `ci / gate` for
+# every PR -- against guard_tree.sh's rule that "a runner without the tool must not red
+# every PR". So exactly two cases are UNMEASURED, exit 0, surfaced under the PASS row
+# (#3651): no interpreter at all, and an interpreter with no TOML reader (the scanner says
+# so and exits 3). Everything else that stops the scan -- a crash, a non-zero exit with no
+# trailer, an exit 3 WITHOUT the no-reader line -- stays ENV rc 2, RED. Only the missing
+# tool is fleet state, the line #3671 drew for pv.
+#
 # Runs bare, no arguments, from anywhere in the repo. `--selftest` runs the case
 # table only. A bare run does BOTH: the case table first, then the tree.
-#   PATHONLY_GUARD_PYTHON=<interpreter>   test seam: a dead one reproduces the intel shape
-#   PATHONLY_GUARD_FORCE_NO_TOML=1        test seam: both readers fail to import, for real
+#   PATHONLY_GUARD_PYTHON=<interpreter>   test seam: a missing one is fleet state, a dead one is ENV
+#   PATHONLY_GUARD_FORCE_NO_TOML=1        test seam: both readers fail to import, for real (the intel shape)
 set -euo pipefail
 
 REPO="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
@@ -70,9 +79,15 @@ cleanup() {
 trap cleanup EXIT
 
 # scan <root-dir> -> prints "manifest|alias|src-file:line:text" per violation.
-# rc 0 with the trailer consumed; rc 2 (ENV) when the scanner did not finish.
+# rc 0 with the trailer consumed; rc 3 (fleet state: the runner lacks the tool, an
+# UNMEASURED line on stderr); rc 2 (ENV, RED) when the scanner did not finish.
 scan() {
     local out rc=0 interp="${PATHONLY_GUARD_PYTHON:-python3}"
+    if ! command -v "$interp" > /dev/null 2>&1; then
+        printf 'UNMEASURED runner=%s reason=no-interpreter interpreter=%s -- this runner has no %s, so the manifests were not read; fleet state, not a pass (#3692)\n' \
+            "${RUNNER_NAME:-unknown}" "$interp" "$interp" >&2
+        return 3
+    fi
     out=$(PATHONLY_GUARD_RUNNER="${RUNNER_NAME:-unknown}" "$interp" - "$1" 2>&1 <<'PY'
 import os, re, sys
 
@@ -91,7 +106,7 @@ for name in ("tomllib", "tomli"):
 if toml is None:
     print("ENV: no TOML reader on this interpreter (python %d.%d, need tomllib >= 3.11 or tomli) runner=%s -- "
           "the manifests were not read; this is not 'no violations'" % (sys.version_info[0], sys.version_info[1], runner))
-    sys.exit(2)
+    sys.exit(3)   # #3692: the runner lacks the tool -- the shell makes this UNMEASURED, never a pass
 
 root = sys.argv[1]
 KINDS = ("dev-dependencies",)
@@ -147,6 +162,13 @@ for dirpath, dirnames, filenames in os.walk(root):
 print("SCAN-DONE manifests=%d reader=%s" % (manifests, toml.__name__))
 PY
     ) || rc=$?
+    # fleet state needs BOTH the scanner's own no-reader line AND its exit 3; either alone is ENV
+    case "$rc:$out" in
+        3:"ENV: no TOML reader on this interpreter"*)
+            printf 'UNMEASURED runner=%s reason=no-toml-reader -- %s; fleet state, not a pass (#3692)\n' \
+                "${RUNNER_NAME:-unknown}" "${out#ENV: }" >&2
+            return 3 ;;
+    esac
     case "$out" in
         *"SCAN-DONE manifests="*) ;;
         *)
@@ -191,9 +213,14 @@ selftest() {
   mk ok_comment   'sib = { path = "../sib" }'                        '// use sib::thing;'
   mk ok_substring 'sib = { path = "../sib" }'                        'use sibling::thing;'
 
-  # ENV from the scanner is ENV here: rc 2, never "missed hit_use" (#3644)
+  # ENV from the scanner is ENV here: rc 2, never "missed hit_use" (#3644).
+  # Fleet state (rc 3) passes through: scan already printed the UNMEASURED line (#3692).
   local env_rc=0
   out="$(scan "$tmp")" || env_rc=$?
+  if [ "$env_rc" -eq 3 ]; then
+    cleanup; FIXTURES=""
+    return 3
+  fi
   if [ "$env_rc" -ne 0 ]; then
     printf 'ENV: the case table could not be measured (scan rc=%s)\n' "$env_rc"
     cleanup; FIXTURES=""
@@ -231,39 +258,53 @@ selftest() {
     if [ "$got" = "$want" ]; then printf 'ok    death  rc=%s  %s\n' "$got" "$label"
     else printf 'FAIL  death  rc=%s (wanted %s)  %s\n' "$got" "$want" "$label"; rc=1; fi
   }
-  death 'both TOML readers absent (the intel shape) -> ENV rc=2'   2 PATHONLY_GUARD_FORCE_NO_TOML=1
-  death 'interpreter exits 1 with no output -> ENV rc=2, never 1' 2 PATHONLY_GUARD_PYTHON=/bin/false
-  death 'no interpreter at all (rc=127) -> ENV rc=2'              2 PATHONLY_GUARD_PYTHON="$tmp/no-such-python"
-  death 'the working interpreter, as the control -> rc=0'         0 PATHONLY_GUARD_PYTHON="${PATHONLY_GUARD_PYTHON:-python3}"
-  # The rows above call scan() directly. This one runs THE WHOLE GUARD under the
-  # intel shape, because the call site is where the old `|| true` swallowed the
-  # death: the exit must be 2 and no row verdict may be printed. (Guarded
-  # against recursion; the nested run has no death rows of its own.)
+  # An interpreter that exits 3 WITHOUT the no-reader line is not fleet state (#3692):
+  # the exit code alone must not buy an UNMEASURED.
+  printf '#!/bin/sh\necho "Traceback (most recent call last): boom" >&2\nexit 3\n' > "$tmp/exit3-python"
+  chmod 755 "$tmp/exit3-python"
+  death 'both TOML readers absent (the intel shape) -> UNMEASURED rc=3, fleet state (#3692)' 3 PATHONLY_GUARD_FORCE_NO_TOML=1
+  death 'no interpreter at all -> UNMEASURED rc=3, fleet state (#3692)'                     3 PATHONLY_GUARD_PYTHON="$tmp/no-such-python"
+  death 'interpreter exits 1 with no output -> ENV rc=2 (RED), never fleet state'          2 PATHONLY_GUARD_PYTHON=/bin/false
+  death 'interpreter exits 3 without the no-reader line -> ENV rc=2 (RED)'                 2 PATHONLY_GUARD_PYTHON="$tmp/exit3-python"
+  death 'the working interpreter, as the control -> rc=0'                                  0 PATHONLY_GUARD_PYTHON="${PATHONLY_GUARD_PYTHON:-python3}"
+  # The rows above call scan() directly. These run THE WHOLE GUARD, because the call
+  # site is where the old `|| true` swallowed the death. Under the intel shape: exit 0,
+  # an UNMEASURED line naming the reason, no row verdict and no OK line (#3692). Under a
+  # dead interpreter: exit 2, still RED. (Guarded against recursion; the nested run has
+  # no death rows of its own.)
   if [ -z "${PATHONLY_GUARD_NESTED:-}" ]; then
     local nested_out nested_rc=0
-    nested_out=$(PATHONLY_GUARD_NESTED=1 PATHONLY_GUARD_FORCE_NO_TOML=1 bash "$0" --selftest 2>&1) || nested_rc=$?
+    nested_out=$(PATHONLY_GUARD_NESTED=1 PATHONLY_GUARD_FORCE_NO_TOML=1 RUNNER_NAME=intel-probe bash "$0" 2>&1) || nested_rc=$?
     case "$nested_rc:$nested_out" in
-      2:*"missed hit_"*|2:*"false positive"*)
-        printf 'FAIL  death  the whole guard under the intel shape printed a row verdict beside its ENV\n'; rc=1 ;;
-      2:*) printf 'ok    death  rc=2  the whole guard under the intel shape exits ENV with no row verdict\n' ;;
-      *)   printf 'FAIL  death  rc=%s (wanted 2)  the whole guard under the intel shape\n' "$nested_rc"; rc=1 ;;
+      0:*"missed hit_"*|0:*"false positive"*|0:*"OK: no NEW"*)
+        printf 'FAIL  death  the whole guard under the intel shape printed a verdict beside its UNMEASURED\n'; rc=1 ;;
+      0:*$'\n'"UNMEASURED runner=intel-probe reason=no-toml-reader"*|0:"UNMEASURED runner=intel-probe reason=no-toml-reader"*)
+        printf 'ok    death  rc=0  the whole guard under the intel shape is UNMEASURED reason=no-toml-reader, no verdict (#3692)\n' ;;
+      *)   printf 'FAIL  death  rc=%s (wanted 0 + UNMEASURED reason=no-toml-reader)  the whole guard under the intel shape: %s\n' "$nested_rc" "$nested_out"; rc=1 ;;
     esac
+    nested_rc=0
+    PATHONLY_GUARD_NESTED=1 PATHONLY_GUARD_PYTHON=/bin/false bash "$0" > /dev/null 2>&1 || nested_rc=$?
+    if [ "$nested_rc" -eq 2 ]; then printf 'ok    death  rc=2  the whole guard under a dead interpreter is ENV, RED\n'
+    else printf 'FAIL  death  rc=%s (wanted 2)  the whole guard under a dead interpreter\n' "$nested_rc"; rc=1; fi
   fi
 
   cleanup
   FIXTURES=""
-  [ "$rc" -eq 0 ] && printf 'PASS: case table (4 must-match, 7 must-not-match, 5 death rows)\n'
+  [ "$rc" -eq 0 ] && printf 'PASS: case table (4 must-match, 7 must-not-match, 7 death rows)\n'
   return "$rc"
 }
 
 main() {
-  if [ "${1:-}" = "--selftest" ]; then selftest; return $?; fi
   local st_rc=0
   selftest || st_rc=$?
+  # fleet state (#3692): the UNMEASURED line is already printed; exit 0, and no tree verdict
+  [ "$st_rc" -eq 3 ] && return 0
+  [ "${1:-}" = "--selftest" ] && return "$st_rc"
   [ "$st_rc" -eq 0 ] || return "$st_rc"
 
   local out pairs rc=0 new stale scan_rc=0
   out="$(scan "$REPO")" || scan_rc=$?
+  [ "$scan_rc" -eq 3 ] && return 0
   if [ "$scan_rc" -ne 0 ]; then
     printf 'ENV: the tree was not scanned (rc=%s); the baseline is neither new nor stale, it is UNMEASURED\n' "$scan_rc"
     return 2
