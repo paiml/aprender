@@ -205,14 +205,7 @@ fn parse_tool_calls_envelope(text: &str) -> (String, Vec<ToolCall>) {
         };
         let json_str = json_str.trim();
 
-        let parsed = serde_json::from_str::<serde_json::Value>(json_str).ok().or_else(|| {
-            if delimited {
-                repair_unclosed_tool_call(json_str)
-            } else {
-                None
-            }
-        });
-        if let Some(parsed) = parsed {
+        if let Some(parsed) = parse_call_json(json_str, delimited) {
             // Must have "name" field to be a tool call (not just any JSON)
             if let Some(name) = parsed.get("name").and_then(|n| n.as_str()) {
                 let name = name.to_string();
@@ -252,35 +245,7 @@ fn parse_tool_calls_envelope(text: &str) -> (String, Vec<ToolCall>) {
 /// still open, and the result is an object with a string `name` and an
 /// explicit `input`. Any other malformation is left to fail as before.
 fn repair_unclosed_tool_call(json_str: &str) -> Option<serde_json::Value> {
-    let mut open: Vec<char> = Vec::new();
-    let mut in_str = false;
-    let mut escaped = false;
-    for c in json_str.chars() {
-        if in_str {
-            if escaped {
-                escaped = false;
-            } else if c == '\\' {
-                escaped = true;
-            } else if c == '"' {
-                in_str = false;
-            }
-            continue;
-        }
-        match c {
-            '"' => in_str = true,
-            '{' => open.push('}'),
-            '[' => open.push(']'),
-            '}' | ']' => {
-                if open.pop() != Some(c) {
-                    return None;
-                }
-            }
-            _ => {}
-        }
-    }
-    if in_str || open.is_empty() {
-        return None;
-    }
+    let open = unclosed_brackets(json_str)?;
     let mut repaired = json_str.to_string();
     repaired.extend(open.iter().rev());
     let parsed = serde_json::from_str::<serde_json::Value>(&repaired).ok()?;
@@ -289,6 +254,48 @@ fn repair_unclosed_tool_call(json_str: &str) -> Option<serde_json::Value> {
     obj.get("input")?;
     info!("closed {} unclosed bracket(s) in a delimited <tool_call> (#3719)", open.len());
     Some(parsed)
+}
+
+/// The JSON of one tool call: parsed as written, or, only for a call its
+/// `</tool_call>` delimits, repaired by [`repair_unclosed_tool_call`].
+fn parse_call_json(json_str: &str, delimited: bool) -> Option<serde_json::Value> {
+    let parsed = serde_json::from_str::<serde_json::Value>(json_str).ok();
+    if parsed.is_some() || !delimited {
+        return parsed;
+    }
+    repair_unclosed_tool_call(json_str)
+}
+
+/// The closers still owed at the end of `json_str`, innermost last; `None`
+/// when the scan ends inside a string, a closer does not match its opener, or
+/// nothing is left open.
+fn unclosed_brackets(json_str: &str) -> Option<Vec<char>> {
+    let mut open: Vec<char> = Vec::new();
+    let (mut in_str, mut escaped) = (false, false);
+    for c in json_str.chars() {
+        if in_str {
+            (in_str, escaped) = string_step(c, escaped);
+            continue;
+        }
+        match c {
+            '"' => in_str = true,
+            '{' => open.push('}'),
+            '[' => open.push(']'),
+            '}' | ']' if open.pop() != Some(c) => return None,
+            _ => {}
+        }
+    }
+    (!in_str && !open.is_empty()).then_some(open)
+}
+
+/// One character inside a JSON string: returns (still in the string, the next
+/// character is escaped).
+fn string_step(c: char, escaped: bool) -> (bool, bool) {
+    if escaped {
+        (true, false)
+    } else {
+        (c != '"', c == '\\')
+    }
 }
 
 /// CCPA-m296 salvage parser: recover a tool call the model emitted OUTSIDE the
