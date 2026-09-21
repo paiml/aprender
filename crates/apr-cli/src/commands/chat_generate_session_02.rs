@@ -240,6 +240,31 @@ impl ChatSession {
                 ..Default::default()
             };
 
+            // #3595: the Qwen3.5 hybrid is resident — built, uploaded and validated once
+            // at load, its decode state carried from the last turn, so a turn prefills
+            // only what the history added since.
+            if let Some(session) = self.qwen35_session.as_mut() {
+                let turn = session
+                    .generate(&prompt_tokens, &gen_config, &mut |_| true)
+                    .map_err(|e| format!("Qwen3.5 generate failed: {e}"))?;
+                if config.trace {
+                    eprintln!(
+                        "[APR-TRACE] qwen35 session: {} prompt tokens reused, {} prefilled, {} generated on the {}",
+                        turn.reused,
+                        prompt_len - turn.reused,
+                        turn.tokens.len() - prompt_len,
+                        if turn.used_gpu { "GPU" } else { "CPU" }
+                    );
+                }
+                if turn.context_capped {
+                    eprintln!(
+                        "[the reply stopped at the model's declared context of {} tokens; /clear starts a new conversation]",
+                        session.context_length()
+                    );
+                }
+                return Ok(mapped.model.decode(&turn.tokens[prompt_len..]));
+            }
+
             // GH-224: Try cached CUDA model first (no re-upload)
             #[cfg(feature = "cuda")]
             if !config.force_cpu && !self.cuda_init_failed {
@@ -283,14 +308,12 @@ impl ChatSession {
             Ok(decoded)
         }
 
-        /// Generation for one GGUF chat turn that the cached dense CUDA model did not serve:
-        /// the Qwen3.5 hybrid forward, which the dense `OwnedQuantizedModel` loader refuses,
-        /// or the dense CPU model. Returns the prompt followed by the generated tokens.
+        /// Generation for one dense GGUF chat turn that the cached dense CUDA model did not
+        /// serve. Returns the prompt followed by the generated tokens.
         ///
-        /// #3477: the hybrid branch goes through the same serve entry point `apr run` uses
-        /// (`run_qwen35_generate_dispatch`), so `apr chat` without `--cpu` gets the GPU
-        /// forward (#3090) and its fallbacks are printed by the runtime, not re-implemented
-        /// here. `force_cpu` is the chat spelling of `--no-gpu`.
+        /// The Qwen3.5 hybrid never reaches here: it is served by the session built at load
+        /// (#3595). It used to be served HERE, by `run_qwen35_generate_dispatch` — which
+        /// builds, uploads and validates the model for one call — on every turn.
         fn generate_gguf_cpu_tokens(
             mapped: &realizar::gguf::MappedGGUFModel,
             prompt_tokens: &[u32],
@@ -298,25 +321,6 @@ impl ChatSession {
             config: &ChatConfig,
         ) -> Result<Vec<u32>, String> {
             use realizar::gguf::OwnedQuantizedModel;
-
-            if realizar::gguf::hybrid_forward_handles(
-                mapped.model.architecture().unwrap_or_default(),
-            ) {
-                let base = realizar::gguf::forward_qwen35::Qwen35Model::create_base_model(
-                    &mapped.model,
-                    mapped.data(),
-                )
-                .map_err(|e| format!("Failed to load the Qwen3.5 base model: {e}"))?;
-                return realizar::gguf::forward_qwen35::run_qwen35_generate_dispatch(
-                    mapped,
-                    &base,
-                    prompt_tokens,
-                    gen_config,
-                    config.force_cpu,
-                )
-                .map(|(tokens, _used_gpu)| tokens)
-                .map_err(|e| format!("Qwen3.5 generate failed: {e}"));
-            }
 
                 // CPU path — create fresh OwnedQuantizedModel from cached or fresh mapped
                 let model = OwnedQuantizedModel::from_mapped(mapped)
