@@ -1,0 +1,27 @@
+# #3762: apr inspect --json quantization on the measured files, lambda noah-Lambda-Vector, 2026-09-21T23:28:02Z
+# binaries: 0.68.2 = ~/.cargo/bin/apr (v0.68.2); 0.69.0 = apr 0.69.0 (225b2a9ab, the v0.69.0 tag); a7e1e3df4 = this row
+# command: apr inspect MODEL --json (parsed from a file, not an echo); the last line of each block compares apr tensors --json .dtype_histogram with inspect's, both non-empty
+
+== Qwen3.5-0.8B-Q4_K_M.gguf
+  0.68.2     rc=0 quantization=Q6_K source=<absent> histogram="<absent>"
+  0.69.0     rc=0 quantization=Q6_K source=<absent> histogram="<absent>"
+  a7e1e3df4  rc=0 quantization=Q4_K_M source=general.file_type histogram={"F32": 18, "Q4_K": 98, "Q5_K": 36, "Q6_K": 17, "Q8_0": 36}
+  tensors --json dtype_histogram == inspect --json dtype_histogram: {"F32": 18, "Q4_K": 98, "Q5_K": 36, "Q6_K": 17, "Q8_0": 36}
+== qwen2.5-coder-1.5b-instruct-q4k.apr
+  0.68.2     rc=0 quantization=<absent> source=<absent> histogram="<absent>"
+  0.69.0     rc=0 quantization=<absent> source=<absent> histogram="<absent>"
+  a7e1e3df4  rc=0 quantization=Q4_K source=quantization.quant_type histogram={"Q4_K": 169, "Q6_K": 29}
+  tensors --json dtype_histogram == inspect --json dtype_histogram: {"Q4_K": 169, "Q6_K": 29}
+== Qwen3.5-0.8B-IQ4_XS.gguf
+  0.68.2     rc=4 error: Invalid APR format: Inspection failed: Invalid model format: Unsupported dtype 23 for raw extraction
+  0.69.0     rc=0 quantization=IQ4_XS source=<absent> histogram="<absent>"
+  a7e1e3df4  rc=0 quantization=IQ4_XS source=general.file_type histogram={"F32": 18, "IQ4_XS": 126, "Q5_K": 24, "Q6_K": 1, "Q8_0": 36}
+  tensors --json dtype_histogram == inspect --json dtype_histogram: {"F32": 18, "IQ4_XS": 126, "Q5_K": 24, "Q6_K": 1, "Q8_0": 36}
+== Qwen2.5-0.5B-Instruct-IQ4_XS.gguf
+  0.68.2     rc=4 error: Invalid APR format: Inspection failed: Invalid model format: Unsupported dtype 23 for raw extraction
+  0.69.0     rc=0 quantization=IQ4_NL source=<absent> histogram="<absent>"
+  a7e1e3df4  rc=0 quantization=IQ4_XS source=general.file_type histogram={"IQ4_NL": 120, "IQ4_XS": 24, "Q5_1": 24, "Q8_0": 1}
+  tensors --json dtype_histogram == inspect --json dtype_histogram: {"IQ4_NL": 120, "IQ4_XS": 24, "Q5_1": 24, "Q8_0": 1}
+
+# RED at 0.69.0: the Q4_K_M file (Q6_K) and the q4k .apr (no quantization), plus Qwen2.5-0.5B IQ4_XS (IQ4_NL, the file declares IQ4_XS).
+# The IQ4_XS inspect FAILURE ('Unsupported dtype 23') is 0.68.2: 0.69.0 already reads both IQ4_XS files (#3601, in 0.69.0). The type-table test guards it; its mutant reproduces the message.

@@ -3,7 +3,7 @@
 //! # Why this module exists (#3762)
 //!
 //! `apr inspect` named the dtype holding the most parameters as a file's scheme, so a
-//! Q4_K_M Qwen3.5 reported Q6_K: its 248k-vocab embedding outweighs every Q4_K matrix.
+//! `Q4_K_M` Qwen3.5 reported `Q6_K`: its 248k-vocab embedding outweighs every `Q4_K` matrix.
 //! The file says what it is. `general.file_type` 15 is `LLAMA_FTYPE_MOSTLY_Q4_K_M`, and
 //! the names of those ids belong to upstream.
 //!
@@ -16,7 +16,7 @@
 //! bump that moves the enum turns it RED in the bump's own PR.
 //!
 //! The names are upstream's enum names without the `LLAMA_FTYPE_MOSTLY_` / `LLAMA_FTYPE_ALL_`
-//! prefix: `Q4_K_M`, `F32`. Upstream's `llama_ftype_name` prose ("Q4_K - Medium") is not
+//! prefix: `Q4_K_M`, `F32`. Upstream's `llama_ftype_name` prose (`"Q4_K - Medium"`) is not
 //! used, because these names are also what `apr` prints for a tensor dtype.
 
 /// Every live `llama_ftype`: (id, name). Removed ids (4-6, 33-35) and the

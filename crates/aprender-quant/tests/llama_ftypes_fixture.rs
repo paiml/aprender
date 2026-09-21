@@ -1,5 +1,7 @@
-// A test asserts; `expect` here names the malformed fixture in the failure.
-#![allow(clippy::expect_used)]
+// A test asserts; `expect`/`panic!` here name the malformed fixture row in the failure
+// message, which is the diagnosis. An integration target is a separate crate, so it says
+// so itself (as tests/ggml_traits_fixture.rs does).
+#![allow(clippy::expect_used, clippy::panic)]
 //! #3762: `LLAMA_FTYPES` equals the upstream-extracted fixture, row for row.
 //!
 //! The fixture is `fixtures/llama_ftypes.json`, written by

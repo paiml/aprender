@@ -1,0 +1,15 @@
+# #3762 mutants, cargo test -p aprender-core --lib tests_quant_scheme_3762, lambda, 2026-09-21T23:28:02Z
+# GOOD: 5 passed
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 14284 filtered out; finished in 0.01s
+
+# M1: inspect_gguf's quantization restored to the parameter vote (the pre-#3762 rule)
+test format::tensors::tests_quant_scheme_3762::a_q4_k_m_gguf_is_q4_k_m_and_never_its_largest_tensors_dtype ... FAILED
+  left: Some("Q6_K")
+ right: Some("Q4_K_M")
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 14284 filtered out; finished in 0.00s
+
+# M2: get_tensor_raw refuses dtype 23 (the 0.68.2 behaviour)
+test format::tensors::tests_quant_scheme_3762::inspect_and_tensors_read_every_live_ggml_type ... FAILED
+1 of 35 ggml types:
+inspect: IQ4_XS: Invalid model format: Unsupported dtype 23 for raw extraction
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 14284 filtered out; finished in 0.01s

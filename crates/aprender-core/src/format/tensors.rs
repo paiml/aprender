@@ -578,7 +578,7 @@ pub(crate) fn ggml_dtype_name(dtype: u32) -> &'static str {
 
 /// #3762: dtype -> count over the tensors of 2 or more dimensions, names upper-cased (an
 /// `.apr` says `q4_k`, a GGUF `Q4_K`). 1-D tensors (norms, biases) do not vote. By COUNT,
-/// never bytes or parameters: a Q4_K_M file's Q6_K embedding outweighs every Q4_K matrix in
+/// never bytes or parameters: a `Q4_K_M` file's `Q6_K` embedding outweighs every `Q4_K` matrix in
 /// both. This is the definition #3712 row A2 ruled (`scripts/lib/tensor_universe.py`), and
 /// the ONE computation `apr tensors --json` and `apr inspect --json` both print.
 pub fn dtype_histogram<'a>(
@@ -619,7 +619,7 @@ impl QuantScheme {
     pub const DOMINANT: &'static str = "dominant >=2-D tensor dtype by count";
 
     /// The scheme the file declares, else its dominant `>= 2`-D tensor dtype(s). Never the
-    /// dtype holding the most bytes or parameters: that named a Q4_K_M file Q6_K (#3762).
+    /// dtype holding the most bytes or parameters: that named a `Q4_K_M` file `Q6_K` (#3762).
     #[must_use]
     pub fn resolve(
         declared: Option<(&str, &'static str)>,
