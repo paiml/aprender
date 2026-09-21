@@ -18591,6 +18591,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3496
+  github_issue: 3495
+  item_type: task
+  title: 'Register PMAT-3495 (VERIFY-001 on 0.71.0) in the roadmap so the AD-04 quorum for PR #3496 can run (registration only)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-21T01:39:59Z
+  updated: 2026-09-21T01:39:59Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:triage
+  notes: 'ACCEPTANCE (this row is PR #3496 itself, a roadmap-only registration): (1) docs/roadmaps/entries/PMAT-3495.yaml exists with id PMAT-3495, github_issue 3495, and a title that transcribes issue #3495 — VERIFY-001 on 0.71.0: Kani harnesses run in CI, then a Verus/Lean follow-up; (2) docs/roadmaps/roadmap.yaml equals aggregate(entries/) and the diff vs origin/main is additive only (deleted=0, reserialised=0) after the merges of origin/main; (3) the PR touches nothing outside docs/roadmaps/ and docs/audits/. NOT in scope: any Kani harness, CI wiring or proof — those are PMAT-3495''s own work and are judged when it lands. A lane that finds the entry mis-transcribed, missing or invented FAILs this row.'
 - id: PMAT-3500
   github_issue: 3500
   item_type: task
