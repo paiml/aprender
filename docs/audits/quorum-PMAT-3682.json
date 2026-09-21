@@ -1,0 +1,235 @@
+{
+  "ticket": "PMAT-3682",
+  "base": "c0dcf208a",
+  "base_resolved": "c0dcf208a",
+  "base_note": "no origin/c0dcf208a exists; judged against the local ref",
+  "head": "2237f4b95da0d300d7d13247891f7b83c3bafa8f",
+  "diff_sha256": "0b768cc0a1fc620dd52d4f5f99af238d315faee7e2a4db4efbe443f7aa13566e",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 11411,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly fulfills all requirements of PMAT-3682. The `git ls-files` stderr is no longer suppressed, preventing dubious ownership failures from being silently swallowed. When git fails, the script now cleanly propagates the error code 2 along with an appropriate error message indicating that git failed, ensuring no false 'holds 0' count is generated. The self-tests properly replicate this scenario and the mutation shows the intended behavior when the fix is rolled back. No ticket constraints are violated.",
+      "findings": [
+        {
+          "claim": "git stderr is no longer discarded (no 2>/dev/null) and ls-files uses the exact arguments specified in the ticket.",
+          "file": "scripts/parity_receipt_denominator.sh",
+          "grounding": "cited",
+          "line": 35
+        },
+        {
+          "claim": "count_and_check returns 2 with a message naming git upon git failure, and verify propagates this with `return $?`.",
+          "file": "scripts/parity_receipt_denominator.sh",
+          "grounding": "cited",
+          "line": 38
+        },
+        {
+          "claim": "A self-test row verifies that git dubious ownership errors yield exit 2 without saying 'holds 0'. Mutating it to the pre-fix behavior correctly turns it RED.",
+          "command": "cat << 'EOF' > test_script.sh\n#!/bin/bash\nset -euo pipefail\n\ntd=$(mktemp -d)\nmkdir -p \"$td/evidence/parity\"\necho 2 > \"$td/evidence/parity/EXPECTED_RECEIPTS\"\nEXPECTED_FILE=\"evidence/parity/EXPECTED_RECEIPTS\"\n\ncount_and_check_old() {\n    local root=$1 records=0 unmigrated=()\n    local f\n    while IFS= read -r f; do\n        [ -n \"$f\" ] || continue\n        echo \"$f\"\n    done < <(cd \"$root\" && git ls-files 'evidence/parity/*.json' 'evidence/parity/**/*.json' 2>/dev/null | sort -u)\n    echo $records\n}\n\nexpected_of() {\n    cat \"$1/$EXPECTED_FILE\"\n}\n\nverify_old() {\n    local root=$1 measured expected\n    [ -f \"$root/$EXPECTED_FILE\" ] || { printf 'FAIL  %s is missing\\n' \"$EXPECTED_FILE\" >&2; return 2; }\n    measured=$(count_and_check_old \"$root\") || return 1\n    expected=$(expected_of \"$root\")\n    if [ \"$measured\" = \"$expected\" ]; then\n        printf 'PASS  %s receipt(s) under evidence/parity/**, and %s says %s.\\n' \\\n            \"$measured\" \"$EXPECTED_FILE\" \"$expected\"\n    else\n        printf 'FAIL  %s says %s; the tree holds %s\\n' \"$EXPECTED_FILE\" \"$expected\" \"$measured\" >&2\n        return 1\n    fi\n}\n\ntest_mutant() {\n    mkdir -p \"$td/nogit\"\n    printf '#!/bin/sh\\necho \"fatal: detected dubious ownership in repository\" >&2\\nexit 128\\n' > \"$td/nogit/git\"\n    chmod 755 \"$td/nogit/git\"\n    local got=0 gout\n    gout=$(PATH=\"$td/nogit:$PATH\" verify_old \"$td\" 2>&1) || got=$?\n    if [ \"$got\" -eq 2 ] && grep -q 'git' <<<\"$gout\" && ! grep -q 'holds 0' <<<\"$gout\"; then\n        printf 'ok    git refusing the tree is ENV exit 2 naming git, never a count of 0\\n'\n    else\n        printf 'FAIL  git refused and the result was exit %s: %s\\n' \"$got\" \"$gout\"\n    fi\n}\n\necho \"Mutant:\"\ntest_mutant\nEOF\nbash test_script.sh",
+          "file": "scripts/parity_receipt_denominator.sh",
+          "grounding": "measured",
+          "line": 143,
+          "output": "Mutant:\nFAIL  git refused and the result was exit 1: FAIL  evidence/parity/EXPECTED_RECEIPTS says 2; the tree holds 0"
+        }
+      ],
+      "raw_bytes": 9039,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements all acceptance criteria of PMAT-3682. Git failures now produce an ENV exit 2 with a message naming git, rather than failing silently and returning 0 receipts. The verify function propagates the exit code, and a self-test verifies this behavior using a mocked git command that simulates the dubious ownership error.",
+      "findings": [
+        {
+          "claim": "git stderr is no longer discarded and is executed with -c safe.directory=\"$root\" -C \"$root\"",
+          "file": "scripts/parity_receipt_denominator.sh",
+          "grounding": "cited"
+        },
+        {
+          "claim": "A git failure returns 2 and prints a message naming git, and verify propagates this status",
+          "file": "scripts/parity_receipt_denominator.sh",
+          "grounding": "cited"
+        },
+        {
+          "claim": "A self-test row is added that stubs git to exit 128, expects exit 2, and requires output to not contain 'holds 0'",
+          "file": "scripts/parity_receipt_denominator.sh",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 3942,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Lane 3 of 3 review complete. The diff for PMAT-3682 fully satisfies all 4 acceptance criteria and does not weaken any gates or violate any requirements.\n1. `count_and_check` uses `git -c safe.directory=\"$root\" -C \"$root\" ls-files ...` and git stderr is no longer redirected to `/dev/null`.\n2. A git failure causes `count_and_check` to return exit status 2 (ENV) with an explicit stderr message naming `git ls-files`. `verify` propagates exit status 2 via `return $?`.\n3. The self-test includes a stub for `git` that exits 128 with a dubious ownership message, asserting exit status 2, message naming `git`, and absence of \"holds 0\".\n4. Restoring the pre-fix `count_and_check` causes the self-test row to fail (goes RED) with exit code 1.\nVerdict: PASS.",
+      "findings": [
+        {
+          "claim": "count_and_check uses git -c safe.directory=\"$root\" -C \"$root\" ls-files without discarding stderr and returns exit status 2 with a message naming git when git fails.",
+          "command": "bash -c 'bash /home/noah/.gemini/antigravity-cli/scratch/parity_receipt_denominator.sh --print /nonexistent 2>&1 || echo \"exit: $?\"'",
+          "file": "scripts/parity_receipt_denominator.sh",
+          "grounding": "measured",
+          "line": 34,
+          "output": "ENV   git ls-files failed in /home/noah/.gemini/antigravity-cli: the receipt universe cannot be read, so no count is reported\nexit: 2"
+        },
+        {
+          "claim": "Self-test stub for git exiting 128 with dubious ownership message verifies exit status 2, requires git in error message, and asserts output does NOT contain \"holds 0\".",
+          "command": "bash /home/noah/.gemini/antigravity-cli/scratch/parity_receipt_denominator.sh --self-test",
+          "file": "scripts/parity_receipt_denominator.sh",
+          "grounding": "measured",
+          "line": 151,
+          "output": "ok    a record is counted and an unrelated document is not (measured 1)\nok    an unmigrated legacy record is refused by name\nok    a receipt added without bumping the denominator disagrees\nok    bumping the denominator makes them agree\nok    git refusing the tree is ENV exit 2 naming git, never a count of 0"
+        },
+        {
+          "claim": "Restoring pre-fix count_and_check causes the new self-test row to go RED with exit code 1.",
+          "command": "bash /home/noah/.gemini/antigravity-cli/scratch/parity_receipt_denominator_mutant.sh --self-test || echo \"exit: $?\"",
+          "file": "scripts/parity_receipt_denominator.sh",
+          "grounding": "measured",
+          "line": 28,
+          "output": "FAIL  git refused and the result was exit 1: FAIL  evidence/parity/EXPECTED_RECEIPTS says 2; the tree holds 0.\n      Unknown{WrongCorpus}: update the denominator in the SAME commit as the receipt.\nexit: 1"
+        },
+        {
+          "claim": "Roadmap entry docs/roadmaps/entries/PMAT-3682.yaml and docs/roadmaps/roadmap.yaml accurately define all 4 acceptance criteria for issue #3682.",
+          "file": "docs/roadmaps/entries/PMAT-3682.yaml",
+          "grounding": "cited",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 7853,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "docs/roadmaps/entries/PMAT-3682.yaml",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Roadmap entry docs/roadmaps/entries/PMAT-3682.yaml and docs/roadmaps/roadmap.yaml accurately define all 4 acceptance criteria for issue #3682."
+      ]
+    },
+    {
+      "file": "scripts/parity_receipt_denominator.sh",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "A git failure returns 2 and prints a message naming git, and verify propagates this status",
+        "A self-test row is added that stubs git to exit 128, expects exit 2, and requires output to not contain 'holds 0'",
+        "git stderr is no longer discarded and is executed with -c safe.directory=\"$root\" -C \"$root\""
+      ]
+    },
+    {
+      "file": "scripts/parity_receipt_denominator.sh",
+      "line": 28,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Restoring pre-fix count_and_check causes the new self-test row to go RED with exit code 1."
+      ]
+    },
+    {
+      "file": "scripts/parity_receipt_denominator.sh",
+      "line": 34,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "count_and_check uses git -c safe.directory=\"$root\" -C \"$root\" ls-files without discarding stderr and returns exit status 2 with a message naming git when git fails."
+      ]
+    },
+    {
+      "file": "scripts/parity_receipt_denominator.sh",
+      "line": 35,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "git stderr is no longer discarded (no 2>/dev/null) and ls-files uses the exact arguments specified in the ticket."
+      ]
+    },
+    {
+      "file": "scripts/parity_receipt_denominator.sh",
+      "line": 38,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "count_and_check returns 2 with a message naming git upon git failure, and verify propagates this with `return $?`."
+      ]
+    },
+    {
+      "file": "scripts/parity_receipt_denominator.sh",
+      "line": 143,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "A self-test row verifies that git dubious ownership errors yield exit 2 without saying 'holds 0'. Mutating it to the pre-fix behavior correctly turns it RED."
+      ]
+    },
+    {
+      "file": "scripts/parity_receipt_denominator.sh",
+      "line": 151,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Self-test stub for git exiting 128 with dubious ownership message verifies exit status 2, requires git in error message, and asserts output does NOT contain \"holds 0\"."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

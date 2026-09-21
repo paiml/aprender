@@ -1,0 +1,75 @@
+# CRUX-O-16 — Fit diagnostics: fit_summary, model_failures and learning curves
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3386, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-16
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 3  # 1..5, medium priority in pmat work
+  intake_status: missing
+  github_issue: 3386
+  description: >
+    Fit diagnostics: fit_summary, model_failures and learning curves. Competitor verb: predictor.fit_summary(); predictor.model_failures(); fit(..., learning_curves=True). Gap measured in aprender at eb262f8eb: ProgressCallback in automl/tuner.rs streams trial results; there is no post-fit summary object listing models trained, models failed with their error, per-model hyperparameters and per-iteration validation curves.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3386'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  a_model_that_raises_during_fit_is_recorded__not_swallowed_an:
+    formula: |
+      a portfolio containing a deliberately failing model finishes; model_failures() has exactly one row naming the model and the error string; the leaderboard omits it
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "a model that raises during fit is recorded, not swallowed and not fatal"
+  learning_curves_have_one_point_per_boosting_epoch_iteration:
+    formula: |
+      for a GBM with n_estimators=50 and learning_curves=true the curve has 50 validation points, monotone non-increasing after early-stopping's best iteration is asserted absent
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "learning curves have one point per boosting/epoch iteration"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-16-001
+  rule: "a model that raises during fit is recorded, not swallowed and not fatal"
+  prediction: "a portfolio containing a deliberately failing model finishes; model_failures() has exactly one row naming the model and the error string; the leaderboard omits it"
+  test: >-
+    LIVE-PENDING - a model that raises during fit is recorded, not swallowed and not fatal. No test surface exists today because the capability is unimplemented: Fit diagnostics: fit_summary, model_failures and learning curves (aprender#3386, CRUX-O-16). PROMOTE by authoring a test named failing_model_is_recorded_not_fatal in module `automl/summary/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'a model that raises during fit is recorded, not swallowed and not fatal' is violated — the autogluon parity claim for CRUX-O-16 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-16-002
+  rule: "learning curves have one point per boosting/epoch iteration"
+  prediction: "for a GBM with n_estimators=50 and learning_curves=true the curve has 50 validation points, monotone non-increasing after early-stopping's best iteration is asserted absent"
+  test: >-
+    LIVE-PENDING - learning curves have one point per boosting/epoch iteration. No test surface exists today because the capability is unimplemented: Fit diagnostics: fit_summary, model_failures and learning curves (aprender#3386, CRUX-O-16). PROMOTE by authoring a test named learning_curve_length_matches_iterations in module `automl/summary/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'learning curves have one point per boosting/epoch iteration' is violated — the autogluon parity claim for CRUX-O-16 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "a model that raises during fit is recorded, not swallowed and not fatal"
+- type: invariant
+  property: "learning curves have one point per boosting/epoch iteration"
+
+kani_harnesses:
+- id: KH-CRUX-O-16-001
+  obligation: a_model_that_raises_during_fit_is_recorded__not_swallowed_an
+  property: a_model_that_raises_during_fit_is_recorded__not_swallowed_an_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-16-002
+  obligation: learning_curves_have_one_point_per_boosting_epoch_iteration
+  property: learning_curves_have_one_point_per_boosting_epoch_iteration_holds_on_bounded_input
+  bound: 4

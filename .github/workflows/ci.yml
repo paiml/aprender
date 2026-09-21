@@ -445,7 +445,9 @@ jobs:
           case "${GITHUB_EVENT_NAME}" in
             pull_request)
               git fetch --no-tags --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
-              git diff --name-only "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"
+              # --no-renames (#3664): a rename must list BOTH paths, or a source
+              # moved into docs/ reads as docs-only and runs zero tests.
+              git diff --no-renames --name-only "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"
               printf 'touched (tip vs tip): %s path(s)\n' "$(wc -l < "$RUNNER_TEMP/touched.txt" | tr -d ' ')"
               args+=(--diff-from "$RUNNER_TEMP/touched.txt")
               ;;
@@ -827,6 +829,17 @@ jobs:
         run: |
           printf 'workspace-test REUSED: %s\n' "${{ steps.tier.outputs.reason }}"
           printf 'cited PR head: %s\n' "${{ steps.tier.outputs.cite }}"
+      # #3658 NONE: the tier step proved the change gives workspace-test nothing
+      # to measure -- every touched path is under docs/roadmaps/ or docs/audits/
+      # and present at HEAD (no Rust source, test or tree reader reads them), or
+      # the change lands no path at all. Nothing is built or run; this step
+      # records why, so the skip is auditable in the log.
+      - name: "None: nothing for workspace-test to measure (#3658)"
+        if: steps.tier.outputs.tier == 'none'
+        env:
+          REASON: ${{ steps.tier.outputs.reason }}
+        run: |
+          printf 'workspace-test NOT RUN: %s\n' "$REASON"
       - name: Build.rs crate-root escape check (v0.31.1 yank guard)
         if: matrix.shard == 1
         # Static Poka-Yoke: flags build.rs files that panic on files outside
@@ -1211,6 +1224,14 @@ jobs:
         run: bash scripts/derive_model_manifest.sh --check
       - name: C14 model-parity case table (L0-1a, #2971)
         run: bash scripts/check_model_parity.sh --self-test
+      # #3577: the parity-receipt denominator is the SECOND, independent reader of the
+      # receipt corpus — the extractor is the first, and they share no code so a defect
+      # in either is caught by the other rather than by nobody. It shipped unwired, which
+      # `check_guards_are_wired.sh` caught: a refusal nothing runs is not a refusal, and
+      # `parity-receipt-v1.yaml`'s own equations name "both readers are wired into CI" as
+      # a precondition. Its 4-case self-test is cargo-free and model-free, so it runs here.
+      - name: Parity-receipt denominator case table (#3577)
+        run: bash scripts/parity_receipt_denominator.sh --self-test
       # F-1 (#3022, #3024): a model file the user NAMED is the model that answers, or
       # the command refuses — `apr chat` silently loaded its toy demo model for a
       # `model.safetensors.index.json` (exit 0, zero tokens, the real path in the banner)

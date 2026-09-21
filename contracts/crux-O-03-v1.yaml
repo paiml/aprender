@@ -1,0 +1,75 @@
+# CRUX-O-03 — Quality presets (medium / good / high / best / extreme) that name a model portfolio and a time budget
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3373, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-03
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  github_issue: 3373
+  description: >
+    Quality presets (medium / good / high / best / extreme) that name a model portfolio and a time budget. Competitor verb: fit(..., presets="best_quality")  # tabular/src/autogluon/tabular/configs/presets_configs.py. Gap measured in aprender at eb262f8eb: No preset vocabulary. AutoTuner takes a SearchSpace the caller hand-builds (crates/aprender-core/src/automl/params.rs); there is no named bundle of {models, bagging, stacking, time_limit}.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3373'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  every_preset_name_resolves_to_a_portfolio_and_unknown_names_:
+    formula: |
+      the five quality presets each yield a non-empty ordered model list; `presets="bestest"` is an Err whose message contains all five valid names
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "every preset name resolves to a portfolio and unknown names are rejected with the valid list"
+  presets_are_ordered__a_higher_preset_never_fits_fewer_model_:
+    formula: |
+      for medium < good < high < best the family count is monotone non-decreasing, asserted pairwise
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "presets are ordered: a higher preset never fits FEWER model families than the one below it"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-03-001
+  rule: "every preset name resolves to a portfolio and unknown names are rejected with the valid list"
+  prediction: "the five quality presets each yield a non-empty ordered model list; `presets=\"bestest\"` is an Err whose message contains all five valid names"
+  test: >-
+    LIVE-PENDING - every preset name resolves to a portfolio and unknown names are rejected with the valid list. No test surface exists today because the capability is unimplemented: Quality presets (medium / good / high / best / extreme) that name a model portfolio and a time budget (aprender#3373, CRUX-O-03). PROMOTE by authoring a test named preset_table_resolves in module `automl/presets/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'every preset name resolves to a portfolio and unknown names are rejected with the valid list' is violated — the autogluon parity claim for CRUX-O-03 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-03-002
+  rule: "presets are ordered: a higher preset never fits FEWER model families than the one below it"
+  prediction: "for medium < good < high < best the family count is monotone non-decreasing, asserted pairwise"
+  test: >-
+    LIVE-PENDING - presets are ordered: a higher preset never fits FEWER model families than the one below it. No test surface exists today because the capability is unimplemented: Quality presets (medium / good / high / best / extreme) that name a model portfolio and a time budget (aprender#3373, CRUX-O-03). PROMOTE by authoring a test named preset_monotone_families in module `automl/presets/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'presets are ordered: a higher preset never fits FEWER model families than the one below it' is violated — the autogluon parity claim for CRUX-O-03 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "every preset name resolves to a portfolio and unknown names are rejected with the valid list"
+- type: invariant
+  property: "presets are ordered: a higher preset never fits FEWER model families than the one below it"
+
+kani_harnesses:
+- id: KH-CRUX-O-03-001
+  obligation: every_preset_name_resolves_to_a_portfolio_and_unknown_names_
+  property: every_preset_name_resolves_to_a_portfolio_and_unknown_names__holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-03-002
+  obligation: presets_are_ordered__a_higher_preset_never_fits_fewer_model_
+  property: presets_are_ordered__a_higher_preset_never_fits_fewer_model__holds_on_bounded_input
+  bound: 4

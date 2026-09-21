@@ -120,8 +120,18 @@ fn explain_kind_default(caused: &mut [Violation]) {
 /// exercised by at least one contract in `contracts/`; adding a competitor is a
 /// deliberate one-line edit here plus a test, which is the point — an open
 /// domain is what let `THIS-COMPETITOR-DOES-NOT-EXIST` validate.
-pub(crate) const CRUX_COMPETITORS: [&str; 14] = [
+pub(crate) const CRUX_COMPETITORS: [&str; 15] = [
     "apr-qa-playbook",
+    // AutoGluon (autogluon/autogluon) — the AutoML library, 1.6.3 at admission
+    // (../autogluon @ 77946149). Added 2026-09-16 with 24 category-O stories
+    // extracted from its three predictors: TabularPredictor (fit(label),
+    // presets, leaderboard, feature pipeline, bagging/stacking/weighted
+    // ensemble, budgets, deployment) and TimeSeriesPredictor (panel data,
+    // quantile metrics, backtesting, local baselines, Chronos-2 class
+    // pretrained forecasters). NOT a BEAT pillar — aprender claims no pinned
+    // benchmark win over AutoGluon; this is a capability/UX source. Epic
+    // aprender#3370.
+    "autogluon",
     // Burn (tracel-ai/burn) — the Rust deep-learning framework, 0.21.0 / 15.9k
     // stars / 312 reverse-dependencies at admission. Added 2026-09-12 with 7
     // category-N stories extracted from its crate surface: burn-linalg (SVD),

@@ -1,0 +1,21 @@
+- id: PMAT-3375
+  github_issue: 3375
+  item_type: task
+  title: 'P0: Automatic feature-type inference and the AutoML feature pipeline (numeric, categorical, datetime, text n-gram, drop-unique, drop-duplicate) — CRUX-O-05'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-05, competitor autogluon, demand 5. Encoders exist (LabelEncoder, OneHotEncoder, OrdinalEncoder, StandardScaler, PolynomialFeatures in crates/aprender-core/src/preprocessing/) but every one is applied by hand to a column the caller already typed. There is no pass that reads a raw DataFrame, infers each column''s kind, and emits a fitted transform. Datetime expansion and text n-gram features do not exist. TfidfVectorizer exists in text/ but is not wired to a tabular pipeline. FALSIFIABLE (contracts/crux-O-05-v1.yaml): column kinds are inferred from raw values — a fixture CSV with int, float, low-cardinality string, high-cardinality string, ISO datetime and free-text columns is typed as {numeric, numeric, categorical, text, datetime, text} exactly; constant and duplicate columns are dropped and the drop is reported — a column with one unique value and an exact duplicate of another column are both absent from the transformed output AND named in the fit report; the fitted pipeline is deterministic under transform — transform(train) then transform(train) are byte-identical and transform(test) never sees a category unseen at fit as anything but the reserved unknown code. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

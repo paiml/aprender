@@ -1,0 +1,171 @@
+{
+  "ticket": "PMAT-3651",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "09ea6b5a36f6a18a40735481f81b4d6d622e4910",
+  "diff_sha256": "16860b2a04b90581da01cab5f669a0edcafe29e53e8a5d86bd9416c11814e007",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 15106,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly satisfies all acceptance criteria for PMAT-3651. `guard_tree.sh` correctly surfaces `UNMEASURED` and `SUMMARY` pass lines using `awk`, limiting output to 5 lines with a count for any extras, and only matches them as the first token. `check_fleet_pv_shapes_gate.sh` successfully re-prints its measured pass row with the `SUMMARY` prefix. The tests in `guard_tree_test.sh` are robust, verifying the cap, the mid-line exclusions, silent pass behavior, and importantly, including a mutation test to guarantee the assertions properly catch failures. Nothing out of scope (like closing #3567) is touched.",
+      "findings": [],
+      "raw_bytes": 3395,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly aligns with PMAT-3651. It introduces the `surface_pass_summary` awk script in `guard_tree.sh` to extract and cap the necessary lines, modifies `check_fleet_pv_shapes_gate.sh` to correctly prefix `SUMMARY` on a `PASS` verdict so it's picked up by `guard_tree`, and includes extensive tests in `guard_tree_test.sh` that assert the surfacing, the 5-line cap, the mutant failure, and ignore midline matches. No requirements are violated.",
+      "findings": [
+        {
+          "claim": "The guard_tree.sh correctly surfaces lines starting with UNMEASURED or SUMMARY, indented and capped at 5 lines + count",
+          "file": "scripts/guard_tree.sh",
+          "grounding": "cited",
+          "line": 253
+        },
+        {
+          "claim": "check_fleet_pv_shapes_gate.sh pass row is prefixed with SUMMARY so that it reaches the log",
+          "file": "scripts/check_fleet_pv_shapes_gate.sh",
+          "grounding": "cited",
+          "line": 207
+        },
+        {
+          "claim": "guard_tree_test.sh adds tests for the surfaced rows, the cap, the midline negative case, and the mutant",
+          "file": "scripts/tests/guard_tree_test.sh",
+          "grounding": "cited",
+          "line": 557
+        }
+      ],
+      "raw_bytes": 4222,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Lane 3 of 3 Independent Review for PMAT-3651: PASS. The diff satisfies all acceptance criteria in issue #3651. 1) guard_tree.sh surfaces lines starting with UNMEASURED or SUMMARY under PASS rows (indented '      ~ ', capped at 5 lines + (+N more) count). 2) check_fleet_pv_shapes_gate.sh re-prints passing rows as SUMMARY PASS verdict=... for log surfacing. 3) guard_tree_test.sh tests 22-27 pass cleanly, including non-vacuous mutation check 27. No gates weakened, no out-of-scope changes.",
+      "findings": [
+        {
+          "claim": "guard_tree.sh surfaces lines starting with UNMEASURED or SUMMARY under PASS rows, capped at 5 lines plus (+N more) count",
+          "command": "bash scripts/tests/guard_tree_test.sh",
+          "file": "scripts/guard_tree.sh",
+          "grounding": "measured",
+          "line": 233,
+          "output": "PASS  22: a passing guard's UNMEASURED line is surfaced under its PASS row (no opt-in)\nPASS  23: a passing guard's SUMMARY line is surfaced; its other output is not\nPASS  24: the words mid-line (or as a prefix of another word) are not markers\nPASS  25: a silent passing guard prints its PASS row and nothing under it\nPASS  26: seven SUMMARY lines are capped at 5 plus a (+2 more) count\nPASS  27: mutant with the surfacing deleted loses rows 22 and 23 (the assertion can fail)\n29 checks, 0 failed"
+        },
+        {
+          "claim": "check_fleet_pv_shapes_gate.sh re-prints a measured PASS row with a SUMMARY prefix so guard_tree.sh captures and surfaces it in CI logs",
+          "command": "bash scripts/check_fleet_pv_shapes_gate.sh --self-test",
+          "file": "scripts/check_fleet_pv_shapes_gate.sh",
+          "grounding": "measured",
+          "line": 205,
+          "output": "=== fleet pv shapes gate: case table (stub pvs, no network, no real fleet binary) ===\nok    row 1  capable pv + Pass verdict -> PASS, row names the runner\nok    row 2  a measured PASS is re-printed as SUMMARY <row> for the guard-tree log\n...\nSELF-TEST PASSED: 11 rows"
+        }
+      ],
+      "raw_bytes": 5912,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "scripts/check_fleet_pv_shapes_gate.sh",
+      "line": 205,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "check_fleet_pv_shapes_gate.sh re-prints a measured PASS row with a SUMMARY prefix so guard_tree.sh captures and surfaces it in CI logs"
+      ]
+    },
+    {
+      "file": "scripts/check_fleet_pv_shapes_gate.sh",
+      "line": 207,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "check_fleet_pv_shapes_gate.sh pass row is prefixed with SUMMARY so that it reaches the log"
+      ]
+    },
+    {
+      "file": "scripts/guard_tree.sh",
+      "line": 233,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "guard_tree.sh surfaces lines starting with UNMEASURED or SUMMARY under PASS rows, capped at 5 lines plus (+N more) count"
+      ]
+    },
+    {
+      "file": "scripts/guard_tree.sh",
+      "line": 253,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The guard_tree.sh correctly surfaces lines starting with UNMEASURED or SUMMARY, indented and capped at 5 lines + count"
+      ]
+    },
+    {
+      "file": "scripts/tests/guard_tree_test.sh",
+      "line": 557,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "guard_tree_test.sh adds tests for the surfaced rows, the cap, the midline negative case, and the mutant"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

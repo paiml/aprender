@@ -1,0 +1,288 @@
+{
+  "ticket": "PMAT-3577",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "445224d9ed3509f8e938414933ad4948ffcce6d5",
+  "diff_sha256": "3eaaa279c9ff352034e9b3782a60e04be118337a00a02be37d76ef1d75ab6bac",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 683926,
+  "author": {
+    "model": "Opus 5 (1M context)",
+    "family": "claude",
+    "source": "measured"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly satisfies the requirements of PMAT-3577. It introduces the v2 shape for parity receipts (with thresholds correctly resolved via path rather than typed into the shape), fully skips adding a shape for v1 (in compliance with the 'do NOT add a v1 shape' STOP condition), updates the EXPECTED_RECEIPTS exactly to the back-fill denominator of 7, and explicitly documents why out-of-scope validations (e.g. check_parity_receipt.sh) are untouched. No weakened gates or unpermitted shared file modifications were found. The implementation strictly adheres to the stated ticket guidelines.",
+      "findings": [
+        {
+          "claim": "The v1 receipt layout declares no shape, strictly abiding by the STOP condition 'do NOT add a v1 shape' as described in the amendment.",
+          "file": "contracts/parity-receipt-v1.yaml",
+          "grounding": "cited",
+          "line": 31
+        },
+        {
+          "claim": "The shape dynamically resolves the threshold via thresholdSource using 'resolves: path' instead of hardcoding any threshold value, satisfying the STOP condition.",
+          "file": "contracts/parity-receipt-v2.yaml",
+          "grounding": "cited",
+          "line": 55
+        },
+        {
+          "claim": "The denominator count for EXPECTED_RECEIPTS is correctly pinned to 7, exactly matching the number of back-filled receipts.",
+          "file": "evidence/parity/EXPECTED_RECEIPTS",
+          "grounding": "cited",
+          "line": 9
+        }
+      ],
+      "raw_bytes": 4837,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff strictly implements the amended PMAT-3577 requirements. It introduces the parity-receipt-v2 shape, implements the extract:parity-receipt logic, successfully back-fills the 7 legacy receipts, and leaves the v1 contract intentionally shapeless as required by the amendment. The PR properly refrains from arming the shapes in `lint-baseline.json` and accurately updates only the in-scope `check_model_parity.sh`. All claims in the receipt accurately reflect the diff, tests pass successfully, and no gates are weakened (the `shapes_gate` is appropriately strengthened to decline on `WrongCorpus`).",
+      "findings": [
+        {
+          "claim": "The diff correctly leaves parity-receipt-v1 shapeless in accordance with the amendment of PMAT-3577.",
+          "file": "contracts/parity-receipt-v1.yaml",
+          "grounding": "cited"
+        },
+        {
+          "claim": "The denominator predicate correctly expects and matches 7 receipts.",
+          "command": "bash scripts/parity_receipt_denominator.sh",
+          "file": "evidence/parity/EXPECTED_RECEIPTS",
+          "grounding": "measured",
+          "output": "PASS 7 receipt(s), EXPECTED_RECEIPTS says 7"
+        },
+        {
+          "claim": "The check_parity_receipt.sh script was left untouched.",
+          "command": "git diff --name-only origin/main...HEAD | grep check_parity_receipt.sh || echo \"Not touched\"",
+          "file": "scripts/check_parity_receipt.sh",
+          "grounding": "measured",
+          "output": "Not touched"
+        },
+        {
+          "claim": "The gate shapes_gate was not weakened; it was actually strengthened to return WrongCorpus on a mismatch.",
+          "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "The tests for ont4c3 parity receipts pass, including the negative condition for a comparator kind the shape does not accept.",
+          "command": "cargo test -p aprender-contracts-cli --test ont4c3_parity_receipts",
+          "file": "crates/aprender-contracts-cli/tests/ont4c3_parity_receipts.rs",
+          "grounding": "measured",
+          "output": "running 9 tests\\ntest every_fixture_carries_the_real_contract_byte_for_byte ... ok\\ntest an_unmigrated_legacy_record_declines_with_exit_2_and_is_named ... ok\\ntest a_receipt_added_without_bumping_the_denominator_declines_naming_both_numbers ... ok\\ntest a_receipt_with_no_comparator_fails_naming_the_property ... ok\\ntest a_complete_receipt_passes_with_one_focus_node ... ok\\ntest a_comparator_kind_the_shape_does_not_accept_fails ... ok\\ntest the_three_answers_are_distinct ... ok\\ntest the_committed_tree_agrees_with_its_own_denominator ... ok\\ntest the_entity_type_is_counted_in_by_entity_type_not_merely_registered ... ok\\n\\ntest result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.13s"
+        }
+      ],
+      "raw_bytes": 8765,
+      "err_bytes": 59,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Reviewed ticket PMAT-3577, receipt PMAT-3577, refutation doctrine, and full diff in /mnt/nvme-raid0/agent-wt/rel-3577/docs/audits/quorum-PMAT-3577.prompt.md. Confirmed that parity-receipt-v2.yaml defines the 3 required shapes, parity-receipt-v1.yaml documents the superseded layout, extract:parity-receipt extracts logit-parity records into RDF focus nodes while refusing unmigrated records by name, the independent denominator predicate script passes all self-tests, all 7 legacy receipts under evidence/parity/** are back-filled to v2, and all unit and CLI integration tests pass cleanly without weakening any gates. Verdict: PASS.",
+      "findings": [
+        {
+          "claim": "extract:parity-receipt unit tests pass cleanly with 10 passed tests, verifying classification, legacy record refusal by name, missing threshold detection, positive control, and denominator checks.",
+          "command": "cargo test -p aprender-contracts --lib ontology::extract::parity_receipt",
+          "file": "crates/aprender-contracts/src/ontology/extract/parity_receipt_tests.rs",
+          "grounding": "measured",
+          "line": 1,
+          "output": "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 1671 filtered out; finished in 0.01s"
+        },
+        {
+          "claim": "All 9 CLI integration tests for ONT-4c3 parity receipts pass, verifying pass/fail/decline discrimination over 5 fixtures and ensuring contract byte-identical parity.",
+          "command": "cargo test -p aprender-contracts-cli --test ont4c3_parity_receipts",
+          "file": "crates/aprender-contracts-cli/tests/ont4c3_parity_receipts.rs",
+          "grounding": "measured",
+          "line": 1,
+          "output": "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.97s"
+        },
+        {
+          "claim": "The independent denominator predicate script passes its 4 self-test cases and confirms 7 receipts under evidence/parity/** match EXPECTED_RECEIPTS.",
+          "command": "bash scripts/parity_receipt_denominator.sh --self-test && bash scripts/parity_receipt_denominator.sh",
+          "file": "scripts/parity_receipt_denominator.sh",
+          "grounding": "measured",
+          "line": 1,
+          "output": "ok    a record is counted and an unrelated document is not (measured 1)\nok    an unmigrated legacy record is refused by name\nok    a receipt added without bumping the denominator disagrees\nok    bumping the denominator makes them agree\nPASS  7 receipt(s) under evidence/parity/**, and evidence/parity/EXPECTED_RECEIPTS says 7."
+        },
+        {
+          "claim": "Defines the active parity-receipt-v2 contract with 3 closed/specific shapes (parity-receipt-complete, parity-comparator-self, parity-comparator-oracle) and pins extractor reach via EXPECTED_RECEIPTS.",
+          "file": "contracts/parity-receipt-v2.yaml",
+          "grounding": "cited",
+          "line": 555
+        }
+      ],
+      "raw_bytes": 10265,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "contracts/parity-receipt-v1.yaml",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The diff correctly leaves parity-receipt-v1 shapeless in accordance with the amendment of PMAT-3577."
+      ]
+    },
+    {
+      "file": "contracts/parity-receipt-v1.yaml",
+      "line": 31,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The v1 receipt layout declares no shape, strictly abiding by the STOP condition 'do NOT add a v1 shape' as described in the amendment."
+      ]
+    },
+    {
+      "file": "contracts/parity-receipt-v2.yaml",
+      "line": 55,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The shape dynamically resolves the threshold via thresholdSource using 'resolves: path' instead of hardcoding any threshold value, satisfying the STOP condition."
+      ]
+    },
+    {
+      "file": "contracts/parity-receipt-v2.yaml",
+      "line": 555,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Defines the active parity-receipt-v2 contract with 3 closed/specific shapes (parity-receipt-complete, parity-comparator-self, parity-comparator-oracle) and pins extractor reach via EXPECTED_RECEIPTS."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/tests/ont4c3_parity_receipts.rs",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The tests for ont4c3 parity receipts pass, including the negative condition for a comparator kind the shape does not accept."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/tests/ont4c3_parity_receipts.rs",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "All 9 CLI integration tests for ONT-4c3 parity receipts pass, verifying pass/fail/decline discrimination over 5 fixtures and ensuring contract byte-identical parity."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The gate shapes_gate was not weakened; it was actually strengthened to return WrongCorpus on a mismatch."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/ontology/extract/parity_receipt_tests.rs",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "extract:parity-receipt unit tests pass cleanly with 10 passed tests, verifying classification, legacy record refusal by name, missing threshold detection, positive control, and denominator checks."
+      ]
+    },
+    {
+      "file": "evidence/parity/EXPECTED_RECEIPTS",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The denominator predicate correctly expects and matches 7 receipts."
+      ]
+    },
+    {
+      "file": "evidence/parity/EXPECTED_RECEIPTS",
+      "line": 9,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The denominator count for EXPECTED_RECEIPTS is correctly pinned to 7, exactly matching the number of back-filled receipts."
+      ]
+    },
+    {
+      "file": "scripts/check_parity_receipt.sh",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The check_parity_receipt.sh script was left untouched."
+      ]
+    },
+    {
+      "file": "scripts/parity_receipt_denominator.sh",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The independent denominator predicate script passes its 4 self-test cases and confirms 7 receipts under evidence/parity/** match EXPECTED_RECEIPTS."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane 3: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (10265 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)"
+  ],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=Opus 5 (1M context)/claude"
+  }
+}

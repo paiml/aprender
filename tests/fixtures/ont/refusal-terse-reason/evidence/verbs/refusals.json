@@ -1,0 +1,11 @@
+{
+ "schema": "apr-refusal-ledger/v1",
+ "refusals": [
+  {
+   "verb": "bench",
+   "reason": "broken",
+   "exit_code": 8,
+   "removed_by": "never"
+  }
+ ]
+}

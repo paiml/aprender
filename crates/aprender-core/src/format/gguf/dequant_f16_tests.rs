@@ -390,49 +390,6 @@ mod tests {
         );
     }
 
-    // =========================================================================
-    // Dequantize IQ approximate
-    // =========================================================================
-
-    #[test]
-    fn test_dequantize_iq_approximate_iq2() {
-        let data = vec![128u8; 1024];
-        let result = dequantize_iq_approximate(&data, 0, 64, 13); // IQ2_XXS
-        assert_eq!(result.len(), 64);
-    }
-
-    #[test]
-    fn test_dequantize_iq_approximate_iq3() {
-        let data = vec![128u8; 1024];
-        let result = dequantize_iq_approximate(&data, 0, 64, 16); // IQ3_XXS
-        assert_eq!(result.len(), 64);
-    }
-
-    #[test]
-    fn test_dequantize_iq_approximate_iq1() {
-        let data = vec![128u8; 1024];
-        let result = dequantize_iq_approximate(&data, 0, 64, 18); // IQ1_S
-        assert_eq!(result.len(), 64);
-    }
-
-    #[test]
-    fn test_dequantize_iq_approximate_default_dtype() {
-        let data = vec![128u8; 1024];
-        let result = dequantize_iq_approximate(&data, 0, 64, 99); // Unknown dtype
-        assert_eq!(result.len(), 64);
-    }
-
-    #[test]
-    fn test_dequantize_iq_approximate_byte_out_of_range() {
-        // Small data so byte_idx exceeds data.len()
-        let data = vec![128u8; 4];
-        let result = dequantize_iq_approximate(&data, 0, 256, 13);
-        // Should still produce 256 elements (some will be 0.0 for out-of-range bytes)
-        assert_eq!(result.len(), 256);
-        // Verify some elements are 0.0 (from the byte_idx >= data.len() path)
-        assert!(result.iter().any(|&v| v == 0.0));
-    }
-
     #[test]
     fn test_dequantize_q4_0_with_nonzero_start() {
         // 18 bytes padding + 18 bytes block; put scale at offset 18

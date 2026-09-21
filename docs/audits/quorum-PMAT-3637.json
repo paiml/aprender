@@ -1,0 +1,134 @@
+{
+  "ticket": "PMAT-3637",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "bda16fc7b905c34139d41d2562a077db55bba10e",
+  "diff_sha256": "803cf607fa6fcd1aad51eb7c610b3ded0784efe5afb10da4caaa9ae79baab017",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 9184,
+  "author": {
+    "model": "Opus 5 (1M context)",
+    "family": "claude",
+    "source": "measured"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly adds PMAT-3604 and PMAT-3637 to the roadmap and entries. It is strictly additive in `roadmap.yaml` and does not touch any files outside of `docs/roadmaps/`. The criteria for PMAT-3637 are met.",
+      "findings": [
+        {
+          "claim": "docs/roadmaps/entries/PMAT-3604.yaml is created with id PMAT-3604, github_issue 3604, kind:code and notes are present.",
+          "file": "docs/roadmaps/entries/PMAT-3604.yaml",
+          "grounding": "cited",
+          "line": 2
+        },
+        {
+          "claim": "docs/roadmaps/roadmap.yaml is modified additively with no lines deleted, adding PMAT-3604 and PMAT-3637.",
+          "file": "docs/roadmaps/roadmap.yaml",
+          "grounding": "cited",
+          "line": 6
+        },
+        {
+          "claim": "No files outside docs/roadmaps/ are modified in the provided diff.",
+          "file": "docs/roadmaps/roadmap.yaml",
+          "grounding": "cited",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 3669,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Review of PR #3637 (ticket PMAT-3637): PASS.\n\nThe diff strictly fulfills all acceptance criteria for PMAT-3637:\n1. `docs/roadmaps/entries/PMAT-3604.yaml` is added with id `PMAT-3604`, `github_issue: 3604`, `kind:code`, and accurately transcribes issue #3604's `done_when` criteria (items 1-6), admission rule, and out-of-scope list verbatim without omissions or unrequested additions.\n2. `docs/roadmaps/roadmap.yaml` equals `aggregate(entries/)` (verified via `scripts/lib/roadmap_fragments.py aggregate --check`) and the diff vs `origin/main` is strictly additive (`added=2, lifecycle=0, reserialised=0, deleted=0` verified via `scripts/check_roadmap_diff_additive.sh origin/main`).\n3. The PR body carries `keep-open: #3604`, and the diff touches only files inside `docs/roadmaps/` (`PMAT-3604.yaml`, `PMAT-3637.yaml`, and `roadmap.yaml`).\n4. All repository roadmap integrity gates (`check_roadmap_sorted.sh`, `check_roadmap_ids_unique.sh`, `check_roadmap_fragment_required.sh`, `check_roadmap_diff_additive.sh`) pass cleanly.\n5. No code, test, or unrelated files are touched outside the ticket's registration scope.",
+      "findings": [],
+      "raw_bytes": 4425,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Lane 3 Audit Result: PASS. The diff correctly registers PMAT-3604 and PMAT-3637 in docs/roadmaps/entries/ and appends them additively to docs/roadmaps/roadmap.yaml. Done_when items 1-6 for issue #3604 are transcribed faithfully. The diff is strictly documentation/registration, touches nothing outside docs/roadmaps/, and contains no code or test changes for PMAT-3604 as specified.",
+      "findings": [],
+      "raw_bytes": 3031,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "docs/roadmaps/entries/PMAT-3604.yaml",
+      "line": 2,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "docs/roadmaps/entries/PMAT-3604.yaml is created with id PMAT-3604, github_issue 3604, kind:code and notes are present."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/roadmap.yaml",
+      "line": 1,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "No files outside docs/roadmaps/ are modified in the provided diff."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/roadmap.yaml",
+      "line": 6,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "docs/roadmaps/roadmap.yaml is modified additively with no lines deleted, adding PMAT-3604 and PMAT-3637."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=Opus 5 (1M context)/claude"
+  }
+}

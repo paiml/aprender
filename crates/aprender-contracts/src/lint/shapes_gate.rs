@@ -59,6 +59,16 @@ pub enum ShapesOutcome {
     NoFocus { shapes_n: usize },
     /// A shape resolves receipts and the tree holds none under `evidence/dogfood/models/`.
     NoReceipts { shapes_n: usize, dir: String },
+    /// PMAT-3577 — `extract:parity-receipt` matched a different number of focus nodes than
+    /// `evidence/parity/EXPECTED_RECEIPTS` says the tree holds, or it refused a record by name. An
+    /// extractor that silently sees the wrong corpus reports the same "no violations" as one that sees
+    /// all of it, so this is `Unknown{WrongCorpus}` — never `Pass`, never a fabricated `Fail`.
+    WrongCorpus {
+        shapes_n: usize,
+        expected: usize,
+        found: usize,
+        refused: Vec<String>,
+    },
     /// A positive control did not fire.
     PositiveControlFailed {
         shapes_n: usize,
@@ -121,6 +131,66 @@ fn armed_shapes_of(contract_dir: &Path) -> Result<ArmedShapes, ShapeError> {
     })
 }
 
+/// PMAT-3577: the parity corpus must be exactly what `EXPECTED_RECEIPTS` pins, and no record may be refused,
+/// before anything is graded. Either miss is `WrongCorpus`, never a corpus verdict. (Extracted from
+/// `run_shapes_gate` unchanged, to keep it under the complexity ratchet.)
+fn parity_refusal(
+    parity: &extract::parity_receipt::ParityStats,
+    shapes_n: usize,
+) -> Option<ShapesOutcome> {
+    let refused = || parity.errors.iter().map(ToString::to_string).collect();
+    if let Some((expected, found)) = parity.wrong_corpus() {
+        return Some(ShapesOutcome::WrongCorpus {
+            shapes_n,
+            expected,
+            found,
+            refused: refused(),
+        });
+    }
+    if !parity.errors.is_empty() {
+        return Some(ShapesOutcome::WrongCorpus {
+            shapes_n,
+            expected: parity.expected.unwrap_or(parity.records),
+            found: parity.records,
+            refused: refused(),
+        });
+    }
+    None
+}
+
+/// A torn JSONL line is the INPUT's fault and is carried as a warning on the entity's root shape — the
+/// gate already rules that warnings alone are `Unknown{Warn}`, never a pass and never a silent drop.
+fn carry_extract_warnings(report: &mut Report, warnings: &[extract::json::Warning]) {
+    for w in warnings {
+        report.results.push(shapes::ValidationResult {
+            severity: Severity::Warning,
+            focus: iri("json", &w.contract),
+            shape: w.contract.clone(),
+            path: Some(w.path.clone()),
+            component: "extract:json",
+            message: w.to_string(),
+        });
+    }
+}
+
+/// ONT-4b2: the vendored W3C cases, every run. A validator that fails the standard's own case for a form
+/// it claims has no standing to grade the corpus: `Err(Differential)`. `Ok` carries the run, whose counts
+/// the verdict reports.
+fn w3c_checked(shapes_n: usize, focus_nodes_n: usize) -> Result<w3c::W3cRun, ShapesOutcome> {
+    let w3c_run = w3c::run_all();
+    let failed = w3c_run.failed();
+    if failed.is_empty() {
+        return Ok(w3c_run);
+    }
+    Err(ShapesOutcome::Differential {
+        shapes_n,
+        focus_nodes_n,
+        passed: w3c_run.passed(),
+        n: w3c_run.results.len(),
+        failed,
+    })
+}
+
 /// Run the gate over `contract_dir`.
 #[must_use]
 pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
@@ -146,6 +216,10 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
         Ok(x) => x,
         Err(e) => return ShapesOutcome::ExtractFailed(e),
     };
+    // PMAT-3577: the count is pinned before anything is graded. A miss here is not a corpus verdict.
+    if let Some(refusal) = parity_refusal(&extraction.parity, shapes.len()) {
+        return refusal;
+    }
     let graph = extraction.graph;
     let needs_receipts = shapes.iter().any(|s| {
         s.properties
@@ -154,18 +228,7 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
     });
 
     let (mut report, plant_violations) = validate_with_plant(&graph, &shapes, &arming);
-    // A torn JSONL line is the INPUT's fault and is carried as a warning on the entity's root shape — the
-    // gate already rules that warnings alone are `Unknown{Warn}`, never a pass and never a silent drop.
-    for w in &extraction.warnings {
-        report.results.push(shapes::ValidationResult {
-            severity: Severity::Warning,
-            focus: iri("json", &w.contract),
-            shape: w.contract.clone(),
-            path: Some(w.path.clone()),
-            component: "extract:json",
-            message: w.to_string(),
-        });
-    }
+    carry_extract_warnings(&mut report, &extraction.warnings);
     let pc_extract = extract_controls();
     let unmeasured = needs_receipts && extraction.receipts.is_empty();
     if let Some(d) = decline(
@@ -177,19 +240,10 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
     ) {
         return d;
     }
-    // ONT-4b2: the vendored W3C cases, every run. A validator that fails the standard's own case for a form
-    // it claims has no standing to grade the corpus.
-    let w3c_run = w3c::run_all();
-    let w3c_failed = w3c_run.failed();
-    if !w3c_failed.is_empty() {
-        return ShapesOutcome::Differential {
-            shapes_n: shapes.len(),
-            focus_nodes_n: report.focus_nodes_n,
-            passed: w3c_run.passed(),
-            n: w3c_run.results.len(),
-            failed: w3c_failed,
-        };
-    }
+    let w3c_run = match w3c_checked(shapes.len(), report.focus_nodes_n) {
+        Ok(run) => run,
+        Err(differential) => return differential,
+    };
 
     let counted = findings_of(
         &report,
@@ -230,6 +284,11 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
             extraction.gguf.rungs.len() + extraction.gguf.files_read,
         ),
         ("apr-model", extraction.apr_model.files_read),
+        // ONT-4c3: registered in Σ and implemented, so it is counted here like every other entity
+        // type. Without this key a probe asking `by_entity_type["parity-receipt"]` reads ABSENT —
+        // and an absent key is not zero, so a consumer that treats it as one measures nothing and
+        // calls it a pass. The same shape as #3610, one map over.
+        ("parity-receipt", extraction.parity.records),
         ("code", extraction.code.symbols),
         ("lean", extraction.lean.statements),
     ]

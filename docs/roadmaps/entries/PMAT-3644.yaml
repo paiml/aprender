@@ -1,0 +1,17 @@
+- id: PMAT-3644
+  github_issue: 3644
+  item_type: task
+  title: 'check_guards_are_wired.sh reads a step NAME as a bare guard_tree.sh dispatch: 4 guards dark, incl. the #3305 publish-strip guard (which also dies on intel''s python 3.10)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-21T01:39:50Z
+  updated: 2026-09-21T01:39:50Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from issue #3644 "What lands"; minted on the PR branch so the AD-04 quorum can run). 1. check_guards_are_wired.sh drops name: lines before the invocation match, in dispatcher_wired() and the per-guard scan; rows 8-10 (the exact ci.yml step-name fixture must NOT count as a dispatch; a quoted run: line still does; a step named after a guard wires nothing); the mutation (remove the drop) turns rows 8 and 10 RED. 2. check_pathonly_devdeps_unused_in_src.sh: tomllib -> tomli -> ENV rc=2 naming interpreter and runner; the scanner ends with a SCAN-DONE trailer the shell REQUIRES; five death rows incl. the whole guard under the intel shape; comments reworded so CARGO_RE no longer classifies it out of --no-cargo, so guard-tree runs it (bare run on the tree: rc 0, 3 s). 3. unwired_guards_baseline.txt records the other three dark guards as APERTURE REVEALS (set-aperture gains a NAME-entry admission: a file the comparand carries, in a diff that changes the owning guard; six case rows, each admission beside its refusal) with the reason each may only leave; #3646 owns the pr_review pair. No workflow file is edited.'

@@ -93,7 +93,7 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         cb200_baseline.txt)                      printf 'count\n' ;;   # mirrors .pmat-gates.toml [tdg] baseline (PMAT-937)
         test_fixture_path_baseline.txt)          printf 'count\n' ;;
         tracked_ignored_baseline.txt)            printf 'count\n' ;;
-        unwired_guards_baseline.txt)             printf 'set\n' ;;
+        unwired_guards_baseline.txt)             printf 'set-aperture\tscripts/check_guards_are_wired.sh\n' ;;   # NAME entries: a guard file that predates the comparand may be ledgered when the meta-guard itself widens (#3644)
         # NOT a ratchet either, and for the same reason one level along: this
         # registry is DERIVED from the test sources on every run
         # (scripts/check_tree_reader_tests.sh) and must equal that derivation
@@ -323,6 +323,12 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
             # PREDATES; `fresh.md` is written by the working tree only.
             printf 'the old claim, 2.93 times faster\n' > "$SR/pre.md"
             printf 'GUARD v1\n' > "$SR/guard.sh"
+            # for the NAME-entry rows (#3644): an owner in a subdirectory with a
+            # sibling file, the shape of scripts/check_guards_are_wired.sh and
+            # its ledger of basenames
+            mkdir -p "$SR/sub"
+            printf 'OWNER v1\n' > "$SR/sub/owner.sh"
+            printf 'a sibling that predates\n' > "$SR/sub/sib.sh"
             git -C "$SR" add -A >/dev/null 2>&1
             git -C "$SR" -c commit.gpgsign=false commit -qm 'aperture base' >/dev/null 2>&1
             SR_APER=$(git -C "$SR" rev-parse HEAD)
@@ -386,6 +392,28 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
             # guard edit at all -- otherwise the new kind would be strictly
             # WORSE than `set` on the ordinary path.
             ap_row 'aperture unchanged is green'         0 '# header\n' 'GUARD v1\n' 'the old claim, 2.93 times faster\n'
+            # -- NAME entries (#3644). unwired_guards_baseline.txt is a set of
+            # FILES, not of lines: the meta-guard's name:-line blindness hid
+            # four dark guards, and widening it reveals files already in the
+            # tree. (a) for a name is "the comparand carries the file" -- at the
+            # entry's path, or beside the owning guard, since the ledger names
+            # siblings by basename. Each admission has its refusal beside it.
+            ap_row 'aperture NAME entry that predates is admitted' 0 '# header\npre.md\n' 'GUARD v2\n' 'the old claim, 2.93 times faster\n'
+            ap_row 'aperture NAME entry this branch WROTE refuses' 1 '# header\nfresh.md\n' 'GUARD v2\n' 'the old claim, 2.93 times faster\n'
+            ap_row 'aperture NAME entry without a guard edit refuses' 1 '# header\npre.md\n' 'GUARD v1\n' 'the old claim, 2.93 times faster\n'
+            ap_row 'aperture NAME entry escaping the repo refuses' 1 '# header\n../pre.md\n' 'GUARD v2\n' 'the old claim, 2.93 times faster\n'
+            # beside the owner: `sib.sh` is not at the root, it is next to sub/owner.sh
+            printf '# header\nsib.sh\n' > "$SR/$P"
+            printf 'OWNER v2\n' > "$SR/sub/owner.sh"
+            ( BASELINE_RATCHET_BASE_REF="$SR_APER" \
+              baseline_ratchet_check "$SR" "$P" set-aperture sub/owner.sh ) >/dev/null 2>&1
+            say_row 'aperture NAME entry beside the OWNER is admitted' 0 $?
+            printf '# header\nsib.sh\n' > "$SR/$P"
+            printf 'GUARD v2\n' > "$SR/guard.sh"
+            ( BASELINE_RATCHET_BASE_REF="$SR_APER" \
+              baseline_ratchet_check "$SR" "$P" set-aperture guard.sh ) >/dev/null 2>&1
+            say_row 'aperture NAME entry beside a DIFFERENT owner refuses' 1 $?
+            printf 'OWNER v1\n' > "$SR/sub/owner.sh"
             # A missing owner argument must fail CLOSED. Called with no guard
             # path, "could not check" must never read as "no growth".
             printf '%b' "$AP_BASE" > "$SR/$P"
