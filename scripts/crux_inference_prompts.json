@@ -1,11 +1,13 @@
 {
   "schema": "crux-inference-prompts/v1",
   "source": "crates/apr-cli/src/commands/golden_output.rs::golden_test_cases, the same three cases given as USER MESSAGES rather than pre-rendered ChatML: each engine applies the chat template it reads from the GGUF, and that step is part of what is under test (#3672 is a template defect a pre-rendered prompt would hide). scripts/check_crux_inference_judge.sh refuses drift between the two lists.",
+  "control": "golden-2plus2 is the POSITIVE CONTROL (the cop's ruling on #3739): the smallest model answers it right on every engine, so a control cell that comes back ALL_WRONG declines the run as a broken harness rather than recording a model limitation.",
   "max_tokens": 64,
   "prompts": [
     {
       "id": "golden-2plus2",
       "rung": "golden",
+      "control": true,
       "messages": [{"role": "user", "content": "What is 2+2?"}],
       "expect_any": ["4"]
     },

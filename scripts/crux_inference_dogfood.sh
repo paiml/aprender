@@ -20,9 +20,10 @@
 #              An apr that falls back from the lane's backend did not answer the cell.
 #   --out      receipt dir (default evidence/crux/<version>); writes <host>-<backend>.{json,md}
 #
-# Exit: 0 no RED, no UNJUDGED cell and at least one GREEN · 1 any RED · 2 decline
-# (a cell no comparator answered, no GREEN, apr unpinned or the wrong version,
-# a verb this slice cannot drive).
+# Exit: 0 no RED, no UNJUDGED cell, every model's positive control measured and
+# not ALL_WRONG · 1 any RED · 2 decline (a cell no comparator answered, a broken
+# or missing control, apr unpinned or the wrong version, a verb this slice
+# cannot drive). ALL_WRONG elsewhere is named and counted per model.
 #
 # WHAT "SAME" MEANS, and how each engine is resolved:
 #   model   one file by path. ollama IMPORTS that file through a Modelfile
@@ -45,9 +46,10 @@
 # reads a clock. A throughput CLAIM goes through scripts/perf_gate.sh (PERF-009).
 #
 # GPU sharing (the cop's rule, /mnt/nvme-raid0/agent-wt/gpu-lock-rule.txt):
-# every engine invocation holds /tmp/apr-gpu.lock for that command only and
-# runs under `choom -n 1000`, so a measurement is the OOM victim, never a CI
-# runner. llama.cpp and ollama are held to it as well as apr.
+# on the gpu lane each cell holds /tmp/apr-gpu.lock for its engine invocations
+# only, and every engine runs under `choom -n 1000`, so a measurement is the OOM
+# victim, never a CI runner. llama.cpp and ollama are held to it as well as apr,
+# and ollama runs with keep_alive 0 and must leave VRAM before the lock drops.
 #
 # Every status is captured as `cmd; rc=$?`, never through a pipe (#2336, #2360).
 set -uo pipefail
@@ -200,27 +202,55 @@ PY
 ) || decline "prompt set $PROMPTS unreadable"
 MAXTOK=$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1]))["max_tokens"]))' "$PROMPTS") || decline "max_tokens unreadable"
 
-# gpu_run <stdout> <stderr> cmd... — one engine invocation under the cop's rule.
-# flock exits 75 (not 1) when the lock is not had in time, so a lock wait can
-# never be read as an engine's own failure. The cpu lane touches no GPU compute
-# and takes no lock (the rule's clause 2); it still runs under choom.
-gpu_run() {
-  local o="$1" e="$2"; shift 2
-  if [ "$BACKEND" = gpu ]; then
-    flock -w "$LOCK_WAIT" -E 75 /tmp/apr-gpu.lock choom -n 1000 -- timeout "$TMO" "$@" > "$o" 2> "$e" < /dev/null
-  else
-    choom -n 1000 -- timeout "$TMO" "$@" > "$o" 2> "$e" < /dev/null
-  fi
+# THE CELL LOCK (the cop's GPU rule rev 2, plus its #3739 ruling on ollama). On
+# the gpu lane one cell, meaning one prompt through every engine, holds
+# /tmp/apr-gpu.lock for exactly its engine invocations. It releases the lock only
+# after ollama's model has left VRAM: ollama keeps a model resident (keep_alive,
+# default 5 min), and a resident model would starve the next session's cell on a
+# 24 GB card. flock exits 75 (not 1) when the lock is not had in time, so a lock
+# wait is never read as an engine's own failure. The cpu lane touches no GPU
+# compute and takes no lock (the rule's clause 2); every engine still runs under
+# choom, so a measurement is the OOM victim, never a CI runner.
+cell_lock() {
+  [ "$BACKEND" = gpu ] || return 0
+  exec 9> /tmp/apr-gpu.lock || return 75
+  flock -w "$LOCK_WAIT" -E 75 9
+}
+cell_unlock() {
+  [ "$BACKEND" = gpu ] || return 0
+  flock -u 9
+  exec 9>&-
 }
 
-emit_gen() { # emit_gen <engine> <prompt_id> <rc> <stdout> <stderr> <refused>
-  python3 - "$MANIFEST" "$1" "$2" "$3" "$4" "$5" "$6" "$SHA" "$HOST" "$VERB" "$THINK" "$BACKEND" <<'PY'
+# eng_run <stdout> <stderr> cmd... — one engine invocation. `9>&-` keeps the lock
+# fd out of the engine, so nothing an engine leaves running can hold the lock.
+eng_run() {
+  local o="$1" e="$2"; shift 2
+  choom -n 1000 -- timeout "$TMO" "$@" > "$o" 2> "$e" < /dev/null 9>&-
+}
+
+# ollama_unloaded <name>: stop the model, then wait up to 30 s for `ollama ps` to
+# stop listing it. Prints true or false, and the cell records which.
+ollama_unloaded() {
+  local i listed
+  "$OLLAMA" stop "$1" > /dev/null 2>&1 9>&-
+  for i in $(seq 1 30); do
+    listed=$("$OLLAMA" ps 2>/dev/null 9>&-)
+    case "$listed" in *"$1"*) sleep 1 ;; *) printf 'true'; return 0 ;; esac
+  done
+  printf 'false'
+}
+
+emit_gen() { # emit_gen <engine> <prompt_id> <rc> <stdout> <stderr> <refused> [ollama_unloaded]
+  python3 - "$MANIFEST" "$1" "$2" "$3" "$4" "$5" "$6" "${7:-}" "$SHA" "$HOST" "$VERB" "$THINK" "$BACKEND" 9>&- <<'PY'
 import json, sys
-m, eng, pid, rc, o, e, ref, sha, host, verb, think, be = sys.argv[1:13]
+m, eng, pid, rc, o, e, ref, unl, sha, host, verb, think, be = sys.argv[1:14]
 row = {"kind": "gen", "engine": eng, "prompt_id": pid,
        "rc": int(rc) if rc.lstrip("-").isdigit() else None,
        "stdout": o or None, "stderr": e or None, "refused": ref or None,
        "model_sha256": sha, "host": host, "verb": verb, "thinking": think, "backend": be}
+if unl:
+    row["ollama_unloaded"] = unl == "true"
 open(m, "a").write(json.dumps(row) + "\n")
 PY
 }
@@ -355,36 +385,42 @@ PY
     d="$WORK/$SHA12/$VERB"
     mkdir -p "$d"
 
-    gpu_run "$d/apr-$pid.out" "$d/apr-$pid.err" "$APR" run "$M" --prompt "$content" --max-tokens "$MAXTOK" \
+    if ! cell_lock; then
+      ref="the GPU lock was not had within ${LOCK_WAIT}s"
+      emit_gen apr "$pid" "" "" "" "$ref"
+      want llama.cpp && emit_gen llama.cpp "$pid" "" "" "" "$ref"
+      want ollama && emit_gen ollama "$pid" "" "" "" "$ref"
+      continue
+    fi
+
+    eng_run "$d/apr-$pid.out" "$d/apr-$pid.err" "$APR" run "$M" --prompt "$content" --max-tokens "$MAXTOK" \
       --temperature "$TEMP" --seed "$SEED" --format json -v "$APR_BE"
     rc=$?
-    ref=""; [ "$rc" = 75 ] && ref="the GPU lock was not had within ${LOCK_WAIT}s"
-    emit_gen apr "$pid" "$rc" "$d/apr-$pid.out" "$d/apr-$pid.err" "$ref"
+    emit_gen apr "$pid" "$rc" "$d/apr-$pid.out" "$d/apr-$pid.err" ""
 
     if [ "$LLAMA_OK" = 1 ]; then
-      gpu_run "$d/llama-$pid.out" "$d/llama-$pid.err" "$LLAMA_CLI" -m "$M" -p "$content" -st -n "$MAXTOK" \
+      eng_run "$d/llama-$pid.out" "$d/llama-$pid.err" "$LLAMA_CLI" -m "$M" -p "$content" -st -n "$MAXTOK" \
         --temp "$TEMP" --seed "$SEED" -c "$CTX" -ngl "$NGL" "${LLAMA_DEV[@]}" "${LLAMA_THINK[@]}"
       rc=$?
-      ref=""; [ "$rc" = 75 ] && ref="the GPU lock was not had within ${LOCK_WAIT}s"
-      emit_gen llama.cpp "$pid" "$rc" "$d/llama-$pid.out" "$d/llama-$pid.err" "$ref"
+      emit_gen llama.cpp "$pid" "$rc" "$d/llama-$pid.out" "$d/llama-$pid.err" ""
     elif want llama.cpp; then
       emit_gen llama.cpp "$pid" "" "" "" "$LLAMA_WHY"
     fi
 
     if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then
-      gpu_run "$d/ollama-$pid.out" "$d/ollama-$pid.err" "$OLLAMA" run "$OL_NAME" "$content" --verbose --nowordwrap \
-        "${OLLAMA_THINK[@]}"
+      eng_run "$d/ollama-$pid.out" "$d/ollama-$pid.err" "$OLLAMA" run "$OL_NAME" "$content" --verbose --nowordwrap \
+        --keepalive 0 "${OLLAMA_THINK[@]}"
       rc=$?
-      ref=""; [ "$rc" = 75 ] && ref="the GPU lock was not had within ${LOCK_WAIT}s"
-      emit_gen ollama "$pid" "$rc" "$d/ollama-$pid.out" "$d/ollama-$pid.err" "$ref"
+      unl=$(ollama_unloaded "$OL_NAME")
+      emit_gen ollama "$pid" "$rc" "$d/ollama-$pid.out" "$d/ollama-$pid.err" "" "$unl"
     elif want ollama; then
       emit_gen ollama "$pid" "" "" "" "${OL_REFUSED:-$OLLAMA_WHY}"
     fi
+    cell_unlock
   done
 
-  if [ "$OLLAMA_OK" = 1 ]; then
-    "$OLLAMA" stop "$OL_NAME" > /dev/null 2>&1
-    [ "$KEEP_OLLAMA" = 1 ] || "$OLLAMA" rm "$OL_NAME" > /dev/null 2>&1
+  if [ "$OLLAMA_OK" = 1 ] && [ "$KEEP_OLLAMA" = 0 ]; then
+    "$OLLAMA" rm "$OL_NAME" > /dev/null 2>&1
   fi
 done
 
