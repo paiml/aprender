@@ -18973,6 +18973,23 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE (hand-entered from issue #3587 "What lands"; minted on the PR branch so the AD-04 quorum can run -- pmat work status refuses a missing item). Two halves: the explicit-command runner (#3616, merged) and the nextest [profile.ci] key (#3626). Lands: 1. **--no-fail-fast on the shard.** The cost is runner minutes on an already-red shard; the benefit is that a red run still measures everything else it was going to measure — which is exactly when you most want the data. 2. **The reducer reports ran / skipped / total** in the shard receipt. The skipped count is a **number**, never an absence. 3. **A receipt with skipped > 0 is Unknown, not Fail and not Pass** — it names what was not measured, per doctrine 4. '
+- id: PMAT-3618
+  github_issue: 3618
+  item_type: task
+  title: 'Release scripts still carry 0.68.2''s V/T/MS/EPIC and AP=/mnt/... — and the hardcoded-path ratchet does not match /mnt, so nothing catches it'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-21T05:36:49Z
+  updated: 2026-09-21T05:36:49Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (quoted from issue #3618 "done_when"): 1. V/T/MS/EPIC are derived or passed, never literals. 2. AP is derived from the repository, not from a path under /mnt. The scripts are in-tree now; an out-of-tree bundle path is a leftover of where they used to live. 3. Either the /mnt blind spot closes (#3592) or this row ships its own assertion that no release script references a path outside the repo. Prefer the first — the blind spot affects every script, not these. 4. Falsifier: reintroduce a literal /mnt/... in a release script and require a gate to go RED. If nothing can be made to go red, item 3 is unsatisfied regardless of what was edited. SCOPE NOTE (author): this row ships its own assertion (item 3, second branch); #3592 stays open for the analyser itself.'
 - id: PMAT-3627
   github_issue: 3627
   item_type: task
