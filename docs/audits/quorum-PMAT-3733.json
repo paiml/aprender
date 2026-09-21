@@ -1,0 +1,178 @@
+{
+  "ticket": "PMAT-3733",
+  "base": "52f43da71",
+  "base_resolved": "52f43da71",
+  "base_note": "no origin/52f43da71 exists; judged against the local ref",
+  "head": "7dad33b28bd31f07b0efbea6ef65c1eb872b44aa",
+  "diff_sha256": "8ab6f85d14ef1d6954f4ec6fd5cb506c4f06a3191c2587c401fc7437ce006438",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 31205,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff comprehensively and accurately implements PMAT-3733. By parsing all metadata keys and placing non-allowlisted ones into `display_only_metadata`, the diff successfully ensures `apr inspect --json` yields every KV from the GGUF header without perturbing `metadata` mappings that downstream config accessors expect. The related refactoring for CLI testing (`rosetta_json`) and the essential array-allocation hardening correctly resolve the ticket's architectural implications. All test expectations mentioned in the ticket notes are met in `api_tests_all_keys_3733.rs` and `inspect_tests.rs`.",
+      "findings": [],
+      "raw_bytes": 2471,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements PMAT-3733. It ensures that every GGUF metadata key is parsed and retained without an arch-prefixed allowlist. Keys outside the configuration allowlist are safely directed to `display_only_metadata` so they appear in `apr inspect --json` without unexpectedly widening the model configuration path. The RosettaStone inspection path is correctly traced and tested, and array parsing is hardened against out-of-bounds/out-of-memory errors on hostile inputs. Tests verifying the KV counts and the unknown architecture prefix (`zzz_never_heard_of`) are present and complete.",
+      "findings": [],
+      "raw_bytes": 2465,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-low",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-low",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff fully and accurately implements PMAT-3733. By parsing all GGUF metadata keys and storing non-allowlisted keys in `display_only_metadata`, all header keys (including `qwen35.*`, `quantize.*`, and arbitrary architecture keys such as `zzz_never_heard_of.*`) reach `apr inspect --json` via RosettaStone inspection without unexpectedly exposing them to configuration accessors (e.g. `context_length()`). Array parsing in `read_metadata_array` was properly hardened against hostile counts to prevent OOM or panics. All tests in `aprender-core` (645 passed) and `apr-cli` (140 passed) were measured and confirmed passing as claimed.",
+      "findings": [],
+      "raw_bytes": 5187,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
