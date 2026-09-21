@@ -22,8 +22,11 @@
 //! proves nothing about the gate.
 //!
 //! **The positive controls.** `pc_shape`: a bare focus node of each shape's target class, drawn every run, must
-//! violate at least one armed shape. `pc_extract.gguf`: a corrupt magic is refused. `pc_extract["apr-model"]`:
-//! a header whose tensor count disagrees with its index is refused. All three every run, in memory.
+//! violate at least one armed shape. `pc_extract` — one planted defect per extractor Σ marks implemented (R-3):
+//! `pv-contract`, a contract stripped of `metadata` carries no `ont:kind`; `json`, a nested key the vocabulary does
+//! not map is refused naming it; `gguf`, a corrupt magic is refused; `apr-model`, a header whose tensor count
+//! disagrees with its index is refused; `code` and `lean`, as their modules state; `parity-receipt`, a record
+//! stripped of `comparator` loses its comparator edge. All of them every run, in memory.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -31,7 +34,10 @@ use std::time::Instant;
 
 use crate::ontology::arming::ArmedShapes;
 use crate::ontology::extract::release_inputs::Subject;
-use crate::ontology::extract::{self, apr_model, code, gguf, lean, pv_contract, ExtractFailure};
+use crate::ontology::extract::{
+    self, apr_model, code, gguf, json, lean, parity_receipt, pv_contract, release_evidence,
+    ExtractFailure,
+};
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};
 use crate::ontology::receipts;
 use crate::ontology::shapes::{self, NodeShape, Report, Severity, ShapeError};
@@ -433,14 +439,24 @@ fn decline(
     })
 }
 
-/// The extractor positive controls (R-3), run in memory every gate run.
+/// The extractor positive controls (R-3: one planted defect per registered extractor), run in memory every gate
+/// run, keyed by the Σ entity type each extractor reads. The key set must equal Σ's implemented entity types —
+/// [`tests::every_implemented_entity_type_in_sigma_has_an_extract_control_and_it_fires`] holds the two together.
 fn extract_controls() -> BTreeMap<String, String> {
     let apr_sample = apr_model::minimal_container(2);
     [
+        ("pv-contract", pv_contract::positive_control()),
+        ("json", json::positive_control()),
         ("gguf", gguf::positive_control()),
         ("apr-model", apr_model::positive_control(&apr_sample)),
         ("code", code::positive_control()),
         ("lean", lean::positive_control()),
+        (
+            "parity-receipt",
+            parity_receipt::positive_control(&parity_receipt::control_sample()),
+        ),
+        // aprender#3715: drawn every run, subject or not — a cell owed without a receipt stays a node
+        ("release-evidence", release_evidence::positive_control()),
     ]
     .into_iter()
     .map(|(k, fired)| {
@@ -852,5 +868,38 @@ mod tests {
             ladder("ladder-plantunarmed"),
             ShapesOutcome::PositiveControlFailed { .. }
         ));
+    }
+
+    #[test]
+    fn every_implemented_entity_type_in_sigma_has_an_extract_control_and_it_fires() {
+        // PMAT-3704 — R-3: `pc_extract`, one planted defect per registered extractor, every run. The control set
+        // was a hand-written array beside Σ with nothing tying the two together, so `parity-receipt` (#3600) and
+        // `json` (#3516) shipped as implemented entity types the gate never controlled — the same shape as #3624
+        // for `by_entity_type`, and as bashrs#266's two lists. Σ is this build's registry (its `extractors[]`
+        // name this crate's readers), so the two sets must be EQUAL: an implemented type without a control fails,
+        // and so does a control for a type Σ does not implement.
+        let sigma_path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/ontology.yaml");
+        let text = std::fs::read_to_string(&sigma_path).expect("contracts/ontology.yaml");
+        let sigma = crate::ontology::sigma::Sigma::from_yaml(&text).expect("Σ parses");
+        let implemented: BTreeSet<String> = sigma
+            .entity_types
+            .iter()
+            .filter(|e| e.implemented)
+            .map(|e| e.name.clone())
+            .collect();
+        assert!(
+            !implemented.is_empty(),
+            "Σ implements nothing — the comparison would be vacuous"
+        );
+        let controls = extract_controls();
+        let controlled: BTreeSet<String> = controls.keys().cloned().collect();
+        assert_eq!(
+            controlled, implemented,
+            "pc_extract keys (left) must equal Σ's implemented entity types (right)"
+        );
+        for (k, v) in &controls {
+            assert_eq!(v, "fired", "pc_extract.{k}");
+        }
     }
 }

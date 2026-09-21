@@ -52,6 +52,22 @@ The full statement, https://github.com/paiml/aprender/issues/3710#issuecomment-5
 
 **2f. No waivers.** #3710 allows "a FAIL for the release unless the operator waives that cell by name", but every agent session posts as `noahgift`, so a comment-based waiver is forgeable by any of them. The cop's ruling, recorded in the body of https://github.com/paiml/aprender/issues/3722: *"(c). #3715 ships with no waiver path."* The diff therefore has no waiver input.
 
+**2g. The extractor's positive control: #3704's rule, which now applies to this new extractor.** origin/main was
+merged in because #3706 (PMAT-3704, merged 52f43da71) ties `pc_extract` to Σ: the merged tree would have been RED
+with `release-evidence` implemented and uncontrolled. The criteria of https://github.com/paiml/aprender/issues/3704,
+quoted verbatim, as they now bind `release-evidence`:
+> - A test that fails when an extractor the shapes gate runs has no `pc_extract` entry — so the next extractor cannot ship without its control.
+> - A not-fired parity control makes the gate refuse (as the other four already do), mutation-proved.
+
+→ `release_evidence::positive_control()` is drawn on EVERY gate run, with no release subject and no file. It runs
+a sample cell with one fresh Pass row and a planted cell with no row through the real `build()`. It fires iff the
+sample's cell has exactly one fresh row AND the planted cell is still a `release:Cell` node with ZERO rows, which
+is to say absence is still materialized for `minCount 1`. `extract_controls()` carries it as `release-evidence`.
+#3706's own Σ-tie test (`every_implemented_entity_type_in_sigma_has_an_extract_control_and_it_fires`) passes.
+**Mutant, measured:** an extractor that emits only the cells it has rows for → `pv lint contracts --gate shapes`
+exits **2**, `shapes: positive control pc_extract.release-evidence did not fire`, `decline: PositiveControlFailed`.
+Restored → Pass, with all eight controls `fired`.
+
 ## 3. Points a reviewer may otherwise read as out of scope
 
 - **"All models, not just Q4_K."** The universe is the host's measured inventory, exactly as done_when 2 says ("focus = every `:Model` in the inventory"). The inventory is defined by the ladder contract's `inventory.patterns`: `*q4_k*.gguf`, `*q4k*.gguf`, `*q4_k*.apr`, `*q4k*.apr` (#3712). That makes it Q4_K by construction. pv does not re-filter by quant, because that would be a second declaration of the universe. Ladder rungs join the inventory only when they claim `cuda`.
@@ -63,7 +79,7 @@ The full statement, https://github.com/paiml/aprender/issues/3710#issuecomment-5
 
 | check | result |
 |---|---|
-| `cargo test -p aprender-contracts --lib` | 1695 passed, 0 failed |
+| `cargo test -p aprender-contracts --lib` (merged head) | 1701 passed, 0 failed |
 | `cargo test -p aprender-contracts-cli` (every target) | all green; `ont_release_readiness` has 34 cases |
 | `cargo clippy -p aprender-contracts --lib --tests -- -D warnings`, and the same for `-cli` | clean |
 | `pv lint contracts` (full) | PASS, 0 errors; no warning from `release-readiness-v1.yaml` |
@@ -72,6 +88,7 @@ The full statement, https://github.com/paiml/aprender/issues/3710#issuecomment-5
 | `bash scripts/check_explicit_test_commands.sh` | PASS (new `.cmd` 450) |
 | mutant: `in: [pass, skip]` on the cell verdict | `a_skipped_cell_is_red_naming_it` FAILS, so it is caught |
 | mutant: `fresh()` always true | 3 staleness cases FAIL, so it is caught |
+| mutant: emit only cells that have rows | `pv lint contracts --gate shapes` exit 2, `pc_extract.release-evidence did not fire` |
 | 0.69.0 proof (`evidence/release/proof-0.69.0/`) | exit 1, 795 findings, naming every leak in done_when 5 |
 
 ## 5. What this PR does NOT do (so it carries `Refs #3715`, not `Closes`)

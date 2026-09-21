@@ -111,6 +111,21 @@ fn the_plant_removes_the_comparator_edge_every_run() {
 }
 
 #[test]
+fn the_gate_sample_is_a_record_the_control_fires_on() {
+    // PMAT-3704: the gate draws the control on control_sample(), not on a test helper's record.
+    assert!(positive_control(&control_sample()));
+}
+
+#[test]
+fn a_sample_without_a_comparator_cannot_fire_the_control() {
+    // Discrimination: the control is a claim about the comparator edge, so a sample that has none to lose must
+    // not fire — else "fired" would say nothing about the extractor.
+    let mut bare = control_sample();
+    bare.as_object_mut().expect("object").remove("comparator");
+    assert!(!positive_control(&bare));
+}
+
+#[test]
 fn an_unmigrated_legacy_record_is_refused_by_name_and_never_skipped() {
     // The exact layout the seven records carried before #3577: no schema, metrics[] at the top level.
     let dir = tempdir("unmigrated");

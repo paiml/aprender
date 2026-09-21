@@ -285,8 +285,7 @@ pub fn extract(
 ) -> Result<ReleaseStats, ReleaseError> {
     let root = super::repo_root(contract_dir);
     let ladder = ladder_of(contract_dir);
-    let hosts = &ladder.hosts;
-    let context = inputs::read_context_rungs(&root)?;
+    let (ctx_rungs, consumers) = inputs::read_context_rungs(&root)?.unwrap_or_default();
     let model_receipts =
         receipts::read_dir(&subject.model_dir(&root), &root).map_err(ReleaseError::Receipt)?;
     let kernel_receipts = inputs::read_kernel_receipts(&subject.kernel_dir(&root), &root)?;
@@ -296,30 +295,137 @@ pub fn extract(
         .as_deref()
         .map(inputs::read_dogfood)
         .transpose()?;
-    let (ctx_rungs, consumers) = context.unwrap_or_default();
+    Ok(build(
+        g,
+        subject,
+        &Inputs {
+            ladder: &ladder,
+            ctx_rungs: &ctx_rungs,
+            consumers: &consumers,
+            model_receipts: &model_receipts,
+            kernel_receipts: &kernel_receipts,
+            tok_receipts: &tok_receipts,
+            dogfood: dogfood.as_ref(),
+        },
+    ))
+}
 
+/// Everything [`build`] reads, already parsed — so the positive control drives the same code in memory.
+pub struct Inputs<'a> {
+    pub ladder: &'a Ladder,
+    pub ctx_rungs: &'a [ContextRung],
+    pub consumers: &'a [Consumer],
+    pub model_receipts: &'a [Receipt],
+    pub kernel_receipts: &'a [KernelReceipt],
+    pub tok_receipts: &'a [TokReceipt],
+    pub dogfood: Option<&'a Dogfood>,
+}
+
+/// The release graph from parsed inputs: pure, no filesystem (R-15).
+pub fn build(g: &mut Graph, subject: &Subject, i: &Inputs<'_>) -> ReleaseStats {
+    let hosts = &i.ladder.hosts;
     let mut stats = ReleaseStats {
         required_hosts: hosts.len(),
-        model_receipts: model_receipts.len(),
-        kernel_receipts: kernel_receipts.len(),
-        context_rungs: ctx_rungs.len(),
+        model_receipts: i.model_receipts.len(),
+        kernel_receipts: i.kernel_receipts.len(),
+        context_rungs: i.ctx_rungs.len(),
         ..ReleaseStats::default()
     };
-    emit_release(g, subject, hosts, &ctx_rungs, dogfood.as_ref());
-    emit_vocabulary_nodes(g, &ctx_rungs, &consumers);
+    emit_release(g, subject, hosts, i.ctx_rungs, i.dogfood);
+    emit_vocabulary_nodes(g, i.ctx_rungs, i.consumers);
     let views: Vec<HostView<'_>> = hosts
         .iter()
-        .map(|h| host_view(h, subject, &model_receipts, &kernel_receipts, &ladder))
+        .map(|h| host_view(h, subject, i.model_receipts, i.kernel_receipts, i.ladder))
         .collect();
     let mut coverage = Coverage::new();
     for v in &views {
         emit_host(g, subject, v, &mut stats);
-        emit_cells(g, subject, v, &ctx_rungs, &mut coverage, &mut stats);
+        emit_cells(g, subject, v, i.ctx_rungs, &mut coverage, &mut stats);
     }
     emit_coverage(g, subject, &coverage, &mut stats);
     emit_kernels(g, subject, &views, &mut stats);
-    emit_tokenizer(g, subject, &views, &tok_receipts, &mut stats);
-    Ok(stats)
+    emit_tokenizer(g, subject, &views, i.tok_receipts, &mut stats);
+    stats
+}
+
+/// The positive control (R-3, PMAT-3704): drawn on EVERY gate run, with or without a release subject. One
+/// required host holds one model that owes one cell; the SAMPLE receipt carries that cell's fresh Pass row, the
+/// PLANTED one omits it. Fires iff the sample's cell has exactly one fresh row AND the planted cell still exists
+/// with ZERO rows — i.e. the extractor still materializes absence as a node for `minCount 1` to reject, which is
+/// the whole reason this shape exists. An extractor that emitted only cells it had rows for would turn absence
+/// back into silence, and this control would go `not-fired`.
+#[must_use]
+pub fn positive_control() -> bool {
+    let Ok(subject) = Subject::new("0.0.0-pc", PC_COMMIT) else {
+        return false;
+    };
+    let (Ok(sample), Ok(planted)) = (
+        receipts::parse("__pc_sample__.json", &pc_receipt(PC_ROW)),
+        receipts::parse("__pc_planted__.json", &pc_receipt("")),
+    ) else {
+        return false;
+    };
+    let cell = iri_path(
+        "release-cell",
+        &["0.0.0-pc", "pc-host", "pc.gguf", "run", "think-off", "pc"],
+    );
+    let rows_of = |r: &Receipt| {
+        let mut g = Graph::new();
+        let ladder = Ladder {
+            hosts: vec![HostDecl {
+                id: "pc-host".into(),
+                cc: "sm_0".into(),
+            }],
+            ..Ladder::default()
+        };
+        let rung = ContextRung {
+            id: "pc".into(),
+            tokens: Some(1),
+            long: false,
+            derived_from: vec!["pc".into()],
+            unmeasured_consumers: Vec::new(),
+        };
+        build(
+            &mut g,
+            &subject,
+            &Inputs {
+                ladder: &ladder,
+                ctx_rungs: std::slice::from_ref(&rung),
+                consumers: &[],
+                model_receipts: std::slice::from_ref(r),
+                kernel_receipts: &[],
+                tok_receipts: &[],
+                dogfood: None,
+            },
+        );
+        let is_cell = g
+            .objects(&cell, RDF_TYPE)
+            .iter()
+            .any(|t| t.as_iri() == Some(rel("Cell").as_str()));
+        let fresh: Vec<bool> = g
+            .objects(&cell, &rel("row"))
+            .iter()
+            .filter_map(|t| t.as_iri())
+            .map(|row| {
+                g.objects(row, &rel("fresh"))
+                    .iter()
+                    .any(|t| t.as_literal().map(|(v, _)| v) == Some("true"))
+            })
+            .collect();
+        (is_cell, fresh)
+    };
+    let (sample_cell, sample_rows) = rows_of(&sample);
+    let (planted_cell, planted_rows) = rows_of(&planted);
+    sample_cell && sample_rows == [true] && planted_cell && planted_rows.is_empty()
+}
+
+const PC_COMMIT: &str = "1111111111111111111111111111111111111111";
+const PC_ROW: &str = r#"{"sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","file":"pc.gguf","verb":"run","thinking":"off","context":"pc","prompt_tokens":2,"max_tokens":8,"answer_chars":1,"verdict":"pass","backend":"cuda","fallback":false,"rc":0}"#;
+
+fn pc_receipt(cells: &str) -> String {
+    format!(
+        r#"{{"schema":"apr-model-ladder-receipt/v2","host":"pc-host","version":"0.0.0-pc","sha":"1","apr_sha":"{PC_COMMIT}","inventory":[{{"file":"pc.gguf","sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","arch":"pc","context_length":10,"thinking_modes":["off"]}}],"cells":[{cells}],"rungs":[]}}"#
+    )
 }
 
 fn emit_release(

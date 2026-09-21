@@ -170,6 +170,10 @@ fn the_green_release_passes_with_every_cell_named() {
         v["pc_shape"], "fired",
         "the plant fired from the named family"
     );
+    assert_eq!(
+        v["pc_extract"]["release-evidence"], "fired",
+        "the extractor's own control (PMAT-3704)"
+    );
     let rel = &v["release"];
     assert_eq!(
         rel["cells"], 48,

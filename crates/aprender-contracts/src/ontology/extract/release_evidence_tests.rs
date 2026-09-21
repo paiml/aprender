@@ -449,3 +449,10 @@ fn a_discrete_kernel_is_within_bound_only_on_zero_mismatches_or_near_ties() {
         "nothing measured is outside every bound"
     );
 }
+
+#[test]
+fn the_positive_control_fires_without_any_release_subject_or_file() {
+    // PMAT-3704 R-3: drawn on every gate run — a sample cell with one fresh row, and a planted cell with none
+    // that must still be a node (the mutant that emits only measured cells turns this false; measured)
+    assert!(positive_control());
+}

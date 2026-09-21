@@ -472,6 +472,16 @@ fn emit_receipt_node(g: &mut Graph, rec: &Receipt, row: &Row, rung: &Rung) -> St
     node
 }
 
+/// An array of strings at `key`, or `None` when the key is absent (which is not an empty list).
+fn strings(r: &serde_json::Value, key: &str) -> Option<Vec<String>> {
+    r.get(key).and_then(serde_json::Value::as_array).map(|a| {
+        a.iter()
+            .filter_map(serde_json::Value::as_str)
+            .map(str::to_string)
+            .collect()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -650,14 +660,4 @@ mod tests {
             "no hosts: → both hosts expected, gx10 missing"
         );
     }
-}
-
-/// An array of strings at `key`, or `None` when the key is absent (which is not an empty list).
-fn strings(r: &serde_json::Value, key: &str) -> Option<Vec<String>> {
-    r.get(key).and_then(serde_json::Value::as_array).map(|a| {
-        a.iter()
-            .filter_map(serde_json::Value::as_str)
-            .map(str::to_string)
-            .collect()
-    })
 }
