@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # check_apr_code_edit_verify.sh - case table for the #3719 `apr code` judge
-# (scripts/lib/apr_code_edit_verify.py). No model, no GPU, no inputs.
+# (scripts/lib/apr_code_edit_verify.py) and harness
+# (scripts/apr_code_edit_verify.sh). No model, no GPU, no inputs.
+#
+# The harness rows (h-*) run the real harness end to end against a fake `apr`
+# and a scratch lock, never the fleet lock. aprender-62 (#3712): the release
+# ladder calls the harness OUTSIDE its own lock, so "every GPU apr call is
+# locked" rests on the harness. The rows prove its apr call runs with the lock
+# held and oom_score_adj 1000, in both gate modes, and that a held lock gives a
+# DECLINE within the bound, never a hang.
 #
 # Each row builds a synthetic artifact directory in the shape
 # scripts/apr_code_edit_verify.sh leaves behind and asserts the verdict and
@@ -174,8 +182,76 @@ make_case lock "$LEGACY"
 rm "$WORK/lock/lock-acquired"
 expect lock DECLINE "gpu lock not acquired" 75
 
+# ---- harness rows: the real harness, a fake apr, a scratch lock -------------
+HARNESS="$ROOT/scripts/apr_code_edit_verify.sh"
+BIN="$WORK/bin"
+mkdir -p "$BIN"
+HEAD_SHA=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || printf 'nogit')
+# The fake answers --version with HEAD's sha (scripts/apr_bin.sh checks it),
+# plays the serve child through the harness's APR_BIN wrapper, records whether
+# the GPU lock is held and its own oom_score_adj, then does the task right.
+cat > "$BIN/fake-apr" <<FAKE
+#!/usr/bin/env bash
+case "\$1" in
+    --version) printf 'apr 0.69.0 (%s)\n' "$HEAD_SHA" ;;
+    serve)
+        printf 'Model ready: Qwen3.5 hybrid, 32 layers resident on the GPU, declared context 262144 tokens\n'
+        printf 'chat template: Qwen3NoThink (thinking off)\n'
+        printf 'gpu-layers: requested=all resolved=32 total=32 (backend=cuda)\n' ;;
+    code)
+        if flock -n "\$APR_GPU_LOCK" true; then held=no; else held=yes; fi
+        printf 'held=%s oom=%s\n' "\$held" "\$(cat /proc/self/oom_score_adj)" > "\$FAKE_PROBE"
+        "\$APR_BIN" serve --fake-child > /dev/null
+        printf 'apr serve ready (0.1s)\n' >&2
+        sed -i 's|$BUGGY_LINE|$FIXED_LINE|' stats.py
+        python3 -m unittest test_stats > /dev/null 2>&1
+        printf '{"type": "result", "subtype": "success", "result": "Fixed the denominator; all tests pass."}\n' ;;
+esac
+FAKE
+# The stub keeps gpu-q's contract: take the lock and choom, then run the job.
+cat > "$BIN/gpu-q" <<'STUB'
+#!/usr/bin/env bash
+[ "${1:-}" = "--prio" ] && shift 2
+[ "${1:-}" = "--" ] && shift
+exec flock "${GPUQ_LOCK:?}" choom -n 1000 -- "$@"
+STUB
+chmod +x "$BIN/fake-apr" "$BIN/gpu-q"
+printf 'not a model\n' > "$WORK/model.gguf"
+
+# harness_row NAME WANT_RC WANT_PROBE MAX_SECONDS [harness args...]
+# A harness that hangs (a double lock, a lost bound) is killed and fails the row.
+harness_row() {
+    local name="$1" want_rc="$2" want_probe="$3" max_s="$4" rc=0 t0 took probe
+    shift 4
+    t0=$(date +%s)
+    (cd "$ROOT" && PATH="$BIN:$PATH" APR_BIN="$BIN/fake-apr" APR_GPU_LOCK="$WORK/gpu.lock" \
+        FAKE_PROBE="$WORK/$name.probe" \
+        timeout "$((max_s + 5))" bash "$HARNESS" --model "$WORK/model.gguf" --host case --out "$WORK/$name" "$@") \
+        > "$WORK/$name.log" 2>&1 || rc=$?
+    took=$(( $(date +%s) - t0 ))
+    probe=$(cat "$WORK/$name.probe" 2>/dev/null || printf 'never-ran')
+    if [ "$rc" = "$want_rc" ] && [ "$probe" = "$want_probe" ] && [ "$took" -le "$max_s" ]; then
+        printf 'ok    %s (rc=%s, %s, %ss)\n' "$name" "$rc" "$probe" "$took"
+    else
+        printf 'FAIL  %s: want rc=%s probe=%s within %ss, got rc=%s probe=%s in %ss\n' \
+            "$name" "$want_rc" "$want_probe" "$max_s" "$rc" "$probe" "$took"
+        sed 's/^/        /' "$WORK/$name.log" | tail -5
+        FAILED=1
+    fi
+}
+
+harness_row h-flock-free 0 "held=yes oom=1000" 60
+harness_row h-gpuq-free 0 "held=yes oom=1000" 60 --gpu-q 1
+flock "$WORK/gpu.lock" sleep 60 &
+holder=$!
+sleep 0.5
+harness_row h-flock-held 2 never-ran 30 --lock-wait 2
+harness_row h-gpuq-held 2 never-ran 30 --gpu-q 1 --lock-wait 1 --timeout 1
+kill "$holder" 2>/dev/null || true
+wait "$holder" 2>/dev/null || true
+
 if [ "$FAILED" -ne 0 ]; then
-    printf 'FAIL: the apr code judge named the wrong verdict or mechanism\n'
+    printf 'FAIL: the apr code judge or harness got a row wrong\n'
     exit 1
 fi
 printf 'OK: every row got its verdict and first failing mechanism\n'

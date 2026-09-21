@@ -32,7 +32,10 @@
 #   --gpu-q PRIO queues the run through `gpu-q --prio PRIO` (the cop's ordered
 #   front of the same lock, rule rev 5; release-blocking rows run at 1) instead
 #   of a bare bounded flock. gpu-q itself takes the lock and choom, so the
-#   harness must not take it again: two flocks on one file deadlock.
+#   harness must not take it again: two flocks on one file deadlock. gpu-q has
+#   no wait bound of its own, so the whole gated step runs under
+#   `timeout LOCK_WAIT+TIMEOUT+5`: a run that never got the lock DECLINES
+#   (no lock-acquired marker) instead of hanging.
 #
 # Exit: 0 PASS; 1 FAIL (cell.json names the first failing mechanism);
 #       2 decline (GPU lock not acquired, missing input); 3 usage error.
@@ -41,7 +44,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FIXTURE="$ROOT/tests/fixtures/apr-code-edit-verify"
 JUDGE="$ROOT/scripts/lib/apr_code_edit_verify.py"
-GPU_LOCK="/tmp/apr-gpu.lock"
+# APR_GPU_LOCK exists for the case table, which must never queue on the fleet
+# lock; gpu-q reads the same path from GPUQ_LOCK.
+GPU_LOCK="${APR_GPU_LOCK:-/tmp/apr-gpu.lock}"
 
 MODEL=""
 HOST=""
@@ -136,7 +141,7 @@ prompt="$(cat "$FIXTURE/task.txt")"
 # flock. The lock-acquired marker, written once the lock is held, separates
 # "never got the GPU" from "apr exited 75".
 if [ -n "$GPU_Q_PRIO" ]; then
-    gate=(gpu-q --prio "$GPU_Q_PRIO" --)
+    gate=(timeout "$((LOCK_WAIT + TIMEOUT + 5))" env GPUQ_LOCK="$GPU_LOCK" gpu-q --prio "$GPU_Q_PRIO" --)
 else
     gate=(flock -w "$LOCK_WAIT" -E 75 "$GPU_LOCK" choom -n 1000 --)
 fi
