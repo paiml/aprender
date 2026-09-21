@@ -1,0 +1,17 @@
+- id: PMAT-3587
+  github_issue: 3587
+  item_type: task
+  title: 'nextest fail-fast discards verdicts: one failure hid 15 unmeasured commands and the shard read as ''1 failure'', not ''1 failure + 15 Unknown'''
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-20T12:37:48Z
+  updated: 2026-09-20T12:37:48Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from issue #3587 "What lands"; minted on the PR branch so the AD-04 quorum can run -- pmat work status refuses a missing item). Two halves: the explicit-command runner (#3616, merged) and the nextest [profile.ci] key (#3626). Lands: 1. **--no-fail-fast on the shard.** The cost is runner minutes on an already-red shard; the benefit is that a red run still measures everything else it was going to measure — which is exactly when you most want the data. 2. **The reducer reports ran / skipped / total** in the shard receipt. The skipped count is a **number**, never an absence. 3. **A receipt with skipped > 0 is Unknown, not Fail and not Pass** — it names what was not measured, per doctrine 4. '
