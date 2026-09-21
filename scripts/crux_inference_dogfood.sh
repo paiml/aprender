@@ -51,11 +51,12 @@
 # receipt, labelled by engine, and judges none of them. Nothing in this file
 # reads a clock. A throughput CLAIM goes through scripts/perf_gate.sh (PERF-009).
 #
-# GPU sharing (the cop's rule, /mnt/nvme-raid0/agent-wt/gpu-lock-rule.txt):
-# on the gpu lane each cell holds /tmp/apr-gpu.lock for its engine invocations
-# only, and every engine runs under `choom -n 1000`, so a measurement is the OOM
-# victim, never a CI runner. llama.cpp and ollama are held to it as well as apr,
-# and ollama runs with keep_alive 0 and must leave VRAM before the lock drops.
+# GPU sharing (the cop's rule, /mnt/nvme-raid0/agent-wt/gpu-lock-rule.txt, rev 5):
+# on the gpu lane each cell (one prompt, every engine) runs as ONE command through
+# gpu-q (priority queue in front of /tmp/apr-gpu.lock; CRUX_GPU_PRIO, default 5),
+# falling back to a bounded flock recorded as "may have jumped the queue". Every
+# engine runs under `choom -n 1000`, so a measurement is the OOM victim, never a
+# CI runner, and ollama must leave VRAM before the cell ends.
 #
 # Every status is captured as `cmd; rc=$?`, never through a pipe (#2336, #2360).
 set -uo pipefail
@@ -72,6 +73,7 @@ ENGINES="apr,llama.cpp,ollama,hf,llamafile"
 VERBS="run"
 OUT_DIR=""
 PROMPTS="scripts/crux_inference_prompts.json"
+HF_SOURCES="${CRUX_HF_SOURCES:-evidence/crux/hf-sources.yaml}"
 TMO=600
 LOCK_WAIT=3600
 KEEP_OLLAMA=0
@@ -195,6 +197,15 @@ for eng in hf llamafile; do
   fi
   rm -f /tmp/crux-probe-$$-$eng.err
 done
+GPUQ="${GPUQ_BIN:-$HOME/.local/bin/gpu-q}"
+GPUQ_OK=0
+GPU_PRIO="${CRUX_GPU_PRIO:-5}"
+LOCK_VIA="flock /tmp/apr-gpu.lock (no gpu-q with \`wait\` on this host: may have jumped the queue)"
+if [ -x "$GPUQ" ]; then
+  gpuq_caps=$("$GPUQ" --caps 2>/dev/null)
+  case "$gpuq_caps" in *wait*) GPUQ_OK=1; LOCK_VIA="gpu-q --prio $GPU_PRIO (GPUQ_WAIT bound)" ;; esac
+fi
+[ "$BACKEND" = gpu ] || LOCK_VIA="none (cpu lane, the rule's clause 2)"
 EXT_ANY=0
 for eng in "${!EXT_OK[@]}"; do [ "${EXT_OK[$eng]}" = 1 ] && EXT_ANY=1; done
 
@@ -236,47 +247,58 @@ PY
 ) || decline "prompt set $PROMPTS unreadable"
 MAXTOK=$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1]))["max_tokens"]))' "$PROMPTS") || decline "max_tokens unreadable"
 
-# THE CELL LOCK (the cop's GPU rule rev 2, plus its #3739 ruling on ollama). On
-# the gpu lane one cell, meaning one prompt through every engine, holds
-# /tmp/apr-gpu.lock for exactly its engine invocations. It releases the lock only
-# after ollama's model has left VRAM: ollama keeps a model resident (keep_alive,
-# default 5 min), and a resident model would starve the next session's cell on a
-# 24 GB card. flock exits 75 (not 1) when the lock is not had in time, so a lock
-# wait is never read as an engine's own failure. The cpu lane touches no GPU
-# compute and takes no lock (the rule's clause 2); every engine still runs under
-# choom, so a measurement is the OOM victim, never a CI runner.
-cell_lock() {
-  [ "$BACKEND" = gpu ] || return 0
-  exec 9> /tmp/apr-gpu.lock || return 75
-  flock -w "$LOCK_WAIT" -E 75 9
+# ONE CELL = ONE COMMAND UNDER THE GPU LOCK (the cop's rule rev 5, #3739). A cell is
+# one prompt through every engine. Its engine commands are written into one
+# script and that script runs as ONE command: `GPUQ_WAIT=<bound> gpu-q --prio P
+# -- bash <cell>` when this host's gpu-q advertises `wait`, else the bounded
+# `flock -w ... -E 75 /tmp/apr-gpu.lock choom -n 1000 -- bash <cell>`, recorded
+# as "may have jumped the queue". gpu-q serves (priority, arrival) in front of
+# the same flock; a bare flock is not FIFO and starved a P0 head for 113 min.
+# ollama runs with keep_alive 0 and the cell waits for `ollama ps` to drop the
+# model BEFORE the script exits, so VRAM is free when the lock is released. The
+# cpu lane touches no GPU compute and runs the same script with no lock (the
+# rule's clause 2), under choom. Exit 75 from either tool means the lock was not
+# had within the bound: every engine of that cell is a refused row, never skipped.
+cell_add() { # cell_add <cell script> <prefix> cmd... — one engine line: out, err, rc files
+  local cell="$1" prefix="$2"; shift 2
+  { printf 'timeout %q ' "$TMO"; printf '%q ' "$@"
+    printf '> %q 2> %q < /dev/null; echo $? > %q\n' "$prefix.out" "$prefix.err" "$prefix.rc"; } >> "$cell"
 }
-cell_unlock() {
-  [ "$BACKEND" = gpu ] || return 0
-  flock -u 9
-  exec 9>&-
+cell_add_ollama_unload() { # cell_add_ollama_unload <cell> <prefix> <model name>
+  { printf '%q stop %q > /dev/null 2>&1; u=false\n' "$OLLAMA" "$3"
+    printf 'for i in $(seq 1 30); do l=$(%q ps 2> /dev/null); case "$l" in *%q*) sleep 1 ;; *) u=true; break ;; esac; done\n' "$OLLAMA" "$3"
+    printf 'echo "$u" > %q\n' "$2.unloaded"; } >> "$1"
 }
-
-# eng_run <stdout> <stderr> cmd... — one engine invocation. `9>&-` keeps the lock
-# fd out of the engine, so nothing an engine leaves running can hold the lock.
-eng_run() {
-  local o="$1" e="$2"; shift 2
-  choom -n 1000 -- timeout "$TMO" "$@" > "$o" 2> "$e" < /dev/null 9>&-
+run_cell() { # run_cell <cell script>; sets CELL_WHY when the lock was not had
+  local rc
+  CELL_WHY=""
+  if [ "$BACKEND" != gpu ]; then
+    choom -n 1000 -- bash "$1"
+    return $?
+  fi
+  if [ "$GPUQ_OK" = 1 ]; then
+    GPUQ_WAIT="$LOCK_WAIT" "$GPUQ" --prio "$GPU_PRIO" -- bash "$1" 2> "$1.lock.err"
+    rc=$?
+  else
+    flock -w "$LOCK_WAIT" -E 75 /tmp/apr-gpu.lock choom -n 1000 -- bash "$1" 2> "$1.lock.err"
+    rc=$?
+  fi
+  if [ "$rc" -ne 0 ]; then
+    CELL_WHY="the GPU lock was not had ($LOCK_VIA, rc $rc, bound ${LOCK_WAIT}s): $(tail -c 200 "$1.lock.err" 2>/dev/null | tr '\n' ' ')"
+  fi
+  return "$rc"
 }
-
-# ollama_unloaded <name>: stop the model, then wait up to 30 s for `ollama ps` to
-# stop listing it. Prints true or false, and the cell records which.
-ollama_unloaded() {
-  local i listed
-  "$OLLAMA" stop "$1" > /dev/null 2>&1 9>&-
-  for i in $(seq 1 30); do
-    listed=$("$OLLAMA" ps 2>/dev/null 9>&-)
-    case "$listed" in *"$1"*) sleep 1 ;; *) printf 'true'; return 0 ;; esac
-  done
-  printf 'false'
+cell_result() { # cell_result <engine> <prompt id> <prefix> — the engine's row from its cell files
+  local rc unl=""
+  if [ -n "$CELL_WHY" ]; then emit_gen "$1" "$2" "" "" "" "$CELL_WHY"; return; fi
+  if [ ! -f "$3.rc" ]; then emit_gen "$1" "$2" "" "" "" "the cell ran but this engine's line never finished"; return; fi
+  rc=$(cat "$3.rc")
+  [ -f "$3.unloaded" ] && unl=$(cat "$3.unloaded")
+  emit_gen "$1" "$2" "$rc" "$3.out" "$3.err" "" "$unl"
 }
 
 emit_gen() { # emit_gen <engine> <prompt_id> <rc> <stdout> <stderr> <refused> [ollama_unloaded]
-  python3 - "$MANIFEST" "$1" "$2" "$3" "$4" "$5" "$6" "${7:-}" "$SHA" "$HOST" "$VERB" "$THINK" "$BACKEND" 9>&- <<'PY'
+  python3 - "$MANIFEST" "$1" "$2" "$3" "$4" "$5" "$6" "${7:-}" "$SHA" "$HOST" "$VERB" "$THINK" "$BACKEND" <<'PY'
 import json, sys
 m, eng, pid, rc, o, e, ref, unl, sha, host, verb, think, be = sys.argv[1:14]
 row = {"kind": "gen", "engine": eng, "prompt_id": pid,
@@ -290,7 +312,7 @@ PY
 }
 
 rows_for() { # rows_for <engine> <prompt_id>: how many gen rows that engine has for the prompt
-  python3 - "$MANIFEST" "$1" "$2" "$SHA" 9>&- <<'PY'
+  python3 - "$MANIFEST" "$1" "$2" "$SHA" <<'PY'
 import json, sys
 m, eng, pid, sha = sys.argv[1:5]
 n = 0
@@ -367,6 +389,29 @@ for M_IN in "${MODELS[@]}"; do
   mkdir -p "$WORK/$SHA12"
   printf '  model %s  sha256 %s\n' "$NAME" "$SHA"
 
+  # hf runs the SOURCE weights of this GGUF, declared by sha256 in
+  # evidence/crux/hf-sources.yaml at a pinned revision; no entry = a refused hf row.
+  HF_SRC=()
+  HF_MODEL_WHY=""
+  if want hf && [ "${EXT_OK[hf]:-0}" = 1 ]; then
+    hf_line=$(python3 - "$HF_SOURCES" "$SHA" <<'PY'
+import sys, yaml
+try:
+    src = (yaml.safe_load(open(sys.argv[1])) or {}).get("sources", {}).get(sys.argv[2], {}).get("hf") or {}
+except OSError:
+    src = {}
+if src.get("repo") and src.get("revision"):
+    print("%s\t%s\t%s" % (src["repo"], src["revision"], src.get("dtype", "bfloat16")))
+PY
+)
+    if [ -n "$hf_line" ]; then
+      IFS=$'\t' read -r hf_repo hf_rev hf_dtype <<< "$hf_line"
+      HF_SRC=(--source-repo "$hf_repo" --source-revision "$hf_rev" --dtype "$hf_dtype")
+    else
+      HF_MODEL_WHY="no HF source declared for this GGUF (sha256 ${SHA:0:12}…) in $HF_SOURCES"
+    fi
+  fi
+
   THINKING_CAPABLE=unknown
   TOK_WHY=""
   if [ "$LLAMA_OK" = 1 ]; then
@@ -431,62 +476,53 @@ PY
     content=$(cat "$WORK/prompt-$pid.txt")
     d="$WORK/$SHA12/$VERB"
     mkdir -p "$d"
+    cell="$d/cell-$pid.sh"
+    printf '#!/usr/bin/env bash\n# one CRUX cell: prompt %s through every engine, one hold of the GPU lock\n' "$pid" > "$cell"
 
-    if ! cell_lock; then
-      ref="the GPU lock was not had within ${LOCK_WAIT}s"
-      emit_gen apr "$pid" "" "" "" "$ref"
-      want llama.cpp && emit_gen llama.cpp "$pid" "" "" "" "$ref"
-      want ollama && emit_gen ollama "$pid" "" "" "" "$ref"
-      continue
-    fi
-
-    eng_run "$d/apr-$pid.out" "$d/apr-$pid.err" "$APR" run "$M" --prompt "$content" --max-tokens "$MAXTOK" \
+    cell_add "$cell" "$d/apr-$pid" "$APR" run "$M" --prompt "$content" --max-tokens "$MAXTOK" \
       --temperature "$TEMP" --seed "$SEED" --format json -v "$APR_BE"
-    rc=$?
-    emit_gen apr "$pid" "$rc" "$d/apr-$pid.out" "$d/apr-$pid.err" ""
-
-    if [ "$LLAMA_OK" = 1 ]; then
-      eng_run "$d/llama-$pid.out" "$d/llama-$pid.err" "$LLAMA_CLI" -m "$M" -p "$content" -st -n "$MAXTOK" \
-        --temp "$TEMP" --seed "$SEED" -c "$CTX" -ngl "$NGL" "${LLAMA_DEV[@]}" "${LLAMA_THINK[@]}"
-      rc=$?
-      emit_gen llama.cpp "$pid" "$rc" "$d/llama-$pid.out" "$d/llama-$pid.err" ""
-    elif want llama.cpp; then
-      emit_gen llama.cpp "$pid" "" "" "" "$LLAMA_WHY"
-    fi
-
+    [ "$LLAMA_OK" = 1 ] && cell_add "$cell" "$d/llama-$pid" "$LLAMA_CLI" -m "$M" -p "$content" -st -n "$MAXTOK" \
+      --temp "$TEMP" --seed "$SEED" -c "$CTX" -ngl "$NGL" "${LLAMA_DEV[@]}" "${LLAMA_THINK[@]}"
     if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then
-      eng_run "$d/ollama-$pid.out" "$d/ollama-$pid.err" "$OLLAMA" run "$OL_NAME" "$content" --verbose --nowordwrap \
+      cell_add "$cell" "$d/ollama-$pid" "$OLLAMA" run "$OL_NAME" "$content" --verbose --nowordwrap \
         --keepalive 0 "${OLLAMA_THINK[@]}"
-      rc=$?
-      unl=$(ollama_unloaded "$OL_NAME")
-      emit_gen ollama "$pid" "$rc" "$d/ollama-$pid.out" "$d/ollama-$pid.err" "" "$unl"
-    elif want ollama; then
-      emit_gen ollama "$pid" "" "" "" "${OL_REFUSED:-$OLLAMA_WHY}"
+      cell_add_ollama_unload "$cell" "$d/ollama-$pid" "$OL_NAME"
     fi
-
     for eng in hf llamafile; do
-      want "$eng" || continue
-      if [ "${EXT_OK[$eng]}" != 1 ]; then
-        emit_gen "$eng" "$pid" "" "" "" "${EXT_WHY[$eng]}"
-        continue
-      fi
+      want "$eng" && [ "${EXT_OK[$eng]}" = 1 ] || continue
+      [ "$eng" = hf ] && [ -n "$HF_MODEL_WHY" ] && continue
       case "${EXT_SCRIPT[$eng]}" in *.py) ext_run=(python3) ;; *) ext_run=(bash) ;; esac
       # llamafile's `--cli` ignores the thinking switch and does not bound output
       # with -n (infra-3c, measured on 0.10.6); its server honours both.
       ext_extra=()
       [ "$eng" = llamafile ] && ext_extra=(--interface server)
-      before=$(rows_for "$eng" "$pid")
-      eng_run "$d/$eng-$pid.driver.out" "$d/$eng-$pid.driver.err" "${ext_run[@]}" "${EXT_SCRIPT[$eng]}" gen \
+      [ "$eng" = hf ] && ext_extra=("${HF_SRC[@]}")
+      cell_add "$cell" "$d/$eng-$pid.driver" "${ext_run[@]}" "${EXT_SCRIPT[$eng]}" gen \
         --model "$M" --model-sha256 "$SHA" --verb "$VERB" --prompt-id "$pid" \
         --messages "$WORK/messages-$pid.json" --prompt-file "$WORK/prompt-$pid.txt" \
         --thinking "$THINK" --backend "$BACKEND" --host "$HOST" \
         --max-tokens "$MAXTOK" --seed "$SEED" --temperature "$TEMP" --context "$CTX" "${ext_extra[@]}"
-      rc=$?
-      if [ "$(rows_for "$eng" "$pid")" -le "$before" ]; then
-        emit_gen "$eng" "$pid" "" "" "" "engine driver ${EXT_SCRIPT[$eng]} gen exited $rc without appending a row: $(tail -c 200 "$d/$eng-$pid.driver.err" 2>/dev/null | tr '\n' ' ')"
+    done
+    printf 'exit 0\n' >> "$cell"
+
+    before_hf=$(rows_for hf "$pid"); before_lf=$(rows_for llamafile "$pid")
+    run_cell "$cell"
+
+    cell_result apr "$pid" "$d/apr-$pid"
+    if [ "$LLAMA_OK" = 1 ]; then cell_result llama.cpp "$pid" "$d/llama-$pid"
+    elif want llama.cpp; then emit_gen llama.cpp "$pid" "" "" "" "$LLAMA_WHY"; fi
+    if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then cell_result ollama "$pid" "$d/ollama-$pid"
+    elif want ollama; then emit_gen ollama "$pid" "" "" "" "${OL_REFUSED:-$OLLAMA_WHY}"; fi
+    for eng in hf llamafile; do
+      want "$eng" || continue
+      if [ "${EXT_OK[$eng]}" != 1 ]; then emit_gen "$eng" "$pid" "" "" "" "${EXT_WHY[$eng]}"; continue; fi
+      if [ "$eng" = hf ] && [ -n "$HF_MODEL_WHY" ]; then emit_gen hf "$pid" "" "" "" "$HF_MODEL_WHY"; continue; fi
+      before=$before_hf; [ "$eng" = llamafile ] && before=$before_lf
+      if [ -n "$CELL_WHY" ]; then emit_gen "$eng" "$pid" "" "" "" "$CELL_WHY"
+      elif [ "$(rows_for "$eng" "$pid")" -le "$before" ]; then
+        emit_gen "$eng" "$pid" "" "" "" "engine driver ${EXT_SCRIPT[$eng]} gen exited $(cat "$d/$eng-$pid.driver.rc" 2>/dev/null || echo '?') without appending a row: $(tail -c 200 "$d/$eng-$pid.driver.err" 2>/dev/null | tr '\n' ' ')"
       fi
     done
-    cell_unlock
   done
 
   if [ "$OLLAMA_OK" = 1 ] && [ "$KEEP_OLLAMA" = 0 ]; then
@@ -506,17 +542,17 @@ json.dump({"hf": {"probe": hp or None, "unavailable": hw or None},
 PY
 python3 - "$WORK/meta.json" "$MODELS_JSONL" "$VERSION" "$HOST" "$BACKEND" "$ENGINES" "$VERBS" \
   "$APR_VERSION_LINE" "${LLAMA_BUILD:-}" "$(llama_pin_get build_commit 2>/dev/null)" "$LLAMA_WHY" \
-  "$OLLAMA_SERVER" "$OLLAMA_CLIENT" "$OLLAMA_WHY" "$TEMP" "$SEED" "$CTX" "$MAXTOK" "${GPU_NAME:-}" "$HARNESS_SHA" "$EXT_META" <<'PY'
+  "$OLLAMA_SERVER" "$OLLAMA_CLIENT" "$OLLAMA_WHY" "$TEMP" "$SEED" "$CTX" "$MAXTOK" "${GPU_NAME:-}" "$HARNESS_SHA" "$EXT_META" "$LOCK_VIA" <<'PY'
 import json, platform, sys
 (out, models, version, host, backend, engines, verbs, apr_line, lbuild, lpin, lwhy,
- osrv, ocli, owhy, temp, seed, ctx, maxtok, gpu, hsha, ext) = sys.argv[1:22]
+ osrv, ocli, owhy, temp, seed, ctx, maxtok, gpu, hsha, ext, lockvia) = sys.argv[1:23]
 meta = {
     "version": version, "host": host, "backend": backend, "isa": platform.machine(), "gpu": gpu or None,
     "engines": engines.split(","), "verbs": verbs.split(","), "thinking": ["off"],
     "sampling": {"temperature": float(temp), "seed": int(seed), "context": int(ctx), "max_tokens": int(maxtok),
                  "source": "scripts/llama_pin.toml [protocol]"},
     "apr": {"version_line": apr_line},
-    "harness": {"sha": hsha or None, "driver": "scripts/crux_inference_dogfood.sh"},
+    "harness": {"sha": hsha or None, "driver": "scripts/crux_inference_dogfood.sh", "gpu_lock": lockvia},
     "llama_cpp": {"build": lbuild or None, "pin": lpin or None, "unavailable": lwhy or None},
     "ollama": {"server_version": osrv or None, "client_version": ocli or None, "unavailable": owhy or None},
     **json.load(open(ext)),

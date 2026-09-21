@@ -351,6 +351,20 @@ row "$d/manifest.jsonl" hf $P 0 "$d/hf-$P.json" ""
 run_judge "$d"; GOT_RC=$?
 expect "hf JSON without a text field is no oracle (UNJUDGED)" "$d" 2 $P UNJUDGED
 
+# E4. a DEGENERATE answer is no answer from any engine: the golden greeting's "!"
+#     pattern would otherwise score "!!!!!!!!" (token id 0, x64) as correct.
+d=$(newcase degenerate_answers)
+apr_out "$d" golden-greeting "!!!!!!!!!!!!!!!!" gpu false; engine_out "$d" hf golden-greeting "!!!!!!!!!!!!!!!!"
+llama_out "$d" golden-greeting "Hello there, how are you doing today my friend?" "Hello! I am well."
+row "$d/manifest.jsonl" apr golden-greeting 0 "$d/apr-golden-greeting.out" "$d/apr-golden-greeting.err"
+row "$d/manifest.jsonl" hf golden-greeting 0 "$d/hf-golden-greeting.json" ""
+row "$d/manifest.jsonl" llama.cpp golden-greeting 0 "$d/llama-golden-greeting.out" "$d/llama-golden-greeting.err"
+control_green "$d"
+run_judge "$d"; GOT_RC=$?
+expect "apr's degenerate '!!!!' is no answer: RED where llama.cpp answered" "$d" 1 golden-greeting RED
+got=$(python3 -c 'import json,sys; c=[x for x in json.load(open(sys.argv[1]))["cells"] if x["key"]["prompt_id"]=="golden-greeting"][0]; print(c["engines"]["hf"]["answered"], c["engines"]["hf"]["why"][:18])' "$d/receipt.json" 2>/dev/null)
+case "$got" in "False degenerate output"*) ok "hf's degenerate '!!!!' cannot vouch either" ;; *) broke "hf degenerate: '$got'" ;; esac
+
 # D1-D4. tok: raw-text ids, BYTE-EQUAL or RED.
 d=$(newcase tok_equal); control_green "$d"
 printf '{"tokens": [9707, 11, 1879]}\n' > "$d/apr-tok.json"; printf '{"tokens": [9707, 11, 1879]}\n' > "$d/hf-tok.json"
