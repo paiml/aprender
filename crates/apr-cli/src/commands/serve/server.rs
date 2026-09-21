@@ -64,6 +64,42 @@ fn measured_model_source(
 /// directly from the mmap (the mapped model MUST outlive any inference
 /// call). For non-MoE GGUF archs this is just an extra Arc reference.
 #[cfg(feature = "inference")]
+/// The served GGUF's own chat template (#3755), announced, and refused by name when it
+/// is invalid or hostile (a GGUF from the internet is untrusted input).
+fn served_gguf_chat_template(
+    mapped: &realizar::gguf::MappedGGUFModel,
+) -> Result<Option<realizar::chat_template::EmbeddedChatTemplate>> {
+    announce_served_chat_template(
+        realizar::chat_template::EmbeddedChatTemplate::from_gguf(&mapped.model).transpose(),
+    )
+}
+
+/// The served APR/SafeTensors file's own chat template (#3755).
+fn served_file_chat_template(
+    model_path: &Path,
+) -> Result<Option<realizar::chat_template::EmbeddedChatTemplate>> {
+    announce_served_chat_template(
+        realizar::chat_template::EmbeddedChatTemplate::for_model_file(model_path).transpose(),
+    )
+}
+
+fn announce_served_chat_template(
+    loaded: std::result::Result<
+        Option<realizar::chat_template::EmbeddedChatTemplate>,
+        realizar::RealizarError,
+    >,
+) -> Result<Option<realizar::chat_template::EmbeddedChatTemplate>> {
+    let template = loaded.map_err(|e| CliError::InvalidFormat(format!("chat template: {e}")))?;
+    if let Some(t) = &template {
+        println!(
+            "{} the model's own (thinking: {}; default off where allowed)",
+            "Chat template:".green(),
+            t.thinking_modes()
+        );
+    }
+    Ok(template)
+}
+
 fn run_cpu_server(
     quantized_model: realizar::gguf::OwnedQuantizedModel,
     vocab: Vec<String>,
@@ -78,9 +114,14 @@ fn run_cpu_server(
     // `size_bytes: 0` / `context_length: 4096` / `quantization: "Q4_K_M"`.
     let model_source = measured_model_source(&quantized_model, config);
 
+    let chat_template = match mapped_model.as_deref() {
+        Some(mapped) => served_gguf_chat_template(mapped)?,
+        None => None,
+    };
     let mut state = AppState::with_quantized_model_and_vocab(quantized_model, vocab)
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?
-        .with_model_source(model_source);
+        .with_model_source(model_source)
+        .with_chat_template(chat_template);
     if let Some(mapped) = mapped_model {
         state = state.with_mapped_gguf_model(mapped);
     }
@@ -189,8 +230,10 @@ fn start_gguf_server_gpu_batched(
     // Create state with cached model and real vocab
     // aprender#1789 Option B: attach mapped GGUF so qwen3_moe chat dispatch
     // via `try_qwen3_moe_backend` can borrow per-expert tensors.
+    let chat_template = served_gguf_chat_template(&mapped_model)?;
     let state = AppState::with_cached_model_and_vocab(cached_model, vocab)
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?
+        .with_chat_template(chat_template)
         .with_mapped_gguf_model(mapped_model)
         .with_verbose(config.verbose); // GH-152: Pass verbose flag
 

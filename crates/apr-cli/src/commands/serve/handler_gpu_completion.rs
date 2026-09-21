@@ -567,6 +567,7 @@ fn start_gguf_server_cuda(
 
             let state = AppState::with_cuda_model_and_vocab(cuda_model, vocab)
                 .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
+                .with_chat_template(served_gguf_chat_template(&mapped_model)?)
                 .with_mapped_gguf_model(mapped_model.clone())
                 // PP-14/PP-15/§9 #8: the resolved offload AND this binary's
                 // `cfg!` feature list (including `cuda-batch`) reach the served
