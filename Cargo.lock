@@ -413,6 +413,7 @@ dependencies = [
 name = "aprender-common"
 version = "0.69.0"
 dependencies = [
+ "clap",
  "lz4_flex 0.11.6",
  "zstd",
 ]

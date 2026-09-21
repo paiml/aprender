@@ -19967,3 +19967,43 @@ roadmap:
   labels:
   - kind:code
   notes: "Refs #3577 (ONT-4c3; its ledger binding is infra's row, bound after this merges) and #3624 (the by_entity_type sibling, not closed here). R-3 of ONT-001: pc_extract is one planted defect per registered extractor, every run."
+- id: PMAT-3749
+  github_issue: 3749
+  item_type: task
+  title: '#3745 S1: apr emits its own clap surface as JSON; arg roles come from typed markers; a model loaded through an unmarked arg is RED'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-fc
+  created: 2026-09-21T17:27:26Z
+  updated: 2026-09-21T17:27:26Z
+  spec: null
+  acceptance_criteria:
+  - "S1.1: cargo test -p apr-cli --lib surface:: passes. It includes the_emitter_sees_a_flag_added_to_the_clap_tree: `--zz-dummy` (SetTrue) is injected into `run` via mut_subcommand and appears in the emitted JSON under path [\"run\"] with role mode. It also includes the_surface_is_versioned_and_deterministic: schema == \"apr-cli-surface/v1\", and two emissions from one tree are byte-identical."
+  - "S1.2: in the emitted surface, every model-taking command's model arg has role model. This covers run SOURCE, chat, serve run, code --model, qa, inspect, tensors, trace, diff, merge, distill --teacher/--student, finetune, the rosetta subcommands, pull/rm/import, and pv verify-structure --model and rag transcribe --model (cop ruling below). run --prompt and the run positional PROMPT have role prompt, run --input has role input-file, and run --backend has role backend. Each role is read by TypeId (or by BackendArg's group id), never by name."
+  - "S1.3: cargo test -p apr-cli --lib surface::guard passes. Every free-form arg (raw PathBuf, or raw String without a finite value set) in a non-foreign subtree is RED, and the guard names `<path> <arg>`. The foreign-subtree list is by Rust type and fails closed both ways. The case table has one row per value-parser class. Mutants, each observed RED then restored GREEN: (a) inspect's `file: ModelPath` reverted to `PathBuf`; (b) a new subcommand with a raw `--model: PathBuf`; (c) a raw `String` prompt."
+  - "S1.4: `\"$APR\" surface --json` from the built binary exits 0 with a single JSON document on stdout, and under --quiet too. The schema is `apr-cli-surface/v1` as agreed on #3745 (issuecomment-5764787123 + amendment 5764810360). No surface JSON is committed."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |
+    Part S1 of #3745. Owner aprender-fc, routed by cop aprender-04. Criteria quoted VERBATIM from the cop's per-part comment on #3745 (issuecomment-5764661626):
+
+    "### S1: surface emitter + typed arg markers + marker guard (aprender-fc)
+    - [ ] S1.1 A hidden `apr` subcommand prints the full clap tree as JSON: every subcommand path; every arg with long/short/positional, num_args, value_enum values, default and **role** ∈ {model, prompt, input-file, backend, mode, other}. A test adds a dummy flag to the clap tree and finds it in the JSON.
+    - [ ] S1.2 The role is read from the arg's typed constructor, not its name. Every existing model-taking command is migrated onto the markers.
+    - [ ] S1.3 Marker guard (issue mutant 3): a command that loads a model through a plain `PathBuf` arg is RED, with a case row and a mutant.
+    - [ ] S1.4 The JSON schema is agreed with S2/S3/#3739 and versioned inside the JSON. It's generated from the binary under test at gate time and never committed."
+
+    Issue mutant 3, VERBATIM from the #3745 body: "**Mutant 3:** a command that loads a model with a plain `PathBuf` arg instead of `ModelArg` → the marker guard is RED."
+
+    Cop rulings on the S1 design note, VERBATIM from aprender-04 (2026-09-21, on #3749's design, #3745 issuecomment-5764787123):
+    "3. Totality over loader-detection: approved, and better than what I specified. Making an undeclared role inexpressible needs no loader list to rot. It also means "other" roles are typed too (OutputPath, DirPath, FreeText…); no raw PathBuf/String survives in apr-cli subtrees.
+    4. KEEP the String half. It closes the #3743 prompt-in-a-String class, and cutting it would re-open a leak we just paid for. The 428-arg migration is the job. Foreign subtrees: they ARE apr's surface, so emit them with `foreign: true`. The two known model gaps (`pv verify-structure --model`, `rag transcribe --model`) are in-tree crates: give them the ModelPath type in S1 itself, not a follow-up, because a model-taking verb with no cells is exactly the leak. Any remaining foreign free-form arg is emitted role `unknown`. S2 gives every `unknown` arg's verb at least the runs-or-refuses cell, and the receipt carries the `unknown` count under a SHRINK-ONLY ratchet (it can only go down).
+    5. dispatch_run.rs and the serve handlers untouched, adapting at dispatch.rs: approved."
+    So the role set emitted is {model, prompt, input-file, backend, mode, other, unknown}. `unknown` exists only because of ruling 4, and the marker guard makes it RED outside foreign subtrees.
+
+    Where it runs: the marker guard is a `cargo test -p apr-cli --lib` test, so it runs in CI's workspace-test (nextest --lib over the workspace). The surface JSON is produced by the built binary (`apr surface --json`) at gate time for S2/S3/#3739. That is cargo-side only, and nothing is committed.
+    Deliberately NOT here: S2 (the cli-surface extractor, derived cells, the release-readiness targets) and S3 (the hand-list guard). Their owners are 97 and 62.
+    Refs #3745 #3743 #3739 #3715.

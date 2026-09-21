@@ -1,0 +1,490 @@
+//! Typed CLI argument roles (#3745 S1, PMAT-3749).
+//!
+//! A release cell can only be derived for an argument whose ROLE the gate can
+//! see. Before these types, the role of an `apr` argument was knowable only
+//! from its name: `apr run SOURCE`, `--prompt` and `-i FILE` were a `String`, a
+//! `String` and a `PathBuf`, the same types as `--name`, `--tag` and
+//! `--output`. Every release list was therefore typed by hand, and a verb, flag
+//! or input shape missing from that list was invisible to the gate. That is how
+//! `apr run --prompt P --chat` shipped double-templated (#3743) while
+//! `-i file --chat` was covered.
+//!
+//! Each type here is a transparent newtype over `PathBuf` or `String` whose clap
+//! value parser is the SAME parser clap uses for the raw type
+//! (`PathBufValueParser` / `StringValueParser`), mapped into the newtype. So a
+//! migrated argument accepts exactly the values it accepted before. The only
+//! thing that changes is the parser's output TYPE, and that is what `apr surface`
+//! reads, through `ValueParser::type_id()`, to decide the role. The role is
+//! declared by how the argument is BUILT; its name never enters into it.
+//!
+//! The types live here rather than in `apr-cli` because a marker compared by
+//! `TypeId` needs ONE defining crate, and some of `apr`'s surface is declared by
+//! crates that do not depend on `apr-cli` (`apr pv …` from
+//! `aprender-contracts-cli`, `apr rag …` from `aprender-rag-cli`).
+
+use std::any::TypeId;
+use std::ffi::OsStr;
+use std::fmt;
+use std::ops::Deref;
+use std::path::{Path, PathBuf};
+
+use clap::builder::{MapValueParser, PathBufValueParser, StringValueParser, TypedValueParser};
+
+/// The role an argument plays in a release cell (#3745).
+///
+/// `Mode` and `Backend` are not listed in [`MARKERS`]. Mode is structural (a
+/// flag action, or a finite value set), and backend is membership in the shared
+/// `BackendArg` group; `apr surface` decides both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Role {
+    /// A model: a local file, or a reference `apr` resolves to one.
+    Model,
+    /// Text the model is prompted with.
+    Prompt,
+    /// A file the command consumes as input data (audio, text, a dataset).
+    InputFile,
+    /// The compute backend override.
+    Backend,
+    /// A flag, or a value drawn from a finite set.
+    Mode,
+    /// Declared, and none of the above: outputs, directories, configs, names.
+    Other,
+    /// A free-form value no role type declares. Only a foreign subtree may
+    /// carry one; the marker guard is RED on it anywhere else.
+    Unknown,
+}
+
+impl Role {
+    /// The spelling used in the `apr-cli-surface` JSON.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Model => "model",
+            Self::Prompt => "prompt",
+            Self::InputFile => "input-file",
+            Self::Backend => "backend",
+            Self::Mode => "mode",
+            Self::Other => "other",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// What a marker's underlying value is: a filesystem path, or free text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Carrier {
+    /// Backed by `PathBuf`.
+    Path,
+    /// Backed by `String`.
+    Text,
+}
+
+/// One role type: the `TypeId` its value parser yields, and what it declares.
+#[derive(Debug, Clone, Copy)]
+pub struct Marker {
+    /// The type's name as written in code, e.g. `ModelPath`.
+    pub name: &'static str,
+    /// The role this type declares.
+    pub role: Role,
+    /// Path- or text-backed.
+    pub carrier: Carrier,
+    type_id: fn() -> TypeId,
+}
+
+impl Marker {
+    /// The `TypeId` of the marker type, which is the `TypeId` its clap value
+    /// parser reports.
+    #[must_use]
+    pub fn type_id(&self) -> TypeId {
+        (self.type_id)()
+    }
+}
+
+macro_rules! path_role {
+    ($(#[$doc:meta])* $name:ident) => {
+        $(#[$doc])*
+        #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        pub struct $name(PathBuf);
+
+        impl $name {
+            /// Wrap a path.
+            #[must_use]
+            pub fn new(path: impl Into<PathBuf>) -> Self {
+                Self(path.into())
+            }
+            /// The path, borrowed.
+            #[must_use]
+            pub fn as_path(&self) -> &Path {
+                &self.0
+            }
+            /// The path, owned.
+            #[must_use]
+            pub fn into_path_buf(self) -> PathBuf {
+                self.0
+            }
+        }
+
+        impl Deref for $name {
+            type Target = PathBuf;
+            fn deref(&self) -> &PathBuf {
+                &self.0
+            }
+        }
+        impl AsRef<Path> for $name {
+            fn as_ref(&self) -> &Path {
+                &self.0
+            }
+        }
+        impl AsRef<OsStr> for $name {
+            fn as_ref(&self) -> &OsStr {
+                self.0.as_os_str()
+            }
+        }
+        impl From<PathBuf> for $name {
+            fn from(p: PathBuf) -> Self {
+                Self(p)
+            }
+        }
+        impl From<&Path> for $name {
+            fn from(p: &Path) -> Self {
+                Self(p.to_path_buf())
+            }
+        }
+        impl From<&str> for $name {
+            fn from(p: &str) -> Self {
+                Self(PathBuf::from(p))
+            }
+        }
+        impl From<String> for $name {
+            fn from(p: String) -> Self {
+                Self(PathBuf::from(p))
+            }
+        }
+        impl From<$name> for PathBuf {
+            fn from(p: $name) -> PathBuf {
+                p.0
+            }
+        }
+        impl PartialEq<PathBuf> for $name {
+            fn eq(&self, other: &PathBuf) -> bool {
+                &self.0 == other
+            }
+        }
+        impl PartialEq<Path> for $name {
+            fn eq(&self, other: &Path) -> bool {
+                self.0 == other
+            }
+        }
+        impl clap::builder::ValueParserFactory for $name {
+            type Parser = MapValueParser<PathBufValueParser, fn(PathBuf) -> $name>;
+            fn value_parser() -> Self::Parser {
+                PathBufValueParser::new().map($name as fn(PathBuf) -> $name)
+            }
+        }
+    };
+}
+
+macro_rules! text_role {
+    ($(#[$doc:meta])* $name:ident) => {
+        $(#[$doc])*
+        #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        pub struct $name(String);
+
+        impl $name {
+            /// Wrap a string.
+            #[must_use]
+            pub fn new(s: impl Into<String>) -> Self {
+                Self(s.into())
+            }
+            /// The text, borrowed.
+            #[must_use]
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
+            /// The text as a `&String`, for callees that take one.
+            #[must_use]
+            pub fn as_string(&self) -> &String {
+                &self.0
+            }
+            /// The text, owned.
+            #[must_use]
+            pub fn into_string(self) -> String {
+                self.0
+            }
+        }
+
+        impl Deref for $name {
+            type Target = String;
+            fn deref(&self) -> &String {
+                &self.0
+            }
+        }
+        impl AsRef<str> for $name {
+            fn as_ref(&self) -> &str {
+                &self.0
+            }
+        }
+        impl AsRef<Path> for $name {
+            fn as_ref(&self) -> &Path {
+                Path::new(&self.0)
+            }
+        }
+        impl AsRef<OsStr> for $name {
+            fn as_ref(&self) -> &OsStr {
+                OsStr::new(&self.0)
+            }
+        }
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(&self.0)
+            }
+        }
+        impl From<String> for $name {
+            fn from(s: String) -> Self {
+                Self(s)
+            }
+        }
+        impl From<&str> for $name {
+            fn from(s: &str) -> Self {
+                Self(s.to_string())
+            }
+        }
+        impl From<$name> for String {
+            fn from(s: $name) -> String {
+                s.0
+            }
+        }
+        impl PartialEq<str> for $name {
+            fn eq(&self, other: &str) -> bool {
+                self.0 == other
+            }
+        }
+        impl PartialEq<&str> for $name {
+            fn eq(&self, other: &&str) -> bool {
+                self.0 == *other
+            }
+        }
+        impl PartialEq<String> for $name {
+            fn eq(&self, other: &String) -> bool {
+                &self.0 == other
+            }
+        }
+        impl clap::builder::ValueParserFactory for $name {
+            type Parser = MapValueParser<StringValueParser, fn(String) -> $name>;
+            fn value_parser() -> Self::Parser {
+                StringValueParser::new().map($name as fn(String) -> $name)
+            }
+        }
+    };
+}
+
+path_role!(
+    /// A local model file (`.apr`, `.gguf`, `.safetensors`, …).
+    ModelPath
+);
+path_role!(
+    /// A file the command reads as input data, not as a model.
+    InputFile
+);
+path_role!(
+    /// A file the command writes.
+    OutputPath
+);
+path_role!(
+    /// A directory: a workspace, a cache, a corpus root, an output tree.
+    DirPath
+);
+path_role!(
+    /// A configuration, manifest, contract, schema or receipt the command
+    /// reads to decide what to do, as distinct from the data it operates on.
+    ConfigPath
+);
+text_role!(
+    /// A model reference: a local path, `hf://org/repo`, a URL, or a cache
+    /// name, which `apr` resolves to a model file.
+    ModelRef
+);
+text_role!(
+    /// Text the model is prompted with.
+    PromptText
+);
+text_role!(
+    /// Any other free text: a name, id, tag, URL, pattern or list.
+    FreeText
+);
+
+/// Every role type, in one table. `apr surface` reads roles through it, and the
+/// marker guard refuses a free-form argument whose parser yields none of these.
+pub const MARKERS: &[Marker] = &[
+    Marker {
+        name: "ModelPath",
+        role: Role::Model,
+        carrier: Carrier::Path,
+        type_id: TypeId::of::<ModelPath>,
+    },
+    Marker {
+        name: "ModelRef",
+        role: Role::Model,
+        carrier: Carrier::Text,
+        type_id: TypeId::of::<ModelRef>,
+    },
+    Marker {
+        name: "PromptText",
+        role: Role::Prompt,
+        carrier: Carrier::Text,
+        type_id: TypeId::of::<PromptText>,
+    },
+    Marker {
+        name: "InputFile",
+        role: Role::InputFile,
+        carrier: Carrier::Path,
+        type_id: TypeId::of::<InputFile>,
+    },
+    Marker {
+        name: "OutputPath",
+        role: Role::Other,
+        carrier: Carrier::Path,
+        type_id: TypeId::of::<OutputPath>,
+    },
+    Marker {
+        name: "DirPath",
+        role: Role::Other,
+        carrier: Carrier::Path,
+        type_id: TypeId::of::<DirPath>,
+    },
+    Marker {
+        name: "ConfigPath",
+        role: Role::Other,
+        carrier: Carrier::Path,
+        type_id: TypeId::of::<ConfigPath>,
+    },
+    Marker {
+        name: "FreeText",
+        role: Role::Other,
+        carrier: Carrier::Text,
+        type_id: TypeId::of::<FreeText>,
+    },
+];
+
+/// The marker whose type a value parser yields, if any.
+#[must_use]
+pub fn marker_for(type_id: TypeId) -> Option<&'static Marker> {
+    MARKERS.iter().find(|m| m.type_id() == type_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::{Arg, Command};
+
+    fn parser_type<T: clap::builder::ValueParserFactory>() -> TypeId
+    where
+        T::Parser: TypedValueParser + Send + Sync + 'static,
+        <T::Parser as TypedValueParser>::Value: Send + Sync + Clone + 'static,
+    {
+        let vp: clap::builder::ValueParser = T::value_parser().into();
+        let arg = Arg::new("x").value_parser(vp);
+        // `AnyValueId` is clap's; it compares equal to a std `TypeId`.
+        let id = arg.get_value_parser().type_id();
+        MARKERS
+            .iter()
+            .map(Marker::type_id)
+            .chain([TypeId::of::<PathBuf>(), TypeId::of::<String>()])
+            .find(|t| id == *t)
+            .expect("value parser yields a known type")
+    }
+
+    #[test]
+    fn every_marker_parser_reports_its_own_type_id() {
+        assert_eq!(parser_type::<ModelPath>(), TypeId::of::<ModelPath>());
+        assert_eq!(parser_type::<ModelRef>(), TypeId::of::<ModelRef>());
+        assert_eq!(parser_type::<PromptText>(), TypeId::of::<PromptText>());
+        assert_eq!(parser_type::<InputFile>(), TypeId::of::<InputFile>());
+        assert_eq!(parser_type::<OutputPath>(), TypeId::of::<OutputPath>());
+        assert_eq!(parser_type::<DirPath>(), TypeId::of::<DirPath>());
+        assert_eq!(parser_type::<ConfigPath>(), TypeId::of::<ConfigPath>());
+        assert_eq!(parser_type::<FreeText>(), TypeId::of::<FreeText>());
+    }
+
+    #[test]
+    fn marker_table_is_one_to_one_with_types() {
+        let mut ids: Vec<TypeId> = MARKERS.iter().map(Marker::type_id).collect();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), MARKERS.len(), "two markers share a TypeId");
+        assert!(
+            marker_for(TypeId::of::<PathBuf>()).is_none(),
+            "raw PathBuf must not be a marker"
+        );
+        assert!(
+            marker_for(TypeId::of::<String>()).is_none(),
+            "raw String must not be a marker"
+        );
+        assert_eq!(
+            marker_for(TypeId::of::<ModelPath>()).map(|m| m.role),
+            Some(Role::Model)
+        );
+        assert_eq!(
+            marker_for(TypeId::of::<PromptText>()).map(|m| m.role),
+            Some(Role::Prompt)
+        );
+    }
+
+    /// A migrated argument must accept exactly what the raw type accepted: the
+    /// marker parser is the raw parser, mapped. An empty path is refused by
+    /// both, a normal value is accepted by both.
+    #[test]
+    fn marker_parsers_accept_what_the_raw_parsers_accept() {
+        let raw = Command::new("t").arg(Arg::new("p").value_parser(clap::value_parser!(PathBuf)));
+        let typed =
+            Command::new("t").arg(Arg::new("p").value_parser(clap::value_parser!(ModelPath)));
+        for argv in [vec!["t", "m.gguf"], vec!["t", ""], vec!["t", "-"]] {
+            let a = raw.clone().try_get_matches_from(&argv).is_ok();
+            let b = typed.clone().try_get_matches_from(&argv).is_ok();
+            assert_eq!(a, b, "PathBuf vs ModelPath disagree on {argv:?}");
+        }
+        let m = typed.try_get_matches_from(["t", "m.gguf"]).expect("parses");
+        assert_eq!(
+            m.get_one::<ModelPath>("p").map(ModelPath::as_path),
+            Some(Path::new("m.gguf"))
+        );
+
+        let raw = Command::new("t").arg(Arg::new("s").value_parser(clap::value_parser!(String)));
+        let typed =
+            Command::new("t").arg(Arg::new("s").value_parser(clap::value_parser!(PromptText)));
+        for argv in [vec!["t", "What is 2+2?"], vec!["t", ""]] {
+            let a = raw.clone().try_get_matches_from(&argv).is_ok();
+            let b = typed.clone().try_get_matches_from(&argv).is_ok();
+            assert_eq!(a, b, "String vs PromptText disagree on {argv:?}");
+        }
+    }
+
+    #[test]
+    fn derive_picks_the_marker_parser_for_a_marker_field() {
+        #[derive(clap::Parser)]
+        struct T {
+            model: ModelPath,
+            #[arg(long)]
+            prompt: Option<PromptText>,
+            #[arg(long)]
+            inputs: Vec<InputFile>,
+        }
+        use clap::CommandFactory;
+        let cmd = T::command();
+        let id = |name: &str| {
+            cmd.get_arguments()
+                .find(|a| a.get_id() == name)
+                .map(|a| a.get_value_parser().type_id())
+                .expect("arg exists")
+        };
+        assert!(id("model") == TypeId::of::<ModelPath>());
+        assert!(id("prompt") == TypeId::of::<PromptText>());
+        assert!(id("inputs") == TypeId::of::<InputFile>());
+        use clap::Parser;
+        let t = T::try_parse_from(["t", "a.apr", "--prompt", "hi", "--inputs", "x.wav"])
+            .expect("parses");
+        assert_eq!(t.model.as_path(), Path::new("a.apr"));
+        assert_eq!(t.prompt.as_deref().map(String::as_str), Some("hi"));
+        assert_eq!(t.inputs.len(), 1);
+    }
+}

@@ -5,6 +5,11 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
     contract_pre_side_effect_classification!();
     contract_pre_dispatch_completeness!();
     contract_pre_output_format_fidelity!();
+    // #3745 S1: the gate input, answered before any command that loads a model.
+    if matches!(cli.command.as_ref(), Commands::Surface) {
+        return Some(crate::surface::run());
+    }
+
     // Try runtime commands first (check, run, serve)
     if let Some(result) = dispatch_runtime_commands(cli) {
         return Some(result);

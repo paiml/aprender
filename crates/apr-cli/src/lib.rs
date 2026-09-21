@@ -52,6 +52,8 @@ mod commands;
 pub mod error;
 mod output;
 pub mod pipe;
+// #3745 S1: the surface the binary actually has, emitted by the binary.
+pub mod surface;
 
 pub use error::CliError;
 

@@ -889,6 +889,15 @@ pub enum Commands {
     #[command(subcommand)]
     Cgp(cgp::cli::Commands),
 
+    /// Print apr's own command surface as JSON (`apr-cli-surface/v1`, #3745).
+    ///
+    /// Hidden: it is a gate input, not a user command. Every subcommand path and
+    /// every argument, with each argument's role read from the type that built
+    /// it. Release cells are derived from this output rather than from a list
+    /// someone typed.
+    #[command(hide = true)]
+    Surface,
+
     /// Provable-contracts: validate, lint, score, kani, proof-status
     /// (the `pv` binary keeps shipping under its own name; this is the
     /// in-apr route to the same commands)
