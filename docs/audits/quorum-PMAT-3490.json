@@ -1,0 +1,84 @@
+{
+  "ticket": "PMAT-3490",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "b940bf4c2f1d7394616fcdd0ef197a7d35d4edff",
+  "diff_sha256": "19d3e2ac7407292969e446508f4446b27e33db99359236d89386298f0dfefae1",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 54075,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements the ticket's instructions. It correctly drops the baseline to 599 in both `.pmat-gates.toml` and `scripts/cb200_baseline.txt`. It updates the stale comment on `tools.toml:7` referencing the infra #692 PR, while omitting the pin at line 56 which was merged in #3484. The PR-review receipt for `0fd8deb79` is correctly preserved without regeneration, and `scripts/complexity_baseline.txt` is accurately omitted as it was already merged. No contradictory or unasked-for changes were found.",
+      "findings": [],
+      "raw_bytes": 3900,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff matches the ticket's explicit requirements. It ratchets CB-200 down to 599, updates the stale comment on `tools.toml:7` (using the fixed SHA `2734069 via f92ed2d` as opposed to the incorrect `9c411f4` noted in the historical `0fd8deb79` receipt), and deliberately carries the un-regenerated receipt from the earlier SHA, which the ticket explicitly acknowledges as correct behavior. No unrequested changes or weakened gates were found.",
+      "findings": [],
+      "raw_bytes": 2140,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff for PMAT-3490 (CB-200 ratchet 601 -> 599 and associated baseline/roadmap updates) precisely implements what is specified in the ticket and its acceptance criteria without any forbidden changes, gate weakenings, or unbacked claims. All changes strictly lower baseline debt (601 -> 599 in `.pmat-gates.toml` and `scripts/cb200_baseline.txt`) or update/add roadmap entry records (`PMAT-3490.yaml` and `roadmap.yaml`) and historical PR-review evidence artifacts.",
+      "findings": [],
+      "raw_bytes": 2340,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-low",
+      "model_measured": "gemini-3.6-flash-low",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
