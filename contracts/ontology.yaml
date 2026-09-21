@@ -140,6 +140,10 @@ entity_types:
   - {name: apr-model, extractor: apr_model, implemented: true}
   - {name: gguf, extractor: gguf, implemented: true}
   - {name: csv, extractor: csv, implemented: false}
+  # ONT-4c3 (aprender#3577): the logit-parity receipts under evidence/parity/**. Subclasses `json` for now;
+  # it moves under a shared `Receipt` class once quorum and dispatch receipts join, so the three families
+  # inherit common shapes. NOT the throughput parity receipts — a different family with a different validator.
+  - {name: parity-receipt, extractor: parity_receipt, implemented: true}
 
 extractors:
   - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: true}
@@ -151,6 +155,7 @@ extractors:
   - {name: apr_model, reader: ontology/extract/apr_model.rs, implemented: true}
   - {name: gguf, reader: ontology/extract/gguf.rs, implemented: true}
   - {name: csv, reader: ontology/extract/csv.rs, implemented: false}
+  - {name: parity_receipt, reader: ontology/extract/parity_receipt.rs, implemented: true}
 
 # What this ontology does NOT express, said out loud so nobody encodes it by accident. Each names the reader that
 # would have to change first.

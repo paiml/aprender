@@ -1211,6 +1211,14 @@ jobs:
         run: bash scripts/derive_model_manifest.sh --check
       - name: C14 model-parity case table (L0-1a, #2971)
         run: bash scripts/check_model_parity.sh --self-test
+      # #3577: the parity-receipt denominator is the SECOND, independent reader of the
+      # receipt corpus — the extractor is the first, and they share no code so a defect
+      # in either is caught by the other rather than by nobody. It shipped unwired, which
+      # `check_guards_are_wired.sh` caught: a refusal nothing runs is not a refusal, and
+      # `parity-receipt-v1.yaml`'s own equations name "both readers are wired into CI" as
+      # a precondition. Its 4-case self-test is cargo-free and model-free, so it runs here.
+      - name: Parity-receipt denominator case table (#3577)
+        run: bash scripts/parity_receipt_denominator.sh --self-test
       # F-1 (#3022, #3024): a model file the user NAMED is the model that answers, or
       # the command refuses — `apr chat` silently loaded its toy demo model for a
       # `model.safetensors.index.json` (exit 0, zero tokens, the real path in the banner)

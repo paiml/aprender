@@ -287,6 +287,23 @@ fn decide_shapes_gate(
             reason: Reason::NoFocus,
         }
         .into()),
+        ShapesOutcome::WrongCorpus {
+            shapes_n,
+            expected,
+            found,
+            refused,
+        } => {
+            eprintln!(
+                "shapes: extract:parity-receipt matched {found} focus node(s);                  evidence/parity/EXPECTED_RECEIPTS says {expected} ({shapes_n} shape(s))"
+            );
+            for r in &refused {
+                eprintln!("shapes: refused {r}");
+            }
+            Err(LintDeclined {
+                reason: Reason::WrongCorpus,
+            }
+            .into())
+        }
         ShapesOutcome::NoReceipts { shapes_n, dir } => {
             // ONT-4c1: the WHY travels with the decline — the lattice has no ReceiptUnmeasured element (ONT-6's
             // 15 reasons), so the reason is NoCheckable and this line says what could not be checked.

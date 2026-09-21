@@ -39,7 +39,13 @@ if "min_cosine" not in rule or not str(rule.get("basis") or "").strip():
 mc = float(rule["min_cosine"]); basis = str(rule["basis"])
 try: d = json.load(open(f, encoding="utf-8"))
 except Exception as e: print(f"FAIL {model}: unreadable apr parity output ({e})"); sys.exit(1)
-rows = d.get("metrics") if isinstance(d, dict) else None
+# A v2 receipt (apr-parity-receipt/v2, #3577) EMBEDS the raw `apr parity --json` document under
+# `raw`, so the readings live at `raw.metrics`. A fresh `apr parity` run is the raw document itself
+# and carries them at the top level. Those are two different INPUTS — a tool's output and an archived
+# receipt that quotes it — not two spellings of one, so the rule is stated once: look inside the
+# envelope when there is one. Anything else is still refused by the line below.
+raw = d.get("raw") if isinstance(d, dict) and isinstance(d.get("raw"), dict) else d
+rows = raw.get("metrics") if isinstance(raw, dict) else None
 if not isinstance(rows, list) or not rows: print(f"FAIL {model}: no per-position metrics in the output"); sys.exit(1)
 cos = [(r.get("position"), float(r.get("cosine_similarity"))) for r in rows if r.get("cosine_similarity") is not None]
 if len(cos) < minpos: print(f"FAIL {model}: {len(cos)} positions < min_positions {minpos} (I8: an autoregressive gate validates over >= 64 positions)"); sys.exit(1)
@@ -172,9 +178,16 @@ if [ "${1:-}" = "--self-test" ]; then
     row 0 "the gx10 7B record is GREEN (min 0.9985)"                              judge "$G/qwen2.5-coder-7b-instruct-q4_k_m.json" qwen2.5-coder-7b-instruct
     python3 - "$L/qwen2.5-coder-7b-instruct-q4_k_m.json" "$TD/twin.json" "$TD/short.json" <<'PY'
 import json, sys
-d = json.load(open(sys.argv[1])); m = d["metrics"]
-m[40]["cosine_similarity"] = 0.5; json.dump(d, open(sys.argv[2], "w"))          # must-RED twin: one position at 0.5
-d2 = json.load(open(sys.argv[1])); d2["metrics"] = d2["metrics"][:20]; json.dump(d2, open(sys.argv[3], "w"))   # fewer than 64 positions
+# The committed records are apr-parity-receipt/v2 (#3577): the raw `apr parity --json` document is
+# embedded under `raw`. Mutate the readings where they actually live, or the twin is built from a
+# KeyError and the must-RED control never fires.
+def rows(doc): return doc["raw"]["metrics"] if isinstance(doc.get("raw"), dict) else doc["metrics"]
+def put(doc, v):
+    (doc["raw"] if isinstance(doc.get("raw"), dict) else doc)["metrics"] = v
+    return doc
+d = json.load(open(sys.argv[1])); rows(d)[40]["cosine_similarity"] = 0.5
+json.dump(d, open(sys.argv[2], "w"))                                            # must-RED twin: one position at 0.5
+d2 = json.load(open(sys.argv[1])); json.dump(put(d2, rows(d2)[:20]), open(sys.argv[3], "w"))   # fewer than 64 positions
 PY
     [ -f "$ROOT/tests/fixtures/parity/defective/one-position-at-0.5.json" ] || cp "$TD/twin.json" "$ROOT/tests/fixtures/parity/defective/one-position-at-0.5.json"
     row 1 "the must-RED twin (7B with position 40 forced to 0.5) is RED naming the position" judge "$TD/twin.json" qwen2.5-coder-7b-instruct

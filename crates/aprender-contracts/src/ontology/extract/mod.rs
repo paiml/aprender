@@ -19,6 +19,7 @@ pub mod code;
 pub mod gguf;
 pub mod json;
 pub mod lean;
+pub mod parity_receipt;
 pub mod pv_contract;
 
 /// Every extractor's output over `contract_dir`, plus the input-side warnings the extractors chose to carry
@@ -41,6 +42,8 @@ pub struct Extraction {
     pub code: code::CodeStats,
     /// ONT-4b2: the in-tree Lean theorems and the contracts that cite them.
     pub lean: lean::LeanStats,
+    /// ONT-4c3: the logit-parity receipts under `evidence/parity/**`, and the files this extractor refused.
+    pub parity: parity_receipt::ParityStats,
 }
 
 /// What a walk could not do. Every variant is the DECLARATION's fault (exit 3), never a corpus verdict.
@@ -87,6 +90,7 @@ pub fn all(contract_dir: &Path) -> Result<Extraction, ExtractFailure> {
     out.resolve = receipts::resolve(&mut out.graph, &out.gguf.rungs, &out.receipts);
     out.code = code::extract(contract_dir, &mut out.graph);
     out.lean = lean::extract(contract_dir, &mut out.graph);
+    out.parity = parity_receipt::extract(root, &mut out.graph);
     Ok(out)
 }
 
