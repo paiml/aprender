@@ -33,13 +33,21 @@ on:
     # `gh workflow run` (#3292); until then, re-measure before trusting.
     - cron: '0 22 * * *'   # 22:00 UTC -> lands ~03:00 UTC
   workflow_dispatch: {}
+  # #3676 (operator 2026-09-21: "YES, coverage on tags release only"): coverage
+  # left the PR / merge-group / push path, so the RELEASE TAG runs it here, with
+  # the same COV_FLOOR `make coverage` enforces nightly. A floor breach reds the
+  # tag's run; scripts/check_coverage_has_producers.sh keeps this trigger present.
+  push:
+    tags: ['v*']
 
 permissions:
   contents: read
   issues: write # open/update the single coverage tracking issue
 
 concurrency:
-  group: coverage-nightly
+  # Per ref (#3676): a tag's run and the nightly on main must not cancel each
+  # other. A second nightly on the same ref still supersedes the first.
+  group: coverage-nightly-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

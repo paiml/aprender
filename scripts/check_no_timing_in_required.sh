@@ -182,9 +182,16 @@ check_no_fabricated_baselines.sh
 check_no_timing_in_required.sh
 check_perf_claims_cite_receipts.sh
 check_perf_concurrency_groups.sh
+check_perf_gate_selftest_scoped.sh
 check_perf_matrix_schema.sh
 check_perf_receipt_fields_have_producers.sh
 "
+# check_perf_gate_selftest_scoped.sh (#3676) matched on `perf`. It reads no clock:
+# it takes a git tree diff against origin/main, decides whether perf_gate.sh's
+# DERIVED input set was touched, and if so runs `perf_gate.sh --selftest` -- the
+# fixture-driven case table that was ALREADY an explicit required step in
+# guard-tree before #3676 moved it behind this scope. A statement about which
+# files changed, not about duration.
 # check_perf_claims_cite_receipts.sh (PERF-010) matches `check_*perf*.sh` and
 # turned this guard RED the moment the file appeared — verified before wiring
 # anything, not after:
