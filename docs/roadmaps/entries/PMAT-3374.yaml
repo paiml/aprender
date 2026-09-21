@@ -1,0 +1,21 @@
+- id: PMAT-3374
+  github_issue: 3374
+  item_type: task
+  title: 'P0: Leaderboard: per-model validation/test score, fit time, predict time and stack level — CRUX-O-04'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-04, competitor autogluon, demand 5. No leaderboard type. GridSearchCVResult in model_selection/ ranks parameter settings of one estimator; TuneResult in automl/tuner.rs is a single best trial. Nothing tabulates several fitted models with timings. FALSIFIABLE (contracts/crux-O-04-v1.yaml): the leaderboard is sorted by validation score descending and its columns are fixed — columns == [model, score_val, score_test?, pred_time_val, fit_time, stack_level, fit_order] and score_val is non-increasing row to row; timings are measured, not defaulted — every fit_time and pred_time_val is > 0 after a real fit; a leaderboard built with no fit has zero rows, not zero timings; apr automl leaderboard prints the same table from a saved artifact — `apr automl leaderboard model.apr --json` emits the rows byte-equal to the in-process leaderboard. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

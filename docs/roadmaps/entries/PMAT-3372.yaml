@@ -1,0 +1,21 @@
+- id: PMAT-3372
+  github_issue: 3372
+  item_type: task
+  title: 'P0: Problem-type inference: binary / multiclass / regression / quantile from the label column — CRUX-O-02'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-02, competitor autogluon, demand 5. No function infers a task from a label column. Estimators are chosen by type name (LogisticRegression vs LinearRegression); DataFrame in crates/aprender-core/src/data/mod.rs carries ColumnStats but no label-kind classifier. FALSIFIABLE (contracts/crux-O-02-v1.yaml): two unique label values infer binary, 3..=N small-cardinality infer multiclass, many-unique numeric infers regression — a table of (label column, expected kind) fixtures including the ambiguous cases {0,1} as int, {0.0,1.0} as float, and 30 unique floats over 1000 rows all classify as documented; the override wins and a contradictory override is rejected — problem_type=regression on a string label column is an Err naming the column, not a silent cast. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
