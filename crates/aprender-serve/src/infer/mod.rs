@@ -583,3 +583,6 @@ mod q8k_reference_drift_tests;
 /// #3714: qwen3moe backend selection — the CUDA forward, or the CPU chain with a printed reason.
 pub mod qwen3_moe_dispatch;
 pub mod qwen3_moe_generate;
+/// #3757: the wgpu parity gate against both CPU references — an env-gated evidence harness.
+#[cfg(all(test, feature = "gpu"))]
+mod wgpu_reference_choice_tests;

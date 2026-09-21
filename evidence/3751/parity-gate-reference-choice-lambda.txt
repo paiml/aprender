@@ -1,0 +1,6 @@
+qwen2.5-coder-0.5b-instruct-q4_k_m.gguf | token 151643 | GPU vs Q8_K 0.999531 | GPU vs FP32 0.999760 | Q8_K vs FP32 0.999721 | argmax GPU 334 Q8_K 334 FP32 334
+qwen2.5-1.5b-instruct-q4_k_m.gguf | token 151643 | GPU vs Q8_K 0.999817 | GPU vs FP32 0.999936 | Q8_K vs FP32 0.999889 | argmax GPU 2 Q8_K 2 FP32 2
+qwen2.5-coder-1.5b-instruct-q4_k_m.gguf | token 151643 | GPU vs Q8_K 0.999977 | GPU vs FP32 0.999984 | Q8_K vs FP32 0.999995 | argmax GPU 15 Q8_K 15 FP32 15
+Qwen3-1.7B-Q4_K_M.gguf | token 151643 | GPU vs Q8_K 0.999849 | GPU vs FP32 0.999866 | Q8_K vs FP32 0.999984 | argmax GPU 25 Q8_K 25 FP32 25
+qwen2.5-coder-7b-instruct-q4_k_m.gguf | token 151643 | GPU vs Q8_K 0.999911 | GPU vs FP32 0.999956 | Q8_K vs FP32 0.999968 | argmax GPU 334 Q8_K 334 FP32 334
+Qwen3-8B-Q4_K_M.gguf | token 151643 | GPU vs Q8_K 0.999903 | GPU vs FP32 0.999872 | Q8_K vs FP32 0.999961 | argmax GPU 33975 Q8_K 33975 FP32 33975

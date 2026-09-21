@@ -132,3 +132,80 @@ fn dense_f2_reference_choice() {
         }
     }
 }
+
+/// The same question for the LOAD-TIME parity gate (`gguf/cuda/mod_parity_gate.rs`):
+/// one token (the BOS, or 1) at position 0, `forward_gpu_resident` against
+/// `forward_single_with_cache`, floor 0.98. Position 0 is where the outlier
+/// activations sit, and the F2 excludes it, so this is measured separately. The
+/// GPU is judged in the state construction left it in (the gate may have moved
+/// it to the unfused FFN), which is the state a real run serves from.
+#[test]
+fn parity_gate_reference_choice() {
+    let Ok(list) = std::env::var("APR_3751_DENSE_MODELS") else {
+        eprintln!("SKIP: APR_3751_DENSE_MODELS is not set");
+        return;
+    };
+    for path in list.split(':').filter(|p| !p.is_empty()) {
+        let name = std::path::Path::new(path)
+            .file_name()
+            .map_or(path.to_string(), |f| f.to_string_lossy().into_owned());
+        let Ok(mapped) = MappedGGUFModel::from_path(path) else {
+            eprintln!("[parity-gate] {name}: will not map");
+            continue;
+        };
+        let Ok(model) = OwnedQuantizedModel::from_mapped(&mapped) else {
+            eprintln!("[parity-gate] {name}: not a dense model");
+            continue;
+        };
+        let mut cuda = match OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("[parity-gate] {name}: CUDA model would not build: {e}");
+                continue;
+            },
+        };
+        // The gate's own inputs, spelled as it spells them.
+        let c = cuda.model().config();
+        let head_dim = if c.num_heads > 0 {
+            c.hidden_dim / c.num_heads
+        } else {
+            0
+        };
+        let kv_dim = c.num_kv_heads * head_dim;
+        let num_layers = c.num_layers;
+        let token = c.bos_token_id.unwrap_or(1);
+        let cpu = |fp32: bool| {
+            let run = || {
+                let mut cache = crate::gguf::OwnedQuantizedKVCache::new(num_layers, kv_dim, 2);
+                cuda.model().forward_single_with_cache(token, &mut cache, 0)
+            };
+            if fp32 {
+                crate::quantize::with_fp32_activations(run)
+            } else {
+                run()
+            }
+        };
+        let (Ok(q8k), Ok(fp32)) = (cpu(false), cpu(true)) else {
+            eprintln!("[parity-gate] {name}: a CPU forward failed");
+            continue;
+        };
+        cuda.executor.reset_kv_cache_gpu();
+        let mut cache = crate::gguf::OwnedQuantizedKVCache::new(num_layers, kv_dim, 2);
+        let gpu = cuda.forward_gpu_resident(token, &mut cache, 0);
+        cuda.executor.reset_kv_cache_gpu();
+        let Ok(gpu) = gpu else {
+            eprintln!("[parity-gate] {name}: GPU forward failed");
+            continue;
+        };
+        let cos = |a: &[f32], b: &[f32]| crate::infer::logits_cosine_similarity(a, b);
+        eprintln!(
+            "[parity-gate] {name} | token {token} | GPU vs Q8_K {:.6} | GPU vs FP32 {:.6} | Q8_K vs FP32 {:.6} | argmax GPU {} Q8_K {} FP32 {}",
+            cos(&gpu, &q8k),
+            cos(&gpu, &fp32),
+            cos(&q8k, &fp32),
+            super::argmax_u32(&gpu),
+            super::argmax_u32(&q8k),
+            super::argmax_u32(&fp32),
+        );
+    }
+}
