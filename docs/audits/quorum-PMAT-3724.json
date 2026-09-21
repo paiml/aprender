@@ -1,0 +1,281 @@
+{
+  "ticket": "PMAT-3724",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "a7d7826aed4ae3fed1ab3fcfde78c535ba67783f",
+  "diff_sha256": "cb62abe008135afdf767414cb93a1b98acc0468b68d21104fb57749161cd6fb1",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 50277,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff strictly fulfills the PMAT-3724 acceptance criteria. It implements the dual-mode judgment for thinking architectures, handles the 4096 vs 512 budget logic appropriately, and safely catches unclosed `<think>` tags via `golden_answer` logic without relaxing any previous gates. The Qwen3 ChatML mode correctly matches production usage without breaking non-Qwen3 models. No test asserts contrary behavior, and all requirements from the ticket are verified.",
+      "findings": [],
+      "raw_bytes": 3591,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff cleanly and fully addresses the requirements of PMAT-3724. It implements appropriate test cases for both direct and thinking modes by tying the prompt builder to the exact same chat template detector used in production. The issue with silent truncation of unclosed think blocks has been fixed securely in `golden_answer`, which explicitly throws a descriptive error specifying the exact budget instead of leaving an empty completion string. The code changes accurately maintain the integrity of non-thinking models, rigorously pinned by updated tests. Hardware verification across Lambda and GX10 aligns with the reported receipt and confirms the divergence in generation. All acceptance criteria are fully met.",
+      "findings": [
+        {
+          "claim": "qwen3-8b-q4km produces correct output on lambda CUDA, and `apr qa` (ladder flags) passes on lambda AND gx10. The five Qwen3.5 Q4_K_M rungs (0.8b/2b/4b/9b/27b) stay green on both.",
+          "file": "docs/audits/impl-PMAT-3724-receipt.md",
+          "fix": "",
+          "grounding": "asserted",
+          "line": 19
+        },
+        {
+          "claim": "The golden gate builds its prompts with the SAME detector and template production uses, keyed on `general.architecture`. Every other architecture keeps byte-identical ChatML, pinned by a test. No check is relaxed.",
+          "file": "crates/apr-cli/src/commands/golden_output.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 388
+        },
+        {
+          "claim": "A thinking-capable model is judged in BOTH modes: OFF (production no-think prompt, answer correct) and ON (think block closes and the answer after it is correct, with a budget that overdoes it). A block that doesn't close is REPORTED by name with the budget (\"think block unclosed within N tokens\"), never stripped to an empty answer.",
+          "file": "crates/apr-cli/src/commands/output_verification.rs",
+          "fix": "",
+          "grounding": "cited",
+          "line": 479
+        },
+        {
+          "claim": "`apr chat`, `apr serve` and `apr run --chat` on qwen3-8b on lambda CUDA are reported.",
+          "file": "docs/audits/impl-PMAT-3724-receipt.md",
+          "fix": "",
+          "grounding": "asserted",
+          "line": 31
+        },
+        {
+          "claim": "The x86-vs-aarch64 think-length difference (545 vs < 512) is recorded on the row.",
+          "file": "docs/audits/impl-PMAT-3724-receipt.md",
+          "fix": "",
+          "grounding": "asserted",
+          "line": 40
+        }
+      ],
+      "raw_bytes": 5645,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
+            "outcome": "capacity",
+            "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+          },
+          {
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
+            "outcome": "capacity",
+            "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+          },
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff fully implements all acceptance criteria in PMAT-3724. It correctly introduces the testing in both DIRECT and THINKING modes with appropriate token budgets (512 and 4096). It respects the requirement for byte-identical ChatML for non-Qwen3 architectures and includes comprehensive tests for unclosed thinking blocks. The provided receipts confirm the necessary hardware verification across lambda and gx10.",
+      "findings": [],
+      "raw_bytes": 2130,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-low",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-low",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/apr-cli/src/commands/golden_output.rs",
+      "line": 388,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The golden gate builds its prompts with the SAME detector and template production uses, keyed on `general.architecture`. Every other architecture keeps byte-identical ChatML, pinned by a test. No check is relaxed."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/output_verification.rs",
+      "line": 479,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "A thinking-capable model is judged in BOTH modes: OFF (production no-think prompt, answer correct) and ON (think block closes and the answer after it is correct, with a budget that overdoes it). A block that doesn't close is REPORTED by name with the budget (\"think block unclosed within N tokens\"), never stripped to an empty answer."
+      ]
+    },
+    {
+      "file": "docs/audits/impl-PMAT-3724-receipt.md",
+      "line": 19,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "qwen3-8b-q4km produces correct output on lambda CUDA, and `apr qa` (ladder flags) passes on lambda AND gx10. The five Qwen3.5 Q4_K_M rungs (0.8b/2b/4b/9b/27b) stay green on both."
+      ]
+    },
+    {
+      "file": "docs/audits/impl-PMAT-3724-receipt.md",
+      "line": 31,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "`apr chat`, `apr serve` and `apr run --chat` on qwen3-8b on lambda CUDA are reported."
+      ]
+    },
+    {
+      "file": "docs/audits/impl-PMAT-3724-receipt.md",
+      "line": 40,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The x86-vs-aarch64 think-length difference (545 vs < 512) is recorded on the row."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (gemini-3.1-pro-high, gemini-3.1-pro-low) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by gemini-3.1-pro-high after falling through gpt-oss-120b-medium (capacity: UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server); gpt-oss-120b-medium (capacity: UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
