@@ -67,7 +67,7 @@ jobs:
     # 23916c00d adds an OPTIONAL `runs_on` input whose default is the label set
     # this repo already gets, and 70e51ec04 swaps the digest on every job. No
     # input this repo passes changes meaning.
-    uses: paiml/.github/.github/workflows/sovereign-ci.yml@5997b411a371d0902f2ade4cba31e04ac6f87580
+    uses: paiml/.github/.github/workflows/sovereign-ci.yml@f713290c86fcd70d6f26a0faab14e67e6713586f
     with:
       repo: ${{ github.event.repository.name }}
       # Phase 3 pilot (heavy workload) — build-performance.md §7 Phase 3.
