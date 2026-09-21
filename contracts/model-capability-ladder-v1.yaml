@@ -44,10 +44,24 @@ entity:
 # for that arch; a claimed backend that falls back is RED.
 # sha256 pins the exact file: a rung measured on a different file is a different
 # measurement (Q5_K taught us three readers can each invent a layout).
+#
+# #3712 (operator 2026-09-21: "you must ensure all models Q4_K CUDA work; the end";
+# publishing with "most working" is a "p0 tire fire"):
+#   * NO Q4_K rung is optional. `required: false` on a Q4_K rung is refused by the
+#     gate, and so is a Q4_K rung whose `backends` does not claim cuda.
+#   * The universe is what each host HOLDS, not this list. `inventory` names where
+#     and what to look for; scripts/model_ladder.sh measures every match on the host
+#     (on `inventory.backends`) and writes the list into the receipt (schema v2).
+#     An inventory model missing from the run, or not green on CUDA, is a FAIL
+#     naming it. A rung is still how a model gets a pinned sha256 and a host list.
 ladder:
   hosts:
     - { id: lambda, isa: x86_64, gpu: "RTX 4090", cc: sm_89,  required: true }
     - { id: gx10,   isa: aarch64, gpu: "GB10",     cc: sm_121, required: true }
+  inventory:
+    dirs: ["~/models", "~/.apr/models", "~/.cache/apr/models"]   # depth 1, the fleet's model dirs
+    patterns: ["*q4_k*.gguf", "*q4k*.gguf", "*q4_k*.apr", "*q4k*.apr"]   # case-insensitive
+    backends: [cuda]
   rungs:
     - id: qwen2-1.5b-q4km
       family: qwen2.5
@@ -71,8 +85,8 @@ ladder:
       gguf: Qwen3-8B-Q4_K_M.gguf
       sha256: d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785
       backends: [cpu, cuda]
-      required: false
-      note: "second dense-Qwen3 size; required once #3413 lands so the fix is proved at two widths"
+      required: false   # REFUSED by check_model_ladder.sh (#3712): T-2 is RED while this key stands
+      note: "second dense-Qwen3 size. No Q4_K model is optional (#3712), so the release gate refuses this key and the release cannot ship on it. It is not flipped here because the ARMED ladder-green shape reads the committed 0.68.2 lambda receipt (golden_output: Empty output — the 0.69.0 hold) and would turn pv lint red on every PR; the flip to true lands with the Qwen3-8B CUDA fix and a committed green lambda receipt"
     - id: qwen35-0.8b-q4km
       family: qwen3.5
       arch: qwen35
@@ -125,20 +139,22 @@ equations:
     preconditions:
       - "binary pinned via scripts/apr_bin.sh (built from HEAD) or DOGFOOD_ALLOW_UNPINNED=1 for the published-crate mode"
   host_receipt:
-    formula: "receipt(host) = {host, version, sha, gpu, cc, rungs: [{id, present, capability_match, golden_output, backends: {b: {ran, fallback}}}]}"
+    formula: "receipt(host) = {schema: apr-model-ladder-receipt/v2, host, version, sha, apr_sha, gpu, cc, inventory: [{file, sha256, bytes}], rungs: [{id, file, present, capability_match, golden_output, backends: {b: {ran, fallback, rc}}}]}"
     domain: "evidence/dogfood/models/<version>/<host>.json, written only by scripts/model_ladder.sh"
     invariants:
       - "receipt.version equals the cargo root version of the tree it was measured on"
       - "receipt.sha equals the git HEAD the binary was built from"
       - "receipt.executed >= 1 — a receipt that measured nothing is a decline (exit 2), never a pass"
+      - "receipt.inventory is MEASURED on the host (every file under inventory.dirs matching inventory.patterns), never copied from the ladder; an empty inventory is FAIL"
     preconditions:
       - "python3 with json on the host (yaml is read by python3 too)"
   gate_verdict:
-    formula: "T2_models = ∀ host required: receipt(host) fresh(version) ∧ ∀ rung required: green(rung, host)"
+    formula: "T2_models = ∀ host required: receipt(host) fresh(version) ∧ ∀ rung required: green(rung, host) ∧ ∀ f ∈ receipt(host).inventory: green(f, host, inventory.backends)"
     domain: "scripts/check_model_ladder.sh, invoked by scripts/dogfood.sh through [package.metadata.dogfood]"
     invariants:
       - "the rung list at origin/main is the floor: a PR may add rungs, hosts or backends and may not remove any (same construction as check_multiplatform_dogfood.sh layer 2)"
       - "a missing receipt is FAIL, not DEFER: unlike the multiplatform gate this needs no published crate, a dev build measures it"
+      - "a Q4_K rung (file or id matches q4_?k) is required and claims cuda — the key `required: false` on one is refused, not tolerated (#3712)"
     preconditions:
       - "git can read origin/main:contracts/model-capability-ladder-v1.yaml, or the run is the bootstrap"
 
@@ -168,6 +184,16 @@ proof_obligations:
     property: "The ladder can grow and cannot shrink in the same PR that reads it"
     formal: "rungs(origin/main) ⊆ rungs(HEAD) ∧ hosts(origin/main) ⊆ hosts(HEAD) ∧ ∀ rung: backends_main(rung) ⊆ backends_head(rung)"
     applies_to: gate_verdict
+  - id: MCL-INV-006
+    type: invariant
+    property: "No Q4_K rung is optional, and every one claims CUDA"
+    formal: "∀ rung ∈ ladder.rungs: q4k(rung) ⟹ rung.required = true ∧ cuda ∈ rung.backends"
+    applies_to: gate_verdict
+  - id: MCL-INV-007
+    type: invariant
+    property: "The universe is the host's measured inventory — every Q4_K model it holds is in the run and green on CUDA"
+    formal: "∀ host required, ∀ f ∈ receipt(host).inventory: ∃ row ∈ receipt(host).rungs: row.file = f ∧ row.present ∧ (f ∈ files(ladder) ∨ green(row, inventory.backends)) ∧ receipt(host).inventory ≠ ∅"
+    applies_to: host_receipt
 
 falsification_tests:
   - id: FALSIFY-MCL-001
@@ -220,6 +246,26 @@ falsification_tests:
     prediction: "narrowing a rung from every host at origin/main to hosts: [gx10] makes the gate exit 1 with 'hosts DROPPED'"
     test: "bash scripts/check_model_ladder.sh --self-test --case red-dropped-host-on-rung"
     if_fails: "a required (rung, host) pair could be dropped by adding a key instead of removing one"
+  - id: FALSIFY-MCL-011
+    rule: "A Q4_K rung cannot be made optional or CPU-only"
+    prediction: "`required: false` on a Q4_K rung exits 1 naming the rung (case red-q4k-required-false); a Q4_K rung with backends [cpu] exits 1 (case red-q4k-rung-cpu-only)"
+    test: "bash scripts/check_model_ladder.sh --self-test --case red-q4k-required-false && bash scripts/check_model_ladder.sh --self-test --case red-q4k-rung-cpu-only"
+    if_fails: "the 0.69.0 hold: qwen3-8b-q4km was required: false, so an empty-output CUDA model was a note, not a failure"
+  - id: FALSIFY-MCL-012
+    rule: "An inventory model missing from the run is named"
+    prediction: "a receipt whose inventory lists a file with no present row exits 1 with 'is MISSING from the run' naming the file (case red-inventory-model-missing)"
+    test: "bash scripts/check_model_ladder.sh --self-test --case red-inventory-model-missing"
+    if_fails: "the universe is the list again: a model the host holds is never measured"
+  - id: FALSIFY-MCL-013
+    rule: "An inventory model beyond the ladder is judged on CUDA like a rung"
+    prediction: "an inventory-only row whose golden_output is skipped, or whose cuda fell back, exits 1 naming inv:<file> (cases red-inventory-model-golden-skipped, red-inventory-model-fell-back); green on cuda exits 0 (case green-inventory-beyond-ladder)"
+    test: "bash scripts/check_model_ladder.sh --self-test --case red-inventory-model-golden-skipped && bash scripts/check_model_ladder.sh --self-test --case red-inventory-model-fell-back && bash scripts/check_model_ladder.sh --self-test --case green-inventory-beyond-ladder"
+    if_fails: "an unlisted model is recorded but never judged — present is not green"
+  - id: FALSIFY-MCL-014
+    rule: "A receipt without a measured inventory is not evidence"
+    prediction: "a v1 receipt (no inventory) exits 1; an empty inventory exits 1; a ladder with no inventory block exits 1 (cases red-receipt-v1-no-inventory, red-inventory-empty, red-ladder-without-inventory)"
+    test: "bash scripts/check_model_ladder.sh --self-test --case red-receipt-v1-no-inventory && bash scripts/check_model_ladder.sh --self-test --case red-inventory-empty && bash scripts/check_model_ladder.sh --self-test --case red-ladder-without-inventory"
+    if_fails: "absence scored as conformance: a host that listed nothing proved nothing and passed"
 
 qa_gate:
   id: F-MCL-001
@@ -231,5 +277,7 @@ qa_gate:
     - required_rungs_present_and_green
     - claimed_backends_ran_without_fallback
     - ladder_not_shrunk_vs_origin_main
-  pass_criteria: "check_model_ladder.sh exits 0 with executed >= 1 on every required host"
+    - q4k_rungs_required_and_claim_cuda
+    - every_inventory_model_measured_and_green_on_cuda
+  pass_criteria: "check_model_ladder.sh exits 0 with executed >= 1 and a non-empty measured inventory on every required host"
   falsification: "plant a receipt with cuda.fallback=true → exit 1"

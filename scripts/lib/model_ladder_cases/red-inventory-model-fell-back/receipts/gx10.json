@@ -1,5 +1,5 @@
 {
- "schema": "apr-model-ladder-receipt/v1",
+ "schema": "apr-model-ladder-receipt/v2",
  "host": "gx10",
  "version": "1.2.3",
  "sha": "abc1234",
@@ -35,7 +35,8 @@
      "rc": 0
     }
    },
-   "green": true
+   "green": true,
+   "file": "c.gguf"
   },
   {
    "id": "q3-q4km",
@@ -64,17 +65,21 @@
      "rc": 0
     }
    },
-   "green": true
+   "green": true,
+   "file": "q.gguf"
   },
   {
-   "id": "cpuonly-q4km",
+   "id": "inv:Extra-Q4_K_M.gguf",
+   "file": "Extra-Q4_K_M.gguf",
+   "inventory_only": true,
    "present": true,
    "sha_ok": true,
+   "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
    "required": true,
    "capability_match": {
     "passed": true,
-    "skipped": true,
-    "message": "Skipped: Skipped by --skip-capability"
+    "skipped": false,
+    "message": "ok"
    },
    "golden_output": {
     "passed": true,
@@ -82,13 +87,30 @@
     "message": "ok"
    },
    "backends": {
-    "cpu": {
+    "cuda": {
      "ran": true,
-     "fallback": false,
+     "fallback": true,
      "rc": 0
     }
    },
-   "green": true
+   "green": false
+  }
+ ],
+ "inventory": [
+  {
+   "file": "c.gguf",
+   "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+   "bytes": 1
+  },
+  {
+   "file": "q.gguf",
+   "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+   "bytes": 1
+  },
+  {
+   "file": "Extra-Q4_K_M.gguf",
+   "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+   "bytes": 1
   }
  ]
 }
