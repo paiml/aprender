@@ -169,8 +169,13 @@ fi
 WORK=$(mktemp -d) || decline "mktemp failed"
 SRV_PID=""
 # The delete is guarded (SEC011): only a path under a temp root is removed.
+OL_NAME=""
 _cleanup() {
   [ -n "$SRV_PID" ] && kill "$SRV_PID" 2>/dev/null
+  # A run killed mid-model leaves its ollama import behind unless removed here.
+  if [ -n "$OL_NAME" ] && [ "$OLLAMA_OK" = 1 ] && [ "$KEEP_OLLAMA" = 0 ]; then
+    "$OLLAMA" rm "$OL_NAME" > /dev/null 2>&1
+  fi
   [ "$KEEP_WORK" = 1 ] && { printf 'work kept: %s\n' "$WORK" >&2; return 0; }
   local v="${WORK:-}"
   case "$v" in
@@ -268,9 +273,11 @@ printf '  apr       %s\n' "$APR_VERSION_LINE"
 printf '  llama.cpp %s\n' "$( [ "$LLAMA_OK" = 1 ] && printf '%s' "${LLAMA_BUILD:-?}" || printf 'UNAVAILABLE: %s' "${LLAMA_WHY:-not requested}")"
 printf '  ollama    %s\n' "$( [ "$OLLAMA_OK" = 1 ] && printf 'server %s (client %s)' "$OLLAMA_SERVER" "${OLLAMA_CLIENT:-?}" || printf 'UNAVAILABLE: %s' "${OLLAMA_WHY:-not requested}")"
 
+# -dev none keeps the cpu lane's llama.cpp off every device, op-offload included;
+# -ngl 0 alone still offloads large host ops to the GPU by default.
 case "$BACKEND" in
-  gpu) APR_BE="--gpu"; NGL=999 ;;
-  cpu) APR_BE="--no-gpu"; NGL=0 ;;
+  gpu) APR_BE="--gpu"; NGL=999; LLAMA_DEV=() ;;
+  cpu) APR_BE="--no-gpu"; NGL=0; LLAMA_DEV=(-dev none) ;;
 esac
 VERB=run
 for M_IN in "${MODELS[@]}"; do
@@ -288,8 +295,9 @@ for M_IN in "${MODELS[@]}"; do
     llama_tokenize_prompts || TOK_WHY="llama.cpp server did not come up for tokenization (see its log)"
   fi
 
-  # ollama: import THIS file, then read back what ollama made of it.
-  OL_NAME="crux-$SHA12"
+  # ollama: import THIS file, then read back what ollama made of it. The name is
+  # per run: two lanes on one host must not `ollama rm` each other's import.
+  OL_NAME="crux-$SHA12-$BACKEND-$$"
   OL_REFUSED=""
   OL_BLOB=""
   OL_TEMPLATE_SHA=""
@@ -354,7 +362,7 @@ PY
 
     if [ "$LLAMA_OK" = 1 ]; then
       gpu_run "$d/llama-$pid.out" "$d/llama-$pid.err" "$LLAMA_CLI" -m "$M" -p "$content" -st -n "$MAXTOK" \
-        --temp "$TEMP" --seed "$SEED" -c "$CTX" -ngl "$NGL" "${LLAMA_THINK[@]}"
+        --temp "$TEMP" --seed "$SEED" -c "$CTX" -ngl "$NGL" "${LLAMA_DEV[@]}" "${LLAMA_THINK[@]}"
       rc=$?
       ref=""; [ "$rc" = 75 ] && ref="the GPU lock was not had within ${LOCK_WAIT}s"
       emit_gen llama.cpp "$pid" "$rc" "$d/llama-$pid.out" "$d/llama-$pid.err" "$ref"
@@ -381,18 +389,20 @@ done
 
 # ---- judge --------------------------------------------------------------------------
 GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
+HARNESS_SHA=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null) || HARNESS_SHA=""
 python3 - "$WORK/meta.json" "$MODELS_JSONL" "$VERSION" "$HOST" "$BACKEND" "$ENGINES" "$VERBS" \
   "$APR_VERSION_LINE" "${LLAMA_BUILD:-}" "$(llama_pin_get build_commit 2>/dev/null)" "$LLAMA_WHY" \
-  "$OLLAMA_SERVER" "$OLLAMA_CLIENT" "$OLLAMA_WHY" "$TEMP" "$SEED" "$CTX" "$MAXTOK" "${GPU_NAME:-}" <<'PY'
+  "$OLLAMA_SERVER" "$OLLAMA_CLIENT" "$OLLAMA_WHY" "$TEMP" "$SEED" "$CTX" "$MAXTOK" "${GPU_NAME:-}" "$HARNESS_SHA" <<'PY'
 import json, platform, sys
 (out, models, version, host, backend, engines, verbs, apr_line, lbuild, lpin, lwhy,
- osrv, ocli, owhy, temp, seed, ctx, maxtok, gpu) = sys.argv[1:20]
+ osrv, ocli, owhy, temp, seed, ctx, maxtok, gpu, hsha) = sys.argv[1:21]
 meta = {
     "version": version, "host": host, "backend": backend, "isa": platform.machine(), "gpu": gpu or None,
     "engines": engines.split(","), "verbs": verbs.split(","), "thinking": ["off"],
     "sampling": {"temperature": float(temp), "seed": int(seed), "context": int(ctx), "max_tokens": int(maxtok),
                  "source": "scripts/llama_pin.toml [protocol]"},
     "apr": {"version_line": apr_line},
+    "harness": {"sha": hsha or None, "driver": "scripts/crux_inference_dogfood.sh"},
     "llama_cpp": {"build": lbuild or None, "pin": lpin or None, "unavailable": lwhy or None},
     "ollama": {"server_version": osrv or None, "client_version": ocli or None, "unavailable": owhy or None},
     "models": [json.loads(l) for l in open(models) if l.strip()],
