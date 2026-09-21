@@ -1,0 +1,29 @@
+- id: PMAT-3788
+  github_issue: 3788
+  item_type: task
+  title: '#3788: the eval::inference python-diagnostics tests assert on behaviour, never on a wall-clock deadline — the budget is injected'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-fc
+  created: 2026-09-21T22:40:00Z
+  updated: 2026-09-21T22:40:00Z
+  spec: null
+  acceptance_criteria:
+  - "No test in execute_python_test_diagnostics_tests passes a wall-clock budget: the behaviour tests (success, assertion failure, harness invariant, verbose stderr, missing python3) run the child to its own exit through an injected ExecBudget that never expires, so a loaded host cannot turn them red. The FALSIFY-HEH-001..004 test names are unchanged."
+  - "The timeout path is tested deterministically: an injected budget that expires after N polls kills a program that never exits and reports timed_out=true, exit_code=None; the production entry point (execute_python_test_with_diagnostics) keeps its wall-clock deadline and is tested with a zero-second budget on a program that never exits, asserting no elapsed time."
+  - "The regression the old 5/10 s deadline stood in for — a stderr pipe that is not drained — is caught by a count, not a clock: stderr is drained on its own thread while the child runs, and a test asserts the drain consumes all of a 1 MiB stream while keeping the 64 KiB cap. verbose_stderr_does_not_deadlock_on_success writes 256 KiB (4x the pipe buffer)."
+  - "Mutants: the drain reverted to a single read turns the byte-count test RED; the kill path not recording timed_out turns the expired-budget test RED; exit codes not propagated turns assertion_failure_reports_nonzero_and_traceback RED."
+  - "contracts/apr-eval-humaneval-harness-invariant-v1.yaml records the drain obligation and the new falsifiers; pv validate passes."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |
+    Issue #3788, VERBATIM (root cause): "`execute_python_test_with_diagnostics(program, 5)` returns `exit_code: None` only when the child is killed by its timeout, or when the spawn fails. The test gives `python3 -c 'assert 1 == 2'` a 5-second wall-clock budget. On a host at load ~50, interpreter start-up alone can exceed that, so the test asserts on the scheduler rather than on the code."
+
+    Cop triage on #3788, VERBATIM: "**0.69.1**. It isn't a flake to tolerate: a wall-clock assertion in a lib test that runs under the required `workspace-test` violates the standing rule (no wall-clock assertion in a required check; 4 have failed before). Under load ~50 it will turn batch CI red at random. Fix: replace the elapsed-time bound with a behavioural assertion (count of work done, or a deterministic budget via an injected clock), or move the timing measurement to a non-required perf lane. Add a mutant proving the new assertion still catches the regression the timer was guarding. Owner: aprender-fc, after #3773."
+
+    The issue's own fix direction (a 60 s timeout, or a timeout read as SKIP) is superseded by the cop's triage: a bigger wall-clock number is still a wall-clock assertion.
+    Found while reading the code: the old "drain" was one `read` after the child exited, so a child writing more than a 64 KiB pipe buffer blocked until the deadline killed it — the deadline was the only thing standing between that bug and a hang. The fix makes the drain real (a thread reading to EOF) so the tests can drop the clock without trading a flake for a hang.
+    Refs #3788 #3749 (where it was observed) and F-APR-EVAL-HUMANEVAL-HARNESS-INVARIANT-001.

@@ -1266,15 +1266,77 @@ pub(super) struct PythonExecResult {
     pub spawn_error: Option<String>,
 }
 
-/// Execute Python and return diagnostics. Drains stderr to avoid pipe-buffer
-/// deadlock (RC2 candidate from §69).
+/// When the harness gives up on a child that has not exited. Production uses a
+/// wall-clock deadline ([`WallClockBudget`]); the tests inject a budget that
+/// never expires, or one that expires after a fixed number of polls, so no test
+/// asserts on the host's scheduler (#3788: a 5 s deadline killed
+/// `assert 1 == 2` before it exited, at load ~50, and the test read
+/// `exit_code: None`).
+pub(super) trait ExecBudget {
+    /// Asked once per poll while the child is still running; true kills it.
+    fn expired(&mut self) -> bool;
+}
+
+/// The production budget: a wall-clock deadline (FALSIFY-EVAL-003, a runaway
+/// program is killed rather than hanging the eval).
+pub(super) struct WallClockBudget(std::time::Instant);
+
+impl WallClockBudget {
+    pub(super) fn after_secs(secs: u64) -> Self {
+        Self(std::time::Instant::now() + std::time::Duration::from_secs(secs))
+    }
+}
+
+impl ExecBudget for WallClockBudget {
+    fn expired(&mut self) -> bool {
+        std::time::Instant::now() >= self.0
+    }
+}
+
+/// How much of a child's stderr is kept for the diagnostics record.
+const STDERR_CAP: usize = 64 * 1024;
+
+/// Read `r` to EOF, keeping the first `cap` bytes. Returns the kept text and
+/// the number of bytes consumed. Reading to EOF — not one `read` — is what
+/// stops a child that writes more than a pipe buffer to stderr from blocking
+/// on the write forever (FALSIFY-HEH-002).
+fn drain_capped(mut r: impl std::io::Read, cap: usize) -> (String, usize) {
+    let mut kept = Vec::new();
+    let mut buf = [0u8; 8192];
+    let mut total = 0usize;
+    loop {
+        match r.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                total += n;
+                let room = cap.saturating_sub(kept.len());
+                kept.extend_from_slice(&buf[..n.min(room)]);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => break,
+        }
+    }
+    (String::from_utf8_lossy(&kept).into_owned(), total)
+}
+
+/// Execute Python and return diagnostics, giving up after `timeout_secs` of
+/// wall-clock time.
 pub(super) fn execute_python_test_with_diagnostics(
     program: &str,
     timeout_secs: u64,
 ) -> PythonExecResult {
-    use std::io::Read;
+    execute_python_with_budget(program, &mut WallClockBudget::after_secs(timeout_secs))
+}
+
+/// Execute Python and return diagnostics, killing the child once `budget`
+/// expires. stderr is drained on its own thread WHILE the child runs, so a
+/// verbose child cannot fill the pipe and stall (RC2 candidate from §69).
+pub(super) fn execute_python_with_budget(
+    program: &str,
+    budget: &mut dyn ExecBudget,
+) -> PythonExecResult {
     use std::process::Command;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     let tmp = std::env::temp_dir().join(format!(
         "apr_eval_{}_{}.py",
@@ -1315,13 +1377,17 @@ pub(super) fn execute_python_test_with_diagnostics(
         }
     };
 
-    let deadline = Instant::now() + Duration::from_secs(timeout_secs);
+    let drain = child
+        .stderr
+        .take()
+        .map(|s| std::thread::spawn(move || drain_capped(s, STDERR_CAP)));
+
     let mut timed_out = false;
     let exit_status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
             Ok(None) => {
-                if Instant::now() >= deadline {
+                if budget.expired() {
                     let _ = child.kill();
                     let _ = child.wait();
                     timed_out = true;
@@ -1333,13 +1399,10 @@ pub(super) fn execute_python_test_with_diagnostics(
         }
     };
 
-    let mut stderr_capture = String::new();
-    if let Some(mut s) = child.stderr.take() {
-        let mut buf = vec![0u8; 65536];
-        if let Ok(n) = s.read(&mut buf) {
-            stderr_capture = String::from_utf8_lossy(&buf[..n]).to_string();
-        }
-    }
+    let stderr_capture = drain
+        .and_then(|h| h.join().ok())
+        .map(|(text, _)| text)
+        .unwrap_or_default();
 
     let _ = std::fs::remove_file(&tmp);
 
@@ -1357,7 +1420,11 @@ pub(super) fn execute_python_test_with_diagnostics(
 
 #[cfg(test)]
 mod execute_python_test_diagnostics_tests {
-    use super::execute_python_test_with_diagnostics;
+    use super::{
+        drain_capped, execute_python_test_with_diagnostics, execute_python_with_budget, ExecBudget,
+        PythonExecResult, STDERR_CAP,
+    };
+    use std::io::Read;
 
     /// Detect whether `python3` is available in the test environment.
     /// The workspace-test CI container does not install python3; these
@@ -1375,6 +1442,38 @@ mod execute_python_test_diagnostics_tests {
             .unwrap_or(false)
     }
 
+    /// A budget that never expires: the child runs to its own exit, so these
+    /// tests assert on the program's behaviour and never on the host's
+    /// scheduler (#3788). Nothing here can time out, at any load.
+    struct NeverExpires;
+
+    impl ExecBudget for NeverExpires {
+        fn expired(&mut self) -> bool {
+            false
+        }
+    }
+
+    /// Expires on the poll after `n` polls: deterministic in polls, not seconds.
+    struct ExpiresAfterPolls(u32);
+
+    impl ExecBudget for ExpiresAfterPolls {
+        fn expired(&mut self) -> bool {
+            if self.0 == 0 {
+                return true;
+            }
+            self.0 -= 1;
+            false
+        }
+    }
+
+    fn run_to_exit(program: &str) -> PythonExecResult {
+        execute_python_with_budget(program, &mut NeverExpires)
+    }
+
+    /// A program that never exits on its own, so killing it is the only way
+    /// the harness can return — whatever the load.
+    const NEVER_EXITS: &str = "import time\nwhile True:\n    time.sleep(0.01)\n";
+
     /// Trivially-passing program reports success + exit_code 0 + empty stderr.
     #[test]
     fn success_program_reports_zero_exit_and_empty_stderr() {
@@ -1382,7 +1481,7 @@ mod execute_python_test_diagnostics_tests {
             return;
         }
         let program = "print('hello')\n";
-        let r = execute_python_test_with_diagnostics(program, 5);
+        let r = run_to_exit(program);
         assert!(r.success, "program should succeed");
         assert_eq!(r.exit_code, Some(0));
         assert!(
@@ -1401,7 +1500,7 @@ mod execute_python_test_diagnostics_tests {
             return;
         }
         let program = "assert 1 == 2\n";
-        let r = execute_python_test_with_diagnostics(program, 5);
+        let r = run_to_exit(program);
         assert!(!r.success);
         assert_eq!(r.exit_code, Some(1));
         assert!(
@@ -1421,28 +1520,70 @@ mod execute_python_test_diagnostics_tests {
             return;
         }
         let program = "def f(x):\n    return x + 1\n\nassert f(1) == 2\n";
-        let r = execute_python_test_with_diagnostics(program, 5);
+        let r = run_to_exit(program);
         assert!(r.success, "passing program must be reported as success");
         assert_eq!(r.exit_code, Some(0));
     }
 
-    /// Falsifier §69 RC2-extension: programs that emit verbose stderr but pass
-    /// MUST NOT deadlock — the stderr pipe is drained.
+    /// Falsifier §69 RC2-extension: a passing program that writes MORE than a
+    /// pipe buffer to stderr must still be reported as passing. 256 KiB is 4x
+    /// Linux's 64 KiB pipe: without a concurrent drain the child blocks on its
+    /// write and never exits. The capture keeps the first `STDERR_CAP` bytes.
     #[test]
     fn verbose_stderr_does_not_deadlock_on_success() {
         if !python3_available() {
             return;
         }
-        // Emit ~10KB to stderr, then exit 0 → must report success without timeout.
-        let program =
-            "import sys\nfor _ in range(200):\n    print('x' * 50, file=sys.stderr)\nsys.exit(0)\n";
-        let r = execute_python_test_with_diagnostics(program, 10);
+        let program = "import sys\nsys.stderr.write('x' * (256 * 1024))\nsys.exit(0)\n";
+        let r = run_to_exit(program);
         assert!(
             r.success,
-            "10KB-stderr passing program timed_out={} exit_code={:?}",
+            "256KiB-stderr passing program timed_out={} exit_code={:?}",
             r.timed_out, r.exit_code
         );
+        assert_eq!(r.stderr_capture.len(), STDERR_CAP);
         assert!(!r.timed_out);
+    }
+
+    /// FALSIFY-HEH-002, counted rather than timed: the drain consumes every
+    /// byte the child writes (1 MiB here), not one pipe-buffer's worth, and
+    /// keeps only the cap. A drain that stops early leaves the child blocked.
+    #[test]
+    fn stderr_drain_consumes_everything_and_keeps_the_cap() {
+        let one_mib: u64 = 1024 * 1024;
+        let (kept, consumed) = drain_capped(std::io::repeat(b'x').take(one_mib), STDERR_CAP);
+        assert_eq!(consumed as u64, one_mib);
+        assert_eq!(kept.len(), STDERR_CAP);
+        let (short, n) = drain_capped(&b"AssertionError\n"[..], STDERR_CAP);
+        assert_eq!((short.as_str(), n), ("AssertionError\n", 15));
+    }
+
+    /// FALSIFY-EVAL-003, deterministically: when the budget expires the child
+    /// is killed and the result says so. The program never exits by itself,
+    /// so the kill is the only path out, at any load.
+    #[test]
+    fn an_expired_budget_kills_the_child_and_reports_timed_out() {
+        if !python3_available() {
+            return;
+        }
+        let r = execute_python_with_budget(NEVER_EXITS, &mut ExpiresAfterPolls(2));
+        assert!(r.timed_out);
+        assert!(!r.success);
+        assert_eq!(r.exit_code, None);
+        assert!(r.spawn_error.is_none());
+    }
+
+    /// The production entry point is a wall-clock deadline: a zero-second
+    /// budget has already expired at the first poll, and a program that never
+    /// exits is killed. No elapsed time is asserted.
+    #[test]
+    fn the_production_budget_is_a_wall_clock_deadline() {
+        if !python3_available() {
+            return;
+        }
+        let r = execute_python_test_with_diagnostics(NEVER_EXITS, 0);
+        assert!(r.timed_out);
+        assert_eq!(r.exit_code, None);
     }
 
     /// Falsifier: when python3 is unavailable, exec result reports
@@ -1452,7 +1593,7 @@ mod execute_python_test_diagnostics_tests {
         if python3_available() {
             return; // can't test absence when present
         }
-        let r = execute_python_test_with_diagnostics("print('hello')\n", 5);
+        let r = run_to_exit("print('hello')\n");
         assert!(!r.success);
         assert!(
             r.spawn_error.is_some(),
