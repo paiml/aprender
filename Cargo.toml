@@ -624,6 +624,11 @@ gates = [
     # silence. RED when evidence/perf041/<host>/marker.json is absent, is not
     # PASS, or is older than perf-matrix.yaml `witness.max_age_days`.
     "scripts/check_perf041_marker.sh",
+    # #3076: apr's F16/BF16 CPU matvec against the pinned llama.cpp, greedy, on the
+    # template-free models its committed receipts name (evidence/pmat-3076-f16-bf16-matvec/).
+    # A model absent from the release host is a FAIL. The PR-time half is the case table,
+    # run by scripts/check_float16_greedy_parity.sh.
+    "scripts/float16_greedy_parity.sh",
 ]
 
 # The interfaces this release SHIPS, each paired with the e2e target that proves

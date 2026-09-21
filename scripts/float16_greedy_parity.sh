@@ -41,10 +41,20 @@
 # scripts/llama_pin.toml. Any other build is refused (rc 2): an unpinned denominator is
 # not a measurement.
 #
+# RELEASE MODE (no arguments) is the pre-publish gate declared in Cargo.toml
+# [package.metadata.dogfood]. For every committed receipt in evidence/pmat-3076-f16-bf16-matvec/
+# it runs the model that receipt names, found under ${APR_MODELS_DIR:-~/models}/parity/,
+# checked against the receipt's sha256, with the receipt as the baseline: a divergence is
+# KNOWN only if apr's text is byte-identical to the text the receipt recorded for that
+# prompt. A model missing from the host is a FAIL, never a skip: a release gate that did
+# not run is not green.
+#
 # usage:
+#   bash scripts/float16_greedy_parity.sh                  # release mode, see above
 #   bash scripts/float16_greedy_parity.sh --model <gguf> [--apr <bin>] [--llama <bin>]
-#        [--baseline <apr-before>] [--n <tokens>] [--out <receipt.json>]
-#   bash scripts/float16_greedy_parity.sh --self-test
+#        [--baseline <apr-before> | --known-from <receipt.json>] [--expect-sha <sha256>]
+#        [--n <tokens>] [--out <receipt.json>]
+#   (the comparison helpers' case table runs on every PR: scripts/check_float16_greedy_parity.sh)
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -52,6 +62,8 @@ N=32
 MODEL=""
 APR_BIN=""
 BASE_BIN=""
+KNOWN_FROM=""
+EXPECT_SHA=""
 LLAMA_BIN=""
 OUT=""
 
@@ -66,84 +78,55 @@ PROMPTS=(
 
 die2() { printf 'float16_greedy_parity: %s\n' "$*" >&2; exit 2; }
 
-# first_diff A B -> prints the first differing character offset, or -1 when equal. The
-# strings go in through the environment, not `awk -v`, which would interpret backslash
-# escapes in generated code.
-first_diff() {
-    A=$1 B=$2 awk 'BEGIN {
-        a = ENVIRON["A"]; b = ENVIRON["B"]
-        if (a == b) { print -1; exit }
-        n = length(a) < length(b) ? length(a) : length(b)
-        for (i = 1; i <= n; i++) if (substr(a, i, 1) != substr(b, i, 1)) { print i - 1; exit }
-        print n
-    }'
-}
-
-trim() {
-    local s=$1
-    s="${s#"${s%%[![:space:]]*}"}"
-    s="${s%"${s##*[![:space:]]}"}"
-    printf '%s' "$s"
-}
-
-# json_str S -> S as a JSON string literal (backslash, quote, control characters escaped).
-json_str() {
-    local s=$1
-    s=${s//\\/\\\\}
-    s=${s//\"/\\\"}
-    s=${s//$'\n'/\\n}
-    s=${s//$'\t'/\\t}
-    s=${s//$'\r'/\\r}
-    printf '"%s"' "$s"
-}
-
-self_test() {
-    local fails=0 got
-    # (a, b, expected first_diff)
-    check() {
-        got=$(first_diff "$1" "$2")
-        if [ "$got" = "$3" ]; then
-            printf 'ok    first_diff(%q, %q) = %s\n' "$1" "$2" "$got"
-        else
-            printf 'FAIL  first_diff(%q, %q) = %s, want %s\n' "$1" "$2" "$got" "$3"
-            fails=$((fails + 1))
-        fi
-    }
-    check "Berlin. The capital" "Berlin. The capital" -1
-    check "Berlin. The capital" "Berlin. A capital" 8
-    check "Berlin" "Berlin." 6
-    check "" "" -1
-    check "x" "" 0
-    check 'print("a\\nb")' 'print("a\\nc")' 11
-    local t
-    t=$(trim $'  Berlin. The capital\n\n')
-    if [ "$t" = "Berlin. The capital" ]; then printf 'ok    trim strips both ends\n'; else
-        printf 'FAIL  trim gave %q\n' "$t"; fails=$((fails + 1)); fi
-    t=$(trim $'a  b')
-    if [ "$t" = $'a  b' ]; then printf 'ok    trim keeps inner whitespace\n'; else
-        printf 'FAIL  trim changed inner whitespace: %q\n' "$t"; fails=$((fails + 1)); fi
-    t=$(json_str $'a"b\\c\nd')
-    if [ "$t" = '"a\"b\\c\nd"' ]; then printf 'ok    json_str escapes\n'; else
-        printf 'FAIL  json_str gave %s\n' "$t"; fails=$((fails + 1)); fi
-    printf -- '--- self-test: %s failure(s) ---\n' "$fails"
-    [ "$fails" -eq 0 ]
-}
+# shellcheck source=float16_parity_lib.sh
+. "$ROOT/scripts/float16_parity_lib.sh" || die2 "cannot source scripts/float16_parity_lib.sh"
 
 while [ $# -gt 0 ]; do
     case $1 in
         --model) MODEL=$2; shift 2 ;;
         --apr) APR_BIN=$2; shift 2 ;;
         --baseline) BASE_BIN=$2; shift 2 ;;
+        --known-from) KNOWN_FROM=$2; shift 2 ;;
+        --expect-sha) EXPECT_SHA=$2; shift 2 ;;
         --llama) LLAMA_BIN=$2; shift 2 ;;
         --n) N=$2; shift 2 ;;
         --out) OUT=$2; shift 2 ;;
-        --self-test) self_test; exit $? ;;
         *) die2 "unknown argument: $1" ;;
     esac
 done
 
 command -v jq > /dev/null || die2 "jq is required (apr --json parsing and the receipt)"
+
+release_mode() {
+    local dir=${APR_MODELS_DIR:-$HOME/models}/parity worst=0 r model sha rc
+    local receipts=("$ROOT"/evidence/pmat-3076-f16-bf16-matvec/greedy-parity-*.json)
+    [ -f "${receipts[0]}" ] || die2 "no committed receipts under evidence/pmat-3076-f16-bf16-matvec/"
+    for r in "${receipts[@]}"; do
+        model=$(jq -r '.model' "$r")
+        sha=$(jq -r '.model_sha256' "$r")
+        printf '=== %s (receipt %s)\n' "$model" "${r#"$ROOT"/}"
+        if [ ! -f "$dir/$model" ]; then
+            printf 'FAIL   %s is not on this host under %s. Provision it: download the source GGUF named\n' "$model" "$dir"
+            printf '       in evidence/pmat-3076-f16-bf16-matvec/findings.json and strip its chat template with\n'
+            printf '       gguf_new_metadata.py --remove-metadata tokenizer.chat_template (sha256 must be %s)\n' "$sha"
+            worst=1
+            continue
+        fi
+        rc=0
+        bash "$0" --model "$dir/$model" --expect-sha "$sha" --known-from "$r" || rc=$?
+        [ "$rc" -gt "$worst" ] && worst=$rc
+    done
+    printf -- '--- release mode: %s model(s), worst rc=%s ---\n' "${#receipts[@]}" "$worst"
+    return "$worst"
+}
+if [ -z "$MODEL" ] && [ -z "$APR_BIN$BASE_BIN$KNOWN_FROM$LLAMA_BIN$OUT" ]; then
+    rc=0
+    release_mode || rc=$?
+    exit "$rc"
+fi
 [ -n "$MODEL" ] || die2 "--model <gguf> is required"
+[ -z "$BASE_BIN" ] || [ -z "$KNOWN_FROM" ] || die2 "--baseline and --known-from are alternatives; give one"
+[ -z "$KNOWN_FROM" ] || [ -f "$KNOWN_FROM" ] || die2 "--known-from receipt not found: $KNOWN_FROM"
 [ -f "$MODEL" ] || die2 "model not found: $MODEL"
 
 # --- the apr under test: pinned to this tree unless given explicitly -------------------
@@ -179,11 +162,14 @@ case $PROBE in
 esac
 
 MODEL_SHA=$(sha256sum "$MODEL" | cut -d' ' -f1)
+[ -z "$EXPECT_SHA" ] || [ "$MODEL_SHA" = "$EXPECT_SHA" ] \
+    || die2 "model sha256 $MODEL_SHA is not the receipt's $EXPECT_SHA: a different file is not the model the receipt judged"
 HOST=$(hostname)
 CPU=$(sed -n 's/^model name[[:space:]]*: //p' /proc/cpuinfo | head -1)
 
 printf 'apr:        %s (%s)\n' "$APR_VERSION" "$APR_BIN"
-printf 'baseline:   %s\n' "${BASE_VERSION:-none (strict: every divergence FAILs)}"
+if [ -n "$KNOWN_FROM" ]; then BASE_DESC="receipt ${KNOWN_FROM#"$ROOT"/}"; else BASE_DESC=${BASE_VERSION:-"none (strict: every divergence FAILs)"}; fi
+printf 'baseline:   %s\n' "$BASE_DESC"
 printf 'comparator: %s (%s)\n' "$LLAMA_VERSION" "$LLAMA_BIN"
 printf 'model:      %s sha256=%s\n' "$MODEL" "$MODEL_SHA"
 printf 'host:       %s, %s; greedy, CPU, n=%s\n' "$HOST" "$CPU" "$N"
@@ -215,6 +201,11 @@ for p in "${PROMPTS[@]}"; do
         base_text=$(trim "$(printf '%s' "$base_json" | jq -r '.text')")
         if [ "$base_text" = "$a" ]; then verdict=KNOWN; base_note=" (baseline apr identical)"; else
             verdict=FAIL; base_note=" (baseline apr differs too, at char $(first_diff "$base_text" "$a"))"; fi
+    elif [ -n "$KNOWN_FROM" ]; then
+        rec=$(jq -r --arg p "$p" '[.prompts[] | select(.prompt == $p and .verdict == "KNOWN")][0].apr_text // empty' "$KNOWN_FROM")
+        if [ -n "$rec" ] && [ "$rec" = "$a" ]; then verdict=KNOWN; base_note=" (apr text identical to the receipt's KNOWN row)"
+        elif [ -n "$rec" ]; then verdict=FAIL; base_note=" (receipt KNOWN, but apr's text moved at char $(first_diff "$rec" "$a"))"
+        else verdict=FAIL; base_note=" (not KNOWN in the receipt)"; fi
     else
         verdict=FAIL
     fi
