@@ -266,7 +266,10 @@ PV=""
 verifier_pin_pv
 VERIFIER_PIN_PV_RC=$?
 
-echo "══ dogfood pre-release: $CRATE v$VERSION ══"
+# The banner names the phase that RAN (#3543): it read "pre-release" in the post-publish run too, so
+# a reader of that log believed they were looking at the pre-release gate set.
+phase_banner() { printf '══ dogfood %s: %s v%s ══\n' "$1" "$2" "$3"; }
+phase_banner "$DOGFOOD_PHASE" "$CRATE" "$VERSION"
 
 # ── 1. hygiene ───────────────────────────────────────────────────────────────
 # `.dogfood/` (this receipt), `.pmat/` (the index the pmat gate must build before
@@ -384,43 +387,43 @@ fi
 # index, not a flaky crates.io HTTP call). A dry-run SUCCEEDS even when the
 # version exists (it only warns), so the "already exists" string — not the exit
 # code — is what tells us the version is taken.
-if [ "$DOGFOOD_PHASE" = pre-publish ]; then
-  # Before the cascade a dry-run of a workspace root cannot resolve its own
-  # members (they are not on the registry yet), so it fails for a reason that
-  # says nothing about the version. The question this row exists to answer --
-  # "is $VERSION already on crates.io?" -- is asked of the registry directly.
-  DRY=""; DRC=0
-  # The SPARSE INDEX is consulted, not the web API: it is the file cargo itself
-  # resolves against, it is not rate-limited the way api/v1 is (measured
-  # 2026-09-03: two api/v1 calls in a row answered HTTP 429), and a crate that
-  # has never been published answers 404 -- the strongest possible "absent", not
-  # a transport failure (third review of #2859, dogfood-curl-404-defect). The
-  # HTTP status is read separately from the body so 404, 200 and anything else
-  # each get their own verdict.
-  # The index is keyed by the LOWERCASED name (crates.io folds case; cargo
-  # metadata reports the manifest's spelling verbatim) -- fifth review of
-  # #2859, F-CRATES-IO-CASE.
-  REG_NAME=$(printf '%s' "$CRATE" | tr '[:upper:]' '[:lower:]')
-  case "${#REG_NAME}" in
-    1) REG_PATH="1/$REG_NAME" ;; 2) REG_PATH="2/$REG_NAME" ;; 3) REG_PATH="3/${REG_NAME:0:1}/$REG_NAME" ;;
-    *) REG_PATH="${REG_NAME:0:2}/${REG_NAME:2:2}/$REG_NAME" ;;
+# index_version_state CRATE VERSION -> prints ONE line: "present", "absent", "crate-absent" or
+# "unknown <why>", from the crates.io SPARSE INDEX (the file cargo itself resolves against). Both
+# publish phases ask it (#3543): pre-publish needs the version ABSENT, post-publish needs it PRESENT.
+# The SPARSE INDEX is consulted, not the web API: it is the file cargo itself
+# resolves against, it is not rate-limited the way api/v1 is (measured
+# 2026-09-03: two api/v1 calls in a row answered HTTP 429), and a crate that
+# has never been published answers 404 -- the strongest possible "absent", not
+# a transport failure (third review of #2859, dogfood-curl-404-defect). The
+# HTTP status is read separately from the body so 404, 200 and anything else
+# each get their own verdict.
+# The index is keyed by the LOWERCASED name (crates.io folds case; cargo
+# metadata reports the manifest's spelling verbatim) -- fifth review of
+# #2859, F-CRATES-IO-CASE.
+index_version_state() {
+  local name path code rc parse
+  name=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  case "${#name}" in
+    1) path="1/$name" ;; 2) path="2/$name" ;; 3) path="3/${name:0:1}/$name" ;;
+    *) path="${name:0:2}/${name:2:2}/$name" ;;
   esac
-  REG_CODE=$(curl -sS -o "$WORKLOG/registry.ndjson" -w '%{http_code}' \
+  code=$(curl -sS -o "$WORKLOG/registry.ndjson" -w '%{http_code}' \
         -A "aprender-dogfood (+https://github.com/paiml/aprender)" \
-        "https://index.crates.io/$REG_PATH" 2>"$WORKLOG/registry.err"); REG_RC=$?
-  if [ "$REG_RC" -ne 0 ]; then
-    mark version-unpublished FAIL "index.crates.io not consulted (curl exit=$REG_RC): $(tail -1 "$WORKLOG/registry.err" 2>/dev/null | cut -c1-100) — the version's status is UNKNOWN"
-  elif [ "$REG_CODE" = 404 ]; then
-    mark version-unpublished PASS "$CRATE is not in the crates.io index at all (HTTP 404), so $VERSION is absent (pre-publish phase)"
-  elif [ "$REG_CODE" != 200 ]; then
-    mark version-unpublished FAIL "index.crates.io answered HTTP $REG_CODE for $CRATE — the version's status is UNKNOWN"
-  else
-    # Three outcomes, three exit codes: 0 the version is in the index, 1 the
-    # index parsed and does not carry it, 2 the body is not the index (an HTML
-    # error page behind a 200, a captive portal). Only 1 is "absent"; 2 is
-    # UNKNOWN and FAIL -- a gate that read `unparseable` as `absent` was
-    # fail-open (fourth review of #2859, dogfood-index-decode-bypass).
-    python3 -c '
+        "https://index.crates.io/$path" 2>"$WORKLOG/registry.err"); rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf 'unknown index.crates.io not consulted (curl exit=%s): %s\n' "$rc" "$(tail -1 "$WORKLOG/registry.err" 2>/dev/null | cut -c1-100)"; return 0
+  fi
+  case "$code" in
+    404) printf 'crate-absent\n'; return 0 ;;
+    200) ;;
+    *) printf 'unknown index.crates.io answered HTTP %s for %s\n' "$code" "$1"; return 0 ;;
+  esac
+  # Three outcomes, three exit codes: 0 the version is in the index, 1 the
+  # index parsed and does not carry it, 2 the body is not the index (an HTML
+  # error page behind a 200, a captive portal). Only 1 is "absent"; 2 is
+  # UNKNOWN -- a gate that read `unparseable` as `absent` was fail-open
+  # (fourth review of #2859, dogfood-index-decode-bypass).
+  python3 -c '
 import json, sys
 want = sys.argv[1]
 seen = 0
@@ -434,21 +437,101 @@ try:
         if rec.get("vers") == want: sys.exit(0)
 except (ValueError, OSError, UnicodeDecodeError):
     sys.exit(2)
-sys.exit(1 if seen else 2)' "$VERSION" "$WORKLOG/registry.ndjson"; REG_PARSE=$?
-    case "$REG_PARSE" in
-      0) mark version-unpublished FAIL "$CRATE $VERSION is ALREADY in the crates.io index — bump the version" ;;
-      1) mark version-unpublished PASS "$VERSION absent from the crates.io index (consulted directly, HTTP 200, index parsed; pre-publish phase)" ;;
-      *) mark version-unpublished FAIL "index.crates.io answered HTTP 200 but the body is not the index ($(head -c 60 "$WORKLOG/registry.ndjson" | tr -d '\n' | cut -c1-60)…) — the version's status is UNKNOWN" ;;
+sys.exit(1 if seen else 2)' "$2" "$WORKLOG/registry.ndjson"; parse=$?
+  case "$parse" in
+    0) printf 'present\n' ;;
+    1) printf 'absent\n' ;;
+    *) printf 'unknown index.crates.io answered HTTP 200 but the body is not the index (%s…)\n' "$(head -c 60 "$WORKLOG/registry.ndjson" | tr -d '\n' | cut -c1-60)" ;;
+  esac
+}
+
+# version_row PHASE CRATE VERSION STATE -> "ROW STATUS NOTE", the version row a publish phase owes (#3543)
+#   pre-publish   version-unpublished: PASS only when the version is ABSENT (the cascade must not collide)
+#   post-publish  version-published:   PASS only when the version is PRESENT (the cascade ran), and
+#                 mark_version_row also requires it to INSTALL from crates.io. This
+#                 phase used to run the pre-publish row, which a successful publish turns RED forever,
+#                 so the post-publish dogfood could never say GO (0.68.2, 2026-09-20).
+# An unknown index is FAIL in both: an unconsulted registry is not evidence either way.
+version_row() {
+  local phase=$1 crate=$2 ver=$3 state=$4 why=""
+  case "$state" in unknown\ *) why=${state#unknown }; state=unknown ;; esac
+  case "$phase:$state" in
+    pre-publish:absent)        printf 'version-unpublished PASS %s absent from the crates.io index (consulted directly, HTTP 200, index parsed; pre-publish phase)\n' "$ver" ;;
+    pre-publish:crate-absent)  printf 'version-unpublished PASS %s is not in the crates.io index at all (HTTP 404), so %s is absent (pre-publish phase)\n' "$crate" "$ver" ;;
+    pre-publish:present)       printf 'version-unpublished FAIL %s %s is ALREADY in the crates.io index — bump the version\n' "$crate" "$ver" ;;
+    pre-publish:unknown)       printf 'version-unpublished FAIL %s — the version'"'"'s status is UNKNOWN\n' "$why" ;;
+    post-publish:present)      printf 'version-published PASS %s %s is in the crates.io index (consulted directly), as the post-publish phase requires\n' "$crate" "$ver" ;;
+    post-publish:absent)       printf 'version-published FAIL %s %s is NOT in the crates.io index — this phase runs after the cascade, so the version was not published\n' "$crate" "$ver" ;;
+    post-publish:crate-absent) printf 'version-published FAIL %s is not in the crates.io index at all (HTTP 404) — this phase runs after the cascade, so nothing was published\n' "$crate" ;;
+    post-publish:unknown)      printf 'version-published FAIL %s — whether %s was published is UNKNOWN\n' "$why" "$ver" ;;
+    *)                         printf 'version-unpublished FAIL version_row has no verdict for phase %s, state %s\n' "$phase" "$state" ;;
+  esac
+}
+
+# published_install_check CRATE VERSION -> "ok <what>" or "fail <why>". #3543: post-publish the version
+# must be "on the index, resolvable, and `cargo install` of it works". Presence in the index is not
+# installability: a yanked version is still listed, and a published crate can miss a file it needs
+# to build (the CB-510 class). So the published crate is installed from crates.io, exactly as a user
+# would (`--version =<v> --locked`, a scratch root, the token unset), and every binary it installs
+# must report the version. Resolution happens inside that install; a version cargo cannot resolve
+# fails it.
+published_install_check() {
+  local root="$WORKLOG/published-install" rc b v n=0 bad=""
+  env -u CARGO_REGISTRY_TOKEN cargo install "$1" --version "=$2" --locked --root "$root" \
+      --target-dir "$WORKLOG/published-install-target" > "$WORKLOG/published-install.log" 2>&1; rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf 'fail `cargo install %s --version =%s --locked` exited %s: %s\n' "$1" "$2" "$rc" \
+      "$(grep -E '^error' "$WORKLOG/published-install.log" | head -n 1 | strip_ansi | cut -c1-120)"
+    return 0
+  fi
+  for b in "$root"/bin/*; do
+    [ -f "$b" ] && [ -x "$b" ] || continue
+    n=$((n + 1))
+    v=$("$b" --version 2>&1 | head -n 1)
+    case "$v" in *"$2"*) ;; *) bad="$bad $(basename "$b")='$v'" ;; esac
+  done
+  [ "$n" -gt 0 ] || { printf 'fail `cargo install %s --version =%s` succeeded but installed no binary\n' "$1" "$2"; return 0; }
+  [ -z "$bad" ] || { printf 'fail the binaries installed from crates.io do not report %s:%s\n' "$2" "$bad"; return 0; }
+  printf 'ok %s binary(ies) installed from crates.io (--version =%s --locked) report %s\n' "$n" "$2" "$2"
+}
+
+# mark_version_row PHASE -> marks the row version_row decides, from a fresh index lookup; post-publish,
+# a version the index carries must also INSTALL (published_install_check)
+mark_version_row() {
+  local row st note line state inst
+  state=$(index_version_state "$CRATE" "$VERSION")
+  line=$(version_row "$1" "$CRATE" "$VERSION" "$state")
+  row=${line%% *}; line=${line#* }; st=${line%% *}; note=${line#* }
+  if [ "$1" = post-publish ] && [ "$state" = present ]; then
+    inst=$(published_install_check "$CRATE" "$VERSION")
+    case "$inst" in
+      ok\ *) note="$note; resolvable, and \`cargo install\` of it works: ${inst#ok }" ;;
+      *)     st=FAIL; note="$CRATE $VERSION is in the crates.io index but is NOT installable: ${inst#fail }" ;;
     esac
   fi
+  mark "$row" "$st" "$note"
+}
+
+if [ "$DOGFOOD_PHASE" = pre-publish ]; then
+  # Before the cascade a dry-run of a workspace root cannot resolve its own
+  # members (they are not on the registry yet), so it fails for a reason that
+  # says nothing about the version. The question this row exists to answer --
+  # "is $VERSION already on crates.io?" -- is asked of the registry directly.
+  DRY=""; DRC=0
+  mark_version_row pre-publish
 else
 DRY=$(env -u CARGO_REGISTRY_TOKEN cargo publish --dry-run --allow-dirty 2>&1); DRC=$?
+if [ "$DOGFOOD_PHASE" = post-publish ]; then
+  # #3543: after the cascade the version SHOULD be on crates.io. The dry-run above still runs --
+  # row 10 (publish-dry-run) reads DRC, discharging the pre-publish DEFER -- but the version row is
+  # the index lookup, asserting the opposite of pre-publish.
+  mark_version_row post-publish
 # Here-string, never `printf | grep -q`: with the marker early and more than a
 # pipe buffer behind it, grep exits at first match, printf takes SIGPIPE, and
 # under pipefail the `if` reads 141 — a PUBLISHED version marked "not yet
 # published" (#2644, DF-2; the same construct inverted a verdict the other way
 # in the pinning guard, VP-06).
-if grep -qiE "already (exists|uploaded)" <<< "$DRY"; then
+elif grep -qiE "already (exists|uploaded)" <<< "$DRY"; then
   mark version-unpublished FAIL "$CRATE $VERSION is ALREADY on crates.io — bump the version"
 elif [ "$DRC" -ne 0 ]; then
   # No already-exists marker AND the dry-run itself died: the registry was
