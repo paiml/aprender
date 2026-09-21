@@ -63,14 +63,19 @@ pub enum DeviceMemory {
 
 impl DeviceMemory {
     /// `(free, total)` a plan compares against: a unified device keeps
-    /// [`UNIFIED_HEADROOM_BYTES`] of `MemAvailable` back for the rest of the host.
+    /// [`UNIFIED_HEADROOM_BYTES`] back from both — from `MemAvailable` for the rest of
+    /// the host now, and from `MemTotal` because an idle host would keep it too, so
+    /// "fits the total" means "an idle host could serve it".
     #[must_use]
     pub const fn plan_free_total(self) -> (u64, u64) {
         match self {
             Self::Discrete { free, total } => (free, total),
             Self::Unified {
                 available, total, ..
-            } => (available.saturating_sub(UNIFIED_HEADROOM_BYTES), total),
+            } => (
+                available.saturating_sub(UNIFIED_HEADROOM_BYTES),
+                total.saturating_sub(UNIFIED_HEADROOM_BYTES),
+            ),
         }
     }
 }
@@ -312,12 +317,23 @@ pub fn plan(i: &CapacityInputs) -> CapacityVerdict {
     if i.f16_kv_decode_available && need16 <= i.gpu_free_bytes {
         return CapacityVerdict::Fits(b16);
     }
-    let held = i.gpu_total_bytes.saturating_sub(i.gpu_free_bytes) as f64 / MIB;
+    let unplannable = i.gpu_total_bytes.saturating_sub(i.gpu_free_bytes) as f64 / MIB;
+    let held = match i.memory {
+        // On unified memory the gap is not all tenants: it is MemTotal less
+        // MemAvailable (processes, the kernel, unreclaimable cache), with the headroom
+        // already taken off both sides by `plan_free_total` (aprender-eb, #3714).
+        Some(DeviceMemory::Unified { .. }) => format!(
+            "(MemTotal - headroom) - (MemAvailable - headroom) = {unplannable:.0} MiB of host \
+             memory is not available to plan against"
+        ),
+        _ => format!("other processes hold {unplannable:.0} MiB of it"),
+    };
     let co_tenant = |b: CapacityBudget| {
         CapacityVerdict::Refused(CapacityRefusal {
             kind: RefusalKind::CoTenant,
             reason: format!(
-                "an empty GPU of this size could hold this context at {:?}, but other processes                  hold {held:.0} MiB of it (free < need <= total): {}",
+                "an empty device of this size could hold this context at {:?}, but {held} \
+                 (free < need <= total): {}",
                 b.kv_dtype,
                 arithmetic(&b)
             ),
@@ -534,7 +550,11 @@ mod tests {
             available - UNIFIED_HEADROOM_BYTES,
             "headroom is held back"
         );
-        assert_eq!(t, total);
+        assert_eq!(
+            t,
+            total - UNIFIED_HEADROOM_BYTES,
+            "an idle host keeps the headroom back too"
+        );
         // The 27B at 262,144 fits GB10 by MemAvailable, and would be REFUSED by the
         // 16 GiB cuMemGetInfo figure — the bug aprender-eb measured.
         let mut i = twenty_seven_b(262_145, free, t, false);
@@ -553,6 +573,17 @@ mod tests {
         };
         assert!(r.reason.contains("MemAvailable"), "{}", r.reason);
         assert!(r.reason.contains("cuMemGetInfo said"), "{}", r.reason);
+        // A co-tenant refusal on unified memory names the terms; it does not blame
+        // "other processes" for page cache and the headroom (aprender-eb, #3714).
+        let mut tight = twenty_seven_b(262_145, 30 * GIB, t, false);
+        tight.memory = Some(unified);
+        let CapacityVerdict::Refused(r) = plan(&tight) else {
+            panic!("~50 GB into 30 GiB free must refuse")
+        };
+        assert_eq!(r.kind, RefusalKind::CoTenant, "{}", r.reason);
+        assert!(r.reason.contains("MemAvailable - headroom"), "{}", r.reason);
+        assert!(!r.reason.contains("other processes hold"), "{}", r.reason);
+        assert!(!r.reason.contains("  "), "a run of spaces in: {}", r.reason);
         let discrete = DeviceMemory::Discrete { free: 5, total: 9 };
         assert_eq!(discrete.plan_free_total(), (5, 9));
     }
