@@ -5,13 +5,13 @@
   "ont": {
     "consumer_present": true,
     "contracts_total": 1882,
-    "entity_types_registered": 11,
-    "extractors_implemented": 8,
+    "entity_types_registered": 12,
+    "extractors_implemented": 9,
     "contracts_anchored": 7,
     "contracts_shaped": 6,
     "unanchored_but_bindable": 297,
     "formal_prose": 1464,
     "legacy_unresolved_depends_on": 8,
-    "shapes_unarmed": 15
+    "shapes_unarmed": 19
   }
 }

@@ -25,7 +25,14 @@
 # model's measured length. Kernels = every (kernel, quant) on ANY required host's dispatch path, owed on EVERY
 # required host (each GPU arch).
 #
-# THE FAMILY. `--shape release-readiness-v1` grades these nine shapes, armed whatever `armed_shapes` says, and
+# DERIVED CELLS (#3745 S2, #3777). The verb axis is no longer a list: the cells are derived from the release
+# candidate's own `apr surface --json` (--surface): per (model command, model, host) a deterministic strength-2
+# covering array over its mode args ∪ {input shape} ∪ (when the surface's typed `generates` says so) {thinking,
+# rung}; a model command that does not generate owes `release:ModelCell`s; a command with no model owes one
+# `release:ProbeCell` per host; S2.5 adds one-factor-at-a-time `release:EffectCell`s judged by `release:ModeEffect`.
+# Receipt rows key onto their cell by `cell_id` (`pv extract --cells-out` lists them).
+#
+# THE FAMILY. `--shape release-readiness-v1` grades these shapes, armed whatever `armed_shapes` says, and
 # reports them in this declaration order: release → host → context → model → coverage → tokenizer → kernel →
 # refusal → cell, so a tokenizer that disagrees with llama.cpp (#3726) or a kernel that diverges across arches is
 # named before any model cell it breaks (#3715 addenda).
@@ -84,6 +91,12 @@ shapes:
       - {path: release:dogfoodReceipt, minCount: 1, maxCount: 1, nodeKind: IRI,
          node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [GO]},
                              {path: release:fresh, minCount: 1, maxCount: 1, in: [true]}]}}
+      # #3745 S2: the cells are DERIVED from the release candidate's own surface — no surface, no cells, no pass
+      - {path: release:surface, minCount: 1, maxCount: 1, nodeKind: IRI, class: cli:Surface}
+      - {path: release:generatesUndeclared, maxCount: 0}
+      # the two shrink-only counts (args no role type claims; stdin forms v1 cannot declare) never grow
+      - {path: release:ratchetGrew, maxCount: 0}
+      - {path: release:ratchetBaselineMissing, maxCount: 0}
   - id: release-readiness-v1.host
     targetClass: release:Host
     properties:
@@ -140,6 +153,12 @@ shapes:
                              {path: release:withinBound, minCount: 1, maxCount: 1, in: [true]},
                              {path: release:boundSource, minCount: 1},
                              {path: release:fresh, minCount: 1, maxCount: 1, in: [true]}]}}
+  # S2.5, the flag-effect oracle: every (command, mode arg, level) is OBSERVED to change the output somewhere —
+  # an effect cell's output digest differs from its base's (#3745 issuecomment-5765674584)
+  - id: release-readiness-v1.effect
+    targetClass: release:ModeEffect
+    properties:
+      - {path: release:observedIn, minCount: 1, nodeKind: IRI}
   # a cell that does not FIT the host is owed as an HONEST PRE-LOAD REFUSAL naming its arithmetic — never an OOM
   # mid-run, never a silent truncation, never a pass (#3710 rule)
   - id: release-readiness-v1.refusal
@@ -149,6 +168,28 @@ shapes:
          node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [refused]},
                              {path: release:arithmeticNamed, minCount: 1, maxCount: 1, in: [true]},
                              {path: release:fresh, minCount: 1, maxCount: 1, in: [true]}]}}
+  # a command with no model arg: it runs, or refuses by name (#3745 design 3, absorbs #3597)
+  - id: release-readiness-v1.probe
+    targetClass: release:ProbeCell
+    properties:
+      - {path: release:row, minCount: 1, maxCount: 1, nodeKind: IRI,
+         node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [pass, refused]},
+                             {path: release:fresh, minCount: 1, maxCount: 1, in: [true]}]}}
+  # a model command that does not generate text (inspect-like): Pass, or a typed refusal by name
+  - id: release-readiness-v1.model-cell
+    targetClass: release:ModelCell
+    properties:
+      - {path: release:row, minCount: 1, maxCount: 1, nodeKind: IRI,
+         node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [pass, refused]},
+                             {path: release:fresh, minCount: 1, maxCount: 1, in: [true]}]}}
+  # S2.5's one-factor-at-a-time cells: each must run, and say what it printed
+  - id: release-readiness-v1.effect-cell
+    targetClass: release:EffectCell
+    properties:
+      - {path: release:row, minCount: 1, maxCount: 1, nodeKind: IRI,
+         node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [pass]},
+                             {path: release:fresh, minCount: 1, maxCount: 1, in: [true]},
+                             {path: release:outputSha, minCount: 1, maxCount: 1}]}}
   - id: release-readiness-v1
     targetClass: release:Cell
     properties:

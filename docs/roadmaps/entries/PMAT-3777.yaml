@@ -1,0 +1,22 @@
+- id: PMAT-3777
+  github_issue: 3777
+  item_type: task
+  title: '#3745 S2: cli-surface extractor + derived release cells (pairwise) — release-readiness-v1 targets the derived set, VERBS deleted'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-97
+  created: 2026-09-21T19:20:00Z
+  updated: 2026-09-21T19:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'verbatim (#3745 issuecomment-5764661626 / -5765674584): S2.1 A pv extractor `cli-surface`, registered implemented in `contracts/ontology.yaml`, with its own pc_extract planted control (the #3706 Σ-tie).'
+  - 'verbatim (#3745 issuecomment-5764661626 / -5765674584): S2.2 The cell set is computed: every model-role command × host-inventory models × input shapes × mode args (a deterministic pairwise covering array) × thinking × rung. Commands without a model owe one runs-or-refuses cell. The derived cell count is printed in the receipt.'
+  - 'verbatim (#3745 issuecomment-5764661626 / -5765674584): S2.3 `release-readiness-v1` targets the derived set through `Inputs.cells`, and `release_evidence.rs`''s `VERBS` const is **deleted**. Issue mutants 1 and 2 are RED.'
+  - 'verbatim (#3745 issuecomment-5764661626 / -5765674584): S2.4 `:CruxCell` plus the per-verb CRUX mapping entry (#3739): a derived verb with no mapping entry is a violation.'
+  - 'verbatim (#3745 issuecomment-5764661626 / -5765674584): S2.5 The flag-effect oracle: for every derived **mode** arg, some cell must exist where toggling it changes the observable output: stdout bytes, the JSON fields, or the token ids. A mode arg with no observable effect on any cell is RED unless its typed marker (S1) declares it a no-op for that model class, with the class named. Sampling args additionally carry a8''s controls: sampled ≠ greedy for some seed; the same seed ×2 byte-identical; seed A ≠ seed B; top-k 1 / T 0 byte-greedy.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Part S2 of #3745, routed by the cop (aprender-04). Cop rulings on the S2 design note (#3745 issuecomment-5765981405): D1 pairwise over modes ∪ {input shape, thinking, rung} per (command, model, host) (≈35k cells vs ≈280k for the literal product, measured on fc''s surface at 621a47862), plus a PROJECTED WALL TIME per host from measured medians (never guessed), long rungs per #3712 done_when 5 (qwen35 full, other archs one named representative); D2 an additive typed `generates` field on the surface (fc adds it to S1), never inferred from names; D3 one-factor-at-a-time cells for S2.5 per representative model per arch, plus `output_sha256` in cells[] (agreed with 62). Input: `apr surface --json` (apr-cli-surface/v1, fc #3749) from the release candidate, passed to pv as a file. Stdin: undeclared in v1, counted under a shrink-only ratchet with `unknown` (baseline 259, all foreign). Base: release/0.69.1-batch-1 (carries #3715); folds after S1.'
