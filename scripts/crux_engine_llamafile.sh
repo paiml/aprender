@@ -96,6 +96,10 @@ parse_gen() {
   case "$INTERFACE" in ""|cli|server) ;; *) die "gen: --interface must be cli|server" ;; esac
   [ -f "$MODEL" ] || die "gen: --model $MODEL is not a file"
   [ -f "$MESSAGES" ] || die "gen: --messages $MESSAGES is not a file"
+  if [ "$VERB" = chat ] && [ "$INTERFACE" != server ] \
+     && [ "$(jq '[.messages[] | select(.role == "user")] | length' "$MESSAGES")" -gt 1 ]; then
+    die "gen: a chat with more than one user turn needs --interface server — llamafile --cli answers one prompt"
+  fi
   [ -n "${CRUX_MANIFEST:-}" ] || die "CRUX_MANIFEST is unset"
   [ -n "${CRUX_WORK:-}" ] || die "CRUX_WORK is unset"
   case "$MODEL_SHA" in *[!0-9a-f]*|"") die "gen: --model-sha256 must be lowercase hex" ;; esac
@@ -186,13 +190,35 @@ run_server() {  # <dir> <stem> -> writes <stem>.resp, <stem>.err; echoes rc (0 o
   if [ "$up" != 1 ]; then stop_server "$port" "$pid"; printf 1; return 0; fi
   kwargs='{}'
   case "$THINKING" in on) kwargs='{"enable_thinking":true}' ;; off) kwargs='{"enable_thinking":false}' ;; esac
-  body=$(jq -c --argjson max "$MAX_TOKENS" --argjson t "$TEMP" --argjson s "$SEED" --argjson kw "$kwargs" \
-           '{messages:.messages, max_tokens:$max, temperature:$t, seed:$s} + (if $kw == {} then {} else {chat_template_kwargs:$kw} end)' "$MESSAGES")
-  if curl -sf "http://127.0.0.1:$port/v1/chat/completions" -H 'Content-Type: application/json' -d "$body" > "$dir/$stem.resp" 2>> "$dir/$stem.err"; then
-    stop_server "$port" "$pid"; printf 0
+  # One request over a message list; the response lands in <stem>.resp.
+  post() {  # <messages json array>
+    body=$(jq -n -c --argjson m "$1" --argjson max "$MAX_TOKENS" --argjson t "$TEMP" --argjson s "$SEED" --argjson kw "$kwargs" \
+             '{messages:$m, max_tokens:$max, temperature:$t, seed:$s} + (if $kw == {} then {} else {chat_template_kwargs:$kw} end)')
+    curl -sf "http://127.0.0.1:$port/v1/chat/completions" -H 'Content-Type: application/json' -d "$body" > "$dir/$stem.resp" 2>> "$dir/$stem.err"
+  }
+  local ok=0
+  if [ "$VERB" = chat ]; then
+    # aprender-76 (#3739): `--messages` holds the USER turns; the engine drives the conversation. Each user
+    # turn is answered with the conversation so far, and the ANSWER (the server returns reasoning separately)
+    # is appended as the assistant turn. Every answer, in order, goes to <stem>.turns.json.
+    local convo='[]' turns='[]' n j role reply
+    n=$(jq '.messages | length' "$MESSAGES")
+    for j in $(seq 0 $((n - 1))); do
+      convo=$(jq -c --argjson c "$convo" --argjson j "$j" '$c + [.messages[$j]]' "$MESSAGES")
+      role=$(jq -r --argjson j "$j" '.messages[$j].role' "$MESSAGES")
+      [ "$role" = user ] || continue
+      post "$convo" || { ok=1; break; }
+      reply=$(jq -r '(.choices[0].message.content // "") | sub("^\\s+"; "") | sub("\\s+$"; "")' "$dir/$stem.resp")
+      convo=$(jq -n -c --argjson c "$convo" --arg r "$reply" '$c + [{role: "assistant", content: $r}]')
+      turns=$(jq -n -c --argjson t "$turns" --arg r "$reply" '$t + [$r]')
+    done
+    if [ "$ok" = 0 ] && [ "$turns" = '[]' ]; then echo "--messages holds no user turn to answer" >> "$dir/$stem.err"; ok=1; fi
+    [ "$ok" = 0 ] && printf '%s' "$turns" > "$dir/$stem.turns.json"
   else
-    stop_server "$port" "$pid"; printf 1
+    post "$(jq -c '.messages' "$MESSAGES")" || ok=1
   fi
+  stop_server "$port" "$pid"
+  printf '%s' "$ok"
 }
 
 # The device the cell ran on, as the judge requires it (aprender-76: a row off its lane is no answer).
@@ -242,9 +268,12 @@ gen() {
     interface=server
     rc=$(run_server "$dir" "$stem")
     if [ "$rc" = 0 ]; then
-      jq --arg th "$THINKING" --arg dev "$(device_label "$dir/$stem.err")" '
+      local turns_json=null
+      [ -f "$dir/$stem.turns.json" ] && turns_json=$(cat "$dir/$stem.turns.json")
+      jq --arg th "$THINKING" --arg dev "$(device_label "$dir/$stem.err")" --argjson turns "$turns_json" '
         .choices[0].message as $m
         | {text: (($m.content // "") | sub("^\\s+"; "") | sub("\\s+$"; ""))}
+          + (if $turns == null then {} else {turns: $turns} end)
           + (if (($m.reasoning_content // "") | length) > 0 then {reasoning: $m.reasoning_content} else {} end)
           + {reported: {interface: "server", thinking_requested: $th,
                         thinking_emitted: ((($m.reasoning_content // "") | length) > 0),

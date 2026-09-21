@@ -149,7 +149,29 @@ def device_label(model) -> str:
 
 
 # ── gen ────────────────────────────────────────────────────────────────────
+def conversation_turns(messages: list, respond) -> tuple[str, list, list]:
+    """Drives a `chat` cell (aprender-76, #3739): `messages` holds the USER turns (a system message, if any,
+    kept in place); every user turn is answered with the conversation so far, and the ANSWER — reasoning
+    split off — is appended as the assistant turn before the next user turn. Returns (raw final reply, the
+    answer of every turn in order, the raw reply of every turn)."""
+    convo, answers, raws = [], [], []
+    for m in messages:
+        convo.append(m)
+        if m.get("role") != "user":
+            continue
+        raw = respond(convo)
+        answer, _ = split_think(raw)
+        convo.append({"role": "assistant", "content": answer})
+        answers.append(answer)
+        raws.append(raw)
+    if not raws:
+        raise ValueError("--messages holds no user turn to answer")
+    return raws[-1], answers, raws
+
+
 def gen_generate(a, messages, device):
+    """`run`: one reply to the messages as given. `chat`: the conversation driven turn by turn. The model is
+    loaded ONCE either way."""
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -157,15 +179,24 @@ def gen_generate(a, messages, device):
     tok = AutoTokenizer.from_pretrained(src, revision=rev)
     # device_map, not .to(): loaded straight onto the lane's device (see main() for why CUDA is hidden on cpu).
     model = AutoModelForCausalLM.from_pretrained(src, revision=rev, dtype=getattr(torch, a.dtype), device_map=device)
-    torch.manual_seed(a.seed)
-    inputs = tok.apply_chat_template(
-        messages, add_generation_prompt=True, return_tensors="pt", return_dict=True, **thinking_kwargs(a.thinking)
-    ).to(device)
-    n_prompt = int(inputs["input_ids"].shape[1])
-    out = model.generate(**inputs, max_new_tokens=a.max_tokens, do_sample=False)
-    new = out[0][n_prompt:]
-    raw = tok.decode(new, skip_special_tokens=True)
-    return raw, {"prompt_tokens": n_prompt, "completion_tokens": int(new.shape[0]), "device": device_label(model)}
+    counts = {"prompt_tokens": 0, "completion_tokens": 0}
+
+    def respond(convo):
+        torch.manual_seed(a.seed)
+        inputs = tok.apply_chat_template(
+            convo, add_generation_prompt=True, return_tensors="pt", return_dict=True, **thinking_kwargs(a.thinking)
+        ).to(device)
+        n_prompt = int(inputs["input_ids"].shape[1])
+        out = model.generate(**inputs, max_new_tokens=a.max_tokens, do_sample=False)
+        new = out[0][n_prompt:]
+        counts["prompt_tokens"] = n_prompt  # the FINAL turn's prompt, which holds the whole conversation
+        counts["completion_tokens"] += int(new.shape[0])
+        return tok.decode(new, skip_special_tokens=True)
+
+    if a.verb == "chat":
+        raw, answers, _ = conversation_turns(messages, respond)
+        return raw, {**counts, "device": device_label(model)}, answers
+    return respond(messages), {**counts, "device": device_label(model)}, None
 
 
 def free_port() -> int:
@@ -247,12 +278,15 @@ def gen(a) -> None:
     try:
         messages = load_messages(a.messages)
         device = device_of(a.backend)
+        turns = None
         if a.verb in ("run", "chat"):
-            raw, counts = gen_generate(a, messages, device)
+            raw, counts, turns = gen_generate(a, messages, device)
         else:
             raw, counts = gen_serve(a, messages, device, d, stem)
         answer, reasoning = split_think(raw)
         doc = {"text": answer}
+        if turns is not None:
+            doc["turns"] = turns  # every assistant answer, in order; `text` is the last of them
         if reasoning:
             doc["reasoning"] = reasoning
         doc["reported"] = {
