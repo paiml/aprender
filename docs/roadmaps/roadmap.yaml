@@ -18717,7 +18717,7 @@ roadmap:
 - id: PMAT-3401
   github_issue: 3401
   item_type: task
-  title: 'Admit AutoGluon 1.6.3 to CRUX as category O: 24 DRAFT contracts crux-O-01..24 with LIVE-PENDING gates (no implementation, no CLI, no tests), CRUX_COMPETITORS 14->15 in validator.rs + both crux_intake_tests.rs lists, CATEGORY_NAMES[O] in scripts/crux_scaffold_contracts.py, 24 master-registry rows (coverage_intake 267->291) + evidence_sources.autogluon, spec v2.3 §3/§5/§6, evidence/crux/autogluon/ (4 files), 26 roadmap fragments (PMAT-3370 epic, PMAT-3371..3394 stories, PMAT-3401 this ticket) + regenerated roadmap.yaml, README CONTRACT_COUNT 1842->1866 — child of #3370'
+  title: 'Admit AutoGluon 1.6.3 to CRUX as category O: 24 DRAFT contracts crux-O-01..24 with LIVE-PENDING gates (no implementation, no CLI, no tests), CRUX_COMPETITORS 14->15 in validator.rs + both crux_intake_tests.rs lists, CATEGORY_NAMES[O] in scripts/crux_scaffold_contracts.py, 24 master-registry rows + evidence_sources.autogluon, spec v2.3 §3/§5/§6, evidence/crux/autogluon/ (4 files), 26 roadmap fragments (PMAT-3370 epic, PMAT-3371..3394 stories, PMAT-3401 this ticket) + regenerated roadmap.yaml, and the three corpus derivatives (census, contracts.nt, README CONTRACT_COUNT) regenerated to the merged tree — child of #3370'
   status: in_progress
   priority: critical
   assigned_to: null
@@ -18734,7 +18734,7 @@ roadmap:
   - enhancement
   - crux
   - pareto-autogluon
-  notes: null
+  notes: 'ACCEPTANCE, stated as invariants and not as counts (the first version of this row pinned "README CONTRACT_COUNT 1842->1866" and "coverage_intake 267->291" from the 2026-09-16 tree; main moved and the numbers described a tree that no longer existed, which is what the AD-04 quorum on #3395 round 0 correctly refused): (1) 24 new contract files contracts/crux-O-01-v1.yaml .. crux-O-24-v1.yaml, each metadata.category O, competitor AutoGluon, status draft, intake_status missing, registry false, and each passing pv validate; (2) CRUX_COMPETITORS grows by exactly one entry (autogluon) in crates/aprender-contracts/src/schema/validator.rs and in both crux_intake_tests.rs lists; (3) CATEGORY_NAMES gains O in scripts/crux_scaffold_contracts.py; (4) the master registry gains one row per new contract and evidence_sources.autogluon; (5) 26 roadmap fragments exist (PMAT-3370, PMAT-3371..PMAT-3394, PMAT-3401) and docs/roadmaps/roadmap.yaml equals aggregate(entries/), additive vs origin/main (deleted=0, reserialised=0); (6) contracts/census.json n_files equals origin/main''s n_files at merge time plus 24, contracts/contracts.nt equals a fresh pv extract of the merged tree, and README''s CONTRACT_COUNT blocks equal census n_files — the three derivatives ride in this PR because adding a contract stales all three (#3569). Known and NOT in scope: the census files these 24 under kind kernel because they carry no metadata.kind and registry:false (main''s crux contracts carry registry:true and file under registry); a draft/intake bucket for the census is a census question (#3640-class), not this PR''s.'
 - id: PMAT-3427
   github_issue: 3427
   item_type: task
