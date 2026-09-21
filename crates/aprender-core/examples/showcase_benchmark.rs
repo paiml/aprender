@@ -8,12 +8,12 @@
 //! - Point 41: ≥25% faster than llama.cpp
 //! - Point 42: ≥60 tok/s minimum threshold
 //! - Point 49: CV <5% consistency
-//! - Target: >2x Ollama (636+ tok/s)
+//! - Target: >2x Ollama (against a measured Ollama baseline; none is recorded here)
 //!
 //! # Run
 //!
 //! ```bash
-//! # Simulated benchmark (no GPU required)
+//! # Synthetic APR results, no competitor baseline (no GPU required)
 //! cargo run --example showcase_benchmark
 //!
 //! # With custom iterations
@@ -63,29 +63,26 @@ fn main() {
         .with_model_info("Qwen2.5-Coder-0.5B-Instruct", "0.5B params", "Q4_K_M")
         .with_gpu_info("NVIDIA RTX 4090", 24.0);
 
-    // Simulate APR GGUF benchmark results
-    // In real usage, this would call actual GPU inference
-    println!("Running APR GGUF benchmark ({} iterations)...", iterations);
+    // Synthetic APR results: this example demonstrates the renderer, it runs
+    // no inference, so nothing it prints is a measurement.
+    println!(
+        "Synthesizing APR GGUF results ({} iterations, SIMULATED — not a measurement)...",
+        iterations
+    );
     let apr_gguf_results = simulate_apr_gguf_benchmark(iterations);
     runner.record_apr_gguf(BenchmarkStats::from_results(apr_gguf_results));
 
-    // Simulate APR native benchmark results
     println!(
-        "Running APR native benchmark ({} iterations)...",
+        "Synthesizing APR native results ({} iterations, SIMULATED — not a measurement)...",
         iterations
     );
     let apr_native_results = simulate_apr_native_benchmark(iterations);
     runner.record_apr_native(BenchmarkStats::from_results(apr_native_results));
 
-    // Simulate Ollama baseline
-    println!("Recording Ollama baseline...");
-    let ollama_results = simulate_ollama_benchmark(iterations);
-    runner.record_ollama(BenchmarkStats::from_results(ollama_results));
-
-    // Simulate llama.cpp baseline
-    println!("Recording llama.cpp baseline...");
-    let llamacpp_results = simulate_llamacpp_benchmark(iterations);
-    runner.record_llamacpp(BenchmarkStats::from_results(llamacpp_results));
+    // #3773: no Ollama / llama.cpp baseline is recorded. The example used to
+    // synthesize one around 318 / 200 tok/s; a competitor figure nobody measured
+    // renders as UNMEASURED and judges no comparison.
+    println!("Ollama / llama.cpp baselines: UNMEASURED (this example runs neither)");
 
     // Add profiling hotspots
     println!("Collecting profiling hotspots...");
@@ -161,44 +158,6 @@ fn simulate_apr_native_benchmark(iterations: usize) -> Vec<BenchmarkResult> {
                 Duration::from_millis(5),
             )
             .with_gpu_metrics(96.0, 1900.0)
-        })
-        .collect()
-}
-
-/// Simulate Ollama baseline (measured: 318 tok/s)
-fn simulate_ollama_benchmark(iterations: usize) -> Vec<BenchmarkResult> {
-    (0..iterations)
-        .map(|i| {
-            let noise = (i as f64 * 1.1).sin() * 0.04;
-            let base_tps = 318.0;
-            let tps = base_tps * (1.0 + noise);
-            let duration_ms = (128.0 / tps * 1000.0) as u64;
-
-            BenchmarkResult::new(
-                128,
-                Duration::from_millis(duration_ms),
-                Duration::from_millis(50),
-            )
-            .with_gpu_metrics(92.0, 1800.0)
-        })
-        .collect()
-}
-
-/// Simulate llama.cpp baseline (estimated: 200 tok/s)
-fn simulate_llamacpp_benchmark(iterations: usize) -> Vec<BenchmarkResult> {
-    (0..iterations)
-        .map(|i| {
-            let noise = (i as f64 * 0.8).sin() * 0.05;
-            let base_tps = 200.0;
-            let tps = base_tps * (1.0 + noise);
-            let duration_ms = (128.0 / tps * 1000.0) as u64;
-
-            BenchmarkResult::new(
-                128,
-                Duration::from_millis(duration_ms),
-                Duration::from_millis(30),
-            )
-            .with_gpu_metrics(90.0, 1600.0)
         })
         .collect()
 }

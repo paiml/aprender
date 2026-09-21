@@ -337,7 +337,7 @@ fn test_showcase_runner_check_point_41_fail() {
     )];
     runner.record_apr_gguf(BenchmarkStats::from_results(apr_results));
 
-    assert!(!runner.check_point_41()); // 100 < 200 * 1.25
+    assert!(!runner.check_point_41()); // no llama.cpp measurement: never judged a pass
 }
 
 #[test]
@@ -345,7 +345,7 @@ fn test_showcase_runner_check_point_41_no_stats() {
     let config = ShowcaseConfig::default();
     let runner = ShowcaseRunner::new(config);
 
-    assert!(!runner.check_point_41()); // 0 < 200 * 1.25
+    assert!(!runner.check_point_41()); // no llama.cpp measurement
 }
 
 #[test]
@@ -385,7 +385,50 @@ fn test_showcase_runner_check_2x_ollama_with_gguf_fallback() {
     )];
     runner.record_apr_gguf(BenchmarkStats::from_results(apr_results));
 
-    assert!(runner.check_2x_ollama()); // Uses GGUF as fallback, 700 >= 318 * 2
+    // Ollama measured at 320 tok/s
+    let ollama_results = vec![BenchmarkResult::new(
+        128,
+        Duration::from_millis(400),
+        Duration::from_millis(50),
+    )];
+    runner.record_ollama(BenchmarkStats::from_results(ollama_results));
+
+    assert!(runner.check_2x_ollama()); // Uses GGUF as fallback, 700 >= 320 * 2
+}
+
+/// #3773: with no Ollama measurement the 2x target used to be judged against a
+/// "default baseline" of 318 tok/s. An unmeasured comparison must not pass.
+#[test]
+fn test_showcase_runner_check_2x_ollama_unmeasured_does_not_pass() {
+    let config = ShowcaseConfig::default();
+    let mut runner = ShowcaseRunner::new(config);
+
+    // APR at ~10,000 tok/s: it would clear any invented baseline.
+    let apr_results = vec![BenchmarkResult::new(
+        128,
+        Duration::from_micros(12_800),
+        Duration::from_millis(5),
+    )];
+    runner.record_apr_gguf(BenchmarkStats::from_results(apr_results));
+
+    assert!(!runner.check_2x_ollama());
+}
+
+/// #3773: with no llama.cpp measurement Point 41 used to be judged against a
+/// "default baseline" of 200 tok/s. An unmeasured comparison must not pass.
+#[test]
+fn test_showcase_runner_check_point_41_unmeasured_does_not_pass() {
+    let config = ShowcaseConfig::default();
+    let mut runner = ShowcaseRunner::new(config);
+
+    let apr_results = vec![BenchmarkResult::new(
+        128,
+        Duration::from_micros(12_800),
+        Duration::from_millis(5),
+    )];
+    runner.record_apr_gguf(BenchmarkStats::from_results(apr_results));
+
+    assert!(!runner.check_point_41());
 }
 
 #[test]

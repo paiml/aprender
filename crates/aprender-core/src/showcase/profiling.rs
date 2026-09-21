@@ -187,20 +187,18 @@ impl PmatVerification {
             .or(runner.apr_native_stats.as_ref())
             .map_or(1.0, |s| s.cv);
 
-        let llamacpp_tps = runner
+        // #3773: an absent comparator used to default to llama.cpp 200 / Ollama
+        // 318 tok/s. An unmeasured comparison cannot pass.
+        let point_41_pass = runner
             .llamacpp_stats
             .as_ref()
-            .map_or(200.0, |s| s.mean_throughput);
-
-        let ollama_tps = runner
-            .ollama_stats
-            .as_ref()
-            .map_or(318.0, |s| s.mean_throughput);
-
-        let point_41_pass = apr_tps >= llamacpp_tps * 1.25;
+            .is_some_and(|l| apr_tps >= l.mean_throughput * 1.25);
         let point_42_pass = apr_tps >= 60.0;
         let point_49_pass = apr_cv < 0.05;
-        let ollama_2x_pass = apr_tps >= ollama_tps * 2.0;
+        let ollama_2x_pass = runner
+            .ollama_stats
+            .as_ref()
+            .is_some_and(|o| apr_tps >= o.mean_throughput * 2.0);
 
         let all_pass = point_41_pass && point_42_pass && point_49_pass;
 

@@ -381,35 +381,51 @@ impl BenchmarkGrid {
 
         // Speedup analysis
         let _ = writeln!(out, "\n{cyan}Speedup Analysis:{reset}");
+        // #3773: an absent comparator used to default to Ollama 318 / llama.cpp
+        // 200 tok/s "from spec", and the ratios below were printed against them.
+        // A missing measurement is now UNMEASURED and yields no ratio.
         let ollama_tps = self
             .gguf_ollama
             .as_ref()
-            .map_or(318.0, BenchMeasurement::mean_throughput);
+            .map(BenchMeasurement::mean_throughput);
         let llamacpp_tps = self
             .gguf_llamacpp
             .as_ref()
-            .map_or(200.0, BenchMeasurement::mean_throughput);
+            .map(BenchMeasurement::mean_throughput);
 
         if let Some(ref m) = self.gguf_apr {
             let tps = m.mean_throughput();
-            let vs_ollama = tps / ollama_tps;
-            let vs_llamacpp = tps / llamacpp_tps;
-            let pass_color = if vs_llamacpp >= 1.25 {
-                green
-            } else {
-                colors::RED
-            };
-            let _ = writeln!(out, "  APR GGUF vs Ollama:     {:.2}x", vs_ollama);
-            let _ = writeln!(
-                out,
-                "  APR GGUF vs llama.cpp:  {pass_color}{:.2}x{reset} {}",
-                vs_llamacpp,
-                if vs_llamacpp >= 1.25 {
-                    "✓ Point 41 PASS"
-                } else {
-                    "✗ Point 41 FAIL"
+            match ollama_tps {
+                Some(o) => {
+                    let _ = writeln!(out, "  APR GGUF vs Ollama:     {:.2}x", tps / o);
                 }
-            );
+                None => {
+                    let _ = writeln!(out, "  APR GGUF vs Ollama:     UNMEASURED");
+                }
+            }
+            match llamacpp_tps {
+                Some(l) => {
+                    let vs_llamacpp = tps / l;
+                    let pass_color = if vs_llamacpp >= 1.25 {
+                        green
+                    } else {
+                        colors::RED
+                    };
+                    let _ = writeln!(
+                        out,
+                        "  APR GGUF vs llama.cpp:  {pass_color}{:.2}x{reset} {}",
+                        vs_llamacpp,
+                        if vs_llamacpp >= 1.25 {
+                            "✓ Point 41 PASS"
+                        } else {
+                            "✗ Point 41 FAIL"
+                        }
+                    );
+                }
+                None => {
+                    let _ = writeln!(out, "  APR GGUF vs llama.cpp:  UNMEASURED (Point 41 not judged)");
+                }
+            }
         }
 
         let _ = writeln!(out, "{}", "─".repeat(72));

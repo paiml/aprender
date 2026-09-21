@@ -168,10 +168,10 @@ fn test_pmat_verification_all_fail() {
 
     let verification = PmatVerification::verify(&runner);
 
-    assert!(!verification.point_41_pass); // 0 < 200 * 1.25
+    assert!(!verification.point_41_pass); // no llama.cpp measurement
     assert!(!verification.point_42_pass); // 0 < 60
     assert!(!verification.point_49_pass); // cv = 1.0 >= 0.05
-    assert!(!verification.ollama_2x_pass); // 0 < 318 * 2
+    assert!(!verification.ollama_2x_pass); // no Ollama measurement
     assert!(!verification.all_pass);
 }
 
@@ -188,8 +188,38 @@ fn test_pmat_verification_2x_ollama_pass() {
     ];
     runner.record_apr_gguf(BenchmarkStats::from_results(apr_results));
 
+    // Ollama measured at 320 tok/s
+    let ollama_results = vec![BenchmarkResult::new(
+        128,
+        Duration::from_millis(400),
+        Duration::from_millis(50),
+    )];
+    runner.record_ollama(BenchmarkStats::from_results(ollama_results));
+
     let verification = PmatVerification::verify(&runner);
     assert!(verification.ollama_2x_pass);
+}
+
+/// #3773: an unmeasured comparator used to default to Ollama 318 / llama.cpp
+/// 200 tok/s. With neither recorded, no comparison may pass however fast APR is.
+#[test]
+fn test_pmat_verification_unmeasured_comparators_do_not_pass() {
+    let config = ShowcaseConfig::default();
+    let mut runner = ShowcaseRunner::new(config);
+
+    // APR at ~10,000 tok/s, three identical runs (CV 0)
+    let apr_results = vec![
+        BenchmarkResult::new(128, Duration::from_micros(12_800), Duration::from_millis(5)),
+        BenchmarkResult::new(128, Duration::from_micros(12_800), Duration::from_millis(5)),
+        BenchmarkResult::new(128, Duration::from_micros(12_800), Duration::from_millis(5)),
+    ];
+    runner.record_apr_gguf(BenchmarkStats::from_results(apr_results));
+
+    let verification = PmatVerification::verify(&runner);
+    assert!(verification.point_42_pass); // an absolute floor, no comparator
+    assert!(!verification.point_41_pass);
+    assert!(!verification.ollama_2x_pass);
+    assert!(!verification.all_pass);
 }
 
 #[test]

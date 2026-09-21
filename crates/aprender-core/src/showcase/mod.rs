@@ -420,12 +420,11 @@ impl ShowcaseRunner {
             .as_ref()
             .map_or(0.0, |s| s.mean_throughput);
 
-        let llamacpp_tps = self
-            .llamacpp_stats
+        // #3773: with no llama.cpp measurement this used to compare against a
+        // "default baseline" of 200 tok/s. An unmeasured comparison cannot pass.
+        self.llamacpp_stats
             .as_ref()
-            .map_or(200.0, |s| s.mean_throughput); // Default baseline
-
-        apr_tps >= llamacpp_tps * 1.25
+            .is_some_and(|l| apr_tps >= l.mean_throughput * 1.25)
     }
 
     /// Check if 2x Ollama target is met
@@ -436,12 +435,11 @@ impl ShowcaseRunner {
             .or(self.apr_gguf_stats.as_ref())
             .map_or(0.0, |s| s.mean_throughput);
 
-        let ollama_tps = self
-            .ollama_stats
+        // #3773: with no Ollama measurement this used to compare against a
+        // "default baseline" of 318 tok/s. An unmeasured comparison cannot pass.
+        self.ollama_stats
             .as_ref()
-            .map_or(318.0, |s| s.mean_throughput); // Default baseline
-
-        apr_tps >= ollama_tps * 2.0
+            .is_some_and(|o| apr_tps >= o.mean_throughput * 2.0)
     }
 }
 

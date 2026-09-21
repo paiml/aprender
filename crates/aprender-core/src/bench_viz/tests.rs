@@ -448,5 +448,29 @@ fn test_truncate_long_string() {
     assert_eq!(truncate(s, 5), "hello");
 }
 
+/// #3773: an absent Ollama / llama.cpp measurement used to render as a ratio
+/// against 318 / 200 tok/s "from spec" (scientific + profiling log) or against
+/// 1.0 (compact). Every renderer must say UNMEASURED and print no ratio.
+#[test]
+fn test_unmeasured_comparators_render_no_ratio() {
+    let mut grid = BenchmarkGrid::new();
+    grid.gguf_apr = Some(BenchMeasurement::new("APR", "GGUF").with_throughput(500.0));
+
+    let compact = grid.render_compact();
+    assert!(compact.contains("Ollama:UNMEASURED"), "{compact}");
+    assert!(compact.contains("vs Ollama:UNMEASURED"), "{compact}");
+    assert!(compact.contains("vs llama.cpp:UNMEASURED"), "{compact}");
+    assert!(!compact.contains("500.00x"), "{compact}");
+
+    let log = grid.render_profiling_log();
+    assert!(log.contains("APR GGUF vs Ollama:     UNMEASURED"), "{log}");
+    assert!(log.contains("UNMEASURED (Point 41 not judged)"), "{log}");
+    assert!(!log.contains("Point 41 PASS") && !log.contains("Point 41 FAIL"), "{log}");
+
+    let sci = grid.render_scientific();
+    assert!(sci.contains("UNMEASURED (Point 41 not judged)"), "{sci}");
+    assert!(!sci.contains("Point 41 PASS") && !sci.contains("Point 41 FAIL"), "{sci}");
+}
+
 #[path = "tests_hotspot_rendering.rs"]
 mod tests_hotspot_rendering;

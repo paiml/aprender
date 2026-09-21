@@ -86,6 +86,28 @@ mod tests {
         assert!(compact.contains("vs llama.cpp:2.50x"));
     }
 
+    /// #3773: an absent Ollama / llama.cpp measurement used to render as a
+    /// ratio against 318 / 200 tok/s (profiling log) or against 1.0 (compact).
+    #[test]
+    fn test_unmeasured_comparators_render_no_ratio() {
+        let mut grid = BenchmarkGrid::new();
+        grid.gguf_apr = Some(BenchMeasurement::new("APR", "GGUF").with_throughput(500.0));
+
+        let compact = grid.render_compact();
+        assert!(compact.contains("Ollama:UNMEASURED"), "{compact}");
+        assert!(compact.contains("vs Ollama:UNMEASURED"), "{compact}");
+        assert!(compact.contains("vs llama.cpp:UNMEASURED"), "{compact}");
+        assert!(!compact.contains("500.00x"), "{compact}");
+
+        let log = grid.render_profiling_log();
+        assert!(log.contains("APR GGUF vs Ollama:     UNMEASURED"), "{log}");
+        assert!(log.contains("UNMEASURED (Point 41 not judged)"), "{log}");
+        assert!(
+            !log.contains("Point 41 PASS") && !log.contains("Point 41 FAIL"),
+            "{log}"
+        );
+    }
+
     #[test]
     fn test_runner_profiling() {
         let mut runner = BenchmarkRunner::new();

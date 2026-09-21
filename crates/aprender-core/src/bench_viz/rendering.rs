@@ -97,48 +97,67 @@ impl BenchmarkGrid {
             "───────────────────────────────────────────────────────────────────────"
         );
 
+        // #3773: an absent comparator used to default to Ollama 318 / llama.cpp
+        // 200 tok/s "from spec". A missing measurement is now UNMEASURED.
         let ollama_tps = self
             .gguf_ollama
             .as_ref()
-            .map_or(318.0, BenchMeasurement::mean_throughput);
+            .map(BenchMeasurement::mean_throughput);
         let llamacpp_tps = self
             .gguf_llamacpp
             .as_ref()
-            .map_or(200.0, BenchMeasurement::mean_throughput);
+            .map(BenchMeasurement::mean_throughput);
 
         if let Some(ref m) = self.gguf_apr {
-            let vs_ollama = m.mean_throughput() / ollama_tps;
-            let vs_llamacpp = m.mean_throughput() / llamacpp_tps;
-            let _ = writeln!(
-                out,
-                "APR GGUF vs Ollama:     {:>5.2}x  {}",
-                vs_ollama,
-                if vs_ollama >= 1.0 { "✓" } else { "⚠" }
-            );
-            let _ = writeln!(
-                out,
-                "APR GGUF vs llama.cpp:  {:>5.2}x  {}",
-                vs_llamacpp,
-                if vs_llamacpp >= 1.25 {
-                    "✓ Point 41 PASS"
-                } else {
-                    "⚠ Point 41 FAIL"
+            match ollama_tps {
+                Some(o) => {
+                    let vs_ollama = m.mean_throughput() / o;
+                    let _ = writeln!(
+                        out,
+                        "APR GGUF vs Ollama:     {:>5.2}x  {}",
+                        vs_ollama,
+                        if vs_ollama >= 1.0 { "✓" } else { "⚠" }
+                    );
                 }
-            );
+                None => {
+                    let _ = writeln!(out, "APR GGUF vs Ollama:     UNMEASURED");
+                }
+            }
+            match llamacpp_tps {
+                Some(l) => {
+                    let vs_llamacpp = m.mean_throughput() / l;
+                    let _ = writeln!(
+                        out,
+                        "APR GGUF vs llama.cpp:  {:>5.2}x  {}",
+                        vs_llamacpp,
+                        if vs_llamacpp >= 1.25 {
+                            "✓ Point 41 PASS"
+                        } else {
+                            "⚠ Point 41 FAIL"
+                        }
+                    );
+                }
+                None => {
+                    let _ = writeln!(out, "APR GGUF vs llama.cpp:  UNMEASURED (Point 41 not judged)");
+                }
+            }
         }
 
         if let Some(ref m) = self.apr_native {
-            let vs_ollama = m.mean_throughput() / ollama_tps;
-            let _ = writeln!(
-                out,
-                "APR .apr vs Ollama:     {:>5.2}x  {}",
-                vs_ollama,
-                if vs_ollama >= 2.0 {
-                    "✓ 2x target"
-                } else {
-                    ""
+            match ollama_tps {
+                Some(o) => {
+                    let vs_ollama = m.mean_throughput() / o;
+                    let _ = writeln!(
+                        out,
+                        "APR .apr vs Ollama:     {:>5.2}x  {}",
+                        vs_ollama,
+                        if vs_ollama >= 2.0 { "✓ 2x target" } else { "" }
+                    );
                 }
-            );
+                None => {
+                    let _ = writeln!(out, "APR .apr vs Ollama:     UNMEASURED");
+                }
+            }
         }
         let _ = writeln!(out);
 
@@ -224,6 +243,9 @@ impl BenchmarkGrid {
     }
 
     /// Generate compact one-liner for quick comparison
+    ///
+    /// #3773: an absent comparator used to read as 0 tok/s and divide as 1.0,
+    /// printing the APR figure itself as the "speedup". It is now UNMEASURED.
     pub fn render_compact(&self) -> String {
         let apr_tps = self
             .gguf_apr
@@ -232,19 +254,32 @@ impl BenchmarkGrid {
         let ollama_tps = self
             .gguf_ollama
             .as_ref()
-            .map_or(0.0, BenchMeasurement::mean_throughput);
+            .map(BenchMeasurement::mean_throughput);
         let llamacpp_tps = self
             .gguf_llamacpp
             .as_ref()
-            .map_or(0.0, BenchMeasurement::mean_throughput);
+            .map(BenchMeasurement::mean_throughput);
 
         format!(
-            "APR:{:.0} Ollama:{:.0} llama.cpp:{:.0} tok/s | APR vs Ollama:{:.2}x vs llama.cpp:{:.2}x",
+            "APR:{:.0} Ollama:{} llama.cpp:{} tok/s | APR vs Ollama:{} vs llama.cpp:{}",
             apr_tps,
-            ollama_tps,
-            llamacpp_tps,
-            apr_tps / ollama_tps.max(1.0),
-            apr_tps / llamacpp_tps.max(1.0)
+            compact_tps(ollama_tps),
+            compact_tps(llamacpp_tps),
+            compact_ratio(apr_tps, ollama_tps),
+            compact_ratio(apr_tps, llamacpp_tps)
         )
+    }
+}
+
+/// A comparator's throughput, or UNMEASURED when none was recorded.
+fn compact_tps(tps: Option<f64>) -> String {
+    tps.map_or_else(|| "UNMEASURED".to_string(), |t| format!("{t:.0}"))
+}
+
+/// APR over a comparator, or UNMEASURED when there is no positive comparator.
+fn compact_ratio(apr_tps: f64, other: Option<f64>) -> String {
+    match other {
+        Some(o) if o > 0.0 => format!("{:.2}x", apr_tps / o),
+        _ => "UNMEASURED".to_string(),
     }
 }
