@@ -1,0 +1,20 @@
+- id: PMAT-3803
+  github_issue: 3803
+  item_type: task
+  title: entrenar .apr export embeds a tokenizer that drops array-form merges and the added tokens
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-21T23:38:19Z
+  updated: 2026-09-21T23:38:19Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3803 done_when 1, verbatim: "One reader of a tokenizer.json''s (vocab incl. added_tokens, merges in both forms) serves both trainer export sites. It is not two more copies."'
+  - 'Issue #3803 done_when 2, verbatim: "A trainer-exported `.apr` from an array-merge tokenizer.json encodes identically to llama.cpp on the parity corpus, or to the source tokenizer.json via apr-cli''s `HfTokenizer`, which is already parity-measured (#3742 receipt). Includes a chat-template text with specials."'
+  - 'Issue #3803 done_when 3, verbatim: "A mutant (string-form-only merges) turns it RED."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Filed by aprender-c3 from the #3742 consumer sweep. Two hand-rolled tokenizer.json readers in crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs (~L2880 SPEC-SHIP-TWO-001 and ~L3093 ALB-130) read merges string-form only and (ALB-130) build the embedded vocabulary from model.vocab without added_tokens. Read from the code at those lines; no array-merge tokenizer.json is on lambda to measure end-to-end. Unassigned: for the cop to route.'
