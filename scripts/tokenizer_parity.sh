@@ -57,6 +57,9 @@ root=$(cd "$here/.." && pwd)
 # shellcheck source=llama_bin.sh
 . "$here/llama_bin.sh" || true
 declare -F llama_pin_get >/dev/null || { printf 'REFUSE: scripts/llama_bin.sh defines no llama_pin_get\n' >&2; exit 2; }
+# The Q4_K universe (#3712): ONE definition, shared with the model ladder (A2, #3766).
+# shellcheck source=lib/tensor_universe.sh
+. "$here/lib/tensor_universe.sh" || { printf 'REFUSE: cannot source scripts/lib/tensor_universe.sh\n' >&2; exit 2; }
 
 apr_bin=""
 lt_bin="${LLAMA_TOKENIZE:-}"
@@ -121,10 +124,11 @@ tmp=$(mktemp -d) || exit 2
 trap 'rm -rf -- "${tmp:?}"' EXIT
 
 pass=0 fail=0 uncovered=0 outside=0
-# UNCOVERED counts against the gate only for a file in the universe (dominant dtype Q4_K,
-# #3712); outside it the pair is reported as OUTSIDE and does not fail the run.
-uncover() { # model file reason (reads $dtype)
-    if tp_in_universe "$dtype"; then
+# UNCOVERED counts against the gate only for a file in the Q4_K universe (tu_is_member, the
+# model ladder's own definition); outside it the pair is reported as OUTSIDE and does not
+# fail the run.
+uncover() { # model file reason (reads $member and $dtype)
+    if [ "$member" = yes ]; then
         printf 'UNCOVERED  %s  %s  %s\n' "$1" "$2" "$3"
         uncovered=$((uncovered + 1))
     else
@@ -137,7 +141,9 @@ uncover() { # model file reason (reads $dtype)
 : >"$tmp/fingerprints"
 for m in "${models[@]}"; do
     mname=$(basename "$m")
-    dtype=$("$apr_bin" tensors "$m" --json 2>/dev/null | tp_dominant_dtype)
+    dtype=$(tu_dominant_dtypes "$apr_bin" "$m")
+    member=no
+    if tu_is_member "$apr_bin" "$m" Q4_K; then member=yes; fi
     "$apr_bin" tokenize encode "$m" -p "fingerprint probe" >/dev/null 2>"$tmp/fp.err"
     fp=$(tp_apr_fingerprint "$(cat "$tmp/fp.err")")
     # the reference: the file itself for a GGUF, a same-tokenizer GGUF for an .apr
@@ -148,7 +154,7 @@ for m in "${models[@]}"; do
         *.gguf) if [ -n "$fp" ] && [ -z "$known" ]; then printf '%s %s\n' "$fp" "$m" >>"$tmp/fingerprints"; fi ;;
         *.apr) ref=$known ;;
     esac
-    printf 'MODEL      %s  dtype=%s  fingerprint=%s  reference=%s\n' "$mname" "${dtype:-unknown}" "${fp:-none}" "$(basename "${ref:-none}")"
+    printf 'MODEL      %s  dtype=%s  q4k-universe=%s  fingerprint=%s  reference=%s\n' "$mname" "${dtype:-unreadable}" "$member" "${fp:-none}" "$(basename "${ref:-none}")"
     for f in "${corpus[@]}"; do
         fname=$(basename "$f")
         if [ -z "$ref" ]; then

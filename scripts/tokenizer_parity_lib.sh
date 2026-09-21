@@ -91,25 +91,8 @@ tp_commit_matches() {
 }
 
 
-# tp_dominant_dtype (stdin: `apr tensors FILE --json`) -> the weight dtype holding the most
-# bytes, upper-cased (#3742: the model-gate universe is decided by the dominant dtype read by
-# apr's own header reader, never by the file name). Empty when no tensor is listed.
-tp_dominant_dtype() {
-    awk -F'"' '
-        /"dtype":/      { dt = toupper($4) }
-        /"size_bytes":/ { n = $3; gsub(/[^0-9]/, "", n); if (dt != "") { sum[dt] += n; dt = "" } }
-        END { best = ""; for (d in sum) if (best == "" || sum[d] > sum[best]) best = d; print best }'
-}
-
 # tp_apr_fingerprint STDERR -> the tables fingerprint `apr tokenize encode` printed
 # ("tokenizer-fingerprint: <16 hex>"). Empty when absent.
 tp_apr_fingerprint() {
     printf '%s\n' "${1-}" | sed -n 's/^tokenizer-fingerprint: \([0-9a-f]\{16\}\)$/\1/p' | tail -1
-}
-
-# tp_in_universe DTYPE -> status 0 iff a file with this dominant weight dtype is in the
-# release model-gate universe (#3712 as ruled on the issue: dominant dtype Q4_K, read by apr's
-# own header reader; the file name is not evidence).
-tp_in_universe() {
-    [ "${1-}" = "Q4_K" ]
 }

@@ -71,33 +71,6 @@ row "commit: 6 digits is ambiguous" "$(cm d1d3c3396 'version: x (build 1, commit
 row "commit: no commit in the line" "$(cm d1d3c3396 'version: 0.4.1-dev')" refuse
 row "commit: empty pin" "$(cm '' 'version: x (build 1, commit d1d3c3396)')" refuse
 
-# #3742: dominant dtype by bytes, from `apr tensors --json`'s pretty-printed layout
-tensors_json='{
-  "tensors": [
-    {
-      "name": "blk.0.attn_k.bias",
-      "dtype": "f32",
-      "size_bytes": 1024
-    },
-    {
-      "name": "blk.0.attn_k.weight",
-      "dtype": "q4_k",
-      "size_bytes": 221184
-    },
-    {
-      "name": "blk.0.ffn_down.weight",
-      "dtype": "Q6_K",
-      "size_bytes": 11059200
-    },
-    {
-      "name": "blk.0.ffn_up.weight",
-      "dtype": "q4_k",
-      "size_bytes": 7741440
-    } ]
-}'
-row "dtype: most bytes wins, case folded" "$(printf '%s' "$tensors_json" | tp_dominant_dtype)" "Q6_K"
-row "dtype: more tensors is not more bytes" "$(printf '%s' "${tensors_json/11059200/100}" | tp_dominant_dtype)" "Q4_K"
-row "dtype: no tensors" "$(printf '{"tensors": []}' | tp_dominant_dtype)" ""
 # #3742: the fingerprint line pairs an .apr with a same-tokenizer GGUF
 fp_err="[PMAT-171] Loaded embedded BPE tokenizer
 pre-tokenizer: Qwen2 (inferred from architecture qwen2)
@@ -106,14 +79,6 @@ tokenizer-fingerprint: 0123456789abcdef
 row "fingerprint: parsed" "$(tp_apr_fingerprint "$fp_err")" "0123456789abcdef"
 row "fingerprint: absent" "$(tp_apr_fingerprint "7 ids; path: canonical; roundtrip: true")" ""
 row "fingerprint: short hex refused" "$(tp_apr_fingerprint "tokenizer-fingerprint: 0123")" ""
-
-# #3742: the universe is the dominant dtype, never the name
-uni() { if tp_in_universe "$1"; then printf 'in'; else printf 'out'; fi; }
-row "universe: Q4_K is in" "$(uni Q4_K)" in
-row "universe: Q5_0 (a q4_k_m-named small model) is out" "$(uni Q5_0)" out
-row "universe: F16 is out" "$(uni F16)" out
-row "universe: lower-case q4_k is not the header reader's spelling" "$(uni q4_k)" out
-row "universe: unknown is out" "$(uni '')" out
 
 printf -- '--- case table: %s failure(s) ---\n' "$fails"
 [ "$fails" -eq 0 ]
