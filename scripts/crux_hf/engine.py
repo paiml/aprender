@@ -137,6 +137,17 @@ def device_of(backend: str):
     return "cpu"
 
 
+def device_label(model) -> str:
+    """The device the weights are ON, read from the model — `cpu`, or `cuda:<i> <name>`. The judge holds a row
+    to its lane with it (aprender-76: required; a row on the wrong device is no answer)."""
+    import torch
+
+    d = next(model.parameters()).device
+    if d.type == "cuda":
+        return f"cuda:{d.index} {torch.cuda.get_device_name(d)}"
+    return d.type
+
+
 # ── gen ────────────────────────────────────────────────────────────────────
 def gen_generate(a, messages, device):
     import torch
@@ -144,7 +155,8 @@ def gen_generate(a, messages, device):
 
     src, rev = source_of(a)
     tok = AutoTokenizer.from_pretrained(src, revision=rev)
-    model = AutoModelForCausalLM.from_pretrained(src, revision=rev, dtype=getattr(torch, a.dtype)).to(device)
+    # device_map, not .to(): loaded straight onto the lane's device (see main() for why CUDA is hidden on cpu).
+    model = AutoModelForCausalLM.from_pretrained(src, revision=rev, dtype=getattr(torch, a.dtype), device_map=device)
     torch.manual_seed(a.seed)
     inputs = tok.apply_chat_template(
         messages, add_generation_prompt=True, return_tensors="pt", return_dict=True, **thinking_kwargs(a.thinking)
@@ -153,7 +165,7 @@ def gen_generate(a, messages, device):
     out = model.generate(**inputs, max_new_tokens=a.max_tokens, do_sample=False)
     new = out[0][n_prompt:]
     raw = tok.decode(new, skip_special_tokens=True)
-    return raw, {"prompt_tokens": n_prompt, "completion_tokens": int(new.shape[0])}
+    return raw, {"prompt_tokens": n_prompt, "completion_tokens": int(new.shape[0]), "device": device_label(model)}
 
 
 def free_port() -> int:
@@ -201,7 +213,13 @@ def gen_serve(a, messages, device, d: Path, stem: str):
         if msg.get("reasoning_content"):
             raw = f"<think>{msg['reasoning_content']}</think>{raw}"
         usage = resp.get("usage") or {}
-        return raw, {"prompt_tokens": usage.get("prompt_tokens"), "completion_tokens": usage.get("completion_tokens")}
+        # The server is a separate process: its device is the one it was TOLD, and on the cpu lane CUDA is
+        # hidden from it too (inherited environment), so "cpu" there is the only device it can have used.
+        import torch
+
+        label = f"cuda:0 {torch.cuda.get_device_name(0)}" if device == "cuda" else "cpu"
+        return raw, {"prompt_tokens": usage.get("prompt_tokens"), "completion_tokens": usage.get("completion_tokens"),
+                     "device": f"{label} (transformers serve --device {device})"}
     finally:
         try:
             os.killpg(proc.pid, signal.SIGTERM)
@@ -316,7 +334,7 @@ def greedy(a) -> None:
 
         device = device_of(a.backend)
         t = AutoTokenizer.from_pretrained(a.model)
-        model = AutoModelForCausalLM.from_pretrained(a.model, dtype=getattr(torch, a.dtype)).to(device)
+        model = AutoModelForCausalLM.from_pretrained(a.model, dtype=getattr(torch, a.dtype), device_map=device)
         if a.messages:
             inputs = t.apply_chat_template(
                 load_messages(a.messages), add_generation_prompt=True, return_tensors="pt", return_dict=True
@@ -332,11 +350,18 @@ def greedy(a) -> None:
             output_logits=a.logits, return_dict_in_generate=True,
         )
         gen_ids = out.sequences[0][n_prompt:].tolist()
-        tokens_path.write_text(
-            json.dumps({"prompt_ids": inputs["input_ids"][0].tolist(), "generated_ids": gen_ids}), encoding="utf-8"
-        )
+        doc = {"prompt_ids": inputs["input_ids"][0].tolist(), "generated_ids": gen_ids, "device": device_label(model)}
         if a.logits:
-            np.save(logits_path, torch.stack([l[0] for l in out.logits]).float().cpu().numpy())
+            steps = torch.stack([l[0] for l in out.logits]).float().cpu()
+            np.save(logits_path, steps.numpy())
+            # A degenerate answer has a cause the ids cannot show: NaN logits make argmax 0 at every step,
+            # which decodes as "!!!!" (measured on the GPU lane, #3739). Reported per step, never judged.
+            doc["step_stats"] = [
+                {"nan": int(torch.isnan(s).sum()), "min": float(torch.nan_to_num(s).min()),
+                 "max": float(torch.nan_to_num(s).max())}
+                for s in steps
+            ]
+        tokens_path.write_text(json.dumps(doc), encoding="utf-8")
     except Exception as e:
         row.update(tokens=None, logits=None, refused=refusal(e))
     append_row(manifest, row)
@@ -397,6 +422,12 @@ def main(argv: list[str]) -> None:
     r.add_argument("--host", required=True)
 
     a = p.parse_args(argv)
+    # THE CPU LANE MUST NOT TOUCH THE GPU. It takes no GPU lock (gpu-q rule clause 2), and with CUDA merely
+    # VISIBLE, transformers 5.17 loaded a `--backend cpu` model through a path that reached the 4090 and
+    # produced token 0 at every step (aprender-76's cpu lane, #3739). So CUDA is hidden from this process
+    # BEFORE torch is imported — for cpu cells and for tok/tmpl, which never need a device.
+    if getattr(a, "backend", "cpu") == "cpu" and a.cmd != "probe":
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
     if a.cmd == "gen" and a.source_repo and not a.source_revision:
         die("gen: --source-repo needs --source-revision (a moving branch is not a pin)")
     if a.cmd == "greedy" and not (a.messages or a.prompt_file):

@@ -195,6 +195,20 @@ run_server() {  # <dir> <stem> -> writes <stem>.resp, <stem>.err; echoes rc (0 o
   fi
 }
 
+# The device the cell ran on, as the judge requires it (aprender-76: a row off its lane is no answer).
+# cpu lane: `--gpu disable`, so cpu by construction. gpu lane: llama.cpp's own load line
+# "offloaded N/M layers to GPU"; without it the label starts with `cpu`, so the judge REJECTS the cell on
+# the gpu lane rather than trusting a GPU nobody measured.
+device_label() {  # <stderr file>
+  local line
+  if [ "$BACKEND" = cpu ]; then printf 'cpu (llamafile --gpu disable)'; return 0; fi
+  line=$(grep -o -E 'offloaded [0-9]+/[0-9]+ layers to GPU' "$1" 2>/dev/null | tail -n 1 || true)
+  case "$line" in
+    "offloaded 0/"*|"") printf 'cpu (llamafile reported no GPU offload)' ;;
+    *) printf 'gpu (llamafile %s)' "$line" ;;
+  esac
+}
+
 # llamafile's own words when it could not run the cell: its error lines, else the tail of stderr.
 refusal_text() {  # <err file>
   local t
@@ -218,23 +232,24 @@ gen() {
     if [ "$rc" = 0 ]; then
       split_think "$dir/$stem.raw" "$dir/$stem.answer" "$dir/$stem.reasoning"
       emitted=false; grep -q '<think>' "$dir/$stem.raw" && emitted=true
-      jq -n --rawfile a "$dir/$stem.answer" --rawfile r "$dir/$stem.reasoning" --argjson e "$emitted" --arg th "$THINKING" '
+      jq -n --rawfile a "$dir/$stem.answer" --rawfile r "$dir/$stem.reasoning" --argjson e "$emitted" --arg th "$THINKING" \
+            --arg dev "$(device_label "$dir/$stem.err")" '
         {text: ($a | sub("^\\s+"; "") | sub("\\s+$"; ""))}
         + (if ($r | length) > 0 then {reasoning: ($r | sub("^\\s+"; "") | sub("\\s+$"; ""))} else {} end)
-        + {reported: {interface: "cli", thinking_requested: $th, thinking_emitted: $e}}' > "$out"
+        + {reported: {interface: "cli", thinking_requested: $th, thinking_emitted: $e, device: $dev}}' > "$out"
     fi
   else
     interface=server
     rc=$(run_server "$dir" "$stem")
     if [ "$rc" = 0 ]; then
-      jq --arg th "$THINKING" '
+      jq --arg th "$THINKING" --arg dev "$(device_label "$dir/$stem.err")" '
         .choices[0].message as $m
         | {text: (($m.content // "") | sub("^\\s+"; "") | sub("\\s+$"; ""))}
           + (if (($m.reasoning_content // "") | length) > 0 then {reasoning: $m.reasoning_content} else {} end)
           + {reported: {interface: "server", thinking_requested: $th,
                         thinking_emitted: ((($m.reasoning_content // "") | length) > 0),
                         prompt_tokens: .usage.prompt_tokens, completion_tokens: .usage.completion_tokens,
-                        timings: .timings}}' "$dir/$stem.resp" > "$out"
+                        timings: .timings, device: $dev}}' "$dir/$stem.resp" > "$out"
     fi
   fi
   if [ "$rc" = 0 ]; then row_rc=0; else row_rc=null; refused=$(refusal_text "$dir/$stem.err"); fi
