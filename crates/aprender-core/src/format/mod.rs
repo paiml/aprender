@@ -83,6 +83,13 @@ pub mod compare;
 // Re-exported here so `aprender::format::v2::*` keeps resolving unchanged.
 pub use apr_format::v2;
 
+// #3750 / #3761: the one bounded-prefix policy for header-only reads of a model file
+// (apr-format's), and the SafeTensors header reader beside its format.
+pub mod prefix;
+
+#[cfg(test)]
+mod prefix_rss_tests;
+
 // APR v2 dequantizing accessor (`get_tensor_as_f32`) re-attached as an
 // extension trait — the GGUF Q4_K/Q6_K dequant + f16-scaled Q4 path is
 // framework/quant concern that was SEVERED from the sovereign leaf (#2231).

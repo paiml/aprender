@@ -548,8 +548,9 @@ impl RosettaStone {
     fn inspect_apr(&self, path: &Path, file_size: usize) -> Result<InspectionReport> {
         use crate::format::v2::AprV2Reader;
 
-        // Read file into bytes
-        let data = std::fs::read(path).map_err(|e| AprenderError::FormatError {
+        // Read the header + metadata + tensor index (#3761: inspect reports metadata and index
+        // entries with no stats, so the tensor data is never read)
+        let data = crate::format::prefix::apr_v2_header_prefix(path).map_err(|e| AprenderError::FormatError {
             message: format!("Cannot read APR file: {e}"),
         })?;
 

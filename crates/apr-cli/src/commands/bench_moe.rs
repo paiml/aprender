@@ -31,24 +31,21 @@ fn is_moe_gguf(gguf: &realizar::gguf::GGUFModel) -> bool {
 /// then runs warmup + iterations through the appropriate forward path.
 #[cfg(feature = "inference")]
 fn run_gguf_moe_benchmark(
-    path: &Path,
+    mapped: &realizar::gguf::MappedGGUFModel,
     config: &BenchConfig,
     use_cuda: bool,
     prompt_tokens: &[u32],
+    start: Instant,
     _tracer: &TracerImpl,
 ) -> Result<BenchResult> {
     use realizar::gguf::qwen3_moe_load::load_qwen3_moe_layer;
-    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
+    use realizar::gguf::OwnedQuantizedModel;
 
     if !config.quiet {
         eprintln!("{}", "Loading MoE GGUF model...".yellow());
     }
-    let start = Instant::now();
 
-    let mapped = MappedGGUFModel::from_path(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to mmap MoE model: {e}")))?;
-
-    let model = OwnedQuantizedModel::from_mapped(&mapped)
+    let model = OwnedQuantizedModel::from_mapped(mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create MoE model: {e}")))?;
 
     // Read MoE config from GGUF metadata. expert_count() must be Some

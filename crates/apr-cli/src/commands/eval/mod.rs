@@ -743,7 +743,8 @@ fn gather_model_info(path: &Path) -> Result<ModelInfo> {
 
 /// Count tensor keys in a safetensors file by reading the header.
 fn count_safetensors_keys(path: &Path) -> usize {
-    let Ok(data) = std::fs::read(path) else {
+    // #3761: the length and the JSON header only, under the shared prefix policy
+    let Ok(data) = aprender::format::prefix::safetensors_header_prefix(path) else {
         return 0;
     };
     if data.len() < 8 {
@@ -919,21 +920,32 @@ fn verify_single_file(path: &Path, checks: &mut Vec<(String, bool)>) -> Result<(
 
     // safetensors format check
     if path.extension().is_some_and(|e| e == "safetensors") {
-        let data = std::fs::read(path).map_err(|e| {
+        // #3761: the 8-byte length, then the JSON header when its size is valid, and a STREAMED
+        // hash of every byte. The whole file is never held in memory.
+        let cannot_read = |e: std::io::Error| {
             CliError::ValidationFailed(format!("Cannot read {}: {e}", path.display()))
-        })?;
+        };
+        let head = super::model_header::read_prefix(path, 8).map_err(cannot_read)?;
 
         // Valid header
-        let header_ok = data.len() >= 8;
+        let header_ok = head.len() >= 8;
         checks.push(("safetensors header present".to_string(), header_ok));
 
         if header_ok {
-            let header_size = u64::from_le_bytes(data[..8].try_into().unwrap_or_default()) as usize;
-            let header_valid = data.len() >= 8 + header_size && header_size < 100_000_000;
+            let header_size = u64::from_le_bytes(head[..8].try_into().unwrap_or_default()) as usize;
+            let header_valid = (header_size as u64)
+                .checked_add(8)
+                .is_some_and(|n| metadata.len() >= n)
+                && header_size < 100_000_000;
             checks.push(("safetensors header valid size".to_string(), header_valid));
 
             if header_valid {
-                let header_str = std::str::from_utf8(&data[8..8 + header_size]).unwrap_or("");
+                let data =
+                    super::model_header::read_prefix(path, 8 + header_size).map_err(cannot_read)?;
+                let header_str = data
+                    .get(8..8 + header_size)
+                    .and_then(|b| std::str::from_utf8(b).ok())
+                    .unwrap_or("");
                 let header_json = serde_json::from_str::<serde_json::Value>(header_str).is_ok();
                 checks.push(("safetensors header valid JSON".to_string(), header_json));
 
@@ -946,8 +958,8 @@ fn verify_single_file(path: &Path, checks: &mut Vec<(String, bool)>) -> Result<(
                 }
             }
 
-            // Hash check: compute simple checksum of entire file
-            let hash = compute_file_hash(&data);
+            // Hash check: a simple checksum of the entire file, streamed
+            let hash = compute_file_hash_streamed(path).map_err(cannot_read)?;
             checks.push((format!("BLAKE3 hash: {}", &hash[..16]), true));
         }
     }
@@ -958,12 +970,36 @@ fn verify_single_file(path: &Path, checks: &mut Vec<(String, bool)>) -> Result<(
 /// Compute a simple hash of file contents (using a basic checksum since we don't have blake3 dep).
 fn compute_file_hash(data: &[u8]) -> String {
     // FNV-1a 64-bit hash as lightweight integrity check
-    let mut hash: u64 = 0xcbf29ce484222325;
+    format!("{:016x}", fnv1a_update(FNV1A_OFFSET, data))
+}
+
+/// The FNV-1a 64-bit offset basis.
+const FNV1A_OFFSET: u64 = 0xcbf29ce484222325;
+
+/// Fold `data` into an FNV-1a 64-bit state. The hash is a sequential byte fold, so feeding a
+/// file chunk by chunk gives exactly the whole-buffer hash.
+fn fnv1a_update(mut hash: u64, data: &[u8]) -> u64 {
     for &byte in data {
         hash ^= byte as u64;
         hash = hash.wrapping_mul(0x100000001b3);
     }
-    format!("{hash:016x}")
+    hash
+}
+
+/// [`compute_file_hash`] of a file's bytes, read in 1 MiB chunks (#3761): the same hash,
+/// without holding the file in memory.
+fn compute_file_hash_streamed(path: &Path) -> std::io::Result<String> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)?;
+    let mut buf = vec![0u8; 1 << 20];
+    let mut hash = FNV1A_OFFSET;
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            return Ok(format!("{hash:016x}"));
+        }
+        hash = fnv1a_update(hash, &buf[..n]);
+    }
 }
 
 // ── PPL-Benchmark Correlation (R-066) ───────────────────────────────────────

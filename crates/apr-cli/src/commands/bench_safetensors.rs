@@ -273,25 +273,20 @@ fn run_cuda_measurement(
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn run_cuda_benchmark(
-    _gguf: &realizar::gguf::GGUFModel,
-    _model_bytes: &[u8],
+    mapped: &realizar::gguf::MappedGGUFModel,
     prompt_tokens: &[u32],
     gen_config: &realizar::gguf::QuantizedGenerateConfig,
     config: &BenchConfig,
     start: Instant,
-    model_path: &Path,
     tracer: &TracerImpl,
 ) -> Result<BenchResult> {
-    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda};
+    use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
 
     if !config.quiet {
         eprintln!("{}", "Initializing CUDA model...".cyan());
     }
 
-    let mapped = MappedGGUFModel::from_path(model_path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to map model: {e}")))?;
-
-    let model = OwnedQuantizedModel::from_mapped(&mapped)
+    let model = OwnedQuantizedModel::from_mapped(mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
 
     let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
@@ -318,18 +313,16 @@ fn run_cuda_benchmark(
 /// CPU-based benchmark fallback path
 #[cfg(feature = "inference")]
 fn run_cpu_benchmark(
+    mapped: &realizar::gguf::MappedGGUFModel,
     prompt_tokens: &[u32],
     gen_config: &realizar::gguf::QuantizedGenerateConfig,
     config: &BenchConfig,
     start: Instant,
-    path: &Path,
     tracer: &TracerImpl,
 ) -> Result<BenchResult> {
-    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
+    use realizar::gguf::OwnedQuantizedModel;
 
-    let mapped = MappedGGUFModel::from_path(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to mmap model: {e}")))?;
-    let model = OwnedQuantizedModel::from_mapped(&mapped)
+    let model = OwnedQuantizedModel::from_mapped(mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
 
     bench_log_ready(config, start.elapsed(), " (CPU)");
