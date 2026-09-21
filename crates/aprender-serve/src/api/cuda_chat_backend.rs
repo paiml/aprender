@@ -255,26 +255,23 @@ async fn try_cuda_backend(
         .ok()
         .and_then(|phases| phases.to_timings(prompt_tokens, completion_tokens));
     // #3723: the reasoning is split out of the answer; an unclosed block is refused.
-    let (reasoning, response_text) =
-        match split_chat_completion(state, &chat_prompt, &response_text, max_tokens) {
-            Ok(split) => split,
-            Err(r) => return Some(r),
-        };
-    Some(build_chat_response(
-        request_id.to_string(),
-        request.model.clone(),
-        response_text,
-        prompt_tokens,
-        completion_tokens,
-        max_tokens,
-        request.stop.as_deref(),
-        trace_level,
-        latency,
-        request.tools.as_deref(),
-        request_tool_choice(request),
-        timings,
-        reasoning,
-    ))
+    Some(respond_with_split(state, &chat_prompt, &response_text, max_tokens, |text, reasoning| {
+        build_chat_response(
+            request_id.to_string(),
+            request.model.clone(),
+                text,
+            prompt_tokens,
+            completion_tokens,
+            max_tokens,
+            request.stop.as_deref(),
+            trace_level,
+            latency,
+            request.tools.as_deref(),
+            request_tool_choice(request),
+            timings,
+            reasoning,
+        )
+    }))
 }
 
 /// §3: pair the engine's prefill measurement with the decode remainder.
@@ -383,26 +380,23 @@ fn try_quantized_backend(
     let latency = start.elapsed();
     state.metrics.record_success(completion_tokens, latency);
     // #3723: the reasoning is split out of the answer; an unclosed block is refused.
-    let (reasoning, text) =
-        match split_chat_completion(state, &chat_prompt, &text, max_tokens) {
-            Ok(split) => split,
-            Err(r) => return Some(r),
-        };
-    Some(build_chat_response(
-        request_id.to_string(),
-        request.model.clone(),
-        text,
-        prompt_tokens,
-        completion_tokens,
-        max_tokens,
-        request.stop.as_deref(),
-        trace_level,
-        latency,
-        request.tools.as_deref(),
-        request_tool_choice(request),
-        None,
-        reasoning,
-    ))
+    Some(respond_with_split(state, &chat_prompt, &text, max_tokens, |text, reasoning| {
+        build_chat_response(
+            request_id.to_string(),
+            request.model.clone(),
+                text,
+            prompt_tokens,
+            completion_tokens,
+            max_tokens,
+            request.stop.as_deref(),
+            trace_level,
+            latency,
+            request.tools.as_deref(),
+            request_tool_choice(request),
+            None,
+            reasoning,
+        )
+    }))
 }
 
 /// `AprTransformer` (f32 APR / SafeTensors CPU) backend for `/v1/chat/completions`
@@ -499,26 +493,23 @@ fn try_apr_transformer_backend(
     let latency = start.elapsed();
     state.metrics.record_success(completion_tokens, latency);
     // #3723: the reasoning is split out of the answer; an unclosed block is refused.
-    let (reasoning, text) =
-        match split_chat_completion(state, &chat_prompt, &text, max_tokens) {
-            Ok(split) => split,
-            Err(r) => return Some(r),
-        };
-    Some(build_chat_response(
-        request_id.to_string(),
-        request.model.clone(),
-        text,
-        prompt_tokens,
-        completion_tokens,
-        max_tokens,
-        request.stop.as_deref(),
-        trace_level,
-        latency,
-        request.tools.as_deref(),
-        request_tool_choice(request),
-        None,
-        reasoning,
-    ))
+    Some(respond_with_split(state, &chat_prompt, &text, max_tokens, |text, reasoning| {
+        build_chat_response(
+            request_id.to_string(),
+            request.model.clone(),
+                text,
+            prompt_tokens,
+            completion_tokens,
+            max_tokens,
+            request.stop.as_deref(),
+            trace_level,
+            latency,
+            request.tools.as_deref(),
+            request_tool_choice(request),
+            None,
+            reasoning,
+        )
+    }))
 }
 
 /// Convert usize token IDs to u32, returning error string on overflow
@@ -626,26 +617,23 @@ fn registry_fallback(
 
     let max_tokens = request.max_tokens.unwrap_or(256);
     // #3723: the reasoning is split out of the answer; an unclosed block is refused.
-    let (reasoning, response_text) =
-        match split_chat_completion(state, &chat_prompt, &response_text, max_tokens) {
-            Ok(split) => split,
-            Err(r) => return r,
-        };
-    build_chat_response(
-        request_id.to_string(),
-        request.model.clone(),
-        response_text,
-        prompt_tokens,
-        completion_tokens,
-        max_tokens,
-        request.stop.as_deref(),
-        None,
-        duration,
-        request.tools.as_deref(),
-        request_tool_choice(request),
-        None,
-        reasoning,
-    )
+    respond_with_split(state, &chat_prompt, &response_text, max_tokens, |text, reasoning| {
+        build_chat_response(
+            request_id.to_string(),
+            request.model.clone(),
+                text,
+            prompt_tokens,
+            completion_tokens,
+            max_tokens,
+            request.stop.as_deref(),
+            None,
+            duration,
+            request.tools.as_deref(),
+            request_tool_choice(request),
+            None,
+            reasoning,
+        )
+    })
 }
 
 // ============================================================================
@@ -805,34 +793,23 @@ async fn try_apr_q4k_chat_backend(
         .record_success(completion_tokens, start.elapsed());
 
     // #3723: the reasoning is split out of the answer; an unclosed block is refused.
-
-    let (reasoning, text) =
-
-        match split_chat_completion(state, &chat_prompt, &text, max_tokens) {
-
-            Ok(split) => split,
-
-            Err(r) => return Some(r),
-
-        };
-
-    Some(build_chat_response(
-        request_id.to_string(),
-        request.model.clone(),
-        text,
-        prompt_tokens,
-        completion_tokens,
-        max_tokens,
-        request.stop.as_deref(),
-        trace_level,
-        start.elapsed(),
-        request.tools.as_deref(),
-        request_tool_choice(request),
-        None,
-
-        reasoning,
-
-    ))
+    Some(respond_with_split(state, &chat_prompt, &text, max_tokens, |text, reasoning| {
+        build_chat_response(
+            request_id.to_string(),
+            request.model.clone(),
+                text,
+            prompt_tokens,
+            completion_tokens,
+            max_tokens,
+            request.stop.as_deref(),
+            trace_level,
+            start.elapsed(),
+            request.tools.as_deref(),
+            request_tool_choice(request),
+            None,
+            reasoning,
+        )
+    }))
 }
 
 /// OpenAI-compatible /v1/chat/completions endpoint (supports streaming)
@@ -1165,34 +1142,23 @@ fn try_qwen3_moe_backend(
     state.metrics.record_success(completion_tokens, duration);
 
     // #3723: the reasoning is split out of the answer; an unclosed block is refused.
-
-    let (reasoning, response_text) =
-
-        match split_chat_completion(state, &chat_prompt, &response_text, max_tokens) {
-
-            Ok(split) => split,
-
-            Err(r) => return Some(r),
-
-        };
-
-    Some(build_chat_response(
-        request_id.to_string(),
-        request.model.clone(),
-        response_text,
-        prompt_token_count,
-        completion_tokens,
-        max_tokens,
-        request.stop.as_deref(),
-        None,
-        duration,
-        request.tools.as_deref(),
-        request_tool_choice(request),
-        None,
-
-        reasoning,
-
-    ))
+    Some(respond_with_split(state, &chat_prompt, &response_text, max_tokens, |text, reasoning| {
+        build_chat_response(
+            request_id.to_string(),
+            request.model.clone(),
+                text,
+            prompt_token_count,
+            completion_tokens,
+            max_tokens,
+            request.stop.as_deref(),
+            None,
+            duration,
+            request.tools.as_deref(),
+            request_tool_choice(request),
+            None,
+            reasoning,
+        )
+    }))
 }
 
 /// Predicate: does this raw architecture string canonicalize to qwen3_moe?

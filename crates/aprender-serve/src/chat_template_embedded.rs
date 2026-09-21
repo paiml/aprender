@@ -300,79 +300,95 @@ fn python_tojson(
     let indent: Option<usize> = kwargs.get("indent")?;
     kwargs.assert_all_used()?;
     let mut out = String::new();
-    write_py_json(&value, indent, 0, &mut out)?;
+    PyJson { indent }.write(&value, 0, &mut out)?;
     Ok(out)
 }
 
-fn write_py_json(
-    value: &minijinja::Value,
+/// The indent-aware half of `python_tojson`: containers, separators and newlines.
+struct PyJson {
     indent: Option<usize>,
-    depth: usize,
-    out: &mut String,
-) -> Result<(), minijinja::Error> {
-    use minijinja::value::ValueKind;
-    use std::fmt::Write;
-    let newline = |out: &mut String, depth: usize| {
-        if let Some(n) = indent {
+}
+
+impl PyJson {
+    fn write(
+        &self,
+        value: &minijinja::Value,
+        depth: usize,
+        out: &mut String,
+    ) -> Result<(), minijinja::Error> {
+        use minijinja::value::ValueKind;
+        match value.kind() {
+            ValueKind::Undefined | ValueKind::None => out.push_str("null"),
+            ValueKind::Bool => out.push_str(if value.is_true() { "true" } else { "false" }),
+            ValueKind::Number => write_py_json_number(value, out),
+            ValueKind::String => write_py_json_str(value.as_str().unwrap_or_default(), out),
+            ValueKind::Map => {
+                let keys: Vec<minijinja::Value> = value.try_iter()?.collect();
+                self.write_container(('{', '}'), &keys, depth, out, |key, out| {
+                    write_py_json_str(&key.to_string(), out);
+                    out.push_str(": ");
+                    self.write(&value.get_item(key)?, depth + 1, out)
+                })?;
+            },
+            _ => {
+                let items: Vec<minijinja::Value> = value.try_iter()?.collect();
+                self.write_container(('[', ']'), &items, depth, out, |item, out| {
+                    self.write(item, depth + 1, out)
+                })?;
+            },
+        }
+        Ok(())
+    }
+
+    fn newline(&self, depth: usize, out: &mut String) {
+        if let Some(n) = self.indent {
             out.push('\n');
             out.push_str(&" ".repeat(n * depth));
         }
-    };
-    let item_sep = if indent.is_some() { "," } else { ", " };
-    match value.kind() {
-        ValueKind::Undefined | ValueKind::None => out.push_str("null"),
-        ValueKind::Bool => out.push_str(if value.is_true() { "true" } else { "false" }),
-        ValueKind::Number if value.is_integer() => {
-            let _ = write!(out, "{value}");
-        }
-        ValueKind::Number => {
-            // Python's float repr keeps a ".0" on integral floats (1.0, not 1).
-            let f = f64::try_from(value.clone()).unwrap_or(f64::NAN);
-            if f.is_finite() && f.fract() == 0.0 && f.abs() < 1e16 {
-                let _ = write!(out, "{f:.1}");
-            } else {
-                let _ = write!(out, "{f}");
-            }
-        }
-        ValueKind::String => write_py_json_str(value.as_str().unwrap_or_default(), out),
-        ValueKind::Map => {
-            let keys: Vec<minijinja::Value> = value.try_iter()?.collect();
-            if keys.is_empty() {
-                out.push_str("{}");
-                return Ok(());
-            }
-            out.push('{');
-            for (i, key) in keys.iter().enumerate() {
-                if i > 0 {
-                    out.push_str(item_sep);
-                }
-                newline(out, depth + 1);
-                write_py_json_str(&key.to_string(), out);
-                out.push_str(": ");
-                write_py_json(&value.get_item(key)?, indent, depth + 1, out)?;
-            }
-            newline(out, depth);
-            out.push('}');
-        }
-        _ => {
-            let items: Vec<minijinja::Value> = value.try_iter()?.collect();
-            if items.is_empty() {
-                out.push_str("[]");
-                return Ok(());
-            }
-            out.push('[');
-            for (i, item) in items.iter().enumerate() {
-                if i > 0 {
-                    out.push_str(item_sep);
-                }
-                newline(out, depth + 1);
-                write_py_json(item, indent, depth + 1, out)?;
-            }
-            newline(out, depth);
-            out.push(']');
-        }
     }
-    Ok(())
+
+    /// `{}` / `[]` when empty, else each entry on its own line when indented.
+    fn write_container(
+        &self,
+        (open, close): (char, char),
+        entries: &[minijinja::Value],
+        depth: usize,
+        out: &mut String,
+        mut write_entry: impl FnMut(&minijinja::Value, &mut String) -> Result<(), minijinja::Error>,
+    ) -> Result<(), minijinja::Error> {
+        out.push(open);
+        if entries.is_empty() {
+            out.push(close);
+            return Ok(());
+        }
+        let item_sep = if self.indent.is_some() { "," } else { ", " };
+        for (i, entry) in entries.iter().enumerate() {
+            if i > 0 {
+                out.push_str(item_sep);
+            }
+            self.newline(depth + 1, out);
+            write_entry(entry, out)?;
+        }
+        self.newline(depth, out);
+        out.push(close);
+        Ok(())
+    }
+}
+
+/// A number as Python's `json.dumps` writes it.
+fn write_py_json_number(value: &minijinja::Value, out: &mut String) {
+    use std::fmt::Write;
+    if value.is_integer() {
+        let _ = write!(out, "{value}");
+        return;
+    }
+    // Python's float repr keeps a ".0" on integral floats (1.0, not 1).
+    let f = f64::try_from(value.clone()).unwrap_or(f64::NAN);
+    if f.is_finite() && f.fract() == 0.0 && f.abs() < 1e16 {
+        let _ = write!(out, "{f:.1}");
+    } else {
+        let _ = write!(out, "{f}");
+    }
 }
 
 /// A JSON string as Python's `json.dumps(..., ensure_ascii=False)` writes it.

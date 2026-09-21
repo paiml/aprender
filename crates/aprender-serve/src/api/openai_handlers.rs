@@ -121,6 +121,21 @@ fn tokenize_chat_request(
     Ok((ids, prompt))
 }
 
+/// Split `completion` into reasoning and answer (#3723), then build the response from
+/// them. A think block still open when generation stopped is the refusal response.
+fn respond_with_split(
+    state: &AppState,
+    prompt: &crate::chat_template::ChatPrompt,
+    completion: &str,
+    max_tokens: usize,
+    build: impl FnOnce(String, Option<String>) -> Response,
+) -> Response {
+    match split_chat_completion(state, prompt, completion, max_tokens) {
+        Ok((reasoning, answer)) => build(answer, reasoning),
+        Err(refused) => refused,
+    }
+}
+
 /// Split a chat completion into reasoning and answer, as production splits it (#3723).
 /// A think block still open when generation stopped is refused with HTTP 422 naming the
 /// `max_tokens` budget, never returned as an empty answer (#3720).
@@ -223,6 +238,90 @@ fn resolve_chat_top_k(temperature: f32, requested: Option<usize>) -> usize {
         1
     } else {
         requested.unwrap_or(40)
+    }
+}
+
+#[cfg(test)]
+mod reasoning_router_tests {
+    use super::ReasoningRouter;
+    use crate::chat_template::ChatPrompt;
+
+    fn prompt(text: &str) -> ChatPrompt {
+        ChatPrompt {
+            text: text.to_string(),
+            thinking: true,
+        }
+    }
+
+    /// Route every delta and join adjacent pieces of the same kind.
+    fn run(router: &mut ReasoningRouter, deltas: &[&str]) -> (String, String) {
+        let (mut reasoning, mut answer) = (String::new(), String::new());
+        for delta in deltas {
+            for (is_reasoning, text) in router.route(delta) {
+                if is_reasoning {
+                    reasoning.push_str(&text);
+                } else {
+                    answer.push_str(&text);
+                }
+            }
+        }
+        (reasoning, answer)
+    }
+
+    #[test]
+    fn a_prompt_that_opens_the_block_streams_reasoning_until_it_closes() {
+        let p = prompt("<|im_start|>assistant\n<think>\n");
+        let mut router = ReasoningRouter::new(Some(&p));
+        let (reasoning, answer) = run(
+            &mut router,
+            &["Two", " plus two", "</think>", "\n\n", "2 + 2", " = 4."],
+        );
+        assert_eq!(reasoning, "Two plus two");
+        // The whitespace between </think> and the answer is dropped, even alone in a delta.
+        assert_eq!(answer, "2 + 2 = 4.");
+        assert!(!router.unclosed());
+    }
+
+    #[test]
+    fn a_completion_that_opens_the_block_itself_is_split_the_same_way() {
+        let p = prompt("<|im_start|>assistant\n");
+        let mut router = ReasoningRouter::new(Some(&p));
+        // A whitespace-only first delta cannot decide yet, and emits nothing.
+        assert!(router.route("\n").is_empty());
+        let (reasoning, answer) = run(&mut router, &["<think>hmm", "</think>\n\nParis."]);
+        assert_eq!(reasoning, "hmm");
+        assert_eq!(answer, "Paris.");
+    }
+
+    #[test]
+    fn text_that_never_opens_a_block_is_all_answer() {
+        let p = prompt("<|im_start|>assistant\n<think>\n\n</think>\n\n");
+        let mut router = ReasoningRouter::new(Some(&p));
+        let (reasoning, answer) = run(&mut router, &["The capital", " is <think> Paris."]);
+        assert_eq!(reasoning, "");
+        assert_eq!(answer, "The capital is <think> Paris.");
+        assert!(!router.unclosed());
+    }
+
+    #[test]
+    fn a_stream_that_ends_inside_the_block_is_unclosed() {
+        let p = prompt("<|im_start|>assistant\n<think>\n");
+        let mut router = ReasoningRouter::new(Some(&p));
+        let (reasoning, answer) = run(&mut router, &["still", " thinking"]);
+        assert_eq!(reasoning, "still thinking");
+        assert_eq!(answer, "");
+        assert!(
+            router.unclosed(),
+            "an open block at the end must be reported"
+        );
+    }
+
+    #[test]
+    fn no_prompt_means_no_routing() {
+        let mut router = ReasoningRouter::new(None);
+        let (reasoning, answer) = run(&mut router, &["<think>x</think>y"]);
+        assert_eq!(reasoning, "");
+        assert_eq!(answer, "<think>x</think>y");
     }
 }
 
@@ -832,46 +931,71 @@ impl ReasoningRouter {
     /// Split one delta into `(is_reasoning, text)` pieces, in order.
     fn route(&mut self, delta: &str) -> Vec<(bool, String)> {
         let mut out = Vec::new();
-        let mut rest = delta;
-        if self.may_open {
-            if rest.trim().is_empty() {
-                return out;
-            }
-            self.may_open = false;
-            if let Some(after) = rest.trim_start().strip_prefix("<think>") {
+        let Some(rest) = self.after_open(delta) else {
+            return out;
+        };
+        let Some(rest) = self.after_reasoning(rest, &mut out) else {
+            return out;
+        };
+        self.push_answer(rest, &mut out);
+        out
+    }
+
+    /// Before the first visible text, a leading `<think>` opens the block. `None` for a
+    /// whitespace-only delta, which cannot decide yet.
+    fn after_open<'a>(&mut self, delta: &'a str) -> Option<&'a str> {
+        if !self.may_open {
+            return Some(delta);
+        }
+        if delta.trim().is_empty() {
+            return None;
+        }
+        self.may_open = false;
+        match delta.trim_start().strip_prefix("<think>") {
+            Some(after) => {
                 self.in_think = true;
-                rest = after;
-            }
+                Some(after)
+            },
+            None => Some(delta),
         }
-        if self.in_think {
-            match rest.find("</think>") {
-                Some(close) => {
-                    if !rest[..close].is_empty() {
-                        out.push((true, rest[..close].to_string()));
-                    }
-                    self.in_think = false;
-                    self.trim_answer_start = true;
-                    rest = &rest[close + "</think>".len()..];
-                },
-                None => {
-                    if !rest.is_empty() {
-                        out.push((true, rest.to_string()));
-                    }
-                    return out;
-                },
-            }
+    }
+
+    /// Inside the block, the text up to `</think>` is reasoning. `None` while the block
+    /// is still open after this delta.
+    fn after_reasoning<'a>(
+        &mut self,
+        rest: &'a str,
+        out: &mut Vec<(bool, String)>,
+    ) -> Option<&'a str> {
+        if !self.in_think {
+            return Some(rest);
         }
+        let (reasoning, after) = match rest.find("</think>") {
+            Some(close) => (&rest[..close], Some(&rest[close + "</think>".len()..])),
+            None => (rest, None),
+        };
+        if !reasoning.is_empty() {
+            out.push((true, reasoning.to_string()));
+        }
+        if after.is_some() {
+            self.in_think = false;
+            self.trim_answer_start = true;
+        }
+        after
+    }
+
+    /// Answer text; the whitespace between `</think>` and the answer is dropped.
+    fn push_answer(&mut self, mut rest: &str, out: &mut Vec<(bool, String)>) {
         if self.trim_answer_start {
             rest = rest.trim_start();
             if rest.is_empty() {
-                return out;
+                return;
             }
             self.trim_answer_start = false;
         }
         if !rest.is_empty() {
             out.push((false, rest.to_string()));
         }
-        out
     }
 
     /// Whether the stream ended inside the think block (an error naming the budget).
@@ -1214,26 +1338,30 @@ fn try_gpu_backend(
     let latency = start.elapsed();
     state.metrics.record_success(completion_tokens, latency);
     // #3723: the reasoning is split out of the answer; an unclosed block is refused.
-    let (reasoning, text) = match split_chat_completion(state, &chat_prompt, &text, max_tokens) {
-        Ok(split) => split,
-        Err(r) => return Some(r),
-    };
-    Some(build_chat_response(
-        request_id.to_string(),
-        request.model.clone(),
-        text,
-        prompt_tokens,
-        completion_tokens,
+    Some(respond_with_split(
+        state,
+        &chat_prompt,
+        &text,
         max_tokens,
-        request.stop.as_deref(),
-        trace_level,
-        latency,
-        request.tools.as_deref(),
-        request_tool_choice(request),
-        // This backend does not separate prefill from decode; §3 timings are
-        // absent rather than zero.
-        None,
-        reasoning,
+        |text, reasoning| {
+            build_chat_response(
+                request_id.to_string(),
+                request.model.clone(),
+                text,
+                prompt_tokens,
+                completion_tokens,
+                max_tokens,
+                request.stop.as_deref(),
+                trace_level,
+                latency,
+                request.tools.as_deref(),
+                request_tool_choice(request),
+                // This backend does not separate prefill from decode; §3 timings are
+                // absent rather than zero.
+                None,
+                reasoning,
+            )
+        },
     ))
 }
 
@@ -1311,26 +1439,30 @@ fn try_cached_backend(
     let latency = start.elapsed();
     state.metrics.record_success(completion_tokens, latency);
     // #3723: the reasoning is split out of the answer; an unclosed block is refused.
-    let (reasoning, text) = match split_chat_completion(state, &chat_prompt, &text, max_tokens) {
-        Ok(split) => split,
-        Err(r) => return Some(r),
-    };
-    Some(build_chat_response(
-        request_id.to_string(),
-        request.model.clone(),
-        text,
-        prompt_tokens,
-        completion_tokens,
+    Some(respond_with_split(
+        state,
+        &chat_prompt,
+        &text,
         max_tokens,
-        request.stop.as_deref(),
-        trace_level,
-        latency,
-        request.tools.as_deref(),
-        request_tool_choice(request),
-        // This backend does not separate prefill from decode; §3 timings are
-        // absent rather than zero.
-        None,
-        reasoning,
+        |text, reasoning| {
+            build_chat_response(
+                request_id.to_string(),
+                request.model.clone(),
+                text,
+                prompt_tokens,
+                completion_tokens,
+                max_tokens,
+                request.stop.as_deref(),
+                trace_level,
+                latency,
+                request.tools.as_deref(),
+                request_tool_choice(request),
+                // This backend does not separate prefill from decode; §3 timings are
+                // absent rather than zero.
+                None,
+                reasoning,
+            )
+        },
     ))
 }
 
