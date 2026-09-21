@@ -1429,7 +1429,13 @@ pub fn run_qwen35_generate_dispatch_timed(
                     timings,
                 })
             },
-            Err(reason) => {
+            // #3596: a context the GPU cannot hold is refused, not served on the CPU —
+            // at the lengths that trip this, the CPU forward takes hours (a 5.7k-token
+            // brief timed out after 3600 s), which is a stall, not a fallback.
+            Err(Qwen35GpuFailure::Refused(refusal)) => {
+                return Err(crate::error::RealizarError::CapacityRefused(refusal));
+            },
+            Err(Qwen35GpuFailure::Fallback(reason)) => {
                 eprintln!("{QWEN35_GPU_FALLBACK_PREFIX}, falling back to CPU: {reason}");
             },
         }
@@ -1447,20 +1453,38 @@ pub fn run_qwen35_generate_dispatch_timed(
 #[cfg(feature = "cuda")]
 const QWEN35_F2_PROBE_MAX: usize = 64;
 
-/// The GPU twin of [`run_qwen35_generate`]: build the hybrid on CUDA, prove it
-/// against its own CPU forward, then decode.
+/// Why the GPU path did not produce the tokens.
+#[cfg(feature = "cuda")]
+enum Qwen35GpuFailure {
+    /// A reason to run the CPU forward instead — printed, never silent.
+    Fallback(String),
+    /// The context does not fit the device (#3596): refused before loading, with the
+    /// arithmetic. NOT a fallback — see `run_qwen35_generate_dispatch_timed`.
+    Refused(Box<crate::capacity::CapacityRefusal>),
+}
+
+#[cfg(feature = "cuda")]
+impl From<String> for Qwen35GpuFailure {
+    fn from(reason: String) -> Self {
+        Self::Fallback(reason)
+    }
+}
+
+/// The GPU twin of [`run_qwen35_generate`]: plan the device memory, build the hybrid
+/// on CUDA, prove it against its own CPU forward, then decode.
 ///
-/// `Err` is a fallback reason, never a user-visible failure — the caller prints
-/// it and runs the CPU forward.
+/// A [`Qwen35GpuFailure::Fallback`] is a reason the caller prints before running the
+/// CPU forward; a [`Qwen35GpuFailure::Refused`] is a capacity refusal the caller
+/// returns as an error, decided before any weight reaches the device.
 #[cfg(feature = "cuda")]
 fn run_qwen35_generate_gpu(
     mapped: &crate::gguf::MappedGGUFModel,
     base: &OwnedQuantizedModel,
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
-) -> std::result::Result<(Vec<u32>, Qwen35PhaseTimings), String> {
+) -> std::result::Result<(Vec<u32>, Qwen35PhaseTimings), Qwen35GpuFailure> {
     if input_tokens.is_empty() {
-        return Err("the prompt is empty".to_string());
+        return Err("the prompt is empty".to_string().into());
     }
     let qwen = Qwen35Model::from_model_and_layers(base, &mapped.model, mapped.data())
         .map_err(|e| format!("the hybrid layers would not load: {e}"))?;
@@ -1470,9 +1494,36 @@ fn run_qwen35_generate_gpu(
     let device_name = executor
         .device_name()
         .unwrap_or_else(|_| "Unknown GPU".to_string());
-    let vram_mb = executor.memory_info().unwrap_or((0, 0)).1 / (1024 * 1024);
+    let (gpu_free, gpu_total) = executor
+        .memory_info()
+        .map_err(|e| format!("the device's free memory could not be read: {e}"))?;
+    let vram_mb = gpu_total / (1024 * 1024);
 
     let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
+    // #3596: will it fit? Decided here, from the host model and the MEASURED free
+    // memory, before a byte is uploaded — never discovered as an OOM mid-prefill.
+    let capacity = crate::gguf::cuda::Qwen35CudaModel::capacity_inputs(
+        &qwen,
+        max_seq_len,
+        gpu_free as u64,
+        gpu_total as u64,
+    );
+    match crate::capacity::plan(&capacity) {
+        crate::capacity::CapacityVerdict::Refused(refusal) => {
+            return Err(Qwen35GpuFailure::Refused(Box::new(refusal)));
+        },
+        crate::capacity::CapacityVerdict::Fits(budget) => {
+            if budget.kv_dtype != crate::capacity::KvDtype::F32 {
+                // `capacity_inputs` reports no f16 decode, so a plan cannot choose it;
+                // if that ever changes without the f16 cache existing, refuse loudly.
+                return Err(format!(
+                    "the capacity plan chose a {:?} KV cache, which this build cannot allocate",
+                    budget.kv_dtype
+                )
+                .into());
+            }
+        },
+    }
     let mut gpu =
         crate::gguf::cuda::Qwen35CudaModel::with_max_seq_len(&qwen, executor, max_seq_len)
             .map_err(|e| format!("the CUDA model would not build: {e}"))?;
@@ -1489,9 +1540,11 @@ fn run_qwen35_generate_gpu(
     let f2 =
         f2_validate_qwen35_receipted(&mut gpu, &qwen, input_tokens, mapped.data(), &device_name);
     if !f2.accepted {
-        return Err("the F2 CPU-parity guard rejected the GPU path".to_string());
+        return Err("the F2 CPU-parity guard rejected the GPU path"
+            .to_string()
+            .into());
     }
-    qwen35_gpu_decode(&mut gpu, input_tokens, gen_config)
+    Ok(qwen35_gpu_decode(&mut gpu, input_tokens, gen_config)?)
 }
 
 /// Prefill + decode on the GPU, with the token choice
@@ -1525,6 +1578,14 @@ fn qwen35_gpu_decode(
         )
     })?;
     let prefill_ms = prefill_start.elapsed().as_secs_f64() * 1000.0;
+    // Unconditional, like the Backend line: a run must show WHICH prefill it took
+    // without --verbose, or a per-token regression reads as a slow GPU.
+    eprintln!(
+        "[qwen35] batched prefill: {} tokens in {prefill_ms:.0} ms ({:.0} tok/s, chunk {} rows)",
+        input_tokens.len(),
+        input_tokens.len() as f64 * 1000.0 / prefill_ms.max(1e-9),
+        gpu.prefill_chunk_rows(input_tokens.len()),
+    );
     let decode_start = std::time::Instant::now();
     let mut tokens = input_tokens.to_vec();
     for _ in 0..gen_config.max_tokens {

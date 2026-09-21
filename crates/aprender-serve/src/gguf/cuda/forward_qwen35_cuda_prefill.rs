@@ -24,7 +24,8 @@
 //! would leave it, so decode continues from it unchanged.
 
 use super::super::{RealizarError, Result};
-use super::{gpu_err, CudaLayer, Qwen35CudaModel, Qwen35CudaState};
+use super::{gpu_err, CudaLayer, Qwen35CudaDims, Qwen35CudaModel, Qwen35CudaState};
+use crate::gguf::forward_qwen35::{Qwen35Model, Qwen35OwnedLayer};
 use trueno_gpu::driver::GpuBuffer;
 
 /// Rows per chunk when the attention scores do not bound it lower.
@@ -92,6 +93,49 @@ struct PrefillBuffers {
     ffn_act: GpuBuffer<f32>,
 }
 
+/// Rows per chunk for a prompt ending at `total_positions` — one formula for the
+/// running prefill and the pre-load capacity plan.
+fn chunk_rows_for(d: Qwen35CudaDims, total_positions: usize) -> usize {
+    let hpk = (d.num_heads / d.num_kv_heads.max(1)).max(1) as usize;
+    let by_scores = PREFILL_SCORES_BUDGET_BYTES / (4 * hpk * total_positions.max(1));
+    by_scores.clamp(PREFILL_MIN_CHUNK_ROWS, PREFILL_MAX_CHUNK_ROWS)
+}
+
+/// Device bytes a prefill ending at `total_positions` allocates beyond weights and
+/// state: its chunk buffers, the attention scores and the f32 dequant scratch.
+fn workspace_bytes_for(
+    d: Qwen35CudaDims,
+    largest_projection: usize,
+    total_positions: usize,
+) -> usize {
+    let rows = chunk_rows_for(d, total_positions);
+    let hpk = (d.num_heads / d.num_kv_heads.max(1)).max(1) as usize;
+    let q_dim = (d.num_heads * d.attn_head_dim) as usize;
+    let kv_dim = (d.num_kv_heads * d.attn_head_dim) as usize;
+    let (hidden, inter) = (d.hidden_dim as usize, d.intermediate_dim as usize);
+    let (conv, v, nv) = (
+        d.conv_dim as usize,
+        d.v_dim as usize,
+        d.num_v_heads as usize,
+    );
+    let per_row = 4 * hidden
+        + 2 * conv
+        + 4 * nv
+        + 3 * v
+        + 2 * q_dim // q_full
+        + 4 * q_dim // q, q_normed, attn_gate, attn_out_in
+        + kv_dim
+        + 3 * inter;
+    let scores = hpk * rows * total_positions;
+    4 * (rows * per_row + scores + largest_projection)
+}
+
+/// Bytes an [`OwnedQuantizedTensor`](crate::gguf::OwnedQuantizedTensor) occupies once
+/// uploaded, and its `n x k`.
+fn quant_bytes(t: &crate::gguf::OwnedQuantizedTensor) -> (u64, usize) {
+    (t.data.len() as u64, t.out_dim * t.in_dim)
+}
+
 impl<'a> Qwen35CudaModel<'a> {
     /// Rows per prefill chunk for a prompt that ends at `total_positions`.
     ///
@@ -101,38 +145,124 @@ impl<'a> Qwen35CudaModel<'a> {
     /// set of compiled shapes.
     #[must_use]
     pub fn prefill_chunk_rows(&self, total_positions: usize) -> usize {
-        let d = self.dims;
-        let hpk = (d.num_heads / d.num_kv_heads.max(1)).max(1) as usize;
-        let by_scores = PREFILL_SCORES_BUDGET_BYTES / (4 * hpk * total_positions.max(1));
-        by_scores.clamp(PREFILL_MIN_CHUNK_ROWS, PREFILL_MAX_CHUNK_ROWS)
+        chunk_rows_for(self.dims, total_positions)
     }
 
     /// Device bytes a [`Self::prefill`] of a prompt ending at `total_positions`
-    /// allocates on top of the weights and the state — the prefill workspace term of
-    /// the capacity plan.
+    /// allocates on top of the weights and the state.
     #[must_use]
     pub fn prefill_workspace_bytes(&self, total_positions: usize) -> usize {
-        let d = self.dims;
-        let rows = self.prefill_chunk_rows(total_positions);
-        let hpk = (d.num_heads / d.num_kv_heads.max(1)).max(1) as usize;
-        let q_dim = (d.num_heads * d.attn_head_dim) as usize;
-        let kv_dim = (d.num_kv_heads * d.attn_head_dim) as usize;
-        let (hidden, inter) = (d.hidden_dim as usize, d.intermediate_dim as usize);
-        let (conv, v, nv) = (
-            d.conv_dim as usize,
-            d.v_dim as usize,
-            d.num_v_heads as usize,
+        workspace_bytes_for(self.dims, self.largest_projection_elems(), total_positions)
+    }
+
+    /// The capacity-plan inputs for serving `model` on a device with `gpu_free` of
+    /// `gpu_total` bytes, for a request of `seq_len` positions (prompt + generated +
+    /// 1) — computed from the HOST model, before anything is uploaded (#3596).
+    ///
+    /// Weights are the bytes [`Self::with_max_seq_len`] uploads (every layer's
+    /// quantized projections and f32 vectors, the output norm twice, the `lm_head`);
+    /// the KV term covers only the layers that have a cache (the full-attention ones);
+    /// the workspace is the prefill's at this length plus the decode state's recurrent
+    /// windows and the model's own capped state.
+    #[must_use]
+    pub fn capacity_inputs(
+        model: &Qwen35Model<'_>,
+        seq_len: usize,
+        gpu_free: u64,
+        gpu_total: u64,
+    ) -> crate::capacity::CapacityInputs {
+        let d = Self::dims_of(model);
+        let f32s = |v: &[f32]| 4 * v.len() as u64;
+        let mut weights = 0u64;
+        let mut largest = 0usize;
+        let mut attn_layers = 0u64;
+        for layer in &model.layers {
+            let (vecs, quants): (Vec<&[f32]>, Vec<&crate::gguf::OwnedQuantizedTensor>) = match layer
+            {
+                Qwen35OwnedLayer::DeltaNet(l) => (
+                    vec![
+                        &l.attn_norm,
+                        &l.ssm_a,
+                        &l.ssm_dt_bias,
+                        &l.ssm_conv1d_weight,
+                        &l.ssm_norm_weight,
+                        &l.post_attention_norm,
+                    ],
+                    vec![
+                        &l.attn_qkv,
+                        &l.attn_gate,
+                        &l.ssm_alpha,
+                        &l.ssm_beta,
+                        &l.ssm_out,
+                        &l.ffn_gate,
+                        &l.ffn_up,
+                        &l.ffn_down,
+                    ],
+                ),
+                Qwen35OwnedLayer::Attention(l) => {
+                    attn_layers += 1;
+                    (
+                        vec![
+                            &l.attn_norm,
+                            &l.attn_q_norm,
+                            &l.attn_k_norm,
+                            &l.post_attention_norm,
+                        ],
+                        vec![
+                            &l.attn_q,
+                            &l.attn_k,
+                            &l.attn_v,
+                            &l.attn_output,
+                            &l.ffn_gate,
+                            &l.ffn_up,
+                            &l.ffn_down,
+                        ],
+                    )
+                },
+            };
+            weights += vecs.iter().map(|v| f32s(v)).sum::<u64>();
+            for q in quants {
+                let (bytes, elems) = quant_bytes(q);
+                weights += bytes;
+                largest = largest.max(elems);
+            }
+        }
+        weights +=
+            2 * f32s(model.base.output_norm_weight()) + quant_bytes(model.base.lm_head_weight()).0;
+
+        let kv_row = u64::from(d.num_kv_heads * d.attn_head_dim);
+        let kv_bytes_per_token_f32 = attn_layers * 2 * kv_row * 4;
+        let recurrent_per_state = model.layers.len() as u64
+            * 4
+            * u64::from(
+                d.conv_dim * (d.conv_kernel - 1) + d.num_v_heads * d.head_v_dim * d.head_k_dim,
+            );
+        let own_state = recurrent_per_state
+            + kv_bytes_per_token_f32 * seq_len.min(super::DEFAULT_MAX_SEQ_LEN) as u64;
+        let per_token_scratch = 4 * u64::from(
+            8 * d.hidden_dim
+                + 2 * d.conv_dim
+                + 4 * d.v_dim
+                + 8 * d.num_heads * d.attn_head_dim
+                + 4 * d.intermediate_dim
+                + d.vocab_size,
         );
-        let per_row = 4 * hidden
-            + 2 * conv
-            + 4 * nv
-            + 3 * v
-            + 2 * q_dim // q_full
-            + 4 * q_dim // q, q_normed, attn_gate, attn_out_in
-            + kv_dim
-            + 3 * inter;
-        let scores = hpk * rows * total_positions;
-        4 * (rows * per_row + scores) + 4 * self.largest_projection_elems()
+        let workspace = workspace_bytes_for(d, largest, seq_len) as u64
+            + recurrent_per_state // the decode state's conv/ssm (its KV is the KV term)
+            + own_state
+            + per_token_scratch;
+        crate::capacity::CapacityInputs {
+            weights_bytes: weights,
+            kv_bytes_per_token_f32,
+            seq_len: seq_len as u64,
+            workspace_bytes: workspace,
+            overhead_bytes: crate::capacity::OVERHEAD_BYTES,
+            gpu_free_bytes: gpu_free,
+            gpu_total_bytes: gpu_total,
+            // Flipped by #3725, whose split-K decode reads an f16 cache; until then a
+            // plan that needs f16 refuses and names it.
+            f16_kv_decode_available: false,
+        }
     }
 
     /// `n × k` of the largest projection — the size of the f32 dequant scratch.
