@@ -115,8 +115,6 @@ pub enum TokenizeCommands {
         include_added_tokens: bool,
     },
 
-    /// Encode a JSONL corpus into `.bin` shards per contracts/pretokenize-bin-v1.yaml.
-    ///
     /// Print the token ids a GGUF model's own tokenizer gives a text (#3726).
     ///
     /// The ids come from the same encoder `apr run`, `apr serve` and `apr parity` use. The
@@ -135,6 +133,8 @@ pub enum TokenizeCommands {
         #[arg(short = 'f', long, value_name = "FILE")]
         file: Option<PathBuf>,
     },
+    /// Encode a JSONL corpus into `.bin` shards per contracts/pretokenize-bin-v1.yaml.
+    ///
     /// Loads a trained BPE tokenizer (vocab.json + merges.txt) from `--tokenizer`,
     /// reads `--corpus` (file or directory of `.jsonl` files), encodes the
     /// `--content-field` of each line to u32 tokens, and writes

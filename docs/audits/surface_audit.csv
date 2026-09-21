@@ -368,7 +368,7 @@ apr,apr test llm bench,6,x86_64-linux,vllm,no,1,apr-lint-diag,crates/apr-cli/src
 apr,apr test llm bench --band,6,x86_64-linux,vllm,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1785 (protocol crates/apr-cli/src/commands/test_llm_band.rs:348),medium
 apr,apr test tensor,4,x86_64-linux,NONE,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1622,high
 apr,apr tokenize apply,6,x86_64-linux,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/tokenize_commands.rs:38,low
-apr,apr tokenize encode,6,x86_64-linux,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/tokenize_commands.rs:127,high
+apr,apr tokenize encode,6,x86_64-linux,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/tokenize_commands.rs:125,high
 apr,apr tokenize encode-corpus,6,x86_64-linux,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/tokenize_commands.rs:149,low
 apr,apr tokenize import-hf,6,x86_64-linux,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/tokenize_commands.rs:104,low
 apr,apr tokenize plan,6,x86_64-linux,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/tokenize_commands.rs:14,low

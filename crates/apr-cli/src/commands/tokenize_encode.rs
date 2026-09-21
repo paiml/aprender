@@ -97,3 +97,47 @@ pub(crate) fn run_encode(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    /// The first quorum round on #3726 found `Encode` spliced into the middle of
+    /// `EncodeCorpus`'s doc comment: `apr tokenize --help` described `encode` as "Encode a
+    /// JSONL corpus into .bin shards" and `encode-corpus` lost its summary. Each subcommand
+    /// must carry its own. (The clap tree is deep; it is built on a 16 MiB stack, as the
+    /// other `Cli::command()` tests do.)
+    #[test]
+    fn tokenize_help_gives_encode_and_encode_corpus_their_own_summaries() {
+        let (encode, corpus) = std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| {
+                use clap::CommandFactory;
+                let cli = crate::Cli::command();
+                let tokenize = cli
+                    .find_subcommand("tokenize")
+                    .expect("apr tokenize exists");
+                let about = |name: &str| {
+                    tokenize
+                        .find_subcommand(name)
+                        .and_then(|c| c.get_about())
+                        .map(ToString::to_string)
+                };
+                (about("encode"), about("encode-corpus"))
+            })
+            .expect("spawn")
+            .join()
+            .expect("clap tree builds");
+        let encode = encode.expect("apr tokenize encode exists");
+        assert!(encode.contains("token ids"), "encode's summary: {encode:?}");
+        assert!(
+            !encode.contains("JSONL"),
+            "encode took encode-corpus's summary: {encode:?}"
+        );
+        // encode-corpus exists only with the `training` feature.
+        if let Some(corpus) = corpus {
+            assert!(
+                corpus.starts_with("Encode a JSONL corpus"),
+                "encode-corpus's summary: {corpus:?}"
+            );
+        }
+    }
+}
