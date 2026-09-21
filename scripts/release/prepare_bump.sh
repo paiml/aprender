@@ -4,8 +4,9 @@
 #   prepare_bump.sh <version>          worktree at origin/main, bump-version.sh <version> + --check,
 #                                      CHANGELOG [<version>] drafted from the PRs merged since the last
 #                                      tag (with a placeholder --ship refuses)
-#   prepare_bump.sh <version> --ship   pre-push checks, commit, push, PR in milestone <version> with
-#                                      auto-merge; prints the autopilot launch line for that PR
+#   prepare_bump.sh <version> --ship   PR body judged by §6 R-2 (#3699), pre-push checks, commit, push,
+#                                      PR in milestone <version> with auto-merge; prints the autopilot
+#                                      launch line for that PR. Case table: scripts/check_release_bump_pr_body.sh
 # The train's identity is DERIVED (#3618, lib_release_params.sh): milestone, epic, last tag and the
 # state dir AP come from GitHub and the repo, never from literals.
 # §4.1 (freeze: open milestone items move to the next milestone with slipped_from:) is done by hand before this.
@@ -69,6 +70,22 @@ grep -qF "$MARK" CHANGELOG.md && die "CHANGELOG [$V] still carries the EDIT plac
 bash scripts/bump-version.sh --check > /dev/null 2>&1 || die "bump-version.sh --check failed"
 awk -v h="## [$V]" 'index($0, h) == 1 {f = 1; next} f && /^## \[/ {exit} f' CHANGELOG.md > "$AP/release_notes.md"
 [ -s "$AP/release_notes.md" ] || die "the CHANGELOG [$V] section is empty"
+# THE PR BODY IS BUILT AND JUDGED BEFORE ANYTHING IS COMMITTED OR PUSHED (#3699). It embeds the
+# CHANGELOG section, which cites the epic and context refs ("refs #N", "(#N layer 1)"), and
+# ci.yml's §6 R-2 step (check_pr_closes_issue.sh) fails a body citing an open issue with no
+# closing keyword and no keep-open line. That hit 0.68.2 (#3498) and 0.69.0 (#3698), each fixed
+# by hand -- and because that step reads the frozen event payload, a body edit cost a cancel, a
+# force-cancel and a close+reopen. The keep-open line names exactly what the guard's own
+# classifier (--list-owed) says is owed, so the two cannot disagree. Its reason is #3699's own text;
+# it carries no `#`, so it cannot add a closing reference: one that closed the epic on this PR's
+# merge would be the #3400 landmine again. Nothing owed, no line.
+CLOSES_GUARD="$REPO_ROOT/scripts/check_pr_closes_issue.sh"
+{ printf 'Release bump for **%s** (06x release schedule §4.2): `bump-version.sh %s` across every workspace, and the CHANGELOG section below.\n\nWhen this merges, `scripts/release/autopilot.sh` runs the rest of the train, fail-closed (APR-RELEASE-001 §4): T-1 deep run, pre-publish dogfood, tag + release, `clean-room.yml` dispatched on the tag with the run id recorded (T-3), all release assets checked with `scripts/check_release_assets.sh`, publish preflight, the crates.io cascade (T-4, automated per operator 2026-09-13), `install.sh --version` receipts on intel and gx10 plus the CUDA asset receipts on gx10 and yoga, and the epic and milestone close.\n\n' "$V" "$V"; cat "$AP/release_notes.md"; } > "$AP/pr_body.md"
+owed=$(bash "$CLOSES_GUARD" --list-owed --body "$AP/pr_body.md") || die "check_pr_closes_issue.sh --list-owed could not read $AP/pr_body.md"
+owed=$(printf '%s' "$owed" | tr '\n' ' ')
+[ -z "$owed" ] || printf '\nkeep-open: %s -- cited by the CHANGELOG for context; each closes via its own PR; the release EPIC closes at T-4\n' "$owed" >> "$AP/pr_body.md"
+printf '\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n' >> "$AP/pr_body.md"
+bash "$CLOSES_GUARD" --body "$AP/pr_body.md" > "$AP/r2.log" 2>&1 || die "the bump PR body fails §6 R-2; nothing committed, pushed or opened ($AP/r2.log, $AP/pr_body.md)"
 cargo_bin() { "${CARGO_HOME:-$HOME/.cargo}"/bin/cargo "$@"; }
 cargo_bin fmt --all -- --check > /dev/null 2>&1 || die "cargo fmt --check failed"
 cargo_bin deny check advisories > "$AP/deny.log" 2>&1 || die "cargo deny check advisories failed ($AP/deny.log)"
@@ -85,7 +102,6 @@ Pmat-Ticket: PMAT-$EPIC
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 MSG
 git push -q -u origin "$BR" || die "push failed"
-{ printf 'Release bump for **%s** (06x release schedule §4.2): `bump-version.sh %s` across every workspace, and the CHANGELOG section below.\n\nWhen this merges, `scripts/release/autopilot.sh` runs the rest of the train, fail-closed (APR-RELEASE-001 §4): T-1 deep run, pre-publish dogfood, tag + release, `clean-room.yml` dispatched on the tag with the run id recorded (T-3), all release assets checked with `scripts/check_release_assets.sh`, publish preflight, the crates.io cascade (T-4, automated per operator 2026-09-13), `install.sh --version` receipts on intel and gx10 plus the CUDA asset receipts on gx10 and yoga, and the epic and milestone close.\n\n' "$V" "$V"; cat "$AP/release_notes.md"; printf '\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n'; } > "$AP/pr_body.md"
 url=$(gh pr create --repo $REPO --base main --head "$BR" --milestone "$MS" --title "release: $V" --body-file "$AP/pr_body.md") || die "gh pr create failed"
 n=${url##*/}
 ARM="$REPO_ROOT/scripts/arm_pr_automerge.sh"; [ -f "$ARM" ] || die "no $ARM"
