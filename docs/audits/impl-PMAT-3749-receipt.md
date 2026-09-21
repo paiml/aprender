@@ -53,6 +53,20 @@ This branch changes 15 files the ledger cites. Each row citing one of them was r
 - v1 declares no stdin form. S2 records `stdin: undeclared` under its ratchet (97's ruling on #3745).
 
 ## Routing
-All phases ran direct (the orchestrator implemented; no worker subagent), because the migration was compile-driven over one crate's clap tree. Quorum: see the section appended after review.
+All phases ran direct (the orchestrator implemented; no worker subagent), because the migration was compile-driven over one crate's clap tree. `route.sh --phase-class review` gave `route=agy-quorum w=1.00 basis=absent effort=1[U]`.
 
-verdict: pending quorum
+## Dispatch ledger
+| # | executor | outcome |
+|---|---|---|
+| 1 | `paiml-agy-delegate`, ph4 quorum width 3 | **DENIED by the spawn hook**: `kind-gate refused PMAT-3749 (exit 2) … not filed in /home/noah/src/aprender/docs/roadmaps/roadmap.yaml`. The hook keys the gate on the session's launch cwd (the shared checkout), while the ticket lives in this worktree. Not retried as-is. The session moved into this worktree (`EnterWorktree path=`, per the cop's own-worktree rule), and the gate then read the tree the ticket lives in |
+| 2 | `paiml-agy-delegate` (opus), agent a31b9c07abd7d6029, same brief | `quorum-review.sh --base 52f43da71 --ticket PMAT-3749 --lane-model gemini-3.1-pro-high ×2 --lane-model gemini-3.1-pro-low --fallback-model gpt-oss-120b-medium` on head 0d417f07b. It hit the 30-turn cap and was resumed once (the only resume allowed) to write its receipt. It disclosed that it had launched the round 3 times and sent 6 manual gpt-oss probes |
+
+## Quorum
+- **Round 1 (head 0d417f07b, diff_sha256 20bfaec0…): NO-VERDICT ×3 in each of 3 attempts. This was a quota/capacity outage, not a review. No lane read the diff.**
+  - Attempt 1: gemini returned 429 at the pre-check. All 3 lanes fell back to gpt-oss-120b-medium, and each got 503 "No capacity" twice.
+  - Attempt 2: gemini 429, gpt-oss 503 at the pre-check, and no lane launched.
+  - Attempt 3: gemini 429 ("Resets in 2h44m53s") and gpt-oss 429 ("Resets in 2h20m24s"), and no lane launched. `receipt-lint` refused each artifact (no `model_measured`).
+  - All three artifacts are archived outside the tree, under the delegate's out_dir. A quota round is archived and never committed.
+  - agy 1.2.7 offers no other non-author family (claude-* is the author's). The seat-fill was requested from the cop (never park), and the round is relaunched when a family resets.
+
+verdict: PARTIAL — gates green, quorum pending (round 1 NO-VERDICT on quota)
