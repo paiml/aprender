@@ -73,7 +73,7 @@ expect() {
     (cd "$d/project" && python3 -m unittest test_stats >/dev/null 2>&1) || test_rc=$?
     line=$(python3 "$JUDGE" --out "$d" --fixture "$FIXTURE" --model /m/Qwen3.5-4B-Q4_K_M.gguf \
         --host case --rc "${4:-0}" --test-rc "$test_rc" --lock-wait 5 --timeout 9 | head -1) || true
-    if printf '%s\n' "$line" | grep -q "^$2" && printf '%s\n' "$line" | grep -qF -- "$3"; then
+    if [[ "$line" == "$2"* && "$line" == *"$3"* ]]; then
         printf 'ok    %s\n' "$1"
     else
         printf 'FAIL  %s: want %s / %s, got: %s\n' "$1" "$2" "$3" "$line"
