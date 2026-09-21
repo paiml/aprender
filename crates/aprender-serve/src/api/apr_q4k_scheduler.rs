@@ -40,6 +40,8 @@ pub struct AprQ4kRequest {
     pub max_tokens: usize,
     /// Sampling temperature (0.0 = greedy).
     pub temperature: f32,
+    /// RNG seed for a sampled step (#3786): the same request and seed give the same tokens.
+    pub seed: u64,
     /// EOS token IDs — generation stops when any of these are produced.
     /// ALB-109: Qwen3 uses 151643 (<|endoftext|>), not 0 or 2.
     pub eos_ids: Vec<u32>,
@@ -241,6 +243,7 @@ pub fn spawn_apr_q4k_inference_thread(
                     &req.prompt_ids,
                     req.max_tokens,
                     req.temperature,
+                    req.seed,
                     &req.eos_ids,
                     &req.cancel,
                 );
@@ -265,11 +268,13 @@ fn generate_q4k(
     prompt_ids: &[u32],
     max_tokens: usize,
     temperature: f32,
+    seed: u64,
     eos_ids: &[u32],
     cancel: &CancelToken,
 ) -> Result<AprQ4kResponse, String> {
-    use crate::cli::inference::{argmax, sample_with_temperature};
+    use crate::cli::inference::argmax;
     use crate::gpu::adapters::apr_q4k::forward_token_apr_q4k;
+    use rand::SeedableRng;
     use std::time::Instant;
 
     // Fresh KV cache per request
@@ -296,11 +301,13 @@ fn generate_q4k(
         .map_err(|e| format!("Prefill failed at pos {pos}: {e}"))?;
     }
 
-    // Sample first token
+    // Sample first token. #3786: one RNG per request, seeded from the request, so the
+    // same request and seed give the same tokens (the old sampler hashed the wall clock).
+    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
     let first_token = if temperature <= 0.01 {
         argmax(&last_logits)
     } else {
-        sample_with_temperature(&last_logits, temperature, 40)
+        q4k_sampled_token(&last_logits, temperature, &mut rng)
     };
 
     // Autoregressive decode. The loop itself lives in `q4k_decode` so that the
@@ -330,7 +337,7 @@ fn generate_q4k(
             Ok(if temperature <= 0.01 {
                 argmax(&logits)
             } else {
-                sample_with_temperature(&logits, temperature, 40)
+                q4k_sampled_token(&logits, temperature, &mut rng)
             })
         },
     )?;
@@ -376,6 +383,23 @@ fn generate_q4k(
 /// # Errors
 ///
 /// Propagates whatever `step` returns, unchanged.
+/// The top-k the APR Q4K chat path samples with.
+const Q4K_TOP_K: usize = 40;
+
+/// A sampled APR Q4K step: one seeded draw through the shared sampler (#3786).
+///
+/// This replaced `cli::inference::sample_with_temperature`, whose uniform draw was a hash
+/// of `SystemTime::now()`: a request's `seed` never reached it, and the same request
+/// gave different tokens on every call. Kept outside the `cuda` gate so the draw the
+/// GPU loop makes is testable on any host.
+pub(crate) fn q4k_sampled_token(
+    logits: &[f32],
+    temperature: f32,
+    rng: &mut rand::rngs::StdRng,
+) -> u32 {
+    crate::sampling::draw_seeded(logits, temperature, Q4K_TOP_K, 1.0, rng)
+}
+
 pub(crate) fn q4k_decode<F>(
     first_token: u32,
     prompt_len: usize,
@@ -418,3 +442,39 @@ where
 #[cfg(test)]
 #[path = "tests/apr_q4k_cancel_2465.rs"]
 mod apr_q4k_cancel_2465;
+
+/// #3786: the APR Q4K sampled step draws from the request's seeded RNG.
+#[cfg(test)]
+mod sampled_token_3786 {
+    use super::q4k_sampled_token;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+
+    const LOGITS: [f32; 6] = [1.0, 0.9, 1.1, 0.95, 1.05, 0.85];
+
+    fn run(seed: u64) -> Vec<u32> {
+        let mut rng = StdRng::seed_from_u64(seed);
+        (0..32)
+            .map(|_| q4k_sampled_token(&LOGITS, 1.0, &mut rng))
+            .collect()
+    }
+
+    /// The same seed reproduces the draws byte for byte: the wall-clock sampler it
+    /// replaced could not, whatever the request said.
+    #[test]
+    fn the_same_seed_reproduces_the_sampled_tokens() {
+        assert_eq!(run(7), run(7));
+    }
+
+    /// A different seed changes them, so the seed is actually read.
+    #[test]
+    fn a_different_seed_changes_the_sampled_tokens() {
+        assert_ne!(run(7), run(8));
+    }
+
+    /// It is a draw, not the argmax (index 2) in disguise.
+    #[test]
+    fn a_sampled_step_draws_off_the_argmax() {
+        assert!(run(7).iter().any(|&t| t != 2));
+    }
+}

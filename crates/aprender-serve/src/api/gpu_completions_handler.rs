@@ -309,6 +309,8 @@ async fn try_apr_q4k_completions(
             prompt_ids,
             max_tokens,
             temperature,
+            // #3786: the request seed reaches the APR Q4K sampler.
+            seed: crate::sampling::DEFAULT_SEED,
             eos_ids,
             cancel: cancel.clone(),
             response_tx,

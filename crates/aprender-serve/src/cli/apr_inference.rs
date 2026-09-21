@@ -283,32 +283,3 @@ pub(crate) fn argmax(logits: &[f32]) -> u32 {
         .map_or(0, |(idx, _)| idx as u32)
 }
 
-/// Sample a token with temperature and top-k.
-#[cfg(feature = "cuda")]
-pub(crate) fn sample_with_temperature(logits: &[f32], temperature: f32, top_k: usize) -> u32 {
-    let scaled: Vec<f32> = logits.iter().map(|&l| l / temperature).collect();
-
-    let mut indexed: Vec<(usize, f32)> = scaled.into_iter().enumerate().collect();
-    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    let top = &indexed[..top_k.min(indexed.len())];
-
-    let max_val = top[0].1;
-    let exp_vals: Vec<(usize, f32)> = top.iter().map(|&(i, v)| (i, (v - max_val).exp())).collect();
-    let sum: f32 = exp_vals.iter().map(|(_, v)| v).sum();
-
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    use std::time::SystemTime;
-    let mut hasher = DefaultHasher::new();
-    SystemTime::now().hash(&mut hasher);
-    let r = (hasher.finish() as f32 / u64::MAX as f32) * sum;
-
-    let mut cumsum = 0.0f32;
-    for &(idx, val) in &exp_vals {
-        cumsum += val;
-        if cumsum >= r {
-            return idx as u32;
-        }
-    }
-    exp_vals.last().map_or(0, |&(i, _)| i as u32)
-}
