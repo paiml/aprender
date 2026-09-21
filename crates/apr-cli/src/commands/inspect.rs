@@ -215,6 +215,20 @@ pub(crate) fn run(
 /// GGUF/SafeTensors inspect via RosettaStone
 /// Print rosetta inspection report as JSON.
 fn output_rosetta_json(path: &Path, report: &aprender::format::rosetta::InspectionReport) {
+    if let Ok(json) = serde_json::to_string_pretty(&rosetta_json(path, report)) {
+        println!("{json}");
+    }
+}
+
+/// The `apr inspect --json` document for a GGUF/SafeTensors file.
+///
+/// `metadata` is every key in the report, unfiltered: #3733's gate reads a
+/// model's declared context and memory arithmetic from it, and a second GGUF
+/// reader is refused (`check_no_hand_rolled_parsers.sh`).
+fn rosetta_json(
+    path: &Path,
+    report: &aprender::format::rosetta::InspectionReport,
+) -> serde_json::Value {
     let mut json_map = serde_json::Map::new();
     json_map.insert(
         "file".to_string(),
@@ -262,10 +276,7 @@ fn output_rosetta_json(path: &Path, report: &aprender::format::rosetta::Inspecti
         .collect::<serde_json::Map<_, _>>()
         .into();
     json_map.insert("metadata".to_string(), metadata);
-
-    if let Ok(json) = serde_json::to_string_pretty(&json_map) {
-        println!("{json}");
-    }
+    serde_json::Value::Object(json_map)
 }
 
 /// Print rosetta inspection report as rich text.

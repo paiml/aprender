@@ -449,3 +449,6 @@ fn test_gguf_model_config_clone() {
 
 #[path = "api_tests_raw_tensor_rope.rs"]
 mod api_tests_raw_tensor_rope;
+
+#[path = "api_tests_all_keys_3733.rs"]
+mod api_tests_all_keys_3733;
