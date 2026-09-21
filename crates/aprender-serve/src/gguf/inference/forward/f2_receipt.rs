@@ -242,18 +242,45 @@ pub fn read_receipt(path: &Path) -> Result<Option<F2Receipt>, String> {
         .map_err(|e| format!("{}: not a receipt: {e}", path.display()))
 }
 
-/// Write a receipt atomically (temp file + rename), so a crash mid-write
-/// leaves either the old receipt or none — never a truncated one that the
-/// next run has to classify.
+/// Write a receipt atomically: a temp file PRIVATE TO THIS WRITER, then a
+/// rename. A crash mid-write leaves the old receipt or none, and two `apr run`
+/// processes validating the same model at once each rename their own complete
+/// file — the last rename wins whole, never half of the other's.
+///
+/// The first version of this used one shared `<sha>.json.tmp`. The AD-04
+/// quorum on #3634 (lane 1) read that against the docstring's "never a
+/// truncated one" and was right: with a shared name, writer B truncates the
+/// file writer A is about to rename, and A renames B's partial into place. The
+/// reader would classify it `Unreadable` and validate — the safe direction —
+/// but the atomicity claim was false. The temp name now carries the pid and a
+/// per-process counter, so no two writers share one.
 pub fn write_receipt(path: &Path, receipt: &F2Receipt) -> Result<(), String> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+
     let dir = path
         .parent()
         .ok_or_else(|| format!("{}: no parent directory", path.display()))?;
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let tmp = path.with_extension("json.tmp");
+    let stem = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("receipt");
+    let tmp = dir.join(format!(
+        ".{stem}.{}.{}.tmp",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
     let body = serde_json::to_string_pretty(receipt).map_err(|e| e.to_string())?;
-    std::fs::write(&tmp, body).map_err(|e| format!("{}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, path).map_err(|e| format!("{}: {e}", path.display()))
+    if let Err(e) = std::fs::write(&tmp, body) {
+        return Err(format!("{}: {e}", tmp.display()));
+    }
+    // If the rename fails, do not leave the private temp behind to be mistaken
+    // for anything: it carries no meaning once it is not the receipt.
+    std::fs::rename(&tmp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("{}: {e}", path.display())
+    })
 }
 
 /// sha256 of the model bytes, lower-case hex.

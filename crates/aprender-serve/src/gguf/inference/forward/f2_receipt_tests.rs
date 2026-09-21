@@ -173,9 +173,15 @@ fn a_written_receipt_reads_back_equal_and_a_missing_one_is_none_not_err() {
     let r = receipt_for(&k);
     write_receipt(&path, &r).expect("write");
     assert_eq!(read_receipt(&path), Ok(Some(r)));
+    // No temp file of any name survives a successful write.
+    let leftovers: Vec<_> = std::fs::read_dir(&dir)
+        .expect("dir")
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
+        .collect();
     assert!(
-        !path.with_extension("json.tmp").exists(),
-        "the temp file must be renamed away, not left beside the receipt"
+        leftovers.is_empty(),
+        "temp files left beside the receipt: {leftovers:?}"
     );
 
     // Corrupt it: that is Err, and it names the file.
@@ -218,4 +224,37 @@ fn model_sha256_is_the_real_sha256_lowercase_hex() {
 fn apr_version_is_this_crates_version() {
     assert_eq!(apr_version(), env!("CARGO_PKG_VERSION"));
     assert!(!apr_version().is_empty());
+}
+
+#[test]
+fn two_writers_on_one_model_each_rename_a_whole_file() {
+    // The race lane 1 named: a shared `<sha>.json.tmp` let writer B truncate
+    // what writer A was about to rename. With per-writer temp names, whichever
+    // rename lands last, the receipt on disk is a COMPLETE receipt from one of
+    // them — never a partial. Exercised by racing threads through the same
+    // path many times and parsing the survivor every time.
+    let dir = std::env::temp_dir().join(format!("f2-receipt-race-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let k = key();
+    let path = receipt_path(&dir, &k.model_sha256);
+    let mut a = receipt_for(&k);
+    a.positions_judged = 11;
+    let mut b = receipt_for(&k);
+    b.positions_judged = 22;
+
+    for _ in 0..40 {
+        let (pa, pb, ra, rb) = (path.clone(), path.clone(), a.clone(), b.clone());
+        let ta = std::thread::spawn(move || write_receipt(&pa, &ra));
+        let tb = std::thread::spawn(move || write_receipt(&pb, &rb));
+        ta.join().expect("thread a").expect("write a");
+        tb.join().expect("thread b").expect("write b");
+        let survivor = read_receipt(&path)
+            .expect("the receipt must always parse")
+            .expect("the receipt must exist");
+        assert!(
+            survivor == a || survivor == b,
+            "the survivor is neither writer's whole receipt: {survivor:?}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
 }
