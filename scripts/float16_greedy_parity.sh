@@ -95,7 +95,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-command -v jq > /dev/null || die2 "jq is required (apr --json parsing and the receipt)"
+command -v jq > /dev/null || die2 "jq is required (it parses the pinned binary's --json output and writes the receipt)"
 
 release_mode() {
     local dir=${APR_MODELS_DIR:-$HOME/models}/parity worst=0 r model sha rc
@@ -203,7 +203,7 @@ for p in "${PROMPTS[@]}"; do
             verdict=FAIL; base_note=" (baseline apr differs too, at char $(first_diff "$base_text" "$a"))"; fi
     elif [ -n "$KNOWN_FROM" ]; then
         rec=$(jq -r --arg p "$p" '[.prompts[] | select(.prompt == $p and .verdict == "KNOWN")][0].apr_text // empty' "$KNOWN_FROM")
-        if [ -n "$rec" ] && [ "$rec" = "$a" ]; then verdict=KNOWN; base_note=" (apr text identical to the receipt's KNOWN row)"
+        if [ -n "$rec" ] && [ "$rec" = "$a" ]; then verdict=KNOWN; base_note=" (the pinned binary's text is identical to the receipt's KNOWN row)"
         elif [ -n "$rec" ]; then verdict=FAIL; base_note=" (receipt KNOWN, but apr's text moved at char $(first_diff "$rec" "$a"))"
         else verdict=FAIL; base_note=" (not KNOWN in the receipt)"; fi
     else
