@@ -14,4 +14,4 @@
   estimated_effort: null
   labels:
   - kind:code
-  notes: null
+  notes: 'SCOPE, transcribed from issue #3347 "Ask" — this row is the second and third bullets; the first bullet (write the six implementation bindings) was #3348 / roadmap PMAT-3347 and is out of scope here. Verbatim from the issue: (2) "Make the --table L2 column read the actual obligation<->test link rather than an index comparison" — the issue states the defect as: obligation_matrix.rs computes l2_tested as idx < falsification_tests.len(), so obligations showed an L2 tick before any test existed; a column that ticks on a count, not on a link, cannot report coverage. (3) "Make single-file pv lint --strict-test-binding resolve its scan root to the repo, or refuse the single-file form instead of reporting a false negative" — the issue states the defect as: it sets the scan root to the contract''s parent, contracts/, which contains no crates/, so no ref can resolve and an already-bound control contract fails identically. Either resolution named in the issue satisfies (3). No count of obligations, tests or contracts is a criterion.'
