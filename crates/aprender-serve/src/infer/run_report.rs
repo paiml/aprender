@@ -289,6 +289,43 @@ mod tests {
         assert_eq!(report.finish_reason, Some(FinishReason::Stop));
     }
 
+    /// done_when 1's case row: a fixed TEXT prompt through the GGUF's own
+    /// tokenizer, the path `apr run --prompt` takes. The expected ids are derived
+    /// by hand from the vocabulary, not from apr's encoder: under a SentencePiece
+    /// vocabulary that holds `▁Hello`, `▁world` and `!` whole, "Hello world!" is
+    /// `<s> ▁Hello ▁world !`, so a conforming tokenizer feeds 4 tokens.
+    #[test]
+    fn a_fixed_text_prompt_counts_the_tokens_the_tokenizer_feeds() {
+        use std::io::Write;
+        let mut vocab: Vec<String> = ["<unk>", "<s>", "</s>", "▁Hello", "▁world", "!"]
+            .map(String::from)
+            .to_vec();
+        vocab.extend((vocab.len()..32).map(|i| format!("<filler_{i}>")));
+        let pieces: Vec<&str> = vocab.iter().map(String::as_str).collect();
+        let bytes = crate::gguf::test_factory::build_executable_pygmy_gguf_with(|b| {
+            b.add_string("tokenizer.ggml.model", "llama")
+                .add_string_array("tokenizer.ggml.tokens", &pieces)
+                .add_u32("tokenizer.ggml.bos_token_id", 1)
+                .add_u32("tokenizer.ggml.eos_token_id", 2)
+        });
+        let mut file = tempfile::NamedTempFile::with_suffix(".gguf").expect("temp gguf");
+        file.write_all(&bytes).expect("write gguf");
+        file.flush().expect("flush gguf");
+
+        let config = super::super::InferenceConfig::new(file.path())
+            .with_prompt("Hello world!")
+            .with_max_tokens(2)
+            .without_gpu();
+        let (result, report) = super::super::run_inference_report(&config).expect("run");
+        assert_eq!(
+            result.tokens.get(..4),
+            Some(&[1, 3, 4, 5][..]),
+            "the prompt must be fed as <s> ▁Hello ▁world !"
+        );
+        assert_eq!(result.input_token_count, 4, "prompt_tokens is what was fed");
+        assert_eq!(report.context_length, Some(PYGMY_CONTEXT));
+    }
+
     /// A prompt that does not fit is refused, never cut to fit: done_when 3's
     /// "or an error".
     #[test]
