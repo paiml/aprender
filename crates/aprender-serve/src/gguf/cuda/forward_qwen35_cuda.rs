@@ -262,6 +262,24 @@ pub struct Qwen35CudaModel<'a> {
     max_seq_len: usize,
 }
 
+/// Why a projection cannot go on the GPU, stated so the user can act on it
+/// (#3595 done_when 3): which tensor, which dtype by NAME, and what to use
+/// instead.
+///
+/// It used to say only "GGML type 1 has no verified GPU GEMV kernel". Unsloth's
+/// dynamic `UD-Q4_K_XL` keeps sensitive tensors (`ssm_alpha`, …) at F16, so its
+/// upload is correctly refused — and the one useful fact, that a plain `Q4_K_M`
+/// build uploads whole, was nowhere in the message.
+fn no_gemv_kernel_reason(name: &str, ggml_type: u32) -> String {
+    let dtype = trueno_quant::GgmlType::from_id(ggml_type)
+        .map_or("an unknown type", trueno_quant::GgmlType::as_str);
+    format!(
+        "'{name}' is {dtype} (GGML type {ggml_type}), which has no verified GPU GEMV kernel — \
+         the file is fine and runs on the CPU; a Q4_K_M build of this model keeps every \
+         projection in a GPU-eligible type"
+    )
+}
+
 /// Map a GPU error into the crate error type with the operation that raised it.
 fn gpu_err(operation: &str, e: &trueno_gpu::GpuError) -> RealizarError {
     RealizarError::UnsupportedOperation {
@@ -281,10 +299,7 @@ impl<'a> Qwen35CudaModel<'a> {
         let qtype = WeightQuantType::from_ggml_type(tensor.qtype).ok_or_else(|| {
             RealizarError::UnsupportedOperation {
                 operation: "qwen35_cuda_upload".to_string(),
-                reason: format!(
-                    "'{name}': GGML type {} has no verified GPU GEMV kernel",
-                    tensor.qtype
-                ),
+                reason: no_gemv_kernel_reason(name, tensor.qtype),
             }
         })?;
         if tensor.data.is_empty() {

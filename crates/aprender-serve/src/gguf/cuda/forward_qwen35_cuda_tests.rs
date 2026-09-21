@@ -1711,3 +1711,23 @@ fn qwen35_cuda_refuses_only_value_heads_that_do_not_group() {
     Qwen35CudaModel::check_head_grouping(dims(0, 16, 128, 128))
         .expect_err("zero key heads must be refused, not divided by");
 }
+
+/// #3595 done_when 3: the upload refusal names the tensor, the dtype BY NAME,
+/// and the build that would upload — one message with the actionable half.
+/// Pure: no device, no model file.
+#[test]
+fn qwen35_cuda_refusal_names_the_tensor_the_dtype_and_the_eligible_build() {
+    let msg = super::no_gemv_kernel_reason("qwen35.blk.0.ssm_alpha.weight", 1);
+    assert!(msg.contains("'qwen35.blk.0.ssm_alpha.weight'"), "{msg}");
+    assert!(
+        msg.contains("is F16 (GGML type 1)"),
+        "the dtype by name: {msg}"
+    );
+    assert!(msg.contains("Q4_K_M"), "what to use instead: {msg}");
+    // An id no ggml table knows is not given a plausible name.
+    let unknown = super::no_gemv_kernel_reason("t", 9999);
+    assert!(
+        unknown.contains("is an unknown type (GGML type 9999)"),
+        "{unknown}"
+    );
+}
