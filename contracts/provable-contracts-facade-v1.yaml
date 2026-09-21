@@ -87,55 +87,68 @@ equations:
       - "Being outside the workspace means `cargo set-version` does not reach these manifests, so the upstream version pin is checked separately"
 
 proof_obligations:
-  - type: invariant
+  - id: PCF-INV-001
+    type: invariant
     property: "Code written against provable-contracts 0.3.1 still compiles against the facade"
     formal: "cargo check --workspace --all-targets in crates/facades exits 0"
     applies_to: old_consumer_code_still_compiles
-  - type: invariant
+  - id: PCF-INV-002
+    type: invariant
     property: "The compile gate demonstrably turns RED"
     formal: "With --features __facade_probe_mutant, naming an unexported item, the build exits non-zero"
     applies_to: old_consumer_code_still_compiles
-  - type: invariant
+  - id: PCF-INV-003
+    type: invariant
     property: "The compat corpus is not vacuous"
     formal: "The guard fails when fewer than 27 example targets are wired"
     applies_to: old_consumer_code_still_compiles
-  - type: invariant
+  - id: PCF-INV-004
+    type: invariant
     property: "All five 0.3.1 attribute macros expand through the macros facade"
     formal: "cargo test -p provable-contracts-macros --test compat_invoke exits 0"
     applies_to: proc_macros_still_expand_through_the_facade
-  - type: invariant
+  - id: PCF-INV-005
+    type: invariant
     property: "The CLI facade ships no binary at all"
     formal: "`cargo build -p provable-contracts-cli --bin pv` fails with 'no bin target named `pv`'"
     applies_to: the_cli_facade_ships_no_binary_and_signposts_the_replacement
-  - type: invariant
+  - id: PCF-INV-006
+    type: invariant
     property: "A failed install is signposted rather than a dead end"
     formal: "Cargo.toml, README.md, src/lib.rs and build.rs each name `cargo install aprender-contracts-cli` and `apr pv`, and the lib carries a #[deprecated] item"
     applies_to: the_cli_facade_ships_no_binary_and_signposts_the_replacement
-  - type: invariant
+  - id: PCF-INV-007
+    type: invariant
     property: "The routes the signpost names actually exist"
     formal: "aprender-contracts-cli declares [[bin]] name = 'pv' and crates/apr-cli declares the `Pv` subcommand"
     applies_to: the_cli_facade_ships_no_binary_and_signposts_the_replacement
-  - type: invariant
+  - id: PCF-INV-008
+    type: invariant
     property: "The signpost facade carries no dependency, so it is publishable at any point in the cascade"
     formal: "scripts/check_facade_compat.sh row R3 (SIGNPOST arm) reports no upstream dependency"
     applies_to: the_signpost_facade_depends_on_nothing
-  - type: invariant
+  - id: PCF-INV-009
+    type: invariant
     property: "No bin name is claimed by two packages without declared intent"
     formal: "scripts/check_duplicate_bin_names.sh exits 0 over both workspaces"
     applies_to: no_two_crates_claim_one_bin_name
-  - type: invariant
+  - id: PCF-INV-010
+    type: invariant
     property: "The duplicate-bin scan cannot be inert: it must see the excluded facade workspace"
     formal: "Rows W1 and W2 FAIL when the facade metadata document is absent from the scan"
     applies_to: no_two_crates_claim_one_bin_name
-  - type: invariant
+  - id: PCF-INV-011
+    type: invariant
     property: "The facades keep the upstream lib names and stay out of the aprender workspace"
     formal: "scripts/check_facade_compat.sh structural rows R1 and R2 pass"
     applies_to: facade_cannot_collide_with_the_crate_it_fronts
-  - type: invariant
+  - id: PCF-INV-012
+    type: invariant
     property: "The upstream version pin cannot drift silently past a release"
     formal: "Each facade requires its upstream at exactly the aprender workspace version"
     applies_to: facade_cannot_collide_with_the_crate_it_fronts
-  - type: invariant
+  - id: PCF-INV-013
+    type: invariant
     property: "The guard is enforced per-PR, not merely present"
     formal: "ci.yml invokes the guard in a job that `gate` depends on"
     applies_to: old_consumer_code_still_compiles

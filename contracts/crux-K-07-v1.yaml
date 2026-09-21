@@ -202,13 +202,17 @@ falsification_tests:
 
   if_fails: rule 'parity with vLLM metric shape' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: invariant
+- id: CK0A322-INV-001
+  type: invariant
   property: "/metrics response is valid Prometheus text format v0.0.4 (promtool lint clean)"
-- type: invariant
+- id: CK0A322-INV-002
+  type: invariant
   property: "MUST_EXPORT metric set is fully present with correct TYPE declarations"
-- type: invariant
+- id: CK0A322-INV-003
+  type: invariant
   property: "Counter metrics are monotone non-decreasing across scrapes"
-- type: equivalence
+- id: CK0A322-EQ-004
+  type: equivalence
   property: "apr /metrics output passes the same prometheus/promtool linter that accepts vLLM /metrics"
 
 verification_summary:

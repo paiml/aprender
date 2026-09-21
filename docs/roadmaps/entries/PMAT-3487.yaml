@@ -1,0 +1,25 @@
+- id: PMAT-3487
+  github_issue: 3487
+  item_type: task
+  title: 'ONT-4: typed relations — a contract''s relations: block (refines · supersedes · contradicts · depends_on) is a gate: role in Σ with Contract→Contract domain/range, every target resolves, acyclic roles have no cycle, contradicts is symmetric; pv lint --gate relations, armed; Σ gains supersedes and contradicts naming this gate as reader (R-11); legacy metadata.depends_on measured as legacy_unresolved_depends_on and ratcheted, never rewritten (R-5); relations_n==0 → Unknown{NoRelations} (R-2)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-18T15:04:36Z
+  updated: 2026-09-18T15:04:36Z
+  spec: null
+  acceptance_criteria:
+  - '`pv lint contracts/ --gate relations --format json` is Pass at exit 0 on the real corpus with relations_n=3 (the ONT-001 §5 ONT-4 probe''s predicate); `pv lint contracts/` (all gates, relations armed) is Pass at exit 0.'
+  - 'Σ declares supersedes (acyclic) and contradicts (symmetric), both Contract→Contract, and readers.roles names lint/relations_gate.rs.'
+  - 'tests/fixtures/ont/relations-{ok,dangling,cycle,domain,malformed,legacy,legacy-rise} each witness one rule: 4 relations accepted with contradicts read both ways (relations_n=5); dangling → PV-ONT-008 naming contract, role, target; a→b→c→a → PV-ONT-009 naming the path; binds in relations → PV-ONT-006; undeclared role + non-list → PV-ONT-005 + 007; legacy hold passes, rise → PV-ONT-010; sigma-ok (no typed relation) → exit 2 decline.'
+  - 'metadata.depends_on is NOT rewritten: 354 legacy edges counted, 8 unresolved recorded as ont.legacy_unresolved_depends_on in lint-baseline.json and ratcheted shrink-only.'
+  - 'Two mutations each turn a test RED: the acyclic check skipped (the cycle test), the symmetric closure dropped (the four-relations test).'
+  - 'cargo test -p aprender-contracts --lib (1588) and -p aprender-contracts-cli (260) pass; clippy -D warnings clean on both crates; make contracts green; census regenerated (1795) and the README count synced.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null

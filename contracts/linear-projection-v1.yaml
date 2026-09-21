@@ -30,23 +30,28 @@ equations:
     - b.len() > 0
     lean_theorem: Theorems.Linear_No_Bias
 proof_obligations:
-- type: bound
+- id: LP127A-BND-001
+  type: bound
   property: Output shape correctness
   formal: y.shape = (batch, d_out) for x.shape = (batch, d_in), W.shape = (d_out, d_in)
   applies_to: all
-- type: linearity
+- id: LP127A-LIN-002
+  type: linearity
   property: Homogeneity without bias
   formal: linear_no_bias(alpha * x, W) = alpha * linear_no_bias(x, W)
   applies_to: all
-- type: invariant
+- id: LP127A-INV-003
+  type: invariant
   property: Bias additivity
   formal: linear_forward(x, W, b) = linear_no_bias(x, W) + b (broadcast)
   applies_to: all
-- type: invariant
+- id: LP127A-INV-004
+  type: invariant
   property: Zero input produces bias
   formal: linear_forward(0, W, b) = b (broadcast to batch)
   applies_to: all
-- type: equivalence
+- id: LP127A-EQ-005
+  type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 4.0
   applies_to: simd

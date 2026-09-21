@@ -125,13 +125,17 @@ falsification_tests:
   if_fails: "Reference policy mutated during DPO — violates DPO paper §3"
 
 proof_obligations:
-- type: invariant
+- id: CD02F45-INV-001
+  type: invariant
   property: "Preference dataset schema {prompt, chosen, rejected} validated before training begins"
-- type: invariant
+- id: CD02F45-INV-002
+  type: invariant
   property: "Reference policy π_ref parameters frozen (zero gradient updates) throughout training"
-- type: invariant
+- id: CD02F45-INV-003
+  type: invariant
   property: "Implicit reward r_θ(x, y_chosen) > r_θ(x, y_rejected) on ≥90% held-out pairs after training"
-- type: invariant
+- id: CD02F45-INV-004
+  type: invariant
   property: "KL divergence KL(π_θ || π_ref) logged per step and bounded by β"
 
 verification_summary:

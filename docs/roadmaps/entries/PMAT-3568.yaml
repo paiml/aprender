@@ -1,0 +1,16 @@
+- id: PMAT-3568
+  github_issue: 3568
+  item_type: task
+  title: Schema-constrained decoding in apr (--json-schema or grammar) — thre
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T10:27:59Z
+  updated: 2026-09-20T10:27:59Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

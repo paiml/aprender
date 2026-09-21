@@ -61,15 +61,18 @@ equations:
     - 'rank is the planner-selected or user-overridden LoRA rank'
 
 proof_obligations:
-- type: invariant
+- id: QRAL-INV-001
+  type: invariant
   property: auto-selected learning rate is convergent at high ranks
   formal: 'rank >= 128 ⇒ recommended_learning_rate(m, rank) <= 5e-5'
   applies_to: rank_aware_lr
-- type: invariant
+- id: QRAL-INV-002
+  type: invariant
   property: never hotter than the classic default and monotonic in rank
   formal: '∀ r: 0 < lr(r) <= 2e-4 ∧ (r1 < r2 ⇒ lr(r1) >= lr(r2))'
   applies_to: rank_aware_lr
-- type: invariant
+- id: QRAL-INV-003
+  type: invariant
   property: optimize() populates the rank-aware lr end to end
   formal: 'optimize().learning_rate == recommended_learning_rate(method, rank)'
   applies_to: rank_aware_lr

@@ -98,19 +98,23 @@ equations:
     postconditions:
       - "the run prints base, merge and recorded tool versions"
 proof_obligations:
-  - type: invariant
+  - id: RVD-INV-001
+    type: invariant
     property: The verdict reads no comparand from the working tree
     formal: "forall c: inputs(V_c) intersect working_tree_paths = {}"
     applies_to: verdict_is_a_function_of_two_revisions
-  - type: invariant
+  - id: RVD-INV-002
+    type: invariant
     property: No lower bound
     formal: "forall c: M_c(merge) < M_c(base) -> V_c = GREEN"
     applies_to: polarity_has_no_lower_bound
-  - type: frame
+  - id: RVD-FRM-003
+    type: frame
     property: An unmeasured comparand is RED, before the measurement
     formal: "unresolvable(base_ref) -> V_c = RED and measured(c) = false"
     applies_to: fail_closed_on_the_comparand
-  - type: invariant
+  - id: RVD-INV-004
+    type: invariant
     property: One instrument across both revisions
     formal: "version(M_c(base)) != version(M_c(merge)) -> V_c = RED"
     applies_to: one_resolver_one_instrument

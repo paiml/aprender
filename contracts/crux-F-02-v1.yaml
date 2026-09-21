@@ -112,13 +112,17 @@ falsification_tests:
   if_fails: "apr trace layer count differs from torch.fx symbolic_trace node count"
 
 proof_obligations:
-- type: invariant
+- id: CF0CA6C-INV-001
+  type: invariant
   property: "layers[] index monotonically increasing from 0 to num_layers-1"
-- type: invariant
+- id: CF0CA6C-INV-002
+  type: invariant
   property: "sum of per-layer params equals model total_params exactly"
-- type: invariant
+- id: CF0CA6C-INV-003
+  type: invariant
   property: "adjacent layer shapes consistent (output_shape[i] == input_shape[i+1])"
-- type: equivalence
+- id: CF0CA6C-EQ-004
+  type: equivalence
   property: "apr trace --layers matches PyTorch torch.fx.symbolic_trace(model).graph layer enumeration on equivalent model"
 
 # References:

@@ -368,15 +368,18 @@ equations:
     - shapes match architecture config
     lean_theorem: Theorems.LoadCheckpoint
 proof_obligations:
-- type: roundtrip
+- id: ACDCDD-RT-001
+  type: roundtrip
   property: Checkpoint save/load roundtrip
   formal: load(save(model)) == model for all finite models
   applies_to: all
-- type: invariant
+- id: ACDCDD-INV-002
+  type: invariant
   property: No NaN/Inf in persisted tensors
   formal: for all tensors t in checkpoint, t.is_finite()
   applies_to: all
-- type: postcondition
+- id: ACDCDD-POST-003
+  type: postcondition
   property: Atomic write safety
   formal: crash during save does not corrupt existing checkpoint
   applies_to: all

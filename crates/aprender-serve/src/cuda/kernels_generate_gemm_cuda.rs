@@ -226,6 +226,10 @@ impl CudaKernels {
             KernelType::PerHeadRmsNorm { head_dim, num_heads, epsilon } => {
                 PerHeadRmsNormKernel::new(*head_dim, *num_heads).with_epsilon(*epsilon).emit_ptx_for_target(target)
             },
+            // #3413 B: batched prefill variant — grid.y selects the sequence.
+            KernelType::BatchedPerHeadRmsNorm { head_dim, num_heads, batch, epsilon } => {
+                PerHeadRmsNormKernel::new(*head_dim, *num_heads).with_epsilon(*epsilon).with_batch(*batch).emit_ptx_for_target(target)
+            },
             // GH-143: BatchedFusedResidualRmsNormKernel only on x86_64
             #[cfg(target_arch = "x86_64")]
             KernelType::BatchedFusedResidualRmsNorm { hidden_size, batch_size, epsilon } => {
@@ -284,6 +288,53 @@ impl CudaKernels {
     fn generate_norm_rope_ptx(kernel_type: &KernelType, target: &str) -> Option<String> {
         Self::generate_rmsnorm_ptx(kernel_type, target)
             .or_else(|| Self::generate_rope_residual_ptx(kernel_type, target))
+            .or_else(|| Self::generate_gdn_ptx(kernel_type, target))
+    }
+
+    /// PMAT-3477 (#3090): PTX for the six Gated `DeltaNet` kernels.
+    ///
+    /// Its own function rather than an arm of `generate_rmsnorm_ptx` so neither
+    /// match grows past the complexity ceiling.
+    fn generate_gdn_ptx(kernel_type: &KernelType, target: &str) -> Option<String> {
+        use trueno_gpu::kernels::gdn::{
+            CausalConv1dSiluKernel, DecodeAttention256Kernel, DeltaRuleRecurrenceKernel,
+            GatedRmsNormKernel, GdnGatesKernel, PartialNeoxRopeKernel, PerHeadL2NormKernel,
+            SigmoidGateKernel, SplitInterleavedKernel,
+        };
+        let ptx = match kernel_type {
+            KernelType::GdnCausalConv1dSilu { channels, kernel_size } => {
+                CausalConv1dSiluKernel::new(*channels, *kernel_size).emit_ptx_for_target(target)
+            },
+            KernelType::GdnPerHeadL2Norm { head_dim, num_heads, epsilon } => {
+                PerHeadL2NormKernel::new(*head_dim, *num_heads, *epsilon).emit_ptx_for_target(target)
+            },
+            KernelType::GdnGates { num_heads } => {
+                GdnGatesKernel::new(*num_heads).emit_ptx_for_target(target)
+            },
+            KernelType::GdnDeltaRule { num_v_heads, head_v_dim, num_k_heads, head_k_dim } => {
+                DeltaRuleRecurrenceKernel::new(*num_k_heads, *head_k_dim, *num_v_heads, *head_v_dim)
+                    .emit_ptx_for_target(target)
+            },
+            KernelType::GdnGatedRmsNorm { head_dim, num_heads, epsilon } => {
+                GatedRmsNormKernel::new(*head_dim, *num_heads, *epsilon).emit_ptx_for_target(target)
+            },
+            KernelType::GdnSigmoidGate { n } => {
+                SigmoidGateKernel::new(*n).emit_ptx_for_target(target)
+            },
+            KernelType::GdnSplitInterleaved { num_heads, head_dim } => {
+                SplitInterleavedKernel::new(*num_heads, *head_dim).emit_ptx_for_target(target)
+            },
+            KernelType::GdnPartialNeoxRope { num_heads, head_dim, n_rot } => {
+                PartialNeoxRopeKernel::new(*num_heads, *head_dim, *n_rot)
+                    .emit_ptx_for_target(target)
+            },
+            KernelType::GdnDecodeAttention { num_heads, num_kv_heads, head_dim } => {
+                DecodeAttention256Kernel::new(*num_heads, *num_kv_heads, *head_dim)
+                    .emit_ptx_for_target(target)
+            },
+            _ => return None,
+        };
+        Some(ptx)
     }
 
     /// Generate PTX for activation, fusion, and miscellaneous kernels

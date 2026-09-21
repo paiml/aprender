@@ -137,15 +137,19 @@ falsification_tests:
   if_fails: "exported GGUF vocab size does not match source tokenizer"
 
 proof_obligations:
-- type: equivalence
+- id: CB0-EQ-001
+  type: equivalence
   property: "apr export --format gguf matches llama.cpp convert_hf_to_gguf.py tokenizer schema and greedy decode"
   competitor_function: "convert_hf_to_gguf.py / gguf.GGUFWriter"
   reference: "https://github.com/ggerganov/llama.cpp/blob/master/convert_hf_to_gguf.py"
-- type: invariant
+- id: CB0-INV-002
+  type: invariant
   property: "All tokenizer.ggml.* required fields present in exported GGUF"
-- type: invariant
+- id: CB0-INV-003
+  type: invariant
   property: "Greedy decode (temp=0, seed=0) produces identical token sequence across apr-GGUF and llama.cpp-GGUF"
-- type: invariant
+- id: CB0-INV-004
+  type: invariant
   property: "Vocab size preserved; BPE merges preserved for BPE tokenizers"
 
 verification_summary:

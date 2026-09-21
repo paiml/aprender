@@ -32,19 +32,23 @@ equations:
       - "Catches: GH-190 GGUF→APR conversion garbage"
 
 proof_obligations:
-  - type: soundness
+  - id: GO-SND-001
+    type: soundness
     property: "No false positives on valid output"
     formal: "forall output in ValidModelOutput: not garbage(output)"
     applies_to: all
-  - type: invariant
+  - id: GO-INV-002
+    type: invariant
     property: "LAYOUT-002 detection"
     formal: "layout_violation(model) implies garbage(inference(model))"
     applies_to: all
-  - type: invariant
+  - id: GO-INV-003
+    type: invariant
     property: "Five garbage detectors"
     formal: "garbage = empty OR control_chars OR nan_inf OR repetitive OR replacement_char"
     applies_to: all
-  - type: invariant
+  - id: GO-INV-004
+    type: invariant
     property: "Empty or whitespace-only output is garbage"
     formal: "trim(output).is_empty() implies garbage(output) = true"
     applies_to: all

@@ -102,16 +102,19 @@ equations:
       qwen_intermediate: 8960
 
 proof_obligations:
-- type: equivalence
+- id: NFGUS-EQ-001
+  type: equivalence
   property: Fused FFN matches separate RMSNorm + Gate + Up + SwiGLU
   formal: '|fused(x) - separate(x)| < ε element-wise'
   tolerance: 1.0e-4
   applies_to: all
-- type: bound
+- id: NFGUS-BND-002
+  type: bound
   property: Reduces kernel launches from 4 to 1 per FFN block
   formal: kernel_count(fused) == 1 AND kernel_count(separate) == 4
   applies_to: all
-- type: bound
+- id: NFGUS-BND-003
+  type: bound
   property: Memory bandwidth savings >= 100 KB per FFN at Qwen 1.5B dimensions
   formal: bw_saved >= 100 * 1024 bytes
   applies_to: fused_rmsnorm_gate_up_swiglu_nf4

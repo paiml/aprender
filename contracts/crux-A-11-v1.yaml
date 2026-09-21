@@ -106,11 +106,14 @@ falsification_tests:
       `apr cp` runs (requires `stat -c %i` over the resolved blob
       paths on a live registry).
 proof_obligations:
-- type: equivalence
+- id: CA15DE2-EQ-001
+  type: equivalence
   property: "apr cp matches `ollama cp` — identical blob sharing semantics"
-- type: invariant
+- id: CA15DE2-INV-002
+  type: invariant
   property: "disk-usage delta ≤ 4 KiB per copy (manifest only)"
-- type: invariant
+- id: CA15DE2-INV-003
+  type: invariant
   property: "removing DST does not affect SRC readability"
 
 verification_summary:

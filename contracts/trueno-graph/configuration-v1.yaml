@@ -18,11 +18,13 @@ equations:
     - source ∈ V (source node exists in graph)
     lean_theorem: Theorems.BFS_Level_Map
 proof_obligations:
-- type: invariant
+- id: C9F8F-INV-001
+  type: invariant
   property: Unreachable nodes excluded
   formal: '∀ v not in reachable(source): v not in bfs(G, source)'
   applies_to: bfs
-- type: invariant
+- id: C9F8F-INV-002
+  type: invariant
   property: Result bounded by graph size
   formal: bfs(G, source).len() <= |V|
   applies_to: bfs

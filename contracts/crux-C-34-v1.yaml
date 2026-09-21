@@ -167,15 +167,20 @@ falsification_tests:
 
   if_fails: rule '503 during startup with status=loading' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: invariant
+- id: CC3F5B4-INV-001
+  type: invariant
   property: "GET /health returns {status ∈ {ok,loading,degraded}, model_loaded: bool, uptime_sec: float>0}"
-- type: invariant
+- id: CC3F5B4-INV-002
+  type: invariant
   property: "HTTP status 200 iff body.status=='ok'; 503 iff body.status ∈ {loading, degraded}"
-- type: invariant
+- id: CC3F5B4-INV-003
+  type: invariant
   property: "/health/live returns 200 once the HTTP port is bound (k8s liveness idiom)"
-- type: invariant
+- id: CC3F5B4-INV-004
+  type: invariant
   property: "/health/ready returns 200 iff status=='ok' AND model_loaded==true (k8s readiness idiom)"
-- type: invariant
+- id: CC3F5B4-INV-005
+  type: invariant
   property: "uptime_sec is strictly monotonically increasing and tracks wall-clock delta within 500ms"
 
 verification_summary:

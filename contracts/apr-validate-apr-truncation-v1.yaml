@@ -57,7 +57,8 @@ equations:
     - 'a truncated .apr exits non-zero for every flag combination of `apr validate` (default, --quality, --json, --skip-contract); an intact one is never described as truncated'
 
 proof_obligations:
-  - type: invariant
+  - id: AVAT-INV-001
+    type: invariant
     property: >
       OBLIG-APR-EXTENT-001: for every APR v2 container,
       `data_offset + max(entry.offset + align_64(entry.size)) <= file_length`.
@@ -72,7 +73,8 @@ proof_obligations:
       bound left up to 63 further bytes of the tail undetected — measured 60 on
       `whisper.apr/models/tiny-int8.apr` and 36 on the in-tree
       `crates/apr-format/tests/fixtures/golden_v2.apr`.
-  - type: invariant
+  - id: AVAT-INV-002
+    type: invariant
     property: >
       OBLIG-APR-RESIDUAL-005 (DISCLOSED RESIDUAL, not a closed gap): the extent
       deliberately STOPS SHORT of the 4-byte CRC32 footer, so a `.apr` truncated by
@@ -87,7 +89,8 @@ proof_obligations:
       footerless files are precisely why check 4 cannot simply be switched on.
       `footer_only_truncation_is_the_disclosed_residual` PINS the residual at
       exactly 4 bytes so it can neither widen nor silently close unnoticed.
-  - type: invariant
+  - id: AVAT-INV-003
+    type: invariant
     property: >
       OBLIG-APR-CHECK5-002: `AprValidator` check 5 ("Data section within file") is
       Fail when the declared extent exceeds the file length, naming the actual
@@ -96,7 +99,8 @@ proof_obligations:
       buffer that is not an APR v2 container, so the GGUF path — which enforces its
       own truncation gate — is untouched. No false positive: an intact `.apr`
       written by `AprV2Writer` passes.
-  - type: invariant
+  - id: AVAT-INV-004
+    type: invariant
     property: >
       OBLIG-APR-EXIT-003: `apr validate` on a truncated `.apr` exits non-zero
       (`CliError::ValidationFailed`) and the message names the truncation, on every
@@ -106,7 +110,8 @@ proof_obligations:
       surviving exit-0 hole: before the fix `--skip-contract` returned Ok(()) from
       `gate_apr_content` on its first line, so a 95%-truncated `.apr` validated
       clean regardless of what its tensors decoded to.
-  - type: invariant
+  - id: AVAT-INV-005
+    type: invariant
     property: >
       OBLIG-APR-SCOPE-004: the fix implements check 5 only. Checks 6-25 remain
       `Skip("Not implemented")` and are asserted to still be 20 stubs, so a later

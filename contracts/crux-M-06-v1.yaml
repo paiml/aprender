@@ -128,13 +128,17 @@ falsification_tests:
   if_fails: "Gate-6 non-deterministic — same config, different verdict (violates Jidoka)"
 
 proof_obligations:
-- type: invariant
+- id: CM072AA-INV-001
+  type: invariant
   property: "apr render byte-equal to HF apply_chat_template for every fixture"
-- type: invariant
+- id: CM072AA-INV-002
+  type: invariant
   property: "Tool-call path covered by at least 1 fixture (non-zero tools)"
-- type: invariant
+- id: CM072AA-INV-003
+  type: invariant
   property: "Exit code aligns with status; determinism across runs"
-- type: equivalence
+- id: CM072AA-EQ-004
+  type: equivalence
   property: "apr qa --gate chat-template  ≅  apr-model-qa-playbook Gate-6 (chat-template byte parity)"
 
 verification_summary:

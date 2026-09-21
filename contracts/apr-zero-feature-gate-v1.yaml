@@ -112,13 +112,17 @@ falsification_tests:
   if_fails: "default features missing inference or training"
 
 proof_obligations:
-- type: invariant
+- id: AZFG-INV-001
+  type: invariant
   property: "all commands work after cargo install aprender"
-- type: invariant
+- id: AZFG-INV-002
+  type: invariant
   property: "GPU auto-detected at runtime, graceful CPU fallback"
-- type: invariant
+- id: AZFG-INV-003
+  type: invariant
   property: "no feature-gate errors in any command output"
-- type: invariant
+- id: AZFG-INV-004
+  type: invariant
   property: "default features include inference + training"
 
 verification_summary:

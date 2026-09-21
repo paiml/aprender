@@ -71,11 +71,14 @@ falsification_tests:
   if_fails: rule 'the advertised export stub is resolved' is violated — the burn parity claim for CRUX-N-06 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
 
 proof_obligations:
-- type: invariant
+- id: CN07F8E-INV-001
+  type: invariant
   property: "unsupported operators fail loudly and by name"
-- type: invariant
+- id: CN07F8E-INV-002
+  type: invariant
   property: "per-op parity against onnxruntime"
-- type: invariant
+- id: CN07F8E-INV-003
+  type: invariant
   property: "the advertised export stub is resolved"
 
 kani_harnesses:

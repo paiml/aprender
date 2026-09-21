@@ -87,11 +87,14 @@ falsification_tests:
 
   if_fails: rule 'vsix build is reproducible' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CK1B0FE-EQ-001
+  type: equivalence
   property: "apr ext scaffold vscode emits valid package.json per VSCode Extension API"
-- type: invariant
+- id: CK1B0FE-INV-002
+  type: invariant
   property: "commands ⊆ activationEvents (no orphan commands)"
-- type: invariant
+- id: CK1B0FE-INV-003
+  type: invariant
   property: "vsix build is reproducible"
 
 verification_summary:

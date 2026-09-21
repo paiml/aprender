@@ -66,11 +66,14 @@ falsification_tests:
   if_fails: rule 'tensor migration is output-preserving' is violated — the burn parity claim for CRUX-N-17 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
 
 proof_obligations:
-- type: invariant
+- id: CN1BE24-INV-001
+  type: invariant
   property: "NMS matches torchvision exactly"
-- type: invariant
+- id: CN1BE24-INV-002
+  type: invariant
   property: "the GPU connected-components path labels identically to CPU"
-- type: invariant
+- id: CN1BE24-INV-003
+  type: invariant
   property: "tensor migration is output-preserving"
 
 kani_harnesses:

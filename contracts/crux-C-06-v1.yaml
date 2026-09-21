@@ -171,13 +171,17 @@ falsification_tests:
   if_fails: "Requests only admitted at batch boundaries (static batching, not continuous)"
 
 proof_obligations:
-- type: invariant
+- id: CC0EC29-INV-001
+  type: invariant
   property: "16-concurrent speedup > 1.5x over serial"
-- type: invariant
+- id: CC0EC29-INV-002
+  type: invariant
   property: "TTFT(short) <= 2x baseline when co-scheduled with long request"
-- type: invariant
+- id: CC0EC29-INV-003
+  type: invariant
   property: "apr_running_requests gauge exceeds 1 under concurrent load"
-- type: invariant
+- id: CC0EC29-INV-004
+  type: invariant
   property: "Late requests admitted mid-generation (continuous, not static, batching)"
 
 verification_summary:

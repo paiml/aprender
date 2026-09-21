@@ -299,6 +299,37 @@ mod tests {
         assert!(check_capability(&required, &supported).is_ok());
     }
 
+    /// #3477 (operator ruling 2026-09-19): the capability gate must ADMIT the
+    /// Qwen3.5 hybrid now that `Qwen35CudaModel` gives it a GPU forward (#3090).
+    ///
+    /// `ArchConstraints` declares no Gated DeltaNet operation — the struct has
+    /// no field for one, and the qwen3_5 row is an ordinary
+    /// RoPE/RMSNorm/SwiGLU/no-QK-norm row — so `required_ops` derives only ops
+    /// `gpu_supported_ops` already contains. That is why `check_gpu_capability`
+    /// admits this architecture without a new `RequiredOp`: the discriminator
+    /// for "can the GPU run the hybrid layers" is the hybrid forward's own
+    /// existence (`gguf::hybrid_forward_handles`), not this op set. This test
+    /// pins the admission so a future op added to the qwen3_5 row cannot
+    /// silently re-refuse it.
+    #[test]
+    fn qwen35_hybrid_is_admitted_by_the_gpu_capability_gate() {
+        for arch in ["qwen35", "qwen3_5", "qwen3.5"] {
+            let constraints = ArchConstraints::from_architecture(arch);
+            let required = required_ops_for_model(&constraints, arch);
+            let supported = gpu_supported_ops();
+            assert!(
+                check_capability(&required, &supported).is_ok(),
+                "{arch}: the GPU forward exists (#3090) — the capability gate must not refuse it, \
+                 missing {:?}",
+                check_capability(&required, &supported)
+            );
+            assert!(
+                crate::gguf::hybrid_forward_handles("qwen35"),
+                "the runtime-dispatch predicate is what decides the hybrid layers"
+            );
+        }
+    }
+
     #[test]
     fn test_required_op_display() {
         assert_eq!(RequiredOp::QkNorm.to_string(), "QkNorm");

@@ -64,15 +64,18 @@ equations:
     - No token contains whitespace
     lean_theorem: Theorems.Tokenize_Normalization
 proof_obligations:
-- type: invariant
+- id: BDE972-INV-001
+  type: invariant
   property: BM25 score is non-negative
   formal: '∀ q, d: bm25(q, d) >= 0.0'
   applies_to: bm25_ranking
-- type: invariant
+- id: BDE972-INV-002
+  type: invariant
   property: Robots.txt compliance
   formal: '∀ url, rules: disallow_match(url, rules) => !crawl(url)'
   applies_to: robots_compliance
-- type: invariant
+- id: BDE972-INV-003
+  type: invariant
   property: Index insert-retrieve round trip
   formal: '∀ doc: doc ∈ retrieve(insert(index, doc), terms(doc))'
   applies_to: index_insert_retrieve

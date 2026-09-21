@@ -76,11 +76,14 @@ falsification_tests:
 
   if_fails: rule 'byte-identical output across runs with same seed+tau+eta' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CC2CBAF-EQ-001
+  type: equivalence
   property: "apr run --sampler mirostat matches llama.cpp `--mirostat 2 --mirostat-tau --mirostat-eta` convergence"
-- type: invariant
+- id: CC2CBAF-INV-002
+  type: invariant
   property: "mean surprise over run converges to tau within ±0.1"
-- type: invariant
+- id: CC2CBAF-INV-003
+  type: invariant
   property: "deterministic given (seed, tau, eta, model, prompt)"
 
 verification_summary:

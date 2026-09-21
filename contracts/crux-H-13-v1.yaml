@@ -120,11 +120,14 @@ falsification_tests:
 
   if_fails: rule 'unsupported extension raises' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CH1A8CD-EQ-001
+  type: equivalence
   property: "apr dataset audio-inspect matches torchaudio.load return shape + dtype"
-- type: invariant
+- id: CH1A8CD-INV-002
+  type: invariant
   property: "waveform range + finite guarantees"
-- type: invariant
+- id: CH1A8CD-INV-003
+  type: invariant
   property: "unsupported format fails closed"
 
 verification_summary:

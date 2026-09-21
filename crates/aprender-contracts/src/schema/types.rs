@@ -101,6 +101,23 @@ pub struct Contract {
     /// Not serialized: it is a parse artifact, not contract content.
     #[serde(skip)]
     pub unknown_top_level_keys: Vec<String>,
+    /// Was `metadata.kind:` WRITTEN in the source YAML? (ONT-6b, infra#751)
+    ///
+    /// [`ContractKind`] derives `Default = Kernel` and `metadata.kind` carries
+    /// `#[serde(default)]`, so by the time anything can read [`Contract::kind`]
+    /// the difference between *declared kernel* and *defaulted to kernel* is
+    /// gone. 666 of this corpus's contracts declare no kind at all and are
+    /// judged by the kernel rules because of that default; until ONT-6b nothing
+    /// in `pv validate`'s output said so, and a kind-less file and the same
+    /// bytes with `kind: kernel` printed identically (measured 2026-09-19,
+    /// pv 0.68.1). The validator uses this to decorate the FIRST kernel-only
+    /// error the default caused — see `schema::validator::validate_contract`.
+    ///
+    /// Not serialized: like `unknown_top_level_keys`, it is a parse artifact.
+    /// `false` is the safe default for a `Contract` built in code rather than
+    /// parsed: it only ever adds an explanation to an error that already fired.
+    #[serde(skip)]
+    pub kind_declared: bool,
     /// The kaizen-record blocks (`contract:`, `kaizen:`, `baseline:`,
     /// `target:`, …) captured by a second parse pass when — and only when —
     /// `metadata.kind` is `kaizen`.

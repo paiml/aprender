@@ -79,23 +79,28 @@ equations:
     preconditions:
     - params.len() > 0
 proof_obligations:
-- type: invariant
+- id: LB-INV-001
+  type: invariant
   property: Descent direction
   formal: g_k^T * H_k * g_k > 0 (direction has negative dot with gradient)
   applies_to: all
-- type: invariant
+- id: LB-INV-002
+  type: invariant
   property: Curvature condition
   formal: y_k^T * s_k > 0 for all stored pairs
   applies_to: all
-- type: bound
+- id: LB-BND-003
+  type: bound
   property: History buffer bounded
   formal: Number of stored (s, y) pairs <= m
   applies_to: all
-- type: monotonicity
+- id: LB-MON-004
+  type: monotonicity
   property: Objective decrease
   formal: f(x_{k+1}) < f(x_k) when Wolfe conditions satisfied
   applies_to: all
-- type: equivalence
+- id: LB-EQ-005
+  type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd

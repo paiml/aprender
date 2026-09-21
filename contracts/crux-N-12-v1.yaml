@@ -70,11 +70,14 @@ falsification_tests:
   if_fails: rule 'the Kernel trait is genuinely shared with the SVM' is violated — the linfa parity claim for CRUX-N-12 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
 
 proof_obligations:
-- type: invariant
+- id: CN192DE-INV-001
+  type: invariant
   property: "kernel PCA separates concentric circles where linear PCA cannot"
-- type: monotonicity
+- id: CN192DE-MON-002
+  type: monotonicity
   property: "Nystroem error decreases monotonically in n_components"
-- type: invariant
+- id: CN192DE-INV-003
+  type: invariant
   property: "the Kernel trait is genuinely shared with the SVM"
 
 kani_harnesses:

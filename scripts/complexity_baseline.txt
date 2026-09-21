@@ -2,7 +2,7 @@
 # (cyclomatic > 30 or cognitive > 25), as "<path>::<function> <cyclomatic> <cognitive>".
 # SHRINK-ONLY. Regenerate with: bash scripts/check_complexity_ratchet.sh --update
 # Owner: scripts/check_complexity_ratchet.sh (PMAT-746).
-# tool_version=pmat 3.40.1
+# tool_version=pmat 3.41.1
 crates/apr-cli/examples/gpu_chat_inference.rs::run_chat_completion 11 33
 crates/apr-cli/src/commands/attn_parity_lint.rs::run 13 26
 crates/apr-cli/src/commands/attn_viz_classifier.rs::classify_causal_mask 8 29
@@ -30,7 +30,6 @@ crates/apr-cli/src/commands/oom_classifier.rs::classify_oom_schema 13 38
 crates/apr-cli/src/commands/otlp_classifier.rs::classify_genai_attributes 9 29
 crates/apr-cli/src/commands/otlp_classifier.rs::classify_trace_propagation 9 32
 crates/apr-cli/src/commands/otlp_lint.rs::run 13 28
-crates/apr-cli/src/commands/output_verification.rs::detect_gibberish 11 30
 crates/apr-cli/src/commands/pretrain.rs::drive_real 10 32
 crates/apr-cli/src/commands/pretrain.rs::run 15 29
 crates/apr-cli/src/commands/prometheus_classifier.rs::classify_text_format 10 50
@@ -101,7 +100,6 @@ crates/aprender-contracts-cli/src/commands/kaizen.rs::find_function_insertion_po
 crates/aprender-contracts-cli/src/commands/kaizen.rs::inject_call_sites 13 49
 crates/aprender-contracts-cli/src/commands/kaizen.rs::scan_call_sites 10 38
 crates/aprender-contracts-cli/src/commands/kaizen.rs::skip_early_returns 14 62
-crates/aprender-contracts-cli/src/commands/lint_render.rs::print_findings_grouped 15 36
 crates/aprender-contracts/src/build_helper.rs::scan_source_fns 12 43
 crates/aprender-contracts/src/codegen.rs::emit_invariant_macro 11 26
 crates/aprender-contracts/src/codegen.rs::emit_precondition_macro 22 71
@@ -114,8 +112,6 @@ crates/aprender-contracts/src/explain.rs::explain_contract_markdown 22 53
 crates/aprender-contracts/src/explain_render.rs::write_obligations 18 40
 crates/aprender-contracts/src/infer.rs::infer 10 28
 crates/aprender-contracts/src/kernels/f16_convert.rs::f32_to_f16_single 13 29
-crates/aprender-contracts/src/lint/gates_extended.rs::collect_test_fns 9 32
-crates/aprender-contracts/src/lint/gates_extended.rs::run_verify_gate 31 110
 crates/aprender-contracts/src/mirai_gen.rs::generate_mirai_annotations 13 27
 crates/aprender-contracts/src/reverse_coverage.rs::scan_file 19 54
 crates/aprender-contracts/src/scaffold/mod.rs::domain_to_params 19 43
@@ -498,7 +494,6 @@ crates/aprender-serve/src/gguf/inference/generate_scratch.rs::generate_with_cach
 crates/aprender-serve/src/gguf/inference/generate_scratch.rs::generate_with_scratch 13 31
 crates/aprender-serve/src/gguf/inference/generate_with.rs::generate_with_cache_adaptive 12 28
 crates/aprender-serve/src/gguf/inference/generate_with.rs::generate_with_scratch 13 31
-crates/aprender-serve/src/gguf/inference/matmul_fused.rs::fused_matmul 17 36
 crates/aprender-serve/src/gguf/metadata.rs::get_tensor_f32 15 66
 crates/aprender-serve/src/gguf/token.rs::decode 11 35
 crates/aprender-serve/src/gguf/token.rs::encode 22 60
@@ -509,7 +504,6 @@ crates/aprender-serve/src/grammar/mod.rs::validate 8 27
 crates/aprender-serve/src/infer/batch.rs::init_batch_model 15 51
 crates/aprender-serve/src/infer/gguf_gpu_generate.rs::try_apr_wgpu_inference 25 69
 crates/aprender-serve/src/infer/gguf_gpu_generate.rs::try_wgpu_generate 19 49
-crates/aprender-serve/src/infer/inference_result.rs::validate_gpu_first_token 12 29
 crates/aprender-serve/src/infer/qwen3_moe_generate.rs::run_qwen3_moe_generate_streaming 10 27
 crates/aprender-serve/src/infer/qwen3_moe_generate.rs::sample_from_logits 20 46
 crates/aprender-serve/src/inference_trace/execution_failure.rs::format_text 34 100
@@ -549,10 +543,6 @@ crates/aprender-sparse/src/bsr.rs::spmv 10 31
 crates/aprender-sparse/src/bsr.rs::to_csr 8 33
 crates/aprender-test-cli/src/handlers/build.rs::scan_files_recursive 8 26
 crates/aprender-test-cli/src/handlers/comply.rs::find_files_recursive 8 26
-crates/aprender-test-cli/src/handlers/llm.rs::execute_llm_experiment 16 36
-crates/aprender-test-cli/src/handlers/llm.rs::execute_llm_load 36 61
-crates/aprender-test-cli/src/handlers/llm.rs::execute_llm_score 40 91
-crates/aprender-test-cli/src/handlers/llm.rs::execute_llm_sweep 20 40
 crates/aprender-test-js-gen/src/codegen.rs::write_expr 22 96
 crates/aprender-test-js-gen/src/codegen.rs::write_stmt 11 45
 crates/aprender-test-lib/src/browser.rs::take_coverage 8 30
@@ -659,7 +649,6 @@ crates/aprender-verify-ml/src/ml/augmentation.rs::find_swappable_pairs 17 45
 crates/aprender-verify-ml/src/ml/augmentation.rs::replace_identifier 10 35
 crates/aprender-verify-ml/src/ml/rich_labeling.rs::classify 31 46
 crates/aprender-verify-ml/src/mutator/ast_mutator.rs::collect_names_recursive 7 35
-crates/aprender-viz/src/grammar/ggplot.rs::compute_data_ranges 12 31
 crates/aprender-viz/src/plots/confusion_matrix.rs::normalized_values 11 26
 crates/aprender-viz/src/plots/loss_curve.rs::render_best_markers 11 43
 crates/aprender-zram-core/src/lz4/compress.rs::compress_fast 16 42

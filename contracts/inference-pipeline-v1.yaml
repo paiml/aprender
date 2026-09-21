@@ -77,32 +77,39 @@ equations:
     - k.len() == v.len()
     lean_theorem: Theorems.Kv_Cache_Growth
 proof_obligations:
-- type: invariant
+- id: INF-INV-001
+  type: invariant
   property: Prefill output shape
   formal: shape(H_L) = [seq_len, d_model]
   applies_to: all
-- type: invariant
+- id: INF-INV-002
+  type: invariant
   property: Decode step output shape
   formal: shape(h_t) = [1, d_model]
   applies_to: all
-- type: invariant
+- id: INF-INV-003
+  type: invariant
   property: Residual dimension preservation
   formal: '∀l: shape(h_{l+1}) = shape(h_l)'
   applies_to: all
-- type: conservation
+- id: INF-CON-004
+  type: conservation
   property: Residual is pure addition
   formal: h_{l+1} - h_l = sublayer(norm(h_l))
   tolerance: 1.0e-06
   applies_to: all
-- type: invariant
+- id: INF-INV-005
+  type: invariant
   property: Layer schedule partition
   formal: '|A| + |L| = num_layers, A ∩ L = ∅'
   applies_to: all
-- type: monotonicity
+- id: INF-MON-006
+  type: monotonicity
   property: KV cache monotonically growing
   formal: t1 < t2 → cache_size(t1) < cache_size(t2)
   applies_to: all
-- type: bound
+- id: INF-BND-007
+  type: bound
   property: All activations finite
   formal: '∀l,t: is_finite(h_l(t))'
   applies_to: all

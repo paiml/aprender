@@ -1,0 +1,31 @@
+tree llama.cpp=d1d3c3396 host=mac-server start_utc=2026-09-15T22:36:01Z load=28.65 53.07 61.12
+bf56215b6b82e976628d99f2bccfea12113a6f5d956229ac6d2820b932be80ad  ggml_emul_fixtures.c
+5f087688edb479598854a25d40be70cdd9a32185e4c8416e29dbeb36a8eb99ea  /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libggml-cpu.so.0.24.0
+bddf9ff4e7923392c3a3be44f89d9d38c8009938e7c3403529c8913ef3841463  /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libggml-base.so.0.24.0
+harness build rc=0
+	libggml-cpu.so.0 => /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libggml-cpu.so.0 (0x00007e75140a1000)
+	libggml-base.so.0 => /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libggml-base.so.0 (0x00007e7513fd2000)
+fixtures rc=0
+b9a2a1c78a61d7e515c089b3d6e1ed1fe3333e6a94069656ccf0c890ee4ea9c4  fixtures_scalar.tsv
+030c4de06d25c4e7c51e1dacc9e444703e1b4918aa2f0c91823ddf74abea406b  fixtures_scalar.rs.txt
+68d3b532dc07486555208257b49e11ef7ecc1b6a6919765082cb80ca7bee7595  fixtures_scalar.bin
+sym ggml_vec_dot_q4_K_q8_K_generic lines=442 fma=0 ymm=0 calls=call   15e30 <__stack_chk_fail@plt>;
+sym ggml_vec_dot_q5_K_q8_K_generic lines=528 fma=0 ymm=0 calls=call   15e30 <__stack_chk_fail@plt>;
+sym ggml_vec_dot_q6_K_q8_K_generic lines=410 fma=0 ymm=0 calls=call   15e30 <__stack_chk_fail@plt>;
+sym ggml_vec_dot_q8_0_q8_0_generic lines=94 fma=0 ymm=0 calls=
+sym ggml_vec_dot_q4_K_q8_K lines=3 fma=0 ymm=0 calls=
+sym ggml_vec_dot_q8_0_q8_0 lines=94 fma=0 ymm=0 calls=
+sym quantize_row_q8_0 lines=3 fma=0 ymm=0 calls=
+sym quantize_row_q8_K_ref lines=670 fma=0 ymm=0 calls=
+sym quantize_row_q8_0_ref lines=89 fma=0 ymm=0 calls=call   19300 <roundf@plt>;
+lib libggml-cpu.so.0.24.0 insns=144981 ymm=0 zmm=0 fma=0 vex_v_mnemonics=0
+lib libggml-base.so.0.24.0 insns=134715 ymm=0 zmm=0 fma=0 vex_v_mnemonics=0
+lib libllama.so.0.4.1 insns=592228 ymm=0 zmm=0 fma=0 vex_v_mnemonics=0
+--- compile flags of ggml-cpu sources (compile_commands.json)
+ggml/src/ggml-cpu/ggml-cpu.c -DGGML_BACKEND_BUILD -DGGML_BACKEND_SHARED -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_OPENMP -O3 -fPIC -fopenmp -std=gnu11
+ggml/src/ggml-cpu/quants.c -DGGML_BACKEND_BUILD -DGGML_BACKEND_SHARED -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_OPENMP -O3 -fPIC -fopenmp -std=gnu11
+ggml/src/ggml-cpu/vec.cpp -DGGML_BACKEND_BUILD -DGGML_BACKEND_SHARED -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_OPENMP -O3 -fPIC -fopenmp -std=gnu++17
+ggml/src/ggml-cpu/ops.cpp -DGGML_BACKEND_BUILD -DGGML_BACKEND_SHARED -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_OPENMP -O3 -fPIC -fopenmp -std=gnu++17
+ggml/src/ggml-cpu/arch/x86/quants.c -DGGML_BACKEND_BUILD -DGGML_BACKEND_SHARED -DGGML_SCHED_MAX_COPIES=4 -DGGML_SHARED -DGGML_USE_OPENMP -O3 -fPIC -fopenmp -std=gnu11
+gcc default fp-contract (C, GNU mode):  -ffp-contract=[off|on|fast] 		fast
+end_utc=2026-09-15T22:36:11Z

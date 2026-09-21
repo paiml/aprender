@@ -66,7 +66,8 @@ equations:
     lean_theorem: Theorems.Running_Var_Ema
 
 proof_obligations:
-- type: invariant
+- id: BRS-INV-001
+  type: invariant
   property: Training forward updates running_mean toward the batch mean
   formal: |
     For a BatchNorm1d with momentum m and a fixed batch with per-feature mean
@@ -75,17 +76,20 @@ proof_obligations:
     In particular running_mean_c is NOT 0 (the buggy fixed point).
   tolerance: 1.0e-04
   applies_to: all
-- type: invariant
+- id: BRS-INV-002
+  type: invariant
   property: Training forward updates running_var off its init
   formal: |
     For a fixed batch with non-zero per-feature variance and N > 1: after one or
     more training-mode forwards, running_var_c differs from its init value 1.0.
   applies_to: all
-- type: bound
+- id: BRS-BND-003
+  type: bound
   property: Running variance stays non-negative
   formal: running_var_c >= 0 after any number of EMA updates when batch_var >= 0
   applies_to: all
-- type: equivalence
+- id: BRS-EQ-004
+  type: equivalence
   property: Eval mode freezes and uses running stats
   formal: |
     In eval mode BatchNorm1d normalizes with the current running_mean/running_var

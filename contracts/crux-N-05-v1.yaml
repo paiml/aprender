@@ -61,11 +61,14 @@ falsification_tests:
   if_fails: rule 'a CNN actually trains end to end' is violated — the burn parity claim for CRUX-N-05 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
 
 proof_obligations:
-- type: invariant
+- id: CN0AFBF-INV-001
+  type: invariant
   property: "every new op passes finite-difference gradcheck"
-- type: invariant
+- id: CN0AFBF-INV-002
+  type: invariant
   property: "embedding backward accumulates on repeated indices"
-- type: invariant
+- id: CN0AFBF-INV-003
+  type: invariant
   property: "a CNN actually trains end to end"
 
 kani_harnesses:

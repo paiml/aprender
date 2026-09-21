@@ -211,15 +211,18 @@ invariants:
 # =============================================================================
 
 proof_obligations:
-- type: bound
+- id: STR-BND-001
+  type: bound
   property: Token ID within vocab
   formal: token_id < vocab_size when token_id > 0
   applies_to: all
-- type: invariant
+- id: STR-INV-002
+  type: invariant
   property: Architecture mapping complete
   formal: all architecture_mapping values reference valid families
   applies_to: all
-- type: bound
+- id: STR-BND-003
+  type: bound
   property: OBLIG-SPECIAL-TOKEN-WITHIN-VOCAB
   formal: "for every present special-token id t in {eos, bos}: t < vocab_size, enforced at ValidatedModelConfig::validate (PMAT-908)"
   applies_to: all

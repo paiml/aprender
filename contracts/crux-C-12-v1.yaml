@@ -114,13 +114,17 @@ falsification_tests:
   if_fails: "non-image input silently accepted — likely segfault or garbage"
 
 proof_obligations:
-- type: equivalence
+- id: CC112DE-EQ-001
+  type: equivalence
   property: "temp=0.0 caption byte-identical to llama-llava-cli on golden image set"
-- type: invariant
+- id: CC112DE-INV-002
+  type: invariant
   property: "N_img_tokens ∈ {576, 729}; projection_dim == hidden_size enforced at load"
-- type: invariant
+- id: CC112DE-INV-003
+  type: invariant
   property: "image format validated; unsupported formats rejected before inference"
-- type: invariant
+- id: CC112DE-INV-004
+  type: invariant
   property: "--json output includes .prompt_tokens.image_token_count and .mmproj.sha256"
 
 verification_summary:

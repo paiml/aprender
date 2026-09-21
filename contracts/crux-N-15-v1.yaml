@@ -66,11 +66,14 @@ falsification_tests:
   if_fails: rule 'the DQN target network lags the online network' is violated — the burn parity claim for CRUX-N-15 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
 
 proof_obligations:
-- type: invariant
+- id: CN1E61E-INV-001
+  type: invariant
   property: "PPO learns where a random policy does not"
-- type: invariant
+- id: CN1E61E-INV-002
+  type: invariant
   property: "the clipped surrogate branch is taken outside the trust region"
-- type: invariant
+- id: CN1E61E-INV-003
+  type: invariant
   property: "the DQN target network lags the online network"
 
 kani_harnesses:

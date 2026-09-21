@@ -71,7 +71,8 @@ falsification_tests:
   test: crates/apr-cli/src/commands/validate_tests.rs::valid_verdict_reports_the_denominator_it_measured
   if_fails: '''VALID 3/100 points'' reads as a 3% model waved through (#2394-12)'
 proof_obligations:
-- type: invariant
+- id: ACSC31C-INV-001
+  type: invariant
   property: "score < 50 implies exit_code != 0"
 kani_harnesses:
 - id: KH-CLI-001

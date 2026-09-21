@@ -148,13 +148,17 @@ falsification_tests:
   if_fails: "--zero-stage argument not validated; silent fallback to default or crash"
 
 proof_obligations:
-- type: invariant
+- id: CD1868F-INV-001
+  type: invariant
   property: "At ZeRO-3 per-GPU memory ≤ (params+optim+grads)/N × 1.3"
-- type: invariant
+- id: CD1868F-INV-002
+  type: invariant
   property: "7B bf16 model trains on 4×24 GB GPUs with --zero-stage 3 without OOM"
-- type: invariant
+- id: CD1868F-INV-003
+  type: invariant
   property: "Checkpoint saved at N ranks is loadable at M ≠ N with bit-identical reconstructed params"
-- type: invariant
+- id: CD1868F-INV-004
+  type: invariant
   property: "--zero-stage values outside {1, 2, 3} rejected with non-zero exit and clear error"
 
 verification_summary:

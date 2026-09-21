@@ -42,15 +42,18 @@ equations:
     - params.steps > 0
     lean_theorem: Theorems.Simulate_Convergence
 proof_obligations:
-- type: invariant
+- id: SS02FA-INV-001
+  type: invariant
   property: Time monotonicity
   formal: '∀ i < j: time(step_i) < time(step_j)'
   applies_to: step_monotonicity
-- type: invariant
+- id: SS02FA-INV-002
+  type: invariant
   property: Audit round-trip
   formal: '∀ id < count: find_by_step_id(record_step(id).id) = Some(record)'
   applies_to: audit_completeness
-- type: invariant
+- id: SS02FA-INV-003
+  type: invariant
   property: Energy bound
   formal: '∀ t: |E(t) - E(0)| < tolerance (for conservative systems)'
   applies_to: simulate_convergence

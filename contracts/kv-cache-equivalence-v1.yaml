@@ -43,27 +43,33 @@ equations:
     - capacity > 0
     lean_theorem: Theorems.Fused_Kernel
 proof_obligations:
-- type: frame
+- id: KCE-FRM-001
+  type: frame
   property: Cache append modifies only new entries; existing KV pairs unchanged
   formal: modifies(cache[seq_len..seq_len+new_len]) ∧ preserves(cache[0..seq_len])
-- type: old_state
+- id: KCE-OLD-002
+  type: old_state
   property: Cache length increases by exactly the number of new tokens
   formal: new(cache.len) = old(cache.len) + new_token_count
-- type: equivalence
+- id: KCE-EQ-003
+  type: equivalence
   property: Prefill/incremental equivalence
   formal: '|cached - full| < 1e-5'
   tolerance: 1e-5
   applies_to: all
-- type: invariant
+- id: KCE-INV-004
+  type: invariant
   property: Page shape formula
   formal: page_elements = block_size * n_kv * d_k
   applies_to: all
-- type: equivalence
+- id: KCE-EQ-005
+  type: equivalence
   property: Batched/serial equivalence
   formal: '|batched - serial| < 1e-5'
   tolerance: 1e-5
   applies_to: all
-- type: equivalence
+- id: KCE-EQ-006
+  type: equivalence
   property: Fused kernel equivalence
   formal: '|fused - decomposed| < 1e-3'
   tolerance: 1e-3

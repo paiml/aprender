@@ -43,7 +43,8 @@ equations:
     - x.len() > 0
     lean_theorem: Theorems.Sigmoid
 proof_obligations:
-- type: invariant
+- id: SIC037-INV-001
+  type: invariant
   property: Zero preservation
   formal: SiLU(0) = 0
   applies_to: all
@@ -54,7 +55,8 @@ proof_obligations:
     depends_on: []
     mathlib_imports: []
     notes: SiLU(0) = 0 · σ(0) = 0 by ring
-- type: invariant
+- id: SIC037-INV-002
+  type: invariant
   property: Sign preservation
   formal: (x > 0 -> SiLU(x) > 0) and (x < 0 -> SiLU(x) < 0)
   applies_to: all
@@ -65,7 +67,8 @@ proof_obligations:
     depends_on: [sigmoid_pos]
     mathlib_imports: []
     notes: sign(x·σ(x)) = sign(x) since σ(x) > 0; mul_pos / mul_neg_of_neg_of_pos
-- type: bound
+- id: SIC037-BND-003
+  type: bound
   property: Global lower bound
   formal: SiLU(x) > -1 for all x
   applies_to: all
@@ -80,7 +83,8 @@ proof_obligations:
       SiLU(x) > -0.279 requires the transcendental stationary point x ~ -1.278 and
       is retained as runtime falsification FALSIFY-SI-002 (analytic-but-unproven at
       that exact constant).
-- type: bound
+- id: SIC037-BND-004
+  type: bound
   property: Sigmoid range
   formal: 0 < sigmoid(x) < 1 for all x
   applies_to: all
@@ -91,7 +95,8 @@ proof_obligations:
     depends_on: []
     mathlib_imports: [Real.exp_pos]
     notes: denominator 1 + exp(-x) > 1 gives (0,1)
-- type: monotonicity
+- id: SIC037-MON-005
+  type: monotonicity
   property: Monotonic for positive inputs
   formal: 0 < x < y implies SiLU(x) < SiLU(y)
   applies_to: all
@@ -104,7 +109,8 @@ proof_obligations:
     notes: >-
       No derivatives; σ is globally strictly increasing and both factors of x·σ(x)
       are positive and increasing on x > 0 (mul_lt_mul'').
-- type: bound
+- id: SIC037-BND-006
+  type: bound
   property: Asymptotic linearity
   formal: for x > 0, 0 < x - SiLU(x) < x*exp(-x)
   applies_to: all
@@ -118,7 +124,8 @@ proof_obligations:
       x - SiLU(x) = x·σ(-x) < x·exp(-x) -> 0. The tight numeric instance
       |SiLU(x) - x| < 0.01 for x > 10 is retained as runtime falsification
       FALSIFY-SI-005.
-- type: equivalence
+- id: SIC037-EQ-007
+  type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd

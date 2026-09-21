@@ -24,19 +24,23 @@ equations:
     - result.len() == token_ids.len() * embed_dim
     - result.iter().all(|v| v.is_finite())
 proof_obligations:
-- type: bound
+- id: EM-BND-001
+  type: bound
   property: Output shape correctness
   formal: output.shape = (seq_len, d_model) for token_ids.len() = seq_len
   applies_to: all
-- type: bound
+- id: EM-BND-002
+  type: bound
   property: Out-of-bounds panic freedom
   formal: token_ids[i] < vocab_size for all i implies no panic
   applies_to: all
-- type: invariant
+- id: EM-INV-003
+  type: invariant
   property: Deterministic output
   formal: lookup(W, ids) = lookup(W, ids) for identical W and ids
   applies_to: all
-- type: bound
+- id: EM-BND-004
+  type: bound
   property: Finite output
   formal: W[j][k] is finite implies output[i][k] is finite for all i, k
   applies_to: all

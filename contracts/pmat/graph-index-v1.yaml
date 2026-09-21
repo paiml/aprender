@@ -99,28 +99,34 @@ equations:
     - score >= 0.0
     lean_theorem: Theorems.Bm25Scoring
 proof_obligations:
-- type: invariant
+- id: GI-INV-001
+  type: invariant
   property: CSR node count equals node map size
   formal: num_nodes() = node_map.len() always
   applies_to: all
-- type: conservation
+- id: GI-CON-002
+  type: conservation
   property: PageRank sums to 1
   formal: abs(sum(ranks) - 1.0) < 1e-6
   tolerance: 1.0e-6
   applies_to: all
-- type: bound
+- id: GI-BND-003
+  type: bound
   property: PageRank non-negative
   formal: for-all i ranks[i] >= 0.0
   applies_to: all
-- type: termination
+- id: GI-TERM-004
+  type: termination
   property: PageRank converges
   formal: loop terminates within max_iterations
   applies_to: all
-- type: roundtrip
+- id: GI-RT-005
+  type: roundtrip
   property: SQLite save/load identity
   formal: load(save(idx)).functions.len() = idx.functions.len()
   applies_to: all
-- type: monotonicity
+- id: GI-MON-006
+  type: monotonicity
   property: BM25 relevance ordering
   formal: Higher TF implies higher score (ceteris paribus)
   applies_to: all

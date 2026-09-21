@@ -42,15 +42,18 @@ equations:
     - AST type node is well-formed
     lean_theorem: Theorems.Type_Preservation
 proof_obligations:
-- type: invariant
+- id: TP-INV-001
+  type: invariant
   property: Parse completeness
   formal: '∀ valid source: parse(source).functions.count >= source.function_count'
   applies_to: parse_soundness
-- type: invariant
+- id: TP-INV-002
+  type: invariant
   property: Transpile determinism
   formal: '∀ source: transpile(source) = transpile(source)'
   applies_to: transpile_determinism
-- type: invariant
+- id: TP-INV-003
+  type: invariant
   property: Field count preservation
   formal: '∀ class: |fields(transpile(class))| = |fields(class)|'
   applies_to: type_preservation

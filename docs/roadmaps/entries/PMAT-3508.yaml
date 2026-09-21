@@ -1,0 +1,26 @@
+- id: PMAT-3508
+  github_issue: 3508
+  item_type: task
+  title: 'ONT-4c1: model receipts as focus nodes — extract:gguf + extract:apr-model over the model:* vocabulary; the ladder rungs as model:Model; resolves: receipt over the tracked ladder receipts (apr-model-ladder-receipt/v1, a row without sha256 is not a witness); per-shape arming (armed_shapes[] in lint-baseline.json, absent = all armed, monotone); shapes ladder-measured (armed) and ladder-green (computed and reported, armed by the 0.68.2 bump)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-19T09:19:25Z
+  updated: 2026-09-19T09:19:25Z
+  spec: docs/specifications/paiml-ontology.md (paiml/infra, v4.6 §5 ONT-4c1)
+  acceptance_criteria:
+  - '`pv lint contracts/ --gate shapes --format json` on this tree reports the ladder rungs as focus nodes (`by_entity_type.gguf` = the rung count), `pc_extract.gguf` and `pc_extract["apr-model"]` fired, `armed_shapes` ⊇ [ont-shapes-v1, ladder-measured], `not_armed_shapes` = [ladder-green], and `by_shape` names all three; verdict Pass once the re-measured 0.68.1 receipts (sha256 per rung, both hosts) are tracked, Fail naming every rung without a witness until then — measured, not assumed.'
+  - 'ontology/extract/{gguf,apr_model}.rs: a corrupt GGUF magic and an .apr header whose tensor count disagrees with its index (crates/apr-format/tests/fixtures/golden_v2.apr, 2 tensors, checksum recomputed) are each refused naming the file; both run in memory every gate run as the positive controls.'
+  - 'ontology/receipts.rs: one reader, schema apr-model-ladder-receipt/v1 refused by name on any other; a rung row with sha256 equal to the contract''s is a witness (model:parityReceipt), a row without sha256 is not (model:unmeasuredRow), a different hex is model:receiptHexMismatch naming file and hex; greenOn / missingGreenHost per (rung, host) with hosts: optional (absent = every host with a receipt), capability passed ∧ ¬skipped, every claimed backend ran ∧ ¬fallback.'
+  - 'Per-shape arming (v4.6 §3.9): lint-baseline.json armed_shapes[] (absent = all armed), a shape not listed is computed and reported and never in the meet; the plant must fire from an armed shape; `armed_shapes shrank` → exit 3 through the same comparand as armed_gates (an All comparand = the shapes declared in files that existed at it); check_ont_ratchet.sh carries armed_shapes through --write and records ont.shapes_unarmed.'
+  - 'tests/fixtures/ont/ladder-{green,fallback,fallback-armed,wronghex,nosha,noreceipts,badschema,lyingapr,plantunarmed}: exit 0 / 0 / 1 / 1 / 1 / 2 (decline NoCheckable naming evidence/dogfood/models) / 3 (naming lambda.json) / 1 (PV-ONT-012 naming lying.apr) / 2 (PositiveControlFailed); crates/aprender-contracts-cli/tests/ont4c1_model_receipts.rs 12 legs, wired in ci/explicit-test-commands.d/339.'
+  - 'Mutations, each RED on its own test: hosts: ignored in resolve() → hosts_scope_the_green_requirement RED; the GGUF magic check removed → PositiveControlFailed pc_extract.gguf; one sha256 changed in a tracked receipt row → ladder-measured rejects naming rung and file (measured on a copy of the real corpus with re-measured receipts); ladder-green armed on the fallback fixture → rejects naming rung and host.'
+  - 'contracts/ont-model-receipts-v1.yaml holds both shapes (shapes: list, ids ladder-measured / ladder-green); the ladder contract gains entity: {type: gguf}; Σ gguf and apr-model implemented: true; contracts.nt (model nodes, no blank node, pv extract --check 0) and shapes.ttl regenerated. No ci.yml change.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null

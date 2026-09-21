@@ -359,7 +359,8 @@ equations:
 
 proof_obligations:
 
-- type: equivalence
+- id: SEC-EQ-001
+  type: equivalence
   property: >
     OBLIG-ENC-02-TOKENIZER-PARITY: for every sentence in the frozen fixture corpus, the
     Rust batched tokenizer produces input ids, token type ids, attention mask, and
@@ -371,7 +372,8 @@ proof_obligations:
   formal: rust_batch.input_ids == fixture.input_ids && rust_batch.attention_mask == fixture.attention_mask
   applies_to: all
 
-- type: equivalence
+- id: SEC-EQ-002
+  type: equivalence
   property: >
     OBLIG-ENC-03-PER-LAYER-FORWARD-PARITY: the token-level output of EVERY transformer
     layer matches the frozen torch reference for the same input batch, within the
@@ -384,7 +386,8 @@ proof_obligations:
   tolerance: 1.52587891e-05
   applies_to: all
 
-- type: equivalence
+- id: SEC-EQ-003
+  type: equivalence
   property: >
     OBLIG-ENC-03-POOLED-EMBEDDING-PARITY: the masked mean pooled vector AND the
     L2-normalized sentence embedding each match the frozen torch reference for the same
@@ -399,7 +402,8 @@ proof_obligations:
   tolerance: 7.62939453e-06
   applies_to: all
 
-- type: equivalence
+- id: SEC-EQ-004
+  type: equivalence
   property: >
     OBLIG-ENC-03-ACTIVATION-PARITY: gelu_exact matches the frozen reference activation
     elementwise within the pinned tolerance across a sweep that includes the negative
@@ -415,7 +419,8 @@ proof_obligations:
   tolerance: 4.47239421e-06
   applies_to: all
 
-- type: invariant
+- id: SEC-INV-005
+  type: invariant
   property: >
     OBLIG-ENC-03-PADDING-INVARIANCE: encoding a sentence as a batch of one and encoding
     the same sentence inside a mixed-length padded batch yield the same sentence
@@ -426,7 +431,8 @@ proof_obligations:
   tolerance: 7.62939453e-06
   applies_to: all
 
-- type: equivalence
+- id: SEC-EQ-006
+  type: equivalence
   property: >
     OBLIG-ENC-04-NAMED-GRADIENT-PARITY: for every trainable tensor, the Rust gradient
     matches the torch reference gradient for the same fixed batch and loss within the
@@ -439,7 +445,8 @@ proof_obligations:
   tolerance: 3.05175781e-05
   applies_to: all
 
-- type: invariant
+- id: SEC-INV-007
+  type: invariant
   property: >
     OBLIG-ENC-04-GRADIENT-AND-STEP-GATE: after one backward pass and one controlled
     AdamW step on a fixed deterministic batch, ALL of the following hold.
@@ -495,7 +502,8 @@ proof_obligations:
     demand a non-zero gradient everywhere.
   applies_to: all
 
-- type: equivalence
+- id: SEC-EQ-008
+  type: equivalence
   property: >
     OBLIG-ENC-06-LOSS-FORWARD-PARITY: the tensor-valued pair objective matches the frozen
     torch reference within the pinned tolerance, at BOTH stages — the per-row cosine
@@ -509,7 +517,8 @@ proof_obligations:
   tolerance: 7.62939453e-06
   applies_to: all
 
-- type: equivalence
+- id: SEC-EQ-009
+  type: equivalence
   property: >
     OBLIG-ENC-04-POST-STEP-PARAMETER-PARITY: after ONE controlled AdamW step (lr 2e-5,
     betas (0.9, 0.999), eps 1e-8, weight_decay 0.01) on the recorded batch, every named
@@ -534,7 +543,8 @@ proof_obligations:
   tolerance: 1.89172753e-06
   applies_to: all
 
-- type: equivalence
+- id: SEC-EQ-010
+  type: equivalence
   property: >
     OBLIG-ENC-04-MULTISTEP-TRAJECTORY-PARITY: replaying 20 consecutive AdamW steps with
     the SAME hyperparameters on the SAME recorded batch reproduces the recorded loss
@@ -557,7 +567,8 @@ proof_obligations:
   tolerance: 7.62939453e-06
   applies_to: all
 
-- type: equivalence
+- id: SEC-EQ-011
+  type: equivalence
   property: >
     OBLIG-ENC-01-FULL-MODEL-REFERENCE-PARITY: the FULL pinned checkpoint (6 layers, hidden
     384, the real 30522-token vocabulary) encodes the recorded sentences to normalized
@@ -573,7 +584,8 @@ proof_obligations:
   tolerance: 3.73762473e-05
   applies_to: all
 
-- type: invariant
+- id: SEC-INV-012
+  type: invariant
   property: >
     OBLIG-ENC-05-MODE-SWITCH-PARAMETER-INVARIANCE: calling train() then eval() (and the
     reverse) changes NO registered parameter value — compared by f32::to_bits, not by an
@@ -584,7 +596,8 @@ proof_obligations:
   formal: for all n, params_after_mode_switch[n].to_bits() == params_before[n].to_bits()
   applies_to: all
 
-- type: invariant
+- id: SEC-INV-013
+  type: invariant
   property: >
     OBLIG-MASK-BROADCAST-GRAPH-PRESERVATION: applying an additive attention mask to a
     score tensor that requires grad yields a tensor that ALSO requires grad and carries
@@ -596,7 +609,8 @@ proof_obligations:
   formal: masked.requires_grad && masked.grad_fn.is_some() && masked.numel() == scores.numel()
   applies_to: all
 
-- type: soundness
+- id: SEC-SND-014
+  type: soundness
   property: >
     OBLIG-DETACH-REJECTION: the gradient gate is not theater. A test-only DETACHED
     encoder variant — identical arithmetic, intermediates rebuilt with Tensor::new so

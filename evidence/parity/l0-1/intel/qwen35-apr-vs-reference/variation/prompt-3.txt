@@ -1,0 +1,5 @@
+Inventory report, week 37:
+1. Bolts M6x20: 1,240 units (reorder at 500)
+2. Washers 6.4 mm: 3,875 units
+3. Hex nuts M8: 912 units, down 14.5% from week 36
+Total line items: 3; total value: $18,432.07; variance: -2.3%.

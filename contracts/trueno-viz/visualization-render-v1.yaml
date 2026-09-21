@@ -42,15 +42,18 @@ equations:
     - all weights > 0
     lean_theorem: Theorems.Layout_Treemap
 proof_obligations:
-- type: invariant
+- id: VR-INV-001
+  type: invariant
   property: Render determinism
   formal: '∀ scene: render(scene) = render(scene)'
   applies_to: render_output
-- type: soundness
+- id: VR-SND-002
+  type: soundness
   property: Primitive bounds safety
   formal: '∀ p, C: draw(p, C) writes only within C.bounds'
   applies_to: primitive_bounds
-- type: invariant
+- id: VR-INV-003
+  type: invariant
   property: Treemap area conservation
   formal: '∀ layout: sum(child_areas) = parent_area'
   applies_to: layout_treemap

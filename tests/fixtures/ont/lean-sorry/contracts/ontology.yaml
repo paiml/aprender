@@ -1,0 +1,12 @@
+schema: ont-sigma-v1
+concepts:
+  Contract: {doc: a contract}
+  Statement: {doc: a Lean theorem}
+entity_types:
+  - {name: code, extractor: lean, implemented: true}
+extractors:
+  - {name: lean, reader: ontology/extract/lean.rs, implemented: true}
+readers:
+  concepts: ontology/sigma.rs
+  entity_types: lint/shapes_gate.rs
+  extractors: lint/shapes_gate.rs

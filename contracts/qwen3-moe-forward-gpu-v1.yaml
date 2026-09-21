@@ -1259,28 +1259,33 @@ equations:
       dense GPU (the dispatch overhead).
 
 proof_obligations:
-- type: equivalence
+- id: QMFG-EQ-001
+  type: equivalence
   property: 'GPU forward result matches CPU LAZY-FUSED-MATVEC reference within ≥0.99 cosine (AC_GPU_MOE_001)'
   formal: 'cosine_similarity(forward_qwen3_moe_gpu(x), forward_qwen3_moe_cpu(x)) ≥ 0.99'
   tolerance: 0.01
   applies_to: all
 
-- type: invariant
+- id: QMFG-INV-002
+  type: invariant
   property: 'Router weights sum to 1.0 after top-k renormalization (AC_GPU_MOE_002)'
   formal: 'Σ_e route.weights[e] = 1.0 ± 1e-6'
   applies_to: all
 
-- type: invariant
+- id: QMFG-INV-003
+  type: invariant
   property: 'Output dimensions preserved (AC_GPU_MOE_003)'
   formal: 'forward_gpu.output.len() == hidden_dim'
   applies_to: all
 
-- type: invariant
+- id: QMFG-INV-004
+  type: invariant
   property: 'Output is finite — no NaN/Inf (AC_GPU_MOE_004)'
   formal: 'forward_gpu.output.iter().all(|v| v.is_finite())'
   applies_to: all
 
-- type: equivalence
+- id: QMFG-EQ-005
+  type: equivalence
   property: 'GPU forward result matches HF FP16 reference (AC_GPU_MOE_005)'
   formal: 'cosine_similarity(apr_gpu_logits, hf_fp16_logits) > 0.99'
   tolerance: 0.01
@@ -1289,12 +1294,14 @@ proof_obligations:
     Inherits from qwen3-moe-forward-v1 AC_QW3_MOE_005. Operator-confirm
     pending the same ~60 GB Qwen3-Coder-30B-A3B-FP16 download.
 
-- type: bound
+- id: QMFG-BND-006
+  type: bound
   property: 'GPU throughput ≥ 150 tok/s on RTX 4090 (AC_GPU_MOE_006)'
   formal: 'tps_128_tok_median(qwen3_coder_30b_a3b_q4_k_m, RTX_4090) ≥ 150'
   applies_to: all
 
-- type: invariant
+- id: QMFG-INV-007
+  type: invariant
   property: 'GPU memory budget under 24 GB VRAM (AC_GPU_MOE_007)'
   formal: 'cuda_mem_get_info().used / cuda_mem_get_info().total ≤ 0.95'
   applies_to: all

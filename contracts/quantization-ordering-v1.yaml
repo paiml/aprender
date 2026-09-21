@@ -50,23 +50,28 @@ equations:
     - x.len() > 0
     lean_theorem: Theorems.Dropout_Expectation
 proof_obligations:
-- type: monotonicity
+- id: QO-MON-001
+  type: monotonicity
   property: Size ordering strict
   formal: Q4K < Q6K < Q8_0 < F16 < F32 bytes for same param count
   applies_to: all
-- type: invariant
+- id: QO-INV-002
+  type: invariant
   property: Alpha scaling correctness
   formal: output scaled by exactly alpha/rank
   applies_to: all
-- type: invariant
+- id: QO-INV-003
+  type: invariant
   property: Dropout expectation
   formal: E[mask] = 1 - p within statistical tolerance
   applies_to: all
-- type: bound
+- id: QO-BND-004
+  type: bound
   property: Concrete Qwen3.5 sizes
   formal: '9B params: Q4K~5GB, Q6K~7GB, Q8~9GB, F16~18GB (within 20%)'
   applies_to: all
-- type: equivalence
+- id: QO-EQ-005
+  type: equivalence
   property: SIMD quantization equivalence
   tolerance: 0.0
   applies_to: simd

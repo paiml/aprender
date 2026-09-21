@@ -280,19 +280,26 @@ falsification_tests:
     against the init checkpoint's recorded val_loss.
 
 proof_obligations:
-- type: invariant
+- id: APFI-INV-001
+  type: invariant
   property: "init_flag_signature: --init is OPTIONAL and composes with --mode without restriction"
-- type: invariant
+- id: APFI-INV-002
+  type: invariant
   property: "init_load_semantics: APR loader is REUSED, not duplicated; magic-byte check happens before tensor read"
-- type: soundness
+- id: APFI-SND-003
+  type: soundness
   property: "init_error_semantics: every load failure exits non-zero BEFORE step 1; no silent random-init fallback when --init was specified"
-- type: termination
+- id: APFI-TERM-004
+  type: termination
   property: "init_load_semantics terminates on a finite-size APR file"
-- type: liveness
+- id: APFI-LIVE-005
+  type: liveness
   property: "init_loss_signal: step-0 val_loss(init) < step-0 val_loss(from-scratch); gap ≥ 3.0 nats"
-- type: invariant
+- id: APFI-INV-006
+  type: invariant
   property: "three_surface_drift_prevention: clap field + unit test + integration test all present in same PR"
-- type: safety
+- id: APFI-SAFE-007
+  type: safety
   property: "INV-INIT-ARCH-MATCH-001 — when metadata.architecture maps to a concrete family slug AND tensor names map to a different concrete family slug, the gate MUST fail-fast with FALSIFY-INIT-ARCH-MATCH-001 before any training step. Skips check when either inference returns 'unknown' (no false-positive on novel architectures or GGUF-style names)"
 
 kani_harnesses:

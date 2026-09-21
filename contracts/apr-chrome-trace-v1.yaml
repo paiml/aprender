@@ -89,11 +89,14 @@ falsification_tests:
   if_fails: "timestamps not monotonic"
 
 proof_obligations:
-- type: invariant
+- id: ACTE66C-INV-001
+  type: invariant
   property: "output is valid Chrome Trace Event Format JSON"
-- type: invariant
+- id: ACTE66C-INV-002
+  type: invariant
   property: "all required categories present"
-- type: invariant
+- id: ACTE66C-INV-003
+  type: invariant
   property: "timestamps monotonically non-decreasing"
 
 verification_summary:

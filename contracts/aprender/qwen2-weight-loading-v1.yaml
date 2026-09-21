@@ -310,20 +310,24 @@ qa_gate:
   pass_criteria: All 7 falsification tests pass
   falsification: Swap Q and K tensor names in mapping to break shape validation
 proof_obligations:
-- type: invariant
+- id: QWL-INV-001
+  type: invariant
   property: Q projection is square for this config
   formal: Q projection is square for this config
   tolerance: 1e-6
   applies_to: all
-- type: invariant
+- id: QWL-INV-002
+  type: invariant
   property: 'GQA ratio: n_h / n_kv = 7'
   formal: 'GQA ratio: n_h / n_kv = 7'
   applies_to: all
-- type: invariant
+- id: QWL-INV-003
+  type: invariant
   property: 'gate_proj and up_proj: [4864, 896]'
   formal: 'gate_proj and up_proj: [4864, 896]'
   applies_to: all
-- type: invariant
+- id: QWL-INV-004
+  type: invariant
   property: 'down_proj: [896, 4864]'
   formal: 'down_proj: [896, 4864]'
   applies_to: all

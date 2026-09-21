@@ -32,7 +32,8 @@ equations:
     - x.len() > 0
     lean_theorem: Theorems.Gelu_Tanh_Approx
 proof_obligations:
-- type: bound
+- id: GE-BND-001
+  type: bound
   property: Non-negativity for positive inputs
   formal: x > 0 implies GELU(x) >= 0
   applies_to: all
@@ -49,7 +50,8 @@ proof_obligations:
     notes: 'GELU(x) = (0.5·x)·(1 + tanh g(x)); for x>0 the left factor 0.5·x ≥ 0 and
       the right factor 1 + tanh g(x) > 0 since tanh > -1 (Real.neg_one_lt_tanh), so
       the product is ≥ 0 by mul_nonneg. Proved in Theorems/Gelu/GeluSign.lean.'
-- type: monotonicity
+- id: GE-MON-002
+  type: monotonicity
   property: Monotonically increasing for positive inputs
   formal: x > y > 0 implies GELU(x) > GELU(y)
   applies_to: all
@@ -72,15 +74,18 @@ proof_obligations:
       tanh strictMono (proved as tanh_strictMono from sinh(β−α)>0 via Real.sinh_pos_iff
       + Real.sinh_sub); left factor 0.5·t increases and is >0. Product of two positive
       increasing factors increases: (0.5·y)Rᵧ<(0.5·x)Rᵧ<(0.5·x)Rₓ. Theorems/Gelu/GeluMono.lean.'
-- type: symmetry
+- id: GE-SYM-003
+  type: symmetry
   property: Odd-function symmetry around origin
   formal: GELU(-x) = -GELU(x) in the limit as the CDF approaches the step function
   applies_to: all
-- type: equivalence
+- id: GE-EQ-004
+  type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd
-- type: bound
+- id: GE-BND-005
+  type: bound
   property: Tanh approximation accuracy
   formal: '|GELU(x) - GELU_approx(x)| < 0.005 for all x'
   applies_to: all

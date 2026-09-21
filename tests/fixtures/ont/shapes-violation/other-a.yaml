@@ -1,0 +1,12 @@
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-18'
+  last_modified: '2026-09-18'
+  author: fixture
+  description: fixture other-a
+name: other-a
+version: "1.0.0"
+scope: fixture
+status: active
+

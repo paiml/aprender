@@ -60,11 +60,14 @@ falsification_tests:
 
   if_fails: rule 'matches llama-quantize byte-for-byte when same overrides applied' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CB1B682-EQ-001
+  type: equivalence
   property: "apr quantize per-tensor overrides byte-identical to `llama-quantize --token-embedding-type / --output-tensor-type`"
-- type: invariant
+- id: CB1B682-INV-002
+  type: invariant
   property: "quant_map persisted in output metadata; apr inspect reproduces it"
-- type: invariant
+- id: CB1B682-INV-003
+  type: invariant
   property: "unknown override target (typo in tensor name) → exit 2 with fuzzy suggestion"
 
 verification_summary:

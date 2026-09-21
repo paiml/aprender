@@ -126,3 +126,8 @@ docs/roadmaps/*.lock
 # Generated on demand by crates/apr-cli/tests/pixel_regression.rs (28 MB; never commit it --
 # a committed copy makes publish_atomically() unreachable, which hid a real race, see #3051)
 /crates/apr-cli/playbooks/snapshots/test.apr
+
+# Quorum lane scratch: per-lane stdout/err and the pid file the runner writes.
+# The VERDICT artifact (quorum-*.json) is committed; its .lanes/ working
+# directory is transient and a lane review correctly refused a PR carrying it.
+docs/audits/quorum-*.json.lanes/

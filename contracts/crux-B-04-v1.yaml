@@ -136,15 +136,19 @@ falsification_tests:
   if_fails: "one or more prompts below 0.99 cosine similarity — quantization/layout regression"
 
 proof_obligations:
-- type: equivalence
+- id: CB0396A-EQ-001
+  type: equivalence
   property: "apr convert output forward-passes within 0.99 cosine of transformers.AutoModel reference"
   competitor_function: "transformers.AutoModel.from_pretrained"
   reference: "https://huggingface.co/docs/transformers/main/model_doc/auto"
-- type: invariant
+- id: CB0396A-INV-002
+  type: invariant
   property: "All 2D tensors row-major; LAYOUT-001/002 shape contract satisfied"
-- type: invariant
+- id: CB0396A-INV-003
+  type: invariant
   property: "lm_head.weight shape == [vocab, hidden], not transposed"
-- type: invariant
+- id: CB0396A-INV-004
+  type: invariant
   property: "Cosine similarity >= 0.99 on 10/10 eval prompts"
 
 verification_summary:

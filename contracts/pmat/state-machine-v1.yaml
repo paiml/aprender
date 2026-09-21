@@ -55,15 +55,18 @@ equations:
     - recovered state = fresh build state
     lean_theorem: Theorems.SnapshotRecovery
 proof_obligations:
-- type: state_machine
+- id: SM-SM-001
+  type: state_machine
   property: Valid transitions only
   formal: No skip transitions, no backward edges
   applies_to: all
-- type: invariant
+- id: SM-INV-002
+  type: invariant
   property: Append-only event store
   formal: events[0..n] immutable after write
   applies_to: all
-- type: equivalence
+- id: SM-EQ-003
+  type: equivalence
   property: Snapshot recovery equals fresh build
   formal: restore(snapshot) + replay(missed) = build_from_scratch(all)
   applies_to: all

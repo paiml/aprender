@@ -123,15 +123,20 @@ falsification_tests:
   if_fails: "Silent fallback — user thinks they're running FA2 but aren't"
 
 proof_obligations:
-- type: invariant
+- id: CL025C5-INV-001
+  type: invariant
   property: "Numerical parity max_abs_diff <= 5e-3 vs naive reference"
-- type: invariant
+- id: CL025C5-INV-002
+  type: invariant
   property: "Causal mask invariant preserved"
-- type: invariant
+- id: CL025C5-INV-003
+  type: invariant
   property: "Kernel source pinned (pkg@sha) on success"
-- type: invariant
+- id: CL025C5-INV-004
+  type: invariant
   property: "Fallback reason populated on failure (no silent downgrade)"
-- type: equivalence
+- id: CL025C5-EQ-005
+  type: equivalence
   property: "apr --attn flash2  ≅  HF Transformers attn_implementation='flash_attention_2'"
 
 verification_summary:

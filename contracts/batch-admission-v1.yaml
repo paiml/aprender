@@ -280,12 +280,14 @@ falsification_tests:
   mutation: >-
     force the batched path unconditionally; the c=1 case must turn RED
 proof_obligations:
-- type: invariant
+- id: BA-INV-001
+  type: invariant
   property: >-
     Admission never blocks on an unrelated request's completion (F-BATCH-001,
     F-BATCH-003).
   formal: "forall r: admitted(r, t) => t < completion(r_inflight) when slots free"
-- type: soundness
+- id: BA-SND-002
+  type: soundness
   property: >-
     The fast path remains reachable exactly when the server is idle
     (F-BATCH-002, F-BATCH-004), so the fix is not a trade of one regression for

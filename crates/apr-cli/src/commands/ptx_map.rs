@@ -402,6 +402,63 @@ fn build_prefill_sequence(info: &ModelInfo) -> Vec<KernelStep> {
     ]
 }
 
+/// #3477: what `ptx-map` prints for a model whose layers this map does not
+/// enumerate, or `None` when the dense map is the truthful answer.
+///
+/// The Qwen3.5 hybrid is no longer refused by
+/// `unsupported_architecture_reason` — it HAS a GPU forward (`Qwen35CudaModel`,
+/// #3090). But its Gated DeltaNet layers launch conv1d / per-head L2 / delta
+/// rule / gated-RMSNorm kernels that this table has no rows for, so printing
+/// the dense 12-step sequence (RoPE + GQA + SwiGLU) for them would be the same
+/// fabrication #2399 found, with a different cause. Neither refusing (the
+/// model runs) nor inventing a map (it does not run THOSE kernels) is honest,
+/// so ptx-map says exactly what it knows.
+///
+/// Takes the tensor names so the note is only produced for a file that really
+/// carries Gated DeltaNet weights — a dense GGUF mislabelled `qwen35` would
+/// still get the dense map it actually runs.
+#[cfg(feature = "inference")]
+fn hybrid_kernel_map_note<'n>(
+    architecture: &str,
+    tensor_names: impl IntoIterator<Item = &'n str>,
+    num_layers: usize,
+) -> Option<String> {
+    if !realizar::gguf::hybrid_forward_handles(architecture) {
+        return None;
+    }
+    if !tensor_names
+        .into_iter()
+        .any(|name| name.contains("ssm_") || name.contains("ssm."))
+    {
+        return None;
+    }
+    Some(format!(
+        "  Architecture '{architecture}' is the Qwen3.5 hybrid: {num_layers} layers of Gated DeltaNet \
+         (causal conv1d + SiLU, per-head L2 norm, delta-rule recurrence, gated RMSNorm) interleaved \
+         with gated full attention.\n\
+         \n  hybrid layers: kernel map not enumerated yet, #3090.\n\
+         \n  The GPU forward exists (Qwen35CudaModel, #3090) and the CPU one does too (#3091); what is \
+         missing is this table's rows for their kernels. The dense RoPE/GQA/SwiGLU sequence ptx-map \
+         prints for a standard transformer is NOT what these layers launch, so it is not printed."
+    ))
+}
+
+/// The hybrid note for the model at `path`, read from the GGUF header alone.
+///
+/// `None` on any read/parse failure: `extract_model_info` is the one place that
+/// reports a bad file, and it runs immediately after.
+#[cfg(feature = "inference")]
+fn hybrid_kernel_map_note_for_model(model_path: &Path) -> Option<String> {
+    let mapped =
+        realizar::gguf::MappedGGUFModel::from_path(model_path.to_str().unwrap_or_default()).ok()?;
+    let config = realizar::gguf::GGUFConfig::from_gguf(&mapped.model).ok()?;
+    hybrid_kernel_map_note(
+        &config.architecture,
+        mapped.model.tensors.iter().map(|t| t.name.as_str()),
+        config.num_layers,
+    )
+}
+
 /// Extract model info from GGUF file
 #[cfg(feature = "inference")]
 fn extract_model_info(model_path: &Path) -> Result<ModelInfo> {
@@ -516,6 +573,65 @@ fn format_shared(bytes: u32) -> String {
         format!("{}KB", bytes / 1024)
     } else {
         format!("{}B", bytes)
+    }
+}
+
+#[cfg(all(test, feature = "inference"))]
+mod hybrid_note_tests {
+    use super::hybrid_kernel_map_note;
+
+    /// #3477: `apr ptx-map` used to REFUSE a Qwen3.5 GGUF with "NEITHER the CPU
+    /// nor the GPU backend implements Gated DeltaNet". Both backends implement
+    /// it now (#3091 CPU, #3090 GPU), so a refusal is false — and the dense
+    /// 12-step map is a fabrication for layers that launch conv1d / delta-rule
+    /// kernels. The honest output names what is missing: the MAP, not the
+    /// model.
+    #[test]
+    fn ptx_map_hybrid_note_is_printed_instead_of_a_dense_map() {
+        let note = hybrid_kernel_map_note("qwen35", ["token_embd.weight", "blk.0.ssm_a"], 28)
+            .expect("a hybrid GGUF must get the note");
+        assert!(
+            note.contains("kernel map not enumerated yet") && note.contains("#3090"),
+            "the note must say what is missing and where it is tracked: {note}"
+        );
+        assert!(
+            note.contains("28") && note.contains("Gated DeltaNet"),
+            "the note must report what the file says: {note}"
+        );
+        // The refusal vocabulary must be gone: the model RUNS.
+        assert!(
+            !note.contains("NEITHER the CPU nor the GPU"),
+            "both backends implement it: {note}"
+        );
+        // And nothing from the dense map may be claimed for these layers.
+        for dense in ["RopeKernel", "BatchedSwigluKernel", "launches/layer"] {
+            assert!(
+                !note.contains(dense),
+                "the note must not fabricate a dense kernel sequence ({dense}): {note}"
+            );
+        }
+    }
+
+    /// The note is for the hybrid alone: a dense model must still get its real
+    /// map, and a file carrying no SSM tensors is dense whatever its tag says.
+    #[test]
+    fn ptx_map_hybrid_note_is_absent_for_a_dense_model() {
+        assert_eq!(
+            hybrid_kernel_map_note("qwen2", ["blk.0.attn_q.weight"], 24),
+            None,
+            "a dense transformer's map is real — it must be printed"
+        );
+        assert_eq!(
+            hybrid_kernel_map_note("qwen35", ["blk.0.attn_q.weight", "output.weight"], 24),
+            None,
+            "no Gated DeltaNet tensors: whatever the tag says, this file runs the dense kernels"
+        );
+        assert_eq!(
+            hybrid_kernel_map_note("mamba", ["blk.0.ssm_a"], 24),
+            None,
+            "an architecture with no forward is REFUSED by unsupported_architecture_reason, \
+             not given a note"
+        );
     }
 }
 

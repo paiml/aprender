@@ -91,24 +91,28 @@ equations:
     lean_theorem: Theorems.Default_Attachment
 
 proof_obligations:
-- type: invariant
+- id: DPO-INV-001
+  type: invariant
   property: Pipeline preserves callback ordering across the training loop
   formal: |
     For every (cb_a, cb_b) attached in that order to Pipeline:
     cb_a.on_step_end is called BEFORE cb_b.on_step_end at every step.
-- type: invariant
+- id: DPO-INV-002
+  type: invariant
   property: on_step_end called exactly once per training step
   formal: |
     Let N = sum over epochs of steps_per_epoch. The total count of on_step_end
     calls across the training run equals N (or fewer if CallbackAction::Stop fired).
-- type: bound
+- id: DPO-BND-003
+  type: bound
   property: callback overhead bounded
   formal: |
     For every callback that returns CallbackAction::Continue: the overhead per
     on_step_end call is O(log_lines_emitted + accumulator_updates), independent
     of model size or batch size. Total callback overhead per training step
     must be <= 1 ms on modern hardware.
-- type: classification
+- id: DPO-CLS-004
+  type: classification
   property: CallbackAction::Stop terminates the loop within one step
   formal: |
     For every callback that returns CallbackAction::Stop at step k: the training

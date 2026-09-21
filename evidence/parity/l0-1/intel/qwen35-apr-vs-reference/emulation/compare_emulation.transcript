@@ -1,0 +1,139 @@
+host=noah-Lambda-Vector start_utc=2026-09-15T21:24:29Z load=58.96 37.58 22.14
+f05cd87aef3bbe8396606f91334c974ddcb4f59d68186c35611405f74bbdd4ce  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/compare_raw_logits.py
+54ccaca6fbf6db33f29f113b6689a8a7eae9466297191a15afe37e7755b7adb3  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/layerwise/compare_layerwise.py
+d9a25a0d6560a2da67a6e98bbc07eaaa57f846e1c5907cf9de325fe814f9f1fe  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/layerwise/layer_steps.py
+1345a838aeed2db81ac54bacdec8726b665713816525ea7c82ae0f985f477697  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/layerwise/kernel_isolation.py
+ea30daa643b0d428dec3764d67a33e826cc19f4181d84d6675f6a70deee7f42e  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/emulation/logits_gap.py
+2401c11005e08bfac946a1de57af84338cc64a0d8e9a95d0941a6023b81bebc4  /tmp/emul3091/ref/orig-per-token.bin
+67dcc9e73382f240a2278cb66863499d882c8eb526ee25737792998da965f10a  /tmp/emul3091/ref/p1-per-token.bin
+a0f87b14ba9f2dd7630dd60268ef323f977e5f88cb9e060cabbfafe4aae8b760  /tmp/emul3091/ref/p2-per-token.bin
+df47beffcc18cf27caed695669ad749642ec3a859c3e3c1652068bfa2ac66ea5  /tmp/emul3091/ref/p3-per-token.bin
+0eca077ceae11c0ef182e09d74a9b019a91503a56e491644a437765b297e6f1e  /tmp/emul3091/ref/p4-per-token.bin
+0eca077ceae11c0ef182e09d74a9b019a91503a56e491644a437765b297e6f1e  /tmp/obs3091/llama/sub-p4.bin
+2401c11005e08bfac946a1de57af84338cc64a0d8e9a95d0941a6023b81bebc4  /tmp/obs3091/llama/sub-p0.bin
+== logits vs llama per-token
+compare_raw_logits orig off rc=0
+compare_raw_logits orig on rc=0
+compare_raw_logits orig only-Q4_K rc=0
+compare_raw_logits orig only-Q5_K rc=0
+compare_raw_logits orig only-Q6_K rc=0
+compare_raw_logits orig only-Q8_0 rc=0
+logits_gap orig rc=0
+compare_raw_logits p1 off rc=0
+compare_raw_logits p1 on rc=0
+compare_raw_logits p1 only-Q4_K rc=0
+compare_raw_logits p1 only-Q5_K rc=0
+compare_raw_logits p1 only-Q6_K rc=0
+compare_raw_logits p1 only-Q8_0 rc=0
+logits_gap p1 rc=0
+compare_raw_logits p2 off rc=0
+compare_raw_logits p2 on rc=0
+compare_raw_logits p2 only-Q4_K rc=0
+compare_raw_logits p2 only-Q5_K rc=0
+compare_raw_logits p2 only-Q6_K rc=0
+compare_raw_logits p2 only-Q8_0 rc=0
+logits_gap p2 rc=0
+compare_raw_logits p3 off rc=0
+compare_raw_logits p3 on rc=0
+compare_raw_logits p3 only-Q4_K rc=0
+compare_raw_logits p3 only-Q5_K rc=0
+compare_raw_logits p3 only-Q6_K rc=0
+compare_raw_logits p3 only-Q8_0 rc=0
+logits_gap p3 rc=0
+compare_raw_logits p4 off rc=0
+compare_raw_logits p4 on rc=0
+compare_raw_logits p4 only-Q4_K rc=0
+compare_raw_logits p4 only-Q5_K rc=0
+compare_raw_logits p4 only-Q6_K rc=0
+compare_raw_logits p4 only-Q8_0 rc=0
+logits_gap p4 rc=0
+== sub-layer curves vs llama (OFF and ON dumps)
+compare_layerwise p4 off rc=0
+compare_layerwise orig off rc=0
+layer_steps off rc=0
+compare_layerwise p4 on rc=0
+compare_layerwise orig on rc=0
+layer_steps on rc=0
+sublayer_p4_off vs committed sublayer_p4.tsv cmp rc=0
+sublayer_orig_off vs committed sublayer_orig.tsv cmp rc=0
+== kernel isolation, all 24 layers, OFF and ON
+kernel_isolation off rc=0
+kernel_isolation on rc=0
+933011f3376805da1d65ebf4a5334b57cb1a5d6f258e657f62f0f99a9f7f11c3  /tmp/emul3091/cmp/gap-orig.tsv
+ea16f8ed2733c69d78fe1a50ab220d3a6f526857e667065a83f055274ceb4481  /tmp/emul3091/cmp/gap-p1.tsv
+0745c49b4762759d96924e668dabe7cae5bc78b8aca31974bf5e545507debef6  /tmp/emul3091/cmp/gap-p2.tsv
+f8aa671f91f335f971ac78a9d933ca2196027a68bdc27df174857a1a72e41342  /tmp/emul3091/cmp/gap-p3.tsv
+17f077c1b43b0c1b353031fbb492942eab35e922efb8710e3521e2c436b292e3  /tmp/emul3091/cmp/gap-p4.tsv
+f4199221bf9f725674d0ae68b3382e57e848ec155f8344194883621cf980f1ea  /tmp/emul3091/cmp/kernel_isolation_off.tsv
+906bdfff9d28e8b9f76d1a2c456dc9d3ed533f05799477258887a28d2c13cf7c  /tmp/emul3091/cmp/kernel_isolation_on.tsv
+cb6a80c52fbcbc5107ab8f27e444f91807c8a9e2291091afe8ffbfb462c3428e  /tmp/emul3091/cmp/layer_steps_off.tsv
+7d8ccc84a937c915547b6aa9fae68a8b30c4f786bcce4ca1f53886b771e3bfc8  /tmp/emul3091/cmp/layer_steps_on.tsv
+1a4ffccdb64804305055f41f7e1cf1777c273e103e325afe2c0cd4e7d5ccd9d6  /tmp/emul3091/cmp/logits-orig-off.json
+fea8ed26faaee7655dbb8fd1eb341a58996d881355b23b5e1ca2186890cea865  /tmp/emul3091/cmp/logits-orig-off.tsv
+a415cc1bb5bab5c39d13c5a515e9dde8a723ce609fb8c11d60dd0c07643cf4c3  /tmp/emul3091/cmp/logits-orig-on.json
+ddda1427573d7f0ae8f162976bc9dbf4a604c910a89494e36614f6122851579b  /tmp/emul3091/cmp/logits-orig-only-Q4_K.json
+ee60786b63047bc428c1fddfca7a4a2b463d53404f7a70ec44029d65e201cdb6  /tmp/emul3091/cmp/logits-orig-only-Q4_K.tsv
+7411fe74372b65a9244a2796568810fe5076dc84ee2d5ee817f9f8f8b24a4b60  /tmp/emul3091/cmp/logits-orig-only-Q5_K.json
+2bacd41e3741dfcd6794301021bf389ebda9c6dc7ba64e47515ed959af02ad2b  /tmp/emul3091/cmp/logits-orig-only-Q5_K.tsv
+d1d82ed9685f77301e71793137eec274238f94e9e61b9de3855fb7f056bb0978  /tmp/emul3091/cmp/logits-orig-only-Q6_K.json
+8566686432d22cd962b2ef606acbf48230917fde0caf1c7ab4f7749882e498a8  /tmp/emul3091/cmp/logits-orig-only-Q6_K.tsv
+07ab90337440ff4be19f5fda71474abd037e337edc71e50899a4dd1f8c3ff089  /tmp/emul3091/cmp/logits-orig-only-Q8_0.json
+7c8f2cb5f8bf9ae0a479d74b73c29d17c41802199fcd109339097bea2cebfb27  /tmp/emul3091/cmp/logits-orig-only-Q8_0.tsv
+77f042102290e2f0f73fa6693efcfd70c0ccc9d5e5dd95e0d15318b4d335b221  /tmp/emul3091/cmp/logits-orig-on.tsv
+6a90dd0953c9fee95d67e5d217d0c63b3290f5b3feaea5764695ec9839d78c97  /tmp/emul3091/cmp/logits-p1-off.json
+b90a9aae043f46fbfd4531137d45c88b05a0cf377b43ad3aa4a6d8caf1ef6e80  /tmp/emul3091/cmp/logits-p1-off.tsv
+dc86108a8205fbf6d31ee7b11e1f147137e93678cb2f1c8f86f2b076222af844  /tmp/emul3091/cmp/logits-p1-on.json
+be06402a01257c23c80be61258bb0a176b3d8be13ec489adcf3a65e7064262a8  /tmp/emul3091/cmp/logits-p1-only-Q4_K.json
+f048b4818a690ebd7b5a1632b79f1889b87ba79477e16a60349a84b731982225  /tmp/emul3091/cmp/logits-p1-only-Q4_K.tsv
+7a1da2931faa6047aef9eb3263cdc37f3ab37564281b5110f704cb333d451c7a  /tmp/emul3091/cmp/logits-p1-only-Q5_K.json
+74bc0f73ecd72f274027ac9c8e5c6b43f877687b4e9d44fae9d1fc9536249073  /tmp/emul3091/cmp/logits-p1-only-Q5_K.tsv
+0b259c9dd74e523bf1942bfef3b17741e35edb0ff1c75ebb914816ee7d1bfc16  /tmp/emul3091/cmp/logits-p1-only-Q6_K.json
+5ee470df51256d5a552ddf57bcbb9ce02458d942786687340f0f9131af46f7fb  /tmp/emul3091/cmp/logits-p1-only-Q6_K.tsv
+51df7201e9438c47f604d2a450f5c81b89f03091a68616f00980678e3b48d15c  /tmp/emul3091/cmp/logits-p1-only-Q8_0.json
+56b3230342342278872c1361a7b48dbed82640d52c69bbd12fc7acdab17bcf1c  /tmp/emul3091/cmp/logits-p1-only-Q8_0.tsv
+3b330e35b13fa576a8ed747506ddaa5c0b202cd7078e24da66bae739bf971664  /tmp/emul3091/cmp/logits-p1-on.tsv
+1be4e8d658ff48a674a3ea71eab0b278f54b489f927db4355d38bf39cec3b79d  /tmp/emul3091/cmp/logits-p2-off.json
+480151a09354f910d347955ae1af2ee85ef3f847e6dc46f22b779836416015fb  /tmp/emul3091/cmp/logits-p2-off.tsv
+47f952c9c1c2b0a7c8c8ff50af5d4a0ba415e14c6842b0187266ea05023047ad  /tmp/emul3091/cmp/logits-p2-on.json
+a74f7c7baa4e59aa5068545e132d74dd54ddd3f609bec38e7275cefb714b85f9  /tmp/emul3091/cmp/logits-p2-only-Q4_K.json
+c261a056e12bfd77389e554951132b386cbe4c346e618a62e2a96cc0fafa7373  /tmp/emul3091/cmp/logits-p2-only-Q4_K.tsv
+c5fa23b80b22719e67b55cccaa45375c0abaabbdec5f76dbec2a108d4b5d899b  /tmp/emul3091/cmp/logits-p2-only-Q5_K.json
+fc1faac08a605163dfd7a80f15139ed6a7bb186f9b7e244383ffe4111cd4b2a6  /tmp/emul3091/cmp/logits-p2-only-Q5_K.tsv
+e41bbeb8132b6e790d98796b11f40d9aec8e23a8c252ffcc936791b3904c83d4  /tmp/emul3091/cmp/logits-p2-only-Q6_K.json
+d83d2410d726ec968d6011ea838b6bf60688e5863e9eb7ffead9cfbc0d398241  /tmp/emul3091/cmp/logits-p2-only-Q6_K.tsv
+0589f646ca7b7d5095fbb71958b2aca653c604da210030fb7d13e22cd424f6c2  /tmp/emul3091/cmp/logits-p2-only-Q8_0.json
+ddf8d4012264cca305ba3c857bd1a617dff59f6728a182483462496d3dfb352d  /tmp/emul3091/cmp/logits-p2-only-Q8_0.tsv
+09b284c2d4e0f3913963dd2946e679b2a11205dac1247f7ae9a9207063609e8c  /tmp/emul3091/cmp/logits-p2-on.tsv
+b715a1956592648ed69fc9c896bb18cf85fc12a253ab132795bfb534468a0436  /tmp/emul3091/cmp/logits-p3-off.json
+edda37823685fcba758a6a23b0ffcdf2336c28de8670ba77e015d5862aa27821  /tmp/emul3091/cmp/logits-p3-off.tsv
+6b8eea2c59146945dfba09fdc24fd2a6081f42b95f9a4a8cbbf8c4cfd594b6d0  /tmp/emul3091/cmp/logits-p3-on.json
+b9270ae86c104bbdaecdf490977868dec0d24f02bdf18ef619aa94abfd1764d1  /tmp/emul3091/cmp/logits-p3-only-Q4_K.json
+1f5021652fdf2618ecbb599205ccfa541427faa5608afd52f90d09dc16a88991  /tmp/emul3091/cmp/logits-p3-only-Q4_K.tsv
+7402a99b9f45f33a4e39909a369df450920202634b2c0fb980fec96f8c447b6f  /tmp/emul3091/cmp/logits-p3-only-Q5_K.json
+c05b6c6226414ac4d1146ccc23ce1a0779a38cfa51ce16eab2e25491b6cfd68a  /tmp/emul3091/cmp/logits-p3-only-Q5_K.tsv
+fb1c43ef22adacd22fb92712d5e8ad2109e3d7d99355c28d4bd45bcd8b5d8fdd  /tmp/emul3091/cmp/logits-p3-only-Q6_K.json
+136f8dd48875c92fb8f94a50c98c52e4d28aca3d68cf8baecf1a9eeb7cf2b198  /tmp/emul3091/cmp/logits-p3-only-Q6_K.tsv
+d56e0c2e8a53d6ac104541af1d1a4579fb0778739a85a27ed06ca6528756188c  /tmp/emul3091/cmp/logits-p3-only-Q8_0.json
+f8c4103f6716c8bdef945aaf859cac307d7ddd0598cdf1c0ec9938b96e94222f  /tmp/emul3091/cmp/logits-p3-only-Q8_0.tsv
+cb69fe69ed5ee1a50ed1c53f09dbb1d37fde94f6a40a715160f79ec418fa2e07  /tmp/emul3091/cmp/logits-p3-on.tsv
+0323e2f583a7c5294d416a8ed00213ec6155665cfbefc91d29c252d3871cf1b2  /tmp/emul3091/cmp/logits-p4-off.json
+414514f60f2f85103b5304e5ecf8a91a7693d98d64770c6d01462477b5e50488  /tmp/emul3091/cmp/logits-p4-off.tsv
+bc18d4b42851ea3dc27eee39e0396763c6090d3d08515cc07fcd6d1276a8c027  /tmp/emul3091/cmp/logits-p4-on.json
+13e654883a62abeafec942c99f11cc134ca8ef6ddea66cde354e66fb0c23e04b  /tmp/emul3091/cmp/logits-p4-only-Q4_K.json
+482cef98149c4208b61b23e502552cdc9b6cdc8d6536e87072c47b9c1710e7ae  /tmp/emul3091/cmp/logits-p4-only-Q4_K.tsv
+11c6fd69bd5eeb8898a8f9d9051de60b03b0d17880eaf86ef269b79c18926459  /tmp/emul3091/cmp/logits-p4-only-Q5_K.json
+df74db849e6cdcf0bae6bd7f499406ff90495fcc075591147c6a30f0aee80331  /tmp/emul3091/cmp/logits-p4-only-Q5_K.tsv
+aba8f3067b60d926d4be9c1a5355a8099ec75095505998d0ea5d6af0742b949f  /tmp/emul3091/cmp/logits-p4-only-Q6_K.json
+7420b32ab5b8fdcbbbd8561b10de5cfb598a067aecdd6c9bb7eaa11a2b6e2e45  /tmp/emul3091/cmp/logits-p4-only-Q6_K.tsv
+adec4f543485feffe57a1ee98dd4966d4e0366590ea4abafe6dd6ffeb0919b48  /tmp/emul3091/cmp/logits-p4-only-Q8_0.json
+aa715a5625894c8a32487c29a7806b86a9355935b752578f4bbdc0bbf9027917  /tmp/emul3091/cmp/logits-p4-only-Q8_0.tsv
+c925bfd3150b2087b2de321dd4c4679a0b0fdafd71ad9cfb3cd76477f37309fe  /tmp/emul3091/cmp/logits-p4-on.tsv
+1185ef7cfed8835ee32fa99544cc057a002373d2ced31c4797881fafe2afa301  /tmp/emul3091/cmp/sublayer_orig_off.selfcheck.txt
+2aad1c99665cca68a00aa78ed5142ad61004666411d63837accab9d3c064145b  /tmp/emul3091/cmp/sublayer_orig_off.tsv
+1185ef7cfed8835ee32fa99544cc057a002373d2ced31c4797881fafe2afa301  /tmp/emul3091/cmp/sublayer_orig_on.selfcheck.txt
+3163b0a48dbbce46889e7ee2f7293cd9f1162ff8aeb831a482a40782275054b2  /tmp/emul3091/cmp/sublayer_orig_on.tsv
+34d0c59e5014e088a4c8a7ff9e97974f6492fa6b099a056a74ffb843a15812d8  /tmp/emul3091/cmp/sublayer_p4_off.selfcheck.txt
+83d18166fe12c7a10d2255b5bb5e5f28cb978fd5e587fb96e3c1b0829588e7c4  /tmp/emul3091/cmp/sublayer_p4_off.tsv
+34d0c59e5014e088a4c8a7ff9e97974f6492fa6b099a056a74ffb843a15812d8  /tmp/emul3091/cmp/sublayer_p4_on.selfcheck.txt
+fe153a7310e630f5b1d44be14ac9b57e70056ebea18733268fb980be84fa9eb4  /tmp/emul3091/cmp/sublayer_p4_on.tsv
+end_utc=2026-09-15T21:26:54Z load=38.65 44.62 27.56

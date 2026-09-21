@@ -52,27 +52,33 @@ equations:
       - "A table that shrank to nothing would sweep clean — the floors are what makes the tables evidence"
 
 proof_obligations:
-  - type: invariant
+  - id: PL0CL-INV-001
+    type: invariant
     property: "No NEW unreceipted claim literal on a user-facing surface"
     formal: "scripts/check_no_claim_literals.sh exits 0"
     applies_to: claim_literal_is_absent_or_receipted
-  - type: invariant
+  - id: PL0CL-INV-002
+    type: invariant
     property: "The guard can turn RED on every shape it claims to cover"
     formal: "The case tables carry must-fire rows for the ratio, throughput, placeholder, table and causal classes and exit non-zero if any fails"
     applies_to: guard_is_not_vacuous
-  - type: invariant
+  - id: PL0CL-INV-003
+    type: invariant
     property: "A figure that cites a resolving receipt is legal; a dangling citation is not"
     formal: "--selftest rows claim_receipted / claim_unreceipted / claim_dangling_citation"
     applies_to: claim_literal_is_absent_or_receipted
-  - type: invariant
+  - id: PL0CL-INV-004
+    type: invariant
     property: "docs/specifications/ is inside the guard's universe"
     formal: "the guard source carries no '^docs/specifications/' exclusion, and does carry '^docs/specifications/archive/'"
     applies_to: claim_literal_is_absent_or_receipted
-  - type: invariant
+  - id: PL0CL-INV-005
+    type: invariant
     property: "The guard is enforced per-PR, not merely present"
     formal: "ci.yml invokes it in guard-runner-labels, which `gate` lists in its needs"
     applies_to: claim_literal_is_absent_or_receipted
-  - type: invariant
+  - id: PL0CL-INV-006
+    type: invariant
     property: "The baseline may only shrink, except through a named aperture reveal"
     formal: "baseline_ratchet_check with kind set-aperture against a ref this branch cannot rewrite"
     applies_to: aperture_growth_is_admitted_not_appended

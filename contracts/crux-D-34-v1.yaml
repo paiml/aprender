@@ -85,11 +85,14 @@ falsification_tests:
 
   if_fails: rule 'conflicting precision flags are rejected' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CD39CC4-EQ-001
+  type: equivalence
   property: "apr --deepspeed accepts canonical DeepSpeed JSON schema (matches HF Trainer's behavior)"
-- type: invariant
+- id: CD39CC4-INV-002
+  type: invariant
   property: "unknown keys surface as warnings (never silently dropped)"
-- type: invariant
+- id: CD39CC4-INV-003
+  type: invariant
   property: "conflicting dtype flags fail fast before step 1"
 
 verification_summary:

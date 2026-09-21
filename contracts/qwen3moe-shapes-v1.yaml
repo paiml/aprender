@@ -85,35 +85,43 @@ equations:
     - indices.len() > 0
     lean_theorem: Theorems.Rope_Frequency
 proof_obligations:
-- type: invariant
+- id: QM3-INV-001
+  type: invariant
   property: Q projection shape
   formal: n_h * d_k = 8192 for Qwen3-235B-A22B
   applies_to: all
-- type: invariant
+- id: QM3-INV-002
+  type: invariant
   property: KV projection shape
   formal: n_kv * d_k = 512 for Qwen3-235B-A22B
   applies_to: all
-- type: invariant
+- id: QM3-INV-003
+  type: invariant
   property: GQA divisibility
   formal: n_h mod n_kv = 64 mod 4 = 0, ratio = 16
   applies_to: all
-- type: invariant
+- id: QM3-INV-004
+  type: invariant
   property: MoE expert shape
   formal: 'each expert: 3 * 4096 * 1536 params'
   applies_to: all
-- type: invariant
+- id: QM3-INV-005
+  type: invariant
   property: MoE router top-k
   formal: router selects exactly 8 of 128 experts
   applies_to: all
-- type: invariant
+- id: QM3-INV-006
+  type: invariant
   property: O projection transpose
   formal: shape(o_proj) == reverse(shape(q_proj))
   applies_to: all
-- type: monotonicity
+- id: QM3-MON-007
+  type: monotonicity
   property: RoPE frequency decreasing
   formal: freq_i > freq_{i+1} for all i
   applies_to: all
-- type: equivalence
+- id: QM3-EQ-008
+  type: equivalence
   property: SIMD shape equivalence
   tolerance: 0.0
   applies_to: simd

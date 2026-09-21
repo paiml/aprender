@@ -1,0 +1,4 @@
+started_utc: 2026-09-15T16:25:57Z
+0.01.239.572 I srv    load_model: initializing, n_slots = 4, n_ctx_slot = 4096, kv_unified = 'true'
+error: Validation failed: run 1 had 1 failed request(s); run 3 had 1 failed request(s) — a throughput averaged over the requests that survived is not a measurement of this runtime, it is a measurement of its survivors
+bench rc=5

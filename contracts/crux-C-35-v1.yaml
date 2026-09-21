@@ -129,13 +129,17 @@ falsification_tests:
   if_fails: "apr serve does not exit within shutdown_timeout after SIGTERM"
 
 proof_obligations:
-- type: equivalence
+- id: CC37C7F-EQ-001
+  type: equivalence
   property: "apr serve SIGTERM handling matches vLLM api_server.py signal handler (drain in-flight, refuse new)"
-- type: invariant
+- id: CC37C7F-INV-002
+  type: invariant
   property: "New TCP connections refused or 503 after SIGTERM"
-- type: invariant
+- id: CC37C7F-INV-003
+  type: invariant
   property: "In-flight requests complete with finish_reason in {stop,length} during drain"
-- type: invariant
+- id: CC37C7F-INV-004
+  type: invariant
   property: "Process exits within shutdown_timeout"
 
 verification_summary:

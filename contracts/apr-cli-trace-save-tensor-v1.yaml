@@ -238,13 +238,17 @@ falsification_tests:
     - "Evidence: evidence/ship-007-pr-c-real-2026-05-03/findings.md"
 
 proof_obligations:
-- type: invariant
+- id: ACTST-INV-001
+  type: invariant
   property: "save-tensor preserves bit-exact f32 values from forward pass"
-- type: determinism
+- id: ACTST-DET-002
+  type: determinism
   property: "same input → byte-identical output across runs"
-- type: invariant
+- id: ACTST-INV-003
+  type: invariant
   property: "12-byte header allows zero-config apr diff loading"
-- type: completeness
+- id: ACTST-CMP-004
+  type: completeness
   property: "all 19 named stages are addressable; --save-tensor stage list covers them"
 
 verification_summary:

@@ -1,0 +1,11 @@
+{
+ "schema": "apr-model-ladder-receipt/v1",
+ "host": "gx10",
+ "version": "1.2.3",
+ "sha": "abc1234",
+ "gpu": "x",
+ "cc": "9.0",
+ "executed": 0,
+ "red": 0,
+ "rungs": []
+}

@@ -54,9 +54,11 @@ falsification_tests:
   if_fails: "ptx-map help does not describe scope"
 
 proof_obligations:
-- type: invariant
+- id: AGPC-INV-001
+  type: invariant
   property: "parity and ptx-map clearly state different scopes"
-- type: invariant
+- id: AGPC-INV-002
+  type: invariant
   property: "contradictory results explained with note"
 
 verification_summary:

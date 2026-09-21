@@ -154,15 +154,20 @@ falsification_tests:
   if_fails: "description/schema drift vs build.rs codegen (FALSIFY-MCP-008 regressed)"
 
 proof_obligations:
-- type: invariant
+- id: CI0-INV-001
+  type: invariant
   property: "tools/list returns non-empty array (>=1 tool registered)"
-- type: invariant
+- id: CI0-INV-002
+  type: invariant
   property: "every tool has required MCP fields {name, description, inputSchema(type=object)}"
-- type: invariant
+- id: CI0-INV-003
+  type: invariant
   property: "JSON-RPC 2.0 envelope preserved (jsonrpc=='2.0', id echoed)"
-- type: invariant
+- id: CI0-INV-004
+  type: invariant
   property: "tools/call dispatches and returns MCP-shaped content array"
-- type: equivalence
+- id: CI0-EQ-005
+  type: equivalence
   property: "Served metadata matches Model Context Protocol 2024-11-05 server/tools schema and equals build.rs codegen manifest (no hand-edit drift)"
   reference: "https://modelcontextprotocol.io/specification/2024-11-05/server/tools"
 

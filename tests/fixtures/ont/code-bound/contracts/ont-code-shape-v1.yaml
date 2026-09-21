@@ -1,0 +1,23 @@
+# The fixture pair (code-bound / code-ghost) shows ARMING, not two validators: both carry
+# `bound-symbols-resolve` over the same ghost binding. Here it is UNARMED — computed, reported under
+# not_armed_shapes, counted in unarmed_violations, and NOT in the verdict — which is how ONT-4b2 ships it.
+# In code-ghost the same shape is armed and the same ghost is a Fail.
+name: ont-code-shape
+version: "1.0.0"
+status: active
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-19'
+  last_modified: '2026-09-19'
+  author: fixture
+  description: the reported form of bound-symbols-resolve, beside an armed contract shape the plant can fire on
+shapes:
+  - id: fixture-contract-id
+    targetClass: ont:Contract
+    properties:
+      - {path: ont:id, minCount: 1, maxCount: 1}
+  - id: bound-symbols-resolve
+    targetClass: ont:Symbol
+    properties:
+      - {path: sym:resolved, minCount: 1, maxCount: 1, in: [true]}

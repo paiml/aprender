@@ -71,27 +71,32 @@ equations:
       - "Used when --vram flag is not provided"
 
 proof_obligations:
-  - type: invariant
+  - id: VG-INV-001
+    type: invariant
     property: "C-VRAM-001: No allocation if over budget"
     formal: "CudaTrainer::new() returns Err(InsufficientMemory) if ledger.total_reserved() + budget > total × reserve_factor"
     applies_to: all
 
-  - type: invariant
+  - id: VG-INV-002
+    type: invariant
     property: "Post-init actual tracking"
     formal: "After CudaTrainer::new() succeeds, ledger contains actual_mb measured via cuMemGetInfo"
     applies_to: all
 
-  - type: bound
+  - id: VG-BND-003
+    type: bound
     property: "Auto-budget within 30% of actual"
     formal: "auto_budget_estimate / actual_mb ∈ [0.85, 1.30] for all supported model sizes"
     applies_to: all
 
-  - type: invariant
+  - id: VG-INV-004
+    type: invariant
     property: "Guard is checked before first GPU allocation"
     formal: "No cuMemAlloc call occurs before budget_check returns true"
     applies_to: all
 
-  - type: invariant
+  - id: VG-INV-005
+    type: invariant
     property: "Overshoot warning emitted"
     formal: "If actual_mb > budget_mb × 1.20, stderr contains 'WARNING: actual VRAM exceeds budget'"
     applies_to: all

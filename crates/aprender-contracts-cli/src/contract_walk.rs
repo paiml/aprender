@@ -32,6 +32,8 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use provable_contracts::lint::collect_yaml_files;
+use provable_contracts::ontology::arming::{ArmedGatesShrank, ArmedShapesShrank};
+use provable_contracts::ontology::verdict::Reason;
 use provable_contracts::schema::{parse_contract, Contract};
 
 /// Exit status of a refused empty corpus.
@@ -79,10 +81,12 @@ impl fmt::Display for ParseErrors {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{} of {} contract files under {} failed to parse",
+            "{} parse error{} under {}\n  {} of {} contract files measured did not parse",
+            self.errors.len(),
+            if self.errors.len() == 1 { "" } else { "s" },
+            self.path.display(),
             self.errors.len(),
             self.files,
-            self.path.display()
         )?;
         for (file, err) in &self.errors {
             write!(f, "\n  {}: {err}", file.display())?;
@@ -151,13 +155,113 @@ pub fn collect_corpus(path: &Path) -> Result<Vec<(String, Contract)>, Box<dyn st
     Ok(out)
 }
 
+/// `pv lint`'s armed meet is `Unknown(reason)` (ONT-001 §3.4): nothing armed was
+/// measured to a verdict. Exit 2; the line is exactly [`Verdict::decline_line`].
+///
+/// [`Verdict::decline_line`]: provable_contracts::ontology::verdict::Verdict::decline_line
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LintDeclined {
+    pub reason: Reason,
+}
+
+impl fmt::Display for LintDeclined {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.reason)
+    }
+}
+
+impl std::error::Error for LintDeclined {}
+
+/// `pv lint`'s armed meet is `Fail`: measured, and failed. Exit 1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LintRejected {
+    /// Armed gates whose verdict is `Pass`.
+    pub passed: usize,
+    /// Armed gates in the meet.
+    pub armed: usize,
+}
+
+impl fmt::Display for LintRejected {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "lint failed ({}/{} armed gates passed)",
+            self.passed, self.armed
+        )
+    }
+}
+
+impl std::error::Error for LintRejected {}
+
+/// `pv lint --gate sigma` found Σ itself malformed (ONT-001 §5 ONT-2b): the DECLARATION is wrong, not the corpus,
+/// so it is `error:` at exit 3 and never `reject:`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SigmaMalformed(pub String);
+
+impl fmt::Display for SigmaMalformed {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for SigmaMalformed {}
+
+/// `--gate <name>` named a gate this build does not compute alone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownGate {
+    pub asked: String,
+    pub known: Vec<String>,
+}
+
+impl fmt::Display for UnknownGate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "--gate {}: not a gate this build runs alone (try: {})",
+            self.asked,
+            self.known.join(", ")
+        )
+    }
+}
+
+impl std::error::Error for UnknownGate {}
+
+/// Exit status of an `armed_gates` list that dropped a gate its comparand armed (ONT-001 §3.9).
+pub const ARMED_GATES_SHRANK_EXIT: i32 = 3;
+
 /// Exit status for a `dispatch` error: [`ZERO_CONTRACTS_EXIT`] for a refused
-/// empty corpus, 1 for everything else (a parse failure included).
+/// empty corpus or a declined lint meet, [`ARMED_GATES_SHRANK_EXIT`] for a shrunk
+/// armed set, 1 for everything else (a parse failure and a rejected meet included).
 pub fn exit_code_for(err: &(dyn std::error::Error + 'static)) -> i32 {
-    if err.downcast_ref::<ZeroContracts>().is_some() {
+    if err.downcast_ref::<ZeroContracts>().is_some() || err.downcast_ref::<LintDeclined>().is_some()
+    {
         ZERO_CONTRACTS_EXIT
+    } else if err.downcast_ref::<ArmedGatesShrank>().is_some()
+        || err.downcast_ref::<ArmedShapesShrank>().is_some()
+        || err.downcast_ref::<SigmaMalformed>().is_some()
+    {
+        ARMED_GATES_SHRANK_EXIT
     } else {
         1
+    }
+}
+
+/// The verdict class `pv` prints before an error, in PVL-001 §0's vocabulary:
+/// `decline` (exit 2, nothing measured), `reject` (exit 1, measured and failed),
+/// `error` (anything else, the shrunk armed set at exit 3 included). One
+/// definition, so the word and the exit code cannot drift apart — ONT-001 §5
+/// ONT-1 asserts both halves of the line.
+#[must_use]
+pub fn verdict_for(err: &(dyn std::error::Error + 'static)) -> &'static str {
+    if err.downcast_ref::<ZeroContracts>().is_some() || err.downcast_ref::<LintDeclined>().is_some()
+    {
+        "decline"
+    } else if err.downcast_ref::<ParseErrors>().is_some()
+        || err.downcast_ref::<LintRejected>().is_some()
+    {
+        "reject"
+    } else {
+        "error"
     }
 }
 
@@ -351,6 +455,42 @@ mod tests {
             "a parse error is not ZeroContracts"
         );
         assert_eq!(exit_code_for(err.as_ref()), 1);
+    }
+
+    #[test]
+    fn lint_meet_errors_map_to_the_lattice_exits() {
+        let declined: Box<dyn std::error::Error> = Box::new(LintDeclined {
+            reason: Reason::NotArmed,
+        });
+        assert_eq!(exit_code_for(declined.as_ref()), 2);
+        assert_eq!(verdict_for(declined.as_ref()), "decline");
+        assert_eq!(
+            format!("{}: {declined}", verdict_for(declined.as_ref())),
+            "decline: NotArmed",
+            "the printed line is Verdict::decline_line"
+        );
+
+        let rejected: Box<dyn std::error::Error> = Box::new(LintRejected {
+            passed: 7,
+            armed: 8,
+        });
+        assert_eq!(exit_code_for(rejected.as_ref()), 1);
+        assert_eq!(verdict_for(rejected.as_ref()), "reject");
+
+        let shrank: Box<dyn std::error::Error> = Box::new(ArmedGatesShrank {
+            dropped: vec!["composition".into()],
+        });
+        assert_eq!(exit_code_for(shrank.as_ref()), ARMED_GATES_SHRANK_EXIT);
+        assert_eq!(ARMED_GATES_SHRANK_EXIT, 3);
+        assert_eq!(verdict_for(shrank.as_ref()), "error");
+
+        let other: Box<dyn std::error::Error> = "some other failure".into();
+        assert_eq!(
+            exit_code_for(other.as_ref()),
+            1,
+            "every existing error keeps exit 1"
+        );
+        assert_eq!(verdict_for(other.as_ref()), "error");
     }
 
     #[test]

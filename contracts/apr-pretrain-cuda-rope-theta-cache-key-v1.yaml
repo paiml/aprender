@@ -97,11 +97,13 @@ equations:
     - 'rope_theta_cache_key_inclusion holds'
 
 proof_obligations:
-- type: invariant
+- id: APCRTCK-INV-001
+  type: invariant
   property: cache key uniquely identifies theta
   formal: 'cache_key contains theta_bits suffix'
   applies_to: rope_theta_cache_key_inclusion
-- type: invariant
+- id: APCRTCK-INV-002
+  type: invariant
   property: distinct thetas produce distinct outputs
   formal: '|rope(x, θ_a) - rope(x, θ_b)|_∞ > 1e-3'
   applies_to: rope_distinct_theta_distinct_output

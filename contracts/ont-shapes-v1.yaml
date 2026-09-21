@@ -1,0 +1,133 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ont-shapes-v1 — the in-house shapes validator and the `shapes` gate (ONT-001 v4.5 §5 ONT-4b, §3.6; issue #3500, PMAT-3500)
+#
+# WHAT IT GOVERNS
+#   provable_contracts::ontology::rdf      — the deterministic graph and N-Triples writer (R-15: no blank nodes, byte order).
+#   provable_contracts::ontology::extract  — `pv-contract`: the contract YAML as triples; `pv extract` writes contracts.nt.
+#   provable_contracts::ontology::shapes   — the SHACL-Core subset of §3.6 EXACTLY; a component outside it is refused at parse.
+#   provable_contracts::lint::shapes_gate  — `pv lint --gate shapes`: every `shape:` block over the graph, with the plant.
+#
+# THIS CONTRACT IS ALSO THE FIRST SHAPE. Its `entity` is the corpus itself (`pv-contract`), so its `shape:` targets
+# `ont:Contract` and every contract's projection is a focus node — 1730 of them at acab2e754. It constrains what every
+# contract HAS (an id, which is the file stem, always exactly one) and what the corpus already SAYS (a `metadata.kind`
+# from the measured vocabulary, 13 values at acab2e754), and nothing the corpus does not yet satisfy: `name`, `status`,
+# `version` are absent from most contracts today and a `minCount` on them would be a migration by refusal. `ont:file`
+# carries no `maxCount` on purpose — 55 stems are shared between contracts/ and a subdirectory, and that is the
+# duplicate-stems gate's finding, baselined there, not this gate's to report twice.
+#
+# THE PLANT. A bare `ont:Contract` node drawn every run violates `ont:id minCount 1` and nothing else: exactly one
+# violation, which is the positive control §5 ONT-4b asks for. Remove `minCount` from `ont:id` and the gate answers
+# `Unknown{PositiveControlFailed}` — measured, and the mutation is in the receipt.
+#
+# KIND: pattern. A vocabulary and a validator over it; no equation to prove (ONT-6's lattice is the kernel it emits into).
+# ─────────────────────────────────────────────────────────────────────────────
+name: ont-shapes
+version: "1.0.0"
+scope: >
+  What a `shape:` block may say (§3.6's subset), how the corpus becomes a graph (`pv-contract`), and the one shape
+  every contract must satisfy. Out of scope: the oracle differential and the W3C cases (ONT-4b2), extractors for
+  code, lean and documents (ONT-4b2, ONT-4c), inheritance down Σ's subsumption edges (ONT-4d).
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-18'
+  last_modified: '2026-09-18'
+  author: PAIML Engineering
+  description: >
+    A contract's shape: block is a SHACL Core shape over the graph pv extract produces; the shapes gate applies every
+    shape, plants a positive control each run, and answers Pass, Fail (naming focus node and shape), or Unknown with
+    the reason — never a silent pass.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md §3.6 (the subset), §3.7 (extractors), §5 ONT-4b, R-2, R-3, R-13, R-15, R-18'
+    - 'crates/aprender-contracts/src/ontology/{rdf,shapes}.rs, ontology/extract/pv_contract.rs, lint/shapes_gate.rs'
+
+entity:
+  type: pv-contract
+  ref: contracts/
+
+relations:
+  depends_on: [ont-relations-v1, ont-sigma-v1, ont-verdict-lattice-v1]
+
+shape:
+  properties:
+    - {path: ont:id,   minCount: 1, maxCount: 1, pattern: "^[A-Za-z0-9._-]+$"}
+    - {path: ont:kind, in: [schema, pattern, kaizen, kernel, model-family, beat-benchmark, training-loop, registry, pretraining-corpus, training-precondition-gate, tokenizer, model-family-variant, corpus-assembly]}
+
+equations:
+  shapes_admission:
+    formula: "admits(corpus) ⇔ plant_violations ≥ 1 ∧ ∀ focus ∈ instances(targetClass): ∀ p ∈ shape.properties: satisfies(focus, p)"
+    domain: "the graph extract:pv-contract produces, and every shape: block in the corpus"
+    codomain: "Pass | Fail | Unknown"
+    invariants:
+      - "a conforming corpus whose plant fires is admitted"
+      - "a corpus with no shape, no focus node, or a dead plant is Unknown, never Pass"
+    preconditions:
+      - "every shape: block is inside §3.6's subset"
+    postconditions:
+      - "verdict ∈ {Pass, Fail, Unknown}"
+      - "two extractions are byte-identical"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: SHP-INV-001
+    property: the graph has no blank node and is byte-ordered
+    formal: '∀ t ∈ graph: subject(t) ∈ IRI ∧ serialize(graph) = sort(serialize(graph))'
+    prose: false
+  - id: SHP-INV-002
+    property: a component outside the subset is refused, never ignored
+    formal: 'component ∉ subset ⇒ verdict = Unknown'
+    prose: false
+  - id: SHP-INV-003
+    property: the plant fires or the gate declines
+    formal: 'plant_violations = 0 ⇒ verdict = Unknown'
+    prose: false
+  - id: SHP-INV-004
+    property: a violation names its focus node and its shape
+    formal: '∀ r ∈ results: focus(r) ∈ instances ∧ shape(r) ∈ shapes'
+    prose: false
+  - id: SHP-INV-005
+    property: warnings alone never pass
+    formal: 'violations = 0 ∧ warnings ≥ 1 ⇒ verdict = Unknown'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-SHP-001
+    rule: determinism, no blank nodes
+    prediction: two extractions of a fixture corpus are byte-identical and contain no `_:`
+    test: cargo test -p aprender-contracts --lib ontology::extract::pv_contract::tests::two_extractions_of_a_fixture_corpus_are_byte_identical
+    if_fails: the graph is not a content address and the tracked contracts.nt lapses on every run
+  - id: FALSIFY-SHP-002
+    rule: every implemented component fires
+    prediction: minCount, maxCount, pattern, in, datatype, class, nodeKind, minLength, maxLength, closed, node each produce a result on a fixture built to violate it
+    test: cargo test -p aprender-contracts --lib ontology::shapes
+    if_fails: a component the table claims is silently vacuous
+  - id: FALSIFY-SHP-003
+    rule: the subset is exact
+    prediction: targetNode, qualifiedValueShape, languageIn, a sequence path, or/and/not, and a nested node two levels deep are each refused at parse by name
+    test: cargo test -p aprender-contracts --lib ontology::shapes::tests::unsupported_components_are_refused_at_parse_by_name
+    if_fails: a shape reports conforms for a constraint it never checked
+  - id: FALSIFY-SHP-004
+    rule: the gate's answers
+    prediction: "Pass 0 on a conforming fixture with the plant fired; a corpus violation 1 naming focus and shape; no shapes / no focus / dead plant / warnings-only 2 with the reason; an unsupported shape 3"
+    test: cargo test -p aprender-contracts-cli --test ont4b_shapes_gate
+    if_fails: a decline and a reject, or a decline and a pass, become indistinguishable to a caller
+  - id: FALSIFY-SHP-005
+    rule: R-18, files are canonical
+    prediction: "`pv extract --check` exits 1 when the tracked contracts.nt or shapes.ttl differs from a fresh extraction"
+    test: cargo test -p aprender-contracts-cli --test ont4b_shapes_gate extract_check
+    if_fails: the tracked graph drifts from the corpus and nothing says so
+
+qa_gate:
+  id: F-SHP-001
+  name: shapes
+  description: 'Every shape: block in the corpus holds, and the plant proves the shapes are live (ONT-4b)'
+  checks:
+    - deterministic_extraction
+    - subset_exact
+    - plant_fires
+    - violation_names_focus_and_shape
+    - warnings_never_pass
+  pass_criteria: All 5 falsification tests pass; `pv lint contracts/ --gate shapes` is Pass on the real corpus with shapes_n ≥ 1, focus_nodes_n ≥ 1000, pc_shape fired
+  falsification: 'remove minCount from ont:id → Unknown{PositiveControlFailed} (measured 2026-09-18); add a kind outside the list to one contract → 1 violation naming it'

@@ -1,0 +1,17 @@
+- id: PMAT-3429
+  github_issue: 3429
+  item_type: task
+  title: 'PP-QUANT-001 M3: regression fixtures — #1749 #1789 #2535 #3341 (+ #3091 reopen) on tiny synthetic GGUFs, obser'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:03Z
+  updated: 2026-09-17T11:33:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

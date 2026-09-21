@@ -1,0 +1,146 @@
+{
+  "ticket": "PMAT-3508",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "e49cd71cc09535b66e157e79ff3b83eced1d4a43",
+  "diff_sha256": "4f227dc4bc2b19eefea643ec959065ff1cd28b2723789b6a9d70a0ff2ae8ab0a",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 314288,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I have reviewed the diff and the receipt against the ticket PMAT-3508. The diff successfully implements the requirements: model receipts as focus nodes, extract:gguf and extract:apr-model, and per-shape arming where `ladder-measured` is armed and `ladder-green` is reported. All documented deviations are explicitly acknowledged in the receipt and do not contradict the ticket's explicit requirements. I found no evidence that any test asserts the opposite, any gate is weakened (in fact, verification includes rigorous checks via pv lint and positive controls), any receipt claim is unsupported by the diff, or any explicitly forbidden actions were taken. The implementation conforms to the expected behavior.",
+      "findings": [],
+      "raw_bytes": 2806,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The PR implements ONT-4c1 exactly as requested in PMAT-3508. It introduces extract:gguf and extract:apr-model, adds the model receipts as focus nodes, implements resolves: receipt over the tracked ladder receipts, and adds per-shape arming with monotone checks. It arms ladder-measured while ladder-green remains computed and reported. The logic and robust tests precisely map to the requirements. No unrequested changes or weakened gates were identified.",
+      "findings": [
+        {
+          "claim": "ONT-4c1: model receipts as focus nodes",
+          "file": "crates/aprender-contracts-cli/tests/ont4c1_model_receipts.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "extract:gguf + extract:apr-model",
+          "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "per-shape arming (armed_shapes[] in lint-baseline.json, absent = all armed, monotone)",
+          "file": "crates/aprender-contracts-cli/src/commands/lint_arming.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "shapes ladder-measured (armed) and ladder-green (computed and reported)",
+          "file": "contracts/lint-baseline.json",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 3498,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-3508 (ONT-4c1) diff verified. Extractors extract:gguf and extract:apr-model over the model:* vocabulary, model receipt resolution over apr-model-ladder-receipt/v1, per-shape arming via armed_shapes[] in lint-baseline.json with monotone enforcement, and shapes ladder-measured (armed) / ladder-green (computed & reported) are completely implemented and verified by 12 test legs and unit test suites.",
+      "findings": [],
+      "raw_bytes": 2221,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-low",
+      "model_measured": "gemini-3.6-flash-low",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "contracts/lint-baseline.json",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "shapes ladder-measured (armed) and ladder-green (computed and reported)"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/lint_arming.rs",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "per-shape arming (armed_shapes[] in lint-baseline.json, absent = all armed, monotone)"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/tests/ont4c1_model_receipts.rs",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "ONT-4c1: model receipts as focus nodes"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/lint/shapes_gate.rs",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "extract:gguf + extract:apr-model"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

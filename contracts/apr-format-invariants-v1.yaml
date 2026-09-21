@@ -69,16 +69,19 @@ equations:
     - 'input.len() > 0'
     lean_theorem: Theorems.Detect_Regression
 proof_obligations:
-- type: equivalence
+- id: AFI-EQ-001
+  type: equivalence
   property: Serialization roundtrip
   formal: deserialize(serialize(e)) == e
   tolerance: 0.0
   applies_to: all
-- type: invariant
+- id: AFI-INV-002
+  type: invariant
   property: Schema validation soundness
   formal: valid evidence always passes; invalid never passes
   applies_to: all
-- type: postcondition
+- id: AFI-POST-003
+  type: postcondition
   property: Report completeness
   formal: format_report output contains all 6 dimension names and scores
   applies_to: all

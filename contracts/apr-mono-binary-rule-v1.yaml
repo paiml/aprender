@@ -104,9 +104,11 @@ falsification_tests:
   if_fails: "legacy binary has no apr subcommand migration path"
 
 proof_obligations:
-- type: invariant
+- id: AMBR-INV-001
+  type: invariant
   property: "apr-cli is the only user-facing binary"
-- type: invariant
+- id: AMBR-INV-002
+  type: invariant
   property: "binary count never increases without contract update"
 
 verification_summary:

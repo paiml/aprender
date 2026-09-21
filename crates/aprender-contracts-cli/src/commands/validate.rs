@@ -175,5 +175,6 @@ fn noun(kind: ArtifactKind) -> &'static str {
         ArtifactKind::Contract => "Contract",
         ArtifactKind::Binding => "Binding registry (kind: binding)",
         ArtifactKind::PublishManifest => "Publish manifest (kind: publish-manifest)",
+        ArtifactKind::ExternalCorpora => "External-corpora declaration (kind: external-corpora)",
     }
 }

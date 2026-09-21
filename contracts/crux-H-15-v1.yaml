@@ -81,11 +81,14 @@ falsification_tests:
 
   if_fails: rule 'partial save is rejected (atomic write)' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CH13D46-EQ-001
+  type: equivalence
   property: "apr dataset save-dict/load-dict round-trips HF `DatasetDict.save_to_disk` layout"
-- type: invariant
+- id: CH13D46-INV-002
+  type: invariant
   property: "manifest splits == sorted filesystem split dirs"
-- type: invariant
+- id: CH13D46-INV-003
+  type: invariant
   property: "missing manifest → load fails (no silent partial load)"
 
 verification_summary:

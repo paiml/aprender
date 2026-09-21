@@ -149,15 +149,20 @@ falsification_tests:
   if_fails: "finish_reason not emitted exactly once in stream"
 
 proof_obligations:
-- type: invariant
+- id: CC04F5D-INV-001
+  type: invariant
   property: "Content-Type: text/event-stream for stream=true"
-- type: invariant
+- id: CC04F5D-INV-002
+  type: invariant
   property: "Terminal frame is literal 'data: [DONE]\\n\\n'"
-- type: invariant
+- id: CC04F5D-INV-003
+  type: invariant
   property: "Every JSON chunk has object=='chat.completion.chunk'"
-- type: invariant
+- id: CC04F5D-INV-004
+  type: invariant
   property: "Σ delta.content == non-stream content under deterministic sampling"
-- type: invariant
+- id: CC04F5D-INV-005
+  type: invariant
   property: "finish_reason emitted exactly once, on the last JSON chunk"
 
 verification_summary:

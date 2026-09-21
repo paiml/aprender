@@ -29,15 +29,18 @@ equations:
     - true (all usize inputs accepted)
     lean_theorem: Theorems.Validate_Index
 proof_obligations:
-- type: invariant
+- id: CD8FB-INV-001
+  type: invariant
   property: Size validation boundary correctness
   formal: '∀ size, min, max: (min <= max) → (validate_size(size, min, max).is_ok() ↔ min <= size <= max)'
   applies_to: validate_size
-- type: invariant
+- id: CD8FB-INV-002
+  type: invariant
   property: Index validation strict upper bound
   formal: '∀ index, len: validate_index(index, len).is_ok() ↔ index < len'
   applies_to: validate_index
-- type: bound
+- id: CD8FB-BND-003
+  type: bound
   property: Empty collection rejects all indices
   formal: '∀ index: validate_index(index, 0) = Err(_)'
   applies_to: validate_index
