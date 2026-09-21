@@ -33,6 +33,10 @@ git symbolic-ref -q HEAD > /dev/null && die "checkout is not detached"
 # violations; it only ever worked through the drain's retries). publish-order.txt is derived from
 # `cargo metadata` at the tag (normal + build + versioned dev-deps, acyclic); the facades, which
 # version independently and resolve their upstream from the registry, go last. Re-proved below.
+# An empty crate name is refused BY LINE NUMBER, before any set check (#3696): a blank line used to
+# reach the checks below as "" and stop with "not in the universe:  " -- naming nothing.
+blank=$(awk '/^[[:space:]]*$/ { printf "%s%d", (n++ ? ", " : ""), NR }' "$WT/scripts/release/publish-order.txt")
+[ -z "$blank" ] || die "blank line $blank in publish-order.txt: an empty crate name is not a crate"
 mapfile -t ORDER < <(cat "$WT/scripts/release/publish-order.txt"; printf '%s\n' provable-contracts provable-contracts-macros provable-contracts-cli)
 declare -A EXPECT MANIFEST ROOTWS
 while IFS=$'\t' read -r n v m w; do [ -n "$n" ] && { EXPECT[$n]=$v; MANIFEST[$n]=$m; ROOTWS[$n]=$w; }; done < <(python3 scripts/lib/cascade_universe.py "$WT")
