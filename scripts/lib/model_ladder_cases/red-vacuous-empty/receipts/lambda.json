@@ -14,5 +14,7 @@
   "*.apr"
  ],
  "member_dtype": "Q4_K",
- "candidates": []
+ "candidates": [],
+ "apr_version": "apr 1.2.3 (abc1234)",
+ "checkout_sha": "c0ffee0"
 }

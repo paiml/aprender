@@ -107,10 +107,11 @@ chmod +x "$TMP/bin/kind" "$TMP/bin/gh"
 export PR_CLOSES_REF_KIND_CMD="$TMP/bin/kind"
 
 # write_receipt DIR HOST -> a green apr-model-ladder-receipt/v2 for 9.9.9: the fixture rung's file is
-# the host's whole measured inventory, read from its header as a Q4_K member (#3712 rows A, A2)
+# the host's whole measured inventory, read from its header as a Q4_K member (#3712 rows A, A2), measured
+# by the binary `apr 9.9.9 (0123abc)` -- the release binary the judge is told about below (#3771)
 write_receipt() {
     mkdir -p "$1"
-    printf '{"schema":"apr-model-ladder-receipt/v2","host":"%s","version":"9.9.9","sha":"fixture","executed":1,"red":0,"inventory":[{"file":"fx.gguf","sha256":"0000000000000000000000000000000000000000000000000000000000000000","bytes":1}],"candidates":[{"file":"fx.gguf","bytes":1,"dtype_counts":{"Q4_K":1},"dominant":["Q4_K"],"member":true}],"rungs":[{"id":"fx-rung","file":"fx.gguf","present":true,"sha_ok":true,"required":true,"capability_match":{"passed":true,"skipped":false},"golden_output":{"passed":true,"skipped":false},"backends":{"cpu":{"ran":true,"fallback":false,"rc":0}},"green":true}]}\n' \
+    printf '{"schema":"apr-model-ladder-receipt/v2","host":"%s","version":"9.9.9","sha":"0123abc","apr_version":"apr 9.9.9 (0123abc)","executed":1,"red":0,"inventory":[{"file":"fx.gguf","sha256":"0000000000000000000000000000000000000000000000000000000000000000","bytes":1}],"candidates":[{"file":"fx.gguf","bytes":1,"dtype_counts":{"Q4_K":1},"dominant":["Q4_K"],"member":true}],"rungs":[{"id":"fx-rung","file":"fx.gguf","present":true,"sha_ok":true,"required":true,"capability_match":{"passed":true,"skipped":false},"golden_output":{"passed":true,"skipped":false},"backends":{"cpu":{"ran":true,"fallback":false,"rc":0}},"green":true}]}\n' \
         "$2" > "$1/$2.json"
 }
 
@@ -165,7 +166,8 @@ PY
     printf 'GO %s fixture\n' "$(git -C "$d/ap/bump" rev-parse origin/main)" \
         > "$d/ap/preflight-$(git -C "$d/ap/bump" rev-parse origin/main).verdict"
     : > "$d/gh.log"
-    ( export RELEASE_AP="$d/ap" RELEASE_EPIC=9002 CARGO_HOME="$d/cargo" \
+    # the fixture tree has no apr to pin: the judge's release-binary seam names the fixture's (#3771)
+    ( export RELEASE_AP="$d/ap" RELEASE_EPIC=9002 CARGO_HOME="$d/cargo" MODEL_LADDER_RELEASE_SHA=0123abc \
           PATH="$TMP/bin:$PATH" FIXTURE_GH_LOG="$d/gh.log" FIXTURE_BODY="$d/body.md"
       bash "$d/repo/scripts/release/prepare_bump.sh" 9.9.9 --ship ) > "$d/out.log" 2>&1
     printf '%s\n' "$?" > "$d/rc"

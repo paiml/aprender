@@ -47,6 +47,9 @@ while [ $# -gt 0 ]; do
     # --lock-probe <apr args…>: one apr call through apr_locked, then exit with its rc. For the case
     # table in check_model_ladder.sh, which proves every apr call runs under the lock.
     --lock-probe) shift; LOCK_PROBE=1; break ;;
+    # --identity-probe: print the identity this run would record (from the pinned binary), then exit 0 --
+    # the judge's table proves it is the binary's own sha, never the checkout's HEAD (#3771)
+    --identity-probe) IDENTITY_PROBE=1; shift ;;
     # --header-probe <apr args…>: one apr call through apr_header, then exit with its rc (the judge's table
     # proves the header read cannot see a GPU)
     --header-probe) shift; HEADER_PROBE=1; break ;;
@@ -113,10 +116,22 @@ host_id() {
   esac
 }
 HOST=$(host_id)
-SHA=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
-# apr_sha: the full 40-hex HEAD, which scripts/apr_bin.sh proved the binary was built from. The
-# release-readiness shape (#3715) compares it to the release commit by exact equality.
-APR_SHA=$(git rev-parse HEAD 2>/dev/null || echo unknown)
+# THE RECEIPT'S IDENTITY IS THE BINARY THAT RAN (#3771): what `apr --version` says -- its version and the
+# git sha it was built from -- never the checkout's HEAD. Pinned, the two agree; unpinned
+# (DOGFOOD_ALLOW_UNPINNED=1, any external $APR) nothing ties them: a run recorded bfd99757c while it
+# executed b89d126fc (aprender-fd, PMAT-3724). The checkout's HEAD is kept as `checkout_sha`, which
+# nothing judges.
+APR_VERSION=$("$APR" --version 2>/dev/null | head -1)
+SHA=$(sed -nE 's/.*\(([0-9a-f]{7,40})\).*/\1/p' <<< "$APR_VERSION")
+[ -n "$SHA" ] || { echo "decline: \"$APR --version\" names no git sha ('${APR_VERSION:-<empty>}') -- what ran cannot be identified, so no receipt can name it (#3771)" >&2; exit 2; }
+CHECKOUT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+# apr_sha: the full 40-hex of the BINARY's commit, resolved in this repository (the release-readiness
+# shape, #3715, compares it to the release commit by exact equality); empty when this checkout does not
+# know the commit the binary was built from.
+APR_SHA=$(git rev-parse --verify --quiet "${SHA}^{commit}" 2>/dev/null)
+if [ "${IDENTITY_PROBE:-0}" = 1 ]; then
+  printf 'sha=%s checkout_sha=%s apr_version=%s\n' "$SHA" "$CHECKOUT_SHA" "$APR_VERSION"; exit 0
+fi
 VERSION=$(cargo metadata --no-deps --offline --format-version 1 2>/dev/null | python3 -c '
 import json, os, sys
 m = json.load(sys.stdin)
@@ -210,8 +225,8 @@ find_model() { # find_model <basename> — the inventory's copy first, then the 
 ROWS="$WORK/rows.jsonl"; : > "$ROWS"
 INV_ROWS="$WORK/inventory.jsonl"; : > "$INV_ROWS"
 EXECUTED=0; RED=0
-printf -- '--- model capability ladder on %s (%s, cc %s) apr=%s sha=%s version=%s ---\n' \
-  "$HOST" "${GPU_NAME:-no-gpu}" "${GPU_CC:-?}" "$APR" "$SHA" "$VERSION"
+printf -- '--- model capability ladder on %s (%s, cc %s) binary=%s [%s] checkout=%s version=%s ---\n' \
+  "$HOST" "${GPU_NAME:-no-gpu}" "${GPU_CC:-?}" "$SHA" "$APR_VERSION" "$CHECKOUT_SHA" "$VERSION"
 printf '    inventory: %s of %s candidate file(s) (%s) under %s have %s as their dominant >= 2-D tensor dtype\n' \
   "$(grep -c . <<< "$INVENTORY")" "$(grep -c . "$CAND_ROWS")" "$INV_CANDIDATES" "$INV_DIRS" "$INV_DTYPE"
 
@@ -346,15 +361,14 @@ if [ "$EXECUTED" -eq 0 ]; then
   exit 2
 fi
 mkdir -p "$OUT_DIR"
-# The receipt names the binary by what it SAYS it is (`apr --version`, which
-# carries the built-from sha), never by its path: a path is machine-specific
-# (check_no_shipped_machine_paths) and says nothing about what was run.
-APR_VERSION=$("$APR" --version 2>/dev/null | head -1)
-python3 - "$ROWS" "$OUT_DIR/$HOST.json" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_ROWS" "$INV_DIRS" "$INV_CANDIDATES" "$APR_SHA" "$CAND_ROWS" "$INV_DTYPE" <<'PY'
+# The receipt names the binary by what it SAYS it is (APR_VERSION, read above from `apr --version`),
+# never by its path: a path is machine-specific (check_no_shipped_machine_paths) and says nothing about
+# what was run.
+python3 - "$ROWS" "$OUT_DIR/$HOST.json" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_ROWS" "$INV_DIRS" "$INV_CANDIDATES" "$APR_SHA" "$CAND_ROWS" "$INV_DTYPE" "$CHECKOUT_SHA" <<'PY'
 import json, sys, datetime, platform
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 inv = [json.loads(l) for l in open(sys.argv[11]) if l.strip()]
-out = {"schema": "apr-model-ladder-receipt/v2", "host": sys.argv[3], "version": sys.argv[4], "sha": sys.argv[5], "apr_sha": sys.argv[14],
+out = {"schema": "apr-model-ladder-receipt/v2", "host": sys.argv[3], "version": sys.argv[4], "sha": sys.argv[5], "apr_sha": sys.argv[14] or None, "checkout_sha": sys.argv[17],
        "isa": platform.machine(), "gpu": sys.argv[6] or None, "cc": sys.argv[7] or None,
        "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
        "apr_version": sys.argv[10], "executed": int(sys.argv[8]), "red": int(sys.argv[9]),

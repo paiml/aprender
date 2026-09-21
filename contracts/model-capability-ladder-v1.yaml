@@ -163,7 +163,7 @@ equations:
       - "binary pinned via scripts/apr_bin.sh (built from HEAD) or DOGFOOD_ALLOW_UNPINNED=1 for the published-crate mode"
       - "every apr call runs through apr_locked: the fleet GPU lock (flock, bounded wait; a held lock is an ENV decline naming its holder) and choom -n 1000, so a measurement and never a CI job is the OOM victim (#3712; gx10 global OOM 2026-09-21 15:56:08Z killed CI containers)"
   host_receipt:
-    formula: "receipt(host) = {schema: apr-model-ladder-receipt/v2, host, version, sha, apr_sha, gpu, cc, inventory: [{file, sha256, bytes}], candidates: [{file, bytes, dtype_counts, dominant, member} | {file, error}], rungs: [{id, file, present, capability_match, golden_output, backends: {b: {ran, fallback, rc}}}]}"
+    formula: "receipt(host) = {schema: apr-model-ladder-receipt/v2, host, version, sha = the binary's own git sha (#3771), apr_version = its `--version` verbatim, apr_sha, checkout_sha (not judged), gpu, cc, inventory: [{file, sha256, bytes}], candidates: [{file, bytes, dtype_counts, dominant, member} | {file, error}], rungs: [{id, file, present, capability_match, golden_output, backends: {b: {ran, fallback, rc}}}]}"
     domain: "evidence/dogfood/models/<version>/<host>.json, written only by scripts/model_ladder.sh"
     invariants:
       - "receipt.version equals the cargo root version of the tree it was measured on"
@@ -222,6 +222,11 @@ proof_obligations:
     type: invariant
     property: "Q4_K membership is read from each file's header and recomputed by the judge — a name is not evidence"
     formal: "∀ host, ∀ c ∈ receipt(host).candidates: readable(c) ∧ (member(c) ⟺ counts₂D(c)[member_dtype] = max counts₂D(c)) ∧ inventory(host) = { c.file | member(c) } ∧ patterns ∉ ladder.inventory"
+    applies_to: host_receipt
+  - id: MCL-INV-010
+    type: invariant
+    property: "A receipt's identity is the binary that ran, and it is the release binary (prefix-equal git shas); a matching version string, or a checkout HEAD, is not the binary"
+    formal: "∀ host: sha(receipt) = gitsha(apr_version(receipt)) ∧ gitsha(apr_version(receipt)) ≡ gitsha(release_binary)"
     applies_to: host_receipt
   - id: MCL-INV-007
     type: invariant
@@ -317,6 +322,12 @@ falsification_tests:
     prediction: "check_model_ladder.sh --self-test: a ladder naming a filename glob, an unreadable candidate, a Q4_K-header file left out of the inventory, a non-Q4_K file let in, a Q4_K tie left out, and a receipt with no candidates are each RED naming it; an unlabelled Q4_K file and a tie are members (green); 4 judge mutants and the no-GPU header-read producer mutant are each killed"
     test: "bash scripts/check_model_ladder.sh --self-test"
     if_fails: "a `q4k` name holding fp16 is measured as Q4_K, or a Q4_K file with no quant in its name is never measured"
+
+  - id: FALSIFY-MCL-018
+    rule: "The receipt names the binary that ran, and the judge requires it to be the release binary (#3771)"
+    prediction: "check_model_ladder.sh --self-test: a receipt measured by a different build of the same version, a receipt naming no binary (HEAD only), and a receipt whose sha is not its binary's are each RED; judge mutants binary-mismatch and no-binary-named and producer mutant identity-is-head are each killed; the producer's identity probe records the fake binary's own sha, not the checkout's HEAD"
+    test: "bash scripts/check_model_ladder.sh --self-test"
+    if_fails: "a receipt names a tree that was never measured (a run recorded bfd99757c while executing b89d126fc)"
 
 qa_gate:
   id: F-MCL-001

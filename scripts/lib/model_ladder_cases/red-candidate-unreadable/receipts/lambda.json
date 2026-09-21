@@ -123,5 +123,7 @@
    "error": "apr tensors exited 1",
    "member": false
   }
- ]
+ ],
+ "apr_version": "apr 1.2.3 (abc1234)",
+ "checkout_sha": "c0ffee0"
 }

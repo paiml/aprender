@@ -52,11 +52,11 @@ SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"   # before the cd: the mu
 cd "${MODEL_LADDER_ROOT:-$(dirname "$SELF")/..}" || exit 2
 
 # ---------------------------------------------------------------- the judge
-# judge <ladder> <ladder_at_main_or_empty> <receipt_dir> <version> [context-rungs.json] [its origin/main copy]  → exit 0/1/2
+# judge <ladder> <ladder_at_main_or_empty> <receipt_dir> <version> <release binary sha> [context-rungs.json] [its origin/main copy]  → exit 0/1/2
 judge() {
-  python3 - "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" <<'PY'
-import json, os, sys, yaml
-ladder_p, main_p, rdir, version, rungs_p, rungs_main_p = sys.argv[1:7]
+  python3 - "$1" "$2" "$3" "$4" "$5" "${6:-}" "${7:-}" <<'PY'
+import json, os, re, sys, yaml
+ladder_p, main_p, rdir, version, release_sha, rungs_p, rungs_main_p = sys.argv[1:8]
 # scripts/lib holds the cells module and THE Q4_K universe definition (tensor_universe, shared with the
 # producer and #3742); MODEL_LADDER_CELLS_LIB puts a mutant copy of either first, in --self-test.
 sys.path[:0] = [p for p in (os.environ.get("MODEL_LADDER_CELLS_LIB"), "scripts/lib") if p]
@@ -149,6 +149,18 @@ for h in hosts:
         print(f"FAIL  {h['id']:7} receipt is for {R.get('version')!r}, this cut is {version!r} — STALE"); rc = 1; continue
     if int(R.get("executed", 0)) < 1:
         print(f"FAIL  {h['id']:7} receipt executed=0 — a receipt that measured nothing is not evidence"); rc = 1; continue
+    # #3771: the receipt's identity is the BINARY that ran -- its own `--version` -- and it must be the
+    # release binary. A version-string match is not the same binary; a checkout HEAD is not what ran.
+    av = str(R.get("apr_version") or "")
+    m = re.search(r"\(([0-9a-f]{7,40})\)", av)
+    if not m:  # no binary named
+        print(f"FAIL  {h['id']:7} receipt names no binary: apr_version {av!r} carries no git sha — a checkout HEAD is not what ran (#3771)"); rc = 1; continue
+    bsha = m.group(1)
+    if str(R.get("sha") or "") != bsha:
+        print(f"FAIL  {h['id']:7} receipt sha {R.get('sha')!r} is not the sha of the binary it names ({bsha}, {av!r}) — the identity must be what ran (#3771)"); rc = 1; continue
+    k = min(len(bsha), len(release_sha))
+    if bsha[:k] != release_sha[:k]:
+        print(f"FAIL  {h['id']:7} measured by {av!r}; the release binary is {release_sha} — a matching version string is not the same binary (#3771)"); rc = 1; continue
     inv = R.get("inventory")
     if R.get("schema") != "apr-model-ladder-receipt/v2" or not isinstance(inv, list):
         print(f"FAIL  {h['id']:7} receipt carries no measured inventory (schema {R.get('schema')!r}) — the universe is what the host HOLDS, not a list (#3712)"); rc = 1; continue
@@ -265,6 +277,11 @@ lock_probe() {
   kill "$hp" 2> /dev/null; wait "$hp" 2> /dev/null
   if [ "$rc" = 2 ] && grep -q 'was not free after 1s' <<< "$out" && grep -q "holder: pid $hp" <<< "$out"; then echo "ok    lock: a held lock declines (exit 2) in the bounded wait, naming the holder's pid"
   else echo "FAIL  lock: a held lock did not decline in the bounded wait naming its holder (rc=$rc): $out"; bad=1; fi
+  # the identity a receipt records is the binary's own sha (#3771), never the checkout's HEAD
+  printf '#!/usr/bin/env bash\necho "apr 9.9.9 (feedbee12)"\n' > "$w/idapr"; chmod +x "$w/idapr"
+  out=$(MODEL_LADDER_ROOT="$PWD" DOGFOOD_ALLOW_UNPINNED=1 APR="$w/idapr" timeout 60 bash "$prod" --identity-probe 2>&1); rc=$?
+  if [ "$rc" = 0 ] && grep -q '^sha=feedbee12 ' <<< "$out"; then echo "ok    identity: the receipt's sha is the binary's own (feedbee12), not the checkout's HEAD"
+  else echo "FAIL  identity: the receipt's sha is not the binary's own (rc=$rc): $out"; bad=1; fi
   # the header read (not GPU work, not locked) must run with no GPU visible
   out=$(MODEL_LADDER_ROOT="$PWD" DOGFOOD_ALLOW_UNPINNED=1 APR="$w/cvd" timeout 60 bash "$prod" --header-probe tensors probe 2>&1); rc=$?
   if [ "$rc" = 0 ] && grep -qx 'cvd=\[\]' <<< "$out"; then echo "ok    header read: runs with CUDA_VISIBLE_DEVICES set and empty (no GPU visible)"
@@ -281,7 +298,7 @@ if [ "$SELF_TEST" = 1 ]; then
     want=$(cat "$c/expected_rc")
     lad="$c/ladder.yaml"; [ -f "$lad" ] || lad="$LADDER"
     main=""; [ -f "$c/ladder_main.yaml" ] && main="$c/ladder_main.yaml"
-    out=$(judge "$lad" "$main" "$c/receipts" "$(cat "$c/version" 2>/dev/null || echo 0.0.0-case)" "$c/context-rungs.json" "$c/context-rungs_main.json"); got=$?
+    out=$(judge "$lad" "$main" "$c/receipts" "$(cat "$c/version" 2>/dev/null || echo 0.0.0-case)" "$(cat "$c/release_sha" 2>/dev/null || echo abc1234)" "$c/context-rungs.json" "$c/context-rungs_main.json"); got=$?
     n=$((n+1))
     if [ "$got" = "$want" ] && { [ ! -f "$c/must_match" ] || grep -qE "$(cat "$c/must_match")" <<< "$out"; }; then
       printf 'ok    case %-28s rc=%s\n' "$name" "$got"
@@ -309,6 +326,8 @@ if [ "$SELF_TEST" = 1 ]; then
     mutant filename-glob      red-inventory-by-filename-glob 's/^if inv_spec.get("patterns"):/if False:/'
     mutant header-excluded    red-q4k-header-excluded     's/    for f in sorted(members - inv_files):/    for f in []:/'
     mutant header-included    red-non-q4k-in-inventory    's/    for f in sorted(inv_files - members):/    for f in []:/'
+    mutant binary-mismatch    red-binary-sha-differs-same-version 's/    if bsha\[:k\] != release_sha\[:k\]:/    if False:/'
+    mutant no-binary-named    red-receipt-head-only       's/    if not m:  # no binary named/    if False:/'
     # The lock: the real producer passes both halves; each producer mutant must fail at least one.
     prod=scripts/model_ladder.sh
     if lock_audit "$prod" > "$mdir/audit.out"; then echo "ok    lock: $prod makes no GPU apr call outside apr_locked"
@@ -325,6 +344,7 @@ if [ "$SELF_TEST" = 1 ]; then
     pmutant no-lock      's/^apr_locked() { flock -E "\$LOCK_BUSY" -w "\$LOCK_WAIT" "\$GPU_LOCK" choom/apr_locked() { choom/'
     pmutant no-choom     's/ choom -n 1000 -- "\$APR" "\$@"/ "$APR" "$@"/'
     pmutant unbounded    's/ -w "\$LOCK_WAIT"//'
+    pmutant identity-is-head 's/^SHA=\$(sed -nE .*/SHA=$(git rev-parse --short HEAD)/'
     pmutant header-sees-gpu 's/^apr_header() { CUDA_VISIBLE_DEVICES="" "\$APR"/apr_header() { "$APR"/'
     # The cells module (scripts/lib/model_ladder_cells.py): each rule deleted in a copy, imported through
     # MODEL_LADDER_CELLS_LIB, and the case that names the rule must go RED under the copy.
@@ -381,10 +401,21 @@ else
   TMP_LADDER=$(mktemp)
   if git show "origin/main:$LADDER" > "$TMP_LADDER" 2>/dev/null && [ -s "$TMP_LADDER" ]; then MAIN_LADDER="$TMP_LADDER"; fi
 fi
-printf -- '--- model capability ladder receipts for %s (%s) ---------------------\n' "$VERSION" "$RECEIPT_DIR"
+# #3771: the release binary's identity is the git sha the PINNED binary reports. MODEL_LADDER_RELEASE_SHA
+# is the case tables' seam, and the verdict names which source the sha came from.
+if [ -n "${MODEL_LADDER_RELEASE_SHA:-}" ]; then
+  RELEASE_SHA=$MODEL_LADDER_RELEASE_SHA; RELEASE_FROM="MODEL_LADDER_RELEASE_SHA"
+else
+  # shellcheck disable=SC1091
+  . scripts/apr_bin.sh || { echo "decline: the release binary cannot be pinned (scripts/apr_bin.sh) -- the receipts' binary cannot be compared with it (#3771)"; exit 2; }
+  RELEASE_SHA=$(sed -nE 's/.*\(([0-9a-f]{7,40})\).*/\1/p' <<< "$("$APR" --version 2> /dev/null | head -1)")
+  RELEASE_FROM="the pinned binary"
+fi
+[ -n "$RELEASE_SHA" ] || { echo "decline: the release binary names no git sha in its --version (#3771)"; exit 2; }
+printf -- '--- model capability ladder receipts for %s (%s), release binary %s (from %s) ---\n' "$VERSION" "$RECEIPT_DIR" "$RELEASE_SHA" "$RELEASE_FROM"
 TMP_RUNGS=$(mktemp)
 git show "origin/main:evidence/release/context-rungs.json" > "$TMP_RUNGS" 2> /dev/null || : > "$TMP_RUNGS"   # absent at main: the bootstrap
-judge "$LADDER" "$MAIN_LADDER" "$RECEIPT_DIR" "$VERSION" evidence/release/context-rungs.json "$TMP_RUNGS"; rc=$?
+judge "$LADDER" "$MAIN_LADDER" "$RECEIPT_DIR" "$VERSION" "$RELEASE_SHA" evidence/release/context-rungs.json "$TMP_RUNGS"; rc=$?
 [ -n "$TMP_RUNGS" ] && [ -f "$TMP_RUNGS" ] && rm -f "$TMP_RUNGS"
 # The producer that writes these receipts must not bypass the fleet GPU lock (#3712): RED, not a decline.
 if ! lock_audit scripts/model_ladder.sh; then [ "$rc" = 2 ] || rc=1; fi
