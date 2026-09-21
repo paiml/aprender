@@ -7,16 +7,13 @@
 /// Unknown dtypes default to 4.0 (F32 size) as a conservative overestimate.
 /// See contracts/gguf-kquant-element-size-v1.yaml (PMAT-869).
 fn ggml_dtype_element_size(dtype: u32) -> f64 {
-    // Index: [F32, F16, Q4_0, Q4_1, (4), (5), Q5_0, Q5_1, Q8_0, Q8_1,
-    //         Q2_K, Q3_K, Q4_K, Q5_K, Q6_K, Q8_K, IQ2_XXS, IQ2_XS,
-    //         IQ3_XXS, IQ1_S, IQ4_NL, IQ3_S, IQ2_S, IQ4_XS, I8, I16,
-    //         BF16, I32, I64, F64, IQ1_M]
-    const SIZES: [f64; 31] = [
-        4.0, 2.0, 0.5625, 0.625, 4.0, 4.0, 0.6875, 0.75, 1.0625, 1.125, 0.328_125, 0.429_687_5,
-        0.5625, 0.6875, 0.820_312_5, 1.140_625, 0.5625, 0.625, 0.6875, 0.4375, 0.5625, 0.4375,
-        0.625, 0.5, 1.0, 2.0, 2.0, 4.0, 8.0, 8.0, 0.375,
-    ];
-    SIZES.get(dtype as usize).copied().unwrap_or(4.0)
+    // #3601: type_size / blck_size from ggml's own type table (`trueno_quant::TRAITS`,
+    // PMAT-3430). The hand-typed SIZES copy this replaces had every IQ quant but IQ4_NL
+    // wrong (IQ2_XXS 144/256 for 66/256 — so `apr tensors` refused a valid UD-IQ2_XXS
+    // GGUF as "Truncated") and its 26-30 tail misordered (BF16 at 0.375 bytes/element).
+    trueno_quant::GgmlType::from_id(dtype).map_or(4.0, |t| {
+        t.block_bytes() as f64 / t.block_size() as f64
+    })
 }
 
 /// List tensors from GGUF file bytes

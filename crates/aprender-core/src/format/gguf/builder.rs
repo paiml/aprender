@@ -15,7 +15,7 @@ fn test_from_bytes_zero_tensors_zero_metadata() {
 // ========================================================================
 
 /// Build a complete synthetic GGUF file with one F32 tensor and optional metadata
-fn build_synthetic_gguf_with_tensor(
+pub(super) fn build_synthetic_gguf_with_tensor(
     tensor_name: &str,
     dims: &[u64],
     dtype: u32,

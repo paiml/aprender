@@ -317,24 +317,26 @@ fn test_ggml_dtype_element_size_exhaustive() {
     assert!((super::ggml_dtype_element_size(14) - 0.820_312_5).abs() < 0.01);
     // Q8_K = 292/256 (PMAT-869: was 1.0625)
     assert!((super::ggml_dtype_element_size(15) - 1.140_625).abs() < 0.01);
-    // BF16
-    assert!((super::ggml_dtype_element_size(26) - 2.0).abs() < 0.001);
-    // I-quant types
-    assert!((super::ggml_dtype_element_size(16) - 0.5625).abs() < 0.01); // IQ2_XXS
-    assert!((super::ggml_dtype_element_size(17) - 0.625).abs() < 0.01); // IQ2_XS
-    assert!((super::ggml_dtype_element_size(18) - 0.6875).abs() < 0.01); // IQ3_XXS
-    assert!((super::ggml_dtype_element_size(19) - 0.4375).abs() < 0.01); // IQ1_S
-    assert!((super::ggml_dtype_element_size(20) - 0.5625).abs() < 0.01); // IQ4_NL
-    assert!((super::ggml_dtype_element_size(21) - 0.4375).abs() < 0.01); // IQ3_S
-    assert!((super::ggml_dtype_element_size(22) - 0.625).abs() < 0.01); // IQ2_S
-    assert!((super::ggml_dtype_element_size(23) - 0.5).abs() < 0.01); // IQ4_XS
-    // Integer types
-    assert!((super::ggml_dtype_element_size(24) - 1.0).abs() < 0.01); // I8
-    assert!((super::ggml_dtype_element_size(25) - 2.0).abs() < 0.01); // I16
-    assert!((super::ggml_dtype_element_size(27) - 4.0).abs() < 0.01); // I32
-    assert!((super::ggml_dtype_element_size(28) - 8.0).abs() < 0.01); // I64
-    assert!((super::ggml_dtype_element_size(29) - 8.0).abs() < 0.01); // F64
-    assert!((super::ggml_dtype_element_size(30) - 0.375).abs() < 0.01); // IQ1_M
+    // #3601: the rows below used to pin the hand-typed table's values under its own
+    // labels — the 24-30 tail shifted by one (26 "BF16", 30 "IQ1_M") and seven IQ rows
+    // wrong. ggml.h: I8=24, I16=25, I32=26, I64=27, F64=28, IQ1_M=29, BF16=30.
+    // I-quant types (block_bytes / block_elems, ggml-common.h)
+    assert!((super::ggml_dtype_element_size(16) - 66.0 / 256.0).abs() < 1e-9); // IQ2_XXS
+    assert!((super::ggml_dtype_element_size(17) - 74.0 / 256.0).abs() < 1e-9); // IQ2_XS
+    assert!((super::ggml_dtype_element_size(18) - 98.0 / 256.0).abs() < 1e-9); // IQ3_XXS
+    assert!((super::ggml_dtype_element_size(19) - 50.0 / 256.0).abs() < 1e-9); // IQ1_S
+    assert!((super::ggml_dtype_element_size(20) - 18.0 / 32.0).abs() < 1e-9); // IQ4_NL
+    assert!((super::ggml_dtype_element_size(21) - 110.0 / 256.0).abs() < 1e-9); // IQ3_S
+    assert!((super::ggml_dtype_element_size(22) - 82.0 / 256.0).abs() < 1e-9); // IQ2_S
+    assert!((super::ggml_dtype_element_size(23) - 136.0 / 256.0).abs() < 1e-9); // IQ4_XS
+    // Integer, F64, IQ1_M and BF16 — in ggml's order
+    assert!((super::ggml_dtype_element_size(24) - 1.0).abs() < 1e-9); // I8
+    assert!((super::ggml_dtype_element_size(25) - 2.0).abs() < 1e-9); // I16
+    assert!((super::ggml_dtype_element_size(26) - 4.0).abs() < 1e-9); // I32
+    assert!((super::ggml_dtype_element_size(27) - 8.0).abs() < 1e-9); // I64
+    assert!((super::ggml_dtype_element_size(28) - 8.0).abs() < 1e-9); // F64
+    assert!((super::ggml_dtype_element_size(29) - 56.0 / 256.0).abs() < 1e-9); // IQ1_M
+    assert!((super::ggml_dtype_element_size(30) - 2.0).abs() < 1e-9); // BF16
     // Unknown defaults to F32 (4.0) — conservative size estimate
     assert!((super::ggml_dtype_element_size(99) - 4.0).abs() < 0.001);
     assert!((super::ggml_dtype_element_size(u32::MAX) - 4.0).abs() < 0.001);
@@ -383,6 +385,46 @@ fn test_kquant_element_size_exact_block_ratio_pmat869() {
     let n = 256.0_f64;
     let q2k_bytes = (n * super::ggml_dtype_element_size(10)) as usize;
     assert_eq!(q2k_bytes, 84, "256 Q2_K elements must report 84 bytes");
+}
+
+// ====================================================================
+// #3601: every other hand-typed row. bytes/element = block_bytes / block_elems from
+// ggml-common.h. The SIZES table this replaces had seven IQ rows wrong and the 26-30
+// tail shifted by one (BF16 read IQ1_M's 0.375).
+// ====================================================================
+
+#[test]
+fn test_3601_element_size_iq_tq_and_the_24_to_30_tail() {
+    // (dtype code, block_bytes, block_elems, label)
+    let cases: [(u32, f64, f64, &str); 18] = [
+        (16, 66.0, 256.0, "IQ2_XXS"), // was 0.5625: `apr tensors` called a valid file truncated
+        (17, 74.0, 256.0, "IQ2_XS"),
+        (18, 98.0, 256.0, "IQ3_XXS"),
+        (19, 50.0, 256.0, "IQ1_S"),
+        (20, 18.0, 32.0, "IQ4_NL"),
+        (21, 110.0, 256.0, "IQ3_S"),
+        (22, 82.0, 256.0, "IQ2_S"),
+        (23, 136.0, 256.0, "IQ4_XS"),
+        (24, 1.0, 1.0, "I8"),
+        (25, 2.0, 1.0, "I16"),
+        (26, 4.0, 1.0, "I32"), // was 2.0
+        (27, 8.0, 1.0, "I64"), // was 4.0
+        (28, 8.0, 1.0, "F64"),
+        (29, 56.0, 256.0, "IQ1_M"), // was 8.0
+        (30, 2.0, 1.0, "BF16"),     // was 0.375
+        (34, 54.0, 256.0, "TQ1_0"), // was the 4.0 default
+        (35, 66.0, 256.0, "TQ2_0"), // was the 4.0 default
+        (8, 34.0, 32.0, "Q8_0"),    // an unchanged row, for contrast
+    ];
+    for (code, block_bytes, block_elems, label) in cases {
+        let expected = block_bytes / block_elems;
+        let actual = super::ggml_dtype_element_size(code);
+        assert_eq!(actual, expected, "{label} (code {code})");
+    }
+    // Removed upstream and never-defined ids keep the conservative F32 default.
+    for code in [4, 5, 31, 36, 43, 4242] {
+        assert_eq!(super::ggml_dtype_element_size(code), 4.0, "code {code}");
+    }
 }
 
 // ====================================================================
