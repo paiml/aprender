@@ -260,6 +260,10 @@ pub struct Qwen35CudaModel<'a> {
     dims: Qwen35CudaDims,
     /// Positions the device KV caches hold.
     max_seq_len: usize,
+    /// Rows per batched-prefill GEMM chunk (#3596): 512 by default, more where the
+    /// device has memory to spare (a unified-memory GB10), because every chunk
+    /// dequantizes every weight once.
+    prefill_rows: usize,
 }
 
 /// Map a GPU error into the crate error type with the operation that raised it.
@@ -613,6 +617,7 @@ impl<'a> Qwen35CudaModel<'a> {
             logits_buf,
             dims,
             max_seq_len,
+            prefill_rows: prefill::PREFILL_MAX_CHUNK_ROWS,
         })
     }
 
@@ -1525,6 +1530,7 @@ impl<'a> Qwen35CudaModel<'a> {
 mod prefill;
 pub use prefill::{
     PrefillAttention, PREFILL_ATTENTION_ENV, PREFILL_MAX_CHUNK_ROWS, PREFILL_SCORES_BUDGET_BYTES,
+    UNIFIED_PREFILL_CHUNK_ROWS,
 };
 
 /// Per-layer CPU parity on the real Qwen3.5-0.8B file.
