@@ -1,0 +1,19 @@
+- id: PMAT-3733
+  github_issue: 3733
+  item_type: task
+  title: 'apr inspect --json drops every qwen35.* metadata key: the GGUF reader parsed only an arch-prefix allowlist; every header key now reaches inspect (#3733)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-a8
+  created: 2026-09-21T17:05:00Z
+  updated: 2026-09-21T17:05:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3733 done_when, verbatim: "`apr inspect --json <gguf>` emits every KV the header carries (or at least every `<general.architecture>.*` key) for any arch, including one inspect has never heard of. A test runs a fixture GGUF with an unknown arch prefix and fails if any header key is missing from `.metadata`."'
+  - 'Cop comment on #3733 (2026-09-21T16:25:54Z), verbatim: "done_when: `apr inspect --json` emits EVERY GGUF metadata key the file carries, with no arch-prefixed allowlist (the 46 KVs on the 4B). A case row checks the count against the header''s KV count, plus a mutant (drop one prefix and it goes RED). Also trace the RosettaStone path, since 62 didn''t."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'PENDING: filled with the measured record before the quorum.'

@@ -86,6 +86,25 @@ fn read_metadata_array(data: &[u8], offset: usize) -> Result<(GgufValue, usize)>
     let count = read_u64(data, offset + 4)? as usize;
     let mut consumed = 12; // type (4) + count (8)
 
+    // #3733: every header key is now parsed (keys outside the allowlist used to
+    // be skipped by length arithmetic alone), so a count taken from the file must
+    // not size an allocation or index past the end. The span is checked first;
+    // a string needs at least its 8-byte length, which bounds that count too.
+    let available = data.len().saturating_sub(offset + consumed);
+    let min_elem = match elem_type {
+        0..=1 | 7 => 1,
+        2..=3 => 2,
+        8 | 10..=12 => 8,
+        _ => 4,
+    };
+    if count.checked_mul(min_elem).is_none_or(|need| need > available) {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "GGUF metadata array of {count} elements (type {elem_type}) overruns the file"
+            ),
+        });
+    }
+
     match elem_type {
         8 => {
             let mut strings = Vec::with_capacity(count);
@@ -107,13 +126,7 @@ fn read_metadata_array(data: &[u8], offset: usize) -> Result<(GgufValue, usize)>
         5 => {
             let mut values = Vec::with_capacity(count);
             for _ in 0..count {
-                let v = i32::from_le_bytes([
-                    data[offset + consumed],
-                    data[offset + consumed + 1],
-                    data[offset + consumed + 2],
-                    data[offset + consumed + 3],
-                ]);
-                values.push(v);
+                values.push(read_i32_le(data, offset + consumed)?);
                 consumed += 4;
             }
             Ok((GgufValue::ArrayInt32(values), consumed))
@@ -121,25 +134,13 @@ fn read_metadata_array(data: &[u8], offset: usize) -> Result<(GgufValue, usize)>
         6 => {
             let mut values = Vec::with_capacity(count);
             for _ in 0..count {
-                let v = f32::from_le_bytes([
-                    data[offset + consumed],
-                    data[offset + consumed + 1],
-                    data[offset + consumed + 2],
-                    data[offset + consumed + 3],
-                ]);
-                values.push(v);
+                values.push(read_f32_le(data, offset + consumed)?);
                 consumed += 4;
             }
             Ok((GgufValue::ArrayFloat32(values), consumed))
         }
         _ => {
-            let elem_size = match elem_type {
-                0..=1 | 7 => 1,
-                2..=3 => 2,
-                10..=12 => 8,
-                _ => 4,
-            };
-            consumed += count * elem_size;
+            consumed += count * min_elem;
             Ok((GgufValue::ArrayUint32(vec![]), consumed))
         }
     }
@@ -261,42 +262,6 @@ pub(crate) fn read_metadata_value(
     }
 }
 
-/// Skip a metadata value (we don't need to parse all metadata types)
-fn skip_metadata_value(data: &[u8], offset: usize, value_type: u32) -> Result<usize> {
-    match value_type {
-        0..=1 | 7 => Ok(1), // Uint8, Int8, Bool
-        2..=3 => Ok(2),     // Uint16, Int16
-        8 => {
-            // String
-            let len = read_u64(data, offset)? as usize;
-            Ok(8 + len)
-        }
-        9 => {
-            // Array - need to read element type and count, then skip elements
-            let elem_type = read_u32(data, offset)?;
-            let count = read_u64(data, offset + 4)? as usize;
-            let elem_size = match elem_type {
-                0..=1 | 7 => 1, // Uint8, Int8, Bool
-                2..=3 => 2,     // Uint16, Int16
-                8 => {
-                    // Array of strings - need to iterate
-                    let mut skip = 12; // type (4) + count (8)
-                    for _ in 0..count {
-                        let (_, slen) = read_string(data, offset + skip)?;
-                        skip += slen;
-                    }
-                    return Ok(skip);
-                }
-                10..=12 => 8, // Uint64, Int64, Float64
-                _ => 4,       // Uint32, Int32, Float32, Unknown
-            };
-            Ok(12 + count * elem_size)
-        }
-        10..=12 => Ok(8), // Uint64, Int64, Float64
-        _ => Ok(4),       // Uint32, Int32, Float32, Unknown (4 bytes default)
-    }
-}
-
 /// Parsed GGUF file for import
 #[derive(Debug)]
 pub struct GgufReader {
@@ -312,6 +277,16 @@ pub struct GgufReader {
     pub data_offset: usize,
     /// Metadata key-value pairs (extracted from GGUF)
     pub metadata: BTreeMap<String, GgufValue>,
+    /// Every header key OUTSIDE the parse allowlist, kept for inventory only
+    /// (`apr inspect`). Empty when the reader was built with `keep_all`.
+    ///
+    /// #3733: the allowlist (`tokenizer.`, `general.`, and six arch prefixes)
+    /// decided what `apr inspect --json` could show, so a Qwen3.5 file lost all
+    /// 22 of its `qwen35.*` keys, `context_length` among them: `qwen35.` does not
+    /// start with `qwen3.`. The keys live here rather than in `metadata` because
+    /// the config accessors read `metadata`, and widening THEM would hand every
+    /// unlisted architecture a config the import path has never been given.
+    pub display_only_metadata: BTreeMap<String, GgufValue>,
 }
 
 /// Tensor metadata from GGUF file
