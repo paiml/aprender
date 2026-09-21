@@ -153,20 +153,24 @@ impl EmbeddedChatTemplate {
     #[must_use]
     pub fn for_model_file(path: &std::path::Path) -> Option<Result<Self, RealizarError>> {
         let name = path.to_string_lossy().to_lowercase();
-        if name.ends_with(".gguf") {
+        let ext = path
+            .extension()
+            .map(|e| e.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
+        if ext == "gguf" {
             return match crate::gguf::MappedGGUFModel::from_path(path) {
                 Ok(mapped) => Self::from_gguf(&mapped.model),
                 Err(e) => Some(Err(e)),
             };
         }
-        if name.ends_with(".safetensors") || name.ends_with(".safetensors.index.json") {
+        if ext == "safetensors" || name.ends_with(".safetensors.index.json") {
             let config = path.parent()?.join("tokenizer_config.json");
             let text = std::fs::read_to_string(config).ok()?;
             let json: serde_json::Value = serde_json::from_str(&text).ok()?;
             let source = json.get("chat_template")?.as_str().filter(|s| !s.is_empty())?;
             return Some(Self::new(source.to_owned()));
         }
-        if name.ends_with(".apr") {
+        if ext == "apr" {
             let model = match crate::apr::AprV2Model::load(path) {
                 Ok(m) => m,
                 Err(e) => return Some(Err(e)),
