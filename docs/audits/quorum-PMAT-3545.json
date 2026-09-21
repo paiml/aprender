@@ -1,0 +1,180 @@
+{
+  "ticket": "PMAT-3545",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "593cab765bc64867e0572fda52c6a5d55c150159",
+  "diff_sha256": "de1754d8b3ab84d91ddb499c57d2592017d340d2acac31e26d23bc9b6cd1c157",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 13727,
+  "author": {
+    "model": "Opus 5 (1M context)",
+    "family": "claude",
+    "source": "measured"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff completely addresses the ticket PMAT-3545. It accurately fixes the defect where `apr devices` reported CUDA as `not-compiled` on a cuda build by ensuring `trueno/cuda` is included in `apr-cli`'s `cuda` feature flag. The tests assert both required scenarios as described in the ticket: the cuda build does not return `NotCompiled`, and the non-cuda build appropriately returns `NotCompiled`. CI is correctly updated with an explicit test command for the feature, and all documentation/measurements reflect the implemented reality. No claims are unfounded and no gates are weakened.",
+      "findings": [],
+      "raw_bytes": 3439,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully addresses PMAT-3545 by adding `trueno/cuda` to the `cuda` feature in `apr-cli`'s Cargo.toml. It adds the required two-sided test which asserts that a CUDA build does not report `NotCompiled` and a non-CUDA build does report `NotCompiled`, correctly asserting `!= not-compiled` instead of `compiled-in`. No constraints are violated.",
+      "findings": [
+        {
+          "claim": "The `cuda` feature in `apr-cli`'s `Cargo.toml` now includes `trueno/cuda`.",
+          "file": "crates/apr-cli/Cargo.toml",
+          "grounding": "cited"
+        },
+        {
+          "claim": "A test is added that RED-turns if `trueno/cuda` is removed again. It checks that `cuda.source` is not `NotCompiled`.",
+          "file": "crates/apr-cli/tests/devices_reports_its_own_build.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "The falsifier is two-sided: a non-cuda build must STILL report not-compiled, which is tested in the `a_non_cuda_build_still_says_not_compiled_even_where_a_gpu_exists` test.",
+          "file": "crates/apr-cli/tests/devices_reports_its_own_build.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "The test asserts `!= not-compiled` rather than `compiled-in` as the issue's query mistakenly requested.",
+          "file": "crates/apr-cli/tests/devices_reports_its_own_build.rs",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 4538,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff completely addresses PMAT-3545 by adding `trueno/cuda` to `apr-cli`'s `cuda` feature array. It includes a two-sided integration test that RED-turns if `trueno/cuda` is removed again, while preserving host-independent `not-compiled` assertions for non-cuda builds. Roadmap tracking, evidence documentation, and CI test runner scripts are all present and accurate. No forbidden changes or weakened gates were identified.",
+      "findings": [
+        {
+          "claim": "`apr-cli`'s `cuda` feature was updated to include `trueno/cuda`, resolving the issue where `apr devices` reported CUDA as `not-compiled` even on CUDA builds.",
+          "file": "crates/apr-cli/Cargo.toml",
+          "fix": "cuda = [\"inference\", \"realizar/cuda\", \"entrenar/cuda\", \"trueno/cuda\", \"aprender-train-distill?/cuda\"]",
+          "grounding": "cited",
+          "line": 98
+        },
+        {
+          "claim": "Two-sided falsification test `devices_reports_its_own_build.rs` asserts `cuda.source != Source::NotCompiled` on `--features cuda` builds and `cuda.source == Source::NotCompiled` on non-cuda builds.",
+          "file": "crates/apr-cli/tests/devices_reports_its_own_build.rs",
+          "fix": "fn a_cuda_build_does_not_report_its_own_cuda_as_not_compiled / fn a_non_cuda_build_still_says_not_compiled_even_where_a_gpu_exists",
+          "grounding": "cited",
+          "line": 33
+        },
+        {
+          "claim": "Explicit CI test runner command added to ensure test execution in CI pipelines with `--features cuda`.",
+          "file": "ci/explicit-test-commands.d/440-apr-cli-devices-reports-its-own-build.cmd",
+          "fix": "cargo test -p apr-cli --features cuda --test devices_reports_its_own_build",
+          "grounding": "cited",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 5356,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "ci/explicit-test-commands.d/440-apr-cli-devices-reports-its-own-build.cmd",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Explicit CI test runner command added to ensure test execution in CI pipelines with `--features cuda`."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/Cargo.toml",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The `cuda` feature in `apr-cli`'s `Cargo.toml` now includes `trueno/cuda`."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/Cargo.toml",
+      "line": 98,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "`apr-cli`'s `cuda` feature was updated to include `trueno/cuda`, resolving the issue where `apr devices` reported CUDA as `not-compiled` even on CUDA builds."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/tests/devices_reports_its_own_build.rs",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "A test is added that RED-turns if `trueno/cuda` is removed again. It checks that `cuda.source` is not `NotCompiled`.",
+        "The falsifier is two-sided: a non-cuda build must STILL report not-compiled, which is tested in the `a_non_cuda_build_still_says_not_compiled_even_where_a_gpu_exists` test.",
+        "The test asserts `!= not-compiled` rather than `compiled-in` as the issue's query mistakenly requested."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/tests/devices_reports_its_own_build.rs",
+      "line": 33,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Two-sided falsification test `devices_reports_its_own_build.rs` asserts `cuda.source != Source::NotCompiled` on `--features cuda` builds and `cuda.source == Source::NotCompiled` on non-cuda builds."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=Opus 5 (1M context)/claude"
+  }
+}
