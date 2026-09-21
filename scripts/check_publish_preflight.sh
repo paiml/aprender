@@ -42,6 +42,7 @@
 # USAGE
 #   bash scripts/check_publish_preflight.sh             # the gate
 #   bash scripts/check_publish_preflight.sh --selftest  # case table, both polarities
+#   bash scripts/check_publish_preflight.sh --receipt-only  # R2+R5 only: T-1, before the tag (#3708)
 set -uo pipefail
 
 PROG=${0##*/}
@@ -76,9 +77,63 @@ newest_receipt() { # dir -> path of the newest receipt-*.json, or nothing
     find "$dir" -maxdepth 1 -name 'receipt-*.json' -type f 2>/dev/null | LC_ALL=C sort | tail -n 1
 }
 
+# R5, ONE function for both ends of the train (#3708). The full gate calls it at
+# T-4, before the first upload; `--receipt-only` calls it at T-1, right after the
+# pre-publish dogfood and before the tag exists, so a receipt this rule will
+# refuse at T-4 is refused while no public tag has been cut. Same file, same
+# function, same verdict: the two ends cannot disagree.
+# rule_r5 root head version -> prints its row; 0 accepted, 1 refused
+rule_r5() {
+    local root="$1" head="$2" version="$3" rdir receipt verdict rcommit rversion rphase rdeferred bad_defer g
+    rdir="${PUBLISH_PREFLIGHT_RECEIPT_DIR:-$root/.dogfood}"
+    receipt="$(newest_receipt "$rdir")"
+    if [ -z "$receipt" ]; then
+        echo "FAIL  R5 no dogfood receipt under $rdir (run scripts/dogfood.sh on this commit)"
+        return 1
+    else
+        read -r verdict rcommit rversion rphase rdeferred < <(python3 -c '
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    print("UNREADABLE - - - -"); sys.exit(0)
+deferred = d.get("deferred") or []
+print(d.get("verdict") or "-", d.get("commit") or "-", d.get("version") or "-",
+      d.get("phase") or "full", ",".join(str(x) for x in deferred) or "-")' "$receipt")
+        # A pre-publish receipt may DEFER only the rows that need the PUBLISHED
+        # crate (scripts/dogfood.sh --phase pre-publish). Any other deferred row
+        # is a refusal to measure, and this gate refuses with it. The set is a
+        # whitelist: a row not named here is refused, whatever it is called.
+        bad_defer=""
+        if [ "$rphase" = pre-publish ] && [ "$rdeferred" != "-" ]; then
+            # Split on commas into an array: an unquoted expansion would also
+            # glob, and a gate should not depend on what files sit in its cwd.
+            local -a deferred_rows=()
+            IFS=, read -r -a deferred_rows <<< "$rdeferred"
+            for g in "${deferred_rows[@]}"; do
+                case " $PREPUBLISH_DEFERRABLE " in *" $g "*) ;; *) bad_defer="$bad_defer $g" ;; esac
+            done
+        elif [ "$rphase" != pre-publish ] && [ "$rdeferred" != "-" ]; then
+            bad_defer=" $rdeferred (deferred outside the pre-publish phase)"
+        fi
+        if [ -n "$bad_defer" ]; then
+            printf 'FAIL  R5 dogfood receipt %s defers a row this gate does not accept:%s (accepted in --phase pre-publish: %s)\n' \
+                "$(basename "$receipt")" "$bad_defer" "$PREPUBLISH_DEFERRABLE"
+            return 1
+        elif [ "$verdict" = GO ] && [ "$rcommit" = "$head" ] && [ "$rversion" = "$version" ]; then
+            echo "ok    R5 dogfood receipt $(basename "$receipt"): GO for ${head:0:9} at $version (phase $rphase${rdeferred:+, deferred: $rdeferred})"
+        else
+            printf 'FAIL  R5 dogfood receipt %s: verdict=%s commit=%s version=%s (need GO, %s, %s)\n' \
+                "$(basename "$receipt")" "$verdict" "${rcommit:0:9}" "$rversion" "${head:0:9}" "${version:-?}"
+            return 1
+        fi
+    fi
+    return 0
+}
+
 gate() {
     local root="${PUBLISH_PREFLIGHT_ROOT:-}" main_ref="${PUBLISH_PREFLIGHT_MAIN_REF:-origin/main}"
-    local fails=0 status version tags head rdir receipt verdict rcommit rversion
+    local fails=0 status version tags head
     for t in git cargo python3; do
         command -v "$t" >/dev/null 2>&1 || die_env "$t is not on PATH"
     done
@@ -129,49 +184,7 @@ gate() {
     fi
 
     # R5 dogfood receipt: GO, this commit, this version
-    rdir="${PUBLISH_PREFLIGHT_RECEIPT_DIR:-$root/.dogfood}"
-    receipt="$(newest_receipt "$rdir")"
-    if [ -z "$receipt" ]; then
-        echo "FAIL  R5 no dogfood receipt under $rdir (run scripts/dogfood.sh on this commit)"
-        fails=1
-    else
-        read -r verdict rcommit rversion rphase rdeferred < <(python3 -c '
-import json, sys
-try:
-    d = json.load(open(sys.argv[1]))
-except Exception:
-    print("UNREADABLE - - - -"); sys.exit(0)
-deferred = d.get("deferred") or []
-print(d.get("verdict") or "-", d.get("commit") or "-", d.get("version") or "-",
-      d.get("phase") or "full", ",".join(str(x) for x in deferred) or "-")' "$receipt")
-        # A pre-publish receipt may DEFER only the rows that need the PUBLISHED
-        # crate (scripts/dogfood.sh --phase pre-publish). Any other deferred row
-        # is a refusal to measure, and this gate refuses with it. The set is a
-        # whitelist: a row not named here is refused, whatever it is called.
-        bad_defer=""
-        if [ "$rphase" = pre-publish ] && [ "$rdeferred" != "-" ]; then
-            # Split on commas into an array: an unquoted expansion would also
-            # glob, and a gate should not depend on what files sit in its cwd.
-            local -a deferred_rows=()
-            IFS=, read -r -a deferred_rows <<< "$rdeferred"
-            for g in "${deferred_rows[@]}"; do
-                case " $PREPUBLISH_DEFERRABLE " in *" $g "*) ;; *) bad_defer="$bad_defer $g" ;; esac
-            done
-        elif [ "$rphase" != pre-publish ] && [ "$rdeferred" != "-" ]; then
-            bad_defer=" $rdeferred (deferred outside the pre-publish phase)"
-        fi
-        if [ -n "$bad_defer" ]; then
-            printf 'FAIL  R5 dogfood receipt %s defers a row this gate does not accept:%s (accepted in --phase pre-publish: %s)\n' \
-                "$(basename "$receipt")" "$bad_defer" "$PREPUBLISH_DEFERRABLE"
-            fails=1
-        elif [ "$verdict" = GO ] && [ "$rcommit" = "$head" ] && [ "$rversion" = "$version" ]; then
-            echo "ok    R5 dogfood receipt $(basename "$receipt"): GO for ${head:0:9} at $version (phase $rphase${rdeferred:+, deferred: $rdeferred})"
-        else
-            printf 'FAIL  R5 dogfood receipt %s: verdict=%s commit=%s version=%s (need GO, %s, %s)\n' \
-                "$(basename "$receipt")" "$verdict" "${rcommit:0:9}" "$rversion" "${head:0:9}" "${version:-?}"
-            fails=1
-        fi
-    fi
+    rule_r5 "$root" "$head" "$version" || fails=1
 
     # R6 no versioned sibling dev-dependency lies on a cycle (PMAT-955, #3468). A
     # dev-dependency with a version is kept in the published manifest and resolved
@@ -229,6 +242,34 @@ for n, t, req in sorted(vdev):
         return 1
     fi
     echo "PASS  $PROG: clean, versioned, tagged, on $main_ref, dogfood GO"
+    return 0
+}
+
+# --receipt-only (#3708): R2 + R5 and nothing else. R1/R3/R4/R6 describe the tree
+# being UPLOADED and the tag it is uploaded from; at T-1 there is no tag yet, so
+# they are judged at T-4 by the full gate, as before.
+receipt_gate() {
+    local root="${PUBLISH_PREFLIGHT_ROOT:-}" head version
+    for t in git cargo python3; do
+        command -v "$t" >/dev/null 2>&1 || die_env "$t is not on PATH"
+    done
+    if [ -z "$root" ]; then
+        root="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+    fi
+    git -C "$root" rev-parse --verify --quiet HEAD >/dev/null || die_env "$root is not a git repository with a HEAD"
+    head="$(git -C "$root" rev-parse HEAD)"
+    version="$(root_version "$root")" || version=""
+    if [ -z "$version" ]; then
+        echo "FAIL  R2 cargo metadata names no version for the root manifest"
+        echo "REFUSE $PROG --receipt-only: no version to judge the dogfood receipt against."
+        return 1
+    fi
+    echo "ok    R2 version $version (cargo metadata, root manifest)"
+    if ! rule_r5 "$root" "$head" "$version"; then
+        echo "REFUSE $PROG --receipt-only: the T-4 publish gate would refuse this receipt (R5)."
+        return 1
+    fi
+    echo "PASS  $PROG --receipt-only: R5 holds for ${head:0:9} at $version (R1/R3/R4/R6 are judged at publish)"
     return 0
 }
 
@@ -295,9 +336,9 @@ selftest() {
         mkdir -p "$d/.dogfood"
         write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     }
-    row() { # name, expect(0|1), needle, dir
-        local name="$1" expect="$2" needle="$3" d="$4" out rc=0
-        out="$( PUBLISH_PREFLIGHT_ROOT="$d" PUBLISH_PREFLIGHT_MAIN_REF=fixture-main gate 2>&1 )" || rc=$?
+    row() { # name, expect(0|1), needle, dir [, gate|receipt_gate]
+        local name="$1" expect="$2" needle="$3" d="$4" mode="${5:-gate}" out rc=0
+        out="$( PUBLISH_PREFLIGHT_ROOT="$d" PUBLISH_PREFLIGHT_MAIN_REF=fixture-main "$mode" 2>&1 )" || rc=$?
         if [ "$rc" != "$expect" ]; then
             printf '  BROKE %-36s expected exit %s got %s\n' "$name" "$expect" "$rc"; fail=$((fail + 1)); return 0
         fi
@@ -386,12 +427,32 @@ selftest() {
     d="$tmp/devdep_path"; build_ws_repo "$d" ''
     row pathed_sibling_devdep_passes   0 "PASS" "$d"
 
+    # --receipt-only (#3708): the T-1 end of R5. An UNTAGGED tree with a GO
+    # receipt passes it (the full gate refuses the same tree on R3 -- the row
+    # above -- which is why T-1 cannot run the full gate), and every receipt
+    # the full gate refuses on R5 it refuses too, with the same row.
+    d="$tmp/ro-untagged-go"; build_repo "$d"; git -C "$d" tag -d v1.2.3 >/dev/null
+    row receipt_only_untagged_go_passes 0 "PASS  $PROG --receipt-only" "$d" receipt_gate
+    d="$tmp/ro-nogo"; build_repo "$d"; git -C "$d" tag -d v1.2.3 >/dev/null
+    write_receipt "$d" NO-GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    row receipt_only_no_go_refuses      1 "FAIL  R5" "$d" receipt_gate
+    d="$tmp/ro-stale"; build_repo "$d"; write_receipt "$d" GO 0000000000000000000000000000000000000000 1.2.3
+    row receipt_only_stale_commit_refuses 1 "FAIL  R5" "$d" receipt_gate
+    d="$tmp/ro-otherver"; build_repo "$d"; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.4
+    row receipt_only_other_version_refuses 1 "FAIL  R5" "$d" receipt_gate
+    d="$tmp/ro-absent"; build_repo "$d"; rm -f "$d/.dogfood/receipt-20260903T000000Z.json"
+    row receipt_only_absent_refuses     1 "FAIL  R5 no dogfood receipt" "$d" receipt_gate
+    d="$tmp/ro-baddefer"; build_repo "$d"
+    write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3 pre-publish '["publish-dry-run","bashrs"]'
+    row receipt_only_unexpected_deferral_refuses 1 "FAIL  R5" "$d" receipt_gate
+
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
 }
 
 case "${1:-}" in
     --selftest) selftest ;;
+    --receipt-only) receipt_gate ;;
     '')         gate ;;
     -h|--help)  sed -n '2,40p' "$0" ;;
     *)          printf '%s: unknown argument %s\n' "$PROG" "$1" >&2; exit 2 ;;

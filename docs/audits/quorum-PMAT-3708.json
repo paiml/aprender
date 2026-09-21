@@ -1,0 +1,195 @@
+{
+  "ticket": "PMAT-3708",
+  "base": "0cb1e4bd6",
+  "base_resolved": "0cb1e4bd6",
+  "base_note": "no origin/0cb1e4bd6 exists; judged against the local ref",
+  "head": "91fc42d16540861fb4bdc4990f5b33475a034e53",
+  "diff_sha256": "90fb651f5c1cb819fa03510c97e967e591da1ea310663b968c4f91875ec003ac",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 78730,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff strictly fulfills PMAT-3708. Dogfood inheritance is successfully removed in favor of running the real dogfood script at T-1. Both T-1 (via `--receipt-only`) and T-4 run the exact same R5 validation function (`rule_r5`) on the same receipt file, ensuring alignment and preventing NO-GOs from being tagged. The close step properly asserts the epic is the only open item in the milestone, closes it, and then closes the milestone; any other open item aborts the process. Additionally, `prepare_bump.sh` strictly verifies that model-ladder receipts are green and unignored before opening the bump PR. All case tables, including the required mutants for each acceptance criterion, are comprehensively implemented and completely backed by the diff.",
+      "findings": [],
+      "raw_bytes": 2802,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff fully implements PMAT-3708 according to all acceptance criteria. It successfully eliminates the dogfood inheritance path ('NEVER inherit'), running the dogfood in all cases. It introduces `rule_r5` in `check_publish_preflight.sh` to ensure the T-1 test and the T-4 publish gate share the exact same evaluation logic on the same file. It also resolves the epic close sequence by explicitly closing the epic prior to the milestone, checking for any other open issues first. Finally, it satisfies the new obligation to ensure model-ladder receipts are present and non-ignored before executing the release bump. The new test file `check_release_autopilot_dogfood_close.sh` thoroughly verifies these exact behaviors with comprehensive row tables and mutant checks, matching the counts and outputs claimed in the PR body. No regression or contradictory behavior was found.",
+      "findings": [],
+      "raw_bytes": 3005,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gpt-oss-120b-medium",
+            "why": "no capacity: 503 on two pre-check probes (UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server)"
+          }
+        ]
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements all requirements outlined in PMAT-3708.\n- Done when 1 & 2: Autopilot now never inherits the dogfood GO. Instead, it always runs the dogfood step and enforces rule R5 at T-1 using `check_publish_preflight.sh --receipt-only`, reusing the exact same file and function (`rule_r5`) as the T-4 gate. A comprehensive case table (`check_release_autopilot_dogfood_close.sh`) was added to test this logic with all required rows and mutants.\n- Done when 4: The `close` step in `autopilot.sh` now correctly identifies the release epic, verifies no other milestone items are open, closes the epic if it's open, and then closes the milestone.\n- Obligation 5: `prepare_bump.sh --ship` now mandates green model-ladder receipts for the new version by running `scripts/check_model_ladder.sh --version \"$V\"`. It also refuses if they are present but ignored. The `check_release_bump_pr_body.sh` case table was expanded to include `ladder-missing-gx10` and `ladder-ignored` rows and their mutants.\n\nNo deviations from the ticket's instructions or prohibitions were found.",
+      "findings": [],
+      "raw_bytes": 3450,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-low",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-low",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (gemini-3.1-pro-high, gemini-3.1-pro-low) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by gemini-3.1-pro-high after falling through gpt-oss-120b-medium (skipped: no capacity: 503 on two pre-check probes (UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server)) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "capacity",
+        "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 2,
+        "outcome": "capacity",
+        "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
