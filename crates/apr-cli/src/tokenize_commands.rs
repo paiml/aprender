@@ -117,6 +117,24 @@ pub enum TokenizeCommands {
 
     /// Encode a JSONL corpus into `.bin` shards per contracts/pretokenize-bin-v1.yaml.
     ///
+    /// Print the token ids a GGUF model's own tokenizer gives a text (#3726).
+    ///
+    /// The ids come from the same encoder `apr run`, `apr serve` and `apr parity` use. The
+    /// output names the path that produced them: `canonical` (pre-tokenizer plus ranked
+    /// merges, identical to llama.cpp) or `greedy-fallback: <why>`. Only the file's metadata
+    /// is read; no weights are loaded.
+    #[cfg(feature = "inference")]
+    Encode {
+        /// GGUF model file whose tokenizer to run
+        #[arg(value_name = "MODEL")]
+        model: PathBuf,
+        /// Text to encode
+        #[arg(short = 'p', long, value_name = "TEXT", conflicts_with = "file")]
+        prompt: Option<String>,
+        /// File whose contents to encode (read as UTF-8, verbatim)
+        #[arg(short = 'f', long, value_name = "FILE")]
+        file: Option<PathBuf>,
+    },
     /// Loads a trained BPE tokenizer (vocab.json + merges.txt) from `--tokenizer`,
     /// reads `--corpus` (file or directory of `.jsonl` files), encodes the
     /// `--content-field` of each line to u32 tokens, and writes

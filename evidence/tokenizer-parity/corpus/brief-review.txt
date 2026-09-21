@@ -1,0 +1,450 @@
+You are one of 3 independent reviewers. Judge whether this diff does what its ticket says, and nothing the ticket forbids. Try to REFUTE it: default to FAIL when a test asserts the opposite of the ticket, when a gate is weakened, when a receipt claim is not backed by the diff, or when the change does something the ticket does not ask for. Every finding needs file, line, claim and grounding (cited = you quote the diff; measured = you ran a command; asserted = neither). Return PASS only if you found nothing that refutes it.
+
+## Ticket(s) ONT-2a
+
+commit f6fb83dd44838fd9217eda8a5ecb4810d1714a28
+Author: Noah Gift <noah.gift@gmail.com>
+Date:   Mon Sep 14 01:01:33 2026 +0000
+
+    ONT-2a: andon — L4/L5 print self-declared until grounded (#3224)
+    
+    * ONT-2a RED: four tests for an L4 claim nothing grounds (Refs PMAT-3222)
+    
+    ONT-001 v3.1 row ONT-2a, the andon. `is_lean_proved` treats a contract's own `verification_summary` as
+    authoritative whenever it claims `l4_lean_proved > 0`, so a YAML file asserting its own proof IS the
+    evidence for that proof. These four tests say what the row requires instead, and they do not compile
+    against the current API — which is the point: the words the report has to print do not exist yet.
+    
+        $ cargo test -p aprender-contracts --lib proof_status
+        error[E0425]: cannot find function `is_l4_self_declared` in this scope
+        error[E0609]: no field `l4_self_declared_excluded` on type `proof_status::ProofStatusReport`
+        error[E0609]: no field `l4_self_declared` on type `ProofStatusTotals`
+        error[E0609]: no field `lean_grounded` on type `ProofStatusTotals`
+        error[E0609]: no field `l4_self_declared` on type `ContractProofStatus`
+        error[E0425]: cannot find function `is_l4_self_declared` in this scope
+    
+    The four: a claim covering every obligation with no in-tree theorem is not L4, and bindings cannot promote
+    it to L5; the report flags it, counts zero grounded and says the total excludes it; the text output prints
+    both `self-declared` and `grounded`; and a contract that claims nothing is NOT flagged, because the flag
+    marks an unbacked claim rather than the absence of a proof.
+    
+    Pmat-Ticket: PMAT-3222
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+    
+    * refactor(proof-status): the theorem scan was 132 cognitive, so the file could not be committed at all (Refs PMAT-3222)
+    
+    `lean_theorem_names` was one 95-line closure eight levels deep: base → domain → file → content → line →
+    theorem name → CamelCase → first word. `pmat analyze complexity` put it at cyclomatic 19 / cognitive 132,
+    against the pre-commit gate's ceiling of 30 / 25, and the gate runs over every STAGED source file — so any
+    change to proof_status.rs, including a comment, was refused. A gate nothing can pass is the one that
+    teaches people to reach for --no-verify; this makes the function honest instead.
+    
+    Six named pieces, behaviour for behaviour: insert_name_forms (the namespaced / bare / lowercased trio),
+    camel_case, first_camel_word, insert_theorem_names_from_content, insert_domain_theorems (which is where
+    `sorry` still disqualifies a file), scan_theorem_base. The base loop keeps its "first base that yields
+    anything wins" rule.
+    
+        before: 13 functions over the file, max cyclomatic 19, max cognitive 132 — 1 error at the gate
+        after:  22 functions,               max cyclomatic  7, max cognitive  13 — 0 over threshold
+        cargo test -p aprender-contracts --lib: 1505 passed, 0 failed
+    
+    No behaviour changed here: this is the commit that makes the next one possible.
+    
+    Pmat-Ticket: PMAT-3222
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+    
+    * ONT-2a: L4 is what the tree grounds, not what the contract claims (Refs PMAT-3222)
+    
+    `is_lean_proved` took a contract's own `verification_summary` as authoritative whenever it claimed
+    `l4_lean_proved > 0`, and consulted the in-tree Lean scan only when it claimed nothing. A YAML file
+    asserting its own proof was therefore the evidence for that proof. ONT-001 R-4 (andon before mechanism)
+    says to withdraw that credit now, in the open, and let ONT-3b earn it back with real grounding.
+    
+    WHAT GROUNDS A CLAIM is a sorry-free in-tree Lean theorem an equation names and `lean_theorem_names()`
+    resolves. That is now the only thing granting L4/L5. A claim with nothing under it is SELF-DECLARED:
+    flagged per contract, counted in the totals, printed in its own `L4 evidence` column as `self-declared`
+    beside `grounded`, and excluded from L4. `not_applicable` credit still comes from the summary — it is a
+    claim about APPLICABILITY, not about a proof, and ONT-8's evidence block is where it gets its provenance.
+    
+    MEASURED over the corpus (1828 contracts), before → after:
+    
+        L1 1074 → 1075     L2 305 → 306     L3 417 → 442     L4 32 → 5 entries
+        unique L4 stems 31 → 4      self-declared and excluded: 27
+        lean obligations: 181 claimed, 70 grounded
+    
+    Nothing downstream encodes those numbers: no README, no `lint-baseline.json` key, no Makefile target and
+    no workflow regenerates or diffs proof-status output (rg over each, 2026-09-13).
+    
+    GROUNDING IS A PARAMETER, not a hidden read. The scan resolves paths relative to the process CWD, so from
+    a unit test it finds nothing and every fixture is ungrounded by construction — a suite in which the andon
+    could withdraw ALL credit for ever and no test would notice. `*_with_grounding` takes the count and the
+    public wrappers do the scan, so the eight existing level tests now say which side they test; two assert
+    both sides on one contract.
+    
+    MUTATION (the row's own): let the claim stand in for the grounding again — `effective = claimed | grounded`
+    — and 4 of 47 proof_status tests fail; restored, 47 pass. Whole crate: 1505 passed, 0 failed.
+    
+    Pmat-Ticket: PMAT-3222
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+    
+    * ONT-2a: quorum agreed, 3/3 PASS (Refs PMAT-3222)
+    
+    Three independent agy lanes over the diff at 34877899d4: gemini-3.1-pro-high, gemini-3.7-flash-high and
+    gemini-3.6-flash-high, all PASS, all model_measured, author family claude.
+    
+    It took three rounds, and the two that failed said nothing about this diff. In both, lane 2
+    (gemini-3.8-flash-high, entry 2 of the default lane_models list) returned NO-VERDICT while lanes 1 and 3
+    returned substantive PASS: round 1 spent 926s narrating "waiting for the background task to complete" at
+    one turn, round 2 ended status=ERROR at 379s. Filed as paiml-implement#190; round 3 put
+    gemini-3.6-flash-high in that slot and finished normally.
+    
+    Pmat-Ticket: PMAT-3222
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+    
+    * fix(clippy): the split left an orphaned doc block and a negated is_some_and (Refs PMAT-3222)
+    
+    ci / lint failed on two errors in the ONT-2a change, both artefacts of splitting is_lean_proved into is_lean_proved_with_grounding:
+    
+      - empty line after doc comment (proof_status.rs:234) — the original function's doc block was left standing above a blank line with no item under it, and the block below it opened with an intra-doc link to [is_lean_proved], a name this file no longer defines. The blank line becomes /// so the two blocks are one doc, and the dangling link is replaced by the sentence it was trying to make.
+      - nonminimal_bool (proof_status.rs:430) — !path.extension().is_some_and(|e| e == "lean") is is_none_or(|e| e != "lean").
+    
+    cargo clippy -p aprender-contracts --lib --all-features -- -D warnings: clean. cargo test -p aprender-contracts --lib: 1505 passed, 0 failed.
+    
+    Pmat-Ticket: PMAT-3222
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+    
+    * receipt(PMAT-3222): the ONT-2a andon, and why the split and the N/A credit are what they are (Refs PMAT-3222)
+    
+    A review lane refused the head on three grounds and the branch carried no receipt to answer any of them. Measured, not argued: level_strict_summary_cannot_understate_total PASSES (the lane predicted it would fail, and read its fixture's l4_lean_proved as 2 where it is 3); the L4 rule is a strengthening because the binding constraint moved from the summary's self-report to a grounding count read out of the Lean tree; and the scan was split because it stood at cognitive complexity 132 against a gate that refuses it, with the file's worst function now 13.
+    
+    Pmat-Ticket: PMAT-3222
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+    
+    * quorum(PMAT-3222): 3/3 PASS on the head that carries the receipt (Refs PMAT-3222)
+    
+    Round 2 was 2 PASS / 1 FAIL and the refusal was measurable: the lane predicted level_strict_summary_cannot_understate_total would fail (it passes), read its fixture's l4_lean_proved as 2 (it is 3), and asked why the scan was split (cognitive 132 against a gate that refuses it). The answers are in docs/audits/impl-PMAT-3222-receipt.md now, where a reviewer reads them.
+    
+    Pmat-Ticket: PMAT-3222
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+    
+    ---------
+    
+    Co-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>
+---
+ crates/aprender-contracts/src/proof_status.rs      | 320 ++++++++++++++-------
+ .../aprender-contracts/src/proof_status_tests.rs   | 130 ++++++++-
+ docs/audits/impl-PMAT-3222-receipt.md              |  81 ++++++
+ docs/audits/quorum-PMAT-3222.json                  |  84 ++++++
+ docs/roadmaps/roadmap.yaml                         |  17 ++
+ 5 files changed, 516 insertions(+), 116 deletions(-)
+
+diff --git a/crates/aprender-contracts/src/proof_status.rs b/crates/aprender-contracts/src/proof_status.rs
+index 1aff86d08..f04ffca1e 100644
+--- a/crates/aprender-contracts/src/proof_status.rs
++++ b/crates/aprender-contracts/src/proof_status.rs
+@@ -70,6 +70,10 @@ pub struct ContractProofStatus {
+     pub kani_harnesses: u32,
+     /// Number of obligations proved in Lean 4
+     pub lean_proved: u32,
++    /// Obligations grounded by a sorry-free in-tree Lean theorem the equation names (ONT-2a)
++    pub lean_grounded: u32,
++    /// The contract claims a Lean proof its tree does not ground: printed `self-declared`, excluded from L4
++    pub l4_self_declared: bool,
+     /// Number of bindings with `implemented` status
+     pub bindings_implemented: u32,
+     /// Total number of equation bindings
+@@ -106,6 +110,8 @@ pub struct ProofStatusReport {
+     pub contracts: Vec<ContractProofStatus>,
+     /// Kernel equivalence class summaries
+     pub kernel_classes: Vec<KernelClassSummary>,
++    /// ONT-2a andon: a self-declared L4 is excluded from the L4 total in this build
++    pub l4_self_declared_excluded: bool,
+     /// Aggregate totals across all contracts
+     pub totals: ProofStatusTotals,
+ }
+@@ -123,6 +129,10 @@ pub struct ProofStatusTotals {
+     pub kani_harnesses: u32,
+     /// Sum of Lean-proved obligations across all contracts
+     pub lean_proved: u32,
++    /// Sum of GROUNDED Lean-proved obligations across all contracts (ONT-2a)
++    pub lean_grounded: u32,
++    /// Contracts whose L4 claim is self-declared, and therefore excluded from L4 (ONT-2a)
++    pub l4_self_declared: u32,
+     /// Sum of implemented bindings across all contracts
+     pub bindings_implemented: u32,
+     /// Sum of total bindings across all contracts
+@@ -222,19 +232,57 @@ fn kernel_class_map() -> Vec<(&'static str, &'static str, &'static [&'static str
+ /// now correctly reports L3 instead of a full L4. Contracts with legitimately
+ /// N/A obligations (e.g. softmax-kernel-v1 = 5 proved + 4 N/A of 9) MUST declare
+ /// that in `verification_summary` — the scan path grants no N/A credit.
+-fn is_lean_proved(contract: &Contract) -> bool {
++///
++/// The grounding count is passed IN rather than scanned here.
++///
++/// The scan reads the Lean tree from paths relative to the process CWD, so inside a unit test it resolves
++/// nothing and every fixture is ungrounded by construction — a suite in which the andon could withdraw
++/// ALL credit for ever and no test would notice. Taking the count as a parameter is what keeps both sides
++/// covered: `grounded == 0` is the andon, `grounded + not_applicable >= total` is the credit it still
++/// grants. Production callers use the wrapper and get the scan.
++#[must_use]
++pub fn is_lean_proved_with_grounding(contract: &Contract, grounded: u32) -> bool {
+     let total = contract.proof_obligations.len() as u32;
+     if total == 0 {
+         return false;
+     }
+-    // A present verification_summary that makes a positive Lean claim is
+-    // authoritative (a stale/zero summary falls through to the scan). Otherwise
+-    // count resolvable in-tree Lean theorems; the scan grants no N/A credit.
+-    let (proved, not_applicable) = match contract.verification_summary.as_ref() {
+-        Some(vs) if vs.l4_lean_proved > 0 => (vs.l4_lean_proved, vs.l4_not_applicable),
+-        _ => (count_lean_theorems_for_contract(contract), 0),
++    // ONT-001 ONT-2a (andon): a `verification_summary` is the contract talking about ITSELF, and until a
++    // discharge summary exists to check it against (PVL EV-8b) the only grounding in this tree is a
++    // sorry-free Lean theorem an equation names and `lean_theorem_names()` resolves. L4 is therefore
++    // granted on the GROUNDED count alone; a claim with nothing under it is reported `self-declared` by
++    // `is_l4_self_declared`, excluded from the L4 total, and never counted quietly. The `not_applicable`
++    // credit still comes from the summary: it is a claim about APPLICABILITY, not about a proof, and it
++    // is ONT-8's evidence block that will give it its own provenance.
++    let not_applicable = contract
++        .verification_summary
++        .as_ref()
++        .map_or(0, |vs| vs.l4_not_applicable);
++    grounded > 0 && grounded + not_applicable >= total
++}
++
++/// Returns `true` when the contract CLAIMS a Lean proof its own tree does not ground.
++///
++/// The claim is the summary's `l4_lean_proved` plus its `l4_not_applicable` covering every obligation —
++/// exactly the test that granted L4 before ONT-2a. The grounding is [`count_lean_theorems_for_contract`].
++/// A contract that would have been L4 by its own summary and is not L4 by grounding is SELF-DECLARED: the
++/// report prints the word beside it, the L4 total excludes it, and ONT-3b is where the credit is earned.
++#[must_use]
++pub fn is_l4_self_declared(contract: &Contract) -> bool {
++    is_l4_self_declared_with_grounding(contract, count_lean_theorems_for_contract(contract))
++}
++
++/// [`is_l4_self_declared`] with the grounding count passed in, for the same reason.
++#[must_use]
++pub fn is_l4_self_declared_with_grounding(contract: &Contract, grounded: u32) -> bool {
++    let total = contract.proof_obligations.len() as u32;
++    if total == 0 {
++        return false;
++    }
++    let Some(vs) = contract.verification_summary.as_ref() else {
++        return false;
+     };
+-    proved > 0 && proved + not_applicable >= total
++    let claim_covers = vs.l4_lean_proved > 0 && vs.l4_lean_proved + vs.l4_not_applicable >= total;
++    claim_covers && !is_lean_proved_with_grounding(contract, grounded)
+ }
+ 
+ /// Returns `true` when all bindings are implemented.
+@@ -254,12 +302,27 @@ fn is_fully_bound(binding_status: Option<(u32, u32)>) -> bool {
+ /// - **L1**: contract exists with equations
+ #[allow(clippy::cast_possible_truncation)]
+ pub fn compute_proof_level(contract: &Contract, binding_status: Option<(u32, u32)>) -> ProofLevel {
++    compute_proof_level_with_grounding(
++        contract,
++        binding_status,
++        count_lean_theorems_for_contract(contract),
++    )
++}
++
++/// [`compute_proof_level`] with the grounding count passed in (ONT-2a).
++#[allow(clippy::cast_possible_truncation)]
++#[must_use]
++pub fn compute_proof_level_with_grounding(
++    contract: &Contract,
++    binding_status: Option<(u32, u32)>,
++    grounded: u32,
++) -> ProofLevel {
+     let total_obligations = contract.proof_obligations.len() as u32;
+     let ft_count = contract.falsification_tests.len() as u32;
+     let kani_count = contract.kani_harnesses.len() as u32;
+ 
+     // Check L4/L5: Lean proved
+-    if is_lean_proved(contract) {
++    if is_lean_proved_with_grounding(contract, grounded) {
+         return if is_fully_bound(binding_status) {
+             ProofLevel::L5
+         } else {
+@@ -294,102 +357,128 @@ pub(crate) const LEAN_THEOREM_BASES: &[&str] = &[
+     "../provable-contracts/lean",
+ ];
+ 
++/// Register the three naming forms a single label contributes: namespaced, bare, and lowercased.
++fn insert_name_forms(names: &mut std::collections::HashSet<String>, label: &str) {
++    names.insert(format!("Theorems.{label}"));
++    names.insert(label.to_string());
++    names.insert(label.to_lowercase());
++}
++
++/// `relu_nonneg` → `ReluNonneg`.
++fn camel_case(snake: &str) -> String {
++    snake
++        .split('_')
++        .map(|s| {
++            let mut c = s.chars();
++            match c.next() {
++                None => String::new(),
++                Some(f) => f.to_uppercase().chain(c).collect(),
++            }
++        })
++        .collect()
++}
++
++/// `ReluNonneg` → `Relu`: the leading word of a CamelCase name.
++fn first_camel_word(camel: &str) -> String {
++    camel
++        .chars()
++        .enumerate()
++        .take_while(|(i, c)| *i == 0 || !c.is_uppercase())
++        .map(|(_, c)| c)
++        .collect()
++}
++
++/// Register every `theorem <name>` a file declares, in the forms a contract may cite it by.
++fn insert_theorem_names_from_content(names: &mut std::collections::HashSet<String>, content: &str) {
++    for line in content.lines() {
++        let Some(pos) = line.find("theorem ") else {
++            continue;
++        };
++        let tname: String = line[pos + 8..]
++            .chars()
++            .take_while(|c| c.is_alphanumeric() || *c == '_')
++            .collect();
++        if tname.is_empty() {
++            continue;
++        }
++        let camel = camel_case(&tname);
++        names.insert(format!("Theorems.{camel}"));
++        names.insert(camel.clone());
++        let first_word = first_camel_word(&camel);
++        if first_word.len() >= 3 {
++            names.insert(format!("Theorems.{first_word}"));
++            names.insert(first_word);
++        }
++    }
++}
++
++/// Register the names contributed by one domain directory's sorry-free `.lean` files.
++///
++/// A file containing `sorry` contributes NOTHING: an admitted proof grounds no claim, which is the whole
++/// reason this scan is the grounding ONT-2a trusts over a contract's own summary.
++fn insert_domain_theorems(names: &mut std::collections::HashSet<String>, domain: &std::path::Path) {
++    let domain_name = domain
++        .file_name()
++        .unwrap_or_default()
++        .to_string_lossy()
++        .to_string();
++    let Ok(files) = std::fs::read_dir(domain) else {
++        return;
++    };
++    for file in files.flatten() {
++        let path = file.path();
++        if path.extension().is_none_or(|e| e != "lean") {
++            continue;
++        }
++        let Ok(content) = std::fs::read_to_string(&path) else {
++            continue;
++        };
++        if content.contains("sorry") {
++            continue;
++        }
++        let stem = path
++            .file_stem()
++            .unwrap_or_default()
++            .to_string_lossy()
++            .to_string();
++        insert_name_forms(names, &domain_name);
++        insert_name_forms(names, &stem);
++        insert_theorem_names_from_content(names, &content);
++    }
++}
++
++/// Every theorem name one base directory contributes; empty when the base is absent.
++fn scan_theorem_base(base: &str) -> std::collections::HashSet<String> {
++    let mut names = std::collections::HashSet::new();
++    let search_dir = std::path::Path::new(base).join("ProvableContracts/Theorems");
++    if !search_dir.exists() {
++        return names;
++    }
++    let Ok(domains) = std::fs::read_dir(&search_dir) else {
++        return names;
++    };
++    for domain_entry in domains.flatten() {
++        let path = domain_entry.path();
++        if path.is_dir() {
++            insert_domain_theorems(&mut names, &path);
++        }
++    }
++    names
++}
++
+ /// Build a set of all sorry-free Lean theorem names from the Theorems/ directory.
+ /// Scans once, caches the result in a thread-local for repeated calls.
+ fn lean_theorem_names() -> &'static std::collections::HashSet<String> {
+     use std::sync::OnceLock;
+     static CACHE: OnceLock<std::collections::HashSet<String>> = OnceLock::new();
+     CACHE.get_or_init(|| {
+-        let mut names = std::collections::HashSet::new();
+         for base in LEAN_THEOREM_BASES {
+-            let search_dir = std::path::Path::new(base).join("ProvableContracts/Theorems");
+-            if !search_dir.exists() {
+-                continue;
+-            }
+-            // Walk all domain dirs and collect theorem names
+-            if let Ok(domains) = std::fs::read_dir(&search_dir) {
+-                for domain_entry in domains.flatten() {
+-                    if !domain_entry.path().is_dir() {
+-                        continue;
+-                    }
+-                    let domain_name = domain_entry.file_name().to_string_lossy().to_string();
+-                    if let Ok(files) = std::fs::read_dir(domain_entry.path()) {
+-                        for file in files.flatten() {
+-                            let path = file.path();
+-                            if path.extension().is_some_and(|e| e == "lean") {
+-                                if let Ok(content) = std::fs::read_to_string(&path) {
+-                                    if !content.contains("sorry") {
+-                                        let stem = path
+-                                            .file_stem()
+-                                            .unwrap_or_default()
+-                                            .to_string_lossy()
+-                                            .to_string();
+-                                        // Register domain, stem, and namespace forms
+-                                        names.insert(format!("Theorems.{domain_name}"));
+-                                        names.insert(domain_name.clone());
+-                                        names.insert(domain_name.to_lowercase());
+-                                        names.insert(format!("Theorems.{stem}"));
+-                                        names.insert(stem.clone());
+-                                        names.insert(stem.to_lowercase());
+-                                        // Extract theorem names from content
+-                                        // e.g., "theorem relu_nonneg" → "Relu"
+-                                        for line in content.lines() {
+-                                            if let Some(pos) = line.find("theorem ") {
+-                                                let rest = &line[pos + 8..];
+-                                                let tname: String = rest
+-                                                    .chars()
+-                                                    .take_while(|c| {
+-                                                        c.is_alphanumeric() || *c == '_'
+-                                                    })
+-                                                    .collect();
+-                                                if !tname.is_empty() {
+-                                                    // CamelCase the theorem name for matching
+-                                                    let camel: String = tname
+-                                                        .split('_')
+-                                                        .map(|s| {
+-                                                            let mut c = s.chars();
+-                                                            match c.next() {
+-                                                                None => String::new(),
+-                                                                Some(f) => f
+-                                                                    .to_uppercase()
+-                                                                    .chain(c)
+-                     
+
+---
+Answer with ONE JSON object and nothing else. The object has exactly these four keys:
+- "verdict": one of "PASS", "FAIL", "do-not-implement-as-written"
+- "summary": a string
+- "findings": an array of objects, each with "file", "line", "claim", "grounding" and "fix"
+- "tree_witness": this token, copied verbatim: 6d559b3160867e925d622cf976ee6f65

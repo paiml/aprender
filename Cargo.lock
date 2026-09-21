@@ -1370,6 +1370,7 @@ dependencies = [
  "tower 0.5.3",
  "tower-http",
  "tracing",
+ "unicode-properties",
  "ureq 2.12.1",
  "uuid",
  "zstd",

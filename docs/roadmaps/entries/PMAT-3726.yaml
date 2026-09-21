@@ -1,0 +1,21 @@
+- id: PMAT-3726
+  github_issue: 3726
+  item_type: task
+  title: 'apr''s byte-level BPE tokenizer is non-canonical (greedy longest-match, no pre-tokenizer, no merge ranks): every GGUF prompt reaches the model as ids it never saw; corrupts copy tasks (#3693) and every non-ASCII user'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-c3
+  created: 2026-09-21T16:20:00Z
+  updated: 2026-09-21T16:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3726 done_when 1, verbatim: "apr''s token ids are **identical to llama.cpp''s** (the pinned comparator, `llama-tokenize` / `--verbose-prompt`) for every Q4_K model family in the inventory (qwen35, qwen3, qwen2 / qwen2.5, qwen3moe) on a corpus of real consumer briefs (#3716), source code, and non-ASCII sets (CJK, accented Latin, emoji, box-drawing, zero-width chars), and the round-trip decode(encode(x)) == x"'
+  - 'done_when 2, verbatim: "the byte-level BPE byte→unicode map (GPT-2 bytes_to_unicode) and the pre-tokenizer regex match the model''s `tokenizer.ggml.pre` / HF definition. Root cause named on the issue."'
+  - 'done_when 3, verbatim: "a **tokenizer-parity gate** (a scripts/check_*.sh, wired) that fails on any id mismatch against the pinned llama.cpp, plus a mutant (reintroduce the id-0 byte fallback and it goes RED). It becomes a required cell per model in the release shape (#3715)."'
+  - 'done_when 4, verbatim: "re-measure #3693 after the fix: if the corruption disappears, #3693 closes as this; if not, the remainder stays on #3693"'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Filed by the cop (aprender-04) from infra-c8''s measurement; owner aprender-c3, who reached the same root cause from the forward side (#3693). ROOT CAUSE: `GGUFModel::encode` (crates/aprender-serve/src/gguf/token.rs) was documented and implemented as greedy longest-match over each whole segment, with no pre-tokenizer and no merge ranks. `prepare_tokens_gguf` (the `apr run` path), `apr parity` and serve''s batch path all call it. Measured on apr 0.69.0 (225b2a9ab) against the pinned llama-tokenize (d1d3c3396) for "The quorum forbids it; cited refutes!!!": apr gave `Ġquo|rum Ġforbid|s … Ġrefute|s`, llama.cpp `Ġqu|orum Ġforb|ids … Ġref|utes`. On arbiter''s r891 prefix apr gave 253 ids and llama.cpp 248, with 16 differing spans. The lane''s "quoorum" is `Ġquo` (apr''s odd split of the prompt) joined to the canonical continuation `orum`. FIX (this row): new crates/aprender-serve/src/gguf/byte_level_bpe.rs, a port of llama.cpp''s reference: `unicode_regex_split_custom_qwen2`/`_qwen35` line for line (selected by tokenizer.ggml.pre; the fleet inventory has exactly these two: qwen2 covers qwen2/qwen2.5/qwen3/qwen3moe, qwen35 covers qwen35/qwen35moe), GPT-2 bytes_to_unicode, ranked merges from tokenizer.ggml.merges with a priority queue (lowest rank, then leftmost, as llm_tokenizer_bpe_session), special tokens by token_type CONTROL/USER_DEFINED/UNKNOWN longest first (tokenizer_st_partition). `GGUFModel::encode` routes every byte-level vocabulary through it. A byte-level file with an unimplemented pre-tokenizer keeps the greedy path and says so once on stderr, naming #3726. The old `<|...|>` special-token rule also missed USER_DEFINED `<think>`/`<tool_call>`. The gate follows the #3076 shape: scripts/check_tokenizer_parity.sh (PR-time case table, run by guard_tree) and scripts/tokenizer_parity.sh (model-backed, apr vs the pinned llama-tokenize, declared in [package.metadata.dogfood] for the pre-publish phase), reading ids from a new `apr tokenize encode MODEL (-p TEXT | -f FILE)`. That command reads only the GGUF metadata, calls the production GGUFModel::encode, and prints the path taken and decode(encode(x)) == x. Corpus: evidence/tokenizer-parity/corpus/ (public aprender source, a review brief over a public aprender commit, non-ASCII / whitespace / identifier / chat-template sets).'
