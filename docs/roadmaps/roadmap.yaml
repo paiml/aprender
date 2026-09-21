@@ -18990,3 +18990,20 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE (hand-entered from issue #3627 done_when; minted on the PR branch so the AD-04 quorum can run -- pmat work status refuses a missing item). Done when: contracts/rmsnorm-kernel-v1.yaml Scale invariance obligation carries either the ε>0 formal or the α²·mean(x²) ≫ ε precondition; pv validate passes ~~regenerated with pv probar --binding~~ **WITHDRAWN 21:40Z** — b3 measured that pv probar --binding emits 7 #[ignore = "no binding available"] stubs for this contract; the tracked file''s 5 real tests were produced by the pre-monorepo external generator (20dda945b, 2026-02-18) and the header is false (class row: #3630). Instead: the tracked test is edited **directly**, the commit says so, and the file''s header is replaced by a true one (hand-maintained, contract-bound) the minimal input above ([0.0, -0.15964308], α=0.012254778) is a committed regression case that PASSES under the new assertion (i.e. the fixed test is exercised on the exact input that killed #3621), and a mutation that restores the ε=0 assertion turns it RED cargo'
+- id: PMAT-3651
+  github_issue: 3651
+  item_type: task
+  title: 'guard_tree.sh drops a passing guard''s output — an UNMEASURED exit-0 reads as PASS in every CI log, so #3567''s verdict can never be observed'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-21T05:28:51Z
+  updated: 2026-09-21T05:28:51Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (quoted from issue #3651 "What lands"): 1. guard_tree.sh: under a PASS row, surface every captured line whose first token is UNMEASURED or SUMMARY (indented "      ~ ", capped at 5 lines + a "(+N more)" count so a chatty guard cannot flood the log). Lines where the word is not the first token are not surfaced. A guard opts a pass-summary in by printing SUMMARY …; an UNMEASURED line is surfaced whether or not the guard opted in. 2. check_fleet_pv_shapes_gate.sh: its pass row is printed as SUMMARY PASS verdict=… so the measured row reaches the log. 3. scripts/tests/guard_tree_test.sh rows: UNMEASURED surfaced; SUMMARY surfaced; the word mid-line not surfaced; a silent pass prints only its PASS row; the cap; and a mutant with the surfacing removed goes RED. NOT in scope: closing #3567 (that needs one guard-tree run on an intel runner after this lands), and the fleet pv''s own verdict.'

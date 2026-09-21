@@ -148,6 +148,8 @@ STUB
     mkpv "$d/pv_ok" capable Pass
     out=$(FLEET_PV_BIN="$d/pv_ok" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" RUNNER_NAME=probe-runner bash "$0" 2>&1); rc=$?
     [ "$rc" -eq 0 ] && grep -q '^PASS .*verdict=Pass.*runner=probe-runner' <<<"$out" && ok "capable pv + Pass verdict -> PASS, row names the runner" || nok "expected PASS row, got rc=$rc: $out"
+    # 1b. ...and re-prints it as SUMMARY, the line guard_tree.sh carries into the CI log (#3651)
+    [ "$rc" -eq 0 ] && grep -q '^SUMMARY PASS .*verdict=Pass.*runner=probe-runner.*version=' <<<"$out" && ok "a measured PASS is re-printed as SUMMARY <row> for the guard-tree log" || nok "expected a SUMMARY PASS row, got rc=$rc: $out"
 
     # 2. PLANTED VIOLATION: lint says Fail -> the guard is RED (verdict parsed, not grepped)
     mkpv "$d/pv_fail" capable Fail
@@ -165,7 +167,7 @@ STUB
 
     # 5. no pin -> UNMEASURED, exit 0, the row says so and names the runner and infra#708
     out=$(FLEET_PV_BIN="$d/pv_ok" FLEET_PV_PIN="$d/no-such-pin" FLEET_PV_CONTRACTS="$d/contracts" RUNNER_NAME=never-converged bash "$0" 2>&1); rc=$?
-    [ "$rc" -eq 0 ] && grep -q '^UNMEASURED runner=never-converged.*infra#708' <<<"$out" && ! grep -q '^PASS' <<<"$out" && ok "no pin -> UNMEASURED row (exit 0, never a PASS line)" || nok "expected UNMEASURED row, got rc=$rc: $out"
+    [ "$rc" -eq 0 ] && grep -q '^UNMEASURED runner=never-converged.*infra#708' <<<"$out" && ! grep -qE '^(SUMMARY )?PASS' <<<"$out" && ok "no pin -> UNMEASURED row (exit 0, never a PASS line)" || nok "expected UNMEASURED row, got rc=$rc: $out"
 
     # 6. pv's own control silent (pc_shape != fired) -> RED even with verdict=Pass
     mkpv "$d/pv_silent" capable Pass silent
@@ -200,7 +202,15 @@ echo "=== shapes gate on the FLEET-PINNED pv, on this runner (check_fleet_pv_sha
 # The row is the verdict. No trailer may begin with PASS unless the row did: a trailer
 # reading "PASS-OR-UNMEASURED" is exactly what a consumer's grep would misread (the
 # self-test's row 5 refused it).
+# A measured PASS is re-printed as `SUMMARY <row>`: guard_tree.sh surfaces SUMMARY
+# and UNMEASURED lines under a passing guard (#3651), so the runner, pv, version,
+# verdict and corpus reach the CI log instead of a bare "PASS" (#3567). UNMEASURED
+# needs no SUMMARY -- guard_tree surfaces it unasked.
 row=$(judge 2>&1); rc=$?
 printf '%s\n' "$row"
-case "$rc" in 0) printf '%s\n' "${row%% *}";; 1) echo "FAIL" >&2;; *) echo "ENV (rc=$rc)" >&2;; esac
+case "$rc" in
+    0) case "$row" in "PASS "*) printf 'SUMMARY %s\n' "$row" ;; *) printf '%s\n' "${row%% *}" ;; esac ;;
+    1) echo "FAIL" >&2 ;;
+    *) echo "ENV (rc=$rc)" >&2 ;;
+esac
 exit "$rc"
