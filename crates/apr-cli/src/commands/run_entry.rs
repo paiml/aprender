@@ -385,6 +385,14 @@ fn print_run_output(
         println!("{}", result.text);
     }
 
+    // UNREACHABLE IN `--json`, and the guard is not local: the `output_format == "json"` arm
+    // above `return`s before here (and `--json --benchmark` is taken by the `benchmark` arm), so
+    // stdout in JSON mode carries exactly one document. Verified by running the binary: stdout was
+    // pure JSON with the human lines on stderr.
+    //
+    // Said out loud because a quorum lane read this `println!`, found no format guard beside it,
+    // and reported it as done_when 3 stdout pollution — a correct reading of what is visible here.
+    // An invariant enforced seventeen lines away is one a reader has to go and find.
     if !benchmark {
         println!();
         println!(

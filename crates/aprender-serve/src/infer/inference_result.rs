@@ -207,10 +207,16 @@ fn run_gguf_inference(
     // rather than being folded into whichever stage happens to bracket it.
     let run_start = Instant::now();
     let mut stages = crate::infer::stage_timings::StageTimings::default();
+    // ORDER IS THE WHOLE POINT. The sleep must sit INSIDE the measured window, or the planted
+    // delay lands in `unattributed_ms` and `load_ms` does not move — which is done_when 2's
+    // falsifier failing silently. It was the wrong way round here: a quorum lane found that
+    // `APR_STAGE_DELAY_MS=load:N` shifted nothing, while the unit tests stayed green because they
+    // exercise `StageTimings::timed`/`planted_delay` in isolation and never this hand-rolled
+    // wiring. `timed()` gets it right by construction; these sites bypassed it.
+    let load_start = Instant::now();
     if let Some(d) = crate::infer::stage_timings::planted_delay("load") {
         std::thread::sleep(d);
     }
-    let load_start = Instant::now();
     let mapped = MappedGGUFModel::from_path(&config.model_path)?;
     prefault_mmap(mapped.data());
     // #3091: Qwen3.5/Qwen3.8 hybrids (Gated DeltaNet) have their own CPU forward. The dense

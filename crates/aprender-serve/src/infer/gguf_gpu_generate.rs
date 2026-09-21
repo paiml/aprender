@@ -333,7 +333,18 @@ fn try_gguf_gpu_generate(
     // Reuse existing CUDA model — generate_gpu_resident() creates fresh KV cache
     // and resets GPU KV positions internally, so validation doesn't "consume" it.
     let generate_start = std::time::Instant::now();
-    if let Some(d) = crate::infer::stage_timings::planted_delay("prefill") {
+    // Both plants are taken here and ATTRIBUTED BELOW to the stage each names. A quorum lane
+    // found that the prefill plant moved the wrong field: `phases.prefill_ms` is measured by the
+    // engine INSIDE `generate_gpu_resident` and cannot see a sleep outside it, while
+    // `decode_ms = total - prefill` is a remainder — so the prefill delay silently became decode
+    // time. Moving the wrong field is worse than moving none: the falsifier reads as working.
+    // The lane also found `decode` had no plant site on this path at all.
+    let planted_prefill = crate::infer::stage_timings::planted_delay("prefill");
+    if let Some(d) = planted_prefill {
+        std::thread::sleep(d);
+    }
+    let planted_decode = crate::infer::stage_timings::planted_delay("decode");
+    if let Some(d) = planted_decode {
         std::thread::sleep(d);
     }
     let result = cuda_model
@@ -346,7 +357,12 @@ fn try_gguf_gpu_generate(
     let mut phases = cuda_model.take_phase_timings();
     if let Some(prefill_ms) = phases.prefill_ms {
         let total_ms = generate_start.elapsed().as_secs_f64() * 1000.0;
-        phases.decode_ms = Some((total_ms - prefill_ms).max(0.0));
+        // The prefill plant is added to prefill explicitly; the decode plant needs nothing,
+        // because decode is the remainder and the sleep is already inside `total_ms`.
+        let prefill_with_plant =
+            prefill_ms + planted_prefill.map_or(0.0, |d| d.as_secs_f64() * 1000.0);
+        phases.decode_ms = Some((total_ms - prefill_with_plant).max(0.0));
+        phases.prefill_ms = Some(prefill_with_plant);
     }
     stages.prefill_ms = phases.prefill_ms;
     stages.decode_ms = phases.decode_ms;
