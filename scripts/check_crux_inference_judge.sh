@@ -197,6 +197,18 @@ done
 run_judge "$d"; GOT_RC=$?
 expect "one RED cell among GREEN ones fails the run" "$d" 1 golden-paris RED
 
+# 9b. one UNJUDGED cell among GREEN ones: that cell was never compared, and the
+#     amended scope makes a missing cell a NO-GO, so the run declines.
+d=$(newcase one_unjudged_among_green)
+apr_out "$d" golden-2plus2 "4" gpu false; llama_out "$d" golden-2plus2 "$Q" "4"
+row "$d/manifest.jsonl" apr golden-2plus2 0 "$d/apr-golden-2plus2.out" "$d/apr-golden-2plus2.err"
+row "$d/manifest.jsonl" llama.cpp golden-2plus2 0 "$d/llama-golden-2plus2.out" "$d/llama-golden-2plus2.err"
+apr_out "$d" golden-paris "Paris" gpu false
+row "$d/manifest.jsonl" apr golden-paris 0 "$d/apr-golden-paris.out" "$d/apr-golden-paris.err"
+row "$d/manifest.jsonl" llama.cpp golden-paris 124 "" "" ""
+run_judge "$d"; GOT_RC=$?
+expect "one UNJUDGED cell among GREEN ones declines the run" "$d" 2 golden-paris UNJUDGED
+
 # 10-11. token parity: equal ids agree; a divergence is located, never averaged away.
 d=$(newcase parity)
 apr_out "$d" $P "4" gpu false "151644,872,198,3838"; llama_out "$d" $P "$Q" "4"

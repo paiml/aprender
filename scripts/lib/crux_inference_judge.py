@@ -15,12 +15,13 @@ a non-zero exit, a backend that fell back to one the lane did not ask for, a
 refusal, output the judge cannot parse, and an apr row that is simply MISSING.
 Absence is a violation here, never a skip.
 
-The other outcomes are reported and never scored as a pass:
+The other outcomes:
   GREEN      apr correct, and at least one comparator ANSWERED (right or wrong)
   UNJUDGED   no comparator answered, so there is no external oracle for the cell
   ALL_WRONG  the comparators answered, none correctly, and apr was wrong too
-A run with no GREEN cell declines (exit 2): a receipt that compared apr to
-nothing, or only to wrong answers, is not evidence that apr is right.
+ANY UNJUDGED cell declines the run (exit 2): it was never compared, and the
+amended scope makes a missing cell a NO-GO. So does a run with no GREEN cell,
+which compared apr only to wrong answers. ALL_WRONG is named, not scored.
 
 PERFORMANCE IS TRANSCRIBED, NEVER COMPUTED. Token counts and rates are copied
 from what each engine prints about itself, labelled with the engine that
@@ -31,7 +32,7 @@ writes is an input to the verdict.
 Usage:
   crux_inference_judge.py collect --manifest M --prompts P --meta META \\
       --out-json R.json --out-md R.md
-Exit: 0 no RED and at least one GREEN cell; 1 any RED; 2 decline.
+Exit: 0 no RED, no UNJUDGED, at least one GREEN; 1 any RED; 2 decline.
 """
 
 import argparse
@@ -304,9 +305,10 @@ def collect(args):
     judged = counts["RED"] + counts["GREEN"] + counts["ALL_WRONG"]
     if counts["RED"]:
         verdict, rc = "RED", 1
-    elif counts["GREEN"] == 0:
-        # Nothing shows apr right where a competitor answered: every cell was
-        # unjudged or all-wrong. That is a broken run or prompt set, not a pass.
+    elif counts["UNJUDGED"] or counts["GREEN"] == 0:
+        # An UNJUDGED cell was never compared to anything: under the amended
+        # scope (#3739, 17:19Z) "a missing cell is a NO-GO", and an unmeasured
+        # cell is a missing one. A run with no GREEN at all shows nothing either.
         verdict, rc = "DECLINE", 2
     else:
         verdict, rc = "PASS", 0

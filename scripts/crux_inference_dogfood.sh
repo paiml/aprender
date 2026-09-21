@@ -20,8 +20,9 @@
 #              An apr that falls back from the lane's backend did not answer the cell.
 #   --out      receipt dir (default evidence/crux/<version>); writes <host>-<backend>.{json,md}
 #
-# Exit: 0 no RED and at least one GREEN cell · 1 any RED · 2 decline (no GREEN
-# judged, apr unpinned or the wrong version, a verb this slice cannot drive).
+# Exit: 0 no RED, no UNJUDGED cell and at least one GREEN · 1 any RED · 2 decline
+# (a cell no comparator answered, no GREEN, apr unpinned or the wrong version,
+# a verb this slice cannot drive).
 #
 # WHAT "SAME" MEANS, and how each engine is resolved:
 #   model   one file by path. ollama IMPORTS that file through a Modelfile
