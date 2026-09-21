@@ -314,6 +314,8 @@ mod bound_dispatch;
 mod core;
 // #3727: PMAT-084 FP8 activation reuse, opt-in per shared-input group.
 mod fp8_activation_cache;
+/// PMAT-3725 (#3725): split-K (flash-decoding) decode attention for the Qwen3.5 full-attention layers.
+mod gdn_decode_splitk_ops;
 // #3759: one module-cache key, one PTX text (debug builds prove it).
 /// PMAT-3477 (#3090): wrappers for the six Gated `DeltaNet` device kernels.
 mod gdn_ops;
