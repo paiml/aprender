@@ -398,6 +398,18 @@ pub fn plan_first_fit<A: Copy>(
     Err(last)
 }
 
+/// One line naming a plan [`plan_first_fit`] passed over, so a fallback is never
+/// silent (#3596: a gx10 27B run at 60k prefilled at 512 rows, not 2048, and nothing
+/// said why). The budget is the dtype the refusal last tried, so the dtype is named.
+#[must_use]
+pub fn passed_over_line(path: &str, rows: usize, refusal: &CapacityRefusal) -> String {
+    let b = &refusal.budget;
+    format!(
+        "{path} at {rows} rows needs {:.0} MiB ({:?} KV), {:.0} MiB plannable ({:?})",
+        b.total_mb, b.kv_dtype, b.gpu_free_mb, refusal.kind
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -646,6 +658,22 @@ mod tests {
         );
         assert!(!r.reason.contains("other processes hold"), "{}", r.reason);
         assert!(!r.reason.contains("  "), "a run of spaces in: {}", r.reason);
+    }
+
+    #[test]
+    fn capacity_a_passed_over_plan_is_named_with_its_numbers() {
+        let i = nine_b(262_013, 23_140 * MIB_U, 24_036 * MIB_U, false);
+        let CapacityVerdict::Refused(r) = plan(&CapacityInputs {
+            weights_bytes: 4_861 * MIB_U,
+            workspace_bytes: 1_593 * MIB_U,
+            ..i
+        }) else {
+            panic!("the measured 262k f32 plan must refuse")
+        };
+        assert_eq!(
+            passed_over_line("cuBLAS f32", 512, &r),
+            "cuBLAS f32 at 512 rows needs 23342 MiB (F32 KV), 23140 MiB plannable (CoTenant)"
+        );
     }
 
     #[test]
