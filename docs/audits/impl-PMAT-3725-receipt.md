@@ -1,7 +1,12 @@
 # PMAT-3725: receipt
 
 **Ticket:** PMAT-3725 (issue #3725). Qwen3.5 CUDA long-context decode: split-K (flash-decoding) decode attention, f32 and f16 KV read. This is site 4 of the #3596 f16 split. **Kind:** code.
-**Branch:** `PMAT-3725-splitk-decode-attention`, from `origin/main` at `52f43da71`, in `/mnt/nvme-raid0/agent-wt/3725-splitk`. The receipts below were measured on commit `e52d34af5` (the kernel commit). Later commits add tests, evidence and this file only.
+**Branch:** `PMAT-3725-splitk-decode-attention`, from `origin/main` at `52f43da71`, in `/mnt/nvme-raid0/agent-wt/3725-splitk`. The rungs receipts were measured on `e52d34af5`, the kernel commit. `01118724d` changed three things:
+- the CPU twin's structure (same arithmetic order), the rungs harness `main`, and the oxide port. The complexity ratchet required these.
+- it added the executor-level tests.
+- it did **not** touch the builder kernels or the serve wiring: `git diff e52d34af5 01118724d` shows no hunk in `aprender-serve/src/gguf` or before line 580 of the kernel file.
+
+The device tests were re-run at `01118724d` on both hosts, and both oxide receipts were measured at `01118724d`.
 **Plan of record:**
 - design note: #3725 issuecomment-5763965543
 - cop rulings: #3725, 2026-09-21T16:35:12Z, quoted in the fragment's `notes`
@@ -41,6 +46,8 @@ cmd=cargo test -p aprender-gpu --features cuda --lib decode_attention_splitk   h
 cmd=<same test binary> decode_attention_splitk                                  host=gx10 sm_121    exit=0   # 10 passed, 0 SKIPPED (grep -c SKIPPED = 0), 9.24 s
 cmd=cargo test -p aprender-serve --features cuda --lib qwen35_cuda              host=lambda         exit=0   # 16 passed in 139 s on the real 0.8B and 4B files, incl. attention_layers_match_cpu, forward_single_matches_cpu_logits_end_to_end, 4b_forward_single_matches_cpu_argmax_end_to_end; no test skipped
 cmd=<realizar lib test binary> gdn_splitk                                       host=lambda         exit=0   # 2 passed: executor path at seq_len 5000 (79 splits) vs the 16-block wrapper AND f64 (1e-4 x max|ref|); seq_len 0 and one-split scratch refused
+cmd=<test binary at 01118724d, after the twin refactor> decode_attention_splitk host=lambda     exit=0   # 10 passed, 0 SKIPPED
+cmd=<test binary at 01118724d, rebuilt on gx10: "Compiling aprender-gpu" in its build log> host=gx10 exit=0 # 10 passed, 0 SKIPPED, 8.91 s
 cmd=MUTATION reduce kernel scale := 1.0 (no split rescale)                      host=lambda         exit=101 # 3 device tests RED
 cmd=MUTATION f16 read at the f32 element stride (bytes.max(4))                  host=lambda         exit=101 # splitk_f16_read_matches_widened_f32 RED
 cmd=MUTATION warp position stride 9 instead of 8                                host=lambda         exit=101 # 3 device tests RED
