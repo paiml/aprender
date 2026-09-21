@@ -112,7 +112,7 @@ fn process_repl_input(
 
 #[cfg(feature = "inference")]
 fn run_repl(path: &Path, config: &ChatConfig) -> Result<(), CliError> {
-    let mut session = ChatSession::new(path)?;
+    let mut session = ChatSession::new(path, config.force_cpu)?;
 
     while let Some(input) = read_repl_line()? {
         if input.is_empty() {
