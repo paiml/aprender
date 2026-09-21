@@ -270,6 +270,17 @@ impl Qwen35Session {
         let (budget, context_limited) =
             turn_budget(prompt.len(), config.max_tokens, self.context_length);
         self.turn_positions = prompt.len() + budget;
+        // A session may be driven from any thread (it is `Send`; `apr serve` runs
+        // every request on a blocking-pool worker), and a CUDA context is current
+        // per thread: bind it here, before the first allocation or launch.
+        #[cfg(feature = "cuda")]
+        if let Backend::Gpu(gpu) = &self.backend {
+            if let Err(e) = gpu.model.make_current() {
+                self.fall_back_to_cpu(&format!(
+                    "the CUDA context would not bind to this thread: {e}"
+                ))?;
+            }
+        }
         self.ensure_capacity_or_fall_back()?;
 
         let (mut logits, reused) = self.advance_to(prompt)?;

@@ -693,6 +693,23 @@ impl<'a> Qwen35CudaModel<'a> {
         Self::build_state(&self.executor, &self.layers, self.dims, self.max_seq_len)
     }
 
+    /// Make this model's CUDA context current on the calling thread.
+    ///
+    /// A context is current per THREAD. A model built on one thread and driven
+    /// from another — `apr serve` runs each request on a blocking-pool worker —
+    /// fails its first allocation there with `CUDA_ERROR_INVALID_CONTEXT` (201)
+    /// unless this runs first: measured on #3571, where a decode state for 4096
+    /// positions "would not allocate" and the session fell back to the CPU.
+    /// The dense path learned the same lesson as GH-282.
+    ///
+    /// # Errors
+    /// `cuCtxSetCurrent` failed.
+    pub fn make_current(&self) -> Result<()> {
+        self.executor
+            .make_current()
+            .map_err(|e| gpu_err("qwen35_cuda_make_current", &e))
+    }
+
     /// A fresh decode state with room for `max_seq_len` positions, whatever
     /// this model was built with (#3595).
     ///

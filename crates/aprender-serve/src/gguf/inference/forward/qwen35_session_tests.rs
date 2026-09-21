@@ -250,6 +250,39 @@ mod gpu {
         );
     }
 
+    /// Built on one thread, driven from another — the shape `apr serve` has. A
+    /// CUDA context is current per thread; without binding it the first
+    /// allocation fails with CUDA_ERROR_INVALID_CONTEXT and the session falls
+    /// back to the CPU (measured on #3571 before the fix).
+    #[test]
+    fn gpu_a_session_built_on_one_thread_serves_from_another() {
+        let mapped = mapped_or_skip!();
+        let Some(session) = gpu_session_or_skip(&mapped) else {
+            return;
+        };
+        let config = greedy(6);
+        let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));
+        let want = one_shot_gpu(&mapped, &p1, &config);
+
+        let prompt = p1.clone();
+        let cfg = config.clone();
+        let turn = std::thread::spawn(move || {
+            let mut session = session;
+            let turn = session
+                .generate(&prompt, &cfg, &mut |_| true)
+                .expect("turn");
+            (turn, session.on_gpu())
+        })
+        .join()
+        .expect("the worker thread");
+        let (turn, still_on_gpu) = turn;
+        assert!(
+            turn.used_gpu && still_on_gpu,
+            "fell back on the worker thread"
+        );
+        assert_eq!(turn.tokens, want);
+    }
+
     #[test]
     fn gpu_a_turn_that_does_not_extend_resets_in_place_and_matches_one_shot() {
         let mapped = mapped_or_skip!();
