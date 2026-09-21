@@ -1,0 +1,261 @@
+{
+  "ticket": "PMAT-3727",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "766f9ce51bf70267551a3d75797a78b64e5bb991",
+  "diff_sha256": "a80a56d35779113400a2b25e6c04fe473a48276bd8a0117e12ba0076d6811ca3",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 30715,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements the opt-in caching mechanism required by PMAT-3727. It correctly scopes the `(ptr, count)` activation cache to groups of GEMMs that share an input (K/V after Q, up after gate). Unarmed dispatches properly invalidate the cache, preventing cross-layer aliasing on mixed-quant models. The provided tests comprehensively cover the expected behaviors, including the negative cases that previously caused stale activations, and the change introduces no forbidden alterations to route predicates or numerics.",
+      "findings": [],
+      "raw_bytes": 3663,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The PR successfully implements PMAT-3727 by restricting FP8 activation reuse to only happen between GEMMs that explicitly declare shared inputs. By making reuse opt-in via `share_next()` and dropping the key in `begin_dispatch()` for every unarmed dispatch, it guarantees that `(ptr, count)` aliasing across layers can no longer result in a cache hit, fixing the stale activation bug for mixed-quant models. The provided tests thoroughly verify all edge cases including 0 cross-layer hits on mixed-quant, and the measurement reports in notes are solid.",
+      "findings": [
+        {
+          "claim": "Implements an explicit opt-in sharing mechanism `Fp8ActivationCache` requiring `share_next()` to prevent cross-layer cache hits.",
+          "file": "crates/aprender-serve/src/cuda/executor/fp8_activation_cache.rs",
+          "grounding": "cited",
+          "line": 26
+        },
+        {
+          "claim": "Includes a test (`a_mixed_quant_model_never_reuses_an_earlier_layers_activation`) that replicates the mixed quant pipeline and correctly asserts 0 cache hits.",
+          "file": "crates/aprender-serve/src/cuda/executor/fp8_activation_cache.rs",
+          "grounding": "cited",
+          "line": 104
+        },
+        {
+          "claim": "Correctly arms `share_next()` prior to K and V GEMM steps, satisfying the sharing requirements for the QKV phase.",
+          "file": "crates/aprender-serve/src/cuda/executor/layers/batched_qkv.rs",
+          "grounding": "cited",
+          "line": 151
+        },
+        {
+          "claim": "Correctly arms `share_next()` prior to the `up` GEMM step to share the input from `gate`.",
+          "file": "crates/aprender-serve/src/cuda/executor/layers/batched_ffn.rs",
+          "grounding": "cited",
+          "line": 140
+        }
+      ],
+      "raw_bytes": 4424,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gpt-oss-120b-medium",
+            "why": "no capacity: 503 on two pre-check probes (UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server)"
+          }
+        ]
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements opt-in FP8 activation reuse via `Fp8ActivationCache`, closing the `(ptr, count)` aliasing across layers on mixed-quant models. It meets all acceptance criteria, adding `share_next` to the specified K, V, and up call sites, handling invalidation correctly on non-FP8 dispatches, and adding the required unit tests. It respects the STOP LIST constraints by keeping numerics and route predicates unchanged.",
+      "findings": [],
+      "raw_bytes": 2166,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-low",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-low",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-serve/src/cuda/executor/fp8_activation_cache.rs",
+      "line": 26,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Implements an explicit opt-in sharing mechanism `Fp8ActivationCache` requiring `share_next()` to prevent cross-layer cache hits."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/cuda/executor/fp8_activation_cache.rs",
+      "line": 104,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Includes a test (`a_mixed_quant_model_never_reuses_an_earlier_layers_activation`) that replicates the mixed quant pipeline and correctly asserts 0 cache hits."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/cuda/executor/layers/batched_ffn.rs",
+      "line": 140,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Correctly arms `share_next()` prior to the `up` GEMM step to share the input from `gate`."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/cuda/executor/layers/batched_qkv.rs",
+      "line": 151,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Correctly arms `share_next()` prior to K and V GEMM steps, satisfying the sharing requirements for the QKV phase."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (gemini-3.1-pro-high, gemini-3.1-pro-low) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by gemini-3.1-pro-high after falling through gpt-oss-120b-medium (skipped: no capacity: 503 on two pre-check probes (UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server)) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "capacity",
+        "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 2,
+        "outcome": "capacity",
+        "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
