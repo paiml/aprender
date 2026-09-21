@@ -131,7 +131,7 @@ impl Splitter {
             return Some(pos + 2);
         }
         let c2 = self.cpt(pos + 2)?.to_ascii_lowercase();
-        matches!((c1, c2), ('r', 'e') | ('v', 'e') | ('l', 'l')).then_some(pos + 3)
+        matches!((c1, c2), ('r' | 'v', 'e') | ('l', 'l')).then_some(pos + 3)
     }
 
     /// `[^\r\n\p{L}\p{N}]?\p{L}+` (qwen35: `[\p{L}\p{M}]+`)

@@ -83,7 +83,7 @@ metadata:
       note: >
         covered may never DECREASE for any binary; total may never decrease
         without a reconciliation finding recording which direction moved.
-      apr: {total: 374, covered: 144}
+      apr: {total: 375, covered: 144}
       aprender-orchestrate: {total: 184, covered: 0}
       aprender-test-cli: {total: 39, covered: 0}
       pv: {total: 38, covered: 0}
@@ -147,7 +147,7 @@ metadata:
         A PRIOR, NEVER EVIDENCE (T3). Cluster membership says where to look. It
         cannot assert that a feature works, and quality_1_10 is never derived from
         it -- severity comes from the 0.63.0 ledger.
-      apr-core-commands: {total: 110, covered: 39}          # 35.5% of cluster, 26.8% of gate effort
+      apr-core-commands: {total: 111, covered: 39}          # 35.1% of cluster, 27.1% of gate effort
       entrypoint-and-mcp: {total: 99, covered: 9}           # 9.1% of cluster,  6.3% of gate effort
       http-orchestrate-banco: {total: 95, covered: 0}       #  ZERO -- one HTTP harness, the cheapest large win
       contracts-pv: {total: 76, covered: 0}                 #  ZERO -- one contract-CLI harness, 76 pv subcommands
@@ -172,7 +172,7 @@ metadata:
         the 4.3% coverage of that band is why.
       q1_2: {total: 80, covered: 58}     # 72.5%
       q3_4: {total: 49, covered: 27}     # 55.1%
-      q5_6: {total: 675, covered: 29}    # 4.3%
+      q5_6: {total: 676, covered: 29}    # 4.3%
       q7_8: {total: 12, covered: 10}      # 83.3%
       q9_10: {total: 21, covered: 20}    # 95.2%
 
