@@ -180,8 +180,9 @@ fn batched_equals_per_token(model_path: &str, n: usize) {
     // Batched, one call.
     let mut batched = gpu.new_state().expect("state");
     let rows = gpu.prefill_chunk_rows(n);
+    let passes = super::attention_rows_for(gpu.dims, n);
     let got = gpu.prefill(&prompt, &mut batched, 0).expect("prefill");
-    let what = format!("{model_path} n={n} (chunk rows {rows})");
+    let what = format!("{model_path} n={n} (chunk rows {rows}, attention rows/pass {passes})");
     assert_logits_agree(&got, &want, &format!("{what} last logits"));
     assert_states_agree(&mut gpu, &batched, &per_token, &what);
 
@@ -225,6 +226,18 @@ fn qwen35_prefill_equals_per_token_at_64_positions_0_8b() {
 fn qwen35_prefill_equals_per_token_across_a_chunk_boundary_0_8b() {
     // 600 > PREFILL_MAX_CHUNK_ROWS: two chunks, the second reading the first's KV.
     batched_equals_per_token(MODEL_0_8B, 600);
+}
+
+#[test]
+#[serial_test::serial]
+fn qwen35_prefill_equals_per_token_with_many_attention_passes_0_8b() {
+    // Budget for exactly 37 query rows per pass at 600 positions (0.8B: 4 heads per
+    // KV head): 14 passes over the first chunk, 3 over the second, none aligned.
+    let rows = 37usize;
+    let budget = 4 * 4 * rows * 600;
+    super::SCORES_BUDGET_OVERRIDE.with(|c| c.set(Some(budget)));
+    batched_equals_per_token(MODEL_0_8B, 600);
+    super::SCORES_BUDGET_OVERRIDE.with(|c| c.set(None));
 }
 
 #[test]

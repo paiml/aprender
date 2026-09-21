@@ -349,9 +349,10 @@ impl CudaExecutor {
     ///
     /// `q` is `[rows][num_heads * head_dim]` (normed and rotated), `k_cache`/`v_cache`
     /// are `[max_len][num_kv_heads * head_dim]` with this chunk's rows already written,
-    /// `out` is `[rows][num_heads * head_dim]`. `scores` must hold
-    /// `heads_per_kv * rows * (pos0 + rows)` floats: the KV groups are processed one
-    /// after another through the same scratch, which is what bounds it.
+    /// `out` is `[rows][num_heads * head_dim]`. The query rows run in passes of at most
+    /// `rows_per_pass`; a pass over rows `r0..r0+n` attends to keys `0..pos0+r0+n`, so
+    /// `scores` must hold `heads_per_kv * rows_per_pass * (pos0 + rows)` floats (the KV
+    /// groups go through it one after another).
     ///
     /// Query head `h` reads KV head `h / (num_heads / num_kv_heads)` — the grouping of
     /// the CPU reference and of `DecodeAttention256Kernel`.
@@ -367,6 +368,7 @@ impl CudaExecutor {
         out: u64,
         scores: u64,
         rows: u32,
+        rows_per_pass: u32,
         pos0: u32,
         num_heads: u32,
         num_kv_heads: u32,
@@ -381,6 +383,45 @@ impl CudaExecutor {
         ] {
             validate_device_ptr(p, &format!("qwen35_prefill_attention {name}"))?;
         }
+        let q_dim = u64::from(num_heads * head_dim);
+        let f = std::mem::size_of::<f32>() as u64;
+        let step = rows_per_pass.max(1);
+        let mut r0 = 0u32;
+        while r0 < rows {
+            let n = step.min(rows - r0);
+            self.qwen35_attention_pass(
+                q + u64::from(r0) * q_dim * f,
+                k_cache,
+                v_cache,
+                out + u64::from(r0) * q_dim * f,
+                scores,
+                n,
+                pos0 + r0,
+                num_heads,
+                num_kv_heads,
+                head_dim,
+            )?;
+            r0 += n;
+        }
+        Ok(())
+    }
+
+    /// One attention pass: `rows` query rows at positions `pos0..pos0+rows` over keys
+    /// `0..pos0+rows`.
+    #[allow(clippy::too_many_arguments)]
+    fn qwen35_attention_pass(
+        &mut self,
+        q: u64,
+        k_cache: u64,
+        v_cache: u64,
+        out: u64,
+        scores: u64,
+        rows: u32,
+        pos0: u32,
+        num_heads: u32,
+        num_kv_heads: u32,
+        head_dim: u32,
+    ) -> Result<(), GpuError> {
         let hpk = num_heads / num_kv_heads;
         let q_dim = num_heads * head_dim;
         let kv_dim = num_kv_heads * head_dim;
