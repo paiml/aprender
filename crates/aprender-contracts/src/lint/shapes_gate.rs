@@ -22,15 +22,20 @@
 //! proves nothing about the gate.
 //!
 //! **The positive controls.** `pc_shape`: a bare focus node of each shape's target class, drawn every run, must
-//! violate at least one armed shape. `pc_extract.gguf`: a corrupt magic is refused. `pc_extract["apr-model"]`:
-//! a header whose tensor count disagrees with its index is refused. All three every run, in memory.
+//! violate at least one armed shape. `pc_extract` — one planted defect per extractor Σ marks implemented (R-3):
+//! `pv-contract`, a contract stripped of `metadata` carries no `ont:kind`; `json`, a nested key the vocabulary does
+//! not map is refused naming it; `gguf`, a corrupt magic is refused; `apr-model`, a header whose tensor count
+//! disagrees with its index is refused; `code` and `lean`, as their modules state; `parity-receipt`, a record
+//! stripped of `comparator` loses its comparator edge. All of them every run, in memory.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::time::Instant;
 
 use crate::ontology::arming::ArmedShapes;
-use crate::ontology::extract::{self, apr_model, code, gguf, lean, pv_contract, ExtractFailure};
+use crate::ontology::extract::{
+    self, apr_model, code, gguf, json, lean, parity_receipt, pv_contract, ExtractFailure,
+};
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};
 use crate::ontology::receipts;
 use crate::ontology::shapes::{self, NodeShape, Report, Severity, ShapeError};
@@ -378,14 +383,22 @@ fn decline(
     })
 }
 
-/// The extractor positive controls (R-3), run in memory every gate run.
+/// The extractor positive controls (R-3: one planted defect per registered extractor), run in memory every gate
+/// run, keyed by the Σ entity type each extractor reads. The key set must equal Σ's implemented entity types —
+/// [`tests::every_implemented_entity_type_in_sigma_has_an_extract_control_and_it_fires`] holds the two together.
 fn extract_controls() -> BTreeMap<String, String> {
     let apr_sample = apr_model::minimal_container(2);
     [
+        ("pv-contract", pv_contract::positive_control()),
+        ("json", json::positive_control()),
         ("gguf", gguf::positive_control()),
         ("apr-model", apr_model::positive_control(&apr_sample)),
         ("code", code::positive_control()),
         ("lean", lean::positive_control()),
+        (
+            "parity-receipt",
+            parity_receipt::positive_control(&parity_receipt::control_sample()),
+        ),
     ]
     .into_iter()
     .map(|(k, fired)| {

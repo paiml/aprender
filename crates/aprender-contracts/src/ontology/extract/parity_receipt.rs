@@ -268,6 +268,33 @@ fn emit(g: &mut Graph, root: &Path, rel: &str, v: &serde_json::Value, stats: &mu
     }
 }
 
+/// The body of [`control_sample`], less its `schema` (which is [`SCHEMA`], inserted so the two cannot drift).
+const CONTROL_SAMPLE: &str = r#"{
+    "cell": {"model": "pc", "file": "./pc.gguf", "quant": "Q4_K_M"},
+    "host": "pc-host",
+    "backend": "cuda",
+    "apr_version": "0.0.0",
+    "generated_at": "1970-01-01",
+    "comparator": {"kind": "self", "reason": "positive control"},
+    "partially_receipted": true,
+    "threshold_source": "evidence/parity/thresholds.yaml",
+    "unmeasured": ["ORACLE ARM: not measured."],
+    "result": {"positions": 1, "parity": true},
+    "raw": {"model": "./pc.gguf", "metrics": []}
+}"#;
+
+/// The record the gate hands [`positive_control`] every run (PMAT-3704): a minimal [`SCHEMA`] record in the
+/// layout the seven back-filled receipts carry, self-compared, so its comparator edge is the one thing the
+/// plant removes. Fails closed: a sample that did not parse is `Null`, on which the control cannot fire.
+#[must_use]
+pub fn control_sample() -> serde_json::Value {
+    let mut v: serde_json::Value = serde_json::from_str(CONTROL_SAMPLE).unwrap_or_default();
+    if let Some(o) = v.as_object_mut() {
+        o.insert("schema".into(), SCHEMA.into());
+    }
+    v
+}
+
 /// The positive control (R-3): a copy of a real record with `comparator` removed must lose its comparator
 /// edge, every run. Drawn beside the corpus so "the extractor still reads this layout" is measured rather
 /// than assumed.
