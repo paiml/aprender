@@ -19905,3 +19905,22 @@ roadmap:
   labels:
   - kind:code
   notes: 'The judged diff is this ONE commit, scripts/parity_receipt_denominator.sh plus this fragment, with --base at its parent. The three commits under it on the 0.69 batch branch (the dogfood ledger re-audit, the ONT ratchet restamp, the ont4b 6->9 raise) are data/ratchet restamps that carry their proofs in their commit bodies and are outside this ticket. Found in batch #3669, workspace-test shard 3/3 on gx10-pool1 (job 106269529629): "EXPECTED_RECEIPTS says 7; the tree holds 0". On the docker runners git refuses the bind-mounted tree ("detected dubious ownership", exit 128), and the old `(cd "$root" && git ls-files … 2>/dev/null | sort -u)` inside a process substitution discarded both the message and the exit status. Measured at this commit: `bash scripts/parity_receipt_denominator.sh --self-test` 5/5 ok (the new row: "git refusing the tree is ENV exit 2 naming git, never a count of 0"); `bash scripts/parity_receipt_denominator.sh` "PASS 7 receipt(s) … says 7"; MUTANT with the pre-fix count_and_check from 55b123f2f: self-test rc=1, "FAIL git refused and the result was exit 1: FAIL evidence/parity/EXPECTED_RECEIPTS says 2; the tree holds 0."; `cargo test -p aprender-contracts-cli --test ont4c3_parity_receipts` 9 passed. Sibling sweep, on lines the batch ADDED in scripts/ and crates/*/tests/: ci_test_tier.sh:180 and :252 fail closed (not docs-only / tier=full); lib_baseline_ratchet.sh:300/302 fail closed but misattribute the cause ("this branch WROTE it"). No other zero-count site. Outside test paths: release/lib_release_params.sh:39 silently falls back to the tree root. Those are filed, not fixed here.'
+- id: PMAT-3696
+  github_issue: 3696
+  item_type: task
+  title: 'publish_strict.sh: a blank line in publish-order.txt stops the cascade naming an EMPTY crate — refuse it by line number'
+  status: in_progress
+  priority: low
+  assigned_to: aprender-62
+  created: 2026-09-21T11:39:00Z
+  updated: 2026-09-21T11:39:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3696 done_when 1, verbatim: "An empty crate name is refused **by name**, before any set check: `STOP publish: blank line N in publish-order.txt` (every blank or whitespace-only line, each by its number), rc 1, and no `bad array subscript`."'
+  - 'done_when 2, verbatim: "Measured in a private clone: a blank line at line 36 gives exactly that message; the clean file still plans 74 rows, rc 0."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Found by aprender-7a seat-filling #3657; the cop ruled it a small 0.70 row stacked on #3657''s 6fd241645, which is not touched (this commit is its child). SCOPE: scripts/release/publish_strict.sh (4 lines before the mapfile) and this fragment. HOW IT IS MET: awk lists every line of publish-order.txt that is empty or whitespace-only, by number; any hit stops with `die "blank line <N[, N…]> in publish-order.txt: an empty crate name is not a crate"` before ORDER is built, so no empty string reaches the set checks or bash''s associative-array subscript. publish_strict.sh has no --self-test on purpose (one would make it a guard that must be workflow-invoked), so the proof is end to end. MEASURED in a private clone (its own refs; tag v9.9.9 in the clone only; RELEASE_AP in scratch; --plan reads the sparse index and uploads nothing). BEFORE, at 6fd241645, a blank line at line 36: rc 1, "scripts/release/publish_strict.sh: line 47: EXPECT: bad array subscript" and "STOP publish: in the publish order but not in the universe:  " (an empty name). AFTER, at this commit: the clean file gives rc 0 and 74 rows; a blank line at 36 gives rc 1, "STOP publish: blank line 36 in publish-order.txt: an empty crate name is not a crate", with 0 subscript errors; a whitespace-only line at 3 plus a blank line (now at 37) gives rc 1, "STOP publish: blank line 3, 37 in publish-order.txt: an empty crate name is not a crate". `bash scripts/check_release_scripts_derive_identity.sh`: PASS (no literal count, no identity literal).'
