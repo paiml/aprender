@@ -1,0 +1,28 @@
+# #3742 MUTANT A: canonical_for_apr returns None (the .apr legacy bpe_encode path); the gate must be RED
+# host: noah-Lambda-Vector  measured: 2026-09-21T19:14Z
+# command: bash scripts/tokenizer_parity.sh --model qwen2.5-coder-1.5b-instruct-q4_k_m.gguf --model ...-q4k.apr --model ...-q4k-v2.apr (binary rebuilt via bash, its .apr path verified as legacy-fallback before the run)
+
+apr:            /mnt/nvme-raid0/targets/c3-3742/release/apr (apr 0.69.0 (36cd1e4d4))
+llama-tokenize: /home/noah/src/llama.cpp-d1d3c3396/build/bin/llama-tokenize (version: 0.4.1-dev (build 10987, commit d1d3c3396))
+models: 3   corpus files: 6
+MODEL      qwen2.5-coder-1.5b-instruct-q4_k_m.gguf  dtype=Q4_K  fingerprint=f74b58d11bdfb976  reference=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+MODEL      qwen2.5-coder-1.5b-instruct-q4k.apr  dtype=Q4_K  fingerprint=f74b58d11bdfb976  reference=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+FAIL       qwen2.5-coder-1.5b-instruct-q4k.apr  brief-review.txt  apr took legacy-fallback: no implemented pre-tokenizer (tokenizer.pre_type None, architecture Some("qwen2"))
+FAIL       qwen2.5-coder-1.5b-instruct-q4k.apr  chat-template.txt  apr took legacy-fallback: no implemented pre-tokenizer (tokenizer.pre_type None, architecture Some("qwen2"))
+FAIL       qwen2.5-coder-1.5b-instruct-q4k.apr  code-rust-token.txt  apr took legacy-fallback: no implemented pre-tokenizer (tokenizer.pre_type None, architecture Some("qwen2"))
+FAIL       qwen2.5-coder-1.5b-instruct-q4k.apr  identifiers.txt  apr took legacy-fallback: no implemented pre-tokenizer (tokenizer.pre_type None, architecture Some("qwen2"))
+FAIL       qwen2.5-coder-1.5b-instruct-q4k.apr  nonascii.txt  apr took legacy-fallback: no implemented pre-tokenizer (tokenizer.pre_type None, architecture Some("qwen2"))
+FAIL       qwen2.5-coder-1.5b-instruct-q4k.apr  whitespace.txt  apr took legacy-fallback: no implemented pre-tokenizer (tokenizer.pre_type None, architecture Some("qwen2"))
+MODEL      qwen2.5-coder-1.5b-instruct-q4k-v2.apr  dtype=Q4_K  fingerprint=f74b58d11bdfb976  reference=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+FAIL       qwen2.5-coder-1.5b-instruct-q4k-v2.apr  brief-review.txt  apr took legacy-fallback: no implemented pre-tokenizer (tokenizer.pre_type None, architecture Some("qwen2"))
+FAIL       qwen2.5-coder-1.5b-instruct-q4k-v2.apr  chat-template.txt  apr took legacy-fallback: no implemented pre-tokenizer (tokenizer.pre_type None, architecture Some("qwen2"))
+FAIL       qwen2.5-coder-1.5b-instruct-q4k-v2.apr  code-rust-token.txt  apr took legacy-fallback: no implemented pre-tokenizer (tokenizer.pre_type None, architecture Some("qwen2"))
+FAIL       qwen2.5-coder-1.5b-instruct-q4k-v2.apr  identifiers.txt  apr took legacy-fallback: no implemented pre-tokenizer (tokenizer.pre_type None, architecture Some("qwen2"))
+FAIL       qwen2.5-coder-1.5b-instruct-q4k-v2.apr  nonascii.txt  apr took legacy-fallback: no implemented pre-tokenizer (tokenizer.pre_type None, architecture Some("qwen2"))
+FAIL       qwen2.5-coder-1.5b-instruct-q4k-v2.apr  whitespace.txt  apr took legacy-fallback: no implemented pre-tokenizer (tokenizer.pre_type None, architecture Some("qwen2"))
+# PASS lines condensed: 6 PASS over 1 model(s), 6 file(s) each.
+# full per-pair log: lambda:/mnt/nvme-raid0/work-c3/3742-mutantA.log
+# model                                          files-passed  total-ids
+#   qwen2.5-coder-1.5b-instruct-q4_k_m.gguf             6             6968
+# files: brief-review.txt, chat-template.txt, code-rust-token.txt, identifiers.txt, nonascii.txt, whitespace.txt
+--- tokenizer parity: 6 pass, 12 fail, 0 uncovered, 0 outside the universe ---

@@ -1,0 +1,73 @@
+# #3742 tokenizer parity, release mode, GGUF + .apr (defaults: pinned llama-tokenize, ~/models, committed corpus)
+# host: noah-Lambda-Vector  measured: 2026-09-21T19:0xZ
+# command: bash scripts/tokenizer_parity.sh --apr <apr 0.69.0 (adc877984)>
+
+apr:            /mnt/nvme-raid0/work-c3/bin/apr-3742 (apr 0.69.0 (adc877984))
+llama-tokenize: /home/noah/src/llama.cpp-d1d3c3396/build/bin/llama-tokenize (version: 0.4.1-dev (build 10987, commit d1d3c3396))
+models: 25   corpus files: 6
+MODEL      Qwen2.5-0.5B-Instruct-f16.gguf  dtype=F16  q4k-universe=no  fingerprint=f74b58d11bdfb976  reference=Qwen2.5-0.5B-Instruct-f16.gguf
+MODEL      Qwen2.5-0.5B-Instruct-IQ3_M.gguf  dtype=IQ4_NL  q4k-universe=no  fingerprint=f74b58d11bdfb976  reference=Qwen2.5-0.5B-Instruct-IQ3_M.gguf
+MODEL      Qwen2.5-0.5B-Instruct-IQ4_XS.gguf  dtype=IQ4_NL  q4k-universe=no  fingerprint=f74b58d11bdfb976  reference=Qwen2.5-0.5B-Instruct-IQ4_XS.gguf
+MODEL      qwen2.5-1.5b-instruct-q4_k_m.gguf  dtype=Q4_K  q4k-universe=yes  fingerprint=f74b58d11bdfb976  reference=qwen2.5-1.5b-instruct-q4_k_m.gguf
+MODEL      qwen2.5-coder-0.5b-instruct-q4_k_m.gguf  dtype=Q5_0  q4k-universe=no  fingerprint=f74b58d11bdfb976  reference=qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+MODEL      qwen2.5-coder-1.5b-instruct-q4_k_m.gguf  dtype=Q4_K  q4k-universe=yes  fingerprint=f74b58d11bdfb976  reference=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+MODEL      qwen2.5-coder-7b-instruct-q4_k_m.gguf  dtype=Q4_K  q4k-universe=yes  fingerprint=3c4520e2011c65ac  reference=qwen2.5-coder-7b-instruct-q4_k_m.gguf
+MODEL      Qwen3-0.6B-BF16.gguf  dtype=BF16  q4k-universe=no  fingerprint=15be13f3ba5c100e  reference=Qwen3-0.6B-BF16.gguf
+MODEL      Qwen3-1.7B-Q4_K_M.gguf  dtype=Q4_K  q4k-universe=yes  fingerprint=15be13f3ba5c100e  reference=Qwen3-1.7B-Q4_K_M.gguf
+MODEL      Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf  dtype=Q4_K  q4k-universe=yes  fingerprint=15be13f3ba5c100e  reference=Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf
+MODEL      Qwen3.5-0.8B-IQ4_XS.gguf  dtype=IQ4_XS  q4k-universe=no  fingerprint=827f307382ff929c  reference=Qwen3.5-0.8B-IQ4_XS.gguf
+MODEL      Qwen3.5-0.8B-Q4_K_M.gguf  dtype=Q4_K  q4k-universe=yes  fingerprint=827f307382ff929c  reference=Qwen3.5-0.8B-Q4_K_M.gguf
+MODEL      Qwen3.5-0.8B-UD-IQ2_XXS.gguf  dtype=IQ2_XXS  q4k-universe=no  fingerprint=827f307382ff929c  reference=Qwen3.5-0.8B-UD-IQ2_XXS.gguf
+MODEL      Qwen3.5-27B-Q4_K_M.gguf  dtype=Q4_K  q4k-universe=yes  fingerprint=827f307382ff929c  reference=Qwen3.5-27B-Q4_K_M.gguf
+MODEL      Qwen3.5-2B-Q4_K_M.gguf  dtype=Q4_K  q4k-universe=yes  fingerprint=827f307382ff929c  reference=Qwen3.5-2B-Q4_K_M.gguf
+MODEL      Qwen3.5-35B-A3B-UD-IQ4_XS.gguf  dtype=Q8_0  q4k-universe=no  fingerprint=827f307382ff929c  reference=Qwen3.5-35B-A3B-UD-IQ4_XS.gguf
+MODEL      Qwen3.5-4B-Q4_K_M.gguf  dtype=Q4_K  q4k-universe=yes  fingerprint=827f307382ff929c  reference=Qwen3.5-4B-Q4_K_M.gguf
+MODEL      Qwen3.5-4B-UD-Q4_K_XL.gguf  dtype=Q4_K  q4k-universe=yes  fingerprint=827f307382ff929c  reference=Qwen3.5-4B-UD-Q4_K_XL.gguf
+MODEL      Qwen3.5-9B-Q4_K_M.gguf  dtype=Q4_K  q4k-universe=yes  fingerprint=827f307382ff929c  reference=Qwen3.5-9B-Q4_K_M.gguf
+MODEL      Qwen3-8B-Q4_K_M.gguf  dtype=Q4_K  q4k-universe=yes  fingerprint=15be13f3ba5c100e  reference=Qwen3-8B-Q4_K_M.gguf
+MODEL      Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf  dtype=Q4_K  q4k-universe=yes  fingerprint=15be13f3ba5c100e  reference=Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+MODEL      qwen2.5-coder-0.5b-instruct.apr  dtype=BF16  q4k-universe=no  fingerprint=ed82f35f39d39814  reference=none
+OUTSIDE    qwen2.5-coder-0.5b-instruct.apr  brief-review.txt  dtype BF16 is outside the Q4_K universe; no GGUF with the same tokenizer fingerprint (ed82f35f39d39814) on this host to compare against
+OUTSIDE    qwen2.5-coder-0.5b-instruct.apr  chat-template.txt  dtype BF16 is outside the Q4_K universe; no GGUF with the same tokenizer fingerprint (ed82f35f39d39814) on this host to compare against
+OUTSIDE    qwen2.5-coder-0.5b-instruct.apr  code-rust-token.txt  dtype BF16 is outside the Q4_K universe; no GGUF with the same tokenizer fingerprint (ed82f35f39d39814) on this host to compare against
+OUTSIDE    qwen2.5-coder-0.5b-instruct.apr  identifiers.txt  dtype BF16 is outside the Q4_K universe; no GGUF with the same tokenizer fingerprint (ed82f35f39d39814) on this host to compare against
+OUTSIDE    qwen2.5-coder-0.5b-instruct.apr  nonascii.txt  dtype BF16 is outside the Q4_K universe; no GGUF with the same tokenizer fingerprint (ed82f35f39d39814) on this host to compare against
+OUTSIDE    qwen2.5-coder-0.5b-instruct.apr  whitespace.txt  dtype BF16 is outside the Q4_K universe; no GGUF with the same tokenizer fingerprint (ed82f35f39d39814) on this host to compare against
+MODEL      qwen2.5-coder-1.5b-instruct-q4k.apr  dtype=Q4_K  q4k-universe=yes  fingerprint=f74b58d11bdfb976  reference=Qwen2.5-0.5B-Instruct-f16.gguf
+MODEL      qwen2.5-coder-1.5b-instruct-q4k-v2.apr  dtype=Q4_K  q4k-universe=yes  fingerprint=f74b58d11bdfb976  reference=Qwen2.5-0.5B-Instruct-f16.gguf
+MODEL      qwen2.5-coder-1.5b-instruct-st.apr  dtype=F32  q4k-universe=no  fingerprint=ed82f35f39d39814  reference=none
+OUTSIDE    qwen2.5-coder-1.5b-instruct-st.apr  brief-review.txt  dtype F32 is outside the Q4_K universe; no GGUF with the same tokenizer fingerprint (ed82f35f39d39814) on this host to compare against
+OUTSIDE    qwen2.5-coder-1.5b-instruct-st.apr  chat-template.txt  dtype F32 is outside the Q4_K universe; no GGUF with the same tokenizer fingerprint (ed82f35f39d39814) on this host to compare against
+OUTSIDE    qwen2.5-coder-1.5b-instruct-st.apr  code-rust-token.txt  dtype F32 is outside the Q4_K universe; no GGUF with the same tokenizer fingerprint (ed82f35f39d39814) on this host to compare against
+OUTSIDE    qwen2.5-coder-1.5b-instruct-st.apr  identifiers.txt  dtype F32 is outside the Q4_K universe; no GGUF with the same tokenizer fingerprint (ed82f35f39d39814) on this host to compare against
+OUTSIDE    qwen2.5-coder-1.5b-instruct-st.apr  nonascii.txt  dtype F32 is outside the Q4_K universe; no GGUF with the same tokenizer fingerprint (ed82f35f39d39814) on this host to compare against
+OUTSIDE    qwen2.5-coder-1.5b-instruct-st.apr  whitespace.txt  dtype F32 is outside the Q4_K universe; no GGUF with the same tokenizer fingerprint (ed82f35f39d39814) on this host to compare against
+# PASS lines condensed: 138 PASS over 23 model(s), 6 file(s) each.
+# full per-pair log: lambda:/mnt/nvme-raid0/work-c3/3742-parity-lambda-final.log
+# model                                          files-passed  total-ids
+#   Qwen2.5-0.5B-Instruct-f16.gguf                      6             6968
+#   Qwen2.5-0.5B-Instruct-IQ3_M.gguf                    6             6968
+#   Qwen2.5-0.5B-Instruct-IQ4_XS.gguf                   6             6968
+#   qwen2.5-1.5b-instruct-q4_k_m.gguf                   6             6968
+#   qwen2.5-coder-0.5b-instruct-q4_k_m.gguf             6             6968
+#   qwen2.5-coder-1.5b-instruct-q4_k_m.gguf             6             6968
+#   qwen2.5-coder-7b-instruct-q4_k_m.gguf               6             6968
+#   Qwen3-0.6B-BF16.gguf                                6             6966
+#   Qwen3-1.7B-Q4_K_M.gguf                              6             6966
+#   Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf             6             6966
+#   Qwen3.5-0.8B-IQ4_XS.gguf                            6             7278
+#   Qwen3.5-0.8B-Q4_K_M.gguf                            6             7278
+#   Qwen3.5-0.8B-UD-IQ2_XXS.gguf                        6             7278
+#   Qwen3.5-27B-Q4_K_M.gguf                             6             7278
+#   Qwen3.5-2B-Q4_K_M.gguf                              6             7278
+#   Qwen3.5-35B-A3B-UD-IQ4_XS.gguf                      6             7278
+#   Qwen3.5-4B-Q4_K_M.gguf                              6             7278
+#   Qwen3.5-4B-UD-Q4_K_XL.gguf                          6             7278
+#   Qwen3.5-9B-Q4_K_M.gguf                              6             7278
+#   Qwen3-8B-Q4_K_M.gguf                                6             6966
+#   Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf            6             6966
+#   qwen2.5-coder-1.5b-instruct-q4k.apr                 6             6968
+#   qwen2.5-coder-1.5b-instruct-q4k-v2.apr              6             6968
+# files: brief-review.txt, chat-template.txt, code-rust-token.txt, identifiers.txt, nonascii.txt, whitespace.txt
+--- tokenizer parity: 138 pass, 0 fail, 0 uncovered, 12 outside the universe ---
+rc=0

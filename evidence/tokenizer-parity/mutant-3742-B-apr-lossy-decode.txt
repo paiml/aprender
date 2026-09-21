@@ -1,0 +1,20 @@
+# #3742 MUTANT B: BpeTokenizer::decode ignores the canonical tables (the lossy .apr decoder); the gate must be RED
+# host: noah-Lambda-Vector  measured: 2026-09-21T19:16Z
+# command: bash scripts/tokenizer_parity.sh --model qwen2.5-coder-1.5b-instruct-q4_k_m.gguf --model ...-q4k.apr
+
+apr:            /mnt/nvme-raid0/targets/c3-3742/release/apr (apr 0.69.0 (36cd1e4d4))
+llama-tokenize: /home/noah/src/llama.cpp-d1d3c3396/build/bin/llama-tokenize (version: 0.4.1-dev (build 10987, commit d1d3c3396))
+models: 2   corpus files: 6
+MODEL      qwen2.5-coder-1.5b-instruct-q4_k_m.gguf  dtype=Q4_K  fingerprint=f74b58d11bdfb976  reference=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+MODEL      qwen2.5-coder-1.5b-instruct-q4k.apr  dtype=Q4_K  fingerprint=f74b58d11bdfb976  reference=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+FAIL       qwen2.5-coder-1.5b-instruct-q4k.apr  brief-review.txt  ids match but decode(encode(x)) != x
+FAIL       qwen2.5-coder-1.5b-instruct-q4k.apr  code-rust-token.txt  ids match but decode(encode(x)) != x
+FAIL       qwen2.5-coder-1.5b-instruct-q4k.apr  nonascii.txt  ids match but decode(encode(x)) != x
+FAIL       qwen2.5-coder-1.5b-instruct-q4k.apr  whitespace.txt  ids match but decode(encode(x)) != x
+# PASS lines condensed: 8 PASS over 2 model(s), 6 file(s) each.
+# full per-pair log: lambda:/mnt/nvme-raid0/work-c3/3742-mutantB.log
+# model                                          files-passed  total-ids
+#   qwen2.5-coder-1.5b-instruct-q4_k_m.gguf             6             6968
+#   qwen2.5-coder-1.5b-instruct-q4k.apr                 2              469
+# files: brief-review.txt, chat-template.txt, code-rust-token.txt, identifiers.txt, nonascii.txt, whitespace.txt
+--- tokenizer parity: 8 pass, 4 fail, 0 uncovered, 0 outside the universe ---
