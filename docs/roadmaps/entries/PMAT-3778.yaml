@@ -1,0 +1,17 @@
+- id: PMAT-3778
+  github_issue: 3778
+  item_type: task
+  title: 'CRUX engine drivers for #3739: llamafile and HF transformers — probe/gen/tok/tmpl/greedy rows to row contract v1'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-21T19:11:28Z
+  updated: 2026-09-21T19:11:28Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

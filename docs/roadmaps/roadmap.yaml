@@ -20145,3 +20145,20 @@ roadmap:
   labels:
   - kind:code
   notes: "Refs #3577 (ONT-4c3; its ledger binding is infra's row, bound after this merges) and #3624 (the by_entity_type sibling, not closed here). R-3 of ONT-001: pc_extract is one planted defect per registered extractor, every run."
+- id: PMAT-3778
+  github_issue: 3778
+  item_type: task
+  title: 'CRUX engine drivers for #3739: llamafile and HF transformers — probe/gen/tok/tmpl/greedy rows to row contract v1'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-21T19:11:28Z
+  updated: 2026-09-21T19:11:28Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
