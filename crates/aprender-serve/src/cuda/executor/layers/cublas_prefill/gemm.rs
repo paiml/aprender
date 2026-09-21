@@ -60,14 +60,16 @@ impl CudaExecutor {
     /// Pipeline (all on device, no CPU readback):
     ///   1. absmax_reduce → device absmax_buf (no sync)
     ///   2. f32_to_e4m3_device_scaled → reads absmax from device, writes FP8 + act_dequant
-    ///   3. gemm_fp8_e4m3_to_f16 → unscaled GEMM with alpha=1.0
-    ///   4. f16_to_f32_device_scaled → reads act_dequant × weight_dequant from device
+    ///   3. gemm_fp8_e4m3_to_bf16_cached → GEMM with alpha = w_absmax/448 into a BF16 D
+    ///   4. bf16_to_f32_act_scaled → reads act_dequant (act_absmax/448) from device
     ///
-    /// The GEMM computes raw FP8 dot products (no scaling). The dequant is applied
-    /// during the FP16→FP32 conversion: output = f16_val × (act_absmax/448) × (w_absmax/448).
-    /// This avoids both the GPU→CPU absmax sync AND cuBLASLt scale pointer issues.
+    /// Step 3 folds the weight dequant into alpha, so D = true_result × 448/act_absmax: it
+    /// carries the activation gain until step 4 multiplies it out. That is why D is BF16
+    /// (#3728): an FP16 D saturated at 65,504 whenever act_absmax was small relative to the
+    /// output (qwen2.5-coder-7b layer-1 QKV: 85,807). This avoids both the GPU→CPU absmax sync
+    /// AND cuBLASLt scale pointer issues.
     #[allow(clippy::too_many_arguments)]
-    fn cublas_prefill_fp8_gemm(
+    pub(super) fn cublas_prefill_fp8_gemm(
         &mut self,
         w_fp8_ptr: u64,
         weight_key: u64, // original weight_ptr used as key into fp8_weight_scales
@@ -144,7 +146,11 @@ impl CudaExecutor {
             None
         };
 
-        // Step 3: cuBLASLt FP8 GEMM with alpha=weight_dequant → FP16 output
+        // Step 3: cuBLASLt FP8 GEMM with alpha=weight_dequant → BF16 output
+        // #3728: D carries the activation gain 448/act_absmax until step 4, so it needs range, not
+        // precision: in FP16 it saturated at 65,504 (qwen2.5-coder-7b layer-1 QKV: 85,807 with
+        // input absmax 0.0602 — cos 0.5668 at position 1). BF16 has FP32's exponent range, and its
+        // 8-bit significand is still finer than the E4M3 operands' 4.
         // weight_dequant is a constant CPU float (computed once at weight cache time).
         // This partially dequants: D = (w_max/448) × FP8(A) × FP8(B)
         // = (448/act_max) × true_result. The act_dequant (act_max/448) is applied in step 4.
@@ -162,7 +168,7 @@ impl CudaExecutor {
         // PMAT-086: Use cached GEMM to avoid per-call descriptor creation.
         // 168 GEMMs per prefill × ~30μs descriptor overhead = ~5ms savings.
         let lt_handle = self.cublaslt_handle.as_mut().expect("just created");
-        lt_handle.gemm_fp8_e4m3_to_f16_cached(
+        lt_handle.gemm_fp8_e4m3_to_bf16_cached(
             n as i32,
             m_padded as i32,
             k as i32,
@@ -184,11 +190,11 @@ impl CudaExecutor {
             None
         };
 
-        // Step 4: Convert FP16→FP32 with device-side act_dequant scaling.
+        // Step 4: Convert BF16→FP32 with device-side act_dequant scaling.
         // Reads act_dequant (act_absmax/448) from device, multiplies each element by it.
         // Combined with step 3 alpha: D_f32 = f16_val × act_dequant = true_result.
         let output_actual_count = n as usize * m as usize;
-        self.convert_f16_to_f32_act_scaled(
+        self.convert_bf16_to_f32_act_scaled(
             f16_output_ptr,
             packed_output_ptr,
             output_actual_count as u32,

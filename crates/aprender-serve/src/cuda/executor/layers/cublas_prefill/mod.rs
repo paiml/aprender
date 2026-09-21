@@ -15,6 +15,9 @@
 
 mod attention;
 mod gemm;
+// #3728: the FP8 GEMM's intermediate range, on the real kernel.
+#[cfg(test)]
+mod fp8_gemm_range_tests_3728;
 
 use super::super::*;
 
@@ -548,32 +551,32 @@ L_DONE:
 }
 "#;
 
-/// PMAT-079: FP16 to FP32 conversion with device-side activation dequant scaling.
-/// Reads a single FP32 scale from a device pointer (act_dequant = act_absmax/448),
-/// multiplies each converted element by it.
-/// Weight dequant is already folded into the GEMM alpha — only act_dequant varies per request.
-const F16_TO_F32_ACT_SCALED_PTX: &str = r#"
+/// aprender#3728 (replaces PMAT-079's FP16 variant): BF16 to FP32, multiplied by the
+/// device-side activation dequant (act_absmax/448). The FP8 prefill GEMM's D is `true × 448/act_absmax`, which
+/// overflowed FP16 (65,504) on qwen2.5-coder-7b's layer-1 QKV (85,807); BF16 has FP32's range.
+/// bf16 is the upper half of an f32, so the widening is an exact 16-bit shift and needs no
+/// sm_80+ `cvt.f32.bf16`: it runs on the same sm_75 target as the kernels around it.
+const BF16_TO_F32_ACT_SCALED_PTX: &str = r#"
 .version 7.5
 .target sm_75
 .address_size 64
 
-.visible .entry f16_to_f32_act_scaled(
+.visible .entry bf16_to_f32_act_scaled(
     .param .u64 param_dst,
     .param .u64 param_src,
     .param .u32 param_count,
     .param .u64 param_act_dequant_ptr
 ) {
     .reg .u64 %rd<6>;
-    .reg .u32 %r<4>;
+    .reg .u32 %r<6>;
+    .reg .u16 %hs;
     .reg .f32 %f<2>;
-    .reg .b16 %h0;
     .reg .pred %p0;
     ld.param.u64 %rd0, [param_dst];
     ld.param.u64 %rd1, [param_src];
     ld.param.u32 %r0, [param_count];
     ld.param.u64 %rd5, [param_act_dequant_ptr];
 
-    // Read act_dequant scale from device (same for all elements)
     ld.global.f32 %f1, [%rd5];
 
     mov.u32 %r1, %tid.x;
@@ -581,20 +584,20 @@ const F16_TO_F32_ACT_SCALED_PTX: &str = r#"
     mov.u32 %r3, %ntid.x;
     mad.lo.u32 %r1, %r2, %r3, %r1;
     setp.ge.u32 %p0, %r1, %r0;
-    @%p0 bra L_DONE_AS;
-    // Load FP16 (16 bits)
+    @%p0 bra L_DONE_BS;
+    // Load BF16 (16 bits) and widen: f32 bits = bf16 bits << 16
     cvt.u64.u32 %rd2, %r1;
     shl.b64 %rd3, %rd2, 1;
     add.u64 %rd3, %rd1, %rd3;
-    ld.global.b16 %h0, [%rd3];
-    // Convert FP16 to FP32 then scale by act_dequant
-    cvt.f32.f16 %f0, %h0;
+    ld.global.u16 %hs, [%rd3];
+    cvt.u32.u16 %r4, %hs;
+    shl.b32 %r5, %r4, 16;
+    mov.b32 %f0, %r5;
     mul.f32 %f0, %f0, %f1;
-    // Store as FP32 (4 bytes)
     shl.b64 %rd4, %rd2, 2;
     add.u64 %rd4, %rd0, %rd4;
     st.global.f32 [%rd4], %f0;
-L_DONE_AS:
+L_DONE_BS:
     ret;
 }
 "#;
@@ -783,20 +786,18 @@ impl CudaExecutor {
         Ok(())
     }
 
-    /// PMAT-079: Convert FP16→FP32 with device-side activation dequant scaling.
-    ///
-    /// Reads act_dequant (act_absmax/448) from a device pointer and multiplies
-    /// each converted element by it. Weight dequant is folded into GEMM alpha.
-    fn convert_f16_to_f32_act_scaled(
+    /// aprender#3728: BF16→FP32 with device-side activation dequant scaling — the widening
+    /// step for `gemm_fp8_e4m3_to_bf16_cached`'s output (see `BF16_TO_F32_ACT_SCALED_PTX`).
+    fn convert_bf16_to_f32_act_scaled(
         &mut self,
         src_ptr: u64,
         dst_ptr: u64,
         count: u32,
         act_dequant_ptr: u64,
     ) -> Result<(), GpuError> {
-        let cache_key = "f16_to_f32_act_scaled";
+        let cache_key = "bf16_to_f32_act_scaled";
         if !self.modules.contains_key(cache_key) {
-            let module = self.compile_ptx(F16_TO_F32_ACT_SCALED_PTX)?;
+            let module = self.compile_ptx(BF16_TO_F32_ACT_SCALED_PTX)?;
             self.modules.insert(cache_key.to_string(), module);
         }
 
@@ -812,7 +813,7 @@ impl CudaExecutor {
         unsafe {
             self.stream.launch_kernel(
                 module,
-                "f16_to_f32_act_scaled",
+                "bf16_to_f32_act_scaled",
                 &config,
                 &mut [
                     std::ptr::from_mut(&mut dst) as *mut std::ffi::c_void,

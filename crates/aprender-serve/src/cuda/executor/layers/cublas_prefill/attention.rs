@@ -1548,10 +1548,9 @@ DONE_NORM:
                     .expect("scratch just allocated")
                     .as_ptr();
 
-                let lt_handle = self.cublaslt_handle.as_ref().expect("just created");
-                let _ = lt_handle.gemm_fp8_e4m3_to_f16(
-                    trueno_gpu::driver::GemmOp::Trans,
-                    trueno_gpu::driver::GemmOp::NoTrans,
+                // #3728: warm the BF16-output kernel the prefill GEMM actually runs.
+                let lt_handle = self.cublaslt_handle.as_mut().expect("just created");
+                let _ = lt_handle.gemm_fp8_e4m3_to_bf16_cached(
                     n_warmup,
                     m_warmup,
                     k_warmup,
