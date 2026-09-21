@@ -1,0 +1,36 @@
+{
+ "verb": "code",
+ "host": "gx10",
+ "file": "Qwen3.5-4B-Q4_K_M.gguf",
+ "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+ "apr_version": "apr 0.69.0 (7b161d743)",
+ "hostname": "gx10-a5b5",
+ "started": "2026-09-21T21:49:58Z",
+ "finished": "2026-09-21T22:06:08Z",
+ "rc": 0,
+ "test_rc": 0,
+ "task": "tests/fixtures/apr-code-edit-verify",
+ "backend": "cuda",
+ "fallback": false,
+ "evidence": "Model ready: Qwen3.5 hybrid, 32 layers resident on the GPU, declared context 262144 tokens",
+ "model_layers": 32,
+ "answer_chars": 299,
+ "thinking": "off",
+ "thinking_raw": "off",
+ "prompt_tokens": null,
+ "context": "task",
+ "max_tokens": 1024,
+ "agent_python_calls": [
+  "/home/noah/wt-3719-logs/cells-v6/gx10-4B/project\t-m unittest test_stats -v"
+ ],
+ "files_added": [],
+ "files_removed": [],
+ "edit": [
+  "-    return sum(values) / (len(values) - 1)",
+  "+    return sum(values) / len(values)"
+ ],
+ "test_call": "/home/noah/wt-3719-logs/cells-v6/gx10-4B/project\t-m unittest test_stats -v",
+ "verdict": "pass",
+ "mechanism": "",
+ "reason": ""
+}

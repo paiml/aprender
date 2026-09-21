@@ -1,0 +1,11 @@
+--- stats.py
++++ stats.py
+@@ -3,7 +3,7 @@
+ 
+ def mean(values):
+     """Arithmetic mean of a non-empty list of numbers."""
+-    return sum(values) / (len(values) - 1)
++    return sum(values) / len(values)
+ 
+ 
+ def median(values):

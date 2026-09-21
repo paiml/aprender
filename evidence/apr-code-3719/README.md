@@ -51,3 +51,27 @@ gx10 / Qwen3.5-4B:
 - **Fix:** in this PR (`b2b89d69e`), with falsifier
   `falsify_3719_single_prompt_run_tells_the_model_about_its_tools`. It is RED with the old
   override restored.
+
+## v6-7b161d743: all four cells PASS (#3719 done_when 1–3)
+
+Binary `apr 0.69.0 (7b161d743)`, `--features cuda`, the same SHA on both hosts. It is a local merge, never pushed: the baseline + aprender-c7's #3571 step (2) `5a4a8e102` + this branch through `ed714f055`. The harness ran through `gpu-q --prio 1` (`GPUQ_WAIT` bound).
+
+| Model | lambda (RTX 4090) | gx10 (GB10) |
+|---|---|---|
+| Qwen3.5-4B-Q4_K_M | **PASS** (5 turns, 81 s) | **PASS** |
+| Qwen3.5-9B-Q4_K_M | **PASS** | **PASS** (4 turns, 214 s) |
+
+Each PASS cell carries:
+
+- **the serve child's own lines:** `Model ready: Qwen3.5 hybrid, 32 layers resident on the GPU, declared context 262144 tokens` · `chat template: Qwen3NoThink (thinking off)` · `gpu-layers: requested=all resolved=32 total=32 (backend=cuda)`, and zero `[GPU->CPU FALLBACK]` lines;
+- **the edit:** exactly `- return sum(values) / (len(values) - 1)` → `+ return sum(values) / len(values)`, with `test_stats.py` untouched and no files added;
+- **the test run:** the agent's own `python3 -m unittest test_stats -v` (shim log), and the independent re-run `OK`;
+- **the answer:** it names the off-by-one and reports the passing tests.
+
+The fixes between route-cc3892acd and v6, each with a falsifier that was RED on the pre-fix code:
+
+1. `b2b89d69e`: `-p` stopped replacing the coding prompt with "Answer the question. Be direct.".
+2. `a35f7b8a0`: a delimited `<tool_call>` missing only its closing brackets is executed.
+3. `ed714f055`: the prompt teaches `file_edit` `old_string`/`new_string` and `memory` `content`, the fields the tools require. Before, Qwen3.5-4B repeated a rejected `old`/`new` call until the loop guard ended the turn; a logging proxy in front of the serve child showed it.
+
+Rows are keyed `thinking: off` (read from the child) and `context: task` (the route prints no per-request prompt size yet). The ON row that `apr code` cannot produce is written by the #3712 ladder as `verdict: error`.
