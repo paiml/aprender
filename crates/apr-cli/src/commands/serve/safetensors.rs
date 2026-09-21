@@ -80,6 +80,12 @@ pub(crate) fn start_safetensors_server(model_path: &Path, config: &ServerConfig)
     // Try to convert to AprTransformer for inference (PAR-301)
     let transformer = match SafetensorsToAprConverter::convert(model_path) {
         Ok(t) => {
+            // #3571: a stack with no layers has no answer to give — refused at load.
+            if let Some(refusal) =
+                super::handlers::zero_layer_refusal(&t.config.architecture, t.config.num_layers)
+            {
+                return Err(refusal);
+            }
             println!(
                 "{}",
                 format!(
@@ -275,6 +281,12 @@ pub(crate) fn start_sharded_safetensors_server(
     // Convert to AprTransformer
     let transformer = match SafetensorsToAprConverter::convert_sharded(&sharded, &st_config) {
         Ok(t) => {
+            // #3571: a stack with no layers has no answer to give — refused at load.
+            if let Some(refusal) =
+                super::handlers::zero_layer_refusal(&t.config.architecture, t.config.num_layers)
+            {
+                return Err(refusal);
+            }
             println!(
                 "{}",
                 format!(
