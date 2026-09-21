@@ -190,7 +190,7 @@
     "result": "8/8 identical, all texts non-empty"
   },
   "greedy_parity_vs_llama_cpp": {
-    "gate": "scripts/check_float16_greedy_parity.sh --baseline <apr before>",
+    "gate": "scripts/float16_greedy_parity.sh --baseline <apr before>",
     "comparator": "llama-completion, llama.cpp commit d1d3c3396 (the scripts/llama_pin.toml build_commit)",
     "why_template_free_copies": "apr run double-templates instruct prompts (#3672), so parity models are copies with tokenizer.chat_template removed (gguf_new_metadata.py --remove-metadata); tensors unchanged",
     "receipts": [

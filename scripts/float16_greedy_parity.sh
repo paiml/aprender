@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check_float16_greedy_parity.sh - #3076: apr's F16/BF16 CPU matvec against the pinned
+# float16_greedy_parity.sh - #3076: apr's F16/BF16 CPU matvec against the pinned
 # llama.cpp, greedy, on an unquantized GGUF.
 #
 # For each prompt, run the pinned `apr run --no-gpu --temperature 0` and the pinned
@@ -32,14 +32,19 @@
 # generated-token difference. A wrong kernel shows up as different words, not as
 # whitespace at the ends.
 #
+# A HOST-SIDE GATE, NOT A TREE GUARD. It needs the models and the pinned llama.cpp build,
+# which CI runners do not carry, so it is not named check_*.sh (scripts/guard_tree.sh runs
+# those bare, in a required job). Its receipts are committed next to the change they judge.
+# It measures agreement only; throughput belongs to the measured A/B, not to this script.
+#
 # THE COMPARATOR IS PINNED. llama-completion must report the `build_commit` declared in
 # scripts/llama_pin.toml. Any other build is refused (rc 2): an unpinned denominator is
 # not a measurement.
 #
 # usage:
-#   bash scripts/check_float16_greedy_parity.sh --model <gguf> [--apr <bin>] [--llama <bin>]
+#   bash scripts/float16_greedy_parity.sh --model <gguf> [--apr <bin>] [--llama <bin>]
 #        [--baseline <apr-before>] [--n <tokens>] [--out <receipt.json>]
-#   bash scripts/check_float16_greedy_parity.sh --self-test
+#   bash scripts/float16_greedy_parity.sh --self-test
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -59,7 +64,7 @@ PROMPTS=(
     "The three primary colors are"
 )
 
-die2() { printf 'check_float16_greedy_parity: %s\n' "$*" >&2; exit 2; }
+die2() { printf 'float16_greedy_parity: %s\n' "$*" >&2; exit 2; }
 
 # first_diff A B -> prints the first differing character offset, or -1 when equal. The
 # strings go in through the environment, not `awk -v`, which would interpret backslash
@@ -193,12 +198,10 @@ for p in "${PROMPTS[@]}"; do
     apr_json=$("$APR_BIN" run "$MODEL" --no-gpu -p "$p" -n "$N" --temperature 0 --json 2>/dev/null) \
         || die2 "apr run failed on prompt: $p"
     apr_text=$(printf '%s' "$apr_json" | jq -r '.text') || die2 "apr --json had no .text"
-    apr_tps=$(printf '%s' "$apr_json" | jq -r '.tok_per_sec')
     "$LLAMA_BIN" -m "$MODEL" -p "$p" -n "$N" --temp 0 -ngl 0 -no-cnv --no-display-prompt \
         --no-warmup -s 0 --simple-io > "$WORK/out" 2> "$WORK/err" < /dev/null \
         || die2 "llama-completion failed on prompt: $p"
     llama_text=$(cat "$WORK/out")
-    llama_tps=$(sed -n 's/.* eval time = .*, *\([0-9.]*\) tokens per second.*/\1/p' "$WORK/err" | grep -v '^$' | tail -1)
     a=$(trim "$apr_text")
     b=$(trim "$llama_text")
     [ -n "$a" ] || die2 "apr generated no text for: $p"
@@ -216,14 +219,13 @@ for p in "${PROMPTS[@]}"; do
         verdict=FAIL
     fi
     case $verdict in
-        PASS) printf 'PASS   %-58s  apr run %s tok/s (whole run), llama.cpp eval %s tok/s\n' \
-                  "$(json_str "$p")" "$apr_tps" "${llama_tps:-?}" ;;
+        PASS) printf 'PASS   %s\n' "$(json_str "$p")" ;;
         *) printf '%-6s %s  first difference from llama.cpp at char %s%s\n       apr:       %s\n       llama.cpp: %s\n' \
                "$verdict" "$(json_str "$p")" "$d" "$base_note" "$(json_str "$a")" "$(json_str "$b")" ;;
     esac
     [ "$verdict" = FAIL ] && fails=$((fails + 1))
     [ "$verdict" = KNOWN ] && known=$((known + 1))
-    rows="${rows}${rows:+,}{\"prompt\":$(json_str "$p"),\"verdict\":\"$verdict\",\"first_diff\":$d,\"apr_text\":$(json_str "$a"),\"llama_text\":$(json_str "$b"),\"apr_run_tok_per_sec_whole_run\":${apr_tps:-null},\"llama_eval_tok_per_sec\":${llama_tps:-null}}"
+    rows="${rows}${rows:+,}{\"prompt\":$(json_str "$p"),\"verdict\":\"$verdict\",\"first_diff\":$d,\"apr_text\":$(json_str "$a"),\"llama_text\":$(json_str "$b")}"
 done
 
 if [ -n "$OUT" ]; then
