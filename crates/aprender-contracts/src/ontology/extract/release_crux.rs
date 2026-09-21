@@ -60,6 +60,8 @@ pub struct CruxRow {
     pub rung: Option<String>,
     pub prompt_id: String,
     pub verdict: String,
+    /// The prompt the set declares its positive control (#3739, `positive_control: true`).
+    pub positive_control: bool,
 }
 
 fn input_err(file: &str, what: impl Into<String>) -> ReleaseError {
@@ -201,6 +203,10 @@ fn rows_of(file: &str, v: &serde_json::Value) -> Vec<CruxRow> {
                 rung: s(k, "rung"),
                 prompt_id: s(k, "prompt_id").unwrap_or_default(),
                 verdict: s(c, "verdict").unwrap_or_default(),
+                positive_control: c
+                    .get("positive_control")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false),
             })
         })
         .collect()
@@ -213,8 +219,12 @@ pub struct CruxStats {
     pub mapped_verbs: usize,
     pub obligations: usize,
     pub rows: usize,
-    /// Named, not violations, pending the cop's ruling (#3739).
+    /// Cop ruling (#3739): ALL_WRONG is NAMED, counted per model, never Pass, never a violation.
     pub all_wrong: usize,
+    pub all_wrong_by_model: BTreeMap<String, usize>,
+    /// ... and a BROKEN HARNESS declines the whole gate (exit 2): a model whose positive-control prompt came back
+    /// ALL_WRONG, or a model owing CRUX cells with no measured control. Each entry names the model and the cause.
+    pub harness_broken: Vec<String>,
 }
 
 /// One CRUX obligation's key: (host, model sha256, model file, verb, thinking, rung).
@@ -266,7 +276,32 @@ pub fn emit(
         st.obligations += 1;
         emit_obligation(g, subject, key, rows, &mut st);
     }
+    st.harness_broken = harness_broken(&owed, rows);
     st
+}
+
+/// The cop's guard (#3739): per model owing CRUX cells, its positive-control rows must exist and none may be
+/// ALL_WRONG — otherwise the comparison machinery, not apr, is what was measured.
+fn harness_broken(owed: &BTreeSet<Key>, rows: &[CruxRow]) -> Vec<String> {
+    let models: BTreeSet<(&str, &str)> = owed
+        .iter()
+        .map(|(_, sha, file, ..)| (sha.as_str(), file.as_str()))
+        .collect();
+    let mut out = Vec::new();
+    for (sha, file) in models {
+        let controls: Vec<&CruxRow> = rows
+            .iter()
+            .filter(|r| r.positive_control && r.model_sha256 == sha)
+            .collect();
+        if controls.is_empty() {
+            out.push(format!("{file}: no measured positive-control cell"));
+        } else if controls.iter().any(|r| r.verdict == "ALL_WRONG") {
+            out.push(format!(
+                "{file}: its positive-control prompt came back ALL_WRONG"
+            ));
+        }
+    }
+    out
 }
 
 fn emit_verb(
@@ -339,6 +374,7 @@ fn emit_obligation(
         st.rows += 1;
         if r.verdict == "ALL_WRONG" {
             st.all_wrong += 1;
+            *st.all_wrong_by_model.entry(file.clone()).or_default() += 1;
         }
         let rn = iri_path(
             "release-crux-row",

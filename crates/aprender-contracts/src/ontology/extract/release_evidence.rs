@@ -1112,6 +1112,15 @@ fn emit_row(
     if let Some(o) = &c.output_sha256 {
         g.insert(n.clone(), rel("outputSha"), Term::string(o));
     }
+    // #3748: a correctness cell's CPU reference ran fresh, or came from THIS binary's own receipt
+    let f2 = match c.f2_source.as_deref() {
+        Some("fresh") => true,
+        Some("receipt") => {
+            c.f2_receipt_binary_sha.is_some() && c.f2_receipt_binary_sha == r.apr_sha
+        }
+        _ => false,
+    };
+    g.insert(n.clone(), rel("f2Measured"), Term::boolean(f2));
     emit_row_detail(g, &n, r, c);
     n
 }

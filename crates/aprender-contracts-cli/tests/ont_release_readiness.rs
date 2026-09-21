@@ -153,6 +153,9 @@ fn pass_row(c: &Value) -> Value {
     if c["thinking"] == "on" {
         r.insert("think_closed".into(), true.into());
     }
+    if generating {
+        r.insert("f2_source".into(), "fresh".into());
+    }
     if matches!(c["kind"].as_str(), Some("base" | "effect")) {
         let id = c["id"].as_str().unwrap_or_default();
         r.insert("output_sha256".into(), format!("out:{id}").into());
@@ -198,6 +201,13 @@ fn synthesize(t: &Path) {
             .collect();
         keys.sort();
         keys.dedup();
+        // the LAST row is the set's positive control (#3739): one per model per host
+        if let Some(last) = keys.last_mut() {
+            *last = last.replace(
+                r#""verdict":"GREEN""#,
+                r#""verdict":"GREEN","positive_control":true"#,
+            );
+        }
         let crux_dir = t.join("evidence/crux/0.69.1");
         std::fs::create_dir_all(&crux_dir).expect("crux dir");
         let receipt = format!(
@@ -976,4 +986,72 @@ fn a_red_an_unjudged_or_an_absent_crux_cell_is_red_and_all_wrong_is_named_not_fa
         show(&r)
     );
     assert_eq!(json_of(&r)["release"]["crux"]["all_wrong"], 1);
+}
+
+// ── #3748 and the CRUX harness guard ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fn a_correctness_cell_validated_by_another_binarys_f2_receipt_is_unmeasured_and_red() {
+    let t = green();
+    let id = pick(t.path(), gen_cell("lambda", "off", "4k"));
+    edit_row(t.path(), "lambda", &id, |r| {
+        r["f2_source"] = "receipt".into();
+        r["f2_receipt_binary_sha"] = PARENT.into();
+    });
+    let v = assert_red_naming(&gate(t.path(), &[]), &named(&id));
+    assert!(v["findings"].to_string().contains("f2Measured"));
+    let t = green();
+    let id = pick(t.path(), gen_cell("gx10", "on", "4k"));
+    edit_row(t.path(), "gx10", &id, |r| {
+        r["f2_source"] = "receipt".into();
+        r["f2_receipt_binary_sha"] = MC.into();
+    });
+    assert_eq!(
+        gate(t.path(), &[]).code,
+        0,
+        "this binary's own F2 receipt counts"
+    );
+    edit_row(t.path(), "gx10", &id, |r| {
+        r.as_object_mut().expect("row").remove("f2_source");
+    });
+    assert_red_naming(&gate(t.path(), &[]), &named(&id));
+}
+
+#[test]
+fn a_broken_crux_harness_declines_the_gate_naming_the_model() {
+    let t = green();
+    edit(&crux_receipt(t.path(), "lambda"), |v| {
+        for c in v["cells"].as_array_mut().expect("cells") {
+            if c["positive_control"] == true {
+                c["verdict"] = "ALL_WRONG".into();
+            }
+        }
+    });
+    let r = gate(t.path(), &[]);
+    assert_eq!(
+        r.code,
+        2,
+        "a positive control that is ALL_WRONG declines: {}",
+        show(&r)
+    );
+    assert!(
+        r.stderr.contains("tiny-qwen35.gguf") && r.stderr.contains("ALL_WRONG"),
+        "{}",
+        show(&r)
+    );
+    let t = green();
+    for h in ["lambda", "gx10"] {
+        edit(&crux_receipt(t.path(), h), |v| {
+            for c in v["cells"].as_array_mut().expect("cells") {
+                c["positive_control"] = false.into();
+            }
+        });
+    }
+    let r = gate(t.path(), &[]);
+    assert_eq!(r.code, 2, "no measured control declines: {}", show(&r));
+    assert!(
+        r.stderr.contains("no measured positive-control cell"),
+        "{}",
+        show(&r)
+    );
 }
