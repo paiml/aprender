@@ -33,7 +33,8 @@ fn golden_output_safetensors(
     let tokens = transformer
         .generate_with_cache(&prompt_tokens, &gen_config)
         .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?;
-    let text = tokenizer.decode(&tokens);
+    // The completion only: judged with the prompt, a case can pass on the prompt.
+    let text = tokenizer.decode(tokens.get(prompt_tokens.len()..).unwrap_or_default());
     Ok(Some((tokens, text)))
 }
 
@@ -68,7 +69,8 @@ fn golden_output_gguf_cpu(
     let tokens = model
         .generate_with_cache(&prompt_tokens, &gen_config)
         .map_err(|e| CliError::ValidationFailed(format!("CPU generation failed: {e}")))?;
-    let text = gguf.decode(&tokens);
+    // The completion only: judged with the prompt, a case can pass on the prompt.
+    let text = gguf.decode(tokens.get(prompt_tokens.len()..).unwrap_or_default());
     Ok((tokens, text))
 }
 
@@ -161,68 +163,61 @@ impl GoldenCase {
     }
 }
 
-/// The golden cases for a model whose architecture is unknown.
+/// The golden cases for a model that ships no chat template of its own.
 #[cfg(test)]
 fn golden_test_cases() -> Vec<GoldenCase> {
-    golden_test_cases_for(None)
+    golden_chatml_cases()
 }
 
-/// The golden cases for `arch`, in every mode production serves it in.
-///
-/// A model realizar templates with `Qwen3NoThinkTemplate` (every `qwen3*` except
-/// `qwen3moe`, PMAT-181) thinks unless told not to, so it is judged BOTH ways:
-/// DIRECT through the production no-think prompt that `apr serve` and `apr chat`
-/// build, and THINKING through plain ChatML with a budget the reasoning can close
-/// in. The gate used to send only plain ChatML at 512 tokens, a mode no production
-/// path used and a budget Qwen3-8B overran (0.69.0 ladder, qwen3-8b-q4km). Every
-/// other architecture gets plain ChatML, byte-identical to the prompts the #2350
-/// selection rule was verified against.
-fn golden_test_cases_for(arch: Option<&str>) -> Vec<GoldenCase> {
-    let thinks = thinks_by_default(arch);
-    let mut cases = Vec::new();
-    for (question, expected) in golden_questions() {
-        if thinks {
-            cases.push(GoldenCase {
-                prompt: no_think_prompt(question),
-                expected: expected.clone(),
-                thinking: false,
-            });
-        }
-        cases.push(GoldenCase {
+/// Plain ChatML, byte-identical to the prompts the #2350 selection rule verified on
+/// both backends: the cases for a file with no chat template of its own.
+fn golden_chatml_cases() -> Vec<GoldenCase> {
+    golden_questions()
+        .into_iter()
+        .map(|(question, expected)| GoldenCase {
             prompt: chatml_prompt(question),
             expected,
-            thinking: thinks,
-        });
+            thinking: false,
+        })
+        .collect()
+}
+
+/// The golden cases for a model, in EVERY mode its own chat template offers.
+///
+/// Each prompt is what production sends (`realizar::chat_template::format_chat_prompt`,
+/// #3755): the model's `tokenizer.chat_template` rendered as HF renders it, with
+/// thinking ON (budget [`GOLDEN_THINK_BUDGET`]) and/or OFF as the template allows
+/// (#3723). The gate used to send plain ChatML to everything, which left Qwen3 in a
+/// thinking mode no production path used, at a budget Qwen3-8B overran (0.69.0 ladder,
+/// qwen3-8b-q4km, "Empty output"). A file with no template of its own gets
+/// [`golden_chatml_cases`].
+#[cfg(feature = "inference")]
+fn golden_test_cases_for(
+    template: Option<&realizar::chat_template::EmbeddedChatTemplate>,
+) -> Result<Vec<GoldenCase>> {
+    use realizar::chat_template::{format_chat_prompt, ChatMessage, ThinkingModes};
+    let Some(template) = template else {
+        return Ok(golden_chatml_cases());
+    };
+    let modes: &[bool] = match template.thinking_modes() {
+        ThinkingModes::Both => &[false, true],
+        ThinkingModes::OnOnly => &[true],
+        ThinkingModes::OffOnly => &[false],
+    };
+    let mut cases = Vec::new();
+    for (question, expected) in golden_questions() {
+        for &on in modes {
+            let prompt =
+                format_chat_prompt(Some(template), None, &[ChatMessage::user(question)], Some(on))
+                    .map_err(|e| CliError::ValidationFailed(format!("golden prompt: {e}")))?;
+            cases.push(GoldenCase {
+                prompt: prompt.text,
+                expected: expected.clone(),
+                thinking: on,
+            });
+        }
     }
-    cases
-}
-
-/// Whether production templates `arch` with thinking switched off, i.e. the model
-/// reasons by default. The same detector `apr serve` uses.
-#[cfg(feature = "inference")]
-fn thinks_by_default(arch: Option<&str>) -> bool {
-    use realizar::chat_template::{detect_format_from_name, TemplateFormat};
-    arch.map(detect_format_from_name) == Some(TemplateFormat::Qwen3NoThink)
-}
-
-/// Without `inference` there is no template detector and no model to run.
-#[cfg(not(feature = "inference"))]
-fn thinks_by_default(_arch: Option<&str>) -> bool {
-    false
-}
-
-/// A user turn as `apr serve` templates it for a model with thinking switched off.
-#[cfg(feature = "inference")]
-fn no_think_prompt(question: &str) -> String {
-    use realizar::chat_template::{create_template, ChatMessage, TemplateFormat};
-    create_template(TemplateFormat::Qwen3NoThink)
-        .format_conversation(&[ChatMessage::user(question)])
-        .unwrap_or_else(|_| chatml_prompt(question))
-}
-
-#[cfg(not(feature = "inference"))]
-fn no_think_prompt(question: &str) -> String {
-    chatml_prompt(question)
+    Ok(cases)
 }
 
 fn chatml_prompt(question: &str) -> String {
@@ -274,7 +269,6 @@ fn validate_golden_test_case(
 ) -> Result<Option<GateResult>> {
     use realizar::format::ModelFormat;
     let prompt = case.prompt.as_str();
-    let expected_patterns = case.expected.as_slice();
     // GH-279-4: a reasoning case needs room to close its think block (GOLDEN_THINK_BUDGET).
     let golden_max_tokens = case.budget(config.max_tokens);
 
@@ -312,7 +306,7 @@ fn validate_golden_test_case(
             &prompt_tokens,
             &gen_config,
             gguf_ref,
-            expected_patterns,
+            case,
             config,
         )? {
             return Ok(Some(GateResult::failed(
@@ -327,17 +321,8 @@ fn validate_golden_test_case(
     #[cfg(not(feature = "cuda"))]
     let _ = cuda_available;
 
-    // GH-279-4: generate_with_cache returns prompt + generated tokens.
-    // Strip the prompt echo so we verify only the model's generated output.
-    let generated_text = output_text
-        .strip_prefix(prompt)
-        .unwrap_or(&output_text);
-    let verdict = golden_answer(generated_text, "golden_output", golden_max_tokens).and_then(
-        |answer| match verify_output(&answer, "golden_output", expected_patterns) {
-            OutputVerification::Fail { reason } => Err(reason),
-            OutputVerification::Pass => Ok(()),
-        },
-    );
+    // The generators return the completion only (never the prompt, see golden_answer).
+    let verdict = judge_golden(case, &output_text, "golden_output", golden_max_tokens);
     if let Err(reason) = verdict {
         return Ok(Some(GateResult::failed(
             "golden_output",
@@ -385,7 +370,10 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         } else {
             (None, None)
         };
-        let test_cases = golden_test_cases_for(gguf_model.as_ref().and_then(|g| g.architecture()));
+        let template = realizar::chat_template::EmbeddedChatTemplate::for_model_file(path)
+            .transpose()
+            .map_err(|e| CliError::ValidationFailed(format!("chat template: {e}")))?;
+        let test_cases = golden_test_cases_for(template.as_ref())?;
 
         for case in &test_cases {
             if let Some(result) = validate_golden_test_case(
@@ -668,69 +656,99 @@ mod golden_output_tests {
     ];
 
     #[test]
-    fn golden_prompts_stay_byte_identical_chatml_off_qwen3() {
-        for arch in [None, Some("qwen2"), Some("llama"), Some("phi3"), Some("qwen3moe")] {
-            let cases = golden_test_cases_for(arch);
-            let prompts: Vec<&str> = cases.iter().map(|c| c.prompt.as_str()).collect();
-            assert_eq!(prompts, VERIFIED_CHATML, "arch {arch:?}");
-            assert!(cases.iter().all(|c| !c.thinking && c.budget(32) == GOLDEN_DIRECT_BUDGET));
+    fn golden_prompts_without_a_template_are_the_verified_chatml() {
+        let cases = golden_chatml_cases();
+        let prompts: Vec<&str> = cases.iter().map(|c| c.prompt.as_str()).collect();
+        assert_eq!(prompts, VERIFIED_CHATML);
+        assert!(cases.iter().all(|c| !c.thinking && c.budget(32) == GOLDEN_DIRECT_BUDGET));
+        #[cfg(feature = "inference")]
+        {
+            let none = golden_test_cases_for(None).expect("no template");
+            let prompts: Vec<&str> = none.iter().map(|c| c.prompt.as_str()).collect();
+            assert_eq!(prompts, VERIFIED_CHATML);
         }
     }
 
-    /// A model that thinks by default (qwen3, qwen35) is judged in BOTH modes: DIRECT
-    /// through the prompt `apr serve` builds (no-think pre-fill), and THINKING through
-    /// plain ChatML with a budget the reasoning can close in. Plain ChatML at 512 was
-    /// the only mode before, and Qwen3-8B overran it (0.69.0 ladder, qwen3-8b-q4km).
+    /// The inventory fixtures realizar's byte-equality oracle uses (#3755).
+    #[cfg(feature = "inference")]
+    fn inventory_template(sha: &str) -> realizar::chat_template::EmbeddedChatTemplate {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../aprender-serve/tests/fixtures/chat_templates")
+            .join(format!("{sha}.jinja"));
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        realizar::chat_template::EmbeddedChatTemplate::new(source).expect("loads")
+    }
+
+    #[cfg(feature = "inference")]
+    fn inventory_reference() -> serde_json::Value {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../aprender-serve/tests/fixtures/chat_templates/reference.json");
+        serde_json::from_str(&std::fs::read_to_string(&path).expect("reference.json"))
+            .expect("parses")
+    }
+
+    /// The gate judges a model in every mode ITS OWN template offers, each prompt the
+    /// one production sends: a thinking-capable model (Qwen3-8B, Qwen3.5) DIRECT and
+    /// THINKING, a non-thinking one (Qwen3-30B-A3B-Instruct-2507, Qwen2.5) DIRECT only.
+    /// Plain ChatML at 512 was the only mode before, and Qwen3-8B overran it.
     #[cfg(feature = "inference")]
     #[test]
-    fn thinking_models_are_judged_direct_and_thinking() {
-        use realizar::chat_template::{
-            create_template, detect_format_from_name, ChatMessage, TemplateFormat,
+    fn golden_cases_are_the_models_own_prompts_in_every_mode() {
+        let reference = inventory_reference();
+        let hf = |sha: &str, set: &str, mode: &str| {
+            reference["cases"][format!("{sha}/{set}/{mode}")].as_str().expect("case").to_string()
         };
-        for arch in ["qwen3", "qwen35"] {
-            assert_eq!(detect_format_from_name(arch), TemplateFormat::Qwen3NoThink, "{arch}");
-            let cases = golden_test_cases_for(Some(arch));
-            let direct: Vec<&GoldenCase> = cases.iter().filter(|c| !c.thinking).collect();
-            let thinking: Vec<&GoldenCase> = cases.iter().filter(|c| c.thinking).collect();
-            assert_eq!(direct.len(), golden_questions().len(), "{arch}");
-            assert_eq!(thinking.len(), golden_questions().len(), "{arch}");
-            for ((d, t), (question, _)) in direct.iter().zip(&thinking).zip(golden_questions()) {
-                let serve = create_template(TemplateFormat::Qwen3NoThink)
-                    .format_conversation(&[ChatMessage::user(question)])
-                    .expect("no-think template formats a user turn");
-                assert_eq!(d.prompt, serve, "{arch}: {question}");
-                assert!(d.prompt.ends_with("<|im_start|>assistant\n<think>\n</think>\n"));
-                assert_eq!(d.budget(32), GOLDEN_DIRECT_BUDGET);
-                assert_eq!(t.prompt, chatml_prompt(question), "{arch}: {question}");
-                assert_eq!(t.budget(32), GOLDEN_THINK_BUDGET);
-            }
+        for sha in ["57f1fd00f001", "7f0e529032c2"] {
+            let cases = golden_test_cases_for(Some(&inventory_template(sha))).expect("cases");
+            assert_eq!(cases.len(), 2 * golden_questions().len(), "{sha}");
+            // "What is 2+2?" is the first question and the fixture's `single` set.
+            assert_eq!((cases[0].thinking, cases[1].thinking), (false, true));
+            assert_eq!(cases[0].prompt, hf(sha, "single", "off"), "{sha} direct");
+            assert_eq!(cases[1].prompt, hf(sha, "single", "on"), "{sha} thinking");
+            assert_eq!(cases[0].budget(32), GOLDEN_DIRECT_BUDGET);
+            assert_eq!(cases[1].budget(32), GOLDEN_THINK_BUDGET);
+        }
+        for sha in ["40c21f34cf67", "d5495a1e5db0"] {
+            let cases = golden_test_cases_for(Some(&inventory_template(sha))).expect("cases");
+            assert_eq!(cases.len(), golden_questions().len(), "{sha}");
+            assert!(cases.iter().all(|c| !c.thinking), "{sha}");
+            assert_eq!(cases[0].prompt, hf(sha, "single", "off"), "{sha}");
         }
         // The think budget must clear the longest block measured, with room to spare.
         assert!(GOLDEN_THINK_BUDGET >= 4 * 545);
     }
 
-    /// An unclosed think block is reported as one, naming the budget. It is never
-    /// stripped to "" and read as "Empty output".
+    /// A case is judged on its completion, split as production splits it. An unclosed
+    /// think block is its own failure naming the budget, never "" read as "Empty output".
+    #[cfg(feature = "inference")]
     #[test]
-    fn unclosed_think_block_is_its_own_failure() {
-        let cut = "<think>\nOkay, the user is asking what 2+2 is. In base 10, which";
+    fn golden_judging_splits_reasoning_and_refuses_unclosed() {
+        let qwen3_on = GoldenCase {
+            prompt: "<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n".into(),
+            expected: vec!["4"],
+            thinking: true,
+        };
+        let qwen35_on = GoldenCase {
+            prompt: "<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n<think>\n"
+                .into(),
+            expected: vec!["4"],
+            thinking: true,
+        };
+        let err = golden_answer(&qwen3_on, "<think>\nIn base 10, which", "golden_output", 512)
+            .expect_err("unclosed");
+        assert!(err.contains("unclosed within the 512-token budget"), "{err}");
         assert_eq!(
-            golden_answer(cut, "golden_output", 512),
-            Err("golden_output: think block unclosed within the 512-token budget".to_string())
-        );
-        assert_eq!(
-            golden_answer("<think>\nsimple.\n</think>\n\n2 + 2 = 4.", "golden_output", 4096),
+            golden_answer(&qwen3_on, "<think>\nadd.\n</think>\n\n2 + 2 = 4.", "golden_output", 4096),
             Ok("2 + 2 = 4.".to_string())
         );
-        // The closed pre-fill of a no-think prompt is not an open block.
         assert_eq!(
-            golden_answer("<think>\n</think>\n2 + 2 = 4.", "golden_output", 512),
-            Ok("2 + 2 = 4.".to_string())
+            golden_answer(&qwen35_on, "add.\n</think>\n\n4", "golden_output", 4096),
+            Ok("4".to_string())
         );
-        assert_eq!(
-            golden_answer("<think>a</think>b<think>c", "golden_output_gpu", 4096),
-            Err("golden_output_gpu: think block unclosed within the 4096-token budget".to_string())
-        );
+        assert!(judge_golden(&qwen35_on, "add.\n</think>\n\n4", "g", 4096).is_ok());
+        // The reasoning must not be what passes: "4" only inside the think block fails.
+        assert!(judge_golden(&qwen35_on, "2+2 is 4.\n</think>\n\nfive", "g", 4096).is_err());
     }
 
     /// Poka-yoke for #2350: no golden prompt may be a bare one-or-two-word user

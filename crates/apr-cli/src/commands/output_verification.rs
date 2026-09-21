@@ -468,22 +468,43 @@ pub fn strip_thinking_blocks(output: &str) -> String {
     result.trim().to_string()
 }
 
-/// The answer a golden case is judged on: the output with its reasoning removed.
+/// The answer a golden case is judged on: the GENERATED text with its reasoning
+/// removed, split exactly as production splits it (`ChatPrompt::split`, #3723).
 ///
-/// A think block that never closes is its OWN failure, naming the budget that cut
-/// it off. Stripped instead, it leaves "" and reads as "Empty output", which is what
-/// qwen3-8b-q4km reported on lambda for a model still reasoning at 512 tokens
-/// (0.69.0 ladder). The check reads the LAST `<think>`, so a closed block in the
-/// prompt (the no-think pre-fill) never counts.
-fn golden_answer(output: &str, test_id: &str, budget: usize) -> std::result::Result<String, String> {
-    if let Some(open) = output.rfind("<think>") {
-        if !output[open..].contains("</think>") {
-            return Err(format!(
-                "{test_id}: think block unclosed within the {budget}-token budget"
-            ));
-        }
+/// A think block still open at the end is its OWN failure naming the budget, never
+/// "" read as "Empty output" (0.69.0 ladder, qwen3-8b-q4km). `generated` must hold
+/// only the completion: judged together with the prompt, a greeting case passes on
+/// the prompt's own "Hello" (found in the GPU leg, which decoded prompt + completion).
+#[cfg(feature = "inference")]
+fn golden_answer(
+    case: &GoldenCase,
+    generated: &str,
+    test_id: &str,
+    budget: usize,
+) -> std::result::Result<String, String> {
+    realizar::chat_template::ChatPrompt {
+        text: case.prompt.clone(),
+        thinking: case.thinking,
     }
-    Ok(strip_thinking_blocks(output))
+    .split(generated, budget)
+    .map(|split| split.answer)
+    .map_err(|e| format!("{test_id}: {e}"))
+}
+
+/// Judge one golden case's completion: its answer, then the patterns.
+#[cfg(feature = "inference")]
+fn judge_golden(
+    case: &GoldenCase,
+    generated: &str,
+    test_id: &str,
+    budget: usize,
+) -> std::result::Result<(), String> {
+    golden_answer(case, generated, test_id, budget).and_then(|answer| {
+        match verify_output(&answer, test_id, &case.expected) {
+            OutputVerification::Fail { reason } => Err(reason),
+            OutputVerification::Pass => Ok(()),
+        }
+    })
 }
 
 /// JIDOKA: Validate GPU golden output matches expected patterns (PMAT-232 lesson).
@@ -497,7 +518,7 @@ fn validate_gpu_golden_output(
     prompt_tokens: &[u32],
     gen_config: &realizar::gguf::QuantizedGenerateConfig,
     gguf: &realizar::gguf::GGUFModel,
-    expected_patterns: &[&str],
+    case: &GoldenCase,
     config: &QaConfig,
 ) -> Result<Option<String>> {
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
@@ -521,15 +542,11 @@ fn validate_gpu_golden_output(
     match OwnedQuantizedModelCuda::new(model, 0) {
         Ok(mut cuda_model) => match cuda_model.generate_gpu_resident(prompt_tokens, gen_config) {
             Ok(gpu_tokens) => {
-                let gpu_text = gguf.decode(&gpu_tokens);
+                // generate_gpu_resident returns prompt + completion: judge the completion.
+                let generated = gpu_tokens.get(prompt_tokens.len()..).unwrap_or_default();
+                let gpu_text = gguf.decode(generated);
                 let verdict =
-                    golden_answer(&gpu_text, "golden_output_gpu", gen_config.max_tokens)
-                        .and_then(|gpu_answer| {
-                            match verify_output(&gpu_answer, "golden_output_gpu", expected_patterns) {
-                                OutputVerification::Fail { reason } => Err(reason),
-                                OutputVerification::Pass => Ok(()),
-                            }
-                        });
+                    judge_golden(case, &gpu_text, "golden_output_gpu", gen_config.max_tokens);
                 if let Err(reason) = verdict {
                     return Ok(Some(format!("GPU output failed (CPU passed): {reason}")));
                 }
@@ -618,21 +635,16 @@ fn run_golden_output_gate_runtime(path: &Path, config: &QaConfig) -> Result<Gate
         );
     }
 
-    // The cases production would build for this architecture (see `golden_test_cases_for`).
-    let arch = realizar::gguf::MappedGGUFModel::from_path(path)
-        .ok()
-        .and_then(|m| m.model.architecture().map(str::to_owned));
-    let test_cases = golden_test_cases_for(arch.as_deref());
+    // The cases production builds from this model's own template (golden_test_cases_for).
+    let template = realizar::chat_template::EmbeddedChatTemplate::for_model_file(path)
+        .transpose()
+        .map_err(|e| CliError::ValidationFailed(format!("chat template: {e}")))?;
+    let test_cases = golden_test_cases_for(template.as_ref())?;
     for case in &test_cases {
         // GH-279-4: a reasoning case needs room to close its think block.
         let budget = case.budget(config.max_tokens);
         let output_text = golden_output_runtime(path, &case.prompt, budget)?;
-        let verdict = golden_answer(&output_text, "golden_output_runtime", budget).and_then(
-            |answer| match verify_output(&answer, "golden_output_runtime", &case.expected) {
-                OutputVerification::Fail { reason } => Err(reason),
-                OutputVerification::Pass => Ok(()),
-            },
-        );
+        let verdict = judge_golden(case, &output_text, "golden_output_runtime", budget);
         if let Err(reason) = verdict {
             return Ok(GateResult::failed(
                 "golden_output",

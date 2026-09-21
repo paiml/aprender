@@ -146,6 +146,43 @@ impl EmbeddedChatTemplate {
         }
     }
 
+    /// The chat template a model FILE ships, by format (#3755): a GGUF's
+    /// `tokenizer.chat_template`, a SafeTensors model's sibling `tokenizer_config.json`
+    /// `chat_template`, or an APR file's `tokenizer.chat_template` metadata. `None` when
+    /// the file ships none (apr's per-family template is then the fallback).
+    #[must_use]
+    pub fn for_model_file(path: &std::path::Path) -> Option<Result<Self, RealizarError>> {
+        let name = path.to_string_lossy().to_lowercase();
+        if name.ends_with(".gguf") {
+            return match crate::gguf::MappedGGUFModel::from_path(path) {
+                Ok(mapped) => Self::from_gguf(&mapped.model),
+                Err(e) => Some(Err(e)),
+            };
+        }
+        if name.ends_with(".safetensors") || name.ends_with(".safetensors.index.json") {
+            let config = path.parent()?.join("tokenizer_config.json");
+            let text = std::fs::read_to_string(config).ok()?;
+            let json: serde_json::Value = serde_json::from_str(&text).ok()?;
+            let source = json.get("chat_template")?.as_str().filter(|s| !s.is_empty())?;
+            return Some(Self::new(source.to_owned()));
+        }
+        if name.ends_with(".apr") {
+            let model = match crate::apr::AprV2Model::load(path) {
+                Ok(m) => m,
+                Err(e) => return Some(Err(e)),
+            };
+            let source = model
+                .metadata()
+                .extra
+                .get("tokenizer.chat_template")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())?
+                .to_owned();
+            return Some(Self::new(source));
+        }
+        None
+    }
+
     /// The thinking modes this template offers.
     #[must_use]
     pub fn thinking_modes(&self) -> ThinkingModes {
