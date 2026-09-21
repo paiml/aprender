@@ -1263,6 +1263,7 @@ pub fn run_qwen35_generate(
             reason: "run_qwen35_generate: prompt cannot be empty".to_string(),
         });
     }
+    qwen35_check_context(input_tokens.len(), base.config.context_length)?;
     let qwen = Qwen35Model::from_model_and_layers(base, &mapped.model, mapped.data())?;
     let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
     let mut state = qwen.new_state(max_seq_len);
@@ -1329,6 +1330,23 @@ pub fn qwen35_route(no_gpu: bool, cuda_backend: bool) -> Qwen35Route {
     } else {
         Qwen35Route::Cpu(Qwen35CpuReason::NoCudaBackend)
     }
+}
+
+/// The bound every other generate path checks (GH-167), which the Qwen3.5 dispatch
+/// skipped: #3596's 262k rung prefilled 263,089 positions into a model that declares
+/// 262,144, on both the GPU and the CPU route, and nothing refused it.
+///
+/// # Errors
+/// [`crate::error::RealizarError::ContextLimitExceeded`] when the prompt is longer
+/// than the model's declared `context_length`.
+pub fn qwen35_check_context(prompt_len: usize, context_length: usize) -> Result<()> {
+    if prompt_len > context_length {
+        return Err(crate::error::RealizarError::ContextLimitExceeded {
+            provided: prompt_len,
+            maximum: context_length,
+        });
+    }
+    Ok(())
 }
 
 /// The one-line notice a route owes the user, or `None` when it owes none.
@@ -1421,6 +1439,7 @@ pub fn run_qwen35_generate_dispatch_timed(
     gen_config: &crate::gguf::QuantizedGenerateConfig,
     no_gpu: bool,
 ) -> Result<Qwen35GenerateOutcome> {
+    qwen35_check_context(input_tokens.len(), base.config.context_length)?;
     let route = qwen35_route(no_gpu, cfg!(feature = "cuda"));
     if let Some(notice) = qwen35_route_notice(route) {
         eprintln!("{notice}");
@@ -1933,7 +1952,34 @@ fn f2_qwen35_gpu_logits(
 
 #[cfg(test)]
 mod qwen35_route_tests {
-    use super::{qwen35_route, qwen35_route_notice, Qwen35CpuReason, Qwen35Route};
+    use super::{
+        qwen35_check_context, qwen35_route, qwen35_route_notice, Qwen35CpuReason, Qwen35Route,
+    };
+
+    // #3596: the 262k rung's 263,089-position prompt ran on a 262,144-position model.
+    // The boundary is inclusive (a prompt of exactly `context_length` is served), as
+    // on every other generate path (GH-167).
+    #[test]
+    fn a_prompt_past_the_declared_context_is_refused_with_both_numbers() {
+        const CTX: usize = 262_144;
+        for (len, ok) in [
+            (1, true),
+            (CTX - 1, true),
+            (CTX, true),
+            (CTX + 1, false),
+            (263_089, false),
+        ] {
+            let got = qwen35_check_context(len, CTX);
+            assert_eq!(got.is_ok(), ok, "prompt of {len} against {CTX}: {got:?}");
+            if let Err(e) = got {
+                let msg = e.to_string();
+                assert!(
+                    msg.contains(&len.to_string()) && msg.contains(&CTX.to_string()),
+                    "{msg}"
+                );
+            }
+        }
+    }
 
     // #3090/#3477: with a CUDA build and no --no-gpu, the hybrid goes to the GPU.
     // This is the whole point of the ticket; if it ever reads Cpu again, `apr run
