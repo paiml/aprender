@@ -427,17 +427,96 @@ pub(crate) fn hybrid_loader_architecture(_path: &Path) -> bool {
 /// forward, CUDA (#3714) or CPU (#3367) — and every gate measured through the
 /// dense `OwnedQuantizedModel`/`OwnedQuantizedModelCuda` skips, saying so.
 ///
-/// Reads the header through the mmap, never the whole file: the siblings
-/// above `std::fs::read` all 18.5 GB of a 30B-A3B file to ask the same kind
-/// of question.
+/// Reads ONLY the GGUF header, streamed from the start of the file until the
+/// `general.architecture` key ([`gguf_architecture_streamed`]). Not a map:
+/// realizar's `MappedGGUFModel::from_path` maps with MAP_POPULATE + mlock,
+/// which faults in the whole 18.5 GB file to answer a one-string question
+/// (#3761).
 #[cfg(feature = "inference")]
 pub(crate) fn moe_loader_architecture(path: &Path) -> bool {
-    realizar::gguf::MappedGGUFModel::from_path(path).is_ok_and(|mapped| {
-        mapped
-            .model
-            .architecture()
-            .is_some_and(|a| realizar::tensor_names::normalize_architecture(a) == "qwen3_moe")
-    })
+    gguf_architecture_streamed(path)
+        .is_some_and(|a| realizar::tensor_names::normalize_architecture(&a) == "qwen3_moe")
+}
+
+/// The GGUF `general.architecture` value, read by streaming the key-value
+/// section from the start of the file and stopping at that key: a 64 KiB
+/// buffered read, bounded by the header, never the tensor data. `None` for a
+/// file that is not GGUF v2+, a malformed header, or no such string key.
+#[cfg_attr(not(feature = "inference"), allow(dead_code))]
+fn gguf_architecture_streamed(path: &Path) -> Option<String> {
+    use std::io::{BufReader, Read};
+    let mut r = BufReader::with_capacity(1 << 16, std::fs::File::open(path).ok()?);
+    let mut b4 = [0u8; 4];
+    let mut b8 = [0u8; 8];
+    let mut u32_ = |r: &mut BufReader<std::fs::File>| -> Option<u32> {
+        r.read_exact(&mut b4).ok()?;
+        Some(u32::from_le_bytes(b4))
+    };
+    let mut u64_ = |r: &mut BufReader<std::fs::File>| -> Option<u64> {
+        r.read_exact(&mut b8).ok()?;
+        Some(u64::from_le_bytes(b8))
+    };
+    // GGUF strings are (u64 length, bytes); a header string is never near 1 GiB.
+    let skip = |r: &mut BufReader<std::fs::File>, n: u64| -> Option<()> {
+        let copied = std::io::copy(&mut r.by_ref().take(n), &mut std::io::sink()).ok()?;
+        (copied == n).then_some(())
+    };
+    let mut magic = [0u8; 4];
+    r.read_exact(&mut magic).ok()?;
+    if &magic != b"GGUF" || u32_(&mut r)? < 2 {
+        return None;
+    }
+    let _tensor_count = u64_(&mut r)?;
+    let kv_count = u64_(&mut r)?;
+    // Element sizes of the fixed-width GGUF value types (ids 0..=12; 8 and 9
+    // are string and array).
+    let fixed = |ty: u32| -> Option<u64> {
+        match ty {
+            0 | 1 | 7 => Some(1),
+            2 | 3 => Some(2),
+            4..=6 => Some(4),
+            10..=12 => Some(8),
+            _ => None,
+        }
+    };
+    for _ in 0..kv_count {
+        let key_len = u64_(&mut r)?;
+        if key_len > 1 << 16 {
+            return None;
+        }
+        let mut key = vec![0u8; usize::try_from(key_len).ok()?];
+        r.read_exact(&mut key).ok()?;
+        let ty = u32_(&mut r)?;
+        if key == b"general.architecture" && ty == 8 {
+            let n = u64_(&mut r)?;
+            if n > 1 << 16 {
+                return None;
+            }
+            let mut v = vec![0u8; usize::try_from(n).ok()?];
+            r.read_exact(&mut v).ok()?;
+            return String::from_utf8(v).ok();
+        }
+        match ty {
+            8 => {
+                let n = u64_(&mut r)?;
+                skip(&mut r, n)?;
+            }
+            9 => {
+                let elem = u32_(&mut r)?;
+                let count = u64_(&mut r)?;
+                if elem == 8 {
+                    for _ in 0..count {
+                        let n = u64_(&mut r)?;
+                        skip(&mut r, n)?;
+                    }
+                } else {
+                    skip(&mut r, count.checked_mul(fixed(elem)?)?)?;
+                }
+            }
+            t => skip(&mut r, fixed(t)?)?,
+        }
+    }
+    None
 }
 
 /// Without `inference` there is no runtime to route to.
@@ -689,5 +768,88 @@ mod qa_capability_ssm_tests {
                 "a dense transformer has no SSM tensors ({backend:?})"
             );
         }
+    }
+}
+
+/// #3714: the MoE predicate reads the architecture from a streamed header, not
+/// a populated map of the whole file (#3761).
+#[cfg(test)]
+mod gguf_architecture_streamed_tests {
+    use super::gguf_architecture_streamed;
+
+    fn gguf_str(out: &mut Vec<u8>, s: &str) {
+        out.extend_from_slice(&(s.len() as u64).to_le_bytes());
+        out.extend_from_slice(s.as_bytes());
+    }
+
+    /// A GGUF v3 header whose architecture key comes AFTER a string array and
+    /// a scalar, so the reader must skip both kinds correctly to find it. The
+    /// file ENDS right after the header: no tensor infos, no data.
+    fn header_with_arch_last(arch: &str) -> Vec<u8> {
+        let mut h = b"GGUF".to_vec();
+        h.extend_from_slice(&3u32.to_le_bytes());
+        h.extend_from_slice(&0u64.to_le_bytes()); // tensor count
+        h.extend_from_slice(&3u64.to_le_bytes()); // kv count
+        gguf_str(&mut h, "tokenizer.ggml.tokens");
+        h.extend_from_slice(&9u32.to_le_bytes()); // array
+        h.extend_from_slice(&8u32.to_le_bytes()); // of strings
+        h.extend_from_slice(&3u64.to_le_bytes());
+        for t in ["<|im_start|>", "hello", "world"] {
+            gguf_str(&mut h, t);
+        }
+        gguf_str(&mut h, "qwen3moe.expert_count");
+        h.extend_from_slice(&4u32.to_le_bytes()); // u32
+        h.extend_from_slice(&128u32.to_le_bytes());
+        gguf_str(&mut h, "general.architecture");
+        h.extend_from_slice(&8u32.to_le_bytes()); // string
+        gguf_str(&mut h, arch);
+        h
+    }
+
+    fn write(tag: &str, bytes: &[u8]) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!("gguf-arch-{tag}-{}", std::process::id()));
+        std::fs::write(&p, bytes).expect("write fixture");
+        p
+    }
+
+    #[test]
+    fn reads_the_architecture_past_arrays_and_scalars_from_the_header_alone() {
+        let p = write("moe", &header_with_arch_last("qwen3moe"));
+        assert_eq!(gguf_architecture_streamed(&p).as_deref(), Some("qwen3moe"));
+        #[cfg(feature = "inference")]
+        assert!(
+            super::moe_loader_architecture(&p),
+            "qwen3moe is the routed-expert arch"
+        );
+        let q = write("dense", &header_with_arch_last("qwen3"));
+        #[cfg(feature = "inference")]
+        assert!(!super::moe_loader_architecture(&q), "dense qwen3 is not");
+        let _ = (std::fs::remove_file(&p), std::fs::remove_file(&q));
+    }
+
+    /// The real file, when `APR_QWEN3MOE_GGUF` names one: the architecture
+    /// comes back from the header alone. Run under `/usr/bin/time -v` for the
+    /// peak-RSS row the #3714 receipt cites.
+    #[test]
+    fn reads_the_real_files_architecture_when_one_is_named() {
+        let Some(path) = std::env::var_os("APR_QWEN3MOE_GGUF") else {
+            eprintln!("SKIP: APR_QWEN3MOE_GGUF is not set");
+            return;
+        };
+        assert_eq!(
+            gguf_architecture_streamed(std::path::Path::new(&path)).as_deref(),
+            Some("qwen3moe")
+        );
+    }
+
+    #[test]
+    fn a_non_gguf_or_truncated_header_is_none_never_a_guess() {
+        let bad = write("bad", b"NOTGGUF-at-all");
+        assert_eq!(gguf_architecture_streamed(&bad), None);
+        let mut cut = header_with_arch_last("qwen3moe");
+        cut.truncate(cut.len() - 3); // mid-value
+        let cut = write("cut", &cut);
+        assert_eq!(gguf_architecture_streamed(&cut), None);
+        let _ = (std::fs::remove_file(&bad), std::fs::remove_file(&cut));
     }
 }
