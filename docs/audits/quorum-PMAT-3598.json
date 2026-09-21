@@ -1,0 +1,256 @@
+{
+  "ticket": "PMAT-3598",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "17fd98265aa9ebe81b82927fe77a002db1dec36c",
+  "diff_sha256": "12415e93017e672251bcffc650ad4dc721cc3a4153470fcf747750f5fc2f0d78",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 86334,
+  "author": {
+    "model": "Opus 5 (1M context)",
+    "family": "claude",
+    "source": "measured"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements all requirements specified in PMAT-3598 accurately and explicitly adheres to all acceptance criteria, constraints, and falsifier conditions without introducing any violations or scope creep.",
+      "findings": [
+        {
+          "claim": "All requested STAGE TIMING fields are correctly implemented as Option<f64> (meaning absent != zero), tokens_out as usize, and backend as String, satisfying the ticket's design rules.",
+          "file": "crates/aprender-serve/src/infer/stage_timings.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "The JSON output correctly handles uninstrumented stages by emitting 'null' instead of 0, effectively satisfying the STOP condition.",
+          "file": "crates/apr-cli/src/commands/run_entry.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "The falsifier is fully implemented. Delays can be planted and they correctly localize to their respective stages. The tests cover planted stages, no-plant control, double-count exclusions, and unclosed-report cases.",
+          "file": "crates/aprender-serve/src/infer/stage_timings_tests.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "The JSON mode early-returns exactly one JSON document to stdout, preventing human-facing logs from mixing in stdout.",
+          "file": "crates/apr-cli/src/commands/run_entry.rs",
+          "grounding": "cited"
+        },
+        {
+          "claim": "The suffix rewording '(cached)' -> '(model already local)' has been correctly applied.",
+          "file": "crates/apr-cli/src/commands/run_entry.rs",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 4990,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I reviewed the diff against PMAT-3598. All stages (load_ms, h2d_ms, validate_ms, prefill_ms, decode_ms, wall_ms, unattributed_ms) are Option<f64> and only set when explicitly measured. Tests verify that the stage timings sum strictly to the wall_ms, and the planted_delay correctly offsets only the designated stage. `apr run --json` properly outputs JSON without human-readable log pollution. The completion printout properly differentiates \"(model already local)\" vs \"(model downloaded this run)\". There are no violations.",
+      "findings": [
+        {
+          "claim": "The diff fully satisfies PMAT-3598 row 1: StageTimings uses Option for all stages, absent != 0, and accurately measures all required stages. uninstrumented runs report None. The falsifier cases are comprehensive and planted delays isolate strictly to their target stages. output_format == \"json\" guarantees pure JSON output to stdout. The \"Completed in N s\" string is updated exactly as specified by #3542.",
+          "file": "docs/roadmaps/entries/PMAT-3598.yaml",
+          "grounding": "asserted"
+        }
+      ],
+      "raw_bytes": 4345,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff fully satisfies ticket PMAT-3598 requirements and design constraints. All stage timing fields are represented as Option<f64> (absent != zero), JSON reporting is isolated to stdout, planted delays enable stage-specific falsification, validation guard sub-stages are excluded from stage totals to prevent double-counting, and completion messaging matches spec updates. No refuting findings or scope creep detected.",
+      "findings": [
+        {
+          "claim": "StageTimings struct represents stage breakdown with all timing fields as Option<f64>, enforcing absent != zero (None serializes to null rather than 0.0).",
+          "file": "crates/aprender-serve/src/infer/stage_timings.rs",
+          "grounding": "cited",
+          "line": 27
+        },
+        {
+          "claim": "merge_stage_fields emits load_ms, h2d_ms, validate_ms, validate_ref_ms, validate_probe_ms, prefill_ms, decode_ms, tokens_out, unattributed_ms, wall_ms, stages_measured, and backend in JSON output mode.",
+          "file": "crates/apr-cli/src/commands/run_entry.rs",
+          "grounding": "cited",
+          "line": 421
+        },
+        {
+          "claim": "measured_sum_ms sums primary measured stages and excludes validate_ref_ms and validate_probe_ms to prevent double counting the validation guard.",
+          "file": "crates/aprender-serve/src/infer/stage_timings.rs",
+          "grounding": "cited",
+          "line": 73
+        },
+        {
+          "claim": "planted_delay inspects APR_STAGE_DELAY_MS=<stage>:<ms> to inject deliberate stage delays for falsifier testing.",
+          "file": "crates/aprender-serve/src/infer/stage_timings.rs",
+          "grounding": "cited",
+          "line": 139
+        },
+        {
+          "claim": "print_run_output returns early on output_format == \"json\", ensuring stdout contains strictly one JSON document and no human output pollution.",
+          "file": "crates/apr-cli/src/commands/run_entry.rs",
+          "grounding": "cited",
+          "line": 369
+        },
+        {
+          "claim": "Completion message suffix updated from (cached)/(downloaded) to (model already local)/(model downloaded this run) per done_when 4 / #3542.",
+          "file": "crates/apr-cli/src/commands/run_entry.rs",
+          "grounding": "cited",
+          "line": 409
+        }
+      ],
+      "raw_bytes": 6121,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/apr-cli/src/commands/run_entry.rs",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The JSON mode early-returns exactly one JSON document to stdout, preventing human-facing logs from mixing in stdout.",
+        "The JSON output correctly handles uninstrumented stages by emitting 'null' instead of 0, effectively satisfying the STOP condition.",
+        "The suffix rewording '(cached)' -> '(model already local)' has been correctly applied."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/run_entry.rs",
+      "line": 369,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "print_run_output returns early on output_format == \"json\", ensuring stdout contains strictly one JSON document and no human output pollution."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/run_entry.rs",
+      "line": 409,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Completion message suffix updated from (cached)/(downloaded) to (model already local)/(model downloaded this run) per done_when 4 / #3542."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/run_entry.rs",
+      "line": 421,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "merge_stage_fields emits load_ms, h2d_ms, validate_ms, validate_ref_ms, validate_probe_ms, prefill_ms, decode_ms, tokens_out, unattributed_ms, wall_ms, stages_measured, and backend in JSON output mode."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/infer/stage_timings.rs",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "All requested STAGE TIMING fields are correctly implemented as Option<f64> (meaning absent != zero), tokens_out as usize, and backend as String, satisfying the ticket's design rules."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/infer/stage_timings.rs",
+      "line": 27,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "StageTimings struct represents stage breakdown with all timing fields as Option<f64>, enforcing absent != zero (None serializes to null rather than 0.0)."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/infer/stage_timings.rs",
+      "line": 73,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "measured_sum_ms sums primary measured stages and excludes validate_ref_ms and validate_probe_ms to prevent double counting the validation guard."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/infer/stage_timings.rs",
+      "line": 139,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "planted_delay inspects APR_STAGE_DELAY_MS=<stage>:<ms> to inject deliberate stage delays for falsifier testing."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/infer/stage_timings_tests.rs",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The falsifier is fully implemented. Delays can be planted and they correctly localize to their respective stages. The tests cover planted stages, no-plant control, double-count exclusions, and unclosed-report cases."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/entries/PMAT-3598.yaml",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The diff fully satisfies PMAT-3598 row 1: StageTimings uses Option for all stages, absent != 0, and accurately measures all required stages. uninstrumented runs report None. The falsifier cases are comprehensive and planted delays isolate strictly to their target stages. output_format == \"json\" guarantees pure JSON output to stdout. The \"Completed in N s\" string is updated exactly as specified by #3542."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=Opus 5 (1M context)/claude"
+  }
+}
