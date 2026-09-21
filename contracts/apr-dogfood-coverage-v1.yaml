@@ -56,6 +56,12 @@ metadata:
     # drifted, +45 lines at ce712eae0 and -39 at bd475b06f, so every citation was
     # 6 lines short of its arm), and two new rows for `apr test llm bench` and its
     # `--band` mode, which shipped with no ledger entry at all.
+    # PARTIAL RE-AUDIT, 0.69 release batch #3669 (G2.1). Same rule, same reason:
+    # `measured_commit` does not move, and a batch-branch SHA would not survive the
+    # squash merge anyway. #3604 inserted 4 lines (`--revalidate`) after line 138 of
+    # crates/apr-cli/src/commands_enum.rs. All 64 citations of that file in 55 rows
+    # were re-derived: 42 at lines >= 139 shifted by +4, 22 at <= 138 unchanged, and
+    # every cited line's text was checked identical between 79a3af79d and the batch.
     ledger: docs/audits/surface_audit.csv
 
     overall:
