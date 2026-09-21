@@ -54,7 +54,8 @@ pub enum CliError {
     ///
     /// #3661: `apr inspect` and `apr tensors` wrapped every parse failure in
     /// [`CliError::InvalidFormat`], so a truncated GGUF was reported as
-    /// "Invalid APR format". Build it with [`CliError::invalid_model_file`].
+    /// "Invalid APR format". Build it with [`CliError::invalid_model_file`],
+    /// or [`CliError::invalid_model_bytes`] when the bytes are already in memory.
     /// Shares exit code 4, the same failure class.
     #[error("Invalid {format} file: {message}")]
     InvalidModelFile {
@@ -188,6 +189,18 @@ impl CliError {
         Self::InvalidModelFile {
             format: crate::commands::hex::detected_model_format(path),
             message: format!("{context}: {inner}"),
+        }
+    }
+
+    /// A parse failure in model-file bytes already in memory (#3691).
+    ///
+    /// Same rule as [`CliError::invalid_model_file`]: the format is read from
+    /// the bytes' magic, never assumed. `apr hex` reads the whole file before
+    /// dispatching, so its SafeTensors header reader passes what it holds.
+    pub(crate) fn invalid_model_bytes(bytes: &[u8], message: impl Into<String>) -> Self {
+        Self::InvalidModelFile {
+            format: crate::commands::hex::detected_format_of(bytes),
+            message: message.into(),
         }
     }
 }

@@ -124,9 +124,16 @@ pub(crate) fn detected_model_format(path: &Path) -> &'static str {
     let mut head = Vec::with_capacity(9);
     let read = std::fs::File::open(path).and_then(|f| f.take(9).read_to_end(&mut head));
     match read {
-        Ok(_) => detect_format(&head).map_or("model", format_display_name),
+        Ok(_) => detected_format_of(&head),
         Err(_) => "model",
     }
+}
+
+/// [`detected_model_format`] for bytes already in memory (#3691). `run` reads
+/// the whole file before it dispatches, so the SafeTensors header reader names
+/// the format from the bytes it holds instead of assuming it.
+pub(crate) fn detected_format_of(bytes: &[u8]) -> &'static str {
+    detect_format(bytes).map_or("model", format_display_name)
 }
 
 // ============================================================================
@@ -320,7 +327,7 @@ fn parse_gguf(path: &Path) -> Result<GgufInfo, CliError> {
     use aprender::format::gguf::GgufReader;
 
     let reader = GgufReader::from_file(path)
-        .map_err(|e| CliError::InvalidFormat(format!("Failed to parse GGUF: {e}")))?;
+        .map_err(|e| CliError::invalid_model_file(path, "Failed to parse GGUF", &e))?;
 
     let tensors = reader
         .tensors
@@ -347,7 +354,7 @@ fn get_gguf_tensor_f32(path: &Path, name: &str) -> Result<(Vec<f32>, Vec<usize>)
     use aprender::format::gguf::GgufReader;
 
     let reader = GgufReader::from_file(path)
-        .map_err(|e| CliError::InvalidFormat(format!("Failed to parse GGUF: {e}")))?;
+        .map_err(|e| CliError::invalid_model_file(path, "Failed to parse GGUF", &e))?;
     reader
         .get_tensor_f32(name)
         .map_err(|e| CliError::InvalidFormat(format!("Failed to read tensor '{name}': {e}")))
@@ -455,3 +462,9 @@ include!("valid.rs");
 include!("sliding_window_entropy.rs");
 include!("hex_print.rs");
 include!("hex_06.rs");
+
+// #3691: every hex and trace GGUF/SafeTensors parse failure names the format.
+// A child of hex so it can reach the header reader behind `run`'s dispatch.
+#[cfg(test)]
+#[path = "model_file_error_tests_3691.rs"]
+mod model_file_error_tests_3691;
