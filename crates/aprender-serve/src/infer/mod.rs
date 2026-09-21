@@ -83,6 +83,10 @@ pub struct InferenceConfig {
     /// INTERNAL: Use mock backend for testing (PMAT-COV-95)
     #[doc(hidden)]
     pub use_mock_backend: bool,
+    /// #3672: apply the model's chat template even when neither its metadata nor its file
+    /// name marks it as an instruct model (`apr run --chat`). The prompt stays raw text:
+    /// the template is applied once, by `prepare_tokens`, never pre-wrapped by a caller.
+    pub force_chat_template: bool,
 }
 
 impl InferenceConfig {
@@ -111,6 +115,7 @@ impl InferenceConfig {
             verbose: false,
             stop_tokens: Vec::new(),
             use_mock_backend: false,
+            force_chat_template: false,
         }
     }
 
@@ -188,6 +193,13 @@ impl InferenceConfig {
     #[must_use]
     pub fn with_verbose(mut self, verbose: bool) -> Self {
         self.verbose = verbose;
+        self
+    }
+
+    /// #3672: apply the chat template even when metadata and file name say base model.
+    #[must_use]
+    pub fn with_force_chat_template(mut self, force: bool) -> Self {
+        self.force_chat_template = force;
         self
     }
 
@@ -353,7 +365,7 @@ fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<Prepare
         || model_name.to_lowercase().contains("-chat");
 
     // Only apply chat template if the model actually has one, or filename says instruct
-    let formatted_prompt = if has_chat_template || filename_instruct {
+    let formatted_prompt = if config.force_chat_template || has_chat_template || filename_instruct {
         let template_hint = apr_arch_to_template_hint(gguf_arch, model_name);
         let messages = vec![ChatMessage::user(prompt)];
         format_messages(&messages, Some(template_hint)).unwrap_or_else(|_| prompt.to_string())
@@ -455,7 +467,8 @@ fn prepare_tokens_safetensors(config: &InferenceConfig, prompt: &str) -> Result<
 
     // Detect instruct model from architecture or filename
     let arch_lower = architecture.to_lowercase();
-    let is_instruct = arch_lower.contains("instruct")
+    let is_instruct = config.force_chat_template
+        || arch_lower.contains("instruct")
         || model_name.to_lowercase().contains("instruct")
         || matches!(
             arch_lower.as_str(),
@@ -535,7 +548,7 @@ fn prepare_tokens_apr(config: &InferenceConfig, prompt: &str) -> Result<Prepared
     let filename_instruct = model_name.to_lowercase().contains("instruct")
         || model_name.to_lowercase().contains("-chat");
 
-    let is_instruct = has_chat_template || filename_instruct;
+    let is_instruct = config.force_chat_template || has_chat_template || filename_instruct;
 
     let formatted_prompt = if is_instruct {
         let template_hint = apr_arch_to_template_hint(&apr_arch, model_name);

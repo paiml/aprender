@@ -327,7 +327,8 @@ fn execute_with_realizar(
         .with_top_p(options.top_p)
         .with_seed(options.seed)
         .with_repeat_penalty(options.repeat_penalty)
-        .with_repeat_last_n(options.repeat_last_n);
+        .with_repeat_last_n(options.repeat_last_n)
+        .with_force_chat_template(options.chat_template);
 
     if options.no_gpu {
         config = config.without_gpu();

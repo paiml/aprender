@@ -169,6 +169,9 @@ pub(crate) struct RunOptions {
     pub repeat_last_n: usize,
     /// Process prompt tokens one-by-one (debug prefill)
     pub split_prompt: bool,
+    /// #3672: apply the model's chat template (`--chat`, or an instruct/chat source name)
+    /// even when its metadata and file name say base model. The prompt itself stays raw.
+    pub chat_template: bool,
     /// `--stream`: emit one NDJSON event per generated token.
     ///
     /// Known here (not only at the print site) because streaming is the one
@@ -202,6 +205,7 @@ impl Default for RunOptions {
             repeat_penalty: 1.0,
             repeat_last_n: 64,
             split_prompt: false,
+            chat_template: false,
             stream: false,
         }
     }
