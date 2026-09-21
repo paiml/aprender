@@ -259,6 +259,19 @@ def engine_entry(row, prompt):
     if be and (be.get("fell_back") or (row.get("backend") and be.get("ran") != row.get("backend"))):
         e["why"] = "backend: asked %s, ran %s (fell_back=%s)" % (row.get("backend"), be.get("ran"), be.get("fell_back"))
         return e
+    if engine in ("hf", "llamafile"):
+        # A plugin engine is held to the lane as apr is. The integration run's
+        # cpu lane got `!` x64 from an HF load that went to CUDA anyway (and
+        # outside the GPU lock). The device must be REPORTED: an unverifiable
+        # lane cannot vouch for or against apr.
+        dev = str((p.get("reported") or {}).get("device") or "")
+        lane = row.get("backend")
+        if not dev:
+            e["why"] = "no reported.device: the %s lane cannot be verified" % lane
+            return e
+        if (lane == "cpu") != dev.lower().startswith("cpu"):
+            e["why"] = "device %r is not the %s lane" % (dev, lane)
+            return e
     e["answered"] = True
     return e
 
@@ -483,6 +496,8 @@ def collect(args):
         cells.append({
             "key": dict(zip(("model_sha256", "host", "verb", "thinking", "rung", "prompt_id"), k)),
             "verdict": verdict,
+            # additive (aprender-97, #3715): pv reads the control by this flag, never by a prompt name
+            "positive_control": bool(prompt.get("control")),
             "expect_any": prompt["expect_any"],
             "engines": entries,
             "agreement": {
