@@ -40,7 +40,15 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--models", nargs="*", default=[os.path.expanduser("~/models")])
     ap.add_argument("--out", default="crates/aprender-serve/tests/fixtures/chat_templates")
+    ap.add_argument(
+        "--llama-server",
+        help="also render every template with this llama-server (--jinja, i.e. minja) into "
+        "llama_reference.json; the release comparator (CRUX) renders with llama.cpp, not HF",
+    )
+    ap.add_argument("--llama-model", default=os.path.expanduser("~/models/Qwen2.5-0.5B-Instruct-IQ3_M.gguf"))
     args = ap.parse_args()
+    if args.llama_server:
+        return render_with_llama(args)
 
     from gguf import GGUFReader
     import transformers
@@ -92,6 +100,57 @@ def main() -> int:
         json.dump(reference, f, indent=1, ensure_ascii=False)
         f.write("\n")
     print(f"{len(index)} templates, {len(cases)} renderings, {reference['renderer']}")
+    return 0
+
+
+def render_with_llama(args) -> int:
+    """Render each fixture template with llama-server's /apply-template (minja, --jinja).
+
+    The small --llama-model is loaded on CPU and its template REPLACED with each fixture
+    via --chat-template-file, so one tiny model renders every template. No inventory
+    template reads bos_token/eos_token, so the carrier model does not enter the output.
+    """
+    import json as _json
+    import subprocess
+    import time
+    import urllib.request
+
+    version = subprocess.run([args.llama_server, "--version"], capture_output=True, text=True)
+    version = (version.stdout + version.stderr).strip().splitlines()
+    version = next((l for l in version if "version" in l), "unknown")
+    index = _json.load(open(os.path.join(args.out, "index.json"), encoding="utf-8"))
+    cases = {}
+    port = 18000 + os.getpid() % 900
+    for sha in sorted(index):
+        proc = subprocess.Popen(
+            [args.llama_server, "-m", args.llama_model, "--jinja", "--chat-template-file",
+             os.path.join(args.out, f"{sha}.jinja"), "-ngl", "0", "-c", "2048", "--port", str(port)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            for _ in range(120):
+                try:
+                    urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=2)
+                    break
+                except Exception:
+                    time.sleep(0.5)
+            for set_name, messages in MESSAGE_SETS.items():
+                for mode, kwargs in MODES.items():
+                    body = {"messages": messages}
+                    if kwargs:
+                        body["chat_template_kwargs"] = kwargs
+                    req = urllib.request.Request(
+                        f"http://127.0.0.1:{port}/apply-template",
+                        data=_json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+                    reply = _json.load(urllib.request.urlopen(req, timeout=30))
+                    cases[f"{sha}/{set_name}/{mode}"] = reply["prompt"]
+        finally:
+            proc.terminate()
+            proc.wait(timeout=30)
+    reference = {"renderer": f"llama-server {version} /apply-template (--jinja)", "cases": cases}
+    with open(os.path.join(args.out, "llama_reference.json"), "w", encoding="utf-8") as f:
+        _json.dump(reference, f, indent=1, ensure_ascii=False)
+        f.write("\n")
+    print(f"{len(cases)} renderings, {reference['renderer']}")
     return 0
 
 

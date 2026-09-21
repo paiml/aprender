@@ -93,6 +93,56 @@ mod chat_template_embedded_oracle {
         );
     }
 
+    /// The release comparator renders with llama.cpp (`--jinja`, minja), not HF: apr must
+    /// match it too (the cop's condition on #3755). Every EXPLICIT thinking mode (on/off,
+    /// all 54 renderings) is byte-equal to the pinned llama-server's `/apply-template`.
+    /// Where llama.cpp and HF disagree the case is NAMED here, never silently picked:
+    /// with `enable_thinking` unset llama-server passes `true` (its default reasoning
+    /// budget) while HF leaves it undefined, and the Qwen3.5 0.8B-9B template
+    /// (7f0e529032c2) renders OFF when it is undefined. apr never renders "unset" in
+    /// production: it always passes the resolved mode, OFF by default (#3723).
+    #[test]
+    fn embedded_rendering_matches_llama_cpp_and_names_the_disagreements() {
+        let hf = reference();
+        let path = fixture_dir().join("llama_reference.json");
+        let llama: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display())),
+        )
+        .expect("llama_reference.json parses");
+        let llama_cases = llama["cases"].as_object().expect("cases");
+        assert!(llama_cases.len() >= 81, "only {} llama renderings", llama_cases.len());
+        // Sorted, as `disagreements` is below.
+        let named: [&str; 3] = [
+            "7f0e529032c2/multi/unset",
+            "7f0e529032c2/single/unset",
+            "7f0e529032c2/system/unset",
+        ];
+        let mut disagreements: Vec<&str> = Vec::new();
+        for (key, rendered) in llama_cases {
+            let rendered = rendered.as_str().expect("string");
+            if hf["cases"][key].as_str() != Some(rendered) {
+                disagreements.push(key.as_str());
+            }
+            let mut parts = key.split('/');
+            let (sha, set, mode) = (
+                parts.next().expect("sha"),
+                parts.next().expect("set"),
+                parts.next().expect("mode"),
+            );
+            let thinking = match mode {
+                "on" => true,
+                "off" => false,
+                _ => continue,
+            };
+            let got = template(sha)
+                .render(&messages(&hf, set), true, Some(thinking))
+                .expect("renders");
+            assert_eq!(got, rendered, "{key}: apr differs from {}", llama["renderer"]);
+        }
+        disagreements.sort_unstable();
+        assert_eq!(disagreements, named, "HF and llama.cpp disagree on an unnamed case");
+    }
+
     /// Thinking capability, derived by rendering, for every template in the inventory.
     /// Qwen3-30B-A3B-Instruct-2507 (40c21f34cf67) carries `<think>` and has no thinking
     /// mode: a marker search would call it capable (aprender-62, #3723).
