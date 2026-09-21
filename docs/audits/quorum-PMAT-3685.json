@@ -1,0 +1,196 @@
+{
+  "ticket": "PMAT-3685",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "d0a898933de849d6aad638bce7331d83cc4b1395",
+  "diff_sha256": "1653a3a772e4a534647db1f173cb26c8e48696cdfb2b70ebf84dcadb973f3c1d",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 20317,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The PR perfectly fulfills the PMAT-3685 ticket requirements. It maps capability mismatches during CUDA initialization to a new ParityRefusal path (exit 12) carrying the required stderr line, and leaves other initialization errors as exit 5. It ensures this behavior is robustly tested (proving the mutation) and refactors the unsupported quant checks so they don't drift. The bash evaluation scripts correctly identify the UNMEASURED-TOOL output and mark it as a REPORT rather than FAIL. No requirements were violated and no gates were weakened.",
+      "findings": [
+        {
+          "claim": "The test parity_refusal_3685_cuda_init_error_maps_refusal_to_12_and_the_rest_to_5 correctly ensures that capability refusals map to exit 12 and other failures map to 5, which tests the mutation.",
+          "file": "crates/apr-cli/src/commands/parity_refusal_tests.rs",
+          "grounding": "cited",
+          "line": 249
+        },
+        {
+          "claim": "The check_model_parity.sh script handles the UNMEASURED-TOOL output (exit 12 + REFUSAL) by treating it as a REPORT rather than FAIL, safely resolving the issue.",
+          "command": "bash scripts/check_model_parity.sh --self-test",
+          "file": "scripts/check_model_parity.sh",
+          "grounding": "measured",
+          "line": 214,
+          "output": "ok    row 17 rc=0  a REFUSED MoE (exit 12 + the refusal line) is UNMEASURED-TOOL, not FAIL"
+        },
+        {
+          "claim": "first_gpu_unsupported_quant safely identifies the unsupported quant type using the same logic structure previously employed by has_gpu_unsupported_quant, preventing any logic drift.",
+          "file": "crates/aprender-serve/src/gguf/dtype.rs",
+          "grounding": "cited",
+          "line": 276
+        }
+      ],
+      "raw_bytes": 5359,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I have reviewed the diff against the criteria of PMAT-3685. The code accurately handles CUDA `CapabilityMismatch` as a tool limit (refusal, exit 12) rather than a model defect (exit 5). It safely refactors the unsupported quant type check to return the specific type instead of a boolean and integrates correctly with the CLI refusal mapping. No test assertions are weakened, and all receipt claims are backed by the code.",
+      "findings": [
+        {
+          "claim": "The code maps a CUDA capability refusal to exit code 12, preserving exit 5 for failed comparisons.",
+          "file": "crates/apr-cli/src/commands/parity_refusal.rs",
+          "grounding": "asserted"
+        },
+        {
+          "claim": "The first_gpu_unsupported_quant function is correctly implemented and replaces the logic in has_gpu_unsupported_quant safely.",
+          "file": "crates/aprender-serve/src/gguf/dtype.rs",
+          "grounding": "asserted"
+        },
+        {
+          "claim": "The PR correctly adds tests that verify the new behavior and fail if the refusal is mapped to 5.",
+          "file": "crates/apr-cli/src/commands/parity_refusal_tests.rs",
+          "grounding": "asserted"
+        }
+      ],
+      "raw_bytes": 4209,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "NO-VERDICT",
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": [],
+      "raw_bytes": 2067,
+      "err_bytes": 407,
+      "envelope_status": "ERROR",
+      "transport_status": "ERROR",
+      "transport_error": "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 52m16s.",
+      "salvageable": "/home/noah/.gemini/antigravity-cli/brain/9d333216-3b35-4901-aaf2-b5f1a0eefc25 (467805 bytes)",
+      "carried_verdict": "",
+      "blind_reason": "",
+      "agy_exit": "",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [
+    {
+      "lane": 3,
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": []
+    }
+  ],
+  "dedup": [
+    {
+      "file": "crates/apr-cli/src/commands/parity_refusal.rs",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The code maps a CUDA capability refusal to exit code 12, preserving exit 5 for failed comparisons."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/parity_refusal_tests.rs",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The PR correctly adds tests that verify the new behavior and fail if the refusal is mapped to 5."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/parity_refusal_tests.rs",
+      "line": 249,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The test parity_refusal_3685_cuda_init_error_maps_refusal_to_12_and_the_rest_to_5 correctly ensures that capability refusals map to exit 12 and other failures map to 5, which tests the mutation."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gguf/dtype.rs",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The first_gpu_unsupported_quant function is correctly implemented and replaces the logic in has_gpu_unsupported_quant safely."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gguf/dtype.rs",
+      "line": 276,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "first_gpu_unsupported_quant safely identifies the unsupported quant type using the same logic structure previously employed by has_gpu_unsupported_quant, preventing any logic drift."
+      ]
+    },
+    {
+      "file": "scripts/check_model_parity.sh",
+      "line": 214,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The check_model_parity.sh script handles the UNMEASURED-TOOL output (exit 12 + REFUSAL) by treating it as a REPORT rather than FAIL, safely resolving the issue."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 3: non-empty .err (407 bytes, 2 line(s) beyond agy-lane's workspace narration)",
+    "lane 3: lane envelope status=ERROR transport_error=Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 52m16s. salvageable=/home/noah/.gemini/antigravity-cli/brain/9d333216-3b35-4901-aaf2-b5f1a0eefc25 (467805 bytes) [UNREVIEWED CLAIM MATERIAL — never a PASS]"
+  ],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
