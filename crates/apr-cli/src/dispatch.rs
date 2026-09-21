@@ -312,6 +312,7 @@ or drop `--backend`."
             emit_trace,
             output_format,
             input_format,
+            thinking,
         } => dispatch_code_command(CodeArgs {
             model,
             project,
@@ -323,6 +324,7 @@ or drop `--backend`."
             emit_trace,
             output_format: *output_format,
             input_format: *input_format,
+            thinking: ThinkingArg::choice(*thinking),
         }),
 
         _ => return None,
@@ -342,6 +344,7 @@ struct CodeArgs<'a> {
     emit_trace: &'a Option<PathBuf>,
     output_format: crate::CodeOutputFormat,
     input_format: crate::CodeInputFormat,
+    thinking: Option<bool>,
 }
 
 /// Dispatch `apr code` (PMAT-182): the sovereign coding assistant.
@@ -386,6 +389,7 @@ fn dispatch_code_command(args: CodeArgs<'_>) -> Result<(), CliError> {
             crate::CodeInputFormat::Text => "text",
             crate::CodeInputFormat::Json => "json",
         },
+        args.thinking,
     )
     .map_err(|e| CliError::Aprender(e.to_string()))
 }

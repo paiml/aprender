@@ -86,14 +86,18 @@ equations:
 
   chat_template_dispatch:
     formula: |
-      format_chat_messages(messages, model_hint) where
-        model_hint = state.model_architecture()
-        template = detect_format_from_name(model_hint)
-        prompt = template.format_conversation(messages)
+      tokenize_chat_request(request) where (#3755, #3723)
+        prompt = format_chat_prompt(state.chat_template(), state.model_architecture(),
+                                    messages, request.requested_thinking())
+        -- state.chat_template() is the served FILE's own template (GGUF metadata,
+        -- sibling tokenizer_config.json, APR metadata), rendered as HF renders it;
+        -- detect_format_from_name(model_hint) is only the fallback for a file with none
     domain: Chat completion request with messages array
     codomain: Formatted prompt string with correct chat template
     invariants:
-    - Qwen3 models ALWAYS use Qwen3NoThinkTemplate (PMAT-181, chat-template-v1)
+    - A model file's own chat template is rendered, never retyped (#3755, chat-template-v1 v2)
+    - Thinking defaults OFF wherever the model's template allows it (PMAT-181, derived); chat_template_kwargs.enable_thinking / enable_thinking choose it; a mode the template cannot honour is HTTP 422
+    - The reasoning travels in message.reasoning_content / delta.reasoning_content, never in content
     - Architecture hint comes from GGUF metadata, NOT from request model name
     - AppState.cached_architecture is populated at construction time
     - Template includes correct special tokens for the model family
@@ -310,8 +314,8 @@ proof_obligations:
     status: sorry
 - id: AS5DD7-INV-005
   type: invariant
-  property: Qwen3 uses NoThinkTemplate via architecture dispatch
-  formal: 'model_architecture() == "qwen3" → template.format() == Qwen3NoThink'
+  property: A Qwen3 model does not think unless asked, via its own template
+  formal: 'modes(state.chat_template()) == Both → tokenize_chat_request(req with no thinking).text == its own enable_thinking=false rendering'
   applies_to: chat_template_dispatch
 - id: AS5DD7-INV-006
   type: invariant
@@ -386,30 +390,20 @@ falsification_tests:
   test: Run 10 identical requests concurrently, assert all outputs identical
   if_fails: KV-cache shared between concurrent requests
 - id: FALSIFY-SRV-005
-  rule: Qwen3 architecture triggers NoThinkTemplate
-  prediction: Qwen3 GGUF model gets Qwen3NoThink template, not ChatML
-  test: |
-    #[test]
-    fn falsify_srv_005_qwen3_nothink_template() {
-        use realizar::chat_template::{detect_format_from_name, TemplateFormat};
-        // Architecture from GGUF metadata
-        assert_eq!(detect_format_from_name("qwen3"), TemplateFormat::Qwen3NoThink);
-        // Model filename patterns
-        assert_eq!(detect_format_from_name("Qwen3-1.7B-Q4_K_M"), TemplateFormat::Qwen3NoThink);
-        // Must NOT match Qwen2
-        assert_ne!(detect_format_from_name("qwen2"), TemplateFormat::Qwen3NoThink);
-    }
-  if_fails: Qwen3 gets ChatML template, enters thinking mode, loops on tokens
+  rule: A Qwen3 model's served prompt is its own template, thinking OFF by default
+  prediction: With no thinking choice a Qwen3/Qwen3.5 file's prompt is its own enable_thinking=false rendering; no hand-typed scaffold exists
+  test: See realizar src/chat_template_contract_tests.rs FALSIFY-CT-001 (and FALSIFY-CT-006 for ON and refusal)
+  if_fails: Qwen3 thinks by default, or is served a prompt that is not its own (#3755)
 - id: FALSIFY-SRV-006
   rule: AppState caches GGUF architecture at construction
   prediction: model_architecture() returns Some after with_quantized_model_and_vocab
   test: See realizar/src/api/tests/chat_template_contract.rs FALSIFY-CT-002
   if_fails: Architecture not cached, template detection falls back to wrong default
 - id: FALSIFY-SRV-007
-  rule: Chat template pre-fills empty thinking block for Qwen3
-  prediction: Qwen3NoThinkTemplate.format_conversation() output contains <think></think>
-  test: See realizar/src/chat_template_contract_tests.rs FALSIFY-CT-006
-  if_fails: Model enters thinking mode, wastes tokens on </think> loops
+  rule: The reasoning is kept out of the answer
+  prediction: ChatPrompt::split puts the think block in reasoning_content (and delta.reasoning_content when streaming); an unclosed block is refused naming the budget
+  test: See realizar src/chat_template_embedded_oracle.rs split_separates_reasoning_and_refuses_unclosed
+  if_fails: Reasoning leaks into content, or a truncated think block reads as an empty answer
 - id: FALSIFY-SRV-008
   rule: Error responses do not leak framework internals
   prediction: Malformed JSON POST to /v1/completions returns sanitized error, not serde trace
@@ -507,8 +501,8 @@ kani_harnesses:
   strategy: bounded_int
   harness: verify_gpu_token_integrity
 - id: KANI-SRV-010
-  obligation: Qwen3 uses NoThinkTemplate via architecture dispatch
-  property: qwen3 architecture selects NoThinkTemplate
+  obligation: A Qwen3 model does not think unless asked, via its own template
+  property: no name-keyed hand-typed scaffold; the default mode resolves OFF where allowed
   bound: 4
   strategy: exhaustive
   harness: verify_qwen3_nothink

@@ -94,7 +94,7 @@ equations:
     invariants:
     - Architecture available before first inference request
     - Used for chat template auto-detection (detect_format_from_name)
-    - Qwen3 architecture → Qwen3NoThinkTemplate (chat-template-v1 contract)
+    - A model file's own chat template is rendered, thinking OFF by default where allowed (chat-template-v1 v2, #3755)
     preconditions:
     - Model loaded successfully
     postconditions:

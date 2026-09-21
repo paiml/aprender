@@ -151,29 +151,20 @@ fn falsify_srv_004_metrics_thread_safe() {
 
 #[test]
 fn falsify_srv_005_qwen3_nothink_template() {
-    // FALSIFY-SRV-005: Qwen3 architecture triggers NoThinkTemplate.
-    // This test verifies that the detect_format_from_name function in realizar
-    // correctly maps "qwen3" to Qwen3NoThink. Since realizar is a dependency,
-    // we test the contract boundary at the apr-cli level.
+    // FALSIFY-SRV-005 (#3755): no name-keyed hand-typed scaffold remains. A Qwen3 file's
+    // served prompt is its OWN template with thinking OFF by default, asserted byte for
+    // byte against transformers in realizar's FALSIFY-CT-001. Here: the name-keyed
+    // fallback never selects the legacy no-think variant.
     #[cfg(feature = "inference")]
     {
         use realizar::chat_template::{detect_format_from_name, TemplateFormat};
-        assert_eq!(
-            detect_format_from_name("qwen3"),
-            TemplateFormat::Qwen3NoThink,
-            "FALSIFY-SRV-005: qwen3 architecture must get Qwen3NoThink"
-        );
-        assert_eq!(
-            detect_format_from_name("Qwen3-1.7B-Q4_K_M"),
-            TemplateFormat::Qwen3NoThink,
-            "FALSIFY-SRV-005: Qwen3 model name must get Qwen3NoThink"
-        );
-        // Qwen2 should NOT get NoThink
-        assert_ne!(
-            detect_format_from_name("qwen2"),
-            TemplateFormat::Qwen3NoThink,
-            "FALSIFY-SRV-005: qwen2 must NOT get Qwen3NoThink"
-        );
+        for name in ["qwen3", "Qwen3-1.7B-Q4_K_M", "qwen2"] {
+            assert_eq!(
+                detect_format_from_name(name),
+                TemplateFormat::ChatML,
+                "FALSIFY-SRV-005: {name}"
+            );
+        }
     }
 }
 

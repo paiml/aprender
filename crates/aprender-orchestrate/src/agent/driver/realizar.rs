@@ -24,8 +24,12 @@ pub struct RealizarDriver {
     model_path: PathBuf,
     /// Context window size.
     context_window_size: usize,
-    /// Auto-detected chat template.
+    /// Auto-detected chat template: the fallback for a file with no template of its own.
     template: ChatTemplate,
+    /// #3755: the model FILE's own chat template, rendered as HF renders it.
+    embedded: Option<realizar::chat_template::EmbeddedChatTemplate>,
+    /// #3723: `apr code --thinking on|off`; None = OFF wherever the model allows it.
+    thinking: Option<bool>,
 }
 
 impl RealizarDriver {
@@ -53,15 +57,57 @@ impl RealizarDriver {
 
         let context_window_size = context_window.unwrap_or(4096);
         let template = ChatTemplate::from_model_path(&model_path);
-        Ok(Self { model_path, context_window_size, template })
+        let embedded = realizar::chat_template::EmbeddedChatTemplate::for_model_file(&model_path)
+            .transpose()
+            .map_err(|e| {
+                AgentError::Driver(DriverError::InferenceFailed(format!("chat template: {e}")))
+            })?;
+        Ok(Self { model_path, context_window_size, template, embedded, thinking: None })
+    }
+
+    /// `apr code --thinking on|off` (#3723).
+    #[must_use]
+    pub fn with_thinking(mut self, thinking: Option<bool>) -> Self {
+        self.thinking = thinking;
+        self
+    }
+
+    /// The prompt for this request: the model's own template when the file ships one
+    /// (#3755), with the thinking mode resolved (#3723); the hand-coded template
+    /// otherwise, which cannot switch thinking on.
+    fn prompt_for(
+        &self,
+        request: &CompletionRequest,
+    ) -> Result<Option<realizar::chat_template::ChatPrompt>, AgentError> {
+        let refused = |e: realizar::RealizarError| {
+            AgentError::Driver(DriverError::InferenceFailed(e.to_string()))
+        };
+        let Some(template) = self.embedded.as_ref() else {
+            realizar::chat_template::ThinkingModes::OffOnly
+                .resolve(self.thinking)
+                .map_err(refused)?;
+            return Ok(None);
+        };
+        let turns: Vec<realizar::chat_template::ChatMessage> =
+            super::chat_template::chat_turns(request)
+                .into_iter()
+                .map(|(role, content)| realizar::chat_template::ChatMessage::new(role, content))
+                .collect();
+        realizar::chat_template::format_chat_prompt(Some(template), None, &turns, self.thinking)
+            .map(Some)
+            .map_err(refused)
     }
 }
 
 #[async_trait]
 impl LlmDriver for RealizarDriver {
     async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, AgentError> {
-        // Format messages using auto-detected chat template
-        let prompt = format_prompt_with_template(&request, self.template);
+        // The model's own template when the file ships one (#3755), else the hand-coded one.
+        let chat_prompt = self.prompt_for(&request)?;
+        let prompt = match &chat_prompt {
+            Some(p) => p.text.clone(),
+            None => format_prompt_with_template(&request, self.template),
+        };
 
         // Build inference config (explicit fields — no Default impl)
         let config = realizar::infer::InferenceConfig {
@@ -101,8 +147,19 @@ impl LlmDriver for RealizarDriver {
             })?
             .map_err(|e| AgentError::Driver(DriverError::InferenceFailed(e.to_string())))?;
 
+        // #3723: the reasoning never reaches the answer (or the tool-call parser); a think
+        // block still open when generation stopped is an error naming the budget.
+        let completion = match &chat_prompt {
+            Some(p) => {
+                p.split(&result.text, request.max_tokens as usize)
+                    .map_err(|e| AgentError::Driver(DriverError::InferenceFailed(e.to_string())))?
+                    .answer
+            }
+            None => result.text.clone(),
+        };
+
         // Parse tool calls from text output
-        let (raw_text, tool_calls) = parse_tool_calls(&result.text);
+        let (raw_text, tool_calls) = parse_tool_calls(&completion);
 
         // Sanitize output: strip echoed system prompt and chat template markers
         let text = sanitize_output(&raw_text, request.system.as_deref());

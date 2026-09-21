@@ -106,7 +106,7 @@ equations:
     - result.contains("</think>") == false
     lean_theorem: Theorems.Thinking_Block_Strip
     notes: |
-      PMAT-180: Qwen3 without Qwen3NoThinkTemplate produces responses
+      PMAT-180: Qwen3 in thinking mode (before #3755 derived its prompt from its own template) produced responses
       that are entirely </think> tokens. PMAT-190: empty text after strip
       now shows diagnostic message.
 

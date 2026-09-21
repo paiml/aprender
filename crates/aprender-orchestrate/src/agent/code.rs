@@ -331,6 +331,8 @@ pub fn cmd_code(
     // to "text" — the legacy behavior — under Poka-Yoke.
     output_format: &str,
     input_format: &str,
+    // #3723: `--thinking on|off`; None = OFF wherever the model's template allows it.
+    thinking: Option<bool>,
 ) -> anyhow::Result<()> {
     // #2607: settled BEFORE the working directory changes, before any
     // settings file is read, and — the point of the issue — before any model
@@ -436,14 +438,14 @@ pub fn cmd_code(
             model_path,
             manifest.model.context_window,
         ) {
-            Ok(d) => Arc::new(d),
+            Ok(d) => Arc::new(d.with_thinking(thinking)),
             Err(e) => {
                 eprintln!("⚠ apr serve unavailable ({e}), using embedded inference");
-                Arc::from(build_fallback_driver(&manifest)?)
+                Arc::from(build_fallback_driver(&manifest, thinking)?)
             }
         }
     } else {
-        Arc::from(build_fallback_driver(&manifest)?)
+        Arc::from(build_fallback_driver(&manifest, thinking)?)
     };
 
     // PMAT-CODE-MCP-JSON-LOADER-001: merge `<project>/.mcp.json` (Claude-Code-
@@ -639,18 +641,22 @@ fn apply_settings_to_manifest(
 }
 
 /// Build fallback driver (embedded RealizarDriver) when AprServeDriver unavailable.
-fn build_fallback_driver(manifest: &AgentManifest) -> anyhow::Result<Box<dyn LlmDriver>> {
+fn build_fallback_driver(
+    manifest: &AgentManifest,
+    thinking: Option<bool>,
+) -> anyhow::Result<Box<dyn LlmDriver>> {
     #[cfg(feature = "inference")]
     {
         if let Some(model_path) = manifest.model.resolve_model_path() {
             let driver = crate::agent::driver::realizar::RealizarDriver::new(
                 model_path,
                 manifest.model.context_window,
-            )?;
+            )?
+            .with_thinking(thinking);
             return Ok(Box::new(driver));
         }
     }
-    let _ = manifest;
+    let _ = (manifest, thinking);
     // No model or no inference feature — return MockDriver
     Ok(Box::new(crate::agent::driver::mock::MockDriver::single_response(
         "Hello! I'm running in dry-run mode. \

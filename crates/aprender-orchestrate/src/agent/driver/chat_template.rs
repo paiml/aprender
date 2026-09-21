@@ -65,6 +65,36 @@ pub fn format_prompt_with_template(request: &CompletionRequest, template: ChatTe
     }
 }
 
+/// The conversation as `(role, content)` turns, with the same text the hand-coded
+/// ChatML formatter writes (tool definitions in the system turn, tool calls and results
+/// as `<tool_call>` / `<tool_result>` text), for rendering through the model's OWN chat
+/// template (#3755).
+pub fn chat_turns(request: &CompletionRequest) -> Vec<(String, String)> {
+    let mut turns = Vec::new();
+    let system = build_enriched_system(&request.system, &request.tools);
+    if !system.is_empty() {
+        turns.push(("system".to_string(), system));
+    }
+    for msg in &request.messages {
+        turns.push(match msg {
+            Message::System(s) => ("system".to_string(), s.clone()),
+            Message::User(s) => ("user".to_string(), s.clone()),
+            Message::Assistant(s) => ("assistant".to_string(), s.clone()),
+            Message::AssistantToolUse(call) => (
+                "assistant".to_string(),
+                format!(
+                    "<tool_call>\n{}\n</tool_call>",
+                    serde_json::json!({"name": call.name, "input": call.input})
+                ),
+            ),
+            Message::ToolResult(result) => {
+                ("user".to_string(), format!("<tool_result>{}</tool_result>", result.content))
+            }
+        });
+    }
+    turns
+}
+
 /// Build an enriched system prompt with tool definitions appended.
 ///
 /// Local models need explicit tool definitions in text form — unlike

@@ -33,6 +33,9 @@ pub struct AprServeDriver {
     /// Model file size in bytes (used to scale the startup-ready timeout
     /// for large MoE GGUFs). `None` if stat failed at launch time.
     model_size_bytes: Option<u64>,
+    /// #3723: `apr code --thinking on|off`, sent as `chat_template_kwargs.enable_thinking`;
+    /// None = the server's default (OFF wherever the model allows it).
+    thinking: Option<bool>,
 }
 
 impl Drop for AprServeDriver {
@@ -69,6 +72,15 @@ impl Drop for AprServeDriver {
 }
 
 impl AprServeDriver {
+    /// `apr code --thinking on|off` (#3723): every request carries
+    /// `chat_template_kwargs.enable_thinking`, which `apr serve` resolves against the
+    /// model's own chat template (and refuses with HTTP 422 when it cannot honour it).
+    #[must_use]
+    pub fn with_thinking(mut self, thinking: Option<bool>) -> Self {
+        self.thinking = thinking;
+        self
+    }
+
     /// Launch `apr serve run` and wait for readiness.
     ///
     /// Picks a random port, spawns the subprocess, polls the health
@@ -128,6 +140,7 @@ impl AprServeDriver {
             _child: child,
             context_window_size: context_window.unwrap_or(4096),
             model_size_bytes,
+            thinking: None,
         };
 
         // Wait for server to be ready
@@ -332,6 +345,9 @@ impl AprServeDriver {
         }
         if let Some(v) = seed {
             body["seed"] = serde_json::json!(v);
+        }
+        if let Some(on) = self.thinking {
+            body["chat_template_kwargs"] = serde_json::json!({ "enable_thinking": on });
         }
         body
     }

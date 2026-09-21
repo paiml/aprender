@@ -880,6 +880,15 @@ pub enum Commands {
         /// as the prompt. Matches Claude Code's `claude -p --input-format json` shape.
         #[arg(long, value_enum, default_value_t = CodeInputFormat::Text)]
         input_format: CodeInputFormat,
+        /// Thinking mode for a model whose own chat template has one (#3723)
+        ///
+        /// Default: off wherever the model allows it. Forwarded to `apr serve` as
+        /// `chat_template_kwargs.enable_thinking` (and to the embedded fallback), which
+        /// resolve it against the model's chat template; a mode the model cannot honour
+        /// is refused, never ignored. The reasoning never reaches the answer or the
+        /// tool-call parser.
+        #[arg(long, value_enum)]
+        thinking: Option<ThinkingArg>,
     },
     /// Extended analysis, profiling, QA, and visualization commands
     #[command(flatten)]

@@ -170,7 +170,7 @@ fn test_exit_codes_match_spec() {
 fn test_fallback_driver_without_model() {
     let manifest = build_default_manifest();
     // No model path set — should return MockDriver
-    let driver = build_fallback_driver(&manifest);
+    let driver = build_fallback_driver(&manifest, None);
     assert!(driver.is_ok(), "fallback should succeed with mock");
 }
 
@@ -226,6 +226,7 @@ fn test_cmd_code_rejects_unknown_resume_session_id() {
         None,
         "text",
         "text",
+        None,
     )
     .expect_err("an unknown --resume id must be an error, not a silent fresh session");
     let msg = err.to_string();
@@ -249,6 +250,7 @@ fn test_cmd_code_rejects_nonexistent_project_dir() {
         None,
         "text",
         "text",
+        None,
     )
     .expect_err("a --project path that is not a directory must be an error");
     let msg = err.to_string();
@@ -261,7 +263,7 @@ fn test_cmd_code_signature_matches_spec() {
     // Verify the public API signature exists and is callable
     // This catches regressions where the function is made private or renamed
     // Verify cmd_code exists and is callable
-    let _ = cmd_code as fn(_, _, _, _, _, _, _, _, _, _) -> _;
+    let _ = cmd_code as fn(_, _, _, _, _, _, _, _, _, _, _) -> _;
 }
 
 #[test]
@@ -1191,11 +1193,20 @@ fn assert_cmd_code_refuses_bare_non_interactive() {
             "child stdin is a pipe/file, not /dev/null; this test would block on the #2607 peek"
         );
     }
-    let err =
-        cmd_code(None, PathBuf::from("."), None, vec![], false, 50, None, None, "text", "text")
-            .expect_err(
-                "#2607: bare `apr code` with a closed stdin must refuse, not launch a model",
-            );
+    let err = cmd_code(
+        None,
+        PathBuf::from("."),
+        None,
+        vec![],
+        false,
+        50,
+        None,
+        None,
+        "text",
+        "text",
+        None,
+    )
+    .expect_err("#2607: bare `apr code` with a closed stdin must refuse, not launch a model");
     let msg = err.to_string();
     assert!(msg.contains("stdin is not a terminal"), "unexpected refusal message: {msg}");
 }

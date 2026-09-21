@@ -41,6 +41,7 @@ pub fn cmd_code(
         None,   // emit_trace: not yet plumbed through the binary's clap surface.
         "text", // output_format: legacy default
         "text", // input_format: legacy default
+        None,   // thinking: the model's default (OFF wherever allowed)
     )
 }
 
