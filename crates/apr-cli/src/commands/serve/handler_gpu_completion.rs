@@ -740,9 +740,8 @@ fn start_gguf_server_cuda(
                 "{}",
                 format!("CUDA init failed, falling back to CPU: {e}").yellow()
             );
-            let quantized_model = OwnedQuantizedModel::from_mapped(&mapped_model).map_err(|e| {
-                CliError::ModelLoadFailed(format!("Failed to rebuild quantized model: {e}"))
-            })?;
+            // #3571: the rebuild goes through the one GGUF serve loader and its refusal.
+            let quantized_model = build_serve_model(&mapped_model)?;
             let vocab = extract_gguf_vocab(&mapped_model)?;
             // CUDA init failed and this process fell back to CPU. The offload
             // report travels with it UNCHANGED, so `/v1/effective-config` shows

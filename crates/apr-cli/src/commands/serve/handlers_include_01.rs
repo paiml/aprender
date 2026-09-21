@@ -38,6 +38,13 @@ fn start_apr_server_gpu(
     let quantized = OwnedQuantizedModel::from_apr(&mapped)
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create quantized model: {e}")))?;
 
+    // #3571: a stack with no layers has no answer to give — refused at load, as on every route.
+    if let Some(refusal) =
+        zero_layer_refusal(&quantized.config().architecture, quantized.layers().len())
+    {
+        return Err(refusal);
+    }
+
     println!(
         "{}",
         format!(
@@ -130,6 +137,19 @@ fn start_apr_q4k_server_gpu(
         println!("  EOS token ID: {eos}");
     }
 
+    // #3571: the pool path reads its layer count on its own thread, after the upload has
+    // begun. Read the count the file declares first, so a zero-layer APR is refused at load
+    // like every other route. A file that declares none is left to the pool path, which
+    // refuses a missing `num_layers` by name (`parse_apr_q4k_config`).
+    if let Ok(apr) = AprV2Model::load(model_path) {
+        let meta = apr.metadata();
+        if let Some(refusal) = meta.num_layers.and_then(|layers| {
+            zero_layer_refusal(meta.architecture.as_deref().unwrap_or("apr"), layers)
+        }) {
+            return Err(refusal);
+        }
+    }
+
     // Spawn Q4K inference thread (loads model, uploads weights to GPU via pool allocator)
     let q4k_tx = apr_q4k_scheduler::spawn_apr_q4k_inference_thread(&model_str)
         .map_err(|e| CliError::InferenceFailed(format!("Q4K inference thread failed: {e}")))?;
@@ -178,6 +198,13 @@ fn start_safetensors_server_gpu(
 
     let quantized = OwnedQuantizedModel::from_apr(&mapped)
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create quantized model: {e}")))?;
+
+    // #3571: a stack with no layers has no answer to give — refused at load, as on every route.
+    if let Some(refusal) =
+        zero_layer_refusal(&quantized.config().architecture, quantized.layers().len())
+    {
+        return Err(refusal);
+    }
 
     println!(
         "{}",
@@ -254,6 +281,13 @@ fn start_safetensors_server_cpu_quantized(
 
     let quantized = OwnedQuantizedModel::from_apr(&mapped)
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create quantized model: {e}")))?;
+
+    // #3571: a stack with no layers has no answer to give — refused at load, as on every route.
+    if let Some(refusal) =
+        zero_layer_refusal(&quantized.config().architecture, quantized.layers().len())
+    {
+        return Err(refusal);
+    }
 
     println!(
         "{}",

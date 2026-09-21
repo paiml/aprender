@@ -1430,6 +1430,12 @@ fn try_apr_quantized_cpu(model_path: &Path, config: &ServerConfig) -> Result<()>
 
     let quantized = OwnedQuantizedModel::from_apr(&mapped)
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create quantized model: {e}")))?;
+    // #3571: a stack with no layers has no answer to give — refused at load, as on every route.
+    if let Some(refusal) =
+        zero_layer_refusal(&quantized.config().architecture, quantized.layers().len())
+    {
+        return Err(refusal);
+    }
 
     println!(
         "{}",
