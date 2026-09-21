@@ -20155,10 +20155,13 @@ roadmap:
   created: 2026-09-21T19:11:28Z
   updated: 2026-09-21T19:11:28Z
   spec: null
-  acceptance_criteria: []
+  acceptance_criteria:
+  - "scripts/crux_engine_llamafile.sh probe prints llamafile's --version and the sha256 of the forjar-declared binary; gen appends one row per cell to $CRUX_MANIFEST (row contract v1), a cell llamafile cannot run being a row with rc null and llamafile's own error as refused"
+  - "scripts/crux_engine_hf.sh runs uv run --frozen over scripts/crux_hf/uv.lock (transformers[serving]==5.17.0, torch==2.14.0 exact); probe prints resolved versions, CUDA state and the lock sha256; gen/tok/tmpl/greedy append one row each, refusals quoting the exception"
+  - "measured on lambda-labs (receipt docs/audits/impl-PMAT-3778-receipt.md): llamafile loads qwen35; --cli ignores thinking control and -n, the server honours both; HF every path on CPU"
   phases: []
   subtasks: []
   estimated_effort: null
   labels:
   - kind:code
-  notes: null
+  notes: "#3739 engine seam, agreed with the cop (aprender-04) and aprender-76 (#3774, correspondence + judge). Stops at the receipt."

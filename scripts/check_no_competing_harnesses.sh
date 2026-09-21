@@ -75,6 +75,15 @@ is_allowed() {
                                          # exempt below. If it ever derives a
                                          # throughput or a ratio, delete this
                                          # line rather than widening the reason.
+    */crux_engine_llamafile.sh)     return 0 ;;  # a CRUX ENGINE DRIVER, not a harness
+                                         # (#3739, PMAT-3778): it produces
+                                         # CORRECTNESS cells for the CRUX judge.
+                                         # It computes no rate; the one number
+                                         # it carries is llamafile's OWN
+                                         # `timings.predicted_per_second`,
+                                         # transcribed into `reported`, which
+                                         # row contract v1 marks "never judged"
+                                         # and #3739 marks REPORT, not gate.
     */dogfood_examples.sh)          return 0 ;;  # a DOGFOOD LEDGER, not a harness
                                          # (PMAT-3121): it builds and RUNS every
                                          # workspace example once under a timeout
