@@ -1554,9 +1554,10 @@ fn run_qwen35_generate_gpu(
             &[crate::gguf::cuda::PREFILL_MAX_CHUNK_ROWS]
         },
     };
+    let mut passed_over = Vec::new();
     let planned =
         crate::capacity::plan_first_fit(&attention_paths, chunk_rows_to_try, |attention, rows| {
-            crate::capacity::plan(&crate::capacity::CapacityInputs {
+            let verdict = crate::capacity::plan(&crate::capacity::CapacityInputs {
                 memory: Some(device_memory),
                 ..crate::gguf::cuda::Qwen35CudaModel::capacity_inputs(
                     &qwen,
@@ -1566,10 +1567,30 @@ fn run_qwen35_generate_gpu(
                     attention,
                     rows,
                 )
-            })
+            });
+            if let crate::capacity::CapacityVerdict::Refused(r) = &verdict {
+                passed_over.push(crate::capacity::passed_over_line(
+                    attention.as_str(),
+                    rows,
+                    r,
+                ));
+            }
+            verdict
         });
     let (attention, chunk_rows, budget) = match planned {
-        Ok(fit) => fit,
+        Ok(fit) => {
+            // A fallback changes speed and precision; it is printed, never silent.
+            if !passed_over.is_empty() {
+                eprintln!(
+                    "[qwen35] prefill plan: {} did not fit; using {} at {} rows ({:.0} MiB)",
+                    passed_over.join("; "),
+                    fit.0.as_str(),
+                    fit.1,
+                    fit.2.total_mb
+                );
+            }
+            fit
+        },
         Err(Some(refusal)) => return Err(Qwen35GpuFailure::Refused(refusal)),
         Err(None) => return Err("no prefill attention path to plan".to_string().into()),
     };
