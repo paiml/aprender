@@ -1451,7 +1451,8 @@ fn test_apr_kv_cache_clear() {
 fn test_generate_config_default() {
     let config = GenerateConfig::default();
     assert_eq!(config.max_tokens, 32);
-    assert!((config.temperature - 1.0).abs() < 0.001);
+    // #3760: greedy by default; the sampler draws now, so 1.0 would randomize every default caller.
+    assert!((config.temperature - 0.0).abs() < 0.001);
     assert!((config.top_p - 0.9).abs() < 0.001);
     assert_eq!(config.top_k, 0);
     assert!((config.repetition_penalty - 1.0).abs() < 0.001);
