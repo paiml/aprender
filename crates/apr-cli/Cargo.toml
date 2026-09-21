@@ -86,7 +86,16 @@ code = []
 dev = []  # Enable `apr mono` subcommands (publish, shims, audit, archive)
 safetensors-compare = ["aprender/safetensors-compare"]
 inference = ["realizar", "trueno", "tokio", "axum", "futures-util"]
-cuda = ["inference", "realizar/cuda", "entrenar/cuda", "aprender-train-distill?/cuda"]
+# #3545: `trueno/cuda` is NOT optional here, and leaving it out was the defect. The inference
+# stack got CUDA through `realizar/cuda` and WORKED, while `trueno`'s backend registry — the thing
+# `apr devices` reads — was built without its cuda feature, so `default_factories()` omitted
+# `CudaFactory`, no factory produced a cuda entry, and the registry emitted `missing_entry(Cuda)` =
+# `Source::NotCompiled`. The shipped `-cuda` asset therefore ran CUDA correctly and told every new
+# user CUDA was unavailable on the first screen they saw.
+#
+# ONE FLAG NOW DECIDES BOTH: what runs and what is reported. Two flags for one fact is how a verb
+# comes to lie about its own binary.
+cuda = ["inference", "realizar/cuda", "entrenar/cuda", "trueno/cuda", "aprender-train-distill?/cuda"]
 # PP-LLAMA-001 §9 #8: a documented COMPATIBILITY ALIAS, nothing more. No
 # `#[cfg(feature = "cuda-batch")]` remains in the tree: the implication ran
 # the wrong way (`cuda-batch = ["cuda"]` means enabling it enables cuda, not

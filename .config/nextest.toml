@@ -16,7 +16,16 @@
 # now fails on any key nextest ignores.
 [profile.ci]
 retries = 2
-fail-fast = true
+# false, not true (PMAT-3587). fail-fast is a verdict-discarding default: on the first
+# failing test nextest cancels every test still queued and reports the one failure with
+# no count of what it did not measure. Measured on a 6-test probe whose 2nd test fails:
+# true -> "3/6 tests run ... Cancelling due to test failure"; false -> "6 tests run:
+# 5 passed, 1 failed" (still rc 100 -- a failure is still a failure, it is just no
+# longer the only thing measured). An ABSENT key is the same as true: nextest's default
+# is ON, so scripts/check_nextest_ci_profile_no_fail_fast.sh requires this line to be
+# present and literally false. The tree paid for the old value once: "nextest fail-fast
+# hid every other dark failure: 7 rounds for 4 tests."
+fail-fast = false
 # Measured on an idle 48-core box, 80806 tests, 353s wall: slowest single test
 # is 202.7s (aprender-orchestrate bug_hunter::test_bh_mod_001_hunt_all_modes),
 # only 2 tests exceed 120s and NONE exceeds 300s. terminate-after = 20 periods
