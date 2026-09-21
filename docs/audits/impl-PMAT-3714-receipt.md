@@ -67,6 +67,7 @@ The golden gate's PASS text on this base still reads "(GPU hybrid forward, #3090
 - FP32 scope across join, par_iter and nested joins; restored on panic.
 - capacity adapter: a busy 4090 → CoTenant with the arithmetic; the measured gx10 → Fits; a starved GB10 → refused naming MemAvailable.
 - `dispatch_gate` records an erroring gate as FAILED and continues.
+- qa's MoE predicate reads `general.architecture` by streaming the GGUF header (`a5f94ed66`). The first cut called realizar's `MappedGGUFModel::from_path`, whose MAP_POPULATE + mlock faults in the whole file (#3761). On Instruct-2507 (18.5 GB) the streamed read peaks at **25,556 kB** RSS for the whole test process and finishes in < 10 ms. The qa rows above were measured with the populated map, and the routing decision is identical.
 - Existing `qwen3_moe` (38) and `moe` (139) unit tests unchanged-green.
 
 ## Not measured / not in this row
