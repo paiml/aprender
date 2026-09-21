@@ -40,7 +40,7 @@ equations:
     note: "Measured on the real 0.8B at 64 and 600 positions (two chunks), split across two calls, and one decode step continued from each state: logits rel L-inf <= 1.6e-6, states <= 3.8e-6, cosine 1.0000000, on sm_89 and sm_121."
   C-QBP-004:
     description: "The capacity plan refuses a request that does not fit the measured free device memory, before loading, and classifies the refusal by what an empty device could hold."
-    formula: "need(d) = weights + kv_per_token(d) * seq + workspace + overhead; f32 iff need(f32) <= free; f16 iff f16_decode and need(f16) <= free; otherwise refuse, co_tenant iff need <= total at the cheapest holdable dtype"
+    formula: "need(d) = weights + kv_per_token(d) * seq + workspace + overhead; f32 iff need(f32) <= free; f16 iff f16_decode and need(f16) <= free; otherwise refuse, co_tenant iff need <= total at the cheapest holdable dtype; attention = the first of [cuBLAS f32, flash] (the environment pins one) whose plan fits, every chunk-row count of a path tried before the next path, a refusal carrying the last (smallest) plan's arithmetic"
   C-QBP-005:
     description: "The fused flash-attention prefill (f16 inputs, f32 accumulation and online softmax) equals exact causal GQA attention over f16-rounded inputs within 2e-3 relative, and the whole flash prefill stays within the flash budget of the per-token path."
     formula: "rel_linf(flash(Q,K,V), attn_f64(f16(Q),f16(K),f16(V))) <= 2e-3 and argmax(prefill_flash) == argmax(fwd^T) and cos >= 0.99999 and rel_linf(logits) <= 2e-3 and rel_linf(state) <= 5e-3"
@@ -84,8 +84,8 @@ falsification_tests:
     if_fails: "A layer op, a KV row write, the attention base offset or the chunking is wrong"
   - id: FALSIFY-QBP-CAPACITY-TABLE
     rule: "Capacity refuses before loading, classified"
-    prediction: "Each case-table row yields its stated f32 / f16 / co_tenant / f16_decode_unavailable / exceeds_device verdict"
-    test: "cargo test -p aprender-serve --lib capacity::"
+    prediction: "Each case-table row yields its stated f32 / f16 / co_tenant / f16_decode_unavailable / exceeds_device verdict; the 262k-beside-a-co-tenant row takes flash only because f32 does not fit, the 20k row takes f32"
+    test: "cargo test -p aprender-serve --lib capacity:: && cargo test -p aprender-serve --features cuda --lib qwen35_prefill_attention_prefers"
     if_fails: "The budget arithmetic or the refusal classification is wrong"
   - id: FALSIFY-QBP-FLASH
     rule: "Flash attention is causal attention"

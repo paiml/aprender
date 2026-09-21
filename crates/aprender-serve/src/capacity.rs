@@ -367,6 +367,31 @@ pub fn plan(i: &CapacityInputs) -> CapacityVerdict {
     })
 }
 
+/// The first `(path, rows)` whose plan fits, trying every row count of a path before
+/// the next path — so the caller's order IS the preference (#3596, cop ruling
+/// 2026-09-21: cuBLAS f32 attention while it fits, flash only when it alone fits).
+///
+/// # Errors
+/// Nothing fits: the refusal of the LAST plan tried, which the caller orders to be
+/// the smallest footprint, so its arithmetic is the closest the device came. With
+/// no candidates at all, `None`.
+pub fn plan_first_fit<A: Copy>(
+    paths: &[A],
+    rows: &[usize],
+    mut plan_one: impl FnMut(A, usize) -> CapacityVerdict,
+) -> Result<(A, usize, CapacityBudget), Option<Box<CapacityRefusal>>> {
+    let mut last = None;
+    for &path in paths {
+        for &r in rows {
+            match plan_one(path, r) {
+                CapacityVerdict::Fits(budget) => return Ok((path, r, budget)),
+                CapacityVerdict::Refused(refusal) => last = Some(Box::new(refusal)),
+            }
+        }
+    }
+    Err(last)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -596,5 +621,51 @@ mod tests {
         assert!(matches!(plan(&i), CapacityVerdict::Fits(b) if b.kv_dtype == KvDtype::F32));
         i.gpu_free_bytes = need - 1;
         assert!(!matches!(plan(&i), CapacityVerdict::Fits(b) if b.kv_dtype == KvDtype::F32));
+    }
+
+    /// #3596 lambda, 9B, 262,144 positions beside a 924 MiB co-tenant (23,112 MiB
+    /// free): the f32 path's 1 GiB of scores does not fit and the flash path does —
+    /// the measured refusal that the first-fit order turns into a flash run. At 20k
+    /// both fit and f32, the faster and exact path on sm_89, is taken.
+    #[test]
+    fn capacity_first_fit_takes_f32_while_it_fits_and_flash_when_only_flash_does() {
+        #[derive(Debug, Clone, Copy, PartialEq)]
+        enum Path {
+            F32,
+            Flash,
+        }
+        let at = |seq_len: u64| {
+            move |path: Path, rows: usize| {
+                let scores = if path == Path::F32 { 1024 * MIB_U } else { 0 };
+                plan(&CapacityInputs {
+                    weights_bytes: 4_861 * MIB_U,
+                    workspace_bytes: 569 * MIB_U + scores + rows as u64 * MIB_U / 512,
+                    ..nine_b(seq_len, 23_112 * MIB_U, CARD_4090, false)
+                })
+            }
+        };
+        let order = [Path::F32, Path::Flash];
+        let (p, r, _) = plan_first_fit(&order, &[512], at(20_085)).expect("20k fits");
+        assert_eq!((p, r), (Path::F32, 512));
+        let (p, r, b) = plan_first_fit(&order, &[512], at(263_091)).expect("flash fits");
+        assert_eq!((p, r, b.kv_dtype), (Path::Flash, 512, KvDtype::F32));
+        // Every row count of a path is tried before the next path (unified: 2048 → 512).
+        let mut tried = Vec::new();
+        let _ = plan_first_fit(&order, &[2048, 512], |p, r| {
+            tried.push((p, r));
+            at(263_091)(p, r)
+        });
+        assert_eq!(
+            tried,
+            [(Path::F32, 2048), (Path::F32, 512), (Path::Flash, 2048)],
+            "flash at 2048 fits here, so 512 is never tried"
+        );
+        // Nothing fits: the LAST plan's refusal (the smallest footprint) is returned.
+        let refusal = plan_first_fit(&order, &[512], at(400_000)).expect_err("too big");
+        let r = refusal.expect("a plan was tried");
+        assert!(r.reason.contains("400000 positions"), "{}", r.reason);
+        assert!(plan_first_fit::<Path>(&[], &[512], at(1))
+            .expect_err("no paths")
+            .is_none());
     }
 }

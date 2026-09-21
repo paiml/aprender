@@ -109,11 +109,12 @@ struct PrefillBuffers {
 pub enum PrefillAttention {
     /// The fused flash-attention kernel: f16 inputs to the tensor cores, f32
     /// accumulation and f32 online softmax (the cop's #3596 ruling). No scores are
-    /// materialised. The default wherever the device and the heads allow it.
+    /// materialised, so it serves the contexts whose f32 scores do not fit; forced
+    /// with `APR_QWEN35_PREFILL_ATTENTION=flash`.
     FlashF16In,
-    /// cuBLAS `QKᵀ` → causal softmax → `PV`, all f32, over materialised scores — the
-    /// diagnosis path, selected by `APR_QWEN35_PREFILL_ATTENTION=f32`, and the path on
-    /// a device without `mma.sync` (pre-sm_80).
+    /// cuBLAS `QKᵀ` → causal softmax → `PV`, all f32, over materialised scores (split
+    /// into query passes by a 1 GiB budget) — the default while it fits, the only
+    /// path on a device without `mma.sync` (pre-sm_80); forced with `=f32`.
     CublasF32,
 }
 
@@ -137,30 +138,63 @@ thread_local! {
     static ATTENTION_OVERRIDE: std::cell::Cell<Option<PrefillAttention>> = const { std::cell::Cell::new(None) };
 }
 
-/// The attention a prefill on this executor runs: [`PREFILL_ATTENTION_ENV`]`=f32`
-/// forces cuBLAS f32; otherwise flash where supported. An unrecognised value is
-/// printed, never silently read as the default.
-pub(crate) fn choose_prefill_attention(
+/// The attention paths a prefill may run, most preferred first (#3596, cop ruling
+/// 2026-09-21): [`PREFILL_ATTENTION_ENV`] pins one; otherwise cuBLAS f32 — exact, and
+/// faster than the flash kernel on sm_89 from 20k to 148k — then flash where the
+/// device and the heads allow it, for the contexts whose f32 scores do not fit. The
+/// capacity plan takes the first that fits. An unrecognised value, or `flash` where
+/// flash cannot run, is printed, never silently read as something else.
+#[must_use]
+pub fn attention_candidates(forced: Option<&str>, flash_supported: bool) -> Vec<PrefillAttention> {
+    let default = if flash_supported {
+        vec![PrefillAttention::CublasF32, PrefillAttention::FlashF16In]
+    } else {
+        vec![PrefillAttention::CublasF32]
+    };
+    match forced {
+        None => default,
+        Some("f32") => vec![PrefillAttention::CublasF32],
+        Some("flash") if flash_supported => vec![PrefillAttention::FlashF16In],
+        Some("flash") => {
+            eprintln!(
+                "warning: {PREFILL_ATTENTION_ENV}=flash, but this device or these heads cannot run the flash kernel; using cuBLAS f32"
+            );
+            vec![PrefillAttention::CublasF32]
+        },
+        Some(other) => {
+            eprintln!(
+                "warning: {PREFILL_ATTENTION_ENV}={other:?} is not one of \"f32\" / \"flash\"; using the default"
+            );
+            default
+        },
+    }
+}
+
+/// [`attention_candidates`] for this executor and these heads (tests pin one path).
+pub(crate) fn prefill_attention_candidates(
+    ex: &crate::cuda::CudaExecutor,
+    d: Qwen35CudaDims,
+) -> Vec<PrefillAttention> {
+    #[cfg(test)]
+    if let Some(a) = ATTENTION_OVERRIDE.with(std::cell::Cell::get) {
+        return vec![a];
+    }
+    attention_candidates(
+        std::env::var(PREFILL_ATTENTION_ENV).ok().as_deref(),
+        ex.qwen35_flash_attention_supported(d.num_heads, d.num_kv_heads, d.attn_head_dim),
+    )
+}
+
+/// The attention a model runs before a capacity plan chooses one: the most preferred
+/// candidate.
+pub(crate) fn default_prefill_attention(
     ex: &crate::cuda::CudaExecutor,
     d: Qwen35CudaDims,
 ) -> PrefillAttention {
-    #[cfg(test)]
-    if let Some(a) = ATTENTION_OVERRIDE.with(std::cell::Cell::get) {
-        return a;
-    }
-    let forced = std::env::var(PREFILL_ATTENTION_ENV).ok();
-    match forced.as_deref() {
-        Some("f32") => return PrefillAttention::CublasF32,
-        None | Some("flash") => {},
-        Some(other) => eprintln!(
-            "warning: {PREFILL_ATTENTION_ENV}={other:?} is not one of \"f32\" / \"flash\"; using the default"
-        ),
-    }
-    if ex.qwen35_flash_attention_supported(d.num_heads, d.num_kv_heads, d.attn_head_dim) {
-        PrefillAttention::FlashF16In
-    } else {
-        PrefillAttention::CublasF32
-    }
+    prefill_attention_candidates(ex, d)
+        .first()
+        .copied()
+        .unwrap_or(PrefillAttention::CublasF32)
 }
 
 /// Rows per chunk for a prompt ending at `total_positions` — one formula for the
@@ -235,7 +269,7 @@ fn quant_bytes(t: &crate::gguf::OwnedQuantizedTensor) -> (u64, usize) {
     (t.data.len() as u64, t.out_dim * t.in_dim)
 }
 
-impl<'a> Qwen35CudaModel<'a> {
+impl Qwen35CudaModel<'_> {
     /// Rows per prefill chunk for a prompt that ends at `total_positions` — the GEMM
     /// row count, fixed for the whole call so every chunk but the last reuses one set
     /// of compiled shapes.
@@ -250,6 +284,13 @@ impl<'a> Qwen35CudaModel<'a> {
         self.prefill_rows = rows.max(1);
     }
 
+    /// Set the attention path (the default is the first of
+    /// [`Self::prefill_attention_candidates_for`]); the capacity plan must have been
+    /// made with the same path, and passes one of those candidates.
+    pub fn set_prefill_attention(&mut self, attention: PrefillAttention) {
+        self.prefill_attention = attention;
+    }
+
     /// Device bytes a [`Self::prefill`] of a prompt ending at `total_positions`
     /// allocates on top of the weights and the state.
     #[must_use]
@@ -258,7 +299,7 @@ impl<'a> Qwen35CudaModel<'a> {
             self.dims,
             self.largest_projection_elems(),
             total_positions,
-            choose_prefill_attention(&self.executor, self.dims),
+            self.prefill_attention,
             self.prefill_rows,
         )
     }
@@ -376,19 +417,20 @@ impl<'a> Qwen35CudaModel<'a> {
         }
     }
 
-    /// The attention [`Self::prefill`] runs on `executor` for `model`'s heads.
+    /// The attention paths [`Self::prefill`] may run on `executor` for `model`'s heads,
+    /// most preferred first — the order the capacity plan tries them in.
     #[must_use]
-    pub fn prefill_attention_for(
+    pub fn prefill_attention_candidates_for(
         model: &Qwen35Model<'_>,
         executor: &crate::cuda::CudaExecutor,
-    ) -> PrefillAttention {
-        choose_prefill_attention(executor, Self::dims_of(model))
+    ) -> Vec<PrefillAttention> {
+        prefill_attention_candidates(executor, Self::dims_of(model))
     }
 
     /// The attention this model's [`Self::prefill`] runs.
     #[must_use]
     pub fn prefill_attention_mode(&self) -> PrefillAttention {
-        choose_prefill_attention(&self.executor, self.dims)
+        self.prefill_attention
     }
 
     /// `n × k` of the largest projection — the size of the f32 dequant scratch.
