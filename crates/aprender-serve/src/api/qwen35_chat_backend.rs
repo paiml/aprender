@@ -69,7 +69,9 @@ async fn try_qwen35_backend(
     let defaults = QuantizedGenerateConfig::default();
     let stop_tokens = stop_tokens_unless_ignore_eos(request, state.model_eos_token_id());
     let gen_config = QuantizedGenerateConfig {
-        max_tokens,
+        // The context-bounded budget, not the request's number: what is decoded and what
+        // `finish_reason` is judged against are the same count.
+        max_tokens: budget,
         temperature: request.temperature.unwrap_or(defaults.temperature),
         top_k: request.top_k.unwrap_or(defaults.top_k),
         top_p: request.top_p.unwrap_or(defaults.top_p),

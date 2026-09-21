@@ -208,6 +208,42 @@ async fn a_prompt_past_the_declared_context_is_a_400_naming_both_numbers() {
     );
 }
 
+/// A reply the context cuts short decodes only what the context left and says
+/// `finish_reason: "length"` — the request asked for 50, the context leaves 2.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reply_the_context_cuts_short_decodes_the_budget_and_reports_length() {
+    let Some((mut state, mapped)) = state_or_skip(true) else {
+        return;
+    };
+    let messages = [ChatMessage {
+        role: "user".to_string(),
+        content: QUESTION.to_string(),
+        ..Default::default()
+    }];
+    let prompt_tokens = mapped
+        .model
+        .encode(&format_chat_messages(
+            &messages,
+            mapped.model.architecture(),
+        ))
+        .expect("encode")
+        .len();
+    state.qwen35_session = Some(Arc::new(Qwen35Served {
+        context_length: prompt_tokens + 2,
+        session: std::sync::Mutex::new(Qwen35Session::load(&mapped, true).expect("load")),
+    }));
+    let mut body = chat_body(false, 50);
+    body["ignore_eos"] = serde_json::json!(true);
+    let (status, body) = post(create_router(state), "/v1/chat/completions", body).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let json: serde_json::Value = serde_json::from_str(&body).expect("JSON");
+    assert_eq!(json["choices"][0]["finish_reason"], "length", "{body}");
+    assert_eq!(
+        json["usage"]["completion_tokens"], 2,
+        "the budget, not max_tokens: {body}"
+    );
+}
+
 #[cfg(feature = "cuda")]
 #[tokio::test(flavor = "multi_thread")]
 async fn gpu_a_chat_request_answers_from_the_gpu_session() {
