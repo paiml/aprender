@@ -71,6 +71,7 @@ pub(crate) fn hybrid_quant_refusal<'n>(
         architecture: architecture.to_string(),
         reason,
         issue: "PMAT-785",
+        quant: None,
     })
 }
 

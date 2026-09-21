@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.69.0] - 2026-09-21
+
+0.69.0 folds every remaining 0.68.x row into one train (EPIC #3080). The headline goal is Qwen models usable on pure CUDA. This release makes the CUDA path honest and routable:
+- `apr serve` now routes the Qwen3.5 hybrid to the model `apr run` already used.
+- `apr run --gpu` no longer reports a CPU fallback as success.
+- `apr devices` no longer tells a CUDA build that CUDA is unavailable.
+- The F2 hybrid guard runs once per model, version and device, and leaves a receipt.
+
+Underneath, the must-carry quantization work (PP-QUANT-001 M1) is complete: one ggml tensor-type table, extracted from upstream, replaces the hand-typed copies. The release train itself now lives in the repository. The tag step cannot be reached while the milestone holds an open item, and the version is the scripts' only input. The logit-parity receipts are under contract, and the shapes gate runs with the fleet-pinned `pv`. A run of gates that were measured reporting the wrong thing were fixed. It is also the first release assembled as an integration batch (#3669): 17 receipted PRs and one andon fix in one CI run and one queue slot.
+
+### Qwen on CUDA — headline (Band 3)
+
+- `apr serve` routes the Qwen3.5 hybrid to `Qwen35Model`, as `apr run` has since #3091 (#3571 layer 1) (#3608)
+- `apr run --gpu` that fell back to the CPU now reports a refusal, not a success; the refusal had no production caller (refs #3602) (#3638)
+- `apr devices` told every user CUDA was unavailable on a binary that runs CUDA; one flag now decides both (#3545) (#3619)
+- The F2 hybrid guard runs once per (model sha256, apr version, device) and leaves a receipt; `apr run --revalidate` re-runs it (#3604) (#3634)
+- `ModelConstraints` keeps the gated-DeltaNet shape keys (refs #3346) (#3350)
+- PP-LLAMA-001 row 2: the perf002 prefill-path probe, with refusals that fire (PMAT-3556) (#3557)
+
+### One ggml tensor-type table — PP-QUANT-001 M1, must-carry (Band 0)
+
+- One ggml tensor-type table, extracted from upstream rather than typed (PMAT-3430 M1) (#3581)
+- Three ggml enums become one; M1 complete (PMAT-3430 phases 3–4) (#3621)
+- Three hand-typed ggml id→name tables read the traits table instead (#3662) (#3665)
+- aprender-core's three hand-typed ggml tables read the traits table, and IQ dequantization refuses instead of inventing weights (#3601, #3656) (#3660)
+
+### The release train, in the repository (Band 0b and Band 4)
+
+- The train's movable half and then its tag path are ported into `scripts/release/` (PMAT-3459 parts 1–2) (#3582, #3599)
+- The tag step cannot be reached without a clean milestone: the gate is called inside `cut_tag()`, and three mutants are killed (PMAT-3459) (#3617)
+- The release scripts take the version as their one input. The milestone, the release epic, the previous tag and the state directory are derived, and a guard refuses a hard-coded version or an out-of-repo path in `scripts/release/` (#3618) (#3655)
+- The T-0 preflight returned GO when the dogfood crashed; GO now requires positive evidence (PMAT-3561) (#3614)
+- The tag-path and epic-follow-up tickets are registered (PMAT-3459, PMAT-3460) (#3461); so are PMAT-3604 (#3637) and VERIFY-001 on 0.71.0 (#3496)
+- The v0.68.2 T-5 reconcile receipt and the train ledger record (#3564); the "always ask before `make publish`" check-in is withdrawn, because T-4 is unattended (#3566)
+
+### Ontology and SHACL (Band 3b)
+
+- The shapes gate runs with the fleet-pinned `pv` on the runner it executes on, resolved the way forjar installs it, with the version checked against the pin (PMAT-3567) (#3633)
+- The seven logit-parity receipts are migrated under contract (`parity-receipt-v2`) and counted as their own entity type (PMAT-3577) (#3600)
+- `removed_by` gets a shape: `refusal-receipt-v1` (#3605) (#3613)
+- A contract with no `kind:` says the kind was assumed, on the first error the default caused (ONT-6b, PMAT-3537) (#3538)
+- `pv` L2's column counts links, not an index, and `--table` no longer panics on a byte-cut (#3338) (#3351)
+- AutoGluon becomes a CRUX competitor (category O, 24 contracts) (#3401) (#3395)
+
+### Gates that were measured reporting the wrong thing (Band 1)
+
+- Fail-fast discarded verdicts: the explicit-command runner no longer stops at the first failure and reports skipped tests as a number (#3616), and nextest's `[profile.ci]` sets `fail-fast = false`; 3 of 6 verdicts had been discarded, measured (#3626) (PMAT-3587)
+- The rmsnorm scale-invariance test asserted the ε=0 theorem, which is false where the generator reaches; it now asserts the ε>0 property (PMAT-3627) (#3631)
+- `fleet_utilization.sh --selftest` read a MATCH as a FAIL under pipefail (EPIPE) (PMAT-3629) (#3632)
+- `ci_resolve_dirty.sh` selected every DIRTY PR, not the roadmap class: 14 where 8 qualified (#3623)
+- `guard_tree.sh` now shows a passing guard's `UNMEASURED` and `SUMMARY` lines, so "not measured here" no longer reads as PASS (#3651) (#3653)
+- The fleet-pinned `pv` shapes guard reports fleet state as `UNMEASURED`, never FAIL: a pin mismatch, a `pv` that returns no verdict, a missing parser, binary or capability. Intel's rewritten pin had turned `guard-tree` red on main (#3669)
+- The wiring meta-guard read a workflow step NAME as a dispatch and passed four guards that nothing ran; the publish-strip guard (#3305) now runs, and it reports an interpreter without a TOML reader as ENV instead of a failure (#3644) (#3647)
+- Two functions over the complexity ratchet are brought back under it by extracting helpers, with no behaviour change (#3681) (#3669)
+- `apr parity` told the user "parity disproven" (exit 5) for a model whose quant type the CUDA capability gate refuses (F16, IQ*); it now REFUSES with exit 12 and names the quant, which the pre-publish C14 row reports rather than fails (#3685) (#3689)
+- Two gates treated a runner WITHOUT a tool as a verdict: the path-only dev-deps guard went red on every intel runner with no TOML reader, and the parity-receipt denominator counted a missing `python3` as "the tree holds 0". Both now report `UNMEASURED` naming the runner and the missing tool; a tool that is present and crashes stays red (#3692, #3695) (#3689)
+
+### CI throughput
+
+- Merge-queue groups no longer pay the full workspace run: the queue is SQUASH, so the tier script now diffs `HEAD^1..HEAD` instead of requiring a second parent. A docs/roadmap/audit-only change runs no workspace tests, and renames are listed on both sides (#3658) (#3664)
+- `book-contracts.yml` drops the three rust-cache steps (PMAT-3539) (#3540)
+- CB-200 601→599 and the complexity shrink under pmat 3.41.1 (#3491)
+- Five tickets minted in a working tree are pushed to the roadmap (#3580)
+
 ## [0.68.2] - 2026-09-19
 
 0.68.2 is an interrupt release for Qwen3 and Qwen3.5 (EPIC #3477). Dense Qwen3 produced garbage on CUDA in 0.68.1 because two fast paths dropped the per-head QK-norm — the manual decode graph never recorded the kernel (#3413 A) and the batched prefill never applied it (#3413 B) — and the CPU-vs-GPU guard could not see either because it probed a path generation does not use (#3413 C). All three are fixed and the guard now judges the real prefill path; a fourth finding (FP8 batched prefill fails parity on QK-norm models, #3483) is mitigated by routing those models to the serial prefill with FP8 off. Qwen3.5 real-world files (unsloth UD-IQ2_XXS / IQ4_XS) load and run on the CPU (#3432, #3091), and `apr qa` certifies a CPU-only architecture instead of aborting. Qwen3.5 now also runs on the GPU: the hybrid Gated DeltaNet layers execute on CUDA (#3090, #3517) — nine device kernels in crates/aprender-gpu/src/kernels/gdn/ with host-reference tests, and the device forward is held to the CPU forward per layer against exact arithmetic (QHF-GPU-008) and end to end on argmax and a cosine floor (QHF-GPU-009), with no silent CPU fallback (QE2E-DEV-008). The dense sizes 4B/9B/27B were wrong on every backend because the loader read a bare `block_count` key that no GGUF carries and every file got 24 layers (#3346); the loader now reads `{arch}.block_count`, and the Gated DeltaNet GQA head mapping (32 or 48 value heads over 16 key heads) is the ggml tiled order llama.cpp converts to, on the CPU and in the CUDA kernel (#3527, #3510) — Qwen3.5 0.8B/2B/4B/9B/27B all answer the golden set on CPU and CUDA on both fleet GPUs. This replaces the 2026-09-18 plan to carry #3090 to 0.69.0 as a dated non-goal; on 2026-09-19 the operator ruled that GPU support up to 27B is required for this release (35B is tracked for post-0.70). The model-capability ladder (contracts/model-capability-ladder-v1.yaml) is green on lambda (sm_89) and gx10 (sm_121) at the cut, including the five Qwen3.5 rungs on cuda (receipts: evidence/dogfood/models/0.68.2/{lambda,gx10}.json); Qwen3-8B's optional rung stays optional pending the golden thinking-budget harness fix (#3486).

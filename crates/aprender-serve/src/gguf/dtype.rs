@@ -262,25 +262,33 @@ impl OwnedQuantizedModel {
     /// whitelist; do not read a `false` here as "this hybrid model is GPU-safe".
     #[must_use]
     pub(crate) fn has_gpu_unsupported_quant(&self) -> bool {
-        if gpu_unsupported_quant_qtype(self.lm_head_weight.qtype) {
-            return true;
+        self.first_gpu_unsupported_quant().is_some()
+    }
+
+    /// #3685: the first GGML quant type, among the tensors the GPU-resident forward reads,
+    /// that has no verified GPU GEMV kernel, or `None` when every one is GPU-eligible.
+    ///
+    /// The same tensors, order and whitelist as [`Self::has_gpu_unsupported_quant`], which
+    /// is defined through this, so the two cannot drift. It exists so that a caller refused
+    /// by the PMAT-785 capability gate can NAME the type (`apr parity` reports
+    /// `quant=F16`) instead of re-deriving the whitelist.
+    #[must_use]
+    pub fn first_gpu_unsupported_quant(&self) -> Option<u32> {
+        let bad = |q: u32| gpu_unsupported_quant_qtype(q).then_some(q);
+        if let Some(q) = bad(self.lm_head_weight.qtype) {
+            return Some(q);
         }
-        self.layers.iter().any(|l| {
-            let qkv_bad = match &l.qkv_weight {
-                OwnedQKVWeights::Fused(t) => gpu_unsupported_quant_qtype(t.qtype),
+        self.layers.iter().find_map(|l| {
+            let qkv = match &l.qkv_weight {
+                OwnedQKVWeights::Fused(t) => bad(t.qtype),
                 OwnedQKVWeights::Separate { q, k, v } => {
-                    gpu_unsupported_quant_qtype(q.qtype)
-                        || gpu_unsupported_quant_qtype(k.qtype)
-                        || gpu_unsupported_quant_qtype(v.qtype)
+                    bad(q.qtype).or_else(|| bad(k.qtype)).or_else(|| bad(v.qtype))
                 },
             };
-            qkv_bad
-                || gpu_unsupported_quant_qtype(l.attn_output_weight.qtype)
-                || gpu_unsupported_quant_qtype(l.ffn_up_weight.qtype)
-                || gpu_unsupported_quant_qtype(l.ffn_down_weight.qtype)
-                || l.ffn_gate_weight
-                    .as_ref()
-                    .is_some_and(|g| gpu_unsupported_quant_qtype(g.qtype))
+            qkv.or_else(|| bad(l.attn_output_weight.qtype))
+                .or_else(|| bad(l.ffn_up_weight.qtype))
+                .or_else(|| bad(l.ffn_down_weight.qtype))
+                .or_else(|| l.ffn_gate_weight.as_ref().and_then(|g| bad(g.qtype)))
         })
     }
 

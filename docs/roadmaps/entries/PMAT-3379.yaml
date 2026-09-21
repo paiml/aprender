@@ -1,0 +1,21 @@
+- id: PMAT-3379
+  github_issue: 3379
+  item_type: task
+  title: 'P0: Time-budgeted portfolio fit: time_limit split across models, each model early-stopped on its share — CRUX-O-09'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-09, competitor autogluon, demand 5. TimeBudget and EarlyStopping exist in automl/tuner.rs but budget ONE tuner. There is no allocation of a global limit across an ordered portfolio, no per-model time share, and no ''skip the rest'' when the budget is exhausted. FALSIFIABLE (contracts/crux-O-09-v1.yaml): the wall-clock of fit never exceeds time_limit by more than the tolerance — with time_limit=5s on a portfolio that would take >60s unconstrained, elapsed <= 5s + 1s AND at least one model was skipped with reason=budget in the summary; the budget is redistributed when a model finishes early — a model that uses 10% of its share returns the remainder to the pool; the next model''s share is asserted larger than the naive equal split. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

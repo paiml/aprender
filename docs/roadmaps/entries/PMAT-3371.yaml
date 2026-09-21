@@ -1,0 +1,21 @@
+- id: PMAT-3371
+  github_issue: 3371
+  item_type: task
+  title: 'P0: One-call tabular AutoML: fit(label) -> predict on a CSV — CRUX-O-01'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-01, competitor autogluon, demand 5. No predictor-level AutoML entry point exists. crates/aprender-core/src/automl/ is a hyperparameter TUNER (AutoTuner, TPE, GridSearch, RandomSearch, DESearch, TimeBudget) that tunes ONE estimator the caller already chose; nothing takes a labelled table and returns a fitted model. `apr train` is causal-LM pre-training only (crates/apr-cli/src/commands/train.rs:1-5) and `apr finetune --task classify` is text classification. FALSIFIABLE (contracts/crux-O-01-v1.yaml): fit on a labelled CSV returns a predictor whose predictions score above the majority-class baseline — on the iris fixture (crates/aprender-core/src/datasets/iris.csv) accuracy >= 0.90 AND the majority-class baseline is asserted at 0.333 in the same test; the same call works for a regression label without a problem_type argument — a numeric label column yields a regressor whose R^2 on a held-out split exceeds 0.5 AND the mean-predictor baseline is asserted at ~0.0; apr automl fit is reachable from the CLI — `apr automl fit --label class train.csv --out model.apr` exits 0 and writes a loadable artifact; a missing --label exits 2 with a message naming the flag. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

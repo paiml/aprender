@@ -1,0 +1,75 @@
+# CRUX-O-08 — Greedy weighted-ensemble selection over fitted models (Caruana ensemble selection)
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3378, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-08
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  github_issue: 3378
+  description: >
+    Greedy weighted-ensemble selection over fitted models (Caruana ensemble selection). Competitor verb: fit_weighted_ensemble=True (default)  # core/src/autogluon/core/models/greedy_ensemble/ensemble_selection.py. Gap measured in aprender at eb262f8eb: No ensemble-selection algorithm. MixtureOfExperts learns a gating network (ensemble/moe.rs); nothing performs the forward greedy selection with replacement over base-model validation predictions that yields non-negative weights summing to 1.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3378'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  weights_are_a_probability_vector_and_the_ensemble_never_scor:
+    formula: |
+      sum(w)=1, all w>=0, and validation metric(ensemble) >= max over members within 1e-9, on 3 fixtures
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "weights are a probability vector and the ensemble never scores below its best member"
+  selection_is_greedy_with_replacement_and_reproducible:
+    formula: |
+      with ensemble_size=25 the weight of a member equals its selection count / 25; two runs on the same inputs produce identical weights
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "selection is greedy with replacement and reproducible"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-08-001
+  rule: "weights are a probability vector and the ensemble never scores below its best member"
+  prediction: "sum(w)=1, all w>=0, and validation metric(ensemble) >= max over members within 1e-9, on 3 fixtures"
+  test: >-
+    LIVE-PENDING - weights are a probability vector and the ensemble never scores below its best member. No test surface exists today because the capability is unimplemented: Greedy weighted-ensemble selection over fitted models (Caruana ensemble selection) (aprender#3378, CRUX-O-08). PROMOTE by authoring a test named weights_simplex_and_no_regression in module `automl/ensemble_selection/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'weights are a probability vector and the ensemble never scores below its best member' is violated — the autogluon parity claim for CRUX-O-08 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-08-002
+  rule: "selection is greedy with replacement and reproducible"
+  prediction: "with ensemble_size=25 the weight of a member equals its selection count / 25; two runs on the same inputs produce identical weights"
+  test: >-
+    LIVE-PENDING - selection is greedy with replacement and reproducible. No test surface exists today because the capability is unimplemented: Greedy weighted-ensemble selection over fitted models (Caruana ensemble selection) (aprender#3378, CRUX-O-08). PROMOTE by authoring a test named greedy_with_replacement_counts in module `automl/ensemble_selection/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'selection is greedy with replacement and reproducible' is violated — the autogluon parity claim for CRUX-O-08 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "weights are a probability vector and the ensemble never scores below its best member"
+- type: invariant
+  property: "selection is greedy with replacement and reproducible"
+
+kani_harnesses:
+- id: KH-CRUX-O-08-001
+  obligation: weights_are_a_probability_vector_and_the_ensemble_never_scor
+  property: weights_are_a_probability_vector_and_the_ensemble_never_scor_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-08-002
+  obligation: selection_is_greedy_with_replacement_and_reproducible
+  property: selection_is_greedy_with_replacement_and_reproducible_holds_on_bounded_input
+  bound: 4

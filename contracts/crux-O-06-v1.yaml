@@ -1,0 +1,75 @@
+# CRUX-O-06 — K-fold bagging with out-of-fold predictions (num_bag_folds, predict_oof)
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3376, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-06
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  github_issue: 3376
+  description: >
+    K-fold bagging with out-of-fold predictions (num_bag_folds, predict_oof). Competitor verb: fit(..., num_bag_folds=8); predictor.predict_proba_oof(). Gap measured in aprender at eb262f8eb: KFold and StratifiedKFold exist (model_selection/) and cross_validate scores them, but no wrapper trains one child per fold, keeps all children, averages them at predict time and exposes the out-of-fold matrix. RandomForest bags trees internally and is not reusable for other estimators.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3376'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  oof_predictions_cover_every_training_row_exactly_once:
+    formula: |
+      for n rows and k folds the OOF matrix has n rows, no NaN, and each row was predicted by the one child that did not see it (asserted through a fold-id trace)
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "OOF predictions cover every training row exactly once"
+  bagged_prediction_is_the_mean_of_the_children:
+    formula: |
+      predict_proba of the bag equals the elementwise mean of the k children's predict_proba within 1e-12
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "bagged prediction is the mean of the children"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-06-001
+  rule: "OOF predictions cover every training row exactly once"
+  prediction: "for n rows and k folds the OOF matrix has n rows, no NaN, and each row was predicted by the one child that did not see it (asserted through a fold-id trace)"
+  test: >-
+    LIVE-PENDING - OOF predictions cover every training row exactly once. No test surface exists today because the capability is unimplemented: K-fold bagging with out-of-fold predictions (num_bag_folds, predict_oof) (aprender#3376, CRUX-O-06). PROMOTE by authoring a test named oof_covers_each_row_once in module `automl/bagging/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'OOF predictions cover every training row exactly once' is violated — the autogluon parity claim for CRUX-O-06 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-06-002
+  rule: "bagged prediction is the mean of the children"
+  prediction: "predict_proba of the bag equals the elementwise mean of the k children's predict_proba within 1e-12"
+  test: >-
+    LIVE-PENDING - bagged prediction is the mean of the children. No test surface exists today because the capability is unimplemented: K-fold bagging with out-of-fold predictions (num_bag_folds, predict_oof) (aprender#3376, CRUX-O-06). PROMOTE by authoring a test named bag_predict_is_child_mean in module `automl/bagging/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'bagged prediction is the mean of the children' is violated — the autogluon parity claim for CRUX-O-06 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "OOF predictions cover every training row exactly once"
+- type: invariant
+  property: "bagged prediction is the mean of the children"
+
+kani_harnesses:
+- id: KH-CRUX-O-06-001
+  obligation: oof_predictions_cover_every_training_row_exactly_once
+  property: oof_predictions_cover_every_training_row_exactly_once_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-06-002
+  obligation: bagged_prediction_is_the_mean_of_the_children
+  property: bagged_prediction_is_the_mean_of_the_children_holds_on_bounded_input
+  bound: 4

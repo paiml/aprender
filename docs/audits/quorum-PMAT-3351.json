@@ -1,0 +1,134 @@
+{
+  "ticket": "PMAT-3351,PMAT-3338",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 128 commit(s); judged against origin/main",
+  "head": "d915b8f16d8e6e6ca71f1cb80174ee656934cda3",
+  "diff_sha256": "91f1a74444bfab677fecdbe7149ffe30cfd7872203e8f67cc540044b7a14930b",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 47132,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff thoroughly addresses both PMAT-3338 and PMAT-3351. \n\n1. **PMAT-3338**: The fix in `truncate()` correctly walks back to the nearest char boundary (`!s.is_char_boundary(end)`) instead of slicing directly by byte index, eliminating the panic when encountering multi-byte characters like `∈`. The fix is backed up by `truncate_cuts_on_a_char_boundary_not_a_byte` test.\n2. **PMAT-3351**: The L2 column verification has been strengthened to check explicit links via `obligation`, `binds_to`, and `discharged_by` instead of relying on an index count. The `L2Status` enum correctly distinguishes between `Tested`, `Untested`, and `Unknown` depending on whether a linkage exists and can be resolved. \n3. **PMAT-3351 (Refusal)**: The `lint` command explicitly refuses `--strict-test-binding` on single files, correctly closing the loop for the false negative gate behavior where missing cross-references were unavoidable.\n\nNo gates were weakened; they were definitively strengthened. Both problems are fixed precisely as requested.",
+      "findings": [],
+      "raw_bytes": 4219,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff accurately implements the requirements for both PMAT-3351 and PMAT-3338.\n\n1. **PMAT-3351**:\n    - The L2 column now correctly reads the actual obligation-to-test links (`discharged_by`, `obligation`/`binds_to`) instead of using an index comparison, correctly reporting `Tested`, `Untested`, or `Unknown`.\n    - Single-file `pv lint --strict-test-binding` is now properly refused with a clear error message instructing the user to run the directory form instead of reporting a false negative.\n\n2. **PMAT-3338**:\n    - The `truncate` function in `obligation_matrix.rs` now properly cuts strings at a character boundary rather than blindly at a byte index, preventing panics on multi-byte characters.\n\nNo unrequested changes were made, no gates were weakened, and all new behavior is well-tested.",
+      "findings": [],
+      "raw_bytes": 3781,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff fully satisfies the requirements of tickets PMAT-3351 (#3347) and PMAT-3338 (#3338).\n1. PMAT-3351: The L2 column in obligation_matrix.rs now inspects actual obligation<->test links (supporting discharged_by, obligation, binds_to, comma-separated lists, and YAML sequences via the Citation enum) instead of doing an index comparison (idx < falsification_tests.len()). Unlinked obligations evaluate to Unknown ('?'), contracts without tests evaluate to Untested ('✗'), and linked obligations evaluate to Tested ('✓'). Single-file `pv lint --strict-test-binding` is cleanly refused to prevent false negative reports when source indexing is unavailable.\n2. PMAT-3338: `truncate` in obligation_matrix.rs now steps back to the nearest UTF-8 character boundary (`s.is_char_boundary(end)`), preventing byte-slice panics on multi-byte characters (such as '∈') during table rendering.\n3. Quality & Safety: All gates are preserved or strengthened, unit and integration tests explicitly exercise both bug fixes and edge cases, and no extraneous changes were introduced.",
+      "findings": [
+        {
+          "claim": "The L2 column reads obligation-to-test links (discharged_by and obligation/binds_to) rather than an index comparison, correctly distinguishing Tested, Untested, and Unknown statuses.",
+          "file": "crates/aprender-contracts/src/obligation_matrix.rs",
+          "grounding": "cited",
+          "line": 73
+        },
+        {
+          "claim": "Single-file pv lint --strict-test-binding is refused with an informative error rather than emitting false negative dangling reference warnings.",
+          "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+          "grounding": "cited",
+          "line": 55
+        },
+        {
+          "claim": "truncate cuts on UTF-8 char boundaries rather than byte indices, preventing panics on multi-byte characters in obligation properties.",
+          "file": "crates/aprender-contracts/src/obligation_matrix.rs",
+          "grounding": "cited",
+          "line": 318
+        }
+      ],
+      "raw_bytes": 5941,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+      "line": 55,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Single-file pv lint --strict-test-binding is refused with an informative error rather than emitting false negative dangling reference warnings."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/obligation_matrix.rs",
+      "line": 73,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The L2 column reads obligation-to-test links (discharged_by and obligation/binds_to) rather than an index comparison, correctly distinguishing Tested, Untested, and Unknown statuses."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/obligation_matrix.rs",
+      "line": 318,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "truncate cuts on UTF-8 char boundaries rather than byte indices, preventing panics on multi-byte characters in obligation properties."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

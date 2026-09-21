@@ -143,3 +143,31 @@ fn unsupported_quant_in_each_projection_forces_cpu() {
         "F16 in ffn_down must force CPU"
     );
 }
+
+/// #3685: `first_gpu_unsupported_quant` NAMES what the gate refuses, and a supported model
+/// never produces a name, so `apr parity` never reports a refusal for a GPU-eligible quant.
+/// `has_gpu_unsupported_quant` is defined through it; the two must agree on every model.
+#[test]
+fn first_gpu_unsupported_quant_names_the_type_and_stays_none_for_supported() {
+    let supported = create_test_model_with_config(&test_config());
+    assert_eq!(
+        supported.first_gpu_unsupported_quant(),
+        None,
+        "all-Q4K: nothing to name"
+    );
+
+    let mut lm = create_test_model_with_config(&test_config());
+    lm.lm_head_weight.qtype = 7; // Q5_1
+    assert_eq!(lm.first_gpu_unsupported_quant(), Some(7));
+
+    let mut down = create_test_model_with_config(&test_config());
+    down.layers[0].ffn_down_weight.qtype = 1; // F16, the #3685 model
+    assert_eq!(down.first_gpu_unsupported_quant(), Some(1));
+
+    for m in [&supported, &lm, &down] {
+        assert_eq!(
+            m.has_gpu_unsupported_quant(),
+            m.first_gpu_unsupported_quant().is_some()
+        );
+    }
+}

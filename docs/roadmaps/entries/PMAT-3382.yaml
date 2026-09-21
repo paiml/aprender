@@ -1,0 +1,21 @@
+- id: PMAT-3382
+  github_issue: 3382
+  item_type: task
+  title: 'P2: refit_full: retrain the selected models on train+validation after model selection — CRUX-O-12'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-12, competitor autogluon, demand 3. No refit-on-full-data step. cross_validate and grid_search return scores; the model returned is the one fitted on a fold, not on all rows. FALSIFIABLE (contracts/crux-O-12-v1.yaml): the refit model saw every row — the refit estimator''s training-row count equals n_train + n_val, asserted through the fitted row count it reports; refit keeps the selected hyperparameters and drops the bag children — the artifact after refit has one child per selected model and its hyperparameters are byte-equal to the pre-refit winner''s. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

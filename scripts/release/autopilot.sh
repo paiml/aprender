@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# 0.68.2 release autopilot (interrupt train, EPIC #3477; adapted from 0.68.1) (crates.io release of the 0.68 line; v0.68.0 is GitHub-only per operator 2026-09-17) (PMAT-1098; APR-RELEASE-001 §4 T-0..T-4, rev 2026-09-16). Fail-closed:
-# every irreversible step sits behind the repo's own gate. Terminal states only in STATUS, full logs
-# beside it. Never --force, never --allow-dirty, never a skip. The 0.66 precedent is
-# /mnt/nvme-raid0/agent-wt/rel-067-autopilot/ (0.67, which ran to close with T-4 automated).
+# Release autopilot (PMAT-1098; APR-RELEASE-001 §4 T-0..T-4, rev 2026-09-16), first run for 0.68.2
+# (EPIC #3477). Fail-closed: every irreversible step sits behind the repo's own gate. Terminal states
+# only in STATUS, full logs beside it. Never --force, never --allow-dirty, never a skip.
+# The train's identity is DERIVED (#3618, scripts/release/lib_release_params.sh): the version is the
+# one argument; milestone, epic and the state dir AP are read from GitHub and the repo, never literals.
 #
-#   autopilot.sh <bump-pr> [from-step] [to-step]
+#   autopilot.sh <version> <bump-pr> [from-step] [to-step]
 #   steps: wait deep dogfood tag cleanroom assets preflight cascade install hosts close
 #   T-4 for THIS train (operator 2026-09-17): cascade DRY-RUN receipt, then STOP and report — the cascade
 #   itself is the operator's step. Default to-step is dryrun; `cascade` and later run only when named.
@@ -13,9 +14,14 @@
 #   cascade-publish.sh refuses without a green `clean-room (aprender)` on exactly the tag commit.
 #   (§4.1 freeze and §4.2 bump are prepare_bump.sh: they need review, so they are not in here)
 set -uo pipefail
-V=0.68.2; T="v$V"; MS=12; EPIC=3477; REPO=paiml/aprender; INFRA=paiml/infra
-AP=/mnt/nvme-raid0/agent-wt/rel-0682-autopilot; STATUS="$AP/STATUS"; LOG="$AP/autopilot.log"
-PR="${1:?usage: autopilot.sh <bump-pr> [from-step] [to-step]}"; FROM="${2:-wait}"; TO="${3:-dryrun}"
+# D2/D3: $0-derived root, resolved BEFORE any cd and before the params that need it.
+# NOT `git rev-parse --show-toplevel` -- git refuses a container bind-mounted tree (#3586).
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || { echo "cannot resolve the repo root from $0" >&2; exit 2; }
+# shellcheck source=scripts/release/lib_release_params.sh
+. "$REPO_ROOT/scripts/release/lib_release_params.sh" || exit 2
+release_params "${1:-}" "$REPO_ROOT" || { echo "usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]" >&2; exit 2; }
+STATUS="$AP/STATUS"; LOG="$AP/autopilot.log"
+PR="${2:?usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]}"; FROM="${3:-wait}"; TO="${4:-dryrun}"
 STEPS=(wait deep dogfood tag cleanroom assets preflight dryrun cascade install hosts close)
 say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$STATUS" >> "$LOG"; }
 die() { say "STOP $*"; exit 1; }
@@ -32,9 +38,10 @@ run_step() { # run_step <name>: true when <name> is at or after FROM and at or b
 # so the old form could fail step-name validation for a reason unrelated to the step name.
 case " ${STEPS[*]} " in *" $FROM "*) ;; *) die "unknown step '$FROM' (${STEPS[*]})" ;; esac
 case " ${STEPS[*]} " in *" $TO "*) ;; *) die "unknown to-step '$TO' (${STEPS[*]})" ;; esac
-# D2/D3: $0-derived root and CARGO_HOME-relative bin, resolved BEFORE any cd.
-# NOT `git rev-parse --show-toplevel` -- git refuses a container bind-mounted tree (#3586).
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || die "cannot resolve the repo root from $0"
+# the milestone and epic, derived once, before any step can need them (#3618)
+MS=$(release_milestone_number) || die "milestone $V: cannot resolve exactly one"
+EPIC=$(release_epic_number) || die "release epic for $V: cannot resolve exactly one"
+say "PARAMS V=$V T=$T milestone=#$MS epic=#$EPIC AP=$AP"
 CARGO_BIN="${CARGO_HOME:-$HOME/.cargo}/bin"
 export PATH="$CARGO_BIN:$PATH"
 unset CARGO_REGISTRY_TOKEN
@@ -292,9 +299,12 @@ fi
 
 # 9. close: the epic hears the receipts; the milestone closes only when nothing is left on it
 if run_step close; then
-  gh issue comment "$EPIC" --repo $REPO --body "$T released: $(gh release view "$T" --repo $REPO --json url -q .url). Receipts: pre-publish dogfood GO at \`$MC\`, all release assets verified by \`scripts/check_release_assets.sh $T\`, crates.io cascade complete, the CUDA asset downloaded, verified and run on gx10 and yoga. clean-room (aprender) green on the tag (run $(cat "$AP/cleanroom-run-id" 2>/dev/null)), install.sh receipts on intel and gx10. Logs: rel-0682-autopilot/ on lambda." >> "$LOG" 2>&1 || say "WARN epic comment failed"
+  # SEC010 (bashrs-gate): read the run id with the read builtin, not $(cat "$AP/…") -- AP is derived
+  # now (#3655), so a cat over it inside the message is flagged as a path-traversal risk.
+  cleanroom_run_id=unknown; IFS= read -r cleanroom_run_id < "$AP/cleanroom-run-id" 2>/dev/null || cleanroom_run_id=unknown
+  gh issue comment "$EPIC" --repo $REPO --body "$T released: $(gh release view "$T" --repo $REPO --json url -q .url). Receipts: pre-publish dogfood GO at \`$MC\`, all release assets verified by \`scripts/check_release_assets.sh $T\`, crates.io cascade complete, the CUDA asset downloaded, verified and run on gx10 and yoga. clean-room (aprender) green on the tag (run ${cleanroom_run_id}), install.sh receipts on intel and gx10. Logs: $AP on $(hostname)." >> "$LOG" 2>&1 || say "WARN epic comment failed"
   open=$(gh api "repos/$REPO/milestones/$MS" --jq .open_issues); [ "$open" = 0 ] || die "milestone $V still has $open open item(s); not closing"
   gh api -X PATCH "repos/$REPO/milestones/$MS" -f state=closed >> "$LOG" 2>&1 && say "MILESTONE $V closed"
-  python3 "$AP/ledger.py" "$AP" "$MC" "$T" "$V" "$STATUS" >> "$LOG" 2>&1 && say "LEDGER record written in $AP (commit under docs/build-ledger/$(date -u +%F)/ via a docs PR)" || say "WARN ledger record not written"  # bashrs disable-line=DET002
+  python3 "$REPO_ROOT/scripts/release/ledger.py" "$AP" "$MC" "$T" "$V" "$STATUS" >> "$LOG" 2>&1 && say "LEDGER record written in $AP (commit under docs/build-ledger/$(date -u +%F)/ via a docs PR)" || say "WARN ledger record not written"  # bashrs disable-line=DET002
   say "DONE $V released, published, installed, receipts taken"
 fi

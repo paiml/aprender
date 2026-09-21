@@ -122,6 +122,7 @@ mod tests {
                 positional_encoding: PositionalEncoding::Rope,
                 mlp_type: MlpType::SwiGlu,
                 qk_norm: false,
+                deltanet: None,
             },
             tensor_template: TensorTemplate {
                 embedding: "model.embed_tokens.weight".to_string(),
