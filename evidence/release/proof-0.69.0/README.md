@@ -2,7 +2,8 @@
 
 The question: had this shape been the gate at 0.69.0's T-1, would it have stopped the train, and would it have
 named the leaks that actually shipped to the publish step? **Yes: RED, 795 findings.** Every leak the issue lists
-is named. This is `gate.json` in this directory.
+is named. `gate-summary.json` holds the verdict, the counts, every non-cell finding verbatim, and the cell findings
+aggregated per host/model. Re-run the command below for all 795 findings.
 
 ## What went in: 0.69.0's measurements, translated, none invented
 
