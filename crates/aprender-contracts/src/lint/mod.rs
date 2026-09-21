@@ -144,6 +144,23 @@ pub enum GateDetail {
 /// it and none can `match` it. That is what makes it extensible where `GateDetail` is
 /// not, and it is `#[non_exhaustive]` from birth so the *next* post-0.3.1 gate does
 /// not have to repeat this exercise.
+// `Shapes` is 304 bytes against a 88-byte second-largest, and adding `declines` to it is what
+// crossed the threshold — `origin/main` at 237fbc32f lints clean, this branch does not, so the
+// finding is this PR's and not inherited.
+//
+// ALLOWED RATHER THAN BOXED, deliberately. `large_enum_variant` is a cost heuristic about copying
+// and stack size: a `GateExtra` is built ONCE PER GATE RUN, moved a handful of times, and then
+// serialised. There is no hot path here for 216 bytes to matter on, so the lint is measuring a cost
+// this type does not pay.
+//
+// The alternatives are worse. Boxing one field (clippy suggests `pc_extract`) reclaims 16 bytes and
+// does not clear the ratio, so it would be churn that silences nothing. Boxing the whole payload —
+// `Shapes(Box<ShapesExtra>)` — turns a struct variant into a newtype variant, which CHANGES THE
+// SERDE REPRESENTATION of a `#[serde(tag = "type")]` enum that downstream consumers parse; the SLK
+// gate reads this JSON. Breaking a wire format to satisfy a stack-size heuristic is the wrong trade.
+//
+// If `GateExtra` ever ends up in a loop or a large collection, this allow is the thing to revisit.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
 #[non_exhaustive]
