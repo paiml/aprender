@@ -32,6 +32,9 @@ pub const RECEIPT_SCHEMA: &str = "crux-inference-receipt/v1";
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Entry {
     pub engines: BTreeMap<String, Result<String, String>>,
+    /// The request modes the verb owes (#3739 slice 4, e.g. `[nonstream, stream]` for a served verb), DECLARED by
+    /// the entry — pv never knows which verb streams. Empty: rows carry no mode.
+    pub modes: Vec<String>,
 }
 
 impl Entry {
@@ -60,6 +63,8 @@ pub struct CruxRow {
     pub rung: Option<String>,
     pub prompt_id: String,
     pub verdict: String,
+    /// `key.mode` (#3739 slice 4): absent on verbs whose entry declares no modes.
+    pub mode: Option<String>,
     /// The prompt the set declares its positive control (#3739, `positive_control: true`).
     pub positive_control: bool,
 }
@@ -116,6 +121,18 @@ pub fn read_mapping(root: &Path) -> Result<Option<Mapping>, ReleaseError> {
 /// A verb entry: a top-level `comparator: none` + `reason` answers every engine; otherwise each engine under
 /// `comparators:` is a mapping (a counterpart) or `{none: reason}`. An engine the entry does not name is absent.
 fn entry_of(e: &serde_yaml::Value, engines: &[String]) -> Entry {
+    let mut out = engines_of(e, engines);
+    out.modes = e
+        .get("modes")
+        .and_then(serde_yaml::Value::as_sequence)
+        .into_iter()
+        .flatten()
+        .filter_map(|m| m.as_str().map(str::to_string))
+        .collect();
+    out
+}
+
+fn engines_of(e: &serde_yaml::Value, engines: &[String]) -> Entry {
     let text = |v: &serde_yaml::Value| v.as_str().unwrap_or("").to_string();
     if e.get("comparator").and_then(serde_yaml::Value::as_str) == Some("none") {
         let reason = e.get("reason").map(text).unwrap_or_default();
@@ -124,6 +141,7 @@ fn entry_of(e: &serde_yaml::Value, engines: &[String]) -> Entry {
                 .iter()
                 .map(|g| (g.clone(), Err(reason.clone())))
                 .collect(),
+            modes: Vec::new(),
         };
     }
     let mut out = Entry::default();
@@ -202,6 +220,7 @@ fn rows_of(file: &str, v: &serde_json::Value) -> Vec<CruxRow> {
                 thinking: s(k, "thinking"),
                 rung: s(k, "rung"),
                 prompt_id: s(k, "prompt_id").unwrap_or_default(),
+                mode: s(k, "mode"),
                 verdict: s(c, "verdict").unwrap_or_default(),
                 positive_control: c
                     .get("positive_control")
@@ -274,7 +293,11 @@ pub fn emit(
         .collect();
     for key in &owed {
         st.obligations += 1;
-        emit_obligation(g, subject, key, rows, &mut st);
+        let modes = mapping
+            .and_then(|m| m.verbs.get(&key.3))
+            .map(|e| e.modes.as_slice())
+            .unwrap_or_default();
+        emit_obligation(g, subject, key, modes, rows, &mut st);
     }
     st.harness_broken = harness_broken(&owed, rows);
     st
@@ -342,6 +365,7 @@ fn emit_obligation(
     g: &mut Graph,
     subject: &Subject,
     key: &Key,
+    modes: &[String],
     rows: &[CruxRow],
     st: &mut CruxStats,
 ) {
@@ -386,5 +410,19 @@ fn emit_obligation(
         let fresh = r.version_line.contains(&subject.version) && r.version_line.contains(short);
         g.insert(rn.clone(), rel("fresh"), Term::boolean(fresh));
         g.insert(n.clone(), rel("cruxCell"), Term::iri(rn));
+    }
+    // a verb whose entry DECLARES modes owes a row in each (#3739 slice 4)
+    for m in modes {
+        let seen = rows.iter().any(|r| {
+            &r.host == host
+                && &r.model_sha256 == sha
+                && &r.verb == verb
+                && &r.thinking == thinking
+                && &r.rung == rung
+                && r.mode.as_deref() == Some(m.as_str())
+        });
+        if !seen {
+            g.insert(n.clone(), rel("modeMissing"), Term::string(m));
+        }
     }
 }

@@ -33,6 +33,7 @@ The receipt interface is agreed with aprender-62 (the producer; S3 has ONE judge
   - the correspondence file (`evidence/crux/verb-correspondence.yaml`, agreed with 76) needs an entry per derived verb covering every engine the file declares;
   - every (host, model, mapped verb, thinking, rung) owes a `:CruxCell`;
   - RED, UNJUDGED and absent are violations; ALL_WRONG is named, not a violation, pending the cop.
+- **CRUX request modes** (#3739 slice 4, agreed with 76): a correspondence entry may DECLARE `modes:` (the `serve run` entry declares `[nonstream, stream]`). Each CRUX obligation of that verb then owes ≥ 1 `:CruxCell` per declared mode, and a missing one is named `modeMissing`. pv never names the verb that streams.
 - **S2.5** `release:ModeEffect`: per (command, mode arg, level), it must be observed in an effect cell whose `output_sha256` differs from its base's, and a flag with no observable effect is RED.
 - **S2.5 sampling (a8's controls)** follow the cop's ruling, "SamplingArg: yes … their role becomes `sampling`, derived from construction", which fc landed at 17dfb1291 as role `sampling` + `sampling_kind`.
   - Per generating command with typed sampling args × representative model per arch × host, there are five control cells (`t0`, `topk1`, `seed-a`, `seed-a-again`, `seed-b`; the knob VALUES are the controls' own constants, never apr names), plus a `release:SamplingCheck`.
@@ -47,7 +48,7 @@ The receipt interface is agreed with aprender-62 (the producer; S3 has ONE judge
 | derivation on fc's real surface (7ed033b63, v1.1) with the 16 ladder host-model pairs | 14,984 cells (11,176 matrix, 3,042 effect, 390 base, 376 probe) in 9.2 s, 166 MB; `run` covers all 12 (thinking, rung) pairs per model and host |
 | shrink-only ceilings (`evidence/release/surface-ratchet.json`) | unknown_args 259 (all foreign), stdin_undeclared 71, measured on the same surface |
 | `cargo test -p aprender-contracts --lib` | 1709 passed |
-| `cargo test -p aprender-contracts-cli` (every target) | green; `ont_release_readiness` has 29 cases (the green base is synthesized from pv's own derived list) |
+| `cargo test -p aprender-contracts-cli` (every target) | green; `ont_release_readiness` has 30 cases (the green base is synthesized from pv's own derived list) |
 | `cargo clippy -p aprender-contracts -p aprender-contracts-cli --lib --tests -- -D warnings` | clean |
 | mutant: the covering array skips its vertical pass | 2 covering cases FAIL |
 | mutant: derivation drops the input-shape factor | issue-mutant-2 case FAILS |
