@@ -51,6 +51,7 @@ Honest limit: the route prints no per-request CUDA line, so the evidence is resi
 - `cargo test -p aprender-orchestrate --lib agent::`: 888 passed. `cargo clippy -p aprender-orchestrate --lib --tests -- -D warnings`: clean. `cargo fmt --check`: clean.
 - `scripts/check_apr_code_edit_verify.sh`: 30 rows ok, 0 fail, mutation-checked.
 - bashrs: 0 errors. `check_apr_bin_pinned`, `check_no_competing_harnesses`, `check_no_pipe_into_grep_q`, `check_guards_are_wired` and `check_roadmap_fragment_required`: pass.
+- `scripts/guard_tree.sh --no-cargo` at `b9d78124c`: 77 checks, 1 failed (`check_complexity_ratchet.sh`: the tool-call repair grew `parse_tool_calls_envelope` and added an over-threshold function). Split in `e060bc114`; the ratchet then reads "PASS (D2): none new, none grown".
 
 ## Out of scope, noted
 - `apr code -p --output-format json` printed nothing on a driver error: #3775 (aprender-f8, separate branch).
