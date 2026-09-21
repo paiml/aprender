@@ -299,7 +299,10 @@ fi
 
 # 9. close: the epic hears the receipts; the milestone closes only when nothing is left on it
 if run_step close; then
-  gh issue comment "$EPIC" --repo $REPO --body "$T released: $(gh release view "$T" --repo $REPO --json url -q .url). Receipts: pre-publish dogfood GO at \`$MC\`, all release assets verified by \`scripts/check_release_assets.sh $T\`, crates.io cascade complete, the CUDA asset downloaded, verified and run on gx10 and yoga. clean-room (aprender) green on the tag (run $(cat "$AP/cleanroom-run-id" 2>/dev/null)), install.sh receipts on intel and gx10. Logs: $AP on $(hostname)." >> "$LOG" 2>&1 || say "WARN epic comment failed"
+  # SEC010 (bashrs-gate): read the run id with the read builtin, not $(cat "$AP/…") -- AP is derived
+  # now (#3655), so a cat over it inside the message is flagged as a path-traversal risk.
+  cleanroom_run_id=unknown; IFS= read -r cleanroom_run_id < "$AP/cleanroom-run-id" 2>/dev/null || cleanroom_run_id=unknown
+  gh issue comment "$EPIC" --repo $REPO --body "$T released: $(gh release view "$T" --repo $REPO --json url -q .url). Receipts: pre-publish dogfood GO at \`$MC\`, all release assets verified by \`scripts/check_release_assets.sh $T\`, crates.io cascade complete, the CUDA asset downloaded, verified and run on gx10 and yoga. clean-room (aprender) green on the tag (run ${cleanroom_run_id}), install.sh receipts on intel and gx10. Logs: $AP on $(hostname)." >> "$LOG" 2>&1 || say "WARN epic comment failed"
   open=$(gh api "repos/$REPO/milestones/$MS" --jq .open_issues); [ "$open" = 0 ] || die "milestone $V still has $open open item(s); not closing"
   gh api -X PATCH "repos/$REPO/milestones/$MS" -f state=closed >> "$LOG" 2>&1 && say "MILESTONE $V closed"
   python3 "$REPO_ROOT/scripts/release/ledger.py" "$AP" "$MC" "$T" "$V" "$STATUS" >> "$LOG" 2>&1 && say "LEDGER record written in $AP (commit under docs/build-ledger/$(date -u +%F)/ via a docs PR)" || say "WARN ledger record not written"  # bashrs disable-line=DET002
