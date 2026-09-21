@@ -2881,24 +2881,18 @@ impl CudaTransformerTrainer {
             let tok_path = dir.join("tokenizer.json");
             if let Ok(json_bytes) = std::fs::read(&tok_path) {
                 if let Ok(tok) = serde_json::from_slice::<Jv>(&json_bytes) {
-                    if let Some(model) = tok.get("model") {
-                        if let Some(vocab_obj) = model.get("vocab").and_then(|v| v.as_object()) {
-                            let mut vocab_pairs: Vec<(String, u64)> = vocab_obj
-                                .iter()
-                                .filter_map(|(k, v)| Some((k.clone(), v.as_u64()?)))
-                                .collect();
-                            vocab_pairs.sort_by_key(|(_, id)| *id);
-                            let vocab: Vec<Jv> =
-                                vocab_pairs.into_iter().map(|(k, _)| Jv::String(k)).collect();
-                            writer.set_metadata("tokenizer.vocabulary", Jv::Array(vocab));
-                        }
-                        if let Some(merges_arr) = model.get("merges").and_then(|m| m.as_array()) {
-                            let merges: Vec<Jv> = merges_arr
-                                .iter()
-                                .filter_map(|v| v.as_str().map(|s| Jv::String(s.to_string())))
-                                .collect();
-                            writer.set_metadata("tokenizer.merges", Jv::Array(merges));
-                        }
+                    // #3803: the one reader (both merge forms; added tokens at their ids).
+                    if let Some(tables) =
+                        crate::tokenizer::apr_embed::embedded_tokenizer_tables(&tok)
+                    {
+                        writer.set_metadata(
+                            "tokenizer.vocabulary",
+                            Jv::Array(tables.vocabulary.into_iter().map(Jv::String).collect()),
+                        );
+                        writer.set_metadata(
+                            "tokenizer.merges",
+                            Jv::Array(tables.merges.into_iter().map(Jv::String).collect()),
+                        );
                     }
                     // BOS / EOS from added_tokens (HF format).
                     if let Some(added) = tok.get("added_tokens").and_then(|a| a.as_array()) {
@@ -3094,20 +3088,11 @@ impl CudaTransformerTrainer {
             tokenizer_path.and_then(|p| {
                 let json_bytes = std::fs::read(p).ok()?;
                 let tok: serde_json::Value = serde_json::from_slice(&json_bytes).ok()?;
-                let model = tok.get("model")?;
-                let vocab_obj = model.get("vocab")?.as_object()?;
-                // Build sorted-by-id vocab list
-                let mut vocab_pairs: Vec<(String, u64)> =
-                    vocab_obj.iter().filter_map(|(k, v)| Some((k.clone(), v.as_u64()?))).collect();
-                vocab_pairs.sort_by_key(|(_, id)| *id);
-                let vocab: Vec<String> = vocab_pairs.into_iter().map(|(k, _)| k).collect();
-                // Merges as "token1 token2" strings
-                let merges: Vec<String> = model
-                    .get("merges")?
-                    .as_array()?
-                    .iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect();
+                // #3803: the one reader (both merge forms; added tokens at their ids).
+                let crate::tokenizer::apr_embed::EmbeddedTokenizerTables {
+                    vocabulary: vocab,
+                    merges,
+                } = crate::tokenizer::apr_embed::embedded_tokenizer_tables(&tok)?;
                 // Special tokens: BOS=<s>=1, EOS=</s>=2 (from added_tokens)
                 let added = tok.get("added_tokens").and_then(|a| a.as_array());
                 let bos_id = added.and_then(|arr| {

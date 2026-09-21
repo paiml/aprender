@@ -44,6 +44,7 @@
 //! }
 //! ```
 
+pub mod apr_embed;
 mod bpe;
 mod char;
 mod config;
