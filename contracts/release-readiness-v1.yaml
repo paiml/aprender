@@ -153,6 +153,21 @@ shapes:
                              {path: release:withinBound, minCount: 1, maxCount: 1, in: [true]},
                              {path: release:boundSource, minCount: 1},
                              {path: release:fresh, minCount: 1, maxCount: 1, in: [true]}]}}
+  # S2.4 (#3739): every derived verb has a CRUX entry naming every declared engine — a counterpart or `none` + reason
+  - id: release-readiness-v1.crux-verb
+    targetClass: release:CruxVerb
+    properties:
+      - {path: release:mappingEntry, minCount: 1, maxCount: 1}
+      - {path: release:engineMissing, maxCount: 0}
+      - {path: release:noneWithoutReason, maxCount: 0}
+  # ... and every (host, model, mapped verb, thinking, rung) was compared: RED, UNJUDGED and absent are violations;
+  # ALL_WRONG is named, not a violation, pending the cop's ruling
+  - id: release-readiness-v1.crux
+    targetClass: release:CruxObligation
+    properties:
+      - {path: release:cruxCell, minCount: 1, nodeKind: IRI,
+         node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [GREEN, ALL_WRONG]},
+                             {path: release:fresh, minCount: 1, maxCount: 1, in: [true]}]}}
   # S2.5, the flag-effect oracle: every (command, mode arg, level) is OBSERVED to change the output somewhere —
   # an effect cell's output digest differs from its base's (#3745 issuecomment-5765674584)
   - id: release-readiness-v1.effect

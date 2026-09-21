@@ -279,7 +279,7 @@ pub struct SurfaceStats {
     pub stdin_undeclared: usize,
 }
 
-fn path_of<'a>(c: &'a Command) -> Vec<&'a str> {
+fn path_of(c: &Command) -> Vec<&str> {
     c.path.iter().map(String::as_str).collect()
 }
 

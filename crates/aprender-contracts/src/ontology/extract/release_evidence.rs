@@ -42,6 +42,7 @@ use crate::ontology::extract::cli_surface::{self, Surface, SurfaceStats};
 use crate::ontology::extract::gguf::{self, Rung};
 use crate::ontology::extract::pv_contract::{self, scalar};
 use crate::ontology::extract::release_cells::{self, CellKind, CellSpec, HostModels, ModelRef};
+use crate::ontology::extract::release_crux;
 use crate::ontology::extract::release_inputs::{
     self as inputs, Consumer, ContextRung, Dogfood, KernelReceipt, ReleaseError, Subject,
     SurfaceRatchet, TokReceipt,
@@ -94,6 +95,8 @@ pub struct ReleaseStats {
     /// cells named" (#3715 done_when 5). Not in the gate's JSON: at ~35k cells it is a file, not a field.
     #[serde(skip)]
     pub derived: Vec<CellSpec>,
+    /// S2.4: what CRUX derived (verbs, mapped verbs, obligations, rows, ALL_WRONG named).
+    pub crux: Option<release_crux::CruxStats>,
 }
 
 /// D1's projected wall time for one host (#3745 cop ruling): the derived cells, how many have a measured class
@@ -326,6 +329,8 @@ pub fn extract(
             what: e.what.clone(),
         })?;
     let ratchet = inputs::read_surface_ratchet(&root)?;
+    let crux_mapping = release_crux::read_mapping(&root)?;
+    let crux_rows = release_crux::read_receipts(&subject.crux_dir(&root), &root)?;
     Ok(build(
         g,
         subject,
@@ -339,6 +344,8 @@ pub fn extract(
             dogfood: dogfood.as_ref(),
             surface: surface.as_ref(),
             ratchet,
+            crux_mapping: crux_mapping.as_ref(),
+            crux_rows: &crux_rows,
         },
     ))
 }
@@ -356,6 +363,9 @@ pub struct Inputs<'a> {
     pub surface: Option<&'a Surface>,
     /// The committed ceilings of the two shrink-only counts.
     pub ratchet: Option<SurfaceRatchet>,
+    /// S2.4: the CRUX correspondence file and the `:CruxCell` rows (#3739).
+    pub crux_mapping: Option<&'a release_crux::Mapping>,
+    pub crux_rows: &'a [release_crux::CruxRow],
 }
 
 /// The release graph from parsed inputs: pure, no filesystem (R-15).
@@ -382,6 +392,14 @@ pub fn build(g: &mut Graph, subject: &Subject, i: &Inputs<'_>) -> ReleaseStats {
         let hm = host_models(&views, i.ctx_rungs);
         let cells = release_cells::derive(surface, &hm);
         emit_derived(g, subject, &views, &cells, &mut stats);
+        stats.crux = Some(release_crux::emit(
+            g,
+            subject,
+            surface,
+            &cells,
+            i.crux_mapping,
+            i.crux_rows,
+        ));
         stats.projection = project(&views, &cells);
         stats.derived = cells;
     }
@@ -598,6 +616,8 @@ pub fn positive_control() -> bool {
                 dogfood: None,
                 surface: Some(&surface),
                 ratchet: None,
+                crux_mapping: None,
+                crux_rows: &[],
             },
         );
         let is_cell = g
@@ -823,11 +843,19 @@ fn emit_host(g: &mut Graph, subject: &Subject, v: &HostView<'_>, stats: &mut Rel
             );
         }
         // #3745 S2: a row keys onto its cell by `cell_id` and nothing else — one without it measured no cell
-        for (i, c) in r.cells.iter().enumerate().filter(|(_, c)| c.cell_id.is_none()) {
+        for (i, c) in r
+            .cells
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.cell_id.is_none())
+        {
             g.insert(
                 h.clone(),
                 rel("unkeyedRow"),
-                Term::string(format!("{}#{i}: no cell_id (verdict={})", r.file, c.verdict)),
+                Term::string(format!(
+                    "{}#{i}: no cell_id (verdict={})",
+                    r.file, c.verdict
+                )),
             );
         }
     }

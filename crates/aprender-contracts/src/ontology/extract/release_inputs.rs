@@ -46,6 +46,8 @@ pub struct Subject {
     /// `--surface`: the release candidate's `apr surface --json` (#3745 S1). `None` → no cell can be derived,
     /// which the `.release` shape names.
     pub surface: Option<PathBuf>,
+    /// `--crux-receipts`: `None` → `evidence/crux/<version>/` (#3739's harness, S2.4).
+    pub crux_receipts_dir: Option<PathBuf>,
 }
 
 impl Subject {
@@ -64,6 +66,7 @@ impl Subject {
             dogfood_receipt: None,
             tokenizer_receipts_dir: None,
             surface: None,
+            crux_receipts_dir: None,
         })
     }
 
@@ -92,6 +95,13 @@ impl Subject {
         self.tokenizer_receipts_dir
             .clone()
             .unwrap_or_else(|| root.join(TOKENIZER_EVIDENCE_DIR).join(&self.version))
+    }
+
+    #[must_use]
+    pub fn crux_dir(&self, root: &Path) -> PathBuf {
+        self.crux_receipts_dir
+            .clone()
+            .unwrap_or_else(|| root.join("evidence/crux").join(&self.version))
     }
 
     #[must_use]

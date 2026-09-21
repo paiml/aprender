@@ -231,11 +231,11 @@ fn the_tracked_repo_graph_is_fresh() {
     // 0.69 batch folded #3600 in and the count went 6 -> 9 with its three shapes. #3715 added the nine-shape
     // `release-readiness-v1` family (shapes_n=18, triples=15863, measured on its branch); it contributes no focus
     // node to a PR's graph — the release evidence is extracted only under `--release-*`. #3745 S2 (#3777) added
-    // four more for the DERIVED cell classes (effect, probe, model-cell, effect-cell): 22.
+    // six more for the DERIVED cell classes (effect, probe, model-cell, effect-cell) and CRUX (crux-verb, crux): 24.
     assert_eq!(
         v["shapes_n"],
-        22,
-        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + release-readiness-v1{{.effect,.probe,.model-cell,.effect-cell}} (#3745 S2)\n{}",
+        24,
+        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + release-readiness-v1{{.effect,.probe,.model-cell,.effect-cell,.crux-verb,.crux}} (#3745 S2)\n{}",
         show(&r)
     );
 }

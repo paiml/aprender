@@ -494,6 +494,48 @@
     ] ;
 .
 
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.crux-verb> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/release/CruxVerb> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/mappingEntry> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/engineMissing> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/noneWithoutReason> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.crux> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/release/CruxObligation> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/cruxCell> ;
+        sh:minCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.crux/node> ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.crux/node> a sh:NodeShape ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "GREEN" "ALL_WRONG" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/fresh> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
 <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.effect> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/release/ModeEffect> ;
     sh:property [

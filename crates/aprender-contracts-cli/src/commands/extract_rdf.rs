@@ -187,12 +187,11 @@ fn write_cells(
         )
         .into());
     }
-    let doc = serde_json::json!({
-        "schema": "apr-release-cells/v1",
-        "version": subject.version,
-        "release_commit": subject.commit,
-        "cells": derived,
-    });
+    let mut doc = serde_json::Map::new();
+    doc.insert("schema".into(), "apr-release-cells/v1".into());
+    doc.insert("version".into(), subject.version.clone().into());
+    doc.insert("release_commit".into(), subject.commit.clone().into());
+    doc.insert("cells".into(), serde_json::to_value(derived)?);
     std::fs::write(path, serde_json::to_string_pretty(&doc)?)?;
     Ok(())
 }
