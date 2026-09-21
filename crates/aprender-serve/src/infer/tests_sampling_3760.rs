@@ -69,3 +69,18 @@ fn top_k_one_and_temperature_zero_stay_greedy_on_safetensors() {
         );
     }
 }
+
+/// The greedy-only wgpu decoders serve greedy requests only; a sampled one goes to the
+/// CPU loop, which draws (#3760). Before, `apr run --temperature 0.8` on a host with a
+/// Vulkan adapter took the wgpu argmax and was greedy.
+#[cfg(feature = "gpu")]
+#[test]
+fn wgpu_serves_greedy_requests_only() {
+    assert!(wgpu_can_serve(0.0, 40));
+    assert!(wgpu_can_serve(0.8, 1));
+    assert!(!wgpu_can_serve(0.8, 40));
+    assert!(
+        !wgpu_can_serve(0.8, 0),
+        "top_k 0 disables the filter and samples"
+    );
+}
