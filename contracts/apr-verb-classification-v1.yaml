@@ -53,9 +53,17 @@ verbs:
   category: evaluation
   bucket: refusal
   basis: measured
+  exit_code: 5
+  line: 'error: Validation failed: Failed to create model: Format error: Architecture ''qwen35'' is the
+    Qwen3.5 hybrid (Gated Delta Net, detected tensor ''blk.0.ssm_a''): it runs through `Qwen35Model` (realizar::gguf::forward_qwen35,
+    CPU #3091) or `Qwen35CudaModel` (GPU #3090), NOT through the dense QuantizedGGUFTransformer loader,
+    whose per-layer tensor names this file does not carry. Load it with `apr run` / `apr chat`, which
+    dispatch this architecture to the hybrid forward.'
+  stream: stderr
   reason: refuses qwen35 outright — the benchmark subcommand cannot measure the flagship architecture.
     The refusal is HONEST today and stays a refusal.
   removed_by: v0.70
+  measured_on: apr 0.68.2 (e6f77c98c), Qwen3.5-0.8B-Q4_K_M.gguf, 2026-09-21
   source: gh#3597
 - verb: canary
   requires_model: false
