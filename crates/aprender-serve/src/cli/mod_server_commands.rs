@@ -6,6 +6,20 @@
 mod server_commands {
     use super::Result;
 
+    /// #3609: the refusal every serve path gives for a model with no vocabulary.
+    ///
+    /// These paths used to substitute `token0..tokenN` and serve that. Placeholder tokens are
+    /// not a tokenizer: a model with no vocabulary refuses by name, it does not load.
+    fn no_vocabulary(what: &str) -> crate::error::RealizarError {
+        crate::error::RealizarError::UnsupportedOperation {
+            operation: "load_vocabulary".to_string(),
+            reason: format!(
+                "{what} has no vocabulary to tokenize with, so there is nothing to serve; \
+                 refusing to substitute placeholder tokens (#3609)"
+            ),
+        }
+    }
+
     /// Result of preparing server state (returned by `prepare_serve_state`)
     pub struct PreparedServer {
         /// The prepared AppState for the server
@@ -95,12 +109,10 @@ mod server_commands {
         println!("  Layers: {}", quantized_model.layers.len());
 
         // Extract vocabulary from GGUF for proper token decoding
-        let vocab = mapped.model.vocabulary().unwrap_or_else(|| {
-            eprintln!("  Warning: No vocabulary in GGUF, using placeholder tokens");
-            (0..quantized_model.config.vocab_size)
-                .map(|i| format!("token{i}"))
-                .collect()
-        });
+        let vocab = mapped
+            .model
+            .vocabulary()
+            .ok_or_else(|| no_vocabulary("the GGUF (no tokenizer.ggml.tokens)"))?;
         println!("  Vocab loaded: {} tokens", vocab.len());
         println!();
 
@@ -336,14 +348,9 @@ mod server_commands {
                 }
             })?;
 
-            let vocab_size = cuda_model.config().vocab_size;
-            #[allow(clippy::map_unwrap_or)]
             let vocab = crate::apr::AprV2Model::load_tokenizer_from_sibling(model_path_obj)
                 .map(|(v, _, _)| v)
-                .unwrap_or_else(|| {
-                    println!("  Warning: No tokenizer.json found, using simple vocabulary");
-                    (0..vocab_size).map(|i| format!("token{i}")).collect()
-                });
+                .ok_or_else(|| no_vocabulary("the SafeTensors model (no sibling tokenizer.json)"))?;
 
             println!("  Vocab size: {}", vocab.len());
 
@@ -377,15 +384,9 @@ mod server_commands {
         println!("  Layers: {}", transformer.config.num_layers);
         println!("  Hidden: {}", transformer.config.hidden_dim);
 
-        #[allow(clippy::map_unwrap_or)]
         let vocab = crate::apr::AprV2Model::load_tokenizer_from_sibling(model_path_obj)
             .map(|(v, _, _)| v)
-            .unwrap_or_else(|| {
-                println!("  Warning: No tokenizer.json found, using simple vocabulary");
-                (0..transformer.config.vocab_size)
-                    .map(|i| format!("token{i}"))
-                    .collect()
-            });
+            .ok_or_else(|| no_vocabulary("the SafeTensors model (no sibling tokenizer.json)"))?;
 
         println!("  Vocab size: {}", vocab.len());
         println!("  Mode: CPU (F32 inference)");
@@ -449,12 +450,7 @@ mod server_commands {
                     .and_then(|m| m.load_embedded_tokenizer())
                     .map(|t| t.id_to_token.clone())
             })
-            .unwrap_or_else(|| {
-                println!("  Warning: No vocabulary found, using simple vocabulary");
-                (0..model.config.vocab_size)
-                    .map(|i| format!("token{i}"))
-                    .collect()
-            });
+            .ok_or_else(|| no_vocabulary("the APR model (no sibling tokenizer.json, no embedded tokenizer)"))?;
 
         println!("  Vocab size: {}", vocab.len());
         println!("  Mode: CPU (per-tensor scratch dequant)");
@@ -494,10 +490,7 @@ mod server_commands {
         let vocab = apr_v2.as_ref()
             .and_then(|m| m.metadata().get_embedded_vocabulary())
             .or_else(|| crate::apr::AprV2Model::load_tokenizer_from_sibling(path).map(|(v, _, _)| v))
-            .unwrap_or_else(|| {
-                println!("  Warning: No tokenizer found");
-                (0..model.config.vocab_size).map(|i| format!("token{i}")).collect()
-            });
+            .ok_or_else(|| no_vocabulary("the APR model (no embedded vocabulary, no sibling tokenizer.json)"))?;
         println!("  Vocab size: {}", vocab.len());
 
         // PMAT-785: fail-closed quant gate at GPU-resident construction. An APR
@@ -556,10 +549,7 @@ mod server_commands {
                     .and_then(|m| m.load_embedded_tokenizer())
                     .map(|t| (t.id_to_token.clone(), None))
             })
-            .unwrap_or_else(|| {
-                println!("  Warning: No vocabulary found, using simple vocabulary");
-                ((0..151936).map(|i| format!("token{i}")).collect(), None)
-            });
+            .ok_or_else(|| no_vocabulary("the APR model (no sibling tokenizer.json, no embedded tokenizer)"))?;
 
         println!("  Vocab: {} tokens", vocab.len());
         if let Some(eos) = eos_id {

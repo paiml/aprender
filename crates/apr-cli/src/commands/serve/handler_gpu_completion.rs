@@ -418,7 +418,7 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         .green()
     );
 
-    let vocab = extract_gguf_vocab(&mapped_model, quantized_model.config().vocab_size);
+    let vocab = extract_gguf_vocab(&mapped_model)?;
 
     // PERF-021 / N4 / I-2: a request has a RESOLUTION, and it is reported.
     //
@@ -463,26 +463,27 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     run_cpu_server(quantized_model, vocab, Some(mapped_model), config, Some(offload))
 }
 
-/// Extract vocabulary from GGUF model, falling back to placeholder tokens.
+/// Extract the vocabulary from a GGUF model, or refuse to serve it (#3609).
 ///
-/// GH-226: When the GGUF lacks `tokenizer.ggml.tokens` metadata, the placeholder
-/// vocabulary must include `<unk>` so that `BPETokenizer::new` can find it.
-/// Without this, the serve path fails with "Unknown token '<unk>' not in vocabulary"
-/// and the server exits before binding — causing "Server failed to become ready".
-fn extract_gguf_vocab(
-    mapped_model: &realizar::gguf::MappedGGUFModel,
-    vocab_size: usize,
-) -> Vec<String> {
-    mapped_model.model.vocabulary().unwrap_or_else(|| {
-        eprintln!("Warning: No vocabulary in GGUF, using placeholder tokens");
-        let mut vocab: Vec<String> = (0..vocab_size).map(|i| format!("token{i}")).collect();
-        // GH-226: Ensure <unk> is present for BPETokenizer compatibility.
-        // Use slot 0 (standard convention for unknown token).
-        if !vocab.is_empty() {
-            vocab[0] = "<unk>".to_string();
-        }
-        vocab
-    })
+/// GH-226 once filled a missing `tokenizer.ggml.tokens` with `token0..tokenN` and put
+/// `<unk>` in slot 0, because `BPETokenizer::new` required one. So a model with NO
+/// vocabulary loaded, while a model with a real vocabulary that lacked `<unk>` (Qwen3.5)
+/// was refused: the less-specified input was the one accepted. The unknown token is
+/// now optional, and a model with no vocabulary refuses by name. Placeholder tokens
+/// are not a tokenizer.
+fn extract_gguf_vocab(mapped_model: &realizar::gguf::MappedGGUFModel) -> Result<Vec<String>> {
+    mapped_model
+        .model
+        .vocabulary()
+        .ok_or_else(|| no_vocabulary("the GGUF (no tokenizer.ggml.tokens)"))
+}
+
+/// #3609: the refusal every serve path gives for a model with no vocabulary.
+fn no_vocabulary(what: &str) -> CliError {
+    CliError::ModelLoadFailed(format!(
+        "{what} has no vocabulary to tokenize with, so there is nothing to serve; \
+         refusing to substitute placeholder tokens (#3609)"
+    ))
 }
 
 /// #2762: resolve the KV-cache context length for the GGUF + CUDA serve path.
@@ -651,7 +652,7 @@ fn start_gguf_server_cuda(
             let quantized_model = OwnedQuantizedModel::from_mapped(&mapped_model).map_err(|e| {
                 CliError::ModelLoadFailed(format!("Failed to rebuild quantized model: {e}"))
             })?;
-            let vocab = extract_gguf_vocab(&mapped_model, quantized_model.config().vocab_size);
+            let vocab = extract_gguf_vocab(&mapped_model)?;
             // CUDA init failed and this process fell back to CPU. The offload
             // report travels with it UNCHANGED, so `/v1/effective-config` shows
             // `gpu_layers_resolved` beside `backend_loaded: ["cpu"]` — which is
