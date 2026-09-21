@@ -53,7 +53,7 @@
 #
 # GPU sharing (the cop's rule, /mnt/nvme-raid0/agent-wt/gpu-lock-rule.txt, rev 5):
 # on the gpu lane each cell (one prompt, every engine) runs as ONE command through
-# gpu-q (priority queue in front of /tmp/apr-gpu.lock; CRUX_GPU_PRIO, default 5),
+# gpu-q (priority queue in front of /tmp/apr-gpu.lock; CRUX_GPU_PRIO, default 3),
 # falling back to a bounded flock recorded as "may have jumped the queue". Every
 # engine runs under `choom -n 1000`, so a measurement is the OOM victim, never a
 # CI runner, and ollama must leave VRAM before the cell ends.
@@ -202,7 +202,9 @@ for eng in hf llamafile; do
 done
 GPUQ="${GPUQ_BIN:-$HOME/.local/bin/gpu-q}"
 GPUQ_OK=0
-GPU_PRIO="${CRUX_GPU_PRIO:-5}"
+# gpu-q priority classes (the cop, 2026-09-21): CRUX development runs = 3, the
+# release train's own T-1 run = 1 (its autopilot passes CRUX_GPU_PRIO=1).
+GPU_PRIO="${CRUX_GPU_PRIO:-3}"
 LOCK_VIA="flock /tmp/apr-gpu.lock (no gpu-q with \`wait\` on this host: may have jumped the queue)"
 if [ -x "$GPUQ" ]; then
   gpuq_caps=$("$GPUQ" --caps 2>/dev/null)
