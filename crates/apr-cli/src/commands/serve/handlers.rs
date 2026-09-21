@@ -594,16 +594,13 @@ fn wgpu_smoke_test(
 }
 
 /// PMAT-340: Extract the real vocab from the GGUF for tokenize/detokenize.
+/// #3609: a GGUF with no vocabulary refuses by name (see `extract_gguf_vocab`).
 #[cfg(feature = "wgpu")]
-fn wgpu_vocabulary(mapped: &realizar::gguf::MappedGGUFModel, vocab_size: usize) -> Vec<String> {
-    mapped.model.vocabulary().unwrap_or_else(|| {
-        eprintln!("Warning: No vocabulary in GGUF, using placeholder");
-        let mut v: Vec<String> = (0..vocab_size).map(|i| format!("token{i}")).collect();
-        if !v.is_empty() {
-            v[0] = "<unk>".to_string();
-        }
-        v
-    })
+fn wgpu_vocabulary(mapped: &realizar::gguf::MappedGGUFModel) -> Result<Vec<String>> {
+    mapped
+        .model
+        .vocabulary()
+        .ok_or_else(|| no_vocabulary("the GGUF (no tokenizer.ggml.tokens)"))
 }
 
 /// PMAT-341: Build a BPE tokenizer from the GGUF merge rules.
@@ -822,7 +819,7 @@ fn serve_wgpu_backend(
     println!("{}", "Starting WGPU inference server...".cyan());
 
     // PMAT-340: Extract real vocab from GGUF for tokenization/detokenization
-    let vocab = wgpu_vocabulary(mapped, vocab_size);
+    let vocab = wgpu_vocabulary(mapped)?;
     // PMAT-341: Extract BPE merge rules for proper tokenization
     let merges = mapped.model.merge_rules().unwrap_or_default();
     println!(
@@ -1443,15 +1440,7 @@ fn try_apr_quantized_cpu(model_path: &Path, config: &ServerConfig) -> Result<()>
     let vocab = mapped
         .metadata
         .get_embedded_vocabulary()
-        .unwrap_or_else(|| {
-            let vocab_size = mapped.metadata.vocab_size.unwrap_or(32000);
-            eprintln!("Warning: No embedded vocabulary in APR, using placeholder tokens");
-            let mut v: Vec<String> = (0..vocab_size).map(|i| format!("token{i}")).collect();
-            if !v.is_empty() {
-                v[0] = "<unk>".to_string();
-            }
-            v
-        });
+        .ok_or_else(|| no_vocabulary("the APR file (no embedded vocabulary)"))?;
 
     println!("{}", "Q4K CPU inference ready".green());
 

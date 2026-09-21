@@ -50,15 +50,10 @@ fn start_apr_server_gpu(
     );
 
     // Extract vocabulary from embedded APR metadata
-    let vocab = mapped.metadata.get_embedded_vocabulary().unwrap_or_else(|| {
-        let vocab_size = mapped.metadata.vocab_size.unwrap_or(32000);
-        eprintln!("Warning: No embedded vocabulary in APR, using placeholder tokens");
-        let mut v: Vec<String> = (0..vocab_size).map(|i| format!("token{i}")).collect();
-        if !v.is_empty() {
-            v[0] = "<unk>".to_string();
-        }
-        v
-    });
+    let vocab = mapped
+        .metadata
+        .get_embedded_vocabulary()
+        .ok_or_else(|| no_vocabulary("the APR file (no embedded vocabulary)"))?;
 
     // GH-88: Extract merge rules for proper BPE tokenization (HuggingFace models)
     let merges = mapped.metadata.get_embedded_merges();
@@ -126,13 +121,9 @@ fn start_apr_q4k_server_gpu(
                 .and_then(|m| m.load_embedded_tokenizer())
                 .map(|t| (t.id_to_token.clone(), None))
         })
-        .unwrap_or_else(|| {
-            println!(
-                "{}",
-                "Warning: No vocabulary found, using placeholder tokens".yellow()
-            );
-            ((0..151936).map(|i| format!("token{i}")).collect(), None)
-        });
+        .ok_or_else(|| {
+            no_vocabulary("the APR model (no sibling tokenizer.json, no embedded tokenizer)")
+        })?;
 
     println!("  Vocab: {} tokens", vocab.len());
     if let Some(eos) = eos_id {
@@ -200,15 +191,10 @@ fn start_safetensors_server_gpu(
     );
 
     // Extract vocabulary from embedded APR metadata
-    let vocab = mapped.metadata.get_embedded_vocabulary().unwrap_or_else(|| {
-        let vocab_size = mapped.metadata.vocab_size.unwrap_or(32000);
-        eprintln!("Warning: No embedded vocabulary in APR, using placeholder tokens");
-        let mut v: Vec<String> = (0..vocab_size).map(|i| format!("token{i}")).collect();
-        if !v.is_empty() {
-            v[0] = "<unk>".to_string();
-        }
-        v
-    });
+    let vocab = mapped
+        .metadata
+        .get_embedded_vocabulary()
+        .ok_or_else(|| no_vocabulary("the APR file (no embedded vocabulary)"))?;
 
     // GH-88: Extract merge rules for proper BPE tokenization (HuggingFace models)
     let merges = mapped.metadata.get_embedded_merges();
@@ -281,15 +267,10 @@ fn start_safetensors_server_cpu_quantized(
     );
 
     // Extract vocabulary from embedded APR metadata
-    let vocab = mapped.metadata.get_embedded_vocabulary().unwrap_or_else(|| {
-        let vocab_size = mapped.metadata.vocab_size.unwrap_or(32000);
-        eprintln!("Warning: No embedded vocabulary in APR, using placeholder tokens");
-        let mut v: Vec<String> = (0..vocab_size).map(|i| format!("token{i}")).collect();
-        if !v.is_empty() {
-            v[0] = "<unk>".to_string();
-        }
-        v
-    });
+    let vocab = mapped
+        .metadata
+        .get_embedded_vocabulary()
+        .ok_or_else(|| no_vocabulary("the APR file (no embedded vocabulary)"))?;
 
     let _ = std::fs::remove_file(&tmp_apr);
 

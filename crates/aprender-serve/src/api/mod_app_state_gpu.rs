@@ -28,7 +28,8 @@ impl AppState {
                 }
             })
             .collect();
-        let tokenizer = BPETokenizer::new(vocab, vec![], "<unk>")?;
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
+        let tokenizer = BPETokenizer::new(vocab, vec![], unk)?;
 
         let (audit_logger, audit_sink) = create_audit_state();
         Ok(Self {
@@ -85,7 +86,8 @@ impl AppState {
         cached_model: crate::gguf::OwnedQuantizedModelCachedSync,
         vocab: Vec<String>,
     ) -> Result<Self, RealizarError> {
-        let tokenizer = BPETokenizer::new(vocab, vec![], "<unk>")?;
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
+        let tokenizer = BPETokenizer::new(vocab, vec![], unk)?;
 
         let (audit_logger, audit_sink) = create_audit_state();
         Ok(Self {
@@ -140,7 +142,8 @@ impl AppState {
         quantized_model: crate::gguf::OwnedQuantizedModel,
         vocab: Vec<String>,
     ) -> Result<Self, RealizarError> {
-        let tokenizer = BPETokenizer::new(vocab, vec![], "<unk>")?;
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
+        let tokenizer = BPETokenizer::new(vocab, vec![], unk)?;
 
         // PMAT-181: Cache architecture for chat template auto-detection.
         // Qwen3 models get Qwen3NoThinkTemplate (disables thinking mode).
@@ -208,7 +211,8 @@ impl AppState {
         cuda_model: crate::gguf::OwnedQuantizedModelCuda,
         vocab: Vec<String>,
     ) -> Result<Self, RealizarError> {
-        let tokenizer = BPETokenizer::new(vocab, vec![], "<unk>")?;
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
+        let tokenizer = BPETokenizer::new(vocab, vec![], unk)?;
         // PMAT-073: Cache architecture at construction to avoid RwLock in hot path.
         // model_architecture() was blocking HTTP handlers for ~2s due to read lock
         // contention with the batch scheduler's write lock.
@@ -265,7 +269,8 @@ impl AppState {
         vocab: Vec<String>,
         merges: Vec<(String, String)>,
     ) -> Result<Self, RealizarError> {
-        let tokenizer = BPETokenizer::with_merges(vocab, merges, "<unk>")?;
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
+        let tokenizer = BPETokenizer::with_merges(vocab, merges, unk)?;
         let arch = Some(cuda_model.model().config.architecture.clone());
         let eos = cuda_model.model().config.eos_token_id;
 
@@ -328,7 +333,8 @@ impl AppState {
         transformer: crate::apr_transformer::AprTransformer,
         vocab: Vec<String>,
     ) -> Result<Self, RealizarError> {
-        let tokenizer = BPETokenizer::new(vocab, vec![], "<unk>")?;
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
+        let tokenizer = BPETokenizer::new(vocab, vec![], unk)?;
 
         let (audit_logger, audit_sink) = create_audit_state();
         Ok(Self {
@@ -555,7 +561,8 @@ impl AppState {
         vocab: Vec<String>,
         eos_id: Option<u32>,
     ) -> Result<Self, RealizarError> {
-        let tokenizer = BPETokenizer::new(vocab, vec![], "<unk>")?;
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
+        let tokenizer = BPETokenizer::new(vocab, vec![], unk)?;
         let (audit_logger, audit_sink) = create_audit_state();
         Ok(Self {
             model: None,
@@ -601,7 +608,8 @@ impl AppState {
         model: crate::safetensors_cuda::SafeTensorsCudaModel,
         vocab: Vec<String>,
     ) -> Result<Self, RealizarError> {
-        let tokenizer = BPETokenizer::new(vocab, vec![], "<unk>")?;
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
+        let tokenizer = BPETokenizer::new(vocab, vec![], unk)?;
         let metrics = Arc::new(MetricsCollector::new());
         let (audit_logger, audit_sink) = create_audit_state();
 

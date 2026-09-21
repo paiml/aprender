@@ -18973,6 +18973,28 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE (hand-entered from issue #3587 "What lands"; minted on the PR branch so the AD-04 quorum can run -- pmat work status refuses a missing item). Two halves: the explicit-command runner (#3616, merged) and the nextest [profile.ci] key (#3626). Lands: 1. **--no-fail-fast on the shard.** The cost is runner minutes on an already-red shard; the benefit is that a red run still measures everything else it was going to measure — which is exactly when you most want the data. 2. **The reducer reports ran / skipped / total** in the shard receipt. The skipped count is a **number**, never an absence. 3. **A receipt with skipped > 0 is Unknown, not Fail and not Pass** — it names what was not measured, per doctrine 4. '
+- id: PMAT-3609
+  github_issue: 3609
+  item_type: task
+  title: 'The BPE tokenizer requires a ''<unk>'' token that Qwen3.5 does not have — a universal unknown-token is an assumption, not a fact'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-62
+  created: 2026-09-21T09:00:00Z
+  updated: 2026-09-21T09:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Operator ruling on #3609 (2026-09-20), constraint 1, verbatim: "`unk` becomes `Option`; absent means absent. No synthesis in either direction. That is stronger than the original framing and deliberately so: the `vocab[0] = "<unk>"` placeholder for an absent vocabulary goes too. A GGUF with no vocabulary refuses by name — it does not load. Today it loads, which is the inversion this ticket is about; removing only the refusal on the present-but-lacking side would leave the permissive fallback intact and simply move the asymmetry. The two-direction falsifier already proposed covers both: a model with an unknown token still resolves it (so the fix is not \"ignore unk\"), and a model with no vocabulary now refuses (so the fix is not \"synthesise one\")."'
+  - 'Constraint 2, verbatim: "Prose changes in the same PR, or the belief is reproduced. `book/src/examples/api-server.md` and `examples/model_cache.rs` both repeat \"vocabulary must include `<unk>`\" — a property of our constructor stated as a property of the data. Run `pmat query` for `<unk>` and `unknown_token`; every hit is either fixed or listed in the PR body as intentionally kept. A hit that is neither is the defect''s next copy."'
+  - 'Constraint 3, verbatim: "Mutation: reintroduce the `ok_or_else` → the Qwen3.5 fixture goes RED. A fix with no red-turning mutation is a claim. The fixture must be a real Qwen3.5 GGUF header — the family declares `tokenizer.ggml.eos_token_id` and no `unknown_token_id` key at all, which is the actual input, not a synthetic one."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Taken by aprender-62, sequenced ahead by the cop (aprender-04). Two interpretation decisions, sent to the cop before implementation: (1) THE FIXTURE. The real Qwen3.5-0.8B header is 10.9 MB (248,320 tokens, 247,587 merges), too large to commit. The fixture is a header-only GGUF generated from the real file: every one of its 46 keys and every scalar value verbatim (eos 248046, padding 248055, model gpt2, pre qwen35, the chat template; no unknown_token_id and no bos key, exactly as in the real file), with only the three arrays (tokens, token_type, merges) cut to a leading slice. Qwen''s first 256 tokens are its byte-level glyphs, so the slice still covers every byte. The generator is committed next to it and records the source header''s sha256. (2) WHERE THE UNKNOWN TOKEN COMES FROM at the vocabulary-only constructors, which receive a Vec<String> and nothing else: the vocabulary''s own `<unk>` entry when it has one, otherwise none. Nothing is synthesised, and every model that loads today keeps its unknown token. Threading `tokenizer.ggml.unknown_token_id` through every loader is a filed follow-up, not a silent gap.
+
+    The cop ruled both decisions YES on 2026-09-21. It also added a guard, verbatim: "When the glyph for a byte is ALSO absent, encode must refuse with an error naming the byte. It must never drop the input or emit nothing. Put a row for it in the case table (a vocab without that glyph and without unk → error). Absent means absent at encode time too." How it is met: `encode` returns an infallible Vec<u32> and has dozens of callers, so the refusal happens at CONSTRUCTION. With no unknown token, `BPETokenizer::new` refuses, naming the first byte that has neither a `<0xNN>` token nor a byte-level glyph token. `with_merges` also requires every glyph, because the merge path maps bytes to glyphs only. `encode` therefore cannot meet an unencodable byte, and the no-drop guarantee holds on every path. Case row: `no_unknown_token_and_a_byte_with_no_token_is_refused_by_name` (a 256-glyph vocabulary minus byte 0xA9''s glyph → error naming 0xA9). With the unknown token present, encode is unchanged: `<0xNN>`, then the unknown token. The glyph fallback applies only when there is no unknown token. Follow-up filed before the PR: #3675 (thread the DECLARED unknown token through every loader; by-name `vocabulary_unk_token` is the interim, and `apr serve`''s chat path already uses tokenizer.json''s declared `model.unk_token`). Found while testing, filed separately because it is independent of the unknown token: #3677 (the greedy path matches Latin-1 characters such as `é` as byte-level glyph tokens, so `é` decodes to U+FFFD). The Qwen round-trip rows therefore use ASCII, CJK and newline, not `é`. Same class but outside the query''s hits, so not in this PR: `apr showcase`''s pipeline substitutes token ids [1,2,3,4,5] when a model has no vocabulary (commands/showcase/pipeline.rs:165).'
 - id: PMAT-3627
   github_issue: 3627
   item_type: task

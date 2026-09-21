@@ -1,0 +1,56 @@
+{
+  "qwen3.5-0.8b.gguf-header": {
+    "keep": 1024,
+    "keys": 46,
+    "output_bytes": 39063,
+    "output_sha256": "0855f96190fcfced331768da28b0bd59117c1a825175220b9de1dddac38cb082",
+    "sliced_arrays": {
+      "tokenizer.ggml.merges": {
+        "kept": 1024,
+        "source_len": 247587
+      },
+      "tokenizer.ggml.token_type": {
+        "kept": 1024,
+        "source_len": 248320
+      },
+      "tokenizer.ggml.tokens": {
+        "kept": 1024,
+        "source_len": 248320
+      }
+    },
+    "source_file": "Qwen3.5-0.8B-IQ4_XS.gguf",
+    "source_gguf_version": 3,
+    "source_header_bytes": 10943082,
+    "source_header_sha256": "2eb5e86ecd53b7ce44da7d43c5b20cdd8962ef87444b9e4f963d0f0a0fdf5d36",
+    "source_tensor_count": 320
+  },
+  "tinyllama-1.1b-chat.gguf-header": {
+    "keep": 512,
+    "keys": 23,
+    "output_bytes": 18724,
+    "output_sha256": "e0e4c5887f9b5de6837620b3caa9681e0db92724aaa7a3fa849ee81a1fde71e9",
+    "sliced_arrays": {
+      "tokenizer.ggml.merges": {
+        "kept": 512,
+        "source_len": 61249
+      },
+      "tokenizer.ggml.scores": {
+        "kept": 512,
+        "source_len": 32000
+      },
+      "tokenizer.ggml.token_type": {
+        "kept": 512,
+        "source_len": 32000
+      },
+      "tokenizer.ggml.tokens": {
+        "kept": 512,
+        "source_len": 32000
+      }
+    },
+    "source_file": "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+    "source_gguf_version": 3,
+    "source_header_bytes": 1697530,
+    "source_header_sha256": "2d44149d9173954e4dfb8b1eca58823d0951e88ac35de4e56abe71f6454b39a9",
+    "source_tensor_count": 201
+  }
+}
