@@ -41,6 +41,10 @@ equations:
   C-QBP-004:
     description: "The capacity plan refuses a request that does not fit the measured free device memory, before loading, and classifies the refusal by what an empty device could hold."
     formula: "need(d) = weights + kv_per_token(d) * seq + workspace + overhead; f32 iff need(f32) <= free; f16 iff f16_decode and need(f16) <= free; otherwise refuse, co_tenant iff need <= total at the cheapest holdable dtype"
+  C-QBP-005:
+    description: "The fused flash-attention prefill (f16 inputs, f32 accumulation and online softmax) equals exact causal GQA attention over f16-rounded inputs within 2e-3 relative, and the whole flash prefill stays within the flash budget of the per-token path."
+    formula: "rel_linf(flash(Q,K,V), attn_f64(f16(Q),f16(K),f16(V))) <= 2e-3 and argmax(prefill_flash) == argmax(fwd^T) and cos >= 0.99999 and rel_linf(logits) <= 2e-3 and rel_linf(state) <= 5e-3"
+    note: "The cop's #3596 ruling admits f16 inputs with f32 accumulation. Measured (sm_89): kernel 2.0e-5 .. 2.8e-4 vs the f16-input reference; whole prefill on the 0.8B: logits <= 1.5e-4, states <= 5.4e-4, cosine 1.0000000."
 proof_obligations:
   - id: PO-QBP-001
     kind: equivalence
@@ -54,6 +58,10 @@ proof_obligations:
     kind: equivalence
     statement: "Batched prefill agrees with the per-token path on logits and every state buffer, in one call and split, and decode continues identically."
     discharged_by: FALSIFY-QBP-PREFILL-EQ
+  - id: PO-QBP-005
+    kind: equivalence
+    statement: "The flash kernel matches exact attention over f16 inputs for the 0.8B, 9B and 27B head shapes, with a cached prefix, a partial block and dozens of key tiles; the flash prefill matches the per-token path within its budget."
+    discharged_by: FALSIFY-QBP-FLASH
   - id: PO-QBP-004
     kind: safety
     statement: "A request that cannot fit is refused with its budget before any upload; a co-tenant-caused refusal is distinguishable from a device limit."
@@ -79,6 +87,11 @@ falsification_tests:
     prediction: "Each case-table row yields its stated f32 / f16 / co_tenant / f16_decode_unavailable / exceeds_device verdict"
     test: "cargo test -p aprender-serve --lib capacity::"
     if_fails: "The budget arithmetic or the refusal classification is wrong"
+  - id: FALSIFY-QBP-FLASH
+    rule: "Flash attention is causal attention"
+    prediction: "The kernel is within 2e-3 of an f64 reference over f16-rounded inputs, and the flash prefill within the flash budget of the per-token path"
+    test: "cargo test -p aprender-gpu --features cuda --lib gdn_flash_prefill && cargo test -p aprender-serve --features cuda --lib qwen35_flash_prefill"
+    if_fails: "A fragment layout, the causal mask, the online-softmax rescale or the GQA head mapping is wrong"
 qa_gate:
   id: F-QBP-001
   name: Qwen3.5 batched prefill contract
@@ -88,5 +101,6 @@ qa_gate:
     - rows_bitwise
     - prefill_equivalence
     - capacity_table
-  pass_criteria: "All 4 falsification tests pass on every architecture the path ships on (sm_89, sm_121)"
+    - flash_attention
+  pass_criteria: "All 5 falsification tests pass on every architecture the path ships on (sm_89, sm_121)"
   falsification: "Scale the scan's output immediate by 1.0001: FALSIFY-QBP-SCAN-BITWISE must go RED (measured 2026-09-21: RED at flat index 0)"
