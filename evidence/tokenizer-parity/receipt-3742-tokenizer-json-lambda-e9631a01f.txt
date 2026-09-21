@@ -1,0 +1,13 @@
+# #3742: the tokenizer.json encode path (apr-cli HfTokenizer = realizar load_tokenizer_from_path -> canonical_for_tokenizer_json; entrenar's HfTokenizer under entrenar/realizar is the same loader) against pinned llama-tokenize, lambda, head e9631a01f (re-measured after the loader split), 2026-09-21T22:47:45Z
+# tokenizer.json: HF Qwen/Qwen2.5-Coder-1.5B-Instruct snapshot 2e1fd397 (22 added tokens, string merges); reference GGUF: ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+# llama-tokenize: commit d1d3c3396 --ids --no-escape --no-bos; ids compared with cmp (sequence, not count)
+# method: a temporary env-gated test in commands/hf_tokenizer.rs (not committed) wrote HfTokenizer::from_file(..).encode(text) per file; is_canonical=true
+# a first pairing with ~/.cache/qwen2/tokenizer.json (Qwen2: 3 added tokens, no <tool_call>) against the Qwen2.5 GGUF differed on chat-template.txt at <tool_call>: a mismatched pair, not a defect
+PASS  brief-review     2648 ids, roundtrip=true
+PASS  chat-template    85 ids, roundtrip=true
+PASS  code-rust-token  3423 ids, roundtrip=true
+PASS  identifiers      384 ids, roundtrip=true
+PASS  nonascii         364 ids, roundtrip=true
+PASS  whitespace       64 ids, roundtrip=true
+PASS  p20k             18350 ids, roundtrip=true
+PASS  p148k            136355 ids, roundtrip=true

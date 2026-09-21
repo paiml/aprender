@@ -1,0 +1,25 @@
+# #3742 done_when 4: is any .apr file in the model-gate universe on either host? The condition 'none on either host' is FALSE on both,
+# so the row does not shrink to the guard. Listing command: ls -l ~/models/*.apr; membership is the parity script's MODEL line
+# (scripts/lib/tensor_universe: most frequent >=2-D tensor dtype by count is Q4_K). 2026-09-21T22:35:15Z
+
+## lambda (noah-Lambda-Vector)
+$ ls -l ~/models/*.apr
+-rw-rw-r-- 991907012 /home/noah/models/qwen2.5-coder-0.5b-instruct.apr
+-rw-rw-r-- 1115198720 /home/noah/models/qwen2.5-coder-1.5b-instruct-q4k.apr
+-rw-rw-r-- 1115198720 /home/noah/models/qwen2.5-coder-1.5b-instruct-q4k-v2.apr
+-rw-rw-r-- 7112199364 /home/noah/models/qwen2.5-coder-1.5b-instruct-st.apr
+$ grep "^MODEL .*\.apr" receipt-3742-lambda-3c65950f8.txt
+MODEL      qwen2.5-coder-0.5b-instruct.apr  dtype=BF16  q4k-universe=no  fingerprint=ed82f35f39d39814  reference=none
+MODEL      qwen2.5-coder-1.5b-instruct-q4k.apr  dtype=Q4_K  q4k-universe=yes  fingerprint=f74b58d11bdfb976  reference=Qwen2.5-0.5B-Instruct-f16.gguf
+MODEL      qwen2.5-coder-1.5b-instruct-q4k-v2.apr  dtype=Q4_K  q4k-universe=yes  fingerprint=f74b58d11bdfb976  reference=Qwen2.5-0.5B-Instruct-f16.gguf
+MODEL      qwen2.5-coder-1.5b-instruct-st.apr  dtype=F32  q4k-universe=no  fingerprint=ed82f35f39d39814  reference=none
+
+## gx10
+$ ls -l ~/models/*.apr
+-rw-rw-r-- 3558023492 /home/noah/models/qwen2.5-coder-1.5b-instruct-fp16.apr
+-rw-rw-r-- 1115198720 /home/noah/models/qwen2.5-coder-1.5b-instruct-q4k.apr
+-rw-rw-r-- 1115528900 /home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.apr
+$ grep "^MODEL .*\.apr" receipt-3742-gx10-3c65950f8.txt
+MODEL      qwen2.5-coder-1.5b-instruct-fp16.apr  dtype=F16  q4k-universe=no  fingerprint=ed82f35f39d39814  reference=none
+MODEL      qwen2.5-coder-1.5b-instruct-q4k.apr  dtype=Q4_K  q4k-universe=yes  fingerprint=f74b58d11bdfb976  reference=qwen2.5-1.5b-instruct-q4_k_m.gguf
+MODEL      qwen2.5-coder-1.5b-instruct-q4_k_m.apr  dtype=Q4_K  q4k-universe=yes  fingerprint=f74b58d11bdfb976  reference=qwen2.5-1.5b-instruct-q4_k_m.gguf
