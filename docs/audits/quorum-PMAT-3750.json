@@ -1,0 +1,241 @@
+{
+  "ticket": "PMAT-3750",
+  "base": "52f43da71745eedacde2f86e1903ea81d6fa34ad",
+  "base_resolved": "52f43da71745eedacde2f86e1903ea81d6fa34ad",
+  "base_note": "no origin/52f43da71745eedacde2f86e1903ea81d6fa34ad exists; judged against the local ref",
+  "head": "24ad5fea344a9ae7a6565d0db91aa1caa73842df",
+  "diff_sha256": "a01d34193242d64ab880870f7f53efb9715fe462dbd6643a12366512df1f159e",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 69825,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I have reviewed the diff against the requirements of PMAT-3750. The PR successfully replaces all whole-file reads of models in the `apr qa` capability predicates with bounded header reads, significantly reducing peak RSS and preventing OOM risks on large models. It introduces a robust bounded reading mechanism in `model_header.rs` (starting at 16 MiB and doubling up to 256 MiB) for GGUF, and correctly uses `data_offset` for APR files. The implementation correctly reuses `MappedGGUFModel` where appropriate to avoid duplicate mapping. Furthermore, it provides the required ledger of all production and test `std::fs::read` occurrences, demonstrating that each was audited. The test suite correctly forks a subprocess to measure peak RSS without test framework pollution, enforcing the memory bounds. The changes directly satisfy `done_when 1`, `done_when 2`, and `done_when 3` of the ticket. I found no weakened gates or unrequested changes.",
+      "findings": [],
+      "raw_bytes": 3140,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly addresses PMAT-3750 by replacing excessive `std::fs::read` and `to_vec` copies with bounded header reads and mmap-backed access (`MappedGGUFModel`). Peak RSS checks are correctly enforced through a subprocess test (`peak_rss_probe`), and the sibling sweep ledger correctly identifies and assigns verdicts to all `std::fs::read` occurrences in the production codebase. No capability gates are weakened, and the file-reading bounds are strictly enforced.",
+      "findings": [],
+      "raw_bytes": 2197,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff flawlessly fulfills all acceptance criteria for PMAT-3750 PR A. It introduces bounded header readers (using `take().read_to_end()` to cap sizes) to replace full-file reads across the `apr qa` predicates. It provides a comprehensive audit of all `std::fs::read` occurrences in the specified crates, recording their status and justifications. The requested test against a sparse multi-GB fixture correctly spawns a probe to measure peak RSS against a precise bound. Furthermore, the provided GX10 measurements document a drop from 36.2GB to 19.3GB peak RSS (and to 45MiB on the capability gates alone), matching the objective perfectly. No refutations were found.",
+      "findings": [
+        {
+          "claim": "PR A covers the qa path and replaces whole-file reads with bounded reads.",
+          "file": "crates/apr-cli/src/commands/model_header.rs",
+          "grounding": "cited",
+          "line": 27
+        },
+        {
+          "claim": "A test with a sparse multi-GB fixture asserts peak RSS stays under a small bound.",
+          "file": "crates/apr-cli/src/commands/model_header.rs",
+          "grounding": "cited",
+          "line": 220
+        },
+        {
+          "claim": "Sibling sweep lists every std::fs::read in apr-cli / aprender-serve / aprender-core with justifications/verdicts.",
+          "file": "docs/audits/3750-whole-file-model-reads.md",
+          "grounding": "cited",
+          "line": 16
+        },
+        {
+          "claim": "Measured on gx10 for 30B model with peak RSS before and after.",
+          "file": "docs/audits/3750-whole-file-model-reads.md",
+          "grounding": "cited",
+          "line": 40
+        }
+      ],
+      "raw_bytes": 4066,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-low",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-low",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/apr-cli/src/commands/model_header.rs",
+      "line": 27,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "PR A covers the qa path and replaces whole-file reads with bounded reads."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/model_header.rs",
+      "line": 220,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "A test with a sparse multi-GB fixture asserts peak RSS stays under a small bound."
+      ]
+    },
+    {
+      "file": "docs/audits/3750-whole-file-model-reads.md",
+      "line": 16,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Sibling sweep lists every std::fs::read in apr-cli / aprender-serve / aprender-core with justifications/verdicts."
+      ]
+    },
+    {
+      "file": "docs/audits/3750-whole-file-model-reads.md",
+      "line": 40,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Measured on gx10 for 30B model with peak RSS before and after."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (gemini-3.1-pro-high, gemini-3.1-pro-low) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
