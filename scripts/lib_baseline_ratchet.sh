@@ -89,7 +89,10 @@
 # place. The paragraph above names a PR that changes the guard's contract as
 # the venue for growth. This is the mechanism that venue needed.
 #
-# An addition to a `set-aperture` baseline is ADMITTED only if BOTH hold:
+# An addition to a `set-aperture` baseline is ADMITTED only if BOTH hold
+# (for a NAME entry -- no `:`, a set of FILES such as unwired_guards_baseline.txt
+# -- (a) is "the comparand carries that file, at the entry's path or beside the
+# owning guard"; see _br_cmp_set_aperture and #3644):
 #
 #   (a) THE LINE PREDATES THE COMPARAND, by either of two proofs. The entry is
 #       `<path>:<line>`, and EITHER
@@ -281,11 +284,27 @@ _br_cmp_set_aperture() { # <base-file> <cur-file> <root> <ref> <owning-guard-pat
         line="${entry##*:}"
         if [ "$aperture_moved" -ne 1 ]; then
             refuse="the owning guard is unchanged in this diff, so no aperture moved"
+        elif [ "${entry#*:}" = "$entry" ]; then
+            # A NAME entry (no `:`), for a set whose members are FILES rather
+            # than lines in files -- unwired_guards_baseline.txt records guard
+            # scripts. (a) then reads: the file PREDATES the comparand, i.e. the
+            # comparand carries it, at the entry's own path or beside the owning
+            # guard (the ledger names siblings by basename, and guard_tree.sh
+            # reads it that way). A file this branch created is refused: a dark
+            # guard written and ledgered in one diff is PERF-028's shape again.
+            # (#3644: the meta-guard's name:-line blindness hid four dark guards;
+            # widening it reveals files that were already in the tree.)
+            # (No separate "repo-relative" check: `git cat-file -e <ref>:<path>`
+            # already refuses an absolute or escaping path, and a check the
+            # case table could not turn RED is a check nobody has proven.)
+            if git -C "$root" cat-file -e "${ref}:${entry}" 2>/dev/null; then
+                :
+            elif [ -n "$guard" ] && git -C "$root" cat-file -e "${ref}:$(dirname "$guard")/${entry}" 2>/dev/null; then
+                :
+            else
+                refuse="the comparand carries no ${entry} (nor $(dirname "${guard:-.}")/${entry}), so this branch WROTE it"
+            fi
         else
-            case "$entry" in
-                *:*) : ;;
-                *)   refuse="not a <path>:<line> coordinate" ;;
-            esac
             if [ -z "$refuse" ]; then
                 case "$line" in
                     '' | *[!0-9]*) refuse="not a <path>:<line> coordinate" ;;
@@ -567,11 +586,11 @@ baseline_ratchet_check() {
                 "$path" "$(printf '%s\n' "$BR_ADMITTED" | grep -c . || true)" \
                 "$(git -C "$root" rev-parse --short "$ref" 2>/dev/null || printf '%s' "$ref")"
             printf '%s\n' "$BR_ADMITTED"
-            printf '               each line above PREDATES the comparand -- byte-identical there,\n'
-            printf '               or moved with its text intact and no more occurrences than before\n'
-            printf '               -- and this diff changes %s. They are claims the\n' "$guard"
-            printf '               guard could not READ before, not claims this branch WROTE.\n'
-            printf '               Recorded, not blessed.\n'
+            printf '               each entry above PREDATES the comparand -- a line byte-identical\n'
+            printf '               there or moved with its text intact and no more occurrences than\n'
+            printf '               before; a name, a file the comparand carries -- and this diff\n'
+            printf '               changes %s. They are findings the guard could not\n' "$guard"
+            printf '               READ before, not findings this branch WROTE. Recorded, not blessed.\n'
         else
             printf 'ok    ratchet  %s did not grow (%s removed) vs %s\n' \
                 "$path" "$BR_REMOVED" \

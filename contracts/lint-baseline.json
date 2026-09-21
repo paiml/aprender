@@ -3,15 +3,15 @@
   "armed_gates": ["validate", "audit", "score", "verify", "enforce", "enforcement-level", "duplicate-stems", "composition", "sigma", "relations", "shapes"],
   "armed_shapes": ["ont-shapes-v1", "ladder-measured", "ladder-green"],
   "ont": {
-    "consumer_present": false,
-    "contracts_total": 1852,
-    "entity_types_registered": 9,
-    "extractors_implemented": 6,
-    "contracts_anchored": 3,
-    "contracts_shaped": 3,
+    "consumer_present": true,
+    "contracts_total": 1881,
+    "entity_types_registered": 10,
+    "extractors_implemented": 7,
+    "contracts_anchored": 6,
+    "contracts_shaped": 5,
     "unanchored_but_bindable": 297,
     "formal_prose": 1464,
     "legacy_unresolved_depends_on": 8,
-    "shapes_unarmed": 3
+    "shapes_unarmed": 6
   }
 }

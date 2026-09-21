@@ -1,0 +1,21 @@
+- id: PMAT-3377
+  github_issue: 3377
+  item_type: task
+  title: 'P1: Multi-layer stack ensembling with a leakage guard (num_stack_levels, auto_stack, dynamic_stacking) — CRUX-O-07'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-07, competitor autogluon, demand 4. No stacking. crates/aprender-core/src/stack/ is a deployment-health module (StackHealth, InferenceConfig), not a model stacker. ensemble/ holds MixtureOfExperts gating only. FALSIFIABLE (contracts/crux-O-07-v1.yaml): level-2 features are OOF, never in-sample — a mutation that feeds in-sample level-1 predictions to level 2 is detected by the leak test: the L2 holdout score on a pure-noise label rises above chance (asserted RED) while the OOF path stays at chance; dynamic stacking falls back when stacking hurts — on a fixture where L2 holdout score < L1 holdout score, the final model is the L1 ensemble and the decision is recorded in the fit summary. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

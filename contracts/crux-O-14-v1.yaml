@@ -1,0 +1,75 @@
+# CRUX-O-14 — Deployment artifact: clone_for_deployment / keep_only_best / save_space / persist into one loadable file
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3384, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-14
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  github_issue: 3384
+  description: >
+    Deployment artifact: clone_for_deployment / keep_only_best / save_space / persist into one loadable file. Competitor verb: predictor.clone_for_deployment(path); predictor.persist(). Gap measured in aprender at eb262f8eb: Single estimators serialize to .apr (bundle/, serialization/). No artifact holds a fitted feature pipeline (O-05) plus several models plus ensemble weights plus a decision threshold and loads them as one predictor. Nothing prunes non-selected models from disk.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3384'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  a_deployment_clone_is_smaller_and_predicts_identically:
+    formula: |
+      clone_for_deployment artifact bytes < 0.5 x full artifact bytes AND predict() on the clone is bit-identical to predict() on the original for the test fixture
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "a deployment clone is smaller and predicts identically"
+  the_artifact_is_self_describing_and_refuses_a_schema_drift:
+    formula: |
+      load() on an artifact whose feature schema disagrees with the input columns is an Err naming the first mismatched column, not a wrong prediction
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "the artifact is self-describing and refuses a schema drift"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-14-001
+  rule: "a deployment clone is smaller and predicts identically"
+  prediction: "clone_for_deployment artifact bytes < 0.5 x full artifact bytes AND predict() on the clone is bit-identical to predict() on the original for the test fixture"
+  test: >-
+    LIVE-PENDING - a deployment clone is smaller and predicts identically. No test surface exists today because the capability is unimplemented: Deployment artifact: clone_for_deployment / keep_only_best / save_space / persist into one loadable file (aprender#3384, CRUX-O-14). PROMOTE by authoring a test named deployment_clone_smaller_identical in module `automl/artifact/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'a deployment clone is smaller and predicts identically' is violated — the autogluon parity claim for CRUX-O-14 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-14-002
+  rule: "the artifact is self-describing and refuses a schema drift"
+  prediction: "load() on an artifact whose feature schema disagrees with the input columns is an Err naming the first mismatched column, not a wrong prediction"
+  test: >-
+    LIVE-PENDING - the artifact is self-describing and refuses a schema drift. No test surface exists today because the capability is unimplemented: Deployment artifact: clone_for_deployment / keep_only_best / save_space / persist into one loadable file (aprender#3384, CRUX-O-14). PROMOTE by authoring a test named artifact_refuses_schema_drift in module `automl/artifact/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'the artifact is self-describing and refuses a schema drift' is violated — the autogluon parity claim for CRUX-O-14 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "a deployment clone is smaller and predicts identically"
+- type: invariant
+  property: "the artifact is self-describing and refuses a schema drift"
+
+kani_harnesses:
+- id: KH-CRUX-O-14-001
+  obligation: a_deployment_clone_is_smaller_and_predicts_identically
+  property: a_deployment_clone_is_smaller_and_predicts_identically_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-14-002
+  obligation: the_artifact_is_self_describing_and_refuses_a_schema_drift
+  property: the_artifact_is_self_describing_and_refuses_a_schema_drift_holds_on_bounded_input
+  bound: 4

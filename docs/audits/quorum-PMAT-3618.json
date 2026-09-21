@@ -1,0 +1,241 @@
+{
+  "ticket": "PMAT-3618",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "e9ca589997b042bb38572975c812fda8806be123",
+  "diff_sha256": "333c8651632d2988647554afdab71cb73b33e53d41c247688afaa37b64840450",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 38781,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff cleanly resolves PMAT-3618 without weakening any gates or making unauthorized changes. \n\n1. **AC 1 & 2 Satisfied:** All literal release identities (`V`, `T`, `MS`, `EPIC`, `LAST_TAG`) and the hardcoded `AP=/mnt/...` path have been replaced with derivations powered by a new `lib_release_params.sh` script. `AP` now properly resolves to the main repository checkout (`target/release-train/$T`).\n2. **AC 3 Satisfied:** The diff ships its own robust assertion script (`check_release_scripts_derive_identity.sh`). It scans all scripts under `scripts/release/` for paths matching `/mnt`, `/home`, etc. (R1) and literal identity assignments (R2). It properly skips comments for R2 and has strict anti-vacuity checks.\n3. **AC 4 Satisfied:** The assertion script includes a `--self-test` mechanism that perfectly models the falsifier requirement: it explicitly tests the `#3618` `/mnt/nvme-raid0/` shape and confirms that the script correctly flags it and fails.\n\nAll other modifications (such as adapting positional arguments in `publish_strict.sh` and `prepare_bump.sh` to accept the `<version>` argument) are necessary consequences of the parameterization and perfectly execute the ticket's intent. No refutations found.",
+      "findings": [
+        {
+          "claim": "The literal release identities (V, T, MS, EPIC, LAST_TAG) and out-of-repo AP path have been removed from autopilot.sh and other release scripts, satisfying AC 1 and AC 2. They are now dynamically resolved via lib_release_params.sh",
+          "file": "scripts/release/autopilot.sh",
+          "grounding": "cited",
+          "line": 14
+        },
+        {
+          "claim": "The row ships its own assertion gate via check_release_scripts_derive_identity.sh to forbid hardcoded literals (R2_RE) and out-of-repo paths (R1_RE), satisfying AC 3.",
+          "file": "scripts/check_release_scripts_derive_identity.sh",
+          "grounding": "cited",
+          "line": 29
+        },
+        {
+          "claim": "The assertion gate includes a self-test falsifier that explicitly verifies the gate goes RED when a literal `/mnt/nvme-raid0/...` path is reintroduced, satisfying AC 4.",
+          "file": "scripts/check_release_scripts_derive_identity.sh",
+          "grounding": "cited",
+          "line": 67
+        }
+      ],
+      "raw_bytes": 6382,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements the requested changes: V/T/MS/EPIC and AP are dynamically derived rather than hardcoded, and out-of-repo paths (like /mnt/) are removed. A new dedicated assertion script `scripts/check_release_scripts_derive_identity.sh` is introduced to enforce this constraint continuously, meeting the ticket's explicit branch 2 requirement. Testing confirms the script correctly flags literal paths.",
+      "findings": [
+        {
+          "claim": "V/T/MS/EPIC and AP are derived, not literals",
+          "file": "scripts/release/autopilot.sh",
+          "grounding": "cited"
+        },
+        {
+          "claim": "Shipped assertion to enforce no out-of-repo paths or literal identities",
+          "file": "scripts/check_release_scripts_derive_identity.sh",
+          "grounding": "cited"
+        },
+        {
+          "claim": "Falsifier gate accurately goes RED when tested against an out-of-repo path",
+          "file": "scripts/check_release_scripts_derive_identity.sh",
+          "grounding": "cited",
+          "grounding_downgraded": "measured-without-command-or-output"
+        }
+      ],
+      "raw_bytes": 3908,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "As Lane 3 reviewer, I evaluated the diff against ticket PMAT-3618 and verified all acceptance criteria.\n\nKey Findings & Measured Verifications:\n1. Identity Derivation: `scripts/release/lib_release_params.sh` dynamically derives release identity parameters (`V`, `T`, `AP`, `MS`, `EPIC`, `LAST_TAG`). Scripts (`autopilot.sh`, `prepare_bump.sh`, `publish_strict.sh`, `t2_preflight.sh`, `ledger_from_run.sh`) no longer hardcode 0.68.2 constants or `/mnt/...` out-of-repo paths.\n2. In-Tree Assertion Guard: Introduced `scripts/check_release_scripts_derive_identity.sh` which enforces R1 (no out-of-repo paths) and R2 (no literal identity assignments) across `scripts/release/`. Its self-test suite passes 14 case table rows.\n3. Falsifier Verified: Reintroducing a literal `AP=/mnt/nvme-raid0/test` path into `scripts/release/autopilot.sh` causes `check_release_scripts_derive_identity.sh` to go RED (exit code 1).\n4. CI Wiring Verified: `guard_tree.sh` automatically discovers `scripts/check_release_scripts_derive_identity.sh` via globbing, ensuring execution on every PR/commit in CI.\n5. Preflight Self-Test Verified: `t2_preflight.sh --self-test` passes all 12 case table checks.\n\nNo refuting issues, weakened gates, unbacked receipt claims, or scope violations were found. Verdict: PASS.",
+      "findings": [
+        {
+          "claim": "scripts/check_release_scripts_derive_identity.sh passes self-test suite (14 case table rows) and validates scripts/release/ cleanroom",
+          "command": "bash scripts/check_release_scripts_derive_identity.sh --self-test && bash scripts/check_release_scripts_derive_identity.sh",
+          "file": "scripts/check_release_scripts_derive_identity.sh",
+          "fix": "N/A",
+          "grounding": "measured",
+          "line": 1,
+          "output": "=== release scripts derive their identity: case table ===\nok    row 1  rc=0  derivations only -> clean\nok    row 2  rc=1  the #3618 shape: AP under the RAID mount -> RED (R1 and R2)\nok    row 3  rc=1  that path in a COMMENT -> RED (R1 reads comments)\nok    row 4  rc=1  a home-directory path -> RED\nok    row 5  rc=1  V=0.69.0 -> RED (R2)\nok    row 6  rc=1  MS and EPIC literals after another statement -> RED\nok    row 7  rc=1  LAST_TAG=v0.68.1 -> RED\nok    row 8  rc=1  a quoted literal V=\"0.69.0\" -> RED\nok    row 9  rc=0  an assignment in a COMMENT is documentation -> clean (R2 skips comments)\nok    row 10 rc=0  lowercase locals and names that merely end in V/T -> clean\nok    row 11 rc=0  /dev/null, /tmp and $HOME paths are not operator-box literals -> clean\nok    row 12 rc=2  zero files -> ENV, never a pass\nok    row 13 rc=2  missing directory -> ENV\nok    row 14 rc=0  the real scripts/release is clean\nSELF-TEST PASSED: 14 rows\n=== scripts/release/ derives the release identity (check_release_scripts_derive_identity.sh) ===\nok    8 file(s) under scripts/release: no out-of-repo path, no literal release identity\nPASS"
+        },
+        {
+          "claim": "Falsifier verification: reintroducing a literal /mnt/... path in scripts/release/autopilot.sh causes check_release_scripts_derive_identity.sh to fail with exit code 1 (RED)",
+          "command": "bash -c 'sed -i \"s/# Release autopilot/AP=\\/mnt\\/nvme-raid0\\/test\\n# Release autopilot/\" scripts/release/autopilot.sh; bash scripts/check_release_scripts_derive_identity.sh; rc=$?; git checkout scripts/release/autopilot.sh; exit $rc'",
+          "file": "scripts/release/autopilot.sh",
+          "fix": "N/A",
+          "grounding": "measured",
+          "line": 2,
+          "output": "=== scripts/release/ derives the release identity (check_release_scripts_derive_identity.sh) ===\nFAIL  R1 scripts/release/autopilot.sh: a path outside the repository:\n        2:AP=/mnt/nvme-raid0/test\nFAIL  R2 scripts/release/autopilot.sh: a release identity assigned a literal (derive it: lib_release_params.sh):\n        2:AP=/mnt/nvme-raid0/test\nFAIL (rc=1)"
+        },
+        {
+          "claim": "Wiring verification: scripts/check_release_scripts_derive_identity.sh is automatically discovered and dispatched by guard_tree.sh in CI",
+          "command": "bash scripts/guard_tree.sh --dry-run | grep \"check_release_scripts_derive_identity\"",
+          "file": "scripts/check_release_scripts_derive_identity.sh",
+          "fix": "N/A",
+          "grounding": "measured",
+          "line": 1,
+          "output": "run: scripts/check_release_scripts_derive_identity.sh"
+        },
+        {
+          "claim": "t2_preflight.sh self-test suite executes and passes 12 case table assertions",
+          "command": "bash scripts/release/t2_preflight.sh --self-test",
+          "file": "scripts/release/t2_preflight.sh",
+          "fix": "N/A",
+          "grounding": "measured",
+          "line": 56,
+          "output": "ok    crash with zero rows is not GO\nok    crash returns 2 (UNKNOWN)\nok    missing log is not GO\nok    missing log returns 2 (UNKNOWN)\nok    no VERDICT line is not GO\nok    truncated returns 2 (UNKNOWN)\nok    row count below the declared floor is not GO\nok    below-floor returns 2 (UNKNOWN)\nok    complete run, only version-unpublished red -> GO\nok    GO returns 0\nok    a genuine FAIL row -> NO-GO\nok    NO-GO returns 1\nself-test OK"
+        }
+      ],
+      "raw_bytes": 17442,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "scripts/check_release_scripts_derive_identity.sh",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Falsifier gate accurately goes RED when tested against an out-of-repo path",
+        "Shipped assertion to enforce no out-of-repo paths or literal identities"
+      ]
+    },
+    {
+      "file": "scripts/check_release_scripts_derive_identity.sh",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Wiring verification: scripts/check_release_scripts_derive_identity.sh is automatically discovered and dispatched by guard_tree.sh in CI",
+        "scripts/check_release_scripts_derive_identity.sh passes self-test suite (14 case table rows) and validates scripts/release/ cleanroom"
+      ]
+    },
+    {
+      "file": "scripts/check_release_scripts_derive_identity.sh",
+      "line": 29,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The row ships its own assertion gate via check_release_scripts_derive_identity.sh to forbid hardcoded literals (R2_RE) and out-of-repo paths (R1_RE), satisfying AC 3."
+      ]
+    },
+    {
+      "file": "scripts/check_release_scripts_derive_identity.sh",
+      "line": 67,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The assertion gate includes a self-test falsifier that explicitly verifies the gate goes RED when a literal `/mnt/nvme-raid0/...` path is reintroduced, satisfying AC 4."
+      ]
+    },
+    {
+      "file": "scripts/release/autopilot.sh",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "V/T/MS/EPIC and AP are derived, not literals"
+      ]
+    },
+    {
+      "file": "scripts/release/autopilot.sh",
+      "line": 2,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Falsifier verification: reintroducing a literal /mnt/... path in scripts/release/autopilot.sh causes check_release_scripts_derive_identity.sh to fail with exit code 1 (RED)"
+      ]
+    },
+    {
+      "file": "scripts/release/autopilot.sh",
+      "line": 14,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The literal release identities (V, T, MS, EPIC, LAST_TAG) and out-of-repo AP path have been removed from autopilot.sh and other release scripts, satisfying AC 1 and AC 2. They are now dynamically resolved via lib_release_params.sh"
+      ]
+    },
+    {
+      "file": "scripts/release/t2_preflight.sh",
+      "line": 56,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "t2_preflight.sh self-test suite executes and passes 12 case table assertions"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane 3: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (17442 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)"
+  ],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
-# publish_strict.sh — 0.68.2 crates.io cascade under the operator's 2026-09-17 authorization.
+# publish_strict.sh <version> [--plan] — the crates.io cascade under the operator's 2026-09-17
+#   authorization (first run 0.68.2). The version is the one argument; T and the state dir AP are
+#   derived (#3618, lib_release_params.sh), never literals.
 #   one crate per `cargo publish` call, in the tag's own TIERS order (scripts/cascade-publish.sh);
 #   STOP on the first non-zero (partial publishes are recorded, never rolled back);
 #   never --allow-dirty; a crates.io transient (429/5xx/timeout) is retried <=3 times with backoff,
 #   same inputs; anything else stops. Runs only from a detached checkout whose HEAD == the tag.
-#   publish_strict.sh --plan   prints the ordered plan and uploads nothing
+#   publish_strict.sh <version> --plan   prints the ordered plan and uploads nothing
 set -uo pipefail
-V=0.68.2; T="v$V"; AP=/mnt/nvme-raid0/agent-wt/rel-0682-autopilot; WT="$AP/wt"
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || { echo "cannot resolve the repo root from $0" >&2; exit 2; }
+# shellcheck source=scripts/release/lib_release_params.sh
+. "$REPO_ROOT/scripts/release/lib_release_params.sh" || exit 2
+release_params "${1:-}" "$REPO_ROOT" || { echo "usage: publish_strict.sh <version> [--plan]" >&2; exit 2; }
+shift
+WT="$AP/wt"
 TSV="$AP/publish-timestamps.tsv"; LOGD="$AP/publish-logs"; STATUS="$AP/STATUS"
 say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$STATUS"; }  # bashrs disable-line=DET002
 die() { say "STOP publish: $*"; exit 1; }
@@ -26,7 +33,7 @@ git symbolic-ref -q HEAD > /dev/null && die "checkout is not detached"
 # violations; it only ever worked through the drain's retries). publish-order.txt is derived from
 # `cargo metadata` at the tag (normal + build + versioned dev-deps, acyclic); the facades, which
 # version independently and resolve their upstream from the registry, go last. Re-proved below.
-mapfile -t ORDER < <(cat "$AP/publish-order.txt"; printf '%s\n' provable-contracts provable-contracts-macros provable-contracts-cli)
+mapfile -t ORDER < <(cat "$WT/scripts/release/publish-order.txt"; printf '%s\n' provable-contracts provable-contracts-macros provable-contracts-cli)
 declare -A EXPECT MANIFEST ROOTWS
 while IFS=$'\t' read -r n v m w; do [ -n "$n" ] && { EXPECT[$n]=$v; MANIFEST[$n]=$m; ROOTWS[$n]=$w; }; done < <(python3 scripts/lib/cascade_universe.py "$WT")
 [ "${#ORDER[@]}" -eq 74 ] && [ "${#EXPECT[@]}" -eq 74 ] || die "order=${#ORDER[@]} universe=${#EXPECT[@]}, expected 74/74"

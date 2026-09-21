@@ -1,0 +1,169 @@
+{
+  "ticket": "PMAT-3604",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 128 commit(s); judged against origin/main",
+  "head": "dd546592b0d47863877f43fac52246120b392ed8",
+  "diff_sha256": "092ba20f3667a8be79d39da6d26b687eababcfa66423fa7ff1ba1a43404f23fd",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 49882,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly satisfies the requirements of PMAT-3604. It introduces receipting for the F2 hybrid guard based on the (model sha256, apr version, device) triple and adds comprehensive unit testing to ensure no cache collisions or improper validations can occur. Edge cases where the guard fails to evaluate real tokens are properly handled with a 'NotJudged' verdict, bypassing the gate safely without storing an invalid receipt that could weaken the gate for future calls.",
+      "findings": [
+        {
+          "claim": "The diff correctly keys the receipt on model_sha256, apr_version, and device, validating and matching them exactly before skipping the guard forward.",
+          "file": "crates/aprender-serve/src/gguf/inference/forward/f2_receipt.rs",
+          "grounding": "cited",
+          "line": 144
+        },
+        {
+          "claim": "The F2 guard explicitly returns a NotJudged verdict when evaluation is skipped (e.g. prompt length < 2 or SKIP_PARITY_GATE=1). This correctly prevents such calls from writing a receipt, ensuring the gate is not permanently bypassed.",
+          "file": "crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs",
+          "grounding": "cited",
+          "line": 1515
+        },
+        {
+          "claim": "The implementation safely sets the APR_F2_REVALIDATE environment variable to support the --revalidate flag before any background thread starts.",
+          "file": "crates/apr-cli/src/dispatch.rs",
+          "grounding": "cited",
+          "line": 149
+        }
+      ],
+      "raw_bytes": 4867,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements the requested receipt mechanism for the F2 CPU parity guard. It checks the model sha256, apr version, and device name, and appropriately skips the CPU forward when a valid receipt exists. The tests thoroughly verify the exact decision table requirements. No claims or assertions are refuted, although there is a slight performance overhead introduced for skipped gates.",
+      "findings": [
+        {
+          "claim": "The diff adds a --revalidate CLI flag to force a fresh validation, which is a feature not explicitly requested in the ticket PMAT-3604.",
+          "file": "crates/apr-cli/src/commands_enum.rs",
+          "fix": "Remove the --revalidate flag and rely only on file deletion to revalidate, or accept it as a reasonable testing addition.",
+          "grounding": "cited",
+          "line": 139
+        },
+        {
+          "claim": "The whole-file SHA-256 is computed before checking the `SKIP_PARITY_GATE` environment variable. This adds a ~1s hash penalty to every run even when the user explicitly set `SKIP_PARITY_GATE=1` to bypass the guard entirely.",
+          "file": "crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs",
+          "fix": "Check for `SKIP_PARITY_GATE=1` in `f2_validate_qwen35_receipted` and return early before hashing the model.",
+          "grounding": "cited",
+          "line": 1558
+        }
+      ],
+      "raw_bytes": 4603,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Reviewed PMAT-3604 diff against all ticket requirements. The implementation successfully caches and receipts the F2 CPU/GPU parity guard per (model sha256, apr version, device) triple, reducing TTFT from ~17.18s to ~7.39s (saving ~9.8s). All falsification tests (planted receipts with wrong model sha256, wrong apr version, wrong device, corrupted file, missing receipt, --revalidate override) pass cleanly and fail closed as expected. Gates are strictly preserved and unjudged/failed runs never leave behind a false receipt. No refuting findings found.",
+      "findings": [],
+      "raw_bytes": 5406,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/apr-cli/src/commands_enum.rs",
+      "line": 139,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The diff adds a --revalidate CLI flag to force a fresh validation, which is a feature not explicitly requested in the ticket PMAT-3604."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/dispatch.rs",
+      "line": 149,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The implementation safely sets the APR_F2_REVALIDATE environment variable to support the --revalidate flag before any background thread starts."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gguf/inference/forward/f2_receipt.rs",
+      "line": 144,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The diff correctly keys the receipt on model_sha256, apr_version, and device, validating and matching them exactly before skipping the guard forward."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs",
+      "line": 1515,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The F2 guard explicitly returns a NotJudged verdict when evaluation is skipped (e.g. prompt length < 2 or SKIP_PARITY_GATE=1). This correctly prevents such calls from writing a receipt, ensuring the gate is not permanently bypassed."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs",
+      "line": 1558,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The whole-file SHA-256 is computed before checking the `SKIP_PARITY_GATE` environment variable. This adds a ~1s hash penalty to every run even when the user explicitly set `SKIP_PARITY_GATE=1` to bypass the guard entirely."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

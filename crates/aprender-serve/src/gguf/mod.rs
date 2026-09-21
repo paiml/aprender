@@ -124,6 +124,10 @@ mod quantized_tests;
 #[cfg(test)]
 mod tests;
 
+/// #3604: the F2 hybrid guard's receipt. CUDA-free on purpose, so its decision
+/// table is tested on every build.
+#[path = "inference/forward/f2_receipt.rs"]
+pub mod f2_receipt;
 /// Qwen3.5 / Qwen3.8 hybrid (Gated `DeltaNet` + gated attention) CPU forward (#3091).
 #[path = "inference/forward/forward_qwen35.rs"]
 pub mod forward_qwen35;

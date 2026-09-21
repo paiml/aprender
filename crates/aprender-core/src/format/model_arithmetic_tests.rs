@@ -4,7 +4,9 @@
 //! the formula changes) and, where the contract states one, one property.
 
 use super::*;
-use crate::format::model_family::{Activation, AttentionType, NormType, PositionalEncoding};
+use crate::format::model_family::{
+    Activation, AttentionType, DeltaNetShape, NormType, PositionalEncoding,
+};
 
 /// A four-dimension toy model whose parameter count is small enough to verify
 /// by hand: V=10, d=4, L=2, n_h=2, n_kv=1, d_k=2, d_ff=8.
@@ -52,7 +54,231 @@ fn qwen35_constraints() -> ModelConstraints {
         positional_encoding: PositionalEncoding::Rope,
         mlp_type: MlpType::SwiGlu,
         qk_norm: true,
+        deltanet: Some(DeltaNetShape {
+            inner_size: 2048,
+            state_size: 128,
+            conv_kernel: 4,
+            group_count: 8,
+            full_attention_interval: 4,
+        }),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Ground truth: a REAL Qwen3.5 file (#3346)
+// ---------------------------------------------------------------------------
+//
+// Every number below was read out of `~/models/Qwen3.5-0.8B-Q4_K_M.gguf`
+// (sha256 `bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517`,
+// GGUF v3, 320 tensors) by parsing the file header directly on 2026-09-16 —
+// not from a model card, a memory, or the family descriptor. The descriptor
+// `contracts/model-families/qwen3_5.yaml` declares only the 9b and 27b
+// variants, and no Qwen3.5-9B file is on this box, so the 0.8B file is the
+// only Qwen3.5 whose true tensor inventory can be MEASURED here. It is the
+// oracle for the shape arithmetic: if the config-derived count and this
+// inventory disagree, the arithmetic is wrong.
+//
+// Shapes are GGUF `ne` order (`[in, out]` for a 2-D weight); only the element
+// COUNT matters for a parameter total, so the order is reproduced verbatim
+// rather than transposed.
+
+/// One Gated DeltaNet layer of `Qwen3.5-0.8B-Q4_K_M.gguf` (measured: `blk.0`,
+/// identical for the 18 layers whose index is not `interval-1 mod interval`).
+const QWEN35_0_8B_GDN_LAYER: &[(&str, &[usize])] = &[
+    ("attn_gate.weight", &[1024, 2048]),
+    ("attn_norm.weight", &[1024]),
+    ("attn_qkv.weight", &[1024, 6144]),
+    ("ffn_down.weight", &[3584, 1024]),
+    ("ffn_gate.weight", &[1024, 3584]),
+    ("ffn_up.weight", &[1024, 3584]),
+    ("post_attention_norm.weight", &[1024]),
+    ("ssm_a", &[16]),
+    ("ssm_alpha.weight", &[1024, 16]),
+    ("ssm_beta.weight", &[1024, 16]),
+    ("ssm_conv1d.weight", &[4, 6144]),
+    ("ssm_dt.bias", &[16]),
+    ("ssm_norm.weight", &[128]),
+    ("ssm_out.weight", &[2048, 1024]),
+];
+
+/// One full-attention layer of the same file (measured: `blk.3`, identical for
+/// the 6 layers at indices 3, 7, 11, 15, 19, 23 — `full_attention_interval` 4).
+///
+/// Two shapes here are NOT what dense/GQA accounting predicts, and both are
+/// facts of the file: `attn_q` is `[1024, 4096]` = `2 * num_heads * head_dim`
+/// (Qwen3.5 gates the attention output, so the q projection emits the gate
+/// alongside the query — `attn_output` is `[2048, 1024]`, confirming
+/// `num_heads * head_dim` = 2048), and `attn_q_norm`/`attn_k_norm` are present
+/// at `head_dim`.
+const QWEN35_0_8B_ATTENTION_LAYER: &[(&str, &[usize])] = &[
+    ("attn_k.weight", &[1024, 512]),
+    ("attn_k_norm.weight", &[256]),
+    ("attn_norm.weight", &[1024]),
+    ("attn_output.weight", &[2048, 1024]),
+    ("attn_q.weight", &[1024, 4096]),
+    ("attn_q_norm.weight", &[256]),
+    ("attn_v.weight", &[1024, 512]),
+    ("ffn_down.weight", &[3584, 1024]),
+    ("ffn_gate.weight", &[1024, 3584]),
+    ("ffn_up.weight", &[1024, 3584]),
+    ("post_attention_norm.weight", &[1024]),
+];
+
+/// The file's non-layer tensors. There is no `output.weight`: the 0.8B TIES
+/// its unembedding to the embedding, unlike the 9b descriptor.
+const QWEN35_0_8B_GLOBAL: &[(&str, &[usize])] = &[
+    ("output_norm.weight", &[1024]),
+    ("token_embd.weight", &[1024, 248_320]),
+];
+
+/// Number of GDN and full-attention layers in the measured file (24 blocks,
+/// `qwen35.full_attention_interval` = 4).
+const QWEN35_0_8B_GDN_LAYERS: u64 = 18;
+const QWEN35_0_8B_ATTENTION_LAYERS: u64 = 6;
+
+/// Total elements of a measured tensor list.
+fn tensor_elements(tensors: &[(&str, &[usize])]) -> u64 {
+    tensors
+        .iter()
+        .map(|(_, dims)| u64::try_from(dims.iter().product::<usize>()).unwrap_or(u64::MAX))
+        .sum()
+}
+
+/// `Qwen3.5-0.8B` as the GGUF's own metadata keys describe it: `block_count`
+/// 24, `embedding_length` 1024, `feed_forward_length` 3584,
+/// `attention.head_count` 8, `attention.head_count_kv` 2, `attention.key_length`
+/// 256, `rope.freq_base` 1e7, `attention.layer_norm_rms_epsilon` 1e-6, and a
+/// 248320-token vocabulary (`token_embd.weight` is `[1024, 248320]`).
+fn qwen35_0_8b_size() -> ModelSizeConfig {
+    ModelSizeConfig {
+        parameters: "0.8B".to_string(),
+        hidden_dim: 1024,
+        num_layers: 24,
+        num_heads: 8,
+        num_kv_heads: 2,
+        intermediate_dim: 3584,
+        vocab_size: 248_320,
+        max_position_embeddings: 262_144,
+        head_dim: 256,
+        rope_theta: 10_000_000.0,
+        norm_eps: 1e-6,
+    }
+}
+
+/// The measured file total: `752,393,024` parameters.
+const QWEN35_0_8B_MEASURED_TOTAL: u64 = 752_393_024;
+
+#[test]
+fn qwen35_0_8b_measured_inventory_sums_to_the_file_total() {
+    // Tensor COUNT: 14 per GDN layer, 11 per attention layer, 2 global = 320,
+    // which is what the GGUF header declares (`n_tensors`).
+    let counted = QWEN35_0_8B_GDN_LAYER.len() * 18 + QWEN35_0_8B_ATTENTION_LAYER.len() * 6 + 2;
+    assert_eq!(counted, 320, "GGUF header declares 320 tensors");
+
+    assert_eq!(tensor_elements(QWEN35_0_8B_GDN_LAYER), 21_555_360);
+    assert_eq!(tensor_elements(QWEN35_0_8B_ATTENTION_LAYER), 18_352_640);
+    assert_eq!(tensor_elements(QWEN35_0_8B_GLOBAL), 254_280_704);
+
+    let total = tensor_elements(QWEN35_0_8B_GLOBAL)
+        + QWEN35_0_8B_GDN_LAYERS * tensor_elements(QWEN35_0_8B_GDN_LAYER)
+        + QWEN35_0_8B_ATTENTION_LAYERS * tensor_elements(QWEN35_0_8B_ATTENTION_LAYER);
+    assert_eq!(total, QWEN35_0_8B_MEASURED_TOTAL);
+}
+
+/// The defect of #3346, as a number rather than a claim: one layer kind applied
+/// to all 24 layers cannot reproduce a REAL hybrid file.
+///
+/// Before #3346 this shortfall was 107,992,896 (14.4%) against the then-dense
+/// `attention_layer_params`. The dense baseline is gone — that function now
+/// models the gated q projection and the q/k norms the file actually has — so
+/// what is left to measure is the mixer itself: 18 of the 24 layers are Gated
+/// DeltaNet, and at these dimensions a DeltaNet layer is LARGER than an
+/// attention layer (21,555,360 against 18,352,640), so uniform accounting is
+/// short by 57,648,960.
+///
+/// The sign is not universal, which is the point: at the 9b descriptor's
+/// dimensions the same comparison inverts (see
+/// `qwen35_9b_uniform_layers_are_the_wrong_model_for_a_hybrid_family`), because
+/// that descriptor keeps `inner_size: 2048` while quadrupling `hidden_dim`.
+/// Only the real schedule gets a hybrid model right.
+#[test]
+fn uniform_accounting_cannot_reproduce_the_measured_qwen35_0_8b_file() {
+    let size = qwen35_0_8b_size();
+    let constraints = qwen35_0_8b_constraints();
+    let p = model_parameter_count(&size, &constraints, &uniform_layers(&size, &constraints));
+
+    assert_eq!(p.total, 694_744_064);
+    assert_eq!(QWEN35_0_8B_MEASURED_TOTAL - p.total, 57_648_960);
+    assert!(
+        tensor_elements(QWEN35_0_8B_GDN_LAYER) > tensor_elements(QWEN35_0_8B_ATTENTION_LAYER),
+        "at 0.8B dims the DeltaNet layer is the bigger of the two"
+    );
+}
+
+/// The same constraints, but as the MEASURED 0.8B file declares them: its
+/// `ssm.group_count` is 16 (not the 9b descriptor's 8), it ties its
+/// unembedding, and its full-attention layers carry q/k norms.
+fn qwen35_0_8b_constraints() -> ModelConstraints {
+    ModelConstraints {
+        tied_embeddings: true,
+        deltanet: Some(DeltaNetShape {
+            inner_size: 2048,
+            state_size: 128,
+            conv_kernel: 4,
+            group_count: 16,
+            full_attention_interval: 4,
+        }),
+        ..qwen35_constraints()
+    }
+}
+
+/// #3346 acceptance. Fed the 0.8B configuration, the equation must reproduce
+/// the measured file EXACTLY — not approximately, and not after tuning a
+/// constant. Both layer kinds are checked separately so a failure names which
+/// block is mis-shaped rather than only that the total drifted.
+#[test]
+fn qwen35_0_8b_config_derived_count_equals_the_measured_gguf_inventory() {
+    let size = qwen35_0_8b_size();
+    let constraints = qwen35_0_8b_constraints();
+    let shape = constraints
+        .deltanet
+        .expect("the 0.8B constraints declare a DeltaNet shape");
+
+    assert_eq!(
+        gated_deltanet_layer_params(&size, &constraints, &shape).total(),
+        tensor_elements(QWEN35_0_8B_GDN_LAYER),
+        "Gated DeltaNet layer"
+    );
+    assert_eq!(
+        attention_layer_params(&size, &constraints).total(),
+        tensor_elements(QWEN35_0_8B_ATTENTION_LAYER),
+        "full-attention layer"
+    );
+
+    let layers = hybrid_layers(&size, &constraints);
+    assert_eq!(layers.len(), 24);
+    let p = model_parameter_count(&size, &constraints, &layers);
+    assert_eq!(p.total, QWEN35_0_8B_MEASURED_TOTAL);
+}
+
+/// The hybrid schedule is measured, not assumed: in the real file the layers
+/// carrying `attn_q`/`attn_k`/`attn_v` are exactly 3, 7, 11, 15, 19, 23 — every
+/// `full_attention_interval`-th layer, counting the LAST of each group.
+#[test]
+fn the_hybrid_schedule_puts_full_attention_last_in_each_group() {
+    let size = qwen35_0_8b_size();
+    let constraints = qwen35_0_8b_constraints();
+    let shape = constraints.deltanet.expect("declared");
+    let attn = attention_layer_params(&size, &constraints);
+    let full: Vec<usize> = hybrid_layers(&size, &constraints)
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| **l == attn)
+        .map(|(i, _)| i)
+        .collect();
+
+    assert_eq!(full, vec![3, 7, 11, 15, 19, 23]);
+    assert_eq!(shape.full_attention_interval, 4);
 }
 
 // ---------------------------------------------------------------------------
@@ -62,13 +288,17 @@ fn qwen35_constraints() -> ModelConstraints {
 #[test]
 fn worked_example_attention_layer_params() {
     let p = attention_layer_params(&toy_size(), &qwen35_constraints());
-    // d_attn = d*q_dim + 2*d*kv_dim + q_dim*d = 4*4 + 2*4*2 + 4*4 = 48
-    assert_eq!(p.d_attn, 48);
+    // Qwen3.5 gates the attention output, so q_out = 2*q_dim (MEASURED:
+    // attn_q [1024, 4096] against attn_output [2048, 1024] in the 0.8B file),
+    // and qk_norm adds one d_k vector each for attn_q_norm/attn_k_norm.
+    // d_attn = d*q_out + 2*d*kv_dim + q_dim*d + 2*d_k
+    //        = 4*8 + 2*4*2 + 4*4 + 2*2 = 68
+    assert_eq!(p.d_attn, 68);
     // d_ffn = 3*d*d_ff = 3*4*8 = 96
     assert_eq!(p.d_ffn, 96);
     // d_norm = 2*d = 8
     assert_eq!(p.d_norm, 8);
-    assert_eq!(p.total(), 152);
+    assert_eq!(p.total(), 172);
 }
 
 #[test]
@@ -79,10 +309,10 @@ fn worked_example_model_parameter_count() {
     let p = model_parameter_count(&size, &constraints, &layers);
 
     assert_eq!(p.embedding, 40); // V*d = 10*4
-    assert_eq!(p.layers, 304); // L*(48+96+8) = 2*152
+    assert_eq!(p.layers, 344); // L*(68+96+8) = 2*172
     assert_eq!(p.final_norm, 4); // d_final = d
     assert_eq!(p.unembedding, 40); // untied lm_head = V*d
-    assert_eq!(p.total, 388); // P = 40 + 304 + 4 + 40
+    assert_eq!(p.total, 428); // P = 40 + 344 + 4 + 40
 }
 
 #[test]
@@ -94,7 +324,7 @@ fn tied_embeddings_drop_the_trailing_v_times_d() {
     let p = model_parameter_count(&size, &constraints, &layers);
 
     assert_eq!(p.unembedding, 0);
-    assert_eq!(p.total, 348); // 388 - 40
+    assert_eq!(p.total, 388); // 428 - 40
 }
 
 #[test]
@@ -103,29 +333,89 @@ fn bias_adds_exactly_the_four_projection_bias_vectors() {
     let mut constraints = qwen35_constraints();
     constraints.has_bias = true;
     let p = attention_layer_params(&size, &constraints);
-    // q_dim + 2*kv_dim + d = 4 + 4 + 4 = 12
-    assert_eq!(p.d_attn, 48 + 12);
+    // qwen35_constraints() is a GATED family, so the q projection is q_out =
+    // 2*q_dim wide and its bias vector is too: q_out + 2*kv_dim + d
+    // = 8 + 4 + 4 = 16. This test asserted 12 (a q_dim-wide bias under a
+    // q_out-wide matrix) until the quorum on #3350 read the two lines against
+    // each other; a bias narrower than its projection is not a model.
+    assert_eq!(p.d_attn, 68 + 16);
 }
 
-/// QE2E-INV-001 wants `P(Qwen3.5-9B) ∈ [9.0B, 9.2B]`. Dense/GQA accounting
-/// gives 8.21B, because three of every four Qwen3.5 layers are Gated DeltaNet
-/// and their `d_attn` is sized by `inner_size`/`state_size`/`conv_kernel`/
-/// `group_count`, none of which exist in `ModelConstraints`. This test pins the
-/// number so the gap is a measured fact, not a claim.
 #[test]
-fn qwen35_9b_uniform_layers_do_not_reach_the_invariant_range() {
+fn a_non_gated_family_with_biases_still_counts_a_q_dim_wide_q_bias() {
+    // The other polarity: where q_out == q_dim (every non-gated family), the
+    // fix above must change nothing.
+    let size = toy_size();
+    let mut constraints = qwen35_constraints();
+    constraints.attention_type = AttentionType::Gqa;
+    constraints.has_bias = true;
+    let p = attention_layer_params(&size, &constraints);
+    let without = {
+        let mut c = constraints.clone();
+        c.has_bias = false;
+        attention_layer_params(&size, &c)
+    };
+    // q_dim + 2*kv_dim + d = 4 + 4 + 4 = 12, on top of the un-doubled matrix.
+    assert_eq!(p.d_attn - without.d_attn, 12);
+}
+
+/// The premise this test used to carry — "the four DeltaNet keys do not exist
+/// in `ModelConstraints`" — stopped being true in #3346, so it states what is
+/// true now: [`uniform_layers`] is the WRONG model for a hybrid family in
+/// either direction. Pretending all 32 layers run softmax attention OVER-counts
+/// the mixer (8.745B) exactly as pretending they are all dense under-counted it
+/// before; only [`hybrid_layers`] describes the architecture.
+#[test]
+fn qwen35_9b_uniform_layers_are_the_wrong_model_for_a_hybrid_family() {
     let size = qwen35_9b_size();
     let constraints = qwen35_constraints();
-    let layers = uniform_layers(&size, &constraints);
+    let uniform = model_parameter_count(&size, &constraints, &uniform_layers(&size, &constraints));
+    let hybrid = model_parameter_count(&size, &constraints, &hybrid_layers(&size, &constraints));
+
+    assert_eq!(uniform.embedding, 1_017_118_720);
+    assert_eq!(uniform.unembedding, 1_017_118_720);
+    assert_eq!(uniform.total, 8_745_406_464);
+    assert!(
+        uniform.total > hybrid.total,
+        "a full-attention layer is bigger than a DeltaNet layer at 9B dims"
+    );
+}
+
+/// QE2E-INV-001 wants `P(Qwen3.5-9B) ∈ [9.0B, 9.2B]`. With the DeltaNet shape
+/// carried and the arithmetic falsified against a real file, the 9b descriptor
+/// yields **8,344,907,136** — still 0.655B short. The obligation therefore
+/// stays UNPROVED, and this test exists to keep it that way: the honest move is
+/// to pin the number, not to widen the range until it passes.
+///
+/// What is unaccounted for is in the descriptor, and it is visible in the
+/// numbers it declares. `inner_size: 2048` is the value the 0.8B file uses at
+/// `hidden_dim` 1024, i.e. `2*d`; at the 9b's `hidden_dim` 4096 the same 2048
+/// makes the mixer NARROWER than the residual stream it mixes, and it is also
+/// inconsistent with the 9b's own `group_count: 8` (8 * 128 != 2048, whereas
+/// the measured 0.8B satisfies 16 * 128 == 2048). Either the 9b `inner_size`
+/// and `group_count` were copied from the small variant, or the range was
+/// copied from a model card. Only a real Qwen3.5-9B file can tell them apart,
+/// and no such file is on this box — see #3346.
+#[test]
+fn qwen35_9b_hybrid_layers_still_fall_short_of_the_invariant_range() {
+    let size = qwen35_9b_size();
+    let constraints = qwen35_constraints();
+    let layers = hybrid_layers(&size, &constraints);
     let p = model_parameter_count(&size, &constraints, &layers);
 
-    assert_eq!(p.embedding, 1_017_118_720);
-    assert_eq!(p.unembedding, 1_017_118_720);
-    assert_eq!(p.total, 8_208_519_168);
+    assert_eq!(layers.len(), 32);
+    assert_eq!(p.total, 8_344_907_136);
     assert!(
         p.total < 9_000_000_000,
-        "QE2E-INV-001 is NOT discharged by dense accounting: got {}",
+        "QE2E-INV-001 is still NOT discharged: got {}",
         p.total
+    );
+
+    // The descriptor's own self-inconsistency, as a fact rather than a remark.
+    let shape = constraints.deltanet.expect("9b declares a DeltaNet shape");
+    assert!(
+        !shape.heads_span_the_mixer(),
+        "9b declares group_count * state_size != inner_size"
     );
 }
 

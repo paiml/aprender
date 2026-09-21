@@ -1,0 +1,17 @@
+- id: PMAT-3670
+  github_issue: 3670
+  item_type: task
+  title: 'check_fleet_pv_shapes_gate.sh FAILs guard-tree on fleet state (intel pin rewritten to 0.65.2 by another repo''s CI) — fleet state must be UNMEASURED, never FAIL'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-21T07:33:19Z
+  updated: 2026-09-21T07:33:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE — issue #3670 done_when, verbatim in substance. (1) Each fleet-state branch prints UNMEASURED runner=... reason=<pin-mismatch|pv-env|judge-env|no-binary|incapable> ..., exits 0, and never prints PASS or SUMMARY PASS. (2) A mutant restoring FAIL on pin-mismatch exits 1, and a mutant restoring the ENV exit on pv-env exits 2; each mutant row refuses to pass if its edit did not apply. (3) A planted violation from a matching pinned binary is still RED, and a control that does not fire is still RED. (4) Real runs: pin forced to 0.65.2 under a 0.68.2 binary gives UNMEASURED reason=pin-mismatch (rc 0); the fleet pv on a tree with migrated parity records gives PASS verdict=Pass. RULING: PASS/FAIL only from a verdict produced by a binary that matches its pin; fleet state is UNMEASURED with a named reason and exit 0. Scope: scripts/check_fleet_pv_shapes_gate.sh only, one commit on top of #3653 (053992448).'

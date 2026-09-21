@@ -1,0 +1,17 @@
+- id: PMAT-3338
+  github_issue: 3338
+  item_type: task
+  title: 'pv proof-status --table panics on the real corpus: a byte slice lands inside a multi-byte character (#3338)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-09-21T00:32:08Z
+  updated: 2026-09-21T00:32:08Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Transcribed from issue #3338. Repro: `pv proof-status contracts --table` on origin/main''s contracts, rc=101, panicked at crates/aprender-contracts/src/obligation_matrix.rs:169:11: "byte index 40 is not a char boundary; it is inside ''∈'' (bytes 39..42) of `for Q4_K_M Qwen2.5-Coder, quantization ∈ {Q4_K, Q6_K}`". Plain `pv proof-status` (no --table) does not panic; only the table renderer does. Cause as the issue states it: `truncate(s, max)` returns `&s[..max]`, a byte slice, which panics when `max` falls inside a multi-byte character. Done when the table renderer no longer panics on that input — truncation cuts on a char boundary, not a byte index — and `pv proof-status contracts --table` runs on the real corpus. This fix rides in PR #3351 because that PR''s L2-column change is exercised through `--table` on the real corpus, which panicked before it.'

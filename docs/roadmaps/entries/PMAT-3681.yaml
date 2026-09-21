@@ -1,0 +1,17 @@
+- id: PMAT-3681
+  github_issue: 3681
+  item_type: task
+  title: '#3669 batch: two functions over the complexity ratchet (run_shapes_gate NEW 13/28, dispatch_runtime_commands GROWN 41->43) — extract helpers, no behaviour change'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-21T09:12:54Z
+  updated: 2026-09-21T09:12:54Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (quoted from issue #3681): 1. run_shapes_gate is under the threshold (cyclomatic < 30, cognitive <= 25) and dispatch_runtime_commands is back to main''s 15/41 — bash scripts/check_complexity_ratchet.sh reports none new, none grown. 2. No behaviour change: each extraction moves code verbatim into a helper (same order, same outcomes); cargo test -p aprender-contracts --lib passes the same count as before (1684); cargo test -p apr-cli --lib dispatch/registry pass; clippy -D warnings clean on both crates. 3. Nothing else in the diff: only shapes_gate.rs and dispatch.rs, plus this row''s roadmap fragment. CONTEXT: the base of this diff is the batch head 01abbca6d (release/0.69-batch); the functions'' prior shapes come from #3600 (run_shapes_gate) and #3604 + #3638/#3602 (dispatch_runtime_commands), which are already in the batch with their own receipts and are NOT judged here.'

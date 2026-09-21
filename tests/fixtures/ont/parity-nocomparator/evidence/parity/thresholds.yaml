@@ -1,0 +1,5 @@
+schema: apr-parity-thresholds/v1
+min_positions: 64
+default:
+  min_cosine: 0.98
+  basis: 'fixture'

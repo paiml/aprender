@@ -99,6 +99,41 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     }
 }
 
+/// #3604: `--revalidate` reaches the F2 hybrid guard through the same env seam the guard already
+/// reads `SKIP_PARITY_GATE` from (`realizar::gguf::f2_receipt::revalidate_requested`). Chosen over
+/// threading a bool through `run_entry::run`'s 37 positional parameters and the six forward
+/// signatures that #3606 is changing at the same time; the flag is still a flag to the user, and
+/// the guard prints `--revalidate` as its reason when it fires. (Extracted from
+/// `dispatch_runtime_commands` unchanged, to keep it under the complexity ratchet.)
+fn request_f2_revalidate(revalidate: bool) {
+    if revalidate {
+        // SAFETY-BY-ORDER: set before any inference thread exists; the
+        // only reader is the guard, on this process.
+        std::env::set_var("APR_F2_REVALIDATE", "1");
+    }
+}
+
+/// #3602: classify an `apr run` request ONCE, with the same tested classifier the registry uses.
+/// `after_generation` refuses to report a forced accelerator that fell to CPU as success; before
+/// this it had no production caller at all, so `apr run --gpu` on a model the GPU gate rejects
+/// printed a result and exited 0. (Extracted from `dispatch_runtime_commands` unchanged.)
+fn run_accelerator_forced(gpu: bool, no_gpu: bool, backend: Option<&str>) -> bool {
+    matches!(
+        crate::registry::Request {
+            gpu,
+            no_gpu,
+            backend,
+            // `apr run` exposes no `--gpu-layers` (see `Commands::Run`
+            // in commands_enum.rs — it carries `gpu` and `no_gpu` and
+            // nothing else); that flag belongs to `apr serve`. So this
+            // is ABSENT for this surface, not a placeholder to fill in.
+            layers_want_accelerator: false,
+        }
+        .wanted(),
+        crate::registry::Wanted::Kind(_) | crate::registry::Wanted::AnyAccelerator
+    )
+}
+
 /// Dispatch runtime commands: check, run, serve.
 fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     Some(match cli.command.as_ref() {
@@ -117,6 +152,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             format,
             no_gpu,
             gpu,
+            revalidate,
             offline,
             benchmark,
             trace,
@@ -138,6 +174,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             verbose,
             backend: BackendArg { backend },
         } => {
+            request_f2_revalidate(*revalidate);
             // GH-614: --backend cpu forces CPU-only inference
             let backend_forces_cpu = backend.as_deref() == Some("cpu");
             if let Some(ref b) = backend {
@@ -199,6 +236,8 @@ or drop `--backend`."
                 return Some(Err(e));
             }
 
+            let accel_forced = run_accelerator_forced(*gpu, *no_gpu, backend.as_deref());
+
             // GH-326: --gpu overrides --no-gpu when both specified
             let effective_no_gpu = if *gpu {
                 false
@@ -233,6 +272,7 @@ or drop `--backend`."
                 task.as_deref(),
                 effective_format,
                 effective_no_gpu,
+                accel_forced,
                 *offline,
                 *benchmark,
                 *verbose || cli.verbose,

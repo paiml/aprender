@@ -1,0 +1,21 @@
+- id: PMAT-3392
+  github_issue: 3392
+  item_type: task
+  title: 'P2: Known covariates, past covariates and static features in forecasting — CRUX-O-22'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-22, competitor autogluon, demand 3. ARIMA is univariate. No container carries per-item static features or time-varying covariates, and no model consumes them. FALSIFIABLE (contracts/crux-O-22-v1.yaml): a known covariate that fully determines the target is used — on a fixture where y = 10*holiday + noise, a model given known_covariates has MASE < 0.5 x the same model without them; future covariates missing for the horizon is an error — predict() without known_covariates for all prediction_length steps is an Err naming the first missing timestamp. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

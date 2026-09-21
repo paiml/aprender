@@ -21,8 +21,8 @@ const MAX_DIMS: u32 = 16;
 const MAX_TENSOR_ELEMENTS: usize = 4_000_000_000;
 
 use super::dequant::{
-    dequantize_iq_approximate, dequantize_q2_k, dequantize_q3_k, dequantize_q4_k, dequantize_q5_1,
-    dequantize_q5_k, dequantize_q6_k, f16_to_f32,
+    dequantize_q2_k, dequantize_q3_k, dequantize_q4_k, dequantize_q5_1, dequantize_q5_k,
+    dequantize_q6_k, f16_to_f32,
 };
 use super::types::{
     padding_for_alignment, GgufValue, TensorDataMap, GGUF_DEFAULT_ALIGNMENT, GGUF_MAGIC,

@@ -1,0 +1,94 @@
+# CRUX-O-05 — Automatic feature-type inference and the AutoML feature pipeline (numeric, categorical, datetime, text n-gram, drop-unique, drop-duplicate)
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3375, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-05
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: partial
+  github_issue: 3375
+  description: >
+    Automatic feature-type inference and the AutoML feature pipeline (numeric, categorical, datetime, text n-gram, drop-unique, drop-duplicate). Competitor verb: AutoMLPipelineFeatureGenerator  # features/src/autogluon/features/generators/auto_ml_pipeline.py. Gap measured in aprender at eb262f8eb: Encoders exist (LabelEncoder, OneHotEncoder, OrdinalEncoder, StandardScaler, PolynomialFeatures in crates/aprender-core/src/preprocessing/) but every one is applied by hand to a column the caller already typed. There is no pass that reads a raw DataFrame, infers each column's kind, and emits a fitted transform. Datetime expansion and text n-gram features do not exist. TfidfVectorizer exists in text/ but is not wired to a tabular pipeline.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3375'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  column_kinds_are_inferred_from_raw_values:
+    formula: |
+      a fixture CSV with int, float, low-cardinality string, high-cardinality string, ISO datetime and free-text columns is typed as {numeric, numeric, categorical, text, datetime, text} exactly
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "column kinds are inferred from raw values"
+  constant_and_duplicate_columns_are_dropped_and_the_drop_is_r:
+    formula: |
+      a column with one unique value and an exact duplicate of another column are both absent from the transformed output AND named in the fit report
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "constant and duplicate columns are dropped and the drop is reported"
+  the_fitted_pipeline_is_deterministic_under_transform:
+    formula: |
+      transform(train) then transform(train) are byte-identical and transform(test) never sees a category unseen at fit as anything but the reserved unknown code
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "the fitted pipeline is deterministic under transform"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-05-001
+  rule: "column kinds are inferred from raw values"
+  prediction: "a fixture CSV with int, float, low-cardinality string, high-cardinality string, ISO datetime and free-text columns is typed as {numeric, numeric, categorical, text, datetime, text} exactly"
+  test: >-
+    LIVE-PENDING - column kinds are inferred from raw values. No test surface exists today because the capability is partial: Automatic feature-type inference and the AutoML feature pipeline (numeric, categorical, datetime, text n-gram, drop-unique, drop-duplicate) (aprender#3375, CRUX-O-05). PROMOTE by authoring a test named infer_feature_kinds_fixture in module `automl/features/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'column kinds are inferred from raw values' is violated — the autogluon parity claim for CRUX-O-05 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-05-002
+  rule: "constant and duplicate columns are dropped and the drop is reported"
+  prediction: "a column with one unique value and an exact duplicate of another column are both absent from the transformed output AND named in the fit report"
+  test: >-
+    LIVE-PENDING - constant and duplicate columns are dropped and the drop is reported. No test surface exists today because the capability is partial: Automatic feature-type inference and the AutoML feature pipeline (numeric, categorical, datetime, text n-gram, drop-unique, drop-duplicate) (aprender#3375, CRUX-O-05). PROMOTE by authoring a test named drop_unique_and_duplicate_reported in module `automl/features/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'constant and duplicate columns are dropped and the drop is reported' is violated — the autogluon parity claim for CRUX-O-05 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-05-003
+  rule: "the fitted pipeline is deterministic under transform"
+  prediction: "transform(train) then transform(train) are byte-identical and transform(test) never sees a category unseen at fit as anything but the reserved unknown code"
+  test: >-
+    LIVE-PENDING - the fitted pipeline is deterministic under transform. No test surface exists today because the capability is partial: Automatic feature-type inference and the AutoML feature pipeline (numeric, categorical, datetime, text n-gram, drop-unique, drop-duplicate) (aprender#3375, CRUX-O-05). PROMOTE by authoring a test named pipeline_transform_deterministic in module `automl/features/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'the fitted pipeline is deterministic under transform' is violated — the autogluon parity claim for CRUX-O-05 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "column kinds are inferred from raw values"
+- type: invariant
+  property: "constant and duplicate columns are dropped and the drop is reported"
+- type: invariant
+  property: "the fitted pipeline is deterministic under transform"
+
+kani_harnesses:
+- id: KH-CRUX-O-05-001
+  obligation: column_kinds_are_inferred_from_raw_values
+  property: column_kinds_are_inferred_from_raw_values_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-05-002
+  obligation: constant_and_duplicate_columns_are_dropped_and_the_drop_is_r
+  property: constant_and_duplicate_columns_are_dropped_and_the_drop_is_r_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-05-003
+  obligation: the_fitted_pipeline_is_deterministic_under_transform
+  property: the_fitted_pipeline_is_deterministic_under_transform_holds_on_bounded_input
+  bound: 4
