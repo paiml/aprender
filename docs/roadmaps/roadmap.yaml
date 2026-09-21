@@ -20145,3 +20145,23 @@ roadmap:
   labels:
   - kind:code
   notes: "Refs #3577 (ONT-4c3; its ledger binding is infra's row, bound after this merges) and #3624 (the by_entity_type sibling, not closed here). R-3 of ONT-001: pc_extract is one planted defect per registered extractor, every run."
+- id: PMAT-3775
+  github_issue: 3775
+  item_type: task
+  title: apr code -p --output-format json prints NO JSON envelope on a driver error (rc 1, stderr only) — a machine consumer cannot tell failure from nothing
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-f8
+  created: '2026-09-21T21:40:00Z'
+  updated: '2026-09-21T21:40:00Z'
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3775 done_when 1, verbatim: "With `--output-format json`, EVERY exit, success or failure, writes exactly one JSON document to stdout. On failure it carries `{"error": {"kind", "message", "exit_code"}}`, plus `capacity` where #3720 / #3596''s CapacityRefused applies, and the same field names as #3720''s response contract (one schema, not a second copy)."'
+  - 'Issue #3775 done_when 2, verbatim: "Cases: the serve child fails to load; a model refused (0 layers, capacity); a tool error. Each gives a parseable envelope, rc ≠ 0, and a RED test at 0.69.0."'
+  - 'Issue #3775 done_when 3, verbatim: "Nothing but the JSON document on stdout (the #3606 "stream declared" rule); diagnostics go to stderr."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Minted by aprender-f8. The cop (aprender-04), verbatim: "(a) the JSON envelope missing on a driver error is a new 0.69.1 issue and **yours** (same area). Every exit writes exactly one JSON document to stdout, with the error fields matching fd''s #3720 schema (one schema)." The schema is the #3720 text aprender-f8 proposed (https://github.com/paiml/aprender/issues/3720#issuecomment-5767761121), which aprender-fd accepted (comment 5767765474), verbatim: "Accepted as written on #3720 (comment 5767765474), with one precision: `empty_completion` uses the command''s own inference-failure exit code (apr run 8, apr code 1), so nothing gets re-mapped." Fields: status ok|refused|failed; error {kind, message, exit_code} iff status != ok; capacity iff kind == capacity_refused; existing apr code fields (type/subtype/is_error/result) stay, is_error == (status != ok).'

@@ -861,7 +861,8 @@ mod emit_trace_tests {
 
 #[cfg(test)]
 mod non_interactive_format_tests {
-    use super::super::{build_json_result_envelope, parse_json_input_envelope};
+    use super::super::parse_json_input_envelope;
+    use crate::agent::code_envelope::{envelope, CodeOutcome};
     use crate::agent::{AgentLoopResult, TokenUsage};
 
     fn synth_result(text: &str) -> AgentLoopResult {
@@ -879,7 +880,7 @@ mod non_interactive_format_tests {
         // contract for any tool downstream (e.g. CCPA differ) that parses
         // this envelope.
         let r = synth_result("the answer is 4");
-        let s = build_json_result_envelope(&r, std::time::Duration::from_millis(123), false);
+        let s = envelope(Some(&r), None, std::time::Duration::from_millis(123));
         let v: serde_json::Value = serde_json::from_str(&s).expect("envelope is valid JSON");
         assert_eq!(v["type"], "result");
         assert_eq!(v["subtype"], "success");
@@ -896,7 +897,8 @@ mod non_interactive_format_tests {
     #[test]
     fn json_output_envelope_marks_error_subtype_on_empty_response() {
         let r = synth_result("");
-        let s = build_json_result_envelope(&r, std::time::Duration::from_millis(1), true);
+        let outcome = CodeOutcome::empty_completion(r.iterations, r.tool_calls);
+        let s = envelope(Some(&r), Some(&outcome), std::time::Duration::from_millis(1));
         let v: serde_json::Value = serde_json::from_str(&s).expect("valid JSON");
         assert_eq!(v["subtype"], "error");
         assert_eq!(v["is_error"], true);
@@ -1268,4 +1270,150 @@ fn falsify_2607_dropping_driver_handle_alone_leaves_serve_child_unreaped() {
         "#2607: release_driver must leave no owner alive, so the `apr serve` child is killed \
          before std::process::exit skips every destructor"
     );
+}
+
+// ---------------------------------------------------------------------------
+// #3775: `apr code -p --output-format json` writes ONE JSON document per exit
+// ---------------------------------------------------------------------------
+
+/// A driver for the #3775 scenarios: a hard driver error, a failing tool call
+/// repeated until the loop guard blocks it, or an empty answer.
+struct ScenarioDriver {
+    scenario: String,
+}
+
+#[async_trait::async_trait]
+impl LlmDriver for ScenarioDriver {
+    async fn complete(
+        &self,
+        _request: crate::agent::driver::CompletionRequest,
+    ) -> Result<crate::agent::driver::CompletionResponse, crate::agent::result::AgentError> {
+        use crate::agent::driver::{CompletionResponse, ToolCall};
+        use crate::agent::result::{AgentError, DriverError, StopReason, TokenUsage};
+        match self.scenario.as_str() {
+            "driver_error" => Err(AgentError::Driver(DriverError::InferenceFailed(
+                "apr serve HTTP 500: Model architecture not supported for GPU-resident path".into(),
+            ))),
+            "tool_error" => Ok(CompletionResponse {
+                text: String::new(),
+                stop_reason: StopReason::ToolUse,
+                tool_calls: vec![ToolCall {
+                    id: "t1".into(),
+                    name: "file_read".into(),
+                    input: serde_json::json!({"path": "does/not/exist-3775.txt"}),
+                }],
+                usage: TokenUsage::default(),
+            }),
+            _ => Ok(CompletionResponse {
+                text: String::new(),
+                stop_reason: StopReason::EndTurn,
+                tool_calls: vec![],
+                usage: TokenUsage::default(),
+            }),
+        }
+    }
+
+    fn context_window(&self) -> usize {
+        32_768
+    }
+
+    fn privacy_tier(&self) -> PrivacyTier {
+        PrivacyTier::Sovereign
+    }
+}
+
+/// Not a test on its own: the body of the #3775 falsifiers, run in a CHILD
+/// test process so its stdout can be captured whole. Returns at once unless
+/// APR_CODE_3775_CHILD names a scenario.
+#[test]
+fn child_3775_single_prompt_json_run() {
+    let Ok(scenario) = std::env::var("APR_CODE_3775_CHILD") else {
+        return;
+    };
+    let manifest = build_default_manifest();
+    let tools = build_code_tools(&manifest);
+    let memory = crate::agent::memory::InMemorySubstrate::new();
+    let driver = ScenarioDriver { scenario };
+    let mut budget = TurnBudget::new(1);
+    let permit = permit_single_prompt(&mut budget, true)
+        .expect("one turn of budget must permit a -p run")
+        .expect("a -p run takes a permit");
+    let code = run_single_prompt(
+        &manifest, &driver, &tools, &memory, "Fix it.", None, "json", None, permit,
+    );
+    eprintln!("CHILD_EXIT_CODE={code}");
+}
+
+/// Runs `child_3775_single_prompt_json_run` for `scenario` in a fresh process;
+/// returns (the JSON documents found on its stdout, the exit code it returned).
+fn run_3775_child(scenario: &str) -> (Vec<serde_json::Value>, i32) {
+    let exe = std::env::current_exe().expect("the test binary's own path");
+    let out = std::process::Command::new(exe)
+        .args([
+            "agent::code::tests::child_3775_single_prompt_json_run",
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+            "-q",
+        ])
+        .env("APR_CODE_3775_CHILD", scenario)
+        .output()
+        .expect("the child test process runs");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let docs = stdout
+        .lines()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l.trim()).ok())
+        .filter(serde_json::Value::is_object)
+        .collect();
+    let code = stderr
+        .lines()
+        .find_map(|l| l.strip_prefix("CHILD_EXIT_CODE="))
+        .and_then(|c| c.trim().parse().ok())
+        .unwrap_or_else(|| panic!("the child printed no exit code; stderr:\n{stderr}"));
+    (docs, code)
+}
+
+fn assert_one_error_document(scenario: &str, want_status: &str, want_kind: &str) -> i32 {
+    let (docs, code) = run_3775_child(scenario);
+    assert_eq!(
+        docs.len(),
+        1,
+        "#3775 {scenario}: a -p json run must write exactly one JSON document to stdout, found {docs:?}"
+    );
+    let d = &docs[0];
+    assert_ne!(code, 0, "#3775 {scenario}: a failed run must not exit 0");
+    assert_eq!(d["status"], want_status, "#3775 {scenario}: {d}");
+    assert_eq!(d["is_error"], true, "#3775 {scenario}: is_error == (status != ok): {d}");
+    assert_eq!(d["error"]["kind"], want_kind, "#3775 {scenario}: {d}");
+    assert_eq!(
+        d["error"]["exit_code"], code,
+        "#3775 {scenario}: the document's exit_code must be the process's real exit code: {d}"
+    );
+    code
+}
+
+/// FALSIFIER (#3775): the serve child fails, or loads a 0-layer model and
+/// answers HTTP 500 (#3571). RED at 0.69.0: stdout was EMPTY; only stderr
+/// said "Error: driver error: …".
+#[test]
+fn falsify_3775_driver_error_writes_one_json_document() {
+    assert_eq!(assert_one_error_document("driver_error", "failed", "inference_failed"), 1);
+}
+
+/// FALSIFIER (#3775): a tool that keeps failing. Measured, not assumed: in
+/// `-p` mode the loop guard BLOCKS the third identical failing call and the
+/// turn ends with no answer text (4 iterations, 3 tool calls), not with a
+/// circuit break. That is an empty completion, a failure with exit 1. RED at
+/// 0.69.0: the run exited 0 with a document carrying no status/error fields.
+#[test]
+fn falsify_3775_tool_error_writes_one_json_document() {
+    assert_eq!(assert_one_error_document("tool_error", "failed", "empty_completion"), 1);
+}
+
+/// FALSIFIER (#3775 / #3720 done_when 3): an empty answer is a failure. RED at
+/// 0.69.0: a document with no status/error fields, and exit 0.
+#[test]
+fn falsify_3775_empty_completion_is_a_failure_document() {
+    assert_eq!(assert_one_error_document("empty", "failed", "empty_completion"), 1);
 }
