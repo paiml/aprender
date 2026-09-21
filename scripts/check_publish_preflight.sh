@@ -29,6 +29,11 @@
 #   R5  the newest dogfood receipt (`.dogfood/receipt-*.json`, written by
 #       scripts/dogfood.sh) says `verdict: GO` for THIS commit and THIS
 #       version. A stale receipt, a NO-GO, or no receipt at all refuses.
+#   R7  the model matrix (#3717, #3712): the per-host receipts COMMITTED in this tree for this
+#       version (evidence/dogfood/models/<version>/, put there by the bump, #3708) are judged by
+#       scripts/check_model_ladder.sh -- the same judge autopilot's T-1 `models` step runs on its
+#       fresh measurement. Red, a missing receipt, a missing judge or a judge DECLINE (exit 2)
+#       refuses: a decline is not a pass.
 #
 # EXIT  0 every rule holds · 1 a rule refused · 2 the box cannot answer
 #       (no git/cargo/python3, not a repository). 2 is not a pass.
@@ -38,6 +43,7 @@
 #   PUBLISH_PREFLIGHT_ROOT         repository root (default: this script's repo)
 #   PUBLISH_PREFLIGHT_MAIN_REF     the main ref for R4 (default: origin/main)
 #   PUBLISH_PREFLIGHT_RECEIPT_DIR  the dogfood receipt dir (default: $ROOT/.dogfood)
+#   PUBLISH_PREFLIGHT_LADDER_JUDGE the R7 judge (default: $ROOT/scripts/check_model_ladder.sh)
 #
 # USAGE
 #   bash scripts/check_publish_preflight.sh             # the gate
@@ -129,6 +135,25 @@ print(d.get("verdict") or "-", d.get("commit") or "-", d.get("version") or "-",
         fi
     fi
     return 0
+}
+
+# R7, the T-4 end of the model matrix (#3717): the committed receipts, the T-1 judge.
+# rule_r7 root version -> prints its row; 0 accepted, 1 refused
+rule_r7() {
+    local root="$1" version="$2" judge out rc
+    judge="${PUBLISH_PREFLIGHT_LADDER_JUDGE:-$root/scripts/check_model_ladder.sh}"
+    if [ ! -f "$judge" ]; then
+        echo "FAIL  R7 no model-matrix judge at $judge: the committed receipts cannot be judged"
+        return 1
+    fi
+    out="$(cd "$root" && bash "$judge" --version "$version" 2>&1)"; rc=$?
+    case "$rc" in
+        0) echo "ok    R7 model matrix green for $version (committed receipts, $(basename "$judge"))"; return 0 ;;
+        2) echo "FAIL  R7 the model-matrix judge DECLINED (rc 2), and a decline is not a pass: $(tail -n 1 <<< "$out")" ;;
+        *) printf 'FAIL  R7 model matrix NOT green for %s (rc %s):\n%s\n' "$version" "$rc" \
+               "$(grep -E '^FAIL' <<< "$out" | head -n 10 | sed 's/^/        /')" ;;
+    esac
+    return 1
 }
 
 gate() {
@@ -237,11 +262,14 @@ for n, t, req in sorted(vdev):
         echo "ok    R6 no sibling dev-dependency carries a version (path-only, stripped at publish)"
     fi
 
+    # R7 the model matrix, re-read at T-4 through the T-1 judge (#3717)
+    rule_r7 "$root" "$version" || fails=1
+
     if [ "$fails" -ne 0 ]; then
         echo "REFUSE $PROG: publishing is not allowed from this tree (see the FAIL rows)."
         return 1
     fi
-    echo "PASS  $PROG: clean, versioned, tagged, on $main_ref, dogfood GO"
+    echo "PASS  $PROG: clean, versioned, tagged, on $main_ref, dogfood GO, model matrix green"
     return 0
 }
 
@@ -299,6 +327,7 @@ selftest() {
         printf '[package]\nname = "preflight-fixture"\nversion = "1.2.3"\nedition = "2021"\n\n[dependencies]\n' > "$d/Cargo.toml"
         printf 'pub fn f() {}\n' > "$d/src/lib.rs"
         printf '.dogfood/\n' > "$d/.gitignore"
+        write_judge "$d"
         git -C "$d" init -q -b fixture-main
         git -C "$d" -c user.name=t -c user.email=t@t config commit.gpgsign false
         ( cd "$d" && cargo metadata --no-deps --offline --format-version 1 >/dev/null 2>&1 )
@@ -307,6 +336,13 @@ selftest() {
         git -C "$d" tag v1.2.3
         mkdir -p "$d/.dogfood"
         write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    }
+    # R7's judge, committed in every fixture: it must be asked about THIS version (1.2.3), and it
+    # answers FX_LADDER_RC (default 0). A judge asked about anything else is red.
+    write_judge() { # dir
+        mkdir -p "$1/scripts"
+        printf '#!/usr/bin/env bash\n[ "${1:-} ${2:-}" = "--version 1.2.3" ] || { echo "FAIL  judge asked about: $*"; exit 1; }\n[ "${FX_LADDER_RC:-0}" = 0 ] || echo "FAIL  fx-rung red on lambda"\nexit "${FX_LADDER_RC:-0}"\n' \
+            > "$1/scripts/check_model_ladder.sh"
     }
     write_receipt() { # dir, verdict, commit, version [, phase, deferred-json-array]
         printf '{"crate":"preflight-fixture","version":"%s","timestamp":"20260903T000000Z","commit":"%s","gates":[],"phase":"%s","deferred":%s,"verdict":"%s"}\n' \
@@ -327,6 +363,7 @@ selftest() {
         fi
         printf 'pub fn b() {}\n' > "$d/b/src/lib.rs"
         printf '.dogfood/\n' > "$d/.gitignore"
+        write_judge "$d"
         git -C "$d" init -q -b fixture-main
         git -C "$d" -c user.name=t -c user.email=t@t config commit.gpgsign false
         ( cd "$d" && cargo metadata --no-deps --offline --format-version 1 >/dev/null 2>&1 )
@@ -426,6 +463,17 @@ selftest() {
     row versioned_sibling_devdep_acyclic_passes 0 "fx-a -> fx-b" "$d"
     d="$tmp/devdep_path"; build_ws_repo "$d" ''
     row pathed_sibling_devdep_passes   0 "PASS" "$d"
+
+    # R7 (#3717): the committed model-matrix receipts, judged by the T-1 judge. all_rules_hold above
+    # is the green row (the stub refuses any version but 1.2.3, so it also proves the argument).
+    d="$tmp/r7-red"; build_repo "$d"
+    FX_LADDER_RC=1 row r7_model_matrix_red_refuses       1 "FAIL  R7 model matrix NOT green" "$d"
+    d="$tmp/r7-decline"; build_repo "$d"
+    FX_LADDER_RC=2 row r7_judge_decline_refuses         1 "FAIL  R7 the model-matrix judge DECLINED" "$d"
+    d="$tmp/r7-absent"; build_repo "$d"; git -C "$d" rm -q scripts/check_model_ladder.sh
+    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'no judge' >/dev/null
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    row r7_judge_absent_refuses        1 "FAIL  R7 no model-matrix judge" "$d"
 
     # --receipt-only (#3708): the T-1 end of R5. An UNTAGGED tree with a GO
     # receipt passes it (the full gate refuses the same tree on R3 -- the row
