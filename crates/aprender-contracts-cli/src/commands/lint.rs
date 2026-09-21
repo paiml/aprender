@@ -50,6 +50,11 @@ pub fn run(
     gate: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     refuse_missing_corpus(contract_dir)?;
+    // Both preconditions before any dispatch: a single file under
+    // --strict-test-binding is refused (this PR) whether or not --gate (ONT-6)
+    // is asked for, because run_single_gate would otherwise report every ref
+    // missing on exactly the input the refusal exists for.
+    refuse_single_file_strict_binding(contract_dir, strict_test_binding)?;
     if let Some(name) = gate {
         return run_single_gate(contract_dir, name);
     }
@@ -448,6 +453,56 @@ fn show_trend_history(contract_dir: &Path) {
 /// Permission denied` AHEAD of the refusal: two stderr lines for one decline,
 /// three under `--diff`. `has_contract_files` does not parse; the post-report
 /// guard in `run` stays for a corpus that parses to nothing.
+/// `pv lint <one-file> --strict-test-binding` REFUSES rather than reporting a
+/// false negative (#3347).
+///
+/// The gate resolves cited test names against a source index rooted at the
+/// contract path's PARENT. For the directory form that parent is the repo
+/// root and the index finds `crates/`; for a single file it is `contracts/`,
+/// which holds no source at all, so every cited ref resolves to nothing and
+/// every one is reported missing.
+///
+/// Measured on `contracts/pv-artifact-kinds-v1.yaml`, a contract whose eight
+/// refs all resolve:
+///
+/// ```text
+/// pv lint contracts/pv-artifact-kinds-v1.yaml --strict-test-binding
+///     total_refs 8, existing 0, missing 8
+/// pv lint contracts/ --strict-test-binding
+///     total_refs 548, existing 521, missing 27   <- and none of the 27 is this contract
+/// ```
+///
+/// A control contract failing identically to a broken one is the definition
+/// of a gate that cannot discriminate, so the single-file form is refused.
+///
+/// REFUSED rather than repaired: the scan root is computed inside
+/// `provable_contracts::lint`, which this ticket does not own. A refusal is
+/// in the caller, is honest, and cannot be mistaken for a clean bill.
+///
+/// Exit 1, not the exit-2 `decline:` class: exit 2 belongs to `ZeroContracts`
+/// and its message ("0 contracts under ...") would be false here -- there IS
+/// a contract, it is the gate that cannot run over it.
+fn refuse_single_file_strict_binding(
+    path: &Path,
+    strict_test_binding: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !strict_test_binding || !path.is_file() {
+        return Ok(());
+    }
+    let dir = path.parent().unwrap_or(Path::new("contracts"));
+    Err(format!(
+        "--strict-test-binding cannot run over a single contract file ({}): \
+         the gate resolves cited test names against a source tree rooted at \
+         that file's parent directory, which holds contracts and no source, \
+         so every reference would be reported missing -- including those that \
+         do resolve. Run the directory form instead: \
+         `pv lint {} --strict-test-binding`.",
+        path.display(),
+        dir.display(),
+    )
+    .into())
+}
+
 fn refuse_missing_corpus(contract_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     if crate::contract_walk::has_contract_files(contract_dir) {
         return Ok(());
