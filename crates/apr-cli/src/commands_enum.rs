@@ -178,8 +178,9 @@ pub enum Commands {
         /// Sampling temperature (0.0 = greedy, default: 0.0)
         #[arg(long, default_value = "0.0")]
         temperature: f32,
-        /// Top-k sampling (default: 1 = greedy)
-        #[arg(long, default_value = "1")]
+        /// Top-k sampling, used when --temperature > 0. `--temperature 0` (the default)
+        /// or `--top-k 1` decodes greedily; `--top-k 0` disables the filter.
+        #[arg(long, default_value_t = crate::commands::run::DEFAULT_TOP_K)]
         top_k: usize,
         /// Top-p nucleus sampling (0.0 = disabled). When set with --top-k, applies top-k first then top-p.
         /// F-CLIPARITY-01 / PMAT-381 / paiml/aprender#569

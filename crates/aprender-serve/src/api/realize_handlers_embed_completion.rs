@@ -528,7 +528,7 @@ async fn try_batch_completion(
         prompt_tokens: prompt_ids.to_vec(),
         max_tokens,
         temperature,
-        top_k: if temperature == 0.0 { 1 } else { 40 },
+        top_k: crate::infer::sampling_top_k(temperature, None),
         response_tx,
         submitted_at: std::time::Instant::now(),
     };
@@ -720,7 +720,7 @@ async fn try_cached_completions(
     let q_config = QuantizedGenerateConfig {
         max_tokens,
         temperature,
-        top_k: if temperature == 0.0 { 1 } else { 40 },
+        top_k: crate::infer::sampling_top_k(temperature, None),
         stop_tokens: Vec::new(),
         trace: state.is_trace_enabled(),
         cancel: cancel.clone(),
@@ -795,7 +795,7 @@ fn try_quantized_completions(
     let q_config = QuantizedGenerateConfig {
         max_tokens,
         temperature,
-        top_k: if temperature == 0.0 { 1 } else { 40 },
+        top_k: crate::infer::sampling_top_k(temperature, None),
         stop_tokens: Vec::new(),
         trace: state.is_trace_enabled(),
         cancel: cancel.clone(),

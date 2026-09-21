@@ -11,4 +11,5 @@ include!("run_tests_chrome_trace.rs");
 include!("run_tests_layer_trace.rs");
 include!("run_tests_stream_output.rs");
 include!("run_tests_accel_reconcile.rs");
+include!("run_tests_top_k_default_3754.rs");
 }
