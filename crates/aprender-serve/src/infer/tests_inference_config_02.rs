@@ -310,6 +310,7 @@
             stop_tokens: Vec::new(),
             use_mock_backend: false,
             force_chat_template: false,
+            raw_prompt: false,
             thinking: None,
         };
         let debug_str = format!("{:?}", config);
@@ -340,6 +341,7 @@
             stop_tokens: Vec::new(),
             use_mock_backend: false,
             force_chat_template: false,
+            raw_prompt: false,
             thinking: None,
         };
         let cloned = config.clone();

@@ -177,6 +177,8 @@ struct InferenceOutput {
     reasoning: Option<String>,
     /// #3723: whether the prompt asked the model to think
     thinking: bool,
+    /// #3801: whether the think-budget guard closed the reasoning
+    reasoning_truncated: bool,
     tokens_generated: Option<usize>,
     inference_ms: Option<f64>,
     tok_per_sec: Option<f64>,
@@ -225,6 +227,7 @@ fn execute_inference(
             text: format!(
             reasoning: None,
             thinking: false,
+            reasoning_truncated: false,
                 "[Inference requires --features inference]\nModel: {}\nInput: {}\nFormat: {}\nGPU: {}",
                 model_path.display(),
                 input_desc,
@@ -357,7 +360,8 @@ fn execute_with_realizar(
         }
         other => inference_error(other),
     })?;
-    let (result, reasoning, thinking) = (chat.result, chat.reasoning, chat.thinking);
+    let (result, reasoning, thinking, reasoning_truncated) =
+        (chat.result, chat.reasoning, chat.thinking, chat.reasoning_truncated);
 
     // Report performance if benchmarking
     if options.benchmark {
@@ -391,6 +395,7 @@ fn execute_with_realizar(
         text: result.text,
         reasoning,
         thinking,
+        reasoning_truncated,
         tokens_generated: Some(result.generated_token_count),
         inference_ms: Some(result.inference_ms),
         tok_per_sec: Some(result.tok_per_sec),

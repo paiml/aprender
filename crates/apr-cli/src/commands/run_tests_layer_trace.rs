@@ -15,6 +15,7 @@
             text: "hi".to_string(),
             reasoning: None,
             thinking: false,
+            reasoning_truncated: false,
             duration_secs,
             cached: true,
             tokens_generated: Some(tokens),

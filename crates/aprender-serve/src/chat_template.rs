@@ -454,6 +454,7 @@ impl ChatTemplateEngine for ChatMLTemplate {
 
 include!("chat_template_embedded.rs");
 include!("chat_template_embedded_oracle.rs");
+include!("chat_template_think_budget.rs");
 include!("chat_template_llama2.rs");
 include!("chat_template_helpers.rs");
 include!("chat_template_special_tokens.rs");

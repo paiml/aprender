@@ -223,6 +223,8 @@ pub(crate) struct RunResult {
     pub reasoning: Option<String>,
     /// Whether the prompt asked the model to think (#3723)
     pub thinking: bool,
+    /// Whether the think-budget guard closed the reasoning (#3801)
+    pub reasoning_truncated: bool,
     /// Processing time in seconds
     pub duration_secs: f64,
     /// Whether model was cached
@@ -322,6 +324,7 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
         text: output.text,
         reasoning: output.reasoning,
         thinking: output.thinking,
+        reasoning_truncated: output.reasoning_truncated,
         duration_secs: duration.as_secs_f64(),
         cached: matches!(model_source, ModelSource::Local(_)) || model_source.cache_path().exists(),
         tokens_generated,

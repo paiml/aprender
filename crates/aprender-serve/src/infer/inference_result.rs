@@ -120,33 +120,106 @@ pub struct ChatInferenceResult {
     pub reasoning: Option<String>,
     /// Whether the prompt asked the model to think.
     pub thinking: bool,
+    /// Whether the think-budget guard closed the reasoning because the model had not
+    /// (#3801). Reported, never silent.
+    pub reasoning_truncated: bool,
 }
 
 /// Run inference and split the completion into reasoning and answer (#3723).
 ///
-/// A think block still open when generation stopped is an ERROR naming the
-/// `max_tokens` budget, never an empty answer (#3720).
+/// A thinking prompt is generated under the think-budget guard (#3801): reasoning still
+/// open at [`crate::chat_template::think_budget`] is closed with the template's own tag
+/// and the answer is generated after it, with `reasoning_truncated` set. A think block
+/// still open when the whole budget is spent is an ERROR naming the `max_tokens` budget,
+/// never an empty answer (#3720).
 ///
 /// # Errors
 ///
 /// Everything [`run_inference`] returns, a refused thinking mode, and an unclosed
 /// think block.
 pub fn run_chat_inference(config: &InferenceConfig) -> Result<ChatInferenceResult> {
-    let (mut result, prompt) = run_inference_prepared(config)?;
-    let Some(prompt) = prompt else {
+    let Some(prompt) = chat_prompt_for(config)? else {
+        // No prompt this can render ahead (e.g. a `.bin` file): one pass, split as rendered.
+        let (mut result, prompt) = run_inference_prepared(config)?;
+        let (reasoning, thinking) = match prompt {
+            Some(prompt) => {
+                let split = prompt.split(&result.text, config.max_tokens)?;
+                result.text = split.answer;
+                (split.reasoning, prompt.thinking)
+            },
+            None => (None, false),
+        };
         return Ok(ChatInferenceResult {
             result,
-            reasoning: None,
-            thinking: false,
+            reasoning,
+            thinking,
+            reasoning_truncated: false,
         });
     };
-    let split = prompt.split(&result.text, config.max_tokens)?;
+    let mut passes = Vec::new();
+    let guarded = prompt.generate_with_think_budget(config.max_tokens, |context, max_tokens| {
+        // The rendered prompt (and any reasoning so far) is continued as it is.
+        let pass = run_inference(
+            &config
+                .clone()
+                .with_prompt(context)
+                .with_raw_prompt(true)
+                .with_thinking(None)
+                .with_max_tokens(max_tokens),
+        )?;
+        let generation = crate::chat_template::Generation {
+            text: pass.text.clone(),
+            tokens: pass.generated_token_count,
+        };
+        passes.push(pass);
+        Ok::<_, RealizarError>(generation)
+    })?;
+    let mut result = merge_guard_passes(passes);
+    let split = prompt.split(&guarded.text, config.max_tokens)?;
     result.text = split.answer;
     Ok(ChatInferenceResult {
         result,
         reasoning: split.reasoning,
         thinking: prompt.thinking,
+        reasoning_truncated: guarded.reasoning_truncated,
     })
+}
+
+/// The chat prompt `config` renders to, or `None` when it renders none (raw token ids,
+/// a raw prompt, a base model, the mock backend, a format this cannot name).
+fn chat_prompt_for(config: &InferenceConfig) -> Result<Option<crate::chat_template::ChatPrompt>> {
+    if config.use_mock_backend || config.raw_prompt || config.input_tokens.is_some() || config.prompt.is_none() {
+        return Ok(None);
+    }
+    validate_model_path(&config.model_path)?;
+    let format = if config.model_path.to_string_lossy().ends_with(".safetensors.index.json") {
+        ModelFormat::SafeTensors
+    } else {
+        match crate::format::detect_format_from_path(&config.model_path) {
+            Ok(format) => format,
+            Err(_) => return Ok(None),
+        }
+    };
+    Ok(prepare_tokens(config, &format)?.chat_prompt().cloned())
+}
+
+/// One result for a completion the guard generated in passes: the first pass's input,
+/// every pass's generated tokens and time, the last pass's token list (its context
+/// holds the prompt, the reasoning and the guard's close).
+fn merge_guard_passes(passes: Vec<InferenceResult>) -> InferenceResult {
+    let mut passes = passes.into_iter();
+    let mut merged = passes.next().expect("the guard always generates at least once");
+    for pass in passes {
+        merged.generated_token_count += pass.generated_token_count;
+        merged.inference_ms += pass.inference_ms;
+        merged.load_ms += pass.load_ms;
+        merged.used_gpu &= pass.used_gpu;
+        merged.tokens = pass.tokens;
+    }
+    if merged.inference_ms > 0.0 {
+        merged.tok_per_sec = merged.generated_token_count as f64 / (merged.inference_ms / 1000.0);
+    }
+    merged
 }
 
 /// [`run_inference`], also returning the chat prompt the tokens came from.

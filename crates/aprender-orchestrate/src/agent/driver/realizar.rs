@@ -133,30 +133,32 @@ impl LlmDriver for RealizarDriver {
             verbose: false,
             use_mock_backend: false,
             force_chat_template: false,
-            // The prompt arrives pre-templated (format_prompt_with_template), so realizar
-            // applies no template and there is no thinking mode to resolve here.
+            // The prompt arrives rendered (the model's own template or
+            // format_prompt_with_template): realizar tokenizes it AS IS. Before #3801 it
+            // wrapped a GGUF's rendered prompt in the template a second time.
+            raw_prompt: true,
             thinking: None,
             stop_tokens: vec![],
         };
 
         // Run inference in blocking thread (realizar is sync)
-        let result = tokio::task::spawn_blocking(move || realizar::infer::run_inference(&config))
-            .await
-            .map_err(|e| {
-                AgentError::Driver(DriverError::InferenceFailed(format!("spawn_blocking: {e}")))
-            })?
-            .map_err(|e| AgentError::Driver(DriverError::InferenceFailed(e.to_string())))?;
-
-        // #3723: the reasoning never reaches the answer (or the tool-call parser); a think
-        // block still open when generation stopped is an error naming the budget.
-        let completion = match &chat_prompt {
-            Some(p) => {
-                p.split(&result.text, request.max_tokens as usize)
-                    .map_err(|e| AgentError::Driver(DriverError::InferenceFailed(e.to_string())))?
-                    .answer
-            }
-            None => result.text.clone(),
-        };
+        let max_tokens = request.max_tokens as usize;
+        let generated = tokio::task::spawn_blocking(move || {
+            generate_guarded(&config, chat_prompt.as_ref(), max_tokens)
+        })
+        .await
+        .map_err(|e| {
+            AgentError::Driver(DriverError::InferenceFailed(format!("spawn_blocking: {e}")))
+        })?
+        .map_err(|e| AgentError::Driver(DriverError::InferenceFailed(e.to_string())))?;
+        let GuardedInference { result, completion, input_tokens, reasoning_truncated } = generated;
+        if reasoning_truncated {
+            // #3801: reported, never silent.
+            eprintln!(
+                "\u{26a0} the think-budget guard closed the reasoning at {} tokens (#3801)",
+                realizar::chat_template::think_budget(max_tokens)
+            );
+        }
 
         // Parse tool calls from text output
         let (raw_text, tool_calls) = parse_tool_calls(&completion);
@@ -172,7 +174,7 @@ impl LlmDriver for RealizarDriver {
             stop_reason,
             tool_calls,
             usage: TokenUsage {
-                input_tokens: result.input_token_count as u64,
+                input_tokens: input_tokens as u64,
                 output_tokens: result.generated_token_count as u64,
             },
         })
@@ -185,6 +187,61 @@ impl LlmDriver for RealizarDriver {
     fn privacy_tier(&self) -> PrivacyTier {
         PrivacyTier::Sovereign
     }
+}
+
+/// A completion generated under the think-budget guard, answer split out.
+struct GuardedInference {
+    /// The last pass (its `generated_token_count` is the total across passes).
+    result: realizar::infer::InferenceResult,
+    /// The answer: the completion with any reasoning removed (#3723).
+    completion: String,
+    /// The rendered prompt's token count (the first pass's input).
+    input_tokens: usize,
+    /// Whether the guard closed the reasoning (#3801).
+    reasoning_truncated: bool,
+}
+
+/// Run `config` (a rendered prompt) under the think-budget guard (#3801) when the
+/// prompt is the model's own and may think; the reasoning never reaches the answer or
+/// the tool-call parser (#3723), and a block still open when the whole budget is spent
+/// is an error naming it.
+fn generate_guarded(
+    config: &realizar::infer::InferenceConfig,
+    chat_prompt: Option<&realizar::chat_template::ChatPrompt>,
+    max_tokens: usize,
+) -> realizar::Result<GuardedInference> {
+    let Some(prompt) = chat_prompt else {
+        let result = realizar::infer::run_inference(config)?;
+        return Ok(GuardedInference {
+            completion: result.text.clone(),
+            input_tokens: result.input_token_count,
+            reasoning_truncated: false,
+            result,
+        });
+    };
+    let mut passes: Vec<realizar::infer::InferenceResult> = Vec::new();
+    let guarded = prompt.generate_with_think_budget(max_tokens, |context, max| {
+        let mut pass_config = config.clone();
+        pass_config.prompt = Some(context.to_string());
+        pass_config.max_tokens = max;
+        let pass = realizar::infer::run_inference(&pass_config)?;
+        let generation = realizar::chat_template::Generation {
+            text: pass.text.clone(),
+            tokens: pass.generated_token_count,
+        };
+        passes.push(pass);
+        Ok::<_, realizar::RealizarError>(generation)
+    })?;
+    let input_tokens = passes.first().map_or(0, |p| p.input_token_count);
+    let generated: usize = passes.iter().map(|p| p.generated_token_count).sum();
+    let mut result = passes.pop().expect("the guard always generates at least once");
+    result.generated_token_count = generated;
+    Ok(GuardedInference {
+        completion: prompt.split(&guarded.text, max_tokens)?.answer,
+        input_tokens,
+        reasoning_truncated: guarded.reasoning_truncated,
+        result,
+    })
 }
 
 /// Parse tool calls from model output text.

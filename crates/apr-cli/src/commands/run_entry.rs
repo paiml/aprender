@@ -489,6 +489,13 @@ fn print_run_output(
         if let Some(reasoning) = result.reasoning.as_deref() {
             println!("{}", "Reasoning:".cyan().bold());
             println!("{}", reasoning.dimmed());
+            if result.reasoning_truncated {
+                println!(
+                    "{}",
+                    "(the think-budget guard closed the reasoning: it had not ended, #3801)"
+                        .yellow()
+                );
+            }
             println!();
         }
         println!("{}", "Output:".green().bold());
@@ -533,6 +540,8 @@ fn build_final_json(
         // #3723: the answer is `text`; the model's reasoning never leaks into it.
         "thinking": result.thinking,
         "reasoning": result.reasoning,
+        // #3801: the think-budget guard closed the reasoning (reported, never silent).
+        "reasoning_truncated": result.reasoning_truncated,
         "tokens": tokens_json,
         "tokens_generated": tokens_generated,
         "max_tokens": max_tokens,

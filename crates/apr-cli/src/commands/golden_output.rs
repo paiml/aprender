@@ -5,7 +5,7 @@ fn golden_output_safetensors(
     path: &Path,
     prompt: &str,
     max_tokens: usize,
-) -> Result<Option<(Vec<u32>, String)>> {
+) -> Result<Option<(usize, String)>> {
     use aprender::text::bpe::{load_from_json, BpeTokenizer};
     use realizar::safetensors_infer::SafetensorsToAprConverter;
 
@@ -34,8 +34,8 @@ fn golden_output_safetensors(
         .generate_with_cache(&prompt_tokens, &gen_config)
         .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?;
     // The completion only: judged with the prompt, a case can pass on the prompt.
-    let text = tokenizer.decode(tokens.get(prompt_tokens.len()..).unwrap_or_default());
-    Ok(Some((tokens, text)))
+    let completion = tokens.get(prompt_tokens.len()..).unwrap_or_default();
+    Ok(Some((completion.len(), tokenizer.decode(completion))))
 }
 
 /// Run golden output CPU generation for GGUF format.
@@ -45,7 +45,7 @@ fn golden_output_gguf_cpu(
     gguf: &realizar::gguf::GGUFModel,
     prompt: &str,
     max_tokens: usize,
-) -> Result<(Vec<u32>, String)> {
+) -> Result<(usize, String)> {
     use realizar::gguf::{OwnedQuantizedModel, QuantizedGenerateConfig};
 
     let specials = aprender::demo::SpecialTokens::qwen2();
@@ -70,8 +70,8 @@ fn golden_output_gguf_cpu(
         .generate_with_cache(&prompt_tokens, &gen_config)
         .map_err(|e| CliError::ValidationFailed(format!("CPU generation failed: {e}")))?;
     // The completion only: judged with the prompt, a case can pass on the prompt.
-    let text = gguf.decode(tokens.get(prompt_tokens.len()..).unwrap_or_default());
-    Ok((tokens, text))
+    let completion = tokens.get(prompt_tokens.len()..).unwrap_or_default();
+    Ok((completion.len(), gguf.decode(completion)))
 }
 
 /// Gate 1: Golden Output Test
@@ -161,6 +161,11 @@ impl GoldenCase {
             "direct"
         }
     }
+
+    /// The case as a report names it: its mode and what a correct answer contains.
+    fn label(&self) -> String {
+        format!("[{}] {:?}", self.mode(), self.expected.first().copied().unwrap_or_default())
+    }
 }
 
 /// The golden cases for a model that ships no chat template of its own.
@@ -234,7 +239,7 @@ fn generate_golden_for_format(
     format: realizar::format::ModelFormat,
     mapped: Option<&realizar::gguf::MappedGGUFModel>,
     gguf_model: Option<&realizar::gguf::GGUFModel>,
-) -> Result<Option<(Vec<u32>, String)>> {
+) -> Result<Option<(usize, String)>> {
     use realizar::format::ModelFormat;
 
     match format {
@@ -253,9 +258,62 @@ fn generate_golden_for_format(
     }
 }
 
-/// Validate a single golden test case: generate output, check GPU parity, verify patterns.
+/// How one golden case ended: passed (and whether the think-budget guard closed its
+/// block), or a gate result that stops the gate.
+#[cfg(feature = "inference")]
+enum CaseVerdict {
+    Passed { guarded: bool },
+    Stop(GateResult),
+}
+
+/// One golden case's completion under production's think-budget guard (#3801).
 ///
-/// Returns `Ok(None)` on success, `Ok(Some(GateResult))` on failure/skip.
+/// `generate(context, max_tokens)` continues the raw `context` and returns (tokens
+/// generated, completion). The guard is the one every apr verb uses, so a thinking case
+/// is judged the way production answers it: the model's own close, or the guard's.
+#[cfg(feature = "inference")]
+fn guarded_golden_completion(
+    case: &GoldenCase,
+    budget: usize,
+    mut generate: impl FnMut(&str, usize) -> Result<(usize, String)>,
+) -> Result<realizar::chat_template::GuardedCompletion> {
+    use realizar::chat_template::{ChatPrompt, Generation};
+    ChatPrompt {
+        text: case.prompt.clone(),
+        thinking: case.thinking,
+    }
+    .generate_with_think_budget(budget, |context, max| {
+        generate(context, max).map(|(tokens, text)| Generation { text, tokens })
+    })
+}
+
+/// The golden gate's PASS message. Every case the think-budget guard closed is NAMED
+/// (#3801): a guard-closed block is reported, never silent.
+fn golden_pass_message(passed: usize, route: &str, guarded: &[String]) -> String {
+    let mut message = format!("{passed} golden test cases passed{route}");
+    if !guarded.is_empty() {
+        message.push_str(&format!(
+            "; the think-budget guard closed the reasoning of {} (#3801): {}",
+            guarded.len(),
+            guarded.join(", ")
+        ));
+    }
+    message
+}
+
+/// A failed golden case, as the gate reports it.
+#[cfg(feature = "inference")]
+fn golden_case_failed(case: &GoldenCase, reason: &str, start: Instant) -> CaseVerdict {
+    CaseVerdict::Stop(GateResult::failed(
+        "golden_output",
+        &format!("[{}] {reason}", case.mode()),
+        None,
+        None,
+        start.elapsed(),
+    ))
+}
+
+/// Validate a single golden test case: generate output, check GPU parity, verify patterns.
 #[cfg(feature = "inference")]
 fn validate_golden_test_case(
     path: &Path,
@@ -266,74 +324,58 @@ fn validate_golden_test_case(
     gguf_model: Option<&realizar::gguf::GGUFModel>,
     cuda_available: bool,
     start: Instant,
-) -> Result<Option<GateResult>> {
-    use realizar::format::ModelFormat;
-    let prompt = case.prompt.as_str();
+) -> Result<CaseVerdict> {
     // GH-279-4: a reasoning case needs room to close its think block (GOLDEN_THINK_BUDGET).
     let golden_max_tokens = case.budget(config.max_tokens);
 
-    let Some((_, output_text)) =
-        generate_golden_for_format(path, prompt, golden_max_tokens, format, mapped, gguf_model)?
-    else {
-        return Ok(Some(GateResult::skipped(
+    let mut no_tokenizer = false;
+    let cpu = guarded_golden_completion(case, golden_max_tokens, |context, max| {
+        let generated = generate_golden_for_format(path, context, max, format, mapped, gguf_model)?;
+        no_tokenizer = generated.is_none();
+        Ok(generated.unwrap_or_default())
+    })?;
+    if no_tokenizer {
+        return Ok(CaseVerdict::Stop(GateResult::skipped(
             "golden_output",
             "SafeTensors: tokenizer.json not found",
         )));
-    };
+    }
 
+    let gpu_guarded =
+        match gpu_golden_verdict(case, config, format, mapped, gguf_model, cuda_available)? {
+            Ok(guarded) => guarded,
+            Err(failure) => return Ok(golden_case_failed(case, &failure, start)),
+        };
+
+    // The generators return the completion only (never the prompt, see golden_answer).
+    if let Err(reason) = judge_golden(case, &cpu.text, "golden_output", golden_max_tokens) {
+        return Ok(golden_case_failed(case, &reason, start));
+    }
+    Ok(CaseVerdict::Passed {
+        guarded: cpu.reasoning_truncated || gpu_guarded,
+    })
+}
+
+/// The GPU half of one golden case: `Ok(Ok(guard fired))` when it passed or did not run,
+/// `Ok(Err(reason))` when the GPU's answer failed.
+#[cfg(feature = "inference")]
+fn gpu_golden_verdict(
+    case: &GoldenCase,
+    config: &QaConfig,
+    format: realizar::format::ModelFormat,
+    mapped: Option<&realizar::gguf::MappedGGUFModel>,
+    gguf_model: Option<&realizar::gguf::GGUFModel>,
+    cuda_available: bool,
+) -> Result<std::result::Result<bool, String>> {
     #[cfg(feature = "cuda")]
-    if cuda_available && format == ModelFormat::Gguf {
-        use realizar::gguf::QuantizedGenerateConfig;
+    if cuda_available && format == realizar::format::ModelFormat::Gguf {
         // Safe: format==Gguf guarantees these are Some
         let gguf_ref = gguf_model.expect("GGUF model required for GPU golden output");
         let mapped_ref = mapped.expect("GGUF mapped model required for GPU golden output");
-        let specials = aprender::demo::SpecialTokens::qwen2();
-        let prompt_tokens = gguf_ref
-            .encode(prompt)
-            .unwrap_or_else(|| vec![specials.bos_id, 9707]);
-        // #1864: GPU path mirrors the CPU gate's fix above — set stop_tokens
-        // to EOS so generation terminates at end-of-turn rather than running
-        // the full 512-token budget and drifting into `<|im_start|>` repeats.
-        let gen_config = QuantizedGenerateConfig {
-            max_tokens: golden_max_tokens, // GH-279-4: match CPU budget
-            temperature: 0.0,
-            top_k: 1,
-            stop_tokens: vec![specials.eos_id],
-            ..Default::default()
-        };
-        if let Some(failure) = validate_gpu_golden_output(
-            mapped_ref,
-            &prompt_tokens,
-            &gen_config,
-            gguf_ref,
-            case,
-            config,
-        )? {
-            return Ok(Some(GateResult::failed(
-                "golden_output",
-                &format!("[{}] {failure}", case.mode()),
-                None,
-                None,
-                start.elapsed(),
-            )));
-        }
+        return validate_gpu_golden_output(mapped_ref, gguf_ref, case, config);
     }
-    #[cfg(not(feature = "cuda"))]
-    let _ = cuda_available;
-
-    // The generators return the completion only (never the prompt, see golden_answer).
-    let verdict = judge_golden(case, &output_text, "golden_output", golden_max_tokens);
-    if let Err(reason) = verdict {
-        return Ok(Some(GateResult::failed(
-            "golden_output",
-            &format!("[{}] {reason}", case.mode()),
-            None,
-            None,
-            start.elapsed(),
-        )));
-    }
-
-    Ok(None)
+    let _ = (case, config, format, mapped, gguf_model, cuda_available);
+    Ok(Ok(false))
 }
 
 fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
@@ -375,8 +417,9 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             .map_err(|e| CliError::ValidationFailed(format!("chat template: {e}")))?;
         let test_cases = golden_test_cases_for(template.as_ref())?;
 
+        let mut guarded = Vec::new();
         for case in &test_cases {
-            if let Some(result) = validate_golden_test_case(
+            match validate_golden_test_case(
                 path,
                 case,
                 config,
@@ -386,13 +429,15 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
                 cuda_available,
                 start,
             )? {
-                return Ok(result);
+                CaseVerdict::Stop(result) => return Ok(result),
+                CaseVerdict::Passed { guarded: true } => guarded.push(case.label()),
+                CaseVerdict::Passed { guarded: false } => {},
             }
         }
 
         Ok(GateResult::passed(
             "golden_output",
-            &format!("{} golden test cases passed", test_cases.len()),
+            &golden_pass_message(test_cases.len(), "", &guarded),
             Some(test_cases.len() as f64),
             Some(test_cases.len() as f64),
             start.elapsed(),
@@ -765,6 +810,55 @@ mod golden_output_tests {
     /// Word count is a crude proxy for "wide argmax margin", but it is the one
     /// that is checkable without a GPU in CI, and it blocks the specific shape
     /// that actually cost 24 days of a red nightly.
+    /// #3801: a thinking case whose reasoning never closes (Qwen3.5-0.8B under greedy
+    /// decoding, and llama.cpp too) is closed by production's guard and judged on the
+    /// answer after it, and the gate NAMES it.
+    #[cfg(feature = "inference")]
+    #[test]
+    fn a_thinking_case_that_never_closes_is_guarded_judged_and_named() {
+        let case = GoldenCase {
+            prompt: "<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n<think>\n"
+                .into(),
+            expected: vec!["4"],
+            thinking: true,
+        };
+        let budget = case.budget(0);
+        let mut calls = Vec::new();
+        let out = guarded_golden_completion(&case, budget, |context, max| {
+            calls.push((context.to_string(), max));
+            Ok(if calls.len() == 1 {
+                (max, "Wait, let me check again. Okay, final decision:".to_string())
+            } else {
+                (2, "2 + 2 = 4.".to_string())
+            })
+        })
+        .expect("generate");
+        assert!(out.reasoning_truncated, "the guard fired");
+        assert_eq!(calls.len(), 2, "one reasoning pass, one answer pass");
+        assert!(calls[1].0.ends_with("final decision:\n</think>\n\n"), "{:?}", calls[1].0);
+        assert!(judge_golden(&case, &out.text, "golden_output", budget).is_ok());
+
+        let message = golden_pass_message(6, "", &[case.label()]);
+        assert!(message.contains("think-budget guard closed the reasoning of 1"), "{message}");
+        assert!(message.contains("[thinking] \"4\""), "the case is named: {message}");
+        assert_eq!(golden_pass_message(6, "", &[]), "6 golden test cases passed");
+    }
+
+    /// Without the guard the same model fails the case by name (the mutant #3801 kills).
+    #[cfg(feature = "inference")]
+    #[test]
+    fn the_same_reasoning_unguarded_is_the_named_unclosed_failure() {
+        let case = GoldenCase {
+            prompt: "<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n<think>\n"
+                .into(),
+            expected: vec!["4"],
+            thinking: true,
+        };
+        let err = judge_golden(&case, "Wait, let me check again.", "golden_output", 4096)
+            .expect_err("unclosed");
+        assert!(err.contains("unclosed within the 4096-token budget"), "{err}");
+    }
+
     #[test]
     fn golden_prompts_are_not_bare_one_word_messages() {
         for case in golden_test_cases() {

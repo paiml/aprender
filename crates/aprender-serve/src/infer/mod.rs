@@ -87,6 +87,9 @@ pub struct InferenceConfig {
     /// name marks it as an instruct model (`apr run --chat`). The prompt stays raw text:
     /// the template is applied once, by `prepare_tokens`, never pre-wrapped by a caller.
     pub force_chat_template: bool,
+    /// #3801: the prompt is ALREADY formatted (a think-budget guard continuation of a
+    /// rendered chat prompt): tokenize it as it is, never wrap it in a template again.
+    pub raw_prompt: bool,
     /// Thinking mode for a chat-templated prompt (#3723): `None` = OFF wherever the
     /// model's own template allows it; a mode the template cannot honour is refused.
     pub thinking: Option<bool>,
@@ -119,6 +122,7 @@ impl InferenceConfig {
             stop_tokens: Vec::new(),
             use_mock_backend: false,
             force_chat_template: false,
+            raw_prompt: false,
             thinking: None,
         }
     }
@@ -204,6 +208,13 @@ impl InferenceConfig {
     #[must_use]
     pub fn with_force_chat_template(mut self, force: bool) -> Self {
         self.force_chat_template = force;
+        self
+    }
+
+    /// #3801: tokenize the prompt as it is (an already-formatted continuation).
+    #[must_use]
+    pub fn with_raw_prompt(mut self, raw: bool) -> Self {
+        self.raw_prompt = raw;
         self
     }
 
@@ -392,7 +403,9 @@ fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<Prepare
     // apr's per-family template is only the fallback. #3723: the thinking mode resolves
     // against the template, and a refusal or a template error is an error, not a
     // silent fall back to the raw prompt.
-    let chat_prompt = if config.force_chat_template || has_chat_template || filename_instruct {
+    let chat_prompt = if config.raw_prompt {
+        None
+    } else if config.force_chat_template || has_chat_template || filename_instruct {
         let template_hint = apr_arch_to_template_hint(gguf_arch, model_name);
         let embedded =
             crate::chat_template::EmbeddedChatTemplate::from_gguf(&mapped.model).transpose()?;
@@ -518,13 +531,14 @@ fn prepare_tokens_safetensors(config: &InferenceConfig, prompt: &str) -> Result<
 
     // Detect instruct model from architecture or filename
     let arch_lower = architecture.to_lowercase();
-    let is_instruct = config.force_chat_template
-        || arch_lower.contains("instruct")
-        || model_name.to_lowercase().contains("instruct")
-        || matches!(
-            arch_lower.as_str(),
-            "qwen2forcausallm" | "llamaforcausallm" | "mistralforcausallm" | "phiforcausallm"
-        );
+    let is_instruct = !config.raw_prompt
+        && (config.force_chat_template
+            || arch_lower.contains("instruct")
+            || model_name.to_lowercase().contains("instruct")
+            || matches!(
+                arch_lower.as_str(),
+                "qwen2forcausallm" | "llamaforcausallm" | "mistralforcausallm" | "phiforcausallm"
+            ));
 
     // #3755/#3723: the model's own template (sibling tokenizer_config.json) when it has
     // one, with the thinking mode resolved; refusals and template errors propagate.
@@ -615,7 +629,8 @@ fn prepare_tokens_apr(config: &InferenceConfig, prompt: &str) -> Result<Prepared
     let filename_instruct = model_name.to_lowercase().contains("instruct")
         || model_name.to_lowercase().contains("-chat");
 
-    let is_instruct = config.force_chat_template || has_chat_template || filename_instruct;
+    let is_instruct = !config.raw_prompt
+        && (config.force_chat_template || has_chat_template || filename_instruct);
 
     // #3755/#3723: the model's own template from APR metadata when it has one.
     let chat_prompt = if is_instruct {

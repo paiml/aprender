@@ -510,17 +510,17 @@ fn judge_golden(
 /// JIDOKA: Validate GPU golden output matches expected patterns (PMAT-232 lesson).
 ///
 /// Without this, GPU correctness was NEVER tested — `apr qa` golden output only ran CPU.
-/// Returns `Some(failure_reason)` if GPU output fails, `None` if pass or skipped.
+/// Returns `Ok(Err(failure_reason))` if the GPU output fails, `Ok(Ok(guard fired))` if it
+/// passed or was skipped. The GPU completion is generated under the same think-budget
+/// guard as the CPU one (#3801).
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn validate_gpu_golden_output(
     mapped: &realizar::gguf::MappedGGUFModel,
-    prompt_tokens: &[u32],
-    gen_config: &realizar::gguf::QuantizedGenerateConfig,
     gguf: &realizar::gguf::GGUFModel,
     case: &GoldenCase,
     config: &QaConfig,
-) -> Result<Option<String>> {
+) -> Result<std::result::Result<bool, String>> {
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
     // #3432 / #3477: the Qwen3.5 hybrid never reaches this dense-loader gate —
     // `golden_gate_for` routes it to `run_golden_output_gate_runtime`, which goes
@@ -535,27 +535,63 @@ fn validate_gpu_golden_output(
             "GPU golden output for the Gated DeltaNet hybrid is judged by the runtime rung \
              (run_inference → Qwen35CudaModel, #3090), not by the dense loader",
         );
-        return Ok(None);
+        return Ok(Ok(false));
     }
     let model = OwnedQuantizedModel::from_mapped(mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-    match OwnedQuantizedModelCuda::new(model, 0) {
-        Ok(mut cuda_model) => match cuda_model.generate_gpu_resident(prompt_tokens, gen_config) {
-            Ok(gpu_tokens) => {
-                // generate_gpu_resident returns prompt + completion: judge the completion.
-                let generated = gpu_tokens.get(prompt_tokens.len()..).unwrap_or_default();
-                let gpu_text = gguf.decode(generated);
-                let verdict =
-                    judge_golden(case, &gpu_text, "golden_output_gpu", gen_config.max_tokens);
-                if let Err(reason) = verdict {
-                    return Ok(Some(format!("GPU output failed (CPU passed): {reason}")));
-                }
-            }
-            Err(e) => note_gpu_golden_skip(config, &format!("GPU golden output skipped: {e}")),
+    let mut cuda_model = match OwnedQuantizedModelCuda::new(model, 0) {
+        Ok(m) => m,
+        Err(e) => {
+            note_gpu_golden_skip(config, &format!("CUDA init skipped: {e}"));
+            return Ok(Ok(false));
         },
-        Err(e) => note_gpu_golden_skip(config, &format!("CUDA init skipped: {e}")),
+    };
+    let budget = case.budget(config.max_tokens);
+    let mut skipped = None;
+    let gpu = guarded_golden_completion(case, budget, |context, max| {
+        match gpu_golden_generate(&mut cuda_model, gguf, context, max) {
+            Ok(generated) => Ok(generated),
+            Err(e) => {
+                skipped = Some(e);
+                Ok((0, String::new()))
+            },
+        }
+    })?;
+    if let Some(e) = skipped {
+        note_gpu_golden_skip(config, &format!("GPU golden output skipped: {e}"));
+        return Ok(Ok(false));
     }
-    Ok(None)
+    Ok(judge_golden(case, &gpu.text, "golden_output_gpu", budget)
+        .map(|()| gpu.reasoning_truncated)
+        .map_err(|reason| format!("GPU output failed (CPU passed): {reason}")))
+}
+
+/// One greedy GPU generation continuing `context`: (tokens generated, completion).
+#[cfg_attr(coverage_nightly, coverage(off))]
+#[cfg(all(feature = "inference", feature = "cuda"))]
+fn gpu_golden_generate(
+    cuda_model: &mut realizar::gguf::OwnedQuantizedModelCuda,
+    gguf: &realizar::gguf::GGUFModel,
+    context: &str,
+    max_tokens: usize,
+) -> std::result::Result<(usize, String), String> {
+    let specials = aprender::demo::SpecialTokens::qwen2();
+    let prompt_tokens = gguf.encode(context).unwrap_or_else(|| vec![specials.bos_id, 9707]);
+    // #1864: GPU path mirrors the CPU gate's fix: stop_tokens = EOS, so generation
+    // terminates at end-of-turn rather than running the full budget.
+    let gen_config = realizar::gguf::QuantizedGenerateConfig {
+        max_tokens, // GH-279-4: match CPU budget
+        temperature: 0.0,
+        top_k: 1,
+        stop_tokens: vec![specials.eos_id],
+        ..Default::default()
+    };
+    let gpu_tokens = cuda_model
+        .generate_gpu_resident(&prompt_tokens, &gen_config)
+        .map_err(|e| e.to_string())?;
+    // generate_gpu_resident returns prompt + completion: judge the completion.
+    let completion = gpu_tokens.get(prompt_tokens.len()..).unwrap_or_default();
+    Ok((completion.len(), gguf.decode(completion)))
 }
 
 /// Note, in a verbose human-readable run, that the GPU half of the golden gate
@@ -594,7 +630,7 @@ fn note_gpu_golden_skip(config: &QaConfig, message: &str) {
 /// (the same reason `golden_output_apr` does it). Stop tokens come from the
 /// model's own EOS, which `run_gguf_inference` merges in.
 #[cfg(feature = "inference")]
-fn golden_output_runtime(path: &Path, prompt: &str, max_tokens: usize) -> Result<String> {
+fn golden_output_runtime(path: &Path, prompt: &str, max_tokens: usize) -> Result<(usize, String)> {
     use realizar::gguf::MappedGGUFModel;
     use realizar::{run_inference, InferenceConfig};
 
@@ -615,7 +651,7 @@ fn golden_output_runtime(path: &Path, prompt: &str, max_tokens: usize) -> Result
         .with_top_k(1);
     let result = run_inference(&infer_config)
         .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?;
-    Ok(result.text)
+    Ok((result.generated_token_count, result.text))
 }
 
 /// Gate 1 for an architecture the dense loader refuses: the same golden cases,
@@ -640,11 +676,17 @@ fn run_golden_output_gate_runtime(path: &Path, config: &QaConfig) -> Result<Gate
         .transpose()
         .map_err(|e| CliError::ValidationFailed(format!("chat template: {e}")))?;
     let test_cases = golden_test_cases_for(template.as_ref())?;
+    let mut guarded = Vec::new();
     for case in &test_cases {
         // GH-279-4: a reasoning case needs room to close its think block.
         let budget = case.budget(config.max_tokens);
-        let output_text = golden_output_runtime(path, &case.prompt, budget)?;
-        let verdict = judge_golden(case, &output_text, "golden_output_runtime", budget);
+        let output = guarded_golden_completion(case, budget, |context, max| {
+            golden_output_runtime(path, context, max)
+        })?;
+        if output.reasoning_truncated {
+            guarded.push(case.label());
+        }
+        let verdict = judge_golden(case, &output.text, "golden_output_runtime", budget);
         if let Err(reason) = verdict {
             return Ok(GateResult::failed(
                 "golden_output",
@@ -658,14 +700,14 @@ fn run_golden_output_gate_runtime(path: &Path, config: &QaConfig) -> Result<Gate
 
     Ok(GateResult::passed(
         "golden_output",
-        &format!(
-            "{} golden test cases passed through the runtime entry point ({})",
+        &golden_pass_message(
             test_cases.len(),
             if cfg!(feature = "cuda") {
-                "GPU hybrid forward, #3090"
+                " through the runtime entry point (GPU hybrid forward, #3090)"
             } else {
-                "CPU hybrid forward, #3091"
-            }
+                " through the runtime entry point (CPU hybrid forward, #3091)"
+            },
+            &guarded,
         ),
         Some(test_cases.len() as f64),
         Some(test_cases.len() as f64),
@@ -698,7 +740,7 @@ fn run_golden_output_gate_runtime(path: &Path, config: &QaConfig) -> Result<Gate
 /// `InferenceConfig::with_input_tokens` to BYPASS the chat-template auto-wrap
 /// in `prepare_tokens_apr` (which would double-wrap a pre-formatted prompt).
 #[cfg(feature = "inference")]
-fn golden_output_apr(path: &Path, prompt: &str, max_tokens: usize) -> Result<(Vec<u32>, String)> {
+fn golden_output_apr(path: &Path, prompt: &str, max_tokens: usize) -> Result<(usize, String)> {
     use realizar::apr::AprV2Model;
     use realizar::{run_inference, InferenceConfig};
 
@@ -722,5 +764,5 @@ fn golden_output_apr(path: &Path, prompt: &str, max_tokens: usize) -> Result<(Ve
     let result = run_inference(&config)
         .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?;
 
-    Ok((result.tokens, result.text))
+    Ok((result.generated_token_count, result.text))
 }

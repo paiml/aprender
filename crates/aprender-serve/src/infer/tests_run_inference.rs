@@ -363,6 +363,7 @@
             verbose: true,
             use_mock_backend: false,
             force_chat_template: false,
+            raw_prompt: false,
         };
 
         let debug = format!("{:?}", config);
@@ -397,6 +398,7 @@
             verbose: true,
             use_mock_backend: false,
             force_chat_template: false,
+            raw_prompt: false,
         };
 
         let cloned = original.clone();
