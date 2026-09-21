@@ -1,0 +1,202 @@
+{
+  "ticket": "PMAT-3225",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 128 commit(s); judged against origin/main",
+  "head": "53a84e9f1439a7383e82366fb05f1ab287f274e1",
+  "diff_sha256": "3e08c274052784f06cc96d3c1a1e93994057856708d4c959f513dbd14cca8d8e",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 76639,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I have reviewed the diff against the ticket PMAT-3225 and the receipt claims. I ran the `make build-report` self-test, verifying the `percentile` edge cases (e.g., p7 of 1..100 = 7). I also ran `scripts/check_build_report.sh` which executes 44 checks, ensuring the report declines on empty data, uses the slowest required check dynamically (not hardcoded to `ci / gate`), rejects malformed JSON objects (including empty files or arrays), and properly derives the `host_class`. `bashrs lint` yields 0 errors.\n\nAll acceptance criteria are met. The ticket's specified outputs (p50/p95 by host class, 10 slowest jobs, and PRs-per-train computed against the required-check set) are exactly what `build_report.sh` generates. The addition of `.github/workflows/build-report.yml` cleanly addresses the need for a non-Makefile caller to satisfy the guard. The specification updates are well-documented and reflect the explicit rulings mentioned in the receipt.\n\nNo gates are weakened (the guard is added sequentially to `lint-scripts`), no tests assert the opposite of the ticket, and the receipt claims exactly match the diff's behavior. I found nothing that refutes the diff.",
+      "findings": [],
+      "raw_bytes": 4505,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements the P0·Instrument requirement (make build-report) to parse and summarize build-ledger records. The jq-based implementation is robust and correctly handles edge cases, such as integer-based percentile calculation to avoid float-ceil traps, and rejects invalid JSON without silently dropping records. All defects identified in the receipt (non-object JSON, empty files, incorrect percentile bounds, unwired script) have been comprehensively fixed in the bash scripts. The testing script (`check_build_report.sh`) provides rigorous verification of all behaviors. I found no refuting evidence; the PR strictly obeys the ticket's instructions.",
+      "findings": [
+        {
+          "claim": "The build_report.sh script correctly calculates percentiles avoiding the float-ceil trap using integer math.",
+          "command": "jq -n 'def percentile(k): (sort) as $sorted | ($sorted | length) as $n | if $n == 0 then null else ((((k * $n) + 99) / 100) | floor) as $raw | (if $raw < 1 then 1 elif $raw > $n then $n else $raw end) as $idx | ($sorted | .[$idx - 1]) end; [range(1;101)] | percentile(7)'",
+          "file": "scripts/build_report.sh",
+          "grounding": "measured",
+          "output": "7"
+        },
+        {
+          "claim": "Empty and whitespace-only files, as well as non-object JSON files, are correctly rejected or skipped using xargs and jq without silently dropping them or crashing.",
+          "command": "mkdir -p /tmp/test-jq && echo '{\"a\": 1}' > /tmp/test-jq/1.json && echo '' > /tmp/test-jq/3.json && find /tmp/test-jq -type f -name '*.json' -print0 | sort -z | xargs -0 jq -c 'if type == \"object\" then . else error(\"not a JSON object\") end' > /tmp/test-jq/out 2>/tmp/test-jq/err; echo rc=$?; wc -l < /tmp/test-jq/out",
+          "file": "scripts/build_report.sh",
+          "grounding": "measured",
+          "output": "rc=0\\n1"
+        },
+        {
+          "claim": "The check_build_report.sh script executes precisely 44 chk assertions as claimed in the receipt.",
+          "file": "scripts/check_build_report.sh",
+          "grounding": "asserted"
+        },
+        {
+          "claim": "The report correctly relies on the slowest required check instead of hardcoding 'ci / gate', addressing the defect where bound calculation could overstate throughput.",
+          "file": "scripts/build_report.sh",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 8993,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Lane 3 Review of PMAT-3225: The diff accurately implements the instrumentation requirement specified in APR-RELEASE-001 §5 (P0·Instrument). It creates scripts/build_report.sh and scripts/check_build_report.sh to summarize build metrics across host classes, identify the slowest jobs, and compute the maximum PRs per train against the required status check set. Quality gates are strengthened via Makefile integration and automated self-tests, with 44/44 verification checks passing cleanly. No gates were weakened, no forbidden changes were introduced, and all receipt claims are backed by measured empirical evidence. Verdict: PASS.",
+      "findings": [
+        {
+          "claim": "The guard script check_build_report.sh runs all 44 assertions cleanly and exits with code 0.",
+          "command": "cd /home/noah/src/aprender-3271 && bash scripts/check_build_report.sh",
+          "file": "scripts/check_build_report.sh",
+          "grounding": "measured",
+          "line": 1,
+          "output": "== check_build_report.sh ==\n  ok   reader is executable                           yes\n  ok   make target build-report declared              yes\n  ok   build-report in .PHONY                         yes\n  ok   self-test has a caller (lint-scripts)          yes\n  ok   empty ledger exits 2                           2\n  ok   empty ledger says decline:                     yes\n  ok   19 records exits 2 (floor is 20)               2\n  ok   20 records exits 0                             0\n  ok   prints a p95 total_s                           yes\n  ok   prints queue_wait p95                          yes\n  ok   prints the §1 max PRs/train number            yes\n  ok   emits the §7 gate: line                       yes\n  ok   bound uses the slowest required check          777\n  ok   names which check binds                        yes\n  ok   one malformed record exits 1                   1\n  ok   malformed record says reject:                  yes\n  ok   non-object/empty [[]] exits 1                  1\n  ok   non-object/empty [[]] says reject:             yes\n  ok   non-object/empty [123] exits 1                 1\n  ok   non-object/empty [123] says reject:            yes\n  ok   non-object/empty [\"str\"] exits 1               1\n  ok   non-object/empty [\"str\"] says reject:          yes\n  ok   non-object/empty [true] exits 1                1\n  ok   non-object/empty [true] says reject:           yes\n  ok   non-object/empty [null] exits 1                1\n  ok   non-object/empty [null] says reject:           yes\n  ok   non-object/empty [] exits 1                    1\n  ok   non-object/empty [] says reject:               yes\n  ok   non-object/empty [   ] exits 1                 1\n  ok   non-object/empty [   ] says reject:            yes\n  ok   --percentile-probe exits 0                     0\n  ok   p7 of 1..100 is 7, not 8                       7\n  ok   both gate spellings are MEASURED under the required set ci / gate,gate\n  ok   the slower spelling binds                      ci / gate\n  ok   records without host_class still report (rc 0) 0\n  ok   prefixes intel/gx10/yoga/lambda/mini classified gx10,intel,lambda,mini,other,yoga\n  ok   unknown prefix AND null host both land in other 5\n  ok   required_source is pinned/derived/fallback, never absent yes\n  ok   un-pinned, the source is derived or a named fallback yes\n  ok   text report prints the required set with its source yes\n  ok   without gh the report still runs (rc 0)        0\n  ok   without gh the source names the reason         fallback (gh not on PATH)\n  ok   --self-test exits 0                            0\n  ok   committed ledger exits 0                       0\ncheck_build_report.sh: PASS"
+        },
+        {
+          "claim": "The build report tool build_report.sh self-tests all percentile calculation cases and exit-code contracts cleanly and passes with exit code 0.",
+          "command": "cd /home/noah/src/aprender-3271 && bash scripts/build_report.sh --self-test",
+          "file": "scripts/build_report.sh",
+          "grounding": "measured",
+          "line": 1,
+          "output": "== build_report.sh --self-test ==\n-- percentile(k) = a[ceil(k/100*n)-1], nearest-rank --\n  ok   percentile(50) over 1..100               want=50     got=50\n  ok   percentile(95) over 1..100               want=95     got=95\n  ok   percentile(100) over 1..100              want=100    got=100\n  ok   percentile(50) over [7] (n=1)            want=7      got=7\n  ok   percentile(95) over [7] (n=1)            want=7      got=7\n  ok   percentile(7) over 1..100 (float-ceil trap) want=7      got=7\n  ok   percentile(29) over 1..100 (float-ceil trap) want=29     got=29\n  ok   percentile(1) over 1..100                want=1      got=1\n  ok   percentile(50) over 1..3 (rounds up)     want=2      got=2\n-- exit-code contract (fixtures under mktemp -d) --\n  ok   0 records -> decline (exit 2)            want=2      got=2\n  ok   19 records -> decline (exit 2)           want=2      got=2\n  ok   20 records -> reported (exit 0)          want=0      got=0\n  ok   1 malformed file -> reject (exit 1)      want=1      got=1\n  ok   JSON array []                            want=1      got=1\n  ok   JSON number                              want=1      got=1\n  ok   JSON string                              want=1      got=1\n  ok   JSON true                                want=1      got=1\n  ok   JSON null                                want=1      got=1\n  ok   empty file                               want=1      got=1\n  ok   whitespace-only file                     want=1      got=1\nbuild_report.sh --self-test: PASS"
+        },
+        {
+          "claim": "Makefile declares build-report target, adds it to .PHONY, and wires check_build_report.sh into lint-scripts.",
+          "file": "Makefile",
+          "grounding": "cited",
+          "line": 828
+        },
+        {
+          "claim": "Added scheduled GitHub Workflow build-report.yml to execute build_report.sh nightly and assert its self-test and guard contracts.",
+          "file": ".github/workflows/build-report.yml",
+          "grounding": "cited",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 14229,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": ".github/workflows/build-report.yml",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Added scheduled GitHub Workflow build-report.yml to execute build_report.sh nightly and assert its self-test and guard contracts."
+      ]
+    },
+    {
+      "file": "Makefile",
+      "line": 828,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Makefile declares build-report target, adds it to .PHONY, and wires check_build_report.sh into lint-scripts."
+      ]
+    },
+    {
+      "file": "scripts/build_report.sh",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Empty and whitespace-only files, as well as non-object JSON files, are correctly rejected or skipped using xargs and jq without silently dropping them or crashing.",
+        "The build_report.sh script correctly calculates percentiles avoiding the float-ceil trap using integer math.",
+        "The report correctly relies on the slowest required check instead of hardcoding 'ci / gate', addressing the defect where bound calculation could overstate throughput."
+      ]
+    },
+    {
+      "file": "scripts/build_report.sh",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The build report tool build_report.sh self-tests all percentile calculation cases and exit-code contracts cleanly and passes with exit code 0."
+      ]
+    },
+    {
+      "file": "scripts/check_build_report.sh",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The check_build_report.sh script executes precisely 44 chk assertions as claimed in the receipt."
+      ]
+    },
+    {
+      "file": "scripts/check_build_report.sh",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The guard script check_build_report.sh runs all 44 assertions cleanly and exits with code 0."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane 2: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (8993 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)"
+  ],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
