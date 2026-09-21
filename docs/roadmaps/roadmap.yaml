@@ -19986,3 +19986,22 @@ roadmap:
   labels:
   - kind:code
   notes: "Refs #3577 (ONT-4c3; its ledger binding is infra's row, bound after this merges) and #3624 (the by_entity_type sibling, not closed here). R-3 of ONT-001: pc_extract is one planted defect per registered extractor, every run."
+- id: PMAT-3756
+  github_issue: 3756
+  item_type: task
+  title: 'Parity lane refuses on intel and mini: the pinned llama.cpp (d1d3c3396) has no llama-bench/llama-server there'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-04
+  created: 2026-09-21T18:00:00Z
+  updated: 2026-09-21T18:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3756 done_when, verbatim: "done_when: `llama_bin.sh` resolves the pin on intel and mini (evidence committed like `evidence/parity/pin-bump-d1d3c3396/RESOLVE-{lambda,gx10}.txt`), and `host_receipt.sh <V> intel|mini` writes a `parity` block"'
+  - 'THIS PR delivers the FIRST clause only (llama_bin.sh resolves the pin on intel and mini, with the evidence committed). The second clause (host_receipt.sh writes a parity block) needs #3731, which is not on main; this PR says Refs #3756, not Closes.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'SCOPE: scripts/llama_bin.sh (one line: the commit-token extraction), evidence/parity/pin-bump-d1d3c3396/RESOLVE-{intel,mini}.txt, and this fragment. STACKED on #3563(A) (branch PMAT-3563-llama-pin-resolves-both-hosts @ 8fe36c080, receipt committed), whose canonical-location resolver it uses; fold #3563(A) first. HOST PROVISIONING (the cop''s fleet row; the operator: "you are traffic cop and have ssh, you fix anything you need"; done before the 0.69.1 train starts, not inside it): intel: `cmake --build ~/src/llama.cpp-d1d3c3396/build --target llama-bench llama-server llama-tokenize llama-cli -j 8` under nice 19 / ionice idle (incremental; the existing cache already matched build_flags_intel, GGML_NATIVE=ON, GGML_CUDA=OFF), BUILD_EXIT=0. mini: `git clone https://github.com/ggml-org/llama.cpp ~/src/llama.cpp-d1d3c3396 && git checkout d1d3c3396aa13a5f239109a822666c4870490ad5 && cmake -B build -DGGML_METAL=ON` (build_flags_mini verbatim), then the same four targets, BUILD_EXIT=0. DEFECT FOUND BY THE PROOF (fixed here): on mini, #3563(A)''s resolver refused the correct build as wrong_build. Its commit extraction `sed -nE ''s/…/p;t;s/…/p''` is one expression, and BSD sed (macOS /usr/bin/sed) reads everything after `t` as a LABEL, so it failed with "undefined label" and extracted nothing. Measured pre-fix on mini, rc 1: `sed: 2: "s/.*commit ([0-9a-f]{7, ...": undefined label '';s/.*\(([0-9a-f]{7,40})\).*/\1/p''` then `FAIL llama.cpp named but NOT the declared build (wrong_build)`. FIX: the same three commands as separate -e arguments. PROBE: 4 inputs (commit d1d3c3396, paren abcdef1, a 6-digit commit, no commit) give byte-identical output under GNU sed 4.8 (lambda) and BSD sed (mini): d1d3c3396 / abcdef1 / empty / empty. MEASURED AFTER: `bash scripts/check_llama_pin.sh` rc 0, 43 ok rows, both mutants still killed; live `env -u LLAMA_BENCH_PATH LLAMA_PIN_HOST=<host> bash scripts/llama_bin.sh` rc 0 on intel (`version: 0.4.1-dev (build 2744, commit d1d3c3396)`) and on mini (`version: 0.4.1-dev (build 10987, commit d1d3c3396)`), in the committed RESOLVE files. REMAINDER: the llama.cpp builds live in user-space trees under ~/src on each host; declaring them in forjar (so a re-provisioned host rebuilds them) is not in this PR.'
