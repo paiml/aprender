@@ -1,0 +1,21 @@
+- id: PMAT-3742
+  github_issue: 3742
+  item_type: task
+  title: 'tokenizer parity: the APR and tokenizer.json encode paths are sibling copies #3726 did not touch (realizar apr bpe_encode with no pre-tokenizer; aprender-core BpeTokenizer whitespace-splits HF byte-level vocabularies)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-c3
+  created: 2026-09-21T18:30:00Z
+  updated: 2026-09-21T18:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3742 done_when 1, verbatim: "The tokenizer parity gate (`tokenizer_parity.sh`) runs over **every file in the model-gate universe**, `.apr` included, not just GGUFs. A universe file that reports UNCOVERED is a **NO-GO**, not a pass. UNCOVERED stays allowed only for files outside the universe."'
+  - 'done_when 2, verbatim: "The APR encode path produces the same ids as pinned `llama-tokenize` on the source GGUF, for every `.apr` in the universe. Measured on lambda and gx10, with a mutant that turns it RED."'
+  - 'done_when 3, verbatim: "`BpeTokenizer::pre_tokenize` either uses the model''s pre-tokenizer or is refused on a byte-level-BPE vocabulary. It must never silently whitespace-split one."'
+  - 'done_when 4, verbatim: "If no `.apr` file is in the universe on either host, say so with the listing command''s output. The row then shrinks to the guard in item 1, not to nothing."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Filed by the cop from aprender-c3 sibling sweep on #3726; owner aprender-c3. Design ruled by the cop (option D, 2026-09-21): apr-cli six tokenizer.json consumers switch to realizar canonical encoder through one adapter; aprender-core pre_tokenize refuses a byte-level HF vocabulary with a named error; one implementation, no new publish edges. Universe ruled on #3712: a file is in iff its dominant weight dtype, read by apr own header reader, is Q4_K; the file name is not evidence. MEASURED BEFORE THE FIX: .apr files exist in the declared models dir on both hosts (lambda 4, gx10 3); most older conversions carry no tokenizer.pre_type or token_type (gx10 q4_k_m.apr carries both). The structural special-token rule (not a merge output, not a single glyph, text shaped like <...>) reproduces llama.cpp CONTROL+USER_DEFINED set exactly on qwen35/qwen2.5/qwen3/qwen3moe (33/22/26/26, none missing, none extra). A stale duplicate, crates/aprender-serve/src/apr/loading.rs, was never included (tokenizer_loading.rs is the live copy) and swallowed the first edit; it is deleted. The .apr decoder (AprV2Model::decode_tokens) lost non-ASCII bytes and whitespace glyphs; decode now goes through ByteLevelBpe::decode when canonical.'
