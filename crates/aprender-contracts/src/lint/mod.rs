@@ -755,6 +755,10 @@ fn shapes_result(contract_dir: &Path, validation_passed: bool) -> (GateResult, V
             skipped_gate("shapes", &format!("extract:parity-receipt matched {found} focus node(s) and evidence/parity/EXPECTED_RECEIPTS says {expected} ({shapes_n} shape(s)){} — an extractor that saw the wrong corpus reports the same \"no violations\" as one that saw all of it", if refused.is_empty() { String::new() } else { format!("; refused: {}", refused.join("; ")) })),
             Vec::new(),
         ),
+        shapes_gate::ShapesOutcome::HarnessBroken { causes } => (
+            skipped_gate("shapes", &format!("the CRUX harness measured itself, not apr: {}", causes.join("; "))),
+            Vec::new(),
+        ),
         shapes_gate::ShapesOutcome::NoReceipts { shapes_n, dir } => (
             skipped_gate("shapes", &format!("{shapes_n} shape(s) resolve receipts and the tree holds none under {dir}/ — R-2: unmeasured is a decline")),
             Vec::new(),

@@ -215,7 +215,9 @@ shapes:
                              {path: release:fresh, minCount: 1, maxCount: 1, in: [true]},
                              {path: release:contextMet, minCount: 1, maxCount: 1, in: [true]},
                              {path: release:thinkOk, minCount: 1, maxCount: 1, in: [true]},
-                             {path: release:answered, minCount: 1, maxCount: 1, in: [true]}]}}
+                             {path: release:answered, minCount: 1, maxCount: 1, in: [true]},
+                             # #3748: the CPU reference ran fresh, or came from THIS binary's own receipt
+                             {path: release:f2Measured, minCount: 1, maxCount: 1, in: [true]}]}}
 
 equations:
   cell_universe:

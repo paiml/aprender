@@ -91,6 +91,9 @@ pub enum ShapesOutcome {
         n: usize,
         failed: Vec<String>,
     },
+    /// #3739: the CRUX harness measured itself, not apr — a model's positive-control prompt came back ALL_WRONG,
+    /// or a model owing CRUX cells has no measured control. Declined (exit 2), each model and cause named.
+    HarnessBroken { causes: Vec<String> },
     /// Shapes ran over the corpus, and the controls fired.
     Ran {
         result: Box<GateResult>,
@@ -258,6 +261,10 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
     // PMAT-3577: the count is pinned before anything is graded. A miss here is not a corpus verdict.
     if let Some(refusal) = parity_refusal(&extraction.parity, shapes.len()) {
         return refusal;
+    }
+    // #3739 / cop: a broken CRUX harness is not a verdict about the release — decline, naming the model
+    if let Some(broken) = harness_broken(&extraction) {
+        return broken;
     }
     let graph = &extraction.graph;
 
@@ -439,6 +446,17 @@ fn by_entity_type(extraction: &extract::Extraction) -> BTreeMap<String, usize> {
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))
     .collect()
+}
+
+fn harness_broken(extraction: &extract::Extraction) -> Option<ShapesOutcome> {
+    let causes = extraction
+        .release
+        .as_ref()?
+        .crux
+        .as_ref()?
+        .harness_broken
+        .clone();
+    (!causes.is_empty()).then_some(ShapesOutcome::HarnessBroken { causes })
 }
 
 /// The answers that are not corpus verdicts, in the order they are asked: no focus node, receipts needed and

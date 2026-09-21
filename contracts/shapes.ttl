@@ -714,5 +714,11 @@
         sh:maxCount 1 ;
         sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
     ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/f2Measured> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
 .
 

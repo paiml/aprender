@@ -97,6 +97,10 @@ pub struct CellRow {
     pub output_sha256: Option<String>,
     /// Wall time of the cell, for the per-host projection (D1).
     pub wall_ms: Option<u64>,
+    /// #3748: where the CPU-reference forward (F2) came from — `fresh`, or `receipt` of the binary named in
+    /// `f2_receipt_binary_sha` (full 40-hex). A receipt from ANOTHER binary validated nothing for this one.
+    pub f2_source: Option<String>,
+    pub f2_receipt_binary_sha: Option<String>,
     pub sha256: Option<String>,
     pub file: String,
     pub verb: String,
@@ -323,6 +327,8 @@ fn parse_cell(r: &serde_json::Value) -> CellRow {
         cell_id: str_of(r, "cell_id"),
         output_sha256: str_of(r, "output_sha256").map(|x| x.to_ascii_lowercase()),
         wall_ms: r.get("wall_ms").and_then(serde_json::Value::as_u64),
+        f2_source: str_of(r, "f2_source"),
+        f2_receipt_binary_sha: str_of(r, "f2_receipt_binary_sha").map(|x| x.to_ascii_lowercase()),
         sha256: str_of(r, "sha256").map(|x| x.to_ascii_lowercase()),
         file: str_of(r, "file").unwrap_or_default(),
         verb: str_of(r, "verb").unwrap_or_default(),
