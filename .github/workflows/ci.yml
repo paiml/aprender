@@ -827,6 +827,17 @@ jobs:
         run: |
           printf 'workspace-test REUSED: %s\n' "${{ steps.tier.outputs.reason }}"
           printf 'cited PR head: %s\n' "${{ steps.tier.outputs.cite }}"
+      # #3658 NONE: the tier step proved the change gives workspace-test nothing
+      # to measure -- every touched path is under docs/roadmaps/ or docs/audits/
+      # and present at HEAD (no Rust source, test or tree reader reads them), or
+      # the change lands no path at all. Nothing is built or run; this step
+      # records why, so the skip is auditable in the log.
+      - name: "None: nothing for workspace-test to measure (#3658)"
+        if: steps.tier.outputs.tier == 'none'
+        env:
+          REASON: ${{ steps.tier.outputs.reason }}
+        run: |
+          printf 'workspace-test NOT RUN: %s\n' "$REASON"
       - name: Build.rs crate-root escape check (v0.31.1 yank guard)
         if: matrix.shard == 1
         # Static Poka-Yoke: flags build.rs files that panic on files outside
