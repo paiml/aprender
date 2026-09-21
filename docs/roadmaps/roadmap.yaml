@@ -19848,3 +19848,24 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE — issue #3670 done_when, verbatim in substance. (1) Each fleet-state branch prints UNMEASURED runner=... reason=<pin-mismatch|pv-env|judge-env|no-binary|incapable> ..., exits 0, and never prints PASS or SUMMARY PASS. (2) A mutant restoring FAIL on pin-mismatch exits 1, and a mutant restoring the ENV exit on pv-env exits 2; each mutant row refuses to pass if its edit did not apply. (3) A planted violation from a matching pinned binary is still RED, and a control that does not fire is still RED. (4) Real runs: pin forced to 0.65.2 under a 0.68.2 binary gives UNMEASURED reason=pin-mismatch (rc 0); the fleet pv on a tree with migrated parity records gives PASS verdict=Pass. RULING: PASS/FAIL only from a verdict produced by a binary that matches its pin; fleet state is UNMEASURED with a named reason and exit 0. Scope: scripts/check_fleet_pv_shapes_gate.sh only, one commit on top of #3653 (053992448).'
+- id: PMAT-3682
+  github_issue: 3682
+  item_type: task
+  title: 'parity_receipt_denominator.sh reads git''s refusal as 0 receipts on container runners — a git failure must be ENV exit 2, never a count'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-62
+  created: 2026-09-21T09:19:00Z
+  updated: 2026-09-21T09:19:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3682 done_when 1, verbatim: "The listing is `git -c safe.directory="$root" -C "$root" ls-files …`, and git''s stderr is no longer discarded."'
+  - 'done_when 2, verbatim: "A git failure makes the script exit **2 (ENV)** with a message naming git. It is never a count of 0. `verify` propagates that status instead of collapsing it to 1."'
+  - 'done_when 3, verbatim: "A self-test row puts a `git` stub on PATH that exits 128 with the dubious-ownership message. It requires exit 2 and a message naming git, and it requires that the output NOT contain \"holds 0\"."'
+  - 'done_when 4, verbatim: "Mutation: with the pre-fix `count_and_check` restored, that row goes RED."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'The judged diff is this ONE commit, scripts/parity_receipt_denominator.sh plus this fragment, with --base at its parent. The three commits under it on the 0.69 batch branch (the dogfood ledger re-audit, the ONT ratchet restamp, the ont4b 6->9 raise) are data/ratchet restamps that carry their proofs in their commit bodies and are outside this ticket. Found in batch #3669, workspace-test shard 3/3 on gx10-pool1 (job 106269529629): "EXPECTED_RECEIPTS says 7; the tree holds 0". On the docker runners git refuses the bind-mounted tree ("detected dubious ownership", exit 128), and the old `(cd "$root" && git ls-files … 2>/dev/null | sort -u)` inside a process substitution discarded both the message and the exit status. Measured at this commit: `bash scripts/parity_receipt_denominator.sh --self-test` 5/5 ok (the new row: "git refusing the tree is ENV exit 2 naming git, never a count of 0"); `bash scripts/parity_receipt_denominator.sh` "PASS 7 receipt(s) … says 7"; MUTANT with the pre-fix count_and_check from 55b123f2f: self-test rc=1, "FAIL git refused and the result was exit 1: FAIL evidence/parity/EXPECTED_RECEIPTS says 2; the tree holds 0."; `cargo test -p aprender-contracts-cli --test ont4c3_parity_receipts` 9 passed. Sibling sweep, on lines the batch ADDED in scripts/ and crates/*/tests/: ci_test_tier.sh:180 and :252 fail closed (not docs-only / tier=full); lib_baseline_ratchet.sh:300/302 fail closed but misattribute the cause ("this branch WROTE it"). No other zero-count site. Outside test paths: release/lib_release_params.sh:39 silently falls back to the tree root. Those are filed, not fixed here.'

@@ -18,7 +18,8 @@
 #   bash scripts/parity_receipt_denominator.sh --print    # print the measured count and exit 0
 #   bash scripts/parity_receipt_denominator.sh --self-test
 #
-# Exit: 0 agree · 1 disagree (or an unmigrated record) · 2 usage / the file is missing.
+# Exit: 0 agree · 1 disagree (or an unmigrated record) · 2 usage / the file is missing / git cannot
+# list the tree (ENV: e.g. "dubious ownership" on a bind-mounted docker checkout, #3669).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,7 +27,17 @@ EXPECTED_FILE="evidence/parity/EXPECTED_RECEIPTS"
 SCHEMA="apr-parity-receipt/v2"
 
 count_and_check() {
-    local root=$1 records=0 unmigrated=()
+    local root=$1 records=0 unmigrated=() listing
+    # #3669: on the docker runners git refuses the bind-mounted tree ("detected dubious ownership"),
+    # and this listing used to discard that refusal (`2>/dev/null` inside a process substitution,
+    # whose exit status nothing reads), so the loop saw an empty universe and reported "the tree
+    # holds 0". A git failure is an ENV exit 2 that names git, never a count. git's own stderr is kept.
+    if ! listing=$(git -c safe.directory="$root" -C "$root" ls-files \
+            'evidence/parity/*.json' 'evidence/parity/**/*.json'); then
+        printf 'ENV   git ls-files failed in %s: the receipt universe cannot be read, so no count is reported\n' \
+            "$root" >&2
+        return 2
+    fi
     local f
     while IFS= read -r f; do
         [ -n "$f" ] || continue
@@ -35,7 +46,7 @@ count_and_check() {
             legacy) unmigrated+=("$f") ;;
             *) : ;;
         esac
-    done < <(cd "$root" && git ls-files 'evidence/parity/*.json' 'evidence/parity/**/*.json' 2>/dev/null | sort -u)
+    done < <(printf '%s\n' "$listing" | sort -u)
     if [ "${#unmigrated[@]}" -gt 0 ]; then
         printf 'FAIL  %s unmigrated legacy record(s) - no schema, but a top-level metrics[]/parity:\n' \
             "${#unmigrated[@]}" >&2
@@ -131,13 +142,26 @@ self_test() {
     else
         printf 'FAIL  the denominator was bumped and they still disagree\n'; rc=1
     fi
+
+    # #3669: git itself refuses, as it does on the docker runners (exit 128, "dubious ownership").
+    # That is ENV (exit 2) naming git. It is never "the tree holds 0".
+    mkdir -p "$td/nogit"
+    printf '#!/bin/sh\necho "fatal: detected dubious ownership in repository" >&2\nexit 128\n' > "$td/nogit/git"
+    chmod 755 "$td/nogit/git"
+    local got=0 gout
+    gout=$(PATH="$td/nogit:$PATH" verify "$td" 2>&1) || got=$?
+    if [ "$got" -eq 2 ] && grep -q 'git' <<<"$gout" && ! grep -q 'holds 0' <<<"$gout"; then
+        printf 'ok    git refusing the tree is ENV exit 2 naming git, never a count of 0\n'
+    else
+        printf 'FAIL  git refused and the result was exit %s: %s\n' "$got" "$gout"; rc=1
+    fi
     return "$rc"
 }
 
 verify() {
     local root=$1 measured expected
     [ -f "$root/$EXPECTED_FILE" ] || { printf 'FAIL  %s is missing\n' "$EXPECTED_FILE" >&2; return 2; }
-    measured=$(count_and_check "$root") || return 1
+    measured=$(count_and_check "$root") || return $?
     expected=$(expected_of "$root")
     if [ "$measured" = "$expected" ]; then
         printf 'PASS  %s receipt(s) under evidence/parity/**, and %s says %s.\n' \
