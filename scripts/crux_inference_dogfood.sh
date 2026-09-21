@@ -335,7 +335,10 @@ PY
   OLLAMA_THINK=()
   if [ "$THINKING_CAPABLE" = true ]; then
     LLAMA_THINK=(--reasoning off)
-    [ "$OLLAMA_OK" = 1 ] && "$OLLAMA" run --help 2>&1 | grep -q -- '--think' && OLLAMA_THINK=(--think=false)
+    if [ "$OLLAMA_OK" = 1 ]; then
+      ol_help=$("$OLLAMA" run --help 2>&1)
+      case "$ol_help" in *--think*) OLLAMA_THINK=(--think=false) ;; esac
+    fi
   fi
 
   for pid in $PIDS; do
