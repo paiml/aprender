@@ -207,7 +207,7 @@ impl MappedAprModel {
     /// GH-321: Convert APR dtype string to GGML qtype using unified enum.
     #[must_use]
     pub fn dtype_to_qtype(dtype: &str) -> u32 {
-        crate::gguf::GgmlQuantType::from_str_lossy(dtype)
+        crate::gguf::admitted_from_name(dtype)
             .map_or(0, crate::gguf::GgmlQuantType::as_id)
     }
 }
