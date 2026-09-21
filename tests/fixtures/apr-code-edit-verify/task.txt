@@ -1,0 +1,1 @@
+The unit test test_mean in test_stats.py fails. Find the bug in stats.py and fix it with a one-line edit. Do not change test_stats.py. Then run `python3 -m unittest test_stats -v` in the project directory and report whether all tests pass.

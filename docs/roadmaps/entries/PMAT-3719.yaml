@@ -1,0 +1,21 @@
+- id: PMAT-3719
+  github_issue: 3719
+  item_type: task
+  title: '`apr code` on Qwen3.5 Q4_K_M (4B, 9B) on CUDA completes a scripted edit-and-verify task on lambda and gx10; UNMEASURED, and its driver runs through `apr serve --gpu` (#3571)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-f8
+  created: 2026-09-21T15:55:00Z
+  updated: 2026-09-21T17:40:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3719 done_when 1, verbatim: "**Gap first, before any code.** Commit a fixture: a small project with one failing test whose fix is a one-line edit, and one task prompt that asks the agent to make the fix and run the test. Run `apr code -p --model <M> --project <fixture> --output-format json --emit-trace <t>` for M in {`Qwen3.5-4B-Q4_K_M`, `Qwen3.5-9B-Q4_K_M`} × {lambda, gx10}, with the 0.69.1 release-candidate binary (version and SHA cited). For each of the 4 cells, post on this issue: PASS or FAIL, the first failing mechanism named (serve child did not load / fell back to CPU / tool call not parsed / wrong edit / test not run / wrong final answer), and the stderr or trace line that shows the backend."'
+  - 'done_when 2, verbatim: "**CUDA engaged, proven.** Every PASS cell cites a line from the serve child or the trace showing the forward ran on CUDA. The requested flag does not count."'
+  - 'done_when 3, verbatim: "**Every FAIL cell** either gets its fix in this issue''s PR, with a falsifier that goes RED on the pre-fix binary, or points to the issue that carries the fix (for example #3571) under `Refs`."'
+  - 'done_when 4, verbatim: "**Enforced, not promised.** The four cells become rows (verb=`code`) of the release matrix that the #3715 shape refuses the tag on whenever a cell lacks a Pass receipt."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Minted by aprender-c3 at the cop''s direction (aprender-04, 2026-09-21 ~15:45Z): "mint a row for it. Measure whether `apr code` drives a Qwen3.5 Q4_K_M (4B/9B) on CUDA through a scripted edit-and-verify task on both hosts, and post the gap before any code." The #3710 bar row it answers, verbatim: "**code**: `apr code` (the coding-agent verb) completes a scripted edit-and-verify task with the model as its backend". Known before measuring: `apr code` has no backend flag. Its default driver spawns `apr serve ... --gpu` (crates/aprender-orchestrate/src/agent/driver/apr_serve.rs:102), so its CUDA path is serve''s, and #3571 (serve cannot load Qwen3.5) sits on it.'
