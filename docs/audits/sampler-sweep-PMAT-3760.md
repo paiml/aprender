@@ -26,7 +26,7 @@ These pick the argmax by design and take no sampling parameters. A sampled reque
 
 | site | reached by | now |
 |---|---|---|
-| `infer/gguf_gpu_generate.rs:80` `try_wgpu_generate` (inline LM-head argmax) | `apr run` GGUF when not `--no-gpu` on a build with realizar's default `gpu` feature and a working wgpu adapter | taken only when `is_greedy`. Otherwise `WGPU_SAMPLING_NOTICE` is printed and the CPU loop runs (`wgpu_can_serve`, `:68`) |
+| `infer/gguf_gpu_generate.rs:80` `try_wgpu_generate` (inline LM-head argmax) | `apr run` GGUF when not `--no-gpu`, on a build with realizar's default `gpu` feature, where wgpu PASSES its own CPU-parity gate (the source cites cosine 0.999863 on GB10). Measured on lambda, where the gate REJECTS it (below): main already fell back to the CPU there and sampled. The greedy-wgpu case is traced from code, not measured | taken only when `is_greedy`. Otherwise `WGPU_SAMPLING_NOTICE` is printed and the CPU loop runs (`wgpu_can_serve`, `:68`) |
 | `infer/gguf_gpu_generate.rs:467` `try_apr_wgpu_inference` (inline argmax) | `apr run` .apr, same condition | same guard |
 | `SafeTensorsCudaModel::generate(input, max_tokens, eos_id)` via `try_safetensors_cuda_inference` | `apr run` .safetensors on a `cuda` build | taken only when `is_greedy`. Otherwise `SAFETENSORS_CUDA_SAMPLING_NOTICE` is printed and the CPU loop runs |
 | `api/gpu_completions_handler.rs` (GpuModel completions) | serve `/v1/completions` on a GpuModel | was `top_k: 1`, so the request `temperature` did nothing. Now uses the same rule as the CPU completions handlers (`1` at temperature 0, else `40`; #3754's `DEFAULT_TOP_K` replaces the literal when both land) |
@@ -71,7 +71,7 @@ git grep -n -E 'fn [a-z_0-9]*(sample|argmax|greedy|to_token_id)[a-z_0-9]*\s*[<(]
 
 over the two trees, excluding tests, plus the inline-argmax decode loops found by reading each `apr run` / serve dispatch chain (the wgpu loops, the SafeTensors CUDA `generate`, and GPU completions' `top_k: 1`). 83 raw matches, of which the non-token ones are excluded above.
 
-**Real models.** CPU, qwen2.5-coder-0.5b-instruct, prompt "Write one sentence about the sea.", 24 tokens. main is `apr 0.69.0 (a9502d992)`; the branch is `(8202b67bb)`.
+**Real models.** CPU, qwen2.5-coder-0.5b-instruct, prompt "Write one sentence about the sea.", 24 tokens. main is `apr 0.69.0 (a9502d992)`; the branch is `(8760145f5)`. Both are pinned by `scripts/apr_bin.sh`.
 
 | model | build | sampled ≠ greedy | same seed ×2 | seed 99 ≠ 1234 | `--top-k 1` = greedy | greedy output |
 |---|---|---|---|---|---|---|
@@ -81,3 +81,10 @@ over the two trees, excluding tests, plus the inline-argmax decode loops found b
 | `.apr` | branch | YES | IDENTICAL | YES | yes | byte-identical to main |
 
 `.apr` already sampled on main: it goes through the GGUF sampler.
+
+**wgpu guard on lambda.** No `--no-gpu`, Qwen3-1.7B-Q4_K_M, 16 tokens, same two binaries.
+
+- **main:** `Backend: wgpu (Vulkan)` → "GPU (wgpu) path rejected … cosine vs CPU = 0.870116 (< 0.99)" → CPU fallback. Sampled ≠ greedy and seed used, both YES. So on this host main samples because wgpu fails its own parity gate.
+- **branch:** a greedy request still tries wgpu, with the same rejection and fallback. A sampled request prints `[wgpu: the wgpu decoder is greedy-only; sampling … runs on the CPU (#3760)]` and goes straight to `Backend: CPU (SIMD-accelerated)`. Sampled ≠ greedy and seed used, both YES.
+
+The greedy-wgpu defect is not reproducible on lambda, because the gate rejects wgpu here. The guard is what stops a host where wgpu passes the gate from silently decoding greedily.
