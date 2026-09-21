@@ -1,0 +1,210 @@
+{
+  "schema": "pmat-3076-findings-v1",
+  "ticket": "PMAT-3076 (#3076)",
+  "host": "noah-Lambda-Vector, AMD Ryzen Threadripper 7960X 24-Cores (Zen 4; avx2 fma f16c avx512f avx512_bf16), 48 threads",
+  "binaries": {
+    "before": "apr 0.68.2 (00e5d2dde)",
+    "after": "apr 0.68.2 (e3ceb27f2), pinned to HEAD by scripts/apr_bin.sh",
+    "note": "crates/aprender-serve/src/gguf/inference is unchanged between 00e5d2dde and this branch's base 79a3af79d except for this diff"
+  },
+  "caveat": "load average 27-42 throughout (other sessions' builds on the host); every comparison interleaved before/after under the same load",
+  "decode_ab": {
+    "method": "apr run <model> --no-gpu --temperature 0 --json, prompt 'Write a long story about a dragon who lives in a mountain.'; ms/token = (inference_time_ms at n=64 - at n=8) / 56; 3 alternating reps; default rayon pool (48 threads)",
+    "models": {
+      "Qwen2.5-0.5B-Instruct-f16.gguf": {
+        "sha256": "f1ad9d1174ce6ab47b584d522634c47e411b75bffdffd9a4e106e21e882392e5",
+        "source": "bartowski/Qwen2.5-0.5B-Instruct-GGUF"
+      },
+      "Qwen3-0.6B-BF16.gguf": {
+        "sha256": "f9c9f1d3c1e21755b82d4e165f88dbbbd4355646d632fb5d6cef7c66ed4ee04e",
+        "source": "unsloth/Qwen3-0.6B-GGUF"
+      }
+    },
+    "runs": {
+      "Qwen2.5-0.5B-Instruct-f16.gguf": {
+        "before": [
+          {
+            "rep": "rep1",
+            "n8_ms": 6983.65,
+            "n64_ms": 13073.59,
+            "ms_per_token": 108.75,
+            "loadavg_1m": 26.67
+          },
+          {
+            "rep": "rep2",
+            "n8_ms": 6987.02,
+            "n64_ms": 12178.45,
+            "ms_per_token": 92.7,
+            "loadavg_1m": 36.42
+          },
+          {
+            "rep": "rep3",
+            "n8_ms": 6905.24,
+            "n64_ms": 11864.66,
+            "ms_per_token": 88.56,
+            "loadavg_1m": 39.06
+          }
+        ],
+        "after": [
+          {
+            "rep": "rep1",
+            "n8_ms": 4722.61,
+            "n64_ms": 7301.97,
+            "ms_per_token": 46.06,
+            "loadavg_1m": 29.55
+          },
+          {
+            "rep": "rep2",
+            "n8_ms": 4363.21,
+            "n64_ms": 7012.17,
+            "ms_per_token": 47.3,
+            "loadavg_1m": 37.27
+          },
+          {
+            "rep": "rep3",
+            "n8_ms": 4295.88,
+            "n64_ms": 6940.17,
+            "ms_per_token": 47.22,
+            "loadavg_1m": 41.81
+          }
+        ]
+      },
+      "Qwen3-0.6B-BF16.gguf": {
+        "before": [
+          {
+            "rep": "rep1",
+            "n8_ms": 5008.17,
+            "n64_ms": 11435.03,
+            "ms_per_token": 114.77,
+            "loadavg_1m": 37.75
+          },
+          {
+            "rep": "rep2",
+            "n8_ms": 5001.23,
+            "n64_ms": 12961.04,
+            "ms_per_token": 142.14,
+            "loadavg_1m": 40.46
+          },
+          {
+            "rep": "rep3",
+            "n8_ms": 6618.38,
+            "n64_ms": 15653.82,
+            "ms_per_token": 161.35,
+            "loadavg_1m": 42.03
+          }
+        ],
+        "after": [
+          {
+            "rep": "rep1",
+            "n8_ms": 3442.39,
+            "n64_ms": 6717.29,
+            "ms_per_token": 58.48,
+            "loadavg_1m": 36.85
+          },
+          {
+            "rep": "rep2",
+            "n8_ms": 4017.9,
+            "n64_ms": 8384.22,
+            "ms_per_token": 77.97,
+            "loadavg_1m": 37.7
+          },
+          {
+            "rep": "rep3",
+            "n8_ms": 4325.96,
+            "n64_ms": 8894.84,
+            "ms_per_token": 81.59,
+            "loadavg_1m": 40.86
+          }
+        ]
+      }
+    },
+    "median_ms_per_token": {
+      "Qwen2.5-0.5B-Instruct-f16.gguf": {
+        "before": 92.7,
+        "after": 47.22
+      },
+      "Qwen3-0.6B-BF16.gguf": {
+        "before": 142.14,
+        "after": 77.97
+      }
+    }
+  },
+  "brick_profile_us_per_call": {
+    "note": "BRICK-PROFILE from apr run --trace --trace-level basic, F16 instruct model, 60 forward positions (52 prefill + 8 decode)",
+    "threads_48": {
+      "before": {
+        "total_ms": 5640.86,
+        "tok_per_sec": 10.6,
+        "FFN": 1844.4,
+        "DownProjection": 804.8,
+        "QkvProjection": 476.7,
+        "OutputProjection": 423.6,
+        "LmHead": 9907.0,
+        "AttentionScore": 13.7,
+        "RopeEmbedding": 2.2,
+        "Embedding": 2.7
+      },
+      "after": {
+        "total_ms": 2970.81,
+        "tok_per_sec": 20.2,
+        "FFN": 979.5,
+        "DownProjection": 405.3,
+        "QkvProjection": 288.1,
+        "OutputProjection": 280.2,
+        "LmHead": 2961.4,
+        "AttentionScore": 14.6,
+        "RopeEmbedding": 2.0,
+        "Embedding": 2.0
+      }
+    },
+    "threads_8": {
+      "before": {
+        "total_ms": 9626.07,
+        "tok_per_sec": 6.2,
+        "FFN": 2866.2,
+        "LmHead": 42950.6,
+        "DownProjection": 1442.8,
+        "QkvProjection": 381.1,
+        "OutputProjection": 301.9,
+        "AttentionScore": 11.0,
+        "RopeEmbedding": 1.5,
+        "Embedding": 3.0
+      },
+      "after": {
+        "total_ms": 874.55,
+        "tok_per_sec": 68.6,
+        "FFN": 252.5,
+        "DownProjection": 134.1,
+        "LmHead": 2716.3,
+        "QkvProjection": 53.4,
+        "OutputProjection": 49.2,
+        "AttentionScore": 10.6,
+        "RopeEmbedding": 1.1,
+        "Embedding": 1.5
+      }
+    },
+    "reading": "at 8 threads the kernel is about an order of magnitude faster per matmul; at the default 48 on a contended host the small projections sit on a ~300-500us per-call floor attributed to pool fan-out (a hypothesis, not isolated here)"
+  },
+  "greedy_parity_before_vs_after": {
+    "method": "4 prompts x both instruct models, 32 tokens, text and token count compared",
+    "result": "8/8 identical, all texts non-empty"
+  },
+  "greedy_parity_vs_llama_cpp": {
+    "gate": "scripts/check_float16_greedy_parity.sh --baseline <apr before>",
+    "comparator": "llama-completion, llama.cpp commit d1d3c3396 (the scripts/llama_pin.toml build_commit)",
+    "why_template_free_copies": "apr run double-templates instruct prompts (#3672), so parity models are copies with tokenizer.chat_template removed (gguf_new_metadata.py --remove-metadata); tensors unchanged",
+    "receipts": [
+      "greedy-parity-Qwen2.5-0.5B-f16-notemplate.json",
+      "greedy-parity-Qwen3-0.6B-bf16-notemplate.json"
+    ],
+    "result": "F16 6/6 identical; BF16 5/6 identical + 1 KNOWN (diverges at char 83, reproduced byte-for-byte by the pre-change binary)",
+    "negative_control": {
+      "binary": "e3ceb27f2 source with two deliberate mutations (F16 routed to the BF16 kernel; BF16 <<15), a dirty-tree build and NOT the branch",
+      "receipts": [
+        "negative-control-mutant-Qwen2.5-0.5B-f16-notemplate.json",
+        "negative-control-mutant-Qwen3-0.6B-bf16-notemplate.json"
+      ],
+      "result": "12/12 FAIL at char 0, gate rc=1 on both models"
+    }
+  }
+}

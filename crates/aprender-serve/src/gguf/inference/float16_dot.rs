@@ -5,6 +5,10 @@
 // (Zen 4, 24 cores), Qwen2.5-0.5B-Instruct-f16 decoded at ~10 tok/s, and the 272 MB LM head
 // read at ~27 GB/s. These kernels read the row's bytes directly: AVX2 + F16C + FMA on x86_64
 // when the CPU has them (runtime-detected), and a chunked decode-then-dot everywhere else.
+//
+// After, same host and load: 21.2 tok/s at the default 48 threads, 68.6 at RAYON_NUM_THREADS=8, and
+// the LM head at 2.7-3.0 ms; greedy output matches the pinned llama.cpp (receipts, method and
+// raw numbers: evidence/pmat-3076-f16-bf16-matvec/).
 
 /// The 2-byte float format a weight row is stored in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
