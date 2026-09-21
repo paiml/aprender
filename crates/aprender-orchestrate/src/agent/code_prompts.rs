@@ -17,6 +17,14 @@ Answer the question. Be direct.\
 
 /// System prompt — PMAT-168: optimized for 1.5B-7B with explicit tool table.
 ///
+/// #3719: every example input here must carry the fields its tool REQUIRES;
+/// `AprServeDriver` strips the JSON schemas, so this table is all a served
+/// model sees. It taught `file_edit` with `old`/`new` (the tool requires
+/// `old_string`/`new_string`) and `memory` with `key`/`value` (it requires
+/// `content`), and Qwen3.5-4B called `file_edit` exactly as taught until the
+/// loop guard ended the run. Pinned by
+/// `falsify_3719_prompt_tool_examples_supply_every_required_field`.
+///
 /// 2026-05-20 update (V1_004 follow-up to paiml/claude-code-parity-apr M287):
 /// large coder-finetuned models (Qwen3-Coder-30B observed) emit Markdown
 /// `\u{60}\u{60}\u{60}rust` code blocks instead of `<tool_call>` JSON when given just
@@ -40,11 +48,11 @@ You have 9 tools. To use one, emit a <tool_call> block:
 |------|---------|---------------|
 | file_read | Read a file | {\"path\": \"src/main.rs\"} |
 | file_write | Create/overwrite file | {\"path\": \"new.rs\", \"content\": \"fn main() {}\"} |
-| file_edit | Replace text in file | {\"path\": \"src/lib.rs\", \"old\": \"foo\", \"new\": \"bar\"} |
+| file_edit | Replace text in file | {\"path\": \"src/lib.rs\", \"old_string\": \"foo\", \"new_string\": \"bar\"} |
 | glob | Find files by pattern | {\"pattern\": \"src/**/*.rs\"} |
 | grep | Search file contents | {\"pattern\": \"TODO\", \"path\": \"src/\"} |
 | shell | Run a command | {\"command\": \"cargo test --lib\"} |
-| memory | Remember/recall facts | {\"action\": \"remember\", \"key\": \"bug\", \"value\": \"off-by-one\"} |
+| memory | Remember/recall facts | {\"action\": \"remember\", \"content\": \"bug: off-by-one\"} |
 | pmat_query | Search code by intent | {\"query\": \"error handling\", \"limit\": 5} |
 | rag | Search project docs | {\"query\": \"authentication flow\"} |
 
@@ -61,7 +69,7 @@ Example 1 — read a file before editing:
 Example 2 — fix a one-line bug:
 
 <tool_call>
-{\"name\": \"file_edit\", \"input\": {\"path\": \"src/lib.rs\", \"old\": \"return (i, j);\", \"new\": \"return (i.min(j), i.max(j));\"}}
+{\"name\": \"file_edit\", \"input\": {\"path\": \"src/lib.rs\", \"old_string\": \"return (i, j);\", \"new_string\": \"return (i.min(j), i.max(j));\"}}
 </tool_call>
 
 Example 3 — verify with tests:

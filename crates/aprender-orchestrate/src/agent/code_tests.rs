@@ -1366,3 +1366,73 @@ fn falsify_3719_single_prompt_run_tells_the_model_about_its_tools() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// #3719: every tool example the system prompt teaches must call the tool right
+// ---------------------------------------------------------------------------
+
+/// Each `(tool name, example input)` the coding prompt shows the model: the
+/// rows of its tool table and the JSON inside its `<tool_call>` examples.
+fn prompt_tool_examples(prompt: &str) -> Vec<(String, serde_json::Value)> {
+    let mut out = Vec::new();
+    for line in prompt.lines() {
+        let cells: Vec<&str> = line.split('|').map(str::trim).collect();
+        if cells.len() >= 5 && cells[3].starts_with('{') {
+            if let Ok(input) = serde_json::from_str::<serde_json::Value>(cells[3]) {
+                out.push((cells[1].to_string(), input));
+            }
+        }
+    }
+    let mut rest = prompt;
+    while let Some(start) = rest.find("<tool_call>") {
+        let after = &rest[start + "<tool_call>".len()..];
+        let Some(end) = after.find("</tool_call>") else { break };
+        if let Ok(call) = serde_json::from_str::<serde_json::Value>(after[..end].trim()) {
+            if let (Some(name), Some(input)) = (call["name"].as_str(), call.get("input")) {
+                out.push((name.to_string(), input.clone()));
+            }
+        }
+        rest = &after[end..];
+    }
+    out
+}
+
+/// FALSIFIER (#3719): the prompt's tool examples must supply every field the
+/// registered tool REQUIRES.
+///
+/// Measured on Qwen3.5-4B (lambda + gx10, CUDA, and on CPU through a logging
+/// proxy): the model read both files, then called
+/// `file_edit {"path": "stats.py", "old": …, "new": …}` exactly as the prompt's
+/// table and Example 2 teach. The tool answered `missing required field
+/// 'old_string'`, and the model repeated the call until the loop guard ended
+/// the run with no answer. `AprServeDriver` strips the JSON schemas from the
+/// prompt, so the table is all a served model sees. RED while the prompt says
+/// `old`/`new`.
+#[test]
+fn falsify_3719_prompt_tool_examples_supply_every_required_field() {
+    let manifest = build_default_manifest();
+    let tools = build_code_tools(&manifest);
+    let examples = prompt_tool_examples(CODE_SYSTEM_PROMPT);
+    assert!(
+        examples.iter().any(|(n, _)| n == "file_edit"),
+        "precondition: the prompt shows a file_edit example; parsed {examples:?}"
+    );
+    let mut drift = Vec::new();
+    for (name, input) in &examples {
+        let Some(tool) = tools.get(name) else {
+            continue; // a tool this build does not register (e.g. rag without its feature)
+        };
+        let schema = tool.definition().input_schema;
+        for field in schema["required"].as_array().into_iter().flatten().filter_map(|f| f.as_str())
+        {
+            if input.get(field).is_none() {
+                drift.push(format!("{name}: example {input} lacks required `{field}`"));
+            }
+        }
+    }
+    assert!(
+        drift.is_empty(),
+        "#3719: the prompt teaches tool calls the tools reject:\n{}",
+        drift.join("\n")
+    );
+}
