@@ -8,20 +8,6 @@ fn test_calculate_stddev_many_values() {
 }
 
 // ========================================================================
-// generate_jitter Tests
-// ========================================================================
-
-#[test]
-fn test_generate_jitter_bounded() {
-    // Run many times to check bounds
-    for _ in 0..1000 {
-        let j = generate_jitter();
-        assert!(j >= -1.0, "jitter {j} below -1.0");
-        assert!(j <= 1.0, "jitter {j} above 1.0");
-    }
-}
-
-// ========================================================================
 // extract_json_field Tests
 // ========================================================================
 
@@ -77,7 +63,7 @@ fn test_extract_json_field_nested() {
 
 #[test]
 fn test_format_benchmark_csv_header_structure() {
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 1.0,
         llama_cpp_tps: None,
         ollama_tps: None,
@@ -99,7 +85,7 @@ fn test_format_benchmark_csv_header_structure() {
 
 #[test]
 fn test_format_benchmark_csv_apr_row_format() {
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 123.45,
         llama_cpp_tps: None,
         ollama_tps: None,
@@ -117,7 +103,7 @@ fn test_format_benchmark_csv_apr_row_format() {
 
 #[test]
 fn test_format_benchmark_csv_ollama_only() {
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 44.0,
         llama_cpp_tps: None,
         ollama_tps: Some(32.0),
@@ -398,7 +384,7 @@ fn test_falsification_zero_tps_high_cv() {
         gguf_inference: true,
         convert: true,
         apr_inference: true,
-        benchmark: Some(BenchmarkComparison {
+        benchmark: Some(BenchmarkComparison { unmeasured: Default::default(),
             apr_tps: 0.0,
             llama_cpp_tps: None,
             ollama_tps: None,

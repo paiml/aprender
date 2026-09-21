@@ -34,7 +34,7 @@ fn test_print_summary_all_pass() {
         gguf_inference: true,
         convert: true,
         apr_inference: true,
-        benchmark: Some(BenchmarkComparison {
+        benchmark: Some(BenchmarkComparison { unmeasured: Default::default(),
             apr_tps: 44.0,
             llama_cpp_tps: Some(35.0),
             ollama_tps: Some(32.0),
@@ -107,7 +107,7 @@ fn test_print_summary_benchmark_below_threshold() {
         gguf_inference: true,
         convert: true,
         apr_inference: true,
-        benchmark: Some(BenchmarkComparison {
+        benchmark: Some(BenchmarkComparison { unmeasured: Default::default(),
             apr_tps: 36.0,
             llama_cpp_tps: Some(35.0),
             ollama_tps: Some(32.0),
@@ -218,7 +218,7 @@ fn test_falsification_single_benchmark_step_no_data() {
 #[test]
 fn test_falsification_single_benchmark_step_valid() {
     let results = ShowcaseResults {
-        benchmark: Some(BenchmarkComparison {
+        benchmark: Some(BenchmarkComparison { unmeasured: Default::default(),
             apr_tps: 44.0,
             llama_cpp_tps: Some(35.0),
             ollama_tps: None,
@@ -271,7 +271,7 @@ fn test_falsification_step_all_passes() {
         gguf_inference: true,
         convert: true,
         apr_inference: true,
-        benchmark: Some(BenchmarkComparison {
+        benchmark: Some(BenchmarkComparison { unmeasured: Default::default(),
             apr_tps: 44.0,
             llama_cpp_tps: Some(35.0),
             ollama_tps: Some(32.0),
@@ -318,7 +318,7 @@ fn test_falsification_both_speedups_below_25() {
         gguf_inference: true,
         convert: true,
         apr_inference: true,
-        benchmark: Some(BenchmarkComparison {
+        benchmark: Some(BenchmarkComparison { unmeasured: Default::default(),
             apr_tps: 37.0,
             llama_cpp_tps: Some(35.0),
             ollama_tps: Some(36.0),
@@ -342,7 +342,7 @@ fn test_falsification_ollama_speedup_below_25_llama_passes() {
         gguf_inference: true,
         convert: true,
         apr_inference: true,
-        benchmark: Some(BenchmarkComparison {
+        benchmark: Some(BenchmarkComparison { unmeasured: Default::default(),
             apr_tps: 44.0,
             llama_cpp_tps: Some(35.0),
             ollama_tps: Some(42.0),

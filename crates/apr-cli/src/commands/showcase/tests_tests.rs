@@ -1,5 +1,5 @@
 use super::super::benchmark::{export_benchmark_results, format_benchmark_csv};
-use super::benchmark::{calculate_stddev, generate_jitter};
+use super::benchmark::calculate_stddev;
 use super::demo::{run_cuda_demo, run_zram_demo};
 use super::*;
 use std::time::Duration;
@@ -24,6 +24,7 @@ fn test_showcase_config_default() {
 #[test]
 fn test_benchmark_comparison_speedup() {
     let comparison = BenchmarkComparison {
+        unmeasured: Default::default(),
         apr_tps: 44.0,
         llama_cpp_tps: Some(35.0),
         ollama_tps: Some(32.0),
@@ -48,6 +49,7 @@ fn test_falsification_passes_with_valid_metrics() {
         convert: true,
         apr_inference: true,
         benchmark: Some(BenchmarkComparison {
+            unmeasured: Default::default(),
             apr_tps: 44.0,
             llama_cpp_tps: Some(35.0),
             ollama_tps: Some(32.0),
@@ -71,6 +73,7 @@ fn test_falsification_passes_with_valid_metrics() {
 fn test_falsification_fails_below_25_percent() {
     let results = ShowcaseResults {
         benchmark: Some(BenchmarkComparison {
+            unmeasured: Default::default(),
             apr_tps: 40.0,
             llama_cpp_tps: Some(35.0),
             ollama_tps: None,
@@ -92,6 +95,7 @@ fn test_falsification_fails_below_25_percent() {
 fn test_falsification_fails_insufficient_runs() {
     let results = ShowcaseResults {
         benchmark: Some(BenchmarkComparison {
+            unmeasured: Default::default(),
             apr_tps: 44.0,
             llama_cpp_tps: Some(35.0),
             ollama_tps: Some(32.0),
@@ -113,6 +117,7 @@ fn test_falsification_fails_insufficient_runs() {
 fn test_falsification_fails_high_variance() {
     let results = ShowcaseResults {
         benchmark: Some(BenchmarkComparison {
+            unmeasured: Default::default(),
             apr_tps: 44.0,
             llama_cpp_tps: Some(35.0),
             ollama_tps: Some(32.0),
@@ -153,21 +158,13 @@ fn test_bench_measurement_tps() {
     assert!((measurement.tokens_per_second() - 50.0).abs() < 0.01);
 }
 
-#[test]
-fn test_generate_jitter_range() {
-    for _ in 0..100 {
-        let jitter = generate_jitter();
-        assert!(jitter >= -1.0);
-        assert!(jitter <= 1.0);
-    }
-}
-
 // === Falsification Point 49: CV <5% ===
 #[test]
 fn test_cv_calculation_at_boundary() {
     // CV = stddev/mean * 100 = 2.2/44.0 * 100 = 5.0% (exactly at limit)
     let results = ShowcaseResults {
         benchmark: Some(BenchmarkComparison {
+            unmeasured: Default::default(),
             apr_tps: 44.0,
             llama_cpp_tps: Some(35.0),
             ollama_tps: Some(32.0),
@@ -195,6 +192,7 @@ fn test_cv_calculation_at_boundary() {
 fn test_exactly_30_runs_passes() {
     let results = ShowcaseResults {
         benchmark: Some(BenchmarkComparison {
+            unmeasured: Default::default(),
             apr_tps: 44.0,
             llama_cpp_tps: Some(35.0),
             ollama_tps: Some(32.0),
@@ -221,6 +219,7 @@ fn test_exactly_30_runs_passes() {
 fn test_29_runs_fails() {
     let results = ShowcaseResults {
         benchmark: Some(BenchmarkComparison {
+            unmeasured: Default::default(),
             apr_tps: 44.0,
             llama_cpp_tps: Some(35.0),
             ollama_tps: Some(32.0),
@@ -248,6 +247,7 @@ fn test_29_runs_fails() {
 fn test_speedup_exactly_25_percent_passes() {
     let results = ShowcaseResults {
         benchmark: Some(BenchmarkComparison {
+            unmeasured: Default::default(),
             apr_tps: 43.75, // 35 * 1.25 = 43.75
             llama_cpp_tps: Some(35.0),
             ollama_tps: Some(32.0),
@@ -274,6 +274,7 @@ fn test_speedup_exactly_25_percent_passes() {
 fn test_speedup_24_9_percent_fails() {
     let results = ShowcaseResults {
         benchmark: Some(BenchmarkComparison {
+            unmeasured: Default::default(),
             apr_tps: 43.7,
             llama_cpp_tps: Some(35.0),
             ollama_tps: Some(32.0),
@@ -383,6 +384,7 @@ fn test_speedup_formula() {
 fn test_only_llama_cpp_baseline_passes() {
     let results = ShowcaseResults {
         benchmark: Some(BenchmarkComparison {
+            unmeasured: Default::default(),
             apr_tps: 44.0,
             llama_cpp_tps: Some(35.0),
             ollama_tps: None, // Ollama not tested
@@ -415,6 +417,7 @@ fn test_import_failure_fails_falsification() {
         convert: true,
         apr_inference: true,
         benchmark: Some(BenchmarkComparison {
+            unmeasured: Default::default(),
             apr_tps: 44.0,
             llama_cpp_tps: Some(35.0),
             ollama_tps: Some(32.0),
@@ -439,3 +442,4 @@ include!("tests_tests_calculate_stddev_generate.rs");
 include!("tests_tests_export_json.rs");
 include!("tests_tests_print_header.rs");
 include!("tests_tests_gguf.rs");
+include!("tests_tests_no_fabricated_baseline.rs");

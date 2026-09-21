@@ -5,7 +5,7 @@
 
 #[test]
 fn test_export_json_default_path() {
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 50.0,
         llama_cpp_tps: None,
         ollama_tps: None,
@@ -35,7 +35,7 @@ fn test_export_json_default_path() {
 
 #[test]
 fn test_export_csv_default_path() {
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 50.0,
         llama_cpp_tps: None,
         ollama_tps: None,
@@ -69,7 +69,7 @@ fn test_export_csv_default_path() {
 #[test]
 fn test_print_benchmark_results_apr_only() {
     // Exercises the APR-only path (no baselines, no speedup annotations)
-    let comparison = BenchmarkComparison {
+    let comparison = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 50.0,
         apr_ttft_ms: 70.0,
         apr_tps_stddev: 2.0,
@@ -88,7 +88,7 @@ fn test_print_benchmark_results_apr_only() {
 #[test]
 fn test_print_benchmark_results_with_llama_cpp() {
     // Exercises llama.cpp row + speedup annotation
-    let comparison = BenchmarkComparison {
+    let comparison = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 50.0,
         apr_ttft_ms: 70.0,
         apr_tps_stddev: 2.0,
@@ -106,7 +106,7 @@ fn test_print_benchmark_results_with_llama_cpp() {
 #[test]
 fn test_print_benchmark_results_with_ollama() {
     // Exercises Ollama row + speedup annotation
-    let comparison = BenchmarkComparison {
+    let comparison = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 50.0,
         apr_ttft_ms: 70.0,
         apr_tps_stddev: 2.0,
@@ -124,7 +124,7 @@ fn test_print_benchmark_results_with_ollama() {
 #[test]
 fn test_print_benchmark_results_all_baselines() {
     // Exercises both baseline rows and both speedup annotations
-    let comparison = BenchmarkComparison {
+    let comparison = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 50.0,
         apr_ttft_ms: 70.0,
         apr_tps_stddev: 2.0,
@@ -142,7 +142,7 @@ fn test_print_benchmark_results_all_baselines() {
 #[test]
 fn test_print_benchmark_results_speedup_below_target() {
     // Exercises the FAIL branch for speedup < 25%
-    let comparison = BenchmarkComparison {
+    let comparison = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 38.0,
         apr_ttft_ms: 90.0,
         apr_tps_stddev: 3.0,
@@ -160,7 +160,7 @@ fn test_print_benchmark_results_speedup_below_target() {
 #[test]
 fn test_print_benchmark_results_llama_no_ttft() {
     // Exercises llama.cpp with None ttft (defaults to 0.0)
-    let comparison = BenchmarkComparison {
+    let comparison = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 50.0,
         apr_ttft_ms: 70.0,
         apr_tps_stddev: 2.0,
@@ -252,7 +252,7 @@ fn test_extract_json_field_real_ollama_response() {
 #[test]
 fn test_format_benchmark_csv_llama_no_speedup() {
     // llama.cpp present but no speedup calculated
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 44.0,
         llama_cpp_tps: Some(35.0),
         ollama_tps: None,
@@ -272,7 +272,7 @@ fn test_format_benchmark_csv_llama_no_speedup() {
 #[test]
 fn test_format_benchmark_csv_llama_zero_ttft() {
     // llama.cpp with None ttft defaults to 0.0
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 44.0,
         llama_cpp_tps: Some(35.0),
         ollama_tps: None,
@@ -291,7 +291,7 @@ fn test_format_benchmark_csv_llama_zero_ttft() {
 #[test]
 fn test_format_benchmark_csv_ollama_zero_ttft() {
     // Ollama with None ttft defaults to 0.0
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 44.0,
         llama_cpp_tps: None,
         ollama_tps: Some(32.0),
@@ -309,7 +309,7 @@ fn test_format_benchmark_csv_ollama_zero_ttft() {
 
 #[test]
 fn test_format_benchmark_csv_ollama_no_speedup() {
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 44.0,
         llama_cpp_tps: None,
         ollama_tps: Some(32.0),
@@ -328,7 +328,7 @@ fn test_format_benchmark_csv_ollama_no_speedup() {
 
 #[test]
 fn test_format_benchmark_csv_zero_values() {
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 0.0,
         llama_cpp_tps: None,
         ollama_tps: None,
@@ -346,7 +346,7 @@ fn test_format_benchmark_csv_zero_values() {
 
 #[test]
 fn test_format_benchmark_csv_high_precision_values() {
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 123.456789,
         llama_cpp_tps: None,
         ollama_tps: None,

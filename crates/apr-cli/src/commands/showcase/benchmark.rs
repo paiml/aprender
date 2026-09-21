@@ -110,29 +110,41 @@ pub(super) fn format_benchmark_csv(bench: &BenchmarkComparison) -> String {
 
 /// Run baseline benchmarks (llama.cpp, Ollama) and build a `BenchmarkComparison`.
 ///
-/// Shared by both the real-inference and simulated benchmark paths.
-fn build_comparison(
+/// Used by the real-inference path (the no-inference path refuses, #3773).
+pub(super) fn build_comparison(
     apr_tps: f64,
     apr_ttft_ms: f64,
     apr_tps_stddev: f64,
     runs: usize,
     config: &ShowcaseConfig,
 ) -> BenchmarkComparison {
-    let llama_results = if config.baselines.contains(&Baseline::LlamaCpp) {
-        println!();
-        println!("{}", "Running llama.cpp benchmark...".yellow());
-        run_llama_cpp_bench(config).ok()
-    } else {
-        None
-    };
-
-    let ollama_results = if config.baselines.contains(&Baseline::Ollama) {
-        println!();
-        println!("{}", "Running Ollama benchmark...".yellow());
-        run_ollama_bench(config).ok()
-    } else {
-        None
-    };
+    // #3773: a requested baseline that fails to measure is RECORDED with its
+    // reason and printed as such. `.ok()` used to drop the reason on the floor.
+    let mut unmeasured = std::collections::BTreeMap::new();
+    let mut baseline =
+        |name: &str, wanted: Baseline, run: fn(&ShowcaseConfig) -> Result<(f64, f64)>| {
+            if !config.baselines.contains(&wanted) {
+                return None;
+            }
+            println!();
+            println!("{}", format!("Running {name} benchmark...").yellow());
+            match run(config) {
+                Ok(m) => Some(m),
+                Err(e) => {
+                    // The bare reason, so the record reads `UNMEASURED: …` and not
+                    // `Validation failed: UNMEASURED: …`.
+                    let why = match e {
+                        CliError::ValidationFailed(msg) => msg,
+                        other => other.to_string(),
+                    };
+                    println!("  {name}: {why}");
+                    unmeasured.insert(name.to_string(), why);
+                    None
+                }
+            }
+        };
+    let llama_results = baseline("llama.cpp", Baseline::LlamaCpp, run_llama_cpp_bench);
+    let ollama_results = baseline("Ollama", Baseline::Ollama, run_ollama_bench);
 
     let speedup_vs_llama = llama_results.map(|(tps, _)| ((apr_tps - tps) / tps) * 100.0);
     let speedup_vs_ollama = ollama_results.map(|(tps, _)| ((apr_tps - tps) / tps) * 100.0);
@@ -148,6 +160,7 @@ fn build_comparison(
         ollama_ttft_ms: ollama_results.map(|(_, ttft)| ttft),
         speedup_vs_llama,
         speedup_vs_ollama,
+        unmeasured,
     }
 }
 
@@ -436,19 +449,13 @@ pub(super) fn run_benchmark(config: &ShowcaseConfig) -> Result<BenchmarkComparis
     println!();
     println!("{}", "═══ Step E: Performance Benchmark ═══".cyan().bold());
     println!();
-    println!(
-        "{} Inference feature not enabled. Using simulated benchmarks.",
-        "⚠".yellow()
-    );
-
-    // Simulated with real variance
-    let apr_tps = 44.0 + generate_jitter() * 2.0;
-    let apr_ttft_ms = 78.0 + generate_jitter() * 5.0;
-
-    let comparison = build_comparison(apr_tps, apr_ttft_ms, 2.0, config.bench_runs, config);
-
-    print_benchmark_results(&comparison);
-    Ok(comparison)
+    // #3773: this path printed "simulated" apr numbers (44.0 + clock jitter tok/s)
+    // into the same table, and the same speedup lines, as a measured run. A
+    // binary that cannot measure refuses by name instead.
+    Err(CliError::ValidationFailed(format!(
+        "{UNMEASURED}: apr showcase benchmark needs the `inference` feature, and this \
+         binary was built without it; no apr throughput is simulated"
+    )))
 }
 
 include!("benchmark_helpers.rs");

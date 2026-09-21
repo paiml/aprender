@@ -6,7 +6,7 @@ fn test_convert_failure_fails_falsification() {
         gguf_inference: true,
         convert: false, // Failed
         apr_inference: true,
-        benchmark: Some(BenchmarkComparison {
+        benchmark: Some(BenchmarkComparison { unmeasured: Default::default(),
             apr_tps: 44.0,
             llama_cpp_tps: Some(35.0),
             ollama_tps: Some(32.0),
@@ -41,7 +41,7 @@ fn test_showcase_config_includes_export_fields() {
 
 #[test]
 fn test_benchmark_comparison_json_serialization() {
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 44.0,
         llama_cpp_tps: Some(35.0),
         ollama_tps: Some(32.0),
@@ -66,7 +66,7 @@ fn test_benchmark_comparison_json_serialization() {
 
 #[test]
 fn test_format_benchmark_csv_all_baselines() {
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 44.0,
         llama_cpp_tps: Some(35.0),
         ollama_tps: Some(32.0),
@@ -94,7 +94,7 @@ fn test_format_benchmark_csv_all_baselines() {
 
 #[test]
 fn test_format_benchmark_csv_no_baselines() {
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 44.0,
         llama_cpp_tps: None,
         ollama_tps: None,
@@ -117,7 +117,7 @@ fn test_format_benchmark_csv_no_baselines() {
 
 #[test]
 fn test_format_benchmark_csv_llama_only() {
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 44.0,
         llama_cpp_tps: Some(35.0),
         ollama_tps: None,
@@ -140,7 +140,7 @@ fn test_format_benchmark_csv_llama_only() {
 
 #[test]
 fn test_export_json_to_file() {
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 44.0,
         llama_cpp_tps: Some(35.0),
         ollama_tps: None,
@@ -174,7 +174,7 @@ fn test_export_json_to_file() {
 
 #[test]
 fn test_export_csv_to_file() {
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 44.0,
         llama_cpp_tps: Some(35.0),
         ollama_tps: Some(32.0),
@@ -208,7 +208,7 @@ fn test_export_csv_to_file() {
 
 #[test]
 fn test_export_none_creates_no_file() {
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 44.0,
         llama_cpp_tps: None,
         ollama_tps: None,

@@ -9,16 +9,6 @@ pub(super) fn calculate_stddev(values: &[f64]) -> f64 {
     variance.sqrt()
 }
 
-/// Generate jitter based on system time for variance
-pub(super) fn generate_jitter() -> f64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.subsec_nanos())
-        .unwrap_or(0);
-    ((nanos % 1000) as f64 / 500.0) - 1.0
-}
-
 /// Extract numeric field from JSON response (simple parser, no serde dependency)
 /// Handles: "field_name":12345 or "field_name": 12345 (with/without space)
 pub(super) fn extract_json_field(json: &str, field: &str) -> Option<f64> {
@@ -36,26 +26,52 @@ pub(super) fn extract_json_field(json: &str, field: &str) -> Option<f64> {
     })
 }
 
+/// Prefix of every baseline that was NOT measured. A consumer greps for it; a
+/// number never stands in for it (#3773).
+pub(super) const UNMEASURED: &str = "UNMEASURED";
+
+/// The llama.cpp baseline of `apr showcase`: never measured here, always said so.
+///
+/// #3773: this used to `which llama-server` (any binary on PATH, no pin, no
+/// version) and then return `35.0 + jitter` tok/s — a constant with clock noise
+/// added so that it looked measured — which `build_comparison` turned into a
+/// "speedup vs llama.cpp". It now measures nothing and returns the reason.
+///
+/// Why showcase does not drive llama.cpp itself: apr's number here is an
+/// in-process `generate_with_cache` loop, so a llama-server run would be a
+/// different client, and its launch flags would be a second copy of the pinned
+/// comparator's knob declaration (`scripts/llama_bin.sh`, #2737). The one
+/// comparator measurement is the pinned parity lane, which drives both engines
+/// through the same client (#2696 / #3563). No PATH lookup is made (#3740).
 pub(super) fn run_llama_cpp_bench(_config: &ShowcaseConfig) -> Result<(f64, f64)> {
-    // Check if llama-server is available
-    let llama_available = Command::new("which")
-        .arg("llama-server")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+    Err(CliError::ValidationFailed(format!(
+        "{UNMEASURED}: apr showcase does not measure llama.cpp — the comparator is \
+         measured only by the pinned parity lane (`. scripts/llama_bin.sh` then \
+         scripts/parity_host_receipt.sh), which runs both engines through one client; \
+         no speedup is reported"
+    )))
+}
 
-    if !llama_available {
-        return Err(CliError::ValidationFailed(
-            "llama-server not found".to_string(),
-        ));
+/// Ollama's throughput and TTFT from an `/api/generate` response body.
+///
+/// #3773: a response without `eval_count`/`eval_duration` used to read as
+/// 200.0 tok/s and one without `prompt_eval_duration` as a 150.0 ms TTFT —
+/// constants printed as Ollama's measurement. Each is now `UNMEASURED`, naming
+/// the field that was missing.
+pub(super) fn ollama_tps_ttft(response: &str) -> Result<(f64, f64)> {
+    let unmeasured =
+        |why: &str| CliError::ValidationFailed(format!("{UNMEASURED}: Ollama response {why}"));
+    let count = extract_json_field(response, "eval_count")
+        .ok_or_else(|| unmeasured("carried no eval_count"))?;
+    let duration_ns = extract_json_field(response, "eval_duration")
+        .ok_or_else(|| unmeasured("carried no eval_duration"))?;
+    if duration_ns <= 0.0 {
+        return Err(unmeasured("reported eval_duration 0"));
     }
-
-    // Real benchmark against llama.cpp server
-    // For now, return measured baseline (should use http_client)
-    let tps = 35.0 + generate_jitter() * 1.5;
-    let ttft = 120.0 + generate_jitter() * 10.0;
-    println!("  llama.cpp: {:.1} tok/s, TTFT: {:.1}ms", tps, ttft);
-    Ok((tps, ttft))
+    let ttft_ns = extract_json_field(response, "prompt_eval_duration")
+        .ok_or_else(|| unmeasured("carried no prompt_eval_duration"))?;
+    // eval_duration and prompt_eval_duration are in nanoseconds.
+    Ok((count / (duration_ns / 1_000_000_000.0), ttft_ns / 1_000_000.0))
 }
 
 pub(super) fn run_ollama_bench(config: &ShowcaseConfig) -> Result<(f64, f64)> {
@@ -116,26 +132,9 @@ pub(super) fn run_ollama_bench(config: &ShowcaseConfig) -> Result<(f64, f64)> {
         )));
     }
 
-    // Parse JSON response from Ollama API
+    // Parse JSON response from Ollama API: {"eval_count":N,"eval_duration":Dns,...}
     let response = String::from_utf8_lossy(&output.stdout);
-
-    // Extract eval_count and eval_duration from JSON response
-    // Format: {"eval_count":N,"eval_duration":Dns,...}
-    let tps = extract_json_field(&response, "eval_count")
-        .zip(extract_json_field(&response, "eval_duration"))
-        .map_or(200.0, |(count, duration_ns)| {
-            // eval_duration is in nanoseconds, convert to seconds
-            let duration_s = duration_ns / 1_000_000_000.0;
-            if duration_s > 0.0 {
-                count / duration_s
-            } else {
-                200.0
-            }
-        }); // Fallback to estimate if parsing fails
-
-    // Extract prompt_eval_duration for TTFT (in nanoseconds)
-    let ttft =
-        extract_json_field(&response, "prompt_eval_duration").map_or(150.0, |ns| ns / 1_000_000.0); // Fallback
+    let (tps, ttft) = ollama_tps_ttft(&response)?;
 
     println!(
         "  Ollama ({}): {:.1} tok/s, TTFT: {:.1}ms",
@@ -187,6 +186,11 @@ pub(super) fn print_benchmark_results(comparison: &BenchmarkComparison) {
     }
 
     println!("└─────────────────┴────────────┴────────────┴──────────┘");
+    // #3773: a requested baseline with no measurement is shown as such, with its
+    // reason, rather than silently left out of the table.
+    for (name, why) in &comparison.unmeasured {
+        println!("{name}: {why}");
+    }
     println!();
 
     // Speedup summary

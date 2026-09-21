@@ -184,6 +184,12 @@ pub struct BenchmarkComparison {
     pub apr_tps_stddev: f64,
     /// Number of runs performed
     pub runs: usize,
+    /// Why each requested baseline has no number, keyed by system name
+    /// (`"llama.cpp"`, `"Ollama"`). A requested baseline is either measured (its
+    /// `*_tps` is `Some`) or named here with the reason; it is never a constant
+    /// (#3773).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub unmeasured: std::collections::BTreeMap<String, String>,
 }
 
 /// Single benchmark measurement

@@ -1,0 +1,33 @@
+- id: PMAT-3773
+  github_issue: 3773
+  item_type: task
+  title: '#3773: apr showcase measures llama.cpp through the pinned comparator or prints UNMEASURED — never a constant; guard: no literal tok/s baseline in any comparator path (*.rs included)'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-fc
+  created: 2026-09-21T19:06:04Z
+  updated: 2026-09-21T19:06:04Z
+  spec: null
+  acceptance_criteria:
+  - "showcase: cargo test -p apr-cli --lib showcase:: passes, including llama_cpp_baseline_is_unmeasured_never_a_number, an_unmeasured_baseline_is_recorded_and_yields_no_speedup, an_unrequested_baseline_is_absent_not_unmeasured, and ollama_counters_or_unmeasured_never_a_fallback_constant. run_llama_cpp_bench makes no PATH probe and returns `UNMEASURED: <reason>`; build_comparison records the reason in BenchmarkComparison.unmeasured (exported to JSON) and reports no speedup; Ollama's 200.0 tok/s and 150.0 ms parse-failure fallbacks are gone; the no-inference build refuses rather than printing simulated apr numbers; generate_jitter is deleted. Mutant: restoring the 35.0 constant turns llama_cpp_baseline_is_unmeasured_never_a_number RED."
+  - "examples/pmat_benchmark_matrix.rs: no literal llama.cpp throughput; llama.cpp is measured through `$LLAMA_BENCH` (exported by scripts/llama_bin.sh after it proves the build) or printed UNMEASURED with no speedup."
+  - "Every EXECUTED literal competitor throughput in Rust examples, benches and src is measured or deleted. The shrink-only ledger scripts/fabricated_baseline_rust_sites.txt is retired into a ban."
+  - "Published docs (crates/apr-cli/README.md, crates/aprender-serve/README.md, docs/BEATS.md): each competitor figure is dated and receipted, or deleted."
+  - "Guard: scripts/check_no_fabricated_baselines.sh refuses a literal competitor throughput outside a receipt in *.rs and in the published docs, with a case table and mutants; it stays wired where it runs today."
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |
+    Issue #3773 done_when, VERBATIM: "done_when: `run_llama_cpp_bench` either measures (the pinned `llama-server` resolved as `scripts/llama_bin.sh` does, driven by the same client as apr, as the #3563/#2696 parity lanes do) or returns an error that the showcase prints as "llama.cpp: not measured" with no speedup. A test, plus a mutant restoring the constant, turns RED. The fabricated-baseline guard, or a Rust sibling of it, covers `*.rs`."
+
+    Cop triage on #3773, VERBATIM: "**0.69.1, release-blocking.** A shipped command printing a fabricated 'speedup vs llama.cpp' (35.0 tok/s + clock jitter) is exactly the class the operator stopped 0.69.0 for: a number that looks measured and isn't. Minimum fix: showcase measures through the pinned comparator (the env llama_bin.sh exports after proving the build, per #3740's ruling) or prints UNMEASURED with the reason, never a constant. Guard: no literal tok/s baseline in any comparator path, with a mutant."
+
+    Cop widening on #3773, VERBATIM: "#3773 owns EVERY such site: showcase (`run_llama_cpp_bench`, `which llama-server` + 35.0), this example, and a sweep for any other literal competitor tok/s in shipped code, examples or docs. Each one is measured through the pinned comparator env, or labelled as a dated, receipted historical figure, or deleted. The guard refuses a literal competitor throughput outside a receipt. **#3740 does not touch the showcase**, which avoids two owners on one file."
+
+    Cop ruling on aprender-fc's scope split (2026-09-21), VERBATIM: "approved as decided. #3773 = every competitor-throughput number that is EXECUTED or PUBLISHED: showcase → UNMEASURED with no probe and no constant; the no-inference "simulated" apr numbers → a named refusal and generate_jitter deleted; pmat_benchmark_matrix measured via $LLAMA_BENCH or UNMEASURED; the 36-site ledger retired into a BAN; the READMEs + BEATS.md dated-and-receipted or deleted. "2.9x faster than Ollama" on the crates.io-facing README is exactly what the withdrawn "beats Ollama" headline taught us not to publish, so it must not ship in 0.69.1 without a dated receipt. Internal docs/specs as a filed follow-up is fine; test fixtures stay."
+
+    Why showcase does not drive llama.cpp itself: apr's showcase number is an in-process generate loop, so a showcase-side llama-server run would be a different client (the issue's "driven by the same client as apr" cannot hold), and its launch flags would be a second copy of the pin's knob declaration (#2737). The issue's other branch applies: an error printed as not measured, with no speedup.
+    Coordination: #3740 (aprender-f0) baselines the `which llama-server` probe this removes; whoever folds second drops that baseline line.
+    Refs #3773 #3740 #2696 #3563 #2737.

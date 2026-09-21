@@ -294,7 +294,7 @@ fn test_export_format_copy_clone() {
 
 #[test]
 fn test_benchmark_comparison_no_baselines() {
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 50.0,
         llama_cpp_tps: None,
         ollama_tps: None,
@@ -315,7 +315,7 @@ fn test_benchmark_comparison_no_baselines() {
 #[test]
 fn test_benchmark_comparison_negative_speedup() {
     // APR slower than baseline
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 30.0,
         llama_cpp_tps: Some(35.0),
         ollama_tps: None,
@@ -354,7 +354,7 @@ fn test_benchmark_comparison_deserialization() {
 
 #[test]
 fn test_benchmark_comparison_clone() {
-    let original = BenchmarkComparison {
+    let original = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 44.0,
         llama_cpp_tps: Some(35.0),
         ollama_tps: Some(32.0),

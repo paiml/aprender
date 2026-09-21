@@ -49,16 +49,20 @@ pub(super) fn print_summary(results: &ShowcaseResults, _config: &ShowcaseConfig)
     println!("  {} APR Inference", check(results.apr_inference));
 
     if let Some(ref bench) = results.benchmark {
-        let llama_pass = bench.speedup_vs_llama.is_some_and(|s| s >= 25.0);
-        let ollama_pass = bench.speedup_vs_ollama.is_some_and(|s| s >= 25.0);
-        println!(
-            "  {} Benchmark vs llama.cpp (25%+ speedup)",
-            check(llama_pass)
-        );
-        println!(
-            "  {} Benchmark vs Ollama (25%+ speedup)",
-            check(ollama_pass)
-        );
+        // #3773: a baseline that was not measured is neither a pass nor a fail;
+        // it is shown as UNMEASURED with its reason.
+        for (name, speedup) in [
+            ("llama.cpp", bench.speedup_vs_llama),
+            ("Ollama", bench.speedup_vs_ollama),
+        ] {
+            match (speedup, bench.unmeasured.get(name)) {
+                (None, Some(why)) => println!("  {} Benchmark vs {name}: {why}", "–".yellow()),
+                (s, _) => println!(
+                    "  {} Benchmark vs {name} (25%+ speedup)",
+                    check(s.is_some_and(|s| s >= 25.0))
+                ),
+            }
+        }
     }
 
     println!("  {} Visualization", check(results.visualize));

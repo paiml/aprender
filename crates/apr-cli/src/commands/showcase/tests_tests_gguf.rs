@@ -163,7 +163,7 @@ fn test_falsification_gguf_inference_failure_full_run() {
         gguf_inference: false, // Failed
         convert: true,
         apr_inference: true,
-        benchmark: Some(BenchmarkComparison {
+        benchmark: Some(BenchmarkComparison { unmeasured: Default::default(),
             apr_tps: 44.0,
             llama_cpp_tps: Some(35.0),
             ollama_tps: None,
@@ -187,7 +187,7 @@ fn test_falsification_apr_inference_failure_full_run() {
         gguf_inference: true,
         convert: true,
         apr_inference: false, // Failed
-        benchmark: Some(BenchmarkComparison {
+        benchmark: Some(BenchmarkComparison { unmeasured: Default::default(),
             apr_tps: 44.0,
             llama_cpp_tps: Some(35.0),
             ollama_tps: None,
@@ -253,7 +253,7 @@ fn test_showcase_config_with_tier_model_field_matches() {
 
 #[test]
 fn test_benchmark_comparison_serde_all_none() {
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 50.0,
         llama_cpp_tps: None,
         ollama_tps: None,
@@ -276,7 +276,7 @@ fn test_benchmark_comparison_serde_all_none() {
 
 #[test]
 fn test_benchmark_comparison_serde_pretty_print() {
-    let bench = BenchmarkComparison {
+    let bench = BenchmarkComparison { unmeasured: Default::default(),
         apr_tps: 44.0,
         llama_cpp_tps: Some(35.0),
         ollama_tps: None,
