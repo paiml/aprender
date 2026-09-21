@@ -27,10 +27,16 @@
 #   check_perf_gate_selftest_scoped.sh              decide, and run it if in scope
 #   check_perf_gate_selftest_scoped.sh --self-test  the decision's case table
 #
-# Test seams: PERF_GATE_SUBJECT (the script whose refs define the scope and which
-# is run), PERF_GATE_BASE (the comparand ref, default origin/main).
+# THE SMOKE ROW (the ticket's words: "The PR path keeps a smoke row"): on a skip,
+# `perf_gate.sh --list-selftests` must still exit 0 and enumerate at least one
+# case (109 today, ~60 ms). It proves the table still parses and registers on
+# this runner; the full table runs when its inputs change, and nightly.
+#
+# Test seams: PERF_GATE_ROOT (the tree), PERF_GATE_SUBJECT (the script whose refs
+# define the scope and which is run), PERF_GATE_BASE (the comparand, default origin/main).
 set -uo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")" || exit 2
+ROOT="${PERF_GATE_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}" || exit 2
 SUBJECT="${PERF_GATE_SUBJECT:-$ROOT/scripts/perf_gate.sh}"
 BASE="${PERF_GATE_BASE:-origin/main}"
 
@@ -108,13 +114,13 @@ if [ "${1:-}" = "--self-test" ]; then
     row() { n=$((n + 1)); if [ "$2" = 0 ]; then printf 'ok    row %-2s %s\n' "$n" "$1"; else printf 'FAIL  row %-2s %s -- got: %s\n' "$n" "$1" "$OUT" >&2; bad=1; fi; }
     r="$d/repo"; mkdir -p "$r/scripts/lib" "$r/tests/fixtures/perf-gate" "$r/src"
     git init -q -b main "$r"
-    printf '#!/usr/bin/env bash\nROOT=x\npython3 "$ROOT/scripts/lib/sig.py"\ncat "$ROOT/tests/fixtures/perf-gate"\nbash "$ROOT/scripts/helper.sh"\necho selftest-ran\n' > "$r/scripts/perf_gate.sh"
+    printf '#!/usr/bin/env bash\nROOT=x\n: python3 "$ROOT/scripts/lib/sig.py"\n: cat "$ROOT/tests/fixtures/perf-gate"\n: bash "$ROOT/scripts/helper.sh"\ncase "$1" in --list-selftests) printf "case_a\\ncase_b\\n" ;; --selftest) echo selftest-ran ;; esac\n' > "$r/scripts/perf_gate.sh"
     printf '#!/usr/bin/env bash\ncat "$ROOT/scripts/deep.txt"\n' > "$r/scripts/helper.sh"
     printf 'x\n' > "$r/scripts/lib/sig.py"; printf 'x\n' > "$r/tests/fixtures/perf-gate/a.json"; printf 'x\n' > "$r/src/lib.rs"; mkdir -p "$r/tests/fixtures/perf-gate-old"; printf 'x\n' > "$r/tests/fixtures/perf-gate-old/x.json"; printf 'x\n' > "$r/scripts/deep.txt"
     ( cd "$r" && export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null
       git add -A && git commit -q -m base && git branch base ) || exit 2
     edit() { # edit <path>... -> a fresh commit on main touching exactly those paths, vs branch base
-        ( cd "$r" && git checkout -q -B main base && for f in "$@"; do printf 'changed\n' >> "$f"; done \
+        ( cd "$r" && git checkout -q -B main base && for f in "$@"; do printf '# changed\n' >> "$f"; done \
           && GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t git -c core.hooksPath=/dev/null commit -q -am e ) || exit 2
     }
     judge() { OUT=$(cd "$r" && ROOT="$r" PERF_GATE_SUBJECT="$r/scripts/perf_gate.sh" PERF_GATE_BASE="${1:-base}" bash -c "$(declare -f scope_of in_scope rmtree decide); SUBJECT=\$PERF_GATE_SUBJECT; BASE=\$PERF_GATE_BASE; decide"); }
@@ -130,6 +136,18 @@ if [ "${1:-}" = "--self-test" ]; then
     judge; [[ $OUT == RUN* ]];                                                                row "a rename INTO a scoped directory -> RUN" $?
     ( cd "$r" && git checkout -q -B main base && git mv scripts/lib/sig.py src/sig.py && GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t git -c core.hooksPath=/dev/null commit -q -m mv2 ) || exit 2
     judge; [[ $OUT == RUN* ]];                                                                row "a rename OUT of scope still lists the removed side -> RUN (--no-renames)" $?
+    # END TO END: the whole guard, not just decide() -- the smoke row on a skip, the table on a RUN
+    whole() { OUT=$(cd "$r" && PERF_GATE_ROOT="$r" PERF_GATE_SUBJECT="$r/scripts/perf_gate.sh" PERF_GATE_BASE=base bash "$SELF" 2>&1); RC=$?; }
+    edit src/lib.rs; whole
+    [ "$RC" = 0 ] && [[ $OUT == *"SUMMARY perf_gate --selftest skipped:"*"smoke: 2 case(s) enumerated"* ]]; row "end to end, out of scope: rc 0 and a SUMMARY line with the SMOKE row (2 cases enumerated)" $?
+    edit scripts/perf_gate.sh; whole
+    [ "$RC" = 0 ] && [[ $OUT == *"selftest-ran"* ]];                                             row "end to end, in scope: the full table runs" $?
+    ( cd "$r" && export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
+      && git checkout -q -B brk base && printf '#!/usr/bin/env bash\nexit 3\n' > scripts/perf_gate.sh \
+      && git -c core.hooksPath=/dev/null commit -q -am brk1 && printf 'y\n' >> src/lib.rs \
+      && git -c core.hooksPath=/dev/null commit -q -am brk2 ) || exit 2   # HEAD~1 already broken; HEAD touches only src/
+    OUT=$(cd "$r" && PERF_GATE_ROOT="$r" PERF_GATE_SUBJECT="$r/scripts/perf_gate.sh" PERF_GATE_BASE=HEAD~1 bash "$SELF" 2>&1); RC=$?
+    [ "$RC" = 1 ] && [[ $OUT == *"FAIL  smoke"* ]];                                              row "end to end, out of scope but the table cannot even enumerate -> the smoke row is RED" $?
     # the real subject's derived scope must include the dirs and files it is known to read
     OUT=$(scope_of "$ROOT/scripts/perf_gate.sh" | tr '\n' ' ')
     [[ $OUT == *"scripts/perf_gate.sh"* && $OUT == *"scripts/lib/receipt_sig.py"* && $OUT == *"tests/fixtures/perf-gate"* ]]
@@ -142,6 +160,14 @@ echo "=== perf_gate.sh --selftest, path-scoped (check_perf_gate_selftest_scoped.
 [ -f "$SUBJECT" ] || { printf 'ENV   %s is missing -- cannot judge, not a pass\n' "$SUBJECT" >&2; exit 2; }
 verdict=$(decide)
 case "$verdict" in
-    SKIP*) printf 'SUMMARY perf_gate --selftest skipped: %s\n' "${verdict#SKIP }"; echo PASS; exit 0 ;;
-    *)     printf '%s\n' "$verdict"; bash "$SUBJECT" --selftest; exit $? ;;
+    SKIP*)
+        cases=$(bash "$SUBJECT" --list-selftests 2>/dev/null); lrc=$?
+        n_cases=$(grep -c . <<<"$cases")
+        if [ "$lrc" -ne 0 ] || [ "$n_cases" -lt 1 ]; then
+            printf 'FAIL  smoke: %s --list-selftests exited %s with %s case(s) -- the table does not even enumerate\n' "${SUBJECT#"$ROOT/"}" "$lrc" "$n_cases" >&2
+            exit 1
+        fi
+        printf 'SUMMARY perf_gate --selftest skipped: %s; smoke: %s case(s) enumerated\n' "${verdict#SKIP }" "$n_cases"
+        echo PASS; exit 0 ;;
+    *)  printf '%s\n' "$verdict"; bash "$SUBJECT" --selftest; exit $? ;;
 esac

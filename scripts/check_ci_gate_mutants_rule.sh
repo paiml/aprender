@@ -54,7 +54,6 @@ ROWS
 }
 
 case "${1:-}" in -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;; esac
-[ -f "$WF" ] || { printf 'ENV   %s is missing\n' "$WF" >&2; exit 2; }
 
 if [ "${1:-}" = "--self-test" ]; then
     echo "=== gate mutants rule: the old rule must turn the table RED ==="
@@ -73,6 +72,8 @@ if [ "${1:-}" = "--self-test" ]; then
 fi
 
 echo "=== gate accepts a skipped mutants job only when the skip is its filter (check_ci_gate_mutants_rule.sh) ==="
+# the workflow is needed only here: --self-test builds its own fixtures (quorum lane 1 on #3688)
+[ -f "$WF" ] || { printf 'ENV   %s is missing\n' "$WF" >&2; exit 2; }
 table "$WF"; rc=$?
 [ "$rc" = 0 ] && echo PASS || echo "FAIL (rc=$rc)" >&2
 exit "$rc"
