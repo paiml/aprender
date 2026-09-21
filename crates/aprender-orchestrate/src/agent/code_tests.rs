@@ -1269,3 +1269,100 @@ fn falsify_2607_dropping_driver_handle_alone_leaves_serve_child_unreaped() {
          before std::process::exit skips every destructor"
     );
 }
+
+// ---------------------------------------------------------------------------
+// #3719: a `-p` run must tell the model it has tools
+// ---------------------------------------------------------------------------
+
+/// Records the system prompt of every request, and ends the turn at once.
+///
+/// `run_agent_turn` sends `manifest.model.system_prompt` (plus any recalled
+/// memories) as `request.system`, and `AprServeDriver` forwards it after
+/// cutting only an `## Available Tools` section, which the coding prompt does
+/// not carry. So what this driver records is what the served model reads.
+struct SystemPromptRecorder {
+    systems: std::sync::Mutex<Vec<Option<String>>>,
+}
+
+#[async_trait::async_trait]
+impl LlmDriver for SystemPromptRecorder {
+    async fn complete(
+        &self,
+        request: crate::agent::driver::CompletionRequest,
+    ) -> Result<crate::agent::driver::CompletionResponse, crate::agent::result::AgentError> {
+        self.systems.lock().expect("recorder lock").push(request.system.clone());
+        Ok(crate::agent::driver::CompletionResponse {
+            text: "done".into(),
+            stop_reason: crate::agent::result::StopReason::EndTurn,
+            tool_calls: vec![],
+            usage: crate::agent::result::TokenUsage::default(),
+        })
+    }
+
+    fn context_window(&self) -> usize {
+        32_768
+    }
+
+    fn privacy_tier(&self) -> PrivacyTier {
+        PrivacyTier::Sovereign
+    }
+}
+
+/// FALSIFIER (#3719): a `-p` run sends the model the manifest's tool-bearing
+/// system prompt.
+///
+/// `run_single_prompt` used to replace it, for every model size, with
+/// `COMPACT_SYSTEM_PROMPT` ("Answer the question. Be direct."), which names
+/// no tool and no `<tool_call>` format. Measured on Qwen3.5-4B through
+/// `apr serve` on CUDA: the model answered an edit-and-verify task with
+/// "Without seeing the actual code…" and made no tool call, because nothing
+/// it was sent said it could read or edit a file. RED on that code: the
+/// recorded prompt is the 31-character COMPACT prompt.
+#[test]
+fn falsify_3719_single_prompt_run_tells_the_model_about_its_tools() {
+    let manifest = build_default_manifest();
+    assert!(
+        manifest.model.system_prompt.contains("<tool_call>"),
+        "precondition: the default manifest carries the tool-call format"
+    );
+    let tools = build_code_tools(&manifest);
+    let memory = crate::agent::memory::InMemorySubstrate::new();
+    let driver = SystemPromptRecorder { systems: std::sync::Mutex::new(Vec::new()) };
+    let mut budget = TurnBudget::new(1);
+    let permit = permit_single_prompt(&mut budget, /* non_interactive */ true)
+        .expect("one turn of budget must permit a -p run")
+        .expect("a -p run takes a permit");
+
+    let _ = run_single_prompt(
+        &manifest,
+        &driver,
+        &tools,
+        &memory,
+        "The unit test fails. Fix the bug with a one-line edit and run the test.",
+        None,
+        "text",
+        None,
+        permit,
+    );
+
+    let systems = driver.systems.lock().expect("recorder lock");
+    let sent = systems
+        .first()
+        .and_then(|s| s.as_deref())
+        .expect("the -p run must call the driver with a system prompt");
+    assert_ne!(
+        sent,
+        crate::agent::code_prompts::COMPACT_SYSTEM_PROMPT,
+        "#3719: a -p run sent COMPACT_SYSTEM_PROMPT, which names no tool"
+    );
+    assert!(
+        sent.contains("<tool_call>"),
+        "#3719: the model must be told the <tool_call> format in -p mode, got: {sent:?}"
+    );
+    for tool in ["file_edit", "shell"] {
+        assert!(
+            sent.contains(tool),
+            "#3719: the -p system prompt must name `{tool}`, which the edit-and-verify task needs"
+        );
+    }
+}

@@ -1055,11 +1055,15 @@ fn run_single_prompt(
     let TurnPermit(()) = permit;
     let mut single_manifest = manifest.clone();
     single_manifest.resources.max_iterations = single_manifest.resources.max_iterations.min(10);
-    // PMAT-197: Use compact system prompt for -p mode.
-    // The full CODE_SYSTEM_PROMPT (9-tool table + project context + CLAUDE.md)
-    // overwhelms Qwen3 1.7B causing </think> loops. For -p mode, use a minimal
-    // prompt that lets the model answer directly. Tools still available if needed.
-    single_manifest.model.system_prompt = COMPACT_SYSTEM_PROMPT.to_string();
+    // #3719: -p mode keeps the manifest's system prompt, which cmd_code has
+    // already scaled to the model (PMAT-198: COMPACT below 2B, the full tool
+    // table otherwise). PMAT-197 used to replace it here, for every model,
+    // with COMPACT_SYSTEM_PROMPT ("Answer the question. Be direct."), which
+    // names no tool and no <tool_call> format. The tools stayed registered but
+    // no model was told they existed: on Qwen3.5-4B (apr 0.69.0 cc3892acd,
+    // gx10, CUDA) `apr code -p` answered an edit-and-verify task with
+    // "Without seeing the actual code…" and made zero tool calls. PMAT-197's
+    // small-model concern is PMAT-198's <2B scaling, which still applies.
     // Note: context_window is set at driver launch time (build_default_manifest),
     // not here. See PMAT-197 fix in build_default_manifest.
 
@@ -1307,7 +1311,7 @@ fn build_json_result_envelope(
 // Prompts and exit codes extracted to code_prompts.rs
 use super::code_prompts::{
     estimate_model_params_from_name, map_error_to_exit_code, scale_prompt_for_model,
-    CODE_SYSTEM_PROMPT, COMPACT_SYSTEM_PROMPT,
+    CODE_SYSTEM_PROMPT,
 };
 
 #[cfg(test)]

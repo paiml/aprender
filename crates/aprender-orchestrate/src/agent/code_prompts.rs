@@ -2,10 +2,15 @@
 //!
 //! Extracted from code.rs to keep module under 500-line threshold.
 
-/// Compact system prompt for -p mode (PMAT-197).
+/// Compact system prompt for models under 2B parameters (PMAT-197/198).
 /// Minimal context to avoid overwhelming small models (Qwen3 1.7B).
 /// The full CODE_SYSTEM_PROMPT causes Qwen3 1.7B to loop on `</think>` tags
 /// when combined with 9 tool JSON schemas consuming most of the context window.
+///
+/// It names no tool and no `<tool_call>` format, so a model given only this
+/// prompt cannot know it has tools. It was once forced on every `-p` run,
+/// whatever the model size; that left `apr code -p` unable to edit a file on
+/// any model (#3719). `scale_prompt_for_model` is its only caller now.
 pub(super) const COMPACT_SYSTEM_PROMPT: &str = "\
 Answer the question. Be direct.\
 ";
@@ -137,7 +142,7 @@ pub(super) fn estimate_model_params_from_name(path: &std::path::Path) -> f64 {
 ///
 /// | Size | Prompt | Rationale |
 /// |------|--------|-----------|
-/// | <2B  | COMPACT | Avoids thinking loops, keeps tool format |
+/// | <2B  | COMPACT | Avoids thinking loops; names no tools     |
 /// | 2-7B | MID | Tool names + format, no example JSON |
 /// | 7B+  | FULL | Full table with examples + guidelines |
 pub(super) fn scale_prompt_for_model(params_b: f64) -> String {
