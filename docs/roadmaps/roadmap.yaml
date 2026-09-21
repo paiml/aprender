@@ -19604,6 +19604,23 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE (hand-entered from issue #3587 "What lands"; minted on the PR branch so the AD-04 quorum can run -- pmat work status refuses a missing item). Two halves: the explicit-command runner (#3616, merged) and the nextest [profile.ci] key (#3626). Lands: 1. **--no-fail-fast on the shard.** The cost is runner minutes on an already-red shard; the benefit is that a red run still measures everything else it was going to measure — which is exactly when you most want the data. 2. **The reducer reports ran / skipped / total** in the shard receipt. The skipped count is a **number**, never an absence. 3. **A receipt with skipped > 0 is Unknown, not Fail and not Pass** — it names what was not measured, per doctrine 4. '
+- id: PMAT-3601
+  github_issue: 3601
+  item_type: task
+  title: 'apr inspect has no byte-size entry for any IQ-family ggml type — aprender-core sizes and names ggml types from trueno_quant::TRAITS'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-21T05:47:55Z
+  updated: 2026-09-21T05:47:55Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from issue #3601 done_when, verbatim; minted on the PR branch so the AD-04 quorum can run). Done when: (1) apr inspect succeeds on a GGUF containing any of the 10 listed ids (repro: Qwen3.5-4B-UD-Q4_K_XL.gguf, dtype 23). (2) A regression test pins all 10 ids against shape.rs''s byte_size, analogous to ggml_type_table.rs''s spot_checks_against_ggml_sizes, so a future edit can''t silently drop one back out. (3) The error message, if a truly unknown id is ever hit, names the id and points at contracts/apr-cli-commands-v1.yaml''s inspect docs or similar — not a bare "Unsupported dtype N". DEVIATION FROM THE ISSUE''S FIX PROSE (not its done_when): the issue proposed porting rows from aprender-serve''s GGML_TYPES because "the unified TRAITS crate #3430 proposes doesn''t exist yet"; #3581 has since landed it (aprender-quant ggml_type.rs TRAITS[43], upstream-extracted, fixture-checked) and aprender-core already depends on it, so shape.rs reads TRAITS instead of becoming a fifth hand copy. ALSO IN THIS DIFF (same defect class, measured on apr 0.68.2 00e5d2dde): (a) apr tensors sized tensors from a second hand-typed table in aprender-core (safetensors.rs ggml_dtype_element_size SIZES) with seven IQ rows wrong and the 26-30 tail misordered (BF16 0.375 bytes/elem) — it refused the valid Qwen3.5-0.8B-UD-IQ2_XXS.gguf as "Truncated GGUF … 167936 bytes too short"; now type_size/blck_size from TRAITS. (b) ggml_dtype_name (a third copy, ids 0-30) reads TRAITS so TQ1_0/TQ2_0 are named rather than "unknown"; contracts/apr-inspect-dtype-naming-v1.yaml GGML_NAMES + KANI bound amended to match. Behaviour preservation: every id sized before keeps its exact byte count (floor arithmetic kept; characterization test over non-block-multiple counts), ids 0-30 keep their names. The IQ fabrication this sizing exposes is PMAT-3656 (#3656), fixed in the same diff.'
 - id: PMAT-3602
   github_issue: 3602
   item_type: task
@@ -19757,6 +19774,23 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE (quoted from issue #3651 "What lands"): 1. guard_tree.sh: under a PASS row, surface every captured line whose first token is UNMEASURED or SUMMARY (indented "      ~ ", capped at 5 lines + a "(+N more)" count so a chatty guard cannot flood the log). Lines where the word is not the first token are not surfaced. A guard opts a pass-summary in by printing SUMMARY …; an UNMEASURED line is surfaced whether or not the guard opted in. 2. check_fleet_pv_shapes_gate.sh: its pass row is printed as SUMMARY PASS verdict=… so the measured row reaches the log. 3. scripts/tests/guard_tree_test.sh rows: UNMEASURED surfaced; SUMMARY surfaced; the word mid-line not surfaced; a silent pass prints only its PASS row; the cap; and a mutant with the surfacing removed goes RED. NOT in scope: closing #3567 (that needs one guard-tree run on an intel runner after this lands), and the fleet pv''s own verdict.'
+- id: PMAT-3656
+  github_issue: 3656
+  item_type: task
+  title: 'apr convert/import invent IQ-quant weights: get_tensor_f32 approximated IQ2..IQ4 from raw bytes and exited 0'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-21T05:47:55Z
+  updated: 2026-09-21T05:47:55Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from issue #3656 done_when, verbatim; minted on the PR branch so the AD-04 quorum can run). Done when: (1) get_tensor_f32 on any IQ tensor returns Err naming the tensor and its type; no path in aprender-core returns approximated IQ values; dequantize_iq_approximate is deleted. (2) apr convert … --quantize q4k and apr import on Qwen3.5-0.8B-IQ4_XS.gguf exit non-zero and write no output file. (3) A unit test fails if an approximation arm is restored (mutation: restore the 16..=23 arm → RED). Not in scope: real IQ dequantization in aprender-core (aprender-serve has dequantize_iq*, core cannot depend on serve; the route is PP-QUANT-001 #3421). Why it rides with PMAT-3601: once IQ tensors are sized, raw apr import reaches map_gguf_dtype, whose Q8_0/Q5_K refusal says "cannot represent exactly" — a GH-375 fallback trigger — so without this fix an IQ file could import invented weights where it used to be refused.'
 - id: PMAT-3658
   github_issue: 3658
   item_type: task
