@@ -345,7 +345,9 @@ fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<Prepare
     use crate::chat_template::{format_messages, ChatMessage};
     use crate::gguf::{GGUFValue, MappedGGUFModel};
 
+    let parse_start = Instant::now();
     let mapped = MappedGGUFModel::from_path(&config.model_path)?;
+    let parse_ms = parse_start.elapsed().as_secs_f64() * 1000.0;
     let gguf_arch = mapped.model.architecture().unwrap_or("transformer");
 
     // GH-278: Check if model actually has a chat template in its GGUF metadata.
@@ -365,6 +367,7 @@ fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<Prepare
         || model_name.to_lowercase().contains("-chat");
 
     // Only apply chat template if the model actually has one, or filename says instruct
+    let template_start = Instant::now();
     let formatted_prompt = if config.force_chat_template || has_chat_template || filename_instruct {
         let template_hint = apr_arch_to_template_hint(gguf_arch, model_name);
         let messages = vec![ChatMessage::user(prompt)];
@@ -372,6 +375,7 @@ fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<Prepare
     } else {
         prompt.to_string()
     };
+    let template_ms = template_start.elapsed().as_secs_f64() * 1000.0;
 
     if config.verbose {
         eprintln!(
@@ -384,6 +388,7 @@ fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<Prepare
         );
     }
 
+    let tokenize_start = Instant::now();
     let mut tokens = mapped.model.encode(&formatted_prompt).ok_or_else(|| {
         RealizarError::InferenceError(format!(
             "Tokenizer encode failed for GGUF model (no tokenizer data in GGUF file?). \
@@ -391,6 +396,17 @@ fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<Prepare
             formatted_prompt.len()
         ))
     })?;
+    // #3787: the phases before the model loads, which no other timing covers. The
+    // tokenizer's used to grow quadratically with the prompt (211 s at 263k tokens).
+    if config.verbose || config.trace {
+        eprintln!(
+            "[prepare] parse {parse_ms:.1} ms, template {template_ms:.1} ms, tokenize {:.1} ms: \
+             {} tokens from {} bytes",
+            tokenize_start.elapsed().as_secs_f64() * 1000.0,
+            tokens.len(),
+            formatted_prompt.len()
+        );
+    }
 
     // GH-278: Prepend BOS token to match llama.cpp behavior.
     // llama.cpp adds BOS when add_bos_token is true (default for LLaMA-family).

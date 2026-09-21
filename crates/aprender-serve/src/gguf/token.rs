@@ -259,16 +259,8 @@ impl GGUFModel {
                 let mut best_byte_len = 0;
                 let mut best_id = None;
 
-                // Collect character byte offsets for proper slicing
-                let char_indices: Vec<usize> = remaining
-                    .char_indices()
-                    .map(|(i, _)| i)
-                    .chain(std::iter::once(remaining.len()))
-                    .collect();
-
                 // Try all prefixes up to 32 chars (reasonable max token length)
-                for char_count in 1..=char_indices.len().saturating_sub(1).min(32) {
-                    let byte_end = char_indices[char_count];
+                for byte_end in greedy_prefix_ends(remaining) {
                     let prefix = &remaining[..byte_end];
                     if let Some(&id) = token_to_id.get(prefix) {
                         best_byte_len = byte_end;
@@ -425,26 +417,80 @@ fn warn_greedy_tokenizer_fallback_once(refusal: &crate::gguf::byte_level_bpe::By
     });
 }
 
+/// The longest prefix, in characters, the greedy scan looks up.
+const GREEDY_MAX_TOKEN_CHARS: usize = 32;
+
+/// The byte offsets ending the first 1, 2, … [`GREEDY_MAX_TOKEN_CHARS`] characters of `s`:
+/// the prefixes the greedy scan looks up. It reads at most that many characters (plus one).
+///
+/// #3787: the scan used to collect the offset of every character LEFT IN THE TEXT before
+/// each token it emitted, which made the encode O(n²) in the prompt: 91.9 s for a 503 KB
+/// prompt, and 211 s before a 263k-token prompt reached the context check.
+fn greedy_prefix_ends(s: &str) -> impl Iterator<Item = usize> + '_ {
+    s.char_indices()
+        .inspect(|_| note_greedy_work(1))
+        .skip(1)
+        .map(|(i, _)| i)
+        .chain(std::iter::once(s.len()))
+        .take(GREEDY_MAX_TOKEN_CHARS)
+}
+
 /// Split `text` at the earliest occurrence of any special token, repeatedly, keeping the
 /// specials as their own `(true, token)` segments (the greedy path's special handling).
+///
+/// #3787: each special's next occurrence is cached and searched for again only once the
+/// split has passed it, so every special scans the text once: O(specials × n). Searching
+/// the whole rest of the text for every special at every split made a long multi-turn
+/// transcript O(occurrences × specials × n).
 fn split_on_special_tokens<'t>(text: &'t str, special_tokens: &[(&'t str, u32)]) -> Vec<(bool, &'t str)> {
+    let find_from = |tok: &str, from: usize| {
+        let hit = text[from..].find(tok).map(|p| from + p);
+        note_greedy_work(hit.map_or(text.len(), |p| p + tok.len()) - from);
+        hit
+    };
+    let mut next: Vec<Option<usize>> = special_tokens
+        .iter()
+        .map(|&(tok, _)| find_from(tok, 0))
+        .collect();
     let mut segments = Vec::new();
-    let mut rest = text;
-    while !rest.is_empty() {
-        let earliest = special_tokens
+    let mut at = 0;
+    while at < text.len() {
+        for (slot, &(tok, _)) in next.iter_mut().zip(special_tokens) {
+            if slot.is_some_and(|p| p < at) {
+                *slot = find_from(tok, at);
+            }
+        }
+        // The first special in `special_tokens` order wins a tie, as `min_by_key` did before.
+        let earliest = next
             .iter()
-            .filter_map(|&(tok, _)| rest.find(tok).map(|pos| (pos, tok)))
+            .zip(special_tokens)
+            .filter_map(|(p, &(tok, _))| p.map(|p| (p, tok)))
             .min_by_key(|&(pos, _)| pos);
         let Some((pos, tok)) = earliest else {
-            segments.push((false, rest));
+            segments.push((false, &text[at..]));
             break;
         };
-        if pos > 0 {
-            segments.push((false, &rest[..pos]));
+        if pos > at {
+            segments.push((false, &text[at..pos]));
         }
         segments.push((true, tok));
-        rest = &rest[pos + tok.len()..];
+        at = pos + tok.len();
     }
     segments
+}
+
+#[cfg(test)]
+thread_local! {
+    /// The greedy encoder's work, in characters read and bytes searched: the complexity
+    /// class test counts it instead of timing the encode (#3787).
+    static GREEDY_WORK: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[inline]
+fn note_greedy_work(units: usize) {
+    #[cfg(test)]
+    GREEDY_WORK.with(|w| w.set(w.get() + units));
+    #[cfg(not(test))]
+    let _ = units;
 }
 

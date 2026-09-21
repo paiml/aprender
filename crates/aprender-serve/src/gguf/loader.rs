@@ -19,3 +19,4 @@ include!("token.rs");
 include!("transformer_loader.rs");
 include!("dtype.rs");
 include!("loader_vocab_tests.rs");
+include!("token_greedy_linear_tests.rs");
