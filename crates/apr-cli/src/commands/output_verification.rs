@@ -468,10 +468,117 @@ pub fn strip_thinking_blocks(output: &str) -> String {
     result.trim().to_string()
 }
 
+/// #3711: what the GPU half of one golden case came to.
+///
+/// An ERROR is a verdict about the GPU, never a skip. It used to be a skip: CUDA
+/// init or generation failing went to `note_gpu_golden_skip`, the case went on to
+/// judge only the CPU answer, and the gate said "N golden test cases passed". So
+/// on a host where CUDA generation was broken, `golden_output` read GREEN. That
+/// was absence scored as conformance, on the one gate that has to prove every
+/// Q4_K model works on CUDA. Only a leg that never STARTED is not run, and it
+/// says why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum GpuGoldenLeg {
+    /// Generated on the device, and the answer matches the golden patterns.
+    Passed,
+    /// Generated on the device, and the answer is wrong.
+    WrongAnswer(String),
+    /// CUDA init or generation ERRORED on a cuda build with a device.
+    Errored(String),
+    /// Never started, and why: no cuda feature, no device, not a GGUF, or judged
+    /// by the runtime rung.
+    NotRun(&'static str),
+}
+
+impl GpuGoldenLeg {
+    /// Judge one GPU generation, given its decoded text or the error that stopped it.
+    pub(crate) fn judge(
+        generated: std::result::Result<String, String>,
+        expected_patterns: &[&str],
+    ) -> Self {
+        match generated {
+            Err(e) => Self::Errored(e),
+            Ok(text) => match verify_output(
+                &strip_thinking_blocks(&text), // GH-279-4
+                "golden_output_gpu",
+                expected_patterns,
+            ) {
+                OutputVerification::Pass => Self::Passed,
+                OutputVerification::Fail { reason } => Self::WrongAnswer(reason),
+            },
+        }
+    }
+
+    /// `Some(reason)` fails the golden gate: a wrong answer, or an error.
+    pub(crate) fn failure(&self) -> Option<String> {
+        match self {
+            Self::Passed | Self::NotRun(_) => None,
+            Self::WrongAnswer(reason) => Some(format!("GPU output failed (CPU passed): {reason}")),
+            Self::Errored(e) => Some(format!(
+                "GPU golden generation ERRORED on a cuda build with a CUDA device: a broken \
+                 GPU, not a skip (#3711): {e}"
+            )),
+        }
+    }
+
+    /// What the gate's pass message says about the GPU leg.
+    pub(crate) fn describe(&self) -> String {
+        match self {
+            Self::NotRun(why) => format!("GPU leg SKIPPED: {why}"),
+            _ => "GPU leg judged on CUDA device 0".to_string(),
+        }
+    }
+}
+
+/// Why the dense GPU leg will not start, or `None` when it will (#3711). These are
+/// the only skips, and each names which.
+pub(crate) fn gpu_golden_not_run(
+    cuda_feature: bool,
+    cuda_device: bool,
+    gguf: bool,
+) -> Option<&'static str> {
+    if !cuda_feature {
+        Some("this build has no cuda feature")
+    } else if !cuda_device {
+        Some("no CUDA device on this host")
+    } else if !gguf {
+        Some("the dense GPU leg judges GGUF only")
+    } else {
+        None
+    }
+}
+
+/// #3711: the backend the runtime rung names is the one the dispatch REPORTED
+/// (`InferenceResult::used_gpu`), never the one the build could have used. The
+/// pass message used to say "GPU hybrid forward" on every cuda build, including
+/// one on a host with no device. Worse, the hybrid's GPU forward falls back to the
+/// CPU on any GPU failure, so a broken GPU passed on the CPU's answer.
+///
+/// `gpu_not_run` is `None` when the GPU should serve the model: a cuda build, a
+/// device, and an architecture the GPU runs. `Err` then means the dispatch
+/// reported CPU, and it fails the gate.
+pub(crate) fn runtime_golden_backend(
+    used_gpu: bool,
+    gpu_not_run: Option<&'static str>,
+) -> std::result::Result<String, String> {
+    match (used_gpu, gpu_not_run) {
+        (true, _) => Ok("GPU: the dispatch reported used_gpu=true".to_string()),
+        (false, Some(why)) => Ok(format!(
+            "CPU: the dispatch reported used_gpu=false, and the GPU was not expected ({why})"
+        )),
+        (false, None) => Err("the GPU should have served this model (a cuda build, a CUDA \
+             device, an architecture the GPU runs) and the dispatch reported CPU: the GPU \
+             forward failed and fell back, and its reason is on stderr. A broken GPU, not a \
+             pass (#3711)"
+            .to_string()),
+    }
+}
+
 /// JIDOKA: Validate GPU golden output matches expected patterns (PMAT-232 lesson).
 ///
 /// Without this, GPU correctness was NEVER tested — `apr qa` golden output only ran CPU.
-/// Returns `Some(failure_reason)` if GPU output fails, `None` if pass or skipped.
+/// Called only when `gpu_golden_not_run` said the leg starts (a cuda build, a device,
+/// a GGUF), so an init or generation error here is `Errored`, a gate FAIL (#3711).
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn validate_gpu_golden_output(
@@ -481,7 +588,7 @@ fn validate_gpu_golden_output(
     gguf: &realizar::gguf::GGUFModel,
     expected_patterns: &[&str],
     config: &QaConfig,
-) -> Result<Option<String>> {
+) -> Result<GpuGoldenLeg> {
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
     // #3432 / #3477: the Qwen3.5 hybrid never reaches this dense-loader gate —
     // `golden_gate_for` routes it to `run_golden_output_gate_runtime`, which goes
@@ -491,31 +598,21 @@ fn validate_gpu_golden_output(
     // gate, so the guard stays as a fail-safe and says where the GPU output IS
     // judged rather than claiming it is not.
     if realizar::gguf::hybrid_forward_handles(mapped.model.architecture().unwrap_or_default()) {
-        note_gpu_golden_skip(
-            config,
-            "GPU golden output for the Gated DeltaNet hybrid is judged by the runtime rung \
-             (run_inference → Qwen35CudaModel, #3090), not by the dense loader",
-        );
-        return Ok(None);
+        const JUDGED_BY_RUNTIME: &str = "the Gated DeltaNet hybrid's GPU output is judged by \
+             the runtime rung (run_inference → Qwen35CudaModel, #3090), not by the dense loader";
+        note_gpu_golden_skip(config, JUDGED_BY_RUNTIME);
+        return Ok(GpuGoldenLeg::NotRun(JUDGED_BY_RUNTIME));
     }
     let model = OwnedQuantizedModel::from_mapped(mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-    match OwnedQuantizedModelCuda::new(model, 0) {
-        Ok(mut cuda_model) => match cuda_model.generate_gpu_resident(prompt_tokens, gen_config) {
-            Ok(gpu_tokens) => {
-                let gpu_text = gguf.decode(&gpu_tokens);
-                let gpu_answer = strip_thinking_blocks(&gpu_text); // GH-279-4
-                if let OutputVerification::Fail { reason } =
-                    verify_output(&gpu_answer, "golden_output_gpu", expected_patterns)
-                {
-                    return Ok(Some(format!("GPU output failed (CPU passed): {reason}")));
-                }
-            }
-            Err(e) => note_gpu_golden_skip(config, &format!("GPU golden output skipped: {e}")),
-        },
-        Err(e) => note_gpu_golden_skip(config, &format!("CUDA init skipped: {e}")),
-    }
-    Ok(None)
+    let generated = match OwnedQuantizedModelCuda::new(model, 0) {
+        Ok(mut cuda_model) => cuda_model
+            .generate_gpu_resident(prompt_tokens, gen_config)
+            .map(|gpu_tokens| gguf.decode(&gpu_tokens))
+            .map_err(|e| format!("GPU generation: {e}")),
+        Err(e) => Err(format!("CUDA init on device 0: {e}")),
+    };
+    Ok(GpuGoldenLeg::judge(generated, expected_patterns))
 }
 
 /// Note, in a verbose human-readable run, that the GPU half of the golden gate
@@ -553,8 +650,10 @@ fn note_gpu_golden_skip(config: &QaConfig, message: &str) {
 /// via `with_input_tokens` to bypass `prepare_tokens`' chat-template auto-wrap
 /// (the same reason `golden_output_apr` does it). Stop tokens come from the
 /// model's own EOS, which `run_gguf_inference` merges in.
+///
+/// Returns the text and the dispatch's own `used_gpu` (#3711).
 #[cfg(feature = "inference")]
-fn golden_output_runtime(path: &Path, prompt: &str, max_tokens: usize) -> Result<String> {
+fn golden_output_runtime(path: &Path, prompt: &str, max_tokens: usize) -> Result<(String, bool)> {
     use realizar::gguf::MappedGGUFModel;
     use realizar::{run_inference, InferenceConfig};
 
@@ -575,7 +674,7 @@ fn golden_output_runtime(path: &Path, prompt: &str, max_tokens: usize) -> Result
         .with_top_k(1);
     let result = run_inference(&infer_config)
         .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?;
-    Ok(result.text)
+    Ok((result.text, result.used_gpu))
 }
 
 /// Gate 1 for an architecture the dense loader refuses: the same golden cases,
@@ -583,8 +682,16 @@ fn golden_output_runtime(path: &Path, prompt: &str, max_tokens: usize) -> Result
 ///
 /// This gate is the point of #3477: `apr qa` must be able to say PASS about the
 /// backend that runs the model — and since #3090 that backend is the GPU.
+///
+/// `cpu_only`: the GPU backend declines this architecture, so the CPU is the
+/// expected backend. Otherwise a cuda build with a device must be served by the
+/// GPU, and a CPU fallback fails the gate (#3711).
 #[cfg(feature = "inference")]
-fn run_golden_output_gate_runtime(path: &Path, config: &QaConfig) -> Result<GateResult> {
+fn run_golden_output_gate_runtime(
+    path: &Path,
+    config: &QaConfig,
+    cpu_only: bool,
+) -> Result<GateResult> {
     let start = Instant::now();
 
     if !config.json && config.verbose {
@@ -598,9 +705,28 @@ fn run_golden_output_gate_runtime(path: &Path, config: &QaConfig) -> Result<Gate
     let test_cases = golden_test_cases();
     // GH-279-4: thinking models need room for <think>...</think> + the answer.
     let golden_max_tokens = config.max_tokens.max(512);
+    let gpu_not_run = if cpu_only {
+        Some("the GPU backend declines this architecture")
+    } else {
+        gpu_golden_not_run(cfg!(feature = "cuda"), cuda_device_present(), true)
+    };
 
+    let mut served_by = String::new();
     for (prompt, expected_patterns) in &test_cases {
-        let output_text = golden_output_runtime(path, prompt, golden_max_tokens)?;
+        let (output_text, used_gpu) = golden_output_runtime(path, prompt, golden_max_tokens)?;
+        // #3711: the backend first — a GPU that fell back is a FAIL even when the CPU's answer is right
+        match runtime_golden_backend(used_gpu, gpu_not_run) {
+            Ok(label) => served_by = label,
+            Err(failure) => {
+                return Ok(GateResult::failed(
+                    "golden_output",
+                    &failure,
+                    None,
+                    None,
+                    start.elapsed(),
+                ))
+            }
+        }
         let answer_text = strip_thinking_blocks(&output_text);
         if let OutputVerification::Fail { reason } =
             verify_output(&answer_text, "golden_output_runtime", expected_patterns)
@@ -618,13 +744,8 @@ fn run_golden_output_gate_runtime(path: &Path, config: &QaConfig) -> Result<Gate
     Ok(GateResult::passed(
         "golden_output",
         &format!(
-            "{} golden test cases passed through the runtime entry point ({})",
+            "{} golden test cases passed through the runtime entry point (served by {served_by})",
             test_cases.len(),
-            if cfg!(feature = "cuda") {
-                "GPU hybrid forward, #3090"
-            } else {
-                "CPU hybrid forward, #3091"
-            }
         ),
         Some(test_cases.len() as f64),
         Some(test_cases.len() as f64),
@@ -634,8 +755,12 @@ fn run_golden_output_gate_runtime(path: &Path, config: &QaConfig) -> Result<Gate
 
 /// Without `inference` there is no runtime to certify.
 #[cfg(not(feature = "inference"))]
-fn run_golden_output_gate_runtime(path: &Path, config: &QaConfig) -> Result<GateResult> {
-    let _ = (path, config);
+fn run_golden_output_gate_runtime(
+    path: &Path,
+    config: &QaConfig,
+    cpu_only: bool,
+) -> Result<GateResult> {
+    let _ = (path, config, cpu_only);
     Ok(GateResult::skipped(
         "golden_output",
         "Requires 'inference' feature",
