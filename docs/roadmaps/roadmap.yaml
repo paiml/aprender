@@ -19689,6 +19689,30 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE (hand-entered from gh#3605 done_when; see paiml-mcp-agent-toolkit#1414). Done when: contracts/refusal-receipt-v1.yaml exists with a shape over removed_by, and the value space is a CLOSED SET rather than free text: pattern ^(v[0-9]+\\.[0-9]+|never|unscheduled)$. The point of the closed set is that legitimately-nothing stays SAYABLE and CHECKABLE — never and unscheduled are honest answers with a shape behind them, instead of a required field manufacturing a fake version. Fixtures cover each arm of the alternation plus a rejecting case. STOP: do not admit free text; do not make the field optional, which would make absence indistinguishable from a deliberate never.'
+- id: PMAT-3609
+  github_issue: 3609
+  item_type: task
+  title: 'The BPE tokenizer requires a ''<unk>'' token that Qwen3.5 does not have — a universal unknown-token is an assumption, not a fact'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-62
+  created: 2026-09-21T09:00:00Z
+  updated: 2026-09-21T09:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Operator ruling on #3609 (2026-09-20), constraint 1, verbatim: "`unk` becomes `Option`; absent means absent. No synthesis in either direction. That is stronger than the original framing and deliberately so: the `vocab[0] = "<unk>"` placeholder for an absent vocabulary goes too. A GGUF with no vocabulary refuses by name — it does not load. Today it loads, which is the inversion this ticket is about; removing only the refusal on the present-but-lacking side would leave the permissive fallback intact and simply move the asymmetry. The two-direction falsifier already proposed covers both: a model with an unknown token still resolves it (so the fix is not \"ignore unk\"), and a model with no vocabulary now refuses (so the fix is not \"synthesise one\")."'
+  - 'Constraint 2, verbatim: "Prose changes in the same PR, or the belief is reproduced. `book/src/examples/api-server.md` and `examples/model_cache.rs` both repeat \"vocabulary must include `<unk>`\" — a property of our constructor stated as a property of the data. Run `pmat query` for `<unk>` and `unknown_token`; every hit is either fixed or listed in the PR body as intentionally kept. A hit that is neither is the defect''s next copy."'
+  - 'Constraint 3, verbatim: "Mutation: reintroduce the `ok_or_else` → the Qwen3.5 fixture goes RED. A fix with no red-turning mutation is a claim. The fixture must be a real Qwen3.5 GGUF header — the family declares `tokenizer.ggml.eos_token_id` and no `unknown_token_id` key at all, which is the actual input, not a synthetic one."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Taken by aprender-62, sequenced ahead by the cop (aprender-04). Two interpretation decisions, sent to the cop before implementation: (1) THE FIXTURE. The real Qwen3.5-0.8B header is 10.9 MB (248,320 tokens, 247,587 merges), too large to commit. The fixture is a header-only GGUF generated from the real file: every one of its 46 keys and every scalar value verbatim (eos 248046, padding 248055, model gpt2, pre qwen35, the chat template; no unknown_token_id and no bos key, exactly as in the real file), with only the three arrays (tokens, token_type, merges) cut to a leading slice. Qwen''s first 256 tokens are its byte-level glyphs, so the slice still covers every byte. The generator is committed next to it and records the source header''s sha256. (2) WHERE THE UNKNOWN TOKEN COMES FROM at the vocabulary-only constructors, which receive a Vec<String> and nothing else: the vocabulary''s own `<unk>` entry when it has one, otherwise none. Nothing is synthesised, and every model that loads today keeps its unknown token. Threading `tokenizer.ggml.unknown_token_id` through every loader is a filed follow-up, not a silent gap.
+
+    The cop ruled both decisions YES on 2026-09-21. It also added a guard, verbatim: "When the glyph for a byte is ALSO absent, encode must refuse with an error naming the byte. It must never drop the input or emit nothing. Put a row for it in the case table (a vocab without that glyph and without unk → error). Absent means absent at encode time too." How it is met: `encode` returns an infallible Vec<u32> and has dozens of callers, so the refusal happens at CONSTRUCTION. With no unknown token, `BPETokenizer::new` refuses, naming the first byte that has neither a `<0xNN>` token nor a byte-level glyph token. `with_merges` also requires every glyph, because the merge path maps bytes to glyphs only. `encode` therefore cannot meet an unencodable byte, and the no-drop guarantee holds on every path. Case row: `no_unknown_token_and_a_byte_with_no_token_is_refused_by_name` (a 256-glyph vocabulary minus byte 0xA9''s glyph → error naming 0xA9). With the unknown token present, encode is unchanged: `<0xNN>`, then the unknown token. The glyph fallback applies only when there is no unknown token. Follow-up filed before the PR: #3675 (thread the DECLARED unknown token through every loader; by-name `vocabulary_unk_token` is the interim, and `apr serve`''s chat path already uses tokenizer.json''s declared `model.unk_token`). Found while testing, filed separately because it is independent of the unknown token: #3677 (the greedy path matches Latin-1 characters such as `é` as byte-level glyph tokens, so `é` decodes to U+FFFD). The Qwen round-trip rows therefore use ASCII, CJK and newline, not `é`. Same class but outside the query''s hits, so not in this PR: `apr showcase`''s pipeline substitutes token ids [1,2,3,4,5] when a model has no vocabulary (commands/showcase/pipeline.rs:165).
+
+    Repo-layout facts a reviewer needs, each checked at the PR head (round 2 lane 1 misread all three, and every one is refuted by `cargo check -p apr-cli` rc=0 and `cargo test -p apr-cli --lib` 7283 passed at e5b2e7541). (1) `realizar` IS aprender-serve: crates/aprender-serve/Cargo.toml:42-43 is `[lib] name = "realizar"`, so `realizar::tokenizer::BPETokenizer` in apr-cli and `crate::tokenizer::BPETokenizer` in aprender-serve are the SAME type, and `realizar::tokenizer::vocabulary_unk_token` (the book, api-server.md) is the function this PR adds. (2) `no_vocabulary` in apr-cli is defined ONCE, at crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:482, and is visible to every serve site because these files are one module: handlers.rs:1618 is `include!("handler_apr_cpu_completion.rs")`, handlers.rs:1619 is `include!("handler_gpu_completion.rs")`, and handler_apr_cpu_completion.rs:869 is `include!("handlers_include_01.rs")`. (3) aprender-serve''s cli has its own `no_vocabulary` (cli/mod_server_commands.rs:13, returning RealizarError), inside the same `mod server_commands` as its six call sites.'
 - id: PMAT-3618
   github_issue: 3618
   item_type: task
@@ -19774,6 +19798,29 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE (hand-entered from issue #3644 "What lands"; minted on the PR branch so the AD-04 quorum can run). 1. check_guards_are_wired.sh drops name: lines before the invocation match, in dispatcher_wired() and the per-guard scan; rows 8-10 (the exact ci.yml step-name fixture must NOT count as a dispatch; a quoted run: line still does; a step named after a guard wires nothing); the mutation (remove the drop) turns rows 8 and 10 RED. 2. check_pathonly_devdeps_unused_in_src.sh: tomllib -> tomli -> ENV rc=2 naming interpreter and runner; the scanner ends with a SCAN-DONE trailer the shell REQUIRES; five death rows incl. the whole guard under the intel shape; comments reworded so CARGO_RE no longer classifies it out of --no-cargo, so guard-tree runs it (bare run on the tree: rc 0, 3 s). 3. unwired_guards_baseline.txt records the other three dark guards as APERTURE REVEALS (set-aperture gains a NAME-entry admission: a file the comparand carries, in a diff that changes the owning guard; six case rows, each admission beside its refusal) with the reason each may only leave; #3646 owns the pr_review pair. No workflow file is edited.'
+- id: PMAT-3646
+  github_issue: 3646
+  item_type: task
+  title: check_pr_review_counts.sh is RED on main (6 rows disagree) and check_pr_review_receipt.sh has no caller — both dark since PRQ-013 moved the receipt job, classified out of --no-cargo by a comment
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-21T06:00:51Z
+  updated: 2026-09-21T06:00:51Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3646 "What lands" item 1, verbatim: "Fix the 6 disagreeing rows in PR-REVIEW-SKILL-002''s files (or the derivation), then reword the one comment so the guard leaves the cargo population and `guard-tree` runs it; delete its ledger line in the same commit (shrink-only)."'
+  - 'Issue #3646 "What lands" item 2, verbatim: "Decide `check_pr_review_receipt.sh`''s caller: either `pr-review-quorum.yml` invokes it on the PR''s receipt (a workflow edit — operator''s call), or it is folded into `check_pr_review_arm4.sh`, which is already wired with args. Delete its ledger line with whichever lands."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'SCOPE OF THIS PR: item 1 only. The PR says `Refs #3646`, not a closing keyword, and carries a `keep-open:` line for item 2. check_pr_review_receipt.sh keeps its line in scripts/unwired_guards_baseline.txt on purpose: neither of item 2''s two options lands here. The workflow edit is the operator''s call, and the fold is moot because check_pr_review_arm4.sh already invokes it with a receipt (see Item 2 below). The ledger entry''s own comment says so ("NOT dark: check_pr_review_arm4.sh runs it … Ledgered only because this meta-guard counts a DIRECT workflow invocation"). A reviewer should judge item 2 as OPEN BY DESIGN, not as missed. Handed over by aprender-b3 (2026-09-21); claimed on the issue. Measured on origin/main @ 237fbc32f per the issue: `bash scripts/check_pr_review_counts.sh` rc=1 "--- 6 row(s) disagree with the tree ---"; `bash scripts/check_pr_review_receipt.sh` rc=1 "A run over zero receipts is not a pass (S6.3: a missing receipt is RED)." The ledger line for each guard is added by #3647 (scripts/unwired_guards_baseline.txt, shrink-only); it is deleted in the commit that wires that guard, after #3647 merges. Item 1 lands first; item 2 lands here only if it folds into check_pr_review_arm4.sh with no workflow edit, otherwise the ticket stays open for the operator''s call and the PR says Refs, not Closes.
+
+    What the item-1 PR does. (a) The 6 RED rows were ci.yml sites whose sentences PRQ-013 deleted along with the receipt job (roadmap: "STATED LOSS"), so the rows go. The bats_tests derivation goes too, because no file states that count any more; ci.yml''s fixture_rows site goes from 2 to 1; and scripts/check_pr_review_wiring.sh''s "43-row" joins the table with a self-test row of its own. (b) The :196 comment is reworded so CARGO_RE stops matching: `guard_tree.sh --dry-run --no-cargo` prints `run: scripts/check_pr_review_counts.sh`, and restoring the old wording moves it back to --cargo-only (mutation-verified). (c) The --list mode of mutate-guard.sh and mutate_quorum_arm.sh requires only awk. Before this it demanded bats/jq/minisign/check-jsonschema, so wiring the counts guard into guard-tree, which runs on clean-room HOSTS including the gx10/yoga docker runners, would have turned a dark guard into an ENV-red job (reproduced: rc=2 under a PATH without those four). Sweeps still refuse without them (rc=1).
+
+    Item 2, measured: check_pr_review_receipt.sh HAS a caller with a receipt. check_pr_review_arm4.sh runs `bash "$guard" "$scratch"` (A3) and `bash "$guard" "$best_dir"` (A4) with guard defaulting to it, and pr-review-quorum.yml:141 runs arm4. So there is nothing to fold. What remains is whether guard_tree.sh and the unwired ledger should treat a guard reachable only through another wired guard as wired. That is recorded on the issue and not changed here. LEDGER LINE (added after the 0.69 batch landed): check_pr_review_counts.sh entered scripts/unwired_guards_baseline.txt through #3644 in batch #3669 (squash a877fa056), after this branch was cut, so the deletion criterion 1 names could only be made once main carried the line. Main is merged into this branch (the only conflict was the generated roadmap.yaml, regenerated from entries/), and the entry and its four comment lines are deleted. On the squash-merge this is one commit with the fix. Measured on the merged tree: `bash scripts/check_guards_are_wired.sh` rc 0, "did not grow (1 removed) vs a877fa056", 149 scanned, 5 named by no workflow; `bash scripts/check_pr_review_counts.sh` rc 0, "PASS every stated count equals the derived one"; `--self-test` 16/16; `bash scripts/guard_tree.sh --no-cargo` 78 checks, 0 failed (76 before this branch), including "PASS scripts/check_pr_review_counts.sh [self-test]" and "[run]".'
 - id: PMAT-3651
   github_issue: 3651
   item_type: task
@@ -19884,6 +19931,44 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE — issue #3670 done_when, verbatim in substance. (1) Each fleet-state branch prints UNMEASURED runner=... reason=<pin-mismatch|pv-env|judge-env|no-binary|incapable> ..., exits 0, and never prints PASS or SUMMARY PASS. (2) A mutant restoring FAIL on pin-mismatch exits 1, and a mutant restoring the ENV exit on pv-env exits 2; each mutant row refuses to pass if its edit did not apply. (3) A planted violation from a matching pinned binary is still RED, and a control that does not fire is still RED. (4) Real runs: pin forced to 0.65.2 under a 0.68.2 binary gives UNMEASURED reason=pin-mismatch (rc 0); the fleet pv on a tree with migrated parity records gives PASS verdict=Pass. RULING: PASS/FAIL only from a verdict produced by a binary that matches its pin; fleet state is UNMEASURED with a named reason and exit 0. Scope: scripts/check_fleet_pv_shapes_gate.sh only, one commit on top of #3653 (053992448).'
+- id: PMAT-3671
+  github_issue: 3671
+  item_type: task
+  title: 'check_fleet_pv_shapes_gate.sh: reason=pv-env (exit 0) covers a pinned pv that PANICS — only pv rc 2 is fleet state; any other no-JSON rc must stay RED'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-62
+  created: 2026-09-21T10:15:00Z
+  updated: 2026-09-21T10:15:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3671 done_when 1, verbatim: "pv''s own exit code is captured before the parser runs. `reason=pv-env`, exit 0, applies **only** when pv''s rc is 2 and it produced no JSON."'
+  - 'done_when 2, verbatim: "A pinned pv that produces no JSON with any other rc (101 panic, 134/139 signal, 1 with no output) goes RED, not `UNMEASURED`. It exits non-zero, and the row names pv''s rc and its first stderr line."'
+  - 'done_when 3, verbatim: "Case-table rows: a panic stub (101, no JSON) → RED. The existing rc-2-no-JSON stub stays `UNMEASURED reason=pv-env`. A mutant that removes the pv-rc check sends the panic row back to `UNMEASURED` (the row discriminates)."'
+  - 'done_when 4, verbatim: "The other fleet-state branches (`no-pin`, `no-binary`, `pin-mismatch`, `incapable`, `judge-env`) are unchanged."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Found by aprender-62 cross-inspecting the andon commit 984fc76a9 (PMAT-3670) in the 0.69 batch #3669; the cop ruled it a separate ticket for after the batch. HOW IT IS MET. `judge` captures pv''s own exit as `pvrc` (the parser still receives it, for its message) and the verdict `case` is keyed on the PAIR `<parser rc>:<pv rc>`: `2:2` is `UNMEASURED reason=pv-env` exit 0, unchanged; `2:*` is `FAIL runner=… reason=pv-no-verdict … pv exited <rc> … pv stderr: <first line>` to stderr, exit 1. The arms for parser rc 0 (PASS), 1 (FAIL) and other (judge-env) are unchanged, and the no-pin / no-binary / pin-mismatch / incapable branches return before pv runs, so they are untouched. RED is FAIL (exit 1), not ENV (exit 2): a panic caused by a contract in the tree is tree state. SIGNAL ROW. The case table uses SIGKILL (rc 137, `kill -KILL $$` in the stub), a real signal death that writes no core file on a runner; 134/139 are the same `2:*` arm, since the arm matches any pv rc but 2. MEASURED at this commit: `bash scripts/check_fleet_pv_shapes_gate.sh --self-test` 19/19 ok (was 15). The new rows are 13-15 (panic 101, SIGKILL 137, rc 1 with no output: each RED naming pv''s rc and stderr, never UNMEASURED) and 16 (mutant `2:2)` -> `2:*)`, i.e. pv-env keyed on the parser alone: the panic stub goes back to `UNMEASURED reason=pv-env`, exit 0, so the panic row discriminates). BEFORE THE FIX, the same self-test with the new rows: rows 13-15 FAIL with "UNMEASURED runner=probe-runner reason=pv-env … ENV no JSON verdict (rc=101) … panicked", rc 0, reproducing the issue''s table. ALSO FIXED, same rows: the existing pv-env mutant (row 12) was VACUOUS. Its sed replaced the arm''s opening single quote with a double quote, so the mutant script was a bash syntax error (`bash -n` rc 2 at "line 146: syntax error near unexpected token `(`") and "exited non-zero" without reaching the arm it claimed to test. Both mutants now keep the arm''s text through a sed backreference, are refused unless `bash -n` passes, and assert the specific outcome (row 12: exit 2 and `ENV (rc=2)`; row 16: exit 0 and `UNMEASURED … reason=pv-env`). `--help` printed a hardcoded `sed -n 2,44p`, which cut the header off once it grew; it now prints the leading comment block, found by awk. `bashrs lint`: 0 errors (baseline 0). `bash scripts/guard_tree.sh --no-cargo`: 76 checks, 0 failed.'
+- id: PMAT-3673
+  github_issue: 3673
+  item_type: task
+  title: 'Batching is the default merge path: scripts/batch_fold.sh + APR-RELEASE-001 §13 (operator 2026-09-21)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-21T08:23:21Z
+  updated: 2026-09-21T08:23:21Z
+  spec: docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (quoted from issue #3673 "What lands"): 1. scripts/batch_fold.sh — fold receipted PR branches into one release/<train>-batch branch, git merge --no-ff in the given order: a conflict ONLY in the generated set {docs/roadmaps/roadmap.yaml, contracts/census.json, contracts/contracts.nt, contracts/shapes.ttl, the CONTRACT_COUNT blocks of README.md} is taken and marked for regeneration; a conflict ANYWHERE else — including README prose outside a count block — aborts that branch''s merge and reports SKIP with the paths, never resolved by picking a side; --regen regenerates the generated set ONCE with the tree-built pv (scripts/pv_bin.sh), asserts the fixed points (aggregate --check, pv extract --check, readme_sync.sh --check), and commits the regeneration; exit 0 all folded; 1 any SKIP; 2 usage/git/regeneration failure; a folded-but-unregenerated generated set is never silent; --self-test case table, wired into CI. 2. APR-RELEASE-001 §13 — the batching procedure as the default path (cop prompt §7): assembly, generated-set regeneration, left-out rules, what needs a new quorum (only content new to the batch), constituent disarm/close, a red batch, and the review-lane VOID rule while paiml-implement#317 is open. AUTHOR NOTES (not criteria): the case table lives in scripts/check_batch_fold.sh (guard-tree runs it) because a --self-test case inside batch_fold.sh made check_guards_are_wired.sh RED; §13 required amending hard rule 9 ("No hand-squash of batches") and the matching §8 stop, which the new default contradicts.'
 - id: PMAT-3681
   github_issue: 3681
   item_type: task
