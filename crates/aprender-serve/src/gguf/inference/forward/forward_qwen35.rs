@@ -1547,7 +1547,18 @@ fn f2_validate_qwen35(
     if probe.len() < 2 {
         return F2Verdict::NotJudged;
     }
-    let Some(cpu_per_pos) = f2_qwen35_cpu_reference(cpu, probe) else {
+    // #3751: the reference runs with FP32 activations. `Qwen35CudaModel` runs
+    // the float (MWV) GEMVs, pinned; the CPU forward's Q4_K matvec quantizes
+    // its activation to Q8_K by default, and on the outlier tokens around a
+    // chat-template special token that reference drifts from the exact
+    // answer, not the GPU. Measured by aprender-37 on Qwen3.5-9B-Q4_K_M with
+    // `apr chat --gpu`: F2 rejected at position 23 (cosine 0.8338 lambda,
+    // 0.8390 gx10, argmax equal) against the Q8_K reference, and passed on 28
+    // positions against the FP32 one. The same scoped reference as qwen3moe's
+    // F2 (#3714).
+    let Some(cpu_per_pos) =
+        crate::quantize::with_fp32_activations(|| f2_qwen35_cpu_reference(cpu, probe))
+    else {
         return F2Verdict::NotJudged; // the CPU forward itself failed: nothing to judge against.
     };
     let decode_token = cpu_per_pos
