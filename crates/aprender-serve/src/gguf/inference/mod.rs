@@ -15,7 +15,9 @@ mod attention;
 #[cfg(any(feature = "gpu", feature = "cuda"))]
 pub(crate) mod cached;
 mod forward;
-mod generation;
+pub(crate) mod generation;
+/// #3793: why a constrained generation ended.
+pub use generation::ConstrainedStop;
 mod matmul;
 
 #[cfg(test)]
@@ -24,6 +26,8 @@ mod attention_flash_tests;
 mod attention_gqa_tests;
 #[cfg(test)]
 mod float16_dot_tests;
+#[cfg(all(test, feature = "structured-output"))]
+mod generate_constrained_tests;
 #[cfg(test)]
 mod generate_quantized_topk_tests;
 #[cfg(test)]

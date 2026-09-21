@@ -1294,6 +1294,56 @@ pub fn run_qwen35_generate(
     Ok(tokens)
 }
 
+/// [`run_qwen35_generate`] with every step constrained (#3568 PR 2, #3793): the same state,
+/// budget and sampler (this loop applies no repetition penalty, so neither does its
+/// constrained twin), with `constraint` masking each step. It ends at end-of-sequence, which
+/// the constraint admits only on a complete document, or at the budget. The returned tokens
+/// include the prompt and never the end-of-sequence token.
+///
+/// # Errors
+/// A forward pass failure, or the constraint's refusal (`RealizarError::Constraint`).
+pub fn run_qwen35_generate_constrained(
+    mapped: &crate::gguf::MappedGGUFModel,
+    base: &OwnedQuantizedModel,
+    input_tokens: &[u32],
+    gen_config: &crate::gguf::QuantizedGenerateConfig,
+    constraint: &mut dyn crate::constrain::TokenConstraint,
+) -> Result<(Vec<u32>, crate::gguf::ConstrainedStop)> {
+    use crate::gguf::inference::generation::{
+        constrained_budget_end, constrained_end, constraint_refusal, sample_step,
+    };
+    use rand::SeedableRng;
+    if input_tokens.is_empty() {
+        return Err(crate::error::RealizarError::InvalidShape {
+            reason: "run_qwen35_generate_constrained: prompt cannot be empty".to_string(),
+        });
+    }
+    let qwen = Qwen35Model::from_model_and_layers(base, &mapped.model, mapped.data())?;
+    let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
+    let mut state = qwen.new_state(max_seq_len);
+    let mut rng = rand::rngs::StdRng::seed_from_u64(gen_config.seed);
+
+    let mut logits = Vec::new();
+    for (pos, &token) in input_tokens.iter().enumerate() {
+        logits = qwen.forward_single_qwen35(token, &mut state, pos)?;
+    }
+    let mut tokens = input_tokens.to_vec();
+    for gen_idx in 0..gen_config.max_tokens {
+        constraint.mask(&mut logits).map_err(constraint_refusal)?;
+        let next = sample_step(&logits, gen_config, &mut rng);
+        if gen_config.stop_tokens.contains(&next) {
+            return Ok((tokens, constrained_end(constraint, next, gen_idx)?));
+        }
+        constraint.accept(next).map_err(constraint_refusal)?;
+        tokens.push(next);
+        if tokens.len() >= max_seq_len {
+            break;
+        }
+        logits = qwen.forward_single_qwen35(next, &mut state, tokens.len() - 1)?;
+    }
+    Ok((tokens, constrained_budget_end(constraint)))
+}
+
 /// Why a Qwen3.5 run served its tokens from the CPU forward.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Qwen35CpuReason {

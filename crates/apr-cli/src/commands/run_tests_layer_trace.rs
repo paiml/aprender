@@ -21,6 +21,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         }
     }
 

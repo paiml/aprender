@@ -157,6 +157,9 @@ pub(crate) mod test_llm_band;
 // #2399: gated on the crate it actually needs (aprender-explain, aliased
 // `trueno-explain`) rather than on `full`, so `--features ptx` is enough and a
 // user does not have to pull CUDA + training to analyze a .ptx file.
+/// #3793: `apr run --json-schema` / `--grammar`.
+#[cfg(feature = "inference")]
+pub(crate) mod constrained_run;
 #[cfg(feature = "trueno-explain")]
 pub(crate) mod ptx_explain;
 pub(crate) mod ptx_map;

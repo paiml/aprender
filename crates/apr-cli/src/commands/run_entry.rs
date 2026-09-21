@@ -44,6 +44,8 @@ pub(crate) fn run(
     split_prompt: bool,
     // #3672: apply the model's chat template once, in realizar; the prompt is raw text.
     chat_template: bool,
+    // #3793: --json-schema / --grammar
+    constraint: super::run::ConstraintArgs,
 ) -> Result<()> {
     // GH-516: Warn on --language/--task since whisper integration is not yet wired up
     if language.is_some() {
@@ -109,9 +111,10 @@ pub(crate) fn run(
         split_prompt,
         chat_template,
         stream,
+        constraint,
     };
 
-    let result = run_model(source, &options)?;
+    let result = run_model_answering_refusals(source, &options)?;
 
     if trace && trace_level == "layer" {
         print_layer_trace(&result, max_tokens);
@@ -179,7 +182,15 @@ fn reconcile_and_emit(
     stream: bool,
     accel_forced: bool,
 ) -> Result<()> {
-    let reconciled = reconcile_accelerator(accel_forced, result);
+    // #3793: a constrained output refused after it was produced (Truncated, SchemaViolation)
+    // follows the same rule: the machine surfaces emit it beside the refusal, the human one
+    // stays silent, and the run exits non-zero
+    let reconciled = reconcile_accelerator(accel_forced, result).and_then(|()| {
+        result
+            .constraint_refusal
+            .clone()
+            .map_or(Ok(()), |r| Err(crate::error::CliError::ConstraintRefused(r)))
+    });
     if reconciled.is_ok() || emits_machine_output(stream, output_format, benchmark) {
         print_run_output(
             result,
@@ -192,6 +203,33 @@ fn reconcile_and_emit(
         )?;
     }
     reconciled
+}
+
+/// [`run_model`], where a constrained run refused before it produced output (#3793) still
+/// answers a machine-readable request: the refusal document on stdout, then the error.
+fn run_model_answering_refusals(source: &str, options: &RunOptions) -> Result<super::run::RunResult> {
+    match run_model(source, options) {
+        Err(crate::error::CliError::ConstraintRefused(refusal)) => {
+            if emits_machine_output(options.stream, &options.output_format, options.benchmark) {
+                let doc = serde_json::json!({
+                    "model": source,
+                    "text": serde_json::Value::Null,
+                    "finish_reason": refusal.finish_reason,
+                    "refusal": refusal.to_json(),
+                });
+                println!(
+                    "{}",
+                    if options.stream {
+                        serde_json::to_string(&doc).unwrap_or_default()
+                    } else {
+                        serde_json::to_string_pretty(&doc).unwrap_or_default()
+                    }
+                );
+            }
+            Err(crate::error::CliError::ConstraintRefused(refusal))
+        },
+        other => other,
+    }
 }
 
 /// Does [`print_run_output`] emit a MACHINE-readable document for these flags?
@@ -555,6 +593,9 @@ fn build_final_json(
             "ran": if result.used_gpu == Some(true) { "gpu" } else { "cpu" },
             "fell_back": accel_forced && result.used_gpu == Some(false),
         },
+        // #3793: a constrained output refused after it was produced (Truncated,
+        // SchemaViolation); null otherwise
+        "refusal": result.constraint_refusal.as_ref().map(crate::error::ConstraintRefusal::to_json),
     })
 }
 
@@ -636,8 +677,23 @@ pub(crate) fn run_batch(
     top_k: usize,
     no_gpu: bool,
     verbose: bool,
+    // #3793: the batch loop applies no constraint, so a constrained batch is refused
+    constraint: &super::run::ConstraintArgs,
 ) -> Result<()> {
     use realizar::{run_batch_inference, BatchInferenceConfig};
+    if constraint.is_set() {
+        return Err(crate::error::CliError::ConstraintRefused(
+            crate::error::ConstraintRefusal {
+                kind: "SchemaUnsupportedPath",
+                message: "SchemaUnsupportedPath: the batch generation path (--batch-jsonl) does \
+                          not apply a constraint yet, so it refuses rather than running \
+                          unconstrained"
+                    .to_string(),
+                removed_by: Some("not scheduled: #3568 constrains `apr run` on one prompt".to_string()),
+                finish_reason: None,
+            },
+        ));
+    }
 
     // Resolve model path (same logic as regular run)
     let model_source = ModelSource::parse(source)?;

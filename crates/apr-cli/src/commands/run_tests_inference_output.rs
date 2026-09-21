@@ -16,6 +16,7 @@
             generated_tokens: Some(vec![1, 2, 3, 4, 5]),
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
         assert_eq!(output.text, "hello");
         assert_eq!(output.tokens_generated, Some(5));
@@ -34,6 +35,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
         assert!(output.tokens_generated.is_none());
         assert!(output.inference_ms.is_none());

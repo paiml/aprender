@@ -208,6 +208,16 @@ pub enum Commands {
         /// Chat template is applied automatically.
         #[arg(long, value_name = "FILE")]
         batch_jsonl: Option<PathBuf>,
+        /// Constrain the output to a JSON Schema: the schema inline, or `@path` to a file (#3568).
+        ///
+        /// Checked before the model loads; the finished output is checked again by a validator
+        /// independent of the engine. A generation path that cannot apply it, or a thinking
+        /// chat template, is refused by name: it never runs unconstrained. Exit 15 on refusal.
+        #[arg(long, value_name = "SCHEMA|@PATH", conflicts_with = "grammar")]
+        json_schema: Option<String>,
+        /// Constrain the output to a Lark grammar: inline, or `@path` to a file (#3568)
+        #[arg(long, value_name = "GRAMMAR|@PATH")]
+        grammar: Option<String>,
         /// Show verbose output (model loading, backend info)
         #[arg(short, long)]
         verbose: bool,

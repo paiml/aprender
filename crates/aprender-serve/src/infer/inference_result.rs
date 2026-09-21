@@ -125,6 +125,7 @@ pub fn run_inference_report(
 ) -> Result<(InferenceResult, run_report::RunReport)> {
     // PMAT-COV-95: Mock backend for testing without disk I/O
     if config.use_mock_backend {
+        refuse_constraint_on(config, "mock", "not scheduled: the mock backend generates no text")?;
         let result = run_mock_inference(config)?;
         let report = mock_run_report(config, &result);
         return Ok((result, report));
@@ -138,6 +139,11 @@ pub fn run_inference_report(
         // Validate path (F-SEC-222) - json extension is now allowed
         validate_model_path(&config.model_path)?;
 
+        refuse_constraint_on(
+            config,
+            "sharded-safetensors",
+            "not scheduled: #3568 constrains the GGUF loops",
+        )?;
         let format = ModelFormat::SafeTensors;
         let prepared = prepare_tokens(config, &format)?;
         return run_sharded_safetensors_inference(config, &prepared)
@@ -174,6 +180,15 @@ pub fn run_inference_report(
         reason: format!("Format detection failed: {}", e),
     })?;
 
+    // #3793: only the GGUF loops apply a constraint
+    if format != ModelFormat::Gguf {
+        refuse_constraint_on(
+            config,
+            if format == ModelFormat::Apr { "apr" } else { "safetensors" },
+            "not scheduled: #3568 constrains the GGUF loops",
+        )?;
+    }
+
     // PMAT-236: Prepare tokens with chat template BEFORE format dispatch.
     // This is compile-time enforced - format-specific functions accept
     // PreparedTokens (private inner data) which can ONLY be created here.
@@ -203,6 +218,44 @@ fn mock_run_report(config: &InferenceConfig, result: &InferenceResult) -> run_re
         )),
         context_length: None,
     }
+}
+
+/// The unconstrained GGUF dispatch: the MoE loop, the Qwen3.5 hybrid (GPU or CPU), or the dense
+/// loops (CUDA, wgpu, CPU). Moved out of `run_gguf_inference` unchanged when #3793 added the
+/// constrained branch beside it.
+fn generate_gguf_unconstrained(
+    mapped: &crate::gguf::MappedGGUFModel,
+    model: crate::gguf::OwnedQuantizedModel,
+    input_tokens: &[u32],
+    gen_config: &crate::gguf::QuantizedGenerateConfig,
+    config: &InferenceConfig,
+    is_qwen35: bool,
+    canonical_arch: &str,
+) -> Result<(Vec<u32>, bool)> {
+    let (tokens, used_gpu) = if canonical_arch == "qwen3_moe" {
+        let tokens = crate::infer::qwen3_moe_generate::run_qwen3_moe_generate(
+            mapped,
+            &model,
+            input_tokens,
+            gen_config,
+        )?;
+        (tokens, false) // CPU-only path; GPU MoE wiring is M32d follow-up
+    } else if is_qwen35 {
+        // #3477: the hybrid now has a GPU forward (#3090), so `apr run --gpu`
+        // routes to it and reports CUDA; the CPU forward (#3091) serves
+        // `--no-gpu`, a build without cuda, and any GPU failure — the last of
+        // which is printed, never silent.
+        crate::gguf::forward_qwen35::run_qwen35_generate_dispatch(
+            mapped,
+            &model,
+            input_tokens,
+            gen_config,
+            config.no_gpu,
+        )?
+    } else {
+        run_gguf_generate(model, input_tokens, gen_config, config)?
+    };
+    Ok((tokens, used_gpu))
 }
 
 /// Run GGUF model inference
@@ -270,28 +323,33 @@ fn run_gguf_inference(
     // gguf_gpu_generate.rs short-circuit with an actual forward pass.
     let infer_start = Instant::now();
     let canonical_arch = crate::tensor_names::normalize_architecture(&model.config.architecture);
-    let (tokens, used_gpu) = if canonical_arch == "qwen3_moe" {
-        let tokens = crate::infer::qwen3_moe_generate::run_qwen3_moe_generate(
-            &mapped,
-            &model,
-            &input_tokens,
-            &gen_config,
-        )?;
-        (tokens, false) // CPU-only path; GPU MoE wiring is M32d follow-up
-    } else if is_qwen35 {
-        // #3477: the hybrid now has a GPU forward (#3090), so `apr run --gpu`
-        // routes to it and reports CUDA; the CPU forward (#3091) serves
-        // `--no-gpu`, a build without cuda, and any GPU failure — the last of
-        // which is printed, never silent.
-        crate::gguf::forward_qwen35::run_qwen35_generate_dispatch(
-            &mapped,
-            &model,
-            &input_tokens,
-            &gen_config,
-            config.no_gpu,
-        )?
-    } else {
-        run_gguf_generate(model, &input_tokens, &gen_config, config)?
+    // #3793: a constrained run takes the CPU loop that applies the constraint, or refuses
+    let (tokens, used_gpu, constrained) = match &config.constraint {
+        Some(request) => {
+            let (tokens, stop) = generate_gguf_constrained(
+                request,
+                config,
+                &mapped,
+                &model,
+                &input_tokens,
+                &gen_config,
+                is_qwen35,
+                &canonical_arch,
+            )?;
+            (tokens, false, Some(stop))
+        },
+        None => {
+            let (tokens, used_gpu) = generate_gguf_unconstrained(
+                &mapped,
+                model,
+                &input_tokens,
+                &gen_config,
+                config,
+                is_qwen35,
+                &canonical_arch,
+            )?;
+            (tokens, used_gpu, None)
+        },
     };
     let inference_ms = infer_start.elapsed().as_secs_f64() * 1000.0;
 
@@ -313,7 +371,13 @@ fn run_gguf_inference(
             &raw_text[..raw_text.len().min(200)]
         );
     }
-    let text = clean_model_output(&raw_text);
+    // #3793: a constrained output is exactly the document the constraint accepted; cleaning
+    // chat markers out of it could change a string inside it
+    let text = if constrained.is_some() {
+        raw_text
+    } else {
+        clean_model_output(&raw_text)
+    };
     let generated_token_count = generated_tokens.len();
     let tps = tok_per_sec(generated_token_count, inference_ms);
 
@@ -338,7 +402,8 @@ fn run_gguf_inference(
         clamps_to_context,
     );
     let report = run_report::RunReport {
-        finish_reason: Some(run_report::FinishReason::from_decode(
+        finish_reason: Some(gguf_finish_reason(
+            constrained,
             generated_tokens,
             &gen_config.stop_tokens,
             budget,

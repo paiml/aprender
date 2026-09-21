@@ -127,6 +127,11 @@ pub enum CliError {
     /// operator learns which of the two it is; never a silent cpu run.
     #[error("Backend unavailable: {0}")]
     BackendUnavailable(String),
+
+    /// #3793: a constrained run (`apr run --json-schema` / `--grammar`) refused, by name, in one
+    /// line. Which refusal is its first word, and `--json` carries it as `refusal.kind`.
+    #[error("{0}")]
+    ConstraintRefused(ConstraintRefusal),
 }
 
 impl CliError {
@@ -167,6 +172,9 @@ impl CliError {
             Self::ParityFailed(_) => 13,
             // R-0b: compiled but not Ready on this host (registry reason in the message).
             Self::BackendUnavailable(_) => 14,
+            // #3793: every constrained-decoding refusal. The kind is the message's first word
+            // and `refusal.kind` in `--json`, so one code does not hide which it was.
+            Self::ConstraintRefused(_) => 15,
         }
     }
 }
@@ -634,5 +642,41 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), CliError::ValidationFailed(_)));
         std::fs::remove_dir(&dir).ok();
+    }
+}
+
+/// A constrained run's refusal (#3793): its name, the one line that explains it, what removes
+/// it, and the `finish_reason` it ended on when it ended on one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstraintRefusal {
+    /// `SchemaInvalid`, `SchemaUnsupported`, `SchemaUnsupportedPath`, `SchemaWithThinking`,
+    /// `SchemaViolation`, `Truncated`, `ConstraintDeadEnd`, ...
+    pub kind: &'static str,
+    /// The explanation, one line, beginning with `kind`.
+    pub message: String,
+    /// What removes the refusal, when something does.
+    pub removed_by: Option<String>,
+    /// `length`, `dead_end` or `constraint_complete` when generation got that far.
+    pub finish_reason: Option<&'static str>,
+}
+
+impl std::fmt::Display for ConstraintRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)?;
+        match &self.removed_by {
+            Some(by) if !self.message.contains("removed_by") => write!(f, " (removed_by: {by})"),
+            _ => Ok(()),
+        }
+    }
+}
+
+impl ConstraintRefusal {
+    /// The refusal as `--json` carries it.
+    pub(crate) fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "kind": self.kind,
+            "message": self.to_string(),
+            "removed_by": self.removed_by,
+        })
     }
 }

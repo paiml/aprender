@@ -110,7 +110,7 @@ pub use inference_types::*;
 // Re-export cached model types from inference module
 #[cfg(any(feature = "gpu", feature = "cuda"))]
 pub use inference::{
-    DequantizedFFNWeights, DequantizedWeightCache, OwnedQuantizedModelCached,
+    ConstrainedStop, DequantizedFFNWeights, DequantizedWeightCache, OwnedQuantizedModelCached,
     OwnedQuantizedModelCachedSync,
 };
 

@@ -34,6 +34,8 @@ fn dispatch_run(
     repeat_penalty: f32,
     repeat_last_n: usize,
     split_prompt: bool,
+    // #3793: --json-schema / --grammar
+    constraint: run::ConstraintArgs,
 ) -> Result<(), CliError> {
     let effective_trace = trace || trace_payload;
     let effective_trace_level = if trace_payload {
@@ -71,6 +73,7 @@ fn dispatch_run(
         repeat_last_n,
         split_prompt,
         chat_template,
+        constraint,
     )
 }
 

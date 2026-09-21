@@ -40,6 +40,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
         let _debug = format!("{:?}", result);
         assert_eq!(result.tokens_generated, Some(5));
@@ -193,6 +194,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
         let cloned = result.clone();
         assert_eq!(result.text, cloned.text);

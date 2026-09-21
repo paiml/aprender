@@ -74,6 +74,25 @@ pub enum ConstraintError {
     Vocab(String),
     /// This build has no `structured-output` feature.
     NotCompiled,
+    /// A generation path that does not apply a constraint yet (#3793). Refused, never run
+    /// unconstrained: "a constraint that is silently ignored is decoration".
+    UnsupportedPath {
+        /// The path, by name (`gguf-cuda`, `apr`, `qwen3-moe`, ...).
+        path: String,
+        /// What removes this refusal.
+        removed_by: String,
+    },
+    /// A thinking template is selected: 0.69.1 constrains no-think output only (#3735
+    /// constrains after `</think>` in 0.70).
+    WithThinking(String),
+    /// The finished output failed the second reader: a validator independent of the engine.
+    Violation(String),
+    /// The token budget ran out before the output was a complete document. A cut document
+    /// is an error, never a success (rmedia, #3716).
+    Truncated {
+        /// The budget the loop ran with.
+        max_tokens: usize,
+    },
 }
 
 impl fmt::Display for ConstraintError {
@@ -98,6 +117,18 @@ impl fmt::Display for ConstraintError {
                 f,
                 "StructuredOutputNotCompiled: this build has no `structured-output` feature, so a \
                  schema cannot be enforced (refused rather than ignored)"
+            ),
+            Self::UnsupportedPath { path, removed_by } => write!(
+                f,
+                "SchemaUnsupportedPath: the {path} generation path does not apply a constraint \
+                 yet, so it refuses rather than running unconstrained (removed_by: {removed_by})"
+            ),
+            Self::WithThinking(why) => write!(f, "SchemaWithThinking: {why}"),
+            Self::Violation(why) => write!(f, "SchemaViolation: {why}"),
+            Self::Truncated { max_tokens } => write!(
+                f,
+                "Truncated: the budget of {max_tokens} tokens ran out before the output was a \
+                 complete document; a cut document is an error, never a success"
             ),
         }
     }
@@ -129,6 +160,47 @@ pub fn load_schema(arg: &str) -> Result<serde_json::Value, ConstraintError> {
         )));
     }
     Ok(value)
+}
+
+/// Read a grammar argument (`--grammar`): the Lark grammar inline, or `@path` to a file
+/// holding it. Checked here, before the first token.
+pub fn load_grammar(arg: &str) -> Result<String, ConstraintError> {
+    let (text, from) = match arg.strip_prefix('@') {
+        Some(path) => (
+            std::fs::read_to_string(path).map_err(|e| {
+                ConstraintError::SchemaInvalid(format!("cannot read the grammar file {path}: {e}"))
+            })?,
+            format!("the grammar file {path}"),
+        ),
+        None => (arg.to_string(), "the inline grammar".to_string()),
+    };
+    if text.trim().is_empty() {
+        return Err(ConstraintError::SchemaInvalid(format!("{from} is empty")));
+    }
+    Ok(text)
+}
+
+/// What a caller asked generation to be constrained to (#3793), read and checked before the
+/// model loads, and carried on the inference config.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConstraintRequest {
+    /// `--json-schema`: a JSON Schema document.
+    JsonSchema(serde_json::Value),
+    /// `--grammar`: a Lark grammar.
+    Lark(String),
+}
+
+impl ConstraintRequest {
+    /// Compile this request against a model's indexed vocabulary.
+    pub fn compile(
+        &self,
+        env: &ConstraintEnv,
+    ) -> Result<Box<dyn TokenConstraint>, ConstraintError> {
+        match self {
+            Self::JsonSchema(schema) => env.json_schema(schema),
+            Self::Lark(grammar) => env.lark(grammar),
+        }
+    }
 }
 
 /// A vocabulary as a constraint sees it: each token's raw bytes, which tokens

@@ -178,6 +178,25 @@ pub(crate) struct RunOptions {
     /// mode that needs per-token decoded text, and resolving the tokenizer for
     /// it costs a second open of the model file.
     pub stream: bool,
+    /// #3793: `--json-schema` / `--grammar`, as given (inline or `@path`), read and checked
+    /// before the model loads.
+    pub constraint: ConstraintArgs,
+}
+
+/// `apr run --json-schema` / `--grammar` as the user gave them (#3793).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ConstraintArgs {
+    /// A JSON Schema, inline or `@path`.
+    pub json_schema: Option<String>,
+    /// A Lark grammar, inline or `@path`.
+    pub grammar: Option<String>,
+}
+
+impl ConstraintArgs {
+    /// Whether either flag was given.
+    pub(crate) fn is_set(&self) -> bool {
+        self.json_schema.is_some() || self.grammar.is_some()
+    }
 }
 
 impl Default for RunOptions {
@@ -207,6 +226,7 @@ impl Default for RunOptions {
             split_prompt: false,
             chat_template: false,
             stream: false,
+            constraint: ConstraintArgs::default(),
         }
     }
 }
@@ -255,6 +275,10 @@ pub(crate) struct RunResult {
     pub token_texts: Option<Vec<String>>,
     /// Prompt and completion counts plus the finish reason (#3718).
     pub usage: RunUsage,
+    /// #3793: a constrained run whose output was produced and then refused (`Truncated`, or
+    /// `SchemaViolation` from the second reader). The output is still emitted in `--json`,
+    /// beside the refusal; the run then exits non-zero.
+    pub constraint_refusal: Option<crate::error::ConstraintRefusal>,
 }
 
 /// Resolve a user-supplied model argument into a [`ModelSource`].
@@ -342,6 +366,7 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
         generated_tokens: output.generated_tokens,
         token_texts: output.token_texts,
         usage: output.usage,
+        constraint_refusal: output.constraint_refusal,
     })
 }
 

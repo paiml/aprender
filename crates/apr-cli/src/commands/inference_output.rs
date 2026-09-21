@@ -186,6 +186,8 @@ struct InferenceOutput {
     token_texts: Option<Vec<String>>,
     /// Prompt and completion counts plus the finish reason (#3718).
     usage: RunUsage,
+    /// #3793: the refusal a constrained output earned after it was produced.
+    constraint_refusal: Option<crate::error::ConstraintRefusal>,
 }
 
 /// Execute inference on model
@@ -234,6 +236,7 @@ fn execute_inference(
             generated_tokens: None,
             token_texts: None,
             usage: RunUsage::default(),
+            constraint_refusal: None,
         })
     }
 }
@@ -286,7 +289,7 @@ fn decode_token_pieces(model_path: &Path, ids: &[u32]) -> Option<Vec<String>> {
 /// which is what MCP clients relayed verbatim. The payload must carry the
 /// underlying diagnosis only.
 #[cfg(feature = "inference")]
-fn inference_error<E: std::fmt::Display>(e: E) -> CliError {
+pub(crate) fn inference_error<E: std::fmt::Display>(e: E) -> CliError {
     CliError::InferenceFailed(e.to_string())
 }
 
@@ -314,8 +317,14 @@ fn execute_with_realizar(
         None
     };
 
+    // #3793: --json-schema / --grammar, read and checked before the model loads
+    let request = crate::commands::constrained_run::constraint_request(&options.constraint)?;
+
     // Build inference config
     let mut config = InferenceConfig::new(model_path);
+    if let Some(ref r) = request {
+        config = config.with_constraint(r.clone());
+    }
     if let Some(ref p) = prompt {
         config = config.with_prompt(p);
     }
@@ -351,7 +360,17 @@ fn execute_with_realizar(
     // #3718: the report carries what only the decode path knows (finish reason,
     // context window); the prompt count is `input_token_count`, taken after the
     // chat template, so it is the number the model actually read.
-    let (result, report) = run_inference_report(&config).map_err(inference_error)?;
+    let (result, report) = run_inference_report(&config)
+        .map_err(crate::commands::constrained_run::inference_or_refusal)?;
+    // #3793: a cut document is Truncated; a complete one must pass the second reader
+    let constraint_refusal = request.as_ref().and_then(|r| {
+        crate::commands::constrained_run::constraint_verdict(
+            r,
+            report.finish_reason,
+            &result.text,
+            options.max_tokens,
+        )
+    });
 
     // Report performance if benchmarking
     if options.benchmark {
@@ -395,6 +414,7 @@ fn execute_with_realizar(
             finish_reason: report.finish_reason.map(|r| r.as_str()),
             context_length: report.context_length,
         },
+        constraint_refusal,
     })
 }
 

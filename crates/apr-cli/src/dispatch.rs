@@ -173,7 +173,14 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             batch_jsonl,
             verbose,
             backend: BackendArg { backend },
+            json_schema,
+            grammar,
         } => {
+            // #3793: --json-schema / --grammar, as given; read and checked before the model loads
+            let constraint = commands::run::ConstraintArgs {
+                json_schema: json_schema.clone(),
+                grammar: grammar.clone(),
+            };
             request_f2_revalidate(*revalidate);
             // GH-614: --backend cpu forces CPU-only inference
             let backend_forces_cpu = backend.as_deref() == Some("cpu");
@@ -256,6 +263,7 @@ or drop `--backend`."
                     *top_k,
                     effective_no_gpu,
                     *verbose || cli.verbose,
+                    &constraint,
                 ));
             }
 
@@ -292,6 +300,7 @@ or drop `--backend`."
                 *repeat_penalty,
                 *repeat_last_n,
                 *split_prompt,
+                constraint,
             )
         }
 

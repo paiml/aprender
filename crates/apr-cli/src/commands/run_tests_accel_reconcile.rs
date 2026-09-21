@@ -63,6 +63,7 @@ fn a_forced_accelerator_that_ran_on_cpu_is_refused() {
         generated_tokens: Some(vec![9707]),
         token_texts: None,
         usage: Default::default(),
+        constraint_refusal: None,
     };
 
     let err = reconcile_accelerator(true, &result)
@@ -150,6 +151,7 @@ fn gpu_result(used_gpu: Option<bool>) -> RunResult {
         generated_tokens: Some(vec![9707]),
         token_texts: None,
         usage: Default::default(),
+        constraint_refusal: None,
     }
 }
 

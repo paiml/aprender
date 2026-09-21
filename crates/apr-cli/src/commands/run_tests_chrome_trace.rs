@@ -25,6 +25,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
 
         let json = build_chrome_trace_events(&result, "model.gguf", 16, true);
@@ -56,6 +57,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
 
         let json = build_chrome_trace_events(&result, "empty.gguf", 0, false);
@@ -76,6 +78,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
 
         let json = build_chrome_trace_events(&result, "model.gguf", 10, false);
@@ -96,6 +99,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
 
         let json = build_chrome_trace_events(&result, "my-model.gguf", 64, true);
@@ -116,6 +120,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
 
         let json = build_chrome_trace_events(&result, "model.gguf", 10, false);
@@ -146,6 +151,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
 
         let json = build_chrome_trace_events(&result, "model.gguf", 10, false);
@@ -166,6 +172,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
         let json = build_chrome_trace_events(&result, "m.gguf", 1, false);
         assert_eq!(json["displayTimeUnit"], "ms");
@@ -186,6 +193,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
         // Just ensure no panic; file creation is best-effort
         print_chrome_trace(&result, "test-model.gguf", 32, false, None);
@@ -219,6 +227,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
         print_chrome_trace(&result, "test-model.gguf", 32, false, Some(&target));
 
@@ -249,6 +258,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
         print_benchmark_results(&result, "model.gguf", "text", 100);
     }
@@ -265,6 +275,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
         print_benchmark_results(&result, "model.gguf", "json", 50);
     }
@@ -281,6 +292,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
         print_benchmark_results(&result, "model.gguf", "text", 10);
     }

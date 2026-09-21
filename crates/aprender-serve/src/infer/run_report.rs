@@ -34,6 +34,12 @@ pub enum FinishReason {
     /// Generation was cut off at its token budget: `max_tokens`, or the room left
     /// in the context window when a path shrinks the budget to fit it.
     Length,
+    /// A constrained generation (#3793) produced a complete document. Only `apr run
+    /// --json-schema` / `--grammar` reports it; no server path is constrained yet.
+    ConstraintComplete,
+    /// A constrained generation reached a position where the constraint allows no token.
+    /// Reported with the refusal, never as a success.
+    DeadEnd,
 }
 
 impl FinishReason {
@@ -79,6 +85,8 @@ impl FinishReason {
         match self {
             Self::Stop => "stop",
             Self::Length => "length",
+            Self::ConstraintComplete => "constraint_complete",
+            Self::DeadEnd => "dead_end",
         }
     }
 }

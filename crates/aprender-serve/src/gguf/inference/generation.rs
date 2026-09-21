@@ -15,4 +15,5 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 include!("generate_scratch.rs");
+include!("generate_constrained.rs");
 include!("generation_argmax_basic.rs");

@@ -191,6 +191,7 @@ fn main() {
             verbose: true,
             use_mock_backend: false,
             force_chat_template: false,
+            constraint: None,
         };
 
         let debug = format!("{:?}", config);

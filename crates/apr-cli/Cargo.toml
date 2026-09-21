@@ -85,7 +85,7 @@ xet = ["hf-hub", "aprender/xet"]
 code = []
 dev = []  # Enable `apr mono` subcommands (publish, shims, audit, archive)
 safetensors-compare = ["aprender/safetensors-compare"]
-inference = ["realizar", "realizar/structured-output", "trueno", "tokio", "axum", "futures-util"]
+inference = ["realizar", "realizar/structured-output", "trueno", "tokio", "axum", "futures-util", "dep:jsonschema"]
 # #3545: `trueno/cuda` is NOT optional here, and leaving it out was the defect. The inference
 # stack got CUDA through `realizar/cuda` and WORKED, while `trueno`'s backend registry — the thing
 # `apr devices` reads — was built without its cuda feature, so `default_factories()` omitted
@@ -147,6 +147,9 @@ batuta = { version = "0.69.0", path = "../aprender-orchestrate", package = "apre
 # Inference engine (workspace path dep — enables cuda/gpu feature forwarding)
 # GH-573: shim (0.9.1) didn't forward cuda feature → 0.7 tok/s instead of 273 tok/s
 realizar = { workspace = true, optional = true }
+# #3793: `apr run --json-schema`'s second reader, independent of the constraint engine.
+# Already in the lock (aprender-train, aprender-mcp and this crate's dev-dependencies).
+jsonschema = { version = "0.28", optional = true }
 
 # SIMD compute library (for BrickProfiler in §12.11 unified profiling)
 # MUST use crates.io version to match aprender's trueno dependency
