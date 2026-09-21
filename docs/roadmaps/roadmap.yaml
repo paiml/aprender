@@ -18906,6 +18906,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3571
+  github_issue: 3571
+  item_type: task
+  title: 'apr serve routes the Qwen3.5 hybrid to Qwen35Model instead of the dense path'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-21T00:00:00Z
+  updated: 2026-09-21T00:00:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from gh#3571 done_when; see paiml-mcp-agent-toolkit#1414). Layer 1 of a surface no test had ever traversed: apr serve could not load the flagship architecture at all, and each assumption was visible only once the one above it cleared. Done when: handler_gpu_completion.rs branches on is_qwen35 and calls Qwen35Model::create_base_model rather than falling through to the dense OwnedQuantizedModel path, which is the wrong architecture for a Gated DeltaNet hybrid. Scope is deliberately ONE LAYER: land what works rather than hold the whole stack behind the last unknown. STOP: do not claim the serve path is end-to-end green on Qwen3.5 from this row alone — the layers above it are separate rows.'
 - id: PMAT-3574
   github_issue: 3574
   item_type: task
