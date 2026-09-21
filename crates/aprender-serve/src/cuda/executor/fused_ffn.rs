@@ -47,8 +47,10 @@ impl CudaExecutor {
         };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         let cache_key = format!(
-            "fused_rmsnorm_gate_up_swiglu_q4k_{}_{}",
-            hidden_size, intermediate_size
+            "fused_rmsnorm_gate_up_swiglu_q4k_{}_{}_{}",
+            hidden_size,
+            intermediate_size,
+            Self::eps_tag(epsilon)
         );
 
         if !self.modules.contains_key(&cache_key) {

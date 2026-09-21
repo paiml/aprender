@@ -392,7 +392,7 @@ impl CudaExecutor {
             epsilon,
         };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("fused_residual_rmsnorm_{}", hidden_size);
+        let cache_key = format!("fused_residual_rmsnorm_{}_{}", hidden_size, Self::eps_tag(epsilon));
 
         if !self.modules.contains_key(&cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);
@@ -459,7 +459,7 @@ impl CudaExecutor {
             epsilon,
         };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("fused_residual_rmsnorm_{}", hidden_size);
+        let cache_key = format!("fused_residual_rmsnorm_{}_{}", hidden_size, Self::eps_tag(epsilon));
 
         if !self.modules.contains_key(&cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);

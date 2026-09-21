@@ -295,6 +295,10 @@ mod gqa_parity_tests;
 #[cfg(test)]
 mod test_fixtures;
 
+// #3759: a norm kernel compiled for one epsilon is never reused for another.
+#[cfg(test)]
+mod rmsnorm_eps_tests_3759;
+
 #[cfg(test)]
 mod poison_trace_test;
 

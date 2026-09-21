@@ -15,6 +15,7 @@ impl CudaExecutor {
         _q_dim: u32,
         _kv_dim: u32,
         nw: u32,
+        epsilon: f32,
     ) -> Result<(), GpuError> {
         // CORRECTNESS-013: Check if precise mode is requested
         static PRECISE_MODE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -142,7 +143,7 @@ impl CudaExecutor {
 
         // 11. Batched prefill kernels (GH-129)
         self.preload_batched_prefill_modules(
-            hidden_dim, intermediate_dim, num_heads, num_kv_heads, head_dim,
+            hidden_dim, intermediate_dim, num_heads, num_kv_heads, head_dim, epsilon,
         )?;
 
         // 12. Flash Decoding chunk + reduce kernels (PAR-118)
@@ -279,12 +280,16 @@ impl CudaExecutor {
         num_heads: u32,
         num_kv_heads: u32,
         head_dim: u32,
+        epsilon: f32,
     ) -> Result<(), GpuError> {
         // Batched RMSNorm (called twice per layer: attn_norm + ffn_norm)
-        let batched_rmsnorm_key = format!("batched_rmsnorm_vectorized_{}", hidden_dim);
+        // #3759: the model's epsilon, keyed like the launch (was a hardcoded 1e-5 under an
+        // epsilon-less key, which every later 1e-6 launch then reused).
+        let batched_rmsnorm_key =
+            format!("batched_rmsnorm_vectorized_{}_{}", hidden_dim, Self::eps_tag(epsilon));
         if !self.modules.contains_key(&batched_rmsnorm_key) {
             let kernel_type = KernelType::BatchedVectorizedRmsNorm {
-                hidden_size: hidden_dim, batch_size: 1, epsilon: 1e-5,
+                hidden_size: hidden_dim, batch_size: 1, epsilon,
             };
             let ptx = self.kernels.generate_ptx(&kernel_type);
             let module = self.compile_ptx(&ptx)?;
@@ -333,7 +338,7 @@ impl CudaExecutor {
     }
 
     /// Pre-load RMSNorm kernel (precise or vectorized based on CORRECTNESS_MODE).
-    fn preload_rmsnorm_module(&mut self, hidden_dim: u32) -> Result<(), GpuError> {
+    fn preload_rmsnorm_module(&mut self, hidden_dim: u32, epsilon: f32) -> Result<(), GpuError> {
         static PRECISE_MODE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         let use_precise = *PRECISE_MODE.get_or_init(|| {
             std::env::var("CORRECTNESS_MODE")
@@ -342,22 +347,22 @@ impl CudaExecutor {
         });
 
         if use_precise {
-            let rmsnorm_key = format!("rmsnorm_precise_{}", hidden_dim);
+            let rmsnorm_key = format!("rmsnorm_precise_{}_{}", hidden_dim, Self::eps_tag(epsilon));
             if !self.modules.contains_key(&rmsnorm_key) {
                 let kernel_type = KernelType::PreciseRmsNorm {
                     hidden_size: hidden_dim,
-                    epsilon: 1e-5,
+                    epsilon,
                 };
                 let ptx = self.kernels.generate_ptx(&kernel_type);
                 let module = self.compile_ptx(&ptx)?;
                 self.modules.insert(rmsnorm_key, module);
             }
         } else {
-            let rmsnorm_key = format!("rmsnorm_vectorized_{}", hidden_dim);
+            let rmsnorm_key = format!("rmsnorm_vectorized_{}_{}", hidden_dim, Self::eps_tag(epsilon));
             if !self.modules.contains_key(&rmsnorm_key) {
                 let kernel_type = KernelType::VectorizedRmsNorm {
                     hidden_size: hidden_dim,
-                    epsilon: 1e-5,
+                    epsilon,
                 };
                 let ptx = self.kernels.generate_ptx(&kernel_type);
                 let module = self.compile_ptx(&ptx)?;

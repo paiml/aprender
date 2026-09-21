@@ -104,7 +104,7 @@ impl CudaExecutor {
         }
 
         self.prepare_capture_buffers(input, position, hidden_dim, vocab_size)?;
-        self.preload_modules_for_capture(num_layers, hidden_dim, intermediate_dim, vocab_size)?;
+        self.preload_modules_for_capture(num_layers, hidden_dim, intermediate_dim, vocab_size, epsilon)?;
 
         // trueno#243: Skip stream capture (code 901 poisons context on driver 570.207).
         // Go directly to manual graph construction via cuGraphAddKernelNode.

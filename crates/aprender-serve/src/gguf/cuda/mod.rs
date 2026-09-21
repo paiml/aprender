@@ -524,11 +524,14 @@ impl OwnedQuantizedModelCuda {
         let hidden_dim = model.config.hidden_dim as u32;
         let intermediate_dim = model.config.intermediate_dim as u32;
         let vocab_size = model.config.vocab_size as u32;
+        // #3759: with the model's RMSNorm epsilon. This preload used to compile the norm kernels
+        // at a hardcoded 1e-5 under epsilon-less keys, and every later launch reused them.
         match executor.preload_modules_for_capture(
             num_layers,
             hidden_dim,
             intermediate_dim,
             vocab_size,
+            model.config.eps,
         ) {
             Ok(()) => eprintln!(
                 "[GH-129] Early kernel preload: {} modules compiled",

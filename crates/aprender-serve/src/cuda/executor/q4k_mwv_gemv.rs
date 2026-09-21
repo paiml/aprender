@@ -397,7 +397,7 @@ impl CudaExecutor {
         validate_device_ptr(gamma_ptr, "fused_rmsnorm_q4k_gemv_into(gamma)")?;
         let kernel_type = KernelType::FusedRmsNormQ4KGemv { k, n, epsilon };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("fused_rmsnorm_q4k_gemv_{}_{}_{:.0e}", k, n, epsilon);
+        let cache_key = format!("fused_rmsnorm_q4k_gemv_{}_{}_{}", k, n, Self::eps_tag(epsilon));
 
         if !self.modules.contains_key(&cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);

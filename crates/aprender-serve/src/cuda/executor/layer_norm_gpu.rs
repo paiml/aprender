@@ -1,4 +1,16 @@
 impl CudaExecutor {
+    /// aprender#3759: the module-cache suffix for a kernel whose epsilon is a PTX immediate.
+    ///
+    /// Every norm kernel here bakes epsilon into its PTX (`mov_f32_imm`), so two epsilons are
+    /// two different kernels. The keys used to carry only the shape, and
+    /// `preload_rmsnorm_module` / `preload_batched_prefill_modules` compiled them with a
+    /// hardcoded 1e-5, so a model asking for its own 1e-6 got the cached 1e-5 kernel.
+    /// qwen2.5-coder-7b's near-zero `<|im_start|>` embedding came out of RMSNorm at 0.431x, and
+    /// the F2 gate rejected the GPU at that position. The exact bits, not a rounded print, so
+    /// 1.5e-6 and 2e-6 cannot collide.
+    pub(crate) fn eps_tag(epsilon: f32) -> String {
+        format!("e{:08x}", epsilon.to_bits())
+    }
 
     /// PAR-014: Apply LayerNorm on GPU
     ///
@@ -21,7 +33,7 @@ impl CudaExecutor {
             affine: true,
         };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("layernorm_{}_{}", hidden_size, batch_size);
+        let cache_key = format!("layernorm_{}_{}_{}", hidden_size, batch_size, Self::eps_tag(epsilon));
 
         if !self.modules.contains_key(&cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);
@@ -91,7 +103,7 @@ impl CudaExecutor {
             epsilon,
         };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("rmsnorm_{}", hidden_size);
+        let cache_key = format!("rmsnorm_{}_{}", hidden_size, Self::eps_tag(epsilon));
 
         if !self.modules.contains_key(&cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);
@@ -208,7 +220,7 @@ impl CudaExecutor {
                     hidden_size,
                     epsilon,
                 },
-                format!("rmsnorm_simple_{}", hidden_size),
+                format!("rmsnorm_simple_{}_{}", hidden_size, Self::eps_tag(epsilon)),
             )
         } else if use_precise {
             (
@@ -216,7 +228,7 @@ impl CudaExecutor {
                     hidden_size,
                     epsilon,
                 },
-                format!("rmsnorm_precise_{}", hidden_size),
+                format!("rmsnorm_precise_{}_{}", hidden_size, Self::eps_tag(epsilon)),
             )
         } else {
             (
@@ -224,7 +236,7 @@ impl CudaExecutor {
                     hidden_size,
                     epsilon,
                 },
-                format!("rmsnorm_vectorized_{}", hidden_size),
+                format!("rmsnorm_vectorized_{}_{}", hidden_size, Self::eps_tag(epsilon)),
             )
         };
 
@@ -310,7 +322,7 @@ impl CudaExecutor {
             epsilon,
         };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("per_head_rmsnorm_{}_{}", head_dim, num_heads);
+        let cache_key = format!("per_head_rmsnorm_{}_{}_{}", head_dim, num_heads, Self::eps_tag(epsilon));
 
         if !self.modules.contains_key(&cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);
@@ -409,7 +421,7 @@ impl CudaExecutor {
         // GH-129: the PTX depends on head_dim/num_heads/epsilon (immediates) but
         // NOT on batch_size (grid dim only) — keep it out of the cache key so a
         // new prompt length does not force a JIT recompile.
-        let cache_key = format!("batched_per_head_rmsnorm_{}_{}", head_dim, num_heads);
+        let cache_key = format!("batched_per_head_rmsnorm_{}_{}_{}", head_dim, num_heads, Self::eps_tag(epsilon));
 
         if !self.modules.contains_key(&cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);
@@ -489,7 +501,8 @@ impl CudaExecutor {
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         // GH-129: PTX depends on hidden_size + epsilon (immediates) but NOT batch_size (grid dim only).
         // Remove batch_size from cache key to prevent JIT recompilation per prompt length.
-        let cache_key = format!("batched_rmsnorm_vectorized_{}", hidden_size);
+        // #3759: epsilon IS in the key now — it was omitted, and the preload's 1e-5 won.
+        let cache_key = format!("batched_rmsnorm_vectorized_{}_{}", hidden_size, Self::eps_tag(epsilon));
 
         if !self.modules.contains_key(&cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);
@@ -709,7 +722,7 @@ impl CudaExecutor {
         };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         // PTX depends on hidden_size + epsilon (immediates) but NOT batch_size (grid dim only).
-        let cache_key = format!("batched_fused_residual_rmsnorm_{}", hidden_size);
+        let cache_key = format!("batched_fused_residual_rmsnorm_{}_{}", hidden_size, Self::eps_tag(epsilon));
 
         if !self.modules.contains_key(&cache_key) {
             let ptx = self.kernels.generate_ptx(&kernel_type);
