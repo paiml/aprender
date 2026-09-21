@@ -486,7 +486,12 @@ impl RosettaStone {
     fn validate_gguf(&self, path: &Path) -> Result<ValidationReport> {
         use crate::format::gguf::GgufReader;
 
-        let reader = GgufReader::from_file(path)?;
+        // #3790: the header from a bounded prefix, then each tensor's own bytes, one at a time.
+        // This read the whole model onto the heap (GgufReader::from_file): 19.36 GB of RssAnon
+        // for `apr qa`'s tensor_contract gate on Qwen3-30B-A3B. Every value is still checked;
+        // the peak is now the largest tensor, not the file.
+        let reader = crate::format::prefix::parse_growing_prefix(path, GgufReader::from_bytes)
+            .map_err(|message| AprenderError::FormatError { message })?;
         let mut tensors = Vec::new();
         let mut total_nan = 0;
         let mut total_inf = 0;
@@ -531,12 +536,17 @@ impl RosettaStone {
             }
         }
 
-        // Get tensor names from metadata
-        let tensor_names: Vec<String> = reader.tensors.iter().map(|t| t.name.clone()).collect();
-
-        for name in &tensor_names {
-            // Use GgufReader's dequantization (handles Q4K, Q6K, etc.)
-            match reader.get_tensor_f32(name) {
+        let file = std::fs::File::open(path).map_err(AprenderError::Io)?;
+        for meta in &reader.tensors {
+            let name = &meta.name;
+            // The same dequantizers as GgufReader::get_tensor_f32 (Q4K, Q6K, etc.), over this
+            // tensor's bytes only
+            match crate::format::gguf::reader::read_tensor_f32(
+                &file,
+                file_size,
+                reader.data_offset,
+                meta,
+            ) {
                 Ok((f32_data, _shape)) => {
                     let tv = self.compute_tensor_validation(name, &f32_data);
 

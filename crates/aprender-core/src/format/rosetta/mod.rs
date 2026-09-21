@@ -129,3 +129,7 @@ pub enum FormatType {
 }
 
 include!("mod_include_01.rs");
+
+#[cfg(test)]
+#[path = "validate_gguf_stream_tests.rs"]
+mod validate_gguf_stream_tests;

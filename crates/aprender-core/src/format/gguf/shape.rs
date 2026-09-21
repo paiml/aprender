@@ -12,140 +12,9 @@ impl GgufReader {
             .ok_or_else(|| AprenderError::FormatError {
                 message: format!("Tensor '{name}' not found in GGUF"),
             })?;
-
-        let shape: Vec<usize> = meta.dims.iter().map(|&d| d as usize).collect();
-
-        // BUG-GGUF-002 FIX: Use checked multiplication to prevent integer overflow
-        let num_elements = shape
-            .iter()
-            .try_fold(1usize, |acc, &dim| acc.checked_mul(dim))
-            .ok_or_else(|| AprenderError::FormatError {
-                message: format!(
-                    "Tensor '{}' shape {:?} causes integer overflow (malicious file?)",
-                    name, shape
-                ),
-            })?;
-
-        // BUG-GGUF-002 FIX: Validate total elements against reasonable limit
-        if num_elements > MAX_TENSOR_ELEMENTS {
-            return Err(AprenderError::FormatError {
-                message: format!(
-                    "Tensor '{}' has {} elements, exceeds max {} (possible malicious file)",
-                    name, num_elements, MAX_TENSOR_ELEMENTS
-                ),
-            });
-        }
-
+        let (shape, num_elements) = tensor_shape_and_elements(meta)?;
         let tensor_start = self.data_offset + meta.offset as usize;
-
-
-        let data = match meta.dtype {
-            0 => {
-                // F32 - direct copy
-                // BUG-GGUF-002 FIX: Use checked_mul for byte size calculation
-                let byte_size =
-                    num_elements
-                        .checked_mul(4)
-                        .ok_or_else(|| AprenderError::FormatError {
-                            message: format!("Tensor '{}' byte size calculation overflow", name),
-                        })?;
-                if tensor_start + byte_size > self.data.len() {
-                    return Err(AprenderError::FormatError {
-                        message: format!("Tensor '{name}' data exceeds file size"),
-                    });
-                }
-                let bytes = &self.data[tensor_start..tensor_start + byte_size];
-                bytes
-                    .as_chunks::<4>()
-                    .0
-                    .iter()
-                    .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                    .collect()
-            }
-            1 => {
-                // F16 - convert to F32
-                // BUG-GGUF-002 FIX: Use checked_mul for byte size calculation
-                let byte_size =
-                    num_elements
-                        .checked_mul(2)
-                        .ok_or_else(|| AprenderError::FormatError {
-                            message: format!("Tensor '{}' byte size calculation overflow", name),
-                        })?;
-                if tensor_start + byte_size > self.data.len() {
-                    return Err(AprenderError::FormatError {
-                        message: format!("Tensor '{name}' data exceeds file size"),
-                    });
-                }
-                let bytes = &self.data[tensor_start..tensor_start + byte_size];
-                bytes
-                    .as_chunks::<2>()
-                    .0
-                    .iter()
-                    .map(|c| f16_to_f32(u16::from_le_bytes([c[0], c[1]])))
-                    .collect()
-            }
-            // GGML dtype values (from ggml.h):
-            // 0=F32, 1=F16, 2=Q4_0, 3=Q4_1, 6=Q5_0, 7=Q5_1, 8=Q8_0, 9=Q8_1
-            // 10=Q2_K, 11=Q3_K, 12=Q4_K, 13=Q5_K, 14=Q6_K
-            // 16+=IQ variants
-            2 => {
-                // Q4_0 - dequantize
-                super::dequantize_q4_0(&self.data, tensor_start, num_elements)?
-            }
-            3 => {
-                // Q4_1 - dequantize (blocks of 32 with scale and min)
-                super::dequantize_q4_1(&self.data, tensor_start, num_elements)?
-            }
-            6 => {
-                // Q5_0 - dequantize (blocks of 32 with 5-bit quants)
-                super::dequantize_q5_0(&self.data, tensor_start, num_elements)?
-            }
-            7 => {
-                // Q5_1 - dequantize (blocks of 32 with 5-bit quants + min)
-                dequantize_q5_1(&self.data, tensor_start, num_elements)?
-            }
-            8 => {
-                // Q8_0 - dequantize
-                super::dequantize_q8_0(&self.data, tensor_start, num_elements)?
-            }
-            10 => {
-                // Q2_K - dequantize (super blocks of 256)
-                dequantize_q2_k(&self.data, tensor_start, num_elements)?
-            }
-            11 => {
-                // Q3_K - dequantize (super blocks of 256)
-                dequantize_q3_k(&self.data, tensor_start, num_elements)?
-            }
-            12 => {
-                // Q4_K - dequantize (super blocks of 256 elements, 144 bytes/block)
-                dequantize_q4_k(&self.data, tensor_start, num_elements)?
-            }
-            13 => {
-                // Q5_K - dequantize (super blocks of 256 elements, 176 bytes/block)
-                dequantize_q5_k(&self.data, tensor_start, num_elements)?
-            }
-            14 => {
-                // Q6_K - dequantize (super blocks of 256 elements, 210 bytes/block)
-                dequantize_q6_k(&self.data, tensor_start, num_elements)?
-            }
-            // #3656: IQ types (16..=23) used to go to `dequantize_iq_approximate`, which
-            // mapped each raw byte to `(b - 128) * 0.01` and returned Ok — `apr convert`
-            // wrote those invented weights (std 36.6x the real tensor) and exited 0. With
-            // no real dequantizer here, the only honest answer is a refusal.
-            _ => {
-                let type_name = trueno_quant::GgmlType::from_id(meta.dtype)
-                    .map_or("a type ggml does not define", trueno_quant::GgmlType::as_str);
-                return Err(AprenderError::FormatError {
-                    message: format!(
-                        "GGUF tensor '{name}' is {type_name} (ggml type {}): aprender-core has \
-                         no dequantizer for it, so it cannot be read as F32. Refusing rather \
-                         than approximating, which would invent its weights",
-                        meta.dtype
-                    ),
-                });
-            }
-        };
-
+        let data = tensor_f32_from(&self.data, tensor_start, num_elements, meta.dtype, name)?;
         Ok((data, shape))
     }
 
@@ -277,4 +146,192 @@ fn unsized_ggml_type_error(tensor: &str, e: &trueno_quant::GgmlTypeError) -> Apr
              contracts/ggml-type-v1.yaml"
         ),
     }
+}
+
+/// A tensor's shape and element count, with the BUG-GGUF-002 guards (overflow, and the element
+/// limit against a malicious file).
+fn tensor_shape_and_elements(meta: &GgufTensorMeta) -> Result<(Vec<usize>, usize)> {
+    let name = &meta.name;
+    let shape: Vec<usize> = meta.dims.iter().map(|&d| d as usize).collect();
+
+    // BUG-GGUF-002 FIX: Use checked multiplication to prevent integer overflow
+    let num_elements = shape
+        .iter()
+        .try_fold(1usize, |acc, &dim| acc.checked_mul(dim))
+        .ok_or_else(|| AprenderError::FormatError {
+            message: format!(
+                "Tensor '{}' shape {:?} causes integer overflow (malicious file?)",
+                name, shape
+            ),
+        })?;
+
+    // BUG-GGUF-002 FIX: Validate total elements against reasonable limit
+    if num_elements > MAX_TENSOR_ELEMENTS {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "Tensor '{}' has {} elements, exceeds max {} (possible malicious file)",
+                name, num_elements, MAX_TENSOR_ELEMENTS
+            ),
+        });
+    }
+    Ok((shape, num_elements))
+}
+
+/// Dequantize one tensor to F32 from `data`, where its bytes start at `tensor_start` (#3790: the
+/// whole file for [`GgufReader::get_tensor_f32`], or just the tensor's own bytes for
+/// [`read_tensor_f32`]). A tensor whose bytes run past `data` is an error, never a short read.
+fn tensor_f32_from(
+    data: &[u8],
+    tensor_start: usize,
+    num_elements: usize,
+    dtype: u32,
+    name: &str,
+) -> Result<Vec<f32>> {
+let data = match dtype {
+        0 => {
+            // F32 - direct copy
+            // BUG-GGUF-002 FIX: Use checked_mul for byte size calculation
+            let byte_size =
+                num_elements
+                    .checked_mul(4)
+                    .ok_or_else(|| AprenderError::FormatError {
+                        message: format!("Tensor '{}' byte size calculation overflow", name),
+                    })?;
+            if tensor_start + byte_size > data.len() {
+                return Err(AprenderError::FormatError {
+                    message: format!("Tensor '{name}' data exceeds file size"),
+                });
+            }
+            let bytes = &data[tensor_start..tensor_start + byte_size];
+            bytes
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect()
+        }
+        1 => {
+            // F16 - convert to F32
+            // BUG-GGUF-002 FIX: Use checked_mul for byte size calculation
+            let byte_size =
+                num_elements
+                    .checked_mul(2)
+                    .ok_or_else(|| AprenderError::FormatError {
+                        message: format!("Tensor '{}' byte size calculation overflow", name),
+                    })?;
+            if tensor_start + byte_size > data.len() {
+                return Err(AprenderError::FormatError {
+                    message: format!("Tensor '{name}' data exceeds file size"),
+                });
+            }
+            let bytes = &data[tensor_start..tensor_start + byte_size];
+            bytes
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|c| f16_to_f32(u16::from_le_bytes([c[0], c[1]])))
+                .collect()
+        }
+        // GGML dtype values (from ggml.h):
+        // 0=F32, 1=F16, 2=Q4_0, 3=Q4_1, 6=Q5_0, 7=Q5_1, 8=Q8_0, 9=Q8_1
+        // 10=Q2_K, 11=Q3_K, 12=Q4_K, 13=Q5_K, 14=Q6_K
+        // 16+=IQ variants
+        2 => {
+            // Q4_0 - dequantize
+            super::dequantize_q4_0(data, tensor_start, num_elements)?
+        }
+        3 => {
+            // Q4_1 - dequantize (blocks of 32 with scale and min)
+            super::dequantize_q4_1(data, tensor_start, num_elements)?
+        }
+        6 => {
+            // Q5_0 - dequantize (blocks of 32 with 5-bit quants)
+            super::dequantize_q5_0(data, tensor_start, num_elements)?
+        }
+        7 => {
+            // Q5_1 - dequantize (blocks of 32 with 5-bit quants + min)
+            dequantize_q5_1(data, tensor_start, num_elements)?
+        }
+        8 => {
+            // Q8_0 - dequantize
+            super::dequantize_q8_0(data, tensor_start, num_elements)?
+        }
+        10 => {
+            // Q2_K - dequantize (super blocks of 256)
+            dequantize_q2_k(data, tensor_start, num_elements)?
+        }
+        11 => {
+            // Q3_K - dequantize (super blocks of 256)
+            dequantize_q3_k(data, tensor_start, num_elements)?
+        }
+        12 => {
+            // Q4_K - dequantize (super blocks of 256 elements, 144 bytes/block)
+            dequantize_q4_k(data, tensor_start, num_elements)?
+        }
+        13 => {
+            // Q5_K - dequantize (super blocks of 256 elements, 176 bytes/block)
+            dequantize_q5_k(data, tensor_start, num_elements)?
+        }
+        14 => {
+            // Q6_K - dequantize (super blocks of 256 elements, 210 bytes/block)
+            dequantize_q6_k(data, tensor_start, num_elements)?
+        }
+        // #3656: IQ types (16..=23) used to go to `dequantize_iq_approximate`, which
+        // mapped each raw byte to `(b - 128) * 0.01` and returned Ok — `apr convert`
+        // wrote those invented weights (std 36.6x the real tensor) and exited 0. With
+        // no real dequantizer here, the only honest answer is a refusal.
+        _ => {
+            let type_name = trueno_quant::GgmlType::from_id(dtype)
+                .map_or("a type ggml does not define", trueno_quant::GgmlType::as_str);
+            return Err(AprenderError::FormatError {
+                message: format!(
+                    "GGUF tensor '{name}' is {type_name} (ggml type {}): aprender-core has \
+                     no dequantizer for it, so it cannot be read as F32. Refusing rather \
+                     than approximating, which would invent its weights",
+                    dtype
+                ),
+            });
+        }
+    };
+
+    Ok(data)
+}
+
+/// The bytes one tensor occupies, from ggml's own type table: `None` for a type aprender-core
+/// has no dequantizer for (reading it would be wasted: [`tensor_f32_from`] refuses it by name).
+fn tensor_byte_extent(dtype: u32, num_elements: usize) -> Option<usize> {
+    match dtype {
+        0 => num_elements.checked_mul(4),
+        1 => num_elements.checked_mul(2),
+        2 | 3 | 6 | 7 | 8 | 10 | 11 | 12 | 13 | 14 => {
+            let t = trueno_quant::GgmlType::from_id(dtype)?;
+            num_elements
+                .div_ceil(t.block_size())
+                .checked_mul(t.block_bytes())
+        }
+        _ => None,
+    }
+}
+
+/// One tensor as F32, read from `file` at its own extent: its bytes, never the rest of the model
+/// (#3790). `data_offset` is the header's; `file_len` cuts the read at end of file, so a tensor
+/// that runs past it fails in the dequantizer exactly as it does over the whole file.
+pub(crate) fn read_tensor_f32(
+    file: &std::fs::File,
+    file_len: u64,
+    data_offset: usize,
+    meta: &GgufTensorMeta,
+) -> Result<(Vec<f32>, Vec<usize>)> {
+    use std::os::unix::fs::FileExt;
+    let (shape, num_elements) = tensor_shape_and_elements(meta)?;
+    let start = (data_offset as u64).saturating_add(meta.offset);
+    let wanted = tensor_byte_extent(meta.dtype, num_elements).unwrap_or(0) as u64;
+    let n = wanted.min(file_len.saturating_sub(start));
+    let mut bytes = vec![0u8; usize::try_from(n).map_err(|_| AprenderError::FormatError {
+        message: format!("Tensor '{}' extent does not fit in memory", meta.name),
+    })?];
+    file.read_exact_at(&mut bytes, start)
+        .map_err(AprenderError::Io)?;
+    let data = tensor_f32_from(&bytes, 0, num_elements, meta.dtype, &meta.name)?;
+    Ok((data, shape))
 }
