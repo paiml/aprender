@@ -1,0 +1,21 @@
+- id: PMAT-3389
+  github_issue: 3389
+  item_type: task
+  title: 'P0: Multi-series forecasting predictor: (item_id, timestamp) panel data, prediction_length, freq — CRUX-O-19'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-19, competitor autogluon, demand 5. crates/aprender-core/src/time_series/mod.rs is one struct, ARIMA, on one f32 series (fit/forecast/order). There is no panel container keyed by item and timestamp, no frequency, no horizon-first API and no per-item forecast. FALSIFIABLE (contracts/crux-O-19-v1.yaml): a panel of N items forecasts N x prediction_length rows — on a fixture of 5 items with 200 hourly points each and prediction_length=24 the output has exactly 120 rows, each (item_id, timestamp) unique, timestamps continuing each item''s last stamp at freq=h; irregular timestamps are rejected or regularised, never silently misaligned — an item with a missing hour is an Err naming the item and gap unless fill=forward is passed, in which case the filled row is flagged. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

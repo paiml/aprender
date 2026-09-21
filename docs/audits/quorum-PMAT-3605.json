@@ -1,0 +1,201 @@
+{
+  "ticket": "PMAT-3605",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "0cd2c6aee7d38b8024c97b8bf46f9a30addddb7a",
+  "diff_sha256": "0786058175344b37587bbf439231e7c79b53085bba429a2468ec83c190a15eca",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 125886,
+  "author": {
+    "model": "Opus 5 (1M context)",
+    "family": "claude",
+    "source": "measured"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements PMAT-3605. It creates the refusal-receipt-v1 shape with `removed_by` configured as a mandatory field (minCount: 1) matching the exact closed set pattern `^(v[0-9]+\\.[0-9]+|never|unscheduled)$`. It includes fixtures for each accepted sentinel arm as well as rejecting edge cases (such as 'tbd', sha, and bare versions). Both the ont_refusal_receipt and ont4b_shapes_gate tests pass successfully. There are no violations of the ticket's negative criteria.",
+      "findings": [
+        {
+          "claim": "The ont_refusal_receipt test suite successfully verifies the requirements, passing 9/9 tests including all arms of the alternation and rejection cases.",
+          "command": "cargo test -p aprender-contracts-cli --test ont_refusal_receipt",
+          "file": "crates/aprender-contracts-cli/tests/ont_refusal_receipt.rs",
+          "grounding": "measured",
+          "line": 442,
+          "output": "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
+        },
+        {
+          "claim": "The ont4b_shapes_gate test suite passes 11/11 tests, successfully verifying the tracked repo graph is fresh and confirming shapes_n equals 6.",
+          "command": "cargo test -p aprender-contracts-cli --test ont4b_shapes_gate",
+          "file": "crates/aprender-contracts-cli/tests/ont4b_shapes_gate.rs",
+          "grounding": "measured",
+          "line": 228,
+          "output": "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.86s"
+        },
+        {
+          "claim": "refusal-receipt-v1.yaml defines removed_by as a required property (minCount: 1) and enforces a closed pattern ^(v[0-9]+\\.[0-9]+|never|unscheduled)$, satisfying the ticket criteria.",
+          "file": "contracts/refusal-receipt-v1.yaml",
+          "grounding": "cited",
+          "line": 226
+        }
+      ],
+      "raw_bytes": 5709,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The provided diff correctly implements PMAT-3605. The 'removed_by' field is constrained by a shape in 'refusal-receipt-v1.yaml' using a closed set pattern ('^(v[0-9]+\\\\.[0-9]+|never|unscheduled)$') and is mandatory (minCount: 1). The test fixtures cover the acceptable arms and rejection cases.",
+      "findings": [
+        {
+          "claim": "The diff implements a contract 'refusal-receipt-v1.yaml' with a shape over 'removed_by' that uses a closed set pattern for its values, ensuring it is required and not free text.",
+          "file": "contracts/refusal-receipt-v1.yaml",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 3256,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff for ticket PMAT-3605 (#3605) completely and correctly implements 'removed_by gets a shape: refusal-receipt-v1 with a closed escape set'. The new pattern contract `contracts/refusal-receipt-v1.yaml` defines a closed set regex pattern `^(v[0-9]+\\\\.[0-9]+|never|unscheduled)$` with `minCount: 1` on `removed_by`, preventing free text and fabricated releases. Eight fixture test cases in `tests/fixtures/ont/` and `crates/aprender-contracts-cli/tests/ont_refusal_receipt.rs` test both valid sentinels (v0.70, never, unscheduled) and invalid entries (tbd, sha, bare version, patch version, missing field, terse reason). `shapes_n` count in `ont4b_shapes_gate.rs` was updated from 5 to 6, and all tests pass without drift.",
+      "findings": [
+        {
+          "claim": "The ont_refusal_receipt test suite passes 9/9 tests, verifying both accepted sentinels (v0.70, never, unscheduled) and rejected edge cases (tbd, sha, bare version 0.70, patch version v0.70.1, missing removed_by, no exit_code, terse reason).",
+          "command": "cargo test -p aprender-contracts-cli --test ont_refusal_receipt",
+          "file": "crates/aprender-contracts-cli/tests/ont_refusal_receipt.rs",
+          "grounding": "measured",
+          "line": 442,
+          "output": "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s"
+        },
+        {
+          "claim": "The ont4b_shapes_gate test suite passes 11/11 tests, confirming the tracked repo graph assertion for shapes_n == 6.",
+          "command": "cargo test -p aprender-contracts-cli --test ont4b_shapes_gate",
+          "file": "crates/aprender-contracts-cli/tests/ont4b_shapes_gate.rs",
+          "grounding": "measured",
+          "line": 228,
+          "output": "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.42s"
+        },
+        {
+          "claim": "pv extract contracts --check verifies zero drift across 15620 triples and 6 shapes.",
+          "command": "cargo run -p aprender-contracts-cli --bin pv -- extract contracts --check",
+          "file": "contracts/census.json",
+          "grounding": "measured",
+          "line": 32,
+          "output": "{\n  \"triples\": 15620,\n  \"sha256\": \"54e4a15ab7f6e4415aa7959a51826f731b650a1998e80b635e6850ae8f5df283\",\n  \"shapes_n\": 6,\n  \"written\": [],\n  \"check\": []\n}"
+        },
+        {
+          "claim": "contracts/refusal-receipt-v1.yaml defines removed_by as a required property (minCount: 1) with a closed pattern pattern: ^(v[0-9]+\\.[0-9]+|never|unscheduled)$.",
+          "file": "contracts/refusal-receipt-v1.yaml",
+          "grounding": "cited",
+          "line": 226
+        }
+      ],
+      "raw_bytes": 7209,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "contracts/census.json",
+      "line": 32,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "pv extract contracts --check verifies zero drift across 15620 triples and 6 shapes."
+      ]
+    },
+    {
+      "file": "contracts/refusal-receipt-v1.yaml",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The diff implements a contract 'refusal-receipt-v1.yaml' with a shape over 'removed_by' that uses a closed set pattern for its values, ensuring it is required and not free text."
+      ]
+    },
+    {
+      "file": "contracts/refusal-receipt-v1.yaml",
+      "line": 226,
+      "lanes_agreeing": [
+        1,
+        3
+      ],
+      "claims": [
+        "contracts/refusal-receipt-v1.yaml defines removed_by as a required property (minCount: 1) with a closed pattern pattern: ^(v[0-9]+\\.[0-9]+|never|unscheduled)$.",
+        "refusal-receipt-v1.yaml defines removed_by as a required property (minCount: 1) and enforces a closed pattern ^(v[0-9]+\\.[0-9]+|never|unscheduled)$, satisfying the ticket criteria."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/tests/ont4b_shapes_gate.rs",
+      "line": 228,
+      "lanes_agreeing": [
+        1,
+        3
+      ],
+      "claims": [
+        "The ont4b_shapes_gate test suite passes 11/11 tests, confirming the tracked repo graph assertion for shapes_n == 6.",
+        "The ont4b_shapes_gate test suite passes 11/11 tests, successfully verifying the tracked repo graph is fresh and confirming shapes_n equals 6."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/tests/ont_refusal_receipt.rs",
+      "line": 442,
+      "lanes_agreeing": [
+        1,
+        3
+      ],
+      "claims": [
+        "The ont_refusal_receipt test suite passes 9/9 tests, verifying both accepted sentinels (v0.70, never, unscheduled) and rejected edge cases (tbd, sha, bare version 0.70, patch version v0.70.1, missing removed_by, no exit_code, terse reason).",
+        "The ont_refusal_receipt test suite successfully verifies the requirements, passing 9/9 tests including all arms of the alternation and rejection cases."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=Opus 5 (1M context)/claude"
+  }
+}

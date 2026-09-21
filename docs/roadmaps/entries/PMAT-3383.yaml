@@ -1,0 +1,21 @@
+- id: PMAT-3383
+  github_issue: 3383
+  item_type: task
+  title: 'P2: Model distillation: compress the ensemble into one fast student — CRUX-O-13'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-13, competitor autogluon, demand 3. Distillation exists only for LLMs in the training crate (knowledge distillation of transformers); nothing trains a single tabular student on the teacher ensemble''s soft labels with data augmentation. FALSIFIABLE (contracts/crux-O-13-v1.yaml): the student is faster and within tolerance of the teacher — student pred_time < 0.25 x teacher pred_time AND student validation score >= teacher score - 0.02 on a fixture; augmentation produces rows the training set does not contain — with augment_method=spunge the student''s training set has > n_train rows and the added rows are not row-equal to any original. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

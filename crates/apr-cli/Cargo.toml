@@ -153,6 +153,10 @@ realizar = { workspace = true, optional = true }
 # 2026-04-05 PMAT-507: bumped 0.16.0→0.17 to match aprender root Cargo.toml (was diamond dep)
 trueno = { workspace = true, optional = true }
 
+# The ggml type table (`GgmlType`: ids, names, block sizes), in-tree as crates/aprender-quant.
+# Not optional: `apr hex` and `apr validate-manifest` name GGUF dtypes in every build (#3662).
+trueno-quant = { workspace = true }
+
 # Async runtime for server
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync"], optional = true }
 

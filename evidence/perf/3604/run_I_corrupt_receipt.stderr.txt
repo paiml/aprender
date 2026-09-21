@@ -1,0 +1,3 @@
+Backend: GPU (CUDA, NVIDIA GeForce RTX 4090, 24035 MB VRAM) [qwen35 hybrid forward, #3090]
+F2 guard: validating on this run (receipt unreadable (<scratch>/f2-receipts/00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4.json: not a receipt: key must be a string at line 1 column 2)) [source=fresh]
+F2 guard: passed in 9724 ms on 65 positions; receipt written to <scratch>/f2-receipts/00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4.json — the next run of this (model, apr, device) skips it.

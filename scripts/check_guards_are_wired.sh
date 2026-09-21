@@ -66,11 +66,25 @@ BASELINE="${REPO_ROOT}/scripts/unwired_guards_baseline.txt"
 # committed by the very guard that exists to catch it. An argument-wired guard
 # is still named by its own workflow and is found by the scan below on that
 # account; a release-time guard is deliberately unwired and stays reported.
+# A STEP NAME IS NOT AN INVOCATION (#3644). ci.yml carries
+#     - name: "guard_tree.sh's own case table (BSE-01, wired BSE-02)"
+#     - name: "guard_tree.sh's parallel dispatcher case table (PMAT-1098)"
+# The invocation regex below accepts `guard_tree.sh` followed by `'` -- meant
+# for a quoted `run: "..."` -- so the apostrophe in `guard_tree.sh's` matched,
+# neither line says --no-cargo, and each was read as a BARE dispatch in mode
+# "all": the full --dry-run RUN set, 55 cargo-classified guards that
+# `--no-cargo` never runs, all counted wired. Four were dark behind it,
+# including the #3305 publish-strip guard, and this meta-guard said PASS.
+# Proven by rewriting those two names (nothing else): 3 -> 7 unwired.
+# Mention-vs-execution, one level below the trailing-comment case above.
+# A `name:` line is documentation whatever it contains; drop it before matching.
+_not_a_name_line() { grep -vE '^[[:space:]]*-?[[:space:]]*name:' || true; }
+
 dispatcher_wired() {
     local root="$1" lines modes mode flag out
     [ -f "$root/scripts/guard_tree.sh" ] || return 0
     lines=$(grep -rh --include='*.yml' --include='*.yaml' -- 'guard_tree.sh' \
-                "$root"/.github/workflows/ 2>/dev/null | sed 's/#.*$//') || lines=''
+                "$root"/.github/workflows/ 2>/dev/null | sed 's/#.*$//' | _not_a_name_line) || lines=''
     # Invocation, not mention -- same test as the scan below.
     lines=$(grep -E "(^|[[:space:];&|(])((ba)?sh[[:space:]]+|\\./)?[^[:space:]]*guard_tree\\.sh([[:space:]]|$|['\"])" \
                 <<< "$lines") || lines=''
@@ -154,7 +168,7 @@ unwired_in() {
         local mentions
         mentions=$(grep -rh --include='*.yml' --include='*.yaml' -- "$base" \
                 "$root"/.github/workflows/ 2>/dev/null \
-             | sed 's/#.*$//') || mentions=''
+             | sed 's/#.*$//' | _not_a_name_line) || mentions=''
         if ! grep -qE "(^|[[:space:];&|(])((ba)?sh[[:space:]]+|\\./)?[^[:space:]]*${base}([[:space:]]|$|['\"])" <<< "$mentions" ; then
             printf '%s\n' "$base"
         fi
@@ -272,8 +286,39 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'FAIL  row 7 got [%s], expected [check_nightly_only.sh check_nowhere.sh ]\n' "$got7"; fails=1
     fi
 
+    # ── Rows 8-10: A STEP NAME IS NOT AN INVOCATION (#3644) ─────────────────
+    #
+    # Row 8 is the exact ci.yml shape that hid four guards: a step NAMED
+    # `guard_tree.sh's ...`, no dispatcher run: line. The dispatched fixture
+    # guard must come back as unwired. Row 9 is the control the `'` in the
+    # regex exists for: a QUOTED run: line still dispatches. Row 10 is the same
+    # blindness in the per-guard scan: a step named after a guard wires nothing.
+    printf 'jobs:\n  gate:\n    steps:\n      - name: "guard_tree.sh'"'"'s own case table (BSE-01, wired BSE-02)"\n        run: echo a name is not a dispatch\n' \
+        > "$TD2/.github/workflows/ci.yml"
+    got8=$(unwired_in "$TD2" | tr '\n' ' ')
+    if [ "$got8" = "check_dispatched.sh " ]; then
+        printf 'ok    row 8 a step NAMED guard_tree.sh'"'"'s ... is not a dispatch; the guard stays unwired\n'
+    else
+        printf 'FAIL  row 8 got [%s], expected [check_dispatched.sh ] -- a step name read as a bare dispatch\n' "$got8"; fails=1
+    fi
+    printf 'jobs:\n  gate:\n    steps:\n      - run: "bash scripts/guard_tree.sh --no-cargo"\n' \
+        > "$TD2/.github/workflows/ci.yml"
+    if [ -z "$(unwired_in "$TD2")" ]; then
+        printf 'ok    row 9 a QUOTED run: line still dispatches (the control for row 8)\n'
+    else
+        printf 'FAIL  row 9 quoted dispatch not honoured: [%s]\n' "$(unwired_in "$TD2" | tr '\n' ' ')"; fails=1
+    fi
+    printf 'jobs:\n  x:\n    steps:\n      - name: "check_dark.sh'"'"'s job"\n        run: bash scripts/check_wired.sh\n' \
+        > "$TD/.github/workflows/ci.yml"
+    got10=$(unwired_in "$TD" | tr '\n' ' ')
+    if [ "$got10" = "check_dark.sh " ]; then
+        printf 'ok    row 10 a step named after a guard wires nothing\n'
+    else
+        printf 'FAIL  row 10 got [%s], expected [check_dark.sh ]\n' "$got10"; fails=1
+    fi
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (7/7)\n'
+    printf '\nSELF-TEST PASSED (10/10)\n'
     exit 0
 fi
 
@@ -332,7 +377,11 @@ fi
 # branch cannot rewrite, and never the branch against itself.
 # shellcheck source=scripts/lib_baseline_ratchet.sh
 . "${REPO_ROOT}/scripts/lib_baseline_ratchet.sh" || exit 1
-baseline_ratchet_check "${REPO_ROOT}" scripts/unwired_guards_baseline.txt set || exit 1
+# set-aperture, owned by this file (#3644): when THIS guard widens and reveals
+# guards that were already dark, the ledger may record them -- only guards the
+# comparand already carries, only in a diff that changes this file, every
+# admission printed. On every other PR it is `set`: shrink-only.
+baseline_ratchet_check "${REPO_ROOT}" scripts/unwired_guards_baseline.txt set-aperture scripts/check_guards_are_wired.sh || exit 1
 
 if [ ! -f "$BASELINE" ]; then
     printf 'FAIL: %s missing. Run --update once to establish it.\n' "$BASELINE"

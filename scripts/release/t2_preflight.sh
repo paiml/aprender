@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # t2_preflight.sh — APR-RELEASE-001 §4 T-0 (operator 2026-09-17): the pre-publish dogfood runs on origin/main HEAD
 # BEFORE the bump PR opens; writes preflight-<sha>.verdict = "GO <sha>" or "NO-GO <sha>". prepare_bump.sh --ship refuses without GO.
+#   t2_preflight.sh <version>     the train's state dir AP is derived from it (#3618)
+#   t2_preflight.sh --self-test   decide()'s case table; needs no version
 set -uo pipefail
-AP=/mnt/nvme-raid0/agent-wt/rel-0682-autopilot
 # D1/D2/D3 (PMAT-3459): $0-derived root and CARGO_HOME-relative bin. Resolved BEFORE any cd.
 # NOT `git rev-parse --show-toplevel` — git refuses a container bind-mounted tree (#3586).
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || exit 2
@@ -114,6 +115,9 @@ if [ "${1:-}" = "--self-test" ]; then
     echo "self-test FAILED: $bad case(s)"; exit 1
 fi
 
+# shellcheck source=scripts/release/lib_release_params.sh
+. "$REPO_ROOT/scripts/release/lib_release_params.sh" || exit 2
+release_params "${1:-}" "$REPO_ROOT" || { echo "usage: t2_preflight.sh <version> | --self-test" >&2; exit 2; }
 cd "$REPO_ROOT" || exit 2; git fetch -q origin main || exit 2
 sha=$(git rev-parse origin/main); wt="$AP/preflight-wt"
 [ -d "$wt" ] && git worktree remove --force "$wt" > /dev/null 2>&1

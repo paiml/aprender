@@ -136,6 +136,10 @@ pub enum Commands {
         /// Force GPU acceleration
         #[arg(long, conflicts_with = "no_gpu")]
         gpu: bool,
+        /// Re-run the GPU/CPU parity guard even if a receipt for this (model,
+        /// apr version, device) exists, and rewrite the receipt (#3604)
+        #[arg(long)]
+        revalidate: bool,
         /// Offline mode: block all network access (Sovereign AI compliance)
         #[arg(long)]
         offline: bool,

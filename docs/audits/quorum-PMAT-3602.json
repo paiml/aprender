@@ -1,0 +1,248 @@
+{
+  "ticket": "PMAT-3602",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "f1810100d84df45f650ea5c889b929884586fafe",
+  "diff_sha256": "811dccb839cd0eecd4f94a3ef705b5ad4df1b421b2968cf065b95564e004b4d4",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 41550,
+  "author": {
+    "model": "Opus 5 (1M context)",
+    "family": "claude",
+    "source": "measured"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements PMAT-3602, surfacing GPU rejection explicitly without leaking it as a success. `reconcile_accelerator` ensures `registry::after_generation` correctly processes a fallback by throwing exit 14 (CliError::BackendUnavailable) for requested GPUs. The machine output (JSON/Stream) now clearly includes `fell_back: true` distinguishing it from intentional CPU runs, while human output correctly abstains from misleading success messages. The tests effectively guard against regressions.",
+      "findings": [
+        {
+          "claim": "reconcile_and_emit correctly wires registry::after_generation for forced GPU checks. It returns the refusal (CliError::BackendUnavailable) effectively surfacing the error to stderr and emitting exit 14.",
+          "file": "crates/apr-cli/src/commands/run_entry.rs",
+          "grounding": "cited",
+          "line": 146
+        },
+        {
+          "claim": "build_final_json reliably adds the `backend` key structure explicitly isolating an unintentional GPU fallback (fell_back: true) from an intentional CPU run, satisfying the requirement to surface GPU rejection on machine output surfaces (--json/--stream).",
+          "file": "crates/apr-cli/src/commands/run_entry.rs",
+          "grounding": "cited",
+          "line": 527
+        },
+        {
+          "claim": "The diff correctly avoids misclassification by uniformly leveraging `registry::Request::wanted()`. It accurately assumes `layers_want_accelerator: false` since `--gpu-layers` belongs exclusively to `apr serve`.",
+          "file": "crates/apr-cli/src/dispatch.rs",
+          "grounding": "cited",
+          "line": 207
+        },
+        {
+          "claim": "Six thorough unit tests verify that forced accelerator fallbacks return an error while silent intentional CPU runs behave correctly, satisfying Item 5's test coverage requirement.",
+          "file": "crates/apr-cli/src/commands/run_tests_accel_reconcile.rs",
+          "grounding": "cited",
+          "line": 56
+        }
+      ],
+      "raw_bytes": 5689,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements the requirements for PMAT-3602. It records the fail-vs-fall-back decision by wiring `registry::after_generation` into `apr run`, surfacing GPU rejections on machine surfaces (`--json`) while preventing human success output on fallbacks. It accurately adds the 6 required falsification tests, proving the fix works without breaking deliberate CPU runs. The change appropriately ignores the `--gpu-layers` flag for `apr run` and avoids approximating the un-plumbed rejection reason, adhering to the ticket's negative constraints.",
+      "findings": [
+        {
+          "claim": "The diff successfully wires `registry::after_generation` into the production execution path inside `reconcile_accelerator` for `apr run`. It explicitly throws an error when `accel_forced` is true but the model executed on CPU, converting the silent fallback into a refusal.",
+          "file": "crates/apr-cli/src/commands/run_entry.rs",
+          "grounding": "cited",
+          "line": 146
+        },
+        {
+          "claim": "The json output has been augmented with a `backend` object (`requested`, `ran`, `fell_back`) which accurately records the engine's execution mode, preventing a fallback from being indistinguishable from a deliberate CPU run.",
+          "file": "crates/apr-cli/src/commands/run_entry.rs",
+          "grounding": "cited",
+          "line": 542
+        },
+        {
+          "claim": "The test file `run_tests_accel_reconcile.rs` was created and includes the required 6 cases to ensure `reconcile_accelerator` properly refuses forced CPU fallbacks while remaining silent on deliberate CPU runs and healthy GPU runs.",
+          "file": "crates/apr-cli/src/commands/run_tests_accel_reconcile.rs",
+          "grounding": "cited",
+          "line": 1
+        },
+        {
+          "claim": "Accelerator intent classification was consolidated in `dispatch.rs` using `crate::registry::Request::wanted()` so that CLI dispatch shares the same logic as the registry.",
+          "file": "crates/apr-cli/src/dispatch.rs",
+          "grounding": "cited",
+          "line": 208
+        }
+      ],
+      "raw_bytes": 6057,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Reviewed diff origin/main...HEAD against ticket PMAT-3602. The diff successfully wires `registry::after_generation` into the production execution path in `run_entry.rs`, ensuring `apr run --gpu` returns exit 14 (`CliError::BackendUnavailable`) on CPU fallback instead of reporting false success. Machine surfaces (`--json` and `--stream`) properly surface the fallback via `\"backend\": {\"requested\": \"gpu\", \"ran\": \"cpu\", \"fell_back\": true}` prior to returning the refusal error, while human surfaces remain silent. Falsification unit tests cover all cases (forced GPU run on CPU, forced GPU run on GPU, unforced CPU run, unforced GPU run, unreporting backend, and JSON output formatting). No refutations found.",
+      "findings": [
+        {
+          "claim": "reconcile_accelerator invokes registry::after_generation(true, Some(\"gpu\"), result.used_gpu) when accel_forced is true, returning CliError::BackendUnavailable when used_gpu is Some(false)",
+          "file": "crates/apr-cli/src/commands/run_entry.rs",
+          "grounding": "cited",
+          "line": 207
+        },
+        {
+          "claim": "emits_machine_output ensures machine formats (--json and --stream) surface backend status while skipping human success output on forced accelerator rejection",
+          "file": "crates/apr-cli/src/commands/run_entry.rs",
+          "grounding": "cited",
+          "line": 188
+        },
+        {
+          "claim": "dispatch.rs classifies accelerator requests via registry::Request::wanted() ensuring uniform classification between CLI dispatch and reconciliation",
+          "file": "crates/apr-cli/src/dispatch.rs",
+          "grounding": "cited",
+          "line": 207
+        }
+      ],
+      "raw_bytes": 5247,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/apr-cli/src/commands/run_entry.rs",
+      "line": 146,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "The diff successfully wires `registry::after_generation` into the production execution path inside `reconcile_accelerator` for `apr run`. It explicitly throws an error when `accel_forced` is true but the model executed on CPU, converting the silent fallback into a refusal.",
+        "reconcile_and_emit correctly wires registry::after_generation for forced GPU checks. It returns the refusal (CliError::BackendUnavailable) effectively surfacing the error to stderr and emitting exit 14."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/run_entry.rs",
+      "line": 188,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "emits_machine_output ensures machine formats (--json and --stream) surface backend status while skipping human success output on forced accelerator rejection"
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/run_entry.rs",
+      "line": 207,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "reconcile_accelerator invokes registry::after_generation(true, Some(\"gpu\"), result.used_gpu) when accel_forced is true, returning CliError::BackendUnavailable when used_gpu is Some(false)"
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/run_entry.rs",
+      "line": 527,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "build_final_json reliably adds the `backend` key structure explicitly isolating an unintentional GPU fallback (fell_back: true) from an intentional CPU run, satisfying the requirement to surface GPU rejection on machine output surfaces (--json/--stream)."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/run_entry.rs",
+      "line": 542,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The json output has been augmented with a `backend` object (`requested`, `ran`, `fell_back`) which accurately records the engine's execution mode, preventing a fallback from being indistinguishable from a deliberate CPU run."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/run_tests_accel_reconcile.rs",
+      "line": 1,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The test file `run_tests_accel_reconcile.rs` was created and includes the required 6 cases to ensure `reconcile_accelerator` properly refuses forced CPU fallbacks while remaining silent on deliberate CPU runs and healthy GPU runs."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/run_tests_accel_reconcile.rs",
+      "line": 56,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Six thorough unit tests verify that forced accelerator fallbacks return an error while silent intentional CPU runs behave correctly, satisfying Item 5's test coverage requirement."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/dispatch.rs",
+      "line": 207,
+      "lanes_agreeing": [
+        1,
+        3
+      ],
+      "claims": [
+        "The diff correctly avoids misclassification by uniformly leveraging `registry::Request::wanted()`. It accurately assumes `layers_want_accelerator: false` since `--gpu-layers` belongs exclusively to `apr serve`.",
+        "dispatch.rs classifies accelerator requests via registry::Request::wanted() ensuring uniform classification between CLI dispatch and reconciliation"
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/dispatch.rs",
+      "line": 208,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Accelerator intent classification was consolidated in `dispatch.rs` using `crate::registry::Request::wanted()` so that CLI dispatch shares the same logic as the registry."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=Opus 5 (1M context)/claude"
+  }
+}

@@ -1,0 +1,21 @@
+- id: PMAT-3378
+  github_issue: 3378
+  item_type: task
+  title: 'P0: Greedy weighted-ensemble selection over fitted models (Caruana ensemble selection) — CRUX-O-08'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-08, competitor autogluon, demand 5. No ensemble-selection algorithm. MixtureOfExperts learns a gating network (ensemble/moe.rs); nothing performs the forward greedy selection with replacement over base-model validation predictions that yields non-negative weights summing to 1. FALSIFIABLE (contracts/crux-O-08-v1.yaml): weights are a probability vector and the ensemble never scores below its best member — sum(w)=1, all w>=0, and validation metric(ensemble) >= max over members within 1e-9, on 3 fixtures; selection is greedy with replacement and reproducible — with ensemble_size=25 the weight of a member equals its selection count / 25; two runs on the same inputs produce identical weights. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

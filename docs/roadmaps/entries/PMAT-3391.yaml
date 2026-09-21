@@ -1,0 +1,21 @@
+- id: PMAT-3391
+  github_issue: 3391
+  item_type: task
+  title: 'P1: Rolling-window backtesting: num_val_windows, refit_every_n_windows, backtest_predictions — CRUX-O-21'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-21, competitor autogluon, demand 4. No time-aware validation. KFold shuffles rows; nothing cuts the last k horizons of each item as expanding-window validation sets, and there is no API that returns the validation forecasts for inspection. FALSIFIABLE (contracts/crux-O-21-v1.yaml): validation windows never contain a timestamp later than the training cut for that window — for num_val_windows=3 and val_step_size=h, each window''s max training timestamp < min validation timestamp per item, asserted for every item and window; backtest_predictions rows align with backtest_targets — the two frames have identical (window, item_id, timestamp) index sets and no NaN targets. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null

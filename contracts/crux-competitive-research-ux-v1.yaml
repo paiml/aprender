@@ -39,6 +39,7 @@ metadata:
     - "https://github.com/huggingface/transformers"
     - "https://github.com/vllm-project/vllm"
     - "https://github.com/mlfoundations/open_clip"
+    - "https://github.com/autogluon/autogluon"
 
 # ─────────────────────────────────────────────────────────────
 # Demand scoring rubric (see subspec §4)
@@ -100,6 +101,11 @@ evidence_sources:
     capability_matrix: "evidence/crux/openclaw/capability-matrix.yaml"
     gaps: "evidence/crux/openclaw/gaps.md"
     interpretation_note: "Resolved 2026-04-18: OpenCLAW is openclaw.ai (local-first personal AI assistant / agent orchestration). NOT OpenCLIP. Category J rewritten accordingly."
+  autogluon:
+    readme_verbs: "evidence/crux/autogluon/readme-verbs.txt"
+    canonical_flow: "evidence/crux/autogluon/hello.sh"
+    api_surface: "evidence/crux/autogluon/api-surface.md"
+    interpretation_note: "AutoGluon 1.6.3 (../autogluon @ 77946149), surveyed 2026-09-16. Category O = AutoML parity (tabular + forecasting). MultiModalPredictor CUT on epic #3370."
   openclip:
     readme_verbs: "evidence/crux/openclip/readme-verbs.txt"
     top_issues: "evidence/crux/openclip/top-issues.json"
@@ -460,15 +466,46 @@ stories:
   - { id: CRUX-N-16, title: "Barnes-Hut t-SNE (O(n log n))",                     competitor: linfa,   demand_score: 3, status: partial,  contract: crux-N-16-v1.yaml }
   - { id: CRUX-N-17, title: "Vision ops: NMS, GPU connected components",         competitor: burn,    demand_score: 2, status: partial,  contract: crux-N-17-v1.yaml }
 
+  # Category O — AutoML Parity (24) — AutoGluon 1.6.3 (aprender#3370, 2026-09-16).
+  # Competitor source: ../autogluon at 77946149. Three products (TabularPredictor,
+  # TimeSeriesPredictor, MultiModalPredictor); MultiModal is CUT on the epic.
+  # aprender's automl/ is a single-estimator tuner and time_series/ is one ARIMA;
+  # the gap is the predictor-level UX (fit(label) -> leaderboard -> deploy), not
+  # the algorithms. Not a BEAT pillar. Registry edit: CRUX_COMPETITORS.
+  - { id: CRUX-O-01, title: "One-call tabular AutoML: fit(label) -> predict on a CSV", competitor: autogluon, demand_score: 5, status: missing,  contract: crux-O-01-v1.yaml }
+  - { id: CRUX-O-02, title: "Problem-type inference: binary / multiclass / regression / quantile fr", competitor: autogluon, demand_score: 5, status: missing,  contract: crux-O-02-v1.yaml }
+  - { id: CRUX-O-03, title: "Quality presets (medium / good / high / best / extreme) that name a mo", competitor: autogluon, demand_score: 5, status: missing,  contract: crux-O-03-v1.yaml }
+  - { id: CRUX-O-04, title: "Leaderboard: per-model validation/test score, fit time, predict time a", competitor: autogluon, demand_score: 5, status: missing,  contract: crux-O-04-v1.yaml }
+  - { id: CRUX-O-05, title: "Automatic feature-type inference and the AutoML feature pipeline (nume", competitor: autogluon, demand_score: 5, status: partial,  contract: crux-O-05-v1.yaml }
+  - { id: CRUX-O-06, title: "K-fold bagging with out-of-fold predictions (num_bag_folds, predict_oo", competitor: autogluon, demand_score: 4, status: missing,  contract: crux-O-06-v1.yaml }
+  - { id: CRUX-O-07, title: "Multi-layer stack ensembling with a leakage guard (num_stack_levels, a", competitor: autogluon, demand_score: 4, status: missing,  contract: crux-O-07-v1.yaml }
+  - { id: CRUX-O-08, title: "Greedy weighted-ensemble selection over fitted models (Caruana ensembl", competitor: autogluon, demand_score: 5, status: missing,  contract: crux-O-08-v1.yaml }
+  - { id: CRUX-O-09, title: "Time-budgeted portfolio fit: time_limit split across models, each mode", competitor: autogluon, demand_score: 5, status: partial,  contract: crux-O-09-v1.yaml }
+  - { id: CRUX-O-10, title: "Predictor-level permutation feature importance with p-values and confi", competitor: autogluon, demand_score: 4, status: partial,  contract: crux-O-10-v1.yaml }
+  - { id: CRUX-O-11, title: "Decision-threshold calibration for binary metrics (calibrate_decision_", competitor: autogluon, demand_score: 4, status: partial,  contract: crux-O-11-v1.yaml }
+  - { id: CRUX-O-12, title: "refit_full: retrain the selected models on train+validation after mode", competitor: autogluon, demand_score: 3, status: missing,  contract: crux-O-12-v1.yaml }
+  - { id: CRUX-O-13, title: "Model distillation: compress the ensemble into one fast student", competitor: autogluon, demand_score: 3, status: missing,  contract: crux-O-13-v1.yaml }
+  - { id: CRUX-O-14, title: "Deployment artifact: clone_for_deployment / keep_only_best / save_spac", competitor: autogluon, demand_score: 4, status: missing,  contract: crux-O-14-v1.yaml }
+  - { id: CRUX-O-15, title: "Inference-latency constraint during model selection (infer_limit, infe", competitor: autogluon, demand_score: 3, status: missing,  contract: crux-O-15-v1.yaml }
+  - { id: CRUX-O-16, title: "Fit diagnostics: fit_summary, model_failures and learning curves", competitor: autogluon, demand_score: 3, status: missing,  contract: crux-O-16-v1.yaml }
+  - { id: CRUX-O-17, title: "Tabular foundation model: in-context prediction with a pretrained tran", competitor: autogluon, demand_score: 4, status: missing,  contract: crux-O-17-v1.yaml }
+  - { id: CRUX-O-18, title: "Memory-aware fit: per-model memory estimate and a memory_limit that sk", competitor: autogluon, demand_score: 3, status: missing,  contract: crux-O-18-v1.yaml }
+  - { id: CRUX-O-19, title: "Multi-series forecasting predictor: (item_id, timestamp) panel data, p", competitor: autogluon, demand_score: 5, status: missing,  contract: crux-O-19-v1.yaml }
+  - { id: CRUX-O-20, title: "Probabilistic forecasts: quantile_levels and the forecasting metric fa", competitor: autogluon, demand_score: 5, status: missing,  contract: crux-O-20-v1.yaml }
+  - { id: CRUX-O-21, title: "Rolling-window backtesting: num_val_windows, refit_every_n_windows, ba", competitor: autogluon, demand_score: 4, status: missing,  contract: crux-O-21-v1.yaml }
+  - { id: CRUX-O-22, title: "Known covariates, past covariates and static features in forecasting", competitor: autogluon, demand_score: 3, status: missing,  contract: crux-O-22-v1.yaml }
+  - { id: CRUX-O-23, title: "Local statistical baselines: SeasonalNaive, ETS, Theta, AutoARIMA, Cro", competitor: autogluon, demand_score: 4, status: partial,  contract: crux-O-23-v1.yaml }
+  - { id: CRUX-O-24, title: "Zero-shot pretrained forecaster (Chronos-2 / Toto-2 class) loaded by a", competitor: autogluon, demand_score: 4, status: missing,  contract: crux-O-24-v1.yaml }
+
 # ─────────────────────────────────────────────────────────────
 # Coverage — intake v2.0.0 (verified by awk over §5 of subspec)
 # ─────────────────────────────────────────────────────────────
 coverage_intake:
   supported: 43
-  partial:   72
-  missing:   152
+  partial:   77
+  missing:   171
   unclear:    0
-  total:    267
+  total:    291
   notes: |
     ID gaps at C-14, F-10, H-04, I-05, K-06 are intentional — those
     five stories were dropped pre-v1.0.0 as duplicative (see inline
@@ -477,6 +514,9 @@ coverage_intake:
     5 partial. It is the first category whose competitors are Rust-native
     frameworks rather than Python/C++ incumbents, which is why it required
     a CRUX_COMPETITORS registry edit rather than reuse of an existing source.
+    Category O (24 rows, aprender#3370) was added 2026-09-16: 19 missing,
+    5 partial. Competitor autogluon (1.6.3) — AutoML parity: predictor-level
+    tabular AutoML and multi-series forecasting. Same registry edit.
 
 # ─────────────────────────────────────────────────────────────
 # Falsification conditions
