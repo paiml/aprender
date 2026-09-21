@@ -1,9 +1,12 @@
 //! ONT-001 §5 ONT-4c1 — `resolves: receipt`: the tracked model-capability-ladder receipts, read once, joined
 //! to the rungs by sha256, and materialized as edges a shape can count.
 //!
-//! One reader, one schema: `evidence/dogfood/models/<version>/<host>.json` with
-//! `schema: apr-model-ladder-receipt/v1` (aprender `scripts/model_ladder.sh`). Any other `schema` value is
-//! refused BY NAME — a receipt this reader does not understand is not silently read as empty. A rung row with
+//! One reader, two versions of one schema: `evidence/dogfood/models/<version>/<host>.json` with
+//! `schema: apr-model-ladder-receipt/v1` or `/v2` (aprender `scripts/model_ladder.sh`; v2 is #3712's, and adds the
+//! host's measured `inventory[]`, the full `apr_sha`, and — with the widened 0.69.1 bar — `cells[]`, one row per
+//! (model × verb × context rung), which the release-readiness resolver reads, #3715). Any other `schema` value is
+//! refused BY NAME — a receipt this reader does not understand is not silently read as empty. v2 rows are v1 rows
+//! plus `file`/`inventory_only`, so the rung join below reads both versions the same way. A rung row with
 //! `sha256` equal to the contract's is a **witness**; a row WITHOUT `sha256` is not a witness (the 0.68.1
 //! receipts committed before aprender#3507 have none — "no measurement", never a match); a row with a
 //! different hex is a **hex mismatch**, materialized so a shape rejects it naming rung, receipt and both hexes.
@@ -32,6 +35,10 @@ use crate::ontology::extract::gguf::{model, Rung};
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};
 
 pub const SCHEMA: &str = "apr-model-ladder-receipt/v1";
+/// #3712's successor: v1 plus `inventory[]`, `apr_sha` and `cells[]`.
+pub const SCHEMA_V2: &str = "apr-model-ladder-receipt/v2";
+/// Every schema this reader understands, in version order.
+pub const SCHEMAS: [&str; 2] = [SCHEMA, SCHEMA_V2];
 /// Where the receipts live, relative to the repository root.
 pub const EVIDENCE_DIR: &str = "evidence/dogfood/models";
 
@@ -50,17 +57,87 @@ pub struct Row {
     pub backends: BTreeMap<String, (bool, bool)>,
 }
 
-/// One receipt file.
+/// One model the host HOLDS (v2 `inventory[]`): the universe the release must prove, measured on the host.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Receipt {
-    /// Path relative to the repository root, `/`-separated.
+pub struct InventoryItem {
     pub file: String,
+    /// `None` when the row carries no hash: no measurement, never a match.
+    pub sha256: Option<String>,
+    pub arch: Option<String>,
+    pub quant: Option<String>,
+    /// The GGUF's own `*.context_length`, read from the file on the host (#3710: "not picked here").
+    pub context_length: Option<u64>,
+    /// The thinking modes the model's chat template supports, DERIVED from `tokenizer.chat_template` (#3723,
+    /// the cop's rule): `enable_thinking` → `["on","off"]`; a generation prompt that always opens `<think>` →
+    /// `["on"]`; otherwise `["off"]`. `None` (no template read) owes BOTH modes.
+    pub thinking_modes: Option<Vec<String>>,
+    /// The evidence for `thinking_modes`: the markers found in `tokenizer.chat_template`, and that template's hash.
+    pub thinking_markers: Option<Vec<String>>,
+    pub chat_template_sha256: Option<String>,
+    /// The producer's ECHO of whether this model owes the long rungs; pv re-derives it from the ladder contract
+    /// and a disagreement is a violation (#3712 amendment 2).
+    pub owes_long_rungs: Option<bool>,
+    /// The declared memory arithmetic (#3710 rule, operator "a"): weights + KV per token (at the chosen
+    /// precision) + workspace, compared with the host's measured `gpu_mem_total_bytes`.
+    pub weights_bytes: Option<u64>,
+    pub kv_bytes_per_token: Option<u64>,
+    pub workspace_bytes: Option<u64>,
+    /// The KV precision `kv_bytes_per_token` was computed at (#3712, 62: device KV was measured as f32).
+    pub kv_dtype: Option<String>,
+}
+
+/// One (model × verb × thinking × context rung) row of v2 `cells[]` (#3712 / #3715).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CellRow {
+    pub sha256: Option<String>,
+    pub file: String,
+    pub verb: String,
+    /// `on` / `off` (#3710, operator: "chat with and without thinking, ditto run, ditto code").
+    pub thinking: String,
+    pub context: String,
+    pub prompt_tokens: Option<u64>,
+    /// The output budget the request asked for; with `prompt_tokens`, what fills the declared context.
+    pub max_tokens: Option<u64>,
+    /// Thinking ON: did the think block close? `None` on a thinking-OFF row (and on a row that did not say).
+    pub think_closed: Option<bool>,
+    /// Characters of answer AFTER any think block. `Some(0)` is the empty answer #3720 forbids.
+    pub answer_chars: Option<u64>,
+    pub ttft_ms: Option<f64>,
+    /// A pre-load refusal's arithmetic: what the cell needs, and what the host has. `verdict: "refused"`.
+    pub required_bytes: Option<u64>,
+    pub available_bytes: Option<u64>,
+    pub verdict: String,
+    pub backend: String,
+    /// `None` when the row does not say — which is not `false`.
+    pub fallback: Option<bool>,
+    pub rc: Option<i64>,
+    pub reason: String,
+}
+
+/// One receipt file.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Receipt {
+    /// Path relative to the repository root, `/`-separated (or as given, for a receipt dir outside the tree).
+    pub file: String,
+    pub schema: String,
     pub host: String,
     pub version: String,
     pub sha: String,
+    /// v2: the full 40-hex commit the measured `apr` was built from. `None` on v1.
+    pub apr_sha: Option<String>,
     pub cc: String,
     pub gpu: String,
+    /// v2: the host's measured TOTAL GPU memory (unified on GB10), the right-hand side of the fit arithmetic.
+    /// Owed iff required ≤ total; a refusal is honest only when required > total (#3712, 62): a co-tenant that
+    /// holds memory must not shrink the owed set.
+    pub gpu_mem_total_bytes: Option<u64>,
+    /// v2: free GPU memory when measured: carried for the reader, never part of the fit.
+    pub gpu_mem_free_bytes: Option<u64>,
     pub rows: Vec<Row>,
+    /// v2 `inventory[]`; empty on v1 (which cannot say what the host holds).
+    pub inventory: Vec<InventoryItem>,
+    /// v2 `cells[]`; empty when the measuring side wrote none.
+    pub cells: Vec<CellRow>,
 }
 
 /// A receipt file this reader refuses, by name.
@@ -79,11 +156,16 @@ impl std::fmt::Display for ReceiptError {
 impl std::error::Error for ReceiptError {}
 
 /// Read every `*.json` under `<root>/evidence/dogfood/models/**`, in byte order. A file whose `schema` is not
-/// [`SCHEMA`] is an error naming the file and the schema it carries.
+/// one of [`SCHEMAS`] is an error naming the file and the schema it carries.
 pub fn read_all(root: &Path) -> Result<Vec<Receipt>, ReceiptError> {
-    let dir = root.join(EVIDENCE_DIR);
+    read_dir(&root.join(EVIDENCE_DIR), root)
+}
+
+/// Read every `*.json` under `dir/**`, in byte order, naming each file relative to `root` when it lies under it
+/// (a T-1 receipt dir such as `$AP/models-t1` does not, and is named as given).
+pub fn read_dir(dir: &Path, root: &Path) -> Result<Vec<Receipt>, ReceiptError> {
     let mut files = Vec::new();
-    walk(&dir, &mut files);
+    walk(dir, &mut files);
     files.sort();
     let mut out = Vec::new();
     for f in files {
@@ -127,9 +209,10 @@ pub fn parse(file: &str, text: &str) -> Result<Receipt, ReceiptError> {
         .get("schema")
         .and_then(serde_json::Value::as_str)
         .unwrap_or("");
-    if schema != SCHEMA {
+    if !SCHEMAS.contains(&schema) {
         return Err(err(format!(
-            "schema {schema:?} is not {SCHEMA} — refused by name"
+            "schema {schema:?} is not {} — refused by name",
+            SCHEMAS.join(" or ")
         )));
     }
     let s = |k: &str| {
@@ -140,68 +223,113 @@ pub fn parse(file: &str, text: &str) -> Result<Receipt, ReceiptError> {
             })
             .unwrap_or_default()
     };
-    let mut rows = Vec::new();
-    for r in v
-        .get("rungs")
-        .and_then(serde_json::Value::as_array)
-        .into_iter()
-        .flatten()
-    {
-        let b = |k: &str| {
-            r.get(k)
-                .and_then(serde_json::Value::as_bool)
-                .unwrap_or(false)
-        };
-        let cap = r.get("capability_match");
-        let capability_passed = cap
-            .and_then(|c| c.get("passed"))
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false)
-            && !cap
-                .and_then(|c| c.get("skipped"))
-                .and_then(serde_json::Value::as_bool)
-                .unwrap_or(false);
-        let mut backends = BTreeMap::new();
-        if let Some(bs) = r.get("backends").and_then(serde_json::Value::as_object) {
-            for (name, st) in bs {
-                let ran = st
-                    .get("ran")
-                    .and_then(serde_json::Value::as_bool)
-                    .unwrap_or(false);
-                let fallback = st
-                    .get("fallback")
-                    .and_then(serde_json::Value::as_bool)
-                    .unwrap_or(false);
-                backends.insert(name.clone(), (ran, fallback));
-            }
-        }
-        rows.push(Row {
-            id: r
-                .get("id")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default()
-                .to_string(),
-            present: b("present"),
-            sha_ok: b("sha_ok"),
-            sha256: r
-                .get("sha256")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_ascii_lowercase),
-            required: b("required"),
-            green: b("green"),
-            capability_passed,
-            backends,
-        });
-    }
     Ok(Receipt {
         file: file.to_string(),
+        schema: schema.to_string(),
         host: s("host"),
         version: s("version"),
         sha: s("sha"),
+        apr_sha: str_of(&v, "apr_sha").map(|x| x.to_ascii_lowercase()),
         cc: s("cc"),
         gpu: s("gpu"),
-        rows,
+        gpu_mem_total_bytes: v
+            .get("gpu_mem_total_bytes")
+            .and_then(serde_json::Value::as_u64),
+        gpu_mem_free_bytes: v
+            .get("gpu_mem_free_bytes")
+            .and_then(serde_json::Value::as_u64),
+        rows: list(&v, "rungs").map(parse_row).collect(),
+        inventory: list(&v, "inventory").map(parse_inventory_item).collect(),
+        cells: list(&v, "cells").map(parse_cell).collect(),
     })
+}
+
+/// The elements of array `key`, or none.
+fn list<'a>(v: &'a serde_json::Value, key: &str) -> impl Iterator<Item = &'a serde_json::Value> {
+    v.get(key)
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+}
+
+fn str_of(v: &serde_json::Value, key: &str) -> Option<String> {
+    v.get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+}
+
+fn bool_of(v: &serde_json::Value, key: &str) -> bool {
+    v.get(key)
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
+/// `passed ∧ ¬skipped`: a skipped gate reports `passed: true`, and that is not a pass.
+fn gate_passed(cap: Option<&serde_json::Value>) -> bool {
+    cap.is_some_and(|c| bool_of(c, "passed") && !bool_of(c, "skipped"))
+}
+
+fn parse_row(r: &serde_json::Value) -> Row {
+    let mut backends = BTreeMap::new();
+    if let Some(bs) = r.get("backends").and_then(serde_json::Value::as_object) {
+        for (name, st) in bs {
+            backends.insert(name.clone(), (bool_of(st, "ran"), bool_of(st, "fallback")));
+        }
+    }
+    Row {
+        id: str_of(r, "id").unwrap_or_default(),
+        present: bool_of(r, "present"),
+        sha_ok: bool_of(r, "sha_ok"),
+        sha256: str_of(r, "sha256").map(|x| x.to_ascii_lowercase()),
+        required: bool_of(r, "required"),
+        green: bool_of(r, "green"),
+        capability_passed: gate_passed(r.get("capability_match")),
+        backends,
+    }
+}
+
+fn parse_inventory_item(r: &serde_json::Value) -> InventoryItem {
+    InventoryItem {
+        file: str_of(r, "file").unwrap_or_default(),
+        sha256: str_of(r, "sha256").map(|x| x.to_ascii_lowercase()),
+        arch: str_of(r, "arch"),
+        quant: str_of(r, "quant"),
+        context_length: r.get("context_length").and_then(serde_json::Value::as_u64),
+        thinking_modes: strings(r, "thinking_modes"),
+        thinking_markers: strings(r, "thinking_markers"),
+        chat_template_sha256: str_of(r, "chat_template_sha256"),
+        owes_long_rungs: r
+            .get("owes_long_rungs")
+            .and_then(serde_json::Value::as_bool),
+        weights_bytes: r.get("weights_bytes").and_then(serde_json::Value::as_u64),
+        kv_bytes_per_token: r
+            .get("kv_bytes_per_token")
+            .and_then(serde_json::Value::as_u64),
+        workspace_bytes: r.get("workspace_bytes").and_then(serde_json::Value::as_u64),
+        kv_dtype: str_of(r, "kv_dtype"),
+    }
+}
+
+fn parse_cell(r: &serde_json::Value) -> CellRow {
+    CellRow {
+        sha256: str_of(r, "sha256").map(|x| x.to_ascii_lowercase()),
+        file: str_of(r, "file").unwrap_or_default(),
+        verb: str_of(r, "verb").unwrap_or_default(),
+        thinking: str_of(r, "thinking").unwrap_or_default(),
+        context: str_of(r, "context").unwrap_or_default(),
+        prompt_tokens: r.get("prompt_tokens").and_then(serde_json::Value::as_u64),
+        max_tokens: r.get("max_tokens").and_then(serde_json::Value::as_u64),
+        think_closed: r.get("think_closed").and_then(serde_json::Value::as_bool),
+        answer_chars: r.get("answer_chars").and_then(serde_json::Value::as_u64),
+        ttft_ms: r.get("ttft_ms").and_then(serde_json::Value::as_f64),
+        required_bytes: r.get("required_bytes").and_then(serde_json::Value::as_u64),
+        available_bytes: r.get("available_bytes").and_then(serde_json::Value::as_u64),
+        verdict: str_of(r, "verdict").unwrap_or_default(),
+        backend: str_of(r, "backend").unwrap_or_default(),
+        fallback: r.get("fallback").and_then(serde_json::Value::as_bool),
+        rc: r.get("rc").and_then(serde_json::Value::as_i64),
+        reason: str_of(r, "reason").unwrap_or_default(),
+    }
 }
 
 /// What resolution found, for the gate's report.
@@ -378,6 +506,42 @@ mod tests {
         let e = parse("x.json", r#"{"schema":"something/v9","rungs":[]}"#).expect_err("refused");
         assert!(e.what.contains("something/v9"), "{e}");
         assert!(e.what.contains(SCHEMA), "{e}");
+        assert!(e.what.contains(SCHEMA_V2), "{e}");
+    }
+
+    #[test]
+    fn a_v2_receipt_joins_its_rungs_like_v1_and_carries_inventory_apr_sha_and_cells() {
+        // #3712's v2: the rung rows are v1 rows plus `file`/`inventory_only`, so the ladder join is unchanged —
+        // the arm that goes RED when v2 is refused (the collision #3715 closes) or read as empty.
+        let row = OK.replace(
+            r#""id":"a","#,
+            r#""id":"a","file":"a.gguf","inventory_only":false,"#,
+        );
+        let text = format!(
+            r#"{{"schema":"apr-model-ladder-receipt/v2","host":"lambda","version":"0.69.1","sha":"abc",
+                "apr_sha":"ABCDEF0123456789ABCDEF0123456789ABCDEF01","cc":"8.9","gpu":"g",
+                "inventory":[{{"file":"a.gguf","sha256":"AAAA","bytes":4}}],
+                "cells":[{{"sha256":"aaaa","file":"a.gguf","verb":"chat","context":"golden","prompt_tokens":40,
+                           "verdict":"pass","backend":"cuda","fallback":false,"rc":0,"reason":""}}],
+                "rungs":[{row}]}}"#
+        );
+        let rec = parse("evidence/dogfood/models/0.69.1/lambda.json", &text).expect("v2 parses");
+        assert_eq!(rec.schema, SCHEMA_V2);
+        assert_eq!(
+            rec.apr_sha.as_deref(),
+            Some("abcdef0123456789abcdef0123456789abcdef01")
+        );
+        assert_eq!(rec.inventory.len(), 1);
+        assert_eq!(rec.inventory[0].sha256.as_deref(), Some("aaaa"));
+        assert_eq!(rec.cells.len(), 1);
+        assert_eq!(rec.cells[0].verb, "chat");
+        assert_eq!(rec.cells[0].fallback, Some(false));
+        let mut g = Graph::new();
+        let st = resolve(&mut g, &[rung("a", "aaaa", &[], true)], &[rec]);
+        assert_eq!((st.witnesses, st.green_on), (1, 1));
+        let v3 =
+            parse("x.json", r#"{"schema":"apr-model-ladder-receipt/v3"}"#).expect_err("v3 refused");
+        assert!(v3.what.contains("v3"), "{v3}");
     }
 
     #[test]
@@ -486,4 +650,14 @@ mod tests {
             "no hosts: → both hosts expected, gx10 missing"
         );
     }
+}
+
+/// An array of strings at `key`, or `None` when the key is absent (which is not an empty list).
+fn strings(r: &serde_json::Value, key: &str) -> Option<Vec<String>> {
+    r.get(key).and_then(serde_json::Value::as_array).map(|a| {
+        a.iter()
+            .filter_map(serde_json::Value::as_str)
+            .map(str::to_string)
+            .collect()
+    })
 }

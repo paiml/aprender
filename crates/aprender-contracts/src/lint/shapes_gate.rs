@@ -30,6 +30,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use crate::ontology::arming::ArmedShapes;
+use crate::ontology::extract::release_inputs::Subject;
 use crate::ontology::extract::{self, apr_model, code, gguf, lean, pv_contract, ExtractFailure};
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};
 use crate::ontology::receipts;
@@ -191,9 +192,51 @@ fn w3c_checked(shapes_n: usize, focus_nodes_n: usize) -> Result<w3c::W3cRun, Sha
     })
 }
 
+/// What `pv lint --gate shapes` is asked beyond the corpus (aprender#3715).
+#[derive(Debug, Clone, Default)]
+pub struct ShapesOptions {
+    /// `--shape <id>`: grade only that shape FAMILY — the shape `<id>` and every shape whose id starts with
+    /// `<id>.` — and arm it whatever `armed_shapes` says: a caller that names a shape is asking for its verdict,
+    /// and "computed and reported" would let a release gate print violations and exit 0.
+    pub only: Option<String>,
+    /// `--release-*`: the release subject `extract:release-evidence` reads. `None` → no release graph at all.
+    pub release: Option<Subject>,
+}
+
+/// The shapes `only` selects, in declaration order; a name that selects nothing is the CALLER's error (exit 3),
+/// never an empty pass.
+fn select_family(
+    declared: Vec<(NodeShape, String)>,
+    only: Option<&str>,
+) -> Result<Vec<NodeShape>, ShapeError> {
+    let Some(id) = only else {
+        return Ok(declared.into_iter().map(|(s, _)| s).collect());
+    };
+    let prefix = format!("{id}.");
+    let family: Vec<NodeShape> = declared
+        .into_iter()
+        .map(|(s, _)| s)
+        .filter(|s| s.id == id || s.id.starts_with(&prefix))
+        .collect();
+    if family.iter().any(|s| s.id == id) {
+        Ok(family)
+    } else {
+        Err(ShapeError::Malformed {
+            shape: id.to_string(),
+            what: "--shape names no declared shape".into(),
+        })
+    }
+}
+
 /// Run the gate over `contract_dir`.
 #[must_use]
 pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
+    run_shapes_gate_with(contract_dir, &ShapesOptions::default())
+}
+
+/// [`run_shapes_gate`] with `--shape` / `--release-*` (aprender#3715).
+#[must_use]
+pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> ShapesOutcome {
     let start = Instant::now();
     let (declared, checked) = match collect_shapes(contract_dir) {
         Ok(x) => x,
@@ -204,15 +247,19 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
             contracts_checked: checked,
         };
     }
-    let arming = match armed_shapes_of(contract_dir) {
-        Ok(a) => a,
+    let arming = match (opts.only.as_deref(), armed_shapes_of(contract_dir)) {
+        (_, Err(e)) => return ShapesOutcome::Unsupported(e),
+        (Some(_), Ok(_)) => ArmedShapes::All,
+        (None, Ok(a)) => a,
+    };
+    let shapes = match select_family(declared, opts.only.as_deref()) {
+        Ok(s) => s,
         Err(e) => return ShapesOutcome::Unsupported(e),
     };
-    let shapes: Vec<NodeShape> = declared.into_iter().map(|(s, _)| s).collect();
 
     // ONE walk (R-18): every extractor, the json documents, the ladder receipts joined to the rungs — the same
-    // graph `pv extract` writes.
-    let extraction = match extract::all(contract_dir) {
+    // graph `pv extract` writes — plus, when a release subject is given, the release evidence (#3715).
+    let extraction = match extract::all_with(contract_dir, opts.release.as_ref()) {
         Ok(x) => x,
         Err(e) => return ShapesOutcome::ExtractFailed(e),
     };
@@ -228,6 +275,13 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
     });
 
     let (mut report, plant_violations) = validate_with_plant(&graph, &shapes, &arming);
+    if opts.only.is_some() {
+        // a named family reports in the order its contract declares it: the release, its hosts, its context,
+        // its kernels, THEN its model cells (#3715: a kernel that diverges across arches is named before any
+        // model cell it breaks). Stable, so the validator's order holds within a shape.
+        let rank = |id: &str| shapes.iter().position(|s| s.id == id).unwrap_or(usize::MAX);
+        report.results.sort_by_key(|r| rank(&r.shape));
+    }
     carry_extract_warnings(&mut report, &extraction.warnings);
     let pc_extract = extract_controls();
     let unmeasured = needs_receipts && extraction.receipts.is_empty();
@@ -337,6 +391,7 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
             symbols_unresolved: extraction.code.unresolved,
             lean_statements: extraction.lean.statements,
             lean_refs_unresolved: extraction.lean.refs_unresolved.len(),
+            release: extraction.release.clone().map(Box::new),
         }),
     };
     ShapesOutcome::Ran {

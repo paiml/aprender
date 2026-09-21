@@ -244,6 +244,9 @@ pub enum GateExtra {
         /// ONT-4b2: Lean theorems extracted, and contract `lean_theorem:` references naming none of them.
         lean_statements: usize,
         lean_refs_unresolved: usize,
+        /// aprender#3715: what `extract:release-evidence` derived — absent unless a release subject was given.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        release: Option<Box<crate::ontology::extract::release_evidence::ReleaseStats>>,
     },
 }
 
@@ -646,11 +649,22 @@ pub enum NamedGateOutcome {
 /// report a verdict whose precondition nobody checked — `UnknownGate` is the honest answer, not a silent pass.
 #[must_use]
 pub fn run_named_gate(contract_dir: &Path, name: &str) -> NamedGateOutcome {
+    run_named_gate_with(contract_dir, name, &shapes_gate::ShapesOptions::default())
+}
+
+/// [`run_named_gate`] with the shapes gate's `--shape` / `--release-*` options (aprender#3715).
+pub fn run_named_gate_with(
+    contract_dir: &Path,
+    name: &str,
+    shapes_opts: &shapes_gate::ShapesOptions,
+) -> NamedGateOutcome {
     match name {
         "relations" => {
             NamedGateOutcome::Relations(relations_gate::run_relations_gate(contract_dir))
         }
-        "shapes" => NamedGateOutcome::Shapes(shapes_gate::run_shapes_gate(contract_dir)),
+        "shapes" => {
+            NamedGateOutcome::Shapes(shapes_gate::run_shapes_gate_with(contract_dir, shapes_opts))
+        }
         "sigma" => NamedGateOutcome::Sigma(sigma_gate::run_sigma_gate(contract_dir)),
         "validate" => {
             let (contracts, parse_errors) = load_contracts(contract_dir);

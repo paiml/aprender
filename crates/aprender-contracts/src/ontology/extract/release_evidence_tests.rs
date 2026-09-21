@@ -1,0 +1,451 @@
+//! aprender#3715 — `extract:release-evidence` in isolation: the universe, the join, and what is computed. The
+//! shapes' verdicts over the same graphs are `tests/fixtures/ont/release-*` on the CLI
+//! (`crates/aprender-contracts-cli/tests/ont_release_readiness.rs`).
+
+use super::*;
+use crate::ontology::extract::release_inputs::{derive_rungs, Consumer};
+
+const MC: &str = "1111111111111111111111111111111111111111";
+const BUMP: &str = "2222222222222222222222222222222222222222";
+const SHA_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const SHA_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+/// A throwaway repo: a ladder contract with two required hosts, a context-rung file, and whatever receipts
+/// the case writes. Returns (tempdir, contract dir).
+fn repo(ladder_rungs: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+    let t = tempfile::tempdir().expect("tempdir");
+    let c = t.path().join("contracts");
+    std::fs::create_dir_all(&c).expect("contracts dir");
+    std::fs::write(
+        c.join("ladder.yaml"),
+        format!(
+            "name: ladder\nentity: {{type: gguf}}\nladder:\n  hosts:\n    - {{id: lambda, cc: sm_89, required: true}}\n    - {{id: gx10, cc: sm_121, required: true}}\n    - {{id: yoga, cc: sm_86, required: false}}\n  rungs:\n{ladder_rungs}"
+        ),
+    )
+    .expect("ladder");
+    let ev = t.path().join("evidence/release");
+    std::fs::create_dir_all(&ev).expect("evidence dir");
+    std::fs::write(
+        ev.join("context-rungs.json"),
+        r#"{"schema":"apr-release-context-rungs/v1",
+            "consumers":[{"consumer":"rah","max_prompt_tokens":1000,"basis":"measured","source":"u1"}],
+            "rungs":[{"id":"golden","tokens":0,"derived_from":["g"]},{"id":"consumer-max"}]}"#,
+    )
+    .expect("rungs");
+    (t, c)
+}
+
+fn write_receipt(root: &Path, host: &str, body: &str) {
+    let d = root.join("evidence/dogfood/models/0.69.1");
+    std::fs::create_dir_all(&d).expect("receipt dir");
+    std::fs::write(d.join(format!("{host}.json")), body).expect("receipt");
+}
+
+fn receipt(host: &str, apr_sha: &str, inventory: &str, cells: &str) -> String {
+    format!(
+        r#"{{"schema":"apr-model-ladder-receipt/v2","host":"{host}","version":"0.69.1","sha":"x",
+            "apr_sha":"{apr_sha}","cc":"8.9","gpu":"g","inventory":[{inventory}],"cells":[{cells}],"rungs":[]}}"#
+    )
+}
+
+fn cell(sha: &str, verb: &str, ctx: &str) -> String {
+    cell_t(sha, verb, "off", ctx)
+}
+
+fn cell_t(sha: &str, verb: &str, thinking: &str, ctx: &str) -> String {
+    format!(
+        r#"{{"sha256":"{sha}","file":"m.gguf","verb":"{verb}","thinking":"{thinking}","context":"{ctx}",
+             "prompt_tokens":2000,"max_tokens":512,"answer_chars":12,
+             "verdict":"pass","backend":"cuda","fallback":false,"rc":0}}"#
+    )
+}
+
+fn subject() -> Subject {
+    Subject::new("0.69.1", MC).expect("subject")
+}
+
+#[test]
+fn a_subject_refuses_a_short_or_empty_sha_and_an_empty_version() {
+    assert!(
+        Subject::new("0.69.1", "225b2a9ab").is_err(),
+        "a prefix is refused, never matched"
+    );
+    assert!(Subject::new("", MC).is_err());
+    assert!(subject().with_receipts_commit("abc").is_err());
+    let s = subject().with_receipts_commit(BUMP).expect("40 hex");
+    assert_eq!(s.measured_commit(), BUMP);
+    assert_eq!(subject().measured_commit(), MC);
+}
+
+#[test]
+fn consumer_max_is_the_max_over_the_records_and_names_a_consumer_with_no_number() {
+    let consumers = vec![
+        Consumer {
+            name: "rah".into(),
+            max_prompt_tokens: Some(148_000),
+            basis: "measured".into(),
+            source: "u1".into(),
+        },
+        Consumer {
+            name: "rmedia".into(),
+            max_prompt_tokens: Some(128_000),
+            basis: "plan".into(),
+            source: "u2".into(),
+        },
+        Consumer {
+            name: "arbiter".into(),
+            max_prompt_tokens: None,
+            basis: String::new(),
+            source: "u3".into(),
+        },
+    ];
+    let rung = ContextRung {
+        id: "consumer-max".into(),
+        tokens: Some(7),
+        long: true,
+        derived_from: vec![],
+        unmeasured_consumers: vec![],
+    };
+    let out = derive_rungs(vec![rung], &consumers);
+    assert_eq!(
+        out[0].tokens,
+        Some(148_000),
+        "a declared number is ignored: the rung is derived"
+    );
+    assert_eq!(out[0].derived_from.len(), 3);
+    assert_eq!(out[0].unmeasured_consumers, vec!["arbiter".to_string()]);
+}
+
+#[test]
+fn the_universe_is_the_inventory_plus_the_cuda_rungs_listed_for_the_host_and_every_cell_gets_a_node(
+) {
+    // rung a: cuda, every host · rung b: cpu only (not a cuda obligation) · rung c: cuda, gx10 only
+    let (t, c) = repo(&format!(
+        "    - {{id: a, sha256: {SHA_A}, arch: qwen2, gguf: a.gguf, backends: [cpu, cuda], required: true}}\n    - {{id: b, sha256: {}, arch: qwen2, gguf: b.gguf, backends: [cpu], required: true}}\n    - {{id: c, sha256: {}, arch: qwen3, gguf: c.gguf, backends: [cuda], hosts: [gx10], required: true}}\n",
+        "c".repeat(64),
+        "d".repeat(64)
+    ));
+    // lambda holds b (inventory) and an unlisted model e
+    let inv = format!(r#"{{"file":"e.gguf","sha256":"{SHA_B}"}},{{"file":"nohash.gguf"}}"#);
+    write_receipt(
+        t.path(),
+        "lambda",
+        &receipt("lambda", MC, &inv, &cell(SHA_A, "run", "golden")),
+    );
+    let mut g = Graph::new();
+    let st = extract(&mut g, &c, &subject()).expect("extracts");
+    assert_eq!(st.required_hosts, 2, "yoga is not required");
+    // lambda: a (rung) + e (inventory) = 2 · gx10: a + c = 2 (no receipt, but the rungs listed for it stay)
+    assert_eq!(st.models, 4);
+    // no measured length or thinking mode: every rung (golden, consumer-max) + declared, both modes
+    assert_eq!(st.cells, 4 * 4 * 2 * 3, "models × verbs × thinking × rungs");
+    assert_eq!(st.cells_with_row, 1);
+    let lambda = iri_path("release-host", &["0.69.1", "lambda"]);
+    let unmeasured = g.objects(&lambda, &rel("unmeasuredModel"));
+    assert_eq!(
+        unmeasured.len(),
+        1,
+        "an inventory row with no hash is named, never dropped"
+    );
+    let gx10 = iri_path("release-host", &["0.69.1", "gx10"]);
+    assert!(
+        g.objects(&gx10, &rel("hostReceipt")).is_empty(),
+        "no receipt is a missing edge"
+    );
+    assert!(!g.to_ntriples().contains("_:"), "no blank nodes (R-15)");
+}
+
+#[test]
+fn a_row_keys_by_sha_verb_and_rung_and_carries_fresh_and_context_met() {
+    let (t, c) = repo(&format!(
+        "    - {{id: a, sha256: {SHA_A}, arch: qwen2, gguf: a.gguf, backends: [cuda], hosts: [lambda], required: true}}\n"
+    ));
+    let rows = [
+        cell(SHA_A, "chat", "consumer-max"),
+        cell(SHA_A, "chat", "no-such-rung"),
+        cell(SHA_B, "chat", "golden"),
+    ]
+    .join(",");
+    let inv = format!(r#"{{"file":"a.gguf","sha256":"{SHA_A}"}}"#);
+    write_receipt(t.path(), "lambda", &receipt("lambda", BUMP, &inv, &rows));
+    let mut g = Graph::new();
+    let st = extract(&mut g, &c, &subject()).expect("extracts");
+    assert_eq!(st.cells_with_row, 1);
+    assert_eq!(
+        st.orphan_rows, 2,
+        "an unknown rung and a model outside the universe key onto no cell"
+    );
+    let cellnode = iri_path(
+        "release-cell",
+        &[
+            "0.69.1",
+            "lambda",
+            "a.gguf",
+            "chat",
+            "think-off",
+            "consumer-max",
+        ],
+    );
+    let row = g.objects(&cellnode, &rel("row"))[0]
+        .as_iri()
+        .expect("iri")
+        .to_string();
+    let lit = |p: &str| {
+        g.objects(&row, &rel(p))[0]
+            .as_literal()
+            .map(|(v, _)| v.to_string())
+            .expect("literal")
+    };
+    assert_eq!(
+        lit("fresh"),
+        "false",
+        "measured at BUMP, released at MC, no --receipts-commit"
+    );
+    assert_eq!(
+        lit("contextMet"),
+        "true",
+        "2000 prompt tokens ≥ consumer-max 1000"
+    );
+    let mut g2 = Graph::new();
+    extract(
+        &mut g2,
+        &c,
+        &subject().with_receipts_commit(BUMP).expect("sha"),
+    )
+    .expect("extracts");
+    let fresh2 = g2.objects(&row, &rel("fresh"))[0]
+        .as_literal()
+        .map(|(v, _)| v.to_string());
+    assert_eq!(
+        fresh2.as_deref(),
+        Some("true"),
+        "T-4: R7 proved BUMP ≡ MC and said so"
+    );
+}
+
+#[test]
+fn a_kernel_on_one_hosts_dispatch_path_is_an_obligation_on_every_required_host() {
+    let (t, c) = repo(&format!(
+        "    - {{id: a, sha256: {SHA_A}, arch: qwen2, gguf: a.gguf, backends: [cuda], required: true}}\n"
+    ));
+    let kd = t.path().join("evidence/dogfood/kernels/0.69.1");
+    std::fs::create_dir_all(&kd).expect("kernel dir");
+    std::fs::write(
+        kd.join("gx10.json"),
+        format!(
+            r#"{{"schema":"apr-kernel-diff-receipt/v1","host":"gx10","version":"0.69.1","apr_sha":"{MC}","sm":"sm_121",
+                "dispatch":[{{"sha256":"{SHA_A}","file":"a.gguf","kernels":[{{"kernel":"q4k_gemv","quant":"q4_k"}}]}}],
+                "rows":[{{"kernel":"q4k_gemv","quant":"q4_k","reference":"cpu","max_err":0.001,"bound":0.004,"bound_source":"pair","verdict":"pass"}},
+                        {{"kernel":"q4k_gemv","quant":"q6_k","reference":"cpu","max_err":0.001,"bound":0.004,"bound_source":"pair","verdict":"pass"}}]}}"#
+        ),
+    )
+    .expect("kernel receipt");
+    let mut g = Graph::new();
+    let st = extract(&mut g, &c, &subject()).expect("extracts");
+    assert_eq!(st.kernel_cells, 2, "one kernel × two required hosts");
+    let lambda = iri_path("release-kernel", &["0.69.1", "lambda", "q4k_gemv", "q4_k"]);
+    let gx10 = iri_path("release-kernel", &["0.69.1", "gx10", "q4k_gemv", "q4_k"]);
+    assert!(
+        g.objects(&lambda, &rel("row")).is_empty(),
+        "measured on gx10 only: lambda's row is missing"
+    );
+    assert_eq!(
+        g.objects(&gx10, &rel("row")).len(),
+        1,
+        "the q6_k row is a different cell (#3712, eb)"
+    );
+    let host = iri_path("release-host", &["0.69.1", "lambda"]);
+    assert_eq!(
+        g.objects(&host, &rel("modelWithoutDispatch")).len(),
+        1,
+        "lambda holds a.gguf and has no dispatch list for it"
+    );
+}
+
+#[test]
+fn a_foreign_context_or_kernel_schema_is_refused_by_name() {
+    let (t, c) = repo("");
+    std::fs::write(
+        t.path().join("evidence/release/context-rungs.json"),
+        r#"{"schema":"something/v9"}"#,
+    )
+    .expect("rewrite");
+    let e = extract(&mut Graph::new(), &c, &subject()).expect_err("refused");
+    assert!(e.to_string().contains("something/v9"), "{e}");
+}
+
+#[test]
+fn a_measured_length_and_thinking_mode_shape_the_cells_and_a_think_on_row_must_close_and_answer() {
+    let (t, c) = repo("");
+    // e.gguf: 1500-token context (golden 0 fits, consumer-max 1000 fits), no thinking mode
+    // f.gguf: 800-token context (consumer-max 1000 does NOT fit), thinking mode unmeasured → both modes
+    let inv = format!(
+        r#"{{"file":"e.gguf","sha256":"{SHA_A}","context_length":1500,"thinking_modes":["off"],"thinking_markers":[]}},
+           {{"file":"f.gguf","sha256":"{SHA_B}","context_length":800}}"#
+    );
+    let unclosed = cell_t(SHA_B, "chat", "on", "golden").replace(
+        r#""answer_chars":12"#,
+        r#""answer_chars":0,"think_closed":false"#,
+    );
+    let declared_row = cell_t(SHA_A, "run", "off", "declared"); // 2000 + 512 ≥ 1500
+    let rows = [unclosed, declared_row].join(",");
+    write_receipt(t.path(), "lambda", &receipt("lambda", MC, &inv, &rows));
+    let mut g = Graph::new();
+    let st = extract(&mut g, &c, &subject()).expect("extracts");
+    // lambda: e = 4 verbs × 1 mode × 3 rungs = 12 · f = 4 × 2 × 2 rungs (golden, declared) = 16
+    // gx10: no receipt and no rung listed → no models, no cells (its Host node carries the missing receipt)
+    assert_eq!(st.cells, 12 + 16);
+    let on = |file: &str| {
+        iri_path(
+            "release-cell",
+            &["0.69.1", "lambda", file, "chat", "think-on", "golden"],
+        )
+    };
+    assert!(
+        g.objects(&on("e.gguf"), RDF_TYPE).is_empty(),
+        "no thinking mode measured → no ON cell"
+    );
+    let row = g.objects(&on("f.gguf"), &rel("row"))[0]
+        .as_iri()
+        .expect("iri")
+        .to_string();
+    let lit = |n: &str, p: &str| {
+        g.objects(n, &rel(p))[0]
+            .as_literal()
+            .map(|(v, _)| v.to_string())
+    };
+    assert_eq!(
+        lit(&row, "thinkOk").as_deref(),
+        Some("false"),
+        "an unclosed think block"
+    );
+    assert_eq!(
+        lit(&row, "answered").as_deref(),
+        Some("false"),
+        "an empty answer"
+    );
+    let big = iri_path(
+        "release-cell",
+        &[
+            "0.69.1",
+            "lambda",
+            "f.gguf",
+            "chat",
+            "think-off",
+            "consumer-max",
+        ],
+    );
+    assert!(
+        g.objects(&big, &rel("model")).is_empty(),
+        "a rung past the declared length is not owed"
+    );
+    let decl = iri_path(
+        "release-cell",
+        &["0.69.1", "lambda", "e.gguf", "run", "think-off", "declared"],
+    );
+    let drow = g.objects(&decl, &rel("row"))[0]
+        .as_iri()
+        .expect("iri")
+        .to_string();
+    assert_eq!(
+        lit(&drow, "contextMet").as_deref(),
+        Some("true"),
+        "prompt + budget fill the declared length"
+    );
+}
+
+#[test]
+fn a_rung_file_that_redeclares_the_per_model_rung_is_refused() {
+    let (t, c) = repo("");
+    std::fs::write(
+        t.path().join("evidence/release/context-rungs.json"),
+        r#"{"schema":"apr-release-context-rungs/v1","consumers":[],"rungs":[{"id":"declared","tokens":4096}]}"#,
+    )
+    .expect("rewrite");
+    let e = extract(&mut Graph::new(), &c, &subject()).expect_err("refused");
+    assert!(e.to_string().contains("declared"), "{e}");
+}
+
+#[test]
+fn long_rungs_are_owed_per_the_ladders_long_rungs_for_and_an_echo_that_disagrees_is_named() {
+    // qwen35 is a family that owes everything; for qwen2 only the representative file does
+    let (t, c) = repo(
+        "  cells:\n    long_rungs_for: {families: [qwen35], representatives: {qwen2: rep.gguf}}\n",
+    );
+    std::fs::write(
+        t.path().join("evidence/release/context-rungs.json"),
+        r#"{"schema":"apr-release-context-rungs/v1",
+            "consumers":[{"consumer":"rah","max_prompt_tokens":1000,"basis":"measured","source":"u1"}],
+            "rungs":[{"id":"4k","tokens":40,"derived_from":["g"]},{"id":"consumer-max","long":true}]}"#,
+    )
+    .expect("rungs");
+    let inv = format!(
+        r#"{{"file":"big.gguf","sha256":"{SHA_A}","arch":"qwen35","context_length":262144,"thinking_modes":["on","off"],"thinking_markers":["<think>","enable_thinking"]}},
+           {{"file":"small.gguf","sha256":"{SHA_B}","arch":"qwen2","context_length":32768,"thinking_modes":["off"],"thinking_markers":["<think>","enable_thinking"],"owes_long_rungs":true}}"#
+    );
+    write_receipt(t.path(), "lambda", &receipt("lambda", MC, &inv, ""));
+    let mut g = Graph::new();
+    let st = extract(&mut g, &c, &subject()).expect("extracts");
+    // big: 4 verbs × 2 modes × (4k, consumer-max, declared) = 24 · small: 4 × 1 × (4k) = 4
+    assert_eq!(st.cells, 24 + 4);
+    let small = iri("model", SHA_B);
+    let lit = |p: &str| {
+        g.objects(&small, &rel(p))
+            .first()
+            .and_then(|t| t.as_literal())
+            .map(|(v, _)| v.to_string())
+    };
+    assert_eq!(
+        lit("owesLongRungs").as_deref(),
+        Some("false"),
+        "qwen2 and not the representative"
+    );
+    assert!(
+        lit("longRungsMismatch").is_some_and(|m| m.contains("small.gguf")),
+        "the echo said true"
+    );
+    assert!(
+        lit("thinkingContradiction").is_some_and(|m| m.contains("<think>")),
+        "off only, though the template carries the enable_thinking switch"
+    );
+    let big = iri("model", SHA_A);
+    assert!(g.objects(&big, &rel("thinkingContradiction")).is_empty());
+    assert!(
+        g.objects(&big, &rel("longRungsMismatch")).is_empty(),
+        "no echo, nothing to disagree with"
+    );
+}
+
+#[test]
+fn a_discrete_kernel_is_within_bound_only_on_zero_mismatches_or_near_ties() {
+    use crate::ontology::extract::release_inputs::KernelRow;
+    let row = |mism: Option<u64>, tie: Option<f64>, err: Option<f64>| KernelRow {
+        kernel: "topk".into(),
+        quant: "f32".into(),
+        reference: "cpu".into(),
+        max_err: err,
+        index_mismatch: mism,
+        tie_margin: tie,
+        bound: Some(0.01),
+        bound_source: "pair".into(),
+        verdict: "pass".into(),
+        reason: String::new(),
+    };
+    assert!(row(Some(0), None, None).within_bound(), "same expert sets");
+    assert!(
+        row(Some(3), Some(0.002), None).within_bound(),
+        "three near-ties"
+    );
+    assert!(
+        !row(Some(1), Some(0.5), Some(0.0)).within_bound(),
+        "a real divergence; max_err is moot"
+    );
+    assert!(
+        !row(Some(1), None, None).within_bound(),
+        "a mismatch with no margin measured"
+    );
+    assert!(
+        !row(None, None, None).within_bound(),
+        "nothing measured is outside every bound"
+    );
+}
