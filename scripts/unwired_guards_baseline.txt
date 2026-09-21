@@ -19,5 +19,8 @@ check_pr_review_counts.sh
 #   out of --no-cargo. RED on main today ("6 row(s) disagree with the tree"), so
 #   it cannot be wired until that is fixed: #3646.
 check_pr_review_receipt.sh
-# ^ same move; takes a receipt path, so a bare run is RED by design (S6.3) and
-#   nothing invokes it with one: #3646.
+# ^ NOT dark: check_pr_review_arm4.sh runs it with a receipt path (A3 on a scratch
+#   receipt, A4 on the PR's own), and pr-review-quorum.yml runs arm4 on every
+#   pull_request_target and merge_group. Ledgered only because this meta-guard
+#   counts a DIRECT workflow invocation, and a bare run is RED by design (S6.3:
+#   a run over zero receipts is not a pass). Found by aprender-62 on #3646.
