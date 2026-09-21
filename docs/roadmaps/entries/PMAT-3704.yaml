@@ -1,0 +1,17 @@
+- id: PMAT-3704
+  github_issue: 3704
+  item_type: task
+  title: 'ONT-4c3: pc_extract draws the parity-receipt positive control every gate run, and every extractor the gate runs has a control'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-21T14:16:17Z
+  updated: 2026-09-21T14:16:17Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

@@ -798,4 +798,37 @@ mod tests {
             ShapesOutcome::PositiveControlFailed { .. }
         ));
     }
+
+    #[test]
+    fn every_implemented_entity_type_in_sigma_has_an_extract_control_and_it_fires() {
+        // PMAT-3704 — R-3: `pc_extract`, one planted defect per registered extractor, every run. The control set
+        // was a hand-written array beside Σ with nothing tying the two together, so `parity-receipt` (#3600) and
+        // `json` (#3516) shipped as implemented entity types the gate never controlled — the same shape as #3624
+        // for `by_entity_type`, and as bashrs#266's two lists. Σ is this build's registry (its `extractors[]`
+        // name this crate's readers), so the two sets must be EQUAL: an implemented type without a control fails,
+        // and so does a control for a type Σ does not implement.
+        let sigma_path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/ontology.yaml");
+        let text = std::fs::read_to_string(&sigma_path).expect("contracts/ontology.yaml");
+        let sigma = crate::ontology::sigma::Sigma::from_yaml(&text).expect("Σ parses");
+        let implemented: BTreeSet<String> = sigma
+            .entity_types
+            .iter()
+            .filter(|e| e.implemented)
+            .map(|e| e.name.clone())
+            .collect();
+        assert!(
+            !implemented.is_empty(),
+            "Σ implements nothing — the comparison would be vacuous"
+        );
+        let controls = extract_controls();
+        let controlled: BTreeSet<String> = controls.keys().cloned().collect();
+        assert_eq!(
+            controlled, implemented,
+            "pc_extract keys (left) must equal Σ's implemented entity types (right)"
+        );
+        for (k, v) in &controls {
+            assert_eq!(v, "fired", "pc_extract.{k}");
+        }
+    }
 }
