@@ -884,6 +884,7 @@ gate is a filed issue, never a paragraph. Tracking: #3768.
 | A flag with no observable effect (`--temperature` alone greedy; `.safetensors` never samples) | flag-effect oracle: every derived mode arg changes output on ≥1 cell, or its typed marker declares it a no-op | pre-publish derived cells | #3745 S2.5, #3754, #3760 |
 | A receipt named what it inferred (ladder `sha` = worktree HEAD, not the binary it ran) | the judge requires the receipt's binary `--version` sha to equal the pinned binary | ladder judge | #3768 row 9 |
 | Rows green alone, RED together (complexity ratchet; fixtures fabricating another subsystem's receipt) | guard_tree + complexity ratchet + `cargo check --workspace --tests` on the ASSEMBLED batch before its PR | the fold | process |
+| Post-release docs drifted: the apr-cookbook banner still said aprender 0.67.0, and nothing checked that a recipe still runs | README release section RENDERED from the release receipts; every cookbook recipe runs against the published binary, and its receipt is validated by SHACL `cookbook-recipe-v1` (argv in the surface, receipt from THAT binary, ≥1 recipe per model-taking verb); a failing recipe STOPs close | post-publish `docs` step | #3769 |
 | Release scripts assumed GNU tools (BSD `sed` on mini refused a correct build) | the multiplatform host receipt runs the release scripts ON mini | post-publish hosts step | #3756, #3731 |
 
 The same shape recurs in every row: something was TYPED where it should have been
