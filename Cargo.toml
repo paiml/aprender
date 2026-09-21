@@ -624,6 +624,10 @@ gates = [
     # silence. RED when evidence/perf041/<host>/marker.json is absent, is not
     # PASS, or is older than perf-matrix.yaml `witness.max_age_days`.
     "scripts/check_perf041_marker.sh",
+    # #3740 — in-tree tests that compare against llama.cpp read ONLY the pinned build that
+    # scripts/llama_bin.sh proves and exports; without it they skip. The release runs them WITH it,
+    # and a skip here is a FAIL, so a skip is never the release path.
+    "scripts/dogfood_comparator_env_tests.sh",
 ]
 
 # The interfaces this release SHIPS, each paired with the e2e target that proves

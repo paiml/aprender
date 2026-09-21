@@ -42,11 +42,19 @@
 //!    `CANONICAL_QWEN3_CODER_GGUF_PATHS`.
 //! 2. The `qwen3_moe_fp16_logits_pos0.json` fixture, generated once via
 //!    `scripts/generate_qwen3_moe_fp16_logits.py` (M32d.1, PR #1129).
-//! 3. The `llama-cli` binary, found via `which llama-cli` or one of the
-//!    `LLAMA_CLI_CANDIDATE_PATHS` fallbacks.
+//! 3. The PINNED `llama-cli`, and only that one: `$LLAMA_CLI` as
+//!    `scripts/llama_bin.sh` exports it after PROVING the build against
+//!    `scripts/llama_pin.toml` (#3740, #3563). Never PATH, never a list of
+//!    candidate paths: a comparator nobody pinned makes the verdict about
+//!    whichever llama.cpp the host happens to have (on lambda, `~/src/llama.cpp`
+//!    is a different commit with a broken llama-cli). Run it as
+//!    `. scripts/llama_bin.sh && cargo test -p aprender-serve --test qwen3_moe_argmax_parity -- --ignored`.
 //!
 //! Skips with `eprintln!` if any of the three is absent. Marked `#[ignore]`
-//! so it does NOT run in default CI.
+//! so it does NOT run in default CI; the pre-publish dogfood runs it WITH the
+//! pinned environment and treats a skip as a failure
+//! (`scripts/dogfood_comparator_env_tests.sh`), so a skip is never the
+//! release path.
 //!
 //! ## What the test does
 //!
@@ -71,12 +79,12 @@ const CANONICAL_QWEN3_CODER_GGUF_PATHS: &[&str] = &[
 
 const FIXTURE_RELATIVE: &str = "tests/fixtures/qwen3_moe_fp16_logits_pos0.json";
 
-const LLAMA_CLI_CANDIDATE_PATHS: &[&str] = &[
-    "/home/noah/.local/bin/llama-cli",
-    "/home/noah/src/llama.cpp/llama-cli",
-    "/usr/local/bin/llama-cli",
-    "/usr/bin/llama-cli",
-];
+/// The one way this test reaches llama.cpp: the variable `scripts/llama_bin.sh`
+/// exports once it has proved the pinned build (#3740).
+const LLAMA_CLI_ENV: &str = "LLAMA_CLI";
+/// What to run when it is unset, printed verbatim in the skip.
+const RUN_PINNED: &str =
+    ". scripts/llama_bin.sh && cargo test -p aprender-serve --test qwen3_moe_argmax_parity -- --ignored";
 
 #[derive(serde::Deserialize)]
 struct Fp16Fixture {
@@ -99,16 +107,15 @@ fn find_first_existing<I: AsRef<str>>(paths: &[I]) -> Option<PathBuf> {
     None
 }
 
+/// `$LLAMA_CLI` from `scripts/llama_bin.sh`, or `None`. The value is used as
+/// given: `llama_bin.sh` has already proved it is the pinned build, and a second
+/// check here would be the second resolver #3740 forbids.
 fn locate_llama_cli() -> Option<PathBuf> {
-    if let Ok(out) = Command::new("which").arg("llama-cli").output() {
-        if out.status.success() {
-            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !path.is_empty() && Path::new(&path).exists() {
-                return Some(PathBuf::from(path));
-            }
-        }
-    }
-    find_first_existing(LLAMA_CLI_CANDIDATE_PATHS)
+    llama_cli_from(std::env::var_os(LLAMA_CLI_ENV))
+}
+
+fn llama_cli_from(value: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    value.filter(|v| !v.is_empty()).map(PathBuf::from)
 }
 
 fn fixture_path() -> PathBuf {
@@ -139,10 +146,15 @@ fn extract_first_emit(raw: &str) -> String {
 fn f_qw3_moe_parity_002_argmax_vs_llama_cpp() {
     let Some(llama_cli) = locate_llama_cli() else {
         eprintln!(
-            "F-QW3-MOE-PARITY-002: skipped — llama-cli not in PATH or in {LLAMA_CLI_CANDIDATE_PATHS:?}"
+            "F-QW3-MOE-PARITY-002: skipped — ${LLAMA_CLI_ENV} is unset, so there is no PINNED llama-cli. Run: {RUN_PINNED}"
         );
         return;
     };
+    assert!(
+        llama_cli.is_file(),
+        "F-QW3-MOE-PARITY-002: ${LLAMA_CLI_ENV}={} is not a file; scripts/llama_bin.sh exports only a proved build",
+        llama_cli.display()
+    );
 
     let Some(gguf_path) = find_first_existing(CANONICAL_QWEN3_CODER_GGUF_PATHS) else {
         eprintln!(
@@ -248,11 +260,22 @@ fn f_qw3_moe_parity_002_argmax_vs_llama_cpp() {
 }
 
 #[test]
-fn locate_llama_cli_handles_missing() {
-    // Sanity for the fallback resolver: a deliberately-bogus list returns None.
-    let none_paths: &[&str] = &["/nonexistent/llama-cli", "/also/nonexistent"];
-    let result = find_first_existing(none_paths);
-    assert!(result.is_none());
+fn locate_llama_cli_reads_only_the_pinned_env() {
+    // #3740: the comparator is `$LLAMA_CLI` (exported by scripts/llama_bin.sh), or nothing.
+    // Unset and empty both mean "no pinned build": the test skips instead of searching.
+    assert_eq!(llama_cli_from(None), None);
+    assert_eq!(llama_cli_from(Some(std::ffi::OsString::new())), None);
+    assert_eq!(
+        llama_cli_from(Some("/pinned/build/bin/llama-cli".into())),
+        Some(PathBuf::from("/pinned/build/bin/llama-cli"))
+    );
+}
+
+#[test]
+fn find_first_existing_handles_missing() {
+    // Still used for the model GGUF (not the comparator): a bogus list returns None.
+    let none_paths: &[&str] = &["/nonexistent/model.gguf", "/also/nonexistent"];
+    assert!(find_first_existing(none_paths).is_none());
 }
 
 #[test]

@@ -79,6 +79,7 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         assertion_exclusion_baseline.txt)        printf 'keyed\n' ;;
         claim_literal_baseline.txt)              printf 'set-aperture\tscripts/check_no_claim_literals.sh\n' ;;
         contract_duplicate_stem_baseline.txt)    printf 'set\n' ;;
+        comparator_consumer_baseline.txt)        printf 'set\n' ;;   # known llama.cpp consumers not resolving through llama_bin.sh, each owned by an issue (scripts/check_comparator_consumers_resolve.sh, #3740)
         contract_test_binding_baseline.txt)      printf 'keyed\n' ;;
         complexity_baseline.txt)                 printf 'keyed2\n' ;;
         fabricated_baseline_rust_sites.txt)      printf 'set\n' ;;
