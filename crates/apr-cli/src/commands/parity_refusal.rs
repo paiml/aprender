@@ -232,3 +232,29 @@ pub(crate) fn capability_refusal(
         quant,
     })
 }
+
+/// #3685: the error `apr parity` returns for a failed CUDA init. This is the decision
+/// itself, CUDA-free so the case table can reach it; the `cuda` arm of `parity::run` only
+/// calls it.
+///
+/// A capability refusal prints its ONE stderr line (plus the `--json` refusal object) and
+/// becomes exit 12. Anything else stays `ValidationFailed`, exactly as before.
+#[cfg(feature = "inference")]
+#[allow(dead_code)]
+pub(crate) fn cuda_init_error(
+    architecture: &str,
+    unsupported_qtype: Option<u32>,
+    error: realizar::error::RealizarError,
+    json: bool,
+) -> CliError {
+    match capability_refusal(architecture, unsupported_qtype, &error) {
+        Some(refusal) => {
+            eprintln!("{}", refusal.line());
+            if json {
+                println!("{}", serde_json::to_string_pretty(&refusal.json()).unwrap_or_default());
+            }
+            refusal.into_error()
+        },
+        None => CliError::ValidationFailed(format!("CUDA init failed: {error}")),
+    }
+}

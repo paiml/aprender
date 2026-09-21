@@ -5,7 +5,7 @@
 
 #[cfg(all(test, feature = "inference"))]
 mod parity_refusal_case_table {
-    use super::{capability_refusal, parity_refusal_for, PARITY_REFUSED_EXIT};
+    use super::{capability_refusal, cuda_init_error, parity_refusal_for, PARITY_REFUSED_EXIT};
 
     /// The three architectures the 0.68.0 T-2 dogfood measured as FAIL rows.
     /// Each one is a TOOL refusal, not a model defect.
@@ -240,5 +240,17 @@ mod parity_refusal_case_table {
         let refused = v.get("refused").expect("top-level `refused` key");
         assert_eq!(refused.get("quant").and_then(|q| q.as_str()), Some("F16"));
         assert!(v.get("metrics").is_none() && v.get("parity").is_none());
+    }
+
+    /// #3685, the decision `apr parity` actually takes on a failed CUDA init: a capability
+    /// refusal is exit 12, and any other init error is still 5. Map the refusal back to
+    /// `ValidationFailed` and this row fails; that is the issue's mutation.
+    #[test]
+    fn parity_refusal_3685_cuda_init_error_maps_refusal_to_12_and_the_rest_to_5() {
+        let refused = cuda_init_error("qwen2", Some(1), f16_capability_mismatch(), false);
+        assert_eq!(refused.exit_code_value(), PARITY_REFUSED_EXIT, "capability refusal");
+        let oom = realizar::error::RealizarError::InferenceError("cuMemAlloc: out of memory".into());
+        let crashed = cuda_init_error("qwen2", Some(1), oom, false);
+        assert_eq!(crashed.exit_code_value(), 5, "a real init failure keeps its old code");
     }
 }
