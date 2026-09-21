@@ -18554,6 +18554,27 @@ roadmap:
   - orch:fable
   - orch-basis:state
   notes: null
+- id: PMAT-3490
+  github_issue: 3490
+  item_type: task
+  title: 'CB-200 ratchet 601 -> 599 and the complexity shrink under pmat 3.41.1 — the pin itself landed in #3484, not here'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-18T15:52:47Z
+  updated: 2026-09-18T15:52:47Z
+  spec: null
+  acceptance_criteria:
+  - 'THE PIN IS ALREADY IN AND THIS ROW NO LONGER BUMPS IT. `[pmat] version = "3.41.1"` landed on main in `f4c0daa37` (09-18 17:07) inside the 0.68.2 PR #3484, not here. Verified on `origin/main:tools.toml:56`. The row was written before that and its original title said otherwise; two humans AND a review lane then read `tools.toml:7` — a COMMENT reading `version: "3.40.1"` — as the pin, which is paiml/infra#816.'
+  - 'WHAT THIS ROW ACTUALLY LANDS: the **CB-200 ratchet 601 -> 599** and the stale comment on `tools.toml:7` — and NOTHING ELSE. The complexity-baseline shrink (8 functions) that an earlier version of this criterion claimed ALSO landed in #3484: `scripts/complexity_baseline.txt` is absent from the diff against origin/main, which quorum r3 lane 1 caught. The r2 ratchet output "8 removed" was measured against the MERGE-BASE, not against main. The rebase against main surfaced 601-vs-599 as a genuine conflict — BOTH sides already carried `tool_version=pmat 3.41.1`, so it was never a version disagreement — and 599 is kept because the file is shrink-only against origin/main and taking 601 would surrender the ratchet.'
+  - 'VERIFIED ON THE MERGED TREE rather than carried, because 10 commits of new code could have made 599 unreachable: `ok CB-200 baseline 599 ([tdg] baseline == scripts/cb200_baseline.txt)`, `ok ratchet cb200_baseline.txt did not grow (2 removed)`, `ok ratchet complexity_baseline.txt did not grow (8 removed)`, `PASS (D2): 3409b29d2 vs 674da069e measured by pmat 3.41.1 — none new, none grown.`'
+  - '3.41.1 RE-CONFIRMED AS CONVERGED before the rebase, on the RUNNER denominator rather than the host set: intel HOST, `gx10-pool1`, `yoga-build3`, and the gx10/mini/lambda-labs hosts all report 3.41.1, and infra declares 3.41.1 on all five machines. `pforge-clean-room` (`rust:1.95-slim`) carries no pmat at all — paiml/infra#813. A pin measured two days earlier asserts nothing if the fleet moved under it; it had not.'
+  - 'THE PR-REVIEW RECEIPT UNDER `evidence/pr-review/3491/0fd8deb79.../` IS NOT REGENERATED, deliberately. It is scoped to the sha it names and correct for it. `pr_review_quorum_arm.sh:612` already refuses this case with the true reason — `0fd8deb79` IS an ancestor of the rebased head, so Q3 reaches the late-diff arm and refuses because commits after the reviewed sha touch `tools.toml` and the baselines, outside `evidence/pr-review/3491/**`. Regenerating a signed receipt for a head it never reviewed would be the real defect; a fresh signed round writes to its own directory and the old one stays as the historical artifact it is.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-3500
   github_issue: 3500
   item_type: task
@@ -18865,6 +18886,23 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE — transcribed from issue #3604 done_when (minted by the cop so the AD-04 quorum for PR #3634 can run; pmat work status refused on a missing item). (1) Validation runs once per (model sha256, apr version, device); subsequent runs of the same triple read the receipt. (2) --revalidate forces a fresh validation and rewrites the receipt. (3) Falsifier: a planted receipt carrying the wrong model sha256 must cause re-validation, not a skip. Same for a receipt written by a different apr version, and one written for a different device. Three planted-receipt cases, each asserted to re-validate. (4) A missing or unreadable receipt validates — absence is never consent. (Unknown/skip is not an option here; the fallback is to do the work.) (5) validate_ms in apr run --json (#3598) reports the cached case distinguishably from the fresh case, so the saving is readable from the receipt rather than inferred from a stopwatch. (6) Measured before/after TTFT on the 144-word row, on the same box with GPU occupancy recorded at start. ADMISSION: 0.69 if it is green by the cut, 0.70 otherwise — readiness rule, not date pressure. EXPLICITLY OUT OF SCOPE (three questions the instrument lane raised and did not answer; none block this row and none should be folded in): whether the CPU reference or the GPU probe dominates the 9.5 s (timed as one unit); whether a cheaper equivalent guard exists; the flat ~1.18 s unattributed_ms residual — recorded rather than absorbed into a neighbour, and the next stage to name. Refs #3596, #3598, #3080.'
+- id: PMAT-3627
+  github_issue: 3627
+  item_type: task
+  title: 'rmsnorm_contract::prop_scale_invariance asserts the ε=0 theorem against the ε=1e-6 implementation — fails whenever α²·mean(x²) ≈ ε (killed #3621 shard 1/3)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-20T21:27:27Z
+  updated: 2026-09-20T21:27:27Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from issue #3627 done_when; minted on the PR branch so the AD-04 quorum can run -- pmat work status refuses a missing item). Done when: contracts/rmsnorm-kernel-v1.yaml Scale invariance obligation carries either the ε>0 formal or the α²·mean(x²) ≫ ε precondition; pv validate passes ~~regenerated with pv probar --binding~~ **WITHDRAWN 21:40Z** — b3 measured that pv probar --binding emits 7 #[ignore = "no binding available"] stubs for this contract; the tracked file''s 5 real tests were produced by the pre-monorepo external generator (20dda945b, 2026-02-18) and the header is false (class row: #3630). Instead: the tracked test is edited **directly**, the commit says so, and the file''s header is replaced by a true one (hand-maintained, contract-bound) the minimal input above ([0.0, -0.15964308], α=0.012254778) is a committed regression case that PASSES under the new assertion (i.e. the fixed test is exercised on the exact input that killed #3621), and a mutation that restores the ε=0 assertion turns it RED cargo'
 - id: PMAT-3637
   github_issue: 3604
   item_type: task

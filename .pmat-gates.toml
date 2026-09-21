@@ -100,7 +100,11 @@ exclude = [
 # the count did not. Between those readings #3004 added one B- definition
 # (registry/wgpu_probe.rs entry, 603) and merged, because no required job runs
 # `pmat comply`; it was split into four graded tables in the pin-bump PR, back to 602.
-baseline = 601
+baseline = 599
+# 599 re-measured 2026-09-18 under pmat 3.41.1 (the fleet pin, infra#692) from a cold index at
+# 3409b29d2. Instrument vs tree, separated: 3.41.1 reads 602 on 5d95ed54e, the tree that banked
+# 601 under 3.40.2 (+1 from the instrument on that tree, definition not identified), and 599
+# here, so the tree is 3 definitions better than 09-17 under the same binary. Lowered, never raised.
 # 601 re-measured 2026-09-17 under pmat 3.40.2 on the 0.68.0 release tree: 604 at head = 602 +
 # three additions since the 09-15 baseline (one Rust fn refactored to A+, two C++ reference
 # `main`s under evidence/** now excluded above); 604 - 3 = 601. Lowered, never raised.
