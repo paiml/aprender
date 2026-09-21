@@ -1,0 +1,474 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.41.1",
+          "informationUri": "https://github.com/paiml/paiml-mcp-agent-toolkit",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "Index BUILT in this worktree (/home/noah/src/aprender-review) at the reviewed head, three times, all at HEAD 0fd8deb79 with a clean tracked tree (the only untracked path was this review's own evidence/pr-review/3491/): first at 18:26-18:27 (Indexed 10440 files, 89633 functions, 9793224 call edges, 422.4 MB, 50.6 s inside a 100 s query), lost by 18:29; rebuilt 18:32 (94 s) and 18:40 (the bisection), each lost after an MCP pmat_index_stats call - see the finding. Every pmat query in this review ran against one of those three builds, all of the same commit; index_commit is stamped from this worktree and /home/noah/src/aprender/.pmat was never read. At receipt time the index is ABSENT (deleted by the mechanism the finding records), so a later `pmat query` here rebuilds it; that does not change what answered this review."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "pmat",
+                  "query",
+                  "tool version pin baseline",
+                  "--rebuild-index",
+                  "--limit",
+                  "1"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "d0b6f9991ae8d65a709c9c3f7e176342d150fa3f4b97bc96b9842e051b3d181d"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Transports: the CLI answered every query (pmat 3.41.1 at /home/noah/.cargo/bin/pmat). The MCP transport WAS probed - `pmat --mode mcp` is attached to this session - and it is reachable: pmat_index_stats returned a response, but that response was an error ('the index is stale ...') and the call deleted the index. Recorded as transport: cli with the MCP entry in transport_unavailable naming what it did, because 'the MCP answered' and 'the MCP answered the question' are not the same artifact."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "<mcp>",
+                  "pmat_index_stats",
+                  "{}"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "4a30f4e5bb97d71ab079843c8f3695255a9df97ffd63f45780cdc04f65ce5758"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "complexity_delta[] is EMPTY BY MEASUREMENT, not by refusal: the diff touches no .rs file, and scripts/check_complexity_ratchet.sh - which is pmat's AST walk over 10345 .rs files on BOTH sides of the merge base - reads 670 function(s) over cyclomatic>30 or cognitive>25 at base 3409b29d2 and 670 at merge 0fd8deb79, universe delta +0, instrument pmat 3.41.1 on both sides, 'PASS (D2): none new, none grown', 20 s. tdg_delta[] is empty BECAUSE THE ANALYSER REFUSES the changed file types: `pmat analyze tdg --path tools.toml` exits 1 'TDG grades source files and .toml is not one', and `pmat analyze complexity --path scripts/complexity_baseline.txt` exits 5 'no source files were found ... This is not a clean result'. Both refusals are recorded so the empty arrays cannot read as clean."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "scripts/check_complexity_ratchet.sh"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "b8b21f509e8d6df118be997b1a5ca1c78d757fc44fb9962a71066239e9bc3946"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "satd_introduced[] is empty and that IS a measurement: 0 of the 179 added lines match TODO|FIXME|HACK|XXX (grep -c exits 1), and `pmat analyze satd --path scripts/cb200_baseline.txt` reports violations: []."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "grep",
+                  "-cE",
+                  "TODO|FIXME|HACK|XXX",
+                  "/tmp/added.txt"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "duplication_hits[] is NON-EMPTY over a FULLY swept horizon: 4 needles, 122 of 122 sibling branches, 0 files in merge_base..origin/main (origin/main IS the merge base - main has not moved since this branch forked), 2 hits, 3 s. The semantic half reached nothing: `pmat query \"pmat tool version pin fleet baseline re-measure\" --limit 10` returned 3 document hits (two .md, one .txt) and no function, because the diff adds no Rust. The lexical half found the sibling branch, which is the finding above."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "scripts/pr_review_duplication_scan.sh",
+                  "--base",
+                  "3409b29d22d8be7ae04334130ccc01877b967a1d",
+                  "--head",
+                  "0fd8deb79bbb1b21a0b15089233979f0c8c73cf7",
+                  "--rust-semantic",
+                  "--json",
+                  "/tmp/dup.json"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "3b821df2b52b87f9e09df110b7bce0e688f6b1e86d084bb7714bdfbfbb16b436"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "The PR's central claim RE-MEASURED at this head under the pinned instrument: `pmat comply check --checks CB-200` from a cold index (the tree had no .pmat/context.db at that moment; comply built its own under ~/.cache) reads exactly what the PR says."
+              },
+              "properties": {
+                "grounding": "cited",
+                "source": "pmat comply check --checks CB-200 @ 0fd8deb79, /tmp/cb200.log line 62 (stdout sha256 b554f7183ba92e0530ed2818cae59fc77519cf9010927ebc9b388daca4f795ae)",
+                "excerpt": "\u26a0 CB-200: TDG Grade Gate: 599 definition(s) below minimum grade B across 478 file(s), at the recorded baseline of 599 \u2014 this is debt held flat, not a clean tree. Any new definition below B fails this gate. [measured against /home/noah/.cache/paiml-mcp-agent-toolkit/comply/index/aprender-review-2765511e67b96f86/context.db, the index pmat keeps for this project outside it \u2014 the audited tree has no .",
+                "excerpt_sha256": "9b1e90953326af2ccaf9602b1d93b0e6f683c8b6b92921ed680f9a17a1f4a5a3"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "The PR's instrument-vs-tree separation RE-MEASURED: pmat 3.41.1 on a detached worktree of 5d95ed54e (the tree that banked 601 under 3.40.2) reads 602, 1 over - exactly the PR's '3.41.1 grades ONE more definition below B on that tree'. 103 s, comply rc 1 (over baseline, as expected there). And the six dropped complexity rows: llm.rs AS OF 4bad830fd under 3.41.1 reads execute_llm_load 36/61, _score 40/91, _sweep 20/40, _experiment 16/36 - the numbers 3.40.1 recorded - while at HEAD they read 14/21, 6/11, 11/21, 8/15; validate_gpu_first_token reads 10/23 and compute_data_ranges 2/1 at HEAD. All six functions still exist (grep -c 'fn <name>' = 1 each). The instrument did not move on complexity; the tree did. The PR's statements are confirmed, not taken on trust."
+              },
+              "properties": {
+                "grounding": "cited",
+                "source": "pmat comply check --checks CB-200 @ 5d95ed54e (git worktree, /tmp/cb200_old.log line 61, stdout sha256 1909e8965182cc76dd25423ac04453d41850d9a00266557d9f44c2b0e09700e8)",
+                "excerpt": "\u2717 CB-200: TDG Grade Gate: 602 definition(s) below minimum grade B \u2014 1 OVER the recorded baseline of 601. A ratchet holds only if new debt is refused: fix 1, or revert what added them. Raising `[tdg] baseline` is not the fix \u2014 a baseline may only go down.",
+                "excerpt_sha256": "3af9fd9050f3f0eb2246efdb0adb8172cb66f059d8c9ac19aaa705c5430c2167"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "The fleet-side half of the pin, read from paiml/infra origin/main (f92ed2d0, 'Merge pull request #692 from paiml/fleet/pmat-3.41.1'): machines/intel/forjar.yaml lines 779-784."
+              },
+              "properties": {
+                "grounding": "cited",
+                "source": "git -C /home/noah/src/infra show origin/main:machines/intel/forjar.yaml | sed -n 779,784p",
+                "excerpt": "  stack-tool-pmat:\n    type: package\n    machine: intel\n    tags: [stack-tools]\n    provider: cargo\n    version: \"3.41.1\"",
+                "excerpt_sha256": "5d59806e2e8bdadfa297e19df641b4ed4f06f31fc6134a49fd1b96f9c56f8042"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "The guards this PR's files feed were all run at HEAD and are green: scripts/check_tool_versions.sh 'ok pmat pinned 3.41.1 found 3.41.1 ... 4/4 checks, 0 failed' (rc 0); scripts/check_baseline_ratchets.sh 'cb200_baseline.txt did not grow (2 removed)', 'complexity_baseline.txt did not grow (6 removed)', '3 ratchet baseline(s) name a versioned instrument and it was PROBED', PASS (rc 0); check_complexity_ratchet.sh's cb200_pair_check 'ok CB-200 baseline 599 ([tdg] baseline == scripts/cb200_baseline.txt)'; the five roadmap guards (fragment_required, ids_unique, sorted, completion_is_cited, diff_additive) rc 0 and `roadmap_fragments.py aggregate --check` 'roadmap.yaml == aggregate(32 fragment(s)), idempotent'. scripts/pmat_bin.sh still carries PMAT_PIN=\"3.37.0\" at line 26, as the PR says it left it."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "scripts/check_tool_versions.sh"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "2f094abcec38091bf6e9b5a58f8c07d39def6d40803df51b2b7846a25fdb68cb"
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "pmat/duplicate-open-pr-for-the-same-ticket",
+          "level": "warning",
+          "message": {
+            "text": "A second OPEN pull request implements the same ticket over the same files from the same merge base. scripts/pr_review_duplication_scan.sh returned 2 hits, both on sibling branch origin/PMAT-3490-pmat-pin-3.41.1 (docs/audits/quorum-PMAT-3490.json and docs/roadmaps/entries/PMAT-3490.yaml by filename), and `gh pr list --search 3490` resolves that branch to PR #3492 (head 509431100, created 2026-09-18T16:02:02Z, 113 s after #3491, author noahgift, body 'Closes #3490'). Its merge base with origin/main is the same 3409b29d2. It changes 6 of this PR's 7 files (all but .pmat-gates.toml): tools.toml pin 3.40.1->3.41.1, the same six complexity_baseline.txt rows removed, cb200_baseline.txt header re-labelled to 3.41.1 but the count LEFT AT 601 (this PR lowers it to 599 and lowers .pmat-gates.toml [tdg] baseline to match). #3491 has auto-merge armed (16:11:34Z); #3492 does not."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tools.toml"
+                },
+                "region": {
+                  "startLine": 56
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "bash",
+              "scripts/pr_review_duplication_scan.sh",
+              "--base",
+              "3409b29d22d8be7ae04334130ccc01877b967a1d",
+              "--head",
+              "0fd8deb79bbb1b21a0b15089233979f0c8c73cf7",
+              "--rust-semantic",
+              "--json",
+              "/tmp/dup.json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "3b821df2b52b87f9e09df110b7bce0e688f6b1e86d084bb7714bdfbfbb16b436",
+            "precision_class": "advisory",
+            "corroborating_commands": [
+              [
+                "gh",
+                "pr",
+                "list",
+                "--state",
+                "open",
+                "--search",
+                "3490",
+                "--json",
+                "number,headRefName,createdAt,headRefOid"
+              ],
+              [
+                "git",
+                "merge-base",
+                "origin/main",
+                "origin/PMAT-3490-pmat-pin-3.41.1"
+              ],
+              [
+                "git",
+                "diff",
+                "--stat",
+                "origin/main",
+                "origin/PMAT-3490-pmat-pin-3.41.1"
+              ]
+            ],
+            "corroborating_results": {
+              "gh_pr_list_stdout_sha256": "41789d8c4b6ab545f2d4cda02b11021eeec5093167e960722eac95ae81a1edea",
+              "pr_3492_merge_base": "3409b29d22d8be7ae04334130ccc01877b967a1d",
+              "pr_3492_files": 6,
+              "pr_3492_cb200_count": 601,
+              "pr_3491_cb200_count": 599
+            },
+            "failure_scenario": "Whichever PR lands second conflicts on tools.toml, cb200_baseline.txt, complexity_baseline.txt and roadmap.yaml. If #3491 lands first (it is the one armed), #3492's naive conflict resolution would carry cb200_baseline.txt back from 599 to 601 - a shrink-only ratchet violation that check_baseline_ratchets.sh would refuse against origin/main, so #3492 becomes unmergeable as written and must be closed by hand. If #3492 lands first, #3491's auto-merge silently rebases onto a tree that already pins 3.41.1 and its 'FAIL pmat pinned 3.40.1 found 3.41.1' narrative no longer describes the base. Either way one PR's 'Closes #3490' closes the issue and the other's is dead text. Nothing in either PR names the other."
+          }
+        },
+        {
+          "ruleId": "pmat/tools-toml-cites-an-infra-sha-that-does-not-exist",
+          "level": "note",
+          "message": {
+            "text": "tools.toml line 7 cites the fleet pin's provenance as 'infra 9c411f4, 2026-09-18 (#692)'. In paiml/infra (~/src/infra, after `git fetch origin +refs/heads/*:refs/remotes/origin/* +refs/pull/692/*:refs/remotes/pr692/*`), `git cat-file -t 9c411f44f` exits 128 'fatal: Not a valid object name'. 9c411f44f is named by infra quorum commit 7346a292 as the tip it reviewed and by 31c25ec7 as pre-dating 'the rebase over #691' - it is a rewritten SHA. The commit that actually pins pmat 3.41.1 is 2734069e ('fleet: pin pmat 3.41.1 on all five boxes, and declare /opt/ci-tools/pmat on gx10 and yoga (closes #690)'), merged via f92ed2d0 (#692). Everything else on the line is verified: machines/intel/forjar.yaml line 779 is stack-tool-pmat and line 784 reads version: \"3.41.1\" on infra origin/main. The competing PR #3492 writes the same line as 'infra#692, 2026-09-18 (...)' - PR number, no SHA - and is not exposed to this."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tools.toml"
+                },
+                "region": {
+                  "startLine": 7
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "git",
+              "-C",
+              "/home/noah/src/infra",
+              "cat-file",
+              "-t",
+              "9c411f44f"
+            ],
+            "exit_code": 128,
+            "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "precision_class": "advisory",
+            "corroborating_commands": [
+              [
+                "git",
+                "-C",
+                "/home/noah/src/infra",
+                "show",
+                "origin/main:machines/intel/forjar.yaml"
+              ],
+              [
+                "git",
+                "-C",
+                "/home/noah/src/infra",
+                "log",
+                "--oneline",
+                "-12",
+                "origin/main"
+              ]
+            ],
+            "corroborating_results": {
+              "forjar_line_779_784_sha256": "bf314c7b1c4e9c4413a73e6e795478795011d1cebc64b099cf05f02f6bf9cacb",
+              "infra_pin_commit": "2734069e",
+              "infra_merge_commit": "f92ed2d0"
+            },
+            "failure_scenario": "The next pin bump copies this line as its template (the line it replaced, 'infra ba369f9 ... (#591)', was the template for this one), a reader runs `git show 9c411f4` in infra to check the fleet was really converged before trusting the pin, and gets 'unknown revision'. A provenance citation that cannot be followed is the exact drift class CLAUDE.md's FALSIFY-DOCS-CLAUDE-001 exists for, one repository over; here nothing checks it, so it will be copied forward."
+          }
+        },
+        {
+          "ruleId": "pmat/pinned-instrument-mcp-index-stats-deletes-a-cli-built-index",
+          "level": "warning",
+          "message": {
+            "text": "pmat 3.41.1 - the version this PR pins on every fleet runner - deletes its own index when its MCP server is asked about it. Measured in this worktree, twice, deterministically: `pmat query \"x\" --rebuild-index --limit 1` (CLI) writes .pmat/context.idx/manifest.json at 18:40:59 and .pmat/context.db at 18:41:01; the MCP tool `pmat_index_stats` (server `pmat --mode mcp`, pid 2468072, the one attached to this session) then answers 'Internal error: the index is stale: .../.pmat/context.db was written after .../.pmat/context.idx/manifest.json, so the manifest does not describe the database', and `ls -la .pmat/` afterwards shows only .gitignore - context.db (522 MB) and context.idx/ are gone. Reproduced 2/2. The same index survives, 7/7, every CLI path exercised here: pmat query with and without --rebuild-index, pmat analyze satd/tdg/complexity, scripts/check_baseline_ratchets.sh, scripts/check_complexity_ratchet.sh, scripts/check_tool_versions.sh and scripts/pr_review_duplication_scan.sh. The first loss of this review's index (built 18:27, absent by 18:29 when `pmat comply check --checks CB-200` printed 'no index in .') was not bisected to a trigger and is consistent with, not proven to be, the same mechanism. NOT a regression claim: pmat 3.40.1 was not tested on this box, so whether this is new in 3.41.x is not known."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tools.toml"
+                },
+                "region": {
+                  "startLine": 56
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "ls",
+              "-la",
+              ".pmat/"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "04f5f15ed7b12020c29e692624410ba88908054adcb33b4aeefd0eb424847479",
+            "precision_class": "advisory",
+            "corroborating_commands": [
+              [
+                "pmat",
+                "query",
+                "x",
+                "--rebuild-index",
+                "--limit",
+                "1"
+              ],
+              [
+                "stat",
+                "-c",
+                "%y %n",
+                ".pmat/context.db",
+                ".pmat/context.idx/manifest.json"
+              ],
+              [
+                "<mcp>",
+                "pmat_index_stats",
+                "{}"
+              ]
+            ],
+            "corroborating_results": {
+              "mcp_error": "the index is stale: context.db was written after context.idx/manifest.json",
+              "context_db_mtime": "2026-09-18 18:41:01.522 +0200",
+              "manifest_mtime": "2026-09-18 18:40:59.408 +0200",
+              "reproductions": "2/2",
+              "cli_paths_that_leave_the_index_intact": "7/7"
+            },
+            "failure_scenario": "Any agent session with the pmat MCP server attached (this one had it, as does every Claude Code session on this box - nine `pmat --mode mcp` processes were live) loses .pmat/context.db on its first pmat_index_stats call. `pmat comply check --checks CB-200` then reports 'no index in .' and builds a private cache index (105 s here) - CB-200 stays MEASURED through the #1008 fallback, which is why this PR's 599 and this review's 599 agree - but `pmat query` needs a 95 s rebuild, and scripts/dogfood.sh:1004 reads 'no .pmat/context.db' as CB-200 UNMEASURED and marks pmat-comply FAIL. A dogfood run started between an MCP stats call and the next rebuild fails on the instrument, not the tree, and the operator reads it as debt. This is a pmat defect to file upstream against 3.41.1, not something this PR can fix; it is recorded here because this PR is what makes 3.41.1 the instrument on every runner."
+          }
+        },
+        {
+          "ruleId": "pmat/required-check-workspace-test-is-red-on-this-head-runner-killed-the-container",
+          "level": "note",
+          "message": {
+            "text": "On the reviewed head 0fd8deb79, the required check `workspace-test` (CI run 35366983482, job 105673963954, runner yoga-build2) is FAILURE with exit code 143: the job log ends '/home/noah/eph-build2/_work/_temp/....sh: line 36: 27323 Killed  docker run --rm ...' at 16:26:36Z, 4 m 24 s in, while the preceding 60 lines are rustc warnings from compiling aprender-profile's sprint50_validate_tests - no test binary ran and no test result exists. The diff changes zero .rs files and zero Cargo.toml files (`git diff --name-only | grep -cE '(^|/)(Cargo\\\\.toml|src/|crates/)'` = 0, exit 1), so the compile it interrupted is not this PR's code. The other red check, `present` (pr-review-quorum, job 105671714910), fails with 'the head carries no evidence/pr-review/3491' - the receipt this review commits is the fix, so it is not a finding."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "tools.toml"
+                },
+                "region": {
+                  "startLine": 56
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "gh",
+              "api",
+              "repos/paiml/aprender/actions/jobs/105673963954/logs"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "afb34d569c7719cb7b21aa9bba31d1d46845b59469076a5addda93b269169f8c",
+            "precision_class": "advisory",
+            "corroborating_commands": [
+              [
+                "gh",
+                "pr",
+                "checks",
+                "3491"
+              ],
+              [
+                "gh",
+                "run",
+                "list",
+                "--branch",
+                "fix/tools-pmat-3.41.1",
+                "--limit",
+                "15"
+              ]
+            ],
+            "corroborating_results": {
+              "exit_code_in_log": 143,
+              "runner": "yoga-build2",
+              "killed_at": "2026-09-18T16:26:36Z",
+              "rs_files_in_diff": 0
+            },
+            "failure_scenario": "Auto-merge is armed and waits on workspace-test. The receipt commit this review pushes re-triggers CI on the new tip, so the red run is superseded rather than re-run; if yoga-build2 kills the container again (an OOM or runner reset, cause not visible from the log) the PR sits armed and unmerged with the operator away, and nothing in this repository distinguishes 'tests failed' from 'the box killed the build' in the check's red X. A reader who sees only the X on a 7-file config PR will look for the defect in the diff, where it is not."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "agy 1.2.6 / requested model gemini-3.1-pro-high",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "note",
+              "message": {
+                "text": "Cross-vendor identity is NOT verifiable from this receipt. model_id records what was REQUESTED on argv (gemini-3.1-pro-high); agy 1.2.6's json output carries no answering-model field. The pin is a real control against the accidental Claude route - `agy models` today lists claude-sonnet-4-6 and claude-opus-4-6-thinking beside eleven Gemini ids and gpt-oss-120b-medium - and the guard's predicate agrees: --match-arm-e-same-family exits 1 for gemini-3.1-pro-high and 0 for claude-sonnet-4-6."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "scripts/check_pr_review_receipt.sh",
+                  "--match-arm-e-same-family",
+                  "gemini-3.1-pro-high"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "Availability decided by the ARTIFACT, never by .status. rc 0 (wall 219 s); .status 'SUCCESS', .error null, num_turns 1, duration_seconds 215.1 are diagnostics only. The three conjuncts each evaluated: `jq -e 'has(\"structured_output\")'` rc 0; `jq -e '.structured_output.reviewed == true'` rc 0; `check-jsonschema --schemafile .claude/skills/pr-review/agy-review-v1.schema.json` over .structured_output rc 0 'ok -- validation done'. Run in a disposable git-archive tree of 0fd8deb79 (22,548 files, no .git) with the 12,538-byte merge-base diff and the 310-byte prompt passed as FILES, --print-timeout 30m, --dangerously-skip-permissions confined to that copy, $OUT absolute before the cd; agy.err is 0 bytes and `git status` in the real worktree shows nothing from the run. agy returned findings: [] with reviewed: true - it read the diff (162,179 input tokens) and raised nothing."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "check-jsonschema",
+                  "--schemafile",
+                  ".claude/skills/pr-review/agy-review-v1.schema.json",
+                  "/tmp/so.json"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "6e03843105fcecad274e749986a5c904a825ffd0ac6ce3ca0126fb632b154db8"
+              }
+            },
+            {
+              "level": "note",
+              "message": {
+                "text": "total_tokens is NOT the total: input 162,179 + output 14,630 = 176,809, while thinking_tokens 12,148 and cache_read_tokens 1,761,130 sit outside it - the cache reads alone are 10x the reported total. All five are copied into usage."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "jq",
+                  "-c",
+                  ".usage",
+                  "evidence/pr-review/3491/0fd8deb79bbb1b21a0b15089233979f0c8c73cf7/agy.json"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "287ea73235d0c49af9d7ba9ca5b2c895d8facf5c55bc50c324ca2cb4d07b3472"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}
