@@ -78,15 +78,20 @@ pr_list_json() {
         return 0
     fi
     local -a gh_cmd=(gh pr list --limit 200 --json
-        number,mergeStateStatus,autoMergeRequest,headRefName,isDraft)
+        number,mergeStateStatus,autoMergeRequest,headRefName,isDraft,files)
     if [ -n "$REPO" ]; then
         gh_cmd+=(--repo "$REPO")
     fi
     "${gh_cmd[@]}"
 }
 
-# select_dirty -> "NUMBER<TAB>HEADREF" for every DIRTY PR, restricted to --pr
-# when given. `.number` must be BOUND before it is used inside index(): in
+# select_dirty -> "NUMBER<TAB>HEADREF" for every DIRTY PR THAT TOUCHES
+# docs/roadmaps/roadmap.yaml, restricted to --pr when given. The file predicate
+# is the script's whole purpose: the by-ID driver resolves the roadmap class and
+# nothing else, so a DIRTY PR whose conflict is elsewhere is not this tool's
+# business and must never be selected -- not even when named with --pr.
+# Measured 2026-09-20: without it, --list-only returned 14 on a board where 8
+# touched the roadmap. `.number` must be BOUND before it is used inside index(): in
 # `$want | index(.number|tostring)` the `.` is $want (the array), which is why
 # the first version died with `Cannot index array with string "number"`.
 select_dirty() {
@@ -97,6 +102,7 @@ select_dirty() {
         printf '%s' "$json" | jq -r --argjson want "$want" '
             .[]
             | select(.mergeStateStatus == "DIRTY")
+            | select(any(.files[]?; .path == "docs/roadmaps/roadmap.yaml"))
             | . as $p
             | select($want | index($p.number | tostring))
             | [$p.number, $p.headRefName] | @tsv'
@@ -104,6 +110,7 @@ select_dirty() {
         printf '%s' "$json" | jq -r '
             .[]
             | select(.mergeStateStatus == "DIRTY")
+            | select(any(.files[]?; .path == "docs/roadmaps/roadmap.yaml"))
             | [.number, .headRefName] | @tsv'
     fi
 }
@@ -208,9 +215,10 @@ fixture_merge() {
 canned_prs() { # canned_prs FILE
     cat > "$1" <<'JSON'
 [
-  {"number": 101, "mergeStateStatus": "DIRTY",  "headRefName": "feat/one",  "isDraft": false, "autoMergeRequest": null},
-  {"number": 102, "mergeStateStatus": "CLEAN",  "headRefName": "feat/two",  "isDraft": false, "autoMergeRequest": null},
-  {"number": 103, "mergeStateStatus": "DIRTY",  "headRefName": "feat/three","isDraft": false, "autoMergeRequest": null}
+  {"number": 101, "mergeStateStatus": "DIRTY",  "headRefName": "feat/one",  "isDraft": false, "autoMergeRequest": null, "files": [{"path": "docs/roadmaps/roadmap.yaml"}, {"path": "src/a.rs"}]},
+  {"number": 102, "mergeStateStatus": "CLEAN",  "headRefName": "feat/two",  "isDraft": false, "autoMergeRequest": null, "files": [{"path": "docs/roadmaps/roadmap.yaml"}]},
+  {"number": 103, "mergeStateStatus": "DIRTY",  "headRefName": "feat/three","isDraft": false, "autoMergeRequest": null, "files": [{"path": "docs/roadmaps/roadmap.yaml"}]},
+  {"number": 104, "mergeStateStatus": "DIRTY",  "headRefName": "feat/four", "isDraft": false, "autoMergeRequest": null, "files": [{"path": "crates/x/src/lib.rs"}]}
 ]
 JSON
 }
@@ -242,7 +250,7 @@ fixture_apply_setup() { # fixture_apply_setup ID
     local main_head
     main_head=$(git -C "$repo" rev-parse HEAD)
     git -C "$repo" push -q origin main
-    printf '[{"number": 104, "mergeStateStatus": "DIRTY", "headRefName": "feat/pr-104", "isDraft": false, "autoMergeRequest": null}]\n' > "$repo/prs.json"
+    printf '[{"number": 104, "mergeStateStatus": "DIRTY", "headRefName": "feat/pr-104", "isDraft": false, "autoMergeRequest": null, "files": [{"path": "docs/roadmaps/roadmap.yaml"}]}]\n' > "$repo/prs.json"
     printf '%s\n' "$origin" > "$td/fa_origin_$t"
     printf '%s\n' "$repo" > "$td/fa_repo_$t"
     printf '%s\n' "$pr_head" > "$td/fa_pr_head_$t"
@@ -313,6 +321,27 @@ SHIM
         st_row 0 'no --pr selects both DIRTY PRs, never the CLEAN one'
     else
         st_row 1 'no --pr selects both DIRTY PRs, never the CLEAN one' "rc=$rc" "got: $out"
+    fi
+
+    # row: a DIRTY PR whose conflict is NOT in roadmap.yaml is never selected -- the
+    # by-ID driver cannot help it, and a selector broader than its purpose, run on a
+    # timer, is a machine for touching branches it cannot fix. Measured 2026-09-20:
+    # the unfiltered selector returned 14 on a board where 8 touched roadmap.yaml.
+    rc=0
+    out=$(CI_RESOLVE_DIRTY_PRS_JSON="$td/prs.json" bash "$REPO_ROOT/scripts/$PROG" \
+            --list-only 2>&1) || rc=$?
+    if [ "$rc" -eq 0 ] && ! grep -q '^104' <<< "$out"; then
+        st_row 0 'a DIRTY PR that does not touch roadmap.yaml is NEVER selected (104)'
+    else
+        st_row 1 'a DIRTY PR that does not touch roadmap.yaml is NEVER selected (104)' "rc=$rc" "got: $out"
+    fi
+    rc=0
+    out=$(CI_RESOLVE_DIRTY_PRS_JSON="$td/prs.json" bash "$REPO_ROOT/scripts/$PROG" \
+            --list-only --pr 104 2>&1) || rc=$?
+    if [ "$rc" -eq 0 ] && [ -z "$out" ]; then
+        st_row 0 '  ...even when named explicitly with --pr 104: an empty selection, not a pass-through'
+    else
+        st_row 1 '  ...even when named explicitly with --pr 104: an empty selection, not a pass-through' "rc=$rc" "got: $out"
     fi
 
     # row a: --apply pushes
