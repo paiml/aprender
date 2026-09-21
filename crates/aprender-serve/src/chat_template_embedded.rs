@@ -73,6 +73,18 @@ impl std::fmt::Display for ThinkingModes {
     }
 }
 
+/// Render steps one template render may take. A GGUF's template is untrusted input
+/// (models are downloaded from the internet), so a looping template is REFUSED by name
+/// rather than hanging the server. The inventory's largest template (Qwen3.5, 7.8 KB)
+/// renders a three-turn conversation well inside this.
+pub const EMBEDDED_TEMPLATE_FUEL: u64 = 5_000_000;
+
+/// Bytes one rendered prompt may reach (about a million tokens, past any context
+/// window). Enforced while writing, so output built up by a loop is refused before it
+/// grows further. Residual, as in jinja2's sandbox: one expression such as
+/// `'x' * 10**12` allocates eagerly before anything is written.
+pub const EMBEDDED_TEMPLATE_MAX_OUTPUT: usize = 4 * 1024 * 1024;
+
 /// A model's own chat template, rendered the way HF `apply_chat_template` renders it.
 pub struct EmbeddedChatTemplate {
     env: Environment<'static>,
@@ -97,6 +109,7 @@ impl EmbeddedChatTemplate {
     pub fn new(source: impl Into<String>) -> Result<Self, RealizarError> {
         let mut env = Environment::new();
         env.set_recursion_limit(MAX_RECURSION_DEPTH);
+        env.set_fuel(Some(EMBEDDED_TEMPLATE_FUEL));
         env.set_trim_blocks(true);
         env.set_lstrip_blocks(true);
         env.set_unknown_method_callback(minijinja_contrib::pycompat::unknown_method_callback);
@@ -164,20 +177,59 @@ impl EmbeddedChatTemplate {
             .iter()
             .map(|m| ChatMessage::new(&m.role, sanitize_special_tokens(&m.content)))
             .collect();
-        let rendered = match enable_thinking {
-            Some(on) => tmpl.render(context!(
+        let ctx = match enable_thinking {
+            Some(on) => context!(
                 messages => messages,
                 add_generation_prompt => add_generation_prompt,
                 enable_thinking => on
-            )),
-            None => tmpl.render(context!(
+            ),
+            None => context!(
                 messages => messages,
                 add_generation_prompt => add_generation_prompt
-            )),
+            ),
         };
-        rendered.map_err(|e| RealizarError::FormatError {
-            reason: format!("embedded chat template render: {e}"),
+        let mut out = CappedOutput::default();
+        if let Err(e) = tmpl.render_captured_to(ctx, &mut out) {
+            let reason = if out.overflowed {
+                format!(
+                    "embedded chat template refused: its output passed the \
+                     {EMBEDDED_TEMPLATE_MAX_OUTPUT}-byte limit"
+                )
+            } else if e.kind() == minijinja::ErrorKind::OutOfFuel {
+                format!(
+                    "embedded chat template refused: it ran past the \
+                     {EMBEDDED_TEMPLATE_FUEL}-step render limit"
+                )
+            } else {
+                format!("embedded chat template render: {e}")
+            };
+            return Err(RealizarError::FormatError { reason });
+        }
+        String::from_utf8(out.bytes).map_err(|e| RealizarError::FormatError {
+            reason: format!("embedded chat template rendered invalid UTF-8: {e}"),
         })
+    }
+}
+
+/// A render sink that refuses to grow past [`EMBEDDED_TEMPLATE_MAX_OUTPUT`].
+#[derive(Default)]
+struct CappedOutput {
+    bytes: Vec<u8>,
+    overflowed: bool,
+}
+
+impl std::io::Write for CappedOutput {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.bytes.len() + buf.len() > EMBEDDED_TEMPLATE_MAX_OUTPUT {
+            self.overflowed = true;
+            return Err(std::io::Error::other("rendered prompt too large"));
+        }
+        self.bytes.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }
 
@@ -306,4 +358,97 @@ fn write_py_json_str(s: &str, out: &mut String) {
         }
     }
     out.push('"');
+}
+
+/// A prompt as production sends it, and the thinking mode it was built for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatPrompt {
+    /// The formatted prompt text.
+    pub text: String,
+    /// Whether the model was asked to think.
+    pub thinking: bool,
+}
+
+/// THE prompt for a conversation, as every apr verb sends it (#3755, #3723).
+///
+/// A model that ships a chat template gets that template, rendered with the thinking
+/// mode resolved against what the template offers: `thinking: None` is OFF wherever the
+/// model allows it, and a mode the template cannot honour is REFUSED. A file with no
+/// template falls back to apr's per-family template (`format_messages`), which has no
+/// thinking switch, so asking it for thinking ON is refused.
+///
+/// # Errors
+///
+/// [`RealizarError::ThinkingModeUnsupported`] for a mode the model cannot honour, or
+/// the template's render error.
+pub fn format_chat_prompt(
+    embedded: Option<&EmbeddedChatTemplate>,
+    model_name: Option<&str>,
+    messages: &[ChatMessage],
+    thinking: Option<bool>,
+) -> Result<ChatPrompt, RealizarError> {
+    if let Some(template) = embedded {
+        let on = template.thinking_modes().resolve(thinking)?;
+        return Ok(ChatPrompt {
+            text: template.render(messages, true, Some(on))?,
+            thinking: on,
+        });
+    }
+    let on = ThinkingModes::OffOnly.resolve(thinking)?;
+    Ok(ChatPrompt {
+        text: format_messages(messages, model_name)?,
+        thinking: on,
+    })
+}
+
+/// A completion split into the model's reasoning and its answer (#3723).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SplitCompletion {
+    /// The think block's content, trimmed, when the completion reasoned.
+    pub reasoning: Option<String>,
+    /// Everything after the think block, trimmed.
+    pub answer: String,
+}
+
+impl ChatPrompt {
+    /// Whether this prompt itself leaves a `<think>` block open (Qwen3.5 thinking ON),
+    /// so the completion starts inside the reasoning.
+    #[must_use]
+    pub fn opens_think_block(&self) -> bool {
+        opens_think_block(&self.text)
+    }
+
+    /// Split a completion of this prompt into reasoning and answer.
+    ///
+    /// The reasoning runs to `</think>`, from the block this prompt opened or from a
+    /// `<think>` the completion itself starts with (Qwen3). A block still open at the
+    /// end is an ERROR naming the `budget`, never an empty answer (#3720, #3723). A
+    /// completion with no reasoning is all answer.
+    ///
+    /// # Errors
+    ///
+    /// [`RealizarError::InferenceError`] when a think block is still open at the end.
+    pub fn split(&self, completion: &str, budget: usize) -> Result<SplitCompletion, RealizarError> {
+        let reasoning = if self.opens_think_block() {
+            Some(completion)
+        } else {
+            completion.trim_start().strip_prefix("<think>")
+        };
+        let Some(reasoning) = reasoning else {
+            return Ok(SplitCompletion {
+                reasoning: None,
+                answer: completion.trim().to_string(),
+            });
+        };
+        match reasoning.find("</think>") {
+            Some(close) => Ok(SplitCompletion {
+                reasoning: Some(reasoning[..close].trim().to_string()),
+                answer: reasoning[close + "</think>".len()..].trim().to_string(),
+            }),
+            None => Err(RealizarError::InferenceError(format!(
+                "think block unclosed within the {budget}-token budget: the model was still \
+                 reasoning when generation stopped"
+            ))),
+        }
+    }
 }

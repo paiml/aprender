@@ -156,3 +156,76 @@ mod chat_template_embedded_oracle {
         );
     }
 }
+
+#[cfg(test)]
+mod chat_template_embedded_limits {
+    use super::*;
+
+    /// A GGUF's template is untrusted input: a looping template is refused by name.
+    #[test]
+    fn looping_template_is_refused_not_hung() {
+        let t = EmbeddedChatTemplate::new(
+            "{% if add_generation_prompt %}{% for a in range(100000) %}{% for b in range(100000) %}{% endfor %}{% endfor %}{% endif %}",
+        );
+        let err = t.expect_err("a looping template must not load").to_string();
+        assert!(err.contains("step render limit"), "{err}");
+    }
+
+    /// Output built up by a loop is refused before it grows past the cap.
+    #[test]
+    fn huge_output_is_refused_not_allocated() {
+        let t = EmbeddedChatTemplate::new(
+            "{% if add_generation_prompt %}{% for i in range(10000) %}{{ 'x' * 100000 }}{% endfor %}{% endif %}",
+        );
+        let err = t.expect_err("a 1 GB prompt must not load").to_string();
+        assert!(err.contains("byte limit"), "{err}");
+    }
+
+    /// Unbounded recursion is refused by the recursion limit.
+    #[test]
+    fn recursive_template_is_refused() {
+        let t = EmbeddedChatTemplate::new(
+            "{% macro f(n) %}{{ f(n + 1) }}{% endmacro %}{% if add_generation_prompt %}{{ f(0) }}{% endif %}",
+        );
+        assert!(t.is_err(), "a recursing template must not load");
+    }
+
+    /// `raise_exception` in a template is a render error carrying its message.
+    #[test]
+    fn raise_exception_carries_the_templates_message() {
+        let t = EmbeddedChatTemplate::new(
+            "{% if messages | length == 0 %}{{ raise_exception('No messages provided.') }}{% endif %}ok",
+        )
+        .expect("renders a one-message conversation");
+        let err = t.render(&[], true, None).expect_err("zero messages").to_string();
+        assert!(err.contains("No messages provided."), "{err}");
+    }
+
+    /// Reasoning is kept out of the answer, and an unclosed block names the budget.
+    #[test]
+    fn split_separates_reasoning_and_refuses_unclosed() {
+        let qwen3 = ChatPrompt {
+            text: "<|im_start|>assistant\n".into(),
+            thinking: true,
+        };
+        let qwen35 = ChatPrompt {
+            text: "<|im_start|>assistant\n<think>\n".into(),
+            thinking: true,
+        };
+        let off = ChatPrompt {
+            text: "<|im_start|>assistant\n<think>\n\n</think>\n\n".into(),
+            thinking: false,
+        };
+        let split = qwen3.split("<think>\nadd.\n</think>\n\n2 + 2 = 4.", 4096).expect("closed");
+        assert_eq!(split.reasoning.as_deref(), Some("add."));
+        assert_eq!(split.answer, "2 + 2 = 4.");
+        let split = qwen35.split("add.\n</think>\n\n4", 4096).expect("closed");
+        assert_eq!(split.reasoning.as_deref(), Some("add."));
+        assert_eq!(split.answer, "4");
+        let split = off.split("2 + 2 = 4.", 512).expect("no reasoning");
+        assert_eq!((split.reasoning, split.answer.as_str()), (None, "2 + 2 = 4."));
+        let err = qwen35.split("still adding", 512).expect_err("unclosed").to_string();
+        assert!(err.contains("unclosed within the 512-token budget"), "{err}");
+        assert!(qwen3.split("<think>\nstill", 64).is_err());
+    }
+}
