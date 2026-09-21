@@ -112,6 +112,17 @@ jobs:
       # MECHANISM is live fleet-wide via sovereign-ci (#37); a single-crate repo is
       # the natural first coverage pilot. aprender's blocking-quality pilot is the
       # diff-scoped mutation gate below.
+      #
+      # #3676 (operator 2026-09-21: "YES, coverage on tags release only"): so this
+      # job gated nothing AND measured nothing (0 tests on the facade root), at the
+      # cost of an instrumented rebuild on every PR, merge group and push (237 s
+      # on main run 35563537942). Skipped here. Every consumer of aprender's
+      # coverage number has its own producer, asserted by
+      # scripts/check_coverage_has_producers.sh: the pre-publish dogfood runs
+      # `make coverage-check` (-> `make coverage`: workspace llvm-cov, COV_FLOOR),
+      # and coverage-nightly.yml runs nightly AND on every `v*` tag. The one
+      # output lost is this job's advisory Codecov upload.
+      skip_coverage: true
     secrets: inherit
 
   # APR-MONO: Workspace-wide test (all 75 crates)
@@ -1164,8 +1175,14 @@ jobs:
       # unwiring the §4.9.1 signature arm drops it to 23 passed, 6 broken), so a
       # gate that silently stops discriminating now fails here rather than
       # certifying a release later.
-      - name: Perf gate can still discriminate (APR-PERF-GATE-001, case table)
-        run: bash scripts/perf_gate.sh --selftest
+      #
+      # #3676: PATH-SCOPED now. The table's verdict changes only when perf_gate.sh
+      # or a file it reads changes, and it cost 405 s on every PR, merge group and
+      # push (main run 35563537942). scripts/check_perf_gate_selftest_scoped.sh --
+      # dispatched by guard_tree.sh --no-cargo above, no step here -- runs it when
+      # the diff vs origin/main touches its DERIVED scope (every $ROOT/ path it
+      # reads, followed through the scripts it calls) and says so on a SUMMARY
+      # line when it does not; guards-nightly.yml runs the table whole.
       # PERF-007, the HOST half of §4.9.1. `perf_gate.sh --selftest` already
       # runs this table, but check_guards_are_wired.sh cannot see one level of
       # indirection and its remedy for an unwired guard is to wire it, not to
@@ -2178,9 +2195,13 @@ jobs:
           # 3. the suites, judged against the measured ceiling
           DR_ENV=(-e "SATD_BASELINE=$n")
           dr "$GITHUB_WORKSPACE" cargo test -p aprender-core --features model-tests \
-            --test falsification_spec_v10_tests \
-            --test falsification_stress_tests \
-            --test falsification_gpu_state_tests
+            --test falsification_spec_v10_tests
+          # #3676: the PR path keeps ONLY falsification_spec_v10_tests -- it holds the
+          # SATD ratchet (F-CHECKLIST-005) measured against origin/main above, the one
+          # property here a diff can change, and the reason this step was KEPT at the
+          # 67-E3 merge (on the nightly HEAD == origin/main, so there the ratchet is
+          # vacuous). falsification_stress_tests and falsification_gpu_state_tests
+          # judge the whole tree, not the diff; guards-nightly.yml runs all three.
           # 4. the satd class of the ratchet-semantics case table (rebuilds nothing)
           DR_ENV=()
           dr "$GITHUB_WORKSPACE" bash scripts/tests/ratchet_semantics_test.sh --class satd
@@ -3094,11 +3115,22 @@ jobs:
           # main-branch pushes are not blocked by a job that intentionally
           # did not run. Only an explicit `failure` blocks.
           MUT="${{ needs.mutants.result }}"
-          if [ "$MUT" = "failure" ]; then
-            echo "mutants (diff-scoped mutation) failed: $MUT"
-            exit 1
-          fi
-          echo "mutants result: $MUT (success/skipped both pass)"
+          EVT="${{ github.event_name }}"
+          # --- GATE-MUTANTS-RULE-BEGIN (#3676; scripts/check_ci_gate_mutants_rule.sh runs this block) ---
+          # `skipped` is a pass ONLY when the skip is the job's own filter:
+          # mutants declares `if: github.event_name == 'pull_request'`, so on every
+          # other event it is skipped by design. On a pull_request it must have RUN
+          # and succeeded -- a diff with no .rs still succeeds (its steps skip, the
+          # job passes), so a pull_request `skipped` or `cancelled` means the job
+          # never ran, and the old rule ("success/skipped both pass") passed that.
+          case "$EVT:$MUT" in
+            pull_request:success) echo "mutants result: success on a pull_request" ;;
+            pull_request:*) echo "mutants on a pull_request must succeed; got '$MUT' -- a skip here is not the job's filter"; exit 1 ;;
+            *:skipped) echo "mutants result: skipped on $EVT (its filter: pull_request only)" ;;
+            *:success) echo "mutants result: success on $EVT" ;;
+            *) echo "mutants (diff-scoped mutation) on $EVT: $MUT"; exit 1 ;;
+          esac
+          # --- GATE-MUTANTS-RULE-END ---
           # Receipt presence is NOT read here any more (PP-066 C0-5, PRQ-013,
           # #2982). This job runs under the PR head's definition of ci.yml, so a
           # receipt clause here was a check the PR under review could edit. The
@@ -3158,6 +3190,7 @@ jobs:
           # Need history + base branch to compute the PR diff for --in-diff.
           fetch-depth: 0
       - name: Compute PR diff for mutation scoping
+        id: prdiff
         # cargo-mutants --in-diff takes a unified diff and mutates ONLY the
         # lines it adds/changes. We diff the PR head against the merge-base with
         # the target branch so the scope is exactly "what this PR introduces".
@@ -3180,7 +3213,19 @@ jobs:
           if [ ! -s pr.diff ]; then
             echo "Empty diff — no code to mutate"
           fi
+          # #3676: cargo-mutants mutates Rust. A diff with no .rs path has nothing to
+          # mutate, but used to pull the image and `cargo install cargo-mutants`
+          # anyway. --no-renames: a .rs file renamed away still counts.
+          git diff --no-renames --name-only "$MERGE_BASE"...HEAD > pr.files
+          if grep -qE '\.rs$' pr.files; then
+            echo "has_rs=true" >> "$GITHUB_OUTPUT"
+            echo "Rust paths in the diff: $(grep -cE '\.rs$' pr.files)"
+          else
+            echo "has_rs=false" >> "$GITHUB_OUTPUT"
+            echo "No .rs path in the diff ($(grep -c . pr.files || true) path(s)) -- nothing to mutate; the mutation steps skip and the job passes"
+          fi
       - name: Pull sovereign-ci image (with retry + local-cache fallback)
+        if: steps.prdiff.outputs.has_rs == 'true'
         # Same two-layer resilience as workspace-test — see that job for full context.
         run: |
           if docker image inspect "$IMAGE" > /dev/null 2>&1; then
@@ -3203,6 +3248,7 @@ jobs:
             delay=$((delay + 6))
           done
       - name: Install cargo-mutants
+        if: steps.prdiff.outputs.has_rs == 'true'
         run: |
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
@@ -3211,6 +3257,7 @@ jobs:
             "$IMAGE" \
             cargo install cargo-mutants --locked
       - name: Run diff-scoped mutation testing (BLOCKING)
+        if: steps.prdiff.outputs.has_rs == 'true'
         # No continue-on-error: a missed mutant on the PR diff fails the job,
         # which fails `gate`, which blocks merge. --in-diff pr.diff restricts
         # mutation to PR-touched lines. Empty diff → 0 mutants → clean pass.
@@ -3311,7 +3358,7 @@ jobs:
               exit 0
             '
       - name: Upload mutation results
-        if: always()
+        if: always() && steps.prdiff.outputs.has_rs == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: mutation-results
