@@ -154,7 +154,9 @@ impl ChatMessage {
 pub enum TemplateFormat {
     /// ChatML format (Qwen2, OpenHermes, Yi)
     ChatML,
-    /// Qwen3 ChatML with thinking mode disabled (PMAT-181)
+    /// Legacy (PMAT-181): Qwen3 ChatML with a hand-typed no-think scaffold. Never
+    /// detected since #3755: a Qwen3 file's own template carries the thinking switch
+    /// (`EmbeddedChatTemplate`), and `create_template` builds plain ChatML for it.
     Qwen3NoThink,
     /// LLaMA 2 format (Vicuna, LLaMA 2 Chat)
     Llama2,
@@ -452,7 +454,6 @@ impl ChatTemplateEngine for ChatMLTemplate {
 
 include!("chat_template_embedded.rs");
 include!("chat_template_embedded_oracle.rs");
-include!("chat_template_qwen3_nothink.rs");
 include!("chat_template_llama2.rs");
 include!("chat_template_helpers.rs");
 include!("chat_template_special_tokens.rs");

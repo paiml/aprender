@@ -11,44 +11,54 @@
 mod contract_tests {
     use super::*;
 
-    // ═══ FALSIFY-CT-001: Qwen3 template selection ═══
+    // ═══ FALSIFY-CT-001: a Qwen3 model does not think unless asked (#3755) ═══
+    // PMAT-181's protection, derived: with no thinking choice, the prompt a Qwen3 /
+    // Qwen3.5 model gets is ITS OWN template rendered with enable_thinking=false, byte
+    // for byte what transformers renders (fixtures from the host inventory).
 
-    #[test]
-    fn falsify_ct_001_qwen3_gets_nothink_template() {
-        // Qwen3 models MUST get Qwen3NoThink, NEVER ChatML
-        assert_eq!(
-            detect_format_from_name("Qwen3-1.7B-Q4_K_M"),
-            TemplateFormat::Qwen3NoThink
-        );
-        assert_eq!(
-            detect_format_from_name("qwen3-0.6b"),
-            TemplateFormat::Qwen3NoThink
-        );
-        assert_eq!(
-            detect_format_from_name("Qwen3-8B-Instruct"),
-            TemplateFormat::Qwen3NoThink
-        );
-        assert_eq!(
-            detect_format_from_name("qwen3"),
-            TemplateFormat::Qwen3NoThink
-        );
+    fn ct_fixture(name: &str) -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/chat_templates")
+            .join(name);
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
     }
 
     #[test]
-    fn falsify_ct_001_qwen2_gets_chatml_not_nothink() {
-        // Qwen2 MUST get ChatML, NOT Qwen3NoThink
-        assert_eq!(
-            detect_format_from_name("Qwen2.5-Coder-1.5B"),
-            TemplateFormat::ChatML
-        );
-        assert_eq!(
-            detect_format_from_name("Qwen2-0.5B-Instruct"),
-            TemplateFormat::ChatML
-        );
-        assert_ne!(
-            detect_format_from_name("Qwen2.5-Coder-1.5B"),
-            TemplateFormat::Qwen3NoThink
-        );
+    fn falsify_ct_001_qwen3_default_is_the_models_own_no_think_prompt() {
+        let reference: serde_json::Value =
+            serde_json::from_str(&ct_fixture("reference.json")).expect("reference.json");
+        // Qwen3-8B, Qwen3-0.6B, Qwen3-1.7B, Qwen3.5 (0.8B-9B), Qwen3.5 (27B)
+        for sha in ["57f1fd00f001", "5da44855ab7e", "8428c815ac94", "7f0e529032c2", "e60df41481b6"] {
+            let template = EmbeddedChatTemplate::new(ct_fixture(&format!("{sha}.jinja")))
+                .expect("inventory template loads");
+            let prompt = format_chat_prompt(
+                Some(&template),
+                Some("qwen3"),
+                &[ChatMessage::user("What is 2+2?")],
+                None,
+            )
+            .expect("default prompt");
+            assert!(!prompt.thinking, "{sha}: thinking must default OFF");
+            assert_eq!(
+                prompt.text,
+                reference["cases"][format!("{sha}/single/off")].as_str().expect("case"),
+                "{sha}: the default prompt must be the model's own no-think rendering"
+            );
+            // The model's scaffold, never the hand-typed single-newline one.
+            assert!(prompt.text.ends_with("<think>\n\n</think>\n\n"), "{sha}");
+        }
+    }
+
+    #[test]
+    fn falsify_ct_001_no_template_fallback_types_no_scaffold() {
+        // A file with no chat template: apr's family fallback, which types no think block.
+        for name in ["qwen3", "Qwen3-8B-Q4_K_M", "qwen3moe", "Qwen2.5-Coder-1.5B", "qwen2"] {
+            assert_eq!(detect_format_from_name(name), TemplateFormat::ChatML, "{name}");
+            let text = auto_detect_template(name)
+                .format_conversation(&[ChatMessage::user("hi")])
+                .expect("format");
+            assert!(!text.contains("<think>"), "{name}: {text:?}");
+        }
     }
 
     #[test]
@@ -74,12 +84,13 @@ mod contract_tests {
     // ═══ FALSIFY-CT-004: Template determinism ═══
 
     #[test]
-    fn falsify_ct_004_qwen3_nothink_deterministic() {
-        let template = Qwen3NoThinkTemplate::new();
+    fn falsify_ct_004_embedded_template_deterministic() {
+        let template =
+            EmbeddedChatTemplate::new(ct_fixture("7f0e529032c2.jinja")).expect("loads");
         let messages = vec![ChatMessage::user("hello world")];
-        let a = template.format_conversation(&messages).unwrap();
-        let b = template.format_conversation(&messages).unwrap();
-        assert_eq!(a, b, "format_conversation must be deterministic");
+        let a = template.render(&messages, true, Some(false)).expect("render");
+        let b = template.render(&messages, true, Some(false)).expect("render");
+        assert_eq!(a, b, "render must be deterministic");
     }
 
     #[test]
@@ -102,7 +113,6 @@ mod contract_tests {
         // and satisfy all ChatTemplateEngine methods.
         let templates: Vec<Box<dyn ChatTemplateEngine>> = vec![
             Box::new(ChatMLTemplate::new()),
-            Box::new(Qwen3NoThinkTemplate::new()),
             Box::new(Llama2Template::new()),
             Box::new(ZephyrTemplate::new()),
             Box::new(MistralTemplate::new()),
@@ -120,34 +130,35 @@ mod contract_tests {
             let conv = t.format_conversation(&[ChatMessage::user("test")]);
             assert!(conv.is_ok(), "format_conversation failed for {:?}", t.format());
         }
-        assert!(templates.len() >= 8, "expected at least 8 template impls");
+        assert!(templates.len() >= 7, "expected at least 7 template impls");
     }
 
-    // ═══ FALSIFY-CT-006: Qwen3NoThink pre-fills empty thinking block ═══
+    // ═══ FALSIFY-CT-006: thinking ON and OFF are the model's own renderings ═══
+    // Both modes come from the template (#3755), and a mode it cannot honour is
+    // refused by name, never silently mapped (#3723).
 
     #[test]
-    fn falsify_ct_006_nothink_prefills_empty_block() {
-        let template = Qwen3NoThinkTemplate::new();
-        let messages = vec![ChatMessage::user("hello")];
-        let output = template.format_conversation(&messages).unwrap();
-        assert!(
-            output.contains("<think>\n</think>"),
-            "Qwen3NoThinkTemplate must pre-fill empty thinking block.\nGot: {output}"
-        );
-    }
-
-    #[test]
-    fn falsify_ct_006_nothink_ends_with_think_block() {
-        let template = Qwen3NoThinkTemplate::new();
-        let messages = vec![
-            ChatMessage::system("you are a coding assistant"),
-            ChatMessage::user("hello"),
-        ];
-        let output = template.format_conversation(&messages).unwrap();
-        assert!(
-            output.ends_with("<think>\n</think>\n"),
-            "Thinking block must be at end of prompt.\nGot: ...{}", &output[output.len().saturating_sub(80)..]
-        );
+    fn falsify_ct_006_both_modes_rendered_and_unhonourable_refused() {
+        let reference: serde_json::Value =
+            serde_json::from_str(&ct_fixture("reference.json")).expect("reference.json");
+        let qwen3 = EmbeddedChatTemplate::new(ct_fixture("57f1fd00f001.jinja")).expect("loads");
+        let msgs = [ChatMessage::user("What is 2+2?")];
+        for (thinking, mode) in [(true, "on"), (false, "off")] {
+            let prompt =
+                format_chat_prompt(Some(&qwen3), None, &msgs, Some(thinking)).expect("honoured");
+            assert_eq!(prompt.thinking, thinking);
+            assert_eq!(
+                prompt.text,
+                reference["cases"][format!("57f1fd00f001/single/{mode}")].as_str().expect("case")
+            );
+        }
+        // Qwen3-30B-A3B-Instruct-2507: think markers, no thinking mode.
+        let instruct = EmbeddedChatTemplate::new(ct_fixture("40c21f34cf67.jinja")).expect("loads");
+        let refused = format_chat_prompt(Some(&instruct), None, &msgs, Some(true))
+            .expect_err("thinking ON on a non-thinking template");
+        assert!(matches!(refused, RealizarError::ThinkingModeUnsupported { .. }), "{refused}");
+        // No template at all: thinking cannot be switched on.
+        assert!(format_chat_prompt(None, Some("qwen3"), &msgs, Some(true)).is_err());
     }
 
     // ═══ FALSIFY-CT-CREATE: create_template round-trip ═══
@@ -157,7 +168,6 @@ mod contract_tests {
         // Every TemplateFormat variant must produce a working template
         let formats = [
             TemplateFormat::ChatML,
-            TemplateFormat::Qwen3NoThink,
             TemplateFormat::Llama2,
             TemplateFormat::Zephyr,
             TemplateFormat::Mistral,
@@ -187,29 +197,16 @@ mod contract_tests {
         }
     }
 
-    // ═══ FALSIFY-SRV-005: apr-serve-v1 contract (PMAT-188) ═══
-    // Qwen3 architecture triggers NoThinkTemplate in serve context
+    // ═══ FALSIFY-SRV-005: apr-serve-v1 contract (PMAT-188), derived (#3755) ═══
+    // serve's Qwen3 prompt comes from the model's template, not from the name.
 
     #[test]
-    fn falsify_srv_005_qwen3_architecture_gets_nothink() {
-        // Architecture string from GGUF metadata (general.architecture = "qwen3")
-        assert_eq!(detect_format_from_name("qwen3"), TemplateFormat::Qwen3NoThink);
-    }
-
-    #[test]
-    fn falsify_srv_005_qwen3_filename_gets_nothink() {
-        // Filename pattern from model file (Qwen3-1.7B-Q4_K_M.gguf)
-        assert_eq!(
-            detect_format_from_name("Qwen3-1.7B-Q4_K_M"),
-            TemplateFormat::Qwen3NoThink
-        );
-    }
-
-    #[test]
-    fn falsify_srv_005_qwen2_does_not_get_nothink() {
-        // Qwen2 must get ChatML, NOT Qwen3NoThink
-        assert_ne!(detect_format_from_name("qwen2"), TemplateFormat::Qwen3NoThink);
-        assert_eq!(detect_format_from_name("qwen2"), TemplateFormat::ChatML);
+    fn falsify_srv_005_legacy_nothink_variant_builds_no_scaffold() {
+        let text = create_template(TemplateFormat::Qwen3NoThink)
+            .format_conversation(&[ChatMessage::user("hi")])
+            .expect("format");
+        assert!(!text.contains("<think>"), "{text:?}");
+        assert_eq!(create_template(TemplateFormat::Qwen3NoThink).format(), TemplateFormat::ChatML);
     }
 
     // ═══ FALSIFY-CT-762: Llama2 system-message handling ═══

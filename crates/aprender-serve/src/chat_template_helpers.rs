@@ -62,19 +62,11 @@ pub fn detect_format_from_name(model_name: &str) -> TemplateFormat {
     // Pattern rules ordered by specificity (more specific patterns first)
     // Format: (patterns, format) - check patterns before formats that share prefixes
     //
-    // M32d Step 6 (companion claude-code-parity-apr-poc.md § "M32d FAST
-    // PATH"): Qwen3-Coder / Qwen3-MoE-arch models do NOT have thinking
-    // mode — Qwen3MoeForCausalLM was trained without `<think>` blocks.
-    // Pre-injecting empty `<think>\n</think>\n` confuses the model and
-    // causes it to emit `<|endoftext|>` immediately. Use plain ChatML
-    // for qwen3_moe; keep Qwen3NoThink for dense Qwen3.
-    if name_lower.contains("qwen3_moe") || name_lower.contains("qwen3moe") {
-        return TemplateFormat::ChatML;
-    }
-    // PMAT-181: Qwen3 gets special no-think template (before generic "qwen" match)
-    if name_lower.contains("qwen3") {
-        return TemplateFormat::Qwen3NoThink;
-    }
+    // This is the FALLBACK for a file with no `tokenizer.chat_template`. A file that
+    // ships one gets it rendered (`EmbeddedChatTemplate`, #3755): its thinking switch
+    // included, so no Qwen3 no-think scaffold is typed here any more. The one that was,
+    // `<think>\n</think>\n`, was not the model's (`<think>\n\n</think>\n\n`), and
+    // Qwen3.5-0.8B answered 2+2 = "2" with it.
 
     let rules: &[(&[&str], TemplateFormat)] = &[
         // ChatML: Qwen (2.x), OpenHermes, Yi
@@ -119,7 +111,8 @@ pub fn detect_format_from_tokens(special_tokens: &SpecialTokens) -> TemplateForm
 pub fn create_template(format: TemplateFormat) -> Box<dyn ChatTemplateEngine> {
     match format {
         TemplateFormat::ChatML => Box::new(ChatMLTemplate::new()),
-        TemplateFormat::Qwen3NoThink => Box::new(Qwen3NoThinkTemplate::new()),
+        // Legacy variant (#3755): no hand-typed scaffold remains; plain ChatML.
+        TemplateFormat::Qwen3NoThink => Box::new(ChatMLTemplate::new()),
         TemplateFormat::Llama2 => Box::new(Llama2Template::new()),
         TemplateFormat::Zephyr => Box::new(ZephyrTemplate::new()),
         TemplateFormat::Mistral => Box::new(MistralTemplate::new()),
