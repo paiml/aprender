@@ -392,40 +392,8 @@ fn remove_tied_lm_head(
 /// Reads the APR metadata JSON and looks for the `"source_metadata"` key
 /// that was preserved during import from SafeTensors.
 fn extract_user_metadata(apr_path: &Path) -> UserMetadata {
-    // #3761: the 24-byte header, then only up to the end of the metadata section below
-    let data = match crate::format::prefix::read_prefix(apr_path, 24) {
-        Ok(d) => d,
-        Err(_) => return UserMetadata::new(),
-    };
-
-    // Real APR v2 header (header_impl.rs::to_bytes, 64 bytes): magic[0..4], version[4..6],
-    // flags[6..8], tensor_count u32 [8..12], metadata_offset u64 [12..20], metadata_size u32
-    // [20..24]; the metadata JSON begins at `metadata_offset` (= HEADER_SIZE_V2 = 64). The prior
-    // code read an 8-byte "metadata_len" at byte 8 (= tensor_count | metadata_offset<<32 ≈ 2.7e11)
-    // and the JSON at byte 16, so the bounds guard ALWAYS failed and this returned empty — silently
-    // dropping the user's SafeTensors __metadata__ on every `apr export`.
-    if data.len() < 24 {
+    let Some(parsed) = read_apr_metadata_json(apr_path) else {
         return UserMetadata::new();
-    }
-    let metadata_offset = u64::from_le_bytes(data[12..20].try_into().unwrap_or([0u8; 8])) as usize;
-    let metadata_size = u32::from_le_bytes(data[20..24].try_into().unwrap_or([0u8; 4])) as usize;
-    let end = match metadata_offset.checked_add(metadata_size) {
-        Some(e) if e <= crate::format::prefix::HEADER_READ_CAP => e,
-        _ => return UserMetadata::new(),
-    };
-    let data = match crate::format::prefix::read_prefix(apr_path, end) {
-        Ok(d) if d.len() >= end => d,
-        _ => return UserMetadata::new(),
-    };
-
-    let metadata_json = match std::str::from_utf8(&data[metadata_offset..end]) {
-        Ok(s) => s,
-        Err(_) => return UserMetadata::new(),
-    };
-
-    let parsed: serde_json::Value = match serde_json::from_str(metadata_json) {
-        Ok(v) => v,
-        Err(_) => return UserMetadata::new(),
     };
 
     // `custom` is #[serde(flatten)] in AprV2Metadata, so "source_metadata" is at the TOP level
@@ -444,6 +412,26 @@ fn extract_user_metadata(apr_path: &Path) -> UserMetadata {
     }
 
     UserMetadata::new()
+}
+
+/// The APR v2 metadata section, parsed (#3761): the 24-byte header, then only up to the end of
+/// the metadata section it names, under the shared cap. Never the tensor data. `None` for a file
+/// too short, a section past the cap, or text that is not UTF-8 JSON.
+///
+/// Real APR v2 header (header_impl.rs::to_bytes, 64 bytes): magic[0..4], version[4..6],
+/// flags[6..8], tensor_count u32 [8..12], metadata_offset u64 [12..20], metadata_size u32
+/// [20..24]; the metadata JSON begins at `metadata_offset` (= HEADER_SIZE_V2 = 64). The prior
+/// code read an 8-byte "metadata_len" at byte 8 (= tensor_count | metadata_offset<<32 ≈ 2.7e11)
+/// and the JSON at byte 16, so the bounds guard ALWAYS failed and this returned empty — silently
+/// dropping the user's SafeTensors __metadata__ on every `apr export`.
+fn read_apr_metadata_json(apr_path: &Path) -> Option<serde_json::Value> {
+    use crate::format::prefix::{read_prefix, HEADER_READ_CAP};
+    let head = read_prefix(apr_path, 24).ok()?;
+    let offset = usize::try_from(u64::from_le_bytes(head.get(12..20)?.try_into().ok()?)).ok()?;
+    let size = u32::from_le_bytes(head.get(20..24)?.try_into().ok()?) as usize;
+    let end = offset.checked_add(size).filter(|&e| e <= HEADER_READ_CAP)?;
+    let data = read_prefix(apr_path, end).ok().filter(|d| d.len() >= end)?;
+    serde_json::from_str(std::str::from_utf8(data.get(offset..end)?).ok()?).ok()
 }
 
 /// Detect predominant quantization type from an APR file (PMAT-252).
