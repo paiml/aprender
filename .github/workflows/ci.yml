@@ -13,6 +13,10 @@ name: CI
 on:
   push:
     branches: [main, master]
+    # #3676: sovereign-ci's `coverage_on: tag` (below) runs coverage only on a push of a
+    # v* tag, and its gate REQUIRES it to succeed there. A push filtered to branches never
+    # fires for a tag, so this is the reusable's second required edit.
+    tags: ['v*']
   pull_request:
     branches: [main, master]
   # Merge queue: GitHub dispatches a `merge_group` event for each batch it forms.
@@ -63,7 +67,7 @@ jobs:
     # 23916c00d adds an OPTIONAL `runs_on` input whose default is the label set
     # this repo already gets, and 70e51ec04 swaps the digest on every job. No
     # input this repo passes changes meaning.
-    uses: paiml/.github/.github/workflows/sovereign-ci.yml@70e51ec045d95983e9a3d02342d13283bf5f9dc1
+    uses: paiml/.github/.github/workflows/sovereign-ci.yml@5997b411a371d0902f2ade4cba31e04ac6f87580
     with:
       repo: ${{ github.event.repository.name }}
       # Phase 3 pilot (heavy workload) — build-performance.md §7 Phase 3.
@@ -116,13 +120,16 @@ jobs:
       # #3676 (operator 2026-09-21: "YES, coverage on tags release only"): so this
       # job gated nothing AND measured nothing (0 tests on the facade root), at the
       # cost of an instrumented rebuild on every PR, merge group and push (237 s
-      # on main run 35563537942). Skipped here. Every consumer of aprender's
-      # coverage number has its own producer, asserted by
-      # scripts/check_coverage_has_producers.sh: the pre-publish dogfood runs
-      # `make coverage-check` (-> `make coverage`: workspace llvm-cov, COV_FLOOR),
-      # and coverage-nightly.yml runs nightly AND on every `v*` tag. The one
-      # output lost is this job's advisory Codecov upload.
-      skip_coverage: true
+      # on main run 35563537942). `coverage_on: tag` runs it only on a push of a v*
+      # tag (the trigger above) and on workflow_dispatch; everywhere else the job is
+      # skipped and sovereign-ci's gate prints "coverage: NOT MEASURED", never a
+      # green. On a v* tag the gate REQUIRES it. The first spelling,
+      # `skip_coverage: true`, was read by that gate as a mandatory job that did not
+      # succeed, so `ci / gate` went red on every PR (#3707). Every consumer of the
+      # number keeps a producer, asserted by scripts/check_coverage_has_producers.sh
+      # (R1-R5): the pre-publish dogfood's `make coverage-check`, coverage-nightly's
+      # schedule, and this job on each release tag.
+      coverage_on: tag
     secrets: inherit
 
   # APR-MONO: Workspace-wide test (all 75 crates)
@@ -1361,12 +1368,12 @@ jobs:
       - name: "Receipt-wiring guard: every rule it states, mutated (15/15 kill)"
         run: bash scripts/mutate_pr_review_wiring_guard.sh
       # APR-RELEASE-001 §6 R-2, WIRED (#3200 shipped the guard; this is its
-      # caller). check_pr_closes_issue.sh is a check_*.sh, so guard_tree.sh
-      # auto-discovers it and runs it BARE -- and bare runs only its own
-      # self-test, "self-test OK: 9 case(s)", exit 0. Nine green rows about a
-      # regex, on every PR, judging NO PR body. The 0.67.0 reconcile found 48
-      # merged PRs since the previous tag of which only 9 closed anything; that
-      # is what this guard exists to stop, and until now it had never read one.
+      # caller). This step is its ONLY runner: guard_tree.sh skips it as
+      # wired-with-args (it needs a body), so its case table ran in NO job until
+      # this step called `--self-test` beside `--body` (found by aprender-f0,
+      # 2026-09-21; the comment here used to claim guard_tree ran it bare). The
+      # 0.67.0 reconcile found 48 merged PRs since the previous tag of which only
+      # 9 closed anything; that is what this guard exists to stop.
       #
       # THE BODY ARRIVES THROUGH `env:`, NEVER INTERPOLATED INTO THE SCRIPT.
       # `${{ }}` is substituted textually BEFORE bash sees the line, so a body
@@ -1390,6 +1397,7 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           set -euo pipefail
+          bash scripts/check_pr_closes_issue.sh --self-test
           printf '%s' "$PR_BODY" > "$RUNNER_TEMP/pr-body.txt"
           bash scripts/check_pr_closes_issue.sh --body "$RUNNER_TEMP/pr-body.txt"
       # APR-RELEASE-001 §11.1, WIRED. The section shipped as prose in #3268 and
