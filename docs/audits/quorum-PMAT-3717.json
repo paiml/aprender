@@ -1,0 +1,195 @@
+{
+  "ticket": "PMAT-3717",
+  "base": "629143eeb",
+  "base_resolved": "629143eeb",
+  "base_note": "no origin/629143eeb exists; judged against the local ref",
+  "head": "d00665a7f6e8b9ef64bc9c3c3037123bb84fc3ba",
+  "diff_sha256": "d20888fe1e3fab1bf6bd804b87cf169c06d2dabf12349fa0ee64a51e028fe77f",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 69431,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I have carefully reviewed the diff against the PMAT-3717 ticket requirements. The changes accurately implement the requested T-1 model matrix verification and the T-4 receipt re-reading:\n\n- **Autopilot Integration:** The `models` step is correctly inserted in `scripts/release/autopilot.sh` right before `tag`. A failure here triggers `die` preventing the tag from being cut.\n- **Instrument Isolation:** `scripts/release/models_t1.sh` provisions the required per-release directory on the remote `gx10` (`$HOME/.cache/aprender-release/rel-<v>`), avoids the shared `~/src/aprender/target` directory, and clears previous `rel-*` directories.\n- **T-4 Re-Read:** `scripts/check_publish_preflight.sh` introduces `rule_r7` which calls `check_model_ladder.sh --version <v>` at T-4 to judge the committed receipts.\n- **Red-Turning Tests:** `scripts/check_release_models_t1.sh` thoroughly tests the matrix with stubs. It covers all the specified rows (green-pair, gx10-unreachable, build-fails, missing-receipt, red-cell, judge-decline, stale-binary, disk-refusal, and the T-4 variants) and introduces corresponding mutants to verify that failures are actively caught for the right reasons.\n- **Pre-measure Checks:** The `apr --version` output is verified against the release commit before measuring, and disk space is checked upfront.\n\nNo contradictions or forbidden behavior were found. The implementation strictly adheres to the acceptance criteria.",
+      "findings": [],
+      "raw_bytes": 5748,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements all requirements specified in PMAT-3717.\n\n1. **T-1 model matrix step before tag**: A `models` step has been added to `scripts/release/autopilot.sh` right before `tag`. It executes `scripts/release/models_t1.sh`, and correctly stops the release process on any non-zero exit code without tagging.\n2. **Instrument isolation on gx10**: `models_t1.sh` ensures the build occurs in a dedicated, per-release directory `\\$HOME/.cache/aprender-release/rel-$ver` instead of the shared `~/src/aprender/target`. It also deletes previous `rel-*` directories and explicitly verifies disk space upfront, raising a named ENV error if it is insufficient (using the measured size). \n3. **Binary proof**: The `apr --version` output is asserted on both hosts prior to invoking the judge, guaranteeing the exact release SHA is what's being measured.\n4. **T-4 receipt re-read**: The `check_publish_preflight.sh` script adds an `R7` rule that runs the `check_model_ladder.sh` judge over the receipts committed in the tree at T-4, halting the preflight if the judge declines (rc 2) or finds any missing/red receipts.\n5. **Red-turning tests**: `check_release_models_t1.sh` introduces a full case table, driving the real `models_t1.sh` and extracting the T-4 `R7` rule against stubs. All required states (green, unreachable, build failure, missing receipt, red receipt, judge decline, stale binary, disk space) are verified, and an exhaustive set of mutating tests ensures the specific refusal branches cannot be bypassed or silenced.",
+      "findings": [],
+      "raw_bytes": 5966,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gpt-oss-120b-medium",
+            "why": "no capacity: 503 on two pre-check probes (UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server)"
+          }
+        ]
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements all requirements of PMAT-3717. The model matrix runs at T-1 on both hosts, instrument isolation is properly enforced on gx10, the judge is executed with the specified frozen interface, and red-turning tests with mutants correctly verify the step's logic. All acceptance criteria and amendments are met without any weakening of gates or contradictions.",
+      "findings": [],
+      "raw_bytes": 2458,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-low",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-low",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (gemini-3.1-pro-high, gemini-3.1-pro-low) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 1: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (5748 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)",
+    "lane 2: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (5966 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)",
+    "lane 3: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (2458 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)",
+    "lane 2: judged by gemini-3.1-pro-high after falling through gpt-oss-120b-medium (skipped: no capacity: 503 on two pre-check probes (UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server)) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "capacity",
+        "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 2,
+        "outcome": "capacity",
+        "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
