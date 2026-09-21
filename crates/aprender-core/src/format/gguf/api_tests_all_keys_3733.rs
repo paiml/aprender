@@ -14,18 +14,39 @@ use crate::format::rosetta::RosettaStone;
 /// THIS list, which is exactly what `export_tensors_to_gguf` writes.
 fn header() -> Vec<(String, GgufValue)> {
     vec![
-        ("general.architecture".into(), GgufValue::String("qwen35".into())),
-        ("general.name".into(), GgufValue::String("pygmy-hybrid".into())),
+        (
+            "general.architecture".into(),
+            GgufValue::String("qwen35".into()),
+        ),
+        (
+            "general.name".into(),
+            GgufValue::String("pygmy-hybrid".into()),
+        ),
         ("qwen35.context_length".into(), GgufValue::Uint32(262_144)),
         ("qwen35.block_count".into(), GgufValue::Uint32(32)),
-        ("qwen35.full_attention_interval".into(), GgufValue::Uint32(4)),
-        ("qwen35.attention.head_count_kv".into(), GgufValue::Uint32(4)),
+        (
+            "qwen35.full_attention_interval".into(),
+            GgufValue::Uint32(4),
+        ),
+        (
+            "qwen35.attention.head_count_kv".into(),
+            GgufValue::Uint32(4),
+        ),
         ("qwen35.attention.key_length".into(), GgufValue::Uint32(256)),
-        ("qwen35.rope.dimension_sections".into(), GgufValue::ArrayInt32(vec![11, 11, 10, 0])),
+        (
+            "qwen35.rope.dimension_sections".into(),
+            GgufValue::ArrayInt32(vec![11, 11, 10, 0]),
+        ),
         ("qwen35.rope.freq_base".into(), GgufValue::Float32(1.0e7)),
-        ("quantize.imatrix.file".into(), GgufValue::String("imatrix.gguf".into())),
+        (
+            "quantize.imatrix.file".into(),
+            GgufValue::String("imatrix.gguf".into()),
+        ),
         ("zzz_never_heard_of.depth".into(), GgufValue::Uint64(7)),
-        ("tokenizer.ggml.model".into(), GgufValue::String("gpt2".into())),
+        (
+            "tokenizer.ggml.model".into(),
+            GgufValue::String("gpt2".into()),
+        ),
     ]
 }
 
@@ -50,7 +71,10 @@ fn assert_every_header_key(shown: &BTreeMap<String, String>, layer: &str) {
         .map(|(k, _)| k.as_str())
         .filter(|k| !shown.contains_key(*k))
         .collect();
-    assert!(missing.is_empty(), "{layer} dropped header keys: {missing:?}");
+    assert!(
+        missing.is_empty(),
+        "{layer} dropped header keys: {missing:?}"
+    );
     assert_eq!(
         shown.len(),
         header.len(),
@@ -64,7 +88,10 @@ fn raw_metadata_carries_every_header_key() {
     let raw = load_gguf_raw(file.path()).expect("load");
     assert_every_header_key(&raw.raw_metadata, "load_gguf_raw");
     assert_eq!(raw.raw_metadata["qwen35.context_length"], "262144");
-    assert_eq!(raw.raw_metadata["qwen35.rope.dimension_sections"], "[len=4]");
+    assert_eq!(
+        raw.raw_metadata["qwen35.rope.dimension_sections"],
+        "[len=4]"
+    );
     assert_eq!(raw.raw_metadata["zzz_never_heard_of.depth"], "7");
 }
 
@@ -83,7 +110,9 @@ fn rosetta_inspect_carries_every_header_key() {
 fn display_only_keys_do_not_reach_the_config_accessors() {
     let file = fixture();
     let reader = GgufReader::from_file(file.path()).expect("read");
-    assert!(reader.display_only_metadata.contains_key("qwen35.context_length"));
+    assert!(reader
+        .display_only_metadata
+        .contains_key("qwen35.context_length"));
     assert!(!reader.metadata.contains_key("qwen35.context_length"));
     assert_eq!(reader.context_length(), None);
     assert_eq!(reader.num_layers(), None);
@@ -112,6 +141,9 @@ fn an_array_count_past_the_end_of_the_file_is_an_error_not_a_panic() {
         data.extend_from_slice(&(u64::MAX / 2).to_le_bytes());
         data.extend_from_slice(&[0u8; 16]);
         let err = GgufReader::from_bytes(data).expect_err("a count past EOF must be refused");
-        assert!(err.to_string().contains("overruns"), "type {elem_type}: {err}");
+        assert!(
+            err.to_string().contains("overruns"),
+            "type {elem_type}: {err}"
+        );
     }
 }

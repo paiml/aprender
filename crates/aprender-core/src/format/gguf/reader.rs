@@ -97,7 +97,10 @@ fn read_metadata_array(data: &[u8], offset: usize) -> Result<(GgufValue, usize)>
         8 | 10..=12 => 8,
         _ => 4,
     };
-    if count.checked_mul(min_elem).is_none_or(|need| need > available) {
+    if count
+        .checked_mul(min_elem)
+        .is_none_or(|need| need > available)
+    {
         return Err(AprenderError::FormatError {
             message: format!(
                 "GGUF metadata array of {count} elements (type {elem_type}) overruns the file"
