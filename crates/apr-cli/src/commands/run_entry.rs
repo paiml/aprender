@@ -42,6 +42,8 @@ pub(crate) fn run(
     repeat_penalty: f32,
     repeat_last_n: usize,
     split_prompt: bool,
+    // #3672: apply the model's chat template once, in realizar; the prompt is raw text.
+    chat_template: bool,
 ) -> Result<()> {
     // GH-516: Warn on --language/--task since whisper integration is not yet wired up
     if language.is_some() {
@@ -105,6 +107,7 @@ pub(crate) fn run(
         repeat_penalty,
         repeat_last_n,
         split_prompt,
+        chat_template,
         stream,
     };
 

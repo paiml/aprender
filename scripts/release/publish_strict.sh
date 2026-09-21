@@ -33,12 +33,26 @@ git symbolic-ref -q HEAD > /dev/null && die "checkout is not detached"
 # violations; it only ever worked through the drain's retries). publish-order.txt is derived from
 # `cargo metadata` at the tag (normal + build + versioned dev-deps, acyclic); the facades, which
 # version independently and resolve their upstream from the registry, go last. Re-proved below.
+# An empty crate name is refused BY LINE NUMBER, before any set check (#3696): a blank line used to
+# reach the checks below as "" and stop with "not in the universe:  " -- naming nothing.
+blank=$(awk '/^[[:space:]]*$/ { printf "%s%d", (n++ ? ", " : ""), NR }' "$WT/scripts/release/publish-order.txt")
+[ -z "$blank" ] || die "blank line $blank in publish-order.txt: an empty crate name is not a crate"
 mapfile -t ORDER < <(cat "$WT/scripts/release/publish-order.txt"; printf '%s\n' provable-contracts provable-contracts-macros provable-contracts-cli)
 declare -A EXPECT MANIFEST ROOTWS
 while IFS=$'\t' read -r n v m w; do [ -n "$n" ] && { EXPECT[$n]=$v; MANIFEST[$n]=$m; ROOTWS[$n]=$w; }; done < <(python3 scripts/lib/cascade_universe.py "$WT")
-[ "${#ORDER[@]}" -eq 74 ] && [ "${#EXPECT[@]}" -eq 74 ] || die "order=${#ORDER[@]} universe=${#EXPECT[@]}, expected 74/74"
-for c in "${ORDER[@]}"; do [ -n "${EXPECT[$c]:-}" ] || die "$c is in TIERS but not in the universe"; done
-[ "$(printf '%s\n' "${ORDER[@]}" | sort -u | wc -l)" -eq 74 ] || die "duplicate crate in TIERS"
+# The ORDER must equal the universe as a SET (#3657): no crate missing, none extra, none twice.
+# The size is N, read from the universe. It is never a literal: 0.68.2's `74` would have
+# stopped a later cascade for a reason unrelated to publish safety
+# (check_release_scripts_derive_identity.sh R3).
+N=${#EXPECT[@]}
+[ "$N" -gt 0 ] || die "the universe is empty: cascade_universe.py enumerated nothing at $WT"
+dup=$(printf '%s\n' "${ORDER[@]}" | sort | uniq -d | tr '\n' ' ')
+[ -z "$dup" ] || die "crate(s) twice in the publish order: $dup"
+extra=$(for c in "${ORDER[@]}"; do [ -n "${EXPECT[$c]:-}" ] || printf '%s\n' "$c"; done | sort | tr '\n' ' ')
+[ -z "$extra" ] || die "in the publish order but not in the universe: $extra"
+declare -A INORDER; for c in "${ORDER[@]}"; do INORDER[$c]=1; done
+missing=$(for c in "${!EXPECT[@]}"; do [ -n "${INORDER[$c]:-}" ] || printf '%s\n' "$c"; done | sort | tr '\n' ' ')
+[ -z "$missing" ] || die "in the universe but not in the publish order, so never uploaded: $missing"
 
 cargo metadata --format-version 1 --no-deps 2>/dev/null | python3 -c '
 import json,sys
@@ -61,7 +75,7 @@ if [ "${1:-}" = "--plan" ]; then
 fi
 
 mkdir -p "$LOGD"; [ -f "$TSV" ] || printf 'crate\tversion\tstart_utc\tend_utc\tresult\tattempts\n' > "$TSV"
-say "CASCADE START $V strict (74 crates, dependency order derived at the tag)"
+say "CASCADE START $V strict ($N crates, dependency order derived at the tag)"
 i=0
 for c in "${ORDER[@]}"; do
   i=$((i+1)); v=${EXPECT[$c]}
@@ -79,7 +93,7 @@ for c in "${ORDER[@]}"; do
     fi
     printf '%s\t%s\t%s\t%s\tFAILED rc=%s\t%s\n' "$c" "$v" "$t0" "$(date -u +%FT%TZ)" "$rc" "$a" >> "$TSV"  # bashrs disable-line=DET002
     say "PUBLISHED so far: $(awk -F'\t' '$5=="published"' "$TSV" | wc -l) crate(s); see $TSV"
-    die "crate $i/74 $c rc=$rc after $a attempt(s): $(grep -iE '^error|caused by' "$log" | head -2 | tr '\n' ' ' | cut -c1-300) ($log)"
+    die "crate $i/$N $c rc=$rc after $a attempt(s): $(grep -iE '^error|caused by' "$log" | head -2 | tr '\n' ' ' | cut -c1-300) ($log)"
   done
   for _ in $(seq 1 30); do live "$c" "$v" && break; sleep 10; done
   live "$c" "$v" || die "$c $v: cargo publish rc=0 but the version is not on the index after 5 min"
@@ -87,5 +101,5 @@ for c in "${ORDER[@]}"; do
   [ -z "$(git status --porcelain)" ] || die "tree dirty after publishing $c"
 done
 n=0; for c in "${ORDER[@]}"; do live "$c" "${EXPECT[$c]}" && n=$((n+1)); done
-[ $n -eq 74 ] || die "final verification: $n/74 live"
-say "CASCADE END $V: 74/74 live on crates.io"
+[ "$n" -eq "$N" ] || die "final verification: $n/$N live"
+say "CASCADE END $V: $N/$N live on crates.io"

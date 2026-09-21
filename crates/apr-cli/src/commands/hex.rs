@@ -116,6 +116,19 @@ fn format_display_name(fmt: FileFormat) -> &'static str {
     }
 }
 
+/// The format a model file's magic bytes identify, for an error message:
+/// "APR", "GGUF", "SafeTensors", or "model" when they identify none or the
+/// file cannot be read (#3661). Reads at most 9 bytes.
+pub(crate) fn detected_model_format(path: &Path) -> &'static str {
+    use std::io::Read;
+    let mut head = Vec::with_capacity(9);
+    let read = std::fs::File::open(path).and_then(|f| f.take(9).read_to_end(&mut head));
+    match read {
+        Ok(_) => detect_format(&head).map_or("model", format_display_name),
+        Err(_) => "model",
+    }
+}
+
 // ============================================================================
 // Main entry point
 // ============================================================================

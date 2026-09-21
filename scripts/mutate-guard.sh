@@ -104,7 +104,12 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-for t in bats jq awk minisign check-jsonschema git; do
+# --list prints the catalogue and runs no mutant, so it needs only what catalogue()
+# reads with. Demanding the sweep's tools there made every count derived from the
+# catalogue (check_pr_review_counts.sh) an ENV failure on a runner that cannot run the
+# sweep, and guard-tree runs on clean-room hosts, not in a sweep image (#3646).
+if [ "$LIST_ONLY" = 1 ]; then need='awk'; else need='bats jq awk minisign check-jsonschema git'; fi
+for t in $need; do
   command -v "$t" >/dev/null 2>&1 || {
     echo "$PROG: FAIL - $t is not on PATH. A mutation score that could not be measured" >&2
     echo "  must not be reported as one (S8: guard_mutation_score is a one, not a floor)." >&2

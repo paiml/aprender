@@ -101,15 +101,6 @@ derive_fixture_rows() {
     printf '%s\n' "$n"
 }
 
-# bats tests: `@test` at column 0 in the file the CI step actually runs.
-derive_bats_tests() {
-    local root=$1 n
-    [ -f "$root/tests/pr-review.bats" ] || return 1
-    n=$(grep -c '^@test ' "$root/tests/pr-review.bats")
-    [ "$n" -gt 0 ] || return 1
-    printf '%s\n' "$n"
-}
-
 # S13 (PRREV-015) adds a SECOND table, a SECOND bats file and a SECOND mutation set.
 # They are derived here rather than left uncounted, because the universe this guard
 # iterates is what decides whether it can fail at all: a table it has never heard of is
@@ -193,9 +184,11 @@ derive_publish_rows() {
 # Falsification tests: the contract's own list, counted from its `- id:` labels rather
 # than from the prose that states the total. It went stale unseen - `pass_criteria` said
 # 11 over 15 entries at PRREV-013 and over 17 at PRREV-015 - and the only thing that
-# noticed was `cargo test -p aprender-contracts --test validate_contracts` printing
+# noticed was the aprender-contracts `validate_contracts` integration test printing
 # `pr-review-skill-v2: pass_criteria says 11 tests, actual 17` into a corpus-wide failure
-# nobody reads per-contract. Counting labels and not lines, the same reason S7's rows
+# nobody reads per-contract. (Name that test runner's binary in prose here and
+# guard_tree.sh's CARGO_RE classifies this whole guard as build-tool-using, which
+# drops it from guard-tree's --no-cargo run. That is how it went dark: #3646.) Counting labels and not lines, the same reason S7's rows
 # carry ids B1..B6.
 derive_falsification_tests() {
     local root=$1 n
@@ -218,32 +211,43 @@ derive_falsification_tests() {
 
 # ---------------------------------------------------------------------------
 # The site table. id | file | occurrences | template (@N@ -> derived value)
+#
+# SIX ci.yml ROWS LEFT WITH THE JOB THAT STATED THEM (#3646). PRQ-013 (#2982, #2985)
+# deleted ci.yml's receipt job, and with it the step names that carried "233/233",
+# "165 tests", "134-mutant" x2, "83 rows" and "Arm 4 case table: 10 rows", plus one
+# of the two "43-row" sites. That is the "sentence was deleted" case, and here it was
+# deliberate: the roadmap records the sweeps and the fixture table as a STATED LOSS.
+# So the rows go, not the sentences. Nobody noticed for weeks because a comment
+# naming the build tool had classified this guard out of guard-tree's --no-cargo
+# population, so it went RED on main and ran nowhere. The ci.yml rows that remain are
+# for step names that still exist.
+#
+# The bats_tests count went with them. No file states the size of tests/pr-review.bats
+# any more, and a derivation with no site checks nothing, so it was removed rather
+# than left to read as coverage. If a file states that count again, derive it again
+# and add the row.
 # ---------------------------------------------------------------------------
 SITES='
 mutants|.claude/skills/pr-review/SKILL.md|2|@N@/@N@
 mutants|contracts/binding.yaml|1|@N@/@N@
-mutants|.github/workflows/ci.yml|1|@N@/@N@
 mutants|docs/specifications/PR-REVIEW-SKILL-002-v2.md|1|@N@/@N@
-fixture_rows|.github/workflows/ci.yml|2|@N@-row
+fixture_rows|.github/workflows/ci.yml|1|@N@-row
+fixture_rows|scripts/check_pr_review_wiring.sh|1|@N@-row
 fixture_rows|tests/pr-review.bats|1|@N@ row
 fixture_rows|tests/pr-review.bats|1|-eq @N@ ]
-bats_tests|.github/workflows/ci.yml|2|@N@ tests
 quorum_mutants|docs/specifications/PR-REVIEW-SKILL-002-v2.md|3|@N@/@N@
 quorum_mutants|.claude/skills/pr-review/SKILL.md|1|@N@/@N@
 quorum_mutants|contracts/pr-review-skill-v2.yaml|1|@N@/@N@
 quorum_mutants|.claude/skills/pr-review/SKILL.md|1|@N@-mutant
-quorum_mutants|.github/workflows/ci.yml|2|@N@-mutant
 quorum_mutants|docs/specifications/PR-REVIEW-SKILL-002-v2.md|2|@N@ mutants
 quorum_bats_tests|docs/specifications/PR-REVIEW-SKILL-002-v2.md|1|@N@ rows
 quorum_bats_tests|docs/specifications/PR-REVIEW-SKILL-002-v2.md|1|@N@-row
 quorum_bats_tests|.claude/skills/pr-review/SKILL.md|2|@N@ rows
-quorum_bats_tests|.github/workflows/ci.yml|1|@N@ rows
 quorum_rows|tests/pr-review-quorum.bats|1|-eq @N@ ]
 quorum_rows|tests/pr-review-quorum.bats|1|expected @N@ q-*
 falsification_tests|contracts/pr-review-skill-v2.yaml|1|All @N@ falsification tests
 shadow_rows|.github/workflows/ci.yml|1|case table: @N@ rows
 publish_rows|.github/workflows/ci.yml|1|Publisher case table: @N@ rows
-arm4_rows|.github/workflows/ci.yml|1|Arm 4 case table: @N@ rows
 arm4_rows|.github/workflows/pr-review-quorum.yml|1|Arm 4 case table: @N@ rows
 signer_rows|.github/workflows/ci.yml|1|Signer case table: @N@ rows
 '
@@ -259,8 +263,6 @@ check() {
     derived[mutants]=$v
     v=$(derive_fixture_rows "$root") || die_env "cannot derive the fixture-row count"
     derived[fixture_rows]=$v
-    v=$(derive_bats_tests   "$root") || die_env "cannot derive the bats test count"
-    derived[bats_tests]=$v
     v=$(derive_quorum_mutants    "$root") || die_env "cannot derive the S13 mutation-set size (mutate_quorum_arm.sh --list)"
     derived[quorum_mutants]=$v
     v=$(derive_quorum_rows       "$root") || die_env "cannot derive the S13 q-* fixture-row count"
@@ -280,7 +282,7 @@ check() {
 
     [ -n "$quiet" ] || {
         echo "=== the counts these files state as measured, against the tree ($PROG) ==="
-        echo "derived:  mutants=${derived[mutants]}  fixture_rows=${derived[fixture_rows]}  bats_tests=${derived[bats_tests]}"
+        echo "derived:  mutants=${derived[mutants]}  fixture_rows=${derived[fixture_rows]}"
         echo "          quorum_mutants=${derived[quorum_mutants]}  quorum_rows=${derived[quorum_rows]}  quorum_bats_tests=${derived[quorum_bats_tests]}"
         echo "          falsification_tests=${derived[falsification_tests]}  shadow_rows=${derived[shadow_rows]}  publish_rows=${derived[publish_rows]}  arm4_rows=${derived[arm4_rows]}  signer_rows=${derived[signer_rows]}"
     }
@@ -381,7 +383,8 @@ self_test() {
                 scripts/pr_review_quorum_arm.sh \
                 scripts/pr_review_shadow_record.sh \
                 scripts/pr_review_shadow_publish.sh \
-                scripts/check_pr_review_arm4.sh scripts/pr_review_sign_receipt.sh ) \
+                scripts/check_pr_review_arm4.sh scripts/pr_review_sign_receipt.sh \
+                scripts/check_pr_review_wiring.sh ) \
       | ( cd "$base" && tar -xf - ) || die_env "could not stage a copy of the tree"
 
     local nrows=0
@@ -428,8 +431,9 @@ self_test() {
                       sed -i "s#$n/$n#$((n - 1))/$((n - 1))#" "$1/.claude/skills/pr-review/SKILL.md"; }
     stale_rows()    { local n; n=$(derive_fixture_rows "$1")
                       sed -i "s#$n-row#$((n - 1))-row#"   "$1/.github/workflows/ci.yml"; }
-    stale_tests()   { local n; n=$(derive_bats_tests "$1")
-                      sed -i "s#$n tests#$((n - 1)) tests#" "$1/.github/workflows/ci.yml"; }
+    # The site #3646 added: check_pr_review_wiring.sh states the fixture-row count too.
+    stale_wrows()   { local n; n=$(derive_fixture_rows "$1")
+                      sed -i "s#$n-row#$((n - 1))-row#"   "$1/scripts/check_pr_review_wiring.sh"; }
     delete_claim()  { local n; n=$(derive_mutants "$1")
                       sed -i "0,\#$n/$n#{\#$n/$n#d}" "$1/contracts/binding.yaml"; }
     stale_ftests()  { local n; n=$(derive_falsification_tests "$1")
@@ -440,7 +444,6 @@ self_test() {
     # let exactly this edit through green.
     grow_ftests()   { sed -i 's#^- id: F-PRREV-002$#- id: F-INVENTED-999\n  rule: a falsification test the contract does not count\n\n&#' \
                              "$1/contracts/pr-review-skill-v2.yaml"; }
-    grow_bats()     { printf '\n@test "a new test the docs do not count" {\n  true\n}\n' >> "$1/tests/pr-review.bats"; }
     grow_rows()     { mkdir -p "$1/tests/fixtures/pr-review/row-27-invented"; }
     grow_mutants()  { sed -i 's#^  \[ -n "$head" \] || reject B1 "predicate.head_sha is absent" || return 1#&\n  [ -n "$head" ] || reject B1 "an invented rule nothing documents" || return 1#' \
                              "$1/scripts/check_pr_review_receipt.sh"; }
@@ -470,9 +473,10 @@ self_test() {
     row baseline                0 "the tree as committed"                                   noop
     row stale-mutation-score    1 "the mutation score written back by one"                  stale_mutants
     row stale-fixture-rows      1 "the fixture-row count written back by one"               stale_rows
-    row stale-bats-count        1 "the bats test count written back by one"                 stale_tests
+    row stale-wiring-rows       1 "the wiring guard's fixture-row count written back by one" stale_wrows
+    # stale-bats-count and tree-grew-a-test left with the bats_tests derivation (#3646):
+    # no file states that count, so neither edit has a claim to falsify.
     row claim-deleted           1 "the sentence stating the count is deleted"               delete_claim
-    row tree-grew-a-test        1 "a bats test is added and no file says so"                grow_bats
     row tree-grew-a-fixture-row 1 "a row-* fixture is added and no file says so"            grow_rows
     row tree-grew-a-mutant      1 "a reject site is added and no file says so"              grow_mutants
     row stale-quorum-mutation   1 "the S13 mutation score written back by 18"               stale_qmutants
@@ -505,7 +509,6 @@ case "${1:-}" in
   --show)
       printf 'mutants            %s\n' "$(derive_mutants           "$REPO_ROOT")"
       printf 'fixture_rows       %s\n' "$(derive_fixture_rows      "$REPO_ROOT")"
-      printf 'bats_tests         %s\n' "$(derive_bats_tests        "$REPO_ROOT")"
       printf 'quorum_mutants     %s\n' "$(derive_quorum_mutants    "$REPO_ROOT")"
       printf 'quorum_rows        %s\n' "$(derive_quorum_rows       "$REPO_ROOT")"
       printf 'quorum_bats_tests  %s\n' "$(derive_quorum_bats_tests "$REPO_ROOT")"

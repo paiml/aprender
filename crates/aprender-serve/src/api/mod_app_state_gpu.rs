@@ -28,7 +28,8 @@ impl AppState {
                 }
             })
             .collect();
-        let tokenizer = BPETokenizer::new(vocab, vec![], "<unk>")?;
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
+        let tokenizer = BPETokenizer::new(vocab, vec![], unk)?;
 
         let (audit_logger, audit_sink) = create_audit_state();
         Ok(Self {
@@ -85,7 +86,8 @@ impl AppState {
         cached_model: crate::gguf::OwnedQuantizedModelCachedSync,
         vocab: Vec<String>,
     ) -> Result<Self, RealizarError> {
-        let tokenizer = BPETokenizer::new(vocab, vec![], "<unk>")?;
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
+        let tokenizer = BPETokenizer::new(vocab, vec![], unk)?;
 
         let (audit_logger, audit_sink) = create_audit_state();
         Ok(Self {
@@ -140,7 +142,8 @@ impl AppState {
         quantized_model: crate::gguf::OwnedQuantizedModel,
         vocab: Vec<String>,
     ) -> Result<Self, RealizarError> {
-        let tokenizer = BPETokenizer::new(vocab, vec![], "<unk>")?;
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
+        let tokenizer = BPETokenizer::new(vocab, vec![], unk)?;
 
         // PMAT-181: Cache architecture for chat template auto-detection.
         // Qwen3 models get Qwen3NoThinkTemplate (disables thinking mode).
@@ -190,7 +193,8 @@ impl AppState {
 
     /// Create application state with CUDA-optimized model for high-performance GPU inference (PAR-111)
     ///
-    /// This uses the `OwnedQuantizedModelCuda` wrapper which achieves 755+ tok/s (2.6x Ollama) by:
+    /// This uses the `OwnedQuantizedModelCuda` wrapper, the fast GPU path (measured
+    /// throughput lives in `docs/BEATS.md`, not here), by:
     /// - Pre-uploading all weights to GPU via `preload_weights_gpu()`
     /// - Using batched workspaces for efficient inference
     /// - GPU-resident KV cache to avoid CPU→GPU transfers
@@ -208,7 +212,8 @@ impl AppState {
         cuda_model: crate::gguf::OwnedQuantizedModelCuda,
         vocab: Vec<String>,
     ) -> Result<Self, RealizarError> {
-        let tokenizer = BPETokenizer::new(vocab, vec![], "<unk>")?;
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
+        let tokenizer = BPETokenizer::new(vocab, vec![], unk)?;
         // PMAT-073: Cache architecture at construction to avoid RwLock in hot path.
         // model_architecture() was blocking HTTP handlers for ~2s due to read lock
         // contention with the batch scheduler's write lock.
@@ -265,7 +270,8 @@ impl AppState {
         vocab: Vec<String>,
         merges: Vec<(String, String)>,
     ) -> Result<Self, RealizarError> {
-        let tokenizer = BPETokenizer::with_merges(vocab, merges, "<unk>")?;
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
+        let tokenizer = BPETokenizer::with_merges(vocab, merges, unk)?;
         let arch = Some(cuda_model.model().config.architecture.clone());
         let eos = cuda_model.model().config.eos_token_id;
 
@@ -314,7 +320,7 @@ impl AppState {
     /// Create application state with APR Transformer for SafeTensors/APR inference (PMAT-SERVE-FIX-001)
     ///
     /// This enables the `/generate` and `/batch/generate` endpoints for SafeTensors and APR models.
-    /// Uses F32 weights for inference, achieving ~1-10 tok/s on CPU.
+    /// Uses F32 weights for inference on CPU (the slow path; see `docs/BEATS.md` for measurements).
     ///
     /// # Arguments
     ///
@@ -328,7 +334,8 @@ impl AppState {
         transformer: crate::apr_transformer::AprTransformer,
         vocab: Vec<String>,
     ) -> Result<Self, RealizarError> {
-        let tokenizer = BPETokenizer::new(vocab, vec![], "<unk>")?;
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
+        let tokenizer = BPETokenizer::new(vocab, vec![], unk)?;
 
         let (audit_logger, audit_sink) = create_audit_state();
         Ok(Self {
@@ -453,7 +460,7 @@ impl AppState {
 
     /// Get the CUDA-optimized model for high-performance GPU inference (PAR-111)
     ///
-    /// Returns the model wrapper that achieves 755+ tok/s (2.6x Ollama) by using:
+    /// Returns the fast GPU model wrapper (measured throughput lives in `docs/BEATS.md`), which uses:
     /// - Pre-uploaded GPU weights
     /// - Batched workspaces
     /// - GPU-resident KV cache
@@ -555,7 +562,8 @@ impl AppState {
         vocab: Vec<String>,
         eos_id: Option<u32>,
     ) -> Result<Self, RealizarError> {
-        let tokenizer = BPETokenizer::new(vocab, vec![], "<unk>")?;
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
+        let tokenizer = BPETokenizer::new(vocab, vec![], unk)?;
         let (audit_logger, audit_sink) = create_audit_state();
         Ok(Self {
             model: None,
@@ -601,7 +609,8 @@ impl AppState {
         model: crate::safetensors_cuda::SafeTensorsCudaModel,
         vocab: Vec<String>,
     ) -> Result<Self, RealizarError> {
-        let tokenizer = BPETokenizer::new(vocab, vec![], "<unk>")?;
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
+        let tokenizer = BPETokenizer::new(vocab, vec![], unk)?;
         let metrics = Arc::new(MetricsCollector::new());
         let (audit_logger, audit_sink) = create_audit_state();
 

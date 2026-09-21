@@ -217,9 +217,6 @@ crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/multi_warp_vectorized.rs:
 crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/wide_kernel.rs:19
 crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/wide_kernel.rs:7
 crates/aprender-qa-runner/src/executor_serve_battery.rs:38
-crates/aprender-serve/src/api/mod_app_state_gpu.rs:193
-crates/aprender-serve/src/api/mod_app_state_gpu.rs:317
-crates/aprender-serve/src/api/mod_app_state_gpu.rs:456
 crates/aprender-serve/src/bench/gemm_performance.rs:259
 crates/aprender-serve/src/cuda/executor/cached.rs:6
 crates/aprender-serve/src/cuda/executor/layers/batched_forward.rs:492
