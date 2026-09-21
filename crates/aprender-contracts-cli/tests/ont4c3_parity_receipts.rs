@@ -210,19 +210,9 @@ fn the_committed_tree_agrees_with_its_own_denominator() {
         .current_dir(repo_root())
         .output()
         .expect("failed to spawn the denominator predicate");
-    // #3695: exit 3 is fleet state, not a verdict. This runner has no python3 (the fleet is
-    // python-free for automation, infra#708), so the predicate could not classify anything.
-    // It is accepted ONLY with the UNMEASURED line naming the interpreter; exits 1 and 2 still
-    // fail. The T-2 ledger requires the MEASURED "PASS 7 receipt(s)" at the release commit, and
-    // #3694 removes this path once classify() needs no python.
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    if out.status.code() == Some(3)
-        && stderr.contains("UNMEASURED runner=")
-        && stderr.contains("reason=no-interpreter interpreter=")
-    {
-        eprintln!("{}", stderr.trim());
-        return;
-    }
+    // #3694: the classifier is awk, so a python-free runner (infra#708) measures the count like any
+    // other. The UNMEASURED exit 3 that #3695 accepted here as a stop-gap is gone: anything but
+    // success is RED.
     assert!(
         out.status.success(),
         "exit {:?}\n{}{}",
