@@ -2,7 +2,7 @@
 # publish_strict.sh <version> [--plan] — the crates.io cascade under the operator's 2026-09-17
 #   authorization (first run 0.68.2). The version is the one argument; T and the state dir AP are
 #   derived (#3618, lib_release_params.sh), never literals.
-#   one crate per `cargo publish` call, in the tag's own TIERS order (scripts/cascade-publish.sh);
+#   one crate per `cargo publish` call, in the dependency order derived at the tag (#3462);
 #   STOP on the first non-zero (partial publishes are recorded, never rolled back);
 #   never --allow-dirty; a crates.io transient (429/5xx/timeout) is retried <=3 times with backoff,
 #   same inputs; anything else stops. Runs only from a detached checkout whose HEAD == the tag.
@@ -29,16 +29,19 @@ git symbolic-ref -q HEAD > /dev/null && die "checkout is not detached"
 [ "${1:-}" = "--plan" ] || [ -s "$AP/b2gpu-run-id" ] || die "no green B2-gpu run id recorded for $T (rule 14)"
 [ "${1:-}" = "--plan" ] || [ -s "$AP/dryrun-receipt-commit" ] || die "no committed dry-run receipt (T-4)"
 
-# order: NOT the tag's TIERS — measured 2026-09-17, TIERS is not topological (47 non-dev
-# violations; it only ever worked through the drain's retries). publish-order.txt is derived from
-# `cargo metadata` at the tag (normal + build + versioned dev-deps, acyclic); the facades, which
-# version independently and resolve their upstream from the registry, go last. Re-proved below.
-mapfile -t ORDER < <(cat "$WT/scripts/release/publish-order.txt"; printf '%s\n' provable-contracts provable-contracts-macros provable-contracts-cli)
+# order: DERIVED AT THE TAG by the function scripts/cascade-publish.sh walks (#3462):
+# scripts/lib/cascade_universe.py --order -- normal + build + versioned dev-deps, acyclic or it
+# refuses, the facades (which version independently and resolve their upstream from the registry)
+# last. It used to be publish-order.txt, a committed snapshot of that derivation from 0.68.1: a
+# snapshot drifts with the dependency graph, and the re-proof below would then STOP the train at
+# T-4, the most expensive place to stop it. Re-proved below all the same.
+order_out=$(python3 "$WT/scripts/lib/cascade_universe.py" --order --names "$WT") || die "no publish order at the tag: cascade_universe.py --order refused (a dependency cycle, or the enumeration broke)"
+mapfile -t ORDER <<< "$order_out"
 declare -A EXPECT MANIFEST ROOTWS
 while IFS=$'\t' read -r n v m w; do [ -n "$n" ] && { EXPECT[$n]=$v; MANIFEST[$n]=$m; ROOTWS[$n]=$w; }; done < <(python3 scripts/lib/cascade_universe.py "$WT")
 [ "${#ORDER[@]}" -eq 74 ] && [ "${#EXPECT[@]}" -eq 74 ] || die "order=${#ORDER[@]} universe=${#EXPECT[@]}, expected 74/74"
-for c in "${ORDER[@]}"; do [ -n "${EXPECT[$c]:-}" ] || die "$c is in TIERS but not in the universe"; done
-[ "$(printf '%s\n' "${ORDER[@]}" | sort -u | wc -l)" -eq 74 ] || die "duplicate crate in TIERS"
+for c in "${ORDER[@]}"; do [ -n "${EXPECT[$c]:-}" ] || die "$c is in the publish order but not in the universe"; done
+[ "$(printf '%s\n' "${ORDER[@]}" | sort -u | wc -l)" -eq 74 ] || die "duplicate crate in the publish order"
 
 cargo metadata --format-version 1 --no-deps 2>/dev/null | python3 -c '
 import json,sys

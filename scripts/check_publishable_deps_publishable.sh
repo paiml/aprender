@@ -196,8 +196,10 @@ if [ -n "$VIOL" ]; then
     done
     printf '\nThe dependent CANNOT be published: cargo resolves every non-dev\n'
     printf 'dependency against the registry, and `optional = true` does not help.\n'
-    printf 'Either drop the dependency, or make the dependency publishable and\n'
-    printf 'add it to scripts/cascade-publish.sh ahead of its dependents.\n'
+    printf 'Either drop the dependency, or make the dependency publishable: the\n'
+    printf 'cascade derives its publish order from cargo metadata (#3462), so a\n'
+    printf 'publishable dependency is published ahead of its dependents with no\n'
+    printf 'table to edit.\n'
     exit 1
 fi
 
