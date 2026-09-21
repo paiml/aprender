@@ -102,6 +102,9 @@ pub enum CodeInputFormat {
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Run model directly (auto-download, cache, execute)
+    // #3745 S1 v1.1: the sampling controls below join this group, which is how
+    // `apr surface` reads them as role `sampling`.
+    #[command(groups(batuta_common::cli_roles::SamplingArg::groups()))]
     Run {
         /// Model source: local path, hf://org/repo, or URL
         #[arg(value_name = "SOURCE")]
@@ -176,26 +179,26 @@ pub enum Commands {
         #[arg(long)]
         chat: bool,
         /// Sampling temperature (0.0 = greedy, default: 0.0)
-        #[arg(long, default_value = "0.0")]
+        #[arg(long, default_value = "0.0", group = batuta_common::cli_roles::SamplingKind::Temperature.id())]
         temperature: f32,
         /// Top-k sampling (default: 1 = greedy)
-        #[arg(long, default_value = "1")]
+        #[arg(long, default_value = "1", group = batuta_common::cli_roles::SamplingKind::TopK.id())]
         top_k: usize,
         /// Top-p nucleus sampling (0.0 = disabled). When set with --top-k, applies top-k first then top-p.
         /// F-CLIPARITY-01 / PMAT-381 / paiml/aprender#569
-        #[arg(long)]
+        #[arg(long, group = batuta_common::cli_roles::SamplingKind::TopP.id())]
         top_p: Option<f32>,
         /// RNG seed for deterministic sampling (default: 299792458, matching Candle)
         /// F-CLIPARITY-01 / PMAT-382 / paiml/aprender#570
-        #[arg(long, default_value = "299792458")]
+        #[arg(long, default_value = "299792458", group = batuta_common::cli_roles::SamplingKind::Seed.id())]
         seed: u64,
         /// Repetition penalty (1.0 = no penalty, >1.0 penalizes repeats)
         /// F-CLIPARITY-01 / PMAT-383 / paiml/aprender#571
-        #[arg(long, default_value = "1.0")]
+        #[arg(long, default_value = "1.0", group = batuta_common::cli_roles::SamplingKind::RepeatPenalty.id())]
         repeat_penalty: f32,
         /// Context window for repetition penalty (number of recent tokens to check)
         /// F-CLIPARITY-01 / PMAT-384 / paiml/aprender#571
-        #[arg(long, default_value = "64")]
+        #[arg(long, default_value = "64", group = batuta_common::cli_roles::SamplingKind::RepeatLastN.id())]
         repeat_last_n: usize,
         /// Process prompt tokens one-by-one instead of batched prefill.
         /// Useful for debugging prefill correctness (comparing per-token attention).

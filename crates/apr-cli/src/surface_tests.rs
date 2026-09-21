@@ -72,6 +72,7 @@ fn the_surface_is_versioned_and_deterministic() {
             "prompt",
             "input-file",
             "backend",
+            "sampling",
             "mode",
             "other",
             "unknown"
@@ -212,7 +213,16 @@ fn classify_case_table() {
         PromptText,
     };
     #[derive(clap::Parser)]
+    #[command(groups(batuta_common::cli_roles::SamplingArg::groups()))]
     struct Probe {
+        // v1.1: a sampling control, by group membership; its twin with no group
+        // is an ordinary number.
+        #[arg(long, group = batuta_common::cli_roles::SamplingKind::Temperature.id())]
+        temperature: Option<f32>,
+        #[arg(long, group = batuta_common::cli_roles::SamplingKind::TopK.id())]
+        top_k: Option<usize>,
+        #[arg(long)]
+        ungrouped_temperature: Option<f32>,
         model_path: ModelPath,
         #[arg(long)]
         model_ref: Option<ModelRef>,
@@ -273,6 +283,10 @@ fn classify_case_table() {
         ("fmt", ("enum", "mode", None)),
         ("c", ("other", "other", None)),
         ("backend", ("enum", "backend", Some("BackendArg"))),
+        ("temperature", ("float", "sampling", Some("SamplingArg"))),
+        ("top_k", ("int", "sampling", Some("SamplingArg"))),
+        // The name says "temperature"; without the group it is not sampling.
+        ("ungrouped_temperature", ("float", "other", None)),
     ];
     let cmd = <Probe as CommandFactory>::command();
     let root = clap::Command::new("apr").subcommand(cmd.name("probe"));

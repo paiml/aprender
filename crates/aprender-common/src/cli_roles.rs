@@ -45,6 +45,9 @@ pub enum Role {
     InputFile,
     /// The compute backend override.
     Backend,
+    /// A generation sampling control: seed, temperature, top-k, top-p,
+    /// repeat penalty (S1 v1.1, for S2.5's flag-effect sampling controls).
+    Sampling,
     /// A flag, or a value drawn from a finite set.
     Mode,
     /// Declared, and none of the above: outputs, directories, configs, names.
@@ -63,6 +66,7 @@ impl Role {
             Self::Prompt => "prompt",
             Self::InputFile => "input-file",
             Self::Backend => "backend",
+            Self::Sampling => "sampling",
             Self::Mode => "mode",
             Self::Other => "other",
             Self::Unknown => "unknown",
@@ -378,6 +382,114 @@ impl ServesGeneration {
     #[must_use]
     pub fn is_on(cmd: &clap::Command) -> bool {
         cmd.get_groups().any(|g| g.get_id() == Self::ID)
+    }
+}
+
+/// Which generation sampling control an argument is (#3745 S1, v1.1). S2
+/// derives its sampling cells per kind (sampled ≠ greedy, same seed twice is
+/// byte-identical, seed A ≠ seed B, top-k 1 / T 0 is byte-greedy), so the kind
+/// is declared, not read off the argument's name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum SamplingKind {
+    /// RNG seed of the sampler.
+    Seed,
+    /// Softmax temperature.
+    Temperature,
+    /// Top-k cut-off.
+    TopK,
+    /// Nucleus (top-p) threshold.
+    TopP,
+    /// Min-p threshold.
+    MinP,
+    /// Repetition penalty.
+    RepeatPenalty,
+    /// Window the repetition penalty looks back over.
+    RepeatLastN,
+}
+
+impl SamplingKind {
+    /// Every kind.
+    pub const ALL: [SamplingKind; 7] = [
+        Self::Seed,
+        Self::Temperature,
+        Self::TopK,
+        Self::TopP,
+        Self::MinP,
+        Self::RepeatPenalty,
+        Self::RepeatLastN,
+    ];
+
+    /// The spelling used in the `apr-cli-surface` JSON (`sampling_kind`).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Seed => "seed",
+            Self::Temperature => "temperature",
+            Self::TopK => "top_k",
+            Self::TopP => "top_p",
+            Self::MinP => "min_p",
+            Self::RepeatPenalty => "repeat_penalty",
+            Self::RepeatLastN => "repeat_last_n",
+        }
+    }
+
+    /// The group id an argument of this kind joins: `#[arg(group = SamplingKind::Temperature.id())]`.
+    #[must_use]
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Seed => "batuta_common::cli_roles::SamplingArg::seed",
+            Self::Temperature => "batuta_common::cli_roles::SamplingArg::temperature",
+            Self::TopK => "batuta_common::cli_roles::SamplingArg::top_k",
+            Self::TopP => "batuta_common::cli_roles::SamplingArg::top_p",
+            Self::MinP => "batuta_common::cli_roles::SamplingArg::min_p",
+            Self::RepeatPenalty => "batuta_common::cli_roles::SamplingArg::repeat_penalty",
+            Self::RepeatLastN => "batuta_common::cli_roles::SamplingArg::repeat_last_n",
+        }
+    }
+}
+
+/// Argument-level marker for a generation SAMPLING control (#3745 S1, v1.1).
+///
+/// These are numbers, so a newtype would change every field's type and every
+/// call site that reads it. Instead the argument joins the argument-less group
+/// of its [`SamplingKind`], and the command declares those groups once, each
+/// `multiple(true)`, so nothing about parsing changes:
+///
+/// ```ignore
+/// #[command(groups(batuta_common::cli_roles::SamplingArg::groups()))]
+/// Run {
+///     #[arg(long, default_value = "0.0",
+///           group = batuta_common::cli_roles::SamplingKind::Temperature.id())]
+///     temperature: f32,
+/// }
+/// ```
+///
+/// `apr surface` reports role `sampling` and `sampling_kind` for a member of
+/// one of these groups, matched by id, never by the argument's name.
+#[derive(Debug, Clone, Copy)]
+pub struct SamplingArg;
+
+impl SamplingArg {
+    /// One argument-less `multiple(true)` group per [`SamplingKind`], for
+    /// `#[command(groups(SamplingArg::groups()))]`.
+    #[must_use]
+    pub fn groups() -> Vec<clap::ArgGroup> {
+        SamplingKind::ALL
+            .iter()
+            .map(|k| clap::ArgGroup::new(k.id()).multiple(true))
+            .collect()
+    }
+
+    /// The sampling kind of `arg` on `built`, if it has one. `built` must be a
+    /// BUILT command: clap merges each argument's `group = …` into the
+    /// command's groups only when the command is built.
+    #[must_use]
+    pub fn kind_of(built: &clap::Command, arg: &clap::Arg) -> Option<SamplingKind> {
+        SamplingKind::ALL.into_iter().find(|k| {
+            built
+                .get_groups()
+                .any(|g| g.get_id() == k.id() && g.get_args().any(|a| a == arg.get_id()))
+        })
     }
 }
 

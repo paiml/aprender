@@ -127,6 +127,10 @@ pub struct ArgEntry {
     pub role: &'static str,
     /// The role type that built this argument (`ModelPath`, `BackendArg`, …).
     pub marker: Option<&'static str>,
+    /// For role `sampling` (v1.1): `seed`, `temperature`, `top_k`, `top_p`,
+    /// `min_p`, `repeat_penalty` or `repeat_last_n`, read from the sampling
+    /// group the argument joined, never from its name. `null` otherwise.
+    pub sampling_kind: Option<&'static str>,
     pub hidden: bool,
     /// Ids of the arguments this one conflicts with.
     pub conflicts_with: Vec<String>,
@@ -221,11 +225,12 @@ pub fn emit_from(root: &clap::Command) -> Surface {
 }
 
 /// Every role, in schema order.
-const ROLES: [Role; 7] = [
+const ROLES: [Role; 8] = [
     Role::Model,
     Role::Prompt,
     Role::InputFile,
     Role::Backend,
+    Role::Sampling,
     Role::Mode,
     Role::Other,
     Role::Unknown,
@@ -288,7 +293,7 @@ fn arg_entry(arg: &clap::Arg, built_cmd: &clap::Command, cmd: &clap::Command) ->
         .get_arguments()
         .find(|b| b.get_id() == arg.get_id())
         .expect("a built command keeps every argument its source declares");
-    let class = classify(arg, cmd);
+    let class = classify(arg, cmd, built_cmd);
     let takes_value = built_arg.get_action().takes_values();
     let num_args = built_arg
         .get_num_args()
@@ -332,6 +337,8 @@ fn arg_entry(arg: &clap::Arg, built_cmd: &clap::Command, cmd: &clap::Command) ->
             .collect(),
         role: class.role.as_str(),
         marker: class.marker,
+        sampling_kind: cli_roles::SamplingArg::kind_of(built_cmd, built_arg)
+            .map(cli_roles::SamplingKind::as_str),
         hidden: arg.is_hide_set(),
         conflicts_with: built_cmd
             .get_arg_conflicts_with(built_arg)
@@ -355,7 +362,7 @@ struct Class {
 }
 
 /// Decide an argument's role from how it is built. Nothing here reads a name.
-fn classify(arg: &clap::Arg, cmd: &clap::Command) -> Class {
+fn classify(arg: &clap::Arg, cmd: &clap::Command, built: &clap::Command) -> Class {
     let ty = arg.get_value_parser().type_id();
     let finite = !finite_values(arg).is_empty();
     let value_type = match arg.get_action() {
@@ -369,6 +376,15 @@ fn classify(arg: &clap::Arg, cmd: &clap::Command) -> Class {
         return Class {
             role: Role::Backend,
             marker: Some("BackendArg"),
+            value_type,
+        };
+    }
+    // v1.1: membership in the SamplingArg group, which is visible only on the
+    // BUILT command (clap merges `#[arg(group = …)]` there).
+    if cli_roles::SamplingArg::kind_of(built, arg).is_some() {
+        return Class {
+            role: Role::Sampling,
+            marker: Some("SamplingArg"),
             value_type,
         };
     }

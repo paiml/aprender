@@ -40,15 +40,16 @@ pub enum ExtendedCommands {
     // #3745 S1 v1.1: prompts arrive over stdin (its only PromptText is --system), not through a PromptText arg,
     // so the generator is declared by marker (`apr surface` → `generates: true`).
     #[command(group(batuta_common::cli_roles::ServesGeneration::group()))]
+    #[command(groups(batuta_common::cli_roles::SamplingArg::groups()))]
     Chat {
         /// Path to .apr model file
         #[arg(value_name = "FILE")]
         file: ModelPath,
         /// Sampling temperature (0 = greedy, higher = more random)
-        #[arg(long, default_value = "0.7")]
+        #[arg(long, default_value = "0.7", group = batuta_common::cli_roles::SamplingKind::Temperature.id())]
         temperature: f32,
         /// Nucleus sampling threshold
-        #[arg(long, default_value = "0.9")]
+        #[arg(long, default_value = "0.9", group = batuta_common::cli_roles::SamplingKind::TopP.id())]
         top_p: f32,
         /// Maximum tokens to generate per response
         #[arg(long, default_value = "512")]

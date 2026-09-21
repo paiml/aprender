@@ -237,3 +237,85 @@ fn mutant_serve_run_without_its_marker_does_not_generate() {
         "without the marker serve run must read generates=false — the marker is load-bearing"
     );
 }
+
+/// v1.1 `sampling` (for S2.5's flag-effect sampling controls): the generation
+/// sampling controls carry the SamplingArg marker. Numbers with the same names
+/// that are not generation sampling (distillation temperature, data seeds,
+/// rerank's top-k) are not.
+#[test]
+fn the_sampling_controls_are_declared() {
+    let s = big_stack(emit);
+    let role = |path: &[&str], id: &str| {
+        s.command(path)
+            .and_then(|c| c.arg(id))
+            .map(|a| a.role)
+            .unwrap_or_else(|| panic!("{path:?} {id} is on the surface"))
+    };
+    let kind = |path: &[&str], id: &str| {
+        s.command(path)
+            .and_then(|c| c.arg(id))
+            .and_then(|a| a.sampling_kind)
+    };
+    // `run`'s field ids happen to equal their kinds' spellings; the kind is read
+    // from the group each field joined, and the case table below the name level
+    // (`ungrouped_temperature`) shows a name alone yields no kind.
+    for (id, want) in [
+        ("temperature", "temperature"),
+        ("top_k", "top_k"),
+        ("top_p", "top_p"),
+        ("seed", "seed"),
+        ("repeat_penalty", "repeat_penalty"),
+        ("repeat_last_n", "repeat_last_n"),
+    ] {
+        assert_eq!(role(&["run"], id), "sampling", "run --{id}");
+        assert_eq!(kind(&["run"], id), Some(want), "run --{id} sampling_kind");
+    }
+    assert_eq!(kind(&["chat"], "top_p"), Some("top_p"));
+    assert_eq!(
+        kind(&["distill"], "temperature"),
+        None,
+        "KD temperature has no kind"
+    );
+    assert_eq!(role(&["chat"], "temperature"), "sampling");
+    assert_eq!(role(&["chat"], "top_p"), "sampling");
+    assert_eq!(
+        role(&["rosetta", "compare-inference"], "temperature"),
+        "sampling"
+    );
+    assert_ne!(
+        role(&["distill"], "temperature"),
+        "sampling",
+        "KD temperature"
+    );
+    assert_ne!(role(&["data", "split"], "seed"), "sampling", "a data seed");
+    assert_ne!(role(&["rerank"], "top_k"), "sampling", "a ranking cut-off");
+}
+
+/// Mutant: `run --temperature` with its SamplingArg marker dropped reads as an
+/// ordinary number, so `the_sampling_controls_are_declared` would go RED.
+#[test]
+fn mutant_temperature_without_its_marker_is_not_sampling() {
+    let s = big_stack(|| {
+        emit_from(&Cli::command().mut_subcommand("run", |c| {
+            c.mut_arg("temperature", |a| {
+                a.group(clap::builder::Resettable::<clap::Id>::Reset)
+            })
+        }))
+    });
+    let t = s
+        .command(&["run"])
+        .and_then(|c| c.arg("temperature"))
+        .expect("run --temperature");
+    assert_ne!(
+        t.role, "sampling",
+        "without the marker the role must not be sampling"
+    );
+    let k = s
+        .command(&["run"])
+        .and_then(|c| c.arg("top_k"))
+        .expect("top_k");
+    assert_eq!(
+        k.role, "sampling",
+        "only the mutated argument loses its role"
+    );
+}

@@ -106,6 +106,7 @@ pub enum RosettaCommands {
     },
 
     /// Compare inference outputs between two models (PMAT-114)
+    #[command(groups(batuta_common::cli_roles::SamplingArg::groups()))]
     CompareInference {
         /// Reference model (typically GGUF)
         #[arg(value_name = "MODEL_A")]
@@ -124,7 +125,7 @@ pub enum RosettaCommands {
         max_tokens: usize,
 
         /// Sampling temperature (0 = greedy)
-        #[arg(long, default_value = "0")]
+        #[arg(long, default_value = "0", group = batuta_common::cli_roles::SamplingKind::Temperature.id())]
         temperature: f32,
 
         /// Logit difference tolerance
