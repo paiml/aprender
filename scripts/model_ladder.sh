@@ -40,13 +40,17 @@ while [ $# -gt 0 ]; do
     --host) [ $# -ge 2 ] || { echo "model_ladder: --host needs a value" >&2; exit 2; }; HOST_ID="$2"; shift 2 ;;
     --out)  [ $# -ge 2 ] || { echo "model_ladder: --out needs a value" >&2; exit 2; };  OUT_DIR="$2"; shift 2 ;;
     --dry-run) DRY=1; shift ;;
+    # --lock-probe <apr args…>: one apr call through apr_locked, then exit with its rc. For the case
+    # table in check_model_ladder.sh, which proves every apr call runs under the lock.
+    --lock-probe) shift; LOCK_PROBE=1; break ;;
     -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) echo "model_ladder: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
 
 # The root is derived from this file's path, never from `git rev-parse` (aprender#3581) or the caller's cwd.
-cd "$(dirname "$0")/.." || exit 2
+# MODEL_LADDER_ROOT tells a mutant copy (in a temp dir) which tree it runs against.
+cd "${MODEL_LADDER_ROOT:-$(dirname "$0")/..}" || exit 2
 [ -f "$LADDER" ] || { echo "decline: $LADDER not found" >&2; exit 2; }
 
 # Step 0 — pin the binary. A diagnostic against the wrong apr is worse than none.
@@ -57,6 +61,33 @@ else
   . scripts/apr_bin.sh || { echo "decline: scripts/apr_bin.sh could not pin a HEAD-built apr" >&2; exit 2; }
 fi
 [ -x "${APR:-}" ] || { echo "decline: \$APR is not executable: '${APR:-}'" >&2; exit 2; }
+
+# THE GPU LOCK (cop ruling 2026-09-21, #3712). Interactive apr runs on gx10 drove the host into a
+# global OOM at 15:56:08Z and the kernel killed CI containers (oom_score_adj 500), not apr (0). So
+# every apr call that can touch the GPU goes through apr_locked and nowhere else: serialized on the
+# fleet lock, and choom'd to 1000 so a measurement, never the pool, is the OOM victim. The wait is
+# bounded: a lock that stays held is an ENV decline naming its holder, never a hang and never a
+# model verdict. T-1 (the autopilot) wraps this script in choom only -- a second flock outside
+# would deadlock on this one. check_model_ladder.sh audits that no GPU apr call bypasses this.
+GPU_LOCK="${MODEL_LADDER_GPU_LOCK:-/tmp/apr-gpu.lock}"
+LOCK_WAIT="${MODEL_LADDER_LOCK_WAIT:-1800}"
+LOCK_BUSY=75   # flock -E: the lock was not free in LOCK_WAIT seconds (an apr exit 75 also declines -- never a pass)
+command -v flock > /dev/null && command -v choom > /dev/null \
+  || { echo "decline: flock and choom (util-linux) are required -- every apr call runs under the fleet GPU lock" >&2; exit 2; }
+apr_locked() { flock -E "$LOCK_BUSY" -w "$LOCK_WAIT" "$GPU_LOCK" choom -n 1000 -- "$APR" "$@"; }
+lock_timeout() { # lock_timeout <what> -> exit 2, naming the holder from /proc/locks (by inode; lslocks
+  local ino pid holder   # leaves PATH empty for a file it cannot resolve, so it cannot be matched by path)
+  ino=$(stat -c %i "$GPU_LOCK" 2> /dev/null)
+  pid=$(awk -v i=":$ino" '$2 != "->" && substr($6, length($6) - length(i) + 1) == i { print $5; exit }' /proc/locks 2> /dev/null)
+  [ -n "$pid" ] && holder="pid $pid: $(ps -o args= -p "$pid" 2> /dev/null | cut -c1-120)"
+  echo "decline: ENV the GPU lock $GPU_LOCK was not free after ${LOCK_WAIT}s for $1 -- holder: ${holder:-unknown}. Not a model verdict." >&2
+  exit 2
+}
+if [ "${LOCK_PROBE:-0}" = 1 ]; then
+  apr_locked "$@"; rc=$?
+  [ "$rc" = "$LOCK_BUSY" ] && lock_timeout "apr $*"
+  exit "$rc"
+fi
 
 host_id() {
   if [ -n "$HOST_ID" ]; then printf '%s' "$HOST_ID"; return; fi
@@ -164,8 +195,9 @@ measure() {
   # and check_model_ladder.sh refuses any Q4_K rung that does not claim cuda (#3712).
   case ",$rbackends," in *,cuda,*|*,gpu,*) ;; *) cap_flag="--skip-capability" ;; esac
   # shellcheck disable=SC2086
-  "$APR" qa "$path" --json --offline --skip-throughput --skip-ollama --skip-gpu-speedup \
+  apr_locked qa "$path" --json --offline --skip-throughput --skip-ollama --skip-gpu-speedup \
       --skip-ptx-parity --skip-gpu-state --skip-format-parity $cap_flag > "$qa_json" 2> "$qa_json.err"; qa_rc=$?
+  [ "$qa_rc" = "$LOCK_BUSY" ] && lock_timeout "apr qa $rid"
   qa_row=$(python3 - "$qa_json" <<'PY'
 import json, sys
 try:
@@ -187,7 +219,8 @@ PY
   IFS=',' read -r -a bes <<< "$rbackends"
   for b in "${bes[@]}"; do
     case "$b" in cpu) flag="--no-gpu" ;; cuda|gpu) flag="--gpu" ;; *) flag="" ;; esac
-    run_out=$("$APR" run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 $flag 2>&1); run_rc=$?
+    run_out=$(apr_locked run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 $flag 2>&1); run_rc=$?
+    [ "$run_rc" = "$LOCK_BUSY" ] && lock_timeout "apr run $rid ($b)"
     fb=false; ran=true
     if grep -qE 'falling back to CPU|path rejected, attempting fallback|runs on the CPU; the GPU backend' <<< "$run_out"; then fb=true; fi
     if [ "$b" != cpu ] && [ -z "$GPU_NAME" ]; then ran=false; fi

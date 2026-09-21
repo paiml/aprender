@@ -138,6 +138,7 @@ equations:
       - "a rung the host does not hold is absent, and absent is FAIL for a required rung: an unmeasured claim is not a passed claim"
     preconditions:
       - "binary pinned via scripts/apr_bin.sh (built from HEAD) or DOGFOOD_ALLOW_UNPINNED=1 for the published-crate mode"
+      - "every apr call runs through apr_locked: the fleet GPU lock (flock, bounded wait; a held lock is an ENV decline naming its holder) and choom -n 1000, so a measurement and never a CI job is the OOM victim (#3712; gx10 global OOM 2026-09-21 15:56:08Z killed CI containers)"
   host_receipt:
     formula: "receipt(host) = {schema: apr-model-ladder-receipt/v2, host, version, sha, apr_sha, gpu, cc, inventory: [{file, sha256, bytes}], rungs: [{id, file, present, capability_match, golden_output, backends: {b: {ran, fallback, rc}}}]}"
     domain: "evidence/dogfood/models/<version>/<host>.json, written only by scripts/model_ladder.sh"
@@ -266,6 +267,11 @@ falsification_tests:
     prediction: "a v1 receipt (no inventory) exits 1; an empty inventory exits 1; a ladder with no inventory block exits 1 (cases red-receipt-v1-no-inventory, red-inventory-empty, red-ladder-without-inventory)"
     test: "bash scripts/check_model_ladder.sh --self-test --case red-receipt-v1-no-inventory && bash scripts/check_model_ladder.sh --self-test --case red-inventory-empty && bash scripts/check_model_ladder.sh --self-test --case red-ladder-without-inventory"
     if_fails: "absence scored as conformance: a host that listed nothing proved nothing and passed"
+  - id: FALSIFY-MCL-015
+    rule: "Every GPU apr call runs under the fleet lock, choom'd to 1000, with a bounded wait"
+    prediction: "check_model_ladder.sh --self-test: model_ladder.sh makes no \"$APR\" <subcommand> call outside apr_locked; a fake apr called through --lock-probe sees the lock held and oom_score_adj 1000; a lock held elsewhere declines with exit 2 naming the holder's pid; four producer mutants (raw call, no flock, no choom, no -w) are each killed. The real run is RED when the audit finds a raw call"
+    test: "bash scripts/check_model_ladder.sh --self-test"
+    if_fails: "a ladder run on gx10's unified memory OOM-kills the CI pool (15:56:08Z, 18 kills in 10 s) or hangs a release on a stuck lock"
 
 qa_gate:
   id: F-MCL-001

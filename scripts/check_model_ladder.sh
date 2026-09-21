@@ -173,6 +173,45 @@ PY
 }
 
 # ---------------------------------------------------------------- self-test
+# ---------------------------------------------------------------- the GPU lock
+# Cop ruling 2026-09-21 (#3712): every apr call scripts/model_ladder.sh makes runs under the fleet GPU
+# lock (flock, bounded wait) and choom -n 1000, through ONE function, apr_locked. Two halves:
+#   lock_audit  (static, also in the REAL run): no apr subcommand is invoked on "$APR" directly.
+#   lock_probe  (behavioural, self-test): a fake apr, called through --lock-probe, must see the lock
+#               held and its own oom_score_adj at 1000; with the lock held elsewhere the call must
+#               decline (exit 2) within the bounded wait, naming the holder's pid.
+# lock_audit <producer> -> prints FAIL lines, exit 1 on any raw call
+lock_audit() {
+  python3 - "$1" <<'LOCKPY'
+import re, sys
+bad = 0
+for n, line in enumerate(open(sys.argv[1]), 1):
+    code = re.sub(r"(^|\s)#.*$", "", line)          # a call in a comment is not a call
+    for m in re.finditer(r'(?<!\\)"?\$\{?APR\}?"?[ \t]+(?!--version\b)([a-z][a-z-]*)\b', code):
+        print(f"FAIL  {sys.argv[1]}:{n} calls \"$APR\" {m.group(1)} directly -- every GPU apr call goes through apr_locked (the fleet lock + choom 1000)")
+        bad = 1
+sys.exit(bad)
+LOCKPY
+}
+# lock_probe <producer> <work dir> -> prints ok/FAIL lines, exit 1 on any failure
+lock_probe() {
+  local prod=$1 w=$2 out rc hp bad=0
+  mkdir -p "$w"; : > "$w/lock"
+  printf '#!/usr/bin/env bash\nif flock -n "$FAKE_LOCK" true; then l=UNLOCKED; else l=LOCKED; fi\necho "fake-apr $1 lock=$l oom=$(cat /proc/self/oom_score_adj)"\n' > "$w/apr"
+  chmod +x "$w/apr"
+  out=$(FAKE_LOCK="$w/lock" MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_GPU_LOCK="$w/lock" DOGFOOD_ALLOW_UNPINNED=1 APR="$w/apr" timeout 60 bash "$prod" --lock-probe qa probe 2>&1); rc=$?
+  if [ "$rc" = 0 ] && grep -q 'lock=LOCKED oom=1000' <<< "$out"; then echo "ok    lock: an apr call runs holding the lock, at oom_score_adj 1000"
+  else echo "FAIL  lock: the probe call did not run holding the lock at oom 1000 (rc=$rc): $out"; bad=1; fi
+  python3 -c 'import fcntl, sys, time; f = open(sys.argv[1], "a"); fcntl.flock(f, fcntl.LOCK_EX); time.sleep(60)' "$w/lock" &
+  hp=$!
+  sleep 0.5
+  out=$(FAKE_LOCK="$w/lock" MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_GPU_LOCK="$w/lock" MODEL_LADDER_LOCK_WAIT=1 DOGFOOD_ALLOW_UNPINNED=1 APR="$w/apr" timeout 8 bash "$prod" --lock-probe run probe 2>&1); rc=$?
+  kill "$hp" 2> /dev/null; wait "$hp" 2> /dev/null
+  if [ "$rc" = 2 ] && grep -q 'was not free after 1s' <<< "$out" && grep -q "holder: pid $hp" <<< "$out"; then echo "ok    lock: a held lock declines (exit 2) in the bounded wait, naming the holder's pid"
+  else echo "FAIL  lock: a held lock did not decline in the bounded wait naming its holder (rc=$rc): $out"; bad=1; fi
+  return "$bad"
+}
+
 if [ "$SELF_TEST" = 1 ]; then
   n=0; bad=0
   for c in "$CASES_DIR"/*/; do
@@ -207,6 +246,22 @@ if [ "$SELF_TEST" = 1 ]; then
     mutant q4k-required-false red-q4k-required-false 's/if is_q4k(r) and r.get("required") is not True:/if False:/'
     mutant q4k-without-cuda   red-q4k-rung-cpu-only  's/if is_q4k(r) and "cuda" not in (r.get("backends") or \[\]):/if False:/'
     mutant inventory-missing  red-inventory-model-missing 's/if x is None or not x.get("present"):  # held by the host, absent from the run/if False:/'
+    # The lock: the real producer passes both halves; each producer mutant must fail at least one.
+    prod=scripts/model_ladder.sh
+    if lock_audit "$prod" > "$mdir/audit.out"; then echo "ok    lock: $prod makes no GPU apr call outside apr_locked"
+    else cat "$mdir/audit.out"; bad=$((bad+1)); fi
+    lock_probe "$prod" "$mdir/probe" || bad=$((bad+1))
+    pmutant() { # pmutant <label> <sed expression breaking the lock in a copy of the producer>
+      local m="$mdir/p-$1.sh"
+      sed "$2" "$prod" > "$m"
+      if cmp -s "$prod" "$m"; then echo "FAIL  producer mutant $1 did not apply -- the lock checks prove nothing"; bad=$((bad+1)); return; fi
+      if lock_audit "$m" > /dev/null && lock_probe "$m" "$mdir/probe-$1" > /dev/null; then echo "FAIL  producer mutant $1 SURVIVED the lock checks"; bad=$((bad+1))
+      else printf 'ok    producer mutant %-14s killed by the lock checks\n' "$1"; fi
+    }
+    pmutant raw-apr-call 's/apr_locked qa "\$path"/"$APR" qa "$path"/'
+    pmutant no-lock      's/^apr_locked() { flock -E "\$LOCK_BUSY" -w "\$LOCK_WAIT" "\$GPU_LOCK" choom/apr_locked() { choom/'
+    pmutant no-choom     's/ choom -n 1000 -- "\$APR" "\$@"/ "$APR" "$@"/'
+    pmutant unbounded    's/ -w "\$LOCK_WAIT"//'
     if [ -n "$mdir" ] && [ "$mdir" != "/" ] && [ -d "$mdir" ]; then rm -rf -- "$mdir"; fi
   fi
   echo "self-test: $n case(s), $bad bad"
@@ -235,6 +290,8 @@ else
 fi
 printf -- '--- model capability ladder receipts for %s (%s) ---------------------\n' "$VERSION" "$RECEIPT_DIR"
 judge "$LADDER" "$MAIN_LADDER" "$RECEIPT_DIR" "$VERSION"; rc=$?
+# The producer that writes these receipts must not bypass the fleet GPU lock (#3712): RED, not a decline.
+if ! lock_audit scripts/model_ladder.sh; then [ "$rc" = 2 ] || rc=1; fi
 case $rc in
   0) echo "ok    every required rung green on every required host" ;;
   1) echo "RED   the release claims a capability no receipt proves — see FAIL rows (EPIC #3477)" ;;
