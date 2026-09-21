@@ -614,4 +614,18 @@ pub enum KernelType {
         num_kv_heads: u32,
         head_dim: u32,
     },
+    /// PMAT-3725: split-K decode attention, kernel A — one online-softmax partial
+    /// per (query head, split) over an f32 or (`kv_f16`) f16 KV cache.
+    GdnDecodeAttentionSplitK {
+        num_heads: u32,
+        num_kv_heads: u32,
+        head_dim: u32,
+        kv_f16: bool,
+    },
+    /// PMAT-3725: split-K decode attention, kernel B — the log-sum-exp merge of
+    /// the split partials into the attention output.
+    GdnDecodeAttentionSplitKReduce {
+        num_heads: u32,
+        head_dim: u32,
+    },
 }

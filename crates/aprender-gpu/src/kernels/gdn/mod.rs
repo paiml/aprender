@@ -25,6 +25,7 @@
 //! | [`SplitInterleavedKernel`] | the `q` / `gate` de-interleave of the joint `attn_q` projection |
 //! | [`PartialNeoxRopeKernel`] | `apply_partial_neox_rope` |
 //! | [`DecodeAttention256Kernel`] | the scores / `softmax` / value accumulation block |
+//! | [`DecodeAttentionSplitKKernel`] + [`DecodeAttentionSplitKReduceKernel`] | the same block, split-K over positions, f32 or f16 KV (#3725) |
 //!
 //! ## Shapes (Qwen3.5-0.8B)
 //!
@@ -44,6 +45,7 @@
 
 mod causal_conv1d;
 mod decode_attention;
+mod decode_attention_splitk;
 mod delta_rule;
 mod gated_rmsnorm;
 mod gdn_gates;
@@ -57,6 +59,11 @@ mod test_support;
 
 pub use causal_conv1d::CausalConv1dSiluKernel;
 pub use decode_attention::{DecodeAttention256Kernel, DEFAULT_MAX_POSITIONS_PER_PASS};
+pub use decode_attention_splitk::{
+    decode_attention_reference_f64, decode_attention_splitk_cpu, splitk_partial_acc_len,
+    splitk_partial_ml_len, DecodeAttentionSplitKKernel, DecodeAttentionSplitKReduceKernel,
+    KvStorage, SplitKPlan, SPLITK_DEFAULT_TARGET_SPLITS, SPLITK_MIN_CHUNK, SPLITK_WARPS,
+};
 pub use delta_rule::DeltaRuleRecurrenceKernel;
 pub use gated_rmsnorm::GatedRmsNormKernel;
 pub use gdn_gates::GdnGatesKernel;

@@ -1,0 +1,5 @@
+# cargo oxide build intermediates and the lock of an isolated, git-pinned experiment
+/*.ll
+/*.ptx
+/Cargo.lock
+/target/

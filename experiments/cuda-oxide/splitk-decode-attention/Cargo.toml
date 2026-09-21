@@ -1,0 +1,14 @@
+[package]
+name = "splitk_decode_attention_oxide"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Isolated from the aprender workspace: this builds only with the cuda-oxide
+# toolchain (see ../README.md), never in the normal `cargo build` / CI.
+[workspace]
+
+[dependencies]
+cuda-device = { git = "https://github.com/NVlabs/cuda-oxide.git", rev = "b9847e95" }
+cuda-host = { git = "https://github.com/NVlabs/cuda-oxide.git", rev = "b9847e95" }
+cuda-core = "0.3.1"

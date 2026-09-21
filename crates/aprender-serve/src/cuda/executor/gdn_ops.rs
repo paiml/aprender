@@ -21,7 +21,7 @@ impl CudaExecutor {
     ///
     /// Returns the kernel's entry name; the module lives in `self.modules`
     /// under `cache_key`.
-    fn gdn_prepare(
+    pub(super) fn gdn_prepare(
         &mut self,
         kernel_type: &KernelType,
         cache_key: &str,
@@ -93,7 +93,7 @@ impl CudaExecutor {
     /// `u64::from(x.to_bits())`. Only `ptrs` are validated as device pointers —
     /// a scalar is not one, and `validate_device_ptr` would reject every small
     /// integer.
-    fn gdn_launch_mixed(
+    pub(super) fn gdn_launch_mixed(
         &mut self,
         cache_key: &str,
         kernel_name: &'static str,

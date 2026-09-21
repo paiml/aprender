@@ -11,7 +11,26 @@ impl CudaKernels {
             .or_else(|| Self::norm_rope_kernel_name(kernel_type))
             .or_else(|| Self::activation_misc_kernel_name(kernel_type))
             .or_else(|| Self::gdn_kernel_name(kernel_type))
+            .or_else(|| Self::gdn_splitk_kernel_name(kernel_type))
             .unwrap_or("unknown")
+    }
+
+    /// PMAT-3725: the split-K decode attention pair. Its own arm so
+    /// `gdn_kernel_name` does not grow past the complexity ceiling.
+    fn gdn_splitk_kernel_name(kernel_type: &KernelType) -> Option<&'static str> {
+        let name = match kernel_type {
+            KernelType::GdnDecodeAttentionSplitK { kv_f16: false, .. } => {
+                "gdn_decode_attention_splitk_f32"
+            },
+            KernelType::GdnDecodeAttentionSplitK { kv_f16: true, .. } => {
+                "gdn_decode_attention_splitk_f16"
+            },
+            KernelType::GdnDecodeAttentionSplitKReduce { .. } => {
+                "gdn_decode_attention_splitk_reduce"
+            },
+            _ => return None,
+        };
+        Some(name)
     }
 
     /// PMAT-3477 (#3090): Gated `DeltaNet` kernel names.

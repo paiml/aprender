@@ -289,6 +289,27 @@ impl CudaKernels {
         Self::generate_rmsnorm_ptx(kernel_type, target)
             .or_else(|| Self::generate_rope_residual_ptx(kernel_type, target))
             .or_else(|| Self::generate_gdn_ptx(kernel_type, target))
+            .or_else(|| Self::generate_gdn_splitk_ptx(kernel_type, target))
+    }
+
+    /// PMAT-3725: PTX for the split-K decode attention pair.
+    fn generate_gdn_splitk_ptx(kernel_type: &KernelType, target: &str) -> Option<String> {
+        use trueno_gpu::kernels::gdn::{
+            DecodeAttentionSplitKKernel, DecodeAttentionSplitKReduceKernel, KvStorage,
+        };
+        let ptx = match kernel_type {
+            KernelType::GdnDecodeAttentionSplitK { num_heads, num_kv_heads, head_dim, kv_f16 } => {
+                let kv = if *kv_f16 { KvStorage::F16 } else { KvStorage::F32 };
+                DecodeAttentionSplitKKernel::new(*num_heads, *num_kv_heads, *head_dim, kv)
+                    .emit_ptx_for_target(target)
+            },
+            KernelType::GdnDecodeAttentionSplitKReduce { num_heads, head_dim } => {
+                DecodeAttentionSplitKReduceKernel::new(*num_heads, *head_dim)
+                    .emit_ptx_for_target(target)
+            },
+            _ => return None,
+        };
+        Some(ptx)
     }
 
     /// PMAT-3477 (#3090): PTX for the six Gated `DeltaNet` kernels.

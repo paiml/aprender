@@ -263,6 +263,7 @@ mod activations;
 mod attention;
 mod bound_dispatch;
 mod core;
+mod gdn_decode_splitk_ops;
 /// PMAT-3477 (#3090): wrappers for the six Gated `DeltaNet` device kernels.
 mod gdn_ops;
 mod gemm;

@@ -38,6 +38,7 @@ use crate::cuda::types::WeightQuantType;
 use crate::cuda::CudaExecutor;
 use crate::gguf::forward_qwen35::{Qwen35Model, Qwen35OwnedLayer};
 use trueno_gpu::driver::GpuBuffer;
+use trueno_gpu::kernels::gdn::{splitk_partial_acc_len, splitk_partial_ml_len, KvStorage};
 
 /// Positions the device KV cache holds unless a caller asks for more.
 ///
@@ -207,6 +208,10 @@ struct Qwen35AttnScratch {
     attn_out_in: GpuBuffer<f32>,
     /// The output projection's result.
     attn_out: GpuBuffer<f32>,
+    /// PMAT-3725: split-K partial accumulators, `[num_heads][splits][head_dim]`.
+    splitk_acc: GpuBuffer<f32>,
+    /// PMAT-3725: split-K partial `(max, sum)` pairs, `[num_heads][splits][2]`.
+    splitk_ml: GpuBuffer<f32>,
 }
 
 /// The shapes the layer forward reads, all derived from the model config.
@@ -448,6 +453,7 @@ impl<'a> Qwen35CudaModel<'a> {
     fn build_attn_scratch(executor: &CudaExecutor, d: Qwen35CudaDims) -> Result<Qwen35AttnScratch> {
         let q_dim = (d.num_heads * d.attn_head_dim) as usize;
         let kv_dim = (d.num_kv_heads * d.attn_head_dim) as usize;
+        let splits = CudaExecutor::gdn_decode_attention_splitk_scratch_splits();
         Ok(Qwen35AttnScratch {
             q_full: Self::zeros(executor, q_dim * 2)?,
             q: Self::zeros(executor, q_dim)?,
@@ -456,6 +462,11 @@ impl<'a> Qwen35CudaModel<'a> {
             k_raw: Self::zeros(executor, kv_dim)?,
             attn_out_in: Self::zeros(executor, q_dim)?,
             attn_out: Self::zeros(executor, d.hidden_dim as usize)?,
+            splitk_acc: Self::zeros(
+                executor,
+                splitk_partial_acc_len(d.num_heads, d.attn_head_dim, splits),
+            )?,
+            splitk_ml: Self::zeros(executor, splitk_partial_ml_len(d.num_heads, splits))?,
         })
     }
 
@@ -1019,11 +1030,15 @@ impl<'a> Qwen35CudaModel<'a> {
             d.theta_scale,
         )?;
 
-        // GQA decode attention over positions 0..=position
-        ex.gdn_decode_attention_into(
+        // GQA decode attention over positions 0..=position, split-K across the
+        // device (#3725) — `gdn_decode_attention_into` ran only num_heads blocks.
+        ex.gdn_decode_attention_splitk_into(
             &a.q_normed,
-            k_cache,
-            v_cache,
+            k_cache.as_ptr(),
+            v_cache.as_ptr(),
+            KvStorage::F32,
+            &a.splitk_acc,
+            &a.splitk_ml,
             &a.attn_out_in,
             d.num_heads,
             d.num_kv_heads,
