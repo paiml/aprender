@@ -83,7 +83,7 @@ Method:
 - The rungs harness times on the host wall: 20 back-to-back launches plus one sync, through aprender-gpu's driver wrapper.
 - The oxide A/B uses CUDA events on the same device and the same builder kernels, with the cache sized to 60k rows instead of 262k.
 - At 4,096 on gx10 the event timer reads the builder pair at 182 µs (f32) and 47 µs (f16), against the harness's 264 µs and 138 µs. At 60k it reads 2284 µs (f32) and 1235 µs (f16), against 3231 µs and 1732 µs.
-- On lambda the two instruments agree within ~2% at 20k–60k (f32 20k: 247.5 vs 248.4 µs).
+- On lambda the two instruments agree within ~2% at 20k–60k (f32 20k: 244.6 vs 248.4 µs; 60k: 606.3 vs 606.7 µs).
 - **The cause of the gx10 gap is not measured.** Per-launch host cost on the GB10's CPU and a different L2 footprint are candidates, not findings.
 - Relative to the device-event timer, the harness reads split-K HIGHER on gx10, so the gx10 speedups in the table are conservative. The ms-scale old-kernel column uses the same instrument, where a per-launch host cost would be a rounding error.
 
@@ -99,7 +99,7 @@ Same buffers, same stream, CUDA events, median of 5 × 20. The builder PTX comes
 
 | host | parity (vs twin / vs f64 / vs builder) | oxide ÷ builder, 4k … 60k |
 |---|---|---|
-| lambda sm_89 | PASS: ≤ 3.7e-7 / ≤ 7.1e-7 / ≤ 2.3e-7, cos 1.0000000 | 3.7 (f32 4k), 2.3 (20k), 2.3 (60k); f16 3.8, 3.3, 3.1 |
+| lambda sm_89 | PASS: ≤ 3.7e-7 / ≤ 7.1e-7 / ≤ 2.4e-7, cos 1.0000000 | 3.6 (f32 4k), 2.4 (20k), 2.3 (60k); f16 3.6, 3.5, 3.2. All 10 rows: 2.14–3.61 |
 | gx10 sm_121 | PASS: ≤ 3.7e-7 / ≤ 7.1e-7 / ≤ 2.4e-7, cos 1.0000000 | 3.5 (f32 4k), 3.9 (20k), 3.7 (60k); f16 11.4, 5.8, 5.8. All 10 rows: 2.97–11.4 |
 
 **Mechanism, from `ptxas -v` on the oxide PTX (sm_89):**
