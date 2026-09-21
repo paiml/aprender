@@ -340,6 +340,70 @@
         assert_eq!(got.as_deref(), Some("from -p"));
     }
 
+    /// #3743: the three spellings of a chat prompt reach realizar identically.
+    ///
+    /// `--prompt P --chat`, positional `P --chat` and `-i file --chat` (same text) must
+    /// build the same realizar config: the raw text, and `force_chat_template` set. At
+    /// 0.69.0 the first two were pre-wrapped in ChatML and the third was not, so realizar
+    /// templated them twice (24 -> 56 prompt tokens on Qwen3.5-0.8B) and the model read
+    /// zero-width-escaped special tokens. The wrap-restored mutant turns this RED.
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_3743_three_prompt_shapes_build_the_same_realizar_config() {
+        const P: &str = "What is 2+2? Answer with one number.";
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("prompt.txt");
+        std::fs::write(&file, P).expect("write prompt");
+        let file_arg: &'static str = Box::leak(file.to_string_lossy().into_owned().into_boxed_str());
+
+        let shapes: [(&str, Vec<&'static str>); 3] = [
+            ("--prompt P --chat", vec!["apr", "run", "m.gguf", "--prompt", P, "--chat"]),
+            ("positional P --chat", vec!["apr", "run", "m.gguf", P, "--chat"]),
+            ("-i file --chat", vec!["apr", "run", "m.gguf", "-i", file_arg, "--chat"]),
+        ];
+        let built: Vec<(String, Option<String>, bool)> = shapes
+            .iter()
+            .map(|(name, argv)| {
+                let argv = argv.clone();
+                // clap's recursive `Commands` parse overflows the 2 MiB test stack in debug.
+                let (source, prompt, positional, input, chat) = std::thread::Builder::new()
+                    .stack_size(16 * 1024 * 1024)
+                    .spawn(move || {
+                        use clap::Parser;
+                        match *crate::Cli::try_parse_from(argv).expect("parse").command {
+                            Commands::Run {
+                                source, prompt, positional_prompt, input, chat, ..
+                            } => (source, prompt, positional_prompt, input, chat),
+                            _ => panic!("expected `run`"),
+                        }
+                    })
+                    .expect("spawn")
+                    .join()
+                    .expect("join");
+                // Exactly what dispatch_run does with those fields.
+                let (run_prompt, chat_template) =
+                    run_prompt_and_chat(prompt.as_ref(), positional.as_ref(), &source, chat);
+                let options = crate::commands::run::RunOptions {
+                    prompt: run_prompt,
+                    chat_template,
+                    ..crate::commands::run::RunOptions::default()
+                };
+                let config = crate::commands::run::realizar_config(
+                    std::path::Path::new(&source),
+                    input.as_ref(),
+                    &options,
+                )
+                .expect("config");
+                ((*name).to_string(), config.prompt, config.force_chat_template)
+            })
+            .collect();
+
+        for (name, prompt, force) in &built {
+            assert_eq!(prompt.as_deref(), Some(P), "{name}: realizar must get the raw text");
+            assert!(*force, "{name}: --chat must reach realizar as force_chat_template");
+        }
+    }
+
     // =========================================================================
     // --trace-payload shorthand logic
     // =========================================================================

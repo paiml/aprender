@@ -114,6 +114,7 @@ for h in hosts:
             v = be.get(b)
             if v is None: why.append(f"{b}: not measured")
             elif v.get("fallback"): why.append(f"{b}: FELL BACK — the claimed backend did not run")
+            elif v.get("escaped_special"): why.append(f"{b}: the formatted prompt carries a zero-width-escaped special token — templated twice (#3743)")
             elif not v.get("ran"): why.append(f"{b}: did not run (rc={v.get('rc')})")
         if why:
             if req: print(f"FAIL  {h['id']:7} {rid:22} " + "; ".join(why)); rc = 1
