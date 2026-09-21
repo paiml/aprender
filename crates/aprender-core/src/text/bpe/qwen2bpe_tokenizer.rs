@@ -459,7 +459,13 @@ impl BpeTokenizer {
         Ok(self.decode(ids))
     }
 
-    /// Pre-tokenize text into words
+    /// Pre-tokenize text into words, on whitespace only.
+    ///
+    /// That is canonical for tokenizers aprender trains (`apr tokenize train`), whose merges
+    /// were learned over exactly these pieces. It is NOT the pre-tokenizer of HuggingFace
+    /// byte-level vocabularies (Qwen, GPT-2, Llama 3 split with a regex first), so
+    /// [`load_from_json`](super::load_from_json) refuses a tokenizer.json that declares one
+    /// (#3742); the refusal, not this comment, is what keeps such a vocabulary out of here.
     pub(crate) fn pre_tokenize(&self, text: &str) -> Vec<String> {
         // Simple regex-like pattern: split on whitespace, keeping punctuation
         // Future: Use self.config for model-specific pre-tokenization rules

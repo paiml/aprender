@@ -10,6 +10,7 @@
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
         let encoded = tokenizer.encode("\u{00E9}"); // e-acute
         // Should not panic

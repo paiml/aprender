@@ -157,6 +157,9 @@ pub(crate) mod test_llm_band;
 // #2399: gated on the crate it actually needs (aprender-explain, aliased
 // `trueno-explain`) rather than on `full`, so `--features ptx` is enough and a
 // user does not have to pull CUDA + training to analyze a .ptx file.
+/// #3742: apr-cli's one tokenizer.json encoder (realizar's canonical byte-level BPE).
+#[cfg(feature = "inference")]
+pub(crate) mod hf_tokenizer;
 #[cfg(feature = "trueno-explain")]
 pub(crate) mod ptx_explain;
 pub(crate) mod ptx_map;

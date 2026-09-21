@@ -52,6 +52,32 @@ impl PreTokenizer {
         }
     }
 
+    /// #3742: the pre-tokenizer a model family's GGUF declares, for files that carry no name
+    /// of their own (`.apr` files converted before `tokenizer.pre_type` was written). Every
+    /// Qwen2, Qwen2.5, Qwen3 and Qwen3-MoE GGUF on the fleet says `qwen2` and every Qwen3.5 says
+    /// `qwen35` (measured over the lambda and gx10 inventories).
+    #[must_use]
+    pub fn for_architecture(arch: &str) -> Option<Self> {
+        match arch {
+            "qwen2" | "qwen2moe" | "qwen3" | "qwen3moe" => Some(Self::Qwen2),
+            "qwen35" | "qwen35moe" => Some(Self::Qwen35),
+            _ => None,
+        }
+    }
+
+    /// #3742: the pre-tokenizer whose HuggingFace `tokenizer.json` `Split` regex is `pattern`
+    /// (the form llama.cpp quotes above each of its custom splitters).
+    #[must_use]
+    pub fn from_hf_regex(pattern: &str) -> Option<Self> {
+        const QWEN2: &str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";
+        const QWEN35: &str = r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+|\p{N}| ?[^\s\p{L}\p{M}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";
+        match pattern {
+            QWEN2 => Some(Self::Qwen2),
+            QWEN35 => Some(Self::Qwen35),
+            _ => None,
+        }
+    }
+
     /// Split `text` into pre-tokens: a line-for-line port of llama.cpp's
     /// `unicode_regex_split_custom_qwen2` (and `_qwen35`, which differs only in treating
     /// `\p{M}` as part of a letter run). Its regex, from tokenizer.json:
@@ -243,6 +269,8 @@ fn byte_glyphs() -> &'static [char; 256] {
 pub struct ByteLevelBpe {
     pre: PreTokenizer,
     token_to_id: HashMap<String, u32>,
+    /// id -> token text, for [`ByteLevelBpe::decode`] (#3742).
+    id_to_token: Vec<String>,
     /// `(left, right) -> (rank, merged)`, from `tokenizer.ggml.merges` in file order.
     merges: HashMap<(u32, u32), (u32, u32)>,
     /// The 256 byte glyphs' ids, by byte.
@@ -317,6 +345,19 @@ impl ByteLevelBpe {
             _ => Vec::new(),
         };
 
+        Ok(Self::cached(pre, vocab, &merges, &token_types))
+    }
+
+    /// Build, or reuse, the tokenizer for these exact tables. The build is cached per distinct
+    /// (pre-tokenizer, vocabulary, merges, token types), so repeated calls on one model pay
+    /// for one hash of the tables, not for rebuilding them.
+    #[must_use]
+    pub fn cached(
+        pre: PreTokenizer,
+        vocab: &[String],
+        merges: &[&str],
+        token_types: &[i32],
+    ) -> Arc<Self> {
         let mut hasher = DefaultHasher::new();
         pre.hash(&mut hasher);
         vocab.hash(&mut hasher);
@@ -331,16 +372,28 @@ impl ByteLevelBpe {
                 .find(|(k, _)| *k == key)
                 .map(|(_, v)| Arc::clone(v))
         }) {
-            return Ok(hit);
+            return hit;
         }
-        let built = Arc::new(Self::build(pre, vocab, &merges, &token_types));
+        let built = Arc::new(Self::build(pre, vocab, merges, token_types));
         if let Ok(mut c) = cache.lock() {
             if c.len() >= 8 {
                 c.remove(0);
             }
             c.push((key, Arc::clone(&built)));
         }
-        Ok(built)
+        built
+    }
+
+    /// #3742: an identity for a (vocabulary, merges) pair, the two tables that decide byte-level
+    /// BPE ids. Two files with the same fingerprint tokenize every text identically, whatever
+    /// their weights: the tokenizer-parity gate uses it to find, for an `.apr`, a GGUF whose
+    /// `llama-tokenize` ids are the reference.
+    #[must_use]
+    pub fn tables_fingerprint(vocab: &[String], merges: &[&str]) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        vocab.hash(&mut hasher);
+        merges.hash(&mut hasher);
+        hasher.finish()
     }
 
     /// Build from explicit tables (no cache).
@@ -388,11 +441,25 @@ impl ByteLevelBpe {
                 .map(|(id, (text, _))| (text.clone(), id as u32))
                 .collect()
         } else {
-            // No usable token types: the `<|...|>` convention this module replaced (GH-320).
+            // #3742: no usable token types (an `.apr` converted before they were written). In a
+            // BPE vocabulary every ordinary token is a byte glyph or a merge's output; an added
+            // token is neither. Restricted to `<...>`-shaped text, that rule reproduces
+            // llama.cpp's CONTROL + USER_DEFINED set exactly on every Qwen family in the fleet
+            // (33/22/26/26 tokens, none missing, none extra; without the shape test Qwen3.5
+            // would also take 201 ordinary CJK tokens that no merge produces).
+            let produced: std::collections::HashSet<String> = merges
+                .iter()
+                .filter_map(|m| m.split_once(' ').map(|(l, r)| format!("{l}{r}")))
+                .collect();
             vocab
                 .iter()
                 .enumerate()
-                .filter(|(_, t)| t.starts_with("<|") && t.ends_with("|>"))
+                .filter(|(_, t)| {
+                    t.chars().count() > 2
+                        && t.starts_with('<')
+                        && t.ends_with('>')
+                        && !produced.contains(t.as_str())
+                })
                 .map(|(id, t)| (t.clone(), id as u32))
                 .collect()
         };
@@ -402,6 +469,7 @@ impl ByteLevelBpe {
         Self {
             pre,
             token_to_id,
+            id_to_token: vocab.to_vec(),
             merges: merge_map,
             byte_ids,
             specials,
@@ -424,6 +492,46 @@ impl ByteLevelBpe {
             }
         }
         ids
+    }
+
+    /// Decode ids back to text: each ordinary token's glyphs map back to their bytes (the
+    /// inverse of GPT-2's `bytes_to_unicode`); a special token is its own text, as llama.cpp
+    /// renders it. `decode(encode(x)) == x` for any `x` (#3742: the `.apr` decoder this
+    /// replaces lost non-ASCII bytes and whitespace glyphs).
+    #[must_use]
+    pub fn decode(&self, ids: &[u32]) -> String {
+        static GLYPH_TO_BYTE: OnceLock<HashMap<char, u8>> = OnceLock::new();
+        let glyph_to_byte = GLYPH_TO_BYTE.get_or_init(|| {
+            byte_glyphs()
+                .iter()
+                .enumerate()
+                .map(|(b, &g)| (g, b as u8))
+                .collect()
+        });
+        let mut bytes = Vec::new();
+        for &id in ids {
+            let Some(token) = self.id_to_token.get(id as usize) else {
+                continue;
+            };
+            if self
+                .specials
+                .iter()
+                .any(|(t, sid)| *sid == id && t == token)
+            {
+                bytes.extend_from_slice(token.as_bytes());
+                continue;
+            }
+            for c in token.chars() {
+                match glyph_to_byte.get(&c) {
+                    Some(&b) => bytes.push(b),
+                    None => {
+                        let mut buf = [0u8; 4];
+                        bytes.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
+                    },
+                }
+            }
+        }
+        String::from_utf8_lossy(&bytes).into_owned()
     }
 
     /// `tokenizer_st_partition`: each special token, longest first, claims its occurrences

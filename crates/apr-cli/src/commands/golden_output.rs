@@ -6,14 +6,14 @@ fn golden_output_safetensors(
     prompt: &str,
     max_tokens: usize,
 ) -> Result<Option<(Vec<u32>, String)>> {
-    use aprender::text::bpe::{load_from_json, BpeTokenizer};
     use realizar::safetensors_infer::SafetensorsToAprConverter;
 
+    // #3742: the tokenizer.json's own pre-tokenizer + ranked merges (realizar's canonical
+    // byte-level BPE); aprender-core's whitespace-splitting BPE refuses these vocabularies.
     let tokenizer_path = realizar::safetensors::find_sibling_file(path, "tokenizer.json");
-    let tokenizer: Option<BpeTokenizer> = tokenizer_path
+    let tokenizer = tokenizer_path
         .as_ref()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|json| load_from_json(&json).ok());
+        .and_then(|p| crate::commands::hf_tokenizer::HfTokenizer::from_file(p).ok());
 
     let Some(tokenizer) = tokenizer else {
         return Ok(None);

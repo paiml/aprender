@@ -47,6 +47,8 @@ use crate::safetensors::find_sibling_file;
 use crate::tokenizer::SentencePieceTokenizer;
 
 // PMAT-802: Extracted modules
+/// #3742: canonical byte-level BPE for `.apr`-embedded and tokenizer.json vocabularies.
+pub mod canonical_tokenizer;
 #[cfg(feature = "cuda")]
 mod cuda;
 #[cfg(all(test, feature = "cuda"))]

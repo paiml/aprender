@@ -611,6 +611,7 @@ fn wgpu_vocabulary(mapped: &realizar::gguf::MappedGGUFModel) -> Result<Vec<Strin
 /// unreachable, so only that dead arm is gone.
 #[cfg(feature = "wgpu")]
 fn build_wgpu_bpe_tokenizer(
+    metadata: &std::collections::HashMap<String, realizar::gguf::GGUFValue>,
     vocab: &[String],
     merges: Vec<(String, String)>,
 ) -> Option<realizar::apr::BpeTokenizer> {
@@ -637,6 +638,9 @@ fn build_wgpu_bpe_tokenizer(
         bos_id: None,
         eos_id: Some(151645), // Qwen2 EOS
         special_tokens,
+        // #3742: the GGUF's canonical byte-level BPE (pre-tokenizer + ranked merges), as
+        // GGUFModel::encode uses; the legacy merge loop stays only when it cannot be built.
+        canonical: realizar::gguf::byte_level_bpe::ByteLevelBpe::from_gguf(metadata, vocab).ok(),
     })
 }
 
@@ -833,7 +837,7 @@ fn serve_wgpu_backend(
     );
 
     // Create BPE tokenizer with merge rules
-    let bpe_tokenizer = build_wgpu_bpe_tokenizer(&vocab, merges);
+    let bpe_tokenizer = build_wgpu_bpe_tokenizer(&mapped.model.metadata, &vocab, merges);
 
     // Build token→ID map for greedy fallback
     let token_to_id: std::collections::HashMap<String, u32> = vocab

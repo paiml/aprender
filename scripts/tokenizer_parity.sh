@@ -7,8 +7,14 @@
 #   FAIL       any id differs (the index and a window of ids either side are printed), apr
 #              took the greedy fallback on a byte-level vocabulary, or the round trip failed
 #   UNCOVERED  the model's vocabulary is not byte-level BPE (tokenizer.ggml.model is not
-#              gpt2): nothing canonical exists in apr to compare. Counted against the gate,
-#              never passed: the fleet's release inventory must be covered.
+#              gpt2), or an .apr has no GGUF with the same tokenizer tables on the host to
+#              compare against. Counted against the gate, never passed: the fleet's release
+#              inventory must be covered.
+# .apr files (#3742) are compared against llama-tokenize on a GGUF whose (vocabulary, merges)
+# fingerprint, as `apr tokenize encode` prints it, is the same: two files with the same tables
+# tokenize every text identically. Every file gets a MODEL line with its dominant weight dtype
+# (by bytes, from `apr tensors --json`), its fingerprint and its reference, so a receipt shows
+# which universe files it measured.
 # Exit 0 iff every pair PASSes. Exit 1 on any FAIL or UNCOVERED. Exit 2 when the comparison
 # cannot be made honestly: no apr, no pinned comparator, no model or no corpus.
 #
@@ -91,7 +97,9 @@ if ! tp_commit_matches "$want_commit" "$lt_version"; then
 fi
 
 if [ ${#models[@]} -eq 0 ]; then
-    for m in "${APR_MODEL_DIR:-$HOME/models}"/*.gguf; do
+    # GGUFs first: an .apr is compared against llama-tokenize on a GGUF with the same
+    # tokenizer tables, found by fingerprint among the GGUFs already run (#3742).
+    for m in "${APR_MODEL_DIR:-$HOME/models}"/*.gguf "${APR_MODEL_DIR:-$HOME/models}"/*.apr; do
         [ -e "$m" ] || continue
         case "$m" in *-0000[2-9]-of-0000[0-9].gguf) continue ;; esac
         models+=("$m")
@@ -112,11 +120,41 @@ printf 'models: %s   corpus files: %s\n' "${#models[@]}" "${#corpus[@]}"
 tmp=$(mktemp -d) || exit 2
 trap 'rm -rf -- "${tmp:?}"' EXIT
 
-pass=0 fail=0 uncovered=0
+pass=0 fail=0 uncovered=0 outside=0
+# UNCOVERED counts against the gate only for a file in the universe (dominant dtype Q4_K,
+# #3712); outside it the pair is reported as OUTSIDE and does not fail the run.
+uncover() { # model file reason (reads $dtype)
+    if tp_in_universe "$dtype"; then
+        printf 'UNCOVERED  %s  %s  %s\n' "$1" "$2" "$3"
+        uncovered=$((uncovered + 1))
+    else
+        printf 'OUTSIDE    %s  %s  dtype %s is outside the Q4_K universe; %s\n' "$1" "$2" "${dtype:-unknown}" "$3"
+        outside=$((outside + 1))
+    fi
+}
+# fingerprint -> first GGUF with it, one "fp path" line each (a file, not an associative
+# array: the reference lookup stays readable to bashrs)
+: >"$tmp/fingerprints"
 for m in "${models[@]}"; do
     mname=$(basename "$m")
+    dtype=$("$apr_bin" tensors "$m" --json 2>/dev/null | tp_dominant_dtype)
+    "$apr_bin" tokenize encode "$m" -p "fingerprint probe" >/dev/null 2>"$tmp/fp.err"
+    fp=$(tp_apr_fingerprint "$(cat "$tmp/fp.err")")
+    # the reference: the file itself for a GGUF, a same-tokenizer GGUF for an .apr
+    ref=$m
+    known=""
+    [ -n "$fp" ] && known=$(awk -v fp="$fp" '$1 == fp { sub(/^[^ ]+ /, ""); print; exit }' "$tmp/fingerprints")
+    case "$m" in
+        *.gguf) if [ -n "$fp" ] && [ -z "$known" ]; then printf '%s %s\n' "$fp" "$m" >>"$tmp/fingerprints"; fi ;;
+        *.apr) ref=$known ;;
+    esac
+    printf 'MODEL      %s  dtype=%s  fingerprint=%s  reference=%s\n' "$mname" "${dtype:-unknown}" "${fp:-none}" "$(basename "${ref:-none}")"
     for f in "${corpus[@]}"; do
         fname=$(basename "$f")
+        if [ -z "$ref" ]; then
+            uncover "$mname" "$fname" "no GGUF with the same tokenizer fingerprint (${fp:-none}) on this host to compare against"
+            continue
+        fi
         apr_ids=$("$apr_bin" tokenize encode "$m" -f "$f" 2>"$tmp/apr.err")
         apr_rc=$?
         if [ "$apr_rc" -ne 0 ]; then
@@ -133,8 +171,7 @@ for m in "${models[@]}"; do
         roundtrip=${status##*|}
         case "$path" in
             *"not a byte-level vocabulary"*)
-                printf 'UNCOVERED  %s  %s  %s\n' "$mname" "$fname" "$path"
-                uncovered=$((uncovered + 1))
+                uncover "$mname" "$fname" "$path"
                 continue ;;
         esac
         if ! tp_is_canonical "$path"; then
@@ -142,7 +179,7 @@ for m in "${models[@]}"; do
             fail=$((fail + 1))
             continue
         fi
-        "$lt_bin" -m "$m" -f "$f" --ids --no-escape --no-bos --log-disable >"$tmp/lt.out" 2>"$tmp/lt.err"
+        "$lt_bin" -m "$ref" -f "$f" --ids --no-escape --no-bos --log-disable >"$tmp/lt.out" 2>"$tmp/lt.err"
         lt_rc=$?
         lt_out=$(tail -1 "$tmp/lt.out")
         if [ "$lt_rc" -ne 0 ]; then
@@ -169,5 +206,5 @@ for m in "${models[@]}"; do
     done
 done
 
-printf -- '--- tokenizer parity: %s pass, %s fail, %s uncovered ---\n' "$pass" "$fail" "$uncovered"
+printf -- '--- tokenizer parity: %s pass, %s fail, %s uncovered, %s outside the universe ---\n' "$pass" "$fail" "$uncovered" "$outside"
 [ "$fail" -eq 0 ] && [ "$uncovered" -eq 0 ]

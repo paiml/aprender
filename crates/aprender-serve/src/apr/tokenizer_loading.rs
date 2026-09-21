@@ -199,6 +199,9 @@ impl AprV2Model {
             merges.len(),
             special_tokens.len()
         );
+        // #3742: the model's pre-tokenizer and ranked merges, as the GGUF path encodes.
+        let canonical =
+            crate::apr::canonical_tokenizer::canonical_for_apr(&self.metadata, &id_to_token, &merges);
 
         Some(BpeTokenizer {
             token_to_id,
@@ -207,6 +210,7 @@ impl AprV2Model {
             bos_id,
             eos_id,
             special_tokens,
+            canonical,
         })
     }
 
@@ -314,6 +318,7 @@ impl AprV2Model {
         let mut bos_id = None;
         let mut eos_id = None;
         let mut special_tokens: HashMap<String, u32> = HashMap::new();
+        let mut added: Vec<(String, u32, bool)> = Vec::new();
 
         if let Some(added_tokens) = json.get("added_tokens").and_then(|v| v.as_array()) {
             for token in added_tokens {
@@ -326,6 +331,11 @@ impl AprV2Model {
                 if let (Some(content), Some(id)) = (content, id) {
                     // Add ALL added_tokens to special_tokens map for atomic tokenization
                     special_tokens.insert(content.to_string(), id);
+                    let special = token
+                        .get("special")
+                        .and_then(serde_json::Value::as_bool)
+                        .unwrap_or(true);
+                    added.push((content.to_string(), id, special));
 
                     // Also track bos/eos specifically
                     if content == "<|endoftext|>" || content == "</s>" || content == "<eos>" {
@@ -343,6 +353,13 @@ impl AprV2Model {
             tokenizer_path.display(),
             special_tokens.len()
         );
+        // #3742: the tokenizer.json's own pre-tokenizer and ranked merges, when implemented.
+        let canonical = crate::apr::canonical_tokenizer::canonical_for_tokenizer_json(
+            &json,
+            &id_to_token,
+            &merge_rules,
+            &added,
+        );
 
         Some(BpeTokenizer {
             token_to_id,
@@ -351,6 +368,7 @@ impl AprV2Model {
             bos_id,
             eos_id,
             special_tokens,
+            canonical,
         })
     }
 }

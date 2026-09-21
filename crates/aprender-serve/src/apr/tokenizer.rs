@@ -98,11 +98,19 @@ pub struct BpeTokenizer {
     /// Special tokens (e.g., <|im_start|>, <|im_end|>) - GH-189 fix
     /// These are tokenized atomically, not split by BPE
     pub special_tokens: HashMap<String, u32>,
+    /// #3742: the canonical byte-level BPE (the model's pre-tokenizer, then its ranked
+    /// merges; identical to llama.cpp), when the loader could name the pre-tokenizer.
+    /// `None` keeps the legacy `bpe_encode`, which runs every merge over the whole text with
+    /// no pre-tokenizer and so is not the model's tokenization.
+    pub canonical: Option<std::sync::Arc<crate::gguf::byte_level_bpe::ByteLevelBpe>>,
 }
 
 impl BpeTokenizer {
     /// Encode text to token IDs
     pub fn encode(&self, text: &str) -> Vec<u32> {
+        if let Some(canonical) = &self.canonical {
+            return canonical.encode(text);
+        }
         // GH-189: Use special_tokens for atomic tokenization of chat markers
         bpe_encode(
             text,
@@ -114,6 +122,9 @@ impl BpeTokenizer {
 
     /// Decode token IDs to text
     pub fn decode(&self, token_ids: &[u32]) -> String {
+        if let Some(canonical) = &self.canonical {
+            return canonical.decode(token_ids);
+        }
         AprV2Model::decode_tokens(&self.id_to_token, token_ids)
     }
 }

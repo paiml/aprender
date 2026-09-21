@@ -48,6 +48,7 @@
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
 
         let decoded = tokenizer.decode(&[0, 1, 2]);
@@ -266,6 +267,7 @@
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
         let encoded = tokenizer.encode("");
         assert!(encoded.is_empty());
@@ -285,6 +287,7 @@
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
         let encoded = tokenizer.encode("ab");
         // Should merge a+b -> ab

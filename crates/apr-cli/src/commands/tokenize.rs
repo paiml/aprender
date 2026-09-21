@@ -1019,6 +1019,11 @@ fn resolve_num_workers(num_workers: Option<usize>) -> Result<usize> {
 enum EncodeTokenizer {
     Hex(entrenar::tokenizer::BPETokenizer),
     ByteLevel(aprender::text::bpe::BpeTokenizer),
+    /// #3742: a HuggingFace byte-level tokenizer.json, through realizar's canonical encoder
+    /// (the tokenizer.json's own pre-tokenizer + ranked merges). aprender-core's `ByteLevel`
+    /// arm refuses these, since it only splits on whitespace.
+    #[cfg(feature = "inference")]
+    Canonical(crate::commands::hf_tokenizer::HfTokenizer),
 }
 
 #[cfg(feature = "training")]
@@ -1027,12 +1032,16 @@ impl EncodeTokenizer {
         match self {
             Self::Hex(t) => entrenar::tokenizer::Tokenizer::vocab_size(t),
             Self::ByteLevel(t) => t.vocab_size(),
+            #[cfg(feature = "inference")]
+            Self::Canonical(t) => t.vocab_size(),
         }
     }
     fn token_to_id(&self, name: &str) -> Option<u32> {
         match self {
             Self::Hex(t) => entrenar::tokenizer::Tokenizer::token_to_id(t, name),
             Self::ByteLevel(t) => t.token_to_id(name),
+            #[cfg(feature = "inference")]
+            Self::Canonical(t) => t.token_to_id(name),
         }
     }
     fn encode(&self, text: &str) -> std::result::Result<Vec<u32>, String> {
@@ -1041,6 +1050,8 @@ impl EncodeTokenizer {
                 entrenar::tokenizer::Tokenizer::encode(t, text).map_err(|e| format!("{e}"))
             }
             Self::ByteLevel(t) => Ok(t.encode(text)),
+            #[cfg(feature = "inference")]
+            Self::Canonical(t) => Ok(t.encode(text)),
         }
     }
 }
@@ -1212,6 +1223,22 @@ fn load_encode_tokenizer(
         .map(EncodeTokenizer::Hex)
         .map_err(|e| CliError::ValidationFailed(format!("Cannot load tokenizer: {e}")))
     } else {
+        // #3742: a tokenizer.json whose pre-tokenizer realizar implements goes through the
+        // canonical encoder; anything else takes aprender-core's loader, which refuses a
+        // regex pre-tokenizer by name.
+        #[cfg(feature = "inference")]
+        {
+            let tokenizer_json = tokenizer_dir.join("tokenizer.json");
+            if tokenizer_json.exists() {
+                if let Ok(tok) =
+                    crate::commands::hf_tokenizer::HfTokenizer::from_file(&tokenizer_json)
+                {
+                    if tok.is_canonical() {
+                        return Ok(EncodeTokenizer::Canonical(tok));
+                    }
+                }
+            }
+        }
         load_byte_level_tokenizer(tokenizer_dir, &vocab_json_for_detect, &merges_path_str)
             .map(EncodeTokenizer::ByteLevel)
     }

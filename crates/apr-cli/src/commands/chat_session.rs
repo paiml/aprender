@@ -6,7 +6,7 @@
 #[cfg(feature = "inference")]
 mod realizar_chat {
     use super::*;
-    use aprender::text::bpe::Qwen2BpeTokenizer;
+    use super::ChatHfTokenizer;
     use std::fs::File;
     use std::io::Read;
 
@@ -32,7 +32,7 @@ mod realizar_chat {
         /// LLaMA tokenizer (for GGUF format)
         llama_tokenizer: Option<LlamaTokenizer>,
         /// Qwen2 BPE tokenizer (for SafeTensors/APR format)
-        qwen_tokenizer: Option<Qwen2BpeTokenizer>,
+        qwen_tokenizer: Option<ChatHfTokenizer>,
         /// GH-224: Cached GGUF mmap model (for tokenizer encode/decode across messages)
         cached_gguf_mapped: Option<realizar::gguf::MappedGGUFModel>,
         /// GH-224: Cached GGUF CUDA model (avoids re-uploading weights per message)

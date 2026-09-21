@@ -204,3 +204,18 @@ fn unknown_pre_tokenizer_is_refused_by_name() {
         ByteLevelBpeRefusal::MissingPreTokenizer
     );
 }
+
+#[test]
+fn decode_inverts_encode_for_every_byte_and_special() {
+    // #3742: the .apr decoder this replaces lost non-ASCII bytes and whitespace glyphs.
+    let vocab = vocab_with(&["<|im_start|>"]);
+    let mut types = vec![1i32; vocab.len()];
+    let im = vocab.len() - 1;
+    types[im] = 3;
+    let bpe = ByteLevelBpe::build(PreTokenizer::Qwen35, &vocab, &[], &types);
+    let text = "a  b\t\r\n<|im_start|>é─ 日本\u{200B}!!!  ";
+    assert_eq!(bpe.decode(&bpe.encode(text)), text);
+    let all_bytes: String =
+        String::from_utf8_lossy(&(0x20..0x7f).collect::<Vec<u8>>()).into_owned();
+    assert_eq!(bpe.decode(&bpe.encode(&all_bytes)), all_bytes);
+}

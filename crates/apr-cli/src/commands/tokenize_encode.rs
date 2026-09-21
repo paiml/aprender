@@ -1,19 +1,33 @@
-//! `apr tokenize encode` (#3726): the token ids a GGUF model's own tokenizer gives a text.
+//! `apr tokenize encode` (#3726, #3742): the token ids a model file's own tokenizer gives a
+//! text, for a GGUF or an `.apr`.
 //!
-//! The ids come from `GGUFModel::encode`, the function `apr run`, `apr serve` and
-//! `apr parity` tokenize prompts with, so a regression in how that function routes a
-//! vocabulary shows up here too. The output names the path that produced the ids: the
-//! canonical byte-level BPE (pre-tokenizer plus ranked merges, identical to llama.cpp), or the
-//! greedy longest-match fallback and why it was taken. `scripts/tokenizer_parity.sh` compares
-//! these ids with the pinned llama.cpp's and refuses a fallback.
+//! A GGUF's ids come from `GGUFModel::encode` and an `.apr`'s from its embedded
+//! `BpeTokenizer`, the functions `apr run`, `apr serve` and `apr parity` tokenize prompts
+//! with, so a regression in how either routes a vocabulary shows up here too. The output
+//! names the path that produced the ids: `canonical` (the model's pre-tokenizer plus its
+//! ranked merges, identical to llama.cpp) or the fallback and why it was taken. It also
+//! prints where the pre-tokenizer came from and a fingerprint of the (vocabulary, merges)
+//! tables: `scripts/tokenizer_parity.sh` pairs an `.apr` with a GGUF of the same fingerprint
+//! and compares both with the pinned llama.cpp.
 //!
-//! Only the file's metadata is read (the GGUF is memory-mapped); no weights are loaded.
+//! Only the tokenizer tables are read (both formats are memory-mapped); no weights are
+//! materialised.
 
 use std::path::Path;
 
 use crate::error::CliError;
 
 type Result<T> = std::result::Result<T, CliError>;
+
+/// What one file's tokenizer made of the text.
+struct Encoded {
+    ids: Vec<u32>,
+    path: String,
+    pre_source: Option<String>,
+    roundtrip: bool,
+    fingerprint: Option<u64>,
+    tokenizer_model: Option<String>,
+}
 
 /// Run `apr tokenize encode MODEL (-p TEXT | -f FILE)`.
 pub(crate) fn run_encode(
@@ -35,6 +49,51 @@ pub(crate) fn run_encode(
     if !model.exists() {
         return Err(CliError::FileNotFound(model.to_path_buf()));
     }
+    let enc = if model.extension().is_some_and(|e| e == "apr") {
+        encode_apr(model, &text)?
+    } else {
+        encode_gguf(model, &text)?
+    };
+    let fingerprint = enc.fingerprint.map(|f| format!("{f:016x}"));
+
+    if json_output {
+        let out = serde_json::json!({
+            "model": model.display().to_string(),
+            "tokenizer_model": enc.tokenizer_model,
+            "path": enc.path,
+            "pre_source": enc.pre_source,
+            "tokenizer_fingerprint": fingerprint,
+            "count": enc.ids.len(),
+            "roundtrip": enc.roundtrip,
+            "ids": enc.ids,
+        });
+        println!("{out}");
+    } else {
+        let joined: Vec<String> = enc.ids.iter().map(u32::to_string).collect();
+        println!("{}", joined.join(" "));
+        if let Some(src) = &enc.pre_source {
+            eprintln!("pre-tokenizer: {src}");
+        }
+        if let Some(f) = &fingerprint {
+            eprintln!("tokenizer-fingerprint: {f}");
+        }
+        eprintln!(
+            "{} ids; path: {}; roundtrip: {}",
+            enc.ids.len(),
+            enc.path,
+            enc.roundtrip
+        );
+    }
+    Ok(())
+}
+
+fn fingerprint(vocab: &[String], merges: &[(String, String)]) -> u64 {
+    let joined: Vec<String> = merges.iter().map(|(a, b)| format!("{a} {b}")).collect();
+    let refs: Vec<&str> = joined.iter().map(String::as_str).collect();
+    realizar::gguf::byte_level_bpe::ByteLevelBpe::tables_fingerprint(vocab, &refs)
+}
+
+fn encode_gguf(model: &Path, text: &str) -> Result<Encoded> {
     let mapped = realizar::gguf::MappedGGUFModel::from_path(model).map_err(|e| {
         CliError::ValidationFailed(format!("{} is not a readable GGUF: {e}", model.display()))
     })?;
@@ -69,33 +128,61 @@ pub(crate) fn run_encode(
         )
     };
 
-    let ids = mapped.model.encode(&text).ok_or_else(|| {
+    let ids = mapped.model.encode(text).ok_or_else(|| {
         CliError::ValidationFailed(format!(
             "{}: the tokenizer returned nothing",
             model.display()
         ))
     })?;
-
     // decode(encode(x)) == x: the byte-level map loses nothing (#3726 done_when 1).
     let roundtrip = mapped.model.decode(&ids) == text;
+    let merges = mapped.model.merge_rules().unwrap_or_default();
+    Ok(Encoded {
+        fingerprint: Some(fingerprint(&vocab, &merges)),
+        pre_source: tokenizer_pre.map(|p| format!("tokenizer.ggml.pre = {p}")),
+        ids,
+        path,
+        roundtrip,
+        tokenizer_model,
+    })
+}
 
-    if json_output {
-        let out = serde_json::json!({
-            "model": model.display().to_string(),
-            "tokenizer_model": tokenizer_model,
-            "tokenizer_pre": tokenizer_pre,
-            "path": path,
-            "count": ids.len(),
-            "roundtrip": roundtrip,
-            "ids": ids,
-        });
-        println!("{out}");
-    } else {
-        let joined: Vec<String> = ids.iter().map(u32::to_string).collect();
-        println!("{}", joined.join(" "));
-        eprintln!("{} ids; path: {path}; roundtrip: {roundtrip}", ids.len());
-    }
-    Ok(())
+fn encode_apr(model: &Path, text: &str) -> Result<Encoded> {
+    use realizar::apr::canonical_tokenizer::{apr_pre_tokenizer, is_byte_level};
+    let apr = realizar::apr::AprV2Model::load(model).map_err(|e| {
+        CliError::ValidationFailed(format!("{} is not a readable APR: {e}", model.display()))
+    })?;
+    let meta = apr.metadata();
+    let tokenizer_model = meta.get_embedded_model_type();
+    let tok = apr.load_embedded_bpe_tokenizer().ok_or_else(|| {
+        CliError::ValidationFailed(format!(
+            "{} carries no embedded vocabulary and merges: there is no tokenizer to run",
+            model.display()
+        ))
+    })?;
+    let pre = apr_pre_tokenizer(meta);
+    let path = match (&tok.canonical, &pre) {
+        (Some(_), _) => "canonical".to_string(),
+        (None, _) if !is_byte_level(&tok.id_to_token, tokenizer_model.as_deref()) => format!(
+            "legacy-fallback: tokenizer.model_type is {:?}, not a byte-level vocabulary",
+            tokenizer_model.as_deref().unwrap_or("absent")
+        ),
+        (None, _) => format!(
+            "legacy-fallback: no implemented pre-tokenizer (tokenizer.pre_type {:?}, architecture {:?})",
+            meta.extra.get("tokenizer.pre_type").and_then(|v| v.as_str()),
+            meta.architecture
+        ),
+    };
+    let ids = tok.encode(text);
+    let roundtrip = tok.decode(&ids) == text;
+    Ok(Encoded {
+        fingerprint: Some(fingerprint(&tok.id_to_token, &tok.merge_rules)),
+        pre_source: pre.map(|(p, src)| format!("{p:?} ({src})")),
+        ids,
+        path,
+        roundtrip,
+        tokenizer_model,
+    })
 }
 
 #[cfg(test)]

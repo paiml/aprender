@@ -89,16 +89,12 @@ fn falsify_bpe_load_from_files_matches_load_from_json_encode() {
     );
 }
 
-/// FALSIFY-BPE-UPSTREAM-001 (SHIP-TWO §60 root-cause #2):
-/// `BpeTokenizer::encode` with a Qwen2-style vocab MUST NOT return
-/// 99%+ `<unk>` tokens for Python source text. This test loads a
-/// real Qwen2 tokenizer.json from the host's HF cache (skipped if
-/// not present) and asserts the encode entropy is sensible.
-///
-/// CONTEXT: PR #1596's encode-corpus dispatch routes Qwen vocab to
-/// this encoder, but the encoder itself produces 99% `<unk>`
-/// (entropy 0.111 bits / 17.21 max). Diagnosis pending bisection.
-/// See evidence/section-60-5g-2-redispatch-2026-05-09/README.md.
+/// FALSIFY-BPE-UPSTREAM-001, superseded by #3742: this crate's `BpeTokenizer` must REFUSE a
+/// real Qwen2 tokenizer.json rather than encode it. Its pre-tokenizer is a regex; this crate
+/// only splits on whitespace, so every id it produced for Qwen text was not the model's (the
+/// defect #3726 removed from the GGUF path). apr-cli encodes such vocabularies through
+/// realizar's canonical byte-level BPE. This test loads the host's HF-cache copy (skipped if
+/// absent) and asserts the refusal names the reason.
 #[test]
 fn falsify_bpe_qwen_encode_python_does_not_unk_99pct() {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
@@ -106,53 +102,17 @@ fn falsify_bpe_qwen_encode_python_does_not_unk_99pct() {
     if !std::path::Path::new(&path).exists() {
         eprintln!(
             "[falsify_bpe_qwen_encode_python_does_not_unk_99pct] skipping: \
-             host lacks {path} (test is host-dependent for upstream H1C \
-             investigation)"
+             host lacks {path} (test is host-dependent)"
         );
         return;
     }
     let json = std::fs::read_to_string(&path).expect("read tokenizer.json");
-    let tokenizer = load_from_json(&json).expect("load_from_json succeeds on Qwen2");
-
-    // Python source: a self-contained, well-formed snippet using only
-    // tokens that any Qwen-tokenizer-trained Python corpus should
-    // recognize. NOT a contrived edge case.
-    let text = "def fibonacci(n):\n    if n < 2:\n        return n\n    \
-                return fibonacci(n - 1) + fibonacci(n - 2)\n";
-    let ids = tokenizer.encode(text);
-
-    // Find the unk_token id (Qwen2: <|endoftext|>).
-    let unk_id = tokenizer.token_to_id(&BpeConfig::qwen2().unk_token);
-    let unk_count = if let Some(unk) = unk_id {
-        ids.iter().filter(|&&id| id == unk).count()
-    } else {
-        0
-    };
-    let total = ids.len();
-    let unk_ratio = if total > 0 {
-        unk_count as f32 / total as f32
-    } else {
-        0.0
-    };
-
-    eprintln!(
-        "[falsify-bpe-upstream-001] text_bytes={}, encoded_tokens={total}, \
-         unk_count={unk_count}, unk_ratio={unk_ratio:.4}, unk_id={unk_id:?}",
-        text.len()
-    );
-
-    // Industry-baseline: a working byte-level BPE encoder on Python
-    // source produces unk_ratio < 0.05 (under 5% unk on common code).
-    // We accept < 0.50 as the bare-minimum sanity bound; if RED, the
-    // upstream encoder is broken.
+    let err =
+        load_from_json(&json).expect_err("a regex pre-tokenizer vocabulary is refused (#3742)");
+    let msg = err.to_string();
     assert!(
-        unk_ratio < 0.50,
-        "FALSIFY-BPE-UPSTREAM-001: BpeTokenizer::encode on Qwen2 vocab \
-         produced unk_ratio={unk_ratio} (>{}); 99% `<unk>` defect class. \
-         encoded_tokens={total}, unk_count={unk_count}, unk_id={unk_id:?}. \
-         See evidence/section-60-5g-2-redispatch-2026-05-09/ + the §60 \
-         val_loss=0.0008 root-cause cascade.",
-        0.50
+        msg.contains("regex pre-tokenizer") && msg.contains("#3742"),
+        "{msg}"
     );
 }
 
@@ -490,5 +450,39 @@ fn test_pmat751_prefix_space_after_special_token() {
     assert_eq!(
         first, spaced,
         "PMAT-751: first-segment prefix space regressed"
+    );
+}
+
+/// #3742: the refusal is the enforcement. A tokenizer.json whose pre-tokenizer is a regex
+/// (a `Split`, or GPT-2's `ByteLevel` with its built-in regex) is refused by name; one without
+/// a regex pre-tokenizer still loads (aprender's own whitespace pre-split is canonical for it).
+#[test]
+fn load_from_json_refuses_a_regex_pre_tokenizer_and_keeps_the_rest() {
+    let body = |pre: &str| {
+        format!(
+            r#"{{"model": {{"type": "BPE", "vocab": {{"a": 0, "b": 1, "ab": 2}}, "merges": ["a b"]}},
+                "added_tokens": [], "pre_tokenizer": {pre}}}"#
+        )
+    };
+    let split = body(
+        r#"{"type": "Sequence", "pretokenizers": [{"type": "Split", "pattern": {"Regex": "\\p{N}"}, "behavior": "Isolated"}]}"#,
+    );
+    let err = load_from_json(&split).expect_err("a Split regex is refused");
+    assert!(err.to_string().contains("#3742"), "{err}");
+
+    let byte_level = body(r#"{"type": "ByteLevel", "add_prefix_space": false}"#);
+    assert!(
+        load_from_json(&byte_level).is_err(),
+        "GPT-2's ByteLevel regex is refused"
+    );
+
+    let no_regex = body(r#"{"type": "ByteLevel", "add_prefix_space": false, "use_regex": false}"#);
+    assert!(
+        load_from_json(&no_regex).is_ok(),
+        "a ByteLevel without its regex still loads"
+    );
+    assert!(
+        load_from_json(&body("null")).is_ok(),
+        "no pre-tokenizer still loads"
     );
 }

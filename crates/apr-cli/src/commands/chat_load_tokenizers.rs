@@ -4,7 +4,7 @@ fn load_tokenizers(
     format: ModelFormat,
     model_bytes: &[u8],
     path: &Path,
-) -> Result<(Option<LlamaTokenizer>, Option<Qwen2BpeTokenizer>), CliError> {
+) -> Result<(Option<LlamaTokenizer>, Option<ChatHfTokenizer>), CliError> {
     contract_pre_byte_encoder_coverage!();
     match format {
         ModelFormat::Gguf => {

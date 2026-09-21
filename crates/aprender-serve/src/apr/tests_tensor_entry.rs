@@ -204,6 +204,7 @@
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
 
         let encoded = tokenizer.encode("abc");
@@ -225,6 +226,7 @@
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
 
         // Non-ASCII should be handled (may result in empty if not in vocab)

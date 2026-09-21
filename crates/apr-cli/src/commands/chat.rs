@@ -27,7 +27,13 @@ use crate::output;
 #[cfg(feature = "inference")]
 use aprender::text::llama_tokenizer::LlamaTokenizer;
 // PMAT-109: Qwen tokenizer needed for APR/SafeTensors format
-use aprender::text::bpe::Qwen2BpeTokenizer;
+/// #3742: chat's tokenizer.json encoder. With `inference`, realizar's canonical byte-level BPE
+/// (the tokenizer.json's own pre-tokenizer + ranked merges); without it, aprender-core's BPE,
+/// which refuses a byte-level vocabulary by name rather than produce ids the model never saw.
+#[cfg(feature = "inference")]
+type ChatHfTokenizer = crate::commands::hf_tokenizer::HfTokenizer;
+#[cfg(not(feature = "inference"))]
+type ChatHfTokenizer = aprender::text::bpe::Qwen2BpeTokenizer;
 // PMAT-181: Read EOS token from APR metadata (fixes GH-170)
 use aprender::serialization::apr::AprReader;
 // Chat template support (Toyota Way: Standardized Work)
@@ -307,8 +313,8 @@ fn format_from_leading_bytes(path: &Path) -> Option<ModelFormat> {
 }
 
 /// Try loading a tokenizer from a specific path, printing success/failure.
-fn try_load_tokenizer(path: &Path, label: &str) -> Option<Qwen2BpeTokenizer> {
-    match Qwen2BpeTokenizer::from_file(path) {
+fn try_load_tokenizer(path: &Path, label: &str) -> Option<ChatHfTokenizer> {
+    match ChatHfTokenizer::from_file(path) {
         Ok(tok) => {
             println!(
                 "{} {} ({})",
@@ -330,7 +336,7 @@ fn try_load_tokenizer(path: &Path, label: &str) -> Option<Qwen2BpeTokenizer> {
 }
 
 /// Search HuggingFace cache for Qwen tokenizer.json files.
-fn search_hf_cache_tokenizer(hf_cache: &Path) -> Option<Qwen2BpeTokenizer> {
+fn search_hf_cache_tokenizer(hf_cache: &Path) -> Option<ChatHfTokenizer> {
     let entries = std::fs::read_dir(hf_cache).ok()?;
     for entry in entries.flatten() {
         let name = entry.file_name();
@@ -352,7 +358,7 @@ fn search_hf_cache_tokenizer(hf_cache: &Path) -> Option<Qwen2BpeTokenizer> {
 }
 
 /// Try to load tokenizer from a path if it exists.
-fn try_tokenizer_at(path: &Path, label: &str) -> Option<Qwen2BpeTokenizer> {
+fn try_tokenizer_at(path: &Path, label: &str) -> Option<ChatHfTokenizer> {
     if path.exists() {
         try_load_tokenizer(path, label)
     } else {
@@ -362,7 +368,7 @@ fn try_tokenizer_at(path: &Path, label: &str) -> Option<Qwen2BpeTokenizer> {
 
 /// PMAT-109: Find Qwen tokenizer from model dir, HF cache, or APR cache.
 /// Search for a Qwen tokenizer alongside the model file.
-fn find_qwen_tokenizer_sibling(model_path: &Path) -> Option<Qwen2BpeTokenizer> {
+fn find_qwen_tokenizer_sibling(model_path: &Path) -> Option<ChatHfTokenizer> {
     if let Some(parent) = model_path.parent() {
         if let Some(stem) = model_path.file_stem().and_then(|s| s.to_str()) {
             let prefixed = parent.join(format!("{stem}.tokenizer.json"));
@@ -376,7 +382,7 @@ fn find_qwen_tokenizer_sibling(model_path: &Path) -> Option<Qwen2BpeTokenizer> {
         .and_then(|p| try_tokenizer_at(&p.join("tokenizer.json"), ""))
 }
 
-fn find_qwen_tokenizer(model_path: &Path) -> Result<Option<Qwen2BpeTokenizer>, CliError> {
+fn find_qwen_tokenizer(model_path: &Path) -> Result<Option<ChatHfTokenizer>, CliError> {
     if let Some(tok) = find_qwen_tokenizer_sibling(model_path) {
         return Ok(Some(tok));
     }

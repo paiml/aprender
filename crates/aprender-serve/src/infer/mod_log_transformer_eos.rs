@@ -249,6 +249,7 @@ fn convert_sentencepiece_to_bpe(
         bos_id: None,
         eos_id: None,
         special_tokens,
+        canonical: None,
     })
 }
 
@@ -271,6 +272,7 @@ fn convert_simple_tokenizer_to_bpe(
         bos_id: simple_tokenizer.bos_token_id,
         eos_id: simple_tokenizer.eos_token_id,
         special_tokens,
+        canonical: None,
     })
 }
 

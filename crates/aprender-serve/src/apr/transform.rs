@@ -12,6 +12,7 @@
             bos_id: Some(1),
             eos_id: Some(2),
             special_tokens: HashMap::new(),
+            canonical: None,
         };
         let debug_str = format!("{:?}", tokenizer);
         assert!(debug_str.contains("BpeTokenizer"));
@@ -28,6 +29,7 @@
             bos_id: Some(1),
             eos_id: Some(2),
             special_tokens: HashMap::new(),
+            canonical: None,
         };
         let cloned = tokenizer.clone();
         assert_eq!(cloned.bos_id, tokenizer.bos_id);

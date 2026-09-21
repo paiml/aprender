@@ -77,6 +77,7 @@
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
         let encoded = tokenizer.encode("");
         assert!(encoded.is_empty());
@@ -95,6 +96,7 @@
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
         let encoded = tokenizer.encode("abc");
         assert_eq!(encoded.len(), 3);
@@ -111,6 +113,7 @@
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
         let encoded = tokenizer.encode("xyz");
         // Unknown chars should be handled gracefully
@@ -128,6 +131,7 @@
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
         let decoded = tokenizer.decode(&[]);
         assert!(decoded.is_empty());
@@ -145,6 +149,7 @@
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
         let decoded = tokenizer.decode(&[0, 1]);
         assert!(decoded.contains("hello"));
@@ -164,6 +169,7 @@
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
         let encoded = tokenizer.encode("he");
         // After merging h+e -> he, should have 1 token
@@ -183,6 +189,7 @@
             bos_id: Some(0),
             eos_id: Some(1),
             special_tokens: HashMap::new(),
+            canonical: None,
         };
         assert_eq!(tokenizer.bos_id, Some(0));
         assert_eq!(tokenizer.eos_id, Some(1));

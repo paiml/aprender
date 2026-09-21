@@ -239,7 +239,7 @@ fn print_inspection_info(_session: &ChatSession) {
 
 /// Display top-k token probabilities (spec E1)
 #[cfg(not(feature = "inference"))]
-fn print_top_k(logits: &[f32], tokenizer: &Qwen2BpeTokenizer, k: usize) {
+fn print_top_k(logits: &[f32], tokenizer: &ChatHfTokenizer, k: usize) {
     println!();
     println!("{}", "[TOP-K CANDIDATES]".cyan().bold());
 

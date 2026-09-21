@@ -72,6 +72,7 @@ mod tests {
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
         let result = tokenizer.encode("");
         assert!(result.is_empty());
@@ -90,6 +91,7 @@ mod tests {
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
         let result = tokenizer.encode("hi");
         assert_eq!(result, vec![0, 1]);
@@ -108,6 +110,7 @@ mod tests {
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
         let result = tokenizer.encode(" a");
         assert_eq!(result, vec![0, 1]);
@@ -303,6 +306,7 @@ mod tests {
             bos_id: None,
             eos_id: None,
             special_tokens,
+            canonical: None,
         };
 
         // Test that special tokens are kept atomic

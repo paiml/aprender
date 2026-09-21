@@ -363,6 +363,7 @@
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
 
         let ids = tokenizer.encode("hello");
@@ -379,6 +380,7 @@
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
 
         let text = tokenizer.decode(&[0, 1]);

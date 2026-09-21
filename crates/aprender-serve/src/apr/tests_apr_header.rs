@@ -315,6 +315,7 @@
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
         let encoded = tokenizer.encode(" a ");
         assert!(!encoded.is_empty());
@@ -331,6 +332,7 @@
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
         let decoded = tokenizer.decode(&[0]);
         assert!(decoded.contains("hello"));
@@ -345,6 +347,7 @@
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
         let decoded = tokenizer.decode(&[0, 100, 200]);
         // Should handle out of bounds gracefully

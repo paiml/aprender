@@ -101,6 +101,7 @@
             bos_id: Some(1),
             eos_id: Some(2),
             special_tokens: HashMap::new(),
+            canonical: None,
         };
 
         // Encode simple ASCII

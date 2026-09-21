@@ -446,14 +446,15 @@ fn profile_apr_real(
 /// tokenization timing). This is best-effort — models without a sibling
 /// tokenizer still get full forward-pass profiling.
 #[cfg(feature = "inference")]
-fn load_tokenizer_for_profile(model_path: &Path) -> Option<aprender::text::bpe::BpeTokenizer> {
-    use aprender::text::bpe::BpeTokenizer;
+fn load_tokenizer_for_profile(model_path: &Path) -> Option<crate::commands::hf_tokenizer::HfTokenizer> {
+    // #3742: realizar's canonical byte-level BPE; aprender-core refuses these vocabularies.
+    use crate::commands::hf_tokenizer::HfTokenizer as BpeTokenizer;
 
     // 1. Sibling {stem}.tokenizer.json
     let stem = model_path.file_stem()?.to_string_lossy();
     let sibling = model_path.with_file_name(format!("{stem}.tokenizer.json"));
     if sibling.exists() {
-        if let Ok(tok) = BpeTokenizer::from_huggingface(&sibling) {
+        if let Ok(tok) = BpeTokenizer::from_file(&sibling) {
             // GH-2395: progress to stderr — see `profile_gguf_real`.
             eprintln!(
                 "{}",
@@ -467,7 +468,7 @@ fn load_tokenizer_for_profile(model_path: &Path) -> Option<aprender::text::bpe::
     if let Some(parent) = model_path.parent() {
         let tokenizer_json = parent.join("tokenizer.json");
         if tokenizer_json.exists() {
-            if let Ok(tok) = BpeTokenizer::from_huggingface(&tokenizer_json) {
+            if let Ok(tok) = BpeTokenizer::from_file(&tokenizer_json) {
                 eprintln!(
                     "{}",
                     format!("Loaded tokenizer from {}", tokenizer_json.display()).dimmed()

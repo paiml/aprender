@@ -609,14 +609,17 @@ fn execute_brick_benchmark(
 // Disabled until realizar publishes TokenizeBrick
 #[cfg(feature = "inference")]
 #[allow(dead_code)]
-fn load_tokenizer_for_brick(model_path: &Path) -> Result<aprender::text::bpe::BpeTokenizer> {
-    use aprender::text::bpe::BpeTokenizer;
+fn load_tokenizer_for_brick(
+    model_path: &Path,
+) -> Result<crate::commands::hf_tokenizer::HfTokenizer> {
+    // #3742: realizar's canonical byte-level BPE; aprender-core refuses these vocabularies.
+    use crate::commands::hf_tokenizer::HfTokenizer as BpeTokenizer;
 
     // 1. Sibling {stem}.tokenizer.json
     let stem = model_path.file_stem().unwrap_or_default().to_string_lossy();
     let sibling = model_path.with_file_name(format!("{stem}.tokenizer.json"));
     if sibling.exists() {
-        return BpeTokenizer::from_huggingface(&sibling).map_err(|e| {
+        return BpeTokenizer::from_file(&sibling).map_err(|e| {
             CliError::ValidationFailed(format!(
                 "Failed to load tokenizer from {}: {e}",
                 sibling.display()
@@ -628,7 +631,7 @@ fn load_tokenizer_for_brick(model_path: &Path) -> Result<aprender::text::bpe::Bp
     if let Some(parent) = model_path.parent() {
         let tokenizer_json = parent.join("tokenizer.json");
         if tokenizer_json.exists() {
-            return BpeTokenizer::from_huggingface(&tokenizer_json).map_err(|e| {
+            return BpeTokenizer::from_file(&tokenizer_json).map_err(|e| {
                 CliError::ValidationFailed(format!(
                     "Failed to load tokenizer from {}: {e}",
                     tokenizer_json.display()

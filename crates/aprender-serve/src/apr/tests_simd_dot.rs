@@ -35,6 +35,7 @@
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
         let decoded = tokenizer.decode(&[0]);
         // Byte fallback should be handled
@@ -401,6 +402,7 @@
             bos_id: None,
             eos_id: None,
             special_tokens: HashMap::new(),
+            canonical: None,
         };
 
         let decoded = tokenizer.decode(&[0, 1, 2]);
