@@ -174,3 +174,61 @@ fn a_foreign_raw_arg_is_unknown_not_red() {
         "foreign subtrees are not the marker guard's"
     );
 }
+
+/// v1.1: the generators S2 derives prompt-shape cells for. `serve run`, `chat`
+/// and `mcp` take their prompts over HTTP, stdin and JSON-RPC, so only the
+/// `ServesGeneration` marker makes them generators; `run` and `code` are by
+/// their `PromptText` args. Model tools that never generate are not.
+#[test]
+fn the_generators_are_declared() {
+    let s = big_stack(emit);
+    let generates = |path: &[&str]| {
+        s.command(path)
+            .map(|c| c.generates)
+            .unwrap_or_else(|| panic!("{path:?} is on the surface"))
+    };
+    for path in [
+        &["serve", "run"][..],
+        &["chat"],
+        &["mcp"],
+        &["run"],
+        &["code"],
+    ] {
+        assert!(generates(path), "{path:?} must be a generator");
+    }
+    for path in [
+        &["inspect"][..],
+        &["tensors"],
+        &["serve", "plan"],
+        &["surface"],
+    ] {
+        assert!(!generates(path), "{path:?} does not generate");
+    }
+}
+
+/// Mutant: `serve run` with its ServesGeneration marker dropped. Its real
+/// argument set, rebuilt without the marker, reads `generates: false`. So the
+/// marker, not any argument, is what makes it a generator (#3571's verb).
+#[test]
+fn mutant_serve_run_without_its_marker_does_not_generate() {
+    let (real, stripped) = big_stack(|| {
+        let root = Cli::command();
+        let run = root
+            .find_subcommand("serve")
+            .and_then(|s| s.find_subcommand("run"))
+            .expect("serve run")
+            .clone();
+        let mut bare = clap::Command::new("run");
+        for a in run.get_arguments() {
+            bare = bare.arg(a.clone());
+        }
+        let real = emit_from(&clap::Command::new("apr").subcommand(run));
+        let stripped = emit_from(&clap::Command::new("apr").subcommand(bare));
+        (real, stripped)
+    });
+    assert!(real.command(&["run"]).expect("run").generates);
+    assert!(
+        !stripped.command(&["run"]).expect("run").generates,
+        "without the marker serve run must read generates=false — the marker is load-bearing"
+    );
+}

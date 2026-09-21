@@ -37,6 +37,13 @@ Cop rulings on the design are quoted verbatim in `docs/roadmaps/entries/PMAT-374
 | `scripts/guard_tree.sh --no-cargo` | 76 checks, 0 failed (after the ledger re-resolution below) |
 | cargo-side guards touched by the diff: `check_explicit_test_commands`, `check_lockfile_current`, `check_lockfile_no_registry_siblings`, `check_cascade_covers_all_crates`, `check_hermetic_stdin_tests`, `check_duplicate_bin_names`, `check_contract_test_binding`, `check_model_tests_wired` | all rc 0 |
 
+### v1.1 `generates` (cop ruling after S2 found `serve run` takes its prompts over HTTP)
+| what | where | evidence |
+|---|---|---|
+| `commands[].generates: bool`, schema bumped to `apr-cli-surface/v1.1` | `surface::generates()`: true iff the command has a `PromptText` arg or carries the command-level `batuta_common::cli_roles::ServesGeneration` marker. The marker is an argument-less `ArgGroup` attached by `#[command(group(ServesGeneration::group()))]`, so it adds no field and changes neither parsing nor `--help` (`cli_roles::tests::serves_generation_marks_a_command_without_changing_it`), and it is matched by `ServesGeneration::ID`, never by name | `generates_case_table` has 5 rows: a PromptText arg (true); the marker (true); model-only (false); a look-alike group literally named `ServesGeneration` (false); a raw String arg named `prompt` (false) |
+| marker placement | `serve run` (HTTP), `chat` (stdin; its only PromptText is `--system`), `mcp` (JSON-RPC `apr.run`/`apr.serve` tools) | `the_generators_are_declared`: serve run, chat, mcp, run and code generate; inspect, tensors, serve plan and surface do not. `mutant_serve_run_without_its_marker_does_not_generate`: serve run's real argument set without the marker reads `generates: false` |
+| live source mutant | the marker line removed from `serve_commands.rs:40` | `the_generators_are_declared` rc 101: `["serve", "run"] must be a generator`. Restored: rc 0. Suites after the change: apr-cli lib 7320 passed, surface_binary_pin 2, cli_roles 6, clippy clean |
+
 ### Live source mutant (S1.3)
 `crates/apr-cli/src/commands_enum.rs:227` `file: ModelPath` → `file: PathBuf`. Then `cargo test -p apr-cli --lib surface::guard::no_free_form` gives rc 101: `1 free-form argument(s) with no declared role:\n  inspect file`. After restoring, rc 0.
 

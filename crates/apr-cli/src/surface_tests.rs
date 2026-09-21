@@ -57,7 +57,7 @@ fn the_surface_is_versioned_and_deterministic() {
     assert_eq!(a, b, "two emissions from one binary must be byte-identical");
     let v: serde_json::Value = serde_json::from_str(&a).expect("the surface is JSON");
     assert_eq!(v["schema"], SCHEMA);
-    assert_eq!(v["schema"], "apr-cli-surface/v1");
+    assert_eq!(v["schema"], "apr-cli-surface/v1.1");
     assert_eq!(v["binary"]["name"], "apr");
     let roles: Vec<&str> = v["roles"]
         .as_array()
@@ -321,5 +321,51 @@ fn apr_surface_parses_to_the_surface_verb() {
             Some(true),
             "{argv:?} must parse to Commands::Surface"
         );
+    }
+}
+
+/// v1.1 `generates`: one row per way a command can be built. A command
+/// generates iff it has a `PromptText` argument or carries the
+/// `ServesGeneration` marker; a name — the arg's or the group's — never counts.
+#[test]
+fn generates_case_table() {
+    use batuta_common::cli_roles::{ModelPath, PromptText, ServesGeneration};
+    let model = || Arg::new("model").value_parser(clap::value_parser!(ModelPath));
+    let prompt_arg =
+        |p: clap::builder::ValueParser| Arg::new("prompt").long("prompt").value_parser(p);
+    let root = clap::Command::new("apr")
+        .subcommand(
+            clap::Command::new("with-prompt")
+                .arg(model())
+                .arg(prompt_arg(clap::value_parser!(PromptText).into())),
+        )
+        .subcommand(
+            clap::Command::new("marked")
+                .arg(model())
+                .group(ServesGeneration::group()),
+        )
+        .subcommand(clap::Command::new("model-only").arg(model()))
+        .subcommand(
+            clap::Command::new("lookalike-group")
+                .arg(model())
+                .group(clap::ArgGroup::new("ServesGeneration").multiple(true)),
+        )
+        .subcommand(
+            clap::Command::new("raw-prompt-name")
+                .arg(model())
+                .arg(prompt_arg(clap::value_parser!(String))),
+        );
+    let s = emit_from(&root);
+    let rows = [
+        ("with-prompt", true),
+        ("marked", true),
+        ("model-only", false),
+        ("lookalike-group", false),
+        ("raw-prompt-name", false),
+    ];
+    assert_eq!(s.commands.len(), rows.len(), "every command has a row");
+    for (name, want) in rows {
+        let c = s.command(&[name]).unwrap_or_else(|| panic!("{name}"));
+        assert_eq!(c.generates, want, "row {name}");
     }
 }

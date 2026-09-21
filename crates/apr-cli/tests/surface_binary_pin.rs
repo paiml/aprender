@@ -41,7 +41,7 @@ fn the_binary_prints_the_library_surface() {
         );
         let v: serde_json::Value =
             serde_json::from_str(&stdout).expect("stdout is exactly one JSON document");
-        assert_eq!(v["schema"], "apr-cli-surface/v1");
+        assert_eq!(v["schema"], "apr-cli-surface/v1.1");
     }
 }
 

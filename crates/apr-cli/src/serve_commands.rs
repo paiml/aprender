@@ -35,6 +35,9 @@ pub enum ServeCommands {
         quant: Option<FreeText>,
     },
     /// Start inference server (REST API, streaming, metrics)
+    // #3745 S1 v1.1: prompts arrive over HTTP, not through a PromptText arg,
+    // so the generator is declared by marker (`apr surface` → `generates: true`).
+    #[command(group(batuta_common::cli_roles::ServesGeneration::group()))]
     Run {
         /// Path to model file
         ///

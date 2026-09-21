@@ -769,6 +769,9 @@ pub enum Commands {
     ///
     /// Exposes `apr` as MCP tools for Claude Code, Cursor, Cline, and other
     /// MCP clients. Configure via `.mcp.json` with `{"command":"apr","args":["mcp"]}`.
+    // #3745 S1 v1.1: prompts arrive over stdio JSON-RPC (the apr.run / apr.serve tools), not through a PromptText arg,
+    // so the generator is declared by marker (`apr surface` → `generates: true`).
+    #[command(group(batuta_common::cli_roles::ServesGeneration::group()))]
     Mcp {},
     /// Interactive terminal UI
     Tui {

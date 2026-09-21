@@ -37,6 +37,9 @@ pub enum EmbedProjection {
 #[derive(Subcommand, Debug)]
 pub enum ExtendedCommands {
     /// Interactive chat with language model
+    // #3745 S1 v1.1: prompts arrive over stdin (its only PromptText is --system), not through a PromptText arg,
+    // so the generator is declared by marker (`apr surface` → `generates: true`).
+    #[command(group(batuta_common::cli_roles::ServesGeneration::group()))]
     Chat {
         /// Path to .apr model file
         #[arg(value_name = "FILE")]

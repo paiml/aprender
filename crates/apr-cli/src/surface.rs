@@ -40,7 +40,10 @@ use serde::Serialize;
 use crate::{BackendArg, Cli};
 
 /// The schema string consumers refuse to read if it is not one they know.
-pub const SCHEMA: &str = "apr-cli-surface/v1";
+///
+/// v1.1 (cop ruling on #3745, after S2 found `serve run`'s prompts arrive over
+/// HTTP) adds `commands[].generates`.
+pub const SCHEMA: &str = "apr-cli-surface/v1.1";
 
 /// Stack for the recursive walk. Building and walking the full `apr` clap tree
 /// overflows a default test-thread stack (see the note at
@@ -87,6 +90,11 @@ pub struct CommandEntry {
     pub foreign: bool,
     /// True iff the command has no subcommands.
     pub leaf: bool,
+    /// The command generates text from prompts (v1.1): it has a `PromptText`
+    /// argument, or it carries the `ServesGeneration` marker because its
+    /// prompts arrive another way (`serve run` over HTTP, `chat` on stdin,
+    /// `mcp` as JSON-RPC). Read from how the command is built, never its name.
+    pub generates: bool,
     /// Names of the direct subcommands, in declaration order.
     pub subcommands: Vec<String>,
     /// Arguments declared on this command (not the propagated globals).
@@ -246,6 +254,11 @@ fn walk(
         .get_subcommands()
         .map(|s| s.get_name().to_string())
         .collect();
+    let args: Vec<ArgEntry> = cmd
+        .get_arguments()
+        .filter(|a| !a.is_global_set())
+        .map(|a| arg_entry(a, built, cmd))
+        .collect();
     out.push(CommandEntry {
         key: path.join(" "),
         path: path.clone(),
@@ -253,12 +266,9 @@ fn walk(
         hidden: cmd.is_hide_set(),
         foreign: is_foreign,
         leaf: subcommands.is_empty(),
+        generates: generates(cmd, &args),
         subcommands,
-        args: cmd
-            .get_arguments()
-            .filter(|a| !a.is_global_set())
-            .map(|a| arg_entry(a, built, cmd))
-            .collect(),
+        args,
     });
 
     for sub in cmd.get_subcommands() {
@@ -329,6 +339,12 @@ fn arg_entry(arg: &clap::Arg, built_cmd: &clap::Command, cmd: &clap::Command) ->
             .map(|c| c.get_id().to_string())
             .collect(),
     }
+}
+
+/// True iff the command generates from prompts: a `PromptText` argument, or the
+/// command-level `ServesGeneration` marker. Both are read from construction.
+fn generates(cmd: &clap::Command, args: &[ArgEntry]) -> bool {
+    cli_roles::ServesGeneration::is_on(cmd) || args.iter().any(|a| a.role == Role::Prompt.as_str())
 }
 
 /// An argument's role, the type that declared it, and the shape of its value.

@@ -334,6 +334,45 @@ text_role!(
     FreeText
 );
 
+/// Command-level marker: this command GENERATES text from prompts that do not
+/// arrive through a `PromptText` argument (#3745 S1, schema v1.1).
+///
+/// `apr serve run` takes its prompts over HTTP, `apr chat` reads them from
+/// stdin, and `apr mcp` receives them as JSON-RPC tool calls. None of them has a
+/// prompt ARGUMENT, so a rule that reads "generates" off the prompt role alone
+/// would derive no prompt-shape cells for the very verb whose 0.69.0 leak
+/// (#3571) started this. The marker is attached to the subcommand itself, with
+/// no argument and no field:
+///
+/// ```ignore
+/// #[command(group(batuta_common::cli_roles::ServesGeneration::group()))]
+/// Run { /* … */ },
+/// ```
+///
+/// `apr surface` reports `generates: true` for a command that has a
+/// `PromptText` argument OR carries this group, and it matches the group by
+/// [`ServesGeneration::ID`], never by the command's name.
+#[derive(Debug, Clone, Copy)]
+pub struct ServesGeneration;
+
+impl ServesGeneration {
+    /// The group id the marker is recognised by.
+    pub const ID: &'static str = "batuta_common::cli_roles::ServesGeneration";
+
+    /// The argument-less group that marks a command as a generator. It names
+    /// no argument, so it changes neither parsing nor `--help`.
+    #[must_use]
+    pub fn group() -> clap::ArgGroup {
+        clap::ArgGroup::new(Self::ID).multiple(true)
+    }
+
+    /// True iff `cmd` carries the marker.
+    #[must_use]
+    pub fn is_on(cmd: &clap::Command) -> bool {
+        cmd.get_groups().any(|g| g.get_id() == Self::ID)
+    }
+}
+
 /// Owned `String`s from a slice of text role values, for callees that take
 /// `&[String]`.
 #[must_use]
@@ -492,6 +531,26 @@ mod tests {
             let b = typed.clone().try_get_matches_from(&argv).is_ok();
             assert_eq!(a, b, "String vs PromptText disagree on {argv:?}");
         }
+    }
+
+    /// The generation marker names no argument, so it changes neither what
+    /// parses nor what `--help` prints, and it is found by id alone.
+    #[test]
+    fn serves_generation_marks_a_command_without_changing_it() {
+        let plain = Command::new("t").arg(Arg::new("port").long("port"));
+        let marked = plain.clone().group(ServesGeneration::group());
+        assert!(!ServesGeneration::is_on(&plain));
+        assert!(ServesGeneration::is_on(&marked));
+        for argv in [vec!["t"], vec!["t", "--port", "8080"], vec!["t", "--nope"]] {
+            let a = plain.clone().try_get_matches_from(&argv).is_ok();
+            let b = marked.clone().try_get_matches_from(&argv).is_ok();
+            assert_eq!(a, b, "the marker changed parsing of {argv:?}");
+        }
+        let help = |c: &Command| c.clone().render_long_help().to_string();
+        assert_eq!(help(&plain), help(&marked), "the marker changed --help");
+        // A look-alike group spelled with the type's short name is not the marker.
+        let lookalike = plain.group(clap::ArgGroup::new("ServesGeneration").multiple(true));
+        assert!(!ServesGeneration::is_on(&lookalike));
     }
 
     /// A migrated field must print the same under `{:?}` as the raw type did:
