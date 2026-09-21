@@ -38,28 +38,12 @@ fn dispatch_run(
     } else {
         trace_level
     };
-    let merged_prompt = prompt.or(positional_prompt).cloned();
-    // GH-638: Auto-detect chat template from model name when --chat not explicit.
-    // Instruct/Chat models (Qwen-Instruct, LLaMA-Instruct, Mistral-Instruct, etc.)
-    // need ChatML wrapping for correct output. Without it, the model ignores the
-    // prompt structure and produces garbled responses.
-    let use_chat = chat || {
-        let src_lower = source.to_lowercase();
-        merged_prompt.is_some()
-            && (src_lower.contains("instruct") || src_lower.contains("chat"))
-    };
-    let effective_prompt = if use_chat {
-        merged_prompt
-            .as_ref()
-            .map(|p| format!("<|im_start|>user\n{p}<|im_end|>\n<|im_start|>assistant\n"))
-    } else {
-        merged_prompt
-    };
+    let (run_prompt, chat_template) = run_prompt_and_chat(prompt, positional_prompt, source, chat);
 
     run::run(
         source,
         input,
-        effective_prompt.as_deref(),
+        run_prompt.as_deref(),
         max_tokens,
         stream,
         language,
@@ -82,7 +66,32 @@ fn dispatch_run(
         repeat_penalty,
         repeat_last_n,
         split_prompt,
+        chat_template,
     )
+}
+
+/// The prompt `apr run` hands to realizar, and whether realizar must apply the chat
+/// template to it.
+///
+/// #3672: this used to return the prompt already wrapped in hard-coded ChatML whenever
+/// `--chat` was given or the source name said instruct/chat (GH-638). realizar's
+/// `prepare_tokens` then applied the model's own template on top, escaping the inner
+/// special tokens (`<\u{200B}|`), so every instruct `apr run` fed the model a user turn
+/// nested inside a user turn: 52 prompt tokens where llama.cpp has 21, and ChatML even for
+/// a model whose template is not ChatML. The prompt now stays raw text. The flag, `--chat`
+/// or the GH-638 name heuristic, reaches realizar as `force_chat_template`, and the model's
+/// own template is applied exactly once.
+fn run_prompt_and_chat(
+    prompt: Option<&String>,
+    positional_prompt: Option<&String>,
+    source: &str,
+    chat: bool,
+) -> (Option<String>, bool) {
+    let merged_prompt = prompt.or(positional_prompt).cloned();
+    let src_lower = source.to_lowercase();
+    let chat_template = chat
+        || (merged_prompt.is_some() && (src_lower.contains("instruct") || src_lower.contains("chat")));
+    (merged_prompt, chat_template)
 }
 
 /// Build server config and launch serve.
