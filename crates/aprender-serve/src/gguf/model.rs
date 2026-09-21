@@ -45,9 +45,18 @@ pub struct MappedGGUFModel {
     pub model: GGUFModel,
     /// Memory-mapped file contents
     pub(crate) mmap: Mmap,
+    /// The path the file was opened from (#3748: the F2 receipt caches the
+    /// model's sha256 by this file's identity).
+    pub(crate) path: std::path::PathBuf,
 }
 
 impl MappedGGUFModel {
+    /// The path this model was mapped from.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
     /// Load GGUF model via memory mapping (zero-copy)
     ///
     /// # Arguments
@@ -120,7 +129,11 @@ impl MappedGGUFModel {
         // Parse the memory-mapped data
         let model = GGUFModel::from_bytes(&mmap)?;
 
-        Ok(Self { model, mmap })
+        Ok(Self {
+            model,
+            mmap,
+            path: path.as_ref().to_path_buf(),
+        })
     }
 
     /// Get the raw memory-mapped file data

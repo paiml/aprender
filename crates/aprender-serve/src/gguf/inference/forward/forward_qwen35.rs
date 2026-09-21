@@ -1432,8 +1432,7 @@ fn run_qwen35_generate_gpu(
     // #3604: the guard runs once per (model sha256, apr version, device) and
     // leaves a receipt; a later run whose triple matches reads it instead of
     // re-deriving a 64-position CPU forward that was 67 % of a 14 s TTFT.
-    let f2 =
-        f2_validate_qwen35_receipted(&mut gpu, &qwen, input_tokens, mapped.data(), &device_name);
+    let f2 = f2_validate_qwen35_receipted(&mut gpu, &qwen, input_tokens, mapped, &device_name);
     if !f2.accepted {
         return Err("the F2 CPU-parity guard rejected the GPU path".to_string());
     }
@@ -1593,15 +1592,22 @@ pub struct F2Outcome {
     pub sha256_ms: f64,
     /// Where the receipt was read from or written to, if a cache dir exists.
     pub receipt_path: Option<std::path::PathBuf>,
+    /// sha256 of the executable that ran (and, on `source == "receipt"`, of the
+    /// one that WROTE the receipt — the key guarantees they are the same).
+    /// Empty when the executable could not be hashed (then nothing is read or
+    /// written). #3748: a cell records this beside `source`.
+    pub exe_sha256: String,
 }
 
-/// [`f2_validate_qwen35`] behind its receipt (#3604).
+/// [`f2_validate_qwen35`] behind its receipt (#3604, re-keyed by #3748).
 ///
-/// Validate once per (model sha256, apr version, device); later runs of the
-/// same triple read the receipt and skip the forward; `--revalidate` forces a
-/// fresh run and rewrites it. Every path that is not a three-key match
-/// validates — see `f2_receipt.rs` for the table — and a receipt is written on
-/// [`F2Verdict::Accepted`] only, never on a verdict that judged nothing.
+/// Validate once per (model sha256, executable sha256, device); later runs of
+/// the same triple read the receipt and skip the forward; `--revalidate`
+/// forces a fresh run and rewrites it. Every path that is not a three-key
+/// match validates — see `f2_receipt.rs` for the table — and a receipt is
+/// written on [`F2Verdict::Accepted`] only, never on a verdict that judged
+/// nothing. An executable that cannot be hashed can be keyed by nothing, so it
+/// validates and writes no receipt.
 ///
 /// Nothing in here can fail the run except the guard's own rejection: an
 /// unwritable cache directory is reported and the next run simply validates
@@ -1611,24 +1617,58 @@ fn f2_validate_qwen35_receipted(
     gpu: &mut crate::gguf::cuda::Qwen35CudaModel<'_>,
     cpu: &Qwen35Model<'_>,
     probe_context: &[u32],
-    model_bytes: &[u8],
+    mapped: &crate::gguf::MappedGGUFModel,
     device_name: &str,
 ) -> F2Outcome {
     use crate::gguf::f2_receipt::{
-        apr_version, decide, model_sha256, read_receipt, receipt_dir, receipt_path,
-        revalidate_requested, unix_now, write_receipt, F2Decision, F2Receipt, F2ReceiptKey,
-        F2_RECEIPT_SCHEMA,
+        build_label, cached_sha256, decide, exe_sha256, model_sha256, read_receipt, receipt_dir,
+        receipt_path, revalidate_requested, unix_now, write_receipt, F2Decision, F2Receipt,
+        F2ReceiptKey, F2_RECEIPT_SCHEMA,
     };
 
+    let dir = receipt_dir();
     let hash_start = std::time::Instant::now();
-    let key = F2ReceiptKey {
-        model_sha256: model_sha256(model_bytes),
-        apr_version: apr_version(),
-        device: device_name.to_string(),
-    };
+    let model = cached_sha256(dir.as_deref(), mapped.path(), || {
+        Ok(model_sha256(mapped.data()))
+    });
+    let exe = exe_sha256(dir.as_deref());
     let sha256_ms = hash_start.elapsed().as_secs_f64() * 1000.0;
 
-    let path = receipt_dir().map(|d| receipt_path(&d, &key.model_sha256));
+    let (Ok((model_sha, model_src)), Ok((exe_sha, exe_src, exe_path))) = (model, exe) else {
+        eprintln!(
+            "F2 guard: the model or the running executable could not be hashed, so no receipt \
+             can be keyed; validating on this run and writing none [source=fresh]"
+        );
+        let start = std::time::Instant::now();
+        let verdict = f2_validate_qwen35(gpu, cpu, probe_context);
+        return F2Outcome {
+            accepted: verdict.lets_the_gpu_serve(),
+            source: if matches!(verdict, F2Verdict::NotJudged) {
+                "not-judged"
+            } else {
+                "fresh"
+            },
+            validate_ms: start.elapsed().as_secs_f64() * 1000.0,
+            sha256_ms,
+            receipt_path: None,
+            exe_sha256: String::new(),
+        };
+    };
+    let key = F2ReceiptKey {
+        model_sha256: model_sha,
+        exe_sha256: exe_sha,
+        device: device_name.to_string(),
+    };
+    let hashes = format!(
+        "model sha256 {}… {}, exe sha256 {}… {}, {:.0} ms",
+        &key.model_sha256[..12],
+        model_src.as_str(),
+        &key.exe_sha256[..12],
+        exe_src.as_str(),
+        sha256_ms
+    );
+
+    let path = dir.as_deref().map(|d| receipt_path(d, &key));
     let found = match path.as_deref() {
         Some(p) => read_receipt(p),
         None => Ok(None),
@@ -1638,13 +1678,17 @@ fn f2_validate_qwen35_receipted(
         F2Decision::Skip { receipt } => {
             let age_s = unix_now().saturating_sub(receipt.validated_at);
             eprintln!(
-                "F2 guard: receipt matches (model sha256 {}…, apr {}, {}) — validated {}s ago on {} positions; CPU reference forward skipped [source=receipt, sha256 {:.0} ms]. `apr run --revalidate` forces a fresh run.",
+                "F2 guard: receipt written by THIS executable (exe sha256 {}…, {}) for model \
+                 sha256 {}… on {} — validated {}s ago on {} positions; CPU reference forward \
+                 skipped [source=receipt exe={} | {hashes}]. `apr run --revalidate` forces a \
+                 fresh run.",
+                &key.exe_sha256[..12],
+                receipt.build,
                 &key.model_sha256[..12],
-                key.apr_version,
                 key.device,
                 age_s,
                 receipt.positions_judged,
-                sha256_ms
+                &key.exe_sha256[..16],
             );
             return F2Outcome {
                 accepted: true,
@@ -1652,16 +1696,21 @@ fn f2_validate_qwen35_receipted(
                 validate_ms: 0.0,
                 sha256_ms,
                 receipt_path: path,
+                exe_sha256: key.exe_sha256,
             };
         },
         F2Decision::Validate(reason) => {
-            eprintln!("F2 guard: validating on this run ({reason}) [source=fresh]");
+            eprintln!(
+                "F2 guard: validating on this run ({reason}) [source=fresh exe={} | {hashes}]",
+                &key.exe_sha256[..16]
+            );
         },
     }
 
     let start = std::time::Instant::now();
     let verdict = f2_validate_qwen35(gpu, cpu, probe_context);
     let validate_ms = start.elapsed().as_secs_f64() * 1000.0;
+    let exe_sha256 = key.exe_sha256.clone();
 
     let source = match verdict {
         F2Verdict::Accepted { positions_judged } => {
@@ -1670,12 +1719,14 @@ fn f2_validate_qwen35_receipted(
                     let receipt = F2Receipt {
                         schema: F2_RECEIPT_SCHEMA,
                         key,
+                        build: build_label(),
+                        exe_path: exe_path.to_string_lossy().into_owned(),
                         validated_at: unix_now(),
                         positions_judged,
                     };
                     match write_receipt(p, &receipt) {
                         Ok(()) => eprintln!(
-                            "F2 guard: passed in {validate_ms:.0} ms on {positions_judged} positions; receipt written to {} — the next run of this (model, apr, device) skips it.",
+                            "F2 guard: passed in {validate_ms:.0} ms on {positions_judged} positions; receipt written to {} — the next run of this (model, executable, device) skips it.",
                             p.display()
                         ),
                         Err(e) => eprintln!(
@@ -1704,6 +1755,7 @@ fn f2_validate_qwen35_receipted(
         validate_ms,
         sha256_ms,
         receipt_path: path,
+        exe_sha256,
     }
 }
 

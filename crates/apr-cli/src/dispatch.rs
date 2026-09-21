@@ -113,6 +113,16 @@ fn request_f2_revalidate(revalidate: bool) {
     }
 }
 
+/// #3748: the F2 receipt is keyed by this executable's sha256; the build label
+/// written beside the key (for humans, never compared) is the one this binary
+/// knows and the library does not — its version and git sha.
+fn record_f2_build_label() {
+    #[cfg(feature = "inference")]
+    realizar::gguf::f2_receipt::set_build_label(
+        concat!("apr ", env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")").to_string(),
+    );
+}
+
 /// #3602: classify an `apr run` request ONCE, with the same tested classifier the registry uses.
 /// `after_generation` refuses to report a forced accelerator that fell to CPU as success; before
 /// this it had no production caller at all, so `apr run --gpu` on a model the GPU gate rejects
@@ -175,6 +185,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             backend: BackendArg { backend },
         } => {
             request_f2_revalidate(*revalidate);
+            record_f2_build_label();
             // GH-614: --backend cpu forces CPU-only inference
             let backend_forces_cpu = backend.as_deref() == Some("cpu");
             if let Some(ref b) = backend {

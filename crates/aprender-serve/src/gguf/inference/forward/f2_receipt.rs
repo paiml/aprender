@@ -1,5 +1,19 @@
-//! The F2 hybrid guard's receipt: validate once per (model, apr version,
+//! The F2 hybrid guard's receipt: validate once per (model, executable,
 //! device), and let later runs read the answer instead of re-deriving it.
+//!
+//! # The key is the EXECUTABLE, not its version (#3748)
+//!
+//! #3604 keyed a receipt by `CARGO_PKG_VERSION`, so every 0.69.0 build shared
+//! one: a receipt written by build A let build B skip the CPU reference, and a
+//! regressed GPU kernel could serve behind another build's green receipt
+//! (aprender-37's Qwen3.5 cells logged `source=receipt` and measured nothing).
+//! Version + git sha would still let a dirty tree, or a different feature set,
+//! ride a clean build's receipt. So the key is the sha256 of the RUNNING
+//! executable (`/proc/self/exe`): a different binary can never skip. The
+//! version (and git sha, where the binary carries one) is recorded beside the
+//! key for humans, never compared. One file per (model, executable, device),
+//! so builds A, B, A never overwrite each other; both hashes are cached by the
+//! file's (canonical path, size, mtime, inode), so a warm run hashes nothing.
 //!
 //! # Why (#3604, operator ruling 2026-09-20)
 //!
@@ -46,10 +60,13 @@ use serde::{Deserialize, Serialize};
 pub struct F2ReceiptKey {
     /// sha256 of the model file's bytes, lower-case hex. The whole file: a
     /// prefix or a size+mtime fingerprint would let a planted receipt with the
-    /// wrong hash pass, which is the first falsifier.
+    /// wrong hash pass, which is the first falsifier. (The hash itself is
+    /// cached by file identity — [`cached_sha256`] — but what is compared is
+    /// always the content hash.)
     pub model_sha256: String,
-    /// The version of the crate that ran the guard.
-    pub apr_version: String,
+    /// sha256 of the executable that ran the guard (`/proc/self/exe`) — the
+    /// build identity (#3748). Strictly finer than its version or git sha.
+    pub exe_sha256: String,
     /// The device the GPU half ran on, as the driver names it.
     pub device: String,
 }
@@ -63,6 +80,12 @@ pub struct F2Receipt {
     /// The triple this receipt vouches for.
     #[serde(flatten)]
     pub key: F2ReceiptKey,
+    /// For humans only, never compared: the build that wrote the receipt
+    /// ([`build_label`] — the apr version, and its git sha where the binary
+    /// set one) and the executable's path.
+    pub build: String,
+    /// The executable's path when it wrote the receipt; for humans only.
+    pub exe_path: String,
     /// Unix seconds when the validation passed.
     pub validated_at: u64,
     /// How many probe positions the passing validation actually compared.
@@ -70,12 +93,15 @@ pub struct F2Receipt {
 }
 
 /// The current receipt schema. Bump it and every old receipt re-validates.
-pub const F2_RECEIPT_SCHEMA: u32 = 1;
+///
+/// 2 (#3748): keyed by the executable's sha256 instead of the apr version, so
+/// every version-keyed schema-1 receipt revalidates once.
+pub const F2_RECEIPT_SCHEMA: u32 = 2;
 
 /// Why a run is validating instead of reading the receipt.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum F2ValidateReason {
-    /// No receipt exists for this model.
+    /// No receipt exists for this (model, executable, device).
     NoReceipt,
     /// A file exists but could not be read or parsed.
     Unreadable(String),
@@ -93,11 +119,12 @@ pub enum F2ValidateReason {
         /// The hash of the model being loaded.
         expected: String,
     },
-    /// The receipt was written by a different apr version.
-    AprVersionMismatch {
-        /// The version in the file.
+    /// The receipt was written by a different executable — whatever its
+    /// version says (#3748).
+    ExeSha256Mismatch {
+        /// The executable hash in the file.
         found: String,
-        /// This crate's version.
+        /// This executable's hash.
         expected: String,
     },
     /// The receipt was written for a different device.
@@ -114,7 +141,7 @@ pub enum F2ValidateReason {
 impl std::fmt::Display for F2ValidateReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NoReceipt => write!(f, "no receipt for this model"),
+            Self::NoReceipt => write!(f, "no receipt for this (model, executable, device)"),
             Self::Unreadable(e) => write!(f, "receipt unreadable ({e})"),
             Self::SchemaMismatch { found, expected } => {
                 write!(f, "receipt schema {found}, this build writes {expected}")
@@ -125,9 +152,12 @@ impl std::fmt::Display for F2ValidateReason {
                 &found[..found.len().min(12)],
                 &expected[..expected.len().min(12)]
             ),
-            Self::AprVersionMismatch { found, expected } => {
-                write!(f, "receipt written by apr {found}, this is {expected}")
-            },
+            Self::ExeSha256Mismatch { found, expected } => write!(
+                f,
+                "receipt written by executable {}…, this executable is {}…",
+                &found[..found.len().min(12)],
+                &expected[..expected.len().min(12)]
+            ),
             Self::DeviceMismatch { found, expected } => {
                 write!(f, "receipt written for {found}, this device is {expected}")
             },
@@ -183,10 +213,10 @@ pub fn decide(
             expected: expected.model_sha256.clone(),
         });
     }
-    if receipt.key.apr_version != expected.apr_version {
-        return F2Decision::Validate(F2ValidateReason::AprVersionMismatch {
-            found: receipt.key.apr_version,
-            expected: expected.apr_version.clone(),
+    if receipt.key.exe_sha256 != expected.exe_sha256 {
+        return F2Decision::Validate(F2ValidateReason::ExeSha256Mismatch {
+            found: receipt.key.exe_sha256,
+            expected: expected.exe_sha256.clone(),
         });
     }
     if receipt.key.device != expected.device {
@@ -220,12 +250,30 @@ pub fn receipt_dir() -> Option<PathBuf> {
     })
 }
 
-/// One file per model. The apr version and device are INSIDE the file and
-/// compared by [`decide`], so a device swap on the same box shows up as a
-/// named mismatch rather than a second silent file.
+/// One file per (model, executable, device) — #3748. A per-model file let
+/// builds A and B overwrite each other, so A→B→A re-validated every time and
+/// the receipt answered for whichever build wrote last. The whole key is also
+/// INSIDE the file and compared by [`decide`], so a file under the wrong name
+/// still cannot skip.
 #[must_use]
-pub fn receipt_path(dir: &Path, model_sha256: &str) -> PathBuf {
-    dir.join(format!("{model_sha256}.json"))
+pub fn receipt_path(dir: &Path, key: &F2ReceiptKey) -> PathBuf {
+    let device: String = key
+        .device
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .take(48)
+        .collect();
+    dir.join(format!(
+        "{}-{}-{device}.json",
+        key.model_sha256,
+        &key.exe_sha256[..key.exe_sha256.len().min(16)]
+    ))
 }
 
 /// Read a receipt. `Ok(None)` when the file does not exist; `Err` for anything
@@ -255,6 +303,11 @@ pub fn read_receipt(path: &Path) -> Result<Option<F2Receipt>, String> {
 /// but the atomicity claim was false. The temp name now carries the pid and a
 /// per-process counter, so no two writers share one.
 pub fn write_receipt(path: &Path, receipt: &F2Receipt) -> Result<(), String> {
+    write_json_atomically(path, receipt)
+}
+
+/// [`write_receipt`]'s atomic write, for any serializable value.
+fn write_json_atomically<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
     use std::sync::atomic::{AtomicU64, Ordering};
     static SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -271,7 +324,7 @@ pub fn write_receipt(path: &Path, receipt: &F2Receipt) -> Result<(), String> {
         std::process::id(),
         SEQ.fetch_add(1, Ordering::Relaxed)
     ));
-    let body = serde_json::to_string_pretty(receipt).map_err(|e| e.to_string())?;
+    let body = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
     if let Err(e) = std::fs::write(&tmp, body) {
         return Err(format!("{}: {e}", tmp.display()));
     }
@@ -308,6 +361,180 @@ pub fn model_sha256(bytes: &[u8]) -> String {
 #[must_use]
 pub fn apr_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+static BUILD_LABEL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Record the human-readable build label the binary knows and this library
+/// does not — `apr` sets `"<version> (<git sha>)"` at startup. First call wins.
+pub fn set_build_label(label: String) {
+    let _ = BUILD_LABEL.set(label);
+}
+
+/// The build label recorded in a receipt for humans; `apr <version>` when the
+/// binary set none. Never part of the key.
+#[must_use]
+pub fn build_label() -> String {
+    BUILD_LABEL
+        .get()
+        .cloned()
+        .unwrap_or_else(|| format!("apr {}", apr_version()))
+}
+
+/// What identifies a file's CONTENT without reading it: if all four are
+/// unchanged, the bytes are taken to be unchanged. `mtime` is in nanoseconds;
+/// the inode catches a replace-by-rename that kept size and mtime.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileIdentity {
+    /// The canonical path (symlinks resolved).
+    pub path: String,
+    /// Size in bytes.
+    pub size: u64,
+    /// Modification time, nanoseconds since the epoch.
+    pub mtime_ns: i128,
+    /// Inode number.
+    pub inode: u64,
+}
+
+/// The identity of the file at `path`, or why it has none. Unix only: without
+/// an inode there is no identity, and callers hash instead of caching.
+pub fn file_identity(path: &Path) -> Result<FileIdentity, String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let canonical =
+            std::fs::canonicalize(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let md =
+            std::fs::metadata(&canonical).map_err(|e| format!("{}: {e}", canonical.display()))?;
+        Ok(FileIdentity {
+            path: canonical.to_string_lossy().into_owned(),
+            size: md.size(),
+            mtime_ns: i128::from(md.mtime()) * 1_000_000_000 + i128::from(md.mtime_nsec()),
+            inode: md.ino(),
+        })
+    }
+    #[cfg(not(unix))]
+    {
+        Err(format!(
+            "{}: no file identity on this platform",
+            path.display()
+        ))
+    }
+}
+
+/// One entry of the content-hash cache.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct HashCacheEntry {
+    identity: FileIdentity,
+    sha256: String,
+}
+
+/// Where a hash came from: the cache, or a fresh read of the file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HashSource {
+    /// The file's identity matched a cached entry; nothing was read.
+    Cache,
+    /// The file was hashed on this run.
+    Hashed,
+}
+
+impl HashSource {
+    /// How it reads in a log line.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Cache => "cached",
+            Self::Hashed => "hashed",
+        }
+    }
+}
+
+/// The sha256 of the file at `path`, from `cache_dir` when the file's
+/// (canonical path, size, mtime, inode) all match the cached entry, else from
+/// `compute` — which is then cached, but only if the identity is the same
+/// after hashing as before (a file rewritten mid-hash is never cached).
+///
+/// Every failure of the cache (no dir, no identity, unreadable or unwritable
+/// entry) falls back to `compute`: the cache may only ever save work, never
+/// supply an answer it cannot vouch for.
+///
+/// # Errors
+/// Only `compute`'s own error.
+pub fn cached_sha256(
+    cache_dir: Option<&Path>,
+    path: &Path,
+    compute: impl FnOnce() -> Result<String, String>,
+) -> Result<(String, HashSource), String> {
+    let before = file_identity(path).ok();
+    let entry_path = match (cache_dir, &before) {
+        (Some(dir), Some(id)) => Some(
+            dir.join("sha256-cache")
+                .join(format!("{}.json", &model_sha256(id.path.as_bytes())[..32])),
+        ),
+        _ => None,
+    };
+    if let (Some(ep), Some(id)) = (&entry_path, &before) {
+        let cached = std::fs::read_to_string(ep)
+            .ok()
+            .and_then(|t| serde_json::from_str::<HashCacheEntry>(&t).ok());
+        if let Some(entry) = cached {
+            if &entry.identity == id {
+                return Ok((entry.sha256, HashSource::Cache));
+            }
+        }
+    }
+    let sha256 = compute()?;
+    if let (Some(ep), Some(id)) = (entry_path, before) {
+        if file_identity(path).ok().as_ref() == Some(&id) {
+            let _ = write_json_atomically(
+                &ep,
+                &HashCacheEntry {
+                    identity: id,
+                    sha256: sha256.clone(),
+                },
+            );
+        }
+    }
+    Ok((sha256, HashSource::Hashed))
+}
+
+/// sha256 of the file at `path`, streamed.
+///
+/// # Errors
+/// The file cannot be read.
+pub fn file_sha256(path: &Path) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read as _;
+    let mut f = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut h = Sha256::new();
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        let n = f
+            .read(&mut buf)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        if n == 0 {
+            break;
+        }
+        h.update(&buf[..n]);
+    }
+    let mut s = String::with_capacity(64);
+    for b in h.finalize() {
+        use std::fmt::Write as _;
+        let _ = write!(s, "{b:02x}");
+    }
+    Ok(s)
+}
+
+/// The running executable's sha256 and path (`/proc/self/exe`), cached by
+/// file identity under `cache_dir`.
+///
+/// # Errors
+/// The executable cannot be located or read — the caller then cannot key a
+/// receipt, validates, and writes none.
+pub fn exe_sha256(cache_dir: Option<&Path>) -> Result<(String, HashSource, PathBuf), String> {
+    let exe = std::env::current_exe().map_err(|e| format!("the running executable: {e}"))?;
+    let (sha, source) = cached_sha256(cache_dir, &exe, || file_sha256(&exe))?;
+    Ok((sha, source, exe))
 }
 
 /// Now, in unix seconds; 0 if the clock is before the epoch.
