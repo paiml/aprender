@@ -1,0 +1,21 @@
+- id: PMAT-3490
+  github_issue: 3490
+  item_type: task
+  title: 'CB-200 ratchet 601 -> 599 and the complexity shrink under pmat 3.41.1 — the pin itself landed in #3484, not here'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-18T15:52:47Z
+  updated: 2026-09-18T15:52:47Z
+  spec: null
+  acceptance_criteria:
+  - 'THE PIN IS ALREADY IN AND THIS ROW NO LONGER BUMPS IT. `[pmat] version = "3.41.1"` landed on main in `f4c0daa37` (09-18 17:07) inside the 0.68.2 PR #3484, not here. Verified on `origin/main:tools.toml:56`. The row was written before that and its original title said otherwise; two humans AND a review lane then read `tools.toml:7` — a COMMENT reading `version: "3.40.1"` — as the pin, which is paiml/infra#816.'
+  - 'WHAT THIS ROW ACTUALLY LANDS: the **CB-200 ratchet 601 -> 599** and the stale comment on `tools.toml:7` — and NOTHING ELSE. The complexity-baseline shrink (8 functions) that an earlier version of this criterion claimed ALSO landed in #3484: `scripts/complexity_baseline.txt` is absent from the diff against origin/main, which quorum r3 lane 1 caught. The r2 ratchet output "8 removed" was measured against the MERGE-BASE, not against main. The rebase against main surfaced 601-vs-599 as a genuine conflict — BOTH sides already carried `tool_version=pmat 3.41.1`, so it was never a version disagreement — and 599 is kept because the file is shrink-only against origin/main and taking 601 would surrender the ratchet.'
+  - 'VERIFIED ON THE MERGED TREE rather than carried, because 10 commits of new code could have made 599 unreachable: `ok CB-200 baseline 599 ([tdg] baseline == scripts/cb200_baseline.txt)`, `ok ratchet cb200_baseline.txt did not grow (2 removed)`, `ok ratchet complexity_baseline.txt did not grow (8 removed)`, `PASS (D2): 3409b29d2 vs 674da069e measured by pmat 3.41.1 — none new, none grown.`'
+  - '3.41.1 RE-CONFIRMED AS CONVERGED before the rebase, on the RUNNER denominator rather than the host set: intel HOST, `gx10-pool1`, `yoga-build3`, and the gx10/mini/lambda-labs hosts all report 3.41.1, and infra declares 3.41.1 on all five machines. `pforge-clean-room` (`rust:1.95-slim`) carries no pmat at all — paiml/infra#813. A pin measured two days earlier asserts nothing if the fleet moved under it; it had not.'
+  - 'THE PR-REVIEW RECEIPT UNDER `evidence/pr-review/3491/0fd8deb79.../` IS NOT REGENERATED, deliberately. It is scoped to the sha it names and correct for it. `pr_review_quorum_arm.sh:612` already refuses this case with the true reason — `0fd8deb79` IS an ancestor of the rebased head, so Q3 reaches the late-diff arm and refuses because commits after the reviewed sha touch `tools.toml` and the baselines, outside `evidence/pr-review/3491/**`. Regenerating a signed receipt for a head it never reviewed would be the real defect; a fresh signed round writes to its own directory and the old one stays as the historical artifact it is.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
