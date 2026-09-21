@@ -71,7 +71,7 @@ fn run_cpu_server(
     config: &ServerConfig,
     offload: Option<realizar::api::OffloadReport>,
 ) -> Result<()> {
-    use realizar::api::{create_router_with_config, AppState};
+    use realizar::api::AppState;
 
     // Measure the model BEFORE it is moved into AppState. Anything not
     // measurable here stays absent — `/realize/model` no longer substitutes
@@ -91,7 +91,80 @@ fn run_cpu_server(
     if let Some(offload) = offload {
         state = state.with_offload_report(offload);
     }
-    let state = state;
+    serve_router(state, config)
+}
+
+/// #3571: serve the Qwen3.5 hybrid from a resident session.
+///
+/// The dense servers cannot: the hybrid has no dense layers, and the base
+/// `apr serve` used to hand them (#3608) was the embeddings, the final norm and
+/// `lm_head` alone — HTTP 200 with 1024 tokens of `"\n"` on the CPU route, HTTP
+/// 500 on the GPU one. The session is the one `apr chat` holds (#3595): built,
+/// uploaded and F2-validated once, its decode state carried from one request to
+/// the next.
+///
+/// The hybrid places every layer on one backend or none, so `--gpu-layers`
+/// resolves to all of them or zero, and the line reports where they actually
+/// are — a GPU that could not take the model is the printed fallback and
+/// `resolved=0`, never a claim.
+#[cfg(feature = "inference")]
+fn start_qwen35_server(
+    mapped_model: std::sync::Arc<realizar::gguf::MappedGGUFModel>,
+    config: &ServerConfig,
+) -> Result<()> {
+    use realizar::api::AppState;
+    use realizar::gguf::qwen35_session::Qwen35Session;
+
+    let vocab = extract_gguf_vocab(&mapped_model)?;
+    let session = Qwen35Session::load(&mapped_model, !config.wants_accelerator())
+        .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load the Qwen3.5 hybrid: {e}")))?;
+    let total_layers = u32::try_from(session.num_layers()).unwrap_or(u32::MAX);
+    // Refuses a partial --gpu-layers before a request is ever served.
+    config.resolve_layers(total_layers)?;
+    let on_gpu = session.on_gpu();
+    let resolved_layers = if on_gpu { total_layers } else { 0 };
+    let context_length = session.context_length();
+    println!(
+        "{}",
+        format!(
+            "Model ready: Qwen3.5 hybrid, {total_layers} layers resident on the {}, declared context {context_length} tokens",
+            if on_gpu { "GPU" } else { "CPU" }
+        )
+        .green()
+    );
+    println!(
+        "gpu-layers: requested={} resolved={resolved_layers} total={total_layers} (backend={})",
+        config
+            .gpu_layers
+            .map_or_else(|| "none".to_string(), |r| r.to_string()),
+        if on_gpu { "cuda" } else { "cpu" }
+    );
+    let offload = super::offload_report(config, resolved_layers, total_layers);
+
+    let model_source = config
+        .model_path
+        .as_deref()
+        .map(realizar::api::ModelSourceInfo::from_path)
+        .unwrap_or_default()
+        .with_architecture("qwen35")
+        .with_model_max_context_length(context_length)
+        .with_context_length(config.context_length);
+    let state = AppState::with_qwen35_session(session, mapped_model, vocab)
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?
+        .with_model_source(model_source)
+        .with_verbose(config.verbose)
+        .with_offload_report(offload);
+    serve_router(state, config)
+}
+
+/// Serve realizar's full router over `state` until Ctrl+C.
+///
+/// The half of [`run_cpu_server`] that does not depend on which model the
+/// state holds — shared with [`start_qwen35_server`] (#3571), so the hybrid is
+/// served by the same router, banner and shutdown as every other GGUF.
+#[cfg(feature = "inference")]
+fn serve_router(state: realizar::api::AppState, config: &ServerConfig) -> Result<()> {
+    use realizar::api::create_router_with_config;
 
     // Create realizar's full inference router (Ollama-parity endpoints).
     // --no-cors / --no-metrics must reach the router, not stop at the banner.

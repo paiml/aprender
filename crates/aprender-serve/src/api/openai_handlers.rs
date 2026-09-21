@@ -1411,4 +1411,5 @@ mod pmat801_tool_calling_tests {
 }
 
 include!("cuda_chat_backend.rs");
+include!("qwen35_chat_backend.rs");
 include!("chat_completions_stream.rs");
