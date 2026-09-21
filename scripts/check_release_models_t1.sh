@@ -27,6 +27,10 @@
 #   stale-binary     gx10 builds an apr that is not the release: STOP, "NOT-THE-RELEASE", before
 #                    any measuring.
 #   disk-refusal     gx10 has less free space than a fresh target needs: STOP, "ENV:", nothing built.
+#   oom-victim       the fleet GPU rule (cop ruling, one lock owner): both hosts' ladders run under
+#                    `choom -n 1000`, and this wrapper takes NO flock -- the GPU lock is the
+#                    ladder's own, per apr call, and a second one here would deadlock it. No build
+#                    runs under a flock.
 # T-4, R7: rule_r7() is EXTRACTED from scripts/check_publish_preflight.sh and run on a tagged tree
 # with the judge stub and committed receipts -- cargo-free, so every decision can be mutated here.
 # (That the full gate CALLS rule_r7 is proved by that script's own --selftest rows r7_*, which need
@@ -46,6 +50,8 @@
 #   no-version-proof gx10's pre-measure `apr --version` proof deleted        -> stale-binary
 #   no-disk-check    gx10's free-space refusal deleted                       -> disk-refusal
 #   autopilot-no-die the autopilot `models` step no longer dies on NO-GO     -> red-cell
+#   no-choom         gx10's ladder runs without `choom -n 1000`              -> oom-victim
+#   wrapper-flock    lambda's ladder wrapped in `flock /tmp/apr-gpu.lock`    -> oom-victim
 #   r7-no-version    the judge is called without --version <v>              -> r7-green
 #   r7-red-is-go     the judge's rc 1 read as ok                             -> r7-red
 #   r7-no-fail-lines the judge's FAIL lines dropped from the refusal         -> r7-missing
@@ -69,6 +75,8 @@ A_DECLINE='    2) echo "MODELS NO-GO: the judge DECLINED (rc 2)'
 A_PROOF='[ "\$got" = "$want" ] || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE'
 A_DISK='if [ -z "\$free_kib" ] || [ \$(( free_kib + have_kib )) -lt $NEED_KIB ]; then'
 A_DIE='  [ $rc -eq 0 ] || die "T-1 model matrix NO-GO'
+A_CHOOM_R='choom -n 1000 -- bash scripts/model_ladder.sh --host $REMOTE_HOST'
+A_CHOOM_L='    choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST"'
 R_VER='    out="$(cd "$root" && bash "$judge" --version "$version" 2>&1)"; rc=$?'
 R_RED='        *) printf '"'"'FAIL  R7 model matrix NOT green for %s (rc %s):\n%s\n'"'"' "$version" "$rc" \'
 R_LINES='               "$(grep -E '"'"'^FAIL'"'"' <<< "$out" | head -n 10 | sed '"'"'s/^/        /'"'"')" ;;'
@@ -78,7 +86,7 @@ R_NOJUDGE='    if [ ! -f "$judge" ]; then'
 env_die() { printf 'ENV   %s -- the table judged nothing, not a pass\n' "$*" >&2; exit 2; }
 for f in "$AUTOPILOT" "$MODELS" "$PARAMS" "$PREFLIGHT"; do [ -r "$f" ] || env_die "no $f"; done
 for t in git python3; do command -v "$t" > /dev/null 2>&1 || env_die "no $t"; done
-for a in "$A_SHARED" "$A_255" "$A_BUILD" "$A_NORCPT" "$A_RED" "$A_DECLINE" "$A_PROOF" "$A_DISK"; do
+for a in "$A_SHARED" "$A_255" "$A_BUILD" "$A_NORCPT" "$A_RED" "$A_DECLINE" "$A_PROOF" "$A_DISK" "$A_CHOOM_R" "$A_CHOOM_L"; do
     grep -qF -- "$a" "$MODELS" || env_die "models_t1.sh has no '$a' line -- the subject moved"
 done
 grep -qF -- "$A_DIE" "$AUTOPILOT" || env_die "autopilot.sh has no '$A_DIE' line -- the subject moved"
@@ -127,6 +135,7 @@ case "${1:-}" in
   metadata)
     printf '{"packages":[{"name":"fx","version":"%s","manifest_path":"%s/Cargo.toml"}],"target_directory":"%s"}\n' "$v" "$PWD" "$tdir" ;;
   build)
+    printf 'build host=%s oom=%s flock=%s\n' "$host" "${FX_OOM:-none}" "${FX_FLOCK:-0}" >> "$FX_LOG"
     [ "${FX_BUILD_FAIL_HOST:-}" = "$host" ] && { echo "error: could not compile (fixture)"; exit 101; }
     s=$(git rev-parse --short=9 HEAD); [ "${FX_STALE_HOST:-}" = "$host" ] && s=deadbeef0
     mkdir -p "$tdir/release"
@@ -136,7 +145,23 @@ case "${1:-}" in
   *) exit 0 ;;
 esac
 STUB
-chmod +x "$TMP/bin/gh" "$TMP/bin/ssh" "$TMP/bin/cargo"
+# choom / flock: record the call in $FX_LOG, then run the command with FX_OOM / FX_FLOCK set, so the
+# ladder and the build can report what wrapped them
+cat > "$TMP/bin/choom" <<'STUB'
+#!/usr/bin/env bash
+[ "${1:-}" = -n ] || exit 64
+n=$2; shift 2; [ "${1:-}" = -- ] && shift
+printf 'choom host=%s n=%s %s\n' "${FX_HOST:-lambda}" "$n" "$*" >> "$FX_LOG"
+FX_OOM=$n exec "$@"
+STUB
+cat > "$TMP/bin/flock" <<'STUB'
+#!/usr/bin/env bash
+printf 'flock host=%s %s\n' "${FX_HOST:-lambda}" "$*" >> "$FX_LOG"
+while [ "${1#-}" != "${1:-}" ]; do [ "$1" = -w ] && shift; shift; done
+shift
+FX_FLOCK=1 exec "$@"
+STUB
+chmod +x "$TMP/bin/gh" "$TMP/bin/ssh" "$TMP/bin/cargo" "$TMP/bin/choom" "$TMP/bin/flock"
 # the judge stub (check_model_ladder.sh's frozen interface): every required host's receipt present,
 # green and for this version -> 0; otherwise 1 with a FAIL line each; FX_JUDGE_DECLINE=1 -> 2
 cat > "$TMP/judge-stub.sh" <<'STUB'
@@ -171,6 +196,7 @@ fixture() {
     cat > "$r/scripts/model_ladder.sh" <<'STUB'
 #!/usr/bin/env bash
 while [ $# -gt 0 ]; do case "$1" in --host) h=$2; shift 2 ;; --out) o=$2; shift 2 ;; *) shift ;; esac; done
+printf 'ladder host=%s oom=%s flock=%s\n' "$h" "${FX_OOM:-none}" "${FX_FLOCK:-0}" >> "$FX_LOG"
 [ "${FX_NO_RECEIPT_HOST:-}" = "$h" ] && { echo "fixture: measured nothing on $h"; exit 2; }
 apr="${CARGO_TARGET_DIR:-$PWD/target}/release/apr"
 v=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
@@ -198,9 +224,10 @@ STUB
 models() {
     local n=$1 d="$TMP/$1"; shift
     fixture "$n" "$1" "$2" || return 2
+    : > "$d/wrap.log"
     shift 2
     ( export RELEASE_AP="$d/ap" RELEASE_EPIC=9002 CARGO_HOME="$TMP/cargo-home" PATH="$TMP/bin:$PATH" \
-          FX_MC="$(cat "$d/mc")" FX_GX10_HOME="$d/gx10" MODELS_T1_NEED_KIB=1
+          FX_MC="$(cat "$d/mc")" FX_GX10_HOME="$d/gx10" MODELS_T1_NEED_KIB=1 FX_LOG="$d/wrap.log"
       for kv in "$@"; do export "${kv?}"; done
       bash "$d/repo/scripts/release/autopilot.sh" 9.9.9 99 models models ) > "$d/out.log" 2>&1
     printf '%s\n' "$?" > "$d/rc"
@@ -249,10 +276,25 @@ disk() {
     return 0
 }
 
+oom_victim() {
+    local n="oom-$1" d; d="$TMP/oom-$1"
+    models "$n" "$2" "$3" || return 2
+    [ "$(cat "$d/rc")" = 0 ] || { printf 'autopilot exited %s: %s\n' "$(cat "$d/rc")" "$(tail -n 1 "$d/ap/STATUS" 2>/dev/null)"; return 1; }
+    local h
+    for h in lambda gx10; do
+        grep -qx "ladder host=$h oom=1000 flock=0" "$d/wrap.log" \
+            || { printf '%s ladder did not run under choom -n 1000 alone: %s\n' "$h" "$(grep "^ladder host=$h" "$d/wrap.log" | tr '\n' ' ')"; return 1; }
+        grep -qx "build host=$h oom=none flock=0" "$d/wrap.log" \
+            || { printf '%s build ran wrapped: %s\n' "$h" "$(grep "^build host=$h" "$d/wrap.log" | tr '\n' ' ')"; return 1; }
+    done
+    ! grep -q '^flock ' "$d/wrap.log" || { printf 'the wrapper took a flock (it would deadlock the ladder'"'"'s own): %s\n' "$(grep '^flock ' "$d/wrap.log" | head -n 1)"; return 1; }
+    return 0
+}
+
 # ---- the rows ---------------------------------------------------------------------------------
 for spec in "green-pair green_pair" "gx10-unreachable unreachable" "build-fails build_fails" \
             "missing-receipt missing" "red-cell red_cell" "judge-decline decline" \
-            "stale-binary stale" "disk-refusal disk"; do
+            "stale-binary stale" "disk-refusal disk" "oom-victim oom_victim"; do
     set -- $spec
     msg=$($2 real "$AUTOPILOT" "$MODELS"); row "$1" "$?" "$msg"
 done
@@ -322,6 +364,8 @@ mutant decline-is-go    "$MODELS" "$A_DECLINE" '    2) ;; 98) echo "' decline
 mutant no-version-proof "$MODELS" "$A_PROOF" 'true || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE' stale
 mutant no-disk-check    "$MODELS" "$A_DISK" 'if false; then' disk
 mutant autopilot-no-die "$AUTOPILOT" "$A_DIE" '  [ $rc -eq $rc ] || die "T-1 model matrix NO-GO' red_cell autopilot
+mutant no-choom         "$MODELS" "$A_CHOOM_R" 'bash scripts/model_ladder.sh --host $REMOTE_HOST' oom_victim
+mutant wrapper-flock    "$MODELS" "$A_CHOOM_L" '    flock /tmp/apr-gpu.lock choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST"' oom_victim
 mutant r7-no-version    "$PREFLIGHT" "$R_VER" '    out="$(cd "$root" && bash "$judge" 2>&1)"; rc=$?' r7_green preflight
 mutant r7-red-is-go     "$PREFLIGHT" "$R_RED" '        *) return 0; printf '"'"'FAIL  R7 model matrix NOT green for %s (rc %s):\n%s\n'"'"' "$version" "$rc" \' r7_red preflight
 mutant r7-no-fail-lines "$PREFLIGHT" "$R_LINES" '               "" ;;' r7_missing preflight
@@ -329,6 +373,6 @@ mutant r7-decline-is-go "$PREFLIGHT" "$R_DECLINE" '        2) return 0; echo "FA
 mutant r7-no-judge-ok   "$PREFLIGHT" "$R_NOJUDGE" '    if false; then' r7_nojudge preflight
 
 # VACUITY FLOOR: a table that ran fewer rows than it declares is not a pass.
-[ "$rows" -ge 27 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 27 declared\n' "$rows" >&2; exit 1; }
+[ "$rows" -ge 30 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 30 declared\n' "$rows" >&2; exit 1; }
 [ "$fails" -eq 0 ] || { printf 'RED   %s of %s row(s) failed\n' "$fails" "$rows" >&2; exit 1; }
 printf 'PASS  %s row(s): the model matrix runs at T-1 on both hosts, every failure to prove the release STOPs before the tag, and R7 refuses the same failures at T-4 (#3717)\n' "$rows"

@@ -16,7 +16,13 @@
 #                first. NEVER ~/src/aprender/target: a shared cache under an old checkout is how
 #                a stale instrument agrees with itself (#3600).
 #   2. prove the binary before measuring: `apr --version` must read "apr <v> (<release sha9>)"
-#   3. scripts/model_ladder.sh --host <id> --out <dir>; the receipt's apr_version must be that line
+#   3. `choom -n 1000 -- bash scripts/model_ladder.sh --host <id> --out <dir>`: the fleet GPU rule
+#      (cop, 2026-09-21, after gx10's 15:56Z global OOM killed 18 CI containers) makes THIS run,
+#      never the CI pool, the OOM victim; oom_score_adj is inherited across fork, so every apr the
+#      ladder starts is covered. The GPU LOCK is model_ladder.sh's own, per apr call (#3712 row B):
+#      this wrapper takes NO flock -- a second flock on the same file here would deadlock the
+#      ladder's inner one (cop ruling, one owner). The build runs under neither.
+#      The receipt's apr_version must be the line proved in step 2.
 # THEN scripts/check_model_ladder.sh --version <v> --receipts <out> judges both receipts.
 #
 # An unreachable host, a failed build, a binary that is not the release, a missing receipt, a red
@@ -54,7 +60,7 @@ local_leg() {
     tdir=${CARGO_TARGET_DIR:-$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')}
     got=$("$tdir/release/apr" --version 2>/dev/null | head -n 1)
     [ "$got" = "$want" ] || { echo "MODELS-LEG $LOCAL_HOST NOT-THE-RELEASE: '$got' (want '$want')"; return 3; }
-    bash scripts/model_ladder.sh --host "$LOCAL_HOST" --out "$out"
+    choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST" --out "$out"
 }
 
 remote_leg() {
@@ -85,7 +91,7 @@ cargo build --release -p apr-cli --bin apr --features cuda --locked > "\$dir/bui
 got=\$("\$CARGO_TARGET_DIR/release/apr" --version 2>/dev/null | head -n 1)
 [ "\$got" = "$want" ] || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE: '\$got' (want '$want')"; exit 3; }
 rm -rf -- "\$dir/out"
-bash scripts/model_ladder.sh --host $REMOTE_HOST --out "\$dir/out"; lrc=\$?
+choom -n 1000 -- bash scripts/model_ladder.sh --host $REMOTE_HOST --out "\$dir/out"; lrc=\$?
 if [ -f "\$dir/out/$REMOTE_HOST.json" ]; then
   echo "---RECEIPT $REMOTE_HOST---"; cat "\$dir/out/$REMOTE_HOST.json"; echo "---END RECEIPT---"
 fi
