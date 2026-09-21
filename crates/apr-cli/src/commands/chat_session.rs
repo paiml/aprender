@@ -35,6 +35,10 @@ mod realizar_chat {
         qwen_tokenizer: Option<Qwen2BpeTokenizer>,
         /// GH-224: Cached GGUF mmap model (for tokenizer encode/decode across messages)
         cached_gguf_mapped: Option<realizar::gguf::MappedGGUFModel>,
+        /// #3595: the Qwen3.5 hybrid, built once with its decode state kept across
+        /// turns. GH-224's dense cache below cannot hold it, so every turn used to
+        /// rebuild, re-upload and re-validate the model.
+        qwen35_session: Option<realizar::gguf::qwen35_session::Qwen35Session>,
         /// GH-224: Cached GGUF CUDA model (avoids re-uploading weights per message)
         #[cfg(feature = "cuda")]
         cached_gguf_cuda: Option<realizar::gguf::OwnedQuantizedModelCuda>,

@@ -1,5 +1,5 @@
 impl ChatSession {
-        pub(super) fn new(path: &Path) -> Result<Self, CliError> {
+        pub(super) fn new(path: &Path, force_cpu: bool) -> Result<Self, CliError> {
             contract_pre_session_persistence!();
             println!("{}", "Loading model...".cyan());
             let start = Instant::now();
@@ -79,6 +79,7 @@ impl ChatSession {
             let model_path_buf = path.to_path_buf();
 
             let mut cached_gguf_mapped = None;
+            let mut qwen35_session = None;
             #[cfg(feature = "cuda")]
             let mut cached_gguf_cuda = None;
             #[cfg(feature = "cuda")]
@@ -87,11 +88,15 @@ impl ChatSession {
             if format == ModelFormat::Gguf {
                 match realizar::gguf::MappedGGUFModel::from_path(&model_path_buf) {
                     Ok(mapped) => {
-                        #[cfg(feature = "cuda")]
-                        {
-                            let (cuda, failed) = try_init_gguf_cuda(&mapped)?;
-                            cached_gguf_cuda = cuda;
-                            if failed { cuda_init_failed = true; }
+                        if let Some(session) = try_init_qwen35_session(&mapped, force_cpu)? {
+                            qwen35_session = Some(session);
+                        } else {
+                            #[cfg(feature = "cuda")]
+                            {
+                                let (cuda, failed) = try_init_gguf_cuda(&mapped)?;
+                                cached_gguf_cuda = cuda;
+                                if failed { cuda_init_failed = true; }
+                            }
                         }
                         cached_gguf_mapped = Some(mapped);
                     }
@@ -129,6 +134,7 @@ impl ChatSession {
                 llama_tokenizer,
                 qwen_tokenizer,
                 cached_gguf_mapped,
+                qwen35_session,
                 #[cfg(feature = "cuda")]
                 cached_gguf_cuda,
                 #[cfg(feature = "cuda")]
