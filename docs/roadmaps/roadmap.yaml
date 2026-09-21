@@ -19967,3 +19967,27 @@ roadmap:
   labels:
   - kind:code
   notes: "Refs #3577 (ONT-4c3; its ledger binding is infra's row, bound after this merges) and #3624 (the by_entity_type sibling, not closed here). R-3 of ONT-001: pc_extract is one planted defect per registered extractor, every run."
+- id: PMAT-3725
+  github_issue: 3725
+  item_type: task
+  title: 'Qwen3.5 CUDA long-context decode: split-K (flash-decoding) decode attention, f32 + f16 KV read (site 4)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-3e [8f56c1]
+  created: 2026-09-21T16:32:01Z
+  updated: 2026-09-21T17:55:00Z
+  spec: null
+  acceptance_criteria:
+  - "cargo test -p aprender-gpu --features cuda --lib decode_attention_splitk passes on lambda (sm_89) AND gx10 (sm_121): the split-K pair matches its CPU twin, the f64 reference and DecodeAttention256Kernel (the kernel it replaces) within 1e-4 x max|ref| for geometries 8/2, 16/4, 24/4 (head_dim 256) at seq_len 1, 5, 37, 64, 65, 520, 4096, 4097, 8192; forced many-split plans; f16 KV read against the same values widened to f32"
+  - "Mutation: dropping the split rescale in the reduce kernel, reading f16 with the f32 element stride, and a warp position stride of 9 instead of 8 each turn the device tests RED"
+  - "evidence/section-3725/{lambda,gx10}.json (cargo run --release -p aprender-gpu --features cuda --example gdn_splitk_rungs): at every rung 4096, 8192, 20000, 60000, 148000, 262144, for 16/4 and 24/4, f32 and f16 — split-K vs DecodeAttention256Kernel relative max |d| and cosine, both vs an f64 reference, and us per call for both kernels"
+  - "The Qwen3.5 CUDA decode (forward_qwen35_cuda.rs attention layer step) calls gdn_decode_attention_splitk_into with KvStorage::F32; cargo test -p aprender-serve --features cuda --lib qwen35_cuda passes on lambda (real 0.8B and 4B files: attention layers vs CPU, forward_single logits vs CPU)"
+  - "Through the executor: gdn_splitk_through_the_executor_matches_the_16_block_kernel_at_many_splits (seq_len 5000, 79 splits) agrees with gdn_decode_attention_into AND an f64 reference within 1e-4 x max|ref|, and gdn_splitk_refuses_an_empty_cache_and_short_scratch refuses seq_len 0 and a one-split scratch asked for 64 splits (cargo test -p aprender-serve --features cuda --lib gdn_splitk, lambda)"
+  - "KvStorage::{F32, F16} is exported from trueno_gpu::kernels::gdn for #3596 (which owns the f16 storage and row writes) to call with KvStorage::F16"
+  - "A cuda-oxide port of the same algorithm under experiments/cuda-oxide/splitk-decode-attention/ with a CPU twin and a differential test, run on sm_89 and sm_121, with a parity and A/B timing receipt vs the builder kernel"
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: "Refs #3725 (NOT Closes: the e2e decode tok/s table follows #3596). Issue done_when, verbatim: '- [ ] a split-K (or flash-decoding) decode attention for the Qwen3.5 full-attention layers on lambda and gx10, parity-checked against the current kernel at every rung (4k … 262,144)' / '- [ ] decode tok/s recorded at 4k/20k/60k/148k/262k on both hosts for the 9B (and every size that fits), against pinned llama.cpp on the same prompt (ratio reported, never claimed as a target)' / '- [ ] oxide-first where practical (a cuda-oxide kernel + CPU twin + differential test on sm_89 and sm_121)'. Cop rulings on #3725 (2026-09-21T16:35:12Z), verbatim: '(1) this row's PR lands the kernel, the wiring and **kernel-level rungs** (parity vs the current kernel and µs per call at 4k…262,144 on lambda and gx10) as `Refs #3725`. The e2e decode tok/s table vs pinned llama.cpp follows once #3596's batched prefill is on main, and the issue stays open for it. (2) \"oxide-first where practical\" means: the production kernel is builder-PTX like every GDN kernel (no in-tree path ships oxide PTX until OXIDE-001 O-1), PLUS a cuda-oxide port under `experiments/cuda-oxide/` with its own parity and A/B receipt on sm_89 and sm_121.' Scope split with #3596 (cop comment 2026-09-21T16:20:41Z): #3725 owns site 4, the decode attention read for f32 and f16. Design note: issuecomment-5763965543."

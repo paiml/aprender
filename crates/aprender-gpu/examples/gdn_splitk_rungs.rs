@@ -25,7 +25,6 @@
 
 #[cfg(feature = "cuda")]
 mod rungs {
-    use std::fmt::Write as _;
     use std::time::Instant;
 
     use trueno_gpu::driver::{CudaContext, CudaModule, CudaStream, GpuBuffer, LaunchConfig};
@@ -194,15 +193,294 @@ mod rungs {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
+    /// q, K and V for one geometry, `max_len` positions. Rows differ in scale so a
+    /// kernel reading the wrong position or KV head lands somewhere else.
+    fn fixture(nh: usize, nkv: usize, max_len: usize) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+        let row = nkv * HEAD_DIM;
+        let mut rng = Lcg(0x3725_7000 + nh as u32);
+        let q: Vec<f32> = (0..nh * HEAD_DIM).map(|_| rng.next_scaled(0.3)).collect();
+        let mut k = Vec::with_capacity(max_len * row);
+        let mut v = Vec::with_capacity(max_len * row);
+        for p in 0..max_len {
+            let scale = 0.5 + 0.5 * ((p % 97) as f32 / 97.0);
+            k.extend((0..row).map(|_| rng.next_scaled(scale)));
+            v.extend((0..row).map(|_| rng.next_scaled(scale)));
+        }
+        (q, k, v)
+    }
+
+    /// Host wall µs per call of `f`: `warmup` launches, then `iters` back-to-back
+    /// launches and one synchronize.
+    fn time_us(stream: &CudaStream, warmup: usize, iters: usize, f: &mut dyn FnMut()) -> f64 {
+        for _ in 0..warmup {
+            f();
+        }
+        stream.synchronize().expect("sync");
+        let t0 = Instant::now();
+        for _ in 0..iters {
+            f();
+        }
+        stream.synchronize().expect("sync");
+        t0.elapsed().as_secs_f64() * 1e6 / iters as f64
+    }
+
+    /// What one rung measured.
+    struct Rung {
+        seq_len: usize,
+        plan: SplitKPlan,
+        old_us: f64,
+        new_us: f64,
+        vs_old: Stats,
+        old_f64: Option<Stats>,
+        new_f64: Option<Stats>,
+    }
+
+    fn fmt_rel(s: Option<&Stats>) -> String {
+        s.map_or("null".into(), |s| format!("{:.3e}", s.rel_max))
+    }
+
+    fn print_rung(nh: usize, nkv: usize, kv: KvStorage, r: &Rung) {
+        println!(
+            "{:>6} {:>4} {:>7} {:>11.1} {:>11.1} {:>7.2} {:>10.3e} {:>9.7} {:>10} {:>10}",
+            format!("{nh}/{nkv}"),
+            kv.tag(),
+            r.seq_len,
+            r.old_us,
+            r.new_us,
+            r.old_us / r.new_us,
+            r.vs_old.rel_max,
+            r.vs_old.cos,
+            fmt_rel(r.old_f64.as_ref()),
+            fmt_rel(r.new_f64.as_ref()),
+        );
+    }
+
+    fn rung_json(nh: usize, nkv: usize, kv: KvStorage, r: &Rung) -> String {
+        format!(
+            "    {{\"num_heads\": {nh}, \"num_kv_heads\": {nkv}, \"head_dim\": {HEAD_DIM}, \
+             \"kv\": \"{}\", \"seq_len\": {}, \"chunk\": {}, \"n_splits\": {}, \
+             \"old_us\": {:.2}, \"splitk_us\": {:.2}, \"speedup\": {:.3}, \
+             \"splitk_vs_old_rel_max\": {:.3e}, \"splitk_vs_old_cos\": {:.9}, \
+             \"old_vs_f64_rel_max\": {}, \"splitk_vs_f64_rel_max\": {}}}",
+            kv.tag(),
+            r.seq_len,
+            r.plan.chunk,
+            r.plan.n_splits,
+            r.old_us,
+            r.new_us,
+            r.old_us / r.new_us,
+            r.vs_old.rel_max,
+            r.vs_old.cos,
+            fmt_rel(r.old_f64.as_ref()),
+            fmt_rel(r.new_f64.as_ref()),
+        )
+    }
+
+    /// The device side of one geometry that every storage and rung shares.
+    struct Shared {
+        nh: usize,
+        nkv: usize,
+        old: DecodeAttention256Kernel,
+        red: DecodeAttentionSplitKReduceKernel,
+        old_mod: CudaModule,
+        red_mod: CudaModule,
+        q_buf: GpuBuffer<f32>,
+        old_out: GpuBuffer<f32>,
+        new_out: GpuBuffer<f32>,
+        pacc: GpuBuffer<f32>,
+        pml: GpuBuffer<f32>,
+    }
+
+    impl Shared {
+        fn new(ctx: &CudaContext, nh: usize, nkv: usize, q: &[f32], max_len: usize) -> Self {
+            let old = DecodeAttention256Kernel::new(nh as u32, nkv as u32, HEAD_DIM as u32);
+            let red = DecodeAttentionSplitKReduceKernel::new(nh as u32, HEAD_DIM as u32);
+            let max_splits = SplitKPlan::for_seq_len(max_len as u32).n_splits.max(256);
+            Self {
+                nh,
+                nkv,
+                old_mod: CudaModule::from_ptx(ctx, &old.emit_ptx()).expect("old module"),
+                red_mod: CudaModule::from_ptx(ctx, &red.emit_ptx()).expect("reduce module"),
+                old,
+                red,
+                q_buf: GpuBuffer::from_host(ctx, q).expect("q"),
+                old_out: GpuBuffer::<f32>::new(ctx, nh * HEAD_DIM).expect("old out"),
+                new_out: GpuBuffer::<f32>::new(ctx, nh * HEAD_DIM).expect("new out"),
+                pacc: GpuBuffer::<f32>::new(
+                    ctx,
+                    splitk_partial_acc_len(nh as u32, HEAD_DIM as u32, max_splits),
+                )
+                .expect("pacc"),
+                pml: GpuBuffer::<f32>::new(ctx, splitk_partial_ml_len(nh as u32, max_splits))
+                    .expect("pml"),
+            }
+        }
+    }
+
+    /// One storage's caches on the device, and the values every kernel sees as f32.
+    struct Cache {
+        k_seen: Vec<f32>,
+        v_seen: Vec<f32>,
+        k32: GpuBuffer<f32>,
+        v32: GpuBuffer<f32>,
+        half: Option<(GpuBuffer<u16>, GpuBuffer<u16>)>,
+    }
+
+    impl Cache {
+        fn new(ctx: &CudaContext, kv: KvStorage, k: &[f32], v: &[f32]) -> Self {
+            let (k_seen, v_seen, half) = match kv {
+                KvStorage::F32 => (k.to_vec(), v.to_vec(), None),
+                KvStorage::F16 => {
+                    let kb: Vec<u16> = k.iter().map(|x| f16_bits(*x)).collect();
+                    let vb: Vec<u16> = v.iter().map(|x| f16_bits(*x)).collect();
+                    let widened = (
+                        kb.iter().map(|b| widen(*b)).collect(),
+                        vb.iter().map(|b| widen(*b)).collect(),
+                    );
+                    let dev = (
+                        GpuBuffer::from_host(ctx, &kb).expect("k16"),
+                        GpuBuffer::from_host(ctx, &vb).expect("v16"),
+                    );
+                    (widened.0, widened.1, Some(dev))
+                }
+            };
+            Self {
+                k32: GpuBuffer::from_host(ctx, &k_seen).expect("k32"),
+                v32: GpuBuffer::from_host(ctx, &v_seen).expect("v32"),
+                k_seen,
+                v_seen,
+                half,
+            }
+        }
+
+        /// The pointers the split-K kernel reads: the f16 cache if there is one.
+        fn splitk_ptrs(&self) -> (u64, u64) {
+            self.half
+                .as_ref()
+                .map_or((self.k32.as_ptr(), self.v32.as_ptr()), |(k, v)| {
+                    (k.as_ptr(), v.as_ptr())
+                })
+        }
+    }
+
+    /// Both kernels on the same cache at one rung: timing, then parity.
+    #[allow(clippy::too_many_arguments)]
+    fn run_rung(
+        stream: &CudaStream,
+        args: &Args,
+        sh: &mut Shared,
+        cache: &Cache,
+        a: &DecodeAttentionSplitKKernel,
+        a_mod: &mut CudaModule,
+        q: &[f32],
+        seq_len: usize,
+    ) -> Rung {
+        let plan = SplitKPlan::for_seq_len(seq_len as u32);
+        let (k_ptr, v_ptr) = cache.splitk_ptrs();
+        let mut old_args = [
+            sh.q_buf.as_ptr(),
+            cache.k32.as_ptr(),
+            cache.v32.as_ptr(),
+            sh.old_out.as_ptr(),
+            seq_len as u64,
+        ];
+        let mut a_args = [
+            sh.q_buf.as_ptr(),
+            k_ptr,
+            v_ptr,
+            sh.pacc.as_ptr(),
+            sh.pml.as_ptr(),
+            seq_len as u64,
+            u64::from(plan.chunk),
+            u64::from(plan.n_splits),
+        ];
+        let mut b_args = [
+            sh.pacc.as_ptr(),
+            sh.pml.as_ptr(),
+            sh.new_out.as_ptr(),
+            u64::from(plan.n_splits),
+        ];
+        let (old, red) = (sh.old, sh.red);
+        let old_us = time_us(stream, args.warmup, args.iters, &mut || {
+            launch(
+                stream,
+                &mut sh.old_mod,
+                &old,
+                old.grid(),
+                old.block(),
+                &mut old_args,
+            );
+        });
+        let new_us = time_us(stream, args.warmup, args.iters, &mut || {
+            launch(stream, a_mod, a, a.grid(plan), a.block(), &mut a_args);
+            launch(
+                stream,
+                &mut sh.red_mod,
+                &red,
+                red.grid(),
+                red.block(),
+                &mut b_args,
+            );
+        });
+
+        let mut got_old = vec![0.0f32; sh.nh * HEAD_DIM];
+        let mut got_new = vec![0.0f32; sh.nh * HEAD_DIM];
+        sh.old_out.copy_to_host(&mut got_old).expect("old download");
+        sh.new_out.copy_to_host(&mut got_new).expect("new download");
+        let reference = (seq_len <= args.reference_max).then(|| {
+            decode_attention_reference_f64(
+                q,
+                &cache.k_seen,
+                &cache.v_seen,
+                sh.nh,
+                sh.nkv,
+                HEAD_DIM,
+                seq_len,
+            )
+        });
+        Rung {
+            seq_len,
+            plan,
+            old_us,
+            new_us,
+            vs_old: compare(&got_new, &widen_f64(&got_old)),
+            old_f64: reference.as_ref().map(|r| compare(&got_old, r)),
+            new_f64: reference.as_ref().map(|r| compare(&got_new, r)),
+        }
+    }
+
+    /// Every storage and rung at one geometry, as JSON rows.
+    fn run_geometry(
+        ctx: &CudaContext,
+        stream: &CudaStream,
+        args: &Args,
+        nh: usize,
+        nkv: usize,
+        max_len: usize,
+    ) -> Vec<String> {
+        let (q, k, v) = fixture(nh, nkv, max_len);
+        let mut sh = Shared::new(ctx, nh, nkv, &q, max_len);
+        let mut rows = Vec::new();
+        for kv in [KvStorage::F32, KvStorage::F16] {
+            let cache = Cache::new(ctx, kv, &k, &v);
+            let a = DecodeAttentionSplitKKernel::new(nh as u32, nkv as u32, HEAD_DIM as u32, kv);
+            let mut a_mod = CudaModule::from_ptx(ctx, &a.emit_ptx()).expect("split-K module");
+            for &seq_len in &args.rungs {
+                let r = run_rung(stream, args, &mut sh, &cache, &a, &mut a_mod, &q, seq_len);
+                print_rung(nh, nkv, kv, &r);
+                rows.push(rung_json(nh, nkv, kv, &r));
+            }
+        }
+        rows
+    }
+
     pub fn main() {
         let args = parse_args();
+        let ctx = CudaContext::new(0).expect("CUDA device 0");
         if let Some(dir) = &args.emit_ptx {
-            let ctx = CudaContext::new(0).expect("CUDA device 0");
             emit_ptx(dir, &ctx);
             return;
         }
-        let ctx = CudaContext::new(0).expect("CUDA device 0");
         let stream = CudaStream::new(&ctx).expect("stream");
         let device = ctx.device_name().unwrap_or_else(|_| "?".into());
         let (cc_major, cc_minor) = ctx.compute_capability().unwrap_or((0, 0));
@@ -210,7 +488,6 @@ mod rungs {
         let (free0, total0) = ctx.memory_info().unwrap_or((0, 0));
         let max_len = *args.rungs.iter().max().expect("at least one rung");
 
-        let mut rows = String::new();
         println!(
             "{:>6} {:>4} {:>7} {:>11} {:>11} {:>7} {:>10} {:>9} {:>10} {:>10}",
             "heads",
@@ -224,197 +501,26 @@ mod rungs {
             "old_vs_f64",
             "new_vs_f64"
         );
+        let mut rows = Vec::new();
         for (nh, nkv) in [(16usize, 4usize), (24, 4)] {
-            let row = nkv * HEAD_DIM;
-            let mut rng = Lcg(0x3725_7000 + nh as u32);
-            let q: Vec<f32> = (0..nh * HEAD_DIM).map(|_| rng.next_scaled(0.3)).collect();
-            let mut k = Vec::with_capacity(max_len * row);
-            let mut v = Vec::with_capacity(max_len * row);
-            for p in 0..max_len {
-                let scale = 0.5 + 0.5 * ((p % 97) as f32 / 97.0);
-                for _ in 0..row {
-                    k.push(rng.next_scaled(scale));
-                }
-                for _ in 0..row {
-                    v.push(rng.next_scaled(scale));
-                }
-            }
-
-            let old = DecodeAttention256Kernel::new(nh as u32, nkv as u32, HEAD_DIM as u32);
-            let red = DecodeAttentionSplitKReduceKernel::new(nh as u32, HEAD_DIM as u32);
-            let mut old_mod = CudaModule::from_ptx(&ctx, &old.emit_ptx()).expect("old module");
-            let mut red_mod = CudaModule::from_ptx(&ctx, &red.emit_ptx()).expect("reduce module");
-            let q_buf = GpuBuffer::from_host(&ctx, &q).expect("q");
-            let old_out = GpuBuffer::<f32>::new(&ctx, nh * HEAD_DIM).expect("old out");
-            let new_out = GpuBuffer::<f32>::new(&ctx, nh * HEAD_DIM).expect("new out");
-            let max_splits = SplitKPlan::for_seq_len(max_len as u32).n_splits.max(256);
-            let pacc = GpuBuffer::<f32>::new(
-                &ctx,
-                splitk_partial_acc_len(nh as u32, HEAD_DIM as u32, max_splits),
-            )
-            .expect("pacc");
-            let pml = GpuBuffer::<f32>::new(&ctx, splitk_partial_ml_len(nh as u32, max_splits))
-                .expect("pml");
-
-            for kv in [KvStorage::F32, KvStorage::F16] {
-                // The values every kernel and the reference see, as f32.
-                let (k_seen, v_seen, k16, v16) = match kv {
-                    KvStorage::F32 => (k.clone(), v.clone(), None, None),
-                    KvStorage::F16 => {
-                        let kb: Vec<u16> = k.iter().map(|x| f16_bits(*x)).collect();
-                        let vb: Vec<u16> = v.iter().map(|x| f16_bits(*x)).collect();
-                        (
-                            kb.iter().map(|b| widen(*b)).collect::<Vec<f32>>(),
-                            vb.iter().map(|b| widen(*b)).collect::<Vec<f32>>(),
-                            Some(GpuBuffer::from_host(&ctx, &kb).expect("k16")),
-                            Some(GpuBuffer::from_host(&ctx, &vb).expect("v16")),
-                        )
-                    }
-                };
-                let k32 = GpuBuffer::from_host(&ctx, &k_seen).expect("k32");
-                let v32 = GpuBuffer::from_host(&ctx, &v_seen).expect("v32");
-                let (k_ptr, v_ptr) = match (&k16, &v16) {
-                    (Some(kb), Some(vb)) => (kb.as_ptr(), vb.as_ptr()),
-                    _ => (k32.as_ptr(), v32.as_ptr()),
-                };
-                let a =
-                    DecodeAttentionSplitKKernel::new(nh as u32, nkv as u32, HEAD_DIM as u32, kv);
-                let mut a_mod = CudaModule::from_ptx(&ctx, &a.emit_ptx()).expect("split-K module");
-
-                for &seq_len in &args.rungs {
-                    let plan = SplitKPlan::for_seq_len(seq_len as u32);
-                    let mut old_args = [
-                        q_buf.as_ptr(),
-                        k32.as_ptr(),
-                        v32.as_ptr(),
-                        old_out.as_ptr(),
-                        seq_len as u64,
-                    ];
-                    let mut a_args = [
-                        q_buf.as_ptr(),
-                        k_ptr,
-                        v_ptr,
-                        pacc.as_ptr(),
-                        pml.as_ptr(),
-                        seq_len as u64,
-                        u64::from(plan.chunk),
-                        u64::from(plan.n_splits),
-                    ];
-                    let mut b_args = [
-                        pacc.as_ptr(),
-                        pml.as_ptr(),
-                        new_out.as_ptr(),
-                        u64::from(plan.n_splits),
-                    ];
-
-                    let time = |f: &mut dyn FnMut()| -> f64 {
-                        for _ in 0..args.warmup {
-                            f();
-                        }
-                        stream.synchronize().expect("sync");
-                        let t0 = Instant::now();
-                        for _ in 0..args.iters {
-                            f();
-                        }
-                        stream.synchronize().expect("sync");
-                        t0.elapsed().as_secs_f64() * 1e6 / args.iters as f64
-                    };
-                    let old_us = time(&mut || {
-                        launch(
-                            &stream,
-                            &mut old_mod,
-                            &old,
-                            old.grid(),
-                            old.block(),
-                            &mut old_args,
-                        );
-                    });
-                    let new_us = time(&mut || {
-                        launch(
-                            &stream,
-                            &mut a_mod,
-                            &a,
-                            a.grid(plan),
-                            a.block(),
-                            &mut a_args,
-                        );
-                        launch(
-                            &stream,
-                            &mut red_mod,
-                            &red,
-                            red.grid(),
-                            red.block(),
-                            &mut b_args,
-                        );
-                    });
-
-                    let mut got_old = vec![0.0f32; nh * HEAD_DIM];
-                    let mut got_new = vec![0.0f32; nh * HEAD_DIM];
-                    old_out.copy_to_host(&mut got_old).expect("old download");
-                    new_out.copy_to_host(&mut got_new).expect("new download");
-                    let vs_old = compare(&got_new, &widen_f64(&got_old));
-                    let (old_f64, new_f64) = if seq_len <= args.reference_max {
-                        let r = decode_attention_reference_f64(
-                            &q, &k_seen, &v_seen, nh, nkv, HEAD_DIM, seq_len,
-                        );
-                        (Some(compare(&got_old, &r)), Some(compare(&got_new, &r)))
-                    } else {
-                        (None, None)
-                    };
-                    let fmt_rel = |s: &Option<Stats>| {
-                        s.as_ref()
-                            .map_or("null".into(), |s| format!("{:.3e}", s.rel_max))
-                    };
-                    println!(
-                        "{:>6} {:>4} {:>7} {:>11.1} {:>11.1} {:>7.2} {:>10.3e} {:>9.7} {:>10} {:>10}",
-                        format!("{nh}/{nkv}"),
-                        kv.tag(),
-                        seq_len,
-                        old_us,
-                        new_us,
-                        old_us / new_us,
-                        vs_old.rel_max,
-                        vs_old.cos,
-                        fmt_rel(&old_f64),
-                        fmt_rel(&new_f64),
-                    );
-                    if !rows.is_empty() {
-                        rows.push_str(",\n");
-                    }
-                    let _ = write!(
-                        rows,
-                        "    {{\"num_heads\": {nh}, \"num_kv_heads\": {nkv}, \"head_dim\": {HEAD_DIM}, \
-                         \"kv\": \"{}\", \"seq_len\": {seq_len}, \"chunk\": {}, \"n_splits\": {}, \
-                         \"old_us\": {old_us:.2}, \"splitk_us\": {new_us:.2}, \"speedup\": {:.3}, \
-                         \"splitk_vs_old_rel_max\": {:.3e}, \"splitk_vs_old_cos\": {:.9}, \
-                         \"old_vs_f64_rel_max\": {}, \"splitk_vs_f64_rel_max\": {}}}",
-                        kv.tag(),
-                        plan.chunk,
-                        plan.n_splits,
-                        old_us / new_us,
-                        vs_old.rel_max,
-                        vs_old.cos,
-                        fmt_rel(&old_f64),
-                        fmt_rel(&new_f64),
-                    );
-                }
-            }
+            rows.extend(run_geometry(&ctx, &stream, &args, nh, nkv, max_len));
         }
 
         let json = format!(
             "{{\n  \"schema\": \"apr-3725-splitk-rungs/v1\",\n  \"host\": \"{}\",\n  \"sha\": \"{}\",\n  \
              \"device\": \"{device}\",\n  \"compute_capability\": \"{cc_major}.{cc_minor}\",\n  \"sms\": {sms},\n  \
              \"free_mib_at_start\": {},\n  \"total_mib\": {},\n  \"timing\": \"host wall over {} back-to-back launches + one stream sync, after {} warmup\",\n  \
-             \"rows\": [\n{rows}\n  ]\n}}\n",
+             \"rows\": [\n{}\n  ]\n}}\n",
             args.host,
             args.sha,
             free0 / (1 << 20),
             total0 / (1 << 20),
             args.iters,
             args.warmup,
+            rows.join(",\n"),
         );
-        if let Some(path) = args.out {
-            std::fs::write(&path, json).expect("write receipt");
+        if let Some(path) = &args.out {
+            std::fs::write(path, json).expect("write receipt");
             println!("wrote {path}");
         }
     }

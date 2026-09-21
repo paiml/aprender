@@ -580,6 +580,81 @@ impl Kernel for DecodeAttentionSplitKReduceKernel {
     }
 }
 
+/// One online-softmax partial: running max `m`, running sum `l`, and the
+/// un-normalised accumulator — what a warp holds in registers and what kernel A
+/// writes per (query head, split).
+#[derive(Debug, Clone)]
+struct Partial {
+    m: f32,
+    l: f32,
+    acc: Vec<f32>,
+}
+
+impl Partial {
+    fn empty(head_dim: usize) -> Self {
+        Self {
+            m: f32::NEG_INFINITY,
+            l: 0.0,
+            acc: vec![0.0; head_dim],
+        }
+    }
+
+    /// Fold one scored position in — kernel A's per-position update.
+    fn push(&mut self, score: f32, v: &[f32]) {
+        let new_m = self.m.max(score);
+        let correction = (self.m - new_m).exp();
+        let weight = (score - new_m).exp();
+        self.l = self.l * correction + weight;
+        for (a, x) in self.acc.iter_mut().zip(v) {
+            *a = *a * correction + weight * x;
+        }
+        self.m = new_m;
+    }
+
+    /// The log-sum-exp merge, parts in order — kernel A's merge of its 8 warps and
+    /// kernel B's merge of the splits are this same arithmetic.
+    fn merge(parts: &[Self], head_dim: usize) -> Self {
+        let m = parts.iter().fold(f32::NEG_INFINITY, |m, p| m.max(p.m));
+        let mut merged = Self {
+            m,
+            l: 0.0,
+            acc: vec![0.0; head_dim],
+        };
+        for part in parts {
+            let scale = (part.m - m).exp();
+            merged.l += part.l * scale;
+            for (a, x) in merged.acc.iter_mut().zip(&part.acc) {
+                *a += x * scale;
+            }
+        }
+        merged
+    }
+}
+
+/// The partial one warp computes: query head `q_h` over `positions` of KV head `kv_h`.
+fn warp_partial(
+    q_h: &[f32],
+    k_cache: &[f32],
+    v_cache: &[f32],
+    row: usize,
+    kv_h: usize,
+    positions: impl Iterator<Item = usize>,
+) -> Partial {
+    let head_dim = q_h.len();
+    let sqrt_hd = (head_dim as f32).sqrt();
+    let mut part = Partial::empty(head_dim);
+    for p in positions {
+        let base = p * row + kv_h * head_dim;
+        let dot: f32 = q_h
+            .iter()
+            .zip(&k_cache[base..base + head_dim])
+            .map(|(a, b)| a * b)
+            .sum();
+        part.push(dot / sqrt_hd, &v_cache[base..base + head_dim]);
+    }
+    part
+}
+
 /// CPU twin of the kernel pair: the same split, warp and merge order, in f32.
 ///
 /// `k_cache` and `v_cache` are `[>= seq_len][num_kv_heads * head_dim]` f32 — for an f16
@@ -613,73 +688,29 @@ pub fn decode_attention_splitk_cpu(
     let warps = SPLITK_WARPS as usize;
     let chunk = plan.chunk as usize;
     let n_splits = plan.n_splits as usize;
-    let sqrt_hd = (head_dim as f32).sqrt();
-
-    // partials[h][s] = (m, l, acc)
-    let mut partials =
-        vec![(f32::NEG_INFINITY, 0.0f32, vec![0.0f32; head_dim]); num_heads * n_splits];
-    for kv_h in 0..num_kv_heads {
-        for s in 0..n_splits {
-            let start = s * chunk;
-            if start >= seq_len {
-                continue;
-            }
-            let end = (start + chunk).min(seq_len);
-            for g in 0..group {
-                let h = kv_h * group + g;
-                let q_h = &q[h * head_dim..(h + 1) * head_dim];
-                // per-warp online softmax
-                let mut warp_state =
-                    vec![(f32::NEG_INFINITY, 0.0f32, vec![0.0f32; head_dim]); warps];
-                for (w, state) in warp_state.iter_mut().enumerate() {
-                    let mut p = start + w;
-                    while p < end {
-                        let base = p * row + kv_h * head_dim;
-                        let k_p = &k_cache[base..base + head_dim];
-                        let v_p = &v_cache[base..base + head_dim];
-                        let dot: f32 = q_h.iter().zip(k_p).map(|(a, b)| a * b).sum();
-                        let score = dot / sqrt_hd;
-                        let new_m = state.0.max(score);
-                        let correction = (state.0 - new_m).exp();
-                        let weight = (score - new_m).exp();
-                        state.1 = state.1 * correction + weight;
-                        for (a, v) in state.2.iter_mut().zip(v_p) {
-                            *a = *a * correction + weight * v;
-                        }
-                        state.0 = new_m;
-                        p += warps;
-                    }
-                }
-                let block_m = warp_state.iter().fold(f32::NEG_INFINITY, |m, w| m.max(w.0));
-                let mut block_l = 0.0f32;
-                let mut block_acc = vec![0.0f32; head_dim];
-                for w in &warp_state {
-                    let scale = (w.0 - block_m).exp();
-                    block_l += w.1 * scale;
-                    for (a, x) in block_acc.iter_mut().zip(&w.2) {
-                        *a += x * scale;
-                    }
-                }
-                partials[h * n_splits + s] = (block_m, block_l, block_acc);
-            }
-        }
-    }
 
     let mut out = vec![0.0f32; num_heads * head_dim];
-    for h in 0..num_heads {
-        let parts = &partials[h * n_splits..(h + 1) * n_splits];
-        let big_m = parts.iter().fold(f32::NEG_INFINITY, |m, p| m.max(p.0));
-        let mut den = 0.0f32;
-        let mut num = vec![0.0f32; head_dim];
-        for part in parts {
-            let scale = (part.0 - big_m).exp();
-            den += part.1 * scale;
-            for (n, a) in num.iter_mut().zip(&part.2) {
-                *n += a * scale;
-            }
-        }
-        for (o, n) in out[h * head_dim..(h + 1) * head_dim].iter_mut().zip(num) {
-            *o = n / den;
+    for (h, out_h) in out.chunks_exact_mut(head_dim).enumerate() {
+        let kv_h = h / group;
+        let q_h = &q[h * head_dim..(h + 1) * head_dim];
+        // kernel A: one partial per split, itself the merge of its 8 warps
+        let splits: Vec<Partial> = (0..n_splits)
+            .map(|s| {
+                let start = (s * chunk).min(seq_len);
+                let end = (start + chunk).min(seq_len);
+                let per_warp: Vec<Partial> = (0..warps)
+                    .map(|w| {
+                        let positions = (start + w..end).step_by(warps);
+                        warp_partial(q_h, k_cache, v_cache, row, kv_h, positions)
+                    })
+                    .collect();
+                Partial::merge(&per_warp, head_dim)
+            })
+            .collect();
+        // kernel B: merge the splits, then normalise
+        let merged = Partial::merge(&splits, head_dim);
+        for (o, a) in out_h.iter_mut().zip(&merged.acc) {
+            *o = a / merged.l;
         }
     }
     out
