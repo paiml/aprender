@@ -19024,3 +19024,20 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE (hand-entered from issue #3629 done_when; minted on the PR branch so the AD-04 quorum can run -- pmat work status refuses a missing item). Done when: scripts/fleet_utilization.sh --selftest has no pipe into grep -q; a mutation that restores the pipe AND forces EPIPE (out padded to >64 KiB so the write cannot complete before grep exits) turns the self-test RED deterministically — the positive control for the race, in the PR body the 55-site count is in the PR body from the command that produced it, and a guard refuses a new site (check_guards_are_wired.sh names it; ratchet baseline committed) main''s guard-tree green on the merge commit without rerun '
+- id: PMAT-3651
+  github_issue: 3651
+  item_type: task
+  title: 'guard_tree.sh drops a passing guard''s output — an UNMEASURED exit-0 reads as PASS in every CI log, so #3567''s verdict can never be observed'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-21T05:28:51Z
+  updated: 2026-09-21T05:28:51Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (quoted from issue #3651 "What lands"): 1. guard_tree.sh: under a PASS row, surface every captured line whose first token is UNMEASURED or SUMMARY (indented "      ~ ", capped at 5 lines + a "(+N more)" count so a chatty guard cannot flood the log). Lines where the word is not the first token are not surfaced. A guard opts a pass-summary in by printing SUMMARY …; an UNMEASURED line is surfaced whether or not the guard opted in. 2. check_fleet_pv_shapes_gate.sh: its pass row is printed as SUMMARY PASS verdict=… so the measured row reaches the log. 3. scripts/tests/guard_tree_test.sh rows: UNMEASURED surfaced; SUMMARY surfaced; the word mid-line not surfaced; a silent pass prints only its PASS row; the cap; and a mutant with the surfacing removed goes RED. NOT in scope: closing #3567 (that needs one guard-tree run on an intel runner after this lands), and the fleet pv''s own verdict.'
