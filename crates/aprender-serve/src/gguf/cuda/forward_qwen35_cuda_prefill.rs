@@ -370,30 +370,45 @@ impl<'a> Qwen35CudaModel<'a> {
         self.prefill_tail(&bufs, last_rows - 1)
     }
 
-    /// [`Self::prefill`], returning the logits of EVERY position — for the F2 guard,
-    /// which compares the GPU against the CPU position by position over its probe.
-    ///
-    /// Each row pays an `lm_head` GEMV, as the per-token path does; a real prompt goes
-    /// through [`Self::prefill`], which pays one.
+    /// [`Self::prefill`], returning the logits at each position in `positions`
+    /// (absolute, ascending) — for the F2 guard, which compares the GPU against the
+    /// CPU position by position over its whole probe, and for long-context parity
+    /// evidence, which samples positions. Only the requested rows pay an `lm_head`.
     ///
     /// # Errors
-    /// As [`Self::prefill`].
-    pub fn prefill_logits_every_row(
+    /// As [`Self::prefill`], and a `positions` that is not ascending or falls outside
+    /// `pos0..pos0 + tokens.len()`.
+    pub fn prefill_logits_at(
         &mut self,
         tokens: &[u32],
         state: &mut Qwen35CudaState,
         pos0: usize,
+        positions: &[usize],
     ) -> Result<Vec<Vec<f32>>> {
         self.prefill_check(tokens, state, pos0)?;
         let end = pos0 + tokens.len();
+        if positions.windows(2).any(|w| w[0] >= w[1])
+            || positions.iter().any(|&p| p < pos0 || p >= end)
+        {
+            return Err(RealizarError::InvalidShape {
+                reason: format!(
+                    "qwen35_cuda prefill: requested positions must ascend within {pos0}..{end}"
+                ),
+            });
+        }
         let rows = self.prefill_chunk_rows(end);
         let bufs = self.alloc_prefill(rows, end)?;
         let mut pos = pos0;
-        let mut out = Vec::with_capacity(tokens.len());
+        let mut want = positions.iter().copied().peekable();
+        let mut out = Vec::with_capacity(positions.len());
         for chunk in tokens.chunks(rows) {
             self.prefill_chunk(&bufs, chunk, state, pos)?;
-            for r in 0..chunk.len() {
-                out.push(self.prefill_tail(&bufs, r)?);
+            while let Some(&p) = want.peek() {
+                if p >= pos + chunk.len() {
+                    break;
+                }
+                out.push(self.prefill_tail(&bufs, p - pos)?);
+                want.next();
             }
             pos += chunk.len();
         }

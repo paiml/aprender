@@ -1401,6 +1401,9 @@ pub struct Qwen35GenerateOutcome {
     pub used_gpu: bool,
     /// The prefill/decode split, `None` fields where not measured.
     pub timings: Qwen35PhaseTimings,
+    /// The device-memory plan the GPU path ran under — including the KV dtype it
+    /// chose, which #3596's amendment 3 requires `--json` to print. `None` on the CPU.
+    pub capacity: Option<crate::capacity::CapacityBudget>,
 }
 
 /// [`run_qwen35_generate_dispatch`] with the phase split (#3596): the same routing,
@@ -1422,11 +1425,12 @@ pub fn run_qwen35_generate_dispatch_timed(
     #[cfg(feature = "cuda")]
     if route == Qwen35Route::Gpu {
         match run_qwen35_generate_gpu(mapped, base, input_tokens, gen_config) {
-            Ok((tokens, timings)) => {
+            Ok((tokens, timings, capacity)) => {
                 return Ok(Qwen35GenerateOutcome {
                     tokens,
                     used_gpu: true,
                     timings,
+                    capacity: Some(capacity),
                 })
             },
             // #3596: a context the GPU cannot hold is refused, not served on the CPU —
@@ -1445,6 +1449,7 @@ pub fn run_qwen35_generate_dispatch_timed(
         tokens,
         used_gpu: false,
         timings: Qwen35PhaseTimings::default(),
+        capacity: None,
     })
 }
 
@@ -1482,7 +1487,14 @@ fn run_qwen35_generate_gpu(
     base: &OwnedQuantizedModel,
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
-) -> std::result::Result<(Vec<u32>, Qwen35PhaseTimings), Qwen35GpuFailure> {
+) -> std::result::Result<
+    (
+        Vec<u32>,
+        Qwen35PhaseTimings,
+        crate::capacity::CapacityBudget,
+    ),
+    Qwen35GpuFailure,
+> {
     if input_tokens.is_empty() {
         return Err("the prompt is empty".to_string().into());
     }
@@ -1508,7 +1520,7 @@ fn run_qwen35_generate_gpu(
         gpu_free as u64,
         gpu_total as u64,
     );
-    match crate::capacity::plan(&capacity) {
+    let budget = match crate::capacity::plan(&capacity) {
         crate::capacity::CapacityVerdict::Refused(refusal) => {
             return Err(Qwen35GpuFailure::Refused(Box::new(refusal)));
         },
@@ -1522,8 +1534,9 @@ fn run_qwen35_generate_gpu(
                 )
                 .into());
             }
+            budget
         },
-    }
+    };
     let mut gpu =
         crate::gguf::cuda::Qwen35CudaModel::with_max_seq_len(&qwen, executor, max_seq_len)
             .map_err(|e| format!("the CUDA model would not build: {e}"))?;
@@ -1544,7 +1557,8 @@ fn run_qwen35_generate_gpu(
             .to_string()
             .into());
     }
-    Ok(qwen35_gpu_decode(&mut gpu, input_tokens, gen_config)?)
+    let (tokens, timings) = qwen35_gpu_decode(&mut gpu, input_tokens, gen_config)?;
+    Ok((tokens, timings, budget))
 }
 
 /// Prefill + decode on the GPU, with the token choice
@@ -1867,8 +1881,9 @@ fn f2_qwen35_gpu_logits(
     let mut state = gpu
         .new_state_with_len(steps)
         .map_err(|e| format!("F2 qwen35 probe: the device state would not allocate: {e}"))?;
+    let every_position: Vec<usize> = (0..probe.len()).collect();
     let mut per_pos = gpu
-        .prefill_logits_every_row(probe, &mut state, 0)
+        .prefill_logits_at(probe, &mut state, 0, &every_position)
         .map_err(|e| crate::infer::gpu_forward_failure_msg(0, steps, &e))?;
     match gpu.forward_single(decode_token, &mut state, probe.len()) {
         Ok(logits) => per_pos.push(logits),
