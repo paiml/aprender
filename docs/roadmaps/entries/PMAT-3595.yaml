@@ -1,0 +1,27 @@
+- id: PMAT-3595
+  github_issue: 3595
+  item_type: task
+  title: 'apr chat hard-skips CUDA for every qwen35 model and prints a banner citing #3090 as unimplemented — #3090 shipped a day earlier, and the corrected replacement has zero callers'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-c7
+  created: 2026-09-21T16:09:46Z
+  updated: 2026-09-21T16:09:46Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3595 done_when 1, verbatim: "`chat_load_tokenizers.rs` calls `qwen35_route_notice` and **attempts CUDA for `qwen35`** like any other architecture; the unconditional early return goes."'
+  - 'Issue #3595 done_when 2, verbatim: "A test asserts the two cannot drift again: a `qwen35` model on a CUDA-capable binary must reach the upload path. The current shape passes every test precisely because nothing asserts the GPU is tried." Strengthened by the issue''s own correction comment (2026-09-20T14:10Z), verbatim: "the test must assert the **printed banner** against the **actual route**, not merely that the GPU is reached. Today''s behaviour reaches the GPU *and* prints that it cannot, so any test asserting only \"the GPU was used\" passes on the broken state."'
+  - 'Issue #3595 done_when 3, verbatim: "**One message per outcome, naming the actionable half** — which tensor, which dtype, and that a `Q4_K_M` build is GPU-eligible. Not two messages with different reasons."'
+  - 'Cop ruling (aprender-04, 2026-09-21), the 0.69.1 bar for this row, verbatim: "done_when: chat runs on CUDA with no fallback for every Qwen3.5 Q4_K_M size (0.8B–27B) on lambda AND gx10, multi-turn, correct answers."'
+  - 'Cop ruling (aprender-04, 2026-09-21) on the root cause measured on this issue, verbatim: "The fix keeps the qwen35 CUDA model and its KV resident across turns (extend the GH-224 session cache to Qwen35CudaModel), with the F2 guard once per session. Put it on #3595, with measured per-turn time and memory before and after on both hosts."'
+  - 'Cop ruling (aprender-04, 2026-09-21) on the raised bar, verbatim: "Your part is that chat and serve accept and handle long prompts without truncating silently." — a conversation longer than the resident state grows the state; one longer than the model''s declared context length is REFUSED by name, never cut.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Gap measured at 0.69.0 (225b2a9ab) on lambda (RTX 4090, sm_89) and gx10 (GB10, sm_121) before any code, posted on #3595 (issuecomment-5763540923). ROOT: the GH-224 session cache holds only the DENSE OwnedQuantizedModelCuda; try_init_gguf_cuda returns (None, false) for qwen35, so every chat turn falls through to generate_gguf_cpu_tokens, which calls Qwen35Model::create_base_model + run_qwen35_generate_dispatch — a fresh Qwen35CudaModel upload, an F2 sha256 of the whole file (27B: 7.5-8.3 s), a token-by-token re-prefill of the whole conversation, and on sm_121 a PTX re-JIT, all PER TURN. nvidia-smi on lambda 9B: 1187 → 6772 → 6936 → 1576 → 6772 → 6936 → 1576 MiB. Under contention the 9B turn-2 re-allocation hit CUDA_ERROR_OUT_OF_MEMORY and fell back to the CPU (99.7 s).
+
+    Shape of the fix: realizar gains `Qwen35Session` (gguf/inference/forward/qwen35_session.rs) — the hybrid built ONCE, F2-validated once on the first turn''s real prompt (the file hashed once, at load), and a decode state that outlives the turn. A prompt that extends the tokens the state already holds prefills only the new suffix; any other prompt resets the state in place (conv + recurrent state zeroed on the device, KV marked empty) and prefills it whole, on the SAME resident model. The state grows by doubling up to the GGUF''s declared context length; a prompt that cannot fit is refused by name, and a generation budget cut by the context is reported, never silent. The GPU fallback stays loud and keeps QWEN35_GPU_FALLBACK_PREFIX. The same type is what #3571 routes `apr serve` to.
+
+    OUT OF SCOPE here, and why: issue done_when 4 (a tree-wide guard for "a pub fn whose doc says live behaviour elsewhere is wrong, with zero callers") is a guard with its own universe and falsifier, filed as a follow-up rather than bundled; so the PR says Refs #3595, not Closes. The --thinking on|off switch is #3723 (aprender-fd); chat consumes it once it lands. aprender-fd''s qwen3-8b chat-template change (f46063527) touches chat_load_tokenizers.rs and chat_session_02.rs in hunks disjoint from this row''s.'

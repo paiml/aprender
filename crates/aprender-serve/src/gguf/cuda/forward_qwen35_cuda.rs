@@ -324,6 +324,22 @@ impl<'a> Qwen35CudaModel<'a> {
             .map_err(|e| gpu_err("qwen35_cuda_alloc", &e))
     }
 
+    /// Zero-filled device buffer of `len` f32, zeroed ON the device.
+    ///
+    /// For the K/V caches, whose size is `max_seq_len` rows: [`Self::zeros`]
+    /// stages a host vector of the same size, which at a long context is
+    /// gigabytes of transient host memory — on GB10's unified memory, drawn from
+    /// the pool the device is allocating from (#3595). The memset is queued on
+    /// the compute stream; [`Self::build_state`] synchronizes it before the
+    /// state is handed out.
+    fn zeros_on_device(executor: &CudaExecutor, len: usize) -> Result<GpuBuffer<f32>> {
+        let mut buf = GpuBuffer::new(executor.context(), len)
+            .map_err(|e| gpu_err("qwen35_cuda_alloc", &e))?;
+        buf.zero_async(executor.compute_stream())
+            .map_err(|e| gpu_err("qwen35_cuda_alloc", &e))?;
+        Ok(buf)
+    }
+
     /// The shapes, read from the model — never hard-coded.
     fn dims_of(model: &Qwen35Model<'_>) -> Qwen35CudaDims {
         let k_dim = model.head_k_dim * model.num_k_heads;
@@ -630,11 +646,15 @@ impl<'a> Qwen35CudaModel<'a> {
             kv.push(match layer {
                 CudaLayer::DeltaNet(_) => None,
                 CudaLayer::Attention(_) => Some((
-                    Self::zeros(executor, kv_row * max_seq_len)?,
-                    Self::zeros(executor, kv_row * max_seq_len)?,
+                    Self::zeros_on_device(executor, kv_row * max_seq_len)?,
+                    Self::zeros_on_device(executor, kv_row * max_seq_len)?,
                 )),
             });
         }
+        executor
+            .compute_stream()
+            .synchronize()
+            .map_err(|e| gpu_err("qwen35_cuda_alloc", &e))?;
         Ok(Qwen35CudaState {
             conv,
             ssm,
@@ -656,6 +676,49 @@ impl<'a> Qwen35CudaModel<'a> {
     /// Any CUDA allocation failure.
     pub fn new_state(&self) -> Result<Qwen35CudaState> {
         Self::build_state(&self.executor, &self.layers, self.dims, self.max_seq_len)
+    }
+
+    /// A fresh decode state with room for `max_seq_len` positions, whatever
+    /// this model was built with (#3595).
+    ///
+    /// A session that outlives one generation sizes its state to the
+    /// conversation, not to the model: the model is built once with a
+    /// probe-sized state and the session grows its own. Capacity is a property
+    /// of the state — [`Self::forward_single`] bounds-checks the state it is
+    /// given, never the model's.
+    ///
+    /// # Errors
+    /// A `max_seq_len` of zero, or any CUDA allocation failure.
+    pub fn new_state_with_capacity(&self, max_seq_len: usize) -> Result<Qwen35CudaState> {
+        if max_seq_len == 0 {
+            return Err(RealizarError::InvalidShape {
+                reason: "qwen35_cuda: max_seq_len must be at least 1".to_string(),
+            });
+        }
+        Self::build_state(&self.executor, &self.layers, self.dims, max_seq_len)
+    }
+
+    /// Return `state` to position 0 in place, keeping its allocation (#3595).
+    ///
+    /// The conv windows and recurrent states are zeroed on the device — the
+    /// values a fresh state starts from. The K/V caches are only marked empty:
+    /// attention at `position` writes row `position` and reads rows
+    /// `0..=position`, so a row past `kv_len` is always written before it is
+    /// read.
+    ///
+    /// # Errors
+    /// Any CUDA memset or synchronization failure.
+    pub fn reset_state(&self, state: &mut Qwen35CudaState) -> Result<()> {
+        let stream = self.executor.compute_stream();
+        for buf in state.conv.iter_mut().chain(state.ssm.iter_mut()) {
+            buf.zero_async(stream)
+                .map_err(|e| gpu_err("qwen35_cuda_reset", &e))?;
+        }
+        stream
+            .synchronize()
+            .map_err(|e| gpu_err("qwen35_cuda_reset", &e))?;
+        state.kv_len = 0;
+        Ok(())
     }
 
     /// Run `f` with the model's own state detached.
