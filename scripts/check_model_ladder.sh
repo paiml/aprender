@@ -308,6 +308,7 @@ if [ "$SELF_TEST" = 1 ]; then
     cmutant modes-evidence  red-cells-thinking-modes-disagree-with-template 's/elif want is not None and modes != want:/elif False:/'
     cmutant no-representative red-cells-arch-without-representative 's/        if not r:/        if False:/'
     cmutant pass-beyond-fit red-cells-pass-beyond-its-arithmetic 's/                            if not fit:/                            if False:/'
+    cmutant family-long     red-cells-missing-cell          's/    if arch in (long_for.get("families") or \[\]):/    if False:/'
     cmutant rungs-floor     red-cells-rung-dropped-vs-main  's/            if gone:/            if False:/'
     if [ -n "$mdir" ] && [ "$mdir" != "/" ] && [ -d "$mdir" ]; then rm -rf -- "$mdir"; fi
   fi
