@@ -1,0 +1,18 @@
+- id: PMAT-3666
+  github_issue: 3666
+  item_type: task
+  title: 'APEX-2d: raster — NEW crates/aprender-viz/src/raster.rs svg_to_png behind `raster` (resvg default-features OFF, so no font database is compiled in; a roxmltree pre-scan refuses text/tspan/textPath/tref/altGlyph/textArea/font/font-face/foreignObject/image/feImage in the SVG namespace OR none; href resolver reads nothing; resvg render; row-wise demultiply into Framebuffer; pinned PngEncoder, never encode_png); error.rs Error::SvgElementRefused; lib.rs pub mod raster; NEW tests/raster_determinism.rs (11 tests + per-host raster-<arch>.json); NEW scripts/ci/raster-compare.sh (10-case self-test, 2 mutants) in ci.yml determinism-compare, raster step + upload path in determinism; tree_reader_tests.txt; Cargo.lock drops zune-jpeg 0.4 + fontdb/rustybuzz edges; png_identical RECORDED not asserted; NO publish (apex APEX-001 row EV-2d)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-21T15:54:31Z
+  updated: 2026-09-21T15:54:31Z
+  spec: null
+  acceptance_criteria:
+  - 'accept (APEX-001 EV-2d): tests_at_least 3 -p aprender-viz --features raster --test raster_determinism; the two-host raster-receipt.json has (.hosts|length)==2 and (.png_identical|type)=="boolean" (recorded, not asserted); mutation M1 (delete the pre-scan) and M2 (resolve system fonts) each turn the 4 refusal tests RED. Publishing aprender-viz stays operator-only (STOP(PUBLISH)).'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
