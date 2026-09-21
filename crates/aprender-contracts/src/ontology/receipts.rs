@@ -89,6 +89,14 @@ pub struct InventoryItem {
 /// One (model × verb × thinking × context rung) row of v2 `cells[]` (#3712 / #3715).
 #[derive(Debug, Clone, PartialEq)]
 pub struct CellRow {
+    /// aprender#3745 S2: the DERIVED cell this row measures (`pv extract --cells-out` names them). A row keys onto
+    /// its cell by this id and nothing else.
+    pub cell_id: Option<String>,
+    /// S2.5: a digest of the observable output (stdout bytes, the JSON fields, the token ids) — what the
+    /// flag-effect oracle compares between an effect cell and its base.
+    pub output_sha256: Option<String>,
+    /// Wall time of the cell, for the per-host projection (D1).
+    pub wall_ms: Option<u64>,
     pub sha256: Option<String>,
     pub file: String,
     pub verb: String,
@@ -312,6 +320,9 @@ fn parse_inventory_item(r: &serde_json::Value) -> InventoryItem {
 
 fn parse_cell(r: &serde_json::Value) -> CellRow {
     CellRow {
+        cell_id: str_of(r, "cell_id"),
+        output_sha256: str_of(r, "output_sha256").map(|x| x.to_ascii_lowercase()),
+        wall_ms: r.get("wall_ms").and_then(serde_json::Value::as_u64),
         sha256: str_of(r, "sha256").map(|x| x.to_ascii_lowercase()),
         file: str_of(r, "file").unwrap_or_default(),
         verb: str_of(r, "verb").unwrap_or_default(),

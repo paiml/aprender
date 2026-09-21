@@ -15,12 +15,15 @@ use crate::ontology::rdf::Graph;
 use crate::ontology::receipts;
 
 pub mod apr_model;
+pub mod cli_surface;
 pub mod code;
+pub mod covering;
 pub mod gguf;
 pub mod json;
 pub mod lean;
 pub mod parity_receipt;
 pub mod pv_contract;
+pub mod release_cells;
 pub mod release_evidence;
 pub mod release_inputs;
 

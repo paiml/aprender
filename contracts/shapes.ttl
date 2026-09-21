@@ -269,6 +269,25 @@
         sh:nodeKind sh:IRI ;
         sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.release/node> ;
     ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/surface> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:class <https://ont.paiml.dev/v1alpha1/cli/Surface> ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/generatesUndeclared> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/ratchetGrew> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/ratchetBaselineMissing> ;
+        sh:maxCount 0 ;
+    ] ;
 .
 
 <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.release/node> a sh:NodeShape ;
@@ -475,6 +494,15 @@
     ] ;
 .
 
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.effect> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/release/ModeEffect> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/observedIn> ;
+        sh:minCount 1 ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+.
+
 <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.refusal> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/release/RefusalCell> ;
     sh:property [
@@ -504,6 +532,89 @@
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.probe> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/release/ProbeCell> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/row> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.probe/node> ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.probe/node> a sh:NodeShape ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "pass" "refused" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/fresh> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.model-cell> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/release/ModelCell> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/row> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.model-cell/node> ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.model-cell/node> a sh:NodeShape ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "pass" "refused" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/fresh> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.effect-cell> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/release/EffectCell> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/row> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.effect-cell/node> ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.effect-cell/node> a sh:NodeShape ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "pass" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/fresh> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/outputSha> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
     ] ;
 .
 

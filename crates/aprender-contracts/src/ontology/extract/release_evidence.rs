@@ -38,17 +38,17 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+use crate::ontology::extract::cli_surface::{self, Surface, SurfaceStats};
 use crate::ontology::extract::gguf::{self, Rung};
 use crate::ontology::extract::pv_contract::{self, scalar};
+use crate::ontology::extract::release_cells::{self, CellKind, CellSpec, HostModels, ModelRef};
 use crate::ontology::extract::release_inputs::{
     self as inputs, Consumer, ContextRung, Dogfood, KernelReceipt, ReleaseError, Subject,
-    TokReceipt,
+    SurfaceRatchet, TokReceipt,
 };
 use crate::ontology::rdf::{iri, iri_path, Graph, Term, ONT_BASE, RDF_TYPE};
 use crate::ontology::receipts::{self, CellRow, Receipt};
 
-/// The verbs every model must pass on every required host (#3710: "run, chat, serve and code").
-pub const VERBS: [&str; 4] = ["run", "chat", "serve", "code"];
 /// Both thinking modes (#3710 bar raise: "chat with and without thinking, ditto run, ditto code").
 pub const THINKING: [&str; 2] = ["on", "off"];
 /// The per-model rung: the model's own declared context length, read from its GGUF on the host.
@@ -79,11 +79,32 @@ pub struct ReleaseStats {
     /// (model, rung) pairs that must be owed on ≥ 1 required host (#3710 rule).
     pub rung_coverage: usize,
     pub context_rungs: usize,
-    /// Rows that keyed onto no cell (a model outside the universe, an unknown verb or rung): counted, not graded.
+    /// Rows that keyed onto no cell (no `cell_id`, or one the surface does not derive): counted, not graded.
     pub orphan_rows: usize,
-    /// Every cell, named `<host>/<file>/<verb>/think-<mode>/<rung>` — so a Pass reads "N/N cells", each named
-    /// (#3715 done_when 5), and a reader can see which cells a verdict covered, not only how many.
-    pub cell_names: Vec<String>,
+    /// #3745 S2: commands with no model arg, one runs-or-refuses cell per host.
+    pub probe_cells: usize,
+    /// #3745 S2.5: one-factor-at-a-time cells (bases and effects), and the (command, arg, level) they judge.
+    pub effect_cells: usize,
+    pub mode_effects: usize,
+    /// What `extract:cli-surface` counted (the two shrink-only ratchets included); `None` without `--surface`.
+    pub surface: Option<SurfaceStats>,
+    /// D1: per host, the derived cells × the measured median wall time of their class — never guessed.
+    pub projection: BTreeMap<String, Projection>,
+    /// Every derived cell, in derivation order — the producer's work list (`pv extract --cells-out`), and "N/N
+    /// cells named" (#3715 done_when 5). Not in the gate's JSON: at ~35k cells it is a file, not a field.
+    #[serde(skip)]
+    pub derived: Vec<CellSpec>,
+}
+
+/// D1's projected wall time for one host (#3745 cop ruling): the derived cells, how many have a measured class
+/// median, the projected seconds over the measured ones, and the class that dominates them.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub struct Projection {
+    pub cells: usize,
+    pub measured_cells: usize,
+    pub unmeasured_cells: usize,
+    pub projected_secs: u64,
+    pub dominating_class: String,
 }
 
 /// A `ladder.hosts[]` entry with `required: true`.
@@ -295,6 +316,16 @@ pub fn extract(
         .as_deref()
         .map(inputs::read_dogfood)
         .transpose()?;
+    let surface = subject
+        .surface
+        .as_deref()
+        .map(cli_surface::read)
+        .transpose()
+        .map_err(|e| ReleaseError::Input {
+            file: e.file.clone(),
+            what: e.what.clone(),
+        })?;
+    let ratchet = inputs::read_surface_ratchet(&root)?;
     Ok(build(
         g,
         subject,
@@ -306,6 +337,8 @@ pub fn extract(
             kernel_receipts: &kernel_receipts,
             tok_receipts: &tok_receipts,
             dogfood: dogfood.as_ref(),
+            surface: surface.as_ref(),
+            ratchet,
         },
     ))
 }
@@ -319,6 +352,10 @@ pub struct Inputs<'a> {
     pub kernel_receipts: &'a [KernelReceipt],
     pub tok_receipts: &'a [TokReceipt],
     pub dogfood: Option<&'a Dogfood>,
+    /// #3745 S2: the release candidate's surface — the cells are derived from it (`None` → none can be).
+    pub surface: Option<&'a Surface>,
+    /// The committed ceilings of the two shrink-only counts.
+    pub ratchet: Option<SurfaceRatchet>,
 }
 
 /// The release graph from parsed inputs: pure, no filesystem (R-15).
@@ -337,15 +374,166 @@ pub fn build(g: &mut Graph, subject: &Subject, i: &Inputs<'_>) -> ReleaseStats {
         .iter()
         .map(|h| host_view(h, subject, i.model_receipts, i.kernel_receipts, i.ladder))
         .collect();
-    let mut coverage = Coverage::new();
     for v in &views {
         emit_host(g, subject, v, &mut stats);
-        emit_cells(g, subject, v, i.ctx_rungs, &mut coverage, &mut stats);
     }
-    emit_coverage(g, subject, &coverage, &mut stats);
+    if let Some(surface) = i.surface {
+        emit_surface(g, subject, surface, i.ratchet, &mut stats);
+        let hm = host_models(&views, i.ctx_rungs);
+        let cells = release_cells::derive(surface, &hm);
+        emit_derived(g, subject, &views, &cells, &mut stats);
+        stats.projection = project(&views, &cells);
+        stats.derived = cells;
+    }
     emit_kernels(g, subject, &views, &mut stats);
     emit_tokenizer(g, subject, &views, i.tok_receipts, &mut stats);
     stats
+}
+
+/// The surface on the release node, and what it cannot yet declare: a model command that does not say whether
+/// it generates (D2), and the two shrink-only counts against their committed ceilings (#3745, cop).
+fn emit_surface(
+    g: &mut Graph,
+    subject: &Subject,
+    surface: &Surface,
+    ratchet: Option<SurfaceRatchet>,
+    stats: &mut ReleaseStats,
+) {
+    let st = cli_surface::emit(g, surface);
+    let rel_node = iri_path("release-subject", &[&subject.version]);
+    let sn = iri_path("cli-surface", &[&surface.git_sha]);
+    g.insert(sn.clone(), RDF_TYPE, Term::iri(cli_surface::cli("Surface")));
+    g.insert(
+        sn.clone(),
+        cli_surface::cli("version"),
+        Term::string(&surface.version),
+    );
+    g.insert(
+        sn.clone(),
+        cli_surface::cli("file"),
+        Term::string(&surface.file),
+    );
+    g.insert(rel_node.clone(), rel("surface"), Term::iri(sn));
+    if !st.generates_declared {
+        g.insert(
+            rel_node.clone(),
+            rel("generatesUndeclared"),
+            Term::string("a model command's surface does not say whether it generates (#3745 D2)"),
+        );
+    }
+    for (what, now, ceiling) in ratchet_rows(&st, ratchet) {
+        match ceiling {
+            None => g.insert(
+                rel_node.clone(),
+                rel("ratchetBaselineMissing"),
+                Term::string(format!(
+                    "{what}: no committed ceiling in {}",
+                    inputs::SURFACE_RATCHET_FILE
+                )),
+            ),
+            Some(c) if now > c => g.insert(
+                rel_node.clone(),
+                rel("ratchetGrew"),
+                Term::string(format!("{what} {now} > ceiling {c} (shrink-only)")),
+            ),
+            Some(_) => {}
+        }
+    }
+    stats.surface = Some(st);
+}
+
+fn ratchet_rows(
+    st: &SurfaceStats,
+    r: Option<SurfaceRatchet>,
+) -> [(&'static str, u64, Option<u64>); 2] {
+    let n = |x: usize| u64::try_from(x).unwrap_or(u64::MAX);
+    [
+        (
+            "unknown_args",
+            n(st.unknown_args),
+            r.map(|r| r.unknown_args),
+        ),
+        (
+            "stdin_undeclared",
+            n(st.stdin_undeclared),
+            r.map(|r| r.stdin_undeclared),
+        ),
+    ]
+}
+
+/// Each host's universe as the derivation needs it: the model, its owed thinking modes and rungs.
+fn host_models<'a>(views: &'a [HostView<'a>], rungs: &'a [ContextRung]) -> Vec<HostModels<'a>> {
+    views
+        .iter()
+        .map(|v| HostModels {
+            host: &v.decl.id,
+            models: v
+                .models
+                .iter()
+                .map(|(sha, m)| ModelRef {
+                    sha,
+                    file: &m.file,
+                    arch: m.arch.as_deref(),
+                    modes: m.modes(),
+                    rungs: m.rungs(rungs),
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+/// D1's projection: per host, each derived cell costs the MEDIAN measured wall time of its class — (command,
+/// rung) — over every receipt row that carries `wall_ms`. A class nobody measured is counted, never guessed.
+fn project(views: &[HostView<'_>], cells: &[CellSpec]) -> BTreeMap<String, Projection> {
+    let by_id: BTreeMap<&str, &CellSpec> = cells.iter().map(|c| (c.id.as_str(), c)).collect();
+    let class = |c: &CellSpec| format!("{} @ {}", c.command, c.rung.as_deref().unwrap_or("-"));
+    let mut samples: BTreeMap<String, Vec<u64>> = BTreeMap::new();
+    for row in views
+        .iter()
+        .flat_map(|v| &v.receipts)
+        .flat_map(|r| &r.cells)
+    {
+        let spec = row.cell_id.as_deref().and_then(|id| by_id.get(id));
+        if let (Some(spec), Some(w)) = (spec, row.wall_ms) {
+            samples.entry(class(spec)).or_default().push(w);
+        }
+    }
+    let median: BTreeMap<String, u64> = samples
+        .into_iter()
+        .map(|(k, mut v)| {
+            v.sort_unstable();
+            (k, v[v.len() / 2])
+        })
+        .collect();
+    let mut out: BTreeMap<String, Projection> = BTreeMap::new();
+    let mut totals: BTreeMap<(String, String), u64> = BTreeMap::new();
+    for c in cells {
+        let p = out.entry(c.host.clone()).or_default();
+        p.cells += 1;
+        match median.get(&class(c)) {
+            Some(ms) => {
+                p.measured_cells += 1;
+                p.projected_secs += ms / 1000;
+                *totals.entry((c.host.clone(), class(c))).or_default() += ms / 1000;
+            }
+            None => p.unmeasured_cells += 1,
+        }
+    }
+    for ((host, cls), secs) in totals {
+        let p = out.entry(host).or_default();
+        if p.dominating_class.is_empty() || secs > dominating_secs(&p.dominating_class) {
+            p.dominating_class = format!("{cls} ({secs} s)");
+        }
+    }
+    out
+}
+
+fn dominating_secs(label: &str) -> u64 {
+    label
+        .rsplit(" (")
+        .next()
+        .and_then(|t| t.trim_end_matches(" s)").parse().ok())
+        .unwrap_or(0)
 }
 
 /// The positive control (R-3, PMAT-3704): drawn on EVERY gate run, with or without a release subject. One
@@ -359,6 +547,9 @@ pub fn positive_control() -> bool {
     let Ok(subject) = Subject::new("0.0.0-pc", PC_COMMIT) else {
         return false;
     };
+    let Ok(surface) = cli_surface::parse("__pc_surface__.json", PC_SURFACE) else {
+        return false;
+    };
     let (Ok(sample), Ok(planted)) = (
         receipts::parse("__pc_sample__.json", &pc_receipt(PC_ROW)),
         receipts::parse("__pc_planted__.json", &pc_receipt("")),
@@ -367,7 +558,16 @@ pub fn positive_control() -> bool {
     };
     let cell = iri_path(
         "release-cell",
-        &["0.0.0-pc", "pc-host", "pc.gguf", "run", "think-off", "pc"],
+        &[
+            "0.0.0-pc",
+            "pc",
+            "pc-host",
+            "pc.gguf",
+            "think-off",
+            "pc",
+            "-",
+            "defaults",
+        ],
     );
     let rows_of = |r: &Receipt| {
         let mut g = Graph::new();
@@ -396,6 +596,8 @@ pub fn positive_control() -> bool {
                 kernel_receipts: &[],
                 tok_receipts: &[],
                 dogfood: None,
+                surface: Some(&surface),
+                ratchet: None,
             },
         );
         let is_cell = g
@@ -419,8 +621,13 @@ pub fn positive_control() -> bool {
     sample_cell && sample_rows == [true] && planted_cell && planted_rows.is_empty()
 }
 
+/// The control's surface: one generating command whose only arg is its model.
+const PC_SURFACE: &str = r#"{"schema":"apr-cli-surface/v1","binary":{"version":"0.0.0-pc","git_sha":"pc"},"global_args":[],
+"commands":[{"path":["pc"],"key":"pc","leaf":true,"generates":true,"args":[
+ {"id":"model","positional":true,"required":true,"value_type":"path","role":"model","marker":"ModelRef"}]}]}"#;
+
 const PC_COMMIT: &str = "1111111111111111111111111111111111111111";
-const PC_ROW: &str = r#"{"sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","file":"pc.gguf","verb":"run","thinking":"off","context":"pc","prompt_tokens":2,"max_tokens":8,"answer_chars":1,"verdict":"pass","backend":"cuda","fallback":false,"rc":0}"#;
+const PC_ROW: &str = r#"{"cell_id":"pc/pc-host/pc.gguf/think-off/pc/-/defaults","prompt_tokens":2,"max_tokens":8,"answer_chars":1,"verdict":"pass","backend":"cuda","fallback":false,"rc":0}"#;
 
 fn pc_receipt(cells: &str) -> String {
     format!(
@@ -472,13 +679,9 @@ fn emit_release(
     }
 }
 
-/// The verbs, the context rungs and the consumers they were derived from.
+/// The context rungs and the consumers they were derived from. (The verbs are no longer vocabulary here: they
+/// are the release candidate's own `cli:Command` nodes, #3745 S2.)
 fn emit_vocabulary_nodes(g: &mut Graph, rungs: &[ContextRung], consumers: &[Consumer]) {
-    for verb in VERBS {
-        let n = iri("release-verb", verb);
-        g.insert(n.clone(), RDF_TYPE, Term::iri(rel("Verb")));
-        g.insert(n, rel("name"), Term::string(verb));
-    }
     // `declared` has no one size — each model's own length is its target — so it is not a `release:ContextRung`
     // (whose shape requires a `tokens`); the model's `contextLength` carries it, and `.model` requires that.
     let declared = iri("release-context", DECLARED);
@@ -619,14 +822,12 @@ fn emit_host(g: &mut Graph, subject: &Subject, v: &HostView<'_>, stats: &mut Rel
                 Term::string(format!("{}: {}", r.file, item.file)),
             );
         }
-        for c in r.cells.iter().filter(|c| c.sha256.is_none()) {
+        // #3745 S2: a row keys onto its cell by `cell_id` and nothing else — one without it measured no cell
+        for (i, c) in r.cells.iter().enumerate().filter(|(_, c)| c.cell_id.is_none()) {
             g.insert(
                 h.clone(),
                 rel("unkeyedRow"),
-                Term::string(format!(
-                    "{}: {} {} think-{} {} verdict={}",
-                    r.file, c.file, c.verb, c.thinking, c.context, c.verdict
-                )),
+                Term::string(format!("{}#{i}: no cell_id (verdict={})", r.file, c.verdict)),
             );
         }
     }
@@ -679,135 +880,162 @@ fn emit_model_evidence(g: &mut Graph, n: &str, m: &ModelInfo) {
     }
 }
 
-/// One cell's key: (verb, thinking mode, rung id, the rung's target size for this model).
-type CellKey<'r> = (&'static str, &'static str, &'r str, Option<u64>);
-
-/// One `release:Cell` per (model, verb, thinking, rung) on this host, and an edge to every row that keys onto it.
 /// (model sha256, model file, rung id) → the hosts on which that rung is OWED (it fits, or its fit is unknown).
 type Coverage = BTreeMap<(String, String, String), BTreeSet<String>>;
 
-fn emit_cells(
-    g: &mut Graph,
-    subject: &Subject,
-    v: &HostView<'_>,
-    rungs: &[ContextRung],
-    coverage: &mut Coverage,
-    stats: &mut ReleaseStats,
-) {
-    let mut keyed: BTreeSet<(String, usize)> = BTreeSet::new();
-    for (sha, m) in &v.models {
-        let owed = m.rungs(rungs);
-        for (id, t) in &owed {
-            let hosts = coverage
-                .entry((sha.clone(), m.file.clone(), (*id).to_string()))
-                .or_default();
-            if m.fits(v.gpu_mem, *t) != Some(false) {
-                hosts.insert(v.node.clone());
-            }
-        }
-        let modes = m.modes();
-        let keys: Vec<CellKey<'_>> = VERBS
-            .iter()
-            .flat_map(|verb| modes.iter().map(move |mode| (*verb, *mode)))
-            .flat_map(|(verb, mode)| owed.iter().map(move |(id, t)| (verb, mode, *id, *t)))
-            .collect();
-        for key in keys {
-            let cell = emit_cell_node(g, subject, v, sha, m, key);
-            stats.cells += 1;
-            if m.fits(v.gpu_mem, key.3) == Some(false) {
-                stats.refusal_cells += 1;
-            }
-            let (verb, mode, rung, _) = key;
-            stats.cell_names.push(format!(
-                "{}/{}/{verb}/think-{mode}/{rung}",
-                v.decl.id, m.file
-            ));
-            let rows = rows_for(g, subject, v, sha, key, &mut keyed);
-            if !rows.is_empty() {
-                stats.cells_with_row += 1;
-            }
-            for r in rows {
-                g.insert(cell.clone(), rel("row"), Term::iri(r));
+/// One receipt row, located: the receipt it came from and its index there.
+type Located<'a> = (&'a Receipt, usize, &'a CellRow);
+
+/// The class a derived cell is graded as (each class has its own shape).
+fn class_of(spec: &CellSpec, m: Option<&ModelInfo>, gpu: Option<u64>) -> &'static str {
+    match spec.kind {
+        CellKind::Probe => "ProbeCell",
+        CellKind::Base | CellKind::Effect { .. } => "EffectCell",
+        CellKind::Matrix if !spec.generates => "ModelCell",
+        CellKind::Matrix => {
+            let fits = m.and_then(|m| m.fits(gpu, spec.rung_tokens));
+            if fits == Some(false) {
+                "RefusalCell"
+            } else {
+                "Cell"
             }
         }
     }
-    let all: usize = v.receipts.iter().map(|r| r.cells.len()).sum();
-    stats.orphan_rows += all - keyed.len();
+}
+
+/// Every derived cell as a node, every receipt row keyed onto it by `cell_id`, the rung coverage and the
+/// flag-effect oracle (#3745 S2).
+fn emit_derived(
+    g: &mut Graph,
+    subject: &Subject,
+    views: &[HostView<'_>],
+    cells: &[CellSpec],
+    stats: &mut ReleaseStats,
+) {
+    let mut keyed: BTreeMap<(&str, &str), Vec<Located<'_>>> = BTreeMap::new();
+    for v in views {
+        for r in &v.receipts {
+            for (i, c) in r.cells.iter().enumerate() {
+                if let Some(id) = &c.cell_id {
+                    keyed
+                        .entry((v.decl.id.as_str(), id.as_str()))
+                        .or_default()
+                        .push((r, i, c));
+                }
+            }
+        }
+    }
+    let all_rows: usize = views
+        .iter()
+        .flat_map(|v| &v.receipts)
+        .map(|r| r.cells.len())
+        .sum();
+    let mut used = 0usize;
+    let mut coverage = Coverage::new();
+    let mut outputs: BTreeMap<(&str, &str), Option<String>> = BTreeMap::new();
+    for spec in cells {
+        let Some(v) = views.iter().find(|v| v.decl.id == spec.host) else {
+            continue;
+        };
+        let m = spec.model_sha256.as_deref().and_then(|s| v.models.get(s));
+        let class = class_of(spec, m, v.gpu_mem);
+        let node = emit_cell_node(g, subject, v, spec, class, m);
+        count_class(stats, class);
+        if let (Some(sha), Some(rung), true) = (&spec.model_sha256, &spec.rung, spec.generates) {
+            let hosts = coverage
+                .entry((
+                    sha.clone(),
+                    spec.model_file.clone().unwrap_or_default(),
+                    rung.clone(),
+                ))
+                .or_default();
+            if class != "RefusalCell" {
+                hosts.insert(v.node.clone());
+            }
+        }
+        let rows = keyed.get(&(spec.host.as_str(), spec.id.as_str()));
+        let rows = rows.map(Vec::as_slice).unwrap_or_default();
+        used += rows.len();
+        if !rows.is_empty() {
+            stats.cells_with_row += 1;
+        }
+        outputs.insert(
+            (spec.host.as_str(), spec.id.as_str()),
+            rows.iter().find_map(|(_, _, c)| c.output_sha256.clone()),
+        );
+        for (r, i, c) in rows {
+            let n = emit_row(g, subject, r, *i, c, spec, v.gpu_mem);
+            g.insert(node.clone(), rel("row"), Term::iri(n));
+        }
+    }
+    stats.orphan_rows += all_rows.saturating_sub(used);
+    emit_coverage(g, subject, &coverage, stats);
+    emit_effects(g, subject, cells, &outputs, stats);
+}
+
+fn count_class(stats: &mut ReleaseStats, class: &str) {
+    stats.cells += 1;
+    match class {
+        "RefusalCell" => stats.refusal_cells += 1,
+        "ProbeCell" => stats.probe_cells += 1,
+        "EffectCell" => stats.effect_cells += 1,
+        _ => {}
+    }
+}
+
+fn cell_iri(subject: &Subject, spec: &CellSpec) -> String {
+    let mut segs: Vec<&str> = vec![subject.version.as_str()];
+    segs.extend(spec.id.split('/'));
+    iri_path("release-cell", &segs)
 }
 
 fn emit_cell_node(
     g: &mut Graph,
     subject: &Subject,
     v: &HostView<'_>,
-    sha: &str,
-    m: &ModelInfo,
-    (verb, mode, rung, target): CellKey<'_>,
+    spec: &CellSpec,
+    class: &str,
+    m: Option<&ModelInfo>,
 ) -> String {
-    let think = format!("think-{mode}");
-    let cell = iri_path(
-        "release-cell",
-        &[&subject.version, &v.decl.id, &m.file, verb, &think, rung],
-    );
-    // a cell that does not FIT this host by the declared arithmetic is owed as an honest pre-load refusal
-    // instead (#3710 rule): a different class, a different shape — never an OOM mid-run
-    let class = if m.fits(v.gpu_mem, target) == Some(false) {
-        "RefusalCell"
-    } else {
-        "Cell"
-    };
+    let cell = cell_iri(subject, spec);
     g.insert(cell.clone(), RDF_TYPE, Term::iri(rel(class)));
-    if let Some(req) = target.and_then(|t| m.required_bytes(t)) {
+    g.insert(cell.clone(), rel("cellId"), Term::string(&spec.id));
+    g.insert(cell.clone(), rel("host"), Term::iri(v.node.clone()));
+    g.insert(cell.clone(), rel("command"), Term::string(&spec.command));
+    if let Some(sha) = &spec.model_sha256 {
+        g.insert(cell.clone(), rel("model"), Term::iri(iri("model", sha)));
+    }
+    if let Some(t) = &spec.thinking {
+        g.insert(cell.clone(), rel("thinking"), Term::string(t));
+    }
+    if let Some(r) = &spec.rung {
+        g.insert(
+            cell.clone(),
+            rel("context"),
+            Term::iri(iri("release-context", r)),
+        );
+    }
+    if let Some(req) = spec
+        .rung_tokens
+        .and_then(|t| m.and_then(|m| m.required_bytes(t)))
+    {
         g.insert(cell.clone(), rel("requiredBytes"), Term::integer(req));
     }
-    g.insert(cell.clone(), rel("host"), Term::iri(v.node.clone()));
-    g.insert(cell.clone(), rel("model"), Term::iri(iri("model", sha)));
-    g.insert(
-        cell.clone(),
-        rel("verb"),
-        Term::iri(iri("release-verb", verb)),
-    );
-    g.insert(cell.clone(), rel("thinking"), Term::string(mode));
-    g.insert(
-        cell.clone(),
-        rel("context"),
-        Term::iri(iri("release-context", rung)),
-    );
     cell
 }
 
-/// Emit every row of this host's receipts that keys onto (sha, verb, thinking, rung); return their IRIs.
-fn rows_for(
-    g: &mut Graph,
-    subject: &Subject,
-    v: &HostView<'_>,
-    sha: &str,
-    key: CellKey<'_>,
-    keyed: &mut BTreeSet<(String, usize)>,
-) -> Vec<String> {
-    let (verb, mode, rung, _) = key;
-    let mut out = Vec::new();
-    for r in &v.receipts {
-        for (i, c) in r.cells.iter().enumerate() {
-            let hit = c.sha256.as_deref() == Some(sha)
-                && c.verb == verb
-                && c.thinking == mode
-                && c.context == rung;
-            if hit {
-                keyed.insert((r.file.clone(), i));
-                out.push(emit_row(g, subject, r, i, c, key, v.gpu_mem));
-            }
-        }
-    }
-    out
-}
-
 /// Did the row fill its rung? A fixed rung: the prompt alone reaches it. `declared`: prompt plus the output
-/// budget fill the model's own length. An unknown on either side is `false` — an unmeasured size met nothing.
-fn context_met(c: &CellRow, (_, _, rung, target): CellKey<'_>) -> bool {
-    let Some(t) = target else {
-        return false;
+/// budget fill the model's own length. A cell with no rung has nothing to fill. An unknown on either side of a
+/// rung is `false` — an unmeasured size met nothing.
+fn context_met(c: &CellRow, spec: &CellSpec) -> bool {
+    let Some(t) = spec.rung_tokens else {
+        return spec.rung.is_none();
     };
-    match (rung == DECLARED, c.prompt_tokens, c.max_tokens) {
+    match (
+        spec.rung.as_deref() == Some(DECLARED),
+        c.prompt_tokens,
+        c.max_tokens,
+    ) {
         (false, Some(p), _) => p >= t,
         (true, Some(p), Some(o)) => p.saturating_add(o) >= t,
         _ => false,
@@ -820,7 +1048,7 @@ fn emit_row(
     r: &Receipt,
     i: usize,
     c: &CellRow,
-    key: CellKey<'_>,
+    spec: &CellSpec,
     gpu_total: Option<u64>,
 ) -> String {
     let n = iri_path(
@@ -842,18 +1070,20 @@ fn emit_row(
     g.insert(
         n.clone(),
         rel("contextMet"),
-        Term::boolean(context_met(c, key)),
+        Term::boolean(context_met(c, spec)),
     );
     // thinking ON must CLOSE its block (#3720: an unclosed block is reported, never an empty answer)
-    let think_ok = c.thinking == "off" || c.think_closed == Some(true);
+    let think_ok = spec.thinking.as_deref() != Some("on") || c.think_closed == Some(true);
     g.insert(n.clone(), rel("thinkOk"), Term::boolean(think_ok));
     let answered = c.answer_chars.is_some_and(|a| a > 0);
-    // a refusal NAMES its arithmetic: what it needs is more than what the host has
     // honest only against the TOTAL: a refusal because a co-tenant holds memory (free < required ≤ total) is
     // not the arithmetic, it is a busy GPU silently shrinking what the release proves (#3712, 62)
     let named = matches!((c.required_bytes, gpu_total), (Some(r), Some(t)) if r > t);
     g.insert(n.clone(), rel("arithmeticNamed"), Term::boolean(named));
     g.insert(n.clone(), rel("answered"), Term::boolean(answered));
+    if let Some(o) = &c.output_sha256 {
+        g.insert(n.clone(), rel("outputSha"), Term::string(o));
+    }
     emit_row_detail(g, &n, r, c);
     n
 }
@@ -869,6 +1099,9 @@ fn emit_row_detail(g: &mut Graph, n: &str, r: &Receipt, c: &CellRow) {
     }
     if let Some(t) = c.ttft_ms {
         g.insert(n.clone(), rel("ttftMs"), Term::double(t));
+    }
+    if let Some(w) = c.wall_ms {
+        g.insert(n.clone(), rel("wallMs"), Term::integer(w));
     }
     if let Some(rc) = c.rc {
         g.insert(n.clone(), rel("rc"), Term::signed(rc));
@@ -897,6 +1130,49 @@ fn emit_coverage(g: &mut Graph, subject: &Subject, coverage: &Coverage, stats: &
         );
         for h in hosts {
             g.insert(n.clone(), rel("owedOn"), Term::iri(h.clone()));
+        }
+    }
+}
+
+/// S2.5, the flag-effect oracle: one `release:ModeEffect` per (command, mode arg, level). It is `observedIn` every
+/// effect cell whose output digest differs from its base cell's on the same host — and it must be observed
+/// SOMEWHERE, or the flag is a flag nobody can see work. (A typed no-op declaration would exempt a model class;
+/// the v1 surface declares none, so none is honoured.)
+fn emit_effects(
+    g: &mut Graph,
+    subject: &Subject,
+    cells: &[CellSpec],
+    outputs: &BTreeMap<(&str, &str), Option<String>>,
+    stats: &mut ReleaseStats,
+) {
+    let mut seen = BTreeSet::new();
+    for spec in cells {
+        let CellKind::Effect { arg, level, base } = &spec.kind else {
+            continue;
+        };
+        let setting = format!("{arg}={level}");
+        let n = iri_path(
+            "release-effect",
+            &[&subject.version, &spec.command, &setting],
+        );
+        if seen.insert(n.clone()) {
+            stats.mode_effects += 1;
+            g.insert(n.clone(), RDF_TYPE, Term::iri(rel("ModeEffect")));
+            g.insert(n.clone(), rel("command"), Term::string(&spec.command));
+            g.insert(n.clone(), rel("setting"), Term::string(&setting));
+        }
+        let mine = outputs
+            .get(&(spec.host.as_str(), spec.id.as_str()))
+            .cloned()
+            .flatten();
+        let theirs = outputs
+            .get(&(spec.host.as_str(), base.as_str()))
+            .cloned()
+            .flatten();
+        if let (Some(a), Some(b)) = (mine, theirs) {
+            if a != b {
+                g.insert(n, rel("observedIn"), Term::iri(cell_iri(subject, spec)));
+            }
         }
     }
 }

@@ -1,0 +1,6 @@
+{
+  "schema": "apr-release-surface-ratchet/v1",
+  "_doc": "aprender#3745 S2 (#3777). The two counts the v1 surface cannot shrink by itself, as committed ceilings that may only FALL (cop ruling). unknown_args: args no role type claims yet (measured 259 on the release-candidate surface at 621a47862, all 259 inside foreign subtrees: pv 104, data x 83, cgp 45, rag 16, sim 7, zram 4). stdin_undeclared: model / input-file / prompt POSITIONALS whose stdin form v1 cannot declare (measured 71 on the same surface; a v2 marker tied to pipe::with_stdin_support makes them owed cells). pv's release gate names any count above its ceiling.",
+  "unknown_args": 259,
+  "stdin_undeclared": 71
+}

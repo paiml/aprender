@@ -33,9 +33,17 @@ pub fn run(
     check: bool,
     subject: Option<&Subject>,
     out: Option<&Path>,
+    cells_out: Option<&Path>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(subject) = subject {
-        return run_release(contract_dir, check, subject, out);
+        return run_release(contract_dir, check, subject, out, cells_out);
+    }
+    if cells_out.is_some() {
+        return Err(ReleaseArgsRefused(
+            "--cells-out lists a release's derived cells; it needs --release-version, --release-commit and --surface"
+                .into(),
+        )
+        .into());
     }
     if out.is_some() {
         return Err(ReleaseArgsRefused(
@@ -125,6 +133,7 @@ fn run_release(
     check: bool,
     subject: &Subject,
     out: Option<&Path>,
+    cells_out: Option<&Path>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if check {
         return Err(ReleaseArgsRefused(
@@ -151,6 +160,9 @@ fn run_release(
     let mut hasher = Sha256::new();
     hasher.update(nt.as_bytes());
     std::fs::write(out, &nt)?;
+    if let Some(path) = cells_out {
+        write_cells(path, subject, extraction.release.as_ref())?;
+    }
     let report = ReleaseExtractReport {
         triples: extraction.graph.len(),
         sha256: format!("{:x}", hasher.finalize()),
@@ -158,5 +170,29 @@ fn run_release(
         release: extraction.release.unwrap_or_default(),
     };
     println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
+}
+
+/// `--cells-out`: every derived cell — the producer's work list, keyed by `cell_id` (aprender#3745 S2).
+fn write_cells(
+    path: &Path,
+    subject: &Subject,
+    release: Option<&provable_contracts::ontology::extract::release_evidence::ReleaseStats>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let derived = release.map(|r| r.derived.as_slice()).unwrap_or_default();
+    if derived.is_empty() {
+        return Err(ReleaseArgsRefused(
+            "--cells-out: no cell was derived (no --surface, or a surface with no leaf command)"
+                .into(),
+        )
+        .into());
+    }
+    let doc = serde_json::json!({
+        "schema": "apr-release-cells/v1",
+        "version": subject.version,
+        "release_commit": subject.commit,
+        "cells": derived,
+    });
+    std::fs::write(path, serde_json::to_string_pretty(&doc)?)?;
     Ok(())
 }

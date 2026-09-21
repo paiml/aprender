@@ -1,0 +1,121 @@
+{
+ "schema": "apr-cli-surface/v1.1",
+ "binary": {
+  "name": "apr",
+  "version": "0.69.1",
+  "git_sha": "fixture"
+ },
+ "roles": [
+  "model",
+  "prompt",
+  "input-file",
+  "backend",
+  "mode",
+  "other",
+  "unknown"
+ ],
+ "global_args": [],
+ "commands": [
+  {
+   "path": [
+    "gen"
+   ],
+   "key": "gen",
+   "aliases": [],
+   "hidden": false,
+   "foreign": false,
+   "leaf": true,
+   "generates": true,
+   "subcommands": [],
+   "args": [
+    {
+     "id": "model",
+     "long": null,
+     "short": null,
+     "positional": true,
+     "index": 1,
+     "required": true,
+     "value_type": "path",
+     "values": [],
+     "default": [],
+     "role": "model",
+     "marker": "ModelRef",
+     "hidden": false,
+     "conflicts_with": []
+    },
+    {
+     "id": "prompt",
+     "long": "prompt",
+     "short": null,
+     "positional": false,
+     "required": false,
+     "value_type": "text",
+     "values": [],
+     "default": [],
+     "role": "prompt",
+     "marker": "PromptText",
+     "hidden": false,
+     "conflicts_with": []
+    },
+    {
+     "id": "chat",
+     "long": "chat",
+     "short": null,
+     "positional": false,
+     "required": false,
+     "value_type": "flag",
+     "values": [
+      "true",
+      "false"
+     ],
+     "default": [],
+     "role": "mode",
+     "marker": null,
+     "hidden": false,
+     "conflicts_with": []
+    }
+   ]
+  },
+  {
+   "path": [
+    "look"
+   ],
+   "key": "look",
+   "aliases": [],
+   "hidden": false,
+   "foreign": false,
+   "leaf": true,
+   "generates": false,
+   "subcommands": [],
+   "args": [
+    {
+     "id": "file",
+     "long": null,
+     "short": null,
+     "positional": true,
+     "index": 1,
+     "required": true,
+     "value_type": "path",
+     "values": [],
+     "default": [],
+     "role": "model",
+     "marker": "ModelPath",
+     "hidden": false,
+     "conflicts_with": []
+    }
+   ]
+  },
+  {
+   "path": [
+    "list"
+   ],
+   "key": "list",
+   "aliases": [],
+   "hidden": false,
+   "foreign": false,
+   "leaf": true,
+   "subcommands": [],
+   "args": []
+  }
+ ]
+}

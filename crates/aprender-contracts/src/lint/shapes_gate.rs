@@ -35,8 +35,8 @@ use std::time::Instant;
 use crate::ontology::arming::ArmedShapes;
 use crate::ontology::extract::release_inputs::Subject;
 use crate::ontology::extract::{
-    self, apr_model, code, gguf, json, lean, parity_receipt, pv_contract, release_evidence,
-    ExtractFailure,
+    self, apr_model, cli_surface, code, gguf, json, lean, parity_receipt, pv_contract,
+    release_evidence, ExtractFailure,
 };
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};
 use crate::ontology::receipts;
@@ -492,6 +492,8 @@ fn extract_controls() -> BTreeMap<String, String> {
         ),
         // aprender#3715: drawn every run, subject or not — a cell owed without a receipt stays a node
         ("release-evidence", release_evidence::positive_control()),
+        // aprender#3745 S2: a model arg read from its ROLE, never its name — drawn every run
+        ("cli-surface", cli_surface::positive_control()),
     ]
     .into_iter()
     .map(|(k, fired)| {

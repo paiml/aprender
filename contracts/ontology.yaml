@@ -147,6 +147,9 @@ entity_types:
   # aprender#3715: a release's receipts (per-host inventory + cells, kernel diffs, context rungs, the dogfood
   # receipt R5 judged), extracted ONLY when a release subject is given — an ordinary PR has no release.
   - {name: release-evidence, extractor: release_evidence, implemented: true}
+  # aprender#3745 S2 (#3777): the release candidate's own interface (`apr surface --json`, apr-cli-surface/v1),
+  # extracted ONLY under a release subject with --surface; the release cells are derived from it.
+  - {name: cli-surface, extractor: cli_surface, implemented: true}
 
 extractors:
   - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: true}
@@ -160,6 +163,7 @@ extractors:
   - {name: csv, reader: ontology/extract/csv.rs, implemented: false}
   - {name: parity_receipt, reader: ontology/extract/parity_receipt.rs, implemented: true}
   - {name: release_evidence, reader: ontology/extract/release_evidence.rs, implemented: true}
+  - {name: cli_surface, reader: ontology/extract/cli_surface.rs, implemented: true}
 
 # What this ontology does NOT express, said out loud so nobody encodes it by accident. Each names the reader that
 # would have to change first.
