@@ -42,12 +42,16 @@
 //!    `CANONICAL_QWEN3_CODER_GGUF_PATHS`.
 //! 2. The `qwen3_moe_fp16_logits_pos0.json` fixture, generated once via
 //!    `scripts/generate_qwen3_moe_fp16_logits.py` (M32d.1, PR #1129).
-//! 3. The PINNED `llama-cli`, and only that one: `$LLAMA_CLI` as
+//! 3. The PINNED `llama-completion`, and only that one: `$LLAMA_COMPLETION` as
 //!    `scripts/llama_bin.sh` exports it after PROVING the build against
 //!    `scripts/llama_pin.toml` (#3740, #3563). Never PATH, never a list of
 //!    candidate paths: a comparator nobody pinned makes the verdict about
 //!    whichever llama.cpp the host happens to have (on lambda, `~/src/llama.cpp`
-//!    is a different commit with a broken llama-cli). Run it as
+//!    is a different commit with a broken llama-cli). It is `llama-completion`,
+//!    not `llama-cli`: this compares a RAW completion, `llama-cli` rejects
+//!    `-no-cnv` and applies the chat template, and `--log-disable` empties
+//!    `llama-completion`'s stdout (evidence/parity/pin-bump-d1d3c3396/LOAD.md).
+//!    Run it as
 //!    `. scripts/llama_bin.sh && cargo test -p aprender-serve --test qwen3_moe_argmax_parity -- --ignored`.
 //!
 //! Skips with `eprintln!` if any of the three is absent. Marked `#[ignore]`
@@ -81,7 +85,7 @@ const FIXTURE_RELATIVE: &str = "tests/fixtures/qwen3_moe_fp16_logits_pos0.json";
 
 /// The one way this test reaches llama.cpp: the variable `scripts/llama_bin.sh`
 /// exports once it has proved the pinned build (#3740).
-const LLAMA_CLI_ENV: &str = "LLAMA_CLI";
+const LLAMA_CLI_ENV: &str = "LLAMA_COMPLETION";
 /// What to run when it is unset, printed verbatim in the skip.
 const RUN_PINNED: &str =
     ". scripts/llama_bin.sh && cargo test -p aprender-serve --test qwen3_moe_argmax_parity -- --ignored";
@@ -146,7 +150,7 @@ fn extract_first_emit(raw: &str) -> String {
 fn f_qw3_moe_parity_002_argmax_vs_llama_cpp() {
     let Some(llama_cli) = locate_llama_cli() else {
         eprintln!(
-            "F-QW3-MOE-PARITY-002: skipped — ${LLAMA_CLI_ENV} is unset, so there is no PINNED llama-cli. Run: {RUN_PINNED}"
+            "F-QW3-MOE-PARITY-002: skipped — ${LLAMA_CLI_ENV} is unset, so there is no PINNED llama-completion. Run: {RUN_PINNED}"
         );
         return;
     };
@@ -210,7 +214,6 @@ fn f_qw3_moe_parity_002_argmax_vs_llama_cpp() {
             "--no-display-prompt",
             "-no-cnv",
             "--no-warmup",
-            "--log-disable",
         ])
         .output()
         .expect("F-QW3-MOE-PARITY-002: failed to spawn llama-cli");

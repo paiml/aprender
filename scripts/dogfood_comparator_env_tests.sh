@@ -30,11 +30,12 @@ if [ "$pin_rc" -ne 0 ]; then
     printf 'FAIL  the pinned llama.cpp does not resolve on %s (scripts/llama_bin.sh rc=%s): the comparator-consumer tests cannot run against it\n' "$(uname -n)" "$pin_rc"
     exit 1
 fi
-if [ -z "${LLAMA_CLI:-}" ] || [ ! -x "$LLAMA_CLI" ]; then
-    printf 'FAIL  scripts/llama_bin.sh proved the pin but exported no executable LLAMA_CLI (%s)\n' "${LLAMA_CLI:-<unset>}"
+# the test compares a RAW completion, so its comparator is llama-completion (LOAD.md at the pin bump)
+if [ -z "${LLAMA_COMPLETION:-}" ] || [ ! -x "$LLAMA_COMPLETION" ]; then
+    printf 'FAIL  scripts/llama_bin.sh proved the pin but exported no executable LLAMA_COMPLETION (%s): build the llama-completion target\n' "${LLAMA_COMPLETION:-<unset>}"
     exit 1
 fi
-printf 'ok    pinned llama-cli: %s (%s)\n' "$LLAMA_CLI" "${LLAMA_BUILD:-?}"
+printf 'ok    pinned llama-completion: %s (%s)\n' "$LLAMA_COMPLETION" "${LLAMA_BUILD:-?}"
 
 # priority 1 at release; a first-green proof outside a train passes DOGFOOD_GPU_PRIO=8 (cop, rule rev 5)
 prio="${DOGFOOD_GPU_PRIO:-1}"

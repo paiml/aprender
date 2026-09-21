@@ -368,8 +368,12 @@ llama_bin_resolve() {
     llama_bin_dir=$(dirname "$llama_bin_candidate")
     LLAMA_CLI=""
     LLAMA_SERVER=""
+    LLAMA_COMPLETION=""
     [ -x "$llama_bin_dir/llama-cli" ] && LLAMA_CLI="$llama_bin_dir/llama-cli"
     [ -x "$llama_bin_dir/llama-server" ] && LLAMA_SERVER="$llama_bin_dir/llama-server"
+    # RAW completion is llama-completion, not llama-cli: llama-cli rejects -no-cnv and applies the
+    # chat template (evidence/parity/pin-bump-d1d3c3396/LOAD.md). A parity test compares raw tokens.
+    [ -x "$llama_bin_dir/llama-completion" ] && LLAMA_COMPLETION="$llama_bin_dir/llama-completion"
 
     llama_bin_oracle="$LLAMA_CLI"
     [ -n "$llama_bin_oracle" ] || llama_bin_oracle="$LLAMA_SERVER"
@@ -390,7 +394,7 @@ llama_bin_resolve() {
     fi
     LLAMA_BENCH="$llama_bin_candidate"
     LLAMA_BUILD="$llama_bin_out"
-    export LLAMA_BENCH LLAMA_BUILD LLAMA_CLI LLAMA_SERVER
+    export LLAMA_BENCH LLAMA_BUILD LLAMA_CLI LLAMA_SERVER LLAMA_COMPLETION
 
     if [ "$llama_bin_want" = "UNPINNED" ]; then
         # A binary exists and runs, but nothing declares which one is correct.
