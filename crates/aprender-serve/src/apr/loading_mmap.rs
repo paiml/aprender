@@ -202,69 +202,81 @@ impl AprV2Model {
             "token_embd.weight",
         ];
         if let Some(embed) = EMBED_NAMES.iter().find_map(|n| self.get_tensor(n)) {
-            if embed.shape.len() == 2 {
-                let (rows, cols) = (embed.shape[0], embed.shape[1]);
-                // Embedding may be stored as [vocab, hidden] (HF/SafeTensors) or
-                // [hidden, vocab] (some tied/GGUF layouts). Accept either
-                // orientation, but vocab_size MUST be one of the two dims and
-                // hidden_size the other.
-                let vocab_ok = rows == vocab_size || cols == vocab_size;
-                let hidden_ok = rows == hidden_size || cols == hidden_size;
-                if !vocab_ok {
-                    return Err(RealizarError::FormatError {
-                        reason: format!(
-                            "OBLIG-APR-VOCAB-EMBED-CONSISTENT: config vocab_size={vocab_size} \
-                             does not match embedding tensor '{}' shape {:?} — neither dim is \
-                             {vocab_size}. The declared vocabulary is inconsistent with the \
-                             embedding matrix; token IDs would index out of bounds and inference \
-                             would produce garbage. Re-convert the model.",
-                            embed.name, embed.shape
-                        ),
-                    });
-                }
-                if !hidden_ok {
-                    return Err(RealizarError::FormatError {
-                        reason: format!(
-                            "OBLIG-APR-WEIGHT-SHAPE-MATCHES-CONFIG: config hidden_size={hidden_size} \
-                             does not match embedding tensor '{}' shape {:?} — neither dim is \
-                             {hidden_size}. The hidden vector would be read with the wrong stride \
-                             and inference would produce garbage. Re-convert the model.",
-                            embed.name, embed.shape
-                        ),
-                    });
-                }
-            }
+            Self::check_embedding_shape(embed, vocab_size, hidden_size)?;
         }
 
         // Separate (untied) lm_head, when present, is [vocab_size, hidden_size].
         if let Some(lm_head) = self.get_tensor("lm_head.weight") {
-            if lm_head.shape.len() == 2 {
-                let (rows, cols) = (lm_head.shape[0], lm_head.shape[1]);
-                if rows != vocab_size && cols != vocab_size {
-                    return Err(RealizarError::FormatError {
-                        reason: format!(
-                            "OBLIG-APR-VOCAB-EMBED-CONSISTENT: config vocab_size={vocab_size} \
-                             does not match lm_head tensor '{}' shape {:?}. The output projection \
-                             targets the wrong vocabulary; inference would produce garbage. \
-                             Re-convert the model.",
-                            lm_head.name, lm_head.shape
-                        ),
-                    });
-                }
-                if rows != hidden_size && cols != hidden_size {
-                    return Err(RealizarError::FormatError {
-                        reason: format!(
-                            "OBLIG-APR-WEIGHT-SHAPE-MATCHES-CONFIG: config hidden_size={hidden_size} \
-                             does not match lm_head tensor '{}' shape {:?}. The output projection \
-                             reads the hidden vector with the wrong stride; inference would produce \
-                             garbage. Re-convert the model.",
-                            lm_head.name, lm_head.shape
-                        ),
-                    });
-                }
-            }
+            Self::check_lm_head_shape(lm_head, vocab_size, hidden_size)?;
         }
 
+        Ok(())
+    }
+
+    /// The token-embedding half of [`Self::validate_config_consistency`].
+    fn check_embedding_shape(embed: &TensorEntry, vocab_size: usize, hidden_size: usize) -> Result<()> {
+        if embed.shape.len() == 2 {
+            let (rows, cols) = (embed.shape[0], embed.shape[1]);
+            // Embedding may be stored as [vocab, hidden] (HF/SafeTensors) or
+            // [hidden, vocab] (some tied/GGUF layouts). Accept either
+            // orientation, but vocab_size MUST be one of the two dims and
+            // hidden_size the other.
+            let vocab_ok = rows == vocab_size || cols == vocab_size;
+            let hidden_ok = rows == hidden_size || cols == hidden_size;
+            if !vocab_ok {
+                return Err(RealizarError::FormatError {
+                    reason: format!(
+                        "OBLIG-APR-VOCAB-EMBED-CONSISTENT: config vocab_size={vocab_size} \
+                         does not match embedding tensor '{}' shape {:?} — neither dim is \
+                         {vocab_size}. The declared vocabulary is inconsistent with the \
+                         embedding matrix; token IDs would index out of bounds and inference \
+                         would produce garbage. Re-convert the model.",
+                        embed.name, embed.shape
+                    ),
+                });
+            }
+            if !hidden_ok {
+                return Err(RealizarError::FormatError {
+                    reason: format!(
+                        "OBLIG-APR-WEIGHT-SHAPE-MATCHES-CONFIG: config hidden_size={hidden_size} \
+                         does not match embedding tensor '{}' shape {:?} — neither dim is \
+                         {hidden_size}. The hidden vector would be read with the wrong stride \
+                         and inference would produce garbage. Re-convert the model.",
+                        embed.name, embed.shape
+                    ),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// The untied-lm_head half of [`Self::validate_config_consistency`].
+    fn check_lm_head_shape(lm_head: &TensorEntry, vocab_size: usize, hidden_size: usize) -> Result<()> {
+        if lm_head.shape.len() == 2 {
+            let (rows, cols) = (lm_head.shape[0], lm_head.shape[1]);
+            if rows != vocab_size && cols != vocab_size {
+                return Err(RealizarError::FormatError {
+                    reason: format!(
+                        "OBLIG-APR-VOCAB-EMBED-CONSISTENT: config vocab_size={vocab_size} \
+                         does not match lm_head tensor '{}' shape {:?}. The output projection \
+                         targets the wrong vocabulary; inference would produce garbage. \
+                         Re-convert the model.",
+                        lm_head.name, lm_head.shape
+                    ),
+                });
+            }
+            if rows != hidden_size && cols != hidden_size {
+                return Err(RealizarError::FormatError {
+                    reason: format!(
+                        "OBLIG-APR-WEIGHT-SHAPE-MATCHES-CONFIG: config hidden_size={hidden_size} \
+                         does not match lm_head tensor '{}' shape {:?}. The output projection \
+                         reads the hidden vector with the wrong stride; inference would produce \
+                         garbage. Re-convert the model.",
+                        lm_head.name, lm_head.shape
+                    ),
+                });
+            }
+        }
         Ok(())
     }
 
