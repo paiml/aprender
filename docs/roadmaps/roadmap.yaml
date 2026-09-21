@@ -19848,6 +19848,27 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE — issue #3670 done_when, verbatim in substance. (1) Each fleet-state branch prints UNMEASURED runner=... reason=<pin-mismatch|pv-env|judge-env|no-binary|incapable> ..., exits 0, and never prints PASS or SUMMARY PASS. (2) A mutant restoring FAIL on pin-mismatch exits 1, and a mutant restoring the ENV exit on pv-env exits 2; each mutant row refuses to pass if its edit did not apply. (3) A planted violation from a matching pinned binary is still RED, and a control that does not fire is still RED. (4) Real runs: pin forced to 0.65.2 under a 0.68.2 binary gives UNMEASURED reason=pin-mismatch (rc 0); the fleet pv on a tree with migrated parity records gives PASS verdict=Pass. RULING: PASS/FAIL only from a verdict produced by a binary that matches its pin; fleet state is UNMEASURED with a named reason and exit 0. Scope: scripts/check_fleet_pv_shapes_gate.sh only, one commit on top of #3653 (053992448).'
+- id: PMAT-3671
+  github_issue: 3671
+  item_type: task
+  title: 'check_fleet_pv_shapes_gate.sh: reason=pv-env (exit 0) covers a pinned pv that PANICS — only pv rc 2 is fleet state; any other no-JSON rc must stay RED'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-62
+  created: 2026-09-21T10:15:00Z
+  updated: 2026-09-21T10:15:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3671 done_when 1, verbatim: "pv''s own exit code is captured before the parser runs. `reason=pv-env`, exit 0, applies **only** when pv''s rc is 2 and it produced no JSON."'
+  - 'done_when 2, verbatim: "A pinned pv that produces no JSON with any other rc (101 panic, 134/139 signal, 1 with no output) goes RED, not `UNMEASURED`. It exits non-zero, and the row names pv''s rc and its first stderr line."'
+  - 'done_when 3, verbatim: "Case-table rows: a panic stub (101, no JSON) → RED. The existing rc-2-no-JSON stub stays `UNMEASURED reason=pv-env`. A mutant that removes the pv-rc check sends the panic row back to `UNMEASURED` (the row discriminates)."'
+  - 'done_when 4, verbatim: "The other fleet-state branches (`no-pin`, `no-binary`, `pin-mismatch`, `incapable`, `judge-env`) are unchanged."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Found by aprender-62 cross-inspecting the andon commit 984fc76a9 (PMAT-3670) in the 0.69 batch #3669; the cop ruled it a separate ticket for after the batch. HOW IT IS MET. `judge` captures pv''s own exit as `pvrc` (the parser still receives it, for its message) and the verdict `case` is keyed on the PAIR `<parser rc>:<pv rc>`: `2:2` is `UNMEASURED reason=pv-env` exit 0, unchanged; `2:*` is `FAIL runner=… reason=pv-no-verdict … pv exited <rc> … pv stderr: <first line>` to stderr, exit 1. The arms for parser rc 0 (PASS), 1 (FAIL) and other (judge-env) are unchanged, and the no-pin / no-binary / pin-mismatch / incapable branches return before pv runs, so they are untouched. RED is FAIL (exit 1), not ENV (exit 2): a panic caused by a contract in the tree is tree state. SIGNAL ROW. The case table uses SIGKILL (rc 137, `kill -KILL $$` in the stub), a real signal death that writes no core file on a runner; 134/139 are the same `2:*` arm, since the arm matches any pv rc but 2. MEASURED at this commit: `bash scripts/check_fleet_pv_shapes_gate.sh --self-test` 19/19 ok (was 15). The new rows are 13-15 (panic 101, SIGKILL 137, rc 1 with no output: each RED naming pv''s rc and stderr, never UNMEASURED) and 16 (mutant `2:2)` -> `2:*)`, i.e. pv-env keyed on the parser alone: the panic stub goes back to `UNMEASURED reason=pv-env`, exit 0, so the panic row discriminates). BEFORE THE FIX, the same self-test with the new rows: rows 13-15 FAIL with "UNMEASURED runner=probe-runner reason=pv-env … ENV no JSON verdict (rc=101) … panicked", rc 0, reproducing the issue''s table. ALSO FIXED, same rows: the existing pv-env mutant (row 12) was VACUOUS. Its sed replaced the arm''s opening single quote with a double quote, so the mutant script was a bash syntax error (`bash -n` rc 2 at "line 146: syntax error near unexpected token `(`") and "exited non-zero" without reaching the arm it claimed to test. Both mutants now keep the arm''s text through a sed backreference, are refused unless `bash -n` passes, and assert the specific outcome (row 12: exit 2 and `ENV (rc=2)`; row 16: exit 0 and `UNMEASURED … reason=pv-env`). `--help` printed a hardcoded `sed -n 2,44p`, which cut the header off once it grew; it now prints the leading comment block, found by awk. `bashrs lint`: 0 errors (baseline 0). `bash scripts/guard_tree.sh --no-cargo`: 76 checks, 0 failed.'
 - id: PMAT-3681
   github_issue: 3681
   item_type: task
