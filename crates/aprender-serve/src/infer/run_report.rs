@@ -135,11 +135,31 @@ mod tests {
     fn from_decode_case_table() {
         let rows: &[(&str, &[u32], usize, FinishReason)] = &[
             // Loops that PUSH the stop token (qwen35, MoE, wgpu).
-            ("pushed stop, under budget", &[5, 6, EOS], 8, FinishReason::Stop),
-            ("pushed stop as the last budgeted token", &[5, 6, EOS], 3, FinishReason::Stop),
+            (
+                "pushed stop, under budget",
+                &[5, 6, EOS],
+                8,
+                FinishReason::Stop,
+            ),
+            (
+                "pushed stop as the last budgeted token",
+                &[5, 6, EOS],
+                3,
+                FinishReason::Stop,
+            ),
             // Loops that CONSUME it (dense CPU, dense CUDA).
-            ("consumed stop, under budget", &[5, 6], 8, FinishReason::Stop),
-            ("consumed stop, nothing generated", &[], 8, FinishReason::Stop),
+            (
+                "consumed stop, under budget",
+                &[5, 6],
+                8,
+                FinishReason::Stop,
+            ),
+            (
+                "consumed stop, nothing generated",
+                &[],
+                8,
+                FinishReason::Stop,
+            ),
             // The cut, on either shape.
             ("budget spent, no stop", &[5, 6, 9], 3, FinishReason::Length),
             ("zero budget", &[], 0, FinishReason::Length),
@@ -278,7 +298,8 @@ mod tests {
         let err = run(&file, prompt, 4, vec![]).expect_err("an over-long prompt must be refused");
         let msg = err.to_string();
         assert!(
-            msg.contains(&(PYGMY_CONTEXT + 4).to_string()) && msg.contains(&PYGMY_CONTEXT.to_string()),
+            msg.contains(&(PYGMY_CONTEXT + 4).to_string())
+                && msg.contains(&PYGMY_CONTEXT.to_string()),
             "the refusal must name the prompt length and the context: {msg}"
         );
     }
