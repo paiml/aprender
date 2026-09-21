@@ -1349,6 +1349,7 @@ dependencies = [
  "memmap2",
  "mime",
  "minijinja",
+ "minijinja-contrib",
  "num-traits",
  "once_cell",
  "predicates",
@@ -8300,7 +8301,18 @@ version = "2.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb3d648e68cea56d9858d535ee28f9538404e2dd8cb08ed0bd05dca379477f39"
 dependencies = [
+ "indexmap 2.14.0",
  "memo-map",
+ "serde",
+]
+
+[[package]]
+name = "minijinja-contrib"
+version = "2.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85342f6fac0be8ccd5bd00d9066be538f34f393f577b75d81b17c8398a6b43bb"
+dependencies = [
+ "minijinja",
  "serde",
 ]
 

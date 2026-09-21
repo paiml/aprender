@@ -112,6 +112,19 @@ pub enum RealizarError {
     #[error("Invalid URI: {0}")]
     InvalidUri(String),
 
+    /// A thinking mode the model's own chat template cannot honour (#3723): `--thinking on`
+    /// on a model with no thinking mode, or `off` on one that always thinks. Refused by
+    /// name, never silently mapped to the mode the model has.
+    #[error(
+        "thinking {requested} refused: this model's chat template supports thinking {supported}"
+    )]
+    ThinkingModeUnsupported {
+        /// The mode asked for: "on" or "off"
+        requested: String,
+        /// What the template offers, e.g. "off only"
+        supported: String,
+    },
+
     /// File format error
     #[error("Format error: {reason}")]
     FormatError {

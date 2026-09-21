@@ -151,7 +151,11 @@ smallvec = "1.13"
 
 # Chat template engine (Jinja2-compatible) for model-specific formatting
 # Supports ChatML, LLaMA2, Mistral, Phi, Alpaca formats
-minijinja = { version = "2.14", features = ["loader"] }
+minijinja = { version = "2.14", features = ["loader", "loop_controls", "preserve_order"] }
+# Python string/dict methods (`.split`, `.lstrip`, `.startswith`, `.items`, ...) that
+# HF chat templates call. Rendering a model's OWN `tokenizer.chat_template` byte-equal
+# to HF's apply_chat_template needs them (#3755).
+minijinja-contrib = { version = "2.14", features = ["pycompat"] }
 
 # That's it. NO candle, NO llama-cpp-rs, NO hf-hub
 # We build everything from scratch: GGUF parser, safetensors, transformer, quantization, tokenizer
