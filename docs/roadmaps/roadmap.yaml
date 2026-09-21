@@ -18452,6 +18452,59 @@ roadmap:
   - orch:fable
   - orch-basis:state
   notes: 'ONT-001 v4.4 row ONT-6. RAH-005 binding filed in paiml/paiml-implement. Receipt: docs/audits/impl-PMAT-3451-receipt.md'
+- id: PMAT-3459
+  github_issue: 3459
+  item_type: task
+  title: 'release train: move the release autopilot''s tag path into the repo; tag step calls check_milestone_cut.sh (#3459)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-17T15:29:02Z
+  updated: 2026-09-17T15:29:02Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - P0
+  - must-carry:0.69.0
+  notes: null
+- id: PMAT-3460
+  github_issue: 3460
+  item_type: task
+  title: 'check_milestone_cut.sh: exempt the release epic by issue number from 06x §5, not title match (#3460)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T15:29:02Z
+  updated: 2026-09-17T15:29:02Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3461
+  github_issue: 3459
+  item_type: task
+  title: 'Register PMAT-3459 and PMAT-3460 in the roadmap so the AD-04 quorum for PR #3461 can run (registration only; the tag-path implementation is #3599, the epic-by-number follow-up is #3460)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-20T22:53:14Z
+  updated: 2026-09-20T22:53:14Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:triage
+  notes: 'ACCEPTANCE (this row is PR #3461 itself, a roadmap-only registration): (1) docs/roadmaps/entries/PMAT-3459.yaml exists with id PMAT-3459, github_issue 3459, priority critical, and a title that transcribes issue #3459 — the release autopilot''s tag path moves into the repo and the tag step calls check_milestone_cut.sh; (2) docs/roadmaps/entries/PMAT-3460.yaml exists with id PMAT-3460, github_issue 3460, and a title that transcribes issue #3460 — check_milestone_cut.sh exempts the release epic by issue number, not title match; (3) docs/roadmaps/roadmap.yaml equals aggregate(entries/) and the diff vs origin/main is additive only (deleted=0, reserialised=0) after the merge of origin/main that picked up PMAT-3539; (4) the PR body carries keep-open for #3459, #3460 and #3080 and no sentence in it is parsed by GitHub as closing #3459 (the must-carry whose criterion is the tag, which this PR does not deliver). NOT in scope: any code, script or measurement for PMAT-3459 or PMAT-3460 — the tag path itself is PR #3599 and is judged there. A lane that finds an entry mis-transcribed, missing or invented FAILs this row.'
 - id: PMAT-3465
   github_issue: 3465
   item_type: task
@@ -18789,6 +18842,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3545
+  github_issue: 3545
+  item_type: task
+  title: 'apr devices told every user CUDA was unavailable on a cuda build: trueno/cuda missing from the feature'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-09-21T00:00:00Z
+  updated: 2026-09-21T00:00:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from gh#3545 done_when; see paiml-mcp-agent-toolkit#1414). The shipped -cuda asset ran CUDA correctly and told every new user cuda unavailable reason=NotCompiled on the first screen they saw. Two flags decided one fact: apr-cli/cuda enabled realizar/cuda (so inference ran on the GPU) but NOT trueno/cuda — and trueno s backend registry is what devices reads, so default_factories() had no CudaFactory and the registry emitted missing_entry(Cuda) = Source::NotCompiled. Done when: the cuda feature includes trueno/cuda, and a test RED-turns if it is removed again. Falsifier is two-sided: a cuda build must not report not-compiled, AND a non-cuda build must STILL report not-compiled even where a GPU is physically present — a fix that made devices optimistic fails the second arm. NOTE: the issue s own query asks for compiled-in, which would be false even after a correct fix — Source::CompiledIn means linked into the binary, while the CUDA driver is reached via Source::Dlopen(path). The test asserts != not-compiled and the issue s query needs correcting rather than satisfying. Measured on lambda RTX 4090: before = unavailable/not-compiled, after = ready/dlopen.'
 - id: PMAT-3556
   github_issue: 3556
   item_type: task
@@ -18869,6 +18939,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3571
+  github_issue: 3571
+  item_type: task
+  title: 'apr serve routes the Qwen3.5 hybrid to Qwen35Model instead of the dense path'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-21T00:00:00Z
+  updated: 2026-09-21T00:00:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from gh#3571 done_when; see paiml-mcp-agent-toolkit#1414). Layer 1 of a surface no test had ever traversed: apr serve could not load the flagship architecture at all, and each assumption was visible only once the one above it cleared. Done when: handler_gpu_completion.rs branches on is_qwen35 and calls Qwen35Model::create_base_model rather than falling through to the dense OwnedQuantizedModel path, which is the wrong architecture for a Gated DeltaNet hybrid. Scope is deliberately ONE LAYER: land what works rather than hold the whole stack behind the last unknown. STOP: do not claim the serve path is end-to-end green on Qwen3.5 from this row alone — the layers above it are separate rows.'
 - id: PMAT-3574
   github_issue: 3574
   item_type: task
@@ -18902,3 +18989,37 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE (hand-entered; pmat work add derived neither spec: nor acceptance_criteria: — defect paiml-mcp-agent-toolkit#1414). Spec: docs/specifications/ruling-receipts-under-contract.md (operator ruling 2026-09-20). Done when: contracts/parity-receipt-v1.yaml with its shape on origin/main; extract:parity-receipt implemented; pv lint --gate shapes --path evidence/ in the required check; PR body shows 7 older receipts RED before back-fill and 0 after, plant violation = 1, mutation RED, pc_shape fired; check_parity_receipt.sh folded into the shape or its remainder listed under not_expressible; ONT-4c3 bound with the parity receipt as focus node; verdict rendered on a fleet host once the pv pin lands, else checkout-only: true. Sigma parent bound: json. Back-fill denominator: 7. STOP: subset-insufficient; shared-file-touched without the guard label; any threshold typed into the shape instead of resolved from thresholds.yaml.'
+- id: PMAT-3587
+  github_issue: 3587
+  item_type: task
+  title: 'nextest fail-fast discards verdicts: one failure hid 15 unmeasured commands and the shard read as ''1 failure'', not ''1 failure + 15 Unknown'''
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-20T12:37:48Z
+  updated: 2026-09-20T12:37:48Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from issue #3587 "What lands"; minted on the PR branch so the AD-04 quorum can run -- pmat work status refuses a missing item). Two halves: the explicit-command runner (#3616, merged) and the nextest [profile.ci] key (#3626). Lands: 1. **--no-fail-fast on the shard.** The cost is runner minutes on an already-red shard; the benefit is that a red run still measures everything else it was going to measure — which is exactly when you most want the data. 2. **The reducer reports ran / skipped / total** in the shard receipt. The skipped count is a **number**, never an absence. 3. **A receipt with skipped > 0 is Unknown, not Fail and not Pass** — it names what was not measured, per doctrine 4. '
+- id: PMAT-3627
+  github_issue: 3627
+  item_type: task
+  title: 'rmsnorm_contract::prop_scale_invariance asserts the ε=0 theorem against the ε=1e-6 implementation — fails whenever α²·mean(x²) ≈ ε (killed #3621 shard 1/3)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-20T21:27:27Z
+  updated: 2026-09-20T21:27:27Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from issue #3627 done_when; minted on the PR branch so the AD-04 quorum can run -- pmat work status refuses a missing item). Done when: contracts/rmsnorm-kernel-v1.yaml Scale invariance obligation carries either the ε>0 formal or the α²·mean(x²) ≫ ε precondition; pv validate passes ~~regenerated with pv probar --binding~~ **WITHDRAWN 21:40Z** — b3 measured that pv probar --binding emits 7 #[ignore = "no binding available"] stubs for this contract; the tracked file''s 5 real tests were produced by the pre-monorepo external generator (20dda945b, 2026-02-18) and the header is false (class row: #3630). Instead: the tracked test is edited **directly**, the commit says so, and the file''s header is replaced by a true one (hand-maintained, contract-bound) the minimal input above ([0.0, -0.15964308], α=0.012254778) is a committed regression case that PASSES under the new assertion (i.e. the fixed test is exercised on the exact input that killed #3621), and a mutation that restores the ε=0 assertion turns it RED cargo'
