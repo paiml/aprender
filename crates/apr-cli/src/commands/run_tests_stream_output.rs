@@ -5,6 +5,8 @@
 fn stream_output_emits_n_plus_one_json_lines() {
     let result = RunResult {
         text: "Hello world".to_string(),
+        reasoning: None,
+        thinking: false,
         duration_secs: 0.25,
         cached: false,
         tokens_generated: Some(3),
@@ -73,6 +75,8 @@ fn stream_output_emits_n_plus_one_json_lines() {
 fn stream_token_events_carry_their_own_decoded_text() {
     let result = RunResult {
         text: "I'm here to help".to_string(),
+        reasoning: None,
+        thinking: false,
         duration_secs: 1.0,
         cached: true,
         tokens_generated: Some(4),
@@ -118,6 +122,8 @@ fn stream_token_events_carry_their_own_decoded_text() {
 fn stream_token_events_degrade_to_empty_text_without_a_tokenizer() {
     let result = RunResult {
         text: "abc".to_string(),
+        reasoning: None,
+        thinking: false,
         duration_secs: 1.0,
         cached: true,
         tokens_generated: Some(2),
@@ -143,6 +149,8 @@ fn stream_token_events_degrade_to_empty_text_without_a_tokenizer() {
 fn stream_output_no_tokens_emits_only_final() {
     let result = RunResult {
         text: String::new(),
+        reasoning: None,
+        thinking: false,
         duration_secs: 0.0,
         cached: true,
         tokens_generated: Some(0),
@@ -168,6 +176,8 @@ fn stream_output_no_tokens_emits_only_final() {
 fn stream_output_none_tokens_emits_only_final() {
     let result = RunResult {
         text: String::new(),
+        reasoning: None,
+        thinking: false,
         duration_secs: 0.0,
         cached: false,
         tokens_generated: None,
@@ -192,6 +202,8 @@ fn stream_output_none_tokens_emits_only_final() {
 fn build_final_json_matches_legacy_json_shape() {
     let result = RunResult {
         text: "abc".to_string(),
+        reasoning: None,
+        thinking: false,
         duration_secs: 1.0,
         cached: true,
         tokens_generated: Some(10),

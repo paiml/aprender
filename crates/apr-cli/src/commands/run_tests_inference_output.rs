@@ -9,6 +9,8 @@
     fn inference_output_fields() {
         let output = InferenceOutput {
             text: "hello".to_string(),
+            reasoning: None,
+            thinking: false,
             tokens_generated: Some(5),
             inference_ms: Some(10.0),
             tok_per_sec: Some(500.0),
@@ -26,6 +28,8 @@
     fn inference_output_no_metrics() {
         let output = InferenceOutput {
             text: "result".to_string(),
+            reasoning: None,
+            thinking: false,
             tokens_generated: None,
             inference_ms: None,
             tok_per_sec: None,

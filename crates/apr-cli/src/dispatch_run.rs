@@ -26,6 +26,8 @@ fn dispatch_run(
     trace_level: &str,
     profile: bool,
     chat: bool,
+    // #3723: `--thinking on|off`; None = OFF wherever the model allows it.
+    thinking: Option<bool>,
     // PMAT-496: Sampling parameters
     temperature: f32,
     top_k: usize,
@@ -71,6 +73,7 @@ fn dispatch_run(
         repeat_last_n,
         split_prompt,
         chat_template,
+        thinking,
     )
 }
 

@@ -44,6 +44,7 @@ pub(crate) fn run(
     split_prompt: bool,
     // #3672: apply the model's chat template once, in realizar; the prompt is raw text.
     chat_template: bool,
+    thinking: Option<bool>,
 ) -> Result<()> {
     // GH-516: Warn on --language/--task since whisper integration is not yet wired up
     if language.is_some() {
@@ -108,6 +109,7 @@ pub(crate) fn run(
         repeat_last_n,
         split_prompt,
         chat_template,
+        thinking,
         stream,
     };
 
@@ -484,6 +486,11 @@ fn print_run_output(
         print_benchmark_results(result, source, output_format, max_tokens);
     } else {
         println!();
+        if let Some(reasoning) = result.reasoning.as_deref() {
+            println!("{}", "Reasoning:".cyan().bold());
+            println!("{}", reasoning.dimmed());
+            println!();
+        }
         println!("{}", "Output:".green().bold());
         println!("{}", result.text);
     }
@@ -523,6 +530,9 @@ fn build_final_json(
     serde_json::json!({
         "model": source,
         "text": result.text,
+        // #3723: the answer is `text`; the model's reasoning never leaks into it.
+        "thinking": result.thinking,
+        "reasoning": result.reasoning,
         "tokens": tokens_json,
         "tokens_generated": tokens_generated,
         "max_tokens": max_tokens,

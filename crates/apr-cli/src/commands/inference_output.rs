@@ -173,6 +173,10 @@ fn glob_first(pattern: &Path) -> Option<PathBuf> {
 /// GH-250: Enhanced with tok_per_sec and used_gpu for JSON output
 struct InferenceOutput {
     text: String,
+    /// #3723: the think block, kept out of `text`
+    reasoning: Option<String>,
+    /// #3723: whether the prompt asked the model to think
+    thinking: bool,
     tokens_generated: Option<usize>,
     inference_ms: Option<f64>,
     tok_per_sec: Option<f64>,
@@ -219,6 +223,8 @@ fn execute_inference(
 
         Ok(InferenceOutput {
             text: format!(
+            reasoning: None,
+            thinking: false,
                 "[Inference requires --features inference]\nModel: {}\nInput: {}\nFormat: {}\nGPU: {}",
                 model_path.display(),
                 input_desc,
@@ -299,7 +305,7 @@ fn execute_with_realizar(
     options: &RunOptions,
     _use_mmap: bool,
 ) -> Result<InferenceOutput> {
-    use realizar::{run_inference, InferenceConfig};
+    use realizar::{run_chat_inference, InferenceConfig, RealizarError};
 
     // Get prompt from options or input file
     let prompt = if let Some(ref p) = options.prompt {
@@ -328,7 +334,8 @@ fn execute_with_realizar(
         .with_seed(options.seed)
         .with_repeat_penalty(options.repeat_penalty)
         .with_repeat_last_n(options.repeat_last_n)
-        .with_force_chat_template(options.chat_template);
+        .with_force_chat_template(options.chat_template)
+        .with_thinking(options.thinking);
 
     if options.no_gpu {
         config = config.without_gpu();
@@ -343,8 +350,14 @@ fn execute_with_realizar(
         config = config.with_trace_output(trace_path);
     }
 
-    // Run inference via realizar
-    let result = run_inference(&config).map_err(inference_error)?;
+    // Run inference via realizar; the reasoning is split out of the answer (#3723).
+    let chat = run_chat_inference(&config).map_err(|e| match e {
+        refused @ RealizarError::ThinkingModeUnsupported { .. } => {
+            CliError::ThinkingModeUnsupported(refused.to_string())
+        }
+        other => inference_error(other),
+    })?;
+    let (result, reasoning, thinking) = (chat.result, chat.reasoning, chat.thinking);
 
     // Report performance if benchmarking
     if options.benchmark {
@@ -376,6 +389,8 @@ fn execute_with_realizar(
     };
     Ok(InferenceOutput {
         text: result.text,
+        reasoning,
+        thinking,
         tokens_generated: Some(result.generated_token_count),
         inference_ms: Some(result.inference_ms),
         tok_per_sec: Some(result.tok_per_sec),

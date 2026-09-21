@@ -172,6 +172,8 @@ pub(crate) struct RunOptions {
     /// #3672: apply the model's chat template (`--chat`, or an instruct/chat source name)
     /// even when its metadata and file name say base model. The prompt itself stays raw.
     pub chat_template: bool,
+    /// #3723: thinking ON/OFF for a chat-templated prompt; None = OFF where allowed.
+    pub thinking: Option<bool>,
     /// `--stream`: emit one NDJSON event per generated token.
     ///
     /// Known here (not only at the print site) because streaming is the one
@@ -206,6 +208,7 @@ impl Default for RunOptions {
             repeat_last_n: 64,
             split_prompt: false,
             chat_template: false,
+            thinking: None,
             stream: false,
         }
     }
@@ -214,8 +217,12 @@ impl Default for RunOptions {
 /// Run result
 #[derive(Debug, Clone)]
 pub(crate) struct RunResult {
-    /// Output text
+    /// Output text: the ANSWER, with any think block moved to `reasoning` (#3723)
     pub text: String,
+    /// The model's reasoning, kept out of the answer (#3723)
+    pub reasoning: Option<String>,
+    /// Whether the prompt asked the model to think (#3723)
+    pub thinking: bool,
     /// Processing time in seconds
     pub duration_secs: f64,
     /// Whether model was cached
@@ -313,6 +320,8 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
 
     Ok(RunResult {
         text: output.text,
+        reasoning: output.reasoning,
+        thinking: output.thinking,
         duration_secs: duration.as_secs_f64(),
         cached: matches!(model_source, ModelSource::Local(_)) || model_source.cache_path().exists(),
         tokens_generated,

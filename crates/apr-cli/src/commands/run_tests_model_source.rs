@@ -32,6 +32,8 @@
     fn test_run_result_debug() {
         let result = RunResult {
             text: "Hello".to_string(),
+            reasoning: None,
+            thinking: false,
             duration_secs: 0.1,
             cached: true,
             tokens_generated: Some(5),
@@ -184,6 +186,8 @@
     fn test_run_result_clone() {
         let result = RunResult {
             text: "Test".to_string(),
+            reasoning: None,
+            thinking: false,
             duration_secs: 1.0,
             cached: false,
             tokens_generated: None,

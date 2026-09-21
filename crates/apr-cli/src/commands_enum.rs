@@ -76,6 +76,24 @@ pub const TRACE_LEVEL_VALUES: [&str; 5] = ["none", "basic", "layer", "payload", 
 /// Output formats `apr run -f/--format` accepts.
 pub const RUN_FORMAT_VALUES: [&str; 4] = ["text", "json", "srt", "vtt"];
 
+/// `--thinking on|off` (#3723): whether a model whose own chat template has a
+/// thinking mode reasons before it answers.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum ThinkingArg {
+    /// Reason first; the reasoning is reported apart from the answer.
+    On,
+    /// Answer directly.
+    Off,
+}
+
+impl ThinkingArg {
+    /// The choice as realizar takes it: `None` = no choice (OFF where allowed).
+    #[must_use]
+    pub fn choice(arg: Option<Self>) -> Option<bool> {
+        arg.map(|a| a == Self::On)
+    }
+}
+
 /// Output format for `apr code` non-interactive mode (PMAT-CODE-OUTPUT-FORMAT-001).
 /// Mirrors Claude Code's `claude -p --output-format <fmt>` parity row.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum, Default)]
@@ -175,6 +193,15 @@ pub enum Commands {
         /// Format: <|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n
         #[arg(long)]
         chat: bool,
+        /// Thinking mode for a model whose own chat template has one (#3723)
+        ///
+        /// Default: off wherever the model allows it. What the model offers is read
+        /// from its chat template; a mode it cannot honour (`on` for a model with no
+        /// thinking mode, `off` for one that always thinks) is refused with exit code
+        /// 15, never ignored. With `on` the reasoning is printed apart from the answer,
+        /// and returned as `reasoning` with `--json`.
+        #[arg(long, value_enum)]
+        thinking: Option<ThinkingArg>,
         /// Sampling temperature (0.0 = greedy, default: 0.0)
         #[arg(long, default_value = "0.0")]
         temperature: f32,

@@ -13,6 +13,8 @@
     fn layer_trace_result(duration_secs: f64, tokens: usize) -> RunResult {
         RunResult {
             text: "hi".to_string(),
+            reasoning: None,
+            thinking: false,
             duration_secs,
             cached: true,
             tokens_generated: Some(tokens),

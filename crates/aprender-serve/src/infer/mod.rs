@@ -87,6 +87,9 @@ pub struct InferenceConfig {
     /// name marks it as an instruct model (`apr run --chat`). The prompt stays raw text:
     /// the template is applied once, by `prepare_tokens`, never pre-wrapped by a caller.
     pub force_chat_template: bool,
+    /// Thinking mode for a chat-templated prompt (#3723): `None` = OFF wherever the
+    /// model's own template allows it; a mode the template cannot honour is refused.
+    pub thinking: Option<bool>,
 }
 
 impl InferenceConfig {
@@ -116,6 +119,7 @@ impl InferenceConfig {
             stop_tokens: Vec::new(),
             use_mock_backend: false,
             force_chat_template: false,
+            thinking: None,
         }
     }
 
@@ -203,6 +207,14 @@ impl InferenceConfig {
         self
     }
 
+    /// Choose thinking ON (`Some(true)`) or OFF (`Some(false)`) for a chat-templated
+    /// prompt; `None` keeps the default, OFF wherever the model allows it (#3723).
+    #[must_use]
+    pub fn with_thinking(mut self, thinking: Option<bool>) -> Self {
+        self.thinking = thinking;
+        self
+    }
+
     /// Enable inference tracing
     #[must_use]
     pub fn with_trace(mut self, trace: bool) -> Self {
@@ -271,6 +283,9 @@ pub struct PreparedTokens {
     tokens: Vec<u32>,
     /// Number of input tokens (for separating prefill from generated tokens)
     input_count: usize,
+    /// The chat prompt the tokens came from, when a chat template was applied: it
+    /// knows the thinking mode and splits the completion (#3723).
+    chat_prompt: Option<crate::chat_template::ChatPrompt>,
 }
 
 impl PreparedTokens {
@@ -284,6 +299,12 @@ impl PreparedTokens {
     #[must_use]
     pub fn input_count(&self) -> usize {
         self.input_count
+    }
+
+    /// The chat prompt, when a chat template was applied (#3723).
+    #[must_use]
+    pub fn chat_prompt(&self) -> Option<&crate::chat_template::ChatPrompt> {
+        self.chat_prompt.as_ref()
     }
 }
 
@@ -311,6 +332,7 @@ pub fn prepare_tokens(config: &InferenceConfig, format: &ModelFormat) -> Result<
         return Ok(PreparedTokens {
             input_count: tokens.len(),
             tokens: tokens.clone(),
+            chat_prompt: None,
         });
     }
 
@@ -320,6 +342,7 @@ pub fn prepare_tokens(config: &InferenceConfig, format: &ModelFormat) -> Result<
             return Ok(PreparedTokens {
                 tokens: vec![1u32],
                 input_count: 1,
+                chat_prompt: None,
             })
         },
     };
@@ -342,7 +365,7 @@ pub fn prepare_tokens(config: &InferenceConfig, format: &ModelFormat) -> Result<
 /// or when a BOS token ID exists and `add_bos_token` is not explicitly false.
 /// This matches llama.cpp behavior for LLaMA-family models.
 fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<PreparedTokens> {
-    use crate::chat_template::{format_messages, ChatMessage};
+    use crate::chat_template::ChatMessage;
     use crate::gguf::{GGUFValue, MappedGGUFModel};
 
     let mapped = MappedGGUFModel::from_path(&config.model_path)?;
@@ -364,14 +387,29 @@ fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<Prepare
     let filename_instruct = model_name.to_lowercase().contains("instruct")
         || model_name.to_lowercase().contains("-chat");
 
-    // Only apply chat template if the model actually has one, or filename says instruct
-    let formatted_prompt = if config.force_chat_template || has_chat_template || filename_instruct {
+    // Only apply chat template if the model actually has one, or filename says instruct.
+    // #3755: a file that ships a template gets THAT template, rendered as HF renders it;
+    // apr's per-family template is only the fallback. #3723: the thinking mode resolves
+    // against the template, and a refusal or a template error is an error, not a
+    // silent fall back to the raw prompt.
+    let chat_prompt = if config.force_chat_template || has_chat_template || filename_instruct {
         let template_hint = apr_arch_to_template_hint(gguf_arch, model_name);
+        let embedded =
+            crate::chat_template::EmbeddedChatTemplate::from_gguf(&mapped.model).transpose()?;
         let messages = vec![ChatMessage::user(prompt)];
-        format_messages(&messages, Some(template_hint)).unwrap_or_else(|_| prompt.to_string())
+        Some(crate::chat_template::format_chat_prompt(
+            embedded.as_ref(),
+            Some(template_hint),
+            &messages,
+            config.thinking,
+        )?)
     } else {
-        prompt.to_string()
+        crate::chat_template::ThinkingModes::OffOnly.resolve(config.thinking)?;
+        None
     };
+    let formatted_prompt = chat_prompt
+        .as_ref()
+        .map_or_else(|| prompt.to_string(), |p| p.text.clone());
 
     if config.verbose {
         eprintln!(
@@ -443,13 +481,26 @@ fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<Prepare
     Ok(PreparedTokens {
         input_count: tokens.len(),
         tokens,
+        chat_prompt,
     })
+}
+
+/// A SafeTensors model's own chat template: `chat_template` in the sibling
+/// `tokenizer_config.json`, when it is a single template string (#3755).
+fn sibling_chat_template(model_path: &std::path::Path) -> Option<String> {
+    let dir = model_path.parent()?;
+    let text = std::fs::read_to_string(dir.join("tokenizer_config.json")).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&text).ok()?;
+    json.get("chat_template")?
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
 }
 
 /// Prepare tokens for SafeTensors format (chat template from config.json)
 fn prepare_tokens_safetensors(config: &InferenceConfig, prompt: &str) -> Result<PreparedTokens> {
     use crate::apr::AprV2Model;
-    use crate::chat_template::{format_messages, ChatMessage};
+    use crate::chat_template::ChatMessage;
     use crate::safetensors::SafetensorsConfig;
 
     // Load config.json for architecture detection
@@ -475,13 +526,27 @@ fn prepare_tokens_safetensors(config: &InferenceConfig, prompt: &str) -> Result<
             "qwen2forcausallm" | "llamaforcausallm" | "mistralforcausallm" | "phiforcausallm"
         );
 
-    let formatted_prompt = if is_instruct {
+    // #3755/#3723: the model's own template (sibling tokenizer_config.json) when it has
+    // one, with the thinking mode resolved; refusals and template errors propagate.
+    let chat_prompt = if is_instruct {
         let template_hint = safetensors_arch_to_template_hint(&architecture, model_name);
+        let embedded = sibling_chat_template(&config.model_path)
+            .map(crate::chat_template::EmbeddedChatTemplate::new)
+            .transpose()?;
         let messages = vec![ChatMessage::user(prompt)];
-        format_messages(&messages, Some(template_hint)).unwrap_or_else(|_| prompt.to_string())
+        Some(crate::chat_template::format_chat_prompt(
+            embedded.as_ref(),
+            Some(template_hint),
+            &messages,
+            config.thinking,
+        )?)
     } else {
-        prompt.to_string()
+        crate::chat_template::ThinkingModes::OffOnly.resolve(config.thinking)?;
+        None
     };
+    let formatted_prompt = chat_prompt
+        .as_ref()
+        .map_or_else(|| prompt.to_string(), |p| p.text.clone());
 
     let tokens =
         AprV2Model::encode_text(&config.model_path, &formatted_prompt).ok_or_else(|| {
@@ -495,6 +560,7 @@ fn prepare_tokens_safetensors(config: &InferenceConfig, prompt: &str) -> Result<
     Ok(PreparedTokens {
         input_count: tokens.len(),
         tokens,
+        chat_prompt,
     })
 }
 
@@ -518,7 +584,7 @@ fn prepare_tokens_safetensors(config: &InferenceConfig, prompt: &str) -> Result<
 /// silently wrapping such files even when they were base completion models).
 fn prepare_tokens_apr(config: &InferenceConfig, prompt: &str) -> Result<PreparedTokens> {
     use crate::apr::AprV2Model;
-    use crate::chat_template::{format_messages, ChatMessage};
+    use crate::chat_template::ChatMessage;
 
     let model_name = config
         .model_path
@@ -526,37 +592,51 @@ fn prepare_tokens_apr(config: &InferenceConfig, prompt: &str) -> Result<Prepared
         .and_then(|n| n.to_str())
         .unwrap_or("");
 
-    let (apr_arch, has_chat_template) = if config.model_path.extension().is_some_and(|e| e == "apr")
-    {
+    let (apr_arch, template_source) = if config.model_path.extension().is_some_and(|e| e == "apr") {
         match AprV2Model::load(&config.model_path) {
             Ok(model) => {
                 let meta = model.metadata();
                 let arch = meta.architecture.clone().unwrap_or_default();
-                let has_tmpl = meta
+                let source = meta
                     .extra
                     .get("tokenizer.chat_template")
                     .and_then(|v| v.as_str())
-                    .is_some_and(|s| !s.is_empty());
-                (arch, has_tmpl)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned);
+                (arch, source)
             },
-            Err(_) => (String::new(), false),
+            Err(_) => (String::new(), None),
         }
     } else {
-        (String::new(), false)
+        (String::new(), None)
     };
+    let has_chat_template = template_source.is_some();
 
     let filename_instruct = model_name.to_lowercase().contains("instruct")
         || model_name.to_lowercase().contains("-chat");
 
     let is_instruct = config.force_chat_template || has_chat_template || filename_instruct;
 
-    let formatted_prompt = if is_instruct {
+    // #3755/#3723: the model's own template from APR metadata when it has one.
+    let chat_prompt = if is_instruct {
         let template_hint = apr_arch_to_template_hint(&apr_arch, model_name);
+        let embedded = template_source
+            .map(crate::chat_template::EmbeddedChatTemplate::new)
+            .transpose()?;
         let messages = vec![ChatMessage::user(prompt)];
-        format_messages(&messages, Some(template_hint)).unwrap_or_else(|_| prompt.to_string())
+        Some(crate::chat_template::format_chat_prompt(
+            embedded.as_ref(),
+            Some(template_hint),
+            &messages,
+            config.thinking,
+        )?)
     } else {
-        prompt.to_string()
+        crate::chat_template::ThinkingModes::OffOnly.resolve(config.thinking)?;
+        None
     };
+    let formatted_prompt = chat_prompt
+        .as_ref()
+        .map_or_else(|| prompt.to_string(), |p| p.text.clone());
 
     let tokens =
         AprV2Model::encode_text(&config.model_path, &formatted_prompt).ok_or_else(|| {
@@ -570,6 +650,7 @@ fn prepare_tokens_apr(config: &InferenceConfig, prompt: &str) -> Result<Prepared
     Ok(PreparedTokens {
         input_count: tokens.len(),
         tokens,
+        chat_prompt,
     })
 }
 

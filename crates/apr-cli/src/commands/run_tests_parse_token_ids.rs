@@ -225,6 +225,8 @@
     fn run_result_tokens_generated_none_vs_zero() {
         let result_none = RunResult {
             text: String::new(),
+            reasoning: None,
+            thinking: false,
             duration_secs: 0.0,
             cached: false,
             tokens_generated: None,
@@ -235,6 +237,8 @@
         };
         let result_zero = RunResult {
             text: String::new(),
+            reasoning: None,
+            thinking: false,
             duration_secs: 0.0,
             cached: false,
             tokens_generated: Some(0),
@@ -255,6 +259,8 @@
     fn run_result_field_independence() {
         let result = RunResult {
             text: "output".to_string(),
+            reasoning: None,
+            thinking: false,
             duration_secs: 1.234,
             cached: true,
             tokens_generated: Some(42),

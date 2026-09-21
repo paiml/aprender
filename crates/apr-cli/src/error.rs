@@ -126,6 +126,11 @@ pub enum CliError {
     /// operator learns which of the two it is; never a silent cpu run.
     #[error("Backend unavailable: {0}")]
     BackendUnavailable(String),
+
+    /// #3723: `--thinking on|off` asked for a mode the model's own chat template
+    /// cannot honour. The message names what the template offers.
+    #[error("{0}")]
+    ThinkingModeUnsupported(String),
 }
 
 impl CliError {
@@ -166,6 +171,10 @@ impl CliError {
             Self::ParityFailed(_) => 13,
             // R-0b: compiled but not Ready on this host (registry reason in the message).
             Self::BackendUnavailable(_) => 14,
+            // #3723: a thinking mode the model's own chat template cannot honour.
+            // Distinct so a caller can tell "this model does not do that" from a
+            // failed inference (8) or bad input (4).
+            Self::ThinkingModeUnsupported(_) => 15,
         }
     }
 }

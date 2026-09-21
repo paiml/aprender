@@ -108,9 +108,54 @@ pub(crate) fn validate_model_path(path: &std::path::Path) -> Result<()> {
 /// - Model format is unsupported
 /// - Generation fails
 pub fn run_inference(config: &InferenceConfig) -> Result<InferenceResult> {
+    run_inference_prepared(config).map(|(result, _)| result)
+}
+
+/// A completion with the model's reasoning kept out of the answer (#3723).
+#[derive(Debug, Clone)]
+pub struct ChatInferenceResult {
+    /// The inference result; `text` is the ANSWER, with any think block removed.
+    pub result: InferenceResult,
+    /// The think block's content, when the completion reasoned.
+    pub reasoning: Option<String>,
+    /// Whether the prompt asked the model to think.
+    pub thinking: bool,
+}
+
+/// Run inference and split the completion into reasoning and answer (#3723).
+///
+/// A think block still open when generation stopped is an ERROR naming the
+/// `max_tokens` budget, never an empty answer (#3720).
+///
+/// # Errors
+///
+/// Everything [`run_inference`] returns, a refused thinking mode, and an unclosed
+/// think block.
+pub fn run_chat_inference(config: &InferenceConfig) -> Result<ChatInferenceResult> {
+    let (mut result, prompt) = run_inference_prepared(config)?;
+    let Some(prompt) = prompt else {
+        return Ok(ChatInferenceResult {
+            result,
+            reasoning: None,
+            thinking: false,
+        });
+    };
+    let split = prompt.split(&result.text, config.max_tokens)?;
+    result.text = split.answer;
+    Ok(ChatInferenceResult {
+        result,
+        reasoning: split.reasoning,
+        thinking: prompt.thinking,
+    })
+}
+
+/// [`run_inference`], also returning the chat prompt the tokens came from.
+fn run_inference_prepared(
+    config: &InferenceConfig,
+) -> Result<(InferenceResult, Option<crate::chat_template::ChatPrompt>)> {
     // PMAT-COV-95: Mock backend for testing without disk I/O
     if config.use_mock_backend {
-        return run_mock_inference(config);
+        return run_mock_inference(config).map(|r| (r, None));
     }
 
     // GH-213: Detect sharded SafeTensors index.json BEFORE reading the file.
@@ -123,7 +168,8 @@ pub fn run_inference(config: &InferenceConfig) -> Result<InferenceResult> {
 
         let format = ModelFormat::SafeTensors;
         let prepared = prepare_tokens(config, &format)?;
-        return run_sharded_safetensors_inference(config, &prepared);
+        let result = run_sharded_safetensors_inference(config, &prepared)?;
+        return Ok((result, prepared.chat_prompt().cloned()));
     }
 
     // Validate path to prevent traversal attacks (F-SEC-222)
@@ -161,11 +207,12 @@ pub fn run_inference(config: &InferenceConfig) -> Result<InferenceResult> {
     // PreparedTokens (private inner data) which can ONLY be created here.
     let prepared = prepare_tokens(config, &format)?;
 
-    match format {
+    let result = match format {
         ModelFormat::Gguf => run_gguf_inference(config, &prepared),
         ModelFormat::Apr => run_apr_inference(config, &prepared),
         ModelFormat::SafeTensors => run_safetensors_inference(config, &prepared),
-    }
+    }?;
+    Ok((result, prepared.chat_prompt().cloned()))
 }
 
 /// Run GGUF model inference

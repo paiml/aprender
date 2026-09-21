@@ -314,6 +314,7 @@
             trace_payload: false,
             profile: false,
             chat: false,
+            thinking: None,
             temperature: 0.0,
             top_k: 1,
             top_p: None,

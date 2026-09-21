@@ -169,6 +169,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             repeat_penalty,
             repeat_last_n,
             chat,
+            thinking,
             split_prompt,
             batch_jsonl,
             verbose,
@@ -284,6 +285,7 @@ or drop `--backend`."
                 trace_level.as_str(),
                 *profile,
                 *chat,
+                ThinkingArg::choice(*thinking),
                 // PMAT-496: Sampling parameters — no longer silently dropped
                 *temperature,
                 *top_k,

@@ -87,6 +87,9 @@ impl LlmDriver for RealizarDriver {
             verbose: false,
             use_mock_backend: false,
             force_chat_template: false,
+            // The prompt arrives pre-templated (format_prompt_with_template), so realizar
+            // applies no template and there is no thinking mode to resolve here.
+            thinking: None,
             stop_tokens: vec![],
         };
 

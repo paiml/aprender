@@ -17,6 +17,8 @@
     fn test_chrome_trace_event_categories() {
         let result = RunResult {
             text: "test".to_string(),
+            reasoning: None,
+            thinking: false,
             duration_secs: 2.0,
             cached: false,
             tokens_generated: Some(3),
@@ -47,6 +49,8 @@
     fn test_chrome_trace_zero_tokens() {
         let result = RunResult {
             text: String::new(),
+            reasoning: None,
+            thinking: false,
             duration_secs: 0.5,
             cached: true,
             tokens_generated: Some(0),
@@ -66,6 +70,8 @@
     fn test_chrome_trace_no_tokens_generated_field() {
         let result = RunResult {
             text: "output".to_string(),
+            reasoning: None,
+            thinking: false,
             duration_secs: 1.0,
             cached: false,
             tokens_generated: None,
@@ -85,6 +91,8 @@
     fn test_chrome_trace_metadata_source() {
         let result = RunResult {
             text: "hi".to_string(),
+            reasoning: None,
+            thinking: false,
             duration_secs: 0.1,
             cached: false,
             tokens_generated: Some(1),
@@ -104,6 +112,8 @@
     fn test_chrome_trace_event_format() {
         let result = RunResult {
             text: "test".to_string(),
+            reasoning: None,
+            thinking: false,
             duration_secs: 1.0,
             cached: false,
             tokens_generated: Some(2),
@@ -133,6 +143,8 @@
     fn test_chrome_trace_token_count() {
         let result = RunResult {
             text: "test".to_string(),
+            reasoning: None,
+            thinking: false,
             duration_secs: 5.0,
             cached: false,
             tokens_generated: Some(10),
@@ -152,6 +164,8 @@
     fn test_chrome_trace_display_time_unit() {
         let result = RunResult {
             text: "t".to_string(),
+            reasoning: None,
+            thinking: false,
             duration_secs: 1.0,
             cached: false,
             tokens_generated: Some(1),
@@ -171,6 +185,8 @@
         // May conflict with parallel tests, but the function itself should not panic.
         let result = RunResult {
             text: "Hello world".to_string(),
+            reasoning: None,
+            thinking: false,
             duration_secs: 1.0,
             cached: false,
             tokens_generated: Some(5),
@@ -203,6 +219,8 @@
 
         let result = RunResult {
             text: "Hello world".to_string(),
+            reasoning: None,
+            thinking: false,
             duration_secs: 1.0,
             cached: false,
             tokens_generated: Some(3),
@@ -232,6 +250,8 @@
     fn test_print_benchmark_results_text() {
         let result = RunResult {
             text: "test output".to_string(),
+            reasoning: None,
+            thinking: false,
             duration_secs: 2.0,
             cached: false,
             tokens_generated: Some(100),
@@ -247,6 +267,8 @@
     fn test_print_benchmark_results_json() {
         let result = RunResult {
             text: "test".to_string(),
+            reasoning: None,
+            thinking: false,
             duration_secs: 1.0,
             cached: false,
             tokens_generated: Some(50),
@@ -262,6 +284,8 @@
     fn test_print_benchmark_zero_duration() {
         let result = RunResult {
             text: "".to_string(),
+            reasoning: None,
+            thinking: false,
             duration_secs: 0.0,
             cached: false,
             tokens_generated: Some(10),

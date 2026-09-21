@@ -462,8 +462,8 @@ pub mod uri;
 pub use arch_requirements::*;
 pub use error::{RealizarError, Result};
 pub use infer::{
-    run_batch_inference, run_inference, BatchInferenceConfig, BatchPrompt, BatchResult, BatchStats,
-    InferenceConfig, InferenceResult, PreparedTokens,
+    run_batch_inference, run_chat_inference, run_inference, BatchInferenceConfig, BatchPrompt,
+    BatchResult, BatchStats, ChatInferenceResult, InferenceConfig, InferenceResult, PreparedTokens,
 };
 pub use inference_trace::{InferenceTracer, ModelInfo, TraceConfig, TraceStep};
 pub use ptx_parity::{KernelDimensions, PtxParityReport};
