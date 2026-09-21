@@ -145,7 +145,6 @@ fn a_malformed_or_foreign_plant_never_fails_a_run() {
     assert!(with_delay(Some("decode:500"), || planted_delay("decode")).is_some());
 }
 
-
 /// #3598 quorum round 1, lane 1: a report that was never `close`d must say so, not print zeros.
 ///
 /// Uninstrumented generate paths return `InferenceResult::default()`, which carries a
@@ -156,8 +155,14 @@ fn a_malformed_or_foreign_plant_never_fails_a_run() {
 fn an_unclosed_report_has_no_wall_clock_and_no_residual() {
     let t = StageTimings::default();
     assert!(!t.is_closed(), "a default report was never closed");
-    assert_eq!(t.wall_ms, None, "absent, not 0.0 — nothing measured the wall clock");
-    assert_eq!(t.unattributed_ms, None, "no wall clock means no residual to state");
+    assert_eq!(
+        t.wall_ms, None,
+        "absent, not 0.0 — nothing measured the wall clock"
+    );
+    assert_eq!(
+        t.unattributed_ms, None,
+        "no wall clock means no residual to state"
+    );
 
     // And the control: once closed, both are present, so `None` means UNCLOSED and not
     // "closed with nothing in it".
@@ -165,5 +170,9 @@ fn an_unclosed_report_has_no_wall_clock_and_no_residual() {
     c.close(1234.0);
     assert!(c.is_closed());
     assert_eq!(c.wall_ms, Some(1234.0));
-    assert_eq!(c.unattributed_ms, Some(1234.0), "no stages measured ⇒ all of it unattributed");
+    assert_eq!(
+        c.unattributed_ms,
+        Some(1234.0),
+        "no stages measured ⇒ all of it unattributed"
+    );
 }
