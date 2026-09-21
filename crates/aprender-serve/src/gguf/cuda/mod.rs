@@ -663,6 +663,21 @@ impl OwnedQuantizedModelCuda {
             );
         }
 
+        // #3785: name the prefill GEMM precision this process will use, and why. Unconditional,
+        // like the [GH-129]/[PMAT-053] lines beside it (verbose() is REALIZAR_VERBOSE, not -v).
+        {
+            let cc = executor.gpu_profile.cc;
+            let precision = if executor.gpu_profile.fp8_prefill {
+                "FP8 (E4M3)"
+            } else {
+                "FP16"
+            };
+            eprintln!(
+                "[#3785] prefill GEMM precision: {precision} (cc={cc}; FP8 prefill defaults on for cc 89..{} only, FP8_PREFILL=0/1 overrides)",
+                crate::cuda::gpu_profile::FP8_PREFILL_MAX_CC_EXCLUSIVE
+            );
+        }
+
         let device_name = executor
             .device_name()
             .unwrap_or_else(|_| "Unknown GPU".to_string());
