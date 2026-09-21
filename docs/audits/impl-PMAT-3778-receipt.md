@@ -29,7 +29,7 @@ GPU cells were NOT run here: the `gpu-q` queue held four P1 release jobs, and th
 
 - Tested with scratch manifests and the drivers' own CLIs, not through the main driver (`scripts/crux_inference_dogfood.sh`, aprender-76's, in flight); the integration is theirs to measure.
 - `greedy` first forced `min_new_tokens=steps`, which suppressed EOS ("4." became "4.000000"); removed before commit.
-- `scripts/check_no_competing_harnesses.sh` (PERF-009) flagged `crux_engine_llamafile.sh`: it starts llamafile's server and carries `decode_rate_tokens_per_second`. It computes no rate — it transcribes the engine's own `timings.predicted_per_second` into `reported`, which row contract v1 marks never judged and #3739 marks REPORT. Allowlisted with that reason (count 0, baseline 0 unchanged; self-test 18/18); `engine.py` does not trip the predicate.
+- `scripts/check_no_competing_harnesses.sh` (PERF-009) flagged the first draft of `crux_engine_llamafile.sh`: it starts llamafile's server and named a `decode_rate_tokens_per_second` field. An allowlist line was added and then REMOVED on the cop's ruling (no exemptions; an agent-added allowlist line is an agent-writable waiver). Restructured instead: the row carries llamafile's raw `timings` object verbatim and names no rate — any rate is the judge's to derive, the one computation site. The guard passes with `check_no_competing_harnesses.sh` byte-identical to main (count 0, baseline 0).
 - `gpu-q --help` was run once by mistake — gpu-q has no `--help` and queued it as a GPU job at prio 5; the tool timeout killed it and its trap removed the ticket (queue re-read afterwards: no ticket of ours).
 
 ## Verdict

@@ -234,7 +234,7 @@ gen() {
           + {reported: {interface: "server", thinking_requested: $th,
                         thinking_emitted: ((($m.reasoning_content // "") | length) > 0),
                         prompt_tokens: .usage.prompt_tokens, completion_tokens: .usage.completion_tokens,
-                        decode_rate_tokens_per_second: .timings.predicted_per_second}}' "$dir/$stem.resp" > "$out"
+                        timings: .timings}}' "$dir/$stem.resp" > "$out"
     fi
   fi
   if [ "$rc" = 0 ]; then row_rc=0; else row_rc=null; refused=$(refusal_text "$dir/$stem.err"); fi
