@@ -468,6 +468,24 @@ pub fn strip_thinking_blocks(output: &str) -> String {
     result.trim().to_string()
 }
 
+/// The answer a golden case is judged on: the output with its reasoning removed.
+///
+/// A think block that never closes is its OWN failure, naming the budget that cut
+/// it off. Stripped instead, it leaves "" and reads as "Empty output", which is what
+/// qwen3-8b-q4km reported on lambda for a model still reasoning at 512 tokens
+/// (0.69.0 ladder). The check reads the LAST `<think>`, so a closed block in the
+/// prompt (the no-think pre-fill) never counts.
+fn golden_answer(output: &str, test_id: &str, budget: usize) -> std::result::Result<String, String> {
+    if let Some(open) = output.rfind("<think>") {
+        if !output[open..].contains("</think>") {
+            return Err(format!(
+                "{test_id}: think block unclosed within the {budget}-token budget"
+            ));
+        }
+    }
+    Ok(strip_thinking_blocks(output))
+}
+
 /// JIDOKA: Validate GPU golden output matches expected patterns (PMAT-232 lesson).
 ///
 /// Without this, GPU correctness was NEVER tested — `apr qa` golden output only ran CPU.
@@ -504,10 +522,15 @@ fn validate_gpu_golden_output(
         Ok(mut cuda_model) => match cuda_model.generate_gpu_resident(prompt_tokens, gen_config) {
             Ok(gpu_tokens) => {
                 let gpu_text = gguf.decode(&gpu_tokens);
-                let gpu_answer = strip_thinking_blocks(&gpu_text); // GH-279-4
-                if let OutputVerification::Fail { reason } =
-                    verify_output(&gpu_answer, "golden_output_gpu", expected_patterns)
-                {
+                let verdict =
+                    golden_answer(&gpu_text, "golden_output_gpu", gen_config.max_tokens)
+                        .and_then(|gpu_answer| {
+                            match verify_output(&gpu_answer, "golden_output_gpu", expected_patterns) {
+                                OutputVerification::Fail { reason } => Err(reason),
+                                OutputVerification::Pass => Ok(()),
+                            }
+                        });
+                if let Err(reason) = verdict {
                     return Ok(Some(format!("GPU output failed (CPU passed): {reason}")));
                 }
             }
@@ -595,19 +618,25 @@ fn run_golden_output_gate_runtime(path: &Path, config: &QaConfig) -> Result<Gate
         );
     }
 
-    let test_cases = golden_test_cases();
-    // GH-279-4: thinking models need room for <think>...</think> + the answer.
-    let golden_max_tokens = config.max_tokens.max(512);
-
-    for (prompt, expected_patterns) in &test_cases {
-        let output_text = golden_output_runtime(path, prompt, golden_max_tokens)?;
-        let answer_text = strip_thinking_blocks(&output_text);
-        if let OutputVerification::Fail { reason } =
-            verify_output(&answer_text, "golden_output_runtime", expected_patterns)
-        {
+    // The cases production would build for this architecture (see `golden_test_cases_for`).
+    let arch = realizar::gguf::MappedGGUFModel::from_path(path)
+        .ok()
+        .and_then(|m| m.model.architecture().map(str::to_owned));
+    let test_cases = golden_test_cases_for(arch.as_deref());
+    for case in &test_cases {
+        // GH-279-4: a reasoning case needs room to close its think block.
+        let budget = case.budget(config.max_tokens);
+        let output_text = golden_output_runtime(path, &case.prompt, budget)?;
+        let verdict = golden_answer(&output_text, "golden_output_runtime", budget).and_then(
+            |answer| match verify_output(&answer, "golden_output_runtime", &case.expected) {
+                OutputVerification::Fail { reason } => Err(reason),
+                OutputVerification::Pass => Ok(()),
+            },
+        );
+        if let Err(reason) = verdict {
             return Ok(GateResult::failed(
                 "golden_output",
-                &reason,
+                &format!("[{}] {reason}", case.mode()),
                 None,
                 None,
                 start.elapsed(),

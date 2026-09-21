@@ -117,6 +117,91 @@ fn dir_name_fallback(path: &Path) -> String {
         .to_string()
 }
 
+/// The session's chat template and its format, announced once.
+/// GH-339: a Raw fallback is warned about instead of degrading silently.
+fn select_chat_template(
+    model_name: &str,
+) -> (Box<dyn ChatTemplateEngine + Send + Sync>, TemplateFormat) {
+    let template_format = detect_format_from_name(model_name);
+    let production = production_chat_template(model_name);
+    let no_think = production.is_some();
+    let chat_template = production.unwrap_or_else(|| auto_detect_template(model_name));
+    if matches!(template_format, TemplateFormat::Raw) {
+        eprintln!(
+            "{} Could not detect chat template for '{}', using raw format (no ChatML/Instruct wrapping)",
+            "Warning:".yellow(),
+            model_name.dimmed()
+        );
+    } else {
+        println!(
+            "{} {} chat template{}",
+            "Detected".green(),
+            template_format_name(template_format).cyan(),
+            if no_think { " (Qwen3 no-think, as `apr serve`)" } else { "" }
+        );
+    }
+    (chat_template, template_format)
+}
+
+/// `apr chat`'s template when it must differ from aprender-core's pick.
+///
+/// `apr chat` templates through aprender-core's detector, which maps every `qwen*`
+/// architecture to plain ChatML. `apr serve` templates through realizar's, which
+/// gives `qwen3*` (except `qwen3moe`) `Qwen3NoThinkTemplate` (PMAT-181): an empty
+/// think block, so the model answers directly. On Qwen3-8B with plain ChatML, chat
+/// reasoned for 545 tokens on "What is 2+2?" on lambda (RTX 4090) and printed only
+/// `<think>` text inside a 512-token turn, while `apr serve` answered "2 + 2 = 4."
+/// (0.69.1 critical path). Returns realizar's production template for the one
+/// architecture family where the two detectors disagree, and `None` for every other
+/// architecture, which keeps aprender-core's template.
+fn production_chat_template(model_name: &str) -> Option<Box<dyn ChatTemplateEngine + Send + Sync>> {
+    use realizar::chat_template::{create_template, detect_format_from_name, TemplateFormat as Rt};
+    (detect_format_from_name(model_name) == Rt::Qwen3NoThink).then(|| {
+        Box::new(RealizarTemplate {
+            inner: create_template(Rt::Qwen3NoThink),
+            chatml: aprender::text::chat_template::ChatMLTemplate::new(),
+        }) as Box<dyn ChatTemplateEngine + Send + Sync>
+    })
+}
+
+/// A realizar template behind aprender-core's `ChatTemplateEngine`, so the chat
+/// session keeps one template type. Special tokens are ChatML's, which is what
+/// `Qwen3NoThinkTemplate` wraps.
+struct RealizarTemplate {
+    inner: Box<dyn realizar::chat_template::ChatTemplateEngine>,
+    chatml: aprender::text::chat_template::ChatMLTemplate,
+}
+
+impl ChatTemplateEngine for RealizarTemplate {
+    fn format_message(&self, role: &str, content: &str) -> Result<String, aprender::AprenderError> {
+        self.inner
+            .format_message(role, content)
+            .map_err(|e| aprender::AprenderError::Serialization(format!("chat template: {e}")))
+    }
+
+    fn format_conversation(&self, messages: &[ChatMessage]) -> Result<String, aprender::AprenderError> {
+        let messages: Vec<realizar::chat_template::ChatMessage> = messages
+            .iter()
+            .map(|m| realizar::chat_template::ChatMessage::new(m.role.clone(), m.content.clone()))
+            .collect();
+        self.inner
+            .format_conversation(&messages)
+            .map_err(|e| aprender::AprenderError::Serialization(format!("chat template: {e}")))
+    }
+
+    fn special_tokens(&self) -> &aprender::text::chat_template::SpecialTokens {
+        self.chatml.special_tokens()
+    }
+
+    fn format(&self) -> TemplateFormat {
+        TemplateFormat::ChatML
+    }
+
+    fn supports_system_prompt(&self) -> bool {
+        self.inner.supports_system_prompt()
+    }
+}
+
 fn template_format_name(tf: TemplateFormat) -> &'static str {
     match tf {
         TemplateFormat::ChatML => "ChatML",
@@ -298,5 +383,34 @@ mod tests {
     #[test]
     fn test_chat_load_no_fallback_on_arch_refusal() {
         assert!(true);
+    }
+}
+
+#[cfg(test)]
+mod production_chat_template_tests {
+    use super::*;
+
+    /// `apr chat` must template Qwen3 turns exactly as `apr serve` does.
+    #[test]
+    fn qwen3_and_qwen35_get_the_serve_template() {
+        use realizar::chat_template::{create_template, TemplateFormat as Rt};
+        for arch in ["qwen3", "qwen35"] {
+            let chat = production_chat_template(arch).expect("qwen3* gets the production template");
+            let turn = [ChatMessage::user("What is 2+2?")];
+            let serve = create_template(Rt::Qwen3NoThink)
+                .format_conversation(&[realizar::chat_template::ChatMessage::user("What is 2+2?")])
+                .expect("serve template formats a user turn");
+            let got = chat.format_conversation(&turn).expect("chat template formats a user turn");
+            assert_eq!(got, serve, "{arch}");
+            assert!(got.ends_with("<|im_start|>assistant\n<think>\n</think>\n"), "{got:?}");
+        }
+    }
+
+    /// Everywhere the two detectors agree, chat keeps aprender-core's template.
+    #[test]
+    fn other_architectures_keep_their_template() {
+        for arch in ["qwen2", "qwen3moe", "llama", "mistral", "phi3", "unknown"] {
+            assert!(production_chat_template(arch).is_none(), "{arch}");
+        }
     }
 }

@@ -76,7 +76,8 @@ fn golden_output_gguf_cpu(
 ///
 /// Runs the model with a known prompt and verifies the output contains expected patterns.
 /// Uses verify_output() for structured validation (PMAT-QA-PROTOCOL-001 §7.4).
-/// Golden test cases: ChatML prompt + expected output patterns.
+/// Golden questions and the patterns a correct answer contains; `golden_test_cases_for`
+/// turns them into prompts for a given architecture.
 ///
 /// SELECTION RULE (#2350): a golden prompt must have a WIDE argmax margin, so its
 /// greedy continuation is the same on every backend. These assert on exact
@@ -109,25 +110,123 @@ fn golden_output_gguf_cpu(
 /// The three cases below were all verified to produce identical continuations on
 /// CPU and CUDA. Keep it that way: if you add a case, run it on both backends
 /// first (`crates/apr-cli/tests/golden_prompt_tokenization.rs` is the harness).
-fn golden_test_cases() -> Vec<(&'static str, Vec<&'static str>)> {
+fn golden_questions() -> Vec<(&'static str, Vec<&'static str>)> {
     vec![
-        (
-            "<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n",
-            vec!["4"],
-        ),
+        ("What is 2+2?", vec!["4"]),
         // Replaces the bare "Hello". Still exercises a conversational turn, but
         // with enough context that the first generated token is not a near-tie.
         (
-            "<|im_start|>user\nHello there, how are you doing today my friend?<|im_end|>\n<|im_start|>assistant\n",
+            "Hello there, how are you doing today my friend?",
             vec!["Hello", "Hi", "hey", "hello", "well", "!"],
         ),
         // Factual recall: a wide-margin argmax and a check that the model is
         // actually reasoning over its weights rather than emitting boilerplate.
-        (
-            "<|im_start|>user\nWhat is the capital of France?<|im_end|>\n<|im_start|>assistant\n",
-            vec!["Paris"],
-        ),
+        ("What is the capital of France?", vec!["Paris"]),
     ]
+}
+
+/// One golden case: the prompt, what a correct answer contains, and whether the
+/// model is made to reason before answering.
+struct GoldenCase {
+    prompt: String,
+    expected: Vec<&'static str>,
+    thinking: bool,
+}
+
+/// Output budget for a case answered directly, without reasoning.
+const GOLDEN_DIRECT_BUDGET: usize = 512;
+
+/// Output budget for a case the model reasons through first. Qwen3-8B reasoned for
+/// 545 tokens on "What is 2+2?" on lambda's x86 CPU (0.69.0), past the 512 every
+/// case used to share, and the gate read the cut-off reasoning as an empty answer.
+/// The 0.69.1 bar is "MORE than enough tokens (overdo it)": this is about 7.5x the
+/// longest measured block.
+const GOLDEN_THINK_BUDGET: usize = 4096;
+
+impl GoldenCase {
+    fn budget(&self, config_max_tokens: usize) -> usize {
+        config_max_tokens.max(if self.thinking {
+            GOLDEN_THINK_BUDGET
+        } else {
+            GOLDEN_DIRECT_BUDGET
+        })
+    }
+
+    fn mode(&self) -> &'static str {
+        if self.thinking {
+            "thinking"
+        } else {
+            "direct"
+        }
+    }
+}
+
+/// The golden cases for a model whose architecture is unknown.
+#[cfg(test)]
+fn golden_test_cases() -> Vec<GoldenCase> {
+    golden_test_cases_for(None)
+}
+
+/// The golden cases for `arch`, in every mode production serves it in.
+///
+/// A model realizar templates with `Qwen3NoThinkTemplate` (every `qwen3*` except
+/// `qwen3moe`, PMAT-181) thinks unless told not to, so it is judged BOTH ways:
+/// DIRECT through the production no-think prompt that `apr serve` and `apr chat`
+/// build, and THINKING through plain ChatML with a budget the reasoning can close
+/// in. The gate used to send only plain ChatML at 512 tokens, a mode no production
+/// path used and a budget Qwen3-8B overran (0.69.0 ladder, qwen3-8b-q4km). Every
+/// other architecture gets plain ChatML, byte-identical to the prompts the #2350
+/// selection rule was verified against.
+fn golden_test_cases_for(arch: Option<&str>) -> Vec<GoldenCase> {
+    let thinks = thinks_by_default(arch);
+    let mut cases = Vec::new();
+    for (question, expected) in golden_questions() {
+        if thinks {
+            cases.push(GoldenCase {
+                prompt: no_think_prompt(question),
+                expected: expected.clone(),
+                thinking: false,
+            });
+        }
+        cases.push(GoldenCase {
+            prompt: chatml_prompt(question),
+            expected,
+            thinking: thinks,
+        });
+    }
+    cases
+}
+
+/// Whether production templates `arch` with thinking switched off, i.e. the model
+/// reasons by default. The same detector `apr serve` uses.
+#[cfg(feature = "inference")]
+fn thinks_by_default(arch: Option<&str>) -> bool {
+    use realizar::chat_template::{detect_format_from_name, TemplateFormat};
+    arch.map(detect_format_from_name) == Some(TemplateFormat::Qwen3NoThink)
+}
+
+/// Without `inference` there is no template detector and no model to run.
+#[cfg(not(feature = "inference"))]
+fn thinks_by_default(_arch: Option<&str>) -> bool {
+    false
+}
+
+/// A user turn as `apr serve` templates it for a model with thinking switched off.
+#[cfg(feature = "inference")]
+fn no_think_prompt(question: &str) -> String {
+    use realizar::chat_template::{create_template, ChatMessage, TemplateFormat};
+    create_template(TemplateFormat::Qwen3NoThink)
+        .format_conversation(&[ChatMessage::user(question)])
+        .unwrap_or_else(|_| chatml_prompt(question))
+}
+
+#[cfg(not(feature = "inference"))]
+fn no_think_prompt(question: &str) -> String {
+    chatml_prompt(question)
+}
+
+fn chatml_prompt(question: &str) -> String {
+    format!("<|im_start|>user\n{question}<|im_end|>\n<|im_start|>assistant\n")
 }
 
 /// Generate output for a single test case based on model format.
@@ -165,8 +264,7 @@ fn generate_golden_for_format(
 #[cfg(feature = "inference")]
 fn validate_golden_test_case(
     path: &Path,
-    prompt: &str,
-    expected_patterns: &[&str],
+    case: &GoldenCase,
     config: &QaConfig,
     format: realizar::format::ModelFormat,
     mapped: Option<&realizar::gguf::MappedGGUFModel>,
@@ -175,13 +273,10 @@ fn validate_golden_test_case(
     start: Instant,
 ) -> Result<Option<GateResult>> {
     use realizar::format::ModelFormat;
-
-    // GH-279-4: Thinking models (Qwen3) need extra tokens for <think>...</think>
-    // chain-of-thought before the answer. 32 tokens is not enough — the model
-    // exhausts the budget on reasoning and never emits the answer. Qwen3's
-    // thinking can be verbose (~100-200 tokens for simple math), so 512 gives
-    // ample room for reasoning + answer.
-    let golden_max_tokens = config.max_tokens.max(512);
+    let prompt = case.prompt.as_str();
+    let expected_patterns = case.expected.as_slice();
+    // GH-279-4: a reasoning case needs room to close its think block (GOLDEN_THINK_BUDGET).
+    let golden_max_tokens = case.budget(config.max_tokens);
 
     let Some((_, output_text)) =
         generate_golden_for_format(path, prompt, golden_max_tokens, format, mapped, gguf_model)?
@@ -222,7 +317,7 @@ fn validate_golden_test_case(
         )? {
             return Ok(Some(GateResult::failed(
                 "golden_output",
-                &failure,
+                &format!("[{}] {failure}", case.mode()),
                 None,
                 None,
                 start.elapsed(),
@@ -237,13 +332,16 @@ fn validate_golden_test_case(
     let generated_text = output_text
         .strip_prefix(prompt)
         .unwrap_or(&output_text);
-    let answer_text = strip_thinking_blocks(generated_text); // GH-279-4
-    if let OutputVerification::Fail { reason } =
-        verify_output(&answer_text, "golden_output", expected_patterns)
-    {
+    let verdict = golden_answer(generated_text, "golden_output", golden_max_tokens).and_then(
+        |answer| match verify_output(&answer, "golden_output", expected_patterns) {
+            OutputVerification::Fail { reason } => Err(reason),
+            OutputVerification::Pass => Ok(()),
+        },
+    );
+    if let Err(reason) = verdict {
         return Ok(Some(GateResult::failed(
             "golden_output",
-            &reason,
+            &format!("[{}] {reason}", case.mode()),
             None,
             None,
             start.elapsed(),
@@ -259,8 +357,6 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
     if !config.json && config.verbose {
         println!("{}", "Running golden output test...".yellow());
     }
-
-    let test_cases = golden_test_cases();
 
     #[cfg(feature = "inference")]
     {
@@ -289,12 +385,12 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         } else {
             (None, None)
         };
+        let test_cases = golden_test_cases_for(gguf_model.as_ref().and_then(|g| g.architecture()));
 
-        for (prompt, expected_patterns) in &test_cases {
+        for case in &test_cases {
             if let Some(result) = validate_golden_test_case(
                 path,
-                prompt,
-                expected_patterns,
+                case,
                 config,
                 format,
                 mapped.as_ref(),
@@ -317,7 +413,7 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 
     #[cfg(not(feature = "inference"))]
     {
-        let _ = (path, config, test_cases);
+        let _ = (path, config);
         Ok(GateResult::skipped(
             "golden_output",
             "Requires 'inference' feature",
@@ -536,10 +632,10 @@ mod golden_output_tests {
     fn test_golden_test_cases_nonempty_and_structured() {
         let cases = golden_test_cases();
         assert!(!cases.is_empty());
-        for (prompt, patterns) in &cases {
-            assert!(prompt.contains("<|im_start|>assistant"));
-            assert!(prompt.contains("<|im_start|>user"));
-            assert!(!patterns.is_empty());
+        for case in &cases {
+            assert!(case.prompt.contains("<|im_start|>assistant"));
+            assert!(case.prompt.contains("<|im_start|>user"));
+            assert!(!case.expected.is_empty());
         }
     }
 
@@ -548,9 +644,9 @@ mod golden_output_tests {
         let cases = golden_test_cases();
         let arith = cases
             .iter()
-            .find(|(p, _)| p.contains("2+2"))
+            .find(|c| c.prompt.contains("2+2"))
             .expect("arithmetic golden case must exist");
-        assert!(arith.1.contains(&"4"));
+        assert!(arith.expected.contains(&"4"));
     }
 
     #[test]
@@ -558,9 +654,83 @@ mod golden_output_tests {
         let a = golden_test_cases();
         let b = golden_test_cases();
         assert_eq!(a.len(), b.len());
-        for ((pa, _), (pb, _)) in a.iter().zip(b.iter()) {
-            assert_eq!(pa, pb);
+        for (ca, cb) in a.iter().zip(b.iter()) {
+            assert_eq!(ca.prompt, cb.prompt);
         }
+    }
+
+    /// The prompts the #2350 selection rule verified, byte for byte. A model whose
+    /// production template is plain ChatML must keep getting exactly these.
+    const VERIFIED_CHATML: [&str; 3] = [
+        "<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n",
+        "<|im_start|>user\nHello there, how are you doing today my friend?<|im_end|>\n<|im_start|>assistant\n",
+        "<|im_start|>user\nWhat is the capital of France?<|im_end|>\n<|im_start|>assistant\n",
+    ];
+
+    #[test]
+    fn golden_prompts_stay_byte_identical_chatml_off_qwen3() {
+        for arch in [None, Some("qwen2"), Some("llama"), Some("phi3"), Some("qwen3moe")] {
+            let cases = golden_test_cases_for(arch);
+            let prompts: Vec<&str> = cases.iter().map(|c| c.prompt.as_str()).collect();
+            assert_eq!(prompts, VERIFIED_CHATML, "arch {arch:?}");
+            assert!(cases.iter().all(|c| !c.thinking && c.budget(32) == GOLDEN_DIRECT_BUDGET));
+        }
+    }
+
+    /// A model that thinks by default (qwen3, qwen35) is judged in BOTH modes: DIRECT
+    /// through the prompt `apr serve` builds (no-think pre-fill), and THINKING through
+    /// plain ChatML with a budget the reasoning can close in. Plain ChatML at 512 was
+    /// the only mode before, and Qwen3-8B overran it (0.69.0 ladder, qwen3-8b-q4km).
+    #[cfg(feature = "inference")]
+    #[test]
+    fn thinking_models_are_judged_direct_and_thinking() {
+        use realizar::chat_template::{
+            create_template, detect_format_from_name, ChatMessage, TemplateFormat,
+        };
+        for arch in ["qwen3", "qwen35"] {
+            assert_eq!(detect_format_from_name(arch), TemplateFormat::Qwen3NoThink, "{arch}");
+            let cases = golden_test_cases_for(Some(arch));
+            let direct: Vec<&GoldenCase> = cases.iter().filter(|c| !c.thinking).collect();
+            let thinking: Vec<&GoldenCase> = cases.iter().filter(|c| c.thinking).collect();
+            assert_eq!(direct.len(), golden_questions().len(), "{arch}");
+            assert_eq!(thinking.len(), golden_questions().len(), "{arch}");
+            for ((d, t), (question, _)) in direct.iter().zip(&thinking).zip(golden_questions()) {
+                let serve = create_template(TemplateFormat::Qwen3NoThink)
+                    .format_conversation(&[ChatMessage::user(question)])
+                    .expect("no-think template formats a user turn");
+                assert_eq!(d.prompt, serve, "{arch}: {question}");
+                assert!(d.prompt.ends_with("<|im_start|>assistant\n<think>\n</think>\n"));
+                assert_eq!(d.budget(32), GOLDEN_DIRECT_BUDGET);
+                assert_eq!(t.prompt, chatml_prompt(question), "{arch}: {question}");
+                assert_eq!(t.budget(32), GOLDEN_THINK_BUDGET);
+            }
+        }
+        // The think budget must clear the longest block measured, with room to spare.
+        assert!(GOLDEN_THINK_BUDGET >= 4 * 545);
+    }
+
+    /// An unclosed think block is reported as one, naming the budget. It is never
+    /// stripped to "" and read as "Empty output".
+    #[test]
+    fn unclosed_think_block_is_its_own_failure() {
+        let cut = "<think>\nOkay, the user is asking what 2+2 is. In base 10, which";
+        assert_eq!(
+            golden_answer(cut, "golden_output", 512),
+            Err("golden_output: think block unclosed within the 512-token budget".to_string())
+        );
+        assert_eq!(
+            golden_answer("<think>\nsimple.\n</think>\n\n2 + 2 = 4.", "golden_output", 4096),
+            Ok("2 + 2 = 4.".to_string())
+        );
+        // The closed pre-fill of a no-think prompt is not an open block.
+        assert_eq!(
+            golden_answer("<think>\n</think>\n2 + 2 = 4.", "golden_output", 512),
+            Ok("2 + 2 = 4.".to_string())
+        );
+        assert_eq!(
+            golden_answer("<think>a</think>b<think>c", "golden_output_gpu", 4096),
+            Err("golden_output_gpu: think block unclosed within the 4096-token budget".to_string())
+        );
     }
 
     /// Poka-yoke for #2350: no golden prompt may be a bare one-or-two-word user
@@ -579,8 +749,9 @@ mod golden_output_tests {
     /// that actually cost 24 days of a red nightly.
     #[test]
     fn golden_prompts_are_not_bare_one_word_messages() {
-        for (prompt, _) in golden_test_cases() {
-            let user_msg = prompt
+        for case in golden_test_cases() {
+            let user_msg = case
+                .prompt
                 .split("<|im_start|>user\n")
                 .nth(1)
                 .and_then(|s| s.split("<|im_end|>").next())
