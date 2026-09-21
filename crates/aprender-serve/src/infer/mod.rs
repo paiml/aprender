@@ -574,6 +574,9 @@ include!("mod_log_transformer_eos.rs");
 include!("mod_05.rs");
 include!("batch.rs");
 
+/// #3751: which CPU reference the dense F2's GPU path tracks — an env-gated evidence harness.
+#[cfg(all(test, feature = "cuda"))]
+mod dense_f2_reference_choice_tests;
 /// #3751: CPU(Q8_K) vs CPU(FP32) reference drift, per model — an env-gated evidence harness.
 #[cfg(test)]
 mod q8k_reference_drift_tests;
