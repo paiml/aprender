@@ -364,6 +364,14 @@ fn dispatch_code_command(args: CodeArgs<'_>) -> Result<(), CliError> {
     {
         print_code_help_and_exit();
     }
+    // PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001: forward as
+    // `&str` so the orchestrate crate need not depend on the apr-cli
+    // ValueEnum types.
+    let output_format = match args.output_format {
+        crate::CodeOutputFormat::Text => "text",
+        crate::CodeOutputFormat::Json => "json",
+    };
+    let started = std::time::Instant::now();
     batuta::agent::code::cmd_code(
         args.model.clone(),
         args.project.to_path_buf(),
@@ -373,19 +381,26 @@ fn dispatch_code_command(args: CodeArgs<'_>) -> Result<(), CliError> {
         args.max_turns,
         args.manifest.clone(),
         args.emit_trace.clone(),
-        // PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001: forward as
-        // `&str` so the orchestrate crate need not depend on the apr-cli
-        // ValueEnum types.
-        match args.output_format {
-            crate::CodeOutputFormat::Text => "text",
-            crate::CodeOutputFormat::Json => "json",
-        },
+        output_format,
         match args.input_format {
             crate::CodeInputFormat::Text => "text",
             crate::CodeInputFormat::Json => "json",
         },
     )
-    .map_err(|e| CliError::Aprender(e.to_string()))
+    .map_err(|e| {
+        let err = CliError::Aprender(e.to_string());
+        // #3775: an error cmd_code returns still owes a -p json run its one
+        // JSON document, carrying the exit code this error becomes.
+        batuta::agent::code::emit_error_document(
+            args.print,
+            args.prompt,
+            output_format,
+            &e,
+            i32::from(err.exit_code_value()),
+            started.elapsed(),
+        );
+        err
+    })
 }
 
 /// #2607: render the real `apr code --help` and leave, without running the

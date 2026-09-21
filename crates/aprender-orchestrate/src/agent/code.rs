@@ -317,9 +317,10 @@ fn release_driver(tools: ToolRegistry, driver: Arc<dyn LlmDriver>) {
 /// tool registration, and REPL launch.
 ///
 /// #3775: a non-interactive run with `--output-format json` writes exactly
-/// one JSON document to stdout on EVERY exit. An error returned from here
-/// leaves `apr` through `CliError::Aprender`, exit 1
-/// (crates/apr-cli/src/error.rs), so its document says exit 1.
+/// one JSON document to stdout on EVERY exit. The exits inside this function
+/// write their own; an error it RETURNS is written by the caller through
+/// [`emit_error_document`], because only the caller knows the exit code the
+/// error becomes.
 #[allow(clippy::too_many_arguments)]
 pub fn cmd_code(
     model: Option<PathBuf>,
@@ -330,51 +331,10 @@ pub fn cmd_code(
     max_turns: u32,
     manifest_path: Option<PathBuf>,
     emit_trace: Option<PathBuf>,
-    // PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001:
-    // accepted as &str ("text" | "json") to keep this crate's public API
-    // independent of apr-cli's ValueEnum types. Unknown values fall back
-    // to "text" — the legacy behavior — under Poka-Yoke.
     output_format: &str,
     input_format: &str,
 ) -> anyhow::Result<()> {
-    let json_document = (print || !prompt.is_empty()) && output_format.eq_ignore_ascii_case("json");
-    let started = std::time::Instant::now();
-    let result = cmd_code_inner(
-        model,
-        project,
-        resume,
-        prompt,
-        print,
-        max_turns,
-        manifest_path,
-        emit_trace,
-        output_format,
-        input_format,
-    );
-    if let (true, Err(e)) = (json_document, &result) {
-        let mut outcome = e.downcast_ref::<CodeOutcome>().cloned().unwrap_or_else(|| {
-            CodeOutcome::failed("agent_error", e.to_string(), exit_code::AGENT_ERROR)
-        });
-        outcome.exit_code = exit_code::AGENT_ERROR;
-        println!("{}", envelope(None, Some(&outcome), started.elapsed()));
-    }
-    result
-}
-
-#[allow(clippy::too_many_arguments)]
-fn cmd_code_inner(
-    model: Option<PathBuf>,
-    project: PathBuf,
-    resume: Option<Option<String>>,
-    prompt: Vec<String>,
-    print: bool,
-    max_turns: u32,
-    manifest_path: Option<PathBuf>,
-    emit_trace: Option<PathBuf>,
-    output_format: &str,
-    input_format: &str,
-) -> anyhow::Result<()> {
-    let json_document = (print || !prompt.is_empty()) && output_format.eq_ignore_ascii_case("json");
+    let json_document = json_document_mode(print, &prompt, output_format);
     let started = std::time::Instant::now();
     // #2607: settled BEFORE the working directory changes, before any
     // settings file is read, and — the point of the issue — before any model
@@ -409,9 +369,7 @@ fn cmd_code_inner(
     // permit; the REPL spends the same budget per turn inside its loop.
     let mut turn_budget = TurnBudget::new(max_turns);
     let single_prompt_permit = permit_single_prompt(&mut turn_budget, print || !prompt.is_empty())
-        .map_err(|e| {
-            CodeOutcome::refused("max_turns_exhausted", e.to_string(), exit_code::AGENT_ERROR)
-        })?;
+        .map_err(max_turns_refusal)?;
 
     // --resume <id>: resolve the session BEFORE any model is launched.
     // An unknown id used to be discarded without a word: `-p` mode returned
@@ -475,16 +433,7 @@ fn cmd_code_inner(
 
     // Contract: no_model_error — never silently use MockDriver
     if manifest.model.resolve_model_path().is_none() && manifest_path.is_none() {
-        print_no_model_error();
-        if json_document {
-            let outcome = CodeOutcome::refused(
-                "no_model",
-                "no model found: pass --model or place a model where apr code discovers one",
-                exit_code::NO_MODEL,
-            );
-            println!("{}", envelope(None, Some(&outcome), started.elapsed()));
-        }
-        std::process::exit(exit_code::NO_MODEL);
+        exit_no_model(json_document, started);
     }
 
     // PMAT-160: Try AprServeDriver first (apr serve has full CUDA/GPU).
@@ -747,6 +696,56 @@ fn discover_and_set_model(manifest: &mut AgentManifest) {
 }
 
 /// Print actionable error when no local model is available.
+/// `true` when this invocation owes exactly one JSON document on stdout:
+/// a non-interactive (`-p` / prompt) run with `--output-format json` (#3775).
+fn json_document_mode(print: bool, prompt: &[String], output_format: &str) -> bool {
+    (print || !prompt.is_empty()) && output_format.eq_ignore_ascii_case("json")
+}
+
+/// A `--max-turns` refusal, carried as its #3720 kind (#3775).
+fn max_turns_refusal(e: anyhow::Error) -> CodeOutcome {
+    CodeOutcome::refused("max_turns_exhausted", e.to_string(), exit_code::AGENT_ERROR)
+}
+
+/// The no-model exit: the stderr guidance, then (#3775) the JSON document a
+/// json run owes, then exit `NO_MODEL`.
+fn exit_no_model(json_document: bool, started: std::time::Instant) -> ! {
+    print_no_model_error();
+    if json_document {
+        let outcome = CodeOutcome::refused(
+            "no_model",
+            "no model found: pass --model or place a model where apr code discovers one",
+            exit_code::NO_MODEL,
+        );
+        println!("{}", envelope(None, Some(&outcome), started.elapsed()));
+    }
+    std::process::exit(exit_code::NO_MODEL);
+}
+
+/// #3775: write the JSON document for an error [`cmd_code`] RETURNED, when the
+/// invocation owes one; a no-op otherwise. `exit_code` is the code the caller
+/// exits with for that error (apr-cli: `CliError::Aprender`, 1), so the
+/// document cannot disagree with the process status. A refusal `cmd_code`
+/// typed (`CodeOutcome`) keeps its kind; anything else is `agent_error`.
+pub fn emit_error_document(
+    print: bool,
+    prompt: &[String],
+    output_format: &str,
+    err: &anyhow::Error,
+    exit_code: i32,
+    elapsed: std::time::Duration,
+) {
+    if !json_document_mode(print, prompt, output_format) {
+        return;
+    }
+    let mut outcome = err
+        .downcast_ref::<CodeOutcome>()
+        .cloned()
+        .unwrap_or_else(|| CodeOutcome::failed("agent_error", err.to_string(), exit_code));
+    outcome.exit_code = exit_code;
+    println!("{}", envelope(None, Some(&outcome), elapsed));
+}
+
 fn print_no_model_error() {
     eprintln!("✗ No local model found. apr code requires a local model.\n");
     if check_invalid_apr_in_search_dirs() {
