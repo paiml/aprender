@@ -379,6 +379,30 @@ fn test_infer_tokenizer_json_apr_without_tokenizer() {
 }
 
 // ========================================================================
+// infer_tokenizer_json: the legacy layout with a tokenizer (#3761)
+// ========================================================================
+
+/// The positive control for the hint reader's non-v2 path, which #3761 moved from a whole-file
+/// read to a growing prefix: a 44-byte head, then metadata naming a tokenizer and ending in the
+/// terminator, then data. The hint is still found.
+#[test]
+fn test_infer_tokenizer_json_legacy_apr_with_tokenizer() {
+    let dir = std::env::temp_dir().join("apr_test_legacy_tokenizer_3761");
+    let _ = fs::create_dir_all(&dir);
+    let path = dir.join("legacy_tok.apr");
+    let mut data = vec![0u8; 44];
+    data.extend_from_slice(br#"{"tokenizer": {"type": "BPE"}"#);
+    data.extend_from_slice(b"}\n\n\n");
+    data.extend_from_slice(&[0u8; 4096]);
+    fs::write(&path, &data).expect("write failed");
+
+    let result = infer_tokenizer_json(&path);
+    assert!(result.contains("BPE"), "{result:?}");
+
+    let _ = fs::remove_file(&path);
+}
+
+// ========================================================================
 // GH-253-4: ValidatedGgufMetadata tests
 // ========================================================================
 
