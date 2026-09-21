@@ -18973,6 +18973,23 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE (hand-entered from issue #3587 "What lands"; minted on the PR branch so the AD-04 quorum can run -- pmat work status refuses a missing item). Two halves: the explicit-command runner (#3616, merged) and the nextest [profile.ci] key (#3626). Lands: 1. **--no-fail-fast on the shard.** The cost is runner minutes on an already-red shard; the benefit is that a red run still measures everything else it was going to measure — which is exactly when you most want the data. 2. **The reducer reports ran / skipped / total** in the shard receipt. The skipped count is a **number**, never an absence. 3. **A receipt with skipped > 0 is Unknown, not Fail and not Pass** — it names what was not measured, per doctrine 4. '
+- id: PMAT-3605
+  github_issue: 3605
+  item_type: task
+  title: 'removed_by gets a shape: refusal-receipt-v1 with a closed escape set'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-21T00:00:00Z
+  updated: 2026-09-21T00:00:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from gh#3605 done_when; see paiml-mcp-agent-toolkit#1414). Done when: contracts/refusal-receipt-v1.yaml exists with a shape over removed_by, and the value space is a CLOSED SET rather than free text: pattern ^(v[0-9]+\\.[0-9]+|never|unscheduled)$. The point of the closed set is that legitimately-nothing stays SAYABLE and CHECKABLE — never and unscheduled are honest answers with a shape behind them, instead of a required field manufacturing a fake version. Fixtures cover each arm of the alternation plus a rejecting case. STOP: do not admit free text; do not make the field optional, which would make absence indistinguishable from a deliberate never.'
 - id: PMAT-3618
   github_issue: 3618
   item_type: task

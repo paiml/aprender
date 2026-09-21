@@ -216,10 +216,21 @@ fn the_tracked_repo_graph_is_fresh() {
     assert_eq!(r.code, 0, "{}", show(&r));
     let v = json_of(&r);
     assert!(v["triples"].as_u64().unwrap_or(0) > 5000, "{}", show(&r));
+    // MEASURED on this branch: `pv extract contracts --check` reports
+    // shapes_n=6, triples=15620. The count is deliberately hardcoded rather
+    // than derived — a shape added without anyone noticing is the thing this
+    // assertion exists to prevent, so adding one is SUPPOSED to turn it red and
+    // make you name the new shape here.
+    //
+    // It did exactly that for #3605's `refusal-receipt-v1`, and a quorum lane
+    // caught it rather than I did. Note for whoever merges second: this counter
+    // is shared across branches, so a sibling PR that also adds a shape
+    // (#3600's parity-receipt-v2) will need the number raised again at merge —
+    // that is the ratchet working, not a conflict to route around.
     assert_eq!(
         v["shapes_n"],
-        5,
-        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2)\n{}",
+        6,
+        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605)\n{}",
         show(&r)
     );
 }

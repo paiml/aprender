@@ -112,109 +112,33 @@
     ] ;
 .
 
-<https://ont.paiml.dev/v1alpha1/shape/parity-receipt-complete> a sh:NodeShape ;
-    sh:targetClass <https://ont.paiml.dev/v1alpha1/parity/ParityReceipt> ;
+<https://ont.paiml.dev/v1alpha1/shape/refusal-receipt-v1> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/refusal/Refusal> ;
     sh:closed true ;
     sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/parity/file> ;
+        sh:path <https://ont.paiml.dev/v1alpha1/refusal/verb> ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
     ] ;
     sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/parity/host> ;
+        sh:path <https://ont.paiml.dev/v1alpha1/refusal/reason> ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:minLength 12 ;
     ] ;
     sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/parity/backend> ;
+        sh:path <https://ont.paiml.dev/v1alpha1/refusal/exit_code> ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
-        sh:in ( "cpu" "cuda" "wgpu" "metal" ) ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
     ] ;
     sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/parity/aprVersion> ;
+        sh:path <https://ont.paiml.dev/v1alpha1/refusal/removed_by> ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/parity/generatedAt> ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/parity/unmeasured> ;
-        sh:minCount 1 ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/parity/partiallyReceipted> ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:datatype <http://www.w3.org/2001/XMLSchema#boolean> ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/parity/thresholdSource> ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/parity/thresholdSourceMissing> ;
-        sh:maxCount 0 ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/parity/modelSha256> ;
-        sh:maxCount 1 ;
-        sh:pattern "^[0-9a-f]{64}$" ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/parity/comparator> ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:class <https://ont.paiml.dev/v1alpha1/parity/Comparator> ;
-        sh:nodeKind sh:IRI ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/parity-receipt-complete/node> ;
-    ] ;
-.
-
-<https://ont.paiml.dev/v1alpha1/shape/parity-receipt-complete/node> a sh:NodeShape ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/parity/kind> ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:in ( "llama_cpp" "transformers" "self" ) ;
-    ] ;
-.
-
-<https://ont.paiml.dev/v1alpha1/shape/parity-comparator-self> a sh:NodeShape ;
-    sh:targetClass <https://ont.paiml.dev/v1alpha1/parity/SelfComparedReceipt> ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/parity/comparator> ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/parity-comparator-self/node> ;
-    ] ;
-.
-
-<https://ont.paiml.dev/v1alpha1/shape/parity-comparator-self/node> a sh:NodeShape ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/parity/reason> ;
-        sh:minCount 1 ;
-    ] ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/parity/comparatorSha> ;
-        sh:maxCount 0 ;
-    ] ;
-.
-
-<https://ont.paiml.dev/v1alpha1/shape/parity-comparator-oracle> a sh:NodeShape ;
-    sh:targetClass <https://ont.paiml.dev/v1alpha1/parity/OracleComparedReceipt> ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/parity/comparator> ;
-        sh:node <https://ont.paiml.dev/v1alpha1/shape/parity-comparator-oracle/node> ;
-    ] ;
-.
-
-<https://ont.paiml.dev/v1alpha1/shape/parity-comparator-oracle/node> a sh:NodeShape ;
-    sh:property [
-        sh:path <https://ont.paiml.dev/v1alpha1/parity/comparatorSha> ;
-        sh:minCount 1 ;
+        sh:pattern "^(v[0-9]+\\.[0-9]+|never|unscheduled)$" ;
     ] ;
 .
 

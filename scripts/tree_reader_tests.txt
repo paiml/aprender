@@ -73,6 +73,7 @@ aprender-contracts-cli	--test	ont6_lint_verdict
 aprender-contracts-cli	--test	ont6b_kind_default
 aprender-contracts-cli	--test	ont_entity_properties
 aprender-contracts-cli	--test	ont_extract_json
+aprender-contracts-cli	--test	ont_refusal_receipt
 aprender-contracts-cli	--test	pv_surface_gate
 aprender-contracts-cli	--test	pvl_zero_contracts
 aprender-core	--lib	format::metadata_bounds_contract_falsify
