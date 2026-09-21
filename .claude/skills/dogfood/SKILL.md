@@ -864,6 +864,34 @@ that does not ship, and it cannot be dogfooded by anyone who has not been told
 the flag. As of 3.32.0 `mcp-http` is in `default`. **If a release moves it back
 out, the description must move with it.**
 
+## 14. What 0.69.0 shipped with — each leak now has an OWNING gate (2026-09-21)
+
+0.69.0 was tagged green and then stopped by the operator ("the requirement was all
+CUDA models on qwen 3.5 4k quantized! STOP THE LINE"). Every leak below passed
+every gate this protocol had. Each row names the check that now owns it and where
+that check runs. **This table is an index, not the enforcement.** A row with no
+gate is a filed issue, never a paragraph. Tracking: #3768.
+
+| leak | owning gate | runs | row |
+|---|---|---|---|
+| Verbs/flags/models enumerated by hand: `apr serve` and `apr code` on Qwen3.5 never exercised, `run --prompt --chat` shape missed, `*Q4_K*` filename glob, a `VERBS` const | cells DERIVED from the release binary's own clap surface × the header-measured Q4_K inventory, SHACL `release-readiness-v1`; a guard refuses a hand-typed verb/flag enumeration | workspace-test (PR) + pre-publish | #3745, #3763 |
+| apr retyped the model's chat template (`<think>\n</think>\n` vs `<think>\n\n</think>\n\n`: 0.8B answered 2+2 = "2") | the prompt is the RENDERING of the GGUF's embedded `tokenizer.chat_template`, byte-equal to pinned llama.cpp `--jinja` for every inventory model × thinking on/off | pre-publish dogfood gate | #3755 |
+| Self-parity is blind to what CPU and GPU share (tokenizer, template) | token ids vs pinned `llama-tokenize` (`scripts/tokenizer_parity.sh`); CRUX: same GGUF + prompts through apr, llama.cpp, ollama for every derived verb, apr right wherever a competitor is right | pre-publish | #3726, #3739 |
+| A JIT/PTX cache key omitted a baked parameter (FP8 activation reuse; RMSNorm ε 1e-5 baked for 1e-6 models → Qwen3.5 GPU fell back to CPU on chat prompts) | per-key content-hash guard: one key, two compiled hashes = panic | the CUDA suite on lambda + gx10, pre-publish (not in PR CI) | #3727, #3759 |
+| A validator was the wrong side (Q8_K-activation CPU reference rejected an exact GPU) | reference with FP32 activations / float64 ground truth; an ORACLE change ships with a mutant proving it still rejects a real fault | row tests + ladder | #3751, #3714 |
+| Removing a refusal delivered garbage (`<unk>` fixed → 0-layer serve → HTTP 200 of newlines) | 0-layer load refusal on all 14 serve routes; an empty or length-only answer is never Pass | PR + ladder cells | #3571, #3720 |
+| Silent CPU fallback under a GPU request | any fallback line under a GPU request scores the cell RED | ladder / derived cells | #3738, #3596 |
+| A flag with no observable effect (`--temperature` alone greedy; `.safetensors` never samples) | flag-effect oracle: every derived mode arg changes output on ≥1 cell, or its typed marker declares it a no-op | pre-publish derived cells | #3745 S2.5, #3754, #3760 |
+| A receipt named what it inferred (ladder `sha` = worktree HEAD, not the binary it ran) | the judge requires the receipt's binary `--version` sha to equal the pinned binary | ladder judge | #3768 row 9 |
+| Rows green alone, RED together (complexity ratchet; fixtures fabricating another subsystem's receipt) | guard_tree + complexity ratchet + `cargo check --workspace --tests` on the ASSEMBLED batch before its PR | the fold | process |
+| Release scripts assumed GNU tools (BSD `sed` on mini refused a correct build) | the multiplatform host receipt runs the release scripts ON mini | post-publish hosts step | #3756, #3731 |
+
+The same shape recurs in every row: something was TYPED where it should have been
+DERIVED or MEASURED. That covers a list of verbs, a template string, a cache key
+missing a parameter, a sha taken from the tree instead of the binary, and a
+default that neutralised a flag. The test for any new gate: **what does it read
+that a person typed, and what would make that typing wrong?**
+
 ## On GO — the release (only after clean-room is also green)
 
 1. `git tag vX.Y.Z && git push origin vX.Y.Z` (or the repo's release workflow).

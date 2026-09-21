@@ -1,0 +1,19 @@
+- id: PMAT-3768
+  github_issue: 3768
+  item_type: task
+  title: 'dogfood: every leak 0.69.0 shipped with gets an OWNING pre-release gate — lessons of 2026-09-21 become checks, not prose'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-04
+  created: 2026-09-21T19:00:00Z
+  updated: 2026-09-21T19:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3768 done_when 1, verbatim: "The section exists in `.claude/skills/dogfood/SKILL.md`, one row per leak, each naming its gate and row. No row without an owning gate or a filed issue."'
+  - 'THIS PR delivers done_when 1 only. done_when 2 (rows 2, 4 and 8 wired as dogfood gates) lands with #3755, #3759 and #3745 S2.5; done_when 3 (row 9 filed and owned) is a GitHub action recorded on the issue. So this PR says Refs #3768, not Closes.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: 'Operator, verbatim, 2026-09-21: "update memory and dogfood for this", on the cop''s list of what 0.69.0 taught. SCOPE: `.claude/skills/dogfood/SKILL.md` (a new section 14 before "On GO": an 11-row table leak → owning gate → where it runs → row, plus one closing paragraph naming the common shape, TYPED where it should have been DERIVED or MEASURED) and this fragment. It is an INDEX, stated as such in the section: every row points at a gate that is a filed row with its own done_when, and the enforcement lives in those rows, not in this prose. Every issue number cited was read from GitHub on 2026-09-21: #3745 #3763 #3755 #3726 #3739 #3727 #3759 #3751 #3714 #3571 #3720 #3738 #3596 #3754 #3760 #3756 #3731 #3768. No code, no script, no workflow changed.'
