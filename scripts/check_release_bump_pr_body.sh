@@ -64,7 +64,7 @@ LADDER_JUDGE="$ROOT/scripts/check_model_ladder.sh"
 # enforces -- the producer (its GPU-lock audit reads it) and the cells module (the judge imports it).
 LADDER_CONTRACT="$ROOT/contracts/model-capability-ladder-v1.yaml"
 LADDER_PRODUCER="$ROOT/scripts/model_ladder.sh"
-LADDER_CELLS="$ROOT/scripts/lib/model_ladder_cells.py"
+LADDER_LIB="$ROOT/scripts/lib"   # every python module the judge imports (cells, the Q4_K universe definition, ...)
 # #3699 done_when 1's reason, verbatim. The row pins it: the line must name exactly the owed
 # refs AND carry this text, nothing else.
 KEEP_OPEN_REASON='cited by the CHANGELOG for context; each closes via its own PR; the release EPIC closes at T-4'
@@ -137,7 +137,7 @@ run_ship() {
     mkdir -p "$d/seed/scripts/lib"
     cp -- "$LADDER_JUDGE" "$d/seed/scripts/check_model_ladder.sh"
     cp -- "$LADDER_PRODUCER" "$d/seed/scripts/model_ladder.sh"
-    [ -f "$LADDER_CELLS" ] && cp -- "$LADDER_CELLS" "$d/seed/scripts/lib/model_ladder_cells.py"
+    for m in "$LADDER_LIB"/*.py; do [ -f "$m" ] && cp -- "$m" "$d/seed/scripts/lib/"; done
     python3 - "$LADDER_CONTRACT" "$d/seed/contracts/model-capability-ladder-v1.yaml" <<'PY' || return 2
 import sys, yaml
 inv = yaml.safe_load(open(sys.argv[1]))["ladder"]["inventory"]
