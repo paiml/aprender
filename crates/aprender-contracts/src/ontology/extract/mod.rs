@@ -24,6 +24,7 @@ pub mod lean;
 pub mod parity_receipt;
 pub mod pv_contract;
 pub mod release_cells;
+pub mod release_crux;
 pub mod release_evidence;
 pub mod release_inputs;
 

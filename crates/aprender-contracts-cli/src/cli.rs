@@ -515,6 +515,9 @@ pub struct ReleaseArgs {
     /// The release candidate's `apr surface --json` (#3745): the release cells are DERIVED from it
     #[arg(long)]
     pub surface: Option<PathBuf>,
+    /// The CRUX receipts, apr vs its comparators (default: evidence/crux/<version>/)
+    #[arg(long)]
+    pub crux_receipts: Option<PathBuf>,
 }
 
 impl ReleaseArgs {
@@ -529,6 +532,7 @@ impl ReleaseArgs {
             || self.dogfood_receipt.is_some()
             || self.tokenizer_receipts.is_some()
             || self.surface.is_some()
+            || self.crux_receipts.is_some()
     }
 
     /// The subject, or `None` when no flag was passed. A partial set is refused, never completed by a default.
@@ -557,6 +561,7 @@ impl ReleaseArgs {
         s.tokenizer_receipts_dir
             .clone_from(&self.tokenizer_receipts);
         s.surface.clone_from(&self.surface);
+        s.crux_receipts_dir.clone_from(&self.crux_receipts);
         Ok(Some(s))
     }
 }

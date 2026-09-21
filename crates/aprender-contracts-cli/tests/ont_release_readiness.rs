@@ -186,6 +186,25 @@ fn synthesize(t: &Path) {
             .map(pass_row)
             .collect();
         edit(&models(t, h), |v| v["cells"] = Value::Array(rows));
+        let mut keys: Vec<String> = cells
+            .iter()
+            .filter(|c| c["host"] == h && c["command"] == "gen" && c["kind"] == "matrix")
+            .map(|c| {
+                format!(
+                    r#"{{"key":{{"model_sha256":{},"host":"{h}","verb":"gen","thinking":{},"rung":{},"prompt_id":"p1"}},"verdict":"GREEN"}}"#,
+                    c["model_sha256"], c["thinking"], c["rung"]
+                )
+            })
+            .collect();
+        keys.sort();
+        keys.dedup();
+        let crux_dir = t.join("evidence/crux/0.69.1");
+        std::fs::create_dir_all(&crux_dir).expect("crux dir");
+        let receipt = format!(
+            r#"{{"schema":"crux-inference-receipt/v1","version":"0.69.1","host":"{h}","apr":{{"version_line":"apr 0.69.1 (111111111)"}},"cells":[{}]}}"#,
+            keys.join(",")
+        );
+        std::fs::write(crux_dir.join(format!("{h}-gpu.json")), receipt).expect("crux receipt");
     }
 }
 
@@ -334,9 +353,12 @@ fn the_green_release_passes_with_every_derived_cell_carrying_a_row() {
     assert_eq!(rel["surface"]["generating_commands"], 1);
     assert_eq!(rel["kernel_cells"], 4);
     assert_eq!(rel["tokenizer_cells"], 1);
+    assert_eq!(rel["crux"]["verbs"], 3, "every derived leaf verb");
+    assert_eq!(rel["crux"]["mapped_verbs"], 1, "only gen has a counterpart");
+    assert!(rel["crux"]["obligations"].as_u64() > Some(0));
     assert_eq!(
         v["armed_shapes"].as_array().map(Vec::len),
-        Some(13),
+        Some(15),
         "--shape arms the whole family"
     );
     let lambda = &rel["projection"]["lambda"];
@@ -552,6 +574,14 @@ fn t4_receipts_measured_at_the_bump_head_pass_only_with_receipts_commit() {
         edit(&kernels(t.path(), h), |v| v["apr_sha"] = BUMP.into());
     }
     edit(&tokenizer(t.path()), |v| v["apr_sha"] = BUMP.into());
+    for h in ["lambda", "gx10"] {
+        edit(
+            &t.path().join(format!("evidence/crux/0.69.1/{h}-gpu.json")),
+            |v| {
+                v["apr"]["version_line"] = format!("apr 0.69.1 ({})", &BUMP[..9]).into();
+            },
+        );
+    }
     let dir = s(&other);
     let r = gate(t.path(), &["--receipts", &dir, "--receipts-commit", BUMP]);
     assert_eq!(r.code, 0, "{}", show(&r));
@@ -873,4 +903,77 @@ fn pv_extract_writes_the_release_graph_and_the_cell_list_only_where_told() {
         !t.path().join("contracts/contracts.nt").exists(),
         "the tracked file is untouched"
     );
+}
+
+// ── S2.4: CRUX for every derived verb (#3739) ───────────────────────────────────────────────────────────
+
+fn crux_map(t: &Path) -> PathBuf {
+    t.join("evidence/crux/verb-correspondence.yaml")
+}
+
+fn crux_receipt(t: &Path, host: &str) -> PathBuf {
+    t.join(format!("evidence/crux/0.69.1/{host}-gpu.json"))
+}
+
+fn rewrite(path: &Path, from: &str, to: &str) {
+    let text = std::fs::read_to_string(path).expect("read");
+    assert!(text.contains(from), "{from:?} is in {}", path.display());
+    std::fs::write(path, text.replace(from, to)).expect("write");
+}
+
+#[test]
+fn a_verb_without_an_entry_an_engine_it_omits_or_a_none_without_reason_is_red() {
+    let t = green();
+    rewrite(
+        &crux_map(t.path()),
+        "  - verb: look\n    comparator: none\n    reason: \"fixture: reading a model's header has no comparator counterpart\"\n",
+        "",
+    );
+    assert_red_naming(&gate(t.path(), &[]), "release-crux-verb/0.69.1/look");
+    let t = green();
+    rewrite(
+        &crux_map(t.path()),
+        "      llamafile: {none: \"fixture: no llamafile build pinned\"}\n",
+        "",
+    );
+    assert_red_naming(&gate(t.path(), &[]), "engineMissing");
+    let t = green();
+    rewrite(
+        &crux_map(t.path()),
+        "reason: \"fixture: listing is apr's own\"",
+        "reason: \"\"",
+    );
+    assert_red_naming(&gate(t.path(), &[]), "noneWithoutReason");
+}
+
+#[test]
+fn a_red_an_unjudged_or_an_absent_crux_cell_is_red_and_all_wrong_is_named_not_failed() {
+    for verdict in ["RED", "UNJUDGED"] {
+        let t = green();
+        edit(&crux_receipt(t.path(), "lambda"), |v| {
+            v["cells"][0]["verdict"] = verdict.into()
+        });
+        assert_red_naming(
+            &gate(t.path(), &[]),
+            "release-crux/0.69.1/lambda/tiny-qwen35.gguf/gen",
+        );
+    }
+    let t = green();
+    std::fs::remove_file(crux_receipt(t.path(), "gx10")).expect("rm");
+    assert_red_naming(
+        &gate(t.path(), &[]),
+        "release-crux/0.69.1/gx10/tiny-qwen35.gguf/gen",
+    );
+    let t = green();
+    edit(&crux_receipt(t.path(), "lambda"), |v| {
+        v["cells"][0]["verdict"] = "ALL_WRONG".into()
+    });
+    let r = gate(t.path(), &[]);
+    assert_eq!(
+        r.code,
+        0,
+        "ALL_WRONG is named, not a violation: {}",
+        show(&r)
+    );
+    assert_eq!(json_of(&r)["release"]["crux"]["all_wrong"], 1);
 }
