@@ -201,6 +201,11 @@ fn the_generators_are_declared() {
         &["tensors"],
         &["serve", "plan"],
         &["surface"],
+        // Encoders and scorers take EncodeText, not PromptText (aprender-97):
+        // thinking × context-rung cells mean nothing for them.
+        &["embed"],
+        &["rerank"],
+        &["eval"],
     ] {
         assert!(!generates(path), "{path:?} does not generate");
     }

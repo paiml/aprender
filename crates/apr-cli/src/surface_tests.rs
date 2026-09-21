@@ -208,7 +208,8 @@ fn foreign_mounts_are_found_by_type() {
 #[test]
 fn classify_case_table() {
     use batuta_common::cli_roles::{
-        ConfigPath, DirPath, FreeText, InputFile, ModelPath, ModelRef, OutputPath, PromptText,
+        ConfigPath, DirPath, EncodeText, FreeText, InputFile, ModelPath, ModelRef, OutputPath,
+        PromptText,
     };
     #[derive(clap::Parser)]
     struct Probe {
@@ -227,6 +228,8 @@ fn classify_case_table() {
         config: Option<ConfigPath>,
         #[arg(long)]
         name: Option<FreeText>,
+        #[arg(long)]
+        encoded: Option<EncodeText>,
         #[arg(long)]
         raw_path: Option<PathBuf>,
         #[arg(long)]
@@ -257,6 +260,8 @@ fn classify_case_table() {
         ("dir", ("path", "other", Some("DirPath"))),
         ("config", ("path", "other", Some("ConfigPath"))),
         ("name", ("text", "other", Some("FreeText"))),
+        // Encoder/scorer input: a model input, but not a prompt (v1.1).
+        ("encoded", ("text", "other", Some("EncodeText"))),
         // The two rows the marker guard exists for.
         ("raw_path", ("path", "unknown", None)),
         ("raw_text", ("text", "unknown", None)),

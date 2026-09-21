@@ -130,7 +130,7 @@ pub enum ExtendedCommands {
         dataset: FreeText,
         /// Custom text (when dataset=custom)
         #[arg(long)]
-        text: Option<PromptText>,
+        text: Option<EncodeText>,
         /// Maximum tokens to evaluate
         #[arg(long, default_value = "512")]
         max_tokens: usize,
@@ -1270,21 +1270,21 @@ pub enum ExtendedCommands {
         /// exclusive with `--query`+`--passage`+`--vocab` (Phase 3b).
         /// Example: `--input-ids 101,2024,102,3456,102` for `[CLS] q [SEP] p [SEP]`.
         #[arg(long, value_name = "IDS")]
-        input_ids: Option<PromptText>,
+        input_ids: Option<EncodeText>,
         /// Pre-tokenised token-type ids (comma-separated `u32`s).
         /// Same length as `--input-ids`. 0 for query side, 1 for passage.
         #[arg(long, value_name = "IDS")]
-        token_type_ids: Option<PromptText>,
+        token_type_ids: Option<EncodeText>,
         /// Phase 3b — query text. Pair with `--passage` + `--vocab` to enable
         /// in-process WordPiece tokenisation. The tokeniser builds
         /// `[CLS] query [SEP] passage [SEP]` with `token_type_ids = 0` for
         /// the query side and `1` for the passage side.
         #[arg(long, value_name = "TEXT")]
-        query: Option<PromptText>,
+        query: Option<EncodeText>,
         /// Phase 3b — passage text. Required when `--query` is supplied
         /// in single-pair mode (use `--passages` for batch ranking).
         #[arg(long, value_name = "TEXT")]
-        passage: Option<PromptText>,
+        passage: Option<EncodeText>,
         /// Phase 5 — batch ranking mode (#326). Passage candidates to
         /// score against `--query`. May be supplied multiple times:
         /// `apr rerank model.apr --query "..." --passages "p1" --passages "p2"`.
@@ -1293,7 +1293,7 @@ pub enum ExtendedCommands {
         /// of `{passage, logit, score}` objects sorted by descending
         /// score when `--sort` is set.
         #[arg(long, value_name = "TEXT")]
-        passages: Vec<PromptText>,
+        passages: Vec<EncodeText>,
         /// Phase 5 — sort batch output by descending score (highest
         /// relevance first). Only meaningful with `--passages` and
         /// `--json`. Default: preserve input order.
@@ -1373,7 +1373,7 @@ pub enum ExtendedCommands {
         model: ModelPath,
         /// Text to encode. Repeatable: `apr embed model.apr --text "a" --text "b" --vocab tok.json`.
         #[arg(long, value_name = "TEXT")]
-        text: Vec<PromptText>,
+        text: Vec<EncodeText>,
         /// Phase 7 (GH-326) — read texts from a file, one per line.
         /// Concatenated with `--text` inputs in order: `--text` first,
         /// then `--text-file` rows. Blank lines and lines starting

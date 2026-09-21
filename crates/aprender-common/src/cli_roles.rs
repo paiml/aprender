@@ -333,6 +333,14 @@ text_role!(
     /// Any other free text: a name, id, tag, URL, pattern or list.
     FreeText
 );
+text_role!(
+    /// Text a model ENCODES or SCORES rather than generates from: `apr embed
+    /// --text`, `apr rerank --query/--passage`, `apr eval --text` (perplexity).
+    /// Role `other`, so the command does not read as a generator: `generates`
+    /// drives the thinking × context-rung cells, which mean nothing for an
+    /// encoder or a scorer (aprender-97 on #3745, v1.1).
+    EncodeText
+);
 
 /// Command-level marker: this command GENERATES text from prompts that do not
 /// arrive through a `PromptText` argument (#3745 S1, schema v1.1).
@@ -438,6 +446,12 @@ pub const MARKERS: &[Marker] = &[
         carrier: Carrier::Text,
         type_id: TypeId::of::<FreeText>,
     },
+    Marker {
+        name: "EncodeText",
+        role: Role::Other,
+        carrier: Carrier::Text,
+        type_id: TypeId::of::<EncodeText>,
+    },
 ];
 
 /// The marker whose type a value parser yields, if any.
@@ -478,6 +492,7 @@ mod tests {
         assert_eq!(parser_type::<DirPath>(), TypeId::of::<DirPath>());
         assert_eq!(parser_type::<ConfigPath>(), TypeId::of::<ConfigPath>());
         assert_eq!(parser_type::<FreeText>(), TypeId::of::<FreeText>());
+        assert_eq!(parser_type::<EncodeText>(), TypeId::of::<EncodeText>());
     }
 
     #[test]
