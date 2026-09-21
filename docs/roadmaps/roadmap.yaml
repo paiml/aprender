@@ -18990,6 +18990,23 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE (hand-entered from gh#3602 done_when; pmat work add derives neither spec: nor acceptance_criteria: — paiml-mcp-agent-toolkit#1414). Item 1: the GPU rejection is surfaced on a stream a user reads AND in --json. Item 2: SATISFIED BY #3606 — validate_ms instruments validate_gpu_first_token, measured 15.1s on qwen2.5-coder-0.5b; not owed again here. Item 3: root cause named for the dense path — ANSWERED, it is FP8 PREFILL, established by a 2x2 over FP8_PREFILL x FP8_DECODE with both flags named in every cell (divergence tracks FP8_PREFILL exactly, independent of FP8_DECODE; 34.3s used_gpu=false vs 16.9s used_gpu=true); a single-knob bisect could not separate them because detect_fp8_decode falls through to fp8_prefill. Item 4: the fail-vs-fall-back decision RECORDED — it already was, in registry::after_generation (R-0b, gh#3002/#3042): forced accelerator that fell to CPU = refusal exit 14, default selection = corrective line. The defect was that it had NO PRODUCTION CALLER; nor do registry::announce or registry::parity_line, which is why a real run prints zero selected: and zero parity: lines. Item 5: falsifier both ways — 6 cases in run_tests_accel_reconcile.rs; planting the pre-fix behaviour turns the two defect tests RED while the healthy-GPU control stays green. Measured on lambda RTX 4090 sm_89, apr 0.68.2 (e6f77c98c). NOT IN SCOPE, deliberately: the rejection REASON (cosine, position) is not plumbed into --json — it is produced inside realizar F2 and no channel carries it to the CLI; that is a #3606-shaped follow-up, not a value to approximate. STOP: do not widen f2_should_retry_without_fp8 here — that band belongs to gh#3483, reopened with the contradicting measurement. BLAST RADIUS: exit code changes on a shipped surface; 14 files under scripts/ and .github/workflows/ pass --gpu, incl. perf_gate.sh, parity_host_receipt.sh, model_ladder.sh — CI going red on one is the measurement, and its fix belongs on that gate.'
+- id: PMAT-3604
+  github_issue: 3604
+  item_type: task
+  title: 'f2_validate_qwen35 runs a full CPU reference forward on EVERY call (67% of a 14s TTFT) — run it once per (model sha256, apr version, device) and receipt it'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-20T22:25:52Z
+  updated: 2026-09-20T22:25:52Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE — transcribed from issue #3604 done_when (minted by the cop so the AD-04 quorum for PR #3634 can run; pmat work status refused on a missing item). (1) Validation runs once per (model sha256, apr version, device); subsequent runs of the same triple read the receipt. (2) --revalidate forces a fresh validation and rewrites the receipt. (3) Falsifier: a planted receipt carrying the wrong model sha256 must cause re-validation, not a skip. Same for a receipt written by a different apr version, and one written for a different device. Three planted-receipt cases, each asserted to re-validate. (4) A missing or unreadable receipt validates — absence is never consent. (Unknown/skip is not an option here; the fallback is to do the work.) (5) validate_ms in apr run --json (#3598) reports the cached case distinguishably from the fresh case, so the saving is readable from the receipt rather than inferred from a stopwatch. (6) Measured before/after TTFT on the 144-word row, on the same box with GPU occupancy recorded at start. ADMISSION: 0.69 if it is green by the cut, 0.70 otherwise — readiness rule, not date pressure. EXPLICITLY OUT OF SCOPE (three questions the instrument lane raised and did not answer; none block this row and none should be folded in): whether the CPU reference or the GPU probe dominates the 9.5 s (timed as one unit); whether a cheaper equivalent guard exists; the flat ~1.18 s unattributed_ms residual — recorded rather than absorbed into a neighbour, and the next stage to name. Refs #3596, #3598, #3080.'
 - id: PMAT-3605
   github_issue: 3605
   item_type: task
@@ -19058,6 +19075,23 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE (hand-entered from issue #3629 done_when; minted on the PR branch so the AD-04 quorum can run -- pmat work status refuses a missing item). Done when: scripts/fleet_utilization.sh --selftest has no pipe into grep -q; a mutation that restores the pipe AND forces EPIPE (out padded to >64 KiB so the write cannot complete before grep exits) turns the self-test RED deterministically — the positive control for the race, in the PR body the 55-site count is in the PR body from the command that produced it, and a guard refuses a new site (check_guards_are_wired.sh names it; ratchet baseline committed) main''s guard-tree green on the merge commit without rerun '
+- id: PMAT-3637
+  github_issue: 3604
+  item_type: task
+  title: 'Register PMAT-3604 in the roadmap so the AD-04 quorum for PR #3634 can run (registration only; the implementation is PR #3634)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-20T22:39:43Z
+  updated: 2026-09-20T22:39:43Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:triage
+  notes: 'ACCEPTANCE (this row is PR #3637 itself, a roadmap-only registration): (1) docs/roadmaps/entries/PMAT-3604.yaml exists with id PMAT-3604, github_issue 3604, kind:code, and its notes transcribe issue #3604 done_when items 1-6 faithfully — every criterion present, none added, the admission rule and the out-of-scope list as the issue states them; (2) docs/roadmaps/roadmap.yaml equals aggregate(entries/) and the diff vs origin/main is additive only (deleted=0, reserialised=0); (3) the PR body carries keep-open for #3604 and the diff touches nothing outside docs/roadmaps/ except this row''s own quorum receipt(s) at docs/audits/quorum-PMAT-3637*.json. NOT in scope: any code, test or measurement of PMAT-3604 — those are PR #3634 and are judged there. A lane that finds a done_when item mis-transcribed, missing or invented FAILs this row.'
 - id: PMAT-3651
   github_issue: 3651
   item_type: task
