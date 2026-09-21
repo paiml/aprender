@@ -291,6 +291,131 @@ else
     fi
 fi
 
+# ── PART 4: no lib test asserts a TRUNCATED duration is positive (#3703) ────
+#
+# The parts above know timing GUARDS (scripts). They cannot see a timing
+# ASSERTION inside a `--lib` test, which every required lane and the clean-room
+# B2 gate run, so this guard passed while `assert!(stats.generation_time_ms > 0
+# …)` sat in aprender-verify-ml. `generation_time_ms` is `elapsed.as_millis()`:
+# 0 on a host that finishes in under a millisecond, and it stopped the v0.69.0
+# clean-room on gx10-pool1.
+#
+# The shape: an assertion that an INTEGER duration (`.as_millis()`,
+# `.as_micros()`, `.as_secs()`, or a name ending `_ms` / `_us` / `_secs`) is
+# `> 0`, `>= 1` or `!= 0`. A float comparison (`> 0.0` on `as_secs_f64()`)
+# does not truncate and is not this shape. Comment lines are not assertions.
+# Each hit is either FIXED or recorded, with its reason, in
+# scripts/wallclock_assert_baseline.txt, keyed by the assertion's TEXT with an
+# occurrence count, never by `<path>:<line>`. A coordinate key goes stale on
+# any edit above the line, and the shrink-only ratchet refuses the re-pointed
+# entry, so an unrelated one-line edit in any file holding a recorded line
+# would turn this red with no remedy short of editing this guard. The ratchet
+# is `keyed`: no text may appear and no count may rise, so a new assertion of
+# this shape fails and so does a copy of a recorded one. A count above the
+# tree's is stale and fails too: lower it in the commit that fixed the line.
+printf '\nPART 4 — no lib test asserts a truncated duration is positive (#3703)\n'
+WALLCLOCK_RE='assert(_ne)?!\(.*(\.as_millis\(\)|\.as_micros\(\)|\.as_secs\(\)|\b[a-z_]*(_ms|_us|_secs)\b)[[:space:]]*(>[[:space:]]*0([^.0-9x]|$)|>=[[:space:]]*1([^.0-9]|$)|!=[[:space:]]*0([^.0-9x]|$))'
+WALLCLOCK_BASELINE=scripts/wallclock_assert_baseline.txt
+wc_matches() { # wc_matches <source line> -> 0 when it is the #3703 shape (never a comment)
+    [[ "$1" =~ ^[[:space:]]*// ]] && return 1
+    grep -qE "$WALLCLOCK_RE" <<<"$1"
+}
+# The pattern ships its case table (CLAUDE.md verification discipline #7).
+wc_table_bad=0
+while IFS='|' read -r want line; do
+    [ -n "$want" ] || continue
+    if wc_matches "$line"; then got=match; else got=no; fi
+    if [ "$got" != "$want" ]; then
+        printf 'FAIL  PART 4 case table: %s (wanted %s): %s\n' "$got" "$want" "$line"
+        wc_table_bad=1
+    fi
+done <<'ROWS'
+match|        assert!(stats.generation_time_ms > 0 || stats.total_generated < 10);
+match|    assert!(meta.age().as_millis() >= 1);
+match|    assert!(event.duration.as_micros() > 0);
+match|        assert!(result.total_time_ms > 0);
+match|    assert!(hunt_result.duration_ms > 0);
+match|    assert!(elapsed.as_secs() != 0);
+match|    assert!(snap.timestamp_ms > 0);
+no|        assert!(result.total_time_ms > 0.0);
+no|    assert!(elapsed.as_secs_f64() > 0.0);
+no|    assert_eq!(stats.total_generated, programs.len());
+no|    assert!(count > 0);
+no|    assert!(items_ms_total > 0);
+no|    // assert!(stats.generation_time_ms > 0) -- documented, not asserted
+no|    assert!(result.total_time_ms >= 10);
+no|    let ok = elapsed_ms > 0;
+ROWS
+if [ "$wc_table_bad" -ne 0 ]; then
+    printf '      the PART 4 pattern disagrees with its own case table -- no scan result is trusted\n'
+    rc=1
+elif [ ! -f "$WALLCLOCK_BASELINE" ]; then
+    printf 'FAIL  %s is missing -- the recorded hits are the other half of this check\n' "$WALLCLOCK_BASELINE"
+    rc=1
+else
+    wc_files=$(git ls-files -- 'crates/*/src/*.rs' 'crates/*/src/**/*.rs' 2>/dev/null | grep -c .)
+    # Every hit as `<path>:<line><TAB><text, tabs flattened, trimmed>`. The text is the key.
+    wc_sites=$(git ls-files -z -- 'crates/*/src/*.rs' 'crates/*/src/**/*.rs' 2>/dev/null \
+        | xargs -0 grep -nHE "$WALLCLOCK_RE" 2>/dev/null \
+        | while IFS= read -r h; do
+            f=${h%%:*}; rest=${h#*:}; n=${rest%%:*}; text=${rest#*:}
+            wc_matches "$text" || continue
+            text=${text//$'\t'/ }
+            text=${text#"${text%%[![:space:]]*}"}
+            text=${text%"${text##*[![:space:]]}"}
+            printf '%s:%s\t%s\n' "$f" "$n" "$text"
+          done | LC_ALL=C sort -u)
+    wc_data=$(grep -vE '^[[:space:]]*(#|$)' "$WALLCLOCK_BASELINE")
+    wc_malformed=$(printf '%s\n' "$wc_data" | grep . | grep -vE $'^[^\t]+\t[1-9][0-9]*$')
+    # NEW: a text the tree holds more often than recorded (absent = 0). STALE: the reverse.
+    # FILENAME, not NR == FNR: with an emptied ledger NR == FNR stays true through the
+    # sites, reads every hit as a recorded entry, and passes them all.
+    wc_new=$(LC_ALL=C awk -F'\t' 'FILENAME == ARGV[1] { want[$1] = $2 + 0; next }
+        { have[$2]++; at[$2] = at[$2] "\n            " $1 }
+        END { for (t in have) if (have[t] > want[t] + 0)
+                printf "%s  (%d in tree, %d recorded)%s\n", t, have[t], want[t] + 0, at[t] }' \
+        <(printf '%s\n' "$wc_data" | grep .) <(printf '%s\n' "$wc_sites" | grep .))
+    wc_stale=$(LC_ALL=C awk -F'\t' 'FILENAME == ARGV[1] { want[$1] = $2 + 0; next }
+        { have[$2]++ }
+        END { for (t in want) if (want[t] > have[t] + 0)
+                printf "%s  (%d recorded, %d in tree)\n", t, want[t], have[t] + 0 }' \
+        <(printf '%s\n' "$wc_data" | grep .) <(printf '%s\n' "$wc_sites" | grep .))
+    if [ "$wc_files" -eq 0 ]; then
+        printf 'FAIL  PART 4 scanned 0 files under crates/*/src -- git ls-files answered nothing,\n'
+        printf '      and a scan of nothing clears nothing\n'
+        rc=1
+    fi
+    if [ -n "$wc_malformed" ]; then
+        printf 'FAIL  %s has line(s) that are not TEXT, one TAB, then a count of at least 1:\n' "$WALLCLOCK_BASELINE"
+        printf '%s\n' "$wc_malformed" | sed 's/^/        /'
+        rc=1
+    fi
+    if [ -n "$wc_new" ]; then
+        printf 'FAIL  a lib test asserts a truncated duration is positive -- fails on a fast host (#3703):\n'
+        printf '%s\n' "$wc_new" | sed 's/^/        /'
+        printf '      Assert what the code promises (a count, a state, the declared value),\n'
+        printf '      never that elapsed time is positive. A copy of a recorded line counts too.\n'
+        rc=1
+    fi
+    if [ -n "$wc_stale" ]; then
+        printf 'FAIL  %s records more than the tree holds; lower or delete these in this commit:\n' "$WALLCLOCK_BASELINE"
+        printf '%s\n' "$wc_stale" | sed 's/^/        /'
+        rc=1
+    fi
+    [ "$wc_files" -gt 0 ] && [ -z "$wc_malformed" ] && [ -z "$wc_new" ] && [ -z "$wc_stale" ] &&
+        printf 'ok    %s hit(s) in %s files, all %s recorded text(s) in %s; no new one\n' \
+            "$(printf '%s\n' "$wc_sites" | grep -c .)" "$wc_files" \
+            "$(printf '%s\n' "$wc_data" | grep -c .)" "$WALLCLOCK_BASELINE"
+    # shrink-only against the merge-base: no text may appear, no count may rise (keyed)
+    # shellcheck source=scripts/lib_baseline_ratchet.sh
+    if . scripts/lib_baseline_ratchet.sh; then
+        baseline_ratchet_check "$(pwd)" "$WALLCLOCK_BASELINE" keyed || rc=1
+    else
+        printf 'FAIL  scripts/lib_baseline_ratchet.sh could not be sourced -- the ratchet did not run\n'
+        rc=1
+    fi
+fi
+
 printf '\n'
 if [ "$rc" -eq 0 ]; then
     printf 'PASS  no timing assertion can reach a required status check.\n'
