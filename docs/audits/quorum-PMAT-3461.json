@@ -1,0 +1,180 @@
+{
+  "ticket": "PMAT-3461",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 127 commit(s); judged against origin/main",
+  "head": "84883195bcde28b49b67b6b451602de53d0d5dd5",
+  "diff_sha256": "af36b08fbdd8142fe5a08dd6e62efb9910f4433f7e13a575fb355ae745e59223",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 7140,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The provided diff successfully registers PMAT-3459, PMAT-3460, and PMAT-3461 in the roadmap as requested. The diff strictly adds the YAML entries for each ticket with correctly transcribed metadata (id, github_issue, title, priority, etc.) matching the provided ticket information. The modification to docs/roadmaps/roadmap.yaml is purely additive as required. I found no evidence that any test asserts the opposite, no weakened gates, and the change correctly executes only what the ticket asks for. Therefore, I judge this diff as a PASS.",
+      "findings": [
+        {
+          "claim": "docs/roadmaps/entries/PMAT-3459.yaml exists with id PMAT-3459, github_issue 3459, priority critical, and a title that transcribes issue #3459",
+          "file": "docs/roadmaps/entries/PMAT-3459.yaml",
+          "grounding": "cited"
+        },
+        {
+          "claim": "docs/roadmaps/entries/PMAT-3460.yaml exists with id PMAT-3460, github_issue 3460, and a title that transcribes issue #3460",
+          "file": "docs/roadmaps/entries/PMAT-3460.yaml",
+          "grounding": "cited"
+        },
+        {
+          "claim": "roadmap.yaml diff is additive only, preserving the order and structure without deletions",
+          "file": "docs/roadmaps/roadmap.yaml",
+          "grounding": "cited"
+        }
+      ],
+      "raw_bytes": 4433,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly registers PMAT-3459, PMAT-3460, and PMAT-3461 as additive-only roadmap updates. It creates the required yaml entry files with the specified IDs, issue numbers, titles, and priorities. The roadmap.yaml update contains zero deletions. No out-of-scope code or script changes are present.",
+      "findings": [
+        {
+          "claim": "Creates PMAT-3459.yaml with correct id, github_issue 3459, priority critical, and matching title.",
+          "file": "docs/roadmaps/entries/PMAT-3459.yaml",
+          "grounding": "cited",
+          "line": 1
+        },
+        {
+          "claim": "Creates PMAT-3460.yaml with correct id, github_issue 3460, and matching title.",
+          "file": "docs/roadmaps/entries/PMAT-3460.yaml",
+          "grounding": "cited",
+          "line": 1
+        },
+        {
+          "claim": "Diff vs main is additive only for roadmap.yaml (0 deletions) and adds the correct entries.",
+          "file": "docs/roadmaps/roadmap.yaml",
+          "grounding": "cited",
+          "line": 18455
+        }
+      ],
+      "raw_bytes": 3834,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Lane 3 Review Summary for PMAT-3461:\n\nVerdict: PASS\n\n1. Alignment with Ticket PMAT-3461:\n   - The diff registers `PMAT-3459`, `PMAT-3460`, and `PMAT-3461` in `docs/roadmaps/entries/` and updates `docs/roadmaps/roadmap.yaml` accordingly.\n   - `docs/roadmaps/entries/PMAT-3459.yaml` correctly defines `id: PMAT-3459`, `github_issue: 3459`, `priority: critical`, and the required title.\n   - `docs/roadmaps/entries/PMAT-3460.yaml` correctly defines `id: PMAT-3460`, `github_issue: 3460`, `priority: medium`, and the required title.\n   - `docs/roadmaps/entries/PMAT-3461.yaml` correctly defines `id: PMAT-3461`, `github_issue: 3459`, `priority: high`, and notes matching acceptance criteria.\n   - `docs/roadmaps/roadmap.yaml` matches the aggregate of entries and is purely additive.\n\n2. Out of Scope / Forbidden Changes Check:\n   - No code, script, or gate modifications were introduced.\n   - No tests or existing roadmap entries were deleted or altered.\n\n3. Refutation Attempt:\n   - No gate weakening, receipt mismatch, or unrequested change was found. All acceptance criteria for roadmap registration are satisfied.",
+      "findings": [],
+      "raw_bytes": 4552,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "docs/roadmaps/entries/PMAT-3459.yaml",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "docs/roadmaps/entries/PMAT-3459.yaml exists with id PMAT-3459, github_issue 3459, priority critical, and a title that transcribes issue #3459"
+      ]
+    },
+    {
+      "file": "docs/roadmaps/entries/PMAT-3459.yaml",
+      "line": 1,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Creates PMAT-3459.yaml with correct id, github_issue 3459, priority critical, and matching title."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/entries/PMAT-3460.yaml",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "docs/roadmaps/entries/PMAT-3460.yaml exists with id PMAT-3460, github_issue 3460, and a title that transcribes issue #3460"
+      ]
+    },
+    {
+      "file": "docs/roadmaps/entries/PMAT-3460.yaml",
+      "line": 1,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Creates PMAT-3460.yaml with correct id, github_issue 3460, and matching title."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/roadmap.yaml",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "roadmap.yaml diff is additive only, preserving the order and structure without deletions"
+      ]
+    },
+    {
+      "file": "docs/roadmaps/roadmap.yaml",
+      "line": 18455,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Diff vs main is additive only for roadmap.yaml (0 deletions) and adds the correct entries."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
