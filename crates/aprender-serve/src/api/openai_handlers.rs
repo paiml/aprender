@@ -984,6 +984,8 @@ fn try_gpu_backend(
         max_tokens,
         temperature,
         top_k: resolve_chat_top_k(temperature, request.top_k),
+        // #3760: the OpenAI `seed` reaches the GpuModel sampler, as it does the others.
+        seed: request.seed.unwrap_or(crate::sampling::DEFAULT_SEED),
         stop_tokens: chat_stop_tokens(request, eos_token_id)
             .into_iter()
             .map(|t| t as usize)

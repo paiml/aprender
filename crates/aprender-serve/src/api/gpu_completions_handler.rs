@@ -43,7 +43,11 @@ fn try_gpu_completions(
     let gpu_config = GpuGenerateConfig {
         max_tokens,
         temperature,
-        top_k: 1,
+        // #3760: this was `top_k: 1`, which every loop reads as greedy, so a request
+        // `temperature` did nothing on the GpuModel completions path. The same rule
+        // the CPU completions handlers use; the request carries no top_k or seed.
+        top_k: if temperature == 0.0 { 1 } else { 40 },
+        seed: crate::sampling::DEFAULT_SEED,
         stop_tokens: Vec::new(),
         trace: state.is_trace_enabled(),
         cancel: cancel.clone(),

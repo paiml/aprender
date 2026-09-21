@@ -404,8 +404,13 @@ impl GpuModel {
     }
 
     /// Top-k sampling with temperature (delegates to ops module)
-    fn sample_topk_generate(logits: &[f32], temperature: f32, top_k: usize) -> usize {
-        super::ops::sample_topk(logits, temperature, top_k)
+    fn sample_topk_generate(
+        logits: &[f32],
+        temperature: f32,
+        top_k: usize,
+        rng: &mut rand::rngs::StdRng,
+    ) -> usize {
+        super::ops::sample_topk(logits, temperature, top_k, rng)
     }
 
     /// Transpose weight matrix (delegates to ops module)

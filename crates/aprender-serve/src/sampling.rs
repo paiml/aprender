@@ -14,6 +14,11 @@
 use rand::rngs::StdRng;
 use rand::Rng;
 
+/// The seed a sampled generation uses when its caller names none (#3760).
+///
+/// Only a sampled step reads it; greedy decoding never touches the RNG.
+pub const DEFAULT_SEED: u64 = 42;
+
 /// Whether a generation picks greedily: temperature 0, or a top-k of exactly 1.
 ///
 /// `top_k == 0` means the filter is OFF (llama.cpp, Ollama), which samples.

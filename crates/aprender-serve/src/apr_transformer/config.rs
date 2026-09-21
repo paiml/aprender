@@ -195,9 +195,7 @@ impl AprKVCache {
 }
 
 /// The seed a [`GenerateConfig`] samples with when its caller names none (#3760).
-///
-/// Only a sampled step reads it; greedy decoding never touches the RNG.
-pub const DEFAULT_SEED: u64 = 42;
+pub use crate::sampling::DEFAULT_SEED;
 
 /// Configuration for text generation
 #[derive(Debug, Clone)]

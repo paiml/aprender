@@ -348,7 +348,8 @@ fn test_layer_num_parameters_with_optional_fields() {
 fn test_generate_config_default_values() {
     let config = GenerateConfig::default();
     assert_eq!(config.max_tokens, 32);
-    assert!((config.temperature - 1.0).abs() < f32::EPSILON);
+    // #3760: greedy by default; the sampler draws now, so 1.0 would randomize every default caller.
+    assert!((config.temperature - 0.0).abs() < f32::EPSILON);
     assert!((config.top_p - 0.9).abs() < f32::EPSILON);
     assert_eq!(config.top_k, 0);
     assert!(!config.trace);
