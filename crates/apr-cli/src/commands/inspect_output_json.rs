@@ -3,7 +3,13 @@
 // Output Formatting
 // ============================================================================
 
-fn output_json(path: &Path, file_size: u64, header: &HeaderData, metadata: MetadataInfo) {
+fn output_json(
+    path: &Path,
+    file_size: u64,
+    header: &HeaderData,
+    metadata: MetadataInfo,
+    quant: QuantInfo,
+) {
     let (v_maj, v_min) = header.version;
     // GH-249: Promote key metadata fields to top level for parity checker compatibility
     let architecture = metadata.architecture.clone();
@@ -24,6 +30,7 @@ fn output_json(path: &Path, file_size: u64, header: &HeaderData, metadata: Metad
         num_heads,
         hidden_size,
         vocab_size,
+        quant,
         flags: flags_from_header(header),
         metadata,
     };
@@ -46,9 +53,10 @@ fn output_json_with_quality(
     header: &HeaderData,
     metadata: MetadataInfo,
     show_quality: bool,
+    quant: QuantInfo,
 ) {
     if !show_quality {
-        return output_json(path, file_size, header, metadata);
+        return output_json(path, file_size, header, metadata, quant);
     }
 
     let quality = compute_quality_score(&metadata, header);
@@ -71,6 +79,7 @@ fn output_json_with_quality(
         num_heads,
         hidden_size,
         vocab_size,
+        quant,
         flags: flags_from_header(header),
         metadata,
     };

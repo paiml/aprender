@@ -450,30 +450,16 @@ impl RosettaStone {
 
         let architecture = result.model_config.architecture.clone();
 
-        // Contract: apr-inspect-quantization-v1 F-INSPECT-QUANT-001 (paiml/aprender#603).
-        // The model's "quantization" is the dominant dtype by parameter count among its WEIGHT
-        // tensors — biases and norm layers are excluded because they are typically kept in F32
-        // even for heavily-quantized models. Previous code picked tensors.first() which, after
-        // alphabetical BTreeMap ordering, was always blk.0.attn_k.bias (F32). See Five Whys in
-        // contracts/apr-inspect-quantization-v1.yaml.
-        let quantization = {
-            let mut params_by_dtype: std::collections::HashMap<&str, usize> =
-                std::collections::HashMap::new();
-            for t in &tensors {
-                let name_lower = t.name.to_lowercase();
-                let is_weight = !(name_lower.contains("bias")
-                    || name_lower.contains("norm")
-                    || name_lower.contains("ln_"));
-                if is_weight {
-                    let params: usize = t.shape.iter().product();
-                    *params_by_dtype.entry(t.dtype.as_str()).or_insert(0) += params;
-                }
-            }
-            params_by_dtype
-                .into_iter()
-                .max_by_key(|(_, params)| *params)
-                .map(|(dtype, _)| dtype.to_string())
-        };
+        // Contract: apr-inspect-quantization-v1 F-INSPECT-QUANT-001 (#603, amended by #3762).
+        // The scheme the file DECLARES (`general.file_type`, e.g. 15 = Q4_K_M), else the
+        // dominant dtype by COUNT among its >= 2-D tensors. The previous rule, the dominant
+        // dtype by PARAMETER count, named a Q4_K_M Qwen3.5 "Q6_K": its 248k-vocab embedding
+        // outweighs every Q4_K matrix. (Before #603 it was tensors.first(), always F32.)
+        let quantization = crate::format::tensors::gguf_quant_scheme(
+            &meta_map,
+            tensors.iter().map(|t| (t.dtype.as_str(), t.shape.as_slice())),
+        )
+        .map(|scheme| scheme.name);
 
         Ok(InspectionReport {
             format: FormatType::Gguf,
@@ -592,13 +578,26 @@ impl RosettaStone {
             .filter(|a| !a.is_empty())
             .or_else(|| Self::infer_architecture_from_tensors(&tensors));
 
+        // #3762: the scheme the metadata declares, else the dominant >= 2-D tensor dtype by
+        // count. A quantized .apr whose metadata names no scheme reported None.
+        let histogram = crate::format::tensors::dtype_histogram(
+            tensors.iter().map(|t| (t.dtype.as_str(), t.shape.as_slice())),
+        );
+        let quantization = crate::format::tensors::QuantScheme::resolve(
+            meta.quantization
+                .as_ref()
+                .map(|q| (q.quant_type.as_str(), "quantization.quant_type")),
+            &histogram,
+        )
+        .map(|scheme| scheme.name);
+
         Ok(InspectionReport {
             format: FormatType::Apr,
             file_size,
             metadata,
             tensors,
             total_params,
-            quantization: meta.quantization.as_ref().map(|q| q.quant_type.clone()),
+            quantization,
             architecture,
         })
     }

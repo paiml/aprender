@@ -68,6 +68,9 @@ struct TensorsResultJson {
     format_version: String,
     tensor_count: usize,
     total_size_bytes: usize,
+    /// #3762: dtype -> count over the listed tensors of 2 or more dimensions, the one
+    /// computation `apr inspect --json` prints beside its `quantization`.
+    dtype_histogram: std::collections::BTreeMap<String, usize>,
     tensors: Vec<TensorInfoJson>,
 }
 
@@ -78,6 +81,12 @@ impl From<&TensorListResult> for TensorsResultJson {
             format_version: result.format_version.clone(),
             tensor_count: result.tensor_count,
             total_size_bytes: result.total_size_bytes,
+            dtype_histogram: aprender::format::tensors::dtype_histogram(
+                result
+                    .tensors
+                    .iter()
+                    .map(|t| (t.dtype.as_str(), t.shape.as_slice())),
+            ),
             tensors: result.tensors.iter().map(TensorInfoJson::from).collect(),
         }
     }

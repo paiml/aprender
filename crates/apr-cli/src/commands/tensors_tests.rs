@@ -464,6 +464,7 @@ fn test_tensors_result_json_serialization() {
         format_version: "v2".to_string(),
         tensor_count: 1,
         total_size_bytes: 100,
+        dtype_histogram: std::collections::BTreeMap::new(),
         tensors: vec![TensorInfoJson {
             name: "test".to_string(),
             shape: vec![10],

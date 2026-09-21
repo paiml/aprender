@@ -576,5 +576,96 @@ pub(crate) fn ggml_dtype_name(dtype: u32) -> &'static str {
     trueno_quant::GgmlType::from_id(dtype).map_or("unknown", trueno_quant::GgmlType::as_str)
 }
 
+/// #3762: dtype -> count over the tensors of 2 or more dimensions, names upper-cased (an
+/// `.apr` says `q4_k`, a GGUF `Q4_K`). 1-D tensors (norms, biases) do not vote. By COUNT,
+/// never bytes or parameters: a Q4_K_M file's Q6_K embedding outweighs every Q4_K matrix in
+/// both. This is the definition #3712 row A2 ruled (`scripts/lib/tensor_universe.py`), and
+/// the ONE computation `apr tensors --json` and `apr inspect --json` both print.
+pub fn dtype_histogram<'a>(
+    tensors: impl IntoIterator<Item = (&'a str, &'a [usize])>,
+) -> std::collections::BTreeMap<String, usize> {
+    let mut histogram = std::collections::BTreeMap::new();
+    for (dtype, shape) in tensors {
+        if shape.len() >= 2 {
+            *histogram.entry(dtype.to_ascii_uppercase()).or_insert(0) += 1;
+        }
+    }
+    histogram
+}
+
+/// The dtypes at the top count of a [`dtype_histogram`], sorted; every one of a tie.
+#[must_use]
+pub fn dominant_dtypes(histogram: &std::collections::BTreeMap<String, usize>) -> Vec<String> {
+    let top = histogram.values().copied().max().unwrap_or(0);
+    histogram
+        .iter()
+        .filter(|&(_, &count)| top > 0 && count == top)
+        .map(|(dtype, _)| dtype.clone())
+        .collect()
+}
+
+/// #3762: a file's quantization scheme, and where that answer came from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuantScheme {
+    /// The scheme (`Q4_K_M`), or the dominant dtype(s) joined with `+` when none is declared.
+    pub name: String,
+    /// `general.file_type`, `quantization.quant_type` (APR metadata), or
+    /// [`QuantScheme::DOMINANT`].
+    pub source: &'static str,
+}
+
+impl QuantScheme {
+    /// The source of a scheme no metadata declared.
+    pub const DOMINANT: &'static str = "dominant >=2-D tensor dtype by count";
+
+    /// The scheme the file declares, else its dominant `>= 2`-D tensor dtype(s). Never the
+    /// dtype holding the most bytes or parameters: that named a Q4_K_M file Q6_K (#3762).
+    #[must_use]
+    pub fn resolve(
+        declared: Option<(&str, &'static str)>,
+        histogram: &std::collections::BTreeMap<String, usize>,
+    ) -> Option<Self> {
+        if let Some((name, source)) = declared {
+            return Some(Self {
+                name: name.to_string(),
+                source,
+            });
+        }
+        let dominant = dominant_dtypes(histogram);
+        (!dominant.is_empty()).then(|| Self {
+            name: dominant.join("+"),
+            source: Self::DOMINANT,
+        })
+    }
+}
+
+/// The scheme a GGUF declares: `general.file_type` decoded by llama.cpp's `llama_ftype`
+/// table ([`trueno_quant::llama_ftype_name`], extracted from upstream). `None` when the key
+/// is absent or names no live scheme.
+#[must_use]
+pub fn gguf_declared_scheme(
+    metadata: &std::collections::BTreeMap<String, String>,
+) -> Option<&'static str> {
+    let id = metadata
+        .get("general.file_type")?
+        .trim()
+        .parse::<u32>()
+        .ok()?;
+    trueno_quant::llama_ftype_name(id)
+}
+
+/// #3762: a GGUF's scheme: the `general.file_type` it declares, else its dominant `>= 2`-D
+/// tensor dtype by count. `apr inspect` reports it, and its JSON names the source, from this
+/// one function.
+pub fn gguf_quant_scheme<'a>(
+    metadata: &std::collections::BTreeMap<String, String>,
+    tensors: impl IntoIterator<Item = (&'a str, &'a [usize])>,
+) -> Option<QuantScheme> {
+    QuantScheme::resolve(
+        gguf_declared_scheme(metadata).map(|name| (name, "general.file_type")),
+        &dtype_histogram(tensors),
+    )
+}
+
 include!("safetensors.rs");
 include!("tensors_safetensors.rs");

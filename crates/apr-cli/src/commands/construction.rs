@@ -335,6 +335,7 @@
             num_heads: None,
             hidden_size: None,
             vocab_size: None,
+            quant: QuantInfo::default(),
             flags: FlagsInfo {
                 lz4_compressed: false,
                 zstd_compressed: false,
@@ -430,6 +431,7 @@
             source_metadata: Some(
                 serde_json::json!({"run_id": "test_123", "framework": "pytorch"}),
             ),
+            declared_quant: None,
         };
         output_metadata_text(&metadata);
     }

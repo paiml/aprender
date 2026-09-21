@@ -59,6 +59,7 @@
 
 mod dequantize;
 pub mod ggml_type;
+pub mod llama_ftype;
 mod quantize;
 mod transpose;
 
@@ -82,6 +83,8 @@ pub use transpose::{transpose_q4k_for_matmul, transpose_q5k_for_matmul, transpos
 pub use ggml_type::{
     GgmlFamily, GgmlType, GgmlTypeError, QuantTraits, ALL, GGML_TYPE_COUNT, TRAITS,
 };
+// #3762: the scheme a GGUF declares in `general.file_type`, extracted the same way.
+pub use llama_ftype::{llama_ftype_name, LLAMA_FTYPES};
 
 // ============================================================================
 // Constants

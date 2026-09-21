@@ -40,8 +40,51 @@ struct InspectResult {
     /// GH-249: Top-level vocab_size for parity checker compatibility
     #[serde(skip_serializing_if = "Option::is_none")]
     vocab_size: Option<usize>,
+    /// #3762: `quantization`, `quantization_source` and `dtype_histogram`.
+    #[serde(flatten)]
+    quant: QuantInfo,
     flags: FlagsInfo,
     metadata: MetadataInfo,
+}
+
+/// #3762: a file's quantization scheme, where it came from, and the `>= 2`-D tensor dtype
+/// histogram beside it: the one computation `apr tensors --json` prints. `quantization` is
+/// the scheme the metadata declares, else the dominant dtype by count; never the dtype that
+/// holds the most bytes, and never absent for a quantized file.
+#[derive(Serialize, Default)]
+struct QuantInfo {
+    quantization: Option<String>,
+    quantization_source: Option<&'static str>,
+    dtype_histogram: std::collections::BTreeMap<String, usize>,
+}
+
+/// The [`QuantInfo`] of an `.apr`, read from its tensor index the way `apr tensors` reads it.
+fn apr_quant_info(path: &Path, declared: Option<&str>) -> Result<QuantInfo, CliError> {
+    let listed = aprender::format::tensors::list_tensors(
+        path,
+        aprender::format::tensors::TensorListOptions::default(),
+    )
+    .map_err(|e| {
+        CliError::InvalidFormat(format!(
+            "{}: the tensor index is unreadable, so its quantization is unknown: {e}",
+            path.display()
+        ))
+    })?;
+    let dtype_histogram = aprender::format::tensors::dtype_histogram(
+        listed
+            .tensors
+            .iter()
+            .map(|t| (t.dtype.as_str(), t.shape.as_slice())),
+    );
+    let scheme = aprender::format::tensors::QuantScheme::resolve(
+        declared.map(|name| (name, "quantization.quant_type")),
+        &dtype_histogram,
+    );
+    Ok(QuantInfo {
+        quantization: scheme.as_ref().map(|s| s.name.clone()),
+        quantization_source: scheme.map(|s| s.source),
+        dtype_histogram,
+    })
 }
 
 #[derive(Serialize)]
@@ -115,6 +158,10 @@ struct MetadataInfo {
     special_tokens: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     source_metadata: Option<serde_json::Value>,
+    /// #3762: the scheme the APR metadata declares (`quantization.quant_type`), if any. It is
+    /// reported as the top-level `quantization`, not inside `metadata`.
+    #[serde(skip)]
+    declared_quant: Option<String>,
 }
 
 /// Parsed v2 header data
@@ -192,7 +239,15 @@ pub(crate) fn run(
             let metadata_info = read_metadata(&mut reader, &header);
 
             if json_output {
-                output_json_with_quality(path, file_size, &header, metadata_info, show_quality);
+                let quant = apr_quant_info(path, metadata_info.declared_quant.as_deref())?;
+                output_json_with_quality(
+                    path,
+                    file_size,
+                    &header,
+                    metadata_info,
+                    show_quality,
+                    quant,
+                );
             } else {
                 output_text(
                     path,
@@ -264,6 +319,31 @@ fn rosetta_json(
                 .clone()
                 .unwrap_or_else(|| "unknown".to_string()),
         ),
+    );
+    // #3762: where `quantization` came from (null when nothing decided it), and beside it
+    // the >= 2-D tensor dtype histogram: the one computation `apr tensors --json` prints.
+    let shapes = || {
+        report
+            .tensors
+            .iter()
+            .map(|t| (t.dtype.as_str(), t.shape.as_slice()))
+    };
+    let source = match report.format {
+        aprender::format::rosetta::FormatType::Gguf => {
+            aprender::format::tensors::gguf_quant_scheme(&report.metadata, shapes())
+                .map(|scheme| scheme.source)
+        }
+        _ => None,
+    };
+    json_map.insert(
+        "quantization_source".to_string(),
+        source.map_or(serde_json::Value::Null, |s| {
+            serde_json::Value::String(s.to_string())
+        }),
+    );
+    json_map.insert(
+        "dtype_histogram".to_string(),
+        serde_json::json!(aprender::format::tensors::dtype_histogram(shapes())),
     );
     json_map.insert(
         "tensor_count".to_string(),
@@ -619,6 +699,10 @@ fn read_metadata(reader: &mut BufReader<File>, header: &HeaderData) -> MetadataI
                     .special_tokens
                     .and_then(|st| serde_json::to_value(st).ok()),
                 source_metadata,
+                declared_quant: meta
+                    .quantization
+                    .map(|q| q.quant_type)
+                    .filter(|q| !q.is_empty()),
             }
         }
         Err(_) => MetadataInfo::default(),

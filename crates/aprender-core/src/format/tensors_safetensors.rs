@@ -142,3 +142,7 @@ pub fn format_size(bytes: u64) -> String {
 #[cfg(test)]
 #[path = "tensors_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tensors_tests_quant_scheme_3762.rs"]
+mod tests_quant_scheme_3762;

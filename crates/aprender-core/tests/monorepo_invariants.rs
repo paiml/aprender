@@ -948,6 +948,35 @@ fn falsify_ggml_001_traits_fixture_records_the_current_pin() {
     );
 }
 
+/// FALSIFY-LLAMA-FTYPE-001 (#3762): the `llama_ftype` fixture (`general.file_type` names,
+/// `trueno_quant::LLAMA_FTYPES`) was extracted at the pin of record, like the ggml traits.
+#[test]
+fn falsify_llama_ftype_001_fixture_records_the_current_pin() {
+    let pin = llama_pin_value("build_commit");
+    let path = workspace_root().join("crates/aprender-quant/fixtures/llama_ftypes.json");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("the llama_ftype fixture must be readable: {e}"));
+    let fixture: serde_json::Value =
+        serde_json::from_str(&text).expect("the llama_ftype fixture must be valid JSON");
+    let recorded = fixture["pin_build_commit"]
+        .as_str()
+        .expect("the fixture must record pin_build_commit");
+    assert_eq!(
+        recorded, pin,
+        "crates/aprender-quant/fixtures/llama_ftypes.json was extracted at {recorded}, but \
+         scripts/llama_pin.toml build_commit is now {pin}. Regenerate it with \
+         `bash scripts/extract_llama_ftypes.sh` against a checkout at {pin} and commit the \
+         result in the SAME PR as the bump."
+    );
+    let resolved = fixture["resolved_sha"]
+        .as_str()
+        .expect("the fixture must record resolved_sha");
+    assert!(
+        resolved.starts_with(&pin),
+        "the fixture's resolved_sha {resolved} does not start with the pin {pin}"
+    );
+}
+
 /// FALSIFY-GGML-002: the fixture still describes upstream's 43 slots, and the
 /// live/removed split the ruling measured (35 + 8).
 #[test]

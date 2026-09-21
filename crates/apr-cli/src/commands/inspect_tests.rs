@@ -88,6 +88,7 @@ mod inspect_tests {
             num_heads: Some(32),
             hidden_size: Some(4096),
             vocab_size: Some(128256),
+            quant: QuantInfo::default(),
             flags: FlagsInfo {
                 lz4_compressed: false,
                 zstd_compressed: false,
@@ -125,6 +126,7 @@ mod inspect_tests {
             num_heads: None,
             hidden_size: None,
             vocab_size: None,
+            quant: QuantInfo::default(),
             flags: FlagsInfo {
                 lz4_compressed: false,
                 zstd_compressed: false,

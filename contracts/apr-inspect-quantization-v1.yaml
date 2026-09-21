@@ -1,10 +1,13 @@
 metadata:
-  version: 1.0.0
+  version: 2.0.0
   created: '2026-04-05'
+  updated: '2026-09-21'
   author: PAIML Engineering
-  description: "apr inspect quantization field contract — InspectionReport.quantization must reflect the dominant dtype among the model's WEIGHT tensors (by parameter count), not the first-tensor-in-BTreeMap-order stub value"
+  description: "apr inspect quantization field contract — `quantization` is the scheme the file DECLARES (GGUF general.file_type decoded by upstream's llama_ftype table; APR metadata quantization.quant_type), else the dominant dtype BY COUNT among its tensors of 2 or more dimensions. Never the first tensor's dtype (#603), never the dtype holding the most parameters or bytes (#3762). Beside it: quantization_source and the >= 2-D dtype histogram, one function shared with `apr tensors --json`."
   references:
     - "paiml/aprender#603 (quantization field shows '0' / 'F32' instead of actual quant scheme)"
+    - "paiml/aprender#3762 (quantization Q6_K for a Q4_K_M GGUF, None for every .apr, inspect failed on IQ4_XS)"
+    - "paiml/aprender#3712 row A2 (the >= 2-D count definition of a file's dominant dtype)"
     - "paiml/aprender#619 (DType IDs — fixed, same file, dtype now comes through as name)"
     - "paiml/aprender#605 (DType IDs historical pattern)"
   registry: true
@@ -16,84 +19,102 @@ metadata:
     - five-whys
 
 five_whys:
-  symptom: "apr inspect reports Quantization: 0 (pre-#619) or Quantization: F32 (post-#619) for a Q4_K_M quantized GGUF model"
-  why_1: "InspectionReport.quantization is populated from tensors.first().map(|t| t.dtype) at validate_inspect.rs:335"
-  why_2: "tensors is built from result.tensors (a BTreeMap) iterated alphabetically; first key is blk.0.attn_k.bias (always F32)"
-  why_3: "'First tensor's dtype' was a stub — never a correct heuristic; correct answer surveys WEIGHT tensors only and picks dominant dtype by parameter count"
-  why_4: "No test fixture asserts quantization != F32 for Q4_K_M GGUF; tests hand-pick dtypes without cross-checking the aggregate field"
-  why_5: "No provable-contract binds InspectionReport.quantization to a semantic definition — the field was written without a specification"
-  root_cause: "Stub computation with no semantic contract binding. This contract fixes the 'no contract' root cause; the code fix applies the now-specified semantic."
+  symptom: "apr inspect --json reports quantization Q6_K for Qwen3.5-0.8B-Q4_K_M.gguf (general.file_type 15 = Q4_K_M), IQ4_NL for Qwen2.5-0.5B-Instruct-IQ4_XS.gguf, and no quantization at all for a q4_k .apr (measured at 0.69.0, #3762). Earlier (#603) it reported F32, the first tensor's dtype."
+  why_1: "v1 of this contract defined quantization as the dtype holding the most PARAMETERS among weight tensors"
+  why_2: "a Q4_K_M file keeps its embedding / output in Q6_K; with a 248k vocabulary that one tensor outweighs every Q4_K matrix, so the parameter vote names the exception, not the scheme"
+  why_3: "the file DECLARES its scheme (general.file_type) and nothing read it; the names of those ids live upstream (llama.h enum llama_ftype) and apr had no copy of them"
+  why_4: "the .apr path of apr inspect reads only the header and metadata, never the tensor index, so it had no dtypes to vote with and printed nothing"
+  why_5: "no test compared inspect with tensors across the ggml type table; the dtype-23 refusal that broke inspect on IQ4_XS in 0.68.2 was fixed in 0.69.0 by #3601 with no guard that inspect keeps reading every type"
+  root_cause: "The field measured size, a proxy, instead of reading the declaration, and had no single definition shared with apr tensors. This version reads the declaration (upstream-extracted table), falls back to the count-based >= 2-D definition #3712 ruled, prints the histogram it came from via the same function apr tensors uses, and guards inspect against every live ggml type."
 
 equations:
-  dominant_weight_dtype:
-    formula: "quantization(M) = argmax_{d ∈ dtypes} Σ {params(t) : t ∈ M.tensors, t.is_weight, t.dtype = d}"
-    domain: "GGUF model M with weight tensors (t.name ∌ 'bias'|'norm'|'ln_')"
-    codomain: "dtype name string from GGML_NAMES"
+  declared_scheme:
+    formula: "declared(M) = llama_ftype_name(M.metadata['general.file_type'])  for GGUF;  M.metadata.quantization.quant_type  for APR"
+    domain: "a GGUF with general.file_type, or an APR whose metadata carries quantization.quant_type"
+    codomain: "scheme name (Q4_K_M, IQ4_XS, F16, ...) from trueno_quant::LLAMA_FTYPES, extracted from upstream llama.h at the pin; or the APR string"
     invariants:
-      - "quantization is computed over WEIGHT tensors only — biases and norm layers are excluded"
-      - "For mixed-quantization models, return the dtype with the most parameters"
-      - "For uniformly-quantized models, return that single dtype"
-      - "For an empty set of weight tensors (shouldn't happen), return None"
+      - "an id upstream removed (4-6, 33-35) or the LLAMA_FTYPE_GUESSED sentinel (1024) declares nothing"
+      - "the name table is never typed by hand: fixtures/llama_ftypes.json is extracted by scripts/extract_llama_ftypes.sh and LLAMA_FTYPES must equal it"
 
-  weight_tensor_predicate:
-    formula: "is_weight(t) = ¬(lower(t.name) contains 'bias' ∨ 'norm' ∨ 'ln_')"
-    domain: "tensor name string"
-    codomain: "boolean"
+  dtype_histogram_2d:
+    formula: "hist(M)[d] = |{t ∈ M.tensors : rank(t) >= 2, upper(t.dtype) = d}|"
+    domain: "any model's tensor index"
+    codomain: "map dtype -> count"
     invariants:
-      - "Bias tensors are excluded regardless of layer position"
-      - "Normalization layer tensors (LayerNorm/RMSNorm) are excluded"
-      - "All other tensors are treated as weights for the purpose of quantization detection"
+      - "1-D tensors (norms, biases) do not vote"
+      - "by COUNT, never bytes or parameters"
+      - "one function (aprender::format::tensors::dtype_histogram) prints it in both apr tensors --json and apr inspect --json"
+
+  quantization:
+    formula: "quantization(M) = declared(M) if defined, else join('+', argmax_count(hist(M)))"
+    domain: "GGUF or APR model M"
+    codomain: "scheme or dtype name, with quantization_source ∈ {general.file_type, quantization.quant_type, dominant >=2-D tensor dtype by count}"
+    invariants:
+      - "never the dtype holding the most parameters or bytes"
+      - "never absent for a file with quantized >= 2-D tensors"
+      - "a tie at the top names every tied dtype"
 
 proof_obligations:
   - id: AIQ-INV-001
     type: invariant
-    property: "quantization reflects dominant weight dtype, not first-in-BTreeMap"
-    formal: "quantization(M) = argmax_{d} Σ {params(t) : is_weight(t), t.dtype=d}"
-    applies_to: dominant_weight_dtype
+    property: "a declared scheme is reported as the quantization"
+    formal: "declared(M) defined ⇒ quantization(M) = declared(M)"
+    applies_to: quantization
   - id: AIQ-INV-002
     type: invariant
-    property: "biases and norms excluded from quantization calculation"
-    formal: "∀ t with is_bias(t) ∨ is_norm(t): t.dtype does not solely determine quantization(M)"
-    applies_to: weight_tensor_predicate
+    property: "without a declaration, the dominant >= 2-D dtype by count; 1-D tensors do not vote"
+    formal: "declared(M) undefined ⇒ quantization(M) = join('+', argmax_count(hist(M)))"
+    applies_to: dtype_histogram_2d
   - id: AIQ-POST-003
     type: postcondition
-    property: "for Q4_K_M Qwen2.5-Coder, quantization ∈ {Q4_K, Q6_K}"
-    formal: "quantization(qwen2.5-coder-1.5b-instruct-q4_k_m.gguf) ∈ {Q4_K, Q6_K}"
-    applies_to: dominant_weight_dtype
+    property: "Qwen3.5-0.8B-Q4_K_M.gguf is Q4_K_M, not Q6_K"
+    formal: "quantization(Qwen3.5-0.8B-Q4_K_M.gguf) = Q4_K_M ∧ quantization_source = general.file_type"
+    applies_to: quantization
+  - id: AIQ-INV-004
+    type: invariant
+    property: "inspect and tensors print the same histogram, and inspect reads every live ggml type tensors reads"
+    formal: "∀ d ∈ trueno_quant::ALL: inspect(gguf_of(d)) ok ∧ tensors(gguf_of(d)) ok ∧ inspect.dtype_histogram = tensors.dtype_histogram"
+    applies_to: dtype_histogram_2d
 
 falsification_tests:
   - id: FALSIFY-INSPECT-QUANT-001
-    rule: "Quantization field is NOT F32 for a quantized GGUF model"
-    prediction: "apr inspect on a Q4_K_M model reports Quantization: Q4_K (or Q6_K), never F32 or a raw integer"
-    test: "Q=$(apr inspect $M 2>&1 | sed 's/\\x1b\\[[0-9;]*m//g' | awk -F'│' '/Quantization/ {gsub(/^ +| +$/, \"\", $3); print $3}'); [ \"$Q\" != \"F32\" ] && [ \"$Q\" != \"0\" ] && [ -n \"$Q\" ]"
-    if_fails: "Quantization still picks first tensor (bias) instead of dominant weight dtype"
+    rule: "a Q4_K_M GGUF is Q4_K_M, and never its largest tensor's dtype"
+    prediction: "a synthetic GGUF with general.file_type 15, one large Q6_K tensor and two small Q4_K tensors inspects as Q4_K_M; without file_type as Q4_K (count), not Q6_K (parameters). The parameter-vote mutant reports Q6_K and fails."
+    test: "cargo test -p aprender-core --lib tests_quant_scheme_3762::a_q4_k_m_gguf_is_q4_k_m_and_never_its_largest_tensors_dtype"
+    if_fails: "quantization is again measured by size instead of read from the declaration"
   - id: FALSIFY-INSPECT-QUANT-002
-    rule: "inspect --json quantization is a dtype name, not 'F32' for quantized model"
-    prediction: "apr inspect --json on a Q4_K_M model has .quantization ∈ {Q4_K, Q6_K, Q4_K_M, mixed}, never 'F32' or '0'"
-    test: "Q=$(apr inspect --json $M | jq -r '.quantization'); [ \"$Q\" != \"F32\" ] && [ \"$Q\" != \"0\" ] && [ \"$Q\" != \"null\" ]"
-    if_fails: "JSON output still picks wrong tensor — same root cause"
+    rule: "inspect --json on the measured Q4_K_M file reports its declared scheme"
+    prediction: "apr inspect --json Qwen3.5-0.8B-Q4_K_M.gguf has .quantization == Q4_K_M and .quantization_source == general.file_type"
+    test: "M=$HOME/models/Qwen3.5-0.8B-Q4_K_M.gguf; [ -f \"$M\" ] || exit 0; J=$(apr inspect --json \"$M\"); [ \"$(echo \"$J\" | jq -r .quantization)\" = Q4_K_M ] && [ \"$(echo \"$J\" | jq -r .quantization_source)\" = general.file_type ]"
+    if_fails: "general.file_type is not read, or not decoded by the upstream table"
   - id: FALSIFY-INSPECT-QUANT-003
-    rule: "quantization agrees with the dominant dtype in apr tensors"
-    prediction: "apr inspect quantization matches the dtype with the most parameters in apr tensors --json output (excluding bias/norm)"
-    test: "QI=$(apr inspect --json $M | jq -r '.quantization'); QT=$(apr tensors --json $M | jq -r '.tensors[] | select(.name | test(\"bias|norm|ln_\"; \"i\") | not) | .dtype' | sort | uniq -c | sort -rn | head -1 | awk '{print $2}'); [ \"$QI\" = \"$QT\" ] || { echo \"inspect=$QI tensors-dominant=$QT\"; exit 1; }"
-    if_fails: "inspect and tensors disagree on dominant weight dtype — stub still in place"
+    rule: "inspect and tensors print the same >= 2-D dtype histogram"
+    prediction: "for any model, apr inspect --json .dtype_histogram equals apr tensors --json .dtype_histogram"
+    test: "M=$HOME/models/Qwen3.5-0.8B-Q4_K_M.gguf; [ -f \"$M\" ] || exit 0; [ \"$(apr inspect --json \"$M\" | jq -cS .dtype_histogram)\" = \"$(apr tensors --json \"$M\" | jq -cS .dtype_histogram)\" ]"
+    if_fails: "the two commands compute the histogram differently: the shared function was bypassed"
   - id: FALSIFY-INSPECT-QUANT-004
-    rule: "code-level check: validate_inspect.rs no longer uses tensors.first()"
-    prediction: "src/format/rosetta/validate_inspect.rs does not contain 'tensors.first().map(|t| t.dtype'"
-    test: "grep -qE 'tensors\\.first\\(\\)\\.map\\(\\|t\\| t\\.dtype' src/format/rosetta/validate_inspect.rs && exit 1 || exit 0"
-    if_fails: "Stub computation still in code"
+    rule: "inspect reads every live ggml type tensors reads"
+    prediction: "for each of trueno_quant::ALL (upstream-extracted, not a hand list), a one-tensor GGUF lists in tensors and inspects, reporting that dtype. Reintroducing the dtype-23 refusal fails it on IQ4_XS."
+    test: "cargo test -p aprender-core --lib tests_quant_scheme_3762::inspect_and_tensors_read_every_live_ggml_type"
+    if_fails: "a ggml type tensors can read is refused by inspect (the 0.68.2 'Unsupported dtype 23' class)"
+  - id: FALSIFY-INSPECT-QUANT-005
+    rule: "a quantized .apr never reports a null quantization"
+    prediction: "apr inspect --json on a .apr with q4_k tensors has a non-null .quantization and a non-empty .dtype_histogram"
+    test: "M=$HOME/models/qwen2.5-coder-1.5b-instruct-q4k.apr; [ -f \"$M\" ] || exit 0; J=$(apr inspect --json \"$M\"); [ \"$(echo \"$J\" | jq -r .quantization)\" != null ] && [ \"$(echo \"$J\" | jq '.dtype_histogram | length')\" -gt 0 ]"
+    if_fails: "the .apr path again reads no tensor index"
 
 kani_harnesses:
   - id: KANI-INSPECT-QUANT-001
-    obligation: "quantization excludes bias/norm tensors"
+    obligation: "1-D tensors do not vote in the dtype histogram"
     bound: 8
     strategy: bounded_int
 
 qa_gate:
   id: F-INSPECT-QUANT-001
   name: "Inspect quantization field semantic contract"
-  description: "InspectionReport.quantization must be the dominant dtype (by parameter count) among the model's weight tensors, excluding biases and norm layers"
+  description: "quantization is the declared scheme, else the dominant >= 2-D dtype by count; the histogram is shared with apr tensors; inspect reads every live ggml type"
   checks:
-    - "dominant_weight_dtype"
-    - "weight_tensor_predicate"
-  pass_criteria: "FALSIFY-INSPECT-QUANT-{001,002,003,004} all PASS on a Q4_K_M GGUF model with mixed F32/Q4_K/Q6_K tensors"
+    - "declared_scheme"
+    - "dtype_histogram_2d"
+    - "quantization"
+  pass_criteria: "FALSIFY-INSPECT-QUANT-{001,002,003,004,005} all PASS"
