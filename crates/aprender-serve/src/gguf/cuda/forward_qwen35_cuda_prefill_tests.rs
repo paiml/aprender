@@ -253,4 +253,20 @@ fn qwen35_prefill_refuses_an_empty_prompt_and_positions_past_the_cache() {
         gpu.prefill(&[u32::MAX], &mut state, 0).is_err(),
         "a token outside the vocabulary must be refused"
     );
+    // prefill_logits_at: positions must ascend inside pos0..pos0+len.
+    assert!(
+        gpu.prefill_logits_at(&[1000; 4], &mut state, 0, &[2, 1])
+            .is_err(),
+        "descending positions must be refused"
+    );
+    assert!(
+        gpu.prefill_logits_at(&[1000; 4], &mut state, 0, &[4])
+            .is_err(),
+        "a position past the prompt must be refused"
+    );
+    let mut fresh = gpu.new_state().expect("state");
+    let got = gpu
+        .prefill_logits_at(&[1000, 1001, 1002, 1003], &mut fresh, 0, &[0, 3])
+        .expect("two requested rows");
+    assert_eq!(got.len(), 2, "one logits vector per requested position");
 }
