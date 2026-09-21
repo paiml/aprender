@@ -32,6 +32,20 @@ CPU_MARKERS = re.compile(
 )
 # The driver prints this once the child answers its health check.
 SERVE_READY = re.compile(r"apr serve ready \(")
+# The thinking mode the serve child renders. The driver strips <think> blocks
+# before parsing, so the trace cannot show it; only the child's own line can.
+THINKING_LINE = re.compile(r"chat template:.*\(thinking (on|off)\)")
+# A per-request prompt size printed by the child. session_end.tokens_in in the
+# trace is summed over turns (agent/result.rs accumulate), so it is not one.
+PROMPT_TOKENS_LINE = re.compile(r"\bprompt_tokens[=: ]+(\d+)")
+
+# The ladder's row keys (#3712 scripts/lib/model_ladder_cells.py, #3715): a
+# row is `4k` only if one request's measured prompt reached the rung. A
+# smaller task is keyed `task`, which no rung owes.
+RUNG_4K_TOKENS = 4096
+# The driver caps every completion at min(manifest 4096, 1024)
+# (crates/aprender-orchestrate/src/agent/driver/apr_serve.rs).
+DRIVER_MAX_TOKENS = 1024
 
 EDITED_FILE = "stats.py"
 TEST_FILE = "test_stats.py"
@@ -171,6 +185,15 @@ def judge(a):
     uses = tool_uses(records)
     cell.update(trace_records=len(records), trace_bad_lines=bad, tool_calls=len(uses),
                 tools_used=sorted({str(u.get("name")) for u in uses}))
+
+    thinking = THINKING_LINE.search(child)
+    cell["thinking"] = thinking.group(1) if thinking else "unknown"
+    sizes = [int(n) for n in PROMPT_TOKENS_LINE.findall(child)]
+    cell["prompt_tokens"] = max(sizes) if sizes else None
+    cell["context"] = "4k" if sizes and max(sizes) >= RUNG_4K_TOKENS else "task"
+    cell["max_tokens"] = DRIVER_MAX_TOKENS
+    ends = [r for r in records if r.get("kind") == "session_end"]
+    cell["tokens_in_total"] = ends[-1].get("tokens_in") if ends else None
 
     env = envelope(stdout)
     result = str(env.get("result", "")) if env else ""
