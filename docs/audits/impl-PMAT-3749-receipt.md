@@ -77,5 +77,9 @@ All phases ran direct (the orchestrator implemented; no worker subagent), becaus
   - Attempt 3: gemini 429 ("Resets in 2h44m53s") and gpt-oss 429 ("Resets in 2h20m24s"), and no lane launched. `receipt-lint` refused each artifact (no `model_measured`).
   - All three artifacts are archived outside the tree, under the delegate's out_dir. A quota round is archived and never committed.
   - agy 1.2.7 offers no other non-author family (claude-* is the author's). The seat-fill was requested from the cop (never park), and the round is relaunched when a family resets.
+- **Round 2 (cop slot 3, head 17dfb1291, base = merge-base 52f43da71): NO-VERDICT ×3 in each of 2 attempts, again on quota. No lane read the diff.** Run directly by the orchestrator (`quorum-review.sh`), with no delegate.
+  - 22:16Z, `--lane-model gemini-3.1-pro-high ×2 --lane-model gemini-3.1-pro-low --fallback-model gpt-oss-120b-medium`: the gemini pre-check returned 429 "Individual quota reached … Resets in 30h14m6s", and gpt-oss returned 503 "No capacity". Every lane was skipped as quota-exhausted.
+  - 22:22Z, `--lane-model gpt-oss-120b-medium ×3`: the pre-check returned 429 "Individual quota reached … Resets in 3h51m25s".
+  - Both artifacts are archived outside the tree, never committed. A second seat-fill was requested from the cop at 22:23Z.
 
 verdict: PARTIAL — gates green, quorum pending (round 1 NO-VERDICT on quota)
