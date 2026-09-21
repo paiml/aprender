@@ -79,6 +79,9 @@ pub(crate) struct ParityRefusal {
     pub(crate) reason: String,
     /// The issue that will lift the refusal.
     pub(crate) issue: &'static str,
+    /// #3685: the GGML quant type the CUDA capability gate refused, when that is the
+    /// reason. `Some` switches [`Self::line`] to the `quant=… reason=…` form.
+    pub(crate) quant: Option<String>,
 }
 
 #[cfg(feature = "inference")]
@@ -87,10 +90,16 @@ impl ParityRefusal {
     /// The single stderr line. `scripts/check_model_parity.sh` greps the
     /// `parity: REFUSED architecture=` prefix; both case tables pin the shape.
     pub(crate) fn line(&self) -> String {
-        format!(
-            "parity: REFUSED architecture={} — {} ({})",
-            self.architecture, self.reason, self.issue
-        )
+        match &self.quant {
+            Some(quant) => format!(
+                "parity: REFUSED architecture={} quant={} reason={}",
+                self.architecture, quant, self.reason
+            ),
+            None => format!(
+                "parity: REFUSED architecture={} — {} ({})",
+                self.architecture, self.reason, self.issue
+            ),
+        }
     }
 
     /// `--json` form. Deliberately carries NO `metrics`/`parity` key: a refusal
@@ -99,6 +108,7 @@ impl ParityRefusal {
         serde_json::json!({
             "refused": {
                 "architecture": self.architecture,
+                "quant": self.quant,
                 "reason": self.reason,
                 "issue": self.issue,
             }
@@ -158,6 +168,7 @@ pub(crate) fn parity_refusal_for<'n>(
                      run/serve route this architecture through the MoE forward and parity does not yet"
                 .to_string(),
             issue: "#3367",
+            quant: None,
         });
     }
 
@@ -182,8 +193,42 @@ pub(crate) fn parity_refusal_for<'n>(
                      GPU=CPU cannot be measured"
                 .to_string(),
             issue: "#3090",
+            quant: None,
         });
     }
 
     None
+}
+
+/// #3685: the refusal for a CUDA init that the capability gate (PMAT-785) turned down.
+///
+/// `apr parity` used to map EVERY `OwnedQuantizedModelCuda::new` error to
+/// `ValidationFailed`, exit 5, "parity disproven". For a model whose quant type has no
+/// verified GPU GEMV kernel (F16, Q5_1, the IQ family, …) nothing was compared: the GPU
+/// side was refused before a single logit. So C14 read a TOOL limit as a MODEL defect.
+/// A `CapabilityMismatch` is now a refusal (exit 12). Any other init error, such as an
+/// OOM, is not a refusal, and keeps its old mapping.
+///
+/// `unsupported_qtype` is the type `OwnedQuantizedModel::first_gpu_unsupported_quant`
+/// named before the model was handed to CUDA, or `None` if the gate refused for another
+/// reason (a missing op, not a quant type).
+#[cfg(feature = "inference")]
+#[allow(dead_code)]
+pub(crate) fn capability_refusal(
+    architecture: &str,
+    unsupported_qtype: Option<u32>,
+    error: &realizar::error::RealizarError,
+) -> Option<ParityRefusal> {
+    if !matches!(error, realizar::error::RealizarError::CapabilityMismatch { .. }) {
+        return None;
+    }
+    let quant = unsupported_qtype.map(|q| {
+        realizar::api::gguf_qtype_name(q).map_or_else(|| format!("ggml type {q}"), str::to_string)
+    });
+    Some(ParityRefusal {
+        architecture: architecture.to_string(),
+        reason: error.to_string(),
+        issue: "PMAT-785",
+        quant,
+    })
 }

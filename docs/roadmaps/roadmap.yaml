@@ -19007,3 +19007,20 @@ roadmap:
   labels:
   - kind:code
   notes: 'ACCEPTANCE (hand-entered from issue #3629 done_when; minted on the PR branch so the AD-04 quorum can run -- pmat work status refuses a missing item). Done when: scripts/fleet_utilization.sh --selftest has no pipe into grep -q; a mutation that restores the pipe AND forces EPIPE (out padded to >64 KiB so the write cannot complete before grep exits) turns the self-test RED deterministically — the positive control for the race, in the PR body the 55-site count is in the PR body from the command that produced it, and a guard refuses a new site (check_guards_are_wired.sh names it; ratchet baseline committed) main''s guard-tree green on the merge commit without rerun '
+- id: PMAT-3685
+  github_issue: 3685
+  item_type: task
+  title: 'apr parity exits 5 ("parity disproven") when CUDA init REFUSES the model quant type (F16/IQ*, PMAT-785): a tool limit read as a model defect; turns pre-publish dogfood C14 NO-GO'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-21T09:50:31Z
+  updated: 2026-09-21T09:50:31Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from issue #3685 done_when, verbatim; minted on the PR branch so the AD-04 quorum can run). (1) apr parity <model> whose quant type the CUDA capability gate refuses (PMAT-785) prints ONE stderr line parity: REFUSED architecture=<arch> quant=<ggml type> reason=<the capability message> and exits 12, never 5; exit 5 stays reserved for a comparison that ran and failed. (2) a RED-turning test: a refused quant type gives 12 plus the mark; a supported one never takes that path; mutation-proved (map the refusal back to 5 and the test fails). (3) bash scripts/check_model_parity.sh --manifest --apr <cuda build> on this host: the qwen2.5-0.5b-instruct row is UNMEASURED-TOOL (report), every Q4_K_M row still PASS, and the must-RED twin still turns C14 RED. (4) scripts/dogfood.sh --phase pre-publish model-parity row is not FAIL on this host. Blocks the 0.69.0 T-2 preflight and the release-commit dogfood; own small PR, not folded into #3669.'
