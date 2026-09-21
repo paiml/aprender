@@ -9,7 +9,9 @@
 # names: llama.cpp correct and apr wrong on one cell turns the run RED. The
 # other rows pin each way apr can fail to answer (a wrong answer, a non-zero
 # exit, a fallback off the lane's backend, a MISSING row), and each way a run
-# can look fine while proving nothing (no comparator answered; everyone wrong).
+# can look fine while proving nothing: no comparator answered, the positive
+# control came back ALL_WRONG or was never measured, no control was declared.
+# ALL_WRONG anywhere else is named and counted per model, never a violation.
 #
 # It also refuses DRIFT between scripts/crux_inference_prompts.json and the
 # golden cases it was derived from (golden_output.rs::golden_test_cases): the
@@ -167,7 +169,7 @@ row "$d/manifest.jsonl" ollama $P "" "" "" "imported with no chat template"
 run_judge "$d"; GOT_RC=$?
 expect "no comparator answered is UNJUDGED and declines" "$d" 2 $P UNJUDGED
 
-# 7. everyone answered wrong: ALL_WRONG, reported, and still no pass.
+# 7. everyone answered wrong on the control prompt: ALL_WRONG, and the run declines.
 d=$(newcase all_wrong)
 apr_out "$d" $P "5" gpu false; llama_out "$d" $P "$Q" "22"; ollama_out "$d" $P "five"
 row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"
@@ -208,6 +210,60 @@ row "$d/manifest.jsonl" apr golden-paris 0 "$d/apr-golden-paris.out" "$d/apr-gol
 row "$d/manifest.jsonl" llama.cpp golden-paris 124 "" "" ""
 run_judge "$d"; GOT_RC=$?
 expect "one UNJUDGED cell among GREEN ones declines the run" "$d" 2 golden-paris UNJUDGED
+
+# 9c-9e. ALL_WRONG is NAMED, not a violation (the cop's ruling), and the positive
+#     control keeps it from becoming the escape.
+# 9c. a non-control ALL_WRONG beside a GREEN control passes, and is counted per model.
+d=$(newcase all_wrong_named)
+apr_out "$d" golden-2plus2 "4" gpu false; llama_out "$d" golden-2plus2 "$Q" "4"
+row "$d/manifest.jsonl" apr golden-2plus2 0 "$d/apr-golden-2plus2.out" "$d/apr-golden-2plus2.err"
+row "$d/manifest.jsonl" llama.cpp golden-2plus2 0 "$d/llama-golden-2plus2.out" "$d/llama-golden-2plus2.err"
+apr_out "$d" golden-paris "Lyon" gpu false; llama_out "$d" golden-paris "What is the capital of France?" "Marseille"
+row "$d/manifest.jsonl" apr golden-paris 0 "$d/apr-golden-paris.out" "$d/apr-golden-paris.err"
+row "$d/manifest.jsonl" llama.cpp golden-paris 0 "$d/llama-golden-paris.out" "$d/llama-golden-paris.err"
+run_judge "$d"; GOT_RC=$?
+expect "a non-control ALL_WRONG is named and the run still passes" "$d" 0 golden-paris ALL_WRONG
+got=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["summary"]["all_wrong_by_model"])' "$d/receipt.json" 2>/dev/null)
+[ "$got" = "{'$SHA': 1}" ] && ok "ALL_WRONG is counted per model (1)" || broke "all_wrong_by_model: got '$got'"
+
+# 9d. the positive control comes back ALL_WRONG: a broken harness, so the run declines.
+d=$(newcase control_all_wrong)
+apr_out "$d" golden-2plus2 "22" gpu false; llama_out "$d" golden-2plus2 "$Q" "22"
+row "$d/manifest.jsonl" apr golden-2plus2 0 "$d/apr-golden-2plus2.out" "$d/apr-golden-2plus2.err"
+row "$d/manifest.jsonl" llama.cpp golden-2plus2 0 "$d/llama-golden-2plus2.out" "$d/llama-golden-2plus2.err"
+apr_out "$d" golden-paris "Paris" gpu false; llama_out "$d" golden-paris "What is the capital of France?" "Paris"
+row "$d/manifest.jsonl" apr golden-paris 0 "$d/apr-golden-paris.out" "$d/apr-golden-paris.err"
+row "$d/manifest.jsonl" llama.cpp golden-paris 0 "$d/llama-golden-paris.out" "$d/llama-golden-paris.err"
+run_judge "$d"; GOT_RC=$?
+expect "the positive control ALL_WRONG declines the run beside a GREEN cell" "$d" 2 golden-2plus2 ALL_WRONG
+
+# 9e. a prompt set that declares no positive control declines, however green the cells.
+d=$(newcase no_control_declared)
+python3 -c 'import json,sys
+d = json.load(open(sys.argv[1]))
+for p in d["prompts"]: p.pop("control", None)
+json.dump(d, open(sys.argv[2], "w"))' "$PROMPTS" "$d/prompts.json"
+apr_out "$d" $P "4" gpu false; llama_out "$d" $P "$Q" "4"
+row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"
+row "$d/manifest.jsonl" llama.cpp $P 0 "$d/llama-$P.out" "$d/llama-$P.err"
+PROMPTS_SAVED=$PROMPTS; PROMPTS="$d/prompts.json"
+run_judge "$d"; GOT_RC=$?
+PROMPTS=$PROMPTS_SAVED
+expect "a prompt set with no positive control declines" "$d" 2 $P GREEN
+why=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["summary"]["declined_because"])' "$d/receipt.json" 2>/dev/null)
+case "$why" in
+  *"declares no positive control"*) ok "the decline names the undeclared control, not a symptom of it" ;;
+  *) broke "undeclared control: declined_because was '$why'" ;;
+esac
+
+# 9f. a model whose run never measured the control prompt declines, however green:
+#     an unmeasured control proves nothing about the harness.
+d=$(newcase no_control_cell)
+apr_out "$d" golden-paris "Paris" gpu false; llama_out "$d" golden-paris "What is the capital of France?" "Paris"
+row "$d/manifest.jsonl" apr golden-paris 0 "$d/apr-golden-paris.out" "$d/apr-golden-paris.err"
+row "$d/manifest.jsonl" llama.cpp golden-paris 0 "$d/llama-golden-paris.out" "$d/llama-golden-paris.err"
+run_judge "$d"; GOT_RC=$?
+expect "a model with no measured control cell declines" "$d" 2 golden-paris GREEN
 
 # 10-11. token parity: equal ids agree; a divergence is located, never averaged away.
 d=$(newcase parity)

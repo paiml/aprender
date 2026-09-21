@@ -20,8 +20,16 @@ The other outcomes:
   UNJUDGED   no comparator answered, so there is no external oracle for the cell
   ALL_WRONG  the comparators answered, none correctly, and apr was wrong too
 ANY UNJUDGED cell declines the run (exit 2): it was never compared, and the
-amended scope makes a missing cell a NO-GO. So does a run with no GREEN cell,
-which compared apr only to wrong answers. ALL_WRONG is named, not scored.
+amended scope makes a missing cell a NO-GO.
+
+ALL_WRONG is NAMED, never a violation and never a pass (the cop's ruling, #3739:
+the bar is "apr right wherever a competitor is right"). Two things keep it from
+becoming the escape: the receipt counts ALL_WRONG per model, and the prompt set
+must declare a POSITIVE CONTROL (`"control": true`), a prompt the smallest model
+answers right on every engine. Every model must have a measured control cell.
+A control cell that comes back ALL_WRONG is a broken harness, not a model
+limitation, and declines the run; so does a model with no control cell, and a
+prompt set that declares no control at all.
 
 PERFORMANCE IS TRANSCRIBED, NEVER COMPUTED. Token counts and rates are copied
 from what each engine prints about itself, labelled with the engine that
@@ -32,7 +40,8 @@ writes is an input to the verdict.
 Usage:
   crux_inference_judge.py collect --manifest M --prompts P --meta META \\
       --out-json R.json --out-md R.md
-Exit: 0 no RED, no UNJUDGED, at least one GREEN; 1 any RED; 2 decline.
+Exit: 0 no RED, no UNJUDGED, every model's control measured and not ALL_WRONG;
+1 any RED; 2 decline.
 """
 
 import argparse
@@ -173,6 +182,10 @@ def correct(entry, expect_any):
 def engine_entry(row, prompt):
     """One engine's answer to one cell, from its manifest row."""
     e = {"answered": False, "rc": row.get("rc"), "why": None, "answer": None, "reported": {}}
+    if "ollama_unloaded" in row:
+        # Did ollama's model leave VRAM before the cell dropped the GPU lock?
+        # Recorded, never judged: it is a property of the harness, not an answer.
+        e["vram_released"] = row["ollama_unloaded"]
     if row.get("refused"):
         e["why"] = "refused: " + row["refused"]
         return e
@@ -303,12 +316,36 @@ def collect(args):
 
     counts = {v: sum(1 for c in cells if c["verdict"] == v) for v in ("RED", "GREEN", "UNJUDGED", "ALL_WRONG")}
     judged = counts["RED"] + counts["GREEN"] + counts["ALL_WRONG"]
+    all_wrong_by_model = {}
+    for c in cells:
+        if c["verdict"] == "ALL_WRONG":
+            k = c["key"]["model_sha256"]
+            all_wrong_by_model[k] = all_wrong_by_model.get(k, 0) + 1
+    controls = [pid for pid, p in prompts.items() if p.get("control")]
+    broken = sorted({"%s/%s" % (c["key"]["model_sha256"][:12], c["key"]["prompt_id"])
+                     for c in cells if c["key"]["prompt_id"] in controls and c["verdict"] == "ALL_WRONG"})
+    models = sorted({c["key"]["model_sha256"] for c in cells})
+    uncontrolled = [m[:12] for m in models
+                    if not any(c["key"]["model_sha256"] == m and c["key"]["prompt_id"] in controls for c in cells)]
+    declined_because = None
+    if not controls:
+        declined_because = "the prompt set declares no positive control (\"control\": true)"
+    elif not cells:
+        declined_because = "no cell was measured"
+    elif uncontrolled:
+        declined_because = "no positive-control cell was measured for model(s) " + ", ".join(uncontrolled)
+    elif broken:
+        declined_because = "positive control came back ALL_WRONG (a broken harness, not a model limit): " + ", ".join(broken)
     if counts["RED"]:
         verdict, rc = "RED", 1
-    elif counts["UNJUDGED"] or counts["GREEN"] == 0:
+    elif declined_because:
+        verdict, rc = "DECLINE", 2
+    elif counts["UNJUDGED"]:
         # An UNJUDGED cell was never compared to anything: under the amended
         # scope (#3739, 17:19Z) "a missing cell is a NO-GO", and an unmeasured
-        # cell is a missing one. A run with no GREEN at all shows nothing either.
+        # cell is a missing one. (A run with no GREEN cannot reach PASS: every
+        # model has a control cell, and a control that is not RED, UNJUDGED or
+        # ALL_WRONG is GREEN.)
         verdict, rc = "DECLINE", 2
     else:
         verdict, rc = "PASS", 0
@@ -317,7 +354,9 @@ def collect(args):
         "schema": "crux-inference-receipt/v1",
         "judged_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
         "cells": cells,
-        "summary": dict(counts, cells=len(cells), judged=judged, verdict=verdict),
+        "summary": dict(counts, cells=len(cells), judged=judged, verdict=verdict,
+                        all_wrong_by_model=all_wrong_by_model, controls=controls,
+                        declined_because=declined_because if verdict == "DECLINE" else None),
     })
     with open(args.out_json, "w", encoding="utf-8") as fh:
         json.dump(receipt, fh, indent=2, ensure_ascii=False)
