@@ -1,19 +1,34 @@
-# #3571 unit (2) — `apr serve` answers Qwen3.5 from its resident session, every size, streaming and not
+# #3571 unit (2) — `apr serve` answers Qwen3.5 from its resident session: every size, both GPU hosts, GPU and `--no-gpu`, streaming and not
 
-Measured by aprender-c7, 2026-09-21, `apr 0.69.0 (51c5bb2ce)` (the unit-(2) head with the /health fix), `gpu-q --prio 1`,
-`apr serve run Qwen3.5-<size>-Q4_K_M.gguf --gpu-layers all`, then one `/v1/chat/completions` request non-streaming and one
-streaming: greedy, `max_tokens` 64, user *"What is the capital of Peru? Answer in one word."* (`serve_e2e.sh`).
+Measured by aprender-c7, 2026-09-21, `apr 0.69.0 (51c5bb2ce)` (the unit-(2) head with the /health fix), every run `gpu-q --prio 1`:
+`apr serve run Qwen3.5-<size>-Q4_K_M.gguf --gpu-layers all` (GPU rows) or `--no-gpu` (CPU rows), wait for `/health` 200, then one
+`/v1/chat/completions` request non-streaming and one streaming — greedy, `max_tokens` 64, user *"What is the capital of Peru? Answer in one word."*
+(`serve_e2e.sh`). "up" is `/health` answering 200.
 
-| host | size | up (/health 200) | load s | `Backend: GPU` | fallback | gpu-layers | chat template | non-stream | stream |
+| route | size | up | load s | `Backend: GPU` | fallback | gpu-layers | chat template | non-stream | stream |
 |---|---|---|---|---|---|---|---|---|---|
-| lambda (RTX 4090) | 0.8B | yes | 3 | 1 | 0 | requested=all resolved=24 total=24 | Qwen3NoThink (thinking off) | 200 `Lima.⏎</think>⏎⏎Lima.` | 200 `Lima.⏎</think>⏎⏎Lima.` |
-| lambda (RTX 4090) | 2B | yes | 6 | 1 | 0 | requested=all resolved=24 total=24 | Qwen3NoThink (thinking off) | 200 `Lima` | 200 `Lima` |
-| lambda (RTX 4090) | 4B | yes | 6 | 1 | 0 | requested=all resolved=32 total=32 | Qwen3NoThink (thinking off) | 200 `Lima` | 200 `Lima` |
-| lambda (RTX 4090) | 9B | yes | 13 | 1 | 0 | requested=all resolved=32 total=32 | Qwen3NoThink (thinking off) | 200 `Lima` | 200 `Lima` |
-| lambda (RTX 4090) | 27B | yes | 60 | 1 | 0 | requested=all resolved=64 total=64 | Qwen3NoThink (thinking off) | 200 `Lima` | 200 `Lima` |
-| gx10 (GB10) | 0.8B–27B | pending — queued `gpu-q --prio 1`; follows as an evidence-only commit, not claimed by this receipt | | | | | | | |
+| lambda GPU | 0.8B | yes | 3 | 1 | 0 | requested=all resolved=24 total=24 | Qwen3NoThink (thinking off) | 200 `Lima.⏎</think>⏎⏎Lima.` | 200 `Lima.⏎</think>⏎⏎Lima.` |
+| lambda GPU | 2B | yes | 6 | 1 | 0 | requested=all resolved=24 total=24 | Qwen3NoThink (thinking off) | 200 `Lima` | 200 `Lima` |
+| lambda GPU | 4B | yes | 6 | 1 | 0 | requested=all resolved=32 total=32 | Qwen3NoThink (thinking off) | 200 `Lima` | 200 `Lima` |
+| lambda GPU | 9B | yes | 13 | 1 | 0 | requested=all resolved=32 total=32 | Qwen3NoThink (thinking off) | 200 `Lima` | 200 `Lima` |
+| lambda GPU | 27B | yes | 60 | 1 | 0 | requested=all resolved=64 total=64 | Qwen3NoThink (thinking off) | 200 `Lima` | 200 `Lima` |
+| gx10 GPU | 0.8B | yes | 3 | 1 | 0 | requested=all resolved=24 total=24 | Qwen3NoThink (thinking off) | 200 `Lima.⏎</think>⏎⏎Lima.` | 200 `Lima.⏎</think>⏎⏎Lima.` |
+| gx10 GPU | 2B | yes | 6 | 1 | 0 | requested=all resolved=24 total=24 | Qwen3NoThink (thinking off) | 200 `Lima` | 200 `Lima` |
+| gx10 GPU | 4B | yes | 8 | 1 | 0 | requested=all resolved=32 total=32 | Qwen3NoThink (thinking off) | 200 `Lima` | 200 `Lima` |
+| gx10 GPU | 9B | yes | 30 | 1 | 0 | requested=all resolved=32 total=32 | Qwen3NoThink (thinking off) | 200 `Lima` | 200 `Lima` |
+| gx10 GPU | 27B | yes | 47 | 1 | 0 | requested=all resolved=64 total=64 | Qwen3NoThink (thinking off) | 200 `Lima` | 200 `Lima` |
+| lambda --no-gpu | 0.8B | yes | 2 | 0 | 0 | requested=none resolved=0 total=24 | Qwen3NoThink (thinking off) | 200 `Lima.⏎</think>⏎⏎Lima.` | 200 `Lima.⏎</think>⏎⏎Lima.` |
+| lambda --no-gpu | 2B | yes | 5 | 0 | 0 | requested=none resolved=0 total=24 | Qwen3NoThink (thinking off) | 200 `Lima` | 200 `Lima` |
+| lambda --no-gpu | 4B | yes | 9 | 0 | 0 | requested=none resolved=0 total=32 | Qwen3NoThink (thinking off) | 200 `Lima` | 200 `Lima` |
+| lambda --no-gpu | 9B | yes | 8 | 0 | 0 | requested=none resolved=0 total=32 | Qwen3NoThink (thinking off) | 200 `Lima` | 200 `Lima` |
+| lambda --no-gpu | 27B | yes | 40 | 0 | 0 | requested=none resolved=0 total=64 | Qwen3NoThink (thinking off) | 200 `Lima` | 200 `Lima` |
+| gx10 --no-gpu | 0.8B | yes | 1 | 0 | 0 | requested=none resolved=0 total=24 | Qwen3NoThink (thinking off) | 200 `Lima.⏎</think>⏎⏎Lima.` | 200 `Lima.⏎</think>⏎⏎Lima.` |
+| gx10 --no-gpu | 2B | yes | 3 | 0 | 0 | requested=none resolved=0 total=24 | Qwen3NoThink (thinking off) | 200 `Lima` | 200 `Lima` |
+| gx10 --no-gpu | 4B | yes | 2 | 0 | 0 | requested=none resolved=0 total=32 | Qwen3NoThink (thinking off) | 200 `Lima` | 200 `Lima` |
+| gx10 --no-gpu | 9B | yes | 11 | 0 | 0 | requested=none resolved=0 total=32 | Qwen3NoThink (thinking off) | 200 `Lima` | 200 `Lima` |
+| gx10 --no-gpu | 27B | yes | 19 | 0 | 0 | requested=none resolved=0 total=64 | Qwen3NoThink (thinking off) | 200 `Lima` | 200 `Lima` |
 
-Every lambda size: the server reports healthy, holds all its layers on the GPU (`resolved = total`: 24/24/32/32/64), prints
-the template line, and answers HTTP 200 streaming and non-streaming, 2B–27B "Lima". The 0.8B reply carries a stray
-`</think>` — the `Qwen3NoThink` scaffold (`<think>\n</think>\n`) differs from the model's own (`<think>\n\n</think>\n\n`),
-#3755 (aprender-fd), which replaces it; this route takes whatever the shared selector renders.
+Every row: `/health` 200, HTTP 200 streaming and non-streaming, 2B–27B "Lima". GPU rows hold every layer on the GPU (`resolved = total`) with no
+fallback; `--no-gpu` rows resolve 0 layers and never print `Backend: GPU` — the route reported is the route taken. The 0.8B reply's stray
+`</think>` is the `Qwen3NoThink` scaffold (`<think>\n</think>\n`, not the model's own `<think>\n\n</think>\n\n`) that #3755 (aprender-fd) replaces;
+this route renders whatever the shared selector picks.
