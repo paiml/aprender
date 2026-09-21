@@ -1,0 +1,10 @@
+# #3803 mutant: embedded_tokenizer_tables reads merges in the string form only (the pre-#3803 read at both export sites)
+# cargo test -p aprender-train --lib --features realizar apr_embed
+test tokenizer::apr_embed::tests::both_merge_forms_are_read_and_added_tokens_take_their_ids ... FAILED
+test tokenizer::apr_embed::tests::an_apr_embedded_from_an_array_merge_tokenizer_json_encodes_like_the_json ... FAILED
+  left: []
+ right: ["a b", "ab c"]
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 7650 filtered out; finished in 0.01s
+
+# good tree:
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 7650 filtered out; finished in 0.01s

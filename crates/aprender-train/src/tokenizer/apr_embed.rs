@@ -36,7 +36,8 @@ pub fn embedded_tokenizer_tables(tok: &serde_json::Value) -> Option<EmbeddedToke
         .filter_map(|t| Some((t.get("content")?.as_str()?, t.get("id")?.as_u64()?)));
 
     let mut vocabulary: Vec<String> = Vec::with_capacity(base.len());
-    for (token, id) in base.iter().filter_map(|(k, v)| Some((k.as_str(), v.as_u64()?))).chain(added) {
+    for (token, id) in base.iter().filter_map(|(k, v)| Some((k.as_str(), v.as_u64()?))).chain(added)
+    {
         let id = usize::try_from(id).ok().filter(|&id| id <= MAX_TOKEN_ID)?;
         if vocabulary.len() <= id {
             vocabulary.resize(id + 1, String::new());

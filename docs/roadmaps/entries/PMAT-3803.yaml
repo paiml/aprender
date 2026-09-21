@@ -2,11 +2,11 @@
   github_issue: 3803
   item_type: task
   title: entrenar .apr export embeds a tokenizer that drops array-form merges and the added tokens
-  status: planned
+  status: in_progress
   priority: high
-  assigned_to: null
+  assigned_to: aprender-c3
   created: 2026-09-21T23:38:19Z
-  updated: 2026-09-21T23:38:19Z
+  updated: 2026-09-21T23:44:00Z
   spec: null
   acceptance_criteria:
   - 'Issue #3803 done_when 1, verbatim: "One reader of a tokenizer.json''s (vocab incl. added_tokens, merges in both forms) serves both trainer export sites. It is not two more copies."'
@@ -17,4 +17,4 @@
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Filed by aprender-c3 from the #3742 consumer sweep. Two hand-rolled tokenizer.json readers in crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs (~L2880 SPEC-SHIP-TWO-001 and ~L3093 ALB-130) read merges string-form only and (ALB-130) build the embedded vocabulary from model.vocab without added_tokens. Read from the code at those lines; no array-merge tokenizer.json is on lambda to measure end-to-end. Unassigned: for the cop to route.'
+  notes: 'Filed and taken by aprender-c3 from the #3742 consumer sweep (the cop was waiting; tokenizer rows are routed to aprender-c3). STACKED ON #3742 (branch PMAT-3742-apr-canonical-bpe): the embedded canonical encoder, entrenar HfTokenizer canonical path and the entrenar realizar-feature compile fix it tests against are #3742 round 2. THE DEFECT, read from the code: crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs embedded a tokenizer into an exported .apr at two sites (SPEC-SHIP-TWO-001 P0-D, ALB-130), each reading the tokenizer.json by hand: merges via as_str() only, so the array form tokenizers 0.20+ writes was dropped (0 merges embedded); the vocabulary from model.vocab only, so added_tokens (the chat specials) were missing; and sorted by id, so a gap would shift later ids. THE FIX: crates/aprender-train/src/tokenizer/apr_embed.rs embedded_tokenizer_tables, the one reader both sites now call: vocabulary indexed by id with added_tokens at their ids (gaps kept as empty strings), merges in both forms, ids capped at 2^24. MEASURED (evidence/trainer-apr-tokenizer-3803/real-array-merge-export-lambda.txt): the real Qwen2.5-Coder-1.5B-Instruct tokenizer.json with its merges rewritten to the array form, embedded exactly as the trainer now embeds it (151387 merges, 151665 tokens incl. the 22 added), loaded by realizar embedded loader (canonical): 7 of 7 corpus files identical by cmp to pinned llama-tokenize on qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, the chat-template file with specials included, round trip true on each. TESTS (tokenizer/apr_embed_tests.rs): both merge forms plus added-token placement and gap; no model.vocab and a hostile id give None; end-to-end under the realizar feature: an .apr embedded from an array-merge tokenizer.json encodes like entrenar HfTokenizer on the same JSON (the realizar loader #3742 measured against llama.cpp) on texts with specials. MUTANT (mutant.txt): string-form-only merges, RED (2 tests; the table test reads merges [] vs [a b, ab c]). pre_type and token_type are still not written by the exporter: for qwen2/qwen3/qwen35 #3742 infers the pre-tokenizer from the architecture and the specials structurally; other architectures take the legacy encoder with #3742 stderr warning.'

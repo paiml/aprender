@@ -1,0 +1,14 @@
+# #3803 done_when 2 on real data, lambda, 2026-09-21T23:43:39Z, head 71a7bdc44
+# input: HF Qwen/Qwen2.5-Coder-1.5B-Instruct tokenizer.json (snapshot 2e1fd397), its merges REWRITTEN into the ["a","b"] form tokenizers 0.20+ writes
+# embedded exactly as the trainer now embeds it: embedded_tokenizer_tables -> AprWriter (architecture qwen2, tokenizer.vocabulary, tokenizer.merges) -> realizar AprV2Model::load(..).load_embedded_bpe_tokenizer()
+# reference: pinned llama-tokenize d1d3c3396 --ids --no-escape --no-bos on ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf; ids compared with cmp
+# method: a temporary env-gated test in tokenizer/apr_embed_tests.rs (not committed)
+RT canonical=true merges=151387 vocab=151665
+PASS  brief-review     2648 ids, roundtrip=true
+PASS  chat-template    85 ids, roundtrip=true
+PASS  code-rust-token  3423 ids, roundtrip=true
+PASS  identifiers      384 ids, roundtrip=true
+PASS  nonascii         364 ids, roundtrip=true
+PASS  whitespace       64 ids, roundtrip=true
+PASS  p20k             18350 ids, roundtrip=true
+# before this row, both trainer export sites read merges with as_str() only: this input would have embedded 0 merges (the unit mutant, mutant.txt, shows exactly that: left [] right ["a b", "ab c"])

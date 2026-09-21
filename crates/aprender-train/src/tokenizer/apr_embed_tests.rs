@@ -72,7 +72,8 @@ fn an_apr_embedded_from_an_array_merge_tokenizer_json_encodes_like_the_json() {
         .load_embedded_bpe_tokenizer()
         .expect("embedded tokenizer");
     assert!(embedded.canonical.is_some(), "qwen2 byte-level: canonical");
-    let reference = crate::tokenizer::HfTokenizer::from_json(&tokenizer_json.to_string()).expect("json");
+    let reference =
+        crate::tokenizer::HfTokenizer::from_json(&tokenizer_json.to_string()).expect("json");
     for text in ["<|im_start|>ab ab", "ab é\nab", "x ab<|im_start|>"] {
         assert_eq!(embedded.encode(text), reference.encode(text), "{text:?}");
     }
