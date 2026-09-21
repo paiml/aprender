@@ -1,0 +1,212 @@
+{
+  "ticket": "PMAT-3571",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "24d49bb1ca3d2636b4997a1a92c2ff712b323686",
+  "diff_sha256": "c0034ef873e67740c5e67305d98842390edb4cae544c87212a5b4e5f0d4d54f2",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 7598,
+  "author": {
+    "model": "Opus 5 (1M context)",
+    "family": "claude",
+    "source": "measured"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I reviewed the diff against the acceptance criteria for PMAT-3571. The diff implements exactly what was asked: branching in `handler_gpu_completion.rs` to route Qwen3.5 to `Qwen35Model::create_base_model` while maintaining the existing dense path for others. Furthermore, the newly added LOADER evidence strictly obeys the ticket's instruction to not claim end-to-end success, correctly capturing the next tokenizer failure instead. I found no assertions that weaken gates, contradict the ticket, or claim unfounded successes.",
+      "findings": [
+        {
+          "claim": "The code correctly branches on `is_qwen35` and calls `Qwen35Model::create_base_model` instead of falling through to the dense `OwnedQuantizedModel` path.",
+          "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
+          "grounding": "cited",
+          "line": 396
+        },
+        {
+          "claim": "The receipt accurately documents the subsequent BPE tokenizer failure (`Unknown token '<unk>'`) and explicitly adheres to the requirement not to claim the serve path is end-to-end green.",
+          "file": "evidence/serve/3571/LOADER.md",
+          "grounding": "cited",
+          "line": 34
+        }
+      ],
+      "raw_bytes": 4324,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PASS: The diff implements PMAT-3571 exactly as specified. In crates/apr-cli/src/commands/serve/handler_gpu_completion.rs, start_gguf_server now checks if the GGUF model architecture is 'qwen35' and dispatches to Qwen35Model::create_base_model instead of falling through to the dense OwnedQuantizedModel::from_mapped path. No gates were weakened, no extra scope was added, and the change compiles and passes tests cleanly.",
+      "findings": [
+        {
+          "claim": "The Qwen3.5 hybrid architecture check routes to Qwen35Model::create_base_model instead of falling through to OwnedQuantizedModel::from_mapped, matching the acceptance criteria of PMAT-3571.",
+          "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
+          "fix": "N/A",
+          "grounding": "cited",
+          "line": 396
+        },
+        {
+          "claim": "CARGO_TARGET_DIR=/tmp/target_rel3571 cargo check -p apr-cli --features inference,cuda compiles cleanly without errors.",
+          "command": "CARGO_TARGET_DIR=/tmp/target_rel3571 cargo check -p apr-cli --features inference,cuda",
+          "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
+          "fix": "N/A",
+          "grounding": "measured",
+          "line": 387,
+          "output": "Finished dev profile [unoptimized + debuginfo] target(s) in 1m 00s"
+        },
+        {
+          "claim": "PMAT-3571 task entry and roadmap entries define the exact single-layer scope and acceptance criteria.",
+          "file": "docs/roadmaps/entries/PMAT-3571.yaml",
+          "fix": "N/A",
+          "grounding": "cited",
+          "line": 1
+        },
+        {
+          "claim": "Evidence file LOADER.md accurately documents before and after state for apr serve on Qwen3.5 without overclaiming end-to-end readiness.",
+          "file": "evidence/serve/3571/LOADER.md",
+          "fix": "N/A",
+          "grounding": "cited",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 5920,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Lane 3 judgment for PMAT-3571: PASS. The diff correctly routes Qwen3.5 hybrid models in `apr serve` to `Qwen35Model::create_base_model` in `handler_gpu_completion.rs` lines 396-408, fulfilling the ticket acceptance criteria. All repository gates, roadmap verification scripts, and `cargo check -p apr-cli` pass cleanly with no gate weakening or unrequested changes.",
+      "findings": [
+        {
+          "claim": "`crates/apr-cli/src/commands/serve/handler_gpu_completion.rs` branches on `is_qwen35` and invokes `realizar::gguf::forward_qwen35::Qwen35Model::create_base_model`, resolving the loader defect where Qwen3.5 hybrid models failed to load in `apr serve`.",
+          "command": "cargo check -p apr-cli",
+          "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
+          "fix": "Added conditional check for architecture 'qwen35' to build Qwen35Model base model instead of falling through to OwnedQuantizedModel::from_mapped.",
+          "grounding": "measured",
+          "line": 396,
+          "output": "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 10s"
+        },
+        {
+          "claim": "`docs/roadmaps/entries/PMAT-3571.yaml` and `docs/roadmaps/roadmap.yaml` correctly document task PMAT-3571 acceptance criteria and scope boundary (Layer 1 loading fix).",
+          "command": "bash scripts/check_roadmap_diff_additive.sh && bash scripts/check_roadmap_ids_unique.sh && bash scripts/check_roadmap_sorted.sh && bash scripts/check_roadmap_fragment_required.sh",
+          "file": "docs/roadmaps/entries/PMAT-3571.yaml",
+          "fix": "Added entry fragment PMAT-3571.yaml and aggregated into roadmap.yaml cleanly.",
+          "grounding": "measured",
+          "line": 1,
+          "output": "PASS check_roadmap_fragment_required.sh: 1 changed entry/entries, each with its fragment; the aggregate is regenerated"
+        },
+        {
+          "claim": "`evidence/serve/3571/LOADER.md` records manual before/after verification logs of `apr serve` with Qwen3.5.",
+          "file": "evidence/serve/3571/LOADER.md",
+          "grounding": "cited",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 6020,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
+      "line": 387,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "CARGO_TARGET_DIR=/tmp/target_rel3571 cargo check -p apr-cli --features inference,cuda compiles cleanly without errors."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
+      "line": 396,
+      "lanes_agreeing": [
+        1,
+        2,
+        3
+      ],
+      "claims": [
+        "The Qwen3.5 hybrid architecture check routes to Qwen35Model::create_base_model instead of falling through to OwnedQuantizedModel::from_mapped, matching the acceptance criteria of PMAT-3571.",
+        "The code correctly branches on `is_qwen35` and calls `Qwen35Model::create_base_model` instead of falling through to the dense `OwnedQuantizedModel` path.",
+        "`crates/apr-cli/src/commands/serve/handler_gpu_completion.rs` branches on `is_qwen35` and invokes `realizar::gguf::forward_qwen35::Qwen35Model::create_base_model`, resolving the loader defect where Qwen3.5 hybrid models failed to load in `apr serve`."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/entries/PMAT-3571.yaml",
+      "line": 1,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "PMAT-3571 task entry and roadmap entries define the exact single-layer scope and acceptance criteria.",
+        "`docs/roadmaps/entries/PMAT-3571.yaml` and `docs/roadmaps/roadmap.yaml` correctly document task PMAT-3571 acceptance criteria and scope boundary (Layer 1 loading fix)."
+      ]
+    },
+    {
+      "file": "evidence/serve/3571/LOADER.md",
+      "line": 1,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "Evidence file LOADER.md accurately documents before and after state for apr serve on Qwen3.5 without overclaiming end-to-end readiness.",
+        "`evidence/serve/3571/LOADER.md` records manual before/after verification logs of `apr serve` with Qwen3.5."
+      ]
+    },
+    {
+      "file": "evidence/serve/3571/LOADER.md",
+      "line": 34,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The receipt accurately documents the subsequent BPE tokenizer failure (`Unknown token '<unk>'`) and explicitly adheres to the requirement not to claim the serve path is end-to-end green."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=Opus 5 (1M context)/claude"
+  }
+}

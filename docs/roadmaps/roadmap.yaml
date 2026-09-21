@@ -18452,6 +18452,59 @@ roadmap:
   - orch:fable
   - orch-basis:state
   notes: 'ONT-001 v4.4 row ONT-6. RAH-005 binding filed in paiml/paiml-implement. Receipt: docs/audits/impl-PMAT-3451-receipt.md'
+- id: PMAT-3459
+  github_issue: 3459
+  item_type: task
+  title: 'release train: move the release autopilot''s tag path into the repo; tag step calls check_milestone_cut.sh (#3459)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-17T15:29:02Z
+  updated: 2026-09-17T15:29:02Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - P0
+  - must-carry:0.69.0
+  notes: null
+- id: PMAT-3460
+  github_issue: 3460
+  item_type: task
+  title: 'check_milestone_cut.sh: exempt the release epic by issue number from 06x §5, not title match (#3460)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T15:29:02Z
+  updated: 2026-09-17T15:29:02Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3461
+  github_issue: 3459
+  item_type: task
+  title: 'Register PMAT-3459 and PMAT-3460 in the roadmap so the AD-04 quorum for PR #3461 can run (registration only; the tag-path implementation is #3599, the epic-by-number follow-up is #3460)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-20T22:53:14Z
+  updated: 2026-09-20T22:53:14Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:triage
+  notes: 'ACCEPTANCE (this row is PR #3461 itself, a roadmap-only registration): (1) docs/roadmaps/entries/PMAT-3459.yaml exists with id PMAT-3459, github_issue 3459, priority critical, and a title that transcribes issue #3459 — the release autopilot''s tag path moves into the repo and the tag step calls check_milestone_cut.sh; (2) docs/roadmaps/entries/PMAT-3460.yaml exists with id PMAT-3460, github_issue 3460, and a title that transcribes issue #3460 — check_milestone_cut.sh exempts the release epic by issue number, not title match; (3) docs/roadmaps/roadmap.yaml equals aggregate(entries/) and the diff vs origin/main is additive only (deleted=0, reserialised=0) after the merge of origin/main that picked up PMAT-3539; (4) the PR body carries keep-open for #3459, #3460 and #3080 and no sentence in it is parsed by GitHub as closing #3459 (the must-carry whose criterion is the tag, which this PR does not deliver). NOT in scope: any code, script or measurement for PMAT-3459 or PMAT-3460 — the tag path itself is PR #3599 and is judged there. A lane that finds an entry mis-transcribed, missing or invented FAILs this row.'
 - id: PMAT-3465
   github_issue: 3465
   item_type: task
@@ -18553,6 +18606,27 @@ roadmap:
   - kind:code
   - orch:fable
   - orch-basis:state
+  notes: null
+- id: PMAT-3490
+  github_issue: 3490
+  item_type: task
+  title: 'CB-200 ratchet 601 -> 599 and the complexity shrink under pmat 3.41.1 — the pin itself landed in #3484, not here'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-18T15:52:47Z
+  updated: 2026-09-18T15:52:47Z
+  spec: null
+  acceptance_criteria:
+  - 'THE PIN IS ALREADY IN AND THIS ROW NO LONGER BUMPS IT. `[pmat] version = "3.41.1"` landed on main in `f4c0daa37` (09-18 17:07) inside the 0.68.2 PR #3484, not here. Verified on `origin/main:tools.toml:56`. The row was written before that and its original title said otherwise; two humans AND a review lane then read `tools.toml:7` — a COMMENT reading `version: "3.40.1"` — as the pin, which is paiml/infra#816.'
+  - 'WHAT THIS ROW ACTUALLY LANDS: the **CB-200 ratchet 601 -> 599** and the stale comment on `tools.toml:7` — and NOTHING ELSE. The complexity-baseline shrink (8 functions) that an earlier version of this criterion claimed ALSO landed in #3484: `scripts/complexity_baseline.txt` is absent from the diff against origin/main, which quorum r3 lane 1 caught. The r2 ratchet output "8 removed" was measured against the MERGE-BASE, not against main. The rebase against main surfaced 601-vs-599 as a genuine conflict — BOTH sides already carried `tool_version=pmat 3.41.1`, so it was never a version disagreement — and 599 is kept because the file is shrink-only against origin/main and taking 601 would surrender the ratchet.'
+  - 'VERIFIED ON THE MERGED TREE rather than carried, because 10 commits of new code could have made 599 unreachable: `ok CB-200 baseline 599 ([tdg] baseline == scripts/cb200_baseline.txt)`, `ok ratchet cb200_baseline.txt did not grow (2 removed)`, `ok ratchet complexity_baseline.txt did not grow (8 removed)`, `PASS (D2): 3409b29d2 vs 674da069e measured by pmat 3.41.1 — none new, none grown.`'
+  - '3.41.1 RE-CONFIRMED AS CONVERGED before the rebase, on the RUNNER denominator rather than the host set: intel HOST, `gx10-pool1`, `yoga-build3`, and the gx10/mini/lambda-labs hosts all report 3.41.1, and infra declares 3.41.1 on all five machines. `pforge-clean-room` (`rust:1.95-slim`) carries no pmat at all — paiml/infra#813. A pin measured two days earlier asserts nothing if the fleet moved under it; it had not.'
+  - 'THE PR-REVIEW RECEIPT UNDER `evidence/pr-review/3491/0fd8deb79.../` IS NOT REGENERATED, deliberately. It is scoped to the sha it names and correct for it. `pr_review_quorum_arm.sh:612` already refuses this case with the true reason — `0fd8deb79` IS an ancestor of the rebased head, so Q3 reaches the late-diff arm and refuses because commits after the reviewed sha touch `tools.toml` and the baselines, outside `evidence/pr-review/3491/**`. Regenerating a signed receipt for a head it never reviewed would be the real defect; a fresh signed round writes to its own directory and the old one stays as the historical artifact it is.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
   notes: null
 - id: PMAT-3500
   github_issue: 3500
@@ -18690,6 +18764,68 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3537
+  github_issue: 3537
+  item_type: task
+  title: 'ONT-6b: a kind-less contract that fails a kernel-only rule says ''no metadata.kind, judged kernel by default'' on the first error the default caused'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T07:01:14Z
+  updated: 2026-09-20T07:01:14Z
+  spec: docs/specifications/paiml-ontology.md
+  acceptance_criteria:
+  - 'crates/aprender-contracts/src/schema/types.rs: `Contract` gains `#[serde(skip)] pub kind_declared: bool` — a parse artifact beside `unknown_top_level_keys`, recording whether `metadata.kind:` was WRITTEN, because `ContractKind` derives `Default = Kernel` and `#[serde(default)]` erases the difference before anything can read `Contract::kind()`'
+  - 'crates/aprender-contracts/src/schema/parser.rs: `parse_contract_str` sets it from a new `kind_is_declared(yaml)` — a `KindProbe` struct whose only field is `metadata: BTreeMap<String, IgnoredAny>`, so every other top-level value is DRAINED rather than built (a whole-document `serde_yaml::Value` parse fails on contracts/apr-cli-commands-v1.yaml and would report a declared kind as absent); an absent or non-mapping `metadata` answers false; a unit test carries the duplicate-nested-key shape with an anti-vacuity assertion that a `Value` parse really refuses it'
+  - 'crates/aprender-contracts/src/schema/validator.rs: `validate_contract` records `violations.len()` before the kernel-only branch and, when `!contract.kind_declared`, calls the new `explain_kind_default` on exactly that slice — which appends ` (no metadata.kind, judged kernel by default)` to the FIRST `Severity::Error` in it, once. New `pub const KIND_DEFAULT_EXPLANATION`. No rule id is matched anywhere and the printer is untouched'
+  - 'four fixtures under tests/fixtures/ont/kind-default/ — kindless-failing.yaml (has `references` so the first error is the kernel-only one), declared-kernel-failing.yaml (the same content plus `kind: kernel`), kindless-passing.yaml (no kind, all four kernel blocks), pattern.yaml (`kind: pattern`)'
+  - 'crates/aprender-contracts-cli/tests/ont6b_kind_default.rs: six legs — first-error, exactly-once (with an anti-vacuity assertion that the fixture yields >1 error), declared-kernel-silent, kindless-passing-silent, pattern-silent, and a differential asserting that stripping the explanation from the kind-less output reproduces the declared-kernel output BYTE-FOR-BYTE; ci/explicit-test-commands.d/344-aprender-contracts-cli-ont6b-kind-default.cmd. No ci.yml change'
+  - 'measured: the four fixtures give rc 1/1/0/0 with the explanation count 1/0/0/0; `cargo test -p aprender-contracts --lib` 1666 passed 0 failed; `cargo fmt --all -- --check` clean and clippy `-D warnings` clean on both crates'
+  - 'four planted mutations, each asserting its own perl match count BEFORE the tests run (an unapplied edit is indistinguishable from an uncaught mutant), each RED on a DIFFERENT set of legs: drop the text → first-error + once; decorate even when declared → declared-kernel + differential; decorate the LAST error → first-error; decorate warnings too → kindless-passing-silent. Tree restored and green afterwards in the same run'
+  - 'R-23: over all 1300 tracked contracts this pv and main''s pv (built at daad9f7c5, named) differ on ZERO and ZERO carry the explanation — the change is inert on the corpus; rmedia''s kind-less crates/rmedia-core/contracts/dialogue-v1.yaml (read-only git archive export at 3ff2f4d) goes from `PROVABILITY-001: Kernel contract has no kani_harnesses` to the same line plus the explanation, exit 1 on both'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3539
+  github_issue: 3539
+  item_type: task
+  title: 'book-contracts.yml: delete the three rust-cache steps — their save step deletes the shared registry/src; cache-bin false was never the fix'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T07:19:32Z
+  updated: 2026-09-20T07:19:32Z
+  spec: null
+  acceptance_criteria:
+  - '.github/workflows/book-contracts.yml: the three `Swatinem/rust-cache@v2` steps (jobs chapter-examples-compile, chapter-examples-run, book-integration-tests — all `[self-hosted, Linux, X64, clean-room]`), each with `workspaces: "."` and `cache-bin: "false"`, are DELETED. `grep -c "uses: Swatinem/rust-cache"` goes 3 → 0'
+  - 'each is replaced by a comment naming the mechanism rather than the old mitigation: cache-bin skips cleanBin alone, the save step also runs cleanRegistry unconditionally and deletes ${CARGO_HOME}/registry/src, and only a job-private CARGO_HOME would make the action safe (--target-dir, --root and a fresh $HOME do not, since cargo reads sources from $CARGO_HOME whatever the target dir is)'
+  - 'each comment states in those words that THE CI-REAPER IS NOT THE ONLY CAUSE OF THAT MESSAGE — aprender#2822 attributes it to the reaper; in the measured case the reaper had last run 27 minutes earlier and its next run logged swept=0 — and names the two commands that check the clock (`journalctl -u ci-reaper.service`, and a grep for `Post Run Swatinem/rust-cache` over the runners'' _diag/Worker_*.log)'
+  - 'measured: paiml/infra main''s machines/clean-room/shared-home-guard/check.sh over the changed file prints no VIOLATION (it printed three before), and no other aprender workflow produces a BLOCK under that guard'
+  - 'FOUR files change and two of them are structural, not scope creep. The two this row authors: `.github/workflows/book-contracts.yml` and this fragment (`docs/roadmaps/entries/PMAT-3539.yaml`). The two the repository requires alongside them: `docs/roadmaps/roadmap.yaml`, GENERATED by `make roadmap-aggregate` and impossible to omit when a fragment is added, and `docs/audits/quorum-PMAT-3539.json`, the committed quorum receipt. An earlier version said "exactly two files change" and quorum r1 correctly FAILED the diff against it, twice.'
+  - 'THE INVARIANT, stated instead of a line count: **every deletion in this diff is inside `.github/workflows/book-contracts.yml`**, and the three doc files are purely additive. NO source, NO test, NO ci.yml. A round-4 lane refused an earlier version of this criterion for citing `+118/+21/+21` when the receipt had become 84 lines — correctly, and the lesson is that the number was UNCITABLE rather than merely wrong: `docs/audits/quorum-PMAT-3539.json` is REWRITTEN BY EACH QUORUM ROUND, so any criterion quoting its line count is false again the moment the next round runs. An acceptance criterion may not cite a measurement of an artifact the review process itself rewrites. The deletions-are-confined invariant is stable across rounds and is what the criterion was actually protecting.'
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3545
+  github_issue: 3545
+  item_type: task
+  title: 'apr devices told every user CUDA was unavailable on a cuda build: trueno/cuda missing from the feature'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-09-21T00:00:00Z
+  updated: 2026-09-21T00:00:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from gh#3545 done_when; see paiml-mcp-agent-toolkit#1414). The shipped -cuda asset ran CUDA correctly and told every new user cuda unavailable reason=NotCompiled on the first screen they saw. Two flags decided one fact: apr-cli/cuda enabled realizar/cuda (so inference ran on the GPU) but NOT trueno/cuda — and trueno s backend registry is what devices reads, so default_factories() had no CudaFactory and the registry emitted missing_entry(Cuda) = Source::NotCompiled. Done when: the cuda feature includes trueno/cuda, and a test RED-turns if it is removed again. Falsifier is two-sided: a cuda build must not report not-compiled, AND a non-cuda build must STILL report not-compiled even where a GPU is physically present — a fix that made devices optimistic fails the second arm. NOTE: the issue s own query asks for compiled-in, which would be false even after a correct fix — Source::CompiledIn means linked into the binary, while the CUDA driver is reached via Source::Dlopen(path). The test asserts != not-compiled and the issue s query needs correcting rather than satisfying. Measured on lambda RTX 4090: before = unavailable/not-compiled, after = ready/dlopen.'
 - id: PMAT-3556
   github_issue: 3556
   item_type: task
@@ -18722,3 +18858,135 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3567
+  github_issue: 3567
+  item_type: task
+  title: The fleet-pinned pv is 0.65.2 and has no 'extract' subcommand and no '
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T10:27:59Z
+  updated: 2026-09-20T10:27:59Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3568
+  github_issue: 3568
+  item_type: task
+  title: Schema-constrained decoding in apr (--json-schema or grammar) — thre
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T10:27:59Z
+  updated: 2026-09-20T10:27:59Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3569
+  github_issue: 3569
+  item_type: task
+  title: 'Decision 8: census.json becomes derived (CI computes, guard refuses PR'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T10:27:58Z
+  updated: 2026-09-20T10:27:58Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3571
+  github_issue: 3571
+  item_type: task
+  title: 'apr serve routes the Qwen3.5 hybrid to Qwen35Model instead of the dense path'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-21T00:00:00Z
+  updated: 2026-09-21T00:00:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from gh#3571 done_when; see paiml-mcp-agent-toolkit#1414). Layer 1 of a surface no test had ever traversed: apr serve could not load the flagship architecture at all, and each assumption was visible only once the one above it cleared. Done when: handler_gpu_completion.rs branches on is_qwen35 and calls Qwen35Model::create_base_model rather than falling through to the dense OwnedQuantizedModel path, which is the wrong architecture for a Gated DeltaNet hybrid. Scope is deliberately ONE LAYER: land what works rather than hold the whole stack behind the last unknown. STOP: do not claim the serve path is end-to-end green on Qwen3.5 from this row alone — the layers above it are separate rows.'
+- id: PMAT-3574
+  github_issue: 3574
+  item_type: task
+  title: ARB-APR-3 parity receipt for the decide lane cell on lambda-labs
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-20T11:20:51Z
+  updated: 2026-09-20T11:27:22Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3577
+  github_issue: 3577
+  item_type: task
+  title: 'Receipts under contract: parity-receipt-v1 shape, extract:parity-receipt, back-fill 7 receipts (ONT-4c3 re-scoped)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-20T11:34:01Z
+  updated: 2026-09-20T11:34:17Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered; pmat work add derived neither spec: nor acceptance_criteria: — defect paiml-mcp-agent-toolkit#1414). Spec: docs/specifications/ruling-receipts-under-contract.md (operator ruling 2026-09-20). Done when: contracts/parity-receipt-v1.yaml with its shape on origin/main; extract:parity-receipt implemented; pv lint --gate shapes --path evidence/ in the required check; PR body shows 7 older receipts RED before back-fill and 0 after, plant violation = 1, mutation RED, pc_shape fired; check_parity_receipt.sh folded into the shape or its remainder listed under not_expressible; ONT-4c3 bound with the parity receipt as focus node; verdict rendered on a fleet host once the pv pin lands, else checkout-only: true. Sigma parent bound: json. Back-fill denominator: 7. STOP: subset-insufficient; shared-file-touched without the guard label; any threshold typed into the shape instead of resolved from thresholds.yaml.'
+- id: PMAT-3587
+  github_issue: 3587
+  item_type: task
+  title: 'nextest fail-fast discards verdicts: one failure hid 15 unmeasured commands and the shard read as ''1 failure'', not ''1 failure + 15 Unknown'''
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-20T12:37:48Z
+  updated: 2026-09-20T12:37:48Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from issue #3587 "What lands"; minted on the PR branch so the AD-04 quorum can run -- pmat work status refuses a missing item). Two halves: the explicit-command runner (#3616, merged) and the nextest [profile.ci] key (#3626). Lands: 1. **--no-fail-fast on the shard.** The cost is runner minutes on an already-red shard; the benefit is that a red run still measures everything else it was going to measure — which is exactly when you most want the data. 2. **The reducer reports ran / skipped / total** in the shard receipt. The skipped count is a **number**, never an absence. 3. **A receipt with skipped > 0 is Unknown, not Fail and not Pass** — it names what was not measured, per doctrine 4. '
+- id: PMAT-3627
+  github_issue: 3627
+  item_type: task
+  title: 'rmsnorm_contract::prop_scale_invariance asserts the ε=0 theorem against the ε=1e-6 implementation — fails whenever α²·mean(x²) ≈ ε (killed #3621 shard 1/3)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-20T21:27:27Z
+  updated: 2026-09-20T21:27:27Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from issue #3627 done_when; minted on the PR branch so the AD-04 quorum can run -- pmat work status refuses a missing item). Done when: contracts/rmsnorm-kernel-v1.yaml Scale invariance obligation carries either the ε>0 formal or the α²·mean(x²) ≫ ε precondition; pv validate passes ~~regenerated with pv probar --binding~~ **WITHDRAWN 21:40Z** — b3 measured that pv probar --binding emits 7 #[ignore = "no binding available"] stubs for this contract; the tracked file''s 5 real tests were produced by the pre-monorepo external generator (20dda945b, 2026-02-18) and the header is false (class row: #3630). Instead: the tracked test is edited **directly**, the commit says so, and the file''s header is replaced by a true one (hand-maintained, contract-bound) the minimal input above ([0.0, -0.15964308], α=0.012254778) is a committed regression case that PASSES under the new assertion (i.e. the fixed test is exercised on the exact input that killed #3621), and a mutation that restores the ε=0 assertion turns it RED cargo'

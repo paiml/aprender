@@ -1,0 +1,16 @@
+- id: PMAT-3567
+  github_issue: 3567
+  item_type: task
+  title: The fleet-pinned pv is 0.65.2 and has no 'extract' subcommand and no '
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-20T10:27:59Z
+  updated: 2026-09-20T10:27:59Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
