@@ -62,6 +62,23 @@ ladder:
     dirs: ["~/models", "~/.apr/models", "~/.cache/apr/models"]   # depth 1, the fleet's model dirs
     patterns: ["*q4_k*.gguf", "*q4k*.gguf", "*q4_k*.apr", "*q4k*.apr"]   # case-insensitive
     backends: [cuda]
+  # #3712 row B (operator 2026-09-21: "MORE than enough tokens for our needs (overdo it), and our verbs are
+  # dogfooded, i.e chat with and without thinking, ditto run, ditto code"). A cell is (model, host, verb,
+  # thinking, context rung). The RUNGS are not declared here: ids and token counts live in ONE file,
+  # evidence/release/context-rungs.json (apr-release-context-rungs/v1, #3715), which pv reads too;
+  # consumer-max is the max over its consumers[].max_prompt_tokens. Thinking modes are derived per model
+  # from its chat template (#3723). A cell fits a host iff weights + kv_bytes_per_token * tokens + workspace
+  # <= the host's TOTAL GPU memory (operator "a", #3710): a fitting cell must pass, a non-fitting one must be
+  # an honest pre-load refusal, and every owed cell must pass on >= 1 required host. Long rungs are owed by
+  # the families below plus ONE representative per other arch, named here by file (cop 2026-09-21).
+  cells:
+    verbs: [run, chat, serve, code]
+    long_rungs_for:
+      families: [qwen35]                      # every consumer's family: the full rung set, through declared
+      representatives:                        # one file per other arch the fleet holds
+        qwen2: qwen2.5-coder-7b-instruct-q4_k_m.gguf      # lambda + gx10
+        qwen3: Qwen3-8B-Q4_K_M.gguf                       # lambda + gx10
+        qwen3moe: Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf  # gx10 (128 GB unified); fits no 24 GB card long
   rungs:
     - id: qwen2-1.5b-q4km
       family: qwen2.5
@@ -190,6 +207,11 @@ proof_obligations:
     property: "No Q4_K rung is optional, and every one claims CUDA"
     formal: "∀ rung ∈ ladder.rungs: q4k(rung) ⟹ rung.required = true ∧ cuda ∈ rung.backends"
     applies_to: gate_verdict
+  - id: MCL-INV-008
+    type: invariant
+    property: "Every owed (model, verb, thinking, rung) cell is proved: pass where it fits, an honest refusal where it does not, and a pass on at least one required host"
+    formal: "∀ host, m ∈ inventory(host), v ∈ cells.verbs, t ∈ modes(template(m)), r ∈ rungs(m): |rows(host, m, v, t, r)| = 1 ∧ (fits(m, r, total(host)) ⟹ pass(row) ∧ backend = cuda ∧ ¬fallback ∧ prompt_tokens ≥ tokens(r) ∧ answer_chars > 0 ∧ (t = on ⟹ think_closed)) ∧ (¬fits ⟹ refused(row) ∧ required_bytes(row) > total(host)) ∧ ∃ host': pass(host', m, v, t, r)"
+    applies_to: gate_verdict
   - id: MCL-INV-007
     type: invariant
     property: "The universe is the host's measured inventory — every Q4_K model it holds is in the run and green on CUDA"
@@ -272,6 +294,12 @@ falsification_tests:
     prediction: "check_model_ladder.sh --self-test: model_ladder.sh makes no \"$APR\" <subcommand> call outside apr_locked; a fake apr called through --lock-probe sees the lock held and oom_score_adj 1000; a lock held elsewhere declines with exit 2 naming the holder's pid; four producer mutants (raw call, no flock, no choom, no -w) are each killed. The real run is RED when the audit finds a raw call"
     test: "bash scripts/check_model_ladder.sh --self-test"
     if_fails: "a ladder run on gx10's unified memory OOM-kills the CI pool (15:56:08Z, 18 kills in 10 s) or hangs a release on a stuck lock"
+
+  - id: FALSIFY-MCL-016
+    rule: "Cells: verbs x thinking x context rung, derived and proved"
+    prediction: "check_model_ladder.sh --self-test: green-cells passes (20 owed on lambda, 12 pass, 8 honest refusals); a missing cell, a duplicate row, a fallback, a thinking block that never closed, a prompt under its rung, an empty answer, a co-tenant refusal, an OOM instead of a refusal, a rung that passes nowhere, thinking_modes that disagree with the template, a missing context_length (#3733), no cells, a consumer without a number, a missing context-rungs file, a dropped cells block or verb, a rung id or consumer dropped from context-rungs.json vs origin/main, an arch with no held representative, and a pass where the declared arithmetic says the cell cannot fit (the arithmetic decides what is owed, so it must be right) are each RED naming it; 11 module mutants are each killed by their case"
+    test: "bash scripts/check_model_ladder.sh --self-test"
+    if_fails: "a release dogfoods one verb at one short prompt with thinking off and calls the model family working"
 
 qa_gate:
   id: F-MCL-001
