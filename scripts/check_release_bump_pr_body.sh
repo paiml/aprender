@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # check_release_bump_pr_body.sh -- the release bump PR's body must pass §6 R-2 BY
-# CONSTRUCTION, and prepare_bump.sh --ship must refuse to open one that does not (#3699).
+# CONSTRUCTION, and prepare_bump.sh --ship must refuse to open one that does not (#3699),
+# or one whose tree lacks green model-ladder receipts for the new version (#3708).
 #
 # THE DEFECT, measured 2026-09-21. `prepare_bump.sh 0.69.0 --ship` opened #3698, whose
 # body embeds the CHANGELOG [0.69.0] section. That section cites EPIC #3080 and context
@@ -34,9 +35,17 @@
 #   prs-only        a CHANGELOG citing only PRs gets no keep-open line and still passes.
 #   landmine        a CHANGELOG carrying "no-close: #9005" is REFUSED: non-zero exit, no
 #                   `gh pr create`, and no branch pushed to origin.
+#   ladder-missing-gx10  (#3708) the bump tree holds lambda.json but no gx10.json for 9.9.9:
+#                   REFUSED by scripts/check_model_ladder.sh (the dogfood's own judge, real copy,
+#                   fixture ladder of the two required hosts), naming gx10.json; nothing pushed
+#                   or opened.
+#   ladder-ignored  (#3708) both receipts present and green but gitignored, so `git add -A`
+#                   would not commit them: REFUSED, naming them.
 # THE MUTANTS (each must turn its row RED, or the table is not discriminating)
 #   drop-keep-open  prepare_bump.sh without the line that writes keep-open -> epic-and-refs RED
 #   drop-refusal    prepare_bump.sh without the R-2 refusal              -> landmine RED
+#   drop-ladder     the ladder judge replaced by `true`                   -> ladder-missing-gx10 RED
+#   drop-ignored    prepare_bump.sh without the gitignored-receipt refusal -> ladder-ignored RED
 #
 # Exit 0 = every row green and both mutants killed. 1 = a row RED or a mutant survived.
 # 2 = ENV: a subject or a mutation anchor is missing -- the table judged nothing.
@@ -47,15 +56,20 @@ GUARD="$ROOT/scripts/check_pr_closes_issue.sh"
 PARAMS="$ROOT/scripts/release/lib_release_params.sh"
 KEEP_OPEN_ANCHOR='keep-open: %s'
 REFUSAL_ANCHOR='bash "$CLOSES_GUARD" --body'
+LADDER_ANCHOR='bash scripts/check_model_ladder.sh --version "$V"'
+IGNORED_ANCHOR='[ -z "$ignored" ] ||'
+LADDER_JUDGE="$ROOT/scripts/check_model_ladder.sh"
 # #3699 done_when 1's reason, verbatim. The row pins it: the line must name exactly the owed
 # refs AND carry this text, nothing else.
 KEEP_OPEN_REASON='cited by the CHANGELOG for context; each closes via its own PR; the release EPIC closes at T-4'
 
 env_die() { printf 'ENV   %s -- the table judged nothing, not a pass\n' "$*" >&2; exit 2; }
-for f in "$SUBJECT" "$GUARD" "$PARAMS"; do [ -r "$f" ] || env_die "no $f"; done
+for f in "$SUBJECT" "$GUARD" "$PARAMS" "$LADDER_JUDGE"; do [ -r "$f" ] || env_die "no $f"; done
 command -v git > /dev/null 2>&1 || env_die "no git"
 grep -qF -- "$KEEP_OPEN_ANCHOR" "$SUBJECT" || env_die "prepare_bump.sh has no '$KEEP_OPEN_ANCHOR' line -- the subject moved"
 grep -qF -- "$REFUSAL_ANCHOR" "$SUBJECT" || env_die "prepare_bump.sh has no '$REFUSAL_ANCHOR' line -- the subject moved"
+grep -qF -- "$LADDER_ANCHOR" "$SUBJECT" || env_die "prepare_bump.sh has no '$LADDER_ANCHOR' line -- the subject moved"
+grep -qF -- "$IGNORED_ANCHOR" "$SUBJECT" || env_die "prepare_bump.sh has no '$IGNORED_ANCHOR' line -- the subject moved"
 
 TMP=$(mktemp -d) || exit 2
 # SEC011: validate before rm -rf. An empty or '/' value must never reach it.
@@ -86,11 +100,19 @@ STUB
 chmod +x "$TMP/bin/kind" "$TMP/bin/gh"
 export PR_CLOSES_REF_KIND_CMD="$TMP/bin/kind"
 
-# run_ship NAME SUBJECT CHANGELOG_SECTION -> the fixture dir; the exit code is in $TMP/NAME/rc
+# write_receipt DIR HOST -> a green apr-model-ladder-receipt/v1 for 9.9.9 on the fixture rung
+write_receipt() {
+    mkdir -p "$1"
+    printf '{"schema":"apr-model-ladder-receipt/v1","host":"%s","version":"9.9.9","sha":"fixture","executed":1,"red":0,"rungs":[{"id":"fx-rung","present":true,"sha_ok":true,"capability_match":{"passed":true,"skipped":false},"golden_output":{"passed":true,"skipped":false},"backends":{"cpu":{"ran":true,"fallback":false,"rc":0}},"green":true}]}\n' \
+        "$2" > "$1/$2.json"
+}
+
+# run_ship NAME SUBJECT CHANGELOG_SECTION [LADDER: all|no-gx10|ignored] -> the fixture dir;
+# the exit code is in $TMP/NAME/rc
 run_ship() {
-    local name=$1 subject=$2 section=$3 d
+    local name=$1 subject=$2 section=$3 ladder=${4:-all} d
     d="$TMP/$name"
-    mkdir -p "$d/repo/scripts/release" "$d/ap" "$d/cargo/bin" "$d/seed/scripts"
+    mkdir -p "$d/repo/scripts/release" "$d/ap" "$d/cargo/bin" "$d/seed/scripts" "$d/seed/contracts"
     cp -- "$subject" "$d/repo/scripts/release/prepare_bump.sh"
     cp -- "$PARAMS" "$d/repo/scripts/release/lib_release_params.sh"
     cp -- "$GUARD" "$d/repo/scripts/check_pr_closes_issue.sh"
@@ -103,6 +125,10 @@ run_ship() {
     # origin's main, on branch release-<V>, with the CHANGELOG [9.9.9] section UNCOMMITTED
     printf '# Changelog\n\n## [Unreleased]\n\n## [9.9.8] - 2025-12-01\n\n- older\n' > "$d/seed/CHANGELOG.md"
     printf '#!/usr/bin/env bash\nexit 0\n' > "$d/seed/scripts/bump-version.sh"
+    # the bump tree's own ladder judge (a real copy) and a fixture ladder: the two required hosts
+    cp -- "$LADDER_JUDGE" "$d/seed/scripts/check_model_ladder.sh"
+    printf 'ladder:\n  hosts:\n    - {id: lambda, required: true, gpu: fixture, cc: sm_89}\n    - {id: gx10, required: true, gpu: fixture, cc: sm_121}\n  rungs:\n    - {id: fx-rung, required: true, backends: [cpu]}\n' \
+        > "$d/seed/contracts/model-capability-ladder-v1.yaml"
     git init -q --bare -b main "$d/origin.git" \
         && git -C "$d/seed" init -q -b main && git -C "$d/seed" add -A \
         && git -C "$d/seed" commit -q -m seed && git -C "$d/seed" push -q "$d/origin.git" main \
@@ -110,6 +136,13 @@ run_ship() {
         && git -C "$d/ap/bump" checkout -q -b release-9.9.9 || return 2
     printf '# Changelog\n\n## [Unreleased]\n\n## [9.9.9] - 2026-01-01\n\n%s\n\n## [9.9.8] - 2025-12-01\n\n- older\n' \
         "$section" > "$d/ap/bump/CHANGELOG.md"
+    # the model-ladder receipts for 9.9.9, UNCOMMITTED in the bump tree as model_ladder.sh leaves them
+    write_receipt "$d/ap/bump/evidence/dogfood/models/9.9.9" lambda
+    case "$ladder" in
+        no-gx10) ;;
+        *) write_receipt "$d/ap/bump/evidence/dogfood/models/9.9.9" gx10 ;;
+    esac
+    [ "$ladder" = ignored ] && printf 'evidence/dogfood/models/\n' > "$d/ap/bump/.gitignore"
     printf 'GO %s fixture\n' "$(git -C "$d/ap/bump" rev-parse origin/main)" \
         > "$d/ap/preflight-$(git -C "$d/ap/bump" rev-parse origin/main).verdict"
     : > "$d/gh.log"
@@ -199,6 +232,19 @@ row_landmine() {
 }
 msg=$(row_landmine landmine-real "$SUBJECT"); row landmine "$?" "$msg"
 
+# row_ladder NAME SUBJECT MODE NEEDLE -> 0 when prepare_bump refused, naming NEEDLE, before push and PR
+row_ladder() {
+    local d="$TMP/$1"
+    run_ship "$1" "$2" "$PRS_SECTION" "$3" || return 2
+    [ "$(cat "$d/rc")" != 0 ] || { printf 'prepare_bump.sh --ship exited 0 (ladder=%s)\n' "$3"; return 1; }
+    grep -qF -- "$4" "$d/out.log" || { printf 'the refusal never named %s: %s\n' "$4" "$(tail -1 "$d/out.log")"; return 1; }
+    ! grep -q '^pr create' "$d/gh.log" || { printf 'gh pr create was issued without the receipts\n'; return 1; }
+    [ -z "$(git -C "$d/origin.git" branch --list 'release-9.9.9')" ] || { printf 'the branch was pushed before the refusal\n'; return 1; }
+    return 0
+}
+msg=$(row_ladder ladder-missing-real "$SUBJECT" no-gx10 "evidence/dogfood/models/9.9.9/gx10.json"); row ladder-missing-gx10 "$?" "$msg"
+msg=$(row_ladder ladder-ignored-real "$SUBJECT" ignored "are gitignored"); row ladder-ignored "$?" "$msg"
+
 # --- the mutants -------------------------------------------------------------
 grep -vF -- "$KEEP_OPEN_ANCHOR" "$SUBJECT" > "$TMP/mutant-drop-keep-open.sh"
 cmp -s "$SUBJECT" "$TMP/mutant-drop-keep-open.sh" && env_die "drop-keep-open mutant is identical to the subject"
@@ -212,7 +258,19 @@ msg=$(row_landmine landmine-mutant "$TMP/mutant-drop-refusal.sh"); mrc=$?
 [ "$mrc" = 2 ] && env_die "drop-refusal mutant could not build its fixture"
 [ "$mrc" != 0 ]; row "mutant drop-refusal is killed by landmine (${msg:-survived})" "$?" "the mutant PASSED landmine -- the row does not discriminate"
 
+sed "s|$LADDER_ANCHOR|true|" "$SUBJECT" > "$TMP/mutant-drop-ladder.sh"
+cmp -s "$SUBJECT" "$TMP/mutant-drop-ladder.sh" && env_die "drop-ladder mutant is identical to the subject"
+msg=$(row_ladder ladder-missing-mutant "$TMP/mutant-drop-ladder.sh" no-gx10 "evidence/dogfood/models/9.9.9/gx10.json"); mrc=$?
+[ "$mrc" = 2 ] && env_die "drop-ladder mutant could not build its fixture"
+[ "$mrc" != 0 ]; row "mutant drop-ladder is killed by ladder-missing-gx10 (${msg:-survived})" "$?" "the mutant PASSED ladder-missing-gx10 -- the row does not discriminate"
+
+grep -vF -- "$IGNORED_ANCHOR" "$SUBJECT" > "$TMP/mutant-drop-ignored.sh"
+cmp -s "$SUBJECT" "$TMP/mutant-drop-ignored.sh" && env_die "drop-ignored mutant is identical to the subject"
+msg=$(row_ladder ladder-ignored-mutant "$TMP/mutant-drop-ignored.sh" ignored "are gitignored"); mrc=$?
+[ "$mrc" = 2 ] && env_die "drop-ignored mutant could not build its fixture"
+[ "$mrc" != 0 ]; row "mutant drop-ignored is killed by ladder-ignored (${msg:-survived})" "$?" "the mutant PASSED ladder-ignored -- the row does not discriminate"
+
 # VACUITY FLOOR: a table that ran fewer rows than it declares is not a pass.
-[ "$rows" -ge 8 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 8 declared\n' "$rows" >&2; exit 1; }
+[ "$rows" -ge 12 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 12 declared\n' "$rows" >&2; exit 1; }
 [ "$fails" -eq 0 ] || { printf 'RED   %s of %s row(s) failed\n' "$fails" "$rows" >&2; exit 1; }
-printf 'PASS  %s row(s): the bump PR body passes §6 R-2 by construction, and prepare_bump.sh refuses one that does not (#3699)\n' "$rows"
+printf 'PASS  %s row(s): the bump PR body passes §6 R-2 by construction, and prepare_bump.sh refuses one that does not (#3699) or whose tree lacks green model-ladder receipts (#3708)\n' "$rows"

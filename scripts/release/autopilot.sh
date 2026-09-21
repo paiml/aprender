@@ -91,26 +91,24 @@ if run_step deep; then
   say "DEEP GO at $MC (doctests, examples green; --no-default-features within #3176)"
 fi
 
-# 2. dogfood: the R5 receipt, pre-publish, FULL, on THIS commit
+# 2. dogfood: the R5 receipt, pre-publish, FULL, on THIS commit -- never inherited (#3708)
+#    The T-2 inheritance (operator 2026-09-17) was withdrawn by the cop's ruling on #3708 (2026-09-21).
+#    It copied the PARENT's preflight GO forward when the bump diff was version-surface only, but the
+#    parent's receipt is at the OLD version, so version-keyed rows (check_model_ladder) were never
+#    measured at the release version, and R5 at T-4 refused it anyway: v0.69.0 stopped at the publish
+#    preflight 43 min after tagging and ran the real dogfood then, with the tag already public.
+#    Now the real dogfood runs here, and R5 is judged HERE by the same function T-4 uses
+#    (check_publish_preflight.sh --receipt-only), on the same receipt file in this worktree, so a
+#    receipt T-4 would refuse stops the train before any tag exists.
 if run_step dogfood; then
-  # Inherited T-2 (operator 2026-09-17): if the bump diff touches only the version surface, the parent-sha
-  # preflight GO is inherited and recorded; any other path -> full T-2.
-  parent=$(git rev-parse "$MC^1"); inherit=0
-  if [ -f "$AP/preflight-$parent.verdict" ] && grep -q '^GO ' "$AP/preflight-$parent.verdict"; then
-    other=$(git diff --name-only "$parent" "$MC" | grep -vE '^(Cargo\.toml|Cargo\.lock|CHANGELOG\.md|crates/[^/]+/Cargo\.toml|crates/facades/[^/]+/Cargo\.toml|crates/facades/Cargo\.lock)$' | wc -l)
-    [ "$other" -eq 0 ] && inherit=1
-  fi
-  if [ $inherit -eq 1 ]; then
-    cp "$AP/preflight-$parent.log" "$AP/dogfood-pre-publish.log"
-    printf 'inherited_from: %s\nrelease_commit: %s\nbump_diff: version surface only\n' "$parent" "$MC" > "$AP/dogfood-inherited.receipt"
-    say "DOGFOOD GO at $MC (INHERITED from parent $parent preflight GO; bump diff = version surface only; receipt $AP/dogfood-inherited.receipt)"
-  else
   bash scripts/dogfood.sh --phase pre-publish > "$AP/dogfood-pre-publish.log" 2>&1; rc=$?
   grep -E 'VERDICT' "$AP/dogfood-pre-publish.log" >> "$STATUS"
   [ $rc -eq 0 ] || die "dogfood pre-publish NO-GO rc=$rc ($AP/dogfood-pre-publish.log)"
   [ -z "$(git status --porcelain)" ] || die "tree dirty after dogfood: $(git status --porcelain | head -3 | tr '\n' ' ')"
-  say "DOGFOOD GO at $MC"
-  fi
+  bash scripts/check_publish_preflight.sh --receipt-only > "$AP/dogfood-r5.log" 2>&1; rc=$?
+  tail -2 "$AP/dogfood-r5.log" >> "$STATUS"
+  [ $rc -eq 0 ] || die "T-1 R5 refused the dogfood receipt rc=$rc: the T-4 publish gate would refuse it too, so nothing is tagged ($AP/dogfood-r5.log)"
+  say "DOGFOOD GO at $MC (R5 holds at T-1)"
 fi
 
 # 3. tag + release (binary-release.yml fires on release: published, from the TAG's workflow file)
@@ -297,13 +295,24 @@ HOST
   [ $fails -eq 0 ] || die "$fails host/installer receipt(s) failed ($AP/receipts/)"
 fi
 
-# 9. close: the epic hears the receipts; the milestone closes only when nothing is left on it
+# 9. close: the epic hears the receipts and closes once it is the last open item; then the milestone
 if run_step close; then
   # SEC010 (bashrs-gate): read the run id with the read builtin, not $(cat "$AP/…") -- AP is derived
   # now (#3655), so a cat over it inside the message is flagged as a path-traversal risk.
   cleanroom_run_id=unknown; IFS= read -r cleanroom_run_id < "$AP/cleanroom-run-id" 2>/dev/null || cleanroom_run_id=unknown
   gh issue comment "$EPIC" --repo $REPO --body "$T released: $(gh release view "$T" --repo $REPO --json url -q .url). Receipts: pre-publish dogfood GO at \`$MC\`, all release assets verified by \`scripts/check_release_assets.sh $T\`, crates.io cascade complete, the CUDA asset downloaded, verified and run on gx10 and yoga. clean-room (aprender) green on the tag (run ${cleanroom_run_id}), install.sh receipts on intel and gx10. Logs: $AP on $(hostname)." >> "$LOG" 2>&1 || say "WARN epic comment failed"
-  open=$(gh api "repos/$REPO/milestones/$MS" --jq .open_issues); [ "$open" = 0 ] || die "milestone $V still has $open open item(s); not closing"
+  # The epic is IN the milestone, so "0 open items" could never hold while it was open, and nothing
+  # here closed it: 0.68.2's #3477 was closed by hand (#3708). Every OTHER item must be closed first;
+  # then the epic, then the milestone. Any other open item refuses both.
+  others=$(gh api "repos/$REPO/issues?milestone=$MS&state=open&per_page=100" --paginate --jq ".[] | select(.number != $EPIC) | .number" | tr '\n' ' ') \
+    || die "cannot read milestone $V's open items; closing neither the epic nor the milestone"
+  [ -z "${others// /}" ] || die "milestone $V still has open item(s) besides epic #$EPIC: $others; closing neither"
+  estate=$(gh issue view "$EPIC" --repo $REPO --json state -q .state) || die "cannot read epic #$EPIC's state"
+  if [ "$estate" = OPEN ]; then
+    gh issue close "$EPIC" --repo $REPO --reason completed >> "$LOG" 2>&1 || die "closing epic #$EPIC failed"
+    say "EPIC #$EPIC closed"
+  fi
+  open=$(gh api "repos/$REPO/milestones/$MS" --jq .open_issues); [ "$open" = 0 ] || die "milestone $V still has $open open item(s) after the epic; not closing"
   gh api -X PATCH "repos/$REPO/milestones/$MS" -f state=closed >> "$LOG" 2>&1 && say "MILESTONE $V closed"
   python3 "$REPO_ROOT/scripts/release/ledger.py" "$AP" "$MC" "$T" "$V" "$STATUS" >> "$LOG" 2>&1 && say "LEDGER record written in $AP (commit under docs/build-ledger/$(date -u +%F)/ via a docs PR)" || say "WARN ledger record not written"  # bashrs disable-line=DET002
   say "DONE $V released, published, installed, receipts taken"

@@ -4,7 +4,8 @@
 #   prepare_bump.sh <version>          worktree at origin/main, bump-version.sh <version> + --check,
 #                                      CHANGELOG [<version>] drafted from the PRs merged since the last
 #                                      tag (with a placeholder --ship refuses)
-#   prepare_bump.sh <version> --ship   PR body judged by §6 R-2 (#3699), pre-push checks, commit, push,
+#   prepare_bump.sh <version> --ship   PR body judged by §6 R-2 (#3699), model-ladder receipts for <version>
+#                                      required (#3708), pre-push checks, commit, push,
 #                                      PR in milestone <version> with auto-merge; prints the autopilot
 #                                      launch line for that PR. Case table: scripts/check_release_bump_pr_body.sh
 # The train's identity is DERIVED (#3618, lib_release_params.sh): milestone, epic, last tag and the
@@ -86,6 +87,18 @@ owed=$(printf '%s' "$owed" | tr '\n' ' ')
 [ -z "$owed" ] || printf '\nkeep-open: %s -- cited by the CHANGELOG for context; each closes via its own PR; the release EPIC closes at T-4\n' "$owed" >> "$AP/pr_body.md"
 printf '\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n' >> "$AP/pr_body.md"
 bash "$CLOSES_GUARD" --body "$AP/pr_body.md" > "$AP/r2.log" 2>&1 || die "the bump PR body fails §6 R-2; nothing committed, pushed or opened ($AP/r2.log, $AP/pr_body.md)"
+# THE MODEL-LADDER RECEIPTS FOR THE NEW VERSION RIDE ON THE BUMP (#3708). The dogfood's
+# check_model_ladder row reads evidence/dogfood/models/<V>/<host>.json for the version being cut;
+# 0.68.2 committed them on its bump by hand (#3498) and 0.69.0 did not, so the row could not be
+# measured until after the tag. This script does not PRODUCE them (scripts/model_ladder.sh, on each
+# required host, with an apr built from this tree): it refuses without them, judged by the SAME
+# judge the dogfood runs. `git add -A` below commits whatever the judge read, unless it is ignored.
+bash scripts/check_model_ladder.sh --version "$V" > "$AP/ladder.log" 2>&1 || {
+  grep -E '^(FAIL|decline)' "$AP/ladder.log" >&2
+  die "model-ladder receipts for $V are not green in the bump tree; nothing committed, pushed or opened ($AP/ladder.log)"
+}
+ignored=$(git ls-files --others --ignored --exclude-standard -- "evidence/dogfood/models/$V")
+[ -z "$ignored" ] || die "model-ladder receipts for $V are gitignored, so the bump would not commit them: $ignored"
 cargo_bin() { "${CARGO_HOME:-$HOME/.cargo}"/bin/cargo "$@"; }
 cargo_bin fmt --all -- --check > /dev/null 2>&1 || die "cargo fmt --check failed"
 cargo_bin deny check advisories > "$AP/deny.log" 2>&1 || die "cargo deny check advisories failed ($AP/deny.log)"
