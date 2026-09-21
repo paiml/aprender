@@ -632,6 +632,10 @@ gates = [
     # runs this entry. The PR-time half, the comparison helpers' case table, is
     # scripts/check_float16_greedy_parity.sh, which guard_tree.sh dispatches.
     "scripts/float16_greedy_parity.sh",
+    # #3755: apr renders each model file's OWN chat template; this proves it byte-equal to
+    # HF's apply_chat_template over the release host's REAL inventory (the lib test proves
+    # it on committed fixtures). Release-time only, on the host that has the models.
+    "scripts/chat_template_inventory_parity.sh",
 ]
 
 # The interfaces this release SHIPS, each paired with the e2e target that proves

@@ -12,8 +12,14 @@
 mod chat_template_embedded_oracle {
     use super::*;
 
+    /// The committed fixtures, or (pre-publish dogfood gate) fixtures regenerated from the
+    /// release host's REAL model inventory: `APR_CHAT_TEMPLATE_FIXTURES=<dir>`, written by
+    /// scripts/chat_template_inventory_parity.sh.
     fn fixture_dir() -> std::path::PathBuf {
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/chat_templates")
+        std::env::var_os("APR_CHAT_TEMPLATE_FIXTURES").map_or_else(
+            || std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/chat_templates"),
+            std::path::PathBuf::from,
+        )
     }
 
     fn reference() -> serde_json::Value {
@@ -50,8 +56,15 @@ mod chat_template_embedded_oracle {
     fn embedded_rendering_is_byte_equal_to_hf() {
         let reference = reference();
         let cases = reference["cases"].as_object().expect("cases");
-        // Vacuity: an empty or shrunken fixture set must not pass.
-        assert!(cases.len() >= 81, "only {} reference renderings", cases.len());
+        // Vacuity: every template in the index, 3 conversations x 3 modes, and at least one.
+        let index: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(fixture_dir().join("index.json")).expect("index.json"),
+        )
+        .expect("index.json parses");
+        let templates = index.as_object().expect("index").len();
+        assert!(templates > 0, "no template in {}", fixture_dir().display());
+        assert_eq!(cases.len(), 9 * templates, "renderings missing in {}", fixture_dir().display());
+        println!("oracle: {} renderings of {templates} templates from {}", cases.len(), fixture_dir().display());
         let mut failures = Vec::new();
         for (key, expected) in cases {
             let mut parts = key.split('/');
