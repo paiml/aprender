@@ -150,8 +150,12 @@ pub fn run(file: &Path, prompt: &str, _assert: bool, verbose: bool, json: bool) 
         config.vocab_size,
     );
 
+    // #3685: name the quant type BEFORE the model moves into CUDA init, so a refusal by
+    // the capability gate can say what it refused.
+    let unsupported_qtype = model.first_gpu_unsupported_quant();
+    let arch_name = mapped.model.architecture().unwrap_or_default().to_string();
     let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
-        .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
+        .map_err(|e| cuda_init_error(&arch_name, unsupported_qtype, e, json))?;
 
     eprintln!(
         "  {} {} ({} MB VRAM)",

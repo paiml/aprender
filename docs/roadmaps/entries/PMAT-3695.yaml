@@ -1,0 +1,22 @@
+- id: PMAT-3695
+  github_issue: 3695
+  item_type: task
+  title: 'workspace-test RED on python-free runners: parity_receipt_denominator.sh scores a missing python3 as "the tree holds 0"'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-62
+  created: 2026-09-21T11:36:00Z
+  updated: 2026-09-21T11:36:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3695 done_when 1, verbatim: "No python3 on the runner prints `UNMEASURED runner=<r> reason=no-interpreter interpreter=<name> …` and exits **3**, never a count. A python3 that exists but gives no classification (crashes, prints nothing) is ENV rc 2, RED. Exit 1 (disagree) is unchanged."'
+  - 'done_when 2, verbatim: "The Rust test accepts exit 3 ONLY with that line (naming the interpreter) on stderr. Exits 1 and 2 still fail it."'
+  - 'done_when 3, verbatim: "Self-test rows for all three: no interpreter → 3 plus the line; an interpreter that answers nothing → 2; the working interpreter → the existing rows. Plus a mutant."'
+  - 'done_when 4, verbatim: "It stays MEASURED wherever python3 exists. The cop requires `PASS 7 receipt(s)` from `bash scripts/parity_receipt_denominator.sh` at the release commit in the T-2 ledger."'
+  - 'done_when 5, verbatim: "The root fix, `classify()` without python, after which the UNMEASURED path disappears, is its own 0.70 row: #3694."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ANDON 2, found by aprender-62 as first responder on #3689: workspace-test-shard 1/3 (job 106309701273, runner yoga-build3) failed ont4c3_parity_receipts::the_committed_tree_agrees_with_its_own_denominator with "scripts/parity_receipt_denominator.sh: line 61: python3: command not found" for every receipt. classify() then printed nothing, the loop read that as "other", and the script said "the tree holds 0", exit 1. That is a missing interpreter scored as a count, the class of the git refusal in #3682. The cop ruled (~11:40Z) to fold it into #3689''s push under four conditions, which are done_when 1-5 above. SCOPE: scripts/parity_receipt_denominator.sh, crates/aprender-contracts-cli/tests/ont4c3_parity_receipts.rs, and this fragment. HOW IT IS MET. PY_BIN (seam PARITY_PYTHON, default python3). count_and_check checks `command -v "$PY_BIN"` after listing the tree and before any file: absent -> UNMEASURED line to stderr, return 3, which verify and --print propagate. Each file''s class must now be exactly record|legacy|other; anything else, including nothing, is "ENV the classifier (<py>) gave no answer for <file>", return 2 (the old `*) :` fall-through was the defect). --self-test on a runner with no interpreter prints an UNMEASURED line and exits 0: the classification rows cannot run there. The Rust test accepts exit 3 only when stderr carries both "UNMEASURED runner=" and "reason=no-interpreter interpreter="; any other non-success still fails. MEASURED at this commit: `--self-test` rc 0 with 7 rows, the 5 existing plus "no interpreter is UNMEASURED exit 3 naming it, never a count of 0" and "an interpreter that answers nothing is ENV exit 2, never a count of 0"; a bare run with python3 gives rc 0, "PASS  7 receipt(s) under evidence/parity/**, and evidence/parity/EXPECTED_RECEIPTS says 7." (the T-2 requirement, measured); PARITY_PYTHON=/nonexistent gives rc 3 "UNMEASURED runner=nopy-probe reason=no-interpreter interpreter=/nonexistent/python3 …"; PARITY_PYTHON=/bin/true gives rc 2 "ENV the classifier (/bin/true) gave no answer for evidence/parity/derived_expiries.json". THE YOGA SHAPE, a PATH made of every /usr/bin and /bin executable except python*: the PRE-FIX script (25d2ee264) prints "python3: command not found" 118 times, then "FAIL evidence/parity/EXPECTED_RECEIPTS says 7; the tree holds 0.", rc 1, which is #3689''s failure reproduced; the fix prints "UNMEASURED runner=yoga-shape reason=no-interpreter interpreter=python3 …", rc 3. MUTANT, the silent-classifier arm restored to the old `*) :` fall-through: self-test rc 1, "FAIL a silent interpreter gave exit 1: FAIL evidence/parity/EXPECTED_RECEIPTS says 2; the tree holds 0." THE RUST TEST: `cargo test -p aprender-contracts-cli --test ont4c3_parity_receipts` gives 9 passed with python3; PARITY_PYTHON=/nonexistent/python3 gives 1 passed, printing the UNMEASURED line; PARITY_PYTHON=/bin/true gives FAILED, "exit Some(2)" plus the ENV line, so a crash is still RED and only the named UNMEASURED line buys exit 3. `cargo fmt --all -- --check` rc 0.'

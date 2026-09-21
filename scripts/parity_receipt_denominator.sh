@@ -19,12 +19,18 @@
 #   bash scripts/parity_receipt_denominator.sh --self-test
 #
 # Exit: 0 agree · 1 disagree (or an unmigrated record) · 2 usage / the file is missing / git cannot
-# list the tree (ENV: e.g. "dubious ownership" on a bind-mounted docker checkout, #3669).
+# list the tree (ENV: e.g. "dubious ownership" on a bind-mounted docker checkout, #3669) / the
+# classifier gave no answer (ENV: an interpreter that crashes or prints nothing is RED, #3695) ·
+# 3 UNMEASURED: this runner has no python3 at all. The fleet is python-free for automation
+# (infra#708), so that is fleet state: an `UNMEASURED runner=… reason=no-interpreter` line, never a
+# count of 0 (#3695). It is measured wherever python3 exists, and the T-2 ledger requires
+# `PASS 7 receipt(s)` at the release commit. The root fix, a python-free classify(), is #3694.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXPECTED_FILE="evidence/parity/EXPECTED_RECEIPTS"
 SCHEMA="apr-parity-receipt/v2"
+PY_BIN="${PARITY_PYTHON:-python3}"   # test seam: a missing one is fleet state, a dead one is ENV (#3695)
 
 count_and_check() {
     local root=$1 records=0 unmigrated=() listing
@@ -38,13 +44,25 @@ count_and_check() {
             "$root" >&2
         return 2
     fi
-    local f
+    # #3695: no interpreter at all is fleet state, rc 3, never a count; checked before any file
+    if ! command -v "$PY_BIN" > /dev/null 2>&1; then
+        printf 'UNMEASURED runner=%s reason=no-interpreter interpreter=%s -- this runner has no %s, so the receipts were not classified; fleet state, not a count (#3695)\n' \
+            "${RUNNER_NAME:-unknown}" "$PY_BIN" "$PY_BIN" >&2
+        return 3
+    fi
+    local f class
     while IFS= read -r f; do
         [ -n "$f" ] || continue
-        case "$(classify "$root/$f")" in
+        class=$(classify "$root/$f") || class=""
+        case "$class" in
             record) records=$((records + 1)) ;;
             legacy) unmigrated+=("$f") ;;
-            *) : ;;
+            other) : ;;
+            # an interpreter that exists but answers nothing (a crash, an empty print) is ENV, RED:
+            # it used to fall through here as "other", and the tree "held 0" (#3695)
+            *) printf 'ENV   the classifier (%s) gave no answer for %s: %s -- no count is reported\n' \
+                   "$PY_BIN" "$f" "${class:-<nothing>}" >&2
+               return 2 ;;
         esac
     done < <(printf '%s\n' "$listing" | sort -u)
     if [ "${#unmigrated[@]}" -gt 0 ]; then
@@ -58,7 +76,7 @@ count_and_check() {
 
 # record | legacy | other — one file, by its own content.
 classify() {
-    python3 - "$1" "$SCHEMA" <<'PY'
+    "$PY_BIN" - "$1" "$SCHEMA" <<'PY'
 import json, sys
 try:
     d = json.load(open(sys.argv[1]))
@@ -155,6 +173,23 @@ self_test() {
     else
         printf 'FAIL  git refused and the result was exit %s: %s\n' "$got" "$gout"; rc=1
     fi
+
+    # #3695: NO interpreter at all (the python-free fleet) is UNMEASURED exit 3, naming the
+    # interpreter it looked for -- never "the tree holds 0", never a pass.
+    got=0; gout=$(PY_BIN="$td/no-such-python" verify "$td" 2>&1) || got=$?
+    if [ "$got" -eq 3 ] && grep -q "^UNMEASURED runner=.* reason=no-interpreter interpreter=$td/no-such-python" <<<"$gout" \
+        && ! grep -q 'holds 0' <<<"$gout"; then
+        printf 'ok    no interpreter is UNMEASURED exit 3 naming it, never a count of 0 (#3695)\n'
+    else
+        printf 'FAIL  no interpreter gave exit %s: %s\n' "$got" "$gout"; rc=1
+    fi
+    # ...and an interpreter that EXISTS but answers nothing (a crash) is ENV exit 2, RED (#3695)
+    got=0; gout=$(PY_BIN=/bin/true verify "$td" 2>&1) || got=$?
+    if [ "$got" -eq 2 ] && grep -q 'gave no answer' <<<"$gout" && ! grep -q 'holds 0' <<<"$gout"; then
+        printf 'ok    an interpreter that answers nothing is ENV exit 2, never a count of 0 (#3695)\n'
+    else
+        printf 'FAIL  a silent interpreter gave exit %s: %s\n' "$got" "$gout"; rc=1
+    fi
     return "$rc"
 }
 
@@ -174,7 +209,14 @@ verify() {
 }
 
 case "${1:-}" in
-    --self-test) self_test ;;
+    --self-test)
+        # the classification rows need the interpreter; without one the table is fleet state too (#3695)
+        if ! command -v "$PY_BIN" > /dev/null 2>&1; then
+            printf 'UNMEASURED runner=%s reason=no-interpreter interpreter=%s -- the case table was not run; fleet state, not a pass (#3695)\n' \
+                "${RUNNER_NAME:-unknown}" "$PY_BIN" >&2
+            exit 0
+        fi
+        self_test ;;
     --print)     count_and_check "$ROOT" ;;
     "")          verify "$ROOT" ;;
     *)           printf 'usage: %s [--print|--self-test]\n' "$(basename "$0")" >&2; exit 2 ;;
