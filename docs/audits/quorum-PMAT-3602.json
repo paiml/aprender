@@ -3,40 +3,27 @@
   "base": "origin/main",
   "base_resolved": "origin/main",
   "base_note": "no origin/origin/main exists; judged against the local ref",
-  "head": "04f9c93321affff5e89dd89b485ef5bf476fe112",
-  "diff_sha256": "283da9b3514f6a7958db8337fcd9018072af9cd99dc45c6fb3fc9a2db25863ac",
+  "head": "ca6c46e51309b8d66e1e99ca20e01975218f261e",
+  "diff_sha256": "0fde4df93cd42ef6864ac427a63360b71a9283968da9baa5978323f79f2b4be1",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "inline",
-  "prompt_bytes": 44878,
+  "prompt_bytes": 43160,
   "author": {
     "model": "Opus 5 (1M context)",
     "family": "claude",
     "source": "measured"
   },
-  "agreed": false,
+  "agreed": true,
   "lanes": [
     {
       "lane": 1,
       "status": "SUCCESS",
-      "verdict": "FAIL",
-      "summary": "The diff fixes the early-return dead code from the previous iteration, but introduces two new logic flaws. First, it leaks the human-formatted success blob when both `--json` and `--benchmark` are passed because `print_run_output` skips JSON generation when benchmarking is active and falls through to human text, violating the contract that human surfaces stay silent on a refusal. Second, it hardcodes `layers_want_accelerator: false` in `dispatch.rs`, completely dropping the `--gpu-layers` signal that the author explicitly claims should force the accelerator.",
-      "findings": [
-        {
-          "claim": "The `machine_surface` check leaks a human-formatted success blob when both `--json` and `--benchmark` are provided. `machine_surface` evaluates to true because `output_format == \"json\"`, causing `print_run_output` to execute on a forced fallback. However, inside `print_run_output`, the condition `output_format == \"json\" && !benchmark` is false, so it falls through and prints the human-readable success text before exiting with an error. This violates the explicit comment that 'the HUMAN surface stays silent' on a refusal.",
-          "file": "crates/apr-cli/src/commands/run_entry.rs",
-          "grounding": "cited",
-          "line": 156
-        },
-        {
-          "claim": "The request classification ignores the `--gpu-layers` parameter by hardcoding `layers_want_accelerator: false` when instantiating `crate::registry::Request`. The author's own comment in `run_entry.rs` states that `--gpu-layers all|n` constitutes explicitly asking for an accelerator and is classified by `Request::wanted`. By hardcoding it to false here, the explicit request is lost, causing the CLI to incorrectly treat a `--gpu-layers` fallback as a default CPU run.",
-          "file": "crates/apr-cli/src/dispatch.rs",
-          "grounding": "cited",
-          "line": 212
-        }
-      ],
-      "raw_bytes": 5690,
-      "err_bytes": 0,
+      "verdict": "PASS",
+      "summary": "The diff successfully implements the requested behavior in PMAT-3602. It accurately surfaces GPU rejection for forced accelerator runs (`--gpu`) via JSON output and appropriate exit codes, while ensuring human-readable output remains silent on fallback as required. The issues identified in the previous quorum round (a human-formatted success blob leaking with `--json --benchmark`, incorrect comments regarding `--gpu-layers`, and an extraneous test artifact `trace-1789944278.json`) have all been fully resolved in this iteration. Extensive and robust test cases have been added to prevent regressions.",
+      "findings": [],
+      "raw_bytes": 3358,
+      "err_bytes": 100,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
@@ -47,131 +34,124 @@
     },
     {
       "lane": 2,
-      "status": "NO-VERDICT",
-      "verdict": "NO-VERDICT",
-      "summary": "",
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully meets the acceptance criteria for PMAT-3602. \n\nLane 1's critiques are refuted by the diff itself:\n1. `emits_machine_output` explicitly checks `!benchmark`, so when both `--json` and `--benchmark` are passed on a forced fallback, it correctly evaluates to `false` and skips printing the success blob, avoiding the leak.\n2. The claim that `--gpu-layers` is ignored wrongly applies to `apr run`. The diff comment correctly states that `--gpu-layers` belongs to `apr serve`, so it is intentionally absent in this classification path.\n\nLane 3's critique regarding an extraneous `trace-1789944278.json` artifact is not present in the provided diff. \n\nThe implementation properly calls `registry::after_generation` to record the fail-vs-fall-back decision and successfully incorporates the 6 specified falsification tests in `run_tests_accel_reconcile.rs`.",
       "findings": [],
-      "raw_bytes": 2062,
-      "err_bytes": 100,
+      "raw_bytes": 3908,
+      "err_bytes": 0,
       "envelope_status": "SUCCESS",
-      "transport_status": "SUCCESS",
-      "transport_error": "",
-      "salvageable": "/home/noah/.gemini/antigravity-cli/brain/dfd8fe2b-45ee-4d05-8ffb-3bfea44d5d92 (791975 bytes)",
-      "carried_verdict": "",
-      "blind_reason": "",
-      "agy_exit": "",
-      "model": "gemini-3.8-flash-high",
-      "model_measured": "gemini-3.8-flash-high",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
       "model_source": "measured",
       "family": "gemini"
     },
     {
       "lane": 3,
       "status": "SUCCESS",
-      "verdict": "FAIL",
-      "summary": "The diff introduces an unrequested test output artifact `trace-1789944278.json` committed to the repository root. This file was generated by running `test_print_chrome_trace_creates_file` during test execution and was accidentally staged into commit 04f9c93321affff5e89dd89b485ef5bf476fe112. The ticket PMAT-3602 does not ask for this file.",
+      "verdict": "PASS",
+      "summary": "As Lane 3 reviewer, I judged the diff origin/main..HEAD against ticket PMAT-3602. The diff successfully wires `registry::after_generation` into production execution path inside `run_entry.rs`, correcting the defect where `apr run --gpu` reported a CPU fallback as exit 0 success.\n\nKey verification results:\n1. Reconciles forced accelerator request (`accel_forced`) against `RunResult.used_gpu` via `reconcile_accelerator`. Returns `CliError::BackendUnavailable` (exit code 14) on refusal.\n2. Machine output surfaces (`--json` and `--stream`) emit structured json containing `\"backend\": {\"requested\": \"gpu\", \"ran\": \"cpu\", \"fell_back\": true}` before returning the refusal error, while human output surfaces remain silent.\n3. `emits_machine_output` correctly isolates machine surfaces and prevents output leaks on `--json --benchmark` runs.\n4. Extraneous artifact `trace-1789944278.json` from earlier iterations was removed.\n5. All new tests in `run_tests_accel_reconcile.rs` pass, `cargo fmt --all --check` passes cleanly, and `cargo clippy -p apr-cli --lib -- -D warnings` finishes with 0 warnings.\n\nVerdict: PASS.",
       "findings": [
         {
-          "claim": "The diff commits an extraneous test artifact `trace-1789944278.json` (232 lines) to the repository root. This file is a runtime byproduct of `test_print_chrome_trace_creates_file` (which writes `trace-<epoch>.json` into the process CWD) that was accidentally staged and committed in commit 04f9c93321affff5e89dd89b485ef5bf476fe112. The ticket PMAT-3602 does not ask for this file.",
-          "command": "git -C /mnt/nvme-raid0/agent-wt/rel-3602 diff origin/main...HEAD --name-status | grep trace-",
-          "file": "trace-1789944278.json",
-          "fix": "Remove `trace-1789944278.json` from git (`git rm trace-1789944278.json`).",
+          "claim": "`reconcile_accelerator` wires `registry::after_generation` in `run_entry.rs`, ensuring a forced GPU run (`apr run --gpu`) that fell back to CPU returns exit 14 (`CliError::BackendUnavailable`) instead of reporting success. Measured unit tests in `run_tests_accel_reconcile.rs` passing.",
+          "command": "cargo test -p apr-cli --lib a_forced_accelerator",
+          "file": "crates/apr-cli/src/commands/run_entry.rs",
+          "grounding": "measured",
+          "line": 146,
+          "output": "test commands::run::tests::a_forced_accelerator_that_actually_ran_on_gpu_says_nothing ... ok\ntest registry::tests::a_forced_accelerator_that_fell_to_cpu_at_runtime_is_refused_never_reported_as_success ... ok\ntest commands::run::tests::a_forced_accelerator_that_ran_on_cpu_is_refused ... ok"
+        },
+        {
+          "claim": "Machine output (`--json` and `--stream`) surfaces the rejection details via `\"backend\": {\"requested\": \"gpu\", \"ran\": \"cpu\", \"fell_back\": true}` prior to returning the refusal error, while human surfaces remain silent. Verified via `the_machine_output_predicate_matches_print_run_output` and `json_plus_benchmark_is_not_a_machine_surface`.",
+          "command": "cargo test -p apr-cli --lib machine_surface",
+          "file": "crates/apr-cli/src/commands/run_entry.rs",
+          "grounding": "measured",
+          "line": 161,
+          "output": "test commands::run::tests::json_plus_benchmark_is_not_a_machine_surface ... ok"
+        },
+        {
+          "claim": "`dispatch.rs` classifies accelerator intent once via `registry::Request::wanted()`, ensuring uniform classification across CLI dispatch and runtime reconciliation.",
+          "file": "crates/apr-cli/src/dispatch.rs",
+          "grounding": "cited",
+          "line": 207
+        },
+        {
+          "claim": "Cargo fmt check passes cleanly without formatting violations.",
+          "command": "cargo fmt --all --check",
+          "file": "crates/apr-cli/src/commands/run_entry.rs",
           "grounding": "measured",
           "line": 1,
-          "output": "A\ttrace-1789944278.json"
+          "output": "exit 0"
+        },
+        {
+          "claim": "Clippy checks pass with zero warnings across apr-cli.",
+          "command": "cargo clippy -p apr-cli --lib -- -D warnings",
+          "file": "crates/apr-cli/src/commands/run_entry.rs",
+          "grounding": "measured",
+          "line": 1,
+          "output": "Finished `dev` profile [unoptimized + debuginfo] target(s) in 56.59s"
         }
       ],
-      "raw_bytes": 4498,
+      "raw_bytes": 12402,
       "err_bytes": 100,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
-      "grounding_check": "parity",
-      "model": "gemini-3.7-flash-high",
-      "model_measured": "gemini-3.7-flash-high",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
       "model_source": "measured",
       "family": "gemini"
     }
   ],
-  "dissent": [
-    {
-      "lane": 1,
-      "verdict": "FAIL",
-      "summary": "The diff fixes the early-return dead code from the previous iteration, but introduces two new logic flaws. First, it leaks the human-formatted success blob when both `--json` and `--benchmark` are passed because `print_run_output` skips JSON generation when benchmarking is active and falls through to human text, violating the contract that human surfaces stay silent on a refusal. Second, it hardcodes `layers_want_accelerator: false` in `dispatch.rs`, completely dropping the `--gpu-layers` signal that the author explicitly claims should force the accelerator.",
-      "findings": [
-        {
-          "claim": "The `machine_surface` check leaks a human-formatted success blob when both `--json` and `--benchmark` are provided. `machine_surface` evaluates to true because `output_format == \"json\"`, causing `print_run_output` to execute on a forced fallback. However, inside `print_run_output`, the condition `output_format == \"json\" && !benchmark` is false, so it falls through and prints the human-readable success text before exiting with an error. This violates the explicit comment that 'the HUMAN surface stays silent' on a refusal.",
-          "file": "crates/apr-cli/src/commands/run_entry.rs",
-          "grounding": "cited",
-          "line": 156
-        },
-        {
-          "claim": "The request classification ignores the `--gpu-layers` parameter by hardcoding `layers_want_accelerator: false` when instantiating `crate::registry::Request`. The author's own comment in `run_entry.rs` states that `--gpu-layers all|n` constitutes explicitly asking for an accelerator and is classified by `Request::wanted`. By hardcoding it to false here, the explicit request is lost, causing the CLI to incorrectly treat a `--gpu-layers` fallback as a default CPU run.",
-          "file": "crates/apr-cli/src/dispatch.rs",
-          "grounding": "cited",
-          "line": 212
-        }
-      ]
-    },
-    {
-      "lane": 2,
-      "verdict": "NO-VERDICT",
-      "summary": "",
-      "findings": []
-    },
-    {
-      "lane": 3,
-      "verdict": "FAIL",
-      "summary": "The diff introduces an unrequested test output artifact `trace-1789944278.json` committed to the repository root. This file was generated by running `test_print_chrome_trace_creates_file` during test execution and was accidentally staged into commit 04f9c93321affff5e89dd89b485ef5bf476fe112. The ticket PMAT-3602 does not ask for this file.",
-      "findings": [
-        {
-          "claim": "The diff commits an extraneous test artifact `trace-1789944278.json` (232 lines) to the repository root. This file is a runtime byproduct of `test_print_chrome_trace_creates_file` (which writes `trace-<epoch>.json` into the process CWD) that was accidentally staged and committed in commit 04f9c93321affff5e89dd89b485ef5bf476fe112. The ticket PMAT-3602 does not ask for this file.",
-          "command": "git -C /mnt/nvme-raid0/agent-wt/rel-3602 diff origin/main...HEAD --name-status | grep trace-",
-          "file": "trace-1789944278.json",
-          "fix": "Remove `trace-1789944278.json` from git (`git rm trace-1789944278.json`).",
-          "grounding": "measured",
-          "line": 1,
-          "output": "A\ttrace-1789944278.json"
-        }
-      ]
-    }
-  ],
+  "dissent": [],
   "dedup": [
     {
       "file": "crates/apr-cli/src/commands/run_entry.rs",
-      "line": 156,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "The `machine_surface` check leaks a human-formatted success blob when both `--json` and `--benchmark` are provided. `machine_surface` evaluates to true because `output_format == \"json\"`, causing `print_run_output` to execute on a forced fallback. However, inside `print_run_output`, the condition `output_format == \"json\" && !benchmark` is false, so it falls through and prints the human-readable success text before exiting with an error. This violates the explicit comment that 'the HUMAN surface stays silent' on a refusal."
-      ]
-    },
-    {
-      "file": "crates/apr-cli/src/dispatch.rs",
-      "line": 212,
-      "lanes_agreeing": [
-        1
-      ],
-      "claims": [
-        "The request classification ignores the `--gpu-layers` parameter by hardcoding `layers_want_accelerator: false` when instantiating `crate::registry::Request`. The author's own comment in `run_entry.rs` states that `--gpu-layers all|n` constitutes explicitly asking for an accelerator and is classified by `Request::wanted`. By hardcoding it to false here, the explicit request is lost, causing the CLI to incorrectly treat a `--gpu-layers` fallback as a default CPU run."
-      ]
-    },
-    {
-      "file": "trace-1789944278.json",
       "line": 1,
       "lanes_agreeing": [
         3
       ],
       "claims": [
-        "The diff commits an extraneous test artifact `trace-1789944278.json` (232 lines) to the repository root. This file is a runtime byproduct of `test_print_chrome_trace_creates_file` (which writes `trace-<epoch>.json` into the process CWD) that was accidentally staged and committed in commit 04f9c93321affff5e89dd89b485ef5bf476fe112. The ticket PMAT-3602 does not ask for this file."
+        "Cargo fmt check passes cleanly without formatting violations.",
+        "Clippy checks pass with zero warnings across apr-cli."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/run_entry.rs",
+      "line": 146,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "`reconcile_accelerator` wires `registry::after_generation` in `run_entry.rs`, ensuring a forced GPU run (`apr run --gpu`) that fell back to CPU returns exit 14 (`CliError::BackendUnavailable`) instead of reporting success. Measured unit tests in `run_tests_accel_reconcile.rs` passing."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/run_entry.rs",
+      "line": 161,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Machine output (`--json` and `--stream`) surfaces the rejection details via `\"backend\": {\"requested\": \"gpu\", \"ran\": \"cpu\", \"fell_back\": true}` prior to returning the refusal error, while human surfaces remain silent. Verified via `the_machine_output_predicate_matches_print_run_output` and `json_plus_benchmark_is_not_a_machine_surface`."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/dispatch.rs",
+      "line": 207,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "`dispatch.rs` classifies accelerator intent once via `registry::Request::wanted()`, ensuring uniform classification across CLI dispatch and runtime reconciliation."
       ]
     }
   ],
   "uncovered": [],
   "coverage_source": "lanes",
-  "partial": true,
+  "partial": false,
   "partial_reasons": [
-    "lane 2: no verdict object found in lane file (status=SUCCESS) salvageable=/home/noah/.gemini/antigravity-cli/brain/dfd8fe2b-45ee-4d05-8ffb-3bfea44d5d92 (791975 bytes) [UNREVIEWED CLAIM MATERIAL — never a PASS]"
+    "lane 3: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (12402 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)"
   ],
   "auto_merge": {
     "checked": true,
