@@ -8,6 +8,15 @@ ladder:
     gpu: GB10
     id: gx10
     required: true
+  inventory:
+    backends:
+    - cuda
+    dirs:
+    - ~/models
+    patterns:
+    - '*q4_k*.gguf'
+    - '*q4k*.apr'
+    - '*q4_k*.apr'
   rungs:
   - arch: qwen2
     backends:

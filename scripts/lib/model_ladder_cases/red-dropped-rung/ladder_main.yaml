@@ -25,10 +25,3 @@ ladder:
     id: q3-q4km
     required: true
     sha256: '1111111111111111111111111111111111111111111111111111111111111111'
-  - arch: phi3
-    backends:
-    - cpu
-    gguf: o.gguf
-    id: opt-q4km
-    required: false
-    sha256: '2222222222222222222222222222222222222222222222222222222222222222'
