@@ -1,0 +1,258 @@
+{
+  "ticket": "PMAT-3567",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "84f22f915c315c7df2064b4f413daae51307e6d8",
+  "diff_sha256": "dcebefbf0edf436b3d9b7dfd9b4e7c55a80f6a9a24f52d67d8f0382463b601ce",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 14968,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements the shapes gate check for the fleet-pinned pv. It correctly handles the 0.65.2 limitation by checking capabilities (the lack of `--gate` and `extract` subcommand) rather than just parsing version strings, and it passes all 10 rows of its self-test perfectly. It fulfills PMAT-3567 without weakening any existing gates.",
+      "findings": [
+        {
+          "claim": "The diff implements a gate check that specifically verifies the presence of the `--gate` flag and `extract` subcommand, accurately addressing the capability deficit of the 0.65.2 version mentioned in the ticket.",
+          "command": "./scripts/check_fleet_pv_shapes_gate.sh --self-test",
+          "file": "scripts/check_fleet_pv_shapes_gate.sh",
+          "grounding": "measured",
+          "line": 48,
+          "output": "=== fleet pv shapes gate: case table (stub pvs, no network, no real fleet binary) ===\nok    row 1  capable pv + Pass verdict -> PASS, row names the runner\nok    row 2  planted violation (verdict=Fail) -> RED\nok    row 3  0.65.2 condition (no --gate) -> RED by capability, not by version\nok    row 4  pin present, no fleet path has the binary -> RED\nok    row 5  no pin -> UNMEASURED row (exit 0, never a PASS line)\nok    row 6  verdict=Pass but pc_shape not fired -> RED (a checker firing on nothing cannot pass)\nok    row 7  first fleet path absent, second present -> resolved to the second, row names it\nok    row 8  binary 0.65.2 under pin 0.68.2 -> RED, named as a pin mismatch (before any lint)\nok    row 9  pv without a pc_shape field -> PASS, row says control=unreported\nok    row 10 pin '  0.68.2-rc1 \\n' strips to 0.68.2-rc1 -- no tr, no busybox class bug\nSELF-TEST PASSED: 10 rows"
+        }
+      ],
+      "raw_bytes": 5594,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff introduces scripts/check_fleet_pv_shapes_gate.sh to evaluate the SHACL shapes gate using the fleet-pinned pv binary on the runner rather than a HEAD-built binary. It directly implements asks 2 and 3 of PMAT-3567 by enforcing pin resolution, validating tool capabilities (--gate and extract), parsing JSON verdicts, and allowing UNMEASURED exit 0 on unconverged runners. All 10 self-test scenarios pass and no gates are weakened.",
+      "findings": [
+        {
+          "claim": "check_fleet_pv_shapes_gate.sh --self-test passes all 10 unit test cases verifying capable/stale pvs, planted violations, unmeasured runners, missing/mismatched pins, and argument stripping",
+          "command": "bash scripts/check_fleet_pv_shapes_gate.sh --self-test",
+          "file": "scripts/check_fleet_pv_shapes_gate.sh",
+          "fix": "N/A - test passes",
+          "grounding": "measured",
+          "line": 126,
+          "output": "=== fleet pv shapes gate: case table (stub pvs, no network, no real fleet binary) ===\nok    row 1  capable pv + Pass verdict -> PASS, row names the runner\nok    row 2  planted violation (verdict=Fail) -> RED\nok    row 3  0.65.2 condition (no --gate) -> RED by capability, not by version\nok    row 4  pin present, no fleet path has the binary -> RED\nok    row 5  no pin -> UNMEASURED row (exit 0, never a PASS line)\nok    row 6  verdict=Pass but pc_shape not fired -> RED (a checker firing on nothing cannot pass)\nok    row 7  first fleet path absent, second present -> resolved to the second, row names it\nok    row 8  binary 0.65.2 under pin 0.68.2 -> RED, named as a pin mismatch (before any lint)\nok    row 9  pv without a pc_shape field -> PASS, row says control=unreported\nok    row 10 pin '  0.68.2-rc1 \\n' strips to 0.68.2-rc1 -- no tr, no busybox class bug\nSELF-TEST PASSED: 10 rows"
+        },
+        {
+          "claim": "capable() probe rejects binaries lacking --gate or extract subcommands (the 0.65.2 condition) and reports specific capability failure diagnostics",
+          "command": "bash -c 'd=$(mktemp -d); printf \"0.65.2\\n\" > \"$d/pin\"; cat > \"$d/pv\" << \"STUB\"\n#!/usr/bin/env bash\nif [ \"$1\" = \"--version\" ]; then echo \"pv 0.65.2\"; exit 0; fi\necho \"no gate flag\"\nSTUB\nchmod +x \"$d/pv\"\nFLEET_PV_BIN=\"$d/pv\" FLEET_PV_PIN=\"$d/pin\" FLEET_PV_CONTRACTS=\"$d\" RUNNER_NAME=test-box bash scripts/check_fleet_pv_shapes_gate.sh 2>&1\nrc=$?\nrm -rf \"$d\"\nexit $rc'",
+          "file": "scripts/check_fleet_pv_shapes_gate.sh",
+          "fix": "N/A - behaves as expected",
+          "grounding": "measured",
+          "line": 48,
+          "output": "=== shapes gate on the FLEET-PINNED pv, on this runner (check_fleet_pv_shapes_gate.sh) ===\nFAIL runner=test-box pin=0.65.2 pv=/tmp/tmp.CtQATQdqho/pv version=0.65.2 -- no --gate on lint; this is the 0.65.2 condition, the gate cannot run here\nFAIL"
+        },
+        {
+          "claim": "When running on an unconverged runner with no pin file, judge() reports an UNMEASURED verdict row and exits with status 0 without failing or emitting PASS",
+          "command": "FLEET_PV_PIN=/nonexistent/path/pv.pin RUNNER_NAME=unconverged-runner bash scripts/check_fleet_pv_shapes_gate.sh",
+          "file": "scripts/check_fleet_pv_shapes_gate.sh",
+          "fix": "N/A - behaves as expected",
+          "grounding": "measured",
+          "line": 68,
+          "output": "=== shapes gate on the FLEET-PINNED pv, on this runner (check_fleet_pv_shapes_gate.sh) ===\nUNMEASURED runner=unconverged-runner reason=no-pin pin=/nonexistent/path/pv.pin -- this runner was never converged (infra#708); the shapes gate is not measured here, and this row is not a pass\nUNMEASURED"
+        },
+        {
+          "claim": "Script syntax and strict error checking validate successfully under bash -n and shellcheck -S error",
+          "command": "bash -n scripts/check_fleet_pv_shapes_gate.sh && shellcheck -S error scripts/check_fleet_pv_shapes_gate.sh && echo \"LINT OK\"",
+          "file": "scripts/check_fleet_pv_shapes_gate.sh",
+          "fix": "N/A - passes linters",
+          "grounding": "measured",
+          "line": 1,
+          "output": "LINT OK"
+        },
+        {
+          "claim": "Whitespace and newline characters in the pin file are stripped using pure Bash parameter expansion ${pin//[[:space:]]/} without invoking external tr commands, avoiding character-class truncation bugs on POSIX/busybox tr",
+          "file": "scripts/check_fleet_pv_shapes_gate.sh",
+          "fix": "N/A",
+          "grounding": "cited",
+          "line": 75
+        }
+      ],
+      "raw_bytes": 10747,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff introduces scripts/check_fleet_pv_shapes_gate.sh to evaluate the SHACL shapes gate using the fleet-pinned pv binary on the runner rather than a HEAD-built binary. It directly addresses PMAT-3567 by validating tool capabilities (--gate and extract), enforcing pin matching, parsing json verdicts, and supporting UNMEASURED graceful exit 0 on unconverged runners. All 10 self-test scenarios pass and no gates are weakened.",
+      "findings": [
+        {
+          "claim": "check_fleet_pv_shapes_gate.sh --self-test passes all 10 unit test cases for stub pvs, planted violations, unmeasured runners, missing/mismatched pins, and capability probes",
+          "command": "bash /tmp/check_fleet_pv_shapes_gate.sh --self-test",
+          "file": "scripts/check_fleet_pv_shapes_gate.sh",
+          "fix": "N/A - test passes",
+          "grounding": "measured",
+          "line": 128,
+          "output": "=== fleet pv shapes gate: case table (stub pvs, no network, no real fleet binary) ===\nok    row 1  capable pv + Pass verdict -> PASS, row names the runner\nok    row 2  planted violation (verdict=Fail) -> RED\nok    row 3  0.65.2 condition (no --gate) -> RED by capability, not by version\nok    row 4  pin present, no fleet path has the binary -> RED\nok    row 5  no pin -> UNMEASURED row (exit 0, never a PASS line)\nok    row 6  verdict=Pass but pc_shape not fired -> RED (a checker firing on nothing cannot pass)\nok    row 7  first fleet path absent, second present -> resolved to the second, row names it\nok    row 8  binary 0.65.2 under pin 0.68.2 -> RED, named as a pin mismatch (before any lint)\nok    row 9  pv without a pc_shape field -> PASS, row says control=unreported\nok    row 10 pin '  0.68.2-rc1 \\n' strips to 0.68.2-rc1 -- no tr, no busybox class bug\nSELF-TEST PASSED: 10 rows"
+        },
+        {
+          "claim": "capable() probe rejects binaries lacking --gate or extract subcommands (the 0.65.2 condition) and reports specific capability failure reasons",
+          "command": "bash -c 'd=$(mktemp -d); printf \"0.65.2\\n\" > \"$d/pin\"; cat > \"$d/pv\" << \"STUB\"\n#!/usr/bin/env bash\nif [ \"$1\" = \"--version\" ]; then echo \"pv 0.65.2\"; exit 0; fi\necho \"no gate flag\"\nSTUB\nchmod +x \"$d/pv\"\nFLEET_PV_BIN=\"$d/pv\" FLEET_PV_PIN=\"$d/pin\" FLEET_PV_CONTRACTS=\"$d\" RUNNER_NAME=test-box bash /tmp/check_fleet_pv_shapes_gate.sh\nrc=$?\nrm -rf \"$d\"\nexit $rc'",
+          "file": "scripts/check_fleet_pv_shapes_gate.sh",
+          "fix": "N/A - behaves as expected",
+          "grounding": "measured",
+          "line": 48,
+          "output": "=== shapes gate on the FLEET-PINNED pv, on this runner (check_fleet_pv_shapes_gate.sh) ===\nFAIL runner=test-box pin=0.65.2 pv=/tmp/tmp.qQQ9nA54kL/pv version=0.65.2 -- no --gate on lint; this is the 0.65.2 condition, the gate cannot run here\nFAIL"
+        },
+        {
+          "claim": "When running on an unconverged runner with no pin file, judge() prints an UNMEASURED verdict row and exits 0 without failing or emitting PASS",
+          "command": "FLEET_PV_PIN=/tmp/nonexistent RUNNER_NAME=test-runner bash /tmp/check_fleet_pv_shapes_gate.sh",
+          "file": "scripts/check_fleet_pv_shapes_gate.sh",
+          "fix": "N/A - behaves as expected",
+          "grounding": "measured",
+          "line": 67,
+          "output": "=== shapes gate on the FLEET-PINNED pv, on this runner (check_fleet_pv_shapes_gate.sh) ===\nUNMEASURED runner=test-runner reason=no-pin pin=/tmp/nonexistent -- this runner was never converged (infra#708); the shapes gate is not measured here, and this row is not a pass\nUNMEASURED"
+        },
+        {
+          "claim": "Whitespace and newline characters in the pin file are stripped using pure Bash parameter expansion without invoking external tr commands",
+          "file": "scripts/check_fleet_pv_shapes_gate.sh",
+          "fix": "N/A",
+          "grounding": "cited",
+          "line": 74
+        }
+      ],
+      "raw_bytes": 13473,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "scripts/check_fleet_pv_shapes_gate.sh",
+      "line": 1,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Script syntax and strict error checking validate successfully under bash -n and shellcheck -S error"
+      ]
+    },
+    {
+      "file": "scripts/check_fleet_pv_shapes_gate.sh",
+      "line": 48,
+      "lanes_agreeing": [
+        1,
+        2,
+        3
+      ],
+      "claims": [
+        "The diff implements a gate check that specifically verifies the presence of the `--gate` flag and `extract` subcommand, accurately addressing the capability deficit of the 0.65.2 version mentioned in the ticket.",
+        "capable() probe rejects binaries lacking --gate or extract subcommands (the 0.65.2 condition) and reports specific capability failure diagnostics",
+        "capable() probe rejects binaries lacking --gate or extract subcommands (the 0.65.2 condition) and reports specific capability failure reasons"
+      ]
+    },
+    {
+      "file": "scripts/check_fleet_pv_shapes_gate.sh",
+      "line": 67,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "When running on an unconverged runner with no pin file, judge() prints an UNMEASURED verdict row and exits 0 without failing or emitting PASS"
+      ]
+    },
+    {
+      "file": "scripts/check_fleet_pv_shapes_gate.sh",
+      "line": 68,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "When running on an unconverged runner with no pin file, judge() reports an UNMEASURED verdict row and exits with status 0 without failing or emitting PASS"
+      ]
+    },
+    {
+      "file": "scripts/check_fleet_pv_shapes_gate.sh",
+      "line": 74,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Whitespace and newline characters in the pin file are stripped using pure Bash parameter expansion without invoking external tr commands"
+      ]
+    },
+    {
+      "file": "scripts/check_fleet_pv_shapes_gate.sh",
+      "line": 75,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Whitespace and newline characters in the pin file are stripped using pure Bash parameter expansion ${pin//[[:space:]]/} without invoking external tr commands, avoiding character-class truncation bugs on POSIX/busybox tr"
+      ]
+    },
+    {
+      "file": "scripts/check_fleet_pv_shapes_gate.sh",
+      "line": 126,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "check_fleet_pv_shapes_gate.sh --self-test passes all 10 unit test cases verifying capable/stale pvs, planted violations, unmeasured runners, missing/mismatched pins, and argument stripping"
+      ]
+    },
+    {
+      "file": "scripts/check_fleet_pv_shapes_gate.sh",
+      "line": 128,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "check_fleet_pv_shapes_gate.sh --self-test passes all 10 unit test cases for stub pvs, planted violations, unmeasured runners, missing/mismatched pins, and capability probes"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane 3: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (13473 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)"
+  ],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

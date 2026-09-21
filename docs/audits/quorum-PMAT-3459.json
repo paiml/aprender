@@ -1,0 +1,150 @@
+{
+  "ticket": "PMAT-3459",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "b0e4be8e8072af119f936cdb903d37e1a78384c8",
+  "diff_sha256": "0a4c6913df7af9280ca94772bbd16ca406dd96821115944954ee2457069dc634",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 22768,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff cleanly implements PMAT-3459. It modifies the tag step in the release autopilot, enclosing it in `cut_tag()`, which checks `check_milestone_cut.sh` before running `git tag`. This fail-closed pattern correctly halts the release if open items remain (rc=1) or if the milestone cannot be judged (rc=2). The guard script (`check_tag_step_gated.sh`) properly verifies this by executing the function against stubbed gate scripts and ensuring no tag is cut unless the exit code is 0. Its `--self-test` checks mutations (deleting the gate call, discarding the gate verdict, and removing the function entirely), ensuring that the test fails on these regressions. The provable contracts and counts were correctly updated. No defects were found.",
+      "findings": [
+        {
+          "claim": "The tag operation is extracted into `cut_tag` and successfully calls `check_milestone_cut.sh`.",
+          "file": "scripts/release/autopilot.sh",
+          "grounding": "cited",
+          "line": 122
+        },
+        {
+          "claim": "The `--self-test` correctly checks the mutant where the gate verdict is discarded (`|| true`), verifying that the behavioural guard will go RED if the defect is restored.",
+          "file": "scripts/check_tag_step_gated.sh",
+          "grounding": "asserted",
+          "line": 98
+        },
+        {
+          "claim": "The count in `census.json` and `README.md` correctly incremented to 1801 to account for the new pattern contract.",
+          "file": "contracts/census.json",
+          "grounding": "cited",
+          "line": 4
+        },
+        {
+          "claim": "The test correctly checks that `check_milestone_cut.sh` appears before `git tag -a` inside `cut_tag()`, ensuring it operates as a gate rather than a receipt.",
+          "file": "contracts/tag-step-milestone-gate-v1.yaml",
+          "grounding": "asserted",
+          "line": 63
+        }
+      ],
+      "raw_bytes": 5540,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Review of diff for PMAT-3459 (origin/main...HEAD) in /mnt/nvme-raid0/agent-wt/pmat3459-milestone:\n\n1. **Ticket & Diff Conformance**:\n   - `scripts/release/autopilot.sh`: Encapsulates the tag cut in `cut_tag()`, ensuring `scripts/check_milestone_cut.sh \"$v\"` is executed strictly prior to `git tag` and `git push`. Fails closed on rc 1 (milestone holds open items) and rc 2+ (judge failure/unknown), ensuring `git tag` is unreachable without a clean milestone (rc 0).\n   - `scripts/check_tag_step_gated.sh`: Behavioural guard testing `cut_tag()` across gate return codes {0, 1, 2}. Validates `--self-test` across 3 distinct mutants (gate call removed, verdict discarded with `|| true`, `cut_tag()` missing). Exposes `--help` containing `self-test` so `scripts/guard_tree.sh` discovers and runs both `[self-test]` and `[run]` rows.\n   - `contracts/tag-step-milestone-gate-v1.yaml`: Formal `kind: pattern` contract defining invariants TSMG-INV-001 through 003 and falsification tests FALSIFY-TSMG-001 through 006.\n   - `README.md`, `contracts/census.json`, `contracts/contracts.nt`: Updated census count and RDF graph from 1800 to 1801 contracts.\n\n2. **Measured Verification**:\n   - `bash scripts/check_tag_step_gated.sh`: PASS (rc=0)\n   - `bash scripts/check_tag_step_gated.sh --self-test`: PASS (rc=0; 3 mutants killed)\n   - FALSIFY-TSMG-001 through 006: all PASS\n   - `bash scripts/check_readme_claims.sh`: PASS\n   - `bash scripts/check_bashrs_gate.sh`: PASS (354 files linted, 0 errors)\n   - `bash scripts/check_hardcoded_paths.sh`: PASS (1854 contract files scanned, 0 machine-specific paths)\n   - `bash scripts/check_contract_enforcement.sh`: PASS\n   - `bash scripts/check_contract_test_binding.sh`: PASS\n   - `shellcheck -S error` and `bash -n` on modified/added shell scripts: PASS\n   - `scripts/guard_tree.sh`: both `[self-test]` and `[run]` executed and PASS.\n\nNo weakened gates, unbacked receipt claims, or unauthorized changes found. Refutation attempts failed. Verdict: PASS.",
+      "findings": [],
+      "raw_bytes": 6365,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Review of diff for PMAT-3459 against ticket 'release train: move the release autopilot\\'s tag path into the repo; tag step calls check_milestone_cut.sh (#3459)':\n\n1. **Ticket & Diff Conformance**:\n   - `scripts/release/autopilot.sh`: Introduced `cut_tag()`, ensuring `check_milestone_cut.sh` is invoked before `git tag` and failing closed on both rc 1 (open items) and rc 2+ (judge failure/unknown).\n   - `scripts/check_tag_step_gated.sh`: Behavioural guard extracting `cut_tag()` from `autopilot.sh` and verifying gate behavior across all return codes (rc 0 tags; rc 1 and 2 die without tagging), with `--self-test` validating 3 distinct mutants (gate call deleted, verdict discarded with `|| true`, `cut_tag()` removed).\n   - `contracts/tag-step-milestone-gate-v1.yaml`: Formal contract pattern specifying the tag-step milestone gate invariants and 6 falsification tests (FALSIFY-TSMG-001 through 006).\n   - `README.md`, `contracts/census.json`, `contracts/contracts.nt`: Updated census and graph reflecting the addition of the new contract (1800 -> 1801).\n\n2. **Verification & Falsification**:\n   - `bash scripts/check_tag_step_gated.sh`: PASS (rc=0)\n   - `bash scripts/check_tag_step_gated.sh --self-test`: PASS (rc=0, 3 mutants killed)\n   - All 6 falsification tests from `contracts/tag-step-milestone-gate-v1.yaml`: PASS\n   - `bash scripts/check_milestone_cut.sh --self-test`: PASS (25 cases)\n   - `bash scripts/check_readme_claims.sh`: PASS\n   - `bash scripts/check_bashrs_gate.sh` & `check_shell_lint_ratchet.sh`: PASS\n   - `bash scripts/check_guards_are_wired.sh`: PASS\n   - `cargo test -p aprender-contracts --lib -- census`: PASS\n   - `shellcheck -S error` and `bash -n` on modified/added shell scripts: PASS\n\nNo weakened gates, unbacked claims, or unauthorized changes found. Verdict: PASS.",
+      "findings": [],
+      "raw_bytes": 5880,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "contracts/census.json",
+      "line": 4,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The count in `census.json` and `README.md` correctly incremented to 1801 to account for the new pattern contract."
+      ]
+    },
+    {
+      "file": "contracts/tag-step-milestone-gate-v1.yaml",
+      "line": 63,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The test correctly checks that `check_milestone_cut.sh` appears before `git tag -a` inside `cut_tag()`, ensuring it operates as a gate rather than a receipt."
+      ]
+    },
+    {
+      "file": "scripts/check_tag_step_gated.sh",
+      "line": 98,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The `--self-test` correctly checks the mutant where the gate verdict is discarded (`|| true`), verifying that the behavioural guard will go RED if the defect is restored."
+      ]
+    },
+    {
+      "file": "scripts/release/autopilot.sh",
+      "line": 122,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The tag operation is extracted into `cut_tag` and successfully calls `check_milestone_cut.sh`."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
