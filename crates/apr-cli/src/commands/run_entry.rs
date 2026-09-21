@@ -135,32 +135,51 @@ pub(crate) fn run(
         print_roofline_profile(&result, max_tokens);
     }
 
-    // #3602: reconcile what was ASKED FOR with what RAN, before any success
-    // output. `--gpu` on a model whose GPU attempt is rejected at runtime used
-    // to print a result and exit 0 — measured on an RTX 4090 at 33.6 s wall,
-    // `used_gpu: false`, exit 0, with nothing on any stream saying the GPU had
-    // been refused. `accel.rs` already states the rule this restores ("a silent
-    // CPU fallback is exactly that override wearing a performance number") and
-    // `registry::after_generation` already implements it, unit-tested, with no
-    // production caller. This is that call.
-    let reconciled = reconcile_accelerator(accel_forced, &result);
+    // #3602: reconcile what was ASKED FOR with what RAN, then emit. Extracted because
+    // inlining it took `run`'s cognitive complexity to 27 against a ceiling of 25 — the
+    // ratchet is measured against origin/main and there is nothing to edit in a baseline
+    // to make that pass, which is the point of it.
+    reconcile_and_emit(
+        &result,
+        source,
+        output_format,
+        max_tokens,
+        benchmark,
+        stream,
+        accel_forced,
+    )?;
 
-    // DELIBERATE DEVIATION FROM `after_generation`'s CONTRACT, named rather than
-    // quiet. That contract says the caller "must print NO output" on a forced
-    // refusal, so a CPU result can never be read as a GPU success. #3602 item 1
-    // requires the rejection to be visible in `--json`, and those two pull
-    // opposite ways.
-    //
-    // Resolved by asking what the "no output" rule protects: a reader mistaking
-    // the fallback for success. A structured document carrying
-    // `"backend": {"fell_back": true}` beside exit 14 cannot be misread that
-    // way, while a human-formatted success blob can. So the MACHINE surfaces
-    // still emit and the HUMAN surface stays silent — the half of the contract
-    // that was doing the protecting is kept, and a `--json` consumer stops
-    // having to infer a refusal from an exit code alone.
+    Ok(())
+}
+
+/// Reconcile the requested accelerator against the one that ran, then emit the run's output.
+///
+/// The two are one step because their ORDER is the decision: `after_generation`'s contract says a
+/// forced refusal prints no output, and #3602 item 1 wants the rejection visible in `--json`.
+///
+/// DELIBERATE DEVIATION, named rather than quiet. The no-output rule protects a reader from
+/// mistaking a fallback for success. A structured document carrying `"backend": {"fell_back": true}`
+/// beside exit 14 cannot be misread that way, while a human-formatted success blob can. So the
+/// MACHINE surfaces still emit and the HUMAN surface stays silent — the protective half of the
+/// contract is kept, and a `--json` consumer stops having to infer a refusal from an exit code.
+///
+/// # Errors
+/// [`crate::error::CliError::BackendUnavailable`] when an accelerator was forced and CPU ran, and
+/// whatever [`print_run_output`] returns.
+#[allow(clippy::too_many_arguments)]
+fn reconcile_and_emit(
+    result: &super::run::RunResult,
+    source: &str,
+    output_format: &str,
+    max_tokens: usize,
+    benchmark: bool,
+    stream: bool,
+    accel_forced: bool,
+) -> Result<()> {
+    let reconciled = reconcile_accelerator(accel_forced, result);
     if reconciled.is_ok() || emits_machine_output(stream, output_format, benchmark) {
         print_run_output(
-            &result,
+            result,
             source,
             output_format,
             max_tokens,
@@ -169,9 +188,7 @@ pub(crate) fn run(
             accel_forced,
         )?;
     }
-    reconciled?;
-
-    Ok(())
+    reconciled
 }
 
 /// Does [`print_run_output`] emit a MACHINE-readable document for these flags?
