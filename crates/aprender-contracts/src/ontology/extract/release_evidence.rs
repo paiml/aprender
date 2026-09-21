@@ -87,6 +87,8 @@ pub struct ReleaseStats {
     /// #3745 S2.5: one-factor-at-a-time cells (bases and effects), and the (command, arg, level) they judge.
     pub effect_cells: usize,
     pub mode_effects: usize,
+    /// S2.5: a8's sampling controls, one check per (host, generating command with sampling args, model).
+    pub sampling_checks: usize,
     /// What `extract:cli-surface` counted (the two shrink-only ratchets included); `None` without `--surface`.
     pub surface: Option<SurfaceStats>,
     /// D1: per host, the derived cells × the measured median wall time of their class — never guessed.
@@ -918,7 +920,7 @@ type Located<'a> = (&'a Receipt, usize, &'a CellRow);
 fn class_of(spec: &CellSpec, m: Option<&ModelInfo>, gpu: Option<u64>) -> &'static str {
     match spec.kind {
         CellKind::Probe => "ProbeCell",
-        CellKind::Base | CellKind::Effect { .. } => "EffectCell",
+        CellKind::Base | CellKind::Effect { .. } | CellKind::Sampling { .. } => "EffectCell",
         CellKind::Matrix if !spec.generates => "ModelCell",
         CellKind::Matrix => {
             let fits = m.and_then(|m| m.fits(gpu, spec.rung_tokens));
@@ -999,6 +1001,7 @@ fn emit_derived(
     stats.orphan_rows += all_rows.saturating_sub(used);
     emit_coverage(g, subject, &coverage, stats);
     emit_effects(g, subject, cells, &outputs, stats);
+    emit_sampling(g, subject, cells, &outputs, stats);
 }
 
 fn count_class(stats: &mut ReleaseStats, class: &str) {
@@ -1168,6 +1171,76 @@ fn emit_coverage(g: &mut Graph, subject: &Subject, coverage: &Coverage, stats: &
         for h in hosts {
             g.insert(n.clone(), rel("owedOn"), Term::iri(h.clone()));
         }
+    }
+}
+
+/// S2.5, a8's sampling controls, judged from the control cells' output digests, one `release:SamplingCheck` per
+/// (host, command, model): sampled ≠ greedy (seed A or B ≠ T 0); the same seed twice is byte-identical; seed A ≠
+/// seed B; top-k 1 == T 0. A check whose controls the command cannot express (it has no typed knob of that kind)
+/// is named `underivable`, never silently passed.
+fn emit_sampling(
+    g: &mut Graph,
+    subject: &Subject,
+    cells: &[CellSpec],
+    outputs: &BTreeMap<(&str, &str), Option<String>>,
+    stats: &mut ReleaseStats,
+) {
+    let mut groups: BTreeMap<(&str, &str, &str), BTreeMap<&str, &CellSpec>> = BTreeMap::new();
+    for c in cells {
+        if let CellKind::Sampling { control } = &c.kind {
+            let key = (
+                c.host.as_str(),
+                c.command.as_str(),
+                c.model_file.as_deref().unwrap_or("-"),
+            );
+            groups.entry(key).or_default().insert(control.as_str(), c);
+        }
+    }
+    for ((host, command, file), ctl) in groups {
+        stats.sampling_checks += 1;
+        let n = iri_path("release-sampling", &[&subject.version, host, command, file]);
+        g.insert(n.clone(), RDF_TYPE, Term::iri(rel("SamplingCheck")));
+        let out = |c: &str| -> Option<Option<String>> {
+            ctl.get(c)
+                .map(|s| outputs.get(&(host, s.id.as_str())).cloned().flatten())
+        };
+        let checks: [(&str, &[&str]); 4] = [
+            ("sampledDiffers", &["t0", "seed-a", "seed-b"]),
+            ("seedRepeatable", &["seed-a", "seed-a-again"]),
+            ("seedsDiffer", &["seed-a", "seed-b"]),
+            ("greedyAgrees", &["t0", "topk1"]),
+        ];
+        for (name, need) in checks {
+            let missing: Vec<&str> = need
+                .iter()
+                .copied()
+                .filter(|c| !ctl.contains_key(c))
+                .collect();
+            if !missing.is_empty() {
+                g.insert(
+                    n.clone(),
+                    rel("underivable"),
+                    Term::string(format!("{name}: no typed knob for {}", missing.join(", "))),
+                );
+                continue;
+            }
+            let o: Vec<Option<String>> = need.iter().map(|c| out(c).flatten()).collect();
+            let ok = sampling_check(name, &o);
+            g.insert(n.clone(), rel(name), Term::boolean(ok));
+        }
+    }
+}
+
+/// One of a8's controls over its cells' output digests (all must be measured; an unmeasured one is `false`).
+fn sampling_check(name: &str, o: &[Option<String>]) -> bool {
+    if o.iter().any(Option::is_none) {
+        return false;
+    }
+    let v: Vec<&str> = o.iter().filter_map(|x| x.as_deref()).collect();
+    match name {
+        "sampledDiffers" => v[1] != v[0] || v[2] != v[0],
+        "seedRepeatable" | "greedyAgrees" => v[0] == v[1],
+        _ => v[0] != v[1],
     }
 }
 

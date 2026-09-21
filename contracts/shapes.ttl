@@ -545,6 +545,34 @@
     ] ;
 .
 
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.sampling> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/release/SamplingCheck> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/sampledDiffers> ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/seedRepeatable> ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/seedsDiffer> ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/greedyAgrees> ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/underivable> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
 <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.refusal> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/release/RefusalCell> ;
     sh:property [

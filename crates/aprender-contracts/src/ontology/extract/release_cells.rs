@@ -37,6 +37,9 @@ pub enum CellKind {
         level: String,
         base: String,
     },
+    /// S2.5, a8's sampling controls: one of `t0`, `topk1`, `seed-a`, `seed-a-again`, `seed-b` for a generating
+    /// command's typed `sampling` args (the knob values are the controls' own constants, not apr names).
+    Sampling { control: String },
 }
 
 /// One derived cell — what the producer runs and what the shape grades.
@@ -105,6 +108,7 @@ pub fn derive(surface: &Surface, hosts: &[HostModels<'_>]) -> Vec<CellSpec> {
                     out.extend(matrix(surface, c, h.host, m));
                 }
                 out.extend(effects(surface, c, h));
+                out.extend(sampling(c, h));
             } else {
                 out.push(probe(c, h.host));
             }
@@ -249,6 +253,7 @@ pub fn cell_id(s: &CellSpec) -> String {
     let prefix = match &s.kind {
         CellKind::Base => "base:",
         CellKind::Effect { .. } => "effect:",
+        CellKind::Sampling { .. } => "sampling:",
         CellKind::Matrix | CellKind::Probe => "",
     };
     [
@@ -328,6 +333,76 @@ fn effects(surface: &Surface, c: &Command, h: &HostModels<'_>) -> Vec<CellSpec> 
             }
         }
         out.push(base);
+    }
+    out
+}
+
+/// a8's controls need these knobs; each control is the base cell with only these sampling args set.
+/// (knob kind, value) per control; a control whose kind the command lacks is not derived (and is named).
+pub const SAMPLING_CONTROLS: [(&str, &[(&str, &str)]); 5] = [
+    ("t0", &[("temperature", "0")]),
+    ("topk1", &[("top_k", "1")]),
+    ("seed-a", &[("temperature", "0.8"), ("seed", "1")]),
+    ("seed-a-again", &[("temperature", "0.8"), ("seed", "1")]),
+    ("seed-b", &[("temperature", "0.8"), ("seed", "2")]),
+];
+
+/// The sampling kinds a8's four controls need together.
+pub const SAMPLING_KINDS_NEEDED: [&str; 3] = ["temperature", "top_k", "seed"];
+
+/// S2.5 sampling controls: per GENERATING command with typed sampling args, per representative model per
+/// architecture, per host — every control whose knobs the command has, on the effect base.
+fn sampling(c: &Command, h: &HostModels<'_>) -> Vec<CellSpec> {
+    if c.generates != Some(true) {
+        return Vec::new();
+    }
+    let knob = |kind: &str| {
+        c.args
+            .iter()
+            .find(|a| a.role == "sampling" && a.sampling_kind.as_deref() == Some(kind))
+            .map(Arg::spelling)
+    };
+    if !c.args.iter().any(|a| a.role == "sampling") {
+        return Vec::new();
+    }
+    let mut archs = BTreeSet::new();
+    let reps = h
+        .models
+        .iter()
+        .filter(|m| archs.insert(m.arch.unwrap_or("-")));
+    let mut out = Vec::new();
+    for m in reps {
+        for (control, knobs) in SAMPLING_CONTROLS {
+            let set: Option<Vec<(String, String)>> = knobs
+                .iter()
+                .map(|(k, v)| knob(k).map(|sp| (sp, (*v).to_string())))
+                .collect();
+            let Some(args) = set else { continue };
+            let mut cell = cell_from_row(
+                c,
+                h.host,
+                m,
+                &[],
+                &[],
+                CellKind::Sampling {
+                    control: control.to_string(),
+                },
+            );
+            cell.shape = c.input_shapes().first().map(|a| a.spelling());
+            let off = m
+                .modes
+                .iter()
+                .find(|t| **t == "off")
+                .or_else(|| m.modes.first());
+            cell.thinking = off.map(|t| (*t).to_string());
+            if let Some((r, t)) = m.rungs.first() {
+                cell.rung = Some((*r).to_string());
+                cell.rung_tokens = *t;
+            }
+            cell.args = args;
+            cell.id = format!("{}#{control}", cell_id(&cell));
+            out.push(cell);
+        }
     }
     out
 }

@@ -25,11 +25,12 @@ pub const SCHEMA: &str = "apr-cli-surface/v1";
 /// Every schema this reader accepts: v1.1 adds `commands[].generates` (#3745 amendment 3, additive).
 pub const SCHEMAS: [&str; 2] = [SCHEMA, "apr-cli-surface/v1.1"];
 /// Every role v1 may carry (#3745 note + amendment 1).
-pub const ROLES: [&str; 7] = [
+pub const ROLES: [&str; 8] = [
     "model",
     "prompt",
     "input-file",
     "backend",
+    "sampling",
     "mode",
     "other",
     "unknown",
@@ -57,6 +58,9 @@ pub struct Arg {
     pub marker: Option<String>,
     pub hidden: bool,
     pub conflicts_with: Vec<String>,
+    /// Role `sampling` (#3745, fc 17dfb1291): which sampling knob this arg is — read from the typed group the arg
+    /// joined, never its name. `None` on every other arg.
+    pub sampling_kind: Option<String>,
 }
 
 impl Arg {
@@ -258,6 +262,7 @@ fn parse_arg(a: &serde_json::Value) -> Result<Arg, String> {
         marker: str_of(a, "marker"),
         hidden: bool_of(a, "hidden"),
         conflicts_with: strings(a, "conflicts_with"),
+        sampling_kind: str_of(a, "sampling_kind"),
         id,
     })
 }
