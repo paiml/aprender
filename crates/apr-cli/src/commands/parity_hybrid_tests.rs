@@ -19,6 +19,21 @@ mod parity_arm_tests {
         );
     }
 
+    /// #3714 R2: the spellings the runtime dispatches to the routed-expert
+    /// forward take the MoE arm; `qwen35moe` (the GGUF Qwen3.5-MoE tag) reaches
+    /// no MoE forward and does not.
+    #[test]
+    fn qwen3moe_is_measured_by_the_moe_arm() {
+        for arch in ["qwen3moe", "qwen3_moe"] {
+            assert_eq!(
+                parity_arm(arch),
+                ParityArm::Moe,
+                "{arch}: both routed-expert forwards exist (#3367 CPU, #3714 CUDA)"
+            );
+        }
+        assert_ne!(parity_arm("qwen35moe"), ParityArm::Moe);
+    }
+
     #[test]
     fn every_other_architecture_keeps_the_dense_arm() {
         for arch in ["llama", "qwen2", "qwen3", "gemma", "phi3", ""] {

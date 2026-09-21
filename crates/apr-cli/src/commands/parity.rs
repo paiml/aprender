@@ -476,3 +476,4 @@ include!("parity_diagnose_tests.rs");
 include!("parity_refusal_tests.rs");
 include!("parity_hybrid.rs");
 include!("parity_hybrid_tests.rs");
+include!("parity_moe.rs");

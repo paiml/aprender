@@ -436,7 +436,7 @@ pub(crate) fn moe_loader_architecture(path: &Path) -> bool {
         mapped
             .model
             .architecture()
-            .is_some_and(|a| realizar::tensor_names::normalize_architecture(a) == "qwen3_moe")
+            .is_some_and(realizar::gguf::moe_forward_handles)
     })
 }
 
