@@ -63,12 +63,12 @@ ollama_out() { # ollama_out <dir> <pid> <answer>
 }
 row() { # row <manifest> <engine> <pid> <rc> <stdout> <stderr> [refused]
   python3 - "$@" <<'PY'
-import json, sys
+import json, os, sys
 m, eng, pid, rc, o, e = sys.argv[1:7]
 ref = sys.argv[7] if len(sys.argv) > 7 else ""
 open(m, "a").write(json.dumps({"kind": "gen", "engine": eng, "prompt_id": pid, "rc": int(rc) if rc else None,
     "stdout": o or None, "stderr": e or None, "refused": ref or None, "model_sha256": "%s",
-    "host": "fixture", "verb": "run", "thinking": "off", "backend": "gpu"}) + "\n")
+    "host": "fixture", "verb": os.environ.get("ROW_VERB", "run"), "thinking": "off", "backend": "gpu"}) + "\n")
 PY
 }
 tokrow() { # tokrow <manifest> <dir> <pid> <ids csv>
@@ -383,6 +383,38 @@ run_judge "$d"; GOT_RC=$?
 expect "apr's degenerate '!!!!' is no answer: RED where llama.cpp answered" "$d" 1 golden-greeting RED
 got=$(python3 -c 'import json,sys; c=[x for x in json.load(open(sys.argv[1]))["cells"] if x["key"]["prompt_id"]=="golden-greeting"][0]; print(c["engines"]["hf"]["answered"], c["engines"]["hf"]["why"][:18])' "$d/receipt.json" 2>/dev/null)
 case "$got" in "False degenerate output"*) ok "hf's degenerate '!!!!' cannot vouch either" ;; *) broke "hf degenerate: '$got'" ;; esac
+
+# C1-C3. the chat verb (#3739 slice 3): judged on the FINAL turn; apr's backend is
+#        recorded as unverified until apr chat reports one (#3794).
+apr_chat_out() { # apr_chat_out <dir> <pid> <reply 1> <reply 2> — apr chat's transcript shape
+  printf 'Detected ChatML chat template\nYou: [3.9s, ~2 tok/s]\nAssistant: %s\nYou: [5.9s, ~1 tok/s]\nAssistant: %s\nYou: \nGoodbye!\n' "$3" "$4" > "$1/apr-$2.out"
+  : > "$1/apr-$2.err"
+}
+chat_json() { # chat_json <dir> <engine> <pid> <reply 1> <reply 2> — the pty helper's JSON
+  python3 -c 'import json,sys; json.dump({"text": sys.argv[3], "turns": [sys.argv[2], sys.argv[3]], "reported": {"device": "cuda (-ngl 999)", "interface": "pty"}}, open(sys.argv[1], "w"))' \
+    "$1/$2-$3.json" "$4" "$5"
+}
+CP=chat-arith-2turn
+d=$(newcase chat_green); control_green "$d"
+apr_chat_out "$d" $CP "2 + 2 equals 4." "4 * 3 equals 12."; chat_json "$d" llama $CP "4" "12"
+ROW_VERB=chat row "$d/manifest.jsonl" apr $CP 0 "$d/apr-$CP.out" "$d/apr-$CP.err"
+ROW_VERB=chat row "$d/manifest.jsonl" llama.cpp $CP 0 "$d/llama-$CP.json" ""
+run_judge "$d"; GOT_RC=$?
+expect "a chat whose final turn carries the first turn's answer is GREEN" "$d" 0 $CP GREEN
+got=$(python3 -c 'import json,sys; c=[x for x in json.load(open(sys.argv[1]))["cells"] if x["key"]["verb"]=="chat"][0]; a=c["engines"]["apr"]; print(a["turns"], a["backend_verified"], c["token_parity"].get("why"))' "$d/receipt.json" 2>/dev/null)
+[ "$got" = "['2 + 2 equals 4.', '4 * 3 equals 12.'] False not measured for the chat verb" ] && ok "every apr turn recorded; backend unverified (#3794); no run-verb token parity" || broke "chat record: '$got'"
+d=$(newcase chat_red); control_green "$d"
+apr_chat_out "$d" $CP "2 + 2 equals 4." "4 * 3 equals 9."; chat_json "$d" llama $CP "4" "12"
+ROW_VERB=chat row "$d/manifest.jsonl" apr $CP 0 "$d/apr-$CP.out" "$d/apr-$CP.err"
+ROW_VERB=chat row "$d/manifest.jsonl" llama.cpp $CP 0 "$d/llama-$CP.json" ""
+run_judge "$d"; GOT_RC=$?
+expect "apr losing the first turn's answer while llama.cpp carries it is RED" "$d" 1 $CP RED
+d=$(newcase chat_no_turn); control_green "$d"
+printf 'Detected ChatML chat template\nYou: \nGoodbye!\n' > "$d/apr-$CP.out"; : > "$d/apr-$CP.err"; chat_json "$d" llama $CP "4" "12"
+ROW_VERB=chat row "$d/manifest.jsonl" apr $CP 0 "$d/apr-$CP.out" "$d/apr-$CP.err"
+ROW_VERB=chat row "$d/manifest.jsonl" llama.cpp $CP 0 "$d/llama-$CP.json" ""
+run_judge "$d"; GOT_RC=$?
+expect "an apr chat transcript with no Assistant turn is no answer (RED)" "$d" 1 $CP RED
 
 # D1-D4. tok: raw-text ids, BYTE-EQUAL or RED.
 d=$(newcase tok_equal); control_green "$d"

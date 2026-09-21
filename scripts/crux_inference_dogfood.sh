@@ -100,8 +100,9 @@ done
 [ "${#MODELS[@]}" -gt 0 ] || decline "no --model given; this slice takes models by path"
 case "$BACKEND" in gpu|cpu) ;; *) decline "--backend is gpu or cpu, got '$BACKEND'" ;; esac
 case ",$VERBS," in
-  ,run,) ;;
-  *) decline "verbs '$VERBS': this slice drives 'run' only; chat/serve/code are the next slices of #3739 and are listed as not covered in every receipt" ;;
+  ,run,|,run,chat,|,chat,run,) ;;
+  *,chat,*) decline "verbs '$VERBS': chat needs run beside it (--verbs run,chat), because the positive control lives in the run verb" ;;
+  *) decline "verbs '$VERBS': this driver runs 'run' and 'chat'; serve and code are later slices of #3739 and are listed as not covered in every receipt" ;;
 esac
 want() { case ",$ENGINES," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 want apr || decline "apr is the subject; --engines must include it"
@@ -241,15 +242,23 @@ export CRUX_MANIFEST="$MANIFEST" CRUX_WORK="$WORK"
 MODELS_JSONL="$WORK/models.jsonl"; : > "$MODELS_JSONL"
 
 # One file per prompt: its id list, and each prompt's last user message.
-PIDS=$(python3 - "$PROMPTS" "$WORK" <<'PY'
+# A prompt belongs to one verb ("verb", default run). A chat prompt's messages are
+# the USER turns of one conversation; it is judged on the final turn.
+PIDS_ALL=$(python3 - "$PROMPTS" "$WORK" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))
 for p in d["prompts"]:
-    open("%s/prompt-%s.txt" % (sys.argv[2], p["id"]), "w").write(p["messages"][-1]["content"])
-    json.dump({"messages": p["messages"]}, open("%s/messages-%s.json" % (sys.argv[2], p["id"]), "w"))
-    print(p["id"])
+    w = sys.argv[2]
+    open("%s/prompt-%s.txt" % (w, p["id"]), "w").write(p["messages"][-1]["content"])
+    json.dump({"messages": p["messages"]}, open("%s/messages-%s.json" % (w, p["id"]), "w"))
+    users = [m["content"] for m in p["messages"] if m.get("role") == "user"]
+    json.dump(users, open("%s/turns-%s.json" % (w, p["id"]), "w"))
+    open("%s/turns-%s.txt" % (w, p["id"]), "w").write("".join(u + "\n" for u in users))
+    print("%s %s" % (p.get("verb", "run"), p["id"]))
 PY
 ) || decline "prompt set $PROMPTS unreadable"
+pids_for() { printf '%s\n' "$PIDS_ALL" | sed -n "s/^$1 //p" | tr '\n' ' '; }
+PIDS=$(pids_for run)
 MAXTOK=$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1]))["max_tokens"]))' "$PROMPTS") || decline "max_tokens unreadable"
 
 # ONE CELL = ONE COMMAND UNDER THE GPU LOCK (the cop's rule rev 5, #3739). A cell is
@@ -293,13 +302,18 @@ run_cell() { # run_cell <cell script>; sets CELL_WHY when the lock was not had
   fi
   return "$rc"
 }
-cell_result() { # cell_result <engine> <prompt id> <prefix> — the engine's row from its cell files
+cell_result() { # cell_result <engine> <prompt id> <prefix> [stdout file] — the engine's row from its cell files
   local rc unl=""
   if [ -n "$CELL_WHY" ]; then emit_gen "$1" "$2" "" "" "" "$CELL_WHY"; return; fi
   if [ ! -f "$3.rc" ]; then emit_gen "$1" "$2" "" "" "" "the cell ran but this engine's line never finished"; return; fi
   rc=$(cat "$3.rc")
   [ -f "$3.unloaded" ] && unl=$(cat "$3.unloaded")
-  emit_gen "$1" "$2" "$rc" "$3.out" "$3.err" "" "$unl"
+  emit_gen "$1" "$2" "$rc" "${4:-$3.out}" "$3.err" "" "$unl"
+}
+cell_add_stdin() { # cell_add_stdin <cell> <prefix> <stdin file> cmd... — like cell_add, fed a file
+  local cell="$1" prefix="$2" input="$3"; shift 3
+  { printf 'timeout %q ' "$TMO"; printf '%q ' "$@"
+    printf '> %q 2> %q < %q; echo $? > %q\n' "$prefix.out" "$prefix.err" "$input" "$prefix.rc"; } >> "$cell"
 }
 
 emit_gen() { # emit_gen <engine> <prompt_id> <rc> <stdout> <stderr> <refused> [ollama_unloaded]
@@ -383,6 +397,12 @@ printf '  ollama    %s\n' "$( [ "$OLLAMA_OK" = 1 ] && printf 'server %s (client 
 case "$BACKEND" in
   gpu) APR_BE="--gpu"; NGL=999; LLAMA_DEV=() ;;
   cpu) APR_BE="--no-gpu"; NGL=0; LLAMA_DEV=(-dev none) ;;
+esac
+# The device the chat cells' pty-driven comparators were TOLD to use: their own
+# flags, recorded in the row (these engines are not held to a measured device).
+case "$BACKEND" in
+  gpu) LLAMA_DEVICE="cuda (-ngl 999)"; OL_DEVICE="gpu (ollama's default placement)" ;;
+  cpu) LLAMA_DEVICE="cpu (-ngl 0 -dev none)"; OL_DEVICE="cpu (PARAMETER num_gpu 0)" ;;
 esac
 VERB=run
 for M_IN in "${MODELS[@]}"; do
@@ -477,21 +497,43 @@ PY
     fi
   fi
 
-  for pid in $PIDS; do
+  for VERB in ${VERBS//,/ }; do
+  for pid in $(pids_for "$VERB"); do
     content=$(cat "$WORK/prompt-$pid.txt")
     d="$WORK/$SHA12/$VERB"
     mkdir -p "$d"
     cell="$d/cell-$pid.sh"
-    printf '#!/usr/bin/env bash\n# one CRUX cell: prompt %s through every engine, one hold of the GPU lock\n' "$pid" > "$cell"
+    printf '#!/usr/bin/env bash\n# one CRUX cell: %s prompt %s through every engine, one hold of the GPU lock\n' "$VERB" "$pid" > "$cell"
 
-    cell_add "$cell" "$d/apr-$pid" "$APR" run "$M" --prompt "$content" --max-tokens "$MAXTOK" \
-      --temperature "$TEMP" --seed "$SEED" --format json -v "$APR_BE"
-    [ "$LLAMA_OK" = 1 ] && cell_add "$cell" "$d/llama-$pid" "$LLAMA_CLI" -m "$M" -p "$content" -st -n "$MAXTOK" \
-      --temp "$TEMP" --seed "$SEED" -c "$CTX" -ngl "$NGL" "${LLAMA_DEV[@]}" "${LLAMA_THINK[@]}"
-    if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then
-      cell_add "$cell" "$d/ollama-$pid" "$OLLAMA" run "$OL_NAME" "$content" --verbose --nowordwrap \
-        --keepalive 0 "${OLLAMA_THINK[@]}"
-      cell_add_ollama_unload "$cell" "$d/ollama-$pid" "$OL_NAME"
+    if [ "$VERB" = chat ]; then
+      # apr chat reads one user turn per stdin line. The competitors' chat CLIs
+      # do not take turns from a pipe (measured: llama.cpp loops on empty
+      # prompts, ollama reads the pipe as ONE prompt), so scripts/lib/
+      # crux_pty_chat.py drives them through a pseudo-terminal, one turn at a
+      # time, and writes the row-contract JSON the judge reads.
+      cell_add_stdin "$cell" "$d/apr-$pid" "$WORK/turns-$pid.txt" "$APR" chat "$M" \
+        --temperature "$TEMP" --max-tokens "$MAXTOK" "$APR_BE"
+      [ "$LLAMA_OK" = 1 ] && cell_add "$cell" "$d/llama-$pid" python3 scripts/lib/crux_pty_chat.py \
+        --marker '(?m)^> $' --turns "$WORK/turns-$pid.json" --out "$d/llama-$pid.json" --exit-line /exit \
+        --device "$LLAMA_DEVICE" --turn-timeout "$TMO" --start-timeout "$TMO" --strip '\[ Prompt:[^]]*\]' -- \
+        "$LLAMA_CLI" -m "$M" -n "$MAXTOK" --temp "$TEMP" --seed "$SEED" -c "$CTX" -ngl "$NGL" "${LLAMA_DEV[@]}" "${LLAMA_THINK[@]}"
+      if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then
+        cell_add "$cell" "$d/ollama-$pid" python3 scripts/lib/crux_pty_chat.py \
+          --marker '>>> ' --answer-after '^[.][.][.].*$' --turns "$WORK/turns-$pid.json" --out "$d/ollama-$pid.json" \
+          --exit-line /bye --device "$OL_DEVICE" --turn-timeout "$TMO" --start-timeout "$TMO" -- \
+          "$OLLAMA" run "$OL_NAME" --keepalive 0 --nowordwrap "${OLLAMA_THINK[@]}"
+        cell_add_ollama_unload "$cell" "$d/ollama-$pid" "$OL_NAME"
+      fi
+    else
+      cell_add "$cell" "$d/apr-$pid" "$APR" run "$M" --prompt "$content" --max-tokens "$MAXTOK" \
+        --temperature "$TEMP" --seed "$SEED" --format json -v "$APR_BE"
+      [ "$LLAMA_OK" = 1 ] && cell_add "$cell" "$d/llama-$pid" "$LLAMA_CLI" -m "$M" -p "$content" -st -n "$MAXTOK" \
+        --temp "$TEMP" --seed "$SEED" -c "$CTX" -ngl "$NGL" "${LLAMA_DEV[@]}" "${LLAMA_THINK[@]}"
+      if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then
+        cell_add "$cell" "$d/ollama-$pid" "$OLLAMA" run "$OL_NAME" "$content" --verbose --nowordwrap \
+          --keepalive 0 "${OLLAMA_THINK[@]}"
+        cell_add_ollama_unload "$cell" "$d/ollama-$pid" "$OL_NAME"
+      fi
     fi
     for eng in hf llamafile; do
       want "$eng" && [ "${EXT_OK[$eng]}" = 1 ] || continue
@@ -513,10 +555,11 @@ PY
     before_hf=$(rows_for hf "$pid"); before_lf=$(rows_for llamafile "$pid")
     run_cell "$cell"
 
+    pty_out=""; [ "$VERB" = chat ] && pty_out=json
     cell_result apr "$pid" "$d/apr-$pid"
-    if [ "$LLAMA_OK" = 1 ]; then cell_result llama.cpp "$pid" "$d/llama-$pid"
+    if [ "$LLAMA_OK" = 1 ]; then cell_result llama.cpp "$pid" "$d/llama-$pid" "${pty_out:+$d/llama-$pid.json}"
     elif want llama.cpp; then emit_gen llama.cpp "$pid" "" "" "" "$LLAMA_WHY"; fi
-    if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then cell_result ollama "$pid" "$d/ollama-$pid"
+    if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then cell_result ollama "$pid" "$d/ollama-$pid" "${pty_out:+$d/ollama-$pid.json}"
     elif want ollama; then emit_gen ollama "$pid" "" "" "" "${OL_REFUSED:-$OLLAMA_WHY}"; fi
     for eng in hf llamafile; do
       want "$eng" || continue
@@ -528,6 +571,7 @@ PY
         emit_gen "$eng" "$pid" "" "" "" "engine driver ${EXT_SCRIPT[$eng]} gen exited $(cat "$d/$eng-$pid.driver.rc" 2>/dev/null || echo '?') without appending a row: $(tail -c 200 "$d/$eng-$pid.driver.err" 2>/dev/null | tr '\n' ' ')"
       fi
     done
+  done
   done
 
   if [ "$OLLAMA_OK" = 1 ] && [ "$KEEP_OLLAMA" = 0 ]; then
@@ -563,7 +607,9 @@ meta = {
     **json.load(open(ext)),
     "models": [json.loads(l) for l in open(models) if l.strip()],
     "not_covered": [
-        "verbs chat, serve and code (the next slices of #3739)",
+        ("verbs serve and code (later slices of #3739)" if "chat" in verbs.split(",")
+         else "verbs chat, serve and code (later slices of #3739)"),
+        *(["apr chat's backend is unverified: apr chat reports none (#3794)"] if "chat" in verbs.split(",") else []),
         "thinking ON (apr has no toggle until #3723)",
         "consumer-brief context rungs (#3716) and each engine's max accepted context",
         "TTFT, which belongs to the serve verb's single OpenAI client",

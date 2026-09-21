@@ -175,6 +175,22 @@ def parse_ollama(stdout, stderr):
     return out
 
 
+def parse_apr_chat(stdout):
+    """apr's `chat` verb, fed one user turn per stdin line: each reply follows an
+    `Assistant: ` prefix and runs to the next `You:` prompt. The final reply is
+    the answer; every reply is recorded."""
+    out = {"answer": None, "why": None, "reported": {"reported_by": "apr"}, "turns": []}
+    text = ANSI.sub("", stdout)
+    for seg in re.split(r"(?m)^Assistant: ", text)[1:]:
+        cut = re.search(r"(?m)^You:", seg)
+        out["turns"].append((seg[:cut.start()] if cut else seg).strip())
+    if not out["turns"]:
+        out["why"] = "no `Assistant:` turn in the transcript"
+        return out
+    out["answer"] = out["turns"][-1]
+    return out
+
+
 def parse_engine_json(stdout):
     """hf and llamafile rows (row contract v1, #3739 issuecomment-5765991210):
     the engine driver writes `{"text": <the answer only>, "reported": {...}}`."""
@@ -190,6 +206,8 @@ def parse_engine_json(stdout):
     rep = doc.get("reported")
     out["reported"] = rep if isinstance(rep, dict) else {}
     out["answer"] = doc["text"]
+    if isinstance(doc.get("turns"), list):
+        out["turns"] = doc["turns"]
     return out
 
 
@@ -227,7 +245,20 @@ def engine_entry(row, prompt):
     stdout, stderr = read_text(row.get("stdout")), read_text(row.get("stderr"))
     content = prompt["messages"][-1]["content"]
     engine = row["engine"]
-    if engine == "apr":
+    if row.get("verb") == "chat":
+        # chat (#3739 slice 3): apr's own transcript; every other engine writes the
+        # row-contract JSON (the pty helper for llama.cpp/ollama, the plugin drivers).
+        if engine == "apr":
+            p = parse_apr_chat(stdout)
+            # apr chat reports no backend (#3794): recorded, not scored as verified.
+            e["backend_verified"] = False
+        elif engine in COMPARATORS:
+            p = parse_engine_json(stdout)
+        else:
+            e["why"] = "unknown engine %r" % engine
+            return e
+        e["turns"] = p.get("turns") or []
+    elif engine == "apr":
         p = parse_apr(stdout, stderr)
         e["backend"] = p["backend"]
         e["prompt_ids"] = p["prompt_ids"]
@@ -505,7 +536,8 @@ def collect(args):
                 "all_identical": len(said) >= 2 and len(set(said.values())) == 1,
                 "apr_matches": sorted(e for e in said if e != "apr" and "apr" in said and said[e] == said["apr"]),
             },
-            "token_parity": token_parity(entries["apr"], toks.get((k[0], k[5]))),
+            "token_parity": (token_parity(entries["apr"], toks.get((k[0], k[5]))) if k[2] == "run"
+                             else {"measured": False, "why": "not measured for the %s verb" % k[2]}),
         })
 
     counts = {v: sum(1 for c in cells if c["verdict"] == v) for v in ("RED", "GREEN", "UNJUDGED", "ALL_WRONG")}
