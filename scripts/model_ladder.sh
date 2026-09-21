@@ -84,7 +84,21 @@ LOCK_WAIT="${MODEL_LADDER_LOCK_WAIT:-1800}"
 LOCK_BUSY=75   # flock -E: the lock was not free in LOCK_WAIT seconds (an apr exit 75 also declines -- never a pass)
 command -v flock > /dev/null && command -v choom > /dev/null \
   || { echo "decline: flock and choom (util-linux) are required -- every apr call runs under the fleet GPU lock" >&2; exit 2; }
-apr_locked() { flock -E "$LOCK_BUSY" -w "$LOCK_WAIT" "$GPU_LOCK" choom -n 1000 -- "$APR" "$@"; }
+# ORDERED ACCESS (cop rule rev 6): when the fleet's gpu-q is present AND bounds its wait (`gpu-q --caps`
+# lists `wait`), the call queues by (priority, arrival) at MODEL_LADDER_GPU_PRIO (1 = release-blocking);
+# gpu-q runs it as `flock ... choom -n 1000 -- ...` and, when GPUQ_WAIT expires, exits 75 naming the
+# holder -- the same bounded-wait contract as below. Otherwise the bounded flock, which excludes correctly
+# but may jump the queue, and says so. MODEL_LADDER_GPU_Q is a test seam (empty = never gpu-q).
+GPU_Q="${MODEL_LADDER_GPU_Q-$(command -v gpu-q 2> /dev/null)}"
+GPU_PRIO="${MODEL_LADDER_GPU_PRIO:-1}"
+GPU_Q_CAPS=""; [ -n "$GPU_Q" ] && [ -x "$GPU_Q" ] && GPU_Q_CAPS=$("$GPU_Q" --caps 2> /dev/null)
+if grep -qx wait <<< "$GPU_Q_CAPS"; then
+  apr_locked() { GPUQ_LOCK="$GPU_LOCK" GPUQ_WAIT="$LOCK_WAIT" "$GPU_Q" --prio "$GPU_PRIO" -- "$APR" "$@"; }
+  LOCK_ROUTE="gpu-q (ordered, prio $GPU_PRIO, wait ${LOCK_WAIT}s)"
+else
+  apr_locked() { flock -E "$LOCK_BUSY" -w "$LOCK_WAIT" "$GPU_LOCK" choom -n 1000 -- "$APR" "$@"; }
+  LOCK_ROUTE="bare flock (wait ${LOCK_WAIT}s) -- no gpu-q with a bounded wait here, so this may have jumped the gpu-q queue"
+fi
 lock_timeout() { # lock_timeout <what> -> exit 2, naming the holder from /proc/locks (by inode; lslocks
   local ino pid holder   # leaves PATH empty for a file it cannot resolve, so it cannot be matched by path)
   ino=$(stat -c %i "$GPU_LOCK" 2> /dev/null)
@@ -101,6 +115,7 @@ if [ "${HEADER_PROBE:-0}" = 1 ]; then
   apr_header "$@"; exit $?
 fi
 if [ "${LOCK_PROBE:-0}" = 1 ]; then
+  echo "lock route: $LOCK_ROUTE" >&2
   apr_locked "$@"; rc=$?
   [ "$rc" = "$LOCK_BUSY" ] && lock_timeout "apr $*"
   exit "$rc"
@@ -227,6 +242,7 @@ INV_ROWS="$WORK/inventory.jsonl"; : > "$INV_ROWS"
 EXECUTED=0; RED=0
 printf -- '--- model capability ladder on %s (%s, cc %s) binary=%s [%s] checkout=%s version=%s ---\n' \
   "$HOST" "${GPU_NAME:-no-gpu}" "${GPU_CC:-?}" "$SHA" "$APR_VERSION" "$CHECKOUT_SHA" "$VERSION"
+printf '    GPU access: %s\n' "$LOCK_ROUTE"
 printf '    inventory: %s of %s candidate file(s) (%s) under %s have %s as their dominant >= 2-D tensor dtype\n' \
   "$(grep -c . <<< "$INVENTORY")" "$(grep -c . "$CAND_ROWS")" "$INV_CANDIDATES" "$INV_DIRS" "$INV_DTYPE"
 

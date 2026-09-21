@@ -307,7 +307,7 @@ falsification_tests:
     if_fails: "absence scored as conformance: a host that listed nothing proved nothing and passed"
   - id: FALSIFY-MCL-015
     rule: "Every GPU apr call runs under the fleet lock, choom'd to 1000, with a bounded wait"
-    prediction: "check_model_ladder.sh --self-test: model_ladder.sh makes no \"$APR\" <subcommand> call outside apr_locked; a fake apr called through --lock-probe sees the lock held and oom_score_adj 1000; a lock held elsewhere declines with exit 2 naming the holder's pid; four producer mutants (raw call, no flock, no choom, no -w) are each killed. The real run is RED when the audit finds a raw call"
+    prediction: "check_model_ladder.sh --self-test: model_ladder.sh makes no \"$APR\" <subcommand> call outside apr_locked; a fake apr called through --lock-probe sees the lock held and oom_score_adj 1000; a lock held elsewhere declines with exit 2 naming the holder's pid; four producer mutants (raw call, no flock, no choom, no -w) are each killed; with the fleet's gpu-q present and bounding its wait (`gpu-q --caps` lists `wait`) the call is ordered at MODEL_LADDER_GPU_PRIO (1) with GPUQ_WAIT = the lock wait, a gpu-q without a bounded wait is never used, and mutants gpuq-unbounded and gpuq-no-caps are each killed. The real run is RED when the audit finds a raw call"
     test: "bash scripts/check_model_ladder.sh --self-test"
     if_fails: "a ladder run on gx10's unified memory OOM-kills the CI pool (15:56:08Z, 18 kills in 10 s) or hangs a release on a stuck lock"
 

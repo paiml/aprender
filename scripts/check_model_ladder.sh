@@ -267,16 +267,26 @@ lock_probe() {
   printf '#!/usr/bin/env bash\nif flock -n "$FAKE_LOCK" true; then l=UNLOCKED; else l=LOCKED; fi\necho "fake-apr $1 lock=$l oom=$(cat /proc/self/oom_score_adj)"\n' > "$w/apr"
   printf '#!/usr/bin/env bash\necho "cvd=[${CUDA_VISIBLE_DEVICES-unset}]"\n' > "$w/cvd"
   chmod +x "$w/apr" "$w/cvd"
-  out=$(FAKE_LOCK="$w/lock" MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_GPU_LOCK="$w/lock" DOGFOOD_ALLOW_UNPINNED=1 APR="$w/apr" timeout 60 bash "$prod" --lock-probe qa probe 2>&1); rc=$?
+  out=$(FAKE_LOCK="$w/lock" MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_GPU_Q= MODEL_LADDER_GPU_LOCK="$w/lock" DOGFOOD_ALLOW_UNPINNED=1 APR="$w/apr" timeout 60 bash "$prod" --lock-probe qa probe 2>&1); rc=$?
   if [ "$rc" = 0 ] && grep -q 'lock=LOCKED oom=1000' <<< "$out"; then echo "ok    lock: an apr call runs holding the lock, at oom_score_adj 1000"
   else echo "FAIL  lock: the probe call did not run holding the lock at oom 1000 (rc=$rc): $out"; bad=1; fi
   python3 -c 'import fcntl, sys, time; f = open(sys.argv[1], "a"); fcntl.flock(f, fcntl.LOCK_EX); time.sleep(60)' "$w/lock" &
   hp=$!
   sleep 0.5
-  out=$(FAKE_LOCK="$w/lock" MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_GPU_LOCK="$w/lock" MODEL_LADDER_LOCK_WAIT=1 DOGFOOD_ALLOW_UNPINNED=1 APR="$w/apr" timeout 8 bash "$prod" --lock-probe run probe 2>&1); rc=$?
+  out=$(FAKE_LOCK="$w/lock" MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_GPU_Q= MODEL_LADDER_GPU_LOCK="$w/lock" MODEL_LADDER_LOCK_WAIT=1 DOGFOOD_ALLOW_UNPINNED=1 APR="$w/apr" timeout 8 bash "$prod" --lock-probe run probe 2>&1); rc=$?
   kill "$hp" 2> /dev/null; wait "$hp" 2> /dev/null
   if [ "$rc" = 2 ] && grep -q 'was not free after 1s' <<< "$out" && grep -q "holder: pid $hp" <<< "$out"; then echo "ok    lock: a held lock declines (exit 2) in the bounded wait, naming the holder's pid"
   else echo "FAIL  lock: a held lock did not decline in the bounded wait naming its holder (rc=$rc): $out"; bad=1; fi
+  # the ordered route: a gpu-q that bounds its wait carries the call, at prio 1, with the lock wait as its bound
+  printf '#!/usr/bin/env bash\n[ "${1:-}" = --caps ] && { printf "prio\\nwait\\n"; exit 0; }\necho "gpu-q prio=$2 wait=${GPUQ_WAIT-unset} lock=${GPUQ_LOCK-unset}" >&2\nshift 3\nexec flock -E 75 -w "${GPUQ_WAIT:-1}" "$GPUQ_LOCK" choom -n 1000 -- "$@"\n' > "$w/gpuq"
+  printf '#!/usr/bin/env bash\n[ "${1:-}" = --caps ] && { printf "prio\\n"; exit 0; }\necho "no-wait gpu-q must not be used" >&2; exit 9\n' > "$w/gpuq-nowait"
+  chmod +x "$w/gpuq" "$w/gpuq-nowait"
+  out=$(FAKE_LOCK="$w/lock" MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_GPU_Q="$w/gpuq" MODEL_LADDER_GPU_LOCK="$w/lock" MODEL_LADDER_LOCK_WAIT=7 DOGFOOD_ALLOW_UNPINNED=1 APR="$w/apr" timeout 60 bash "$prod" --lock-probe qa probe 2>&1); rc=$?
+  if [ "$rc" = 0 ] && grep -q 'lock=LOCKED oom=1000' <<< "$out" && grep -q "gpu-q prio=1 wait=7 lock=$w/lock" <<< "$out"; then echo "ok    lock: with a bounded gpu-q the call is ordered (prio 1) and bounded (GPUQ_WAIT = the lock wait), under the lock at oom 1000"
+  else echo "FAIL  lock: the gpu-q route did not carry prio 1 and the bounded wait under the lock (rc=$rc): $out"; bad=1; fi
+  out=$(FAKE_LOCK="$w/lock" MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_GPU_Q="$w/gpuq-nowait" MODEL_LADDER_GPU_LOCK="$w/lock" DOGFOOD_ALLOW_UNPINNED=1 APR="$w/apr" timeout 60 bash "$prod" --lock-probe qa probe 2>&1); rc=$?
+  if [ "$rc" = 0 ] && grep -q 'lock=LOCKED oom=1000' <<< "$out" && grep -q 'may have jumped the gpu-q queue' <<< "$out"; then echo "ok    lock: a gpu-q without a bounded wait is not used; the bounded flock runs and says it may have jumped the queue"
+  else echo "FAIL  lock: a gpu-q without a bounded wait was used, or the fallback did not say so (rc=$rc): $out"; bad=1; fi
   # the identity a receipt records is the binary's own sha (#3771), never the checkout's HEAD
   printf '#!/usr/bin/env bash\necho "apr 9.9.9 (feedbee12)"\n' > "$w/idapr"; chmod +x "$w/idapr"
   out=$(MODEL_LADDER_ROOT="$PWD" DOGFOOD_ALLOW_UNPINNED=1 APR="$w/idapr" timeout 60 bash "$prod" --identity-probe 2>&1); rc=$?
@@ -341,9 +351,11 @@ if [ "$SELF_TEST" = 1 ]; then
       else printf 'ok    producer mutant %-14s killed by the lock checks\n' "$1"; fi
     }
     pmutant raw-apr-call 's/apr_locked qa "\$path"/"$APR" qa "$path"/'
-    pmutant no-lock      's/^apr_locked() { flock -E "\$LOCK_BUSY" -w "\$LOCK_WAIT" "\$GPU_LOCK" choom/apr_locked() { choom/'
+    pmutant no-lock      's/^  apr_locked() { flock -E "\$LOCK_BUSY" -w "\$LOCK_WAIT" "\$GPU_LOCK" choom/  apr_locked() { choom/'
     pmutant no-choom     's/ choom -n 1000 -- "\$APR" "\$@"/ "$APR" "$@"/'
     pmutant unbounded    's/ -w "\$LOCK_WAIT"//'
+    pmutant gpuq-unbounded 's/GPUQ_WAIT="\$LOCK_WAIT" //'
+    pmutant gpuq-no-caps  's/^if grep -qx wait <<< "\$GPU_Q_CAPS"; then/if [ -n "$GPU_Q" ]; then/'
     pmutant identity-is-head 's/^SHA=\$(sed -nE .*/SHA=$(git rev-parse --short HEAD)/'
     pmutant header-sees-gpu 's/^apr_header() { CUDA_VISIBLE_DEVICES="" "\$APR"/apr_header() { "$APR"/'
     # The cells module (scripts/lib/model_ladder_cells.py): each rule deleted in a copy, imported through
