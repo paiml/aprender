@@ -26,7 +26,8 @@
 use super::*;
 use trueno_gpu::kernels::gdn::{
     CausalConv1dSiluSeqKernel, DeltaRuleChunkScanKernel, GdnGatesRowsKernel,
-    PartialNeoxRopeRowsKernel, PerHeadL2NormRowsKernel,
+    PartialNeoxRopeRowsKernel, PerHeadL2NormRowsKernel, PrefillFlashAttention256Kernel,
+    FLASH_HEAD_DIM,
 };
 use trueno_gpu::kernels::{
     Q4KDequantKernel, Q5KDequantKernel, Q6KDequantKernel, Q8_0DequantKernel,
@@ -342,6 +343,60 @@ impl CudaExecutor {
         };
         let mut args = [q, k, v, beta, gate, state, output, u64::from(rows)];
         self.qp_launch(&key, kern.name(), config, &mut args, 7)
+    }
+
+    /// Can this device run [`Self::qwen35_flash_prefill_attention`] for these heads?
+    /// It needs `mma.sync.m16n8k16` (sm_80+), `head_dim == 256`, and a KV group whose
+    /// warps fit the kernel's static shared memory.
+    #[must_use]
+    pub(crate) fn qwen35_flash_attention_supported(
+        &self,
+        num_heads: u32,
+        num_kv_heads: u32,
+        head_dim: u32,
+    ) -> bool {
+        let sm = self
+            .kernels
+            .sm_target
+            .trim_start_matches("sm_")
+            .trim_end_matches(|c: char| !c.is_ascii_digit())
+            .parse::<u32>()
+            .unwrap_or(0);
+        sm >= 80
+            && head_dim == FLASH_HEAD_DIM
+            && PrefillFlashAttention256Kernel::fits(num_heads, num_kv_heads)
+    }
+
+    /// Fused causal flash attention for `rows` query rows at `pos0..pos0+rows` over
+    /// the resident KV cache — f16 inputs to the tensor cores, f32 accumulation and
+    /// f32 online softmax (the #3596 ruling). No scores are materialised.
+    ///
+    /// # Errors
+    /// Compile/launch failure or a null pointer.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn qwen35_flash_prefill_attention(
+        &mut self,
+        q: u64,
+        k_cache: u64,
+        v_cache: u64,
+        out: u64,
+        rows: u32,
+        pos0: u32,
+        num_heads: u32,
+        num_kv_heads: u32,
+    ) -> Result<(), GpuError> {
+        let kern = PrefillFlashAttention256Kernel::new(num_heads, num_kv_heads);
+        let key = format!("qp_flash_attn_{num_heads}_{num_kv_heads}");
+        self.qp_prepare(&key, &kern)?;
+        let (gx, gy, _) = kern.grid(rows);
+        let (bx, _, _) = kern.block();
+        let config = LaunchConfig {
+            grid: (gx, gy, 1),
+            block: (bx, 1, 1),
+            shared_mem: 0, // static: the kernel declares its tiles
+        };
+        let mut args = [q, k_cache, v_cache, out, u64::from(rows), u64::from(pos0)];
+        self.qp_launch(&key, kern.name(), config, &mut args, 4)
     }
 
     /// Causal attention for `rows` query rows at positions `pos0..pos0+rows` over the

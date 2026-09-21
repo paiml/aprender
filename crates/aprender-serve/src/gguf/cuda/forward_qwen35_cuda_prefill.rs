@@ -64,6 +64,8 @@ impl std::ops::Deref for View {
 /// [`prefill`]: Qwen35CudaModel::prefill
 struct PrefillBuffers {
     rows: usize,
+    /// The attention this prefill runs (decided once per call).
+    attention: PrefillAttention,
     /// Query rows per attention pass (the scores are sized for this many).
     attn_rows: usize,
     /// `[rows][hidden]` — the residual stream.
@@ -94,6 +96,65 @@ struct PrefillBuffers {
     ffn_gate: GpuBuffer<f32>,
     ffn_up: GpuBuffer<f32>,
     ffn_act: GpuBuffer<f32>,
+}
+
+/// Which attention the batched prefill runs (#3596).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrefillAttention {
+    /// The fused flash-attention kernel: f16 inputs to the tensor cores, f32
+    /// accumulation and f32 online softmax (the cop's #3596 ruling). No scores are
+    /// materialised. The default wherever the device and the heads allow it.
+    FlashF16In,
+    /// cuBLAS `QKᵀ` → causal softmax → `PV`, all f32, over materialised scores — the
+    /// diagnosis path, selected by `APR_QWEN35_PREFILL_ATTENTION=f32`, and the path on
+    /// a device without `mma.sync` (pre-sm_80).
+    CublasF32,
+}
+
+impl PrefillAttention {
+    /// How the choice reads in the stderr line and in `--json`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::FlashF16In => "flash (f16 inputs, f32 accumulation)",
+            Self::CublasF32 => "cuBLAS f32",
+        }
+    }
+}
+
+/// The environment variable that forces the f32 attention path for diagnosis.
+pub const PREFILL_ATTENTION_ENV: &str = "APR_QWEN35_PREFILL_ATTENTION";
+
+#[cfg(test)]
+thread_local! {
+    /// Tests pin the attention path; production reads [`PREFILL_ATTENTION_ENV`].
+    static ATTENTION_OVERRIDE: std::cell::Cell<Option<PrefillAttention>> = const { std::cell::Cell::new(None) };
+}
+
+/// The attention a prefill on this executor runs: [`PREFILL_ATTENTION_ENV`]`=f32`
+/// forces cuBLAS f32; otherwise flash where supported. An unrecognised value is
+/// printed, never silently read as the default.
+pub(crate) fn choose_prefill_attention(
+    ex: &crate::cuda::CudaExecutor,
+    d: Qwen35CudaDims,
+) -> PrefillAttention {
+    #[cfg(test)]
+    if let Some(a) = ATTENTION_OVERRIDE.with(std::cell::Cell::get) {
+        return a;
+    }
+    let forced = std::env::var(PREFILL_ATTENTION_ENV).ok();
+    match forced.as_deref() {
+        Some("f32") => return PrefillAttention::CublasF32,
+        None | Some("flash") => {},
+        Some(other) => eprintln!(
+            "warning: {PREFILL_ATTENTION_ENV}={other:?} is not one of \"f32\" / \"flash\"; using the default"
+        ),
+    }
+    if ex.qwen35_flash_attention_supported(d.num_heads, d.num_kv_heads, d.attn_head_dim) {
+        PrefillAttention::FlashF16In
+    } else {
+        PrefillAttention::CublasF32
+    }
 }
 
 /// Rows per chunk for a prompt ending at `total_positions` — one formula for the
@@ -132,6 +193,7 @@ fn workspace_bytes_for(
     d: Qwen35CudaDims,
     largest_projection: usize,
     total_positions: usize,
+    attention: PrefillAttention,
 ) -> usize {
     let rows = chunk_rows_for(d, total_positions);
     let hpk = (d.num_heads / d.num_kv_heads.max(1)).max(1) as usize;
@@ -151,7 +213,12 @@ fn workspace_bytes_for(
         + 4 * q_dim // q, q_normed, attn_gate, attn_out_in
         + kv_dim
         + 3 * inter;
-    let scores = hpk * attention_rows_for(d, total_positions) * total_positions;
+    let scores = match attention {
+        PrefillAttention::CublasF32 => {
+            hpk * attention_rows_for(d, total_positions) * total_positions
+        },
+        PrefillAttention::FlashF16In => 0,
+    };
     4 * (rows * per_row + scores + largest_projection)
 }
 
@@ -174,7 +241,12 @@ impl<'a> Qwen35CudaModel<'a> {
     /// allocates on top of the weights and the state.
     #[must_use]
     pub fn prefill_workspace_bytes(&self, total_positions: usize) -> usize {
-        workspace_bytes_for(self.dims, self.largest_projection_elems(), total_positions)
+        workspace_bytes_for(
+            self.dims,
+            self.largest_projection_elems(),
+            total_positions,
+            choose_prefill_attention(&self.executor, self.dims),
+        )
     }
 
     /// The capacity-plan inputs for serving `model` on a device with `gpu_free` of
@@ -192,6 +264,7 @@ impl<'a> Qwen35CudaModel<'a> {
         seq_len: usize,
         gpu_free: u64,
         gpu_total: u64,
+        attention: PrefillAttention,
     ) -> crate::capacity::CapacityInputs {
         let d = Self::dims_of(model);
         let f32s = |v: &[f32]| 4 * v.len() as u64;
@@ -269,7 +342,7 @@ impl<'a> Qwen35CudaModel<'a> {
                 + 4 * d.intermediate_dim
                 + d.vocab_size,
         );
-        let workspace = workspace_bytes_for(d, largest, seq_len) as u64
+        let workspace = workspace_bytes_for(d, largest, seq_len, attention) as u64
             + recurrent_per_state // the decode state's conv/ssm (its KV is the KV term)
             + own_state
             + per_token_scratch;
@@ -286,6 +359,21 @@ impl<'a> Qwen35CudaModel<'a> {
             f16_kv_decode_available: false,
             memory: None,
         }
+    }
+
+    /// The attention [`Self::prefill`] runs on `executor` for `model`'s heads.
+    #[must_use]
+    pub fn prefill_attention_for(
+        model: &Qwen35Model<'_>,
+        executor: &crate::cuda::CudaExecutor,
+    ) -> PrefillAttention {
+        choose_prefill_attention(executor, Self::dims_of(model))
+    }
+
+    /// The attention this model's [`Self::prefill`] runs.
+    #[must_use]
+    pub fn prefill_attention_mode(&self) -> PrefillAttention {
+        choose_prefill_attention(&self.executor, self.dims)
     }
 
     /// `n × k` of the largest projection — the size of the f32 dequant scratch.
@@ -320,6 +408,7 @@ impl<'a> Qwen35CudaModel<'a> {
 
     fn alloc_prefill(&self, rows: usize, total_positions: usize) -> Result<PrefillBuffers> {
         let d = self.dims;
+        let attention = self.prefill_attention_mode();
         let ctx = self.executor.context();
         // Uninitialised: every buffer is written by a copy or a kernel before any op
         // reads it, and a zero-fill would cost a host vector the size of the scores.
@@ -338,6 +427,7 @@ impl<'a> Qwen35CudaModel<'a> {
         );
         Ok(PrefillBuffers {
             rows,
+            attention,
             attn_rows: attention_rows_for(d, total_positions),
             x: z(rows * hidden)?,
             normed: z(rows * hidden)?,
@@ -358,7 +448,13 @@ impl<'a> Qwen35CudaModel<'a> {
             attn_gate: z(rows * q_dim)?,
             k_raw: z(rows * kv_dim)?,
             attn_out_in: z(rows * q_dim)?,
-            scores: z(hpk * attention_rows_for(d, total_positions) * total_positions)?,
+            // Flash attention never materialises a score.
+            scores: z(match attention {
+                PrefillAttention::CublasF32 => {
+                    hpk * attention_rows_for(d, total_positions) * total_positions
+                },
+                PrefillAttention::FlashF16In => 1,
+            })?,
             ffn_gate: z(rows * inter)?,
             ffn_up: z(rows * inter)?,
             ffn_act: z(rows * inter)?,
@@ -810,19 +906,31 @@ impl<'a> Qwen35CudaModel<'a> {
         )?;
 
         // causal attention over cache rows 0..pos + n
-        ex.qwen35_prefill_attention(
-            b.q_normed.as_ptr(),
-            k_cache.as_ptr(),
-            v_cache.as_ptr(),
-            b.attn_out_in.as_ptr(),
-            b.scores.as_ptr(),
-            rows,
-            b.attn_rows as u32,
-            pos32,
-            d.num_heads,
-            d.num_kv_heads,
-            d.attn_head_dim,
-        )?;
+        match b.attention {
+            PrefillAttention::FlashF16In => ex.qwen35_flash_prefill_attention(
+                b.q_normed.as_ptr(),
+                k_cache.as_ptr(),
+                v_cache.as_ptr(),
+                b.attn_out_in.as_ptr(),
+                rows,
+                pos32,
+                d.num_heads,
+                d.num_kv_heads,
+            )?,
+            PrefillAttention::CublasF32 => ex.qwen35_prefill_attention(
+                b.q_normed.as_ptr(),
+                k_cache.as_ptr(),
+                v_cache.as_ptr(),
+                b.attn_out_in.as_ptr(),
+                b.scores.as_ptr(),
+                rows,
+                b.attn_rows as u32,
+                pos32,
+                d.num_heads,
+                d.num_kv_heads,
+                d.attn_head_dim,
+            )?,
+        }
 
         // the output gate, attn_output, the first residual
         ex.gdn_sigmoid_gate_into(&b.attn_out_in, &b.attn_gate, rows * q_dim)?;

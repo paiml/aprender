@@ -1523,7 +1523,9 @@ impl<'a> Qwen35CudaModel<'a> {
 /// PMAT-3596 (#3596): the batched (chunked) prefill — [`Qwen35CudaModel::prefill`].
 #[path = "forward_qwen35_cuda_prefill.rs"]
 mod prefill;
-pub use prefill::{PREFILL_MAX_CHUNK_ROWS, PREFILL_SCORES_BUDGET_BYTES};
+pub use prefill::{
+    PrefillAttention, PREFILL_ATTENTION_ENV, PREFILL_MAX_CHUNK_ROWS, PREFILL_SCORES_BUDGET_BYTES,
+};
 
 /// Per-layer CPU parity on the real Qwen3.5-0.8B file.
 #[cfg(test)]
