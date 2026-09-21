@@ -1,0 +1,208 @@
+{
+  "ticket": "PMAT-3597",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "5de0552ed451029914f2ede56dc48a43fcdd7ebc",
+  "diff_sha256": "1290deb4da2dacaa51943b6dfc06895033d7d5f9812c3f13e15f8d962ccc6527",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 47384,
+  "author": {
+    "model": "Opus 5 (1M context)",
+    "family": "claude",
+    "source": "measured"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully derives the verb classification from the SSOT registry, accurately classifying all 111 verbs. It satisfies done_when 1 by proposing a blanket disposition for the 32 `*-lint` verbs based on their shared `requires_model: false` property. It satisfies done_when 5 by generating data rather than prose. It satisfies done_when 3 by meticulously providing the necessary fields for the single refusal (`bench`). Finally, the roadmap entry appropriately limits the scope of the PR by explicitly excluding done_when 2, correctly bypassing the need for dogfood receipts for known-red commands like `chat` and `run`. No gates are weakened and no false claims are asserted.",
+      "findings": [
+        {
+          "claim": "The classification correctly includes all 111 commands and classifies them based on SSOT registry.",
+          "file": "contracts/apr-verb-classification-v1.yaml",
+          "grounding": "cited",
+          "line": 12
+        },
+        {
+          "claim": "The diff explicitly scopes out done_when 2 (receipts on intel + gx10), which excuses the lack of dogfood receipts for known-red commands like chat and run.",
+          "file": "docs/roadmaps/entries/PMAT-3597.yaml",
+          "grounding": "cited",
+          "line": 30
+        },
+        {
+          "claim": "The refusal for bench correctly contains an exit_code, removed_by, line, stream, and reason stating it refuses outright.",
+          "file": "scripts/derive_verb_classification.py",
+          "grounding": "cited",
+          "line": 55
+        },
+        {
+          "claim": "The *-lint family verbs are assigned a blanket disposition based on the property of not being model-bound (requires_model: false).",
+          "file": "scripts/derive_verb_classification.py",
+          "grounding": "cited",
+          "line": 24
+        }
+      ],
+      "raw_bytes": 5402,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements exactly what is required for PMAT-3597's done_when 1 and 5. It derives the classification from the registry, classifies all 111 verbs, proposes the blanket disposition for `*-lint` family logically (based on `requires_model: false`), explicitly models `bench` as a refusal with all required fields (exit_code, line, stream, removed_by), and doesn't improperly claim completion of done_when 2 (leaving V rows as `dogfood: U`). No requirements are violated.",
+      "findings": [],
+      "raw_bytes": 3090,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff review for PMAT-3597 complete. The diff classifies all 111 registered `apr` CLI verbs into V (41 model-bound), V2 (69 non-model-bound including all 32 *-lint verbs), and refusal (1 for `bench`), satisfying done_when 1. The script `scripts/derive_verb_classification.py` derives the classification deterministically from `contracts/apr-cli-commands-v1.yaml` and enforces anti-drift via `--check` (done_when 5). The refusal entry for `bench` specifies `exit_code: 5`, stderr stream, explicit error line, and `removed_by: v0.70` (done_when 3). `dogfood: U` is recorded for V rows and receipts are explicitly not claimed, matching scope boundaries. No gates were weakened, no tests failed, and no unauthorized changes were made. Verdict: PASS.",
+      "findings": [
+        {
+          "claim": "Every registered verb (111 total) in contracts/apr-cli-commands-v1.yaml is classified into V (41), V2 (69), or refusal (1), leaving 0 unclassified verbs.",
+          "command": "python3 scripts/derive_verb_classification.py --check",
+          "file": "contracts/apr-verb-classification-v1.yaml",
+          "fix": "N/A",
+          "grounding": "measured",
+          "line": 1,
+          "output": "ok  111 verbs classified, 0 unclassified (V=41 V2=69 refusal=1); dogfood denominator 41"
+        },
+        {
+          "claim": "The derive_verb_classification.py script validates that committed contracts/apr-verb-classification-v1.yaml matches the SSOT registry contracts/apr-cli-commands-v1.yaml deterministically.",
+          "command": "python3 scripts/derive_verb_classification.py && git diff contracts/apr-verb-classification-v1.yaml",
+          "file": "scripts/derive_verb_classification.py",
+          "fix": "N/A",
+          "grounding": "measured",
+          "line": 1,
+          "output": "wrote contracts/apr-verb-classification-v1.yaml — {'total': 111, 'V': 41, 'V2': 69, 'refusal': 1, 'unclassified': 0, 'dogfood_denominator': 41}"
+        },
+        {
+          "claim": "Every refusal row (bench) states a single-line error output, an integer exit_code (5), stream, measured_on, and removed_by (v0.70) as required by done_when 3.",
+          "command": "python3 -c \"import yaml; d = yaml.safe_load(open('contracts/apr-verb-classification-v1.yaml')); bench = [v for v in d['verbs'] if v['verb'] == 'bench'][0]; print(bench['bucket'], bench['exit_code'], bench['removed_by'], bench['stream'])\"",
+          "file": "contracts/apr-verb-classification-v1.yaml",
+          "fix": "N/A",
+          "grounding": "measured",
+          "line": 58,
+          "output": "refusal 5 v0.70 stderr"
+        }
+      ],
+      "raw_bytes": 6827,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "contracts/apr-verb-classification-v1.yaml",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Every registered verb (111 total) in contracts/apr-cli-commands-v1.yaml is classified into V (41), V2 (69), or refusal (1), leaving 0 unclassified verbs."
+      ]
+    },
+    {
+      "file": "contracts/apr-verb-classification-v1.yaml",
+      "line": 12,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The classification correctly includes all 111 commands and classifies them based on SSOT registry."
+      ]
+    },
+    {
+      "file": "contracts/apr-verb-classification-v1.yaml",
+      "line": 58,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Every refusal row (bench) states a single-line error output, an integer exit_code (5), stream, measured_on, and removed_by (v0.70) as required by done_when 3."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/entries/PMAT-3597.yaml",
+      "line": 30,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The diff explicitly scopes out done_when 2 (receipts on intel + gx10), which excuses the lack of dogfood receipts for known-red commands like chat and run."
+      ]
+    },
+    {
+      "file": "scripts/derive_verb_classification.py",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The derive_verb_classification.py script validates that committed contracts/apr-verb-classification-v1.yaml matches the SSOT registry contracts/apr-cli-commands-v1.yaml deterministically."
+      ]
+    },
+    {
+      "file": "scripts/derive_verb_classification.py",
+      "line": 24,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The *-lint family verbs are assigned a blanket disposition based on the property of not being model-bound (requires_model: false)."
+      ]
+    },
+    {
+      "file": "scripts/derive_verb_classification.py",
+      "line": 55,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The refusal for bench correctly contains an exit_code, removed_by, line, stream, and reason stating it refuses outright."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=Opus 5 (1M context)/claude"
+  }
+}
