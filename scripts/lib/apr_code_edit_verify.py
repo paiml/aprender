@@ -68,8 +68,11 @@ SERVE_READY = re.compile(r"apr serve ready \(")
 SERVE_HTTP_ERROR = re.compile(r"apr serve HTTP (\d+): (.*)")
 # The thinking mode the serve child renders (the Qwen35Session route prints
 # `chat template: Qwen3NoThink (thinking off)`). The driver strips <think>
-# blocks before parsing, so nothing else can show it.
-THINKING_LINE = re.compile(r"chat template:.*\(thinking (on|off)\)")
+# blocks before parsing, so nothing else can show it. The template name varies
+# with the shared selection (#3755), so only the `(thinking ...)` part is read.
+# Its value is `off`, `on` or `the model's choice`; only on/off key a ladder
+# row, and anything else is kept raw and keys onto no cell.
+THINKING_LINE = re.compile(r"chat template:.*\(thinking ([^)]+)\)")
 # A per-request prompt size printed by the child. session_end.tokens_in in the
 # trace is summed over turns (agent/result.rs accumulate), so it is not one.
 PROMPT_TOKENS_LINE = re.compile(r"\bprompt_tokens[=: ]+(\d+)")
@@ -214,7 +217,9 @@ def judge(a):
                 model_layers=layers, answer_chars=len(result))
 
     thinking = THINKING_LINE.search(child)
-    cell["thinking"] = thinking.group(1) if thinking else "unknown"
+    raw = thinking.group(1).strip() if thinking else ""
+    cell["thinking"] = raw if raw in ("on", "off") else "unknown"
+    cell["thinking_raw"] = raw
     sizes = [int(n) for n in PROMPT_TOKENS_LINE.findall(child)]
     cell["prompt_tokens"] = max(sizes) if sizes else None
     cell["context"] = "4k" if sizes and max(sizes) >= RUNG_4K_TOKENS else "task"

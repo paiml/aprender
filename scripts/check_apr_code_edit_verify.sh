@@ -95,6 +95,15 @@ else
     FAILED=1
 fi
 
+make_case model-choice "${HYBRID/thinking off/thinking the model\'s choice}"
+expect model-choice PASS "task completed"
+if python3 -c 'import json,sys; c=json.load(open(sys.argv[1])); sys.exit(0 if (c["thinking"], c["thinking_raw"]) == ("unknown", "the model'"'"'s choice") else 1)' "$WORK/model-choice/cell.json"; then
+    printf 'ok    a thinking value other than on/off keys onto no cell: thinking=unknown\n'
+else
+    printf 'FAIL  model-choice row keys: %s\n' "$(cat "$WORK/model-choice/cell.json")"
+    FAILED=1
+fi
+
 make_case hybrid-cpu "${HYBRID/GPU/CPU}"
 expect hybrid-cpu FAIL "fell back to CPU"
 
