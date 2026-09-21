@@ -284,6 +284,7 @@ impl<'a> Qwen35CudaModel<'a> {
             // Flipped by #3725, whose split-K decode reads an f16 cache; until then a
             // plan that needs f16 refuses and names it.
             f16_kv_decode_available: false,
+            memory: None,
         }
     }
 

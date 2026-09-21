@@ -1506,20 +1506,26 @@ fn run_qwen35_generate_gpu(
     let device_name = executor
         .device_name()
         .unwrap_or_else(|_| "Unknown GPU".to_string());
-    let (gpu_free, gpu_total) = executor
+    // #3596/#3714: discrete → cuMemGetInfo; unified (GB10) → the host's MemAvailable
+    // less a CI headroom, because there cuMemGetInfo's free excludes page cache.
+    let device_memory = crate::capacity::measure_device_memory(&executor)?;
+    let (gpu_free, gpu_total) = device_memory.plan_free_total();
+    let vram_mb = executor
         .memory_info()
-        .map_err(|e| format!("the device's free memory could not be read: {e}"))?;
-    let vram_mb = gpu_total / (1024 * 1024);
+        .map_or(0, |(_, total)| total / (1024 * 1024));
 
     let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
     // #3596: will it fit? Decided here, from the host model and the MEASURED free
     // memory, before a byte is uploaded — never discovered as an OOM mid-prefill.
-    let capacity = crate::gguf::cuda::Qwen35CudaModel::capacity_inputs(
-        &qwen,
-        max_seq_len,
-        gpu_free as u64,
-        gpu_total as u64,
-    );
+    let capacity = crate::capacity::CapacityInputs {
+        memory: Some(device_memory),
+        ..crate::gguf::cuda::Qwen35CudaModel::capacity_inputs(
+            &qwen,
+            max_seq_len,
+            gpu_free,
+            gpu_total,
+        )
+    };
     let budget = match crate::capacity::plan(&capacity) {
         crate::capacity::CapacityVerdict::Refused(refusal) => {
             return Err(Qwen35GpuFailure::Refused(Box::new(refusal)));

@@ -29,6 +29,100 @@ const MIB: f64 = 1024.0 * 1024.0;
 /// allocator fragmentation — the constant `apr serve plan` already charges.
 pub const OVERHEAD_BYTES: u64 = 512 * 1024 * 1024;
 
+/// On a unified-memory device (GB10), bytes of `MemAvailable` the plan leaves to
+/// everything else on the host — the CI build containers above all: at 15:56Z on
+/// 2026-09-21 three concurrent interactive runs on gx10 made the kernel's global
+/// OOM kill 18 of them. NOT a measured peak of those containers — a named reserve
+/// until one is measured; shared with the qwen3moe resident path (#3714).
+pub const UNIFIED_HEADROOM_BYTES: u64 = 16 * 1024 * 1024 * 1024;
+
+/// How a device's memory is shaped, as a plan needs it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "class", rename_all = "snake_case")]
+pub enum DeviceMemory {
+    /// A discrete GPU (RTX 4090): its own VRAM, `cuMemGetInfo` is the truth.
+    Discrete {
+        /// `cuMemGetInfo` free.
+        free: u64,
+        /// `cuMemGetInfo` total.
+        total: u64,
+    },
+    /// An integrated GPU sharing host memory (GB10): allocations are managed memory
+    /// from the host pool, and `cuMemGetInfo`'s free EXCLUDES reclaimable page cache —
+    /// measured on gx10 by aprender-eb: 16,056 MiB "free" beside 92,443 MiB
+    /// `MemAvailable`. The host's `MemAvailable` is the truth.
+    Unified {
+        /// `/proc/meminfo` `MemAvailable`.
+        available: u64,
+        /// `/proc/meminfo` `MemTotal`.
+        total: u64,
+        /// `cuMemGetInfo` free, recorded but not planned against.
+        cuda_free: u64,
+    },
+}
+
+impl DeviceMemory {
+    /// `(free, total)` a plan compares against: a unified device keeps
+    /// [`UNIFIED_HEADROOM_BYTES`] of `MemAvailable` back for the rest of the host.
+    #[must_use]
+    pub const fn plan_free_total(self) -> (u64, u64) {
+        match self {
+            Self::Discrete { free, total } => (free, total),
+            Self::Unified {
+                available, total, ..
+            } => (available.saturating_sub(UNIFIED_HEADROOM_BYTES), total),
+        }
+    }
+}
+
+/// Parse `MemAvailable` and `MemTotal` (bytes) out of `/proc/meminfo` text.
+#[must_use]
+pub fn parse_meminfo(text: &str) -> Option<(u64, u64)> {
+    let field = |name: &str| {
+        text.lines()
+            .find_map(|l| l.strip_prefix(name))
+            .and_then(|rest| rest.trim().strip_suffix("kB"))
+            .and_then(|kb| kb.trim().parse::<u64>().ok())
+            .map(|kb| kb * 1024)
+    };
+    Some((field("MemAvailable:")?, field("MemTotal:")?))
+}
+
+/// Measure the device the executor is bound to (#3596, #3714): discrete →
+/// `cuMemGetInfo`; integrated → the host's `/proc/meminfo`.
+///
+/// # Errors
+/// The driver refuses the attribute or memory query, or an integrated device's host
+/// has no readable `/proc/meminfo` (never guessed).
+#[cfg(feature = "cuda")]
+pub fn measure_device_memory(
+    executor: &crate::cuda::CudaExecutor,
+) -> std::result::Result<DeviceMemory, String> {
+    use trueno_gpu::driver::{classify_device_memory, DeviceMemoryClass};
+    let (cuda_free, cuda_total) = executor
+        .memory_info()
+        .map_err(|e| format!("cuMemGetInfo failed: {e}"))?;
+    let class = classify_device_memory(executor.context())
+        .map_err(|e| format!("the device class could not be read: {e}"))?;
+    match class {
+        DeviceMemoryClass::ClassicDevice => Ok(DeviceMemory::Discrete {
+            free: cuda_free as u64,
+            total: cuda_total as u64,
+        }),
+        DeviceMemoryClass::UnifiedMemory => {
+            let text = std::fs::read_to_string("/proc/meminfo")
+                .map_err(|e| format!("a unified-memory device needs /proc/meminfo: {e}"))?;
+            let (available, total) = parse_meminfo(&text)
+                .ok_or_else(|| "/proc/meminfo has no MemAvailable/MemTotal".to_string())?;
+            Ok(DeviceMemory::Unified {
+                available,
+                total,
+                cuda_free: cuda_free as u64,
+            })
+        },
+    }
+}
+
 /// The numbers a plan is made from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapacityInputs {
@@ -50,6 +144,9 @@ pub struct CapacityInputs {
     pub gpu_total_bytes: u64,
     /// Can decode attention read an f16 KV cache (#3725)?
     pub f16_kv_decode_available: bool,
+    /// Where `gpu_free_bytes`/`gpu_total_bytes` came from, when a device was measured
+    /// — so a refusal can say "MemAvailable less the headroom" instead of "free".
+    pub memory: Option<DeviceMemory>,
 }
 
 /// The KV cache element type a plan chose.
@@ -96,6 +193,8 @@ pub struct CapacityBudget {
     pub gpu_free_mb: f64,
     /// Device total, MiB.
     pub gpu_total_mb: f64,
+    /// The measurement behind the two figures above, if one was made.
+    pub memory: Option<DeviceMemory>,
 }
 
 /// Why a plan refused.
@@ -159,15 +258,26 @@ fn budget(i: &CapacityInputs, dtype: KvDtype) -> (CapacityBudget, u64) {
             total_mb: mb(total),
             gpu_free_mb: mb(i.gpu_free_bytes),
             gpu_total_mb: mb(i.gpu_total_bytes),
+            memory: i.memory,
         },
         total,
     )
 }
 
 fn arithmetic(b: &CapacityBudget) -> String {
+    let source = match b.memory {
+        Some(DeviceMemory::Unified { available, cuda_free, .. }) => format!(
+            " (unified memory: MemAvailable {:.0} MiB less a {:.0} MiB headroom; cuMemGetInfo said {:.0} MiB free)",
+            available as f64 / MIB,
+            UNIFIED_HEADROOM_BYTES as f64 / MIB,
+            cuda_free as f64 / MIB
+        ),
+        Some(DeviceMemory::Discrete { .. }) => " (discrete GPU: cuMemGetInfo)".to_string(),
+        None => String::new(),
+    };
     format!(
         "weights {:.0} MiB + KV {:.0} MiB ({} positions x {} B at {:?}) + workspace {:.0} MiB \
-         + overhead {:.0} MiB = {:.0} MiB, against {:.0} MiB free of {:.0} MiB",
+         + overhead {:.0} MiB = {:.0} MiB, against {:.0} MiB free of {:.0} MiB{source}",
         b.weights_mb,
         b.kv_cache_mb,
         b.seq_len,
@@ -265,6 +375,7 @@ mod tests {
             gpu_free_bytes: free,
             gpu_total_bytes: total,
             f16_kv_decode_available: f16,
+            memory: None,
         }
     }
 
@@ -403,6 +514,47 @@ mod tests {
         }
         assert_eq!(v["kind"], "f16_decode_unavailable");
         assert_eq!(v["budget"]["kv_dtype"], "f16");
+    }
+
+    #[test]
+    fn capacity_unified_memory_plans_against_mem_available_less_the_headroom() {
+        let text =
+            "MemTotal:       124958720 kB\nMemFree:  16000000 kB\nMemAvailable:   94661632 kB\n";
+        let (available, total) = parse_meminfo(text).expect("parse");
+        assert_eq!(available, 94_661_632 * 1024);
+        assert_eq!(total, 124_958_720 * 1024);
+        let unified = DeviceMemory::Unified {
+            available,
+            total,
+            cuda_free: 16_056 * MIB_U,
+        };
+        let (free, t) = unified.plan_free_total();
+        assert_eq!(
+            free,
+            available - UNIFIED_HEADROOM_BYTES,
+            "headroom is held back"
+        );
+        assert_eq!(t, total);
+        // The 27B at 262,144 fits GB10 by MemAvailable, and would be REFUSED by the
+        // 16 GiB cuMemGetInfo figure — the bug aprender-eb measured.
+        let mut i = twenty_seven_b(262_145, free, t, false);
+        assert_eq!(kind(&plan(&i)), "f32");
+        i.gpu_free_bytes = 16_056 * MIB_U;
+        assert_ne!(kind(&plan(&i)), "f32");
+        assert!(
+            parse_meminfo("MemTotal: 1 kB\n").is_none(),
+            "no MemAvailable: refuse to guess"
+        );
+        // A refusal on unified memory names where "free" came from.
+        let mut big = twenty_seven_b(2_000_000, free, t, false);
+        big.memory = Some(unified);
+        let CapacityVerdict::Refused(r) = plan(&big) else {
+            panic!("the 27B at 2M positions cannot fit GB10")
+        };
+        assert!(r.reason.contains("MemAvailable"), "{}", r.reason);
+        assert!(r.reason.contains("cuMemGetInfo said"), "{}", r.reason);
+        let discrete = DeviceMemory::Discrete { free: 5, total: 9 };
+        assert_eq!(discrete.plan_free_total(), (5, 9));
     }
 
     #[test]
