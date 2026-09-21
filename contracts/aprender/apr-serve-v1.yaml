@@ -273,7 +273,8 @@ kernel_structure:
     description: Graceful shutdown, drain in-flight requests, release all resources
 
 proof_obligations:
-- type: state_machine
+- id: AS5DD7-SM-001
+  type: state_machine
   property: Server lifecycle valid transitions
   formal: >
     Init->Binding->Loading->Ready->Draining->Stopped, no skip.
@@ -282,7 +283,8 @@ proof_obligations:
   lean:
     theorem: Theorems.ServerLifecycle
     status: sorry
-- type: invariant
+- id: AS5DD7-INV-002
+  type: invariant
   property: No cross-request KV cache contamination
   formal: result(req_a, concurrent=[]) == result(req_a, concurrent=[req_b])
   tolerance: 1e-6
@@ -290,61 +292,71 @@ proof_obligations:
   lean:
     theorem: Theorems.ConcurrentInferenceIsolation
     status: sorry
-- type: postcondition
+- id: AS5DD7-POST-003
+  type: postcondition
   property: Graceful shutdown completes in-flight requests
   formal: in_flight_count == 0 before process exit
   applies_to: graceful_shutdown
   lean:
     theorem: Theorems.GracefulShutdown
     status: sorry
-- type: completeness
+- id: AS5DD7-CMP-004
+  type: completeness
   property: All API routes handled
   formal: no path returns 500 Internal Server Error for routing failures
   applies_to: request_routing
   lean:
     theorem: Theorems.RequestRouting
     status: sorry
-- type: invariant
+- id: AS5DD7-INV-005
+  type: invariant
   property: Qwen3 uses NoThinkTemplate via architecture dispatch
   formal: 'model_architecture() == "qwen3" → template.format() == Qwen3NoThink'
   applies_to: chat_template_dispatch
-- type: invariant
+- id: AS5DD7-INV-006
+  type: invariant
   property: AppState caches architecture from GGUF at construction
   formal: 'with_quantized_model_and_vocab(m, v).model_architecture().is_some()'
   applies_to: chat_template_dispatch
-- type: invariant
+- id: AS5DD7-INV-007
+  type: invariant
   property: Format detection uses magic bytes not extension
   formal: 'detect(gguf_bytes_with_apr_extension) == GGUF'
   applies_to: format_detection
-- type: postcondition
+- id: AS5DD7-POST-008
+  type: postcondition
   property: Error responses never leak framework internals
   formal: '!response.body.contains("serde") && !response.body.contains("axum")'
   applies_to: error_sanitization
   lean:
     theorem: Theorems.ErrorSanitization
     status: sorry
-- type: postcondition
+- id: AS5DD7-POST-009
+  type: postcondition
   property: OPTIONS returns 204 with CORS headers
   formal: 'OPTIONS /any -> 204, Access-Control-Allow-Origin present'
   applies_to: cors_preflight
   lean:
     theorem: Theorems.CorsPreflight
     status: sorry
-- type: postcondition
+- id: AS5DD7-POST-010
+  type: postcondition
   property: Unknown routes return JSON 404 (not empty body)
   formal: 'GET /nonexistent -> 404, body.len() > 0, body is JSON'
   applies_to: unknown_route_json_404
   lean:
     theorem: Theorems.UnknownRouteJson404
     status: sorry
-- type: bound
+- id: AS5DD7-BND-011
+  type: bound
   property: Generation bounded by max_tokens
   formal: 'response.usage.completion_tokens <= max_tokens'
   applies_to: max_tokens_bound
   lean:
     theorem: Theorems.MaxTokensBound
     status: sorry
-- type: invariant
+- id: AS5DD7-INV-012
+  type: invariant
   property: GPU batched decode produces non-zero tokens
   formal: 'batch_decode(prompts).all(|seq| !seq.tokens.all_zeros())'
   applies_to: gpu_token_integrity

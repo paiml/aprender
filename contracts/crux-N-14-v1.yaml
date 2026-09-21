@@ -76,11 +76,14 @@ falsification_tests:
   if_fails: rule 'constant folding and DCE both fire and are bounded' is violated — the burn parity claim for CRUX-N-14 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
 
 proof_obligations:
-- type: idempotency
+- id: CN1A377-IDEM-001
+  type: idempotency
   property: "lowering is byte-identical to the direct path"
-- type: invariant
+- id: CN1A377-INV-002
+  type: invariant
   property: "mixed-layout graphs are rejected"
-- type: invariant
+- id: CN1A377-INV-003
+  type: invariant
   property: "constant folding and DCE both fire and are bounded"
 
 kani_harnesses:

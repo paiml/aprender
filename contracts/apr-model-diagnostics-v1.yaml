@@ -172,14 +172,16 @@ kernel_structure:
     description: Verify output completeness, format determinism, no false positives
 
 proof_obligations:
-- type: invariant
+- id: AMD-INV-001
+  type: invariant
   property: Hex byte offsets are correct and display matches raw storage
   formal: "∀ offset, len: hex_display(t, offset, len).bytes == t.raw_bytes[offset..offset+len]"
   applies_to: hex_display_fidelity
   lean:
     theorem: Theorems.Hex_Display_Fidelity
     status: sorry
-- type: determinism
+- id: AMD-DET-002
+  type: determinism
   property: Rosetta fingerprint is format-independent and deterministic
   formal: "fingerprint(load_gguf(m)) == fingerprint(load_safetensors(m)) for same logical model m"
   tolerance: 1e-6
@@ -187,21 +189,24 @@ proof_obligations:
   lean:
     theorem: Theorems.Rosetta_Fingerprint_Determinism
     status: sorry
-- type: postcondition
+- id: AMD-POST-003
+  type: postcondition
   property: Oracle never misidentifies unknown architecture as known family
   formal: "unknown_architecture(model) => detect_family(model).family == Unknown"
   applies_to: oracle_family_detection
   lean:
     theorem: Theorems.Oracle_Family_Detection
     status: sorry
-- type: invariant
+- id: AMD-INV-004
+  type: invariant
   property: Compatibility check has no false positives
   formal: "check_compatibility(m, r).pass == true => m loads and runs on r"
   applies_to: oracle_compatibility_matrix
   lean:
     theorem: Theorems.Oracle_Compatibility_Matrix
     status: sorry
-- type: postcondition
+- id: AMD-POST-005
+  type: postcondition
   property: Diagnosis isolates faults with actionable remediation
   formal: "∀ fault in diagnose(m).faults: fault.remediation.len() > 0 ∧ fault.tensor_name is specific"
   applies_to: diagnose_fault_isolation

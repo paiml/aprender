@@ -98,23 +98,28 @@ equations:
     postconditions:
       - "the run prints one verdict line per cell and the records it judged"
 proof_obligations:
-  - type: invariant
+  - id: FCH-INV-001
+    type: invariant
     property: The demo model is not a resolution of a named file
     formal: "forall p: exists(p) -> resolve(p) != Demo"
     applies_to: named_model_is_the_loaded_model
-  - type: invariant
+  - id: FCH-INV-002
+    type: invariant
     property: The multi-dot suffix is matched before the extension
     formal: "endswith(p, '.safetensors.index.json') -> resolve(p) = ShardedSafeTensors"
     applies_to: suffix_before_extension
-  - type: frame
+  - id: FCH-FRM-003
+    type: frame
     property: One decision reaches every consumer
     formal: "banner_format(p) = session_format(p) for all p"
     applies_to: named_model_is_the_loaded_model
-  - type: invariant
+  - id: FCH-INV-004
+    type: invariant
     property: A manifest's own size is never the model's size
     formal: "sharded(p) -> reported(p) = total_size(index(p))"
     applies_to: reported_size_is_the_model_size
-  - type: invariant
+  - id: FCH-INV-005
+    type: invariant
     property: The gate fires on the defect it was written for
     formal: "build_without_the_sharded_arm -> matrix = RED on (sharded, chat)"
     applies_to: the_gate_intersects_the_defect

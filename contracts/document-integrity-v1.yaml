@@ -277,70 +277,80 @@ kernel_structure:
     description: Emit violations with line numbers and fix suggestions
 
 proof_obligations:
-- type: invariant
+- id: DI-INV-001
+  type: invariant
   property: Heading hierarchy forms valid tree
   formal: '∀ i: h_i ≤ h_{i-1} + 1 ∧ h_1 = 1 ∧ |{h=1}| = 1'
   applies_to: heading_hierarchy
   lean:
     theorem: Theorems.HeadingHierarchy
     status: sorry
-- type: invariant
+- id: DI-INV-002
+  type: invariant
   property: No script injection in SVG
   formal: 'count(script) = 0 ∧ count(foreignObject) = 0'
   applies_to: svg_structural_safety
   lean:
     theorem: Theorems.SvgStructuralSafety
     status: sorry
-- type: invariant
+- id: DI-INV-003
+  type: invariant
   property: Table column count consistent
   formal: '∀ rows r in table: |r| = |header|'
   applies_to: table_column_parity
   lean:
     theorem: Theorems.TableColumnParity
     status: sorry
-- type: postcondition
+- id: DI-POST-004
+  type: postcondition
   property: README drift detection is sound
   formal: '¬stale ⟹ actual = generated'
   applies_to: readme_drift
   lean:
     theorem: Theorems.ReadmeDrift
     status: sorry
-- type: invariant
+- id: DI-INV-005
+  type: invariant
   property: Link URLs are non-empty and safe
   formal: '∀ link: url.len() > 0 ∧ ¬url.starts_with("javascript:")'
   applies_to: link_wellformedness
   lean:
     theorem: Theorems.LinkWellformedness
     status: sorry
-- type: invariant
+- id: DI-INV-006
+  type: invariant
   property: All code fences have language tags
   formal: '∀ fence: lang.len() > 0'
   applies_to: code_fence_language
   lean:
     theorem: Theorems.CodeFenceLanguage
     status: sorry
-- type: invariant
+- id: DI-INV-007
+  type: invariant
   property: YAML parses without errors
   formal: 'serde_yaml::from_str(content).is_ok()'
   applies_to: yaml_structural_validity
   lean:
     theorem: Theorems.YamlStructuralValidity
     status: sorry
-- type: invariant
+- id: DI-INV-008
+  type: invariant
   property: Media magic bytes match extension
   formal: '∀ file: magic(content) = expected_magic(ext)'
   applies_to: media_magic_bytes
   lean:
     theorem: Theorems.MediaMagicBytes
     status: sorry
-- type: bound
+- id: DI-BND-009
+  type: bound
   property: Media dimensions within safe bounds
   formal: '1 <= width <= 8192 ∧ 1 <= height <= 8192'
   applies_to: media_dimension_bounds
   lean:
     theorem: Theorems.MediaDimensionBounds
     status: sorry
-- type: bound
+- id: DI-BND-010
+  type: bound
   property: Animation frame count bounded
   formal: '1 <= frame_count <= 1000 ∧ duration_ms <= 60000'
   applies_to: animation_bounds

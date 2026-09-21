@@ -155,17 +155,22 @@ falsification_tests:
   if_fails: "apr --gpu-layers N offloaded layer count differs from llama-cli -ngl N"
 
 proof_obligations:
-- type: equivalence
+- id: CC2A3B8-EQ-001
+  type: equivalence
   property: "apr --gpu-layers N offloads exactly the same layer count as llama-cli -ngl N"
   competitor_function: "llama.cpp llama_model_params.n_gpu_layers / -ngl"
   reference: "https://github.com/ggerganov/llama.cpp/blob/master/README.md#gpu-offloading"
-- type: invariant
+- id: CC2A3B8-INV-002
+  type: invariant
   property: "--gpu-layers 0 allocates 0 MB VRAM (CPU-only)"
-- type: invariant
+- id: CC2A3B8-INV-003
+  type: invariant
   property: "VRAM usage monotonic non-decreasing and approximately linear in N"
-- type: invariant
+- id: CC2A3B8-INV-004
+  type: invariant
   property: "--gpu-layers >= total_layers puts every layer on GPU"
-- type: invariant
+- id: CC2A3B8-INV-005
+  type: invariant
   property: "Full-offload throughput > CPU-only throughput"
 
 verification_summary:

@@ -31,11 +31,13 @@ equations:
     - addr is valid and reachable within namespace
     lean_theorem: Theorems.Connect_Lifecycle
 proof_obligations:
-- type: soundness
+- id: NI-SND-001
+  type: soundness
   property: Namespace isolation
   formal: '∀ ns_a, ns_b, data: send(ns_a, data) ∧ ns_a ≠ ns_b → ¬recv(ns_b, data)'
   applies_to: send_isolation
-- type: invariant
+- id: NI-INV-002
+  type: invariant
   property: Connection count consistency
   formal: '∀ n connects: connection_count() >= n (no undercount)'
   applies_to: connect_lifecycle

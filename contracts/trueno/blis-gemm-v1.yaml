@@ -105,7 +105,8 @@ falsification_tests:
   prediction: layer_norm AVX2 matches scalar
   if_fails: Layer norm AVX2 kernel diverges from scalar reference
 proof_obligations:
-- type: invariant
+- id: BG-INV-001
+  type: invariant
   property: GEMM numerical correctness
   formal: '∀ A,B,C: |gemm_blis(A,B) - gemm_ref(A,B)| < 1e-4'
   tolerance: 1.0e-4
@@ -113,7 +114,8 @@ proof_obligations:
   lean:
     theorem: Theorems.GemmCorrectness
     status: sorry
-- type: invariant
+- id: BG-INV-002
+  type: invariant
   property: Elementwise parity
   formal: '∀ x: |silu_avx2(x) - silu_scalar(x)| < 1e-5'
   tolerance: 1.0e-5

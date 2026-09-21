@@ -86,11 +86,14 @@ falsification_tests:
       resolved URL with no fallback to huggingface.co.
 
 proof_obligations:
-- type: equivalence
+- id: CA028F9-EQ-001
+  type: equivalence
   property: "apr pull with HF_ENDPOINT matches `huggingface_hub.snapshot_download(endpoint=...)` URL construction"
-- type: invariant
+- id: CA028F9-INV-002
+  type: invariant
   property: "network isolation — strace shows zero packets to non-endpoint hosts"
-- type: invariant
+- id: CA028F9-INV-003
+  type: invariant
   property: "HF_ENDPOINT with invalid scheme (ftp://, file://) rejected at parse time with exit 2"
 
 verification_summary:

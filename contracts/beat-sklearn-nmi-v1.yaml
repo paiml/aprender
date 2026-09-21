@@ -46,15 +46,18 @@ equations:
     postconditions:
     - result >= 0.0 && result <= 1.0
 proof_obligations:
-- type: invariant
+- id: BSN-INV-001
+  type: invariant
   property: NMI matches sklearn arithmetic on a partial-agreement fixture
   formal: '|normalized_mutual_info_score([0,0,1,1,2,2],[0,0,1,2,2,2]) - 0.7396673768007592| < 1e-4'
   applies_to: normalized_mutual_info_score
-- type: invariant
+- id: BSN-INV-002
+  type: invariant
   property: NMI is relabel-invariant and honours sklearn degenerate conventions
   formal: 'NMI(t, permute(t)) == 1.0; one-single-cluster => 0.0; both-single-cluster => 1.0'
   applies_to: normalized_mutual_info_score
-- type: invariant
+- id: BSN-INV-003
+  type: invariant
   property: mutual_info_score matches sklearn (nats)
   formal: '|mutual_info_score([0,0,1,1,2,2],[0,0,1,2,2,2]) - 0.7803552045207032| < 1e-4'
   applies_to: mutual_info_score

@@ -72,9 +72,11 @@ falsification_tests:
   if_fails: CRUX-J-16 path invariant — audit log must live under $HOME or documented state dir
 
 proof_obligations:
-- type: invariant
+- id: CJ1B8CB-INV-001
+  type: invariant
   property: "audit log is append-only"
-- type: invariant
+- id: CJ1B8CB-INV-002
+  type: invariant
   property: "audit log covers tool_call / msg_in / msg_out / daemon_state"
 
 verification_summary:

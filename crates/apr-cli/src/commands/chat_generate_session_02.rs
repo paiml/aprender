@@ -5,7 +5,13 @@ impl ChatSession {
 
             let formatted_prompt = match self.build_formatted_prompt(user_input, config) {
                 Ok(prompt) => prompt,
-                Err(e) => return e,
+                // #3367: a template failure produced no model output either. The turn is
+                // printed exactly as before (`[Template error: ...]`, already formatted by
+                // `build_formatted_prompt`); only the session's verdict changes.
+                Err(e) => {
+                    self.had_generate_error = true;
+                    return e;
+                }
             };
 
             // For GGUF, use embedded tokenizer directly (correct special token IDs)
@@ -34,7 +40,7 @@ impl ChatSession {
                     let raw_response = self.decode_tokens(new_tokens);
                     clean_chat_response(&raw_response)
                 }
-                Err(e) => format!("[Error: {}]", e),
+                Err(e) => render_assistant_turn(Err(e), &mut self.had_generate_error),
             }
         }
 
@@ -91,7 +97,7 @@ impl ChatSession {
                     );
                     clean_chat_response(&response)
                 }
-                Err(e) => format!("[Error: {}]", e),
+                Err(e) => render_assistant_turn(Err(e), &mut self.had_generate_error),
             }
         }
 
@@ -264,47 +270,8 @@ impl ChatSession {
                 }
             }
 
-            // CPU path — create fresh OwnedQuantizedModel from cached or fresh mapped
-            let model = OwnedQuantizedModel::from_mapped(mapped)
-                .map_err(|e| format!("Failed to create GGUF model: {e}"))?;
-
-            // APR-TRACE-001: Use traced generation when --trace is enabled
-            let output_tokens = if config.trace {
-                use realizar::{InferenceTracer, ModelInfo, TraceConfig};
-
-                let trace_config = TraceConfig {
-                    enabled: true,
-                    verbose: false,
-                    output: config.trace_output.clone(),
-                    ..Default::default()
-                };
-
-                let mut tracer = InferenceTracer::new(trace_config);
-                tracer.set_model_info(ModelInfo {
-                    name: "GGUF Model (CPU)".to_string(),
-                    num_layers: model.config().num_layers,
-                    hidden_dim: model.config().hidden_dim,
-                    vocab_size: model.config().vocab_size,
-                    num_heads: model.config().num_heads,
-                    quant_type: None,
-                });
-
-                eprintln!("Warning: CPU traced generation not implemented, using non-traced path");
-
-                let result = model
-                    .generate_with_cache(&prompt_tokens, &gen_config)
-                    .map_err(|e| format!("GGUF generate failed: {e}"))?;
-
-                if let Err(e) = tracer.write_output() {
-                    eprintln!("Warning: Failed to write trace output: {e}");
-                }
-
-                result
-            } else {
-                model
-                    .generate_with_cache(&prompt_tokens, &gen_config)
-                    .map_err(|e| format!("GGUF generate failed: {e}"))?
-            };
+            let output_tokens =
+                Self::generate_gguf_cpu_tokens(mapped, &prompt_tokens, &gen_config, config)?;
 
             let new_tokens = if output_tokens.len() > prompt_len {
                 &output_tokens[prompt_len..]
@@ -314,6 +281,84 @@ impl ChatSession {
 
             let decoded = mapped.model.decode(new_tokens);
             Ok(decoded)
+        }
+
+        /// Generation for one GGUF chat turn that the cached dense CUDA model did not serve:
+        /// the Qwen3.5 hybrid forward, which the dense `OwnedQuantizedModel` loader refuses,
+        /// or the dense CPU model. Returns the prompt followed by the generated tokens.
+        ///
+        /// #3477: the hybrid branch goes through the same serve entry point `apr run` uses
+        /// (`run_qwen35_generate_dispatch`), so `apr chat` without `--cpu` gets the GPU
+        /// forward (#3090) and its fallbacks are printed by the runtime, not re-implemented
+        /// here. `force_cpu` is the chat spelling of `--no-gpu`.
+        fn generate_gguf_cpu_tokens(
+            mapped: &realizar::gguf::MappedGGUFModel,
+            prompt_tokens: &[u32],
+            gen_config: &realizar::gguf::QuantizedGenerateConfig,
+            config: &ChatConfig,
+        ) -> Result<Vec<u32>, String> {
+            use realizar::gguf::OwnedQuantizedModel;
+
+            if realizar::gguf::hybrid_forward_handles(
+                mapped.model.architecture().unwrap_or_default(),
+            ) {
+                let base = realizar::gguf::forward_qwen35::Qwen35Model::create_base_model(
+                    &mapped.model,
+                    mapped.data(),
+                )
+                .map_err(|e| format!("Failed to load the Qwen3.5 base model: {e}"))?;
+                return realizar::gguf::forward_qwen35::run_qwen35_generate_dispatch(
+                    mapped,
+                    &base,
+                    prompt_tokens,
+                    gen_config,
+                    config.force_cpu,
+                )
+                .map(|(tokens, _used_gpu)| tokens)
+                .map_err(|e| format!("Qwen3.5 generate failed: {e}"));
+            }
+
+                // CPU path — create fresh OwnedQuantizedModel from cached or fresh mapped
+                let model = OwnedQuantizedModel::from_mapped(mapped)
+                    .map_err(|e| format!("Failed to create GGUF model: {e}"))?;
+
+                // APR-TRACE-001: Use traced generation when --trace is enabled
+                if config.trace {
+                    use realizar::{InferenceTracer, ModelInfo, TraceConfig};
+
+                    let trace_config = TraceConfig {
+                        enabled: true,
+                        verbose: false,
+                        output: config.trace_output.clone(),
+                        ..Default::default()
+                    };
+
+                    let mut tracer = InferenceTracer::new(trace_config);
+                    tracer.set_model_info(ModelInfo {
+                        name: "GGUF Model (CPU)".to_string(),
+                        num_layers: model.config().num_layers,
+                        hidden_dim: model.config().hidden_dim,
+                        vocab_size: model.config().vocab_size,
+                        num_heads: model.config().num_heads,
+                        quant_type: None,
+                    });
+
+                    eprintln!("Warning: CPU traced generation not implemented, using non-traced path");
+
+                    let result = model
+                        .generate_with_cache(prompt_tokens, gen_config)
+                        .map_err(|e| format!("GGUF generate failed: {e}"))?;
+
+                    if let Err(e) = tracer.write_output() {
+                        eprintln!("Warning: Failed to write trace output: {e}");
+                    }
+
+                    Ok(result)
+                } else {
+                    model
+                        .generate_with_cache(prompt_tokens, gen_config)
+                        .map_err(|e| format!("GGUF generate failed: {e}"))
+                }
         }
 
         fn generate_apr(

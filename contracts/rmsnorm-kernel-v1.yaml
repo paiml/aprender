@@ -29,21 +29,26 @@ equations:
       - "output.len() == x.len()"
       - "output is finite"
 proof_obligations:
-- type: precondition
+- id: RN-PRE-001
+  type: precondition
   property: Input and weight vectors finite, same length, epsilon positive
   formal: 'len(x) = len(γ) ∧ ε > 0 ∧ ∀i: isFinite(x_i) ∧ isFinite(γ_i)'
-- type: postcondition
+- id: RN-POST-002
+  type: postcondition
   property: Output same length as input, all elements finite
   formal: 'len(out) = len(x) ∧ ∀i: isFinite(out_i)'
   requires: RMS-PRE-001
-- type: frame
+- id: RN-FRM-003
+  type: frame
   property: Input vector, weight vector, and epsilon unchanged
   formal: modifies(output) ∧ preserves(x, γ, ε)
-- type: invariant
+- id: RN-INV-004
+  type: invariant
   property: Output is finite
   formal: '|RMSNorm(x)_i| < ∞ for all i when ε > 0'
   applies_to: all
-- type: invariant
+- id: RN-INV-005
+  type: invariant
   property: Scale invariance
   formal: RMSNorm(α·x) = sign(α) · RMSNorm(x) for α ≠ 0
   applies_to: all
@@ -58,7 +63,8 @@ proof_obligations:
     mathlib_imports:
     - Mathlib.Data.Real.Sqrt
     notes: Proved for ε=0; RMS(αx) = |α|·RMS(x). Full RMSNorm scale invariance follows.
-- type: bound
+- id: RN-BND-006
+  type: bound
   property: RMS denominator is positive
   formal: RMS(x) > 0 when ε > 0
   applies_to: all
@@ -72,11 +78,13 @@ proof_obligations:
     mathlib_imports:
     - Mathlib.Data.Real.Sqrt
     notes: sum(x²) ≥ 0, so sum(x²)/n + ε > 0, and √ of positive is positive
-- type: equivalence
+- id: RN-EQ-007
+  type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 4.0
   applies_to: simd
-- type: idempotency
+- id: RN-IDEM-008
+  type: idempotency
   property: Normalized RMS ≈ 1
   formal: RMS(RMSNorm(x)/γ) ≈ 1 when γ = 1
   applies_to: all

@@ -97,20 +97,23 @@ falsification_tests:
     is the discrimination evidence)
 
 proof_obligations:
-- type: invariant
+- id: AR-INV-001
+  type: invariant
   property: >-
     An unhonourable request is refused (F-ACCEL-001). The predicate is pure
     boolean logic over four inputs, so this is decidable by exhaustion.
   formal: >-
     forall c: requested(c) and not can_dispatch => result(c) = Err
-- type: invariant
+- id: AR-INV-002
+  type: invariant
   property: >-
     A request that is not made, or is overridden by --no-gpu, is never refused
     (F-ACCEL-003). This is the half that keeps the guard from being a blanket
     rejection.
   formal: >-
     forall c: (not requested(c)) => result(c) = Ok
-- type: soundness
+- id: AR-SND-003
+  type: soundness
   property: >-
     A build that CAN dispatch never refuses (F-ACCEL-003). Together with the
     first obligation this makes result a total function of

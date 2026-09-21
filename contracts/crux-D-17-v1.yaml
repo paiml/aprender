@@ -84,11 +84,14 @@ falsification_tests:
 
   if_fails: rule 'IPO flag present and numerically distinct from DPO' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CD1A751-EQ-001
+  type: equivalence
   property: "apr train --method {orpo,kto,ipo} matches TRL {ORPO,KTO,IPO}Trainer within 1e-4"
-- type: invariant
+- id: CD1A751-INV-002
+  type: invariant
   property: "lambda=0 for ORPO is exactly SFT (byte-equal gradients)"
-- type: invariant
+- id: CD1A751-INV-003
+  type: invariant
   property: "KTO accepts unpaired binary-labeled inputs; doesn't require (chosen, rejected) tuples"
 
 verification_summary:

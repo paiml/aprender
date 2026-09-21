@@ -48,15 +48,18 @@ equations:
     - logits.len() == vocab_size
     lean_theorem: Theorems.Sampling_Temperature
 proof_obligations:
-- type: invariant
+- id: IP-INV-001
+  type: invariant
   property: Batched-serial prefill equivalence
   formal: '∀ tokens: prefill_batch(tokens).kv_cache = prefill_serial(tokens).kv_cache'
   applies_to: prefill_phase
-- type: invariant
+- id: IP-INV-002
+  type: invariant
   property: Decode output dimension
   formal: '∀ token, pos: forward(token, pos).len() = vocab_size'
   applies_to: decode_step
-- type: invariant
+- id: IP-INV-003
+  type: invariant
   property: Greedy determinism
   formal: '∀ logits: sample(logits, T=0) = argmax(logits)'
   applies_to: sampling_temperature

@@ -27,11 +27,13 @@ metadata:
 # These are absolute requirements — violation means the config is garbage.
 
 proof_obligations:
-- type: bound
+- id: MMB-BND-001
+  type: bound
   property: Hidden dim upper bound
   formal: hidden_dim <= 65536
   applies_to: all
-- type: invariant
+- id: MMB-INV-002
+  type: invariant
   property: GQA divisibility
   formal: num_heads % num_kv_heads == 0
   applies_to: all

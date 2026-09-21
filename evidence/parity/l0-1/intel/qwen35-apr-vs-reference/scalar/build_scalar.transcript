@@ -1,0 +1,79 @@
+tree llama.cpp=d1d3c3396 dirty=0 host=mac-server start_utc=2026-09-15T22:33:51Z load=28.46 67.54 66.38 free= 338G
+gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0
+-- The C compiler identification is GNU 11.4.0
+-- The CXX compiler identification is GNU 11.4.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- llama.cpp version: 0.4.1-dev
+CMAKE_BUILD_TYPE=Release
+-- Found Git: /usr/bin/git (found version "2.34.1") 
+-- The ASM compiler identification is GNU
+-- Found assembler: /usr/bin/cc
+-- Looking for pthread.h
+-- Looking for pthread.h - found
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE  
+-- CMAKE_SYSTEM_PROCESSOR: x86_64
+-- GGML_SYSTEM_ARCH: x86
+-- Found OpenMP_C: -fopenmp (found version "4.5") 
+-- Found OpenMP_CXX: -fopenmp (found version "4.5") 
+-- Found OpenMP: TRUE (found version "4.5")  
+-- Including CPU backend
+-- x86 detected
+-- Adding CPU backend variant ggml-cpu:  
+-- ggml version: 0.24.0
+-- ggml commit:  d1d3c3396
+-- Generating embedded license file for target: llama-app
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /home/noah/parity-ref/llama-scalar-d1d3c3396
+configure rc=0
+build rc=0
+[100%] Built target ggml-base
+[ 42%] Built target ggml-base
+[100%] Built target ggml-cpu
+BUILD_SHARED_LIBS:BOOL=ON
+CMAKE_BUILD_TYPE:STRING=Release
+GGML_AMX_BF16:BOOL=OFF
+GGML_AMX_INT8:BOOL=OFF
+GGML_AMX_TILE:BOOL=OFF
+GGML_AVX:BOOL=OFF
+GGML_AVX2:BOOL=OFF
+GGML_AVX512:BOOL=OFF
+GGML_AVX512_BF16:BOOL=OFF
+GGML_AVX512_VBMI:BOOL=OFF
+GGML_AVX512_VNNI:BOOL=OFF
+GGML_AVX_VNNI:BOOL=OFF
+GGML_BMI2:BOOL=OFF
+GGML_CPU_REPACK:BOOL=OFF
+GGML_F16C:BOOL=OFF
+GGML_FMA:BOOL=OFF
+GGML_HIP_MMQ_MFMA:BOOL=ON
+GGML_LLAMAFILE:BOOL=OFF
+GGML_NATIVE:BOOL=OFF
+GGML_OPENMP:BOOL=ON
+GGML_SSE42:BOOL=OFF
+--- producer
+producer rc=0
+	libllama-common.so.0 => /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libllama-common.so.0 (0x000079f589600000)
+	libllama.so.0 => /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libllama.so.0 (0x000079f589200000)
+	libggml-base.so.0 => /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libggml-base.so.0 (0x000079f589bb5000)
+	libggml.so.0 => /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libggml.so.0 (0x000079f589b78000)
+	libggml-cpu.so.0 => /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libggml-cpu.so.0 (0x000079f588ca7000)
+f7443c64566394fc18e8af23c02de03d315def7b14d87350a7e2f8e00d03dc45  /home/noah/parity-ref/scalar-3091/bin/apr_raw_logits
+5f087688edb479598854a25d40be70cdd9a32185e4c8416e29dbeb36a8eb99ea  /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libggml-cpu.so.0
+5f087688edb479598854a25d40be70cdd9a32185e4c8416e29dbeb36a8eb99ea  /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libggml-cpu.so.0.24.0
+bddf9ff4e7923392c3a3be44f89d9d38c8009938e7c3403529c8913ef3841463  /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libggml-base.so.0
+bddf9ff4e7923392c3a3be44f89d9d38c8009938e7c3403529c8913ef3841463  /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libggml-base.so.0.24.0
+5cdec1e94b252df3c51a4bef81ad8bb0a5f395563137b539a3cc8fb3ecf32b68  /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libllama.so.0
+5cdec1e94b252df3c51a4bef81ad8bb0a5f395563137b539a3cc8fb3ecf32b68  /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libllama.so.0.4.1
+end_utc=2026-09-15T22:35:55Z load=28.88 53.53 61.31

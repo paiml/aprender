@@ -1,0 +1,129 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ont-relations-v1 — typed relations and the `relations` gate (ONT-001 v4.5 §5 ONT-4; issue #3487, ticket PMAT-3487)
+#
+# WHAT IT GOVERNS
+#   provable_contracts::lint::relations_gate — a contract's `relations:` block, checked against Σ's roles:
+#   the role is declared (PV-ONT-005) and relates Contract to Contract (PV-ONT-006), the value is a list of ids
+#   (PV-ONT-007), every id resolves to contracts/<id>.yaml (PV-ONT-008), no acyclic role closes a cycle (PV-ONT-009),
+#   and the legacy `metadata.depends_on` debt shrinks (PV-ONT-010). `contradicts` is symmetric: declared once, read
+#   both ways. `pv lint --gate relations`, and the `relations` gate inside every `pv lint` run (R-8).
+#
+# KIND: pattern. A vocabulary and a gate over it; no equation to prove, no Kani harness (ONT-6's lattice is the
+# kernel this gate emits into).
+#
+# THIS CONTRACT IS ALSO THE FIRST FOCUS NODE. It `depends_on` the Σ contract it reads and the lattice contract it
+# emits verdicts into — true statements about this code — so the real corpus carries typed relations and the gate
+# has something to measure there (R-2: zero relations is a decline, never a Pass). `supersedes` and `contradicts`
+# have no true instance in the corpus today and are exercised on tests/fixtures/ont/relations-*.
+# ─────────────────────────────────────────────────────────────────────────────
+name: ont-relations
+version: "1.0.0"
+scope: >
+  What a `relations:` block may say and whom it may name. Out of scope: Liskov on `refines` (ONT-4e), what
+  `contradicts` means for pv-sat (ONT-5), the RDF the relations become (ONT-4b).
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-18'
+  last_modified: '2026-09-18'
+  author: PAIML Engineering
+  description: >
+    A contract relates to other contracts through roles Σ declares — refines, supersedes, contradicts, depends_on —
+    and the relations gate refuses an undeclared role, a role that is not Contract→Contract, a non-list, a dangling
+    id, or a cycle through an acyclic role.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md §3.1 (relations), §5 ONT-4, R-2, R-5, R-6, R-11'
+    - 'crates/aprender-contracts/src/lint/relations_gate.rs — PV-ONT-005..010'
+    - 'contracts/ontology.yaml — roles supersedes (acyclic) and contradicts (symmetric), reader lint/relations_gate.rs'
+
+relations:
+  depends_on: [ont-sigma-v1, ont-verdict-lattice-v1]
+
+equations:
+  relations_admission:
+    formula: "admits(corpus) ⇔ ∀ (c, r, t) ∈ relations(corpus): r ∈ Σ.roles ∧ dom(r)=Contract ∧ rng(r)=Contract ∧ t ∈ stems(corpus) ∧ ¬cycle(r) for acyclic r"
+    domain: "a contract corpus and the Σ that declares its roles"
+    codomain: "Pass | Fail | Unknown"
+    invariants:
+      - "a corpus whose every typed edge is declared, well-typed, resolved and acyclic is admitted"
+      - "a corpus with no typed edge is Unknown, never Pass"
+    preconditions:
+      - "Σ parses and satisfies its own integrity rules"
+    postconditions:
+      - "verdict ∈ {Pass, Fail, Unknown}"
+      - "legacy_unresolved_depends_on ≤ baseline(legacy_unresolved_depends_on)"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: REL-INV-001
+    property: every relation key is a role Σ declares
+    formal: 'r ∈ keys(relations) ⇒ r ∈ Σ.roles'
+    prose: false
+  - id: REL-INV-002
+    property: a relations block relates contracts, and only contracts
+    formal: 'r ∈ keys(relations) ⇒ dom(r) = Contract ∧ rng(r) = Contract'
+    prose: false
+  - id: REL-INV-003
+    property: every target names a contract that exists
+    formal: 't ∈ relations[r] ⇒ t ∈ stems(corpus)'
+    prose: false
+  - id: REL-INV-004
+    property: an acyclic role has no cycle in the corpus
+    formal: 'acyclic(r) ⇒ ¬∃ c ∈ corpus: reach(r, c, c)'
+    prose: false
+  - id: REL-INV-005
+    property: a symmetric role is read both ways
+    formal: 'symmetric(r) ∧ (a, r, b) ⇒ (b, r, a)'
+    prose: false
+  - id: REL-INV-006
+    property: the legacy debt is shrink-only
+    formal: 'legacy_unresolved_depends_on ≤ baseline(legacy_unresolved_depends_on)'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-REL-001
+    rule: four relations accepted, contradicts symmetric
+    prediction: a fixture with refines, supersedes, depends_on and contradicts passes, and the report counts the materialized reverse edge
+    test: cargo test -p aprender-contracts --lib lint::relations_gate::tests::four_relations_are_accepted_and_contradicts_is_symmetric
+    if_fails: the vocabulary the spec names is not the vocabulary the gate accepts
+  - id: FALSIFY-REL-002
+    rule: dangling id
+    prediction: a target with no contracts/<id>.yaml is rejected naming contract, role and target
+    test: cargo test -p aprender-contracts --lib lint::relations_gate::tests::a_dangling_id_is_rejected_naming_contract_role_and_target
+    if_fails: a relation can point at nothing and pass
+  - id: FALSIFY-REL-003
+    rule: cycle through an acyclic role
+    prediction: a → b → c → a on depends_on is rejected naming that path
+    test: cargo test -p aprender-contracts --lib lint::relations_gate::tests::a_cycle_through_an_acyclic_role_is_rejected_naming_the_path
+    if_fails: supersedes and depends_on can loop, and every consumer that walks them can too
+  - id: FALSIFY-REL-004
+    rule: domain and range per Σ
+    prediction: a binds edge (Contract→Code) in a relations block is rejected
+    test: cargo test -p aprender-contracts --lib lint::relations_gate::tests::a_role_outside_contract_to_contract_is_rejected
+    if_fails: a relations block becomes a second, unchecked binding.yaml
+  - id: FALSIFY-REL-005
+    rule: exit vocabulary
+    prediction: "Pass 0; violation 1 (reject); no Σ or no typed relations 2 (decline); malformed Σ 3 (error)"
+    test: cargo test -p aprender-contracts-cli --test ont4_relations_gate
+    if_fails: a decline and a reject become indistinguishable to a caller
+  - id: FALSIFY-REL-006
+    rule: the legacy ratchet
+    prediction: a rise in unresolved metadata.depends_on above the baseline is PV-ONT-010; the count itself is never a reject
+    test: cargo test -p aprender-contracts --lib lint::relations_gate::tests::legacy_depends_on_is_counted_never_rejected_and_ratcheted
+    if_fails: either the legacy field is silently rewritten by refusal, or its debt can grow unrecorded
+
+qa_gate:
+  id: F-REL-001
+  name: typed relations
+  description: A relations block is declared, typed, resolved and acyclic (ONT-4)
+  checks:
+    - role_declared
+    - role_contract_to_contract
+    - target_resolves
+    - acyclic_roles_have_no_cycle
+    - symmetric_roles_read_both_ways
+    - legacy_ratchet
+  pass_criteria: All 6 falsification tests pass; `pv lint contracts/ --gate relations` is Pass on the real corpus
+  falsification: 'add `depends_on: [ont-relations-v1]` to ont-sigma-v1 → a depends_on cycle → the gate rejects naming it (measured 2026-09-18); point a target at a stem that does not exist → PV-ONT-008'

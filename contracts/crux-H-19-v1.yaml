@@ -77,11 +77,14 @@ falsification_tests:
 
   if_fails: rule 'determinism under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CH1D9D2-EQ-001
+  type: equivalence
   property: "apr synth generate output format matches distilabel + SFTTrainer jsonl schema"
-- type: invariant
+- id: CH1D9D2-INV-002
+  type: invariant
   property: "schema validation always passes on emitted rows"
-- type: invariant
+- id: CH1D9D2-INV-003
+  type: invariant
   property: "determinism under fixed seed + fixed teacher"
 
 verification_summary:

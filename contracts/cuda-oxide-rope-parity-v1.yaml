@@ -38,23 +38,28 @@ equations:
       - "cos_sim(oxide, cpu_f64) >= 0.9999"
       - "oxide_us / handptx_us <= 1.2"
 proof_obligations:
-- type: precondition
+- id: CORP-PRE-001
+  type: precondition
   property: head_dim even and positive
   formal: 'head_dim mod 2 = 0 ∧ head_dim > 0'
-- type: postcondition
+- id: CORP-POST-002
+  type: postcondition
   property: Output shape preserved, all finite
   formal: 'len(out) = len(x) ∧ ∀i: isFinite(out_i)'
-- type: invariant
+- id: CORP-INV-003
+  type: invariant
   property: F-OXIDE-ROPE-PARITY-001 — oxide kernel bit-parity vs f64 CPU on GB10 sm_121
   formal: 'cos_sim(oxide_out, cpu_f64_out) ≥ 0.9999 ∧ maxdiff(oxide_out, cpu_f64_out) < 1e-3'
   tolerance: 1.0e-03
   applies_to: all
-- type: invariant
+- id: CORP-INV-004
+  type: invariant
   property: F-OXIDE-ROPE-PARITY-001 — matched single-launch perf tie vs hand-PTX RopeKernel
   formal: 'oxide_us / handptx_us ≤ 1.2 (grid=heads × block=head_dim/2, same data, GPU-event median 5×100)'
   tolerance: 1.2
   applies_to: all
-- type: frame
+- id: CORP-FRM-005
+  type: frame
   property: Input tensor and position unchanged
   formal: modifies(output) ∧ preserves(x, pos, theta)
 falsification_tests:

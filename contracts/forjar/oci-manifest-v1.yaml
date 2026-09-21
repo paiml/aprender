@@ -56,23 +56,28 @@ equations:
     - ctx directory exists
     lean_theorem: Theorems.Reproducible_Build
 proof_obligations:
-- type: determinism
+- id: OM-DET-001
+  type: determinism
   property: Manifest digest deterministic
   formal: same content → same digest
   applies_to: all
-- type: ordering
+- id: OM-ORD-002
+  type: ordering
   property: Layer application order
   formal: later layers override earlier
   applies_to: all
-- type: equivalence
+- id: OM-EQ-003
+  type: equivalence
   property: Cache hit avoids rebuild
   formal: cached layer = built layer (by digest)
   applies_to: all
-- type: determinism
+- id: OM-DET-004
+  type: determinism
   property: Reproducible build
   formal: same inputs → same manifest
   applies_to: all
-- type: bound
+- id: OM-BND-005
+  type: bound
   property: Digest format
   formal: 'len("sha256:") + 64 hex chars'
   applies_to: all

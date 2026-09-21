@@ -214,27 +214,33 @@ falsification_tests:
     if_fails: Sync mode too aggressive — use Deferred mode for production
 
 proof_obligations:
-  - type: invariant
+  - id: TSP-INV-001
+    type: invariant
     property: Wall coverage threshold
     formal: sum(phase_times) / wall_clock >= 0.90
     applies_to: all
-  - type: invariant
+  - id: TSP-INV-002
+    type: invariant
     property: Coverage upper bound
     formal: sum(phase_times) <= wall_clock
     applies_to: all
-  - type: monotonicity
+  - id: TSP-MON-003
+    type: monotonicity
     property: Backward >= forward time
     formal: backward_total >= forward_total * 1.5
     applies_to: all
-  - type: invariant
+  - id: TSP-INV-004
+    type: invariant
     property: Layer count matches model
     formal: len(layer_forward) == num_layers AND len(layer_backward) == num_layers
     applies_to: all
-  - type: bound
+  - id: TSP-BND-005
+    type: bound
     property: Memory BW floor
     formal: step_time >= weight_bytes / peak_memory_bw
     applies_to: all
-  - type: bound
+  - id: TSP-BND-006
+    type: bound
     property: Profiler overhead
     formal: (profiled_step - unprofiled_step) / unprofiled_step < 0.03
     applies_to: all

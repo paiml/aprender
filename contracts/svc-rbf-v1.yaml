@@ -57,23 +57,29 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Svc_Predict
 proof_obligations:
-- type: invariant
+- id: SR-INV-001
+  type: invariant
   property: RBF kernel bounded
   formal: K(x, z) ∈ (0, 1] for all finite x, z and gamma > 0
   applies_to: all
-- type: invariant
+- id: SR-INV-002
+  type: invariant
   property: Binary prediction in training labels
   formal: predict(x) ∈ {neg_label, pos_label} for all x
   applies_to: all
-- type: invariant
+- id: SR-INV-003
+  type: invariant
   property: Prediction deterministic
   formal: predict(x) = predict(x) for all x
   applies_to: all
-- type: invariant
+- id: SR-INV-004
+  type: invariant
   property: RBF SVC sklearn parity
   formal: OBLIG-RBF-SVC-SKLEARN-PARITY — predict(grid) agrees with pinned sklearn SVC(kernel='rbf') on >= 90% of held-out grid points
+  prose: true
   applies_to: all
-- type: invariant
+- id: SR-INV-005
+  type: invariant
   property: Non-linear separation
   formal: XOR-structured data ⟹ train accuracy >= 0.95 (linear SVM provably cannot)
   applies_to: all

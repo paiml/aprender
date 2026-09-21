@@ -39,7 +39,8 @@ equations:
     - input.iter().all(|v| v.is_finite())
     - input.len() > 0
 proof_obligations:
-- type: invariant
+- id: LN-INV-001
+  type: invariant
   property: Centering
   formal: '|mean(LN(x)) - mean(beta)| < eps when gamma = 1'
   tolerance: 1.0e-05
@@ -53,7 +54,8 @@ proof_obligations:
     mathlib_imports:
     - Mathlib.Algebra.BigOperators.Group.Finset.Basic
     notes: Centered values Σ(xᵢ-μ)=0, so with γ=1 the mean of LN(x) equals mean(β) exactly
-- type: invariant
+- id: LN-INV-002
+  type: invariant
   property: Standardization
   formal: '|var(LN(x)) - 1.0| < eps when gamma = 1, beta = 0'
   tolerance: 1.0e-05
@@ -69,7 +71,8 @@ proof_obligations:
     - Mathlib.Algebra.BigOperators.Field
     - Mathlib.Data.Real.Sqrt
     notes: var(LN(x))=variance(x)/(variance(x)+ε); ideal ε=0 with variance>0 gives exactly 1
-- type: bound
+- id: LN-BND-003
+  type: bound
   property: Denominator strictly positive
   formal: sqrt(sigma^2 + eps) > 0 when eps > 0
   applies_to: all
@@ -83,11 +86,13 @@ proof_obligations:
     mathlib_imports:
     - Mathlib.Data.Real.Sqrt
     notes: Variance ≥ 0 (sum of squares), so var + ε > 0, and √ positive
-- type: equivalence
+- id: LN-EQ-004
+  type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd
-- type: idempotency
+- id: LN-IDEM-005
+  type: idempotency
   property: Idempotent under identity affine
   formal: '|LN(LN(x)) - LN(x)| < eps when gamma = 1, beta = 0'
   tolerance: 1.0e-05
@@ -103,7 +108,8 @@ proof_obligations:
     mathlib_imports:
     - Mathlib.Data.Real.Sqrt
     notes: LN(x) is mean-0 unit-variance (ε=0, variance>0), so re-normalizing is the identity
-- type: invariant
+- id: LN-INV-006
+  type: invariant
   property: Shift invariance
   formal: '|LN(x + c) - LN(x)| < eps for any scalar c'
   tolerance: 1.0e-06

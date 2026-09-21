@@ -23,29 +23,35 @@ equations:
     - input.len() > 0
     lean_theorem: Theorems.Qk_Rmsnorm
 proof_obligations:
-- type: invariant
+- id: QKN-INV-001
+  type: invariant
   property: Unit RMS after normalization
   formal: RMS(RMSNorm(x, 1)) ≈ 1.0
   tolerance: 0.1
   applies_to: all
-- type: bound
+- id: QKN-BND-002
+  type: bound
   property: Output amplitude bounded
   formal: '|output_i| <= |weight_i| * sqrt(d_k / ε)'
   applies_to: all
-- type: invariant
+- id: QKN-INV-003
+  type: invariant
   property: Idempotent with unit weight
   formal: RMSNorm(RMSNorm(x, 1), 1) ≈ RMSNorm(x, 1)
   tolerance: 0.001
   applies_to: all
-- type: invariant
+- id: QKN-INV-004
+  type: invariant
   property: Zero-input stability
   formal: RMSNorm(0, w) = 0
   applies_to: all
-- type: equivalence
+- id: QKN-EQ-005
+  type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd
-- type: invariant
+- id: QKN-INV-006
+  type: invariant
   property: Per-head independence
   formal: RMSNorm([h1;h2;...]) = [RMSNorm(h1); RMSNorm(h2); ...]
   tolerance: 0.0
@@ -77,15 +83,20 @@ falsification_tests:
   test: 'proptest: compare scalar vs SIMD QK-norm output'
   if_fails: SIMD normalization diverges beyond ULP tolerance
 - id: FALSIFY-QKN-006
-  rule: Cross-backend equivalence
-  prediction: GPU per-head RMSNorm algorithm (rsqrt.approx) matches CPU RMSNorm::forward
-  test: proptest comparing GPU reference simulation vs CPU at Qwen3-8B dimensions
-  if_fails: GPU kernel diverges from CPU — check argument order, head count, or rsqrt precision
+  rule: Cross-backend equivalence — the REAL kernel, on the path generation takes
+  prediction: "`apr run --gpu` on a dense-Qwen3 Q4_K_M GGUF stays on CUDA: no `diverges from CPU … falling back to CPU` line, and `apr qa` golden_output passes on GPU, on lambda (sm_89) and on gx10 (GB10, sm_121)"
+  test: "bash scripts/check_model_ladder.sh — rung qwen3-1.7b-q4km, backend cuda, both required hosts (receipts under evidence/dogfood/models/<version>/)"
+  if_fails: "the per-head RMSNorm did not run where generation runs — at 4a538ddef the kernel was correct in isolation and SKIPPED by the manual CUDA graph replay (argmax 25 ≠ 198 at position 1 on both silicons, #3413); a simulation-vs-CPU proptest cannot see that, which is why this falsifier was rewritten (EPIC #3477)"
 - id: FALSIFY-QKN-007
   rule: Per-head independence
   prediction: Normalizing N heads produces same result as normalizing each head independently
   test: proptest comparing batch per-head vs individual head normalization
   if_fails: Head slicing or offset computation incorrect in GPU kernel
+- id: FALSIFY-QKN-008
+  rule: The simulation is not the kernel
+  prediction: "the CPU-vs-simulation proptest (the old QKN-006 body) still passes — it guards the algorithm, and is recorded as NOT guarding the dispatch"
+  test: proptest comparing GPU reference simulation vs CPU at Qwen3-8B dimensions
+  if_fails: GPU algorithm diverges from CPU — check argument order, head count, or rsqrt precision
 kani_harnesses:
 - id: KANI-QKN-001
   obligation: QKN-INV-001
@@ -128,7 +139,7 @@ kani_harnesses:
   strategy: exhaustive
 - id: KANI-QK_NOR-008
   obligation: GPU kernel matches CPU reference
-  property: GPU kernel matches CPU reference
+  property: "GPU reference SIMULATION matches CPU reference — this harness checks the algorithm in Rust, it cannot execute the CUDA kernel or the graph that dispatches it; the kernel-on-the-generation-path obligation is discharged only by FALSIFY-QKN-006 (measured per host), never by this harness (#3477)"
   bound: 8
   strategy: exhaustive
 - id: KANI-QK_NOR-009
@@ -145,5 +156,5 @@ qa_gate:
   - bounded_amplitude
   - idempotent
   - zero_stability
-  pass_criteria: All 7 falsification tests pass
+  pass_criteria: All 8 falsification tests pass; FALSIFY-QKN-006 is read from the per-host ladder receipts, never from a simulation
   falsification: Set eps=0 to trigger division by zero

@@ -130,7 +130,8 @@ equations:
     lean_theorem: Theorems.PeakThroughput
 
 proof_obligations:
-- type: equivalence
+- id: AB17B3-EQ-001
+  type: equivalence
   property: AVX-512 matches scalar numerically
   formal: '|avx512 - scalar| < n * eps per element'
   tolerance: 1.0e-4
@@ -138,7 +139,8 @@ proof_obligations:
   lean:
     theorem: Theorems.NumericalEquivalence
     status: sorry
-- type: bound
+- id: AB17B3-BND-002
+  type: bound
   property: Throughput above 40% of peak
   formal: 'measured GFLOPS > 0.4 * peak GFLOPS'
   applies_to: peak_throughput

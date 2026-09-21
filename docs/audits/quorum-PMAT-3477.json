@@ -1,0 +1,84 @@
+{
+  "ticket": "PMAT-3477",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 92 commit(s); judged against origin/main",
+  "head": "788be9b5859089ab1e1baf9e650bd7b668f55c6a",
+  "diff_sha256": "79bc81c8d89e03c5ed4a5358549df70116a6d6407d4dabacb8aa0d20ce6777f7",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 21693,
+  "author": {
+    "model": "claude-fable-5-1",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I have thoroughly reviewed the provided diff against ticket PMAT-3477 (\"0.68.2: ladder cpu-only rung\"). The diff correctly and safely implements the logic to allow CPU-only rungs to skip the `capability_match` gate. It correctly identifies CPU-only rungs by checking if their claimed backends include 'cuda' or 'gpu'. It modifies both the online runner (`scripts/model_ladder.sh`) and the offline dogfood gate (`scripts/check_model_ladder.sh`) to enforce this new rule without weakening the gate for GPU-claiming models. Two comprehensive test cases are included which correctly verify both the green path (CPU-only rung correctly skips capability match) and the red path (GPU-claiming rung fails if capability match is skipped). The logic is mathematically sound, correctly avoids `KeyError` exceptions when parsing JSON responses, and properly normalizes the skipped state. The deletion of the previous quorum file is standard orchestrator behavior for a new review iteration. I found no refuting evidence; the diff does exactly what is requested and nothing the ticket forbids.",
+      "findings": [],
+      "raw_bytes": 3424,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Review of diff (origin/main...HEAD) against ticket PMAT-3477 (\\\"0.68.2: ladder cpu-only rung (PR #3481, EPIC #3477)\\\"):\n\n1. Intent & Scope:\n   - The ticket addresses CPU-only rungs (e.g. `qwen35-0.8b-q4km` claiming `backends: [cpu]`) failing `apr qa`'s GPU `capability_match` gate.\n   - The diff modifies `scripts/model_ladder.sh` to pass `--skip-capability` to `apr qa` when the rung claims no GPU/CUDA backend.\n   - `scripts/model_ladder.sh` and `scripts/check_model_ladder.sh` now treat `capability_match` as satisfied (`cap_ok`) if it passed without skipping, OR if it was skipped on a rung that does not claim GPU/CUDA (`claims_gpu = False`).\n   - For any rung claiming `cuda` or `gpu`, a skipped `capability_match` remains strictly RED/FAIL, ensuring GPU gates are not weakened.\n   - `golden_output` and execution without fallback (`ran: true`, `fallback: false`) continue to be strictly required across all claimed backends.\n\n2. Test Case Backing:\n   - Added positive discrimination case `green-cpu-only-rung-skips-capability`: verifies that a CPU-only rung skipping `capability_match` evaluates to GREEN (rc=0).\n   - Added negative discrimination case `red-cuda-rung-skipped-capability`: verifies that a CUDA-claiming rung with skipped `capability_match` evaluates to RED (rc=1) with message matching `capability_match SKIPPED`.\n   - Both cases adhere to contract formats and ensure self-test table discriminates both paths cleanly.\n\n3. Prior Quorum Cleanup:\n   - Dropping the lapsed `docs/audits/quorum-PMAT-3477.json` artifact from PR #3479 follows the repository's established quorum review protocol, ensuring the current round evaluates the diff itself rather than a stale verdict from a previous PR.\n\nNo refuting conditions found. Verdict is PASS.",
+      "findings": [],
+      "raw_bytes": 4872,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Review of diff for PMAT-3477 (PR #3481, EPIC #3477 - \"0.68.2: ladder cpu-only rung\"):\n\n1. Intent & Scope:\n   - The ticket adds support for CPU-only rungs (`backends: [cpu]`) in the model capability ladder.\n   - For CPU-only rungs, GPU `capability_match` is bypassed via `--skip-capability` in `scripts/model_ladder.sh`.\n   - Both `scripts/model_ladder.sh` and `scripts/check_model_ladder.sh` are updated to accept a `SKIPPED` capability match if and only if the rung does not claim GPU backends (`cuda` or `gpu`).\n   - GPU-claiming rungs attempting to skip capability match continue to be strictly rejected (`FAIL` / exit code 1).\n\n2. Falsification & Discrimination Testing:\n   - Added test case `green-cpu-only-rung-skips-capability` (expected RC 0, matching `ok gx10 cpuonly-q4km`), verifying that legitimate CPU-only rungs with skipped capability checks evaluate to GREEN.\n   - Added test case `red-cuda-rung-skipped-capability` (expected RC 1, matching `capability_match SKIPPED`), verifying that a GPU-claiming rung skipping capability match is caught and marked RED.\n\n3. Integrity & Gates:\n   - Gate integrity is preserved; no relaxation of GPU capability validation occurs for GPU-targeted models.\n   - The changes are strictly scoped to the ticket requirements with zero unrelated modifications.\n\nVerdict: PASS.",
+      "findings": [],
+      "raw_bytes": 3989,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-fable-5-1/claude"
+  }
+}

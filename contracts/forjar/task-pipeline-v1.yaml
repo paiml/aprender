@@ -56,23 +56,28 @@ equations:
     - hc.interval > Duration::ZERO
     lean_theorem: Theorems.Health_Check_Retry
 proof_obligations:
-- type: ordering
+- id: TPB55D-ORD-001
+  type: ordering
   property: DAG execution order
   formal: depends_on satisfied before start
   applies_to: all
-- type: postcondition
+- id: TPB55D-POST-002
+  type: postcondition
   property: Quality gate blocks dependents
   formal: gate fails → all dependents skipped
   applies_to: all
-- type: state_machine
+- id: TPB55D-SM-003
+  type: state_machine
   property: Terminal states are final
   formal: no transition from Succeeded/Failed/Skipped/Cancelled
   applies_to: all
-- type: termination
+- id: TPB55D-TERM-004
+  type: termination
   property: Health check terminates
   formal: attempts ≤ retries + 1
   applies_to: all
-- type: bound
+- id: TPB55D-BND-005
+  type: bound
   property: Wall clock bounded
   formal: 'total ≤ retries × (timeout + interval)'
   applies_to: all

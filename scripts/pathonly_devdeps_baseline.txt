@@ -6,12 +6,28 @@
 # `cargo publish` strips. SHRINK-ONLY: adding a row fails review, and a row
 # whose violation is gone must be deleted in the same commit. Drain: #3306.
 #
-# aprender-core|entrenar and aprender-core|renacer are genuine publish CYCLES
-# (aprender-train and aprender-serve both depend on aprender-core), so those two
-# cannot be fixed by versioning -- the code has to leave src/. The other three
-# are plain omissions and version cleanly.
-crates/aprender-core/Cargo.toml|entrenar
+# PMAT-1098 drained the two rows whose lib tests actually failed clean-room
+# GATE B2 (`cargo test --lib` after the publish strip), by moving the tests out
+# of src/ -- neither can be fixed by versioning, both are publish CYCLES:
+#   aprender-core|entrenar          19 sites -> tests/contracts/classification_finetune_xcrate_contract.rs
+#   aprender-test-showcase|jugar-probar  3 sites -> tests/probar_tests.rs
+#
+# The three rows below are NOT B2 exposure. Measured with the gate's own
+# gates-lib.sh A0 strip + A1 overlay over the whole workspace:
+#   aprender-core|renacer        src/showcase/profiling.rs is LIB code, not a
+#     test module, behind `showcase-profile`. A dev-dep is never linked into the
+#     lib target, so `cargo check -p aprender-core --lib --features
+#     showcase-profile` fails with the same E0433 IN-WORKSPACE, published or not
+#     (measured 2026-09-17). A separate defect; the feature is documented
+#     "disabled: renacer->aprender circular dep".
+#   aprender-gpu|simular         src/testing/integration_tests/mod.rs is declared
+#     by no `mod` statement anywhere in the crate -- a dark file that is never
+#     compiled. aprender-gpu is also excluded from B2 (GPU toolchain).
+#   aprender-orchestrate|jugar-probar  src/agent/tool/browser.rs is LIB code that
+#     resolves through the VERSIONED optional regular dep
+#     (`jugar-probar = { workspace = true, ... }`, version 0.68.0), which publish
+#     keeps. The guard keys on the dev-dep table only, so this row is a false
+#     positive of the guard, not a violation.
 crates/aprender-core/Cargo.toml|renacer
 crates/aprender-gpu/Cargo.toml|simular
 crates/aprender-orchestrate/Cargo.toml|jugar-probar
-crates/aprender-test-showcase/Cargo.toml|jugar-probar

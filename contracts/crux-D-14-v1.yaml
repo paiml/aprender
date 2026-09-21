@@ -134,13 +134,17 @@ falsification_tests:
   if_fails: "apr diverges from HF EarlyStoppingCallback halt epoch by >1"
 
 proof_obligations:
-- type: invariant
+- id: CD1E759-INV-001
+  type: invariant
   property: "training halts within patience P of best val_loss epoch"
-- type: invariant
+- id: CD1E759-INV-002
+  type: invariant
   property: "output model equals argmin(val_loss) checkpoint (bitwise)"
-- type: invariant
+- id: CD1E759-INV-003
+  type: invariant
   property: "best_val_loss is non-increasing across epochs"
-- type: equivalence
+- id: CD1E759-EQ-004
+  type: equivalence
   property: "apr finetune --early-stopping-patience P matches HuggingFace Trainer's EarlyStoppingCallback(early_stopping_patience=P) on golden fixture"
 
 # References:

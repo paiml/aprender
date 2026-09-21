@@ -126,43 +126,53 @@ equations:
     - Mutation score >= 100% (M1-M5)
     lean_theorem: Theorems.State_Machine_Validity
 proof_obligations:
-- type: bound
+- id: AU-BND-001
+  type: bound
   property: Streaming TTFT within 2s
   formal: ttft_displayed <= 2.0s
   applies_to: all
-- type: bound
+- id: AU-BND-002
+  type: bound
   property: Frame budget 16ms
   formal: frame_time <= 16ms for all frames
   applies_to: all
-- type: invariant
+- id: AU-INV-003
+  type: invariant
   property: Brick Jidoka enforcement
   formal: invalid state => not rendered
   applies_to: all
-- type: bound
+- id: AU-BND-004
+  type: bound
   property: Pixel coverage >= 80%
   formal: coverage >= 0.80 across test suite
   applies_to: all
-- type: bound
+- id: AU-BND-005
+  type: bound
   property: WCAG AA contrast
   formal: contrast_ratio >= 4.5 for all text
   applies_to: all
-- type: invariant
+- id: AU-INV-006
+  type: invariant
   property: Layout no-overlap
   formal: overlap(panels) == 0 for all terminal sizes
   applies_to: all
-- type: bound
+- id: AU-BND-007
+  type: bound
   property: Cost display accuracy
   formal: "abs(displayed - actual) / actual < 0.05"
   applies_to: all
-- type: completeness
+- id: AU-CMP-008
+  type: completeness
   property: State machine reachability
   formal: all states reachable from initial
   applies_to: all
-- type: determinism
+- id: AU-DET-009
+  type: determinism
   property: State machine determinism
   formal: each (state, event) pair has exactly one transition
   applies_to: all
-- type: soundness
+- id: AU-SND-010
+  type: soundness
   property: Mutation testing kills all mutants
   formal: mutation_score == 1.0 for M1-M5
   applies_to: all

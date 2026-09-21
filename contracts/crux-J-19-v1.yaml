@@ -75,9 +75,11 @@ falsification_tests:
   if_fails: CRUX-J-19 observability invariant — cloud/local transitions must be observable
 
 proof_obligations:
-- type: invariant
+- id: CJ16310-INV-001
+  type: invariant
   property: "local-only path is first-class"
-- type: invariant
+- id: CJ16310-INV-002
+  type: invariant
   property: "degrade is observable, not silent"
 
 verification_summary:

@@ -90,11 +90,13 @@ equations:
     - dy/dB exists and flows correctly through transpose
     lean_theorem: Theorems.LoraForward
 proof_obligations:
-- type: invariant
+- id: LGF-INV-001
+  type: invariant
   property: Gradient flow preserved through transpose
   formal: d(loss)/d(A) != 0 when loss depends on output of LoRA layer
   applies_to: all
-- type: equivalence
+- id: LGF-EQ-002
+  type: equivalence
   property: Autograd transpose matches manual transpose
   formal: autograd_backward(f(x)) == manual_backward(f(x)) for all x
   tolerance: 1e-5

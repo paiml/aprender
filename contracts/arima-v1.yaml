@@ -53,23 +53,28 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Forecast_Finite
 proof_obligations:
-- type: invariant
+- id: ARIMA-INV-001
+  type: invariant
   property: Forecast length equals n_periods
   formal: '|forecast(model, n_periods)| = n_periods'
   applies_to: all
-- type: bound
+- id: ARIMA-BND-002
+  type: bound
   property: All forecasts finite
   formal: 'forall h in 1..n_periods: |y_hat_{T+h}| < infinity'
   applies_to: all
-- type: invariant
+- id: ARIMA-INV-003
+  type: invariant
   property: Differencing reduces order
   formal: '|Delta^d y| = |y| - d'
   applies_to: all
-- type: invariant
+- id: ARIMA-INV-004
+  type: invariant
   property: Forecast deterministic
   formal: forecast(model, n) = forecast(model, n) for same model and data
   applies_to: all
-- type: invariant
+- id: ARIMA-INV-005
+  type: invariant
   property: Reverse-differencing seeds each pass with the matching intermediate difference (PMAT-834)
   formal: 'for d >= 2, the pass that undoes the k-th difference is seeded with the last value of
     the (k-1)-th-order difference of y (tail[0] = y[n]); NOT y[n] for every pass'

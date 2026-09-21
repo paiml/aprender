@@ -122,7 +122,8 @@ kernel_structure:
     description: Graceful shutdown, drain in-flight requests, release all resources
 
 proof_obligations:
-- type: state_machine
+- id: ASCB49-SM-001
+  type: state_machine
   property: Health returns 200 only when ready
   formal: >
     Init->Binding->Loading->Ready->Draining->Stopped, no skip.
@@ -131,7 +132,8 @@ proof_obligations:
   lean:
     theorem: Theorems.ServerLifecycle
     status: sorry
-- type: invariant
+- id: ASCB49-INV-002
+  type: invariant
   property: Concurrent inference isolation
   formal: result(req_a, concurrent=[]) == result(req_a, concurrent=[req_b])
   tolerance: 1e-6
@@ -139,14 +141,16 @@ proof_obligations:
   lean:
     theorem: Theorems.ConcurrentInferenceIsolation
     status: sorry
-- type: postcondition
+- id: ASCB49-POST-003
+  type: postcondition
   property: Graceful shutdown completes in-flight
   formal: in_flight_count == 0 before process exit
   applies_to: graceful_shutdown
   lean:
     theorem: Theorems.GracefulShutdown
     status: sorry
-- type: completeness
+- id: ASCB49-CMP-004
+  type: completeness
   property: Unknown path returns 404
   formal: no path returns 500 Internal Server Error for routing failures
   applies_to: request_routing

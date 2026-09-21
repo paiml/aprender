@@ -95,13 +95,17 @@ falsification_tests:
   if_fails: "Unpinned fp8-fbgemm source"
 
 proof_obligations:
-- type: invariant
+- id: CL02C58-INV-001
+  type: invariant
   property: "Parity max_abs_diff <= 1e-2 vs bf16 reference on sm_90+"
-- type: invariant
+- id: CL02C58-INV-002
+  type: invariant
   property: "sm_80 is hard error (ARCH_MISMATCH)"
-- type: invariant
+- id: CL02C58-INV-003
+  type: invariant
   property: "Only scalar or per-row scales accepted"
-- type: equivalence
+- id: CL02C58-EQ-004
+  type: equivalence
   property: "apr fp8-fbgemm matmul  ≅  HF kernels-community fp8-fbgemm"
 
 verification_summary:

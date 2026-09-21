@@ -96,13 +96,17 @@ falsification_tests:
   if_fails: "chosen MASTER_PORT collides with an existing listener"
 
 proof_obligations:
-- type: invariant
+- id: CD3B31D-INV-001
+  type: invariant
   property: "WORLD_SIZE/RANK/MASTER_ADDR/MASTER_PORT set per accelerate spec"
-- type: invariant
+- id: CD3B31D-INV-002
+  type: invariant
   property: "config.yaml schema is a superset of accelerate's required keys"
-- type: equivalence
+- id: CD3B31D-EQ-003
+  type: equivalence
   property: "apr serve --replicas N observable == accelerate launch --num_processes N"
-- type: invariant
+- id: CD3B31D-INV-004
+  type: invariant
   property: "launcher exit code = max of worker exit codes"
 
 verification_summary:

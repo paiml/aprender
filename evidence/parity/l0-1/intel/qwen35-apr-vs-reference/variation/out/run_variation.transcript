@@ -1,0 +1,220 @@
+tree llama.cpp=d1d3c3396 host=mac-server nproc=32 start_utc=2026-09-15T19:35:55Z load=32.53 45.56 45.83
+/dev/nvme0n1p2  3.6T  3.1T  322G  91% /
+bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517  /home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf
+5ef2b60ac1761efcd0584cfdcf67363e2c7ebaf1b08a6bcb19cf9d933af403e3  /home/noah/src/llama.cpp-d1d3c3396/apr-raw-logits/apr_raw_logits
+ad4397d5efcc8aa64a7b4e15303b32e5b51de3180c2da80cbf247cdfe7253d8e  /home/noah/parity-ref/variation-3091/qwen35_raw_logits
+f05cd87aef3bbe8396606f91334c974ddcb4f59d68186c35611405f74bbdd4ce  /home/noah/parity-ref/apr-3091-subject/compare_raw_logits.py
+62e908350982297259947997d026c399c39558e8129890b6e9e64d17ace55e72  /home/noah/parity-ref/apr-3091-subject/prompt_token_ids.txt
+9a7cc3f840df7d56e0ac4bf3141f097e24e717a085486a54c1fc28cbc40204ee  /tmp/flipvar3091/prompt-1.txt
+134e1832e1b3cf189fa70a6d678a47234e77ce718588ab9ec9f5cc3b9f321787  /tmp/flipvar3091/prompt-2.txt
+c2a4c3daf5b69e7cce50ab7246fb1f805826090462c346bd58941363aee5ac98  /tmp/flipvar3091/prompt-3.txt
+7873eb8de372472c24dfb713b6720fd551b60fd1821f26a50850a807751c8f23  /tmp/flipvar3091/prompt-4.txt
+a4df9cdea5769e5e0ab81ba20e3a6bc890767b4cd668ae001b5c3b4034f380be  /tmp/flipvar3091/prompt-1.ids
+b30c7fda54dab52c817618424b12f98ec7ccb0caae3cb50a89056a0d03e8336f  /tmp/flipvar3091/prompt-2.ids
+1b7d56c1ff086b7332d9ece65683797417f8237a34a99705c9ce396b04fd8ca2  /tmp/flipvar3091/prompt-3.ids
+db24cf1f67f7e0f62d90996675d4402b4f2ff5d326e066c6f4b5319d5bf2d8c3  /tmp/flipvar3091/prompt-4.ids
+== phase T (thread confound, original 78 ids; recorded subject f6f79264...0252)
+apr t0-default threads=default start_utc=19:35:59Z load=31.60 45.15 45.70
+apr t0-default rc=0 end_utc=19:36:12Z load=34.44 45.15 45.69 max_threads_sampled=33  Percent of CPU this job got: 785%; Elapsed (wall clock) time (h:mm:ss or m:ss): 0:13.35;
+f6f792649014dcef6eec1afaf96852a293cc95c6cfceb1c88d62e16ee36c0252  /home/noah/parity-ref/variation-3091/t0-default.bin
+apr t0-rayon8 threads=8 start_utc=19:36:13Z load=34.44 45.15 45.69
+apr t0-rayon8 rc=0 end_utc=19:36:25Z load=33.56 44.61 45.51 max_threads_sampled=9  Percent of CPU this job got: 545%; Elapsed (wall clock) time (h:mm:ss or m:ss): 0:12.38;
+f6f792649014dcef6eec1afaf96852a293cc95c6cfceb1c88d62e16ee36c0252  /home/noah/parity-ref/variation-3091/t0-rayon8.bin
+apr t0-rayon1 threads=1 start_utc=19:36:26Z load=33.56 44.61 45.51
+apr t0-rayon1 rc=0 end_utc=19:37:24Z load=32.40 42.49 44.74 max_threads_sampled=2  Percent of CPU this job got: 99%; Elapsed (wall clock) time (h:mm:ss or m:ss): 0:58.11;
+f6f792649014dcef6eec1afaf96852a293cc95c6cfceb1c88d62e16ee36c0252  /home/noah/parity-ref/variation-3091/t0-rayon1.bin
+== phase P prompt-1 n_tokens=83
+llama p1-batched start_utc=19:37:24Z load=32.40 42.49 44.74
+llama p1-batched rc=0 end_utc=19:37:28Z load=32.13 42.27 44.65
+apr_raw_logits: n_pos=83 n_vocab=248320 add_bos=0 mode=batched out=/home/noah/parity-ref/variation-3091/p1-batched.bin
+04221c5689ba7a66edb57dfa9c8f78d82a7c181c754ba08636739f9cd4b686da  /home/noah/parity-ref/variation-3091/p1-batched.bin
+llama p1-per-token start_utc=19:37:29Z load=32.13 42.27 44.65
+llama p1-per-token rc=0 end_utc=19:37:34Z load=32.20 42.12 44.59
+apr_raw_logits: n_pos=83 n_vocab=248320 add_bos=0 mode=per-token out=/home/noah/parity-ref/variation-3091/p1-per-token.bin
+67dcc9e73382f240a2278cb66863499d882c8eb526ee25737792998da965f10a  /home/noah/parity-ref/variation-3091/p1-per-token.bin
+apr p1-apr threads=default start_utc=19:37:34Z load=32.20 42.12 44.59
+apr p1-apr rc=0 end_utc=19:37:49Z load=33.52 41.92 44.48 max_threads_sampled=33  Percent of CPU this job got: 739%; Elapsed (wall clock) time (h:mm:ss or m:ss): 0:14.64;
+b9815d9be8b14b255db54d22821ff63a306d7dd8ae94d7bdfe4c93328376b7f8  /home/noah/parity-ref/variation-3091/p1-apr.bin
+== phase P prompt-2 n_tokens=118
+llama p2-batched start_utc=19:37:50Z load=33.52 41.92 44.48
+llama p2-batched rc=0 end_utc=19:37:53Z load=33.32 41.73 44.41
+apr_raw_logits: n_pos=117 n_vocab=248320 add_bos=0 mode=batched out=/home/noah/parity-ref/variation-3091/p2-batched.bin
+985dc34529154df7ed7c1a501c87abea4cbadd9ab4dc58eee213830bb53460c6  /home/noah/parity-ref/variation-3091/p2-batched.bin
+llama p2-per-token start_utc=19:37:54Z load=33.32 41.73 44.41
+llama p2-per-token rc=0 end_utc=19:38:00Z load=34.02 41.74 44.40
+apr_raw_logits: n_pos=117 n_vocab=248320 add_bos=0 mode=per-token out=/home/noah/parity-ref/variation-3091/p2-per-token.bin
+a0f87b14ba9f2dd7630dd60268ef323f977e5f88cb9e060cabbfafe4aae8b760  /home/noah/parity-ref/variation-3091/p2-per-token.bin
+apr p2-apr threads=default start_utc=19:38:01Z load=34.02 41.74 44.40
+apr p2-apr rc=0 end_utc=19:38:26Z load=46.79 44.02 45.08 max_threads_sampled=33  Percent of CPU this job got: 632%; Elapsed (wall clock) time (h:mm:ss or m:ss): 0:24.59;
+0453801180d66354a11edc522960f21c7a467ea74e5d3fe8ebaa83fd1d52a3c4  /home/noah/parity-ref/variation-3091/p2-apr.bin
+== phase P prompt-3 n_tokens=108
+llama p3-batched start_utc=19:38:27Z load=47.13 44.14 45.11
+llama p3-batched rc=0 end_utc=19:38:31Z load=47.13 44.14 45.11
+apr_raw_logits: n_pos=108 n_vocab=248320 add_bos=0 mode=batched out=/home/noah/parity-ref/variation-3091/p3-batched.bin
+788f0ab15d6f2bfb33a18a00be2bb4c656be6fcaf348433e24afae274d76a382  /home/noah/parity-ref/variation-3091/p3-batched.bin
+llama p3-per-token start_utc=19:38:32Z load=46.48 44.05 45.07
+llama p3-per-token rc=0 end_utc=19:38:38Z load=47.48 44.30 45.15
+apr_raw_logits: n_pos=108 n_vocab=248320 add_bos=0 mode=per-token out=/home/noah/parity-ref/variation-3091/p3-per-token.bin
+df47beffcc18cf27caed695669ad749642ec3a859c3e3c1652068bfa2ac66ea5  /home/noah/parity-ref/variation-3091/p3-per-token.bin
+apr p3-apr threads=default start_utc=19:38:39Z load=47.48 44.30 45.15
+apr p3-apr rc=0 end_utc=19:39:02Z load=49.52 44.95 45.34 max_threads_sampled=33  Percent of CPU this job got: 633%; Elapsed (wall clock) time (h:mm:ss or m:ss): 0:22.55;
+b2a984d0bacc24c1e5963f16256194c172fa99dd90481f6b364fc22a206e3e91  /home/noah/parity-ref/variation-3091/p3-apr.bin
+== phase P prompt-4 n_tokens=82
+llama p4-batched start_utc=19:39:03Z load=50.44 45.21 45.43
+llama p4-batched rc=0 end_utc=19:39:07Z load=50.24 45.26 45.44
+apr_raw_logits: n_pos=82 n_vocab=248320 add_bos=0 mode=batched out=/home/noah/parity-ref/variation-3091/p4-batched.bin
+cba9ec3eb910d1c251a01b74c701ec3d5ae41169437461acd1ca234686489273  /home/noah/parity-ref/variation-3091/p4-batched.bin
+llama p4-per-token start_utc=19:39:08Z load=50.24 45.26 45.44
+llama p4-per-token rc=0 end_utc=19:39:13Z load=51.82 45.67 45.57
+apr_raw_logits: n_pos=82 n_vocab=248320 add_bos=0 mode=per-token out=/home/noah/parity-ref/variation-3091/p4-per-token.bin
+0eca077ceae11c0ef182e09d74a9b019a91503a56e491644a437765b297e6f1e  /home/noah/parity-ref/variation-3091/p4-per-token.bin
+apr p4-apr threads=default start_utc=19:39:14Z load=51.82 45.67 45.57
+apr p4-apr rc=0 end_utc=19:39:31Z load=57.02 47.13 46.05 max_threads_sampled=33  Percent of CPU this job got: 613%; Elapsed (wall clock) time (h:mm:ss or m:ss): 0:17.84;
+c2cedf2feb1c37c208a16478bd2949708d05ac440d09e7f87477b8a424d45e76  /home/noah/parity-ref/variation-3091/p4-apr.bin
+== phase C
+p1-A-per-token-vs-batched cmp rc=1 (0 = byte-identical)
+p1-A-per-token-vs-batched compare rc=0
+summary	n_positions	83
+summary	n_vocab	248320
+summary	min_cosine	0.998855
+summary	min_cosine_pos	3
+summary	mean_cosine	0.999538
+summary	median_cosine	0.999591
+summary	positions_below_0_98	[]
+summary	n_below_0_98	0
+summary	argmax_mismatches	[8, 11, 15, 25, 32, 43, 54, 81]
+summary	n_argmax_mismatches	8
+summary	max_abs_diff	0.773483
+summary	max_abs_diff_pos	77
+p1-B-per-token-vs-apr cmp rc=1 (0 = byte-identical)
+p1-B-per-token-vs-apr compare rc=0
+summary	n_positions	83
+summary	n_vocab	248320
+summary	min_cosine	0.997448
+summary	min_cosine_pos	0
+summary	mean_cosine	0.999509
+summary	median_cosine	0.99958
+summary	positions_below_0_98	[]
+summary	n_below_0_98	0
+summary	argmax_mismatches	[1, 54, 70, 81]
+summary	n_argmax_mismatches	4
+summary	max_abs_diff	1.452764
+summary	max_abs_diff_pos	0
+p1-C-batched-vs-apr cmp rc=1 (0 = byte-identical)
+p1-C-batched-vs-apr compare rc=0
+summary	n_positions	83
+summary	n_vocab	248320
+summary	min_cosine	0.997315
+summary	min_cosine_pos	0
+summary	mean_cosine	0.999511
+summary	median_cosine	0.999593
+summary	positions_below_0_98	[]
+summary	n_below_0_98	0
+summary	argmax_mismatches	[1, 8, 11, 15, 25, 32, 43, 70]
+summary	n_argmax_mismatches	8
+summary	max_abs_diff	1.300403
+summary	max_abs_diff_pos	0
+p2-A-per-token-vs-batched cmp rc=1 (0 = byte-identical)
+p2-A-per-token-vs-batched compare rc=0
+summary	n_positions	117
+summary	n_vocab	248320
+summary	min_cosine	0.996228
+summary	min_cosine_pos	44
+summary	mean_cosine	0.998549
+summary	median_cosine	0.99866
+summary	positions_below_0_98	[]
+summary	n_below_0_98	0
+summary	argmax_mismatches	[8, 12, 71]
+summary	n_argmax_mismatches	3
+summary	max_abs_diff	1.263819
+summary	max_abs_diff_pos	100
+p2-B-per-token-vs-apr cmp rc=1 (0 = byte-identical)
+compare_raw_logits: shape/token mismatch ref=(117, 248320) sub=(118, 248320)
+p2-B-per-token-vs-apr compare rc=2
+p2-C-batched-vs-apr cmp rc=1 (0 = byte-identical)
+compare_raw_logits: shape/token mismatch ref=(117, 248320) sub=(118, 248320)
+p2-C-batched-vs-apr compare rc=2
+p3-A-per-token-vs-batched cmp rc=1 (0 = byte-identical)
+p3-A-per-token-vs-batched compare rc=0
+summary	n_positions	108
+summary	n_vocab	248320
+summary	min_cosine	0.997185
+summary	min_cosine_pos	84
+summary	mean_cosine	0.999282
+summary	median_cosine	0.999462
+summary	positions_below_0_98	[]
+summary	n_below_0_98	0
+summary	argmax_mismatches	[11, 42, 43, 70, 94, 105]
+summary	n_argmax_mismatches	6
+summary	max_abs_diff	0.730901
+summary	max_abs_diff_pos	88
+p3-B-per-token-vs-apr cmp rc=1 (0 = byte-identical)
+p3-B-per-token-vs-apr compare rc=0
+summary	n_positions	108
+summary	n_vocab	248320
+summary	min_cosine	0.995687
+summary	min_cosine_pos	0
+summary	mean_cosine	0.999133
+summary	median_cosine	0.999353
+summary	positions_below_0_98	[]
+summary	n_below_0_98	0
+summary	argmax_mismatches	[0, 11, 17, 43, 74]
+summary	n_argmax_mismatches	5
+summary	max_abs_diff	1.376676
+summary	max_abs_diff_pos	0
+p3-C-batched-vs-apr cmp rc=1 (0 = byte-identical)
+p3-C-batched-vs-apr compare rc=0
+summary	n_positions	108
+summary	n_vocab	248320
+summary	min_cosine	0.995826
+summary	min_cosine_pos	0
+summary	mean_cosine	0.999154
+summary	median_cosine	0.99933
+summary	positions_below_0_98	[]
+summary	n_below_0_98	0
+summary	argmax_mismatches	[0, 17, 42, 70, 74, 94, 105]
+summary	n_argmax_mismatches	7
+summary	max_abs_diff	1.730367
+summary	max_abs_diff_pos	0
+p4-A-per-token-vs-batched cmp rc=1 (0 = byte-identical)
+p4-A-per-token-vs-batched compare rc=0
+summary	n_positions	82
+summary	n_vocab	248320
+summary	min_cosine	0.986225
+summary	min_cosine_pos	70
+summary	mean_cosine	0.997532
+summary	median_cosine	0.998678
+summary	positions_below_0_98	[]
+summary	n_below_0_98	0
+summary	argmax_mismatches	[2, 24, 32]
+summary	n_argmax_mismatches	3
+summary	max_abs_diff	1.919606
+summary	max_abs_diff_pos	1
+p4-B-per-token-vs-apr cmp rc=1 (0 = byte-identical)
+compare_raw_logits: shape/token mismatch ref=(82, 248320) sub=(82, 248320)
+p4-B-per-token-vs-apr compare rc=2
+p4-C-batched-vs-apr cmp rc=1 (0 = byte-identical)
+compare_raw_logits: shape/token mismatch ref=(82, 248320) sub=(82, 248320)
+p4-C-batched-vs-apr compare rc=2
+c2a596d146cc264c14b1f73ec2ef39fa8cc158df85deca4c8c1ced214e51b4dc  /home/noah/parity-ref/variation-3091/p1-A-per-token-vs-batched.tsv
+b90a9aae043f46fbfd4531137d45c88b05a0cf377b43ad3aa4a6d8caf1ef6e80  /home/noah/parity-ref/variation-3091/p1-B-per-token-vs-apr.tsv
+b9a52c5c4a51cd7f46906c5cf616a303dfae0ff09a20bd58a31c2697bdec1df7  /home/noah/parity-ref/variation-3091/p1-C-batched-vs-apr.tsv
+e588009166d8fa7d04a1b0f61b42d2fae53ef7c06f90901be7c1d6f91d9f250e  /home/noah/parity-ref/variation-3091/p2-A-per-token-vs-batched.tsv
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  /home/noah/parity-ref/variation-3091/p2-B-per-token-vs-apr.tsv
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  /home/noah/parity-ref/variation-3091/p2-C-batched-vs-apr.tsv
+af1761bdbb1968b3627bf44e367501dfed5b10213cf165ceb1d7439a4a142a6d  /home/noah/parity-ref/variation-3091/p3-A-per-token-vs-batched.tsv
+edda37823685fcba758a6a23b0ffcdf2336c28de8670ba77e015d5862aa27821  /home/noah/parity-ref/variation-3091/p3-B-per-token-vs-apr.tsv
+ce7f005ed416860e12428d228d4b4f20b87fa9738e8dd7912b5d9826949293ef  /home/noah/parity-ref/variation-3091/p3-C-batched-vs-apr.tsv
+47663a51c0e5125ac900c9d0956633cd15968871f8753da5294e1dc1023a84ca  /home/noah/parity-ref/variation-3091/p4-A-per-token-vs-batched.tsv
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  /home/noah/parity-ref/variation-3091/p4-B-per-token-vs-apr.tsv
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  /home/noah/parity-ref/variation-3091/p4-C-batched-vs-apr.tsv
+6db75f196f2ca9d57c42b7a3fd389e402aabf0c983e00b1891a4a44a1ed75890  /home/noah/parity-ref/variation-3091/classify_spec.json
+f6ab721f2dde7347a831c82edd1473f8f83787f5ab7c4ccd7298a6879e704c43  /home/noah/parity-ref/variation-3091/p1-A-per-token-vs-batched.json
+7349a67d3c2cef3698fba7cf5afcf9659fed05759165712fbf94b982806ecb4b  /home/noah/parity-ref/variation-3091/p1-B-per-token-vs-apr.json
+8c1f76025fc0691f99772f55c6a9c3f818040a58fb15bf992f1082c137fbc8e8  /home/noah/parity-ref/variation-3091/p1-C-batched-vs-apr.json
+2020cfbe6787ff08cbcd7c3bb1836b91850b1e31a0c906417d1083ee3b44d132  /home/noah/parity-ref/variation-3091/p2-A-per-token-vs-batched.json
+ef3065c6e379d352c50e8eeeb68b5468432998f754fa135a360aca688bf00009  /home/noah/parity-ref/variation-3091/p3-A-per-token-vs-batched.json
+89d3f9e00642bc0e1620602c8c99fb7cebd4a8a55a96c1032f5bcf594caa8e6e  /home/noah/parity-ref/variation-3091/p3-B-per-token-vs-apr.json
+cec359ce600a0bdec2e58359345d75a4fdb67dfb9008bd58afe37d2b3702ab38  /home/noah/parity-ref/variation-3091/p3-C-batched-vs-apr.json
+69330535c9e27a0b251580d995b15c86b0619a0f017924db384055db21fee6e8  /home/noah/parity-ref/variation-3091/p4-A-per-token-vs-batched.json
+done end_utc=2026-09-15T19:40:45Z load=51.86 47.85 46.41

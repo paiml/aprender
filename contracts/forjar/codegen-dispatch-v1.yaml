@@ -45,11 +45,13 @@ equations:
     - '!script.is_empty()'
     lean_theorem: Theorems.State_Query_Script
 proof_obligations:
-- type: completeness
+- id: CD7F67-CMP-001
+  type: completeness
   property: All Phase 1 types dispatched
   formal: '∀ t ∈ {Package, File, Service, Mount}: check_script(r{type=t}) = Ok(_)'
   applies_to: all
-- type: symmetry
+- id: CD7F67-SYM-002
+  type: symmetry
   property: Dispatch is symmetric across three functions
   formal: '∀ t: check_script(r{type=t}).is_ok() ⟺ apply_script(r{type=t}).is_ok()
     ⟺ state_query_script(r{type=t}).is_ok()'

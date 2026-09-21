@@ -122,56 +122,64 @@ equations:
     - "Pre-hook Block verdict prevents tool execution entirely"
     lean_theorem: Theorems.Hook_Ordering
 proof_obligations:
-- type: termination
+- id: AL0479-TERM-001
+  type: termination
   property: Agent loop always terminates
   formal: iterations <= max_iterations for all executions
   applies_to: all
   lean:
     theorem: Theorems.LoopTermination
     status: sorry
-- type: state_machine
+- id: AL0479-SM-002
+  type: state_machine
   property: Valid state transitions only
   formal: No state reached without valid transition edge
   applies_to: all
   lean:
     theorem: Theorems.AgentStateMachine
     status: sorry
-- type: invariant
+- id: AL0479-INV-003
+  type: invariant
   property: Context window never exceeded
   formal: token_count(messages) <= context_window at every LLM call
   applies_to: all
   lean:
     theorem: Theorems.ContextCompaction
     status: sorry
-- type: invariant
+- id: AL0479-INV-004
+  type: invariant
   property: Sandbox blocks unauthorized access
   formal: Sovereign tier produces zero network syscalls
   applies_to: all
   lean:
     theorem: Theorems.SandboxEnforcement
     status: sorry
-- type: invariant
+- id: AL0479-INV-005
+  type: invariant
   property: Parallel tools are conflict-free
   formal: No concurrent write-write on same resource
   applies_to: all
   lean:
     theorem: Theorems.ParallelToolSafety
     status: sorry
-- type: idempotency
+- id: AL0479-IDEM-006
+  type: idempotency
   property: Compaction is idempotent
   formal: compact(compact(messages)) == compact(messages)
   applies_to: all
   lean:
     theorem: Theorems.ContextCompactionIdempotent
     status: sorry
-- type: frame
+- id: AL0479-FRM-007
+  type: frame
   property: Message history append-only
   formal: messages[0..n] unchanged after appending messages[n+1]
   applies_to: all
   lean:
     theorem: Theorems.CrashRecovery
     status: sorry
-- type: ordering
+- id: AL0479-ORD-008
+  type: ordering
   property: Hook execution order
   formal: pre_hooks before execute before post_hooks
   applies_to: all

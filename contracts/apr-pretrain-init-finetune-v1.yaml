@@ -219,23 +219,28 @@ equations:
     - 'exit_status_invariant holds'
 
 proof_obligations:
-- type: invariant
+- id: APIF-INV-001
+  type: invariant
   property: 5g.2 dispatch exits 0
   formal: 'apr_pretrain_500_steps.exit_code == 0'
   applies_to: exit_status_invariant
-- type: invariant
+- id: APIF-INV-002
+  type: invariant
   property: 5g.2 wall budget ≤ 3600 s
   formal: 'wall_seconds ≤ 3600'
   applies_to: wall_budget_invariant
-- type: invariant
+- id: APIF-INV-003
+  type: invariant
   property: Init weights flow through forward pass
   formal: 'step_0_loss ≤ 0.7 × ln(vocab_size)'
   applies_to: init_weights_used_invariant
-- type: invariant
+- id: APIF-INV-004
+  type: invariant
   property: val_loss beats 370M from-scratch ceiling
   formal: 'val_loss < 9.38'
   applies_to: val_loss_below_from_scratch_invariant
-- type: invariant
+- id: APIF-INV-005
+  type: invariant
   property: A finetune checkpoint is written to disk
   formal: '∃ p ∈ output : valid_apr_magic(p)'
   applies_to: checkpoint_written_invariant

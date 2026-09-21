@@ -562,28 +562,33 @@ equations:
     - 'arch resolved via tensor_names_fallback::normalize_architecture from GGUF general.architecture or HF arch class name'
 
 proof_obligations:
-- type: equivalence
+- id: QMF-EQ-001
+  type: equivalence
   property: 'CPU forward result equals reference within Q4_K tolerance (AC_QW3_MOE_001)'
   formal: '|moe_forward_one_layer(h, W) - llama_cpp_reference(h, W)| / ||ref||_2 < 5e-2'
   tolerance: 5.0e-2
   applies_to: all
 
-- type: invariant
+- id: QMF-INV-002
+  type: invariant
   property: 'Router weights sum to 1.0 after top-k renormalization (AC_QW3_MOE_002)'
   formal: 'Σ_e route.weights[e] = 1.0 ± 1e-6'
   applies_to: all
 
-- type: invariant
+- id: QMF-INV-003
+  type: invariant
   property: 'Output dimensions preserved (AC_QW3_MOE_003)'
   formal: 'forward.output.len() == hidden_dim'
   applies_to: all
 
-- type: invariant
+- id: QMF-INV-004
+  type: invariant
   property: 'Output is finite — no NaN/Inf (AC_QW3_MOE_004)'
   formal: 'forward.output.iter().all(|v| v.is_finite())'
   applies_to: all
 
-- type: equivalence
+- id: QMF-EQ-005
+  type: equivalence
   property: 'Single-token CPU forward matches HF FP16 reference (AC_QW3_MOE_005)'
   formal: 'cosine_similarity(apr_logits, hf_fp16_logits) > 0.99'
   tolerance: 0.01

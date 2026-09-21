@@ -145,13 +145,17 @@ falsification_tests:
 
   if_fails: rule 'parity with llama.cpp json_schema_to_grammar.py' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: invariant
+- id: CI14C3F-INV-001
+  type: invariant
   property: "compile_gbnf(S) produces a grammar that accepts only instances satisfying S"
-- type: invariant
+- id: CI14C3F-INV-002
+  type: invariant
   property: "Constrained sampling yields JSON-valid, schema-valid output with 100% rate (50+ seeds)"
-- type: invariant
+- id: CI14C3F-INV-003
+  type: invariant
   property: "Enum and required-key schema clauses are enforced at sampling time, not post-hoc repair"
-- type: equivalence
+- id: CI14C3F-EQ-004
+  type: equivalence
   property: "Grammar accepts the same JSON language as llama.cpp's json_schema_to_grammar.py on fuzzed inputs"
 
 verification_summary:

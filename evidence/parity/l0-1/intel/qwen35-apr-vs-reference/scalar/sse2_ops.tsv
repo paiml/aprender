@@ -1,0 +1,11 @@
+op	file:line	used-by-tensor	engaged_in_config_C
+ggml_v_expf (SSE2 __m128 approximate exp; MADD128=add(mul) without __FMA__)	ggml/src/ggml-cpu/vec.h:1278 (branch vec.h:1264 #elif defined(__SSE2__))	(inline; reached only via ggml_v_silu and ggml_vec_soft_max_f32 below)	yes
+ggml_v_silu (x / (1 + ggml_v_expf(0 - x)))	ggml/src/ggml-cpu/vec.h:1309	(inline; reached via ggml_vec_silu_f32 and ggml_vec_swiglu_f32)	yes
+ggml_vec_silu_f32 (SSE2 body for i+3<n, libm tail ggml_silu_f32 vec.h:1046)	ggml/src/ggml-cpu/vec.cpp:390, called ops.cpp:2611 (ggml_compute_forward_silu_f32, per row of ne[0])	conv_output_silu-{0,1,2,4,5,6,8,9,10,12,13,14,16,17,18,20,21,22} (qwen35.cpp:394, row=conv_dim 6144); the unnamed gated_silu inside final_output-{DeltaNet layers} (build_norm_gated qwen35.cpp:249, row=head_v_dim 128)	yes
+ggml_vec_swiglu_f32 (mul(ggml_v_silu(x), g); libm tail)	ggml/src/ggml-cpu/vec.cpp:427, called ops.cpp:3224 (ggml_compute_forward_swiglu_f32, per row)	ffn_swiglu-{0..23} (build_ffn LLM_FFN_SILU+LLM_FFN_PAR, qwen35.cpp:474-479; row=n_ff 3584) -> ffn_out-{0..23}	yes
+ggml_vec_soft_max_f32 (ggml_v_expf(x - max); f32 4-lane sum (v0+v1)+(v2+v3) via shuffle/movehl/add_ss, then double; libm tail)	ggml/src/ggml-cpu/vec.cpp:552, called ops.cpp:5675 (ggml_compute_forward_soft_max_f32)	kq_soft_max inside attn_pregate-{3,7,11,15,19,23} (FA off: build_attn_mha soft_max_ext; row=n_kv)	yes (FA off)
+ggml_vec_soft_max_f32 (same SSE2 body)	ggml/src/ggml-cpu/vec.cpp:552, called ops.cpp:9082 and ops.cpp:9537 (flash-attention tiled paths)	none under config C (--flash-attn off)	no
+ggml_vec_soft_max_f32 (same SSE2 body)	ggml/src/ggml-cpu/vec.cpp:552, called ops.cpp:11810 (cross_entropy_loss_back)	none (training op)	no
+ggml_vec_cvar_f32 (SSE2 centred variance)	ggml/src/ggml-cpu/vec.cpp:479, called ops.cpp:3866 (ggml_compute_forward_norm_f32, LayerNorm)	none (qwen35 uses RMS_NORM only; llama_tensor_names.tsv has no NORM op)	no
+sgemm (__SSE__ guards)	ggml/src/ggml-cpu/llamafile/sgemm.cpp:87,251,334	none (GGML_LLAMAFILE=OFF, not compiled)	no
+_mm_pause in spin locks (__x86_64__)	ggml/src/ggml-cpu/ggml-cpu.c:462,524	none (no arithmetic)	no

@@ -231,15 +231,20 @@ falsification_tests:
   if_fails: "late divergence is swallowed - exactly the class (PMAT-810 batched-prefill decode corruption, GH-1864) the gate exists to catch"
 
 proof_obligations:
-- type: invariant
+- id: ACQ-INV-001
+  type: invariant
   property: "all 58 commands exit 0 on --help"
-- type: invariant
+- id: ACQ-INV-002
+  type: invariant
   property: "missing model produces non-zero exit code"
-- type: invariant
+- id: ACQ-INV-003
+  type: invariant
   property: "JSON output is always valid"
-- type: invariant
+- id: ACQ-INV-004
+  type: invariant
   property: "format_parity SKIPs on a genuinely absent SafeTensors reference, FAILs on a present-but-diverging one (PMAT-815)"
-- type: invariant
+- id: ACQ-INV-005
+  type: invariant
   property: "format_parity compares >= 64 greedy decode steps through the production cache path, teacher-forced, with a cosine >= 0.98 near-tie exemption (PMAT-QA-FMTPARITY-DECODE-001)"
 
 kani_harnesses:

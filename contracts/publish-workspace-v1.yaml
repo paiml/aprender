@@ -84,22 +84,26 @@ equations:
       - "a MEANINGFUL declaration is made only for a crate with zero sibling deps"
 
 proof_obligations:
-  - type: ordering
+  - id: PW-ORD-001
+    type: ordering
     property: "No crate is published before every non-dev workspace dependency is live at the target version"
     formal: "forall C, D: D in non_dev_workspace_deps(C) => publish_time(D) < publish_time(C)"
     applies_to: all
 
-  - type: precondition
+  - id: PW-PRE-002
+    type: precondition
     property: "Every pre-release gate that runs `cargo package -p <crate>` on a crate with workspace-sibling dependencies states the release stage at which it is satisfiable"
     formal: "forall C in gate5_crates(skill): sibling_deps(C) = {} or declared_stage(C) != none"
     applies_to: all
 
-  - type: soundness
+  - id: PW-SND-003
+    type: soundness
     property: "A declared stage is true against the dependency graph: MEANINGFUL if and only if the crate has no workspace-sibling dependencies"
     formal: "forall C: declared_stage(C) = MEANINGFUL <=> sibling_deps(C) = {}"
     applies_to: all
 
-  - type: completeness
+  - id: PW-CMP-004
+    type: completeness
     property: "The stage classifier can distinguish the stages it names; a classifier collapsing to one verdict is a failure"
     formal: "|{ classify(C, R) : (C,R) in fixture_states }| >= 3"
     applies_to: all

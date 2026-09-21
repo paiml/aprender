@@ -62,22 +62,26 @@ equations:
     lean_theorem: Theorems.Additive_Safety
 
 proof_obligations:
-- type: invariant
+- id: DPPK-INV-001
+  type: invariant
   property: per-position trains on all positions
   formal: |
     For B rows of length L with matching teacher/student/labels:
     kd_step_per_position returns grads with sum(|grads[r]|) == B*L (not B).
-- type: invariant
+- id: DPPK-INV-002
+  type: invariant
   property: math correct — zero loss/grad at perfect per-position agreement
   formal: |
     If student[r][p] == teacher[r][p] for all (r,p) and alpha=0, then
     avg_loss < 1e-4 and every grad component has |.| < 1e-4.
-- type: invariant
+- id: DPPK-INV-003
+  type: invariant
   property: ragged rows are safe
   formal: |
     For any (teacher_pos, student_pos, label_pos), the trained position count
     per row is exactly min of the three; no panic, no out-of-bounds.
-- type: classification
+- id: DPPK-CLS-004
+  type: classification
   property: opt-in additive — per-row path unchanged
   formal: |
     With APR_DISTILL_PER_POSITION off, Pipeline::train produces the same

@@ -94,31 +94,38 @@ equations:
     - diagnostics.len() >= 0
     lean_theorem: Theorems.Severity_Ordering
 proof_obligations:
-- type: postcondition
+- id: CL-POST-001
+  type: postcondition
   property: Exit 0 implies zero findings
   formal: 'exit_code(args, fs) == 0 => diagnostics.is_empty()'
   applies_to: all
-- type: postcondition
+- id: CL-POST-002
+  type: postcondition
   property: Exit 1 implies non-empty findings
   formal: 'exit_code(args, fs) == 1 => !diagnostics.is_empty()'
   applies_to: all
-- type: postcondition
+- id: CL-POST-003
+  type: postcondition
   property: Exit 2 implies parse failure
   formal: 'exit_code(args, fs) == 2 => no lint rules executed'
   applies_to: all
-- type: invariant
+- id: CL-INV-004
+  type: invariant
   property: Exit code totality
   formal: 'forall args, fs: exit_code(args, fs) in {0, 1, 2}'
   applies_to: all
-- type: invariant
+- id: CL-INV-005
+  type: invariant
   property: JSON output validity
   formal: 'format == json => serde_json::from_str(output).is_ok()'
   applies_to: all
-- type: invariant
+- id: CL-INV-006
+  type: invariant
   property: Deterministic findings
   formal: 'forall src, cfg: lint(src, cfg) == lint(src, cfg)'
   applies_to: all
-- type: ordering
+- id: CL-ORD-007
+  type: ordering
   property: Severity-descending output order
   formal: 'forall i < j: severity(diagnostics[i]) >= severity(diagnostics[j])'
   applies_to: all

@@ -21,16 +21,19 @@ equations:
     - indices.len() > 0
     lean_theorem: Theorems.Position_Embedding
 proof_obligations:
-- type: bound
+- id: LPE-BND-001
+  type: bound
   property: Position in range
   formal: 0 <= pos < max_positions
   applies_to: all
-- type: equivalence
+- id: LPE-EQ-002
+  type: equivalence
   property: Deterministic lookup
   formal: PE(pos) = PE(pos) for same weights (idempotent)
   tolerance: 0.0
   applies_to: all
-- type: invariant
+- id: LPE-INV-003
+  type: invariant
   property: Output dimension
   formal: PE(pos).len() == d_model for all valid pos
   applies_to: all

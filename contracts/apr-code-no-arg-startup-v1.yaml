@@ -84,31 +84,38 @@ equations:
     lean_theorem: Theorems.Apr_Code_Serve_Child_Reaped_Before_Exit
 
 proof_obligations:
-- type: invariant
+- id: ACNAS-INV-001
+  type: invariant
   property: A bare `apr code` on a non-terminal stdin spawns no inference server
   formal: wants_help(inv) ⟹ |children(run)| = 0
   applies_to: no_arg_startup_policy
-- type: invariant
+- id: ACNAS-INV-002
+  type: invariant
   property: Every named argument still runs with stdin closed
   formal: (has_prompt ∨ print ∨ has_model ∨ has_manifest ∨ has_resume) ⟹ ¬wants_help(inv)
   applies_to: no_arg_startup_policy
-- type: invariant
+- id: ACNAS-INV-003
+  type: invariant
   property: An interactive terminal is never refused
   formal: stdin_is_terminal ⟹ ¬wants_help(inv)
   applies_to: no_arg_startup_policy
-- type: invariant
+- id: ACNAS-INV-004
+  type: invariant
   property: A pipe or redirected file carrying bytes is an instruction and still runs
   formal: stdin_has_input ⟹ ¬wants_help(inv)
   applies_to: no_arg_startup_policy
-- type: invariant
+- id: ACNAS-INV-005
+  type: invariant
   property: The stdin peek does not consume the bytes it reports
   formal: reader_has_input(r) ⟹ read(r) yields the same byte sequence as before the peek
   applies_to: no_arg_startup_policy
-- type: equivalence
+- id: ACNAS-EQ-006
+  type: equivalence
   property: Releasing the registry first makes the last driver handle actually the last
   formal: release_driver(tools, driver) ⟹ strong_count → 0 ⟹ Drop runs
   applies_to: serve_child_reaped_before_exit
-- type: invariant
+- id: ACNAS-INV-007
+  type: invariant
   property: The spawning call site leaves no live child, observed on the real binary
   formal: run(`apr code -p P`) terminates ⟹ |live_children(run)| = 0
   applies_to: serve_child_reaped_before_exit

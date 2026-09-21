@@ -107,15 +107,20 @@ falsification_tests:
   if_fails: "Process killed by OOM during max-batch search (binary-search unsafe)"
 
 proof_obligations:
-- type: invariant
+- id: CE15424-INV-001
+  type: invariant
   property: "JSON output contains {max_concurrent, peak_throughput_tok_s, vram_used_bytes, vram_total_bytes}"
-- type: invariant
+- id: CE15424-INV-002
+  type: invariant
   property: "vram_used_bytes <= vram_total_bytes × 0.95"
-- type: invariant
+- id: CE15424-INV-003
+  type: invariant
   property: "peak_throughput >= single-request throughput × 4"
-- type: invariant
+- id: CE15424-INV-004
+  type: invariant
   property: "max_concurrent >= 1"
-- type: invariant
+- id: CE15424-INV-005
+  type: invariant
   property: "No OOM (process survives benchmark)"
 
 verification_summary:

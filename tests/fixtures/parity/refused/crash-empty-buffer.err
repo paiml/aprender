@@ -1,0 +1,2 @@
+  Arch: hidden=2048 heads=32 kv_heads=4 head_dim=64 GQA=8 layers=48 vocab=151936
+error: Inference failed: CPU forward failed at pos 0: Invalid shape: matmul weight has EMPTY data buffer (in_dim=2048, out_dim=16384, qtype=0)

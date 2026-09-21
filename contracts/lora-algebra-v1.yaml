@@ -68,27 +68,33 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Shape_Preservation
 proof_obligations:
-- type: invariant
+- id: LA-INV-001
+  type: invariant
   property: Task vector roundtrip
   formal: base + (fine - base) == fine within ULP
   applies_to: all
-- type: bound
+- id: LA-BND-002
+  type: bound
   property: Eckart-Young bound
   formal: '||M - M_r||_F <= sigma_{r+1}'
   applies_to: all
-- type: invariant
+- id: LA-INV-003
+  type: invariant
   property: LoRA shape compatibility
   formal: A=[m,r], B=[r,n] => A@B=[m,n]
   applies_to: all
-- type: invariant
+- id: LA-INV-004
+  type: invariant
   property: DARE unbiasedness
   formal: E[DARE(delta, p)] = delta
   applies_to: all
-- type: invariant
+- id: LA-INV-005
+  type: invariant
   property: Shape preservation
   formal: merged shape == base shape
   applies_to: all
-- type: equivalence
+- id: LA-EQ-006
+  type: equivalence
   property: SIMD LoRA equivalence
   tolerance: 0.0
   applies_to: simd

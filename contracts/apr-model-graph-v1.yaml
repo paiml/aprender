@@ -496,36 +496,44 @@ kernel_structure:
       Check that forward pass DAG is complete (no dangling edges).
 
 proof_obligations:
-- type: invariant
+- id: AMG-INV-001
+  type: invariant
   property: Forward pass preserves hidden dimension
   formal: "∀ layer_i: shape(layer_output_i) == [B, S, H]"
   tolerance: 1e-6
   applies_to: forward_pass_completeness
-- type: invariant
+- id: AMG-INV-002
+  type: invariant
   property: Attention softmax rows sum to 1.0
   formal: "∀ row in attn_weights: |sum(row) - 1.0| < 1e-5"
   applies_to: attention_mechanism
-- type: invariant
+- id: AMG-INV-003
+  type: invariant
   property: FFN SwiGLU gate/up shapes match
   formal: "gate_proj.shape == up_proj.shape"
   applies_to: ffn_computation
-- type: invariant
+- id: AMG-INV-004
+  type: invariant
   property: KV cache immutability
   formal: "∀ pos < current_len: cache[pos] == cache_prev[pos]"
   applies_to: kv_cache_management
-- type: postcondition
+- id: AMG-POST-005
+  type: postcondition
   property: Tensor name resolution is bijective
   formal: "∀ (name1, name2) with role1 ≠ role2: name1 ≠ name2"
   applies_to: tensor_name_resolution
-- type: invariant
+- id: AMG-INV-006
+  type: invariant
   property: Quantization preserves element count
   formal: "quant(t).num_elements == t.num_elements"
   applies_to: quantization_precision
-- type: invariant
+- id: AMG-INV-007
+  type: invariant
   property: MoE router selects exactly k experts
   formal: "top_k(logits, k).len() == k"
   applies_to: ffn_computation
-- type: bound
+- id: AMG-BND-008
+  type: bound
   property: Quantization round-trip bounded error
   formal: "max|dequant(quant(t)) - t| <= precision_bound(scheme)"
   applies_to: quantization_precision

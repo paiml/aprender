@@ -34,15 +34,18 @@ invariants:
     rationale: "Training must converge regardless of target count"
 
 proof_obligations:
-  - type: invariant
+  - id: LTS-INV-001
+    type: invariant
     property: Target set is a valid subset of projections
     formal: "for all t in target_modules: t ∈ {q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj}"
     applies_to: all
-  - type: invariant
+  - id: LTS-INV-002
+    type: invariant
     property: Non-target projections have zero LoRA contribution
     formal: "for all p not in target_modules: lora_a[p] = None AND lora_b[p] = None"
     applies_to: all
-  - type: bound
+  - id: LTS-BND-003
+    type: bound
     property: Backward compute proportional to target count
     formal: "backward_time(N) / backward_time(7) ∈ [N/7 * 0.8, N/7 * 1.2]"
     applies_to: all

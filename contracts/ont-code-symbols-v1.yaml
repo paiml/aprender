@@ -1,0 +1,156 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ont-code-symbols-v1 — `extract:code` + `extract:lean`: the bound Rust symbols and the in-tree Lean theorems
+# as focus nodes (ONT-001 §3.7, §5 ONT-4b2; aprender#3509, PMAT-3509)
+#
+# WHAT IT GOVERNS
+#   provable_contracts::ontology::extract::code   — every `module_path` + `function` a binding.yaml declares,
+#                                                   resolved by a `syn` module-tree walk → ont:Symbol.
+#   provable_contracts::ontology::extract::lean   — every `theorem` under ProvableContracts/Theorems → ont:Statement.
+#   provable_contracts::ontology::w3c             — the vendored W3C SHACL-Core cases, run by the gate.
+#   tests/oracle/                                 — the pinned out-of-gate differential (R-13, release gate only).
+#
+# WHY THE BOUND SYMBOLS AND NOT THE WORKSPACE. 3.9 M lines of Rust would be a second copy of the tree in RDF,
+# and no contract constrains a symbol nothing binds. The bindings are the corpus's OWN claim about which code
+# its equations name — ONT-3a already makes that claim falsifiable one binding at a time; this row puts the
+# claim in the graph, where a SHAPE says it, and where `sym:attribute "kernel"` is what ONT-4c3 will type.
+#
+# WHY AN UNRESOLVED SYMBOL IS STILL A NODE. A walker that silently dropped what it could not find would shrink
+# the graph exactly where the defect is: the corpus would conform because the ghost was never a focus node.
+# `sym:resolved false` + `sym:unresolvedReason` is the fail-closed form — measured on this tree: 169 of 270
+# bound symbols resolve, and the 101 that do not name modules and functions that are genuinely absent.
+#
+# WHY THE SHAPES SHIP UNARMED. §3.9: a gate red on its own target the day it merges trains bypass. 101 ghosts
+# exist on main today; `bound-symbols-resolve` is COMPUTED AND REPORTED at this row (under `not_armed_shapes`)
+# and the release that cleans the bindings arms it by adding one string to lint-baseline.json's `armed_shapes`.
+# Same for `lean-statements-grounded`: three theorem files carry `sorry`.
+#
+# KIND: pattern. Two extractors, their vocabularies, and the shapes they feed.
+# ─────────────────────────────────────────────────────────────────────────────
+name: ont-code-symbols
+version: "1.0.0"
+scope: >
+  How a bound Rust symbol and an in-tree Lean theorem become RDF, what `sym:*` and `lean:*` carry, and what the
+  two shapes over them assert. Out of scope: symbols no binding names (not focus nodes at v1alpha1), Lean
+  `formalization.yaml` (PVL EV-8b's file, not in this tree), and proof CHECKING — `lean:sorryFree` is a
+  property of the file's text, never a claim that `lake` succeeded.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-19'
+  last_modified: '2026-09-19'
+  author: PAIML Engineering
+  description: >
+    extract:code — the bound symbols by a syn module-tree walk (inline mods, file mods, #[path], one re-export
+    hop, impl methods), fail-closed with the reason in the graph; extract:lean — theorems from the in-tree
+    Theorems tree, sorry-free files only grounding, joined to the contracts that cite them by ONT-2a's name
+    forms; 16 vendored W3C SHACL-Core cases run every gate run; the oracle differential in the release gate.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md §3.6 (the subset), §3.7 (extractors), §5 ONT-4b2, R-13, R-15, R-18'
+    - 'paiml/infra docs/specifications/ont-oracle-ledger.md (ONT-0: the 32-case table and the pinned oracle)'
+    - 'crates/aprender-contracts/src/ontology/extract/{code,lean}.rs, ontology/w3c.rs, tests/oracle/'
+    - 'ONT-2a: crates/aprender-contracts/src/proof_status.rs — the same theorem scan this extractor reuses'
+
+relations:
+  depends_on: [ont-shapes-v1, ont-sigma-v1]
+
+equations:
+  resolve_symbol:
+    formula: "resolve(module_path, function) = walk(crate_root(head), tail) ▷ (fn function ∨ impl::function ∨ use → resolve(target))"
+    domain: "every (module_path, function) a binding.yaml under contracts/ declares with a function"
+    codomain: "Resolved{file, visibility, kind, attributes} or Unresolved{reason naming the file and the segment}"
+    invariants:
+      - "only the files on the walk are parsed: cost is bindings × depth, never the workspace"
+      - "a symbol that does not resolve is still a focus node, with sym:resolved false"
+      - "a re-export is followed at most 8 hops, so a cycle terminates with a reason"
+    preconditions:
+      - "the workspace's Cargo.toml files name their crates ([package] name and [lib] name, both indexed)"
+    postconditions:
+      - "two extractions of the same tree are byte-identical (R-15)"
+    lean_theorem: none — L4 not declared
+  ground_theorem:
+    formula: "grounded(t) ⇔ ¬contains(file(t), \"sorry\") ; modelOf(t) = { c | ref ∈ refs(c) ∧ ref ∈ acceptedNames(t) }"
+    domain: "every `theorem` declaration under <lean base>/ProvableContracts/Theorems/<Domain>/*.lean"
+    codomain: "an ont:Statement node with lean:sorryFree, lean:discharge and one lean:modelOf edge per citing contract"
+    invariants:
+      - "a file carrying `sorry` grounds nothing — the same rule ONT-2a's L4 credit uses, from the same scan"
+      - "a contract reference that names no theorem, file or domain is counted (lean_refs_unresolved), never guessed"
+    preconditions:
+      - "the Lean tree is the first of proof_status::LEAN_THEOREM_BASES that exists under the repo root"
+    postconditions:
+      - "what the graph says about a theorem and what `pv proof-status` credits agree by construction"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: SYM-INV-001
+    property: deterministic, no blank nodes
+    formal: '∀ tree: extract(tree) = extract(tree) ∧ ∀ t ∈ extract(tree): subject(t) ∈ IRI'
+    prose: false
+  - id: SYM-INV-002
+    property: fail-closed — an unresolved binding is a node with a reason, never an absence
+    formal: '¬resolves(b) ⇒ (b, sym:resolved, false) ∈ graph ∧ (b, sym:unresolvedReason, r) ∈ graph'
+    prose: false
+  - id: SYM-INV-003
+    property: an admitted proof grounds nothing
+    formal: 'sorry ∈ file(t) ⇒ (t, lean:sorryFree, false) ∧ discharge(t) = admitted'
+    prose: false
+  - id: SYM-INV-004
+    property: the validator agrees with the standard on every form it claims
+    formal: '∀ c ∈ vendored W3C cases: results(c) = expected(c) ∨ verdict = Unknown{Differential}'
+    prose: false
+  - id: SYM-INV-005
+    property: no third-party SHACL crate is reachable from the gate path
+    formal: 'shacl ∉ deps(aprender-contracts, {normal, build, dev})'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-SYM-001
+    rule: the module-tree walk
+    prediction: the walk resolves a file module, an inline module, an impl method and one `pub use … as` hop, and refuses a ghost naming the file it looked in and the segment it wanted
+    test: cargo test -p aprender-contracts --lib ontology::extract::code
+    if_fails: a binding that names nothing is dropped from the graph instead of reported, and a ghost passes because it was never a focus node
+  - id: FALSIFY-SYM-002
+    rule: an admitted proof grounds nothing
+    prediction: a theorem file carrying `sorry` yields lean:sorryFree false and discharge "admitted"; a contract reference naming no theorem, file or domain is counted in lean_refs_unresolved, never guessed
+    test: cargo test -p aprender-contracts --lib ontology::extract::lean
+    if_fails: an admitted theorem grounds an L4 claim, or a dangling lean_theorem is silently ignored
+  - id: FALSIFY-SYM-003
+    rule: the vendored W3C cases
+    prediction: all 16 vendored cases pass, the 32 of ONT-0's table are accounted for case by case (vendored or excused by name), and a mistranslated expectation fails naming the difference
+    test: cargo test -p aprender-contracts --lib ontology::w3c
+    if_fails: the subset claims a component the standard's own case refutes, or a case is quietly dropped from the count
+  - id: FALSIFY-SYM-004
+    rule: the gate's answers on the CLI
+    prediction: the bound symbols are focus nodes with the counts reported; the SAME ghost is a Fail naming the symbol under an armed shape and a reported unarmed_violation under an unarmed one; a failing vendored case declines Unknown{Differential} naming it; no shacl crate is in the workspace lock
+    test: cargo test -p aprender-contracts-cli --test ont4b2_code_lean_w3c
+    if_fails: arming is ignored, a differential is graded as a corpus verdict, or the oracle leaks into the gate path
+  - id: FALSIFY-SYM-005
+    rule: the out-of-gate differential
+    prediction: the pinned shacl 0.3.21 agrees with the in-house validator on all 16 cases and on the real corpus's violation set; a planted `sh:minCount` change in shapes.ttl makes it disagree, measured
+    test: make oracle
+    if_fails: the in-house subset has drifted from the standard and nobody outside it noticed
+
+qa_gate:
+  required_checks:
+    - "cargo test -p aprender-contracts --lib ontology::"
+    - "cargo test -p aprender-contracts-cli --test ont4b2_code_lean_w3c"
+
+shapes:
+  # REPORTED, not armed (see the header): 101 of 270 bound symbols on this tree name code that is not there.
+  - id: bound-symbols-resolve
+    targetClass: ont:Symbol
+    properties:
+      - {path: sym:crate, minCount: 1, maxCount: 1}
+      - {path: sym:module, minCount: 1, maxCount: 1}
+      - {path: sym:name, minCount: 1, maxCount: 1}
+      - {path: sym:implements, minCount: 1, nodeKind: IRI, class: ont:Contract}
+      - {path: sym:resolved, minCount: 1, maxCount: 1, in: [true]}
+  # REPORTED, not armed: three theorem files carry `sorry`.
+  - id: lean-statements-grounded
+    targetClass: ont:Statement
+    properties:
+      - {path: lean:name, minCount: 1, maxCount: 1}
+      - {path: lean:file, minCount: 1, maxCount: 1}
+      - {path: lean:discharge, minCount: 1, maxCount: 1, in: [grounded, admitted]}
+      - {path: lean:sorryFree, minCount: 1, maxCount: 1, in: [true]}

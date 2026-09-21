@@ -24,12 +24,22 @@ pub fn validate_contract(contract: &Contract) -> Vec<Violation> {
     // Kernel-only checks: these enforce the provability invariant and
     // require equations + proof obligations + tests + Kani harnesses.
     if contract.kind() == ContractKind::Kernel && !contract.is_registry() {
+        let before = violations.len();
         validate_equations(contract, &mut violations);
         validate_provability_invariant(contract, &mut violations);
         validate_proof_obligations(contract, &mut violations);
         validate_falsification_tests(contract, &mut violations);
         validate_kani_harnesses(contract, &mut violations);
         validate_qa_gate(contract, &mut violations);
+        // ONT-6b: this branch was entered because `metadata.kind` is absent and
+        // `ContractKind` defaults to `Kernel`. Say so, on the first error the
+        // default caused — the fact that explains the verdict is printed with
+        // it. Here and nowhere else: the printer must never learn to recognise
+        // rule ids, and a caller must never have to ask twice why a file it
+        // never called a kernel was held to the kernel rules.
+        if !contract.kind_declared {
+            explain_kind_default(&mut violations[before..]);
+        }
     } else {
         // Non-kernel kinds (registry, model-family, schema): still validate
         // any proof obligations/falsification/kani data that IS present, so
@@ -59,6 +69,26 @@ pub fn validate_contract(contract: &Contract) -> Vec<Violation> {
     validate_crux_intake(contract, &mut violations);
 
     violations
+}
+
+/// The sentence a kind-less contract's first kernel-only error carries
+/// (ONT-6b, infra#751).
+pub const KIND_DEFAULT_EXPLANATION: &str = "no metadata.kind, judged kernel by default";
+
+/// Decorate the FIRST error among `caused` with [`KIND_DEFAULT_EXPLANATION`].
+///
+/// `caused` is the slice of violations the kernel-only branch just produced, so
+/// every candidate here is by construction a finding the default is responsible
+/// for; no rule id is matched and none needs to be.
+///
+/// ONCE, and only on an `Error`. A warning is not a verdict, and repeating the
+/// sentence on all six kernel rules would bury the file's actual problem under
+/// its own explanation — the failure mode this row exists to avoid is output
+/// that does not say why, and "says it six times" is the other half of that.
+fn explain_kind_default(caused: &mut [Violation]) {
+    if let Some(first) = caused.iter_mut().find(|v| v.severity == Severity::Error) {
+        first.message = format!("{} ({KIND_DEFAULT_EXPLANATION})", first.message);
+    }
 }
 
 /// The closed set of competitors a CRUX story may be extracted from

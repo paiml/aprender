@@ -60,31 +60,39 @@ equations:
     - vocab_size > 0
     lean_theorem: Theorems.Roundtrip
 proof_obligations:
-- type: roundtrip
+- id: ER-RT-001
+  type: roundtrip
   property: Parse-emit-parse equivalence for purifier
   formal: 'For all valid bash source s: parse(emit_purified(parse(s))) ~= parse(s) up to whitespace and comments'
   applies_to: all
-- type: invariant
+- id: ER-INV-002
+  type: invariant
   property: Emitted output is valid POSIX sh
   formal: 'For all ast in BashAst: parse(emit_purified(ast)) = Ok(_) — output always re-parseable'
+  prose: true
   applies_to: all
-- type: invariant
+- id: ER-INV-003
+  type: invariant
   property: Escape idempotence
   formal: escape_shell_string(escape_shell_string(s)) == escape_shell_string(s) for all s
   applies_to: all
-- type: invariant
+- id: ER-INV-004
+  type: invariant
   property: Variable preservation
   formal: 'For all assignments in ast: variable name appears verbatim in emit_purified(ast) output'
   applies_to: all
-- type: invariant
+- id: ER-INV-005
+  type: invariant
   property: Control flow structure preservation
   formal: count_if(ast) == count_if(parse(emit_purified(ast))) and count_for(ast) == count_for(parse(emit_purified(ast)))
   applies_to: all
-- type: bound
+- id: ER-BND-006
+  type: bound
   property: Output size bounded
   formal: '|emit_purified(ast)| <= C * |ast| for constant C (linear blowup, no exponential expansion)'
   applies_to: all
-- type: invariant
+- id: ER-INV-007
+  type: invariant
   property: Arithmetic precedence correctness
   formal: 'Parenthesization in emitted arithmetic matches C/POSIX precedence: no incorrect grouping'
   applies_to: all

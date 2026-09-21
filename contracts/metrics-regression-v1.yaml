@@ -84,32 +84,39 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Rmse
 proof_obligations:
-- type: bound
+- id: MR-BND-001
+  type: bound
   property: R² upper bound
   formal: R² ≤ 1.0 for all y, ŷ with Var(y) > 0
   tolerance: 1.0e-06
   applies_to: all
-- type: bound
+- id: MR-BND-002
+  type: bound
   property: MSE non-negativity
   formal: MSE ≥ 0 for all y, ŷ
   applies_to: all
-- type: invariant
+- id: MR-INV-003
+  type: invariant
   property: MAE-RMSE ordering (Jensen's inequality)
   formal: MAE(y, ŷ) ≤ RMSE(y, ŷ) for all y, ŷ
   applies_to: all
-- type: equivalence
+- id: MR-EQ-004
+  type: equivalence
   property: Perfect prediction identity
   formal: R² = 1 ∧ MSE = 0 ∧ MAE = 0 ∧ RMSE = 0 when ŷ = y
   applies_to: all
-- type: invariant
+- id: MR-INV-005
+  type: invariant
   property: MSE symmetry
   formal: MSE(y, ŷ) = MSE(ŷ, y)
   applies_to: all
-- type: bound
+- id: MR-BND-006
+  type: bound
   property: MAE non-negativity
   formal: MAE ≥ 0 for all y, ŷ
   applies_to: all
-- type: bound
+- id: MR-BND-007
+  type: bound
   property: RMSE non-negativity
   formal: RMSE ≥ 0 for all y, ŷ
   applies_to: all

@@ -1,0 +1,19 @@
+dumps start_utc=2026-09-15T20:33:13Z load=9.95 7.23 8.43
+035531c18c5cb89489caf0ef87e91b09de3f34c7f975e0f50ce2d590e3251186  /tmp/obs3091/bins/qwen35_layer_obs
+run obs-p4 start_utc=20:33:13Z
+qwen35_layer_obs: dump dir=/tmp/obs3091/apr/obs-p4 written=1500
+qwen35_layer_obs: n_pos=82 n_vocab=248320 out=/tmp/obs3091/apr/obs-p4.bin
+run obs-p4 rc=0 end_utc=20:33:18Z load=11.62 7.65 8.55
+run obs-p0 start_utc=20:33:18Z
+qwen35_layer_obs: dump dir=/tmp/obs3091/apr/obs-p0 written=750
+qwen35_layer_obs: n_pos=78 n_vocab=248320 out=/tmp/obs3091/apr/obs-p0.bin
+run obs-p0 rc=0 end_utc=20:33:23Z load=13.17 8.04 8.67
+92f1b54d504a53f758a56911c4779ce1900207bd89c78d58597e558ebc6d3ee9  /tmp/obs3091/apr/obs-p4.bin
+f6f792649014dcef6eec1afaf96852a293cc95c6cfceb1c88d62e16ee36c0252  /tmp/obs3091/apr/obs-p0.bin
+obs-p4 dump-run logits vs p4-apr.bin cmp rc=0
+obs-p0 dump-run logits vs apr-intel-run1.bin cmp rc=0
+obs-p4 rows=1500
+d0de99e364d2ee236f65e4e115c83b1d859f07d2736b2012bce861743b683eff  /tmp/obs3091/apr/obs-p4/manifest.sha256.tsv
+obs-p0 rows=750
+ea779812dd96e0ab42e1e900441ac80e56b2d678e8ce6ed95024c25d38262e37  /tmp/obs3091/apr/obs-p0/manifest.sha256.tsv
+dumps end_utc=2026-09-15T20:33:28Z

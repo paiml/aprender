@@ -600,17 +600,23 @@ falsification_tests:
   if_fails: "MultiHeadAttention::new is dropping bias allocation despite config.use_bias=true; each missing bias is a 3 × 24 = 72 silent-drop per Qwen2 0.5B init, restoring the §59 val_loss=0.0008 defect class. Restore the `if config.use_bias { Some(zero_tensor) } else { None }` branch."
 
 proof_obligations:
-- type: invariant
+- id: APAP-INV-001
+  type: invariant
   property: "arch_extraction_signature: init=None preserves Llama370M baseline byte-for-byte"
-- type: soundness
+- id: APAP-SND-002
+  type: soundness
   property: "arch_extraction_signature: init=Some extracts ALL 10 fields, no silent defaults"
-- type: invariant
+- id: APAP-INV-003
+  type: invariant
   property: "qwen2_0_5b_constructor: constructor is pure (no I/O); shape matches HF config.json"
-- type: invariant
+- id: APAP-INV-004
+  type: invariant
   property: "gqa_7_to_1_invariants: GQA ratio is data, not code; one kernel handles all ratios"
-- type: liveness
+- id: APAP-LIVE-005
+  type: liveness
   property: "qwen_tokenizer_vocab_compatibility: preflight passes for matching vocab; fails for mismatching"
-- type: termination
+- id: APAP-TERM-006
+  type: termination
   property: "build_transformer_config terminates on a finite-size APR header (no recursion)"
 
 kani_harnesses:

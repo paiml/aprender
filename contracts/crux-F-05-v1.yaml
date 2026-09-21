@@ -118,13 +118,17 @@ falsification_tests:
   if_fails: "apr total FLOPs diverges from torch.profiler.with_flops total by >5%"
 
 proof_obligations:
-- type: invariant
+- id: CF02281-INV-001
+  type: invariant
   property: "ai = flops / bytes exactly (within f64 rounding) for every op"
-- type: invariant
+- id: CF02281-INV-002
+  type: invariant
   property: "regime classification matches ai > (peak_flops/peak_bw) strictly"
-- type: invariant
+- id: CF02281-INV-003
+  type: invariant
   property: "utilization == achieved_flops / min(peak_flops, ai*peak_bw) in [0,1]"
-- type: equivalence
+- id: CF02281-EQ-004
+  type: equivalence
   property: "apr profile --roofline matches PyTorch torch.profiler (with_flops=True) + bandwidth total FLOPs within ±5% on equivalent model"
 
 # References:

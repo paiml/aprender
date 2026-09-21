@@ -106,13 +106,17 @@ falsification_tests:
   if_fails: "Q4_K_M exceeds quality gate (KL >= 0.02 or flip >= 5%)"
 
 proof_obligations:
-- type: invariant
+- id: CE2-INV-001
+  type: invariant
   property: "KL stats schema complete (mean/median/p99/max/flip/num_tokens)"
-- type: invariant
+- id: CE2-INV-002
+  type: invariant
   property: "KL >= 0 (Gibbs inequality) — never NaN, never negative"
-- type: equivalence
+- id: CE2-EQ-003
+  type: equivalence
   property: "apr KL mean matches llama.cpp --kl-divergence within ±5% on identical GGUF + dataset"
-- type: invariant
+- id: CE2-INV-004
+  type: invariant
   property: "KL(M || M) == 0 within 1e-6 (self-identity)"
 
 verification_summary:

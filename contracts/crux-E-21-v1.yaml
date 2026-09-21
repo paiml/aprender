@@ -68,11 +68,14 @@ falsification_tests:
 
   if_fails: rule '--fail-on-tox threshold gating' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CE2C254-EQ-001
+  type: equivalence
   property: "apr eval-bias toxicity matches HF `evaluate.load('toxicity')` Detoxify backbone within 1e-3"
-- type: invariant
+- id: CE2C254-INV-002
+  type: invariant
   property: "tox(empty) = 0"
-- type: invariant
+- id: CE2C254-INV-003
+  type: invariant
   property: "disparate_impact ∈ [0, 1]"
 
 verification_summary:

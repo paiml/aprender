@@ -115,27 +115,33 @@ equations:
     - no duplicate keys
     lean_theorem: Theorems.Metadata_KV_Safety
 proof_obligations:
-- type: precondition
+- id: GFS-PRE-001
+  type: precondition
   property: Magic check before allocation
   formal: No heap allocation occurs before magic bytes are validated
   applies_to: magic_validation
-- type: bound
+- id: GFS-BND-002
+  type: bound
   property: Tensor shape product bounded
   formal: forall t in tensors, product(t.shape) * dtype_size(t.dtype) <= file_size
   applies_to: tensor_metadata_integrity
-- type: invariant
+- id: GFS-INV-003
+  type: invariant
   property: No out-of-bounds tensor read
   formal: forall t, t.offset + t.size <= file_size
   applies_to: tensor_metadata_integrity
-- type: precondition
+- id: GFS-PRE-004
+  type: precondition
   property: String length checked before allocation
   formal: string_length < MAX_STRING_LEN checked before alloc(string_length)
   applies_to: metadata_kv_safety
-- type: invariant
+- id: GFS-INV-005
+  type: invariant
   property: Alignment is power of two
   formal: alignment & (alignment - 1) == 0 for all alignment values
   applies_to: alignment_enforcement
-- type: roundtrip
+- id: GFS-RT-006
+  type: roundtrip
   property: Version roundtrip consistency
   formal: write_version(parse_version(bytes)) == bytes for valid versions
   applies_to: version_compatibility

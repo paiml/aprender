@@ -1,0 +1,6 @@
+<|im_start|>system
+You are a concise assistant who answers in plain English.<|im_end|>
+<|im_start|>user
+My sourdough starter smells like nail polish remover and has a grey liquid on top. Is it ruined, and what should I change about how I feed it this week?<|im_end|>
+<|im_start|>assistant
+

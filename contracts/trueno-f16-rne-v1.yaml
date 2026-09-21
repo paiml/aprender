@@ -54,7 +54,8 @@ equations:
     lean_theorem: Theorems.F32_To_F16_RNE
 
 proof_obligations:
-- type: invariant
+- id: TFR-INV-001
+  type: invariant
   property: f32_to_f16 is bit-identical to half::f16::from_f32 across the f32 domain
   formal: |
     For all x sampled across all 256 f32 exponents x strided mantissas x both signs,

@@ -50,28 +50,34 @@ equations:
     - b.len() > 0
     lean_theorem: Theorems.Shared_Q8_Qkv
 proof_obligations:
-- type: equivalence
+- id: FQP-EQ-001
+  type: equivalence
   property: Fused matches separate QKV
   formal: '|fused_qkv(x) - separate_qkv(x)| < ε element-wise'
   tolerance: 1.0e-06
   applies_to: all
-- type: invariant
+- id: FQP-INV-002
+  type: invariant
   property: Output dimension correct
   formal: len(qkv) = 3 * d_model
   applies_to: all
-- type: invariant
+- id: FQP-INV-003
+  type: invariant
   property: Weight concatenation preserves values
   formal: W_qkv[i*d..(i+1)*d, :] = W_i for i ∈ {q,k,v}
   applies_to: all
-- type: invariant
+- id: FQP-INV-004
+  type: invariant
   property: Bias concatenation preserves values
   formal: b_qkv[i*d..(i+1)*d] = b_i for i ∈ {q,k,v}
   applies_to: all
-- type: invariant
+- id: FQP-INV-005
+  type: invariant
   property: Single matvec call
   formal: Exactly one tiled_matvec_f16_into call for Q+K+V combined
   applies_to: all
-- type: equivalence
+- id: FQP-EQ-006
+  type: equivalence
   property: Shared Q8_1 matches separate quantization (PMAT-054A)
   formal: '|shared_q8_qkv(x) - separate_qkv(x)| = 0 (exact, no FP rounding diff)'
   tolerance: 0.0

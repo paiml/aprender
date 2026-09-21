@@ -1,0 +1,164 @@
+{
+  "ticket": "PMAT-3556",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "f787b50e1b150aba3cead763701c9c8886e20df0",
+  "diff_sha256": "a02d20a51f0f53b9a67646576f3e18b2151224d44a74117bb5d432532cdc4255",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 121764,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements the perf002 probe with all mandatory refusals (too_few_distinct_x, negative_slope, r2_below_bound, bimodal, implausibly_fast), handles warm-up discards, unique nonces, and TTFT measurement properly. The bash driver sets up the bail_marker correctly before any risky commands. Additionally, the tracking defect found in the previous review (where the word 'LANDED' caused derived rows to incorrectly lose their expiry dates) has been completely resolved by rephrasing the explanatory text. As a result, evidence/parity/derived_expiries.json now properly reflects these rows as discharged: false with their correct expiry dates intact. All ticket requirements are met and there are no forbidden file changes.",
+      "findings": [],
+      "raw_bytes": 2837,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff addresses all PMAT-3556 requirements. It successfully implements the bash driver and Python decider with all 5 mandatory refusals properly mapping to UNMEASURABLE (exit 2). The issue raised in a previous quorum round (Round 8) regarding the word 'LANDED' tripping the spec parser has been resolved in this revision by changing the text to 'was discharged' and accurately regenerating derived_expiries.json. The diff avoids touching forbidden files and includes a comprehensive receipt and roadmap update. The verdict is PASS.",
+      "findings": [
+        {
+          "claim": "The diff successfully implements the perf002 probe with all mandatory refusals mapping to exit 2, correctly measures TTFT from the SSE stream instead of relying on time_starttransfer, discards the first request for warm-up, and includes unique prompt nonces.",
+          "file": "scripts/perf002_prefill_path_probe.py",
+          "grounding": "asserted"
+        },
+        {
+          "claim": "The bash driver establishes the bail marker early, uses a secure single clock for the entire run, and properly writes a marker with UNMEASURABLE on early failure paths, matching the perf041 idiom.",
+          "file": "scripts/perf002_prefill_path_probe.sh",
+          "grounding": "asserted"
+        },
+        {
+          "claim": "The issue with the word 'LANDED' in the explanatory text tripping the parser has been addressed. The text was updated to 'was discharged', and evidence/parity/derived_expiries.json correctly reflects these derived rows as discharged: false with the updated expiry dates.",
+          "file": "evidence/parity/derived_expiries.json",
+          "grounding": "asserted"
+        },
+        {
+          "claim": "The ticket explicitly specified that this PR carries row 1's cell as a deliberate change of scope. No forbidden files under crates/aprender-serve/** or .github/workflows/cuda-nightly.yml were modified.",
+          "file": "docs/roadmaps/entries/PMAT-3556.yaml",
+          "grounding": "asserted"
+        }
+      ],
+      "raw_bytes": 4998,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Lane 3 of 3 review completed. The diff for PMAT-3556 was thoroughly analyzed against the ticket, receipt, refutation doctrine, and acceptance criteria. All 5 mandatory refusals in decompose(), bash driver marker logic, unit selftests, SSE timing, and roadmap/spec updates were verified. No forbidden files were modified, and past rounds of audit issues were resolved appropriately. Verdict is PASS.",
+      "findings": [
+        {
+          "claim": "Completed Lane 3 review for PMAT-3556. The diff fully satisfies all ticket requirements and acceptance criteria without violating any constraints or touching forbidden files. Refutation attempt yielded no defects or grounds for failure.",
+          "file": "docs/audits/impl-PMAT-3556-receipt.md",
+          "fix": "None",
+          "grounding": "cited",
+          "line": 149
+        }
+      ],
+      "raw_bytes": 2962,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-low",
+      "model_measured": "gemini-3.6-flash-low",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "docs/audits/impl-PMAT-3556-receipt.md",
+      "line": 149,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Completed Lane 3 review for PMAT-3556. The diff fully satisfies all ticket requirements and acceptance criteria without violating any constraints or touching forbidden files. Refutation attempt yielded no defects or grounds for failure."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/entries/PMAT-3556.yaml",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The ticket explicitly specified that this PR carries row 1's cell as a deliberate change of scope. No forbidden files under crates/aprender-serve/** or .github/workflows/cuda-nightly.yml were modified."
+      ]
+    },
+    {
+      "file": "evidence/parity/derived_expiries.json",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The issue with the word 'LANDED' in the explanatory text tripping the parser has been addressed. The text was updated to 'was discharged', and evidence/parity/derived_expiries.json correctly reflects these derived rows as discharged: false with the updated expiry dates."
+      ]
+    },
+    {
+      "file": "scripts/perf002_prefill_path_probe.py",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The diff successfully implements the perf002 probe with all mandatory refusals mapping to exit 2, correctly measures TTFT from the SSE stream instead of relying on time_starttransfer, discards the first request for warm-up, and includes unique prompt nonces."
+      ]
+    },
+    {
+      "file": "scripts/perf002_prefill_path_probe.sh",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The bash driver establishes the bail marker early, uses a secure single clock for the entire run, and properly writes a marker with UNMEASURABLE on early failure paths, matching the perf041 idiom."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

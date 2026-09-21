@@ -1,0 +1,25 @@
+name: softmax-kernel
+version: "1.0.0"
+status: active
+metadata:
+  kind: kernel
+  version: "1.0.0"
+  created: '2026-09-19'
+  last_modified: '2026-09-19'
+  author: fixture
+  description: a bound kernel contract
+equations:
+  softmax:
+    formula: "softmax(x)_i = exp(x_i) / Σ exp(x_j)"
+    domain: "finite x"
+    codomain: "a distribution"
+    lean_theorem: Theorems.Softmax
+invariants:
+  - id: SM-INV-001
+    property: sums to one
+    formal: 'Σ softmax(x) = 1'
+    prose: false
+falsification_tests:
+  - id: FALSIFY-SM-001
+    description: the sum is one
+    pass_criteria: "1 test"

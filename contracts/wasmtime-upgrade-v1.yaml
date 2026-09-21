@@ -83,12 +83,14 @@ falsification_tests:
   if_fails: "gc feature not enabled or wasm_reference_types removed in the pinned version"
 
 proof_obligations:
-- type: postcondition
+- id: WU-POST-001
+  type: postcondition
   property: "Zero wasmtime security exemptions after upgrade"
   formal: "grep -c 'wasmtime' .cargo/audit.toml == lines mentioning wasmtime as comment only"
   applies_to: advisory_elimination
 
-- type: invariant
+- id: WU-INV-002
+  type: invariant
   property: "WasmRuntime public API unchanged"
   formal: "cargo check && cargo test"
   applies_to: api_compatibility

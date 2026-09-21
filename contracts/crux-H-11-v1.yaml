@@ -126,11 +126,14 @@ falsification_tests:
   if_fails: "apr finetune --json does not expose detected_format field"
 
 proof_obligations:
-- type: invariant
+- id: CH1375E-INV-001
+  type: invariant
   property: "Auto-detect alpaca shape with >=90% key coverage threshold"
-- type: invariant
+- id: CH1375E-INV-002
+  type: invariant
   property: "Role mapping human→user / gpt→assistant for sharegpt"
-- type: equivalence
+- id: CH1375E-EQ-003
+  type: equivalence
   property: "apr finetune auto-format matches HuggingFace TRL apply_chat_template / alpaca_prompt on golden alpaca.jsonl and sharegpt.jsonl inputs"
   reference: "https://huggingface.co/docs/transformers/main/en/chat_templating"
 

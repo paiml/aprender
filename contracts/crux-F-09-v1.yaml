@@ -195,15 +195,20 @@ falsification_tests:
     full_discharge_blocked_on: "BLOCKER-UPSTREAM-MISSING — no stable per-step gradient-norm hook in `apr pretrain` / `apr finetune` training loops to emit NDJSON step records + total_steps summary; classifier aggregates num_steps over user-supplied JSON but cannot cross-check against live training-loop step counts until the hook ships (separate ticket)."
 
 proof_obligations:
-- type: invariant
+- id: CF0EFDC-INV-001
+  type: invariant
   property: "compute_grad_norm_l2 >= 0.0 and finite for any finite input; distinct variant for empty/NaN/Inf"
-- type: invariant
+- id: CF0EFDC-INV-002
+  type: invariant
   property: "clip_grad_norm: post_norm <= pre_norm pointwise (non-expansive)"
-- type: invariant
+- id: CF0EFDC-INV-003
+  type: invariant
   property: "clip_grad_norm: post_norm <= max_norm + 1e-6 when max_norm > 0"
-- type: invariant
+- id: CF0EFDC-INV-004
+  type: invariant
   property: "detect_grad_spike: Spike iff grad_norm[k] > multiplier * rolling_median_window(k)"
-- type: invariant
+- id: CF0EFDC-INV-005
+  type: invariant
   property: "--history-file CLI flag reaches analyze_history and surfaces 8 aggregate keys in --json"
 
 verification_summary:

@@ -53,20 +53,23 @@ equations:
     lean_theorem: Theorems.ReduceLROnPlateau_Patience_Strict
 
 proof_obligations:
-- type: invariant
+- id: RLP-INV-001
+  type: invariant
   property: PO-PATIENCE-TOLERATES-N N non-improving epochs do not reduce LR
   formal: |
     For mode=Min, factor=0.5, lr₀=0.1, patience=1: after the baseline epoch and
     exactly 1 non-improving epoch (num_bad_epochs=1), 1 > 1 is false, so lr
     remains 0.1 (NOT 0.05). Generalizes: for patience=N, N non-improving epochs
     leave lr unchanged.
-- type: invariant
+- id: RLP-INV-002
+  type: invariant
   property: PO-REDUCE-ON-N-PLUS-1 the (N+1)-th non-improving epoch reduces LR
   formal: |
     Continuing the above, the 2nd non-improving epoch (num_bad_epochs=2) gives
     2 > 1 true, so lr reduces to lr₀ * factor = 0.05. Generalizes: for
     patience=N, the (N+1)-th non-improving epoch reduces lr by factor.
-- type: invariant
+- id: RLP-INV-003
+  type: invariant
   property: PO-IMPROVEMENT-RESETS an improving epoch prevents reduction
   formal: |
     For continuous improvement (each metric better than best by > threshold),

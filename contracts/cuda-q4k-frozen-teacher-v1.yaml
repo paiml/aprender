@@ -101,28 +101,33 @@ equations:
     lean_theorem: Theorems.Parity_With_Realizar_Inference
 
 proof_obligations:
-- type: invariant
+- id: CQFT-INV-001
+  type: invariant
   property: frozen teacher block memory footprint stays within Q4K bound
   formal: |
     For every CudaTrainerTeacher constructed from a Q4K-on-disk checkpoint:
     sum_over_layers(gpu_bytes(block)) <= 2 * on_disk_q4k_bytes(checkpoint)
     (factor of 2 covers per-block scratch + KV cache; never the 7× F32 inflation)
-- type: invariant
+- id: CQFT-INV-002
+  type: invariant
   property: frozen teacher has no gradient buffers
   formal: |
     For every CudaBlock::Q4K constructed in a CudaTrainerTeacher:
     block.grad_buffer == None at construction and throughout the trainer lifetime.
-- type: equivalence
+- id: CQFT-EQ-003
+  type: equivalence
   property: Q4K forward matches Fp32 forward for the same weights
   formal: |
     For every (W_q4k, x) pair: cosine(q4k_forward(W_q4k, x), fp32_forward(dequant(W_q4k), x)) >= 0.999
     (verified at runtime via apr trace --compare cuda-q4k cuda-fp32 on a held-out batch)
-- type: classification
+- id: CQFT-CLS-004
+  type: classification
   property: teacher_mode autodetection picks Frozen for distill teacher path
   formal: |
     For every call site CudaTrainerTeacher::for_inference(checkpoint_dir, model_config):
     the constructed trainer has teacher_mode = Frozen, regardless of model_config flags.
-- type: bound
+- id: CQFT-BND-005
+  type: bound
   property: 7B Q4K teacher fits within GB10 budget after this fix
   formal: |
     Let M = peak GPU+system memory used by `apr distill --backend cuda --epochs 1`

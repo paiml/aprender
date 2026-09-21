@@ -170,15 +170,20 @@ falsification_tests:
   if_fails: "apr AdamW step-1 diverges from torch.optim.AdamW — bias correction or update formula bug"
 
 proof_obligations:
-- type: invariant
+- id: CD18949-INV-001
+  type: invariant
   property: "AdamW update: m_t=β1·m+(1-β1)g, v_t=β2·v+(1-β2)g², θ_t=θ-η·m̂/(√v̂+ε)-η·λ·θ"
-- type: invariant
+- id: CD18949-INV-002
+  type: invariant
   property: "8-bit AdamW state ≤ 0.30× fp32 AdamW state memory"
-- type: invariant
+- id: CD18949-INV-003
+  type: invariant
   property: "|final_loss(adamw-8bit) - final_loss(adamw)| / final_loss(adamw) ≤ 0.02"
-- type: invariant
+- id: CD18949-INV-004
+  type: invariant
   property: "--debug-optimizer emits (m, v, m_hat, v_hat, update, weight_decay_term) per step"
-- type: equivalence
+- id: CD18949-EQ-005
+  type: equivalence
   property: "apr --optimizer adamw ≡ torch.optim.AdamW step-1 θ within 1e-5 relative"
 
 # References:

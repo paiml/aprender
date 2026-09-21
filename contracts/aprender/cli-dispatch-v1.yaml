@@ -191,20 +191,24 @@ kernel_structure:
     description: Map result to exit code, verify output format fidelity
 
 proof_obligations:
-- type: invariant
+- id: CD-INV-001
+  type: invariant
   property: Every Commands variant has a dispatch handler
   formal: '∀ v ∈ Commands::variants(): dispatch(v) ≠ unreachable!()'
   applies_to: dispatch_completeness
-- type: invariant
+- id: CD-INV-002
+  type: invariant
   property: Exit codes are injective (no collisions)
   formal: '∀ e1, e2 ∈ CliError: e1 ≠ e2 → exit_code(e1) ≠ exit_code(e2) (by variant class)'
   applies_to: exit_code_semantics
-- type: invariant
+- id: CD-INV-003
+  type: invariant
   property: JSON output is always parseable
   formal: '∀ r: serde_json::from_str(format(r, "json")).is_ok()'
   tolerance: 1e-6
   applies_to: output_format_fidelity
-- type: invariant
+- id: CD-INV-004
+  type: invariant
   property: Inspection commands have no side effects
   formal: '∀ cmd ∈ ReadOnlySet: fs_snapshot_before == fs_snapshot_after'
   applies_to: idempotent_inspection

@@ -141,11 +141,14 @@ falsification_tests:
     full_discharge_blocked_on: "adversarial-prompt 4-gram uniqueness test against real GGUF fixture with DRY sampler wired into apr run CLI"
 
 proof_obligations:
-- type: equivalence
+- id: CC2A5BA-EQ-001
+  type: equivalence
   property: "apr --dry-* matches llama.cpp DRY sampler on identical (ctx, multiplier, base, allowed)"
-- type: invariant
+- id: CC2A5BA-INV-002
+  type: invariant
   property: "multiplier=0 is identity; verified by byte-equal tokens"
-- type: invariant
+- id: CC2A5BA-INV-003
+  type: invariant
   property: "penalty ≥ 0 for all tokens; never adds probability mass"
 
 verification_summary:

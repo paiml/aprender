@@ -1,0 +1,26 @@
+# vendored: tests/core/property/node-002.ttl
+id: property/node-002
+label: "Test of sh:node at property shape 002"
+prefix: "http://datashapes.org/sh/tests/core/property/node-002.test#"
+targeting: "sh:node ex:AddressShape names a shape; it is written inline (same properties); ex:AddressShape has no target of its own"
+shapes:
+  - id: PersonShape
+    targetClass: ex:Person
+    properties:
+      - path: ex:address
+        minCount: 1
+        node:
+          properties:
+            - {path: ex:postalCode, datatype: xsd:string, maxCount: 1}
+data: |
+  ex:Bob rdf:type ex:Person .
+  ex:Bob ex:address ex:BobsAddress .
+  ex:BobsAddress ex:postalCode "1234" .
+  ex:Person rdf:type rdfs:Class .
+  ex:Reto rdf:type ex:Person .
+  ex:Reto ex:address ex:RetosAddress .
+  ex:RetosAddress ex:postalCode 5678 .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:Reto, path: ex:address, component: node}

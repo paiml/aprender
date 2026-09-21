@@ -42,15 +42,18 @@ equations:
     - page is initialized
     lean_theorem: Theorems.Page_State
 proof_obligations:
-- type: invariant
+- id: CR34D3-INV-001
+  type: invariant
   property: Roundtrip identity
   formal: '∀ data: decompress(compress(data)) = data'
   applies_to: roundtrip_identity
-- type: invariant
+- id: CR34D3-INV-002
+  type: invariant
   property: Positive ratio
   formal: '∀ data: compression_ratio(data) > 0.0'
   applies_to: compression_ratio
-- type: invariant
+- id: CR34D3-INV-003
+  type: invariant
   property: Page state consistency
   formal: '∀ page: is_compressed(uncompressed(data)) = false'
   applies_to: page_state

@@ -31,15 +31,18 @@ equations:
     - send_result.is_err()
     lean_theorem: Theorems.Error_Categorized
 proof_obligations:
-- type: invariant
+- id: EHDB49-INV-001
+  type: invariant
   property: Complete send or error
   formal: '∀ msg, conn: send(msg, conn).is_ok() → send(msg, conn).unwrap() = msg.len()'
   applies_to: send
-- type: invariant
+- id: EHDB49-INV-002
+  type: invariant
   property: All errors are categorized
   formal: '∀ err ∈ SendError: err.kind() ∈ {ConnectionClosed, Timeout, BufferFull}'
   applies_to: send_error_propagation
-- type: soundness
+- id: EHDB49-SND-003
+  type: soundness
   property: Send on closed connection does not panic
   formal: '∀ msg, closed_conn: send(msg, closed_conn) = Err(_)'
   applies_to: send

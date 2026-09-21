@@ -42,25 +42,30 @@ equations:
     - params.len() > 0
     lean_theorem: Theorems.CMAES.CovarianceSymmetry
 proof_obligations:
-- type: bound
+- id: CMA-BND-001
+  type: bound
   property: Step size positive
   formal: sigma > 0 at every generation
   applies_to: all
-- type: invariant
+- id: CMA-INV-002
+  type: invariant
   property: Covariance positive definite
   formal: eigenvalues(C) > 0 at every generation
   applies_to: all
-- type: invariant
+- id: CMA-INV-003
+  type: invariant
   property: Weights sum to 1
   formal: '|sum(w_i) - 1.0| < eps for recombination weights'
   tolerance: 1.0e-10
   applies_to: all
-- type: invariant
+- id: CMA-INV-004
+  type: invariant
   property: Covariance symmetry
   formal: C = C^T at every generation
   tolerance: 1.0e-10
   applies_to: all
-- type: equivalence
+- id: CMA-EQ-005
+  type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd

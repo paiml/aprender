@@ -78,11 +78,14 @@ falsification_tests:
 
   if_fails: rule 'Deployment has liveness + readiness probes on /healthz' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CK1E8A9-EQ-001
+  type: equivalence
   property: "emitted chart conforms to Helm v3 chart.yaml v2 + apps/v1 Deployment schema"
-- type: invariant
+- id: CK1E8A9-INV-002
+  type: invariant
   property: "helm lint == 0; helm template deterministic"
-- type: invariant
+- id: CK1E8A9-INV-003
+  type: invariant
   property: "both probes present on /healthz"
 
 verification_summary:
