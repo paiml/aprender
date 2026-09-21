@@ -33,13 +33,18 @@ on:
     # `gh workflow run` (#3292); until then, re-measure before trusting.
     - cron: '0 22 * * *'   # 22:00 UTC -> lands ~03:00 UTC
   workflow_dispatch: {}
+  # #3676: no v* tag trigger here. The release tag's coverage is owned by ci.yml
+  # (`coverage_on: tag`, which sovereign-ci's gate requires on a tag push), so a tag
+  # is measured once. scripts/check_coverage_has_producers.sh R3 keeps it that way.
 
 permissions:
   contents: read
   issues: write # open/update the single coverage tracking issue
 
 concurrency:
-  group: coverage-nightly
+  # Per ref (#3676): a tag's run and the nightly on main must not cancel each
+  # other. A second nightly on the same ref still supersedes the first.
+  group: coverage-nightly-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
