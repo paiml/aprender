@@ -150,6 +150,41 @@ mod engine {
         u32::try_from(pos).expect("id fits u32")
     }
 
+    /// Greedy pick: the highest logit's id (a masked token is -inf and never wins).
+    fn greedy(logits: &[f32]) -> u32 {
+        let (next, _) =
+            logits
+                .iter()
+                .enumerate()
+                .fold((0usize, f32::NEG_INFINITY), |best, (i, &l)| {
+                    if l > best.1 {
+                        (i, l)
+                    } else {
+                        best
+                    }
+                });
+        u32::try_from(next).expect("id fits u32")
+    }
+
+    /// One decoding step, the way a constrained loop runs it: mask, the loop's own greedy
+    /// sampler, then accept. `None` when the model chose end-of-sequence.
+    fn step(
+        constraint: &mut Option<&mut dyn TokenConstraint>,
+        mut logits: Vec<f32>,
+    ) -> Result<Option<u32>, ConstraintError> {
+        if let Some(c) = constraint.as_deref_mut() {
+            c.mask(&mut logits)?;
+        }
+        let next = greedy(&logits);
+        if next == EOS {
+            return Ok(None);
+        }
+        if let Some(c) = constraint.as_deref_mut() {
+            c.accept(next)?;
+        }
+        Ok(Some(next))
+    }
+
     /// A fake model that WANTS to violate any schema: `x` scores highest, then `xx`, then
     /// every token by a fixed arbitrary order. Greedy, like `--temperature 0`.
     fn generate(
@@ -159,46 +194,45 @@ mod engine {
     ) -> Result<Vec<u8>, ConstraintError> {
         let x = id_of(v, b"x");
         let xx = id_of(v, b"xx");
+        let score = |i: usize| {
+            let t = u32::try_from(i).expect("id fits u32");
+            if t == x {
+                100.0
+            } else if t == xx {
+                90.0
+            } else if t == EOS {
+                80.0 // a finished model wants to stop; masked until the document is complete
+            } else {
+                ((i * 7919) % 1000) as f32 / 100.0
+            }
+        };
         let mut out = Vec::new();
         for _ in 0..max {
-            let mut logits: Vec<f32> = (0..v.token_bytes.len())
-                .map(|i| {
-                    let t = u32::try_from(i).expect("id fits u32");
-                    if t == x {
-                        100.0
-                    } else if t == xx {
-                        90.0
-                    } else if t == EOS {
-                        80.0 // a finished model wants to stop; masked until the document is complete
-                    } else {
-                        ((i * 7919) % 1000) as f32 / 100.0
-                    }
-                })
-                .collect();
-            if let Some(c) = constraint.as_deref_mut() {
-                c.mask(&mut logits)?;
-            }
-            let (next, _) =
-                logits
-                    .iter()
-                    .enumerate()
-                    .fold((0usize, f32::NEG_INFINITY), |best, (i, &l)| {
-                        if l > best.1 {
-                            (i, l)
-                        } else {
-                            best
-                        }
-                    });
-            let next = u32::try_from(next).expect("id fits u32");
-            if next == EOS {
+            let logits = (0..v.token_bytes.len()).map(score).collect();
+            let Some(next) = step(&mut constraint, logits)? else {
                 return Ok(out);
-            }
-            if let Some(c) = constraint.as_deref_mut() {
-                c.accept(next)?;
-            }
+            };
             out.extend_from_slice(&v.token_bytes[next as usize]);
         }
         Ok(out)
+    }
+
+    /// How the intent model scores token `i` when `rest` is what it still means to write:
+    /// end-of-sequence once the intent is written; else the longest allowed prefix of `rest`;
+    /// else `fallback`'s fixed order, which closes structures.
+    fn intent_score(v: &ConstraintVocab, fallback: &[u32], rest: &[u8], i: usize) -> f32 {
+        let t = u32::try_from(i).expect("id fits u32");
+        let bytes = &v.token_bytes[i];
+        if t == EOS {
+            return if rest.is_empty() { 2000.0 } else { -1.0 };
+        }
+        if !v.special[i] && !bytes.is_empty() && rest.starts_with(bytes) {
+            return 1000.0 + bytes.len() as f32;
+        }
+        fallback
+            .iter()
+            .position(|&f| f == t)
+            .map_or(0.0, |rank| 500.0 - rank as f32)
     }
 
     /// A fake model with an INTENT: it prefers the allowed token that spells the longest prefix
@@ -218,46 +252,12 @@ mod engine {
         let mut done = 0usize; // bytes of the intent already written
         for _ in 0..max {
             let rest = &intended[done..];
-            let mut logits: Vec<f32> = (0..v.token_bytes.len())
-                .map(|i| {
-                    let t = u32::try_from(i).expect("id fits u32");
-                    let bytes = &v.token_bytes[i];
-                    if t == EOS {
-                        if rest.is_empty() {
-                            2000.0
-                        } else {
-                            -1.0
-                        }
-                    } else if !v.special[i] && !bytes.is_empty() && rest.starts_with(bytes) {
-                        1000.0 + bytes.len() as f32
-                    } else if let Some(rank) = fallback.iter().position(|&f| f == t) {
-                        500.0 - rank as f32
-                    } else {
-                        0.0
-                    }
-                })
+            let logits = (0..v.token_bytes.len())
+                .map(|i| intent_score(v, &fallback, rest, i))
                 .collect();
-            if let Some(c) = constraint.as_deref_mut() {
-                c.mask(&mut logits)?;
-            }
-            let (next, _) =
-                logits
-                    .iter()
-                    .enumerate()
-                    .fold((0usize, f32::NEG_INFINITY), |best, (i, &l)| {
-                        if l > best.1 {
-                            (i, l)
-                        } else {
-                            best
-                        }
-                    });
-            let next = u32::try_from(next).expect("id fits u32");
-            if next == EOS {
+            let Some(next) = step(&mut constraint, logits)? else {
                 return Ok(out);
-            }
-            if let Some(c) = constraint.as_deref_mut() {
-                c.accept(next)?;
-            }
+            };
             let bytes = &v.token_bytes[next as usize];
             if rest.starts_with(bytes) {
                 done += bytes.len();
