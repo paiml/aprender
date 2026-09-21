@@ -562,7 +562,7 @@ fn build_health_response(state: &AppState) -> HealthResponse {
         compute_mode = "gpu";
     }
     #[cfg(feature = "cuda")]
-    if state.has_cuda_model() {
+    if state.has_cuda_model() || state.apr_q4k_tx().is_some() {
         compute_mode = "gpu";
     }
     // #3571: the hybrid's session reports its own backend, without waiting on a generation.

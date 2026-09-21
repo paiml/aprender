@@ -421,8 +421,13 @@ impl AppState {
         if self.gpu_model.is_some() || self.cached_model.is_some() {
             return true;
         }
+        // #3791: the APR Q4K pool path (ALB-095) serves from its inference thread's
+        // channel; with no other model in the state, /health reported it "loading" forever.
         #[cfg(feature = "cuda")]
-        if self.cuda_model.is_some() || self.safetensors_cuda_model.is_some() {
+        if self.cuda_model.is_some()
+            || self.safetensors_cuda_model.is_some()
+            || self.apr_q4k_tx.is_some()
+        {
             return true;
         }
         false
@@ -610,6 +615,17 @@ impl AppState {
             model_source: None,
             effective: EffectiveConfigState::new(),
         })
+    }
+
+    /// #3791: the architecture the model file declares, for states that hold no
+    /// model object to read it from (the APR Q4K pool path). Without it
+    /// `model_architecture()` is `None`, the shared chat-template selector falls
+    /// back to the raw template, and a chat request reaches the model as bare
+    /// text — measured: 7 prompt tokens for one user sentence.
+    #[must_use]
+    pub fn with_architecture(mut self, architecture: impl Into<String>) -> Self {
+        self.cached_architecture = Some(architecture.into());
+        self
     }
 
     /// #169: Create state with SafeTensors CUDA model for GPU-accelerated inference
