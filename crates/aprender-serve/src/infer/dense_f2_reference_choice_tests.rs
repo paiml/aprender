@@ -74,14 +74,20 @@ fn dense_f2_reference_choice() {
                 eprintln!("[dense-f2] {name} | {pname}: nothing to judge");
                 continue;
             };
+            // Each reference is timed: the dense F2 runs on every `apr run --gpu`
+            // (no receipt), so the FP32 reference's cost is part of the choice.
+            let t = std::time::Instant::now();
             let Some(q8k) =
                 super::f2_cpu_reference_logits(cuda.model(), &probe, kv_dim, num_layers)
             else {
                 continue;
             };
+            let q8k_ms = t.elapsed().as_millis();
+            let t = std::time::Instant::now();
             let fp32 = crate::quantize::with_fp32_activations(|| {
                 super::f2_cpu_reference_logits(cuda.model(), &probe, kv_dim, num_layers)
             });
+            let fp32_ms = t.elapsed().as_millis();
             let Some(fp32) = fp32 else { continue };
             let decode_token = q8k
                 .get(probe.len().saturating_sub(1))
@@ -110,7 +116,7 @@ fn dense_f2_reference_choice() {
             let judged = if same_decode { gpu.len() } else { probe.len() };
             let b = super::f2_multi_position_report(&fp32[..judged], &gpu[..judged]);
             eprintln!(
-                "[dense-f2] {name} | {pname} | via {} | {} positions | vs Q8_K: {} | vs FP32: {}{}",
+                "[dense-f2] {name} | {pname} | via {} | {} positions | vs Q8_K: {} | vs FP32: {} | CPU reference Q8_K {q8k_ms} ms, FP32 {fp32_ms} ms{}",
                 via.as_str(),
                 gpu.len(),
                 verdict(&a),
