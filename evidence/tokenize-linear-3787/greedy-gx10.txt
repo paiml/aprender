@@ -1,0 +1,18 @@
+# #3787 on gx10 (aarch64): new = apr 37f702fdb, old = apr 36cd1e4d4 (the greedy loop before #3787), 2026-09-21T22:50:26Z
+# same vocabularies and prompt snapshot as greedy-ab-lambda.txt; old measured at p20k/p60k (growth), identity checked there
+new llama-spm p4k rc=0 ids=4950 t=0.034s
+new llama-spm p8k rc=0 ids=9690 t=0.045s
+new llama-spm p20k rc=0 ids=23605 t=0.039s
+new llama-spm p60k rc=0 ids=70920 t=0.084s
+new llama-spm p148k rc=0 ids=175956 t=0.136s
+new llama-spm p262k rc=0 ids=309128 t=0.223s
+old llama-spm p20k rc=0 ids=23605 t=0.795s IDENTICAL
+old llama-spm p60k rc=0 ids=70920 t=7.372s IDENTICAL
+new gpt-2 p4k rc=0 ids=6555 t=0.068s
+new gpt-2 p8k rc=0 ids=12506 t=0.051s
+new gpt-2 p20k rc=0 ids=30280 t=0.069s
+new gpt-2 p60k rc=0 ids=88568 t=0.111s
+new gpt-2 p148k rc=0 ids=222752 t=0.217s
+new gpt-2 p262k rc=0 ids=389752 t=0.328s
+old gpt-2 p20k rc=0 ids=30280 t=0.965s IDENTICAL
+old gpt-2 p60k rc=0 ids=88568 t=8.698s IDENTICAL

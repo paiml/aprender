@@ -1,0 +1,66 @@
+# #3787: the greedy encoder (non-byte-level GGUFs; byte-level with an unimplemented pre-tokenizer), old vs new, lambda noah-Lambda-Vector, 2026-09-21T22:50:26Z
+# old = apr (948f3a4a8) (the greedy loop as on release/0.69.1-batch-1); new = apr (37f702fdb) (#3787)
+# vocabularies: the pinned llama.cpp tree's models/ggml-vocab-llama-spm.gguf (llama) and ggml-vocab-gpt-2.gguf (gpt2, pre 'gpt-2' not implemented -> greedy)
+# command: apr tokenize encode VOCAB -f FILE; ids compared with cmp (sequence); files: the committed corpus + 3e's #3596 prompts (snapshot sha256 of p262k: 6a4619cc29925763)
+
+## identity: old vs new ids, every (vocabulary, file)
+IDENTICAL gpt-2-brief-review           3142 ids
+IDENTICAL gpt-2-chat-template          157 ids
+IDENTICAL gpt-2-code-rust-token        7574 ids
+IDENTICAL gpt-2-identifiers            349 ids
+IDENTICAL gpt-2-nonascii               778 ids
+IDENTICAL gpt-2-p4k                    6555 ids
+IDENTICAL gpt-2-p8k                    12506 ids
+IDENTICAL gpt-2-p20k                   30280 ids
+IDENTICAL gpt-2-p60k                   88568 ids
+IDENTICAL gpt-2-p148k                  222752 ids
+IDENTICAL gpt-2-p262k                  389752 ids
+IDENTICAL gpt-2-whitespace             88 ids
+IDENTICAL llama-spm-brief-review       3047 ids
+IDENTICAL llama-spm-chat-template      163 ids
+IDENTICAL llama-spm-code-rust-token    4448 ids
+IDENTICAL llama-spm-identifiers        443 ids
+IDENTICAL llama-spm-nonascii           456 ids
+IDENTICAL llama-spm-p4k                4950 ids
+IDENTICAL llama-spm-p8k                9690 ids
+IDENTICAL llama-spm-p20k               23605 ids
+IDENTICAL llama-spm-p60k               70920 ids
+IDENTICAL llama-spm-p148k              175956 ids
+IDENTICAL llama-spm-p262k              309128 ids
+IDENTICAL llama-spm-whitespace         80 ids
+
+## new: wall per encode (process start to exit; floor = '-p x')
+llama-spm brief-review rc=0 bytes=9295 ids=3047 t=0.023s
+llama-spm chat-template rc=0 bytes=361 ids=163 t=0.019s
+llama-spm code-rust-token rc=0 bytes=14633 ids=4448 t=0.022s
+llama-spm identifiers rc=0 bytes=795 ids=443 t=0.019s
+llama-spm nonascii rc=0 bytes=983 ids=456 t=0.020s
+llama-spm p148k rc=0 bytes=503351 ids=175956 t=0.156s
+llama-spm p20k rc=0 bytes=71401 ids=23605 t=0.042s
+llama-spm p262k rc=0 bytes=872251 ids=309128 t=0.240s
+llama-spm p4k rc=0 bytes=14751 ids=4950 t=0.021s
+llama-spm p60k rc=0 bytes=205251 ids=70920 t=0.073s
+llama-spm p8k rc=0 bytes=28751 ids=9690 t=0.032s
+llama-spm whitespace rc=0 bytes=241 ids=80 t=0.019s
+gpt-2 brief-review rc=0 bytes=9295 ids=3142 t=0.036s
+gpt-2 chat-template rc=0 bytes=361 ids=157 t=0.028s
+gpt-2 code-rust-token rc=0 bytes=14633 ids=7574 t=0.032s
+gpt-2 identifiers rc=0 bytes=795 ids=349 t=0.027s
+gpt-2 nonascii rc=0 bytes=983 ids=778 t=0.028s
+gpt-2 p148k rc=0 bytes=503351 ids=222752 t=0.196s
+gpt-2 p20k rc=0 bytes=71401 ids=30280 t=0.054s
+gpt-2 p262k rc=0 bytes=872251 ids=389752 t=0.369s
+gpt-2 p4k rc=0 bytes=14751 ids=6555 t=0.033s
+gpt-2 p60k rc=0 bytes=205251 ids=88568 t=0.119s
+gpt-2 p8k rc=0 bytes=28751 ids=12506 t=0.034s
+gpt-2 whitespace rc=0 bytes=241 ids=88 t=0.024s
+floor llama-spm -p x t=0.023s
+
+## old: wall per encode, llama-spm, measured earlier on the same binary (3e-drift/spm-timing.txt)
+p4k rc=0 bytes=14751 t=0.08s 
+p8k rc=0 bytes=28751 t=0.22s 
+p20k rc=0 bytes=71401 t=1.32s 
+p60k rc=0 bytes=205251 t=11.89s 
+p148k rc=0 bytes=503351 t=91.92s 
+p262k rc=0 bytes=872251 t=305.62s 
+# note: that p262k run read an earlier p262k.txt of the same size (872251 bytes) that gave 306748 ids; the snapshot above gives 309128 on BOTH binaries. The timing is of an 872 KB prompt either way.

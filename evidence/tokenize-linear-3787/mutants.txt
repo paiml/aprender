@@ -1,0 +1,15 @@
+# #3787 done_when 4: the complexity-class test, greedy_encode_work_is_linear_in_the_prompt (gguf/token_greedy_linear_tests.rs), and its two mutants. 2026-09-21T22:50:48Z, lambda, cargo test -p aprender-serve --lib greedy_linear_tests
+# GOOD tree (37f702fdb content): 4 passed; work ratio for 4x the prompt:
+RATIO 2944 -> 11776 bytes: 64905 -> 260745 = 4.02x
+
+# M1: greedy_prefix_ends collects every character's offset before take(32) (the pre-#3787 scan):
+test gguf::loader::greedy_linear_tests::greedy_encode_work_is_linear_in_the_prompt ... FAILED
+4x the prompt (2944 -> 11776 bytes) cost 15.2x the work (610992 -> 9263808): superlinear
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 16010 filtered out; finished in 0.33s
+
+# M2: split_on_special_tokens re-searches every special at every split (`if slot.is_some_and(|p| p < at)` -> `if true`):
+test gguf::loader::greedy_linear_tests::greedy_encode_work_is_linear_in_the_prompt ... FAILED
+4x the prompt (2944 -> 11776 bytes) cost 9.9x the work (138559 -> 1369135): superlinear
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 16010 filtered out; finished in 0.17s
+
+# a first version of the test used chat turns only and M1 SURVIVED (each turn is bounded by specials, so a segment-length scan stayed linear); the prompt now grows a special-free body too, and both mutants are RED.

@@ -1,0 +1,27 @@
+# #3787 done_when 1+2: the phases before the model loads, Qwen3.5-9B-Q4_K_M, gx10
+# harness: evidence/tokenize-linear-3787/phases.py -- `apr run MODEL -i PROMPT --chat -n 1 -v --no-gpu`, every stderr line stamped on arrival,
+#   stopped at 'Model loaded in' (CPU-only builds, no GPU touched). AFTER = apr 37f702fdb, from its [prepare] line (parse/template/tokenize) and 'Model loaded in'.
+#   BEFORE = apr 262dfb2f6 (pre-#3726: Qwen took the same O(n^2) greedy loop), tokenize = stamp('[DEBUG] ... encoded N tokens') - stamp('[DEBUG] formatted_prompt').
+# prefill is not measured here: at 148k/262k it needs #3596's batched prefill, not in this base; see 3e's #3596 runs (#3726 issuecomment-5767766463).
+# the Qwen3.5 context check is #3596's (08555906a), not in this base.
+# gx10 AFTER p4k ran first on a cold page cache (parse 5.1 s, load 22.7 s); every later row is warm.
+prompt   tokens before/after | tokenize before tokenize after |   parse  template |   load | to-loaded before   after
+p4k           4131/4134      |          0.05 s        0.179 s |  5.09 s    0.2 ms | 22.7 s |           11.8 s  28.4 s
+p20k         20085/20077     |          0.57 s        0.232 s |  0.58 s    0.5 ms | 15.1 s |           12.5 s  16.3 s
+p60k         59887/59924     |          5.69 s        0.136 s |  0.26 s    0.4 ms | 11.3 s |           23.3 s  11.9 s
+p148k       148563/148203    |         43.22 s        0.163 s |  0.27 s    0.9 ms | 11.4 s |           62.7 s  12.0 s
+p262k       263089/261948    |        161.85 s        0.180 s |  0.28 s    1.4 ms | 11.3 s |          183.1 s  11.8 s
+# 'tokens': BEFORE reproduces 3e's apr counts (4131/20085/59887/148563/263089, the drift #3726 fixed); AFTER = raw + 11 wrapper tokens
+#   (the raw text ids equal llama.cpp's; the +11 vs llama.cpp's +8 chat wrapper is the template, not the tokenizer).
+# tokenize AFTER ~0.15 s floor = the first build of the byte-level tables in the process (cached per model afterwards).
+# raw rows:
+# {"prompt": "/mnt/nvme-raid0/work-c3/3787-ab/prompts/p4k.txt", "wall_to_loaded_s": 28.448601178009994, "load_ms": 22714.6, "tokens": 4134, "marks": {"template_end": 5.103495831019245, "tokenize_end": 5.282593387004454, "loaded": 28.448601178009994}, "prepare": {"parse_ms": 5093.4, "template_ms": 0.2, "tokenize_ms": 179.1, "tokens": 4134, "bytes": 14818}}
+# {"prompt": "/mnt/nvme-raid0/work-c3/3787-ab/prompts/p20k.txt", "wall_to_loaded_s": 16.293135030020494, "load_ms": 15097.4, "tokens": 20077, "marks": {"template_end": 0.5889404100016691, "tokenize_end": 0.8213478469988331, "loaded": 16.293135030020494}, "prepare": {"parse_ms": 578.0, "template_ms": 0.5, "tokenize_ms": 232.3, "tokens": 20077, "bytes": 71468}}
+# {"prompt": "/mnt/nvme-raid0/work-c3/3787-ab/prompts/p60k.txt", "wall_to_loaded_s": 11.861477222992107, "load_ms": 11308.4, "tokens": 59924, "marks": {"template_end": 0.26406286598648876, "tokenize_end": 0.40025962400250137, "loaded": 11.861477222992107}, "prepare": {"parse_ms": 259.2, "template_ms": 0.4, "tokenize_ms": 136.1, "tokens": 59924, "bytes": 205318}}
+# {"prompt": "/mnt/nvme-raid0/work-c3/3787-ab/prompts/p148k.txt", "wall_to_loaded_s": 11.997225770028308, "load_ms": 11408.7, "tokens": 148203, "marks": {"template_end": 0.27360998204676434, "tokenize_end": 0.43643135303864256, "loaded": 11.997225770028308}, "prepare": {"parse_ms": 266.9, "template_ms": 0.9, "tokenize_ms": 163.0, "tokens": 148203, "bytes": 503418}}
+# {"prompt": "/mnt/nvme-raid0/work-c3/3787-ab/prompts/p262k.txt", "wall_to_loaded_s": 11.837762089038733, "load_ms": 11255.3, "tokens": 261948, "marks": {"template_end": 0.2849552489933558, "tokenize_end": 0.4642037270241417, "loaded": 11.837762089038733}, "prepare": {"parse_ms": 276.0, "template_ms": 1.4, "tokenize_ms": 180.0, "tokens": 261948, "bytes": 872318}}
+# {"prompt": "/mnt/nvme-raid0/work-c3/3787-ab/prompts/p4k.txt", "wall_to_loaded_s": 11.821106262970716, "load_ms": 11405.0, "tokens": 4131, "marks": {"template_end": 0.24124701198888943, "tokenize_end": 0.2889033079845831, "loaded": 11.821106262970716}, "prepare": null, "tokenize_ms_from_marks": 47.656295995693654}
+# {"prompt": "/mnt/nvme-raid0/work-c3/3787-ab/prompts/p20k.txt", "wall_to_loaded_s": 12.476079170999583, "load_ms": 11555.8, "tokens": 20085, "marks": {"template_end": 0.22157787601463497, "tokenize_end": 0.7939249839982949, "loaded": 12.476079170999583}, "prepare": null, "tokenize_ms_from_marks": 572.34710798366}
+# {"prompt": "/mnt/nvme-raid0/work-c3/3787-ab/prompts/p60k.txt", "wall_to_loaded_s": 23.289313008019235, "load_ms": 17240.1, "tokens": 59887, "marks": {"template_end": 0.2243351319921203, "tokenize_end": 5.911967489984818, "loaded": 23.289313008019235}, "prepare": null, "tokenize_ms_from_marks": 5687.6323579926975}
+# {"prompt": "/mnt/nvme-raid0/work-c3/3787-ab/prompts/p148k.txt", "wall_to_loaded_s": 62.74924666102743, "load_ms": 18648.2, "tokens": 148563, "marks": {"template_end": 0.7119663269841112, "tokenize_end": 43.93223856203258, "loaded": 62.74924666102743}, "prepare": null, "tokenize_ms_from_marks": 43220.27223504847}
+# {"prompt": "/mnt/nvme-raid0/work-c3/3787-ab/prompts/p262k.txt", "wall_to_loaded_s": 183.1382857330027, "load_ms": 19933.5, "tokens": 263089, "marks": {"template_end": 0.8572128829546273, "tokenize_end": 162.70442973199533, "loaded": 183.1382857330027}, "prepare": null, "tokenize_ms_from_marks": 161847.2168490407}
