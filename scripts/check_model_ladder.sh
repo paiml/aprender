@@ -52,11 +52,11 @@ SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"   # before the cd: the mu
 cd "${MODEL_LADDER_ROOT:-$(dirname "$SELF")/..}" || exit 2
 
 # ---------------------------------------------------------------- the judge
-# judge <ladder> <ladder_at_main_or_empty> <receipt_dir> <version> [context-rungs.json]  → exit 0/1/2
+# judge <ladder> <ladder_at_main_or_empty> <receipt_dir> <version> [context-rungs.json] [its origin/main copy]  → exit 0/1/2
 judge() {
-  python3 - "$1" "$2" "$3" "$4" "${5:-}" <<'PY'
+  python3 - "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" <<'PY'
 import json, os, sys, yaml
-ladder_p, main_p, rdir, version, rungs_p = sys.argv[1:6]
+ladder_p, main_p, rdir, version, rungs_p, rungs_main_p = sys.argv[1:7]
 sys.path.insert(0, os.environ.get("MODEL_LADDER_CELLS_LIB") or "scripts/lib")  # a mutant copy of the module, in --self-test
 import model_ladder_cells
 try:
@@ -116,8 +116,8 @@ if main_p and os.path.exists(main_p):
             print("FAIL  the cells block DROPPED vs origin/main -- verbs x thinking x context would owe nothing"); rc = 1
         elif mc:
             for what, a, b in (("verbs", mc.get("verbs"), hc.get("verbs")),
-                               ("rungs", [r["id"] for r in mc.get("rungs") or []], [r["id"] for r in hc.get("rungs") or []]),
-                               ("long-rung families", (mc.get("long_rungs_for") or {}).get("families"), (hc.get("long_rungs_for") or {}).get("families"))):
+                               ("long-rung families", (mc.get("long_rungs_for") or {}).get("families"), (hc.get("long_rungs_for") or {}).get("families")),
+                               ("long-rung representatives", list((mc.get("long_rungs_for") or {}).get("representatives") or {}), list((hc.get("long_rungs_for") or {}).get("representatives") or {}))):
                 gone = set(a or []) - set(b or [])
                 if gone: print(f"FAIL  cells {what} DROPPED vs origin/main: {sorted(gone)}"); rc = 1
         mh = {h["id"] for h in M.get("hosts", []) if h.get("required")}
@@ -188,7 +188,13 @@ if rungs_p and os.path.exists(rungs_p):
         rungs_doc = json.load(open(rungs_p))
     except Exception as e:
         print(f"FAIL  context rungs {rungs_p} unreadable: {e}")
-if model_ladder_cells.judge(L, good, rungs_doc, print):
+rungs_main = None
+if rungs_main_p and os.path.exists(rungs_main_p) and os.path.getsize(rungs_main_p) > 0:
+    try:
+        rungs_main = json.load(open(rungs_main_p))
+    except Exception as e:
+        print(f"FAIL  context rungs at origin/main unreadable: {e}"); rc = 1
+if model_ladder_cells.judge(L, good, rungs_doc, print, rungs_main):
     rc = 1
 sys.exit(rc)
 PY
@@ -243,7 +249,7 @@ if [ "$SELF_TEST" = 1 ]; then
     want=$(cat "$c/expected_rc")
     lad="$c/ladder.yaml"; [ -f "$lad" ] || lad="$LADDER"
     main=""; [ -f "$c/ladder_main.yaml" ] && main="$c/ladder_main.yaml"
-    out=$(judge "$lad" "$main" "$c/receipts" "$(cat "$c/version" 2>/dev/null || echo 0.0.0-case)" "$c/context-rungs.json"); got=$?
+    out=$(judge "$lad" "$main" "$c/receipts" "$(cat "$c/version" 2>/dev/null || echo 0.0.0-case)" "$c/context-rungs.json" "$c/context-rungs_main.json"); got=$?
     n=$((n+1))
     if [ "$got" = "$want" ] && { [ ! -f "$c/must_match" ] || grep -qE "$(cat "$c/must_match")" <<< "$out"; }; then
       printf 'ok    case %-28s rc=%s\n' "$name" "$got"
@@ -301,6 +307,8 @@ if [ "$SELF_TEST" = 1 ]; then
     cmutant prompt-short    red-cells-prompt-under-rung     's/if int(c.get("prompt_tokens") or 0) < tok:/if False:/'
     cmutant modes-evidence  red-cells-thinking-modes-disagree-with-template 's/elif want is not None and modes != want:/elif False:/'
     cmutant no-representative red-cells-arch-without-representative 's/        if not r:/        if False:/'
+    cmutant pass-beyond-fit red-cells-pass-beyond-its-arithmetic 's/                            if not fit:/                            if False:/'
+    cmutant rungs-floor     red-cells-rung-dropped-vs-main  's/            if gone:/            if False:/'
     if [ -n "$mdir" ] && [ "$mdir" != "/" ] && [ -d "$mdir" ]; then rm -rf -- "$mdir"; fi
   fi
   echo "self-test: $n case(s), $bad bad"
@@ -328,7 +336,10 @@ else
   if git show "origin/main:$LADDER" > "$TMP_LADDER" 2>/dev/null && [ -s "$TMP_LADDER" ]; then MAIN_LADDER="$TMP_LADDER"; fi
 fi
 printf -- '--- model capability ladder receipts for %s (%s) ---------------------\n' "$VERSION" "$RECEIPT_DIR"
-judge "$LADDER" "$MAIN_LADDER" "$RECEIPT_DIR" "$VERSION" evidence/release/context-rungs.json; rc=$?
+TMP_RUNGS=$(mktemp)
+git show "origin/main:evidence/release/context-rungs.json" > "$TMP_RUNGS" 2> /dev/null || : > "$TMP_RUNGS"   # absent at main: the bootstrap
+judge "$LADDER" "$MAIN_LADDER" "$RECEIPT_DIR" "$VERSION" evidence/release/context-rungs.json "$TMP_RUNGS"; rc=$?
+[ -n "$TMP_RUNGS" ] && [ -f "$TMP_RUNGS" ] && rm -f "$TMP_RUNGS"
 # The producer that writes these receipts must not bypass the fleet GPU lock (#3712): RED, not a decline.
 if ! lock_audit scripts/model_ladder.sh; then [ "$rc" = 2 ] || rc=1; fi
 case $rc in

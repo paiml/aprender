@@ -94,13 +94,21 @@ def load_rungs(doc, out):
     return rungs, consumer_max, rc
 
 
-def judge(L, receipts, rungs_doc, out):
+def judge(L, receipts, rungs_doc, out, rungs_main=None):
     C = L.get("cells")
     if not C:
         return 0
+    required = {h["id"] for h in L.get("hosts") or [] if h.get("required")}
+    receipts = {hid: R for hid, R in receipts.items() if hid in required}  # a non-required host proves nothing here
     verbs = list(C.get("verbs") or [])
     long_for = C.get("long_rungs_for") or {}
     rungs, consumer_max, rc = load_rungs(rungs_doc, out)
+    if rungs_main is not None:  # the context-rungs file at origin/main is a floor, like the ladder itself
+        for what, key in (("rung ids", "rungs"), ("consumers", "consumers")):
+            name = "id" if key == "rungs" else "name"
+            gone = {x.get(name) for x in rungs_main.get(key) or []} - {x.get(name) for x in (rungs_doc or {}).get(key) or []}
+            if gone:
+                out(f"FAIL  context rungs {what} DROPPED vs origin/main: {sorted(map(str, gone))} -- the token bar may rise, never fall"); rc = 1
     long_ids = {r["id"] for r in rungs if r.get("long")}
     if not verbs:
         out("FAIL  the ladder's cells block names no verbs -- it owes nothing, which is not a pass")
@@ -170,6 +178,8 @@ def judge(L, receipts, rungs_doc, out):
                             if int(c.get("prompt_tokens") or 0) < tok: bad.append(f"prompt_tokens {c.get('prompt_tokens')} < {tok}")
                             if int(c.get("answer_chars") or 0) <= 0: bad.append("no answer")
                             if mode == "on" and c.get("think_closed") is not True: bad.append("thinking never closed")
+                            if not fit:
+                                bad.append(f"the declared arithmetic says it cannot fit ({need} B > {total} B total) -- a pass here means the arithmetic that decides what is owed is wrong (#3596)")
                             if bad:
                                 fails.append(f"{label} 'pass' is not a pass: " + ", ".join(bad))
                             else:

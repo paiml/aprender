@@ -297,7 +297,7 @@ falsification_tests:
 
   - id: FALSIFY-MCL-016
     rule: "Cells: verbs x thinking x context rung, derived and proved"
-    prediction: "check_model_ladder.sh --self-test: green-cells passes (20 owed on lambda, 12 pass, 8 honest refusals); a missing cell, a duplicate row, a fallback, a thinking block that never closed, a prompt under its rung, an empty answer, a co-tenant refusal, an OOM instead of a refusal, a rung that passes nowhere, thinking_modes that disagree with the template, a missing context_length (#3733), no cells, a consumer without a number, a missing context-rungs file, a dropped cells block or verb, and an arch with no held representative are each RED naming it; 8 module mutants are each killed by their case"
+    prediction: "check_model_ladder.sh --self-test: green-cells passes (20 owed on lambda, 12 pass, 8 honest refusals); a missing cell, a duplicate row, a fallback, a thinking block that never closed, a prompt under its rung, an empty answer, a co-tenant refusal, an OOM instead of a refusal, a rung that passes nowhere, thinking_modes that disagree with the template, a missing context_length (#3733), no cells, a consumer without a number, a missing context-rungs file, a dropped cells block or verb, a rung id or consumer dropped from context-rungs.json vs origin/main, an arch with no held representative, and a pass where the declared arithmetic says the cell cannot fit (the arithmetic decides what is owed, so it must be right) are each RED naming it; 10 module mutants are each killed by their case"
     test: "bash scripts/check_model_ladder.sh --self-test"
     if_fails: "a release dogfoods one verb at one short prompt with thinking off and calls the model family working"
 
