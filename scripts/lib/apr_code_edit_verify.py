@@ -174,7 +174,10 @@ def judge(a):
     out = Path(a.out)
     fixture = Path(a.fixture) / "project"
     work = out / "project"
-    stderr = read(out / "stderr.txt")
+    # gpu-q prints its queue position to stderr while it waits; those lines are
+    # the queue talking, not apr, and are kept out of every evidence excerpt.
+    stderr = "\n".join(ln for ln in read(out / "stderr.txt").splitlines()
+                       if not ln.startswith("gpu-q: "))
     stdout = read(out / "stdout.json")
     child = read(out / "serve-child.stdout") + "\n" + read(out / "serve-child.stderr")
 

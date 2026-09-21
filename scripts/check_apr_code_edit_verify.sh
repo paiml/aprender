@@ -146,8 +146,15 @@ expect unparsed FAIL "tool call not parsed"
 
 make_case no-edit "$LEGACY"
 unfix no-edit
-set_result no-edit 'The bug is the denominator.'
+set_result no-edit ''
+printf 'gpu-q: waiting (prio 1, 2/5 in queue)\n%s\n' "$(cat "$WORK/no-edit/stderr.txt")" > "$WORK/no-edit/stderr.txt"
 expect no-edit FAIL "wrong edit: stats.py was not changed"
+if python3 -c 'import json,sys; c=json.load(open(sys.argv[1])); sys.exit(1 if "gpu-q:" in c["evidence"] else 0)' "$WORK/no-edit/cell.json"; then
+    printf 'ok    gpu-q queue lines are not quoted as evidence\n'
+else
+    printf 'FAIL  no-edit evidence quotes the gpu-q queue: %s\n' "$(cat "$WORK/no-edit/cell.json")"
+    FAILED=1
+fi
 
 make_case test-edited "$LEGACY"
 printf '# edited\n' >> "$WORK/test-edited/project/test_stats.py"
