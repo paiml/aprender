@@ -4,7 +4,8 @@
 # Usage:
 #   scripts/cascade-publish.sh                # run full cascade for current workspace version
 #   scripts/cascade-publish.sh --check        # report which crates are still behind
-#   scripts/cascade-publish.sh --tier 1       # publish only Tier 1 (leaves)
+#   scripts/cascade-publish.sh --print-order  # print the publish order this run walks ("ORDER <crate>" lines); no network
+#   (--tier N is gone: there are no tiers. The order is DERIVED -- see THE PUBLISH ORDER below.)
 #
 # Prerequisites:
 #   - Workspace version already bumped (Cargo.toml + per-crate Cargo.toml refs)
@@ -30,37 +31,6 @@ set +e  # don't exit on individual crate failures — track each and report at e
 
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
-# Tier definitions per SPEC-HF-PUBLISH-001 § crates.io release cascade.
-declare -A TIERS
-TIERS[1]="apr-format aprender-contracts-macros aprender-quant aprender-gemm-codegen aprender-sparse aprender-solve aprender-rand aprender-fft aprender-image aprender-tensor aprender-cupti"
-TIERS[2]="aprender-contracts aprender-core aprender-profile-core aprender-graph aprender-contrastive-data"
-TIERS[3]="aprender-profile"
-TIERS[4]="aprender-gpu"
-TIERS[5]="aprender-cuda-edge aprender-cgp"
-TIERS[6]="aprender-compute"
-TIERS[7]="aprender-cbtop aprender-ptx-debug aprender-explain"
-TIERS[8]="aprender-common aprender-train-common aprender-train aprender-train-lora aprender-train-distill aprender-serve aprender-mcp aprender-data aprender-orchestrate"
-TIERS[9]="aprender-present-core aprender-present-layout aprender-present-yaml aprender-present-widgets aprender-present-terminal"
-TIERS[10]="apr-cli"
-TIERS[11]="aprender"
-TIERS[12]="aprender-tsp aprender-monte-carlo aprender-shell"
-TIERS[13]="aprender-test-derive aprender-test-lib aprender-test-js-gen aprender-test-cli aprender-test-showcase aprender-zram-core aprender-zram-adaptive aprender-zram-generator aprender-zram-cli aprender-zram aprender-present-test-macros aprender-present-test aprender-present-lib aprender-present-cli aprender-db aprender-rag aprender-viz aprender-registry aprender-distribute aprender-simulate aprender-verify aprender-verify-ml aprender-train-shell aprender-train-inspect aprender-train-bench aprender-train-wasm aprender-contracts-cli aprender-rag-cli"
-# TIER 14 — the crates.io compatibility facades (aprender#2559).
-#
-# THESE WERE NOT HERE, AND THE CASCADE STILL REPORTED SUCCESS. Tiers 1-13 are
-# EXACTLY the 70 publishable crates of the root workspace — MEASURED, zero drift
-# in either direction — so the table looked complete. `crates/facades/` is a
-# second workspace, `exclude`d from the root, and FINAL VERIFICATION below
-# iterates TIERS[]: three publishable crates were absent from the loop, so their
-# absence read as "✅ ALL crates at $TARGET". See scripts/lib/cascade_universe.py.
-#
-# LAST TIER ON PURPOSE, AND THE ORDER IS ENFORCED, NOT ASSUMED. A re-export
-# facade resolves `aprender-contracts*` FROM THE REGISTRY, not through its path
-# dep, so publishing a facade before its upstream yields a crate that cannot
-# compile for anyone. Being last makes the order LIKELY; `facade_upstream_ready`
-# below makes it TRUE — it refuses to upload a facade until the exact upstream
-# version that facade requires is live on the sparse index.
-TIERS[14]="provable-contracts provable-contracts-macros provable-contracts-cli"
 
 TARGET_VERSION=$(grep -E '^version = "' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
 [ -z "$TARGET_VERSION" ] && { echo "ERROR: could not detect target version from Cargo.toml"; exit 1; }
@@ -111,8 +81,64 @@ expected_version() {
   echo "${EXPECT[$1]:-$TARGET_VERSION}"
 }
 
+# --------------------------------------------------------------------------
+# THE PUBLISH ORDER (#3462) -- DERIVED from cargo, never hand-written.
+#
+# This used to be TIERS[], a hand-maintained table. MEASURED at v0.68.1 it was NOT a dependency
+# order: 47 (crate -> non-dev workspace dep) pairs had the dep in a LATER tier (aprender-core in T2
+# needs aprender-compute in T6; apr-cli in T10 needs eight T13 crates), and at 225b2a9ab 44 non-dev
+# pairs plus 1 versioned dev-dep still were. It only ever published because cascade-drain.sh
+# re-ran it until the deferrals stopped ("pass 1 exiting 1 is normal"); under a
+# stop-on-first-non-zero rule (operator, 0.68.1) it stops at crate 13.
+#
+# scripts/lib/cascade_universe.py --order walks the SAME metadata the universe comes from: B before
+# A when A needs B through a normal or build dep or a VERSIONED dev-dep (kept in the published
+# manifest, resolved on the registry -- PMAT-955). It is acyclic or it refuses (exit 2), and the
+# facades land LAST. scripts/check_cascade_covers_all_crates.sh checks the sequence this script
+# prints with --print-order, crate by crate, against the graph.
+#
+# FACADES are the excluded workspaces' crates (crates/facades): a re-export facade resolves its
+# upstream FROM THE REGISTRY, not through its path dep, so publishing it first yields a crate that
+# cannot compile for anyone. Being after its upstream in ORDER makes that true by construction;
+# `facade_upstream_ready` below still refuses to upload a facade until the exact upstream version
+# it requires is live on the sparse index.
+# --------------------------------------------------------------------------
+ORDER_OUT=$(python3 "$REPO_ROOT/scripts/lib/cascade_universe.py" --order --names "$REPO_ROOT") || {
+  echo "ERROR: cascade_universe.py --order found no publish order (a dependency cycle, or the enumeration broke). Refusing to publish."
+  exit 1
+}
+mapfile -t ORDER <<< "$ORDER_OUT"
+FACADES=()
+for _c in "${ORDER[@]}"; do [ "${ROOTWS[$_c]:-}" = "$REPO_ROOT" ] || FACADES+=("$_c"); done
+if [ "${#ORDER[@]}" -ne "$UNIVERSE_N" ]; then
+  echo "ERROR: the publish order names ${#ORDER[@]} crate(s), the universe $UNIVERSE_N. Refusing to publish."
+  exit 1
+fi
+
 MODE="${1:-publish}"
-ONLY_TIER="${2:-}"
+# An ALLOWLIST, before anything can upload (#3462). An unrecognized argument used to fall through to
+# the publish loop, so a typo (`--chek`) or a removed flag (`--tier 1`) started a real cascade.
+case "$MODE" in
+  publish|--check|--order-check) : ;;
+  --print-order) printf 'ORDER %s\n' "${ORDER[@]}"; exit 0 ;;
+  --tier) echo "ERROR: --tier is gone: the publish order is derived, not tiered (#3462). Use --print-order to see it." >&2; exit 2 ;;
+  *) echo "ERROR: unknown argument '$MODE' (no argument | --check | --order-check | --print-order). Nothing was published." >&2; exit 2 ;;
+esac
+
+# scripts/release/publish-order.txt is the ROOT workspace's part of ORDER, GENERATED and committed:
+# publish_strict.sh walks it at T-4, and infra#898's release sensor reads it AT THE TAG as the set
+# this cascade publishes (infra-3c, option A). A file that is not this ORDER is stale; publishing
+# anyway would make the sensor judge a different set than the one uploaded, so it refuses here,
+# before any network call. (--print-order above still prints the derivation, so the guard can
+# name the difference.)
+ROOT_ORDER=()
+for _c in "${ORDER[@]}"; do [ "${ROOTWS[$_c]:-}" = "$REPO_ROOT" ] && ROOT_ORDER+=("$_c"); done
+if [ "$(printf '%s\n' "${ROOT_ORDER[@]}")" != "$(cat "$REPO_ROOT/scripts/release/publish-order.txt" 2> /dev/null)" ]; then
+  echo "ERROR: scripts/release/publish-order.txt is not the derived root publish order (#3462). Regenerate it: make publish-order" >&2
+  echo "       (python3 scripts/lib/cascade_universe.py --order --names --root-only . > scripts/release/publish-order.txt)" >&2
+  echo "       Nothing was published." >&2
+  exit 1
+fi
 
 check_version() {
   local crate=$1
@@ -660,7 +686,7 @@ if [ "$MODE" = "--order-check" ]; then
   echo ""
   echo "=== PUBLISH ORDER PRECONDITION (not publishing) ==="
   order_rc=0
-  for crate in ${TIERS[14]}; do
+  for crate in "${FACADES[@]}"; do
     echo -n "  $crate: "
     if facade_upstream_ready "$crate"; then
       echo "READY"
@@ -684,31 +710,27 @@ if [ "$MODE" = "--check" ]; then
   echo ""
   echo "=== STATUS REPORT (not publishing) ==="
   any_behind=0
-  for tier in $(echo "${!TIERS[@]}" | tr ' ' '\n' | sort -n); do
-    for crate in ${TIERS[$tier]}; do
-      want=$(expected_version "$crate")
-      cur=$(check_version "$crate")
-      if [ "$cur" != "$want" ]; then
-        echo "  T$tier  $crate: $cur (want $want)"
-        any_behind=1
-      fi
-    done
+  i=0
+  for crate in "${ORDER[@]}"; do
+    i=$((i + 1))
+    want=$(expected_version "$crate")
+    cur=$(check_version "$crate")
+    if [ "$cur" != "$want" ]; then
+      echo "  #$i  $crate: $cur (want $want)"
+      any_behind=1
+    fi
   done
   [ $any_behind -eq 0 ] && echo "  ✅ ALL $UNIVERSE_N crates at their target version"
   exit 0
 fi
 
-# Walk tiers in order
+# Walk the derived order: every crate's dependencies are already on the registry when its turn
+# comes, so a deferral here is a real failure (or a transient), not the order working itself out.
 DEFERRED=""
-for tier in $(echo "${!TIERS[@]}" | tr ' ' '\n' | sort -n); do
-  if [ -n "$ONLY_TIER" ] && [ "$tier" != "$ONLY_TIER" ]; then
-    continue
-  fi
-  echo ""
-  echo "=== TIER $tier ==="
-  for crate in ${TIERS[$tier]}; do
-    publish_crate "$crate" || DEFERRED="$DEFERRED $crate"
-  done
+echo ""
+echo "=== PUBLISH ORDER (${#ORDER[@]} crates, derived; #3462) ==="
+for crate in "${ORDER[@]}"; do
+  publish_crate "$crate" || DEFERRED="$DEFERRED $crate"
 done
 
 if [ -n "$DEFERRED" ]; then
@@ -727,12 +749,12 @@ fi
 
 echo ""
 echo "=== FINAL VERIFICATION ==="
-# Iterates the UNIVERSE, not TIERS[]. Verifying the same list you published is
-# circular: a crate missing from TIERS[] was skipped by the publish loop AND by
-# the verify loop, so it could not be reported. That is precisely how the three
-# facades went unshipped under a green "✅ ALL crates at $TARGET" — the check
-# and the omission shared one list. scripts/check_cascade_covers_all_crates.sh
-# closes the other half by failing CI when TIERS[] and the universe disagree.
+# Iterates the UNIVERSE, not the publish loop's list. Verifying the same list you published is
+# circular: when the list was the hand-written TIERS[], a crate missing from it was skipped by the
+# publish loop AND by the verify loop, so it could not be reported. That is precisely how the three
+# facades went unshipped under a green "✅ ALL crates at $TARGET" -- the check and the omission
+# shared one list. The order is now derived from the universe (#3462), and
+# scripts/check_cascade_covers_all_crates.sh fails CI when the two disagree.
 ALL_OK=1
 VERIFIED=0
 for crate in $(printf '%s\n' "${!EXPECT[@]}" | sort); do

@@ -55,6 +55,30 @@ Output is TSV, one row per publishable crate, sorted by name:
 Usage:
     cascade_universe.py <repo-root>            # all workspaces
     cascade_universe.py --names <repo-root>    # names only, one per line
+    cascade_universe.py --order <repo-root>    # the PUBLISH ORDER: same rows, dependencies first
+    cascade_universe.py --order --names <repo-root>
+    cascade_universe.py --edges <repo-root>    # "<crate>\t<dep>": every must-precede edge inside the
+                                               # universe (what check_cascade_covers_all_crates.sh
+                                               # checks a publish sequence against)
+    cascade_universe.py --order --names --root-only <repo-root>
+                                               # scripts/release/publish-order.txt, byte for byte: the
+                                               # ROOT workspace's crates in publish order. The facades
+                                               # version independently; publish_strict.sh appends them,
+                                               # and infra#898's release sensor must not wait on them.
+
+THE PUBLISH ORDER (#3462). cascade-publish.sh used to hand-maintain TIERS[], and MEASURED at
+v0.68.1 it was not a dependency order: 47 (crate -> non-dev workspace dep) pairs sat with the
+dep in a LATER tier (aprender-core in T2 needs aprender-compute in T6; apr-cli in T10 needs eight
+T13 crates). It only ever published because cascade-drain.sh re-ran it until the deferrals
+stopped. Under a stop-on-first-non-zero rule (operator, 0.68.1) it stops at crate 13. The order
+is now DERIVED here, from the same metadata as the universe: crate B must be on the registry
+before crate A when A depends on B through a normal or build dependency, or through a VERSIONED
+dev-dependency. cargo keeps a versioned dev-dependency in the published manifest and resolves it
+on the registry (PMAT-955: 0.65.0 stuck at 48/74 on aprender-core <-> aprender-test-lib); a
+path-only dev-dependency (req "*") is stripped at publish and orders nothing. Ties break by
+(workspace, name): root-workspace crates first, then the excluded workspaces' crates (the
+facades), so the order is deterministic and the facades land LAST. A cycle is exit 2, naming
+the crates left on it: no order exists, and pretending one does is the defect.
 
 A crate carrying `publish = false` is not in the universe: it is never
 uploaded, so the cascade must not wait for it.
@@ -101,8 +125,19 @@ def metadata(repo_root, ws):
     return json.loads(out.stdout)
 
 
+# The dependency names each crate needs ON THE REGISTRY before it can be published (see above).
+DEPS = {}
+
+
+def must_precede(dep):
+    if dep.get("kind") == "dev":
+        return dep.get("req", "*") != "*"
+    return True  # normal (kind null) and build
+
+
 def rows(repo_root):
     seen = {}
+    DEPS.clear()
     for ws in WORKSPACES:
         doc = metadata(repo_root, ws)
         if doc is None:
@@ -120,11 +155,50 @@ def rows(repo_root):
                 )
                 return None
             seen[pkg["name"]] = (pkg["version"], pkg["manifest_path"], ws_root)
+            DEPS[pkg["name"]] = {d["name"] for d in pkg.get("dependencies", []) if must_precede(d)}
     return sorted((n, v, m, w) for n, (v, m, w) in seen.items())
+
+
+def publish_order(got, repo_root):
+    """got: rows(). -> the same rows in a topological publish order, or None (exit 2) on a cycle."""
+    import heapq
+    names = {r[0] for r in got}
+    by = {r[0]: r for r in got}
+    root = os.path.normpath(os.path.abspath(repo_root))
+    rank = {n: (0 if os.path.normpath(by[n][3]) == root else 1) for n in names}
+    for n in names:
+        bad = sorted(d for d in DEPS.get(n, ()) if d in names and rank[d] > rank[n])
+        if bad:
+            sys.stderr.write(f"cascade_universe: root-workspace crate `{n}` depends on excluded-workspace crate(s) {bad}; "
+                             f"the facades must stay leaves of the publish order\n")
+            return None
+    pending = {n: {d for d in DEPS.get(n, ()) if d in names and d != n} for n in names}
+    users = {n: set() for n in names}
+    for n, ds in pending.items():
+        for d in ds:
+            users[d].add(n)
+    heap = [(rank[n], n) for n in names if not pending[n]]
+    heapq.heapify(heap)
+    out = []
+    while heap:
+        _, n = heapq.heappop(heap)
+        out.append(by[n])
+        for u in sorted(users[n]):
+            pending[u].discard(n)
+            if not pending[u]:
+                heapq.heappush(heap, (rank[u], u))
+    if len(out) != len(names):
+        stuck = sorted(n for n in names if pending[n])
+        sys.stderr.write(f"cascade_universe: the publish graph has a CYCLE; no order exists. On it or behind it: {stuck}\n")
+        return None
+    return out
 
 
 def main(argv):
     names_only = "--names" in argv[1:]
+    ordered = "--order" in argv[1:]
+    edges = "--edges" in argv[1:]
+    root_only = "--root-only" in argv[1:]
     args = [a for a in argv[1:] if not a.startswith("--")]
     repo_root = args[0] if args else "."
 
@@ -137,6 +211,20 @@ def main(argv):
             f"expected at least {MIN_CRATES}. The ENUMERATION is broken, not the repo.\n"
         )
         return 2
+    if edges:
+        names = {r[0] for r in got}
+        for n in sorted(names):
+            for d in sorted(DEPS.get(n, ())):
+                if d in names and d != n:
+                    print(f"{n}\t{d}")
+        return 0
+    if ordered:
+        got = publish_order(got, repo_root)
+        if got is None:
+            return 2
+    if root_only:
+        rr = os.path.realpath(repo_root)
+        got = [r for r in got if os.path.realpath(r[3]) == rr]
 
     for name, version, manifest, ws_root in got:
         if names_only:

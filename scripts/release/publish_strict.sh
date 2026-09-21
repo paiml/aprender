@@ -2,7 +2,8 @@
 # publish_strict.sh <version> [--plan] — the crates.io cascade under the operator's 2026-09-17
 #   authorization (first run 0.68.2). The version is the one argument; T and the state dir AP are
 #   derived (#3618, lib_release_params.sh), never literals.
-#   one crate per `cargo publish` call, in the tag's own TIERS order (scripts/cascade-publish.sh);
+#   one crate per `cargo publish` call, in the order of the tag's scripts/release/publish-order.txt
+#   (generated from cargo metadata and checked against it, #3462), then the facades;
 #   STOP on the first non-zero (partial publishes are recorded, never rolled back);
 #   never --allow-dirty; a crates.io transient (429/5xx/timeout) is retried <=3 times with backoff,
 #   same inputs; anything else stops. Runs only from a detached checkout whose HEAD == the tag.

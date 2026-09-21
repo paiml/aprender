@@ -569,6 +569,10 @@ roadmap-aggregate: ## Regenerate docs/roadmaps/roadmap.yaml from docs/roadmaps/e
 roadmap-aggregate-check: ## Fail if roadmap.yaml is not what the aggregator produces, or if it is not idempotent
 	@python3 scripts/lib/roadmap_fragments.py aggregate --check
 
+.PHONY: publish-order
+publish-order: ## Regenerate scripts/release/publish-order.txt from cargo metadata (#3462; check_cascade_covers_all_crates.sh R6 fails on any drift)
+	@python3 scripts/lib/cascade_universe.py --order --names --root-only . > scripts/release/publish-order.txt
+
 .PHONY: ratchet-semantics-test
 ratchet-semantics-test: ## BSE-03: D2 ratchet polarity rows (--class readme)
 	@bash scripts/tests/ratchet_semantics_test.sh --class readme
