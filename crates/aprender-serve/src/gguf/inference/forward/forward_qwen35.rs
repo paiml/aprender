@@ -1389,6 +1389,9 @@ pub struct Qwen35PhaseTimings {
     pub prefill_ms: Option<f64>,
     /// Every generated token after the first's logits.
     pub decode_ms: Option<f64>,
+    /// Which attention the prefill ran (#3596 ruling: printed, never silent) —
+    /// `PrefillAttention::as_str`.
+    pub prefill_attention: Option<&'static str>,
 }
 
 /// What one Qwen3.5 generation produced: the tokens, the backend that produced them,
@@ -1517,6 +1520,7 @@ fn run_qwen35_generate_gpu(
     let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
     // #3596: will it fit? Decided here, from the host model and the MEASURED free
     // memory, before a byte is uploaded — never discovered as an OOM mid-prefill.
+    let attention = crate::gguf::cuda::Qwen35CudaModel::prefill_attention_for(&qwen, &executor);
     let capacity = crate::capacity::CapacityInputs {
         memory: Some(device_memory),
         ..crate::gguf::cuda::Qwen35CudaModel::capacity_inputs(
@@ -1524,6 +1528,7 @@ fn run_qwen35_generate_gpu(
             max_seq_len,
             gpu_free,
             gpu_total,
+            attention,
         )
     };
     let budget = match crate::capacity::plan(&capacity) {
@@ -1600,11 +1605,13 @@ fn qwen35_gpu_decode(
     let prefill_ms = prefill_start.elapsed().as_secs_f64() * 1000.0;
     // Unconditional, like the Backend line: a run must show WHICH prefill it took
     // without --verbose, or a per-token regression reads as a slow GPU.
+    let attention = gpu.prefill_attention_mode();
     eprintln!(
-        "[qwen35] batched prefill: {} tokens in {prefill_ms:.0} ms ({:.0} tok/s, chunk {} rows)",
+        "[qwen35] batched prefill: {} tokens in {prefill_ms:.0} ms ({:.0} tok/s, chunk {} rows, attention {})",
         input_tokens.len(),
         input_tokens.len() as f64 * 1000.0 / prefill_ms.max(1e-9),
         gpu.prefill_chunk_rows(input_tokens.len()),
+        attention.as_str(),
     );
     let decode_start = std::time::Instant::now();
     let mut tokens = input_tokens.to_vec();
@@ -1632,6 +1639,7 @@ fn qwen35_gpu_decode(
     let timings = Qwen35PhaseTimings {
         prefill_ms: Some(prefill_ms),
         decode_ms: Some(decode_start.elapsed().as_secs_f64() * 1000.0),
+        prefill_attention: Some(attention.as_str()),
     };
     Ok((tokens, timings))
 }

@@ -26,16 +26,34 @@ use crate::gguf::forward_qwen35::Qwen35Model;
 
 const MODEL_0_8B: &str = "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf";
 
-/// Last-position logits: cosine floor between batched and per-token.
-///
-/// MEASURED on the 0.8B (sm_89, 2026-09-21): cosine 1.0000000 (7 places) at n=64 and
-/// n=600, split and decode-step alike.
-const LOGITS_COSINE_FLOOR: f64 = 0.99999;
-/// Last-position logits: relative L∞ budget. MEASURED: 4.6e-7 .. 1.2e-6.
-const LOGITS_LINF_BUDGET: f32 = 1e-4;
-/// Any state buffer (conv window, recurrent state, KV rows): relative L∞ budget.
-/// MEASURED: worst 2.1e-6 (a recurrent state), over every layer at n=64 and n=600.
-const STATE_LINF_BUDGET: f32 = 1e-4;
+/// Budgets for one attention path.
+#[derive(Clone, Copy)]
+struct Budget {
+    /// Cosine floor on the logits.
+    cosine: f64,
+    /// Relative L∞ on the logits.
+    logits: f32,
+    /// Relative L∞ on any state buffer (conv window, recurrent state, KV rows).
+    state: f32,
+}
+
+/// The f32 cuBLAS attention path. MEASURED on the 0.8B (sm_89 and sm_121,
+/// 2026-09-21): cosine 1.0000000, logits 4.6e-7 .. 1.6e-6, states <= 3.8e-6.
+const F32_BUDGET: Budget = Budget {
+    cosine: 0.99999,
+    logits: 1e-4,
+    state: 1e-4,
+};
+
+/// The flash path (f16 inputs, f32 accumulation — the #3596 ruling). MEASURED on
+/// the 0.8B (sm_89, 2026-09-21): identical argmax and cosine 1.0000000 everywhere,
+/// logits 8.2e-5 .. 1.5e-4, states <= 5.4e-4 (layer-23 K rows at n=64) — ~100x the
+/// f32 path, the price of f16 inputs; the budgets are ~10x the reading.
+const FLASH_BUDGET: Budget = Budget {
+    cosine: 0.99999,
+    logits: 2e-3,
+    state: 5e-3,
+};
 
 fn cosine(a: &[f32], b: &[f32]) -> f64 {
     let (mut ab, mut aa, mut bb) = (0.0f64, 0.0f64, 0.0f64);
@@ -71,7 +89,7 @@ fn argmax(v: &[f32]) -> usize {
         .0
 }
 
-fn assert_logits_agree(batched: &[f32], per_token: &[f32], what: &str) {
+fn assert_logits_agree(batched: &[f32], per_token: &[f32], what: &str, b: Budget) {
     let cos = cosine(batched, per_token);
     let linf = rel_linf(batched, per_token, what);
     let (ab, ap) = (argmax(batched), argmax(per_token));
@@ -79,14 +97,8 @@ fn assert_logits_agree(batched: &[f32], per_token: &[f32], what: &str) {
         "[3596] {what}: argmax batched {ab} / per-token {ap}, cosine {cos:.7}, rel L∞ {linf:.3e}"
     );
     assert_eq!(ab, ap, "{what}: argmax differs");
-    assert!(
-        cos >= LOGITS_COSINE_FLOOR,
-        "{what}: cosine {cos} < {LOGITS_COSINE_FLOOR}"
-    );
-    assert!(
-        linf <= LOGITS_LINF_BUDGET,
-        "{what}: rel L∞ {linf} > {LOGITS_LINF_BUDGET}"
-    );
+    assert!(cos >= b.cosine, "{what}: cosine {cos} < {}", b.cosine);
+    assert!(linf <= b.logits, "{what}: rel L∞ {linf} > {}", b.logits);
 }
 
 fn download(buf: &trueno_gpu::driver::GpuBuffer<f32>, elems: usize) -> Vec<f32> {
@@ -102,6 +114,7 @@ fn assert_states_agree(
     batched: &Qwen35CudaState,
     per_token: &Qwen35CudaState,
     what: &str,
+    budget: Budget,
 ) {
     gpu.executor_mut().sync_stream().expect("sync");
     assert_eq!(batched.kv_len, per_token.kv_len, "{what}: kv_len");
@@ -136,10 +149,11 @@ fn assert_states_agree(
         worst.0, worst.1
     );
     assert!(
-        worst.0 <= STATE_LINF_BUDGET,
-        "{what}: state rel L∞ {} at {} > {STATE_LINF_BUDGET}",
+        worst.0 <= budget.state,
+        "{what}: state rel L∞ {} at {} > {}",
         worst.0,
-        worst.1
+        worst.1,
+        budget.state
     );
 }
 
@@ -154,7 +168,12 @@ fn tokens(n: usize, vocab: usize, seed: u32) -> Vec<u32> {
         .collect()
 }
 
-fn batched_equals_per_token(model_path: &str, n: usize) {
+fn batched_equals_per_token(model_path: &str, n: usize, attention: super::PrefillAttention) {
+    super::ATTENTION_OVERRIDE.with(|c| c.set(Some(attention)));
+    let b = match attention {
+        super::PrefillAttention::CublasF32 => F32_BUDGET,
+        super::PrefillAttention::FlashF16In => FLASH_BUDGET,
+    };
     if !std::path::Path::new(model_path).exists() {
         eprintln!("SKIP: {model_path} is absent");
         return;
@@ -182,9 +201,12 @@ fn batched_equals_per_token(model_path: &str, n: usize) {
     let rows = gpu.prefill_chunk_rows(n);
     let passes = super::attention_rows_for(gpu.dims, n);
     let got = gpu.prefill(&prompt, &mut batched, 0).expect("prefill");
-    let what = format!("{model_path} n={n} (chunk rows {rows}, attention rows/pass {passes})");
-    assert_logits_agree(&got, &want, &format!("{what} last logits"));
-    assert_states_agree(&mut gpu, &batched, &per_token, &what);
+    let what = format!(
+        "{model_path} n={n} (chunk rows {rows}, attention {}, rows/pass {passes})",
+        attention.as_str()
+    );
+    assert_logits_agree(&got, &want, &format!("{what} last logits"), b);
+    assert_states_agree(&mut gpu, &batched, &per_token, &what, b);
 
     // Split across two calls: pos0 > 0 reads the first call's KV rows. Compared
     // before either state decodes, so both hold exactly the prompt.
@@ -196,12 +218,13 @@ fn batched_equals_per_token(model_path: &str, n: usize) {
     let got_split = gpu
         .prefill(&prompt[cut..], &mut split, cut)
         .expect("prefill part 2");
-    assert_logits_agree(&got_split, &want, &format!("{what} split at {cut}"));
+    assert_logits_agree(&got_split, &want, &format!("{what} split at {cut}"), b);
     assert_states_agree(
         &mut gpu,
         &split,
         &per_token,
         &format!("{what} split at {cut}"),
+        b,
     );
 
     // One decode step continued from each state.
@@ -212,20 +235,33 @@ fn batched_equals_per_token(model_path: &str, n: usize) {
     let step_p = gpu
         .forward_single(next, &mut per_token, n)
         .expect("decode from per-token");
-    assert_logits_agree(&step_b, &step_p, &format!("{what} decode step"));
+    assert_logits_agree(&step_b, &step_p, &format!("{what} decode step"), b);
+    super::ATTENTION_OVERRIDE.with(|c| c.set(None));
 }
 
 #[test]
 #[serial_test::serial]
 fn qwen35_prefill_equals_per_token_at_64_positions_0_8b() {
-    batched_equals_per_token(MODEL_0_8B, 64);
+    batched_equals_per_token(MODEL_0_8B, 64, super::PrefillAttention::CublasF32);
+}
+
+#[test]
+#[serial_test::serial]
+fn qwen35_flash_prefill_equals_per_token_at_64_positions_0_8b() {
+    batched_equals_per_token(MODEL_0_8B, 64, super::PrefillAttention::FlashF16In);
+}
+
+#[test]
+#[serial_test::serial]
+fn qwen35_flash_prefill_equals_per_token_across_a_chunk_boundary_0_8b() {
+    batched_equals_per_token(MODEL_0_8B, 600, super::PrefillAttention::FlashF16In);
 }
 
 #[test]
 #[serial_test::serial]
 fn qwen35_prefill_equals_per_token_across_a_chunk_boundary_0_8b() {
     // 600 > PREFILL_MAX_CHUNK_ROWS: two chunks, the second reading the first's KV.
-    batched_equals_per_token(MODEL_0_8B, 600);
+    batched_equals_per_token(MODEL_0_8B, 600, super::PrefillAttention::CublasF32);
 }
 
 #[test]
@@ -236,7 +272,7 @@ fn qwen35_prefill_equals_per_token_with_many_attention_passes_0_8b() {
     let rows = 37usize;
     let budget = 4 * 4 * rows * 600;
     super::SCORES_BUDGET_OVERRIDE.with(|c| c.set(Some(budget)));
-    batched_equals_per_token(MODEL_0_8B, 600);
+    batched_equals_per_token(MODEL_0_8B, 600, super::PrefillAttention::CublasF32);
     super::SCORES_BUDGET_OVERRIDE.with(|c| c.set(None));
 }
 
