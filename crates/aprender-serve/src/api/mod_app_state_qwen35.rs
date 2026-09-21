@@ -8,6 +8,10 @@ pub struct Qwen35Served {
     pub context_length: usize,
     /// One request at a time: the hybrid is a single-stream model.
     pub session: std::sync::Mutex<crate::gguf::qwen35_session::Qwen35Session>,
+    /// Whether the session serves from the GPU — readable by `/health` while a
+    /// generation holds the session, and refreshed after every generation, so a
+    /// mid-run fallback to the CPU is reported, not remembered wrong.
+    pub on_gpu: std::sync::atomic::AtomicBool,
 }
 
 impl AppState {
@@ -73,6 +77,7 @@ impl AppState {
             mapped_gguf_model: Some(mapped),
             qwen35_session: Some(Arc::new(Qwen35Served {
                 context_length: session.context_length(),
+                on_gpu: std::sync::atomic::AtomicBool::new(session.on_gpu()),
                 session: std::sync::Mutex::new(session),
             })),
             cached_eos_token_id: eos_token_id,

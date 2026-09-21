@@ -412,6 +412,8 @@ impl AppState {
             || self.apr_model.is_some()
             || self.quantized_model.is_some()
             || self.apr_transformer.is_some()
+            // #3571: the Qwen3.5 hybrid has no dense model at all; its session IS the model.
+            || self.qwen35_session.is_some()
         {
             return true;
         }

@@ -189,6 +189,7 @@ async fn a_prompt_past_the_declared_context_is_a_400_naming_both_numbers() {
     const CONTEXT: usize = 16;
     state.qwen35_session = Some(Arc::new(Qwen35Served {
         context_length: CONTEXT,
+        on_gpu: std::sync::atomic::AtomicBool::new(false),
         session: std::sync::Mutex::new(Qwen35Session::load(&mapped, true).expect("load")),
     }));
     let (status, body) = post(
@@ -230,6 +231,7 @@ async fn a_reply_the_context_cuts_short_decodes_the_budget_and_reports_length() 
         .len();
     state.qwen35_session = Some(Arc::new(Qwen35Served {
         context_length: prompt_tokens + 2,
+        on_gpu: std::sync::atomic::AtomicBool::new(false),
         session: std::sync::Mutex::new(Qwen35Session::load(&mapped, true).expect("load")),
     }));
     let mut body = chat_body(false, 50);
@@ -242,6 +244,36 @@ async fn a_reply_the_context_cuts_short_decodes_the_budget_and_reports_length() 
         json["usage"]["completion_tokens"], 2,
         "the budget, not max_tokens: {body}"
     );
+}
+
+/// A Qwen3.5 server is healthy and ready: its session is the model. Measured
+/// before this row counted it: `/health` answered 503 "loading" forever, so
+/// every probe — and every harness that waits on it — treated a working server
+/// as down.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_qwen35_server_reports_healthy_and_ready() {
+    let Some((state, _)) = state_or_skip(true) else {
+        return;
+    };
+    for path in ["/health", "/health/ready"] {
+        let response = create_router(state.clone())
+            .oneshot(
+                Request::builder()
+                    .uri(path)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("the router answers");
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let json: serde_json::Value = serde_json::from_slice(&bytes).expect("JSON");
+        assert_eq!(status, StatusCode::OK, "{path}: {json}");
+        assert_eq!(json["model_loaded"], true, "{path}: {json}");
+        assert_eq!(json["compute_mode"], "cpu", "--no-gpu session: {json}");
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -279,5 +311,9 @@ async fn gpu_a_chat_request_answers_from_the_gpu_session() {
     assert!(
         served.session.lock().expect("lock").on_gpu(),
         "no fallback during the request"
+    );
+    assert!(
+        served.on_gpu.load(std::sync::atomic::Ordering::Relaxed),
+        "/health's flag agrees with the session"
     );
 }

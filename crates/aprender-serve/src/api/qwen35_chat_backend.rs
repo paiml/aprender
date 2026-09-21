@@ -89,13 +89,14 @@ async fn try_qwen35_backend(
         tokio::task::spawn_blocking(move || {
             let mut sink = crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics);
             let result = match session.session.lock() {
-                Ok(mut s) => s
-                    .generate(&input_ids, &gen_config, &mut |tok| {
+                Ok(mut s) => {
+                    let r = s.generate(&input_ids, &gen_config, &mut |tok| {
                         // The stop token ends the turn; it is not content.
                         stop_tokens.contains(&tok) || sink(tok)
-                    })
-                    .map(|_| ())
-                    .map_err(|e| e.to_string()),
+                    });
+                    session.on_gpu.store(s.on_gpu(), std::sync::atomic::Ordering::Relaxed);
+                    r.map(|_| ()).map_err(|e| e.to_string())
+                },
                 Err(_) => Err(POISONED.to_string()),
             };
             if let Err(e) = result {
@@ -117,9 +118,11 @@ async fn try_qwen35_backend(
 
     let decode_mapped = mapped.clone();
     let turn = tokio::task::spawn_blocking(move || match session.session.lock() {
-        Ok(mut s) => s
-            .generate(&input_ids, &gen_config, &mut |_| true)
-            .map_err(|e| e.to_string()),
+        Ok(mut s) => {
+            let r = s.generate(&input_ids, &gen_config, &mut |_| true);
+            session.on_gpu.store(s.on_gpu(), std::sync::atomic::Ordering::Relaxed);
+            r.map_err(|e| e.to_string())
+        },
         Err(_) => Err(POISONED.to_string()),
     })
     .await;

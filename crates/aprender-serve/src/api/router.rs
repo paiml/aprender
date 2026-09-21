@@ -565,6 +565,13 @@ fn build_health_response(state: &AppState) -> HealthResponse {
     if state.has_cuda_model() {
         compute_mode = "gpu";
     }
+    // #3571: the hybrid's session reports its own backend, without waiting on a generation.
+    if state
+        .qwen35_session()
+        .is_some_and(|s| s.on_gpu.load(std::sync::atomic::Ordering::Relaxed))
+    {
+        compute_mode = "gpu";
+    }
 
     let model_loaded = state.model_loaded();
     // Contract §health_response_schema:
