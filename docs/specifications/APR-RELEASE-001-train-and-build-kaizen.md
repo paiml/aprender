@@ -418,7 +418,7 @@ shared registry keeps the live guard; N consecutive skips exits non-zero; one le
 
 **P0 · Instrument.** One ledger record per gate job: `sha host job queue_wait_s exec_s
 total_s peak_rss_mb free_disk_gb exit`. Add `make build-report`: p50/p95 `total_s` and
-`queue_wait_s` per host, 10 slowest test targets, and the §1 PRs-per-train number.
+`queue_wait_s` per host, 10 slowest test **jobs**, and the §1 PRs-per-train number. *(Amended 2026-09-21, ruling on #3271 round 1: the build ledger is per job and cannot answer per target; per-target timing lives in nextest's junit output, which #3134 adds. Until that ledger exists `make build-report` reports the 10 slowest jobs and prints that the ledger lacks target granularity — instrument-first, the gap recorded rather than the requirement silently substituted. Per-target once #3134 lands.)*
 *Done:* ≥ 20 records; `make build-report` runs on a clean checkout.
 
 **P1 · Two lanes.** `ci / gate` (every PR) = compile + **fast set**. `deep` (tags +
