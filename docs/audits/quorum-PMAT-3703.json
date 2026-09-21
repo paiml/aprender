@@ -1,0 +1,196 @@
+{
+  "ticket": "PMAT-3703",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "8c08dd8ddfa0a553def60f9d582239258d5b097c",
+  "diff_sha256": "1a373a497fef965a9f5bc7fdd612121e571b439702fa4718efd4f7db6644ec76",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 36148,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully addresses PMAT-3703 without weakening tests. It replaces arbitrary integer wall-clock assertions with correct invariants (e.g., generated counts and guaranteed monotonic invariants over wait boundaries). The `check_no_timing_in_required.sh` Part 4 properly handles regex matching, parsing, and baseline verification logic for remaining cases in the code, enforcing a `keyed` test ratchet list that strictly avoids regressions. All acceptance criteria are fully met.",
+      "findings": [],
+      "raw_bytes": 2337,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly matches the acceptance criteria for PMAT-3703. It fixes the `generation_time_ms` assertion in `pipeline.rs`, drops the integer time assertions in `bug_hunter` and `instruct_trainer`, and correctly updates the `monotonic_ns` check in `inference_monitor_tests`. It introduces a strict guard in `check_no_timing_in_required.sh` with a comprehensive case table and a text-keyed ledger to prevent future integer wall-clock assertions. No tests assert the opposite, no gates are weakened, and all ticket claims are fully backed by the diff.",
+      "findings": [],
+      "raw_bytes": 2477,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gpt-oss-120b-medium",
+            "why": "no capacity: 503 on two pre-check probes (UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server)"
+          }
+        ]
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements the requirements of PMAT-3703. \n\n1. **AC1 (Fix test_pipeline_generate_small)**: The wall-clock assertion `stats.generation_time_ms > 0` was removed and replaced with a deterministic state verification `assert_eq!(stats.total_generated, programs.len())`.\n2. **AC2 (Sweep & Guard)**: A comprehensive sweep was performed. The exact integer duration shape (`.as_millis()`, `_ms`, etc. `> 0`) is now guarded against in `scripts/check_no_timing_in_required.sh` (Part 4), checking against a `keyed` baseline file `scripts/wallclock_assert_baseline.txt` that documents the 101 existing safe hits with justifications. Three unsafe hits were fixed. The `Instant`-based test (`test_monotonic_ns_non_zero`) was also fixed to sleep *after* initialization to guarantee a clock advance, exactly as described in the ticket notes.\n3. **AC3 (Mutation proof)**: Documented in the ticket notes, and mathematically verified by the diff since the new assertion in `test_pipeline_generate_small` has no dependency on the timing metrics.\n\nNo regressions or contradictions with the ticket were found.",
+      "findings": [],
+      "raw_bytes": 3561,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-low",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-low",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (gemini-3.1-pro-high, gemini-3.1-pro-low) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: judged by gemini-3.1-pro-high after falling through gpt-oss-120b-medium (skipped: no capacity: 503 on two pre-check probes (UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server)) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "capacity",
+        "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 2,
+        "outcome": "capacity",
+        "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+      }
+    ],
+    "prah": {
+      "source": "none",
+      "path": null,
+      "why": "no --prah, none on PATH, and no install receipt at /home/noah/.claude/skills/paiml-implement/install-receipt.json"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

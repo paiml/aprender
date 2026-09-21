@@ -21,6 +21,9 @@
 # instead, e.g. `assert_eq!(budget.total_ms, 16)`, never `> 0`. PART 4 also fails when a count here
 # exceeds the tree (fixed or edited lines): lower or delete the entry in the same commit, which the
 # ratchet allows. Editing a recorded line's text is a new key: fix that assertion rather than record it.
+#
+# The rest of #3703's sweep (upper bounds, the #3705 class; other lower bounds, each with a reason) is
+# LISTED, not enforced, in docs/audits/pmat-3703-timing-sweep.md.
 
 # -- declared render budgets: BrickBudget::uniform(N) / BrickBudget constants returned by budget(); set in code, never measured (76)
 assert!(CpuStateBreakdown::default().budget().measure_ms > 0);	1
