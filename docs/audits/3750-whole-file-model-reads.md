@@ -5,13 +5,15 @@ Measured on `PMAT-3750-qa-header-only-reads` (base `52f43da71`) with
 **231 hits** after this PR: **99 production**, **132 test-only**, plus the **13 `apr qa` reads this PR converted** (they no longer match).
 
 Verdicts:
-- **CONVERTED** — read only the header or magic now (this PR).
+- **CONVERTED** — reads only the header or magic now: the `apr qa` path in #3750 PR A, the 17 sites marked `CONVERTED (#3761)` in PR B.
 - **PR-B …** — needs only the magic / header / metadata and is converted by the 0.69.1 sub-issue #3761 (#3750 PR B), which puts the APR and SafeTensors prefix readers in their format crates.
 - **PR-B STREAMED** — needs every byte, but never all of them at once; #3761 streams it.
 - **WHOLE-DATA** — consumes the tensor data or every byte (loaders, converters, validators, copies, uploads); "could stream" notes a whole-file buffer that is not needed all at once.
 - **NOT-MODEL** — reads a file that is not a model. **DOC** — a doc example, not executed code.
 
-Counts over the 99 production sites: DOC 9, NOT-MODEL 11, PR-B CONDITIONAL 1, PR-B HEADER-ONLY 11, PR-B MAGIC-ONLY 4, PR-B STREAMED 1, WHOLE-DATA 62.
+Counts over the 99 production sites: DOC 9, NOT-MODEL 11, CONVERTED (#3761) 17 (they were PR-B CONDITIONAL 1, HEADER-ONLY 11, MAGIC-ONLY 4, STREAMED 1), WHOLE-DATA 62.
+
+After #3761 the same `git grep` finds **215 hits**: the 17 are gone, and one line matches that is not a whole-file read (aprender-serve's `read_magic`, a `take(4)` before `read_to_end`). The rows below keep their line numbers on `52f43da71`.
 
 ## Converted by this PR (the `apr qa` path, line numbers on `52f43da71`)
 
@@ -67,13 +69,38 @@ What the numbers say:
   tracks streaming it from a map.
 - 36,278,440 − 19,367,800 = 16,910,640 KiB (16.1 GiB) less peak per `apr qa` run on this model.
 
+## Converted by #3761 (#3750 PR B)
+
+ONE bounded-prefix policy: `apr_format::prefix` (first read 16 MiB, doubling, 256 MiB cap, refused
+past it, never read whole) with the APR v2 header reader; aprender-core's `format::prefix` re-exports it
+and adds the SafeTensors header reader beside its format; apr-cli's `model_header.rs` delegates to it.
+
+Each reader has a case row: a real file extended SPARSELY to 2 GiB, the reader run in a CHILD process
+(the test binary re-run on one probe test), its VmHWM held under a measured bound. With a whole-file read
+put back into any one reader, its row goes RED:
+
+| row | readers | peak (KiB) | with a whole-file read back (KiB) |
+|---|---|---|---|
+| `apr_format::prefix::tests` | `apr_v2_header_prefix` | 4,608 | 2,100,864 |
+| `aprender::format::prefix_rss_tests` | `list_tensors` (GGUF, APR v1), `safetensors_header_prefix`, lint (SafeTensors, APR), rosetta `inspect`, `is_onnx_file` | 36,916-38,000 | 2,116,876-4,218,352 |
+| `aprender::format::converter::export::rss_tests` | the converter's five APR readers | 16,200-17,648 | 2,110,308-4,208,572 |
+| `realizar::apr::helpers::rss_tests` | `is_apr_file`, `detect_format` by magic | 20,352-20,736 | 2,112,484-2,113,676 |
+| `apr-cli model_header::tests` | the qa header readers + `gguf_header_bytes` | 43,368-44,856 | 2,135,696 |
+| `apr-cli embed_viz::tests` | `gguf_vocab` | 40,768-43,304 | 2,116,644-2,117,924 |
+| `apr-cli eval_mod_tests` | `count_safetensors_keys`, `verify_single_file` | 25,900-27,952 | 2,114,024-2,115,124 |
+| `apr-cli bench::rss_tests` | `apr bench` on GGUF | 2,123,680-2,125,672 (one map: the bench runs the model) | 4,212,152-4,212,352 |
+
+The rows found two copies the `git grep` could not: `list_tensors_gguf` copied the bytes it was given
+(`data.to_vec()`), and `apr bench` mapped the model in `run_gguf_benchmark` and then again in each backend
+path. realizar's map pre-faults every page (MAP_POPULATE, PMAT-304), so two maps count the file twice.
+
 ## Every production site
 
 | site | function | verdict | what the bytes are used for |
 |---|---|---|---|
 | apr-cli/src/commands/audio_inspect.rs:108 | inspect | NOT-MODEL | a WAV file; parses its fmt/data chunks |
-| apr-cli/src/commands/benchmark.rs:104 | run_realizar_benchmark | PR-B MAGIC-ONLY | bytes used only for detect_format on the first 8 |
-| apr-cli/src/commands/benchmark.rs:167 | run_gguf_benchmark | PR-B HEADER-ONLY | GGUFModel::from_bytes only for the tokenizer; the model is mapped separately |
+| apr-cli/src/commands/benchmark.rs:104 | run_realizar_benchmark | CONVERTED (#3761) | bytes used only for detect_format on the first 8. **Now:** 8 bytes (`read_prefix`). Row: `bench::rss_tests` |
+| apr-cli/src/commands/benchmark.rs:167 | run_gguf_benchmark | CONVERTED (#3761) | GGUFModel::from_bytes only for the tokenizer; the model is mapped separately. **Now:** the ONE map the bench runs on (`MappedGGUFModel`), handed to the CPU, CUDA and MoE paths, which each mapped the file again. Row: `bench::rss_tests`, bound = one map + 256 MiB |
 | apr-cli/src/commands/canary.rs:166 | load_tensor_data_gguf | WHOLE-DATA | loads every GGUF tensor as f32 for the canary |
 | apr-cli/src/commands/canary.rs:186 | load_tensor_data_apr | WHOLE-DATA | loads every APR tensor as f32 for the canary |
 | apr-cli/src/commands/chat_session_02.rs:21 | new | WHOLE-DATA | the chat session keeps the model bytes and runs inference from them |
@@ -82,10 +109,10 @@ What the numbers say:
 | apr-cli/src/commands/distill.rs:695 | run_cuda_backend | WHOLE-DATA | teacher model weights for distillation |
 | apr-cli/src/commands/distill.rs:738 | run_cuda_backend | WHOLE-DATA | student model weights for distillation |
 | apr-cli/src/commands/embed.rs:245 | run | WHOLE-DATA | APR v2 reader; reads the embedding weights |
-| apr-cli/src/commands/embed_viz.rs:382 | gguf_vocab | PR-B HEADER-ONLY | LlamaTokenizer::from_gguf_bytes needs only the header vocabulary |
+| apr-cli/src/commands/embed_viz.rs:382 | gguf_vocab | CONVERTED (#3761) | LlamaTokenizer::from_gguf_bytes needs only the header vocabulary. **Now:** the whole header, cut at `data_offset` (`gguf_header_bytes`). Row: `embed_viz::tests::gguf_vocab_of_a_2_gib_gguf_keeps_peak_rss_small` |
 | apr-cli/src/commands/embed_viz_lint.rs:35 | run | NOT-MODEL | an output artifact whose determinism is classified |
-| apr-cli/src/commands/eval/mod.rs:746 | count_safetensors_keys | PR-B HEADER-ONLY | SafeTensors: 8-byte length + JSON header, counts keys |
-| apr-cli/src/commands/eval/mod.rs:922 | verify_single_file | PR-B STREAMED | SafeTensors header checks (bounded), plus an FNV-1a hash of EVERY byte: it needs the whole file, never all of it at once, so #3761 streams the hash in 1 MiB chunks |
+| apr-cli/src/commands/eval/mod.rs:746 | count_safetensors_keys | CONVERTED (#3761) | SafeTensors: 8-byte length + JSON header, counts keys. **Now:** `safetensors_header_prefix`. Row: `eval_mod_tests::safetensors_readers_of_a_2_gib_file_keep_peak_rss_small` |
+| apr-cli/src/commands/eval/mod.rs:922 | verify_single_file | CONVERTED (#3761) | SafeTensors header checks (bounded), plus an FNV-1a hash of EVERY byte: it needs the whole file, never all of it at once, so #3761 streams the hash in 1 MiB chunks. **Now:** 8 bytes, then the JSON header when its size is valid, and the hash STREAMED in 1 MiB chunks (`compute_file_hash_streamed`, equal to the whole-buffer hash by test). Row: as above |
 | apr-cli/src/commands/eval/mod.rs:1314 | run_encrypt | WHOLE-DATA | encrypts every byte (could stream) |
 | apr-cli/src/commands/eval/mod.rs:1399 | run_decrypt | WHOLE-DATA | decrypts every byte (could stream) |
 | apr-cli/src/commands/eval/mod.rs:1478 | derive_encryption_key | NOT-MODEL | an encryption key file |
@@ -118,25 +145,25 @@ What the numbers say:
 | aprender-core/src/bundle/mmap.rs:204 | open | WHOLE-DATA | loads the whole bundle (named mmap, reads; could map) |
 | aprender-core/src/cluster/kmeans_impl.rs:110 | load | WHOLE-DATA | deserializes a small classical model |
 | aprender-core/src/ensemble/moe.rs:323 | load | WHOLE-DATA | deserializes the ensemble |
-| aprender-core/src/format/converter/apr_export_fn.rs:133 | detect_apr_architecture_for_completeness | PR-B HEADER-ONLY | APR metadata architecture only |
+| aprender-core/src/format/converter/apr_export_fn.rs:133 | detect_apr_architecture_for_completeness | CONVERTED (#3761) | APR metadata architecture only. **Now:** `apr_v2_header_prefix`. Row: `converter::export::rss_tests` |
 | aprender-core/src/format/converter/convert_report.rs:173 | load_apr_tensors_f32 | WHOLE-DATA | loads every APR tensor as f32 |
 | aprender-core/src/format/converter/gguf_export_config.rs:516 | export_to_gguf | WHOLE-DATA | exports every tensor to GGUF |
 | aprender-core/src/format/converter/metadata.rs:563 | export_apr_to_gguf_raw | WHOLE-DATA | raw APR -> GGUF export of every tensor |
-| aprender-core/src/format/converter/tensor.rs:202 | extract_apr_tokenizer_hint | PR-B HEADER-ONLY | tokenizer hint from the APR metadata section |
-| aprender-core/src/format/converter/tensor.rs:226 | read_apr_metadata | PR-B HEADER-ONLY | APR metadata only |
-| aprender-core/src/format/converter/tensor.rs:382 | extract_user_metadata | PR-B HEADER-ONLY | user metadata from the APR metadata section |
-| aprender-core/src/format/converter/tensor.rs:439 | detect_apr_quantization | PR-B HEADER-ONLY | counts tensor dtypes from the APR tensor index |
+| aprender-core/src/format/converter/tensor.rs:202 | extract_apr_tokenizer_hint | CONVERTED (#3761) | tokenizer hint from the APR metadata section. **Now:** APR v2: `apr_v2_header_prefix` (its writer zero-pads the metadata, so the scan's terminator is absent and the answer is None, as it was reading the whole model); any other layout: a growing prefix under the cap. Row: `converter::export::rss_tests`; the legacy path's positive control: `test_infer_tokenizer_json_legacy_apr_with_tokenizer` |
+| aprender-core/src/format/converter/tensor.rs:226 | read_apr_metadata | CONVERTED (#3761) | APR metadata only. **Now:** `apr_v2_header_prefix`. Row: `converter::export::rss_tests` |
+| aprender-core/src/format/converter/tensor.rs:382 | extract_user_metadata | CONVERTED (#3761) | user metadata from the APR metadata section. **Now:** 24 header bytes, then only up to the end of the metadata section (under the cap). Row: `converter::export::rss_tests` |
+| aprender-core/src/format/converter/tensor.rs:439 | detect_apr_quantization | CONVERTED (#3761) | counts tensor dtypes from the APR tensor index. **Now:** `apr_v2_header_prefix`. Row: `converter::export::rss_tests` |
 | aprender-core/src/format/converter/tokenizer_loader.rs:482 | load_tokenizer_from_sentencepiece | NOT-MODEL | a SentencePiece tokenizer.model |
 | aprender-core/src/format/core_io.rs:173 | read_file_content | WHOLE-DATA | generic whole-content reader (callers decide) |
 | aprender-core/src/format/gguf/reader_parsing.rs:6 | from_file | WHOLE-DATA, could stream | GgufReader::from_file owns the whole file by API (importers read tensors). `apr qa`'s tensor_contract gate reaches it through `RosettaStone::validate`: the 19.36 GB heap peak measured above. It reads every tensor, but never needs them all at once (#3790) |
 | aprender-core/src/format/gguf/reader_parsing.rs:20 | from_file_full | WHOLE-DATA | GgufReader::from_file_full, the shard merge reads tensors |
-| aprender-core/src/format/lint/lint.rs:187 | lint_safetensors_file | PR-B HEADER-ONLY | SafeTensors metadata from the header; tensors come from the existing map |
-| aprender-core/src/format/lint/lint.rs:324 | lint_apr_v2_file | PR-B HEADER-ONLY | lints APR metadata fields |
+| aprender-core/src/format/lint/lint.rs:187 | lint_safetensors_file | CONVERTED (#3761) | SafeTensors metadata from the header; tensors come from the existing map. **Now:** the 8-byte length and the JSON header (under the cap). Row: `format::prefix_rss_tests` |
+| aprender-core/src/format/lint/lint.rs:324 | lint_apr_v2_file | CONVERTED (#3761) | lints APR metadata fields. **Now:** `apr_v2_header_prefix`. Row: `format::prefix_rss_tests` |
 | aprender-core/src/format/onnx/reader.rs:5 | from_file | WHOLE-DATA | parses the ONNX protobuf including initializers |
-| aprender-core/src/format/onnx/reader.rs:467 | is_onnx_file | PR-B MAGIC-ONLY | checks data[0] == 0x08 only |
+| aprender-core/src/format/onnx/reader.rs:467 | is_onnx_file | CONVERTED (#3761) | checks data[0] == 0x08 only. **Now:** 5 bytes. Row: `format::prefix_rss_tests` |
 | aprender-core/src/format/rosetta/validate_inspect.rs:7 | validate_apr | WHOLE-DATA | rosetta validate reads tensor data |
-| aprender-core/src/format/rosetta/validate_inspect.rs:552 | inspect_apr | PR-B HEADER-ONLY | rosetta inspect: metadata + tensor index entries |
-| aprender-core/src/format/safetensors.rs:448 | list_tensors | PR-B CONDITIONAL | GGUF/APR v1 listing: data only with --stats |
+| aprender-core/src/format/rosetta/validate_inspect.rs:552 | inspect_apr | CONVERTED (#3761) | rosetta inspect: metadata + tensor index entries. **Now:** `apr_v2_header_prefix`. Row: `format::prefix_rss_tests` |
+| aprender-core/src/format/safetensors.rs:448 | list_tensors | CONVERTED (#3761) | GGUF/APR v1 listing: data only with --stats. **Now:** GGUF without `--stats`: the header (growing prefix). It was not only this read: `list_tensors_gguf` then COPIED the bytes (`data.to_vec()`), 4.2 GB peak on the 2 GiB fixture. GGUF with `--stats` and APR v1: a map, which pages in only what is read. Row: `format::prefix_rss_tests` (GGUF and APR v1) |
 | aprender-core/src/index/persistent_hnsw.rs:110 | open | NOT-MODEL | an HNSW index file |
 | aprender-core/src/inspect/safetensors.rs:174 | from_file | WHOLE-DATA | keeps the bytes for later tensor reads |
 | aprender-core/src/linear_model/elastic_net.rs:165 | load | WHOLE-DATA | deserializes a small classical model |
@@ -151,8 +178,8 @@ What the numbers say:
 | aprender-core/src/setfit/import.rs:699 | read_required | NOT-MODEL | a required SetFit sidecar file |
 | aprender-core/src/tree/classifier.rs:156 | load | WHOLE-DATA | deserializes a small classical model |
 | aprender-core/src/verify/ground_truth.rs:88 | from_bin_file | NOT-MODEL | a ground-truth .bin |
-| aprender-serve/src/apr/helpers.rs:309 | is_apr_file | PR-B MAGIC-ONLY | data[0..4] == MAGIC only |
-| aprender-serve/src/apr/helpers.rs:325 | format_from_magic | PR-B MAGIC-ONLY | format from the first 4 bytes only |
+| aprender-serve/src/apr/helpers.rs:309 | is_apr_file | CONVERTED (#3761) | data[0..4] == MAGIC only. **Now:** 4 bytes (`read_magic`). Row: `apr::helpers::rss_tests` |
+| aprender-serve/src/apr/helpers.rs:325 | format_from_magic | CONVERTED (#3761) | format from the first 4 bytes only. **Now:** 4 bytes (`read_magic`). Row: `apr::helpers::rss_tests` |
 | aprender-serve/src/apr/loading_mmap.rs:48 | load | WHOLE-DATA | a COMPRESSED .apr must be decompressed whole |
 | aprender-serve/src/apr/loading_mmap.rs:69 | load | WHOLE-DATA | the wasm32 fallback (no mmap) |
 | aprender-serve/src/apr_transformer/from_apr_file.rs:32 | from_apr_file | WHOLE-DATA | loads the transformer's weights |
