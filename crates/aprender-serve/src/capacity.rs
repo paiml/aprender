@@ -326,7 +326,13 @@ pub fn plan(i: &CapacityInputs) -> CapacityVerdict {
             "(MemTotal - headroom) - (MemAvailable - headroom) = {unplannable:.0} MiB of host \
              memory is not available to plan against"
         ),
-        _ => format!("other processes hold {unplannable:.0} MiB of it"),
+        // Discrete: `cuMemGetInfo` is read after this process's CUDA context exists,
+        // so the gap is other processes AND that context — measured on the 4090 at
+        // #3596's 262k rung: 606 MiB in use before the run, 896 MiB in the gap.
+        _ => format!(
+            "{unplannable:.0} MiB of it is already in use (other processes, and this \
+             process's own CUDA context)"
+        ),
     };
     let co_tenant = |b: CapacityBudget| {
         CapacityVerdict::Refused(CapacityRefusal {
@@ -611,6 +617,35 @@ mod tests {
         assert!(!r.reason.contains("  "), "a run of spaces in: {}", r.reason);
         let discrete = DeviceMemory::Discrete { free: 5, total: 9 };
         assert_eq!(discrete.plan_free_total(), (5, 9));
+    }
+
+    /// #3596 lambda 262k, forced f32: the gap `cuMemGetInfo` leaves is not all other
+    /// tenants — it includes this process's own context — and the text says so.
+    #[test]
+    fn capacity_discrete_co_tenant_names_what_holds_the_gap() {
+        let mut i = nine_b(262_013, 23_140 * MIB_U, 24_036 * MIB_U, false);
+        i.weights_bytes = 4_861 * MIB_U;
+        i.workspace_bytes = 1_593 * MIB_U;
+        i.memory = Some(DeviceMemory::Discrete {
+            free: 23_140 * MIB_U,
+            total: 24_036 * MIB_U,
+        });
+        let CapacityVerdict::Refused(r) = plan(&i) else {
+            panic!("23,342 MiB into 23,140 MiB free must refuse")
+        };
+        assert_eq!(r.kind, RefusalKind::CoTenant, "{}", r.reason);
+        assert!(
+            r.reason.contains("896 MiB of it is already in use"),
+            "{}",
+            r.reason
+        );
+        assert!(
+            r.reason.contains("this process's own CUDA context"),
+            "{}",
+            r.reason
+        );
+        assert!(!r.reason.contains("other processes hold"), "{}", r.reason);
+        assert!(!r.reason.contains("  "), "a run of spaces in: {}", r.reason);
     }
 
     #[test]
