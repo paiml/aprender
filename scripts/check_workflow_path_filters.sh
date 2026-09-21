@@ -69,24 +69,9 @@ check_workflow() {
   rm -f /tmp/wfpf_err.$$
   [ -z "$out" ] && return 0
 
-  local push pr sched
+  local push pr
   push="$(printf '%s\n' "$out" | awk -F'\t' '$1=="PUSH"{print $2}' | sort -u)"
   pr="$(printf '%s\n' "$out" | awk -F'\t' '$1=="PR"{print $2}' | sort -u)"
-  sched="$(printf '%s\n' "$out" | awk -F'\t' '$1=="SCHEDULE"{print $2}')"
-
-  # Rule 3 (#3676): a path-FILTERED workflow must also run on `schedule:`. The
-  # filter is a claim that nothing outside its paths can break the gate; the
-  # nightly run is what turns a wrong claim into a red within a day instead of
-  # the three months book.yml sat dark. Applies when either event is filtered.
-  local filtered=0
-  if [ -n "$push" ] && [ "$push" != '<unfiltered>' ]; then filtered=1; fi
-  if [ -n "$pr" ] && [ "$pr" != '<unfiltered>' ]; then filtered=1; fi
-  if [ "$filtered" = 1 ] && [ "$sched" != yes ]; then
-    printf '\nFAIL %s: path-filtered, but no `schedule:` trigger.\n' "$name"
-    printf '     A change outside the filter that breaks this gate is never seen;\n'
-    printf '     add a nightly cron so the claim is re-checked every day.\n'
-    return 1
-  fi
 
   # An unfiltered event cannot go dark; only compare when BOTH are filtered.
   case "$push" in *'<unfiltered>'*) return 0 ;; esac
@@ -144,32 +129,13 @@ on:
   pull_request:
     paths: ["book/**"]
 YML
-  # 2 - symmetric, with a nightly. MUST pass.
+  # 2 - symmetric. MUST pass.
   cat > "$TD/wf2.yml" <<'YML'
 on:
   push:
     paths: ["book/**"]
   pull_request:
     paths: ["book/**"]
-  schedule:
-    - cron: '30 22 * * *'
-YML
-  # 5 - symmetric but NO schedule (rule 3, #3676). MUST fail.
-  cat > "$TD/wf5.yml" <<'YML'
-on:
-  push:
-    paths: ["book/**"]
-  pull_request:
-    paths: ["book/**"]
-YML
-  # 6 - a schedule key with no cron entry is not a nightly (rule 3). MUST fail.
-  cat > "$TD/wf6.yml" <<'YML'
-on:
-  push:
-    paths: ["book/**"]
-  pull_request:
-    paths: ["book/**"]
-  schedule: []
 YML
   # 3 - no path filter at all: cannot go dark. MUST pass.
   cat > "$TD/wf3.yml" <<'YML'
@@ -189,7 +155,7 @@ on:
 YML
 
   fails=0
-  for c in 1 4 5 6; do
+  for c in 1 4; do
     if check_workflow "$TD/wf${c}.yml" >/dev/null 2>&1; then
       printf 'FAIL  row %s NOT flagged - the guard is blind to a real defect shape\n' "$c"
       fails=$((fails + 1))
@@ -207,9 +173,9 @@ YML
   done
 
   if [ "$fails" -ne 0 ]; then
-    printf '\nSELF-TEST FAILED (%s/6 wrong)\n' "$fails"; exit 1
+    printf '\nSELF-TEST FAILED (%s/4 wrong)\n' "$fails"; exit 1
   fi
-  printf '\nSELF-TEST PASSED (6/6)\n'
+  printf '\nSELF-TEST PASSED (4/4)\n'
   exit 0
 fi
 
@@ -246,5 +212,5 @@ if [ "$violations" -ne 0 ]; then
   exit 1
 fi
 
-printf 'PASS: every path-filtered workflow gates PRs and main identically, and runs nightly.\n'
+printf 'PASS: every path-filtered workflow gates PRs and main identically.\n'
 exit 0

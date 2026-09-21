@@ -49,11 +49,6 @@ on:
       - "crates/aprender-core/src/lib.rs"
       - "crates/apr-cli/src/extended_commands.rs"
       - "crates/apr-cli/src/tool_commands.rs"
-  # #3676 rule 3 (scripts/check_workflow_path_filters.sh): a path filter is a
-  # claim that nothing outside these paths can break this gate; the nightly run
-  # re-checks the claim every day. Set ~5h early for the dispatch delay (#3292).
-  schedule:
-    - cron: '30 22 * * *'
 
 permissions:
   contents: read

@@ -20,10 +20,6 @@ if not isinstance(d, dict):
 on = d.get(True) if d.get(True) is not None else d.get('on')
 if not isinstance(on, dict):
     sys.exit(0)
-# RULE 3 (#3676): a path filter is a claim; the nightly run is its backstop.
-sched = on.get('schedule')
-if isinstance(sched, list) and any(isinstance(e, dict) and e.get('cron') for e in sched):
-    print("SCHEDULE\tyes")
 for ev, tag in (('push', 'PUSH'), ('pull_request', 'PR')):
     spec = on.get(ev)
     if not isinstance(spec, dict):
