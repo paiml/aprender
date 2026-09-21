@@ -299,7 +299,7 @@ commands:
     description: "Tokenizer training pipeline (plan/apply)"
     requires_model: false
     side_effects: [filesystem]
-    subcommands: [apply, encode-corpus, import-hf, plan, repair-manifest, train]
+    subcommands: [apply, encode, encode-corpus, import-hf, plan, repair-manifest, train]
 
   - name: tune
     category: training

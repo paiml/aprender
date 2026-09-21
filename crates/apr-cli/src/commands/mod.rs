@@ -199,6 +199,9 @@ pub(crate) mod stop_op;
 pub(crate) mod tensors;
 pub(crate) mod token_redactor;
 pub(crate) mod tokenize;
+/// #3726: `apr tokenize encode` — a GGUF's own token ids for a text, and the path that made them.
+#[cfg(feature = "inference")]
+pub(crate) mod tokenize_encode;
 pub(crate) mod tokenize_parquet;
 pub(crate) mod tool_use_classifier;
 pub(crate) mod tool_use_lint;

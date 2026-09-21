@@ -1,0 +1,34 @@
+# #3726 tokenizer parity, release mode (defaults: pinned llama-tokenize, ~/models, committed corpus)
+# host: noah-Lambda-Vector  measured: 2026-09-21T17:22:15Z
+# command: bash scripts/tokenizer_parity.sh --apr <apr 0.69.0 (9026b70a5)>
+
+apr:            /mnt/nvme-raid0/work-c3/bin/apr-fixed-9026b70a5 (apr 0.69.0 (9026b70a5))
+llama-tokenize: /home/noah/src/llama.cpp-d1d3c3396/build/bin/llama-tokenize (version: 0.4.1-dev (build 10987, commit d1d3c3396))
+models: 21   corpus files: 7
+# PASS lines condensed: 147 PASS over 21 model(s), 7 file(s) each.
+# full per-pair log: lambda:/mnt/nvme-raid0/work-c3/3726-parity-lambda-final.log
+# model                                          files-passed  total-ids
+#   Qwen2.5-0.5B-Instruct-f16.gguf                      7            18200
+#   Qwen2.5-0.5B-Instruct-IQ3_M.gguf                    7            18200
+#   Qwen2.5-0.5B-Instruct-IQ4_XS.gguf                   7            18200
+#   qwen2.5-1.5b-instruct-q4_k_m.gguf                   7            18200
+#   qwen2.5-coder-0.5b-instruct-q4_k_m.gguf             7            18200
+#   qwen2.5-coder-1.5b-instruct-q4_k_m.gguf             7            18200
+#   qwen2.5-coder-7b-instruct-q4_k_m.gguf               7            18200
+#   Qwen3-0.6B-BF16.gguf                                7            18198
+#   Qwen3-1.7B-Q4_K_M.gguf                              7            18198
+#   Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf             7            18198
+#   Qwen3.5-0.8B-IQ4_XS.gguf                            7            18990
+#   Qwen3.5-0.8B-Q4_K_M.gguf                            7            18990
+#   Qwen3.5-0.8B-UD-IQ2_XXS.gguf                        7            18990
+#   Qwen3.5-27B-Q4_K_M.gguf                             7            18990
+#   Qwen3.5-2B-Q4_K_M.gguf                              7            18990
+#   Qwen3.5-35B-A3B-UD-IQ4_XS.gguf                      7            18990
+#   Qwen3.5-4B-Q4_K_M.gguf                              7            18990
+#   Qwen3.5-4B-UD-Q4_K_XL.gguf                          7            18990
+#   Qwen3.5-9B-Q4_K_M.gguf                              7            18990
+#   Qwen3-8B-Q4_K_M.gguf                                7            18198
+#   Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf            7            18198
+# files: brief-review.txt, chat-template.txt, code-rust-token.txt, code-shell-llama_bin.txt, identifiers.txt, nonascii.txt, whitespace.txt
+--- tokenizer parity: 147 pass, 0 fail, 0 uncovered ---
+rc=0

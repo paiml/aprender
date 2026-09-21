@@ -1132,6 +1132,17 @@ fn dispatch_tokenize_command(
             output,
             include_added_tokens,
         } => tokenize::run_import_hf(input, output, *include_added_tokens, cli.json),
+        #[cfg(feature = "inference")]
+        TokenizeCommands::Encode {
+            model,
+            prompt,
+            file,
+        } => commands::tokenize_encode::run_encode(
+            model,
+            prompt.as_deref(),
+            file.as_deref(),
+            cli.json,
+        ),
         #[cfg(feature = "training")]
         TokenizeCommands::EncodeCorpus {
             corpus,
