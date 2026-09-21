@@ -17150,6 +17150,23 @@ roadmap:
   - orch:fable
   - ci
   notes: null
+- id: PMAT-3076
+  github_issue: 3076
+  item_type: task
+  title: 'F16/BF16 GGUF CPU matmul has no SIMD path — unquantized models appear to hang'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-21T07:52:58Z
+  updated: 2026-09-21T07:52:58Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered; #3076 has no done_when section, so this quotes its last plan comment verbatim, minted on the PR branch so the AD-04 quorum can run). "(1) the GGUF CPU path gets a SIMD f16/bf16 matvec (dequant-to-f32 tiles through the existing fused dispatcher) with a greedy-parity gate against llama.cpp on an unquantized ≤1B GGUF, so an F16/BF16 model decodes at a measured tok/s instead of appearing to hang; (2) until that lands the loader prints a one-line notice that the F16/BF16 path is scalar and slow rather than silently crawling." Since (1) lands here, (2) is moot. DEVIATION from the issue body: it suggests an integration test "with a wall-clock assertion"; the project bans wall-clock assertions in required checks, so the regression guard is behavioural (kernel parity against an f64 reference at lengths hitting every loop and tail, and float16_matmul against a transcription of the pre-fix loop including a truncated buffer), and tok/s is measured and reported rather than asserted. Not in scope: prefill running one position at a time at decode rate (#2787 / #2801). EVIDENCE (added after the round-1 quorum found the llama.cpp gate missing): scripts/float16_greedy_parity.sh is the greedy-parity gate against the pinned llama.cpp (llama_pin.toml build_commit), on template-free copies of an unquantized ≤1B F16 and BF16 GGUF, because apr double-templates instruct prompts (#3672); --baseline <pre-change apr> separates divergences this change introduces from ones that predate it. Receipts, the negative control (a deliberately broken binary FAILs 12/12) and the measured before/after decode tok/s with model sha256, host and binaries are in evidence/pmat-3076-f16-bf16-matvec/. WIRING (cop ruling, no workflow edit): the model-backed run is declared in Cargo.toml [package.metadata.dogfood] and runs bare (release mode: the committed receipts are the baseline and pin each model sha256; a model absent from the host is a FAIL) in scripts/dogfood.sh --phase pre-publish; the comparison helpers live in scripts/float16_parity_lib.sh and their case table runs on every PR as scripts/check_float16_greedy_parity.sh through guard_tree.sh.'
 - id: PMAT-3118
   github_issue: 3118
   item_type: task
