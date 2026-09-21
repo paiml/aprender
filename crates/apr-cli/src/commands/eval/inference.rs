@@ -1328,6 +1328,49 @@ pub(super) fn execute_python_test_with_diagnostics(
     execute_python_with_budget(program, &mut WallClockBudget::after_secs(timeout_secs))
 }
 
+/// What the poll loop needs from a child process. `std::process::Child` is the
+/// only production implementor; the tests drive the loop with a fake that never
+/// exits, so the timeout path is exercised without python3 and without a clock.
+trait PollChild {
+    fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>>;
+    /// Kill the child and reap it.
+    fn kill_and_reap(&mut self);
+}
+
+impl PollChild for std::process::Child {
+    fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
+        std::process::Child::try_wait(self)
+    }
+
+    fn kill_and_reap(&mut self) {
+        let _ = self.kill();
+        let _ = self.wait();
+    }
+}
+
+/// Poll `child` every `interval` until it exits or `budget` expires, killing
+/// it on expiry. Returns the exit status (None when killed or when waiting
+/// failed) and whether the budget killed it.
+fn wait_within_budget(
+    child: &mut impl PollChild,
+    budget: &mut dyn ExecBudget,
+    interval: std::time::Duration,
+) -> (Option<std::process::ExitStatus>, bool) {
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return (Some(status), false),
+            Ok(None) => {
+                if budget.expired() {
+                    child.kill_and_reap();
+                    return (None, true);
+                }
+                std::thread::sleep(interval);
+            }
+            Err(_) => return (None, false),
+        }
+    }
+}
+
 /// Execute Python and return diagnostics, killing the child once `budget`
 /// expires. stderr is drained on its own thread WHILE the child runs, so a
 /// verbose child cannot fill the pipe and stall (RC2 candidate from §69).
@@ -1382,22 +1425,8 @@ pub(super) fn execute_python_with_budget(
         .take()
         .map(|s| std::thread::spawn(move || drain_capped(s, STDERR_CAP)));
 
-    let mut timed_out = false;
-    let exit_status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) => {
-                if budget.expired() {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    timed_out = true;
-                    break None;
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            }
-            Err(_) => break None,
-        }
-    };
+    let (exit_status, timed_out) =
+        wait_within_budget(&mut child, budget, Duration::from_millis(50));
 
     let stderr_capture = drain
         .and_then(|h| h.join().ok())
@@ -1421,8 +1450,8 @@ pub(super) fn execute_python_with_budget(
 #[cfg(test)]
 mod execute_python_test_diagnostics_tests {
     use super::{
-        drain_capped, execute_python_test_with_diagnostics, execute_python_with_budget, ExecBudget,
-        PythonExecResult, STDERR_CAP,
+        drain_capped, execute_python_test_with_diagnostics, execute_python_with_budget,
+        wait_within_budget, ExecBudget, PollChild, PythonExecResult, STDERR_CAP,
     };
     use std::io::Read;
 
@@ -1556,6 +1585,49 @@ mod execute_python_test_diagnostics_tests {
         assert_eq!(kept.len(), STDERR_CAP);
         let (short, n) = drain_capped(&b"AssertionError\n"[..], STDERR_CAP);
         assert_eq!((short.as_str(), n), ("AssertionError\n", 15));
+    }
+
+    /// A child that never exits, and refuses to be polled forever: a loop that
+    /// ignores an expired budget panics here instead of hanging the suite.
+    struct NeverExitingChild {
+        polls: u32,
+        killed: bool,
+    }
+
+    impl PollChild for NeverExitingChild {
+        fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
+            self.polls += 1;
+            assert!(
+                self.polls <= 1000,
+                "polled {} times: the loop is not consulting its budget",
+                self.polls
+            );
+            Ok(None)
+        }
+
+        fn kill_and_reap(&mut self) {
+            self.killed = true;
+        }
+    }
+
+    /// FALSIFY-EVAL-003 without python3 or a clock, so it runs in the CI
+    /// container too: a budget of three polls kills a child that never exits
+    /// on exactly the fourth poll, and reports it as timed out.
+    #[test]
+    fn the_poll_loop_kills_on_the_poll_its_budget_expires() {
+        let mut child = NeverExitingChild {
+            polls: 0,
+            killed: false,
+        };
+        let (status, timed_out) = wait_within_budget(
+            &mut child,
+            &mut ExpiresAfterPolls(3),
+            std::time::Duration::ZERO,
+        );
+        assert!(status.is_none());
+        assert!(timed_out);
+        assert!(child.killed);
+        assert_eq!(child.polls, 4);
     }
 
     /// FALSIFY-EVAL-003, deterministically: when the budget expires the child
