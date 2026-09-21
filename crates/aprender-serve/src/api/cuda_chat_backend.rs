@@ -820,6 +820,11 @@ pub async fn openai_chat_completions_handler(
             .as_millis()
     );
 
+    // #3571: a Qwen3.5 hybrid is answered from its resident session or not at all.
+    if let Some(r) = try_qwen35_backend(&state, &request, &request_id, start, &cancel).await {
+        return r;
+    }
+
     if let Some(r) = try_qwen3_moe_backend(&state, &request, &request_id, start, &cancel) {
         return r;
     }

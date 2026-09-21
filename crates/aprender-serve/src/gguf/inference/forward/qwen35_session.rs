@@ -212,6 +212,13 @@ impl Qwen35Session {
         self.context_length
     }
 
+    /// The hybrid's layers — Gated `DeltaNet` and full attention together, all
+    /// resident on the one backend the session serves from.
+    #[must_use]
+    pub fn num_layers(&self) -> usize {
+        self.qwen.layers.len()
+    }
+
     /// Every line the session has printed about its route — the route notice,
     /// the `Backend:` line, each fallback — in order. The printed banner and
     /// the route actually taken can then be checked against each other, which
