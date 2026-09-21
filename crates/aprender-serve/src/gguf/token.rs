@@ -136,27 +136,7 @@ impl GGUFModel {
                 let token = vocab
                     .get(id as usize)
                     .map_or("�", std::string::String::as_str);
-
-                // Check if this is a byte token like <0xE6>
-                if token.starts_with("<0x") && token.ends_with('>') && token.len() == 6 {
-                    if let Ok(byte_val) = u8::from_str_radix(token.get(3..5).expect("byte token <0xNN> has len 6, indices 3..5 always valid"), 16) {
-                        bytes.push(byte_val);
-                        continue;
-                    }
-                }
-
-                // For GPT-2 style tokenizers, decode byte-level BPE properly
-                // Each unicode character in the token represents a raw byte
-                if is_gpt2_style {
-                    for c in token.chars() {
-                        if let Some(byte) = gpt2_unicode_to_byte(c) {
-                            bytes.push(byte);
-                        }
-                    }
-                } else {
-                    // SentencePiece style - tokens are regular strings
-                    bytes.extend_from_slice(token.as_bytes());
-                }
+                push_token_bytes(token, is_gpt2_style, &mut bytes);
             }
 
             // Decode bytes as UTF-8 (lossy for invalid sequences)
@@ -323,6 +303,105 @@ impl GGUFModel {
 
         Some(tokens)
     }
+
+    /// The vocabulary as schema-constrained decoding sees it (#3568): each
+    /// token's raw bytes from [`push_token_bytes`], the same per-token decoding
+    /// [`Self::decode`] uses, so the mask and the decoded text agree about what a
+    /// token is. Control and unused tokens (`tokenizer.ggml.token_type` 3 and 5)
+    /// are special and can never be emitted as constrained text. Without that
+    /// metadata, a `<|…|>` token is special: the same rule `encode` uses (GH-320).
+    ///
+    /// `None` when the file has no vocabulary or no end-of-sequence id.
+    #[must_use]
+    pub fn constraint_vocab(&self) -> Option<crate::constrain::ConstraintVocab> {
+        let vocab = self.vocabulary()?;
+        let eos = self.eos_token_id()?;
+        let is_gpt2_style = self
+            .metadata
+            .get(crate::gguf::keys::TOKENIZER_MODEL)
+            .is_some_and(|v| matches!(v, GGUFValue::String(s) if s == "gpt2" || s == "bpe"));
+        let token_types: Option<Vec<i32>> = match self.metadata.get(TOKENIZER_TOKEN_TYPE) {
+            Some(GGUFValue::Array(arr)) => arr
+                .iter()
+                .map(|v| match v {
+                    GGUFValue::Int32(t) => Some(*t),
+                    _ => None,
+                })
+                .collect(),
+            _ => None,
+        };
+        let mut token_bytes = Vec::with_capacity(vocab.len());
+        let mut special = Vec::with_capacity(vocab.len());
+        for (id, token) in vocab.iter().enumerate() {
+            let is_special = match token_types.as_ref().and_then(|t| t.get(id)) {
+                Some(&t) => t == 3 || t == 5, // CONTROL, UNUSED
+                None => token.starts_with("<|") && token.ends_with("|>"),
+            };
+            let mut bytes = Vec::new();
+            if is_special {
+                bytes.extend_from_slice(token.as_bytes());
+            } else {
+                push_token_bytes(token, is_gpt2_style, &mut bytes);
+                if !is_gpt2_style {
+                    // decode() maps SentencePiece's word boundary `▁` (E2 96 81) to a space after
+                    // joining; done per token here, on BYTES, so a lone <0xNN> byte token survives
+                    bytes = replace_sp_word_boundary(&bytes);
+                }
+            }
+            token_bytes.push(bytes);
+            special.push(is_special);
+        }
+        Some(crate::constrain::ConstraintVocab {
+            token_bytes,
+            special,
+            eos,
+        })
+    }
+}
+
+/// `tokenizer.ggml.token_type`: one llama.cpp token type per token (1 normal,
+/// 3 control, 5 unused, 6 byte, …).
+const TOKENIZER_TOKEN_TYPE: &str = "tokenizer.ggml.token_type";
+
+/// Append one token's raw bytes, exactly as [`GGUFModel::decode`] renders it: a
+/// `<0xNN>` byte token is that byte; a GPT-2 byte-level BPE token maps each char
+/// back to its byte; a SentencePiece token is its UTF-8 text. `decode` and the
+/// constraint vocabulary (#3568) both call this, so they cannot drift apart.
+fn push_token_bytes(token: &str, is_gpt2_style: bool, bytes: &mut Vec<u8>) {
+    if token.starts_with("<0x") && token.ends_with('>') && token.len() == 6 {
+        if let Ok(byte_val) = u8::from_str_radix(
+            token
+                .get(3..5)
+                .expect("byte token <0xNN> has len 6, indices 3..5 always valid"),
+            16,
+        ) {
+            bytes.push(byte_val);
+            return;
+        }
+    }
+    if is_gpt2_style {
+        // Each unicode character in a byte-level BPE token represents a raw byte
+        bytes.extend(token.chars().filter_map(gpt2_unicode_to_byte));
+    } else {
+        bytes.extend_from_slice(token.as_bytes());
+    }
+}
+
+/// SentencePiece's word boundary `▁` (U+2581, bytes E2 96 81) as a space, on raw bytes.
+fn replace_sp_word_boundary(bytes: &[u8]) -> Vec<u8> {
+    const BOUNDARY: [u8; 3] = [0xE2, 0x96, 0x81];
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i..].starts_with(&BOUNDARY) {
+            out.push(b' ');
+            i += BOUNDARY.len();
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    out
 }
 
 use crate::gguf::{

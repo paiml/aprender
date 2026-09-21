@@ -239,6 +239,9 @@ pub mod chat_template;
 /// CLI command implementations (extracted for testability)
 #[cfg(feature = "cli")]
 pub mod cli;
+/// Schema-constrained decoding (#3568): the `TokenConstraint` hook every
+/// generation loop calls, and the llguidance engine behind it (`structured-output`).
+pub mod constrain;
 /// GGUF to APR Transformer converter
 ///
 /// Converts GGUF models to APR format for fair comparison.

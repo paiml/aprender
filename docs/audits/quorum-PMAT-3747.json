@@ -1,0 +1,430 @@
+{
+  "ticket": "PMAT-3747",
+  "base": "52f43da71",
+  "base_resolved": "52f43da71",
+  "base_note": "no origin/52f43da71 exists; judged against the local ref",
+  "head": "c5047bd942f5b7f76946fec7aabf9c2f7c70e528",
+  "diff_sha256": "a8382b71c09386d50431ddcc97fccbddab4ebc27aa8408688745186ec1e499b7",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 84589,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff faithfully implements all the requirements of PMAT-3747 without violating the negative constraints. The `TokenConstraint` trait and the `llguidance`-powered engine are introduced correctly and hidden behind the `structured-output` feature. The `load_schema` function appropriately handles inline JSON schemas or file paths via `@path` prefix. The `GGUFModel::constraint_vocab` securely maps `decode()`'s token logic while ensuring control tokens never manifest in constrained text. The test suite thoroughly verifies the constraint engine behavior with RAH's quorum-lane and rmedia's schemas as per the ticket, and the mask overhead evaluation is securely included as an example. All criteria are fully met.",
+      "findings": [
+        {
+          "claim": "`constrain::TokenConstraint` {mask, accept, is_complete} exists",
+          "file": "crates/aprender-serve/src/constrain/mod.rs",
+          "grounding": "cited",
+          "line": 35
+        },
+        {
+          "claim": "`ConstraintError` names every refusal (SchemaInvalid, SchemaUnsupported, DeadEnd, Rejected, Vocab, NotCompiled), each rendered with its name first",
+          "file": "crates/aprender-serve/src/constrain/mod.rs",
+          "grounding": "cited",
+          "line": 51
+        },
+        {
+          "claim": "`load_schema` takes the schema inline OR as `@path` and refuses non-JSON, non-schema JSON and unreadable paths as SchemaInvalid, before any token",
+          "file": "crates/aprender-serve/src/constrain/mod.rs",
+          "grounding": "cited",
+          "line": 114
+        },
+        {
+          "claim": "llguidance 1.8.0 sits behind the trait, as an optional dependency behind a feature that apr-cli's `inference` enables",
+          "file": "crates/aprender-serve/Cargo.toml",
+          "grounding": "cited",
+          "line": 113
+        },
+        {
+          "claim": "`GGUFModel::constraint_vocab()` builds each token's bytes from the SAME per-token decoding `decode()` uses; control/unused tokens are special and can never be constrained text",
+          "file": "crates/aprender-serve/src/gguf/token.rs",
+          "grounding": "cited",
+          "line": 307
+        },
+        {
+          "claim": "case table: RAH's quorum-lane schema and rmedia's three schemas (#3716) compile exactly, accept their real documents, refuse violations at the byte, and allow nothing after one complete value; an approximation is refused; without the feature a constraint is refused (NotCompiled), never ignored",
+          "file": "crates/aprender-serve/src/constrain/tests.rs",
+          "grounding": "cited",
+          "line": 312
+        },
+        {
+          "claim": "a measured per-token mask overhead on the Qwen3.5-9B vocabulary is provided as an example",
+          "file": "crates/aprender-serve/examples/constrain_mask_overhead.rs",
+          "grounding": "cited",
+          "line": 33
+        },
+        {
+          "claim": "No generation loop is wired (apr run's CPU paths, etc. are NOT in this PR)",
+          "file": "crates/aprender-serve/src/constrain/mod.rs",
+          "grounding": "asserted",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 6536,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Reviewed diff (52f43da71...HEAD) for ticket PMAT-3747 (#3568 PR 1/4). Verified that all acceptance criteria are fully met, no gates are weakened, no tests assert opposite behavior, no receipt claims are unbacked, and no generation loop is wired. Empirically verified with cargo test (24/24 passed with feature, 12/12 without feature), cargo check -p apr-cli --features inference (passed), cargo fmt (clean), cargo clippy (-D warnings clean), and cargo deny check (advisories ok, bans ok, licenses ok, sources ok). Verdict: PASS.",
+      "findings": [
+        {
+          "claim": "`TokenConstraint` trait defines `mask`, `accept`, and `is_complete`",
+          "file": "crates/aprender-serve/src/constrain/mod.rs",
+          "grounding": "cited",
+          "line": 35
+        },
+        {
+          "claim": "`ConstraintError` defines all 6 refusal variants (SchemaInvalid, SchemaUnsupported, DeadEnd, Rejected, Vocab, NotCompiled) with Display prefix formatting matching ticket spec",
+          "file": "crates/aprender-serve/src/constrain/mod.rs",
+          "grounding": "cited",
+          "line": 50
+        },
+        {
+          "claim": "`load_schema` parses inline JSON schema or `@path` schema file, refusing unreadable paths, non-JSON text, and non-schema JSON as `SchemaInvalid`",
+          "file": "crates/aprender-serve/src/constrain/mod.rs",
+          "grounding": "cited",
+          "line": 112
+        },
+        {
+          "claim": "`llguidance 1.8.0` is an optional dependency under `structured-output` feature, and `cargo deny check` (licenses, advisories, bans, sources) passes cleanly",
+          "file": "crates/aprender-serve/Cargo.toml",
+          "grounding": "measured",
+          "line": 111
+        },
+        {
+          "claim": "`apr-cli`'s `inference` feature enables `realizar/structured-output`",
+          "file": "crates/apr-cli/Cargo.toml",
+          "grounding": "cited",
+          "line": 88
+        },
+        {
+          "claim": "`GGUFModel::constraint_vocab()` extracts raw token bytes using `push_token_bytes` (sharing logic with `decode()`) and marks control/unused token types as special",
+          "file": "crates/aprender-serve/src/gguf/token.rs",
+          "grounding": "cited",
+          "line": 316
+        },
+        {
+          "claim": "Case table tests pass with 24/24 tests green under `--features structured-output` and 12/12 tests green without the feature",
+          "file": "crates/aprender-serve/src/constrain/tests.rs",
+          "grounding": "measured",
+          "line": 304
+        },
+        {
+          "claim": "Per-token constraint overhead example `constrain_mask_overhead.rs` is implemented and builds cleanly under `--features structured-output`",
+          "file": "crates/aprender-serve/examples/constrain_mask_overhead.rs",
+          "grounding": "cited",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 8919,
+      "err_bytes": 59,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.6-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.6-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff accurately implements all requirements specified in PMAT-3747. \n- The `TokenConstraint` trait and `ConstraintError` are correctly implemented, with Display logic matching the specific format in the ticket notes.\n- `load_schema` successfully supports both inline schemas and `@path` resolution, explicitly catching invalid/non-JSON paths.\n- The `llguidance` dependency is properly placed behind the `structured-output` feature and enabled via the `inference` feature in `apr-cli` Cargo.toml.\n- `GGUFModel::constraint_vocab()` correctly reuses `push_token_bytes` and marks control tokens as special so they can't be constrained text.\n- The comprehensive test suite in `tests.rs` fully captures the validation for RAH's quorum-lane schema and rmedia schemas, verifying proper rejection of mutations and out-of-spec JSON configurations.\n- The `constrain_mask_overhead.rs` example fulfills the overhead measurement requirement.\n\nNo contradictions or forbidden features were introduced.",
+      "findings": [],
+      "raw_bytes": 3298,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-low",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-low",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/apr-cli/Cargo.toml",
+      "line": 88,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "`apr-cli`'s `inference` feature enables `realizar/structured-output`"
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/Cargo.toml",
+      "line": 111,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "`llguidance 1.8.0` is an optional dependency under `structured-output` feature, and `cargo deny check` (licenses, advisories, bans, sources) passes cleanly"
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/Cargo.toml",
+      "line": 113,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "llguidance 1.8.0 sits behind the trait, as an optional dependency behind a feature that apr-cli's `inference` enables"
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/examples/constrain_mask_overhead.rs",
+      "line": 1,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Per-token constraint overhead example `constrain_mask_overhead.rs` is implemented and builds cleanly under `--features structured-output`"
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/examples/constrain_mask_overhead.rs",
+      "line": 33,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "a measured per-token mask overhead on the Qwen3.5-9B vocabulary is provided as an example"
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/constrain/mod.rs",
+      "line": 1,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "No generation loop is wired (apr run's CPU paths, etc. are NOT in this PR)"
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/constrain/mod.rs",
+      "line": 35,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "`TokenConstraint` trait defines `mask`, `accept`, and `is_complete`",
+        "`constrain::TokenConstraint` {mask, accept, is_complete} exists"
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/constrain/mod.rs",
+      "line": 50,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "`ConstraintError` defines all 6 refusal variants (SchemaInvalid, SchemaUnsupported, DeadEnd, Rejected, Vocab, NotCompiled) with Display prefix formatting matching ticket spec"
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/constrain/mod.rs",
+      "line": 51,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "`ConstraintError` names every refusal (SchemaInvalid, SchemaUnsupported, DeadEnd, Rejected, Vocab, NotCompiled), each rendered with its name first"
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/constrain/mod.rs",
+      "line": 112,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "`load_schema` parses inline JSON schema or `@path` schema file, refusing unreadable paths, non-JSON text, and non-schema JSON as `SchemaInvalid`"
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/constrain/mod.rs",
+      "line": 114,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "`load_schema` takes the schema inline OR as `@path` and refuses non-JSON, non-schema JSON and unreadable paths as SchemaInvalid, before any token"
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/constrain/tests.rs",
+      "line": 304,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Case table tests pass with 24/24 tests green under `--features structured-output` and 12/12 tests green without the feature"
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/constrain/tests.rs",
+      "line": 312,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "case table: RAH's quorum-lane schema and rmedia's three schemas (#3716) compile exactly, accept their real documents, refuse violations at the byte, and allow nothing after one complete value; an approximation is refused; without the feature a constraint is refused (NotCompiled), never ignored"
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gguf/token.rs",
+      "line": 307,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "`GGUFModel::constraint_vocab()` builds each token's bytes from the SAME per-token decoding `decode()` uses; control/unused tokens are special and can never be constrained text"
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gguf/token.rs",
+      "line": 316,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "`GGUFModel::constraint_vocab()` extracts raw token bytes using `push_token_bytes` (sharing logic with `decode()`) and marks control/unused token types as special"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane 2: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (8919 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.6-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
