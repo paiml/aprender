@@ -81,14 +81,14 @@ pub mod framebuffer;
 pub mod geometry;
 /// Content manifest: per-file digests reduced to one root hash (APEX-001 EV-2a rule 4).
 pub mod manifest;
+/// Rasterisation through a pinned, font-free `resvg` (APEX-001 EV-2a rule 3, EV-2d).
+#[cfg(feature = "raster")]
+pub mod raster;
 /// Scale functions for data-to-visual mappings.
 pub mod scale;
 /// Text as glyph outlines, from caller-pinned font bytes (APEX-001 EV-2a rule 1).
 #[cfg(feature = "text-path")]
 pub mod text;
-/// Rasterisation through a pinned, font-free `resvg` (APEX-001 EV-2a rule 3, EV-2d).
-#[cfg(feature = "raster")]
-pub mod raster;
 
 /// The coordinate grid emitted geometry is snapped to, in user units.
 ///

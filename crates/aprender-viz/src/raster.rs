@@ -40,13 +40,21 @@ use crate::output::PngEncoder;
 /// Elements refused by the pre-scan, grouped by why (see the module doc for the reasoning).
 const REFUSED: &[&str] = &[
     // Text family: usvg with no font database silently drops these instead of failing.
-    "text", "tspan", "textPath", "tref", "altGlyph", "textArea",
+    "text",
+    "tspan",
+    "textPath",
+    "tref",
+    "altGlyph",
+    "textArea",
     // Fonts: no font should ever be resolved on the raster path.
-    "font", "font-face",
+    "font",
+    "font-face",
     // Opaque or file-reading content: usvg either drops it silently (foreignObject) or its
     // default resolver reads the filesystem and can load a nested SVG document (image,
     // feImage) that this pre-scan cannot see.
-    "foreignObject", "image", "feImage",
+    "foreignObject",
+    "image",
+    "feImage",
 ];
 
 /// The SVG namespace URI. `usvg` treats an element as SVG when it declares this namespace OR

@@ -55,7 +55,12 @@ fn base_svg() -> String {
             None,
             1.0,
         )
-        .path("M 20 150 L 60 180 L 100 140 Z", Some(Rgba::new(255, 165, 0, 200)), Some(Rgba::BLACK), 1.5)
+        .path(
+            "M 20 150 L 60 180 L 100 140 Z",
+            Some(Rgba::new(255, 165, 0, 200)),
+            Some(Rgba::BLACK),
+            1.5,
+        )
         .render()
 }
 
@@ -236,7 +241,8 @@ fn a_comment_mentioning_text_is_not_refused() {
 #[test]
 fn image_with_nested_svg_text_is_refused_as_image() {
     use base64::{engine::general_purpose::STANDARD, Engine};
-    let nested = r#"<svg xmlns="http://www.w3.org/2000/svg" width="5" height="5"><text>hi</text></svg>"#;
+    let nested =
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="5" height="5"><text>hi</text></svg>"#;
     let encoded = STANDARD.encode(nested);
     let svg = format!(
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">
