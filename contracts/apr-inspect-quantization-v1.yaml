@@ -89,8 +89,8 @@ falsification_tests:
     if_fails: "general.file_type is not read, or not decoded by the upstream table"
   - id: FALSIFY-INSPECT-QUANT-003
     rule: "inspect and tensors print the same >= 2-D dtype histogram"
-    prediction: "for any model, apr inspect --json .dtype_histogram equals apr tensors --json .dtype_histogram"
-    test: "M=$HOME/models/Qwen3.5-0.8B-Q4_K_M.gguf; [ -f \"$M\" ] || exit 0; [ \"$(apr inspect --json \"$M\" | jq -cS .dtype_histogram)\" = \"$(apr tensors --json \"$M\" | jq -cS .dtype_histogram)\" ]"
+    prediction: "for any model, apr inspect --json .dtype_histogram is present, non-empty, and equals apr tensors --json .dtype_histogram (two absent histograms are not agreement)"
+    test: "M=$HOME/models/Qwen3.5-0.8B-Q4_K_M.gguf; [ -f \"$M\" ] || exit 0; HI=$(apr inspect --json \"$M\" | jq -cS .dtype_histogram); HT=$(apr tensors --json \"$M\" | jq -cS .dtype_histogram); [ \"$HI\" != null ] && [ \"$HI\" != '{}' ] && [ \"$HI\" = \"$HT\" ]"
     if_fails: "the two commands compute the histogram differently: the shared function was bypassed"
   - id: FALSIFY-INSPECT-QUANT-004
     rule: "inspect reads every live ggml type tensors reads"
