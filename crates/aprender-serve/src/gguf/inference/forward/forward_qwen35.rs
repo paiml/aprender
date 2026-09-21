@@ -1539,56 +1539,54 @@ fn run_qwen35_generate_gpu(
     let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
     // #3596: will it fit? Decided here, from the host model and the MEASURED free
     // memory, before a byte is uploaded — never discovered as an OOM mid-prefill.
-    let attention = crate::gguf::cuda::Qwen35CudaModel::prefill_attention_for(&qwen, &executor);
-    let plan_with = |rows: usize| {
-        crate::capacity::plan(&crate::capacity::CapacityInputs {
-            memory: Some(device_memory),
-            ..crate::gguf::cuda::Qwen35CudaModel::capacity_inputs(
-                &qwen,
-                max_seq_len,
-                gpu_free,
-                gpu_total,
-                attention,
-                rows,
-            )
-        })
-    };
-    // Bigger GEMM chunks on a unified-memory host (the dequant is paid per chunk);
-    // if that workspace does not fit, the default does before anything is refused.
-    let mut chunk_rows = match device_memory {
-        crate::capacity::DeviceMemory::Unified { .. } => {
-            crate::gguf::cuda::UNIFIED_PREFILL_CHUNK_ROWS
+    // #3596 (cop ruling 2026-09-21): cuBLAS f32 attention while its plan fits — exact,
+    // and faster than flash on sm_89 — flash only when flash alone fits.
+    let attention_paths =
+        crate::gguf::cuda::Qwen35CudaModel::prefill_attention_candidates_for(&qwen, &executor);
+    // Bigger GEMM chunks on a unified-memory host (the dequant is paid per chunk); if
+    // that workspace does not fit, the default does before the next path is tried.
+    let chunk_rows_to_try: &[usize] = match device_memory {
+        crate::capacity::DeviceMemory::Unified { .. } => &[
+            crate::gguf::cuda::UNIFIED_PREFILL_CHUNK_ROWS,
+            crate::gguf::cuda::PREFILL_MAX_CHUNK_ROWS,
+        ],
+        crate::capacity::DeviceMemory::Discrete { .. } => {
+            &[crate::gguf::cuda::PREFILL_MAX_CHUNK_ROWS]
         },
-        crate::capacity::DeviceMemory::Discrete { .. } => crate::gguf::cuda::PREFILL_MAX_CHUNK_ROWS,
     };
-    let mut verdict = plan_with(chunk_rows);
-    if matches!(verdict, crate::capacity::CapacityVerdict::Refused(_))
-        && chunk_rows != crate::gguf::cuda::PREFILL_MAX_CHUNK_ROWS
-    {
-        chunk_rows = crate::gguf::cuda::PREFILL_MAX_CHUNK_ROWS;
-        verdict = plan_with(chunk_rows);
-    }
-    let budget = match verdict {
-        crate::capacity::CapacityVerdict::Refused(refusal) => {
-            return Err(Qwen35GpuFailure::Refused(Box::new(refusal)));
-        },
-        crate::capacity::CapacityVerdict::Fits(budget) => {
-            if budget.kv_dtype != crate::capacity::KvDtype::F32 {
-                // `capacity_inputs` reports no f16 decode, so a plan cannot choose it;
-                // if that ever changes without the f16 cache existing, refuse loudly.
-                return Err(format!(
-                    "the capacity plan chose a {:?} KV cache, which this build cannot allocate",
-                    budget.kv_dtype
+    let planned =
+        crate::capacity::plan_first_fit(&attention_paths, chunk_rows_to_try, |attention, rows| {
+            crate::capacity::plan(&crate::capacity::CapacityInputs {
+                memory: Some(device_memory),
+                ..crate::gguf::cuda::Qwen35CudaModel::capacity_inputs(
+                    &qwen,
+                    max_seq_len,
+                    gpu_free,
+                    gpu_total,
+                    attention,
+                    rows,
                 )
-                .into());
-            }
-            budget
-        },
+            })
+        });
+    let (attention, chunk_rows, budget) = match planned {
+        Ok(fit) => fit,
+        Err(Some(refusal)) => return Err(Qwen35GpuFailure::Refused(refusal)),
+        Err(None) => return Err("no prefill attention path to plan".to_string().into()),
     };
+    if budget.kv_dtype != crate::capacity::KvDtype::F32 {
+        // `capacity_inputs` reports no f16 decode, so a plan cannot choose it; if that
+        // ever changes without the f16 cache existing, refuse loudly.
+        return Err(format!(
+            "the capacity plan chose a {:?} KV cache, which this build cannot allocate",
+            budget.kv_dtype
+        )
+        .into());
+    }
     let mut gpu =
         crate::gguf::cuda::Qwen35CudaModel::with_max_seq_len(&qwen, executor, max_seq_len)
             .map_err(|e| format!("the CUDA model would not build: {e}"))?;
     gpu.set_prefill_chunk_rows(chunk_rows);
+    gpu.set_prefill_attention(attention);
 
     // Unconditional, like every other backend-selection line on this path: the
     // user must be able to tell a GPU run from a CPU one without --verbose.

@@ -264,6 +264,9 @@ pub struct Qwen35CudaModel<'a> {
     /// device has memory to spare (a unified-memory GB10), because every chunk
     /// dequantizes every weight once.
     prefill_rows: usize,
+    /// The batched prefill's attention path (#3596): cuBLAS f32 unless only flash
+    /// fits, as the capacity plan decides.
+    prefill_attention: prefill::PrefillAttention,
 }
 
 /// Map a GPU error into the crate error type with the operation that raised it.
@@ -593,6 +596,7 @@ impl<'a> Qwen35CudaModel<'a> {
         let attn_scratch = Self::build_attn_scratch(&executor, dims)?;
         let out_normed = Self::zeros(&executor, dims.hidden_dim as usize)?;
         let logits_buf = Self::zeros(&executor, dims.vocab_size as usize)?;
+        let prefill_attention = prefill::default_prefill_attention(&executor, dims);
         // #3596: the model's OWN state serves only the single-layer handles
         // (`forward_attention_layer`, `upload_attention_kv`, …), never a generation —
         // `qwen35_gpu_decode` and the F2 probe each allocate theirs. Sizing it to the
@@ -618,6 +622,7 @@ impl<'a> Qwen35CudaModel<'a> {
             dims,
             max_seq_len,
             prefill_rows: prefill::PREFILL_MAX_CHUNK_ROWS,
+            prefill_attention,
         })
     }
 

@@ -196,6 +196,9 @@ fn batched_equals_per_token_rows(
     if let Some(rows) = chunk_rows {
         gpu.set_prefill_chunk_rows(rows);
     }
+    // The path under test is the path that runs — never the default by accident.
+    gpu.set_prefill_attention(attention);
+    assert_eq!(gpu.prefill_attention_mode(), attention);
     let vocab = base.config.vocab_size;
     let prompt = tokens(n, vocab, 0x3596_0100 ^ n as u32);
 
@@ -349,4 +352,33 @@ fn qwen35_prefill_refuses_an_empty_prompt_and_positions_past_the_cache() {
         .prefill_logits_at(&[1000, 1001, 1002, 1003], &mut fresh, 0, &[0, 3])
         .expect("two requested rows");
     assert_eq!(got.len(), 2, "one logits vector per requested position");
+}
+
+/// The cop's 2026-09-21 ruling on the default: cuBLAS f32 first (exact, and faster
+/// than flash on sm_89 from 20k to 148k), flash second where it can run; the
+/// environment pins one. Pure — no device.
+#[test]
+fn qwen35_prefill_attention_prefers_f32_then_flash_and_the_environment_pins_one() {
+    use super::{
+        attention_candidates,
+        PrefillAttention::{CublasF32, FlashF16In},
+    };
+    let rows: [(Option<&str>, bool, &[super::PrefillAttention]); 7] = [
+        (None, true, &[CublasF32, FlashF16In]),
+        (None, false, &[CublasF32]),
+        (Some("f32"), true, &[CublasF32]),
+        (Some("flash"), true, &[FlashF16In]),
+        // Flash asked for where it cannot run: said so, and f32 — never nothing.
+        (Some("flash"), false, &[CublasF32]),
+        // An unrecognised value is the default, and printed.
+        (Some("fast"), true, &[CublasF32, FlashF16In]),
+        (Some(""), false, &[CublasF32]),
+    ];
+    for (forced, flash, want) in rows {
+        assert_eq!(
+            attention_candidates(forced, flash),
+            want,
+            "{forced:?}, flash supported {flash}"
+        );
+    }
 }
