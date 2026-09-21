@@ -51,7 +51,6 @@ fn throughput_safetensors(
 #[cfg(feature = "inference")]
 fn throughput_for_format(
     path: &Path,
-    model_bytes: &[u8],
     format: realizar::format::ModelFormat,
     prompt: &str,
     config: &QaConfig,
@@ -62,7 +61,7 @@ fn throughput_for_format(
 
     match format {
         ModelFormat::Gguf => {
-            throughput_gguf(path, model_bytes, config, cuda_available, tracer, prompt).map(Some)
+            throughput_gguf(path, config, cuda_available, tracer, prompt).map(Some)
         }
         ModelFormat::Apr => throughput_apr(path, config, tracer, prompt).map(Some),
         ModelFormat::SafeTensors => throughput_safetensors(path, config, tracer, prompt),

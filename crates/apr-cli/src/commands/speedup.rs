@@ -46,16 +46,16 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
         #[cfg(not(feature = "cuda"))]
         let cuda_available = false;
 
-        let model_bytes = std::fs::read(path)
+        // #3750: the format from the 8-byte magic, never the whole model
+        let magic = super::model_header::read_prefix(path, 8)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
 
-        let format = detect_format(&model_bytes[..8.min(model_bytes.len())])
+        let format = detect_format(&magic)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
 
         let prompt = "Write a hello world program in Python:";
         let Some((tps, _measurement_duration)) = throughput_for_format(
             path,
-            &model_bytes,
             format,
             prompt,
             config,
@@ -245,10 +245,10 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> 
         GGUFModel, MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig,
     };
 
-    let model_bytes = std::fs::read(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-    let gguf = GGUFModel::from_bytes(&model_bytes)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+    // #3750: one map; the tokenizer comes from its header, not from a whole-file read
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+    let gguf = &mapped.model;
 
     let prompt = "Write a function to check if a number is prime:";
     let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
@@ -270,8 +270,6 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> 
     #[cfg(not(feature = "cuda"))]
     let cuda_available = false;
 
-    let mapped = MappedGGUFModel::from_path(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
 
@@ -416,10 +414,10 @@ fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> R
         QuantizedGenerateConfig,
     };
 
-    let model_bytes = std::fs::read(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-    let gguf = GGUFModel::from_bytes(&model_bytes)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+    // #3750: one map; the tokenizer comes from its header, not from a whole-file read
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+    let gguf = &mapped.model;
 
     let prompt = "Write a function to calculate factorial:";
     let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
@@ -433,8 +431,6 @@ fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig, tracer: &TracerImpl) -> R
     let budget_us = config.max_tokens as u64 * config.iterations as u64 * 100_000;
 
     // CPU throughput
-    let mapped = MappedGGUFModel::from_path(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
     let (cpu_tps, _) = measure_generate_throughput(
@@ -501,9 +497,10 @@ fn run_gpu_speedup_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
             ));
         }
 
-        let model_bytes = std::fs::read(path)
+        // #3750: the format from the 8-byte magic, never the whole model
+        let magic = super::model_header::read_prefix(path, 8)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-        let format = detect_format(&model_bytes[..8.min(model_bytes.len())])
+        let format = detect_format(&magic)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
         if format != ModelFormat::Gguf {
             return Ok(GateResult::skipped(

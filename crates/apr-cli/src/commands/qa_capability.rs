@@ -42,8 +42,8 @@ pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult>
         );
     }
 
-    // Read file header to detect format
-    let data = match std::fs::read(path) {
+    // #3750: the magic here and the header below, never the whole model (17.3 GiB on the 30B)
+    let magic = match super::model_header::read_prefix(path, 4) {
         Ok(d) => d,
         Err(e) => {
             let duration = start.elapsed();
@@ -57,7 +57,7 @@ pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult>
         }
     };
 
-    if data.len() < 4 {
+    if magic.len() < 4 {
         let duration = start.elapsed();
         return Ok(GateResult::failed(
             "capability_match",
@@ -69,8 +69,7 @@ pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult>
     }
 
     // Only check GGUF files — APR/SafeTensors don't carry arch constraints yet
-    let magic = &data[0..4];
-    if magic != b"GGUF" {
+    if magic.as_slice() != b"GGUF" {
         let duration = start.elapsed();
         return Ok(GateResult::passed(
             "capability_match",
@@ -82,7 +81,7 @@ pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult>
     }
 
     // Parse GGUF to get architecture string and tensor (name, GGML type) pairs
-    let Some((arch, tensors)) = extract_gguf_arch_and_tensors(&data) else {
+    let Some((arch, tensors)) = super::model_header::gguf_arch_and_tensors(path) else {
         let duration = start.elapsed();
         return Ok(GateResult::passed(
             "capability_match",
@@ -374,13 +373,8 @@ pub(crate) fn cpu_only_architecture(path: &Path) -> bool {
     if !cfg!(feature = "cuda") {
         return false;
     }
-    let Ok(data) = std::fs::read(path) else {
-        return false;
-    };
-    if data.len() < 4 || &data[0..4] != b"GGUF" {
-        return false;
-    }
-    let Some((arch, tensors)) = extract_gguf_arch_and_tensors(&data) else {
+    // #3750: the header, never the whole model
+    let Some((arch, tensors)) = super::model_header::gguf_arch_and_tensors(path) else {
         return false;
     };
     is_cpu_only_architecture(&arch, tensors.iter().map(|(n, _)| n.as_str()))
@@ -403,13 +397,8 @@ pub(crate) fn cpu_only_architecture(_path: &Path) -> bool {
 /// measured on some other model shape.
 #[cfg(feature = "inference")]
 pub(crate) fn hybrid_loader_architecture(path: &Path) -> bool {
-    let Ok(data) = std::fs::read(path) else {
-        return false;
-    };
-    if data.len() < 4 || &data[0..4] != b"GGUF" {
-        return false;
-    }
-    let Some((arch, _)) = extract_gguf_arch_and_tensors(&data) else {
+    // #3750: the header, never the whole model
+    let Some((arch, _)) = super::model_header::gguf_arch_and_tensors(path) else {
         return false;
     };
     cpu_forward_handles(&arch)
@@ -419,23 +408,6 @@ pub(crate) fn hybrid_loader_architecture(path: &Path) -> bool {
 #[cfg(not(feature = "inference"))]
 pub(crate) fn hybrid_loader_architecture(_path: &Path) -> bool {
     false
-}
-
-/// Extract the architecture string and the tensor table from GGUF metadata.
-///
-/// Uses aprender's GGUF reader to parse metadata without loading tensors.
-/// #3477: the GGML type travels with the name, because the hybrid GPU quant
-/// gate judges `(name, type)` pairs — reading the names alone was what let an
-/// unsupported-quant DeltaNet tensor through.
-fn extract_gguf_arch_and_tensors(data: &[u8]) -> Option<(String, Vec<(String, u32)>)> {
-    let reader = aprender::format::gguf::reader::GgufReader::from_bytes(data.to_vec()).ok()?;
-    let arch = reader.architecture()?;
-    let tensors = reader
-        .tensors
-        .into_iter()
-        .map(|t| (t.name, t.dtype))
-        .collect();
-    Some((arch, tensors))
 }
 
 #[cfg(all(test, feature = "inference"))]

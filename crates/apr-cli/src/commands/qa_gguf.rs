@@ -3,13 +3,10 @@ fn is_gguf_format(path: &Path) -> bool {
     #[cfg(feature = "inference")]
     {
         use realizar::format::{detect_format, ModelFormat};
-        let magic = std::fs::read(path).ok().and_then(|b| {
-            if b.len() >= 8 {
-                Some(b[..8].to_vec())
-            } else {
-                None
-            }
-        });
+        // #3750: the 8-byte magic, never the whole model
+        let magic = super::model_header::read_prefix(path, 8)
+            .ok()
+            .filter(|b| b.len() >= 8);
         magic.and_then(|m| detect_format(&m).ok()) == Some(ModelFormat::Gguf)
     }
     #[cfg(not(feature = "inference"))]

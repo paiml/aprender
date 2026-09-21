@@ -513,7 +513,7 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
     #[cfg(feature = "inference")]
     {
         use realizar::format::{detect_format, ModelFormat};
-        use realizar::gguf::{GGUFModel, MappedGGUFModel, OwnedQuantizedModel};
+        use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 
         // Peek the primary's magic bytes first (cheap — no full-file read) so that
         // non-GGUF inputs SKIP cleanly instead of churning through SafeTensors
@@ -523,8 +523,8 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         // silently skip" invariant was scoped to missing-reference failures, not
         // to category-mismatched inputs.
         {
-            let header = std::fs::read(path)
-                .map(|b| b.into_iter().take(8).collect::<Vec<u8>>())
+            // #3750: this said "cheap — no full-file read" above a whole-file read; now it is 8 bytes
+            let header = super::model_header::read_prefix(path, 8)
                 .map_err(|e| {
                     CliError::ValidationFailed(format!("Failed to read primary model: {e}"))
                 })?;
@@ -546,9 +546,6 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             Err(gate_result) => return Ok(gate_result),
         };
 
-        let gguf_bytes = std::fs::read(path)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to read GGUF: {e}")))?;
-
         // Verify SafeTensors model exists
         if !safetensors_path.exists() {
             return Ok(GateResult::failed(
@@ -563,17 +560,14 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             ));
         }
 
-        // Load GGUF model and get tokenizer
-        let gguf = GGUFModel::from_bytes(&gguf_bytes)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+        // Map the GGUF (#3750: the mapped header carries the tokenizer; no second, whole-file read)
+        let mapped = MappedGGUFModel::from_path(path)
+            .map_err(|e| CliError::ValidationFailed(format!("GGUF map failed: {e}")))?;
 
         // Test prompt - use simple arithmetic for deterministic output
         let prompt = "<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n";
         let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
-        let prompt_tokens: Vec<u32> = gguf.encode(prompt).unwrap_or_else(|| vec![bos, 9707]);
-
-        let mapped = MappedGGUFModel::from_path(path)
-            .map_err(|e| CliError::ValidationFailed(format!("GGUF map failed: {e}")))?;
+        let prompt_tokens: Vec<u32> = mapped.model.encode(prompt).unwrap_or_else(|| vec![bos, 9707]);
         let gguf_model = OwnedQuantizedModel::from_mapped(&mapped)
             .map_err(|e| CliError::ValidationFailed(format!("GGUF model failed: {e}")))?;
 

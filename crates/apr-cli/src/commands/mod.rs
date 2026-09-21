@@ -154,6 +154,7 @@ pub(crate) mod test_llm_band;
 // #2399: gated on the crate it actually needs (aprender-explain, aliased
 // `trueno-explain`) rather than on `full`, so `--features ptx` is enough and a
 // user does not have to pull CUDA + training to analyze a .ptx file.
+pub(crate) mod model_header;
 #[cfg(feature = "trueno-explain")]
 pub(crate) mod ptx_explain;
 pub(crate) mod ptx_map;
