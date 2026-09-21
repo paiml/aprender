@@ -177,6 +177,25 @@ impl GGUFModel {
         }
     }
 
+    /// #3726: the canonical encoding of a byte-level (`gpt2`) vocabulary, or `None` when the
+    /// file is not byte-level or its pre-tokenizer is not implemented (said once on stderr).
+    /// Greedy longest-match gave these vocabularies ids the model never saw in training
+    /// (" quorum" -> `Ġquo|rum`, where the merges give `Ġqu|orum`; every byte outside the
+    /// printable glyphs -> id 0), and the model quoted identifiers back corrupted (#3693).
+    fn encode_byte_level(&self, text: &str, vocab: &[String]) -> Option<Vec<u32>> {
+        let byte_level = self
+            .metadata
+            .get("tokenizer.ggml.model")
+            .is_some_and(|v| matches!(v, GGUFValue::String(s) if s == "gpt2" || s == "bpe"));
+        if !byte_level {
+            return None;
+        }
+        crate::gguf::byte_level_bpe::ByteLevelBpe::from_gguf(&self.metadata, vocab)
+            .map_err(|refusal| warn_greedy_tokenizer_fallback_once(&refusal))
+            .ok()
+            .map(|bpe| bpe.encode(text))
+    }
+
     /// Encode text to token IDs using vocabulary
     ///
     /// A byte-level (`tokenizer.ggml.model = "gpt2"`) vocabulary whose pre-tokenizer is
@@ -193,19 +212,8 @@ impl GGUFModel {
     pub fn encode(&self, text: &str) -> Option<Vec<u32>> {
         let vocab = self.vocabulary()?;
 
-        // #3726: greedy longest-match gave byte-level vocabularies ids the model never saw in
-        // training (" quorum" -> `Ġquo|rum`, where the merges give `Ġqu|orum`; every byte
-        // outside the printable glyphs -> id 0), and the model quoted identifiers back
-        // corrupted (#3693).
-        let byte_level = self
-            .metadata
-            .get("tokenizer.ggml.model")
-            .is_some_and(|v| matches!(v, GGUFValue::String(s) if s == "gpt2" || s == "bpe"));
-        if byte_level {
-            match crate::gguf::byte_level_bpe::ByteLevelBpe::from_gguf(&self.metadata, &vocab) {
-                Ok(bpe) => return Some(bpe.encode(text)),
-                Err(refusal) => warn_greedy_tokenizer_fallback_once(&refusal),
-            }
+        if let Some(ids) = self.encode_byte_level(text, &vocab) {
+            return Some(ids);
         }
 
         // Build reverse lookup: token string -> token ID
@@ -234,32 +242,7 @@ impl GGUFModel {
         let space_char = if is_gpt2_style { '\u{0120}' } else { '▁' };
 
         // Split text on special tokens first, preserving them
-        let mut segments: Vec<(bool, &str)> = Vec::new(); // (is_special, text)
-        let mut text_remaining = text;
-        while !text_remaining.is_empty() {
-            // Find earliest special token match
-            let mut earliest_match: Option<(usize, &str, u32)> = None;
-            for &(special_tok, special_id) in &special_tokens {
-                if let Some(pos) = text_remaining.find(special_tok) {
-                    if earliest_match.is_none()
-                        || pos < earliest_match.as_ref().map_or(usize::MAX, |m| m.0)
-                    {
-                        earliest_match = Some((pos, special_tok, special_id));
-                    }
-                }
-            }
-
-            if let Some((pos, special_tok, _)) = earliest_match {
-                if pos > 0 {
-                    segments.push((false, &text_remaining[..pos]));
-                }
-                segments.push((true, special_tok));
-                text_remaining = &text_remaining[pos + special_tok.len()..];
-            } else {
-                segments.push((false, text_remaining));
-                break;
-            }
-        }
+        let segments = split_on_special_tokens(text, &special_tokens);
 
         let mut tokens = Vec::new();
 
@@ -362,3 +345,27 @@ fn warn_greedy_tokenizer_fallback_once(refusal: &crate::gguf::byte_level_bpe::By
         );
     });
 }
+
+/// Split `text` at the earliest occurrence of any special token, repeatedly, keeping the
+/// specials as their own `(true, token)` segments (the greedy path's special handling).
+fn split_on_special_tokens<'t>(text: &'t str, special_tokens: &[(&'t str, u32)]) -> Vec<(bool, &'t str)> {
+    let mut segments = Vec::new();
+    let mut rest = text;
+    while !rest.is_empty() {
+        let earliest = special_tokens
+            .iter()
+            .filter_map(|&(tok, _)| rest.find(tok).map(|pos| (pos, tok)))
+            .min_by_key(|&(pos, _)| pos);
+        let Some((pos, tok)) = earliest else {
+            segments.push((false, rest));
+            break;
+        };
+        if pos > 0 {
+            segments.push((false, &rest[..pos]));
+        }
+        segments.push((true, tok));
+        rest = &rest[pos + tok.len()..];
+    }
+    segments
+}
+

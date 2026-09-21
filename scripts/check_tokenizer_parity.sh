@@ -49,8 +49,9 @@ row "window clips at the start" "$(tp_window '1 2 3' 0)" "[1] 2 3"
 
 # apr status line
 row "apr status: canonical" "$(tp_apr_status '3 ids; path: canonical; roundtrip: true')" "canonical|true"
-row "apr status: fallback with reason" \
-    "$(tp_apr_status $'noise\n5 ids; path: greedy-fallback: pre-tokenizer \'llama-bpe\' is not implemented; roundtrip: false')" \
+fallback_status="noise
+5 ids; path: greedy-fallback: pre-tokenizer 'llama-bpe' is not implemented; roundtrip: false"
+row "apr status: fallback with reason" "$(tp_apr_status "$fallback_status")" \
     "greedy-fallback: pre-tokenizer 'llama-bpe' is not implemented|false"
 if tp_apr_status 'no status line here' >/dev/null; then
     row "apr status: absent line is refused" "parsed" "refused"

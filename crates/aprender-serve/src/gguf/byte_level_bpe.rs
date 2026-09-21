@@ -61,122 +61,132 @@ impl PreTokenizer {
     /// ```
     #[must_use]
     pub fn split(self, text: &str) -> Vec<&str> {
-        let chars: Vec<(usize, char)> = text.char_indices().collect();
-        let n = chars.len();
-        let marks = self == Self::Qwen35;
-        let byte_at = |i: usize| if i < n { chars[i].0 } else { text.len() };
-        let cpt = |i: usize| if i < n { Some(chars[i].1) } else { None };
-        // `None` is llama.cpp's out-of-range `unicode_cpt_flags{}`: every flag false and
-        // `as_uint() == 0`. Every in-range codepoint has a nonzero flag word.
-        let flags_at = |i: usize| cpt(i).map(CptFlags::of);
-        let word = |f: Option<CptFlags>| f.is_some_and(|f| f.letter || (marks && f.mark));
-        let other = |f: Option<CptFlags>| {
-            f.is_some_and(|f| !(f.whitespace || f.letter || f.number || (marks && f.mark)))
+        let sp = Splitter {
+            chars: text.char_indices().collect(),
+            marks: self == Self::Qwen35,
         };
-
+        let byte_at = |i: usize| sp.chars.get(i).map_or(text.len(), |&(b, _)| b);
         let mut pieces = Vec::new();
-        let mut prev = 0usize;
-        let mut push = |end: usize, prev: &mut usize| {
-            if end > *prev {
-                pieces.push(&text[byte_at(*prev)..byte_at(end)]);
-            }
-            *prev = end;
-        };
-
         let mut pos = 0usize;
-        while pos < n {
-            let c = chars[pos].1;
-            let f = CptFlags::of(c);
-
-            // (?i:'s|'t|'re|'ve|'m|'ll|'d)
-            if c == '\'' && pos + 1 < n {
-                let c1 = chars[pos + 1].1.to_ascii_lowercase();
-                if matches!(c1, 's' | 't' | 'm' | 'd') {
-                    pos += 2;
-                    push(pos, &mut prev);
-                    continue;
-                }
-                if pos + 2 < n {
-                    let c2 = chars[pos + 2].1.to_ascii_lowercase();
-                    if matches!((c1, c2), ('r', 'e') | ('v', 'e') | ('l', 'l')) {
-                        pos += 3;
-                        push(pos, &mut prev);
-                        continue;
-                    }
-                }
-            }
-
-            // [^\r\n\p{L}\p{N}]?\p{L}+   (qwen35: [\p{L}\p{M}]+)
-            if !(c == '\r' || c == '\n' || f.number) && (word(Some(f)) || word(flags_at(pos + 1))) {
-                pos += 1;
-                while word(flags_at(pos)) {
-                    pos += 1;
-                }
-                push(pos, &mut prev);
-                continue;
-            }
-
-            // \p{N}
-            if f.number {
-                pos += 1;
-                push(pos, &mut prev);
-                continue;
-            }
-
-            // <space>?[^\s\p{L}\p{N}]+[\r\n]*   (qwen35 also excludes \p{M})
-            // llama.cpp tests the NEXT codepoint when this one is a space, and the loop's
-            // own flags for the rest; an out-of-range next codepoint passes the first test.
-            let f2 = if c == ' ' { flags_at(pos + 1) } else { Some(f) };
-            let f2_other = f2.map_or(true, |f2| other(Some(f2)));
-            if f2_other {
-                if c == ' ' {
-                    pos += 1;
-                }
-                while other(flags_at(pos)) {
-                    pos += 1;
-                }
-                while matches!(cpt(pos), Some('\r' | '\n')) {
-                    pos += 1;
-                }
-                push(pos, &mut prev);
-                continue;
-            }
-
-            let mut num_ws = 0usize;
-            let mut last_end_r_or_n = 0usize;
-            while flags_at(pos + num_ws).is_some_and(|f| f.whitespace) {
-                if matches!(chars[pos + num_ws].1, '\r' | '\n') {
-                    last_end_r_or_n = pos + num_ws + 1;
-                }
-                num_ws += 1;
-            }
-
-            // \s*[\r\n]+
-            if last_end_r_or_n > 0 {
-                pos = last_end_r_or_n;
-                push(pos, &mut prev);
-                continue;
-            }
-
-            // \s+(?!\S)
-            if num_ws > 1 && pos + num_ws < n {
-                pos += num_ws - 1;
-                push(pos, &mut prev);
-                continue;
-            }
-
-            // \s+
-            if num_ws > 0 {
-                pos += num_ws;
-                push(pos, &mut prev);
-                continue;
-            }
-
-            // no match: one codepoint
-            pos += 1;
-            push(pos, &mut prev);
+        while pos < sp.chars.len() {
+            let end = sp.next_end(pos);
+            pieces.push(&text[byte_at(pos)..byte_at(end)]);
+            pos = end;
         }
         pieces
+    }
+}
+
+/// One text's codepoints, and the regex alternatives of llama.cpp's Qwen splitter as methods
+/// tried in the splitter's order. Each returns where its match ends, or `None`.
+struct Splitter {
+    chars: Vec<(usize, char)>,
+    /// `qwen35`: `\p{M}` belongs to letter runs.
+    marks: bool,
+}
+
+impl Splitter {
+    fn cpt(&self, i: usize) -> Option<char> {
+        self.chars.get(i).map(|&(_, c)| c)
+    }
+
+    /// `None` is llama.cpp's out-of-range `unicode_cpt_flags{}`: every flag false and
+    /// `as_uint() == 0`. Every in-range codepoint has a nonzero flag word.
+    fn flags(&self, i: usize) -> Option<CptFlags> {
+        self.cpt(i).map(CptFlags::of)
+    }
+
+    fn is_word(&self, f: CptFlags) -> bool {
+        f.letter || (self.marks && f.mark)
+    }
+
+    fn is_other(&self, f: CptFlags) -> bool {
+        !(f.whitespace || f.letter || f.number || (self.marks && f.mark))
+    }
+
+    fn word_at(&self, i: usize) -> bool {
+        self.flags(i).is_some_and(|f| self.is_word(f))
+    }
+
+    fn other_at(&self, i: usize) -> bool {
+        self.flags(i).is_some_and(|f| self.is_other(f))
+    }
+
+    /// The end of the piece starting at `pos` (always past `pos`).
+    fn next_end(&self, pos: usize) -> usize {
+        self.contraction(pos)
+            .or_else(|| self.letters(pos))
+            .or_else(|| self.number(pos))
+            .or_else(|| self.punctuation(pos))
+            .unwrap_or_else(|| self.whitespace(pos))
+    }
+
+    /// `(?i:'s|'t|'re|'ve|'m|'ll|'d)`
+    fn contraction(&self, pos: usize) -> Option<usize> {
+        if self.cpt(pos) != Some('\'') {
+            return None;
+        }
+        let c1 = self.cpt(pos + 1)?.to_ascii_lowercase();
+        if matches!(c1, 's' | 't' | 'm' | 'd') {
+            return Some(pos + 2);
+        }
+        let c2 = self.cpt(pos + 2)?.to_ascii_lowercase();
+        matches!((c1, c2), ('r', 'e') | ('v', 'e') | ('l', 'l')).then_some(pos + 3)
+    }
+
+    /// `[^\r\n\p{L}\p{N}]?\p{L}+` (qwen35: `[\p{L}\p{M}]+`)
+    fn letters(&self, pos: usize) -> Option<usize> {
+        let c = self.cpt(pos)?;
+        let f = CptFlags::of(c);
+        if c == '\r' || c == '\n' || f.number || !(self.is_word(f) || self.word_at(pos + 1)) {
+            return None;
+        }
+        let mut end = pos + 1;
+        while self.word_at(end) {
+            end += 1;
+        }
+        Some(end)
+    }
+
+    /// `\p{N}`: one digit per piece.
+    fn number(&self, pos: usize) -> Option<usize> {
+        self.flags(pos)?.number.then_some(pos + 1)
+    }
+
+    /// `<space>?[^\s\p{L}\p{N}]+[\r\n]*` (qwen35 also excludes `\p{M}`). llama.cpp tests the
+    /// NEXT codepoint when this one is a space, and an out-of-range next codepoint passes.
+    fn punctuation(&self, pos: usize) -> Option<usize> {
+        let space = self.cpt(pos)? == ' ';
+        let probe = if space { pos + 1 } else { pos };
+        if self.flags(probe).is_some_and(|f| !self.is_other(f)) {
+            return None;
+        }
+        let mut end = probe;
+        while self.other_at(end) {
+            end += 1;
+        }
+        while matches!(self.cpt(end), Some('\r' | '\n')) {
+            end += 1;
+        }
+        Some(end)
+    }
+
+    /// `\s*[\r\n]+`, then `\s+(?!\S)`, then `\s+`, then one unmatched codepoint.
+    fn whitespace(&self, pos: usize) -> usize {
+        let mut run = 0usize;
+        let mut last_newline_end = None;
+        while self.flags(pos + run).is_some_and(|f| f.whitespace) {
+            if matches!(self.cpt(pos + run), Some('\r' | '\n')) {
+                last_newline_end = Some(pos + run + 1);
+            }
+            run += 1;
+        }
+        match last_newline_end {
+            Some(end) => end,
+            // a run followed by more text gives its last codepoint to that text
+            None if run > 1 && pos + run < self.chars.len() => pos + run - 1,
+            None => pos + run.max(1),
+        }
     }
 }
 
@@ -449,60 +459,11 @@ impl ByteLevelBpe {
     /// BPE over one pre-token's byte glyphs: a port of `llm_tokenizer_bpe_session`'s merge
     /// loop. Lowest rank first; among equal ranks, the leftmost pair.
     fn encode_piece(&self, piece: &str, out: &mut Vec<u32>) {
-        let glyphs = byte_glyphs();
-        let mut syms: Vec<Sym> = Vec::with_capacity(piece.len());
-        for (i, b) in piece.bytes().enumerate() {
-            let id = self.byte_ids[usize::from(b)].unwrap_or_else(|| {
-                // A byte-level vocabulary carries all 256 glyphs; one that does not is
-                // looked up by glyph text so the failure is at least visible as a miss.
-                self.token_to_id
-                    .get(glyphs[usize::from(b)].to_string().as_str())
-                    .copied()
-                    .unwrap_or(u32::MAX)
-            });
-            syms.push(Sym {
-                id,
-                prev: i.checked_sub(1),
-                next: Some(i + 1).filter(|&j| j < piece.len()),
-                alive: true,
-            });
-        }
+        let mut syms = self.seed_symbols(piece);
         if syms.is_empty() {
             return;
         }
-
-        let mut queue = BinaryHeap::new();
-        for left in 0..syms.len() - 1 {
-            self.enqueue(&syms, left, left + 1, &mut queue);
-        }
-        while let Some(Pending {
-            left,
-            right,
-            left_id,
-            right_id,
-            merged,
-            ..
-        }) = queue.pop()
-        {
-            let (l, r) = (&syms[left], &syms[right]);
-            if !l.alive || !r.alive || l.next != Some(right) || l.id != left_id || r.id != right_id
-            {
-                continue;
-            }
-            syms[left].id = merged;
-            syms[left].next = syms[right].next;
-            syms[right].alive = false;
-            if let Some(nn) = syms[right].next {
-                syms[nn].prev = Some(left);
-            }
-            if let Some(p) = syms[left].prev {
-                self.enqueue(&syms, p, left, &mut queue);
-            }
-            if let Some(nn) = syms[left].next {
-                self.enqueue(&syms, left, nn, &mut queue);
-            }
-        }
-
+        self.merge_all(&mut syms);
         let mut at = Some(0);
         while let Some(i) = at {
             if syms[i].id != u32::MAX {
@@ -510,6 +471,69 @@ impl ByteLevelBpe {
             }
             at = syms[i].next;
         }
+    }
+
+    /// One symbol per byte, spelled by its glyph.
+    fn seed_symbols(&self, piece: &str) -> Vec<Sym> {
+        let glyphs = byte_glyphs();
+        piece
+            .bytes()
+            .enumerate()
+            .map(|(i, b)| Sym {
+                // A byte-level vocabulary carries all 256 glyphs; one that does not is
+                // looked up by glyph text, and a miss stays visible as u32::MAX (never 0).
+                id: self.byte_ids[usize::from(b)].unwrap_or_else(|| {
+                    self.token_to_id
+                        .get(glyphs[usize::from(b)].to_string().as_str())
+                        .copied()
+                        .unwrap_or(u32::MAX)
+                }),
+                prev: i.checked_sub(1),
+                next: Some(i + 1).filter(|&j| j < piece.len()),
+                alive: true,
+            })
+            .collect()
+    }
+
+    /// The merge loop: pop the best pending pair, apply it if it is still current, and queue
+    /// the two pairs it creates with its neighbours.
+    fn merge_all(&self, syms: &mut [Sym]) {
+        let mut queue = BinaryHeap::new();
+        for left in 0..syms.len() - 1 {
+            self.enqueue(syms, left, left + 1, &mut queue);
+        }
+        while let Some(pending) = queue.pop() {
+            if !Self::apply(syms, &pending) {
+                continue;
+            }
+            if let Some(p) = syms[pending.left].prev {
+                self.enqueue(syms, p, pending.left, &mut queue);
+            }
+            if let Some(nn) = syms[pending.left].next {
+                self.enqueue(syms, pending.left, nn, &mut queue);
+            }
+        }
+    }
+
+    /// Merge `pending.right` into `pending.left` unless either side changed since the pair
+    /// was queued (llama.cpp's stale-bigram check). Returns whether it merged.
+    fn apply(syms: &mut [Sym], pending: &Pending) -> bool {
+        let (l, r) = (syms[pending.left], syms[pending.right]);
+        let current = l.alive
+            && r.alive
+            && l.next == Some(pending.right)
+            && l.id == pending.left_id
+            && r.id == pending.right_id;
+        if !current {
+            return false;
+        }
+        syms[pending.left].id = pending.merged;
+        syms[pending.left].next = r.next;
+        syms[pending.right].alive = false;
+        if let Some(nn) = r.next {
+            syms[nn].prev = Some(pending.left);
+        }
+        true
     }
 
     fn enqueue(&self, syms: &[Sym], left: usize, right: usize, queue: &mut BinaryHeap<Pending>) {

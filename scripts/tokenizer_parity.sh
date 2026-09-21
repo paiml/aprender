@@ -110,7 +110,7 @@ printf 'llama-tokenize: %s (%s)\n' "$lt_bin" "$lt_version"
 printf 'models: %s   corpus files: %s\n' "${#models[@]}" "${#corpus[@]}"
 
 tmp=$(mktemp -d) || exit 2
-trap 'rm -rf "$tmp"' EXIT
+trap 'rm -rf -- "${tmp:?}"' EXIT
 
 pass=0 fail=0 uncovered=0
 for m in "${models[@]}"; do
