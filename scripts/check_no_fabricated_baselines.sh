@@ -63,7 +63,7 @@ cd "$(dirname "$0")/.." || exit 2
 # MODES, AND WHY AN UNKNOWN ARGUMENT IS FATAL.
 #
 # `--selftest` (the repo convention, cf. check_no_claim_literals.sh:140) runs the
-# case tables alone: the regexes and the ledger ratchet are exercised against
+# case tables alone: the regexes and the Rust and docs bans are exercised against
 # fixtures, with no repository scan. The plain invocation — what ci.yml:927 runs
 # — does the scan AND the tables.
 #
@@ -335,344 +335,294 @@ if [ "$MODE" = full ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# THE RUST SITES — a SHRINK-ONLY LEDGER, and explicitly NOT a construct ban.
+# THE RUST SITES — a BAN since #3773. Until then this block was a SHRINK-ONLY
+# LEDGER (scripts/fabricated_baseline_rust_sites.txt, 36 coordinates, PERF-008-RUST)
+# whose stated purpose was to hold the count while the deletions were scheduled.
+# #3773 did the deletions: every non-test site was deleted, measured through the
+# pinned comparator, or labelled with its dated receipt, so the ledger's reason to
+# exist ended and it is retired into the ban it was always meant to become.
 #
-# Read this before trusting the row it prints.
+# WHY THE LEDGER'S SHAPE WAS NOT ENOUGH. `apr showcase` printed
+# `35.0 + generate_jitter()` tok/s as llama.cpp's throughput (#3773), bound to a
+# variable called `tps` inside `fn run_llama_cpp_bench`. The ledger recognised
+# one shape — a binding whose NAME names a competitor — and `tps` names nothing,
+# so the most visible fabrication in the tree was invisible to the guard built for
+# it. Its Ollama twin, `.map_or(200.0, …)` as a parse-failure fallback, was a
+# second shape the ledger could not see. So the ban keeps the old shape and adds
+# the one that was missed:
 #
-# §9 named "the `225.0 // Ollama parity` literals in crates/aprender-serve/src/
-# gguf/tests/parity*.rs" and put the count at "15+" with a `[C]` marker. Counted
-# on main at ce712eae0, the spec was wrong in BOTH directions and wrong about
-# the location:
+#   R1  `let|const|static <name naming a competitor> = <bare numeric literal>`
+#       (the ledger's shape, name denylist unchanged);
+#   R2  "default <competitor> baseline" announcements;
+#   R3  inside a `fn` whose NAME names a competitor: a throughput-named binding
+#       (`tps`, `tok_s`, `toks`, `throughput`, `ttft`, `baseline`, …) initialised
+#       from a non-zero numeric literal, or a `.map_or(N` / `.unwrap_or(N` numeric
+#       fallback. A zero initialiser is an accumulator, not a claim.
 #
-#   225.0 in aprender-serve src/tests/examples          22 lines
-#   ...of which are competitor-NAMED bindings            2   (parity016d, parity021c)
-#   ...in parity*.rs at all, on any value                4
-#   competitor-named bindings = bare literal, crates/**  35
-#   "default <competitor> baseline" announcements         1
-#   ------------------------------------------------------------
-#   TRUE TOTAL, ledgered                                 36
+# A RECEIPT, NOT AN ALLOWLIST. A site is legal iff a `receipt:` comment carrying a
+# YYYY-MM-DD date sits on the same line or within the 3 lines above — a dated,
+# receipted historical figure (crates/aprender-core/examples/ch22_vs_llamacpp.rs
+# cites the bootstrap JSON its number came from). There is no file of exempt
+# coordinates for an edit to append to.
 #
-# (That 35/1 split was itself measured while writing this comment, and the first
-# number written down — 34/2 — was wrong: there is exactly ONE announcement,
-# gpu_showcase_benchmark.rs:464. Counting is cheap; guessing is what produced the
-# 29 above.)
+# TEST FILES ARE OUT OF SCOPE, by ruling (cop on #3773: "test fixtures stay"): a
+# path with a `tests/` component, a file named test*.rs / *_test(s).rs /
+# tests_*.rs, or the lines after a `#[cfg(test)]` module header. Examples and
+# benches ARE in scope: they print numbers a user reads.
 #
-# So 225.0 is not the shape; parity*.rs is not the place. TWENTY-THREE of the 36
-# are in crates/aprender-serve/examples/ and benches/, which §9 does not mention,
-# and FOUR are in a different crate entirely (aprender-core/examples/, incl.
-# ch22_vs_llamacpp.rs). Chasing the literal would have found 2 of 36.
+# ONE DECISION FUNCTION, CALLED BY BOTH THE SCAN AND THE CASE TABLE (the lesson
+# of the table that once graded a copy of the rule): `rust_ban_scan` below is the
+# only place R1-R3, the receipt and the test exclusion exist.
 #
-# THE 29/31 THAT USED TO STAND HERE WERE STALE — an intermediate count from this
-# guard's own development, left in the prose while the ledger went to 36. That is
-# the failure this block exists to prevent, committed into its own documentation.
-# Nothing detected it, because prose is not executed. It is why the printed row
-# now derives BOTH numbers at run time and fails when they disagree, and why no
-# total is hardcoded in this script.
-#
-# WHY A LEDGER AND NOT A BAN. A construct ban over Rust would be born RED
-# against 31 live sites, and a guard born red is deleted or ignored within the
-# week. The ledger commits the true count TODAY so the number cannot grow while
-# the deletions are scheduled — §5's actual instruction: "commit the true count
-# as the shrink-only baseline now, or the guard will be quietly widened later."
-#
-# WHAT THIS IS NOT. It is not a claim that a shell regex understands Rust. It
-# recognises ONE syntactic shape — `let|const|static <name-containing-a-
-# competitor> = <bare numeric literal>;` — and it will miss a fabrication
-# assembled through a const table, a builder, or a match arm. Deleting the 31
-# sites is PERF-008-RUST, a separate ticket, and closing it retires this block
-# rather than tightening it. The count is whatever the ledger holds and the tree
-# proves; see the printed `rust` row, not this comment.
-RUST_LEDGER="scripts/fabricated_baseline_rust_sites.txt"
-RUST_BIND='(let|const|static)[[:space:]]+(mut[[:space:]]+)?[A-Za-z0-9_]*('"$COMP"')[A-Za-z0-9_]*([[:space:]]*:[[:space:]]*[A-Za-z0-9_]+)?[[:space:]]*=[[:space:]]*[0-9]+(\.[0-9]+)?(_?f(32|64)|_?[iu](8|16|32|64|size))?[[:space:]]*[;,]'
-RUST_DEFAULT='default[[:space:]]+[A-Za-z.]*('"$COMP"')[A-Za-z.]*[[:space:]]+baseline'
-# The denylist is applied to the BOUND NAME ONLY, and that is load-bearing. Run
-# against the whole `path:line:text`, it silently dropped three true positives:
-# `beat_ollama_deCODE_...rs` matched CODE, `tests_f083_tiMINg_f084.rs` matched
-# MIN, and `llamacpp_deCODE_tps` matched CODE. A denylist over a haystack that
-# includes the file path is a denylist over the directory tree.
-RUST_NAME_DENY='(^|_)(trials?|runs?|timeout|port|retries|retry|seconds|secs|limit|max|min|size|count|workers|threads|rc|status|code|pid|fd|level|version|index|idx|seed|iters?|iterations?)(_|$)'
+# WHAT THIS IS NOT. It is not a Rust parser. The function context is the last
+# `fn <name>` seen above a line, which is exact for the shapes above and
+# approximate for closures; a fabrication assembled through a const table, a
+# builder or a match arm is RESIDUAL (listed at the end of this file).
+# THE PATH LIST IS A FILE, NOT ARGV. The universe is ~10k paths; passed as
+# arguments that is ~0.6 MB of argv, inside Linux's limit on a quiet shell and
+# not on a CI container whose environment is large. An E2BIG there would fail
+# the exec, print nothing — and nothing is what a clean tree prints.
+rust_ban_scan() { # rust_ban_scan <file-of-paths>  -> "HIT\tpath:line:text" | "RECEIPTED\tpath:line"
+    COMP="$COMP" python3 - "$1" <<'PY'
+import os, re, sys
+COMP = os.environ["COMP"]
+comp = re.compile(COMP)
+BIND = re.compile(r"(let|const|static)\s+(mut\s+)?([A-Za-z0-9_]+)(\s*:\s*[A-Za-z0-9_]+)?\s*=\s*[0-9]+(\.[0-9]+)?(_?f(32|64)|_?[iu](8|16|32|64|size))?\s*[;,]")
+DEFAULT = re.compile(r"default\s+[A-Za-z.]*" + COMP + r"[A-Za-z.]*\s+baseline")
+NAME_DENY = re.compile(r"(^|_)(trials?|runs?|timeout|port|retries|retry|seconds|secs|limit|max|min|size|count|workers|threads|rc|status|code|pid|fd|level|version|index|idx|seed|iters?|iterations?)(_|$)")
+TPUT_NAME = re.compile(r"(^|_)(tps|tok_s|toks|tok_per_s|tokens_per_sec|throughput|ttft|ttft_ms|baseline)(_|$)")
+LIT_INIT = re.compile(r"(let|const|static)\s+(mut\s+)?([A-Za-z0-9_]+)(\s*:\s*[A-Za-z0-9_]+)?\s*=\s*([0-9]+(\.[0-9]+)?)(_?f(32|64))?\b")
+LIT_BIND = re.compile(r"(let|const|static)\s+(mut\s+)?([A-Za-z0-9_]+)")
+TPUT_WORD = re.compile(r"(\btps\b|_tps\b|tok_s|\btoks\b|tok/s|tokens_per_sec|throughput|\bttft|baseline)", re.I)
+FALLBACK = re.compile(r"\.(map_or|unwrap_or)\(\s*([0-9]+(\.[0-9]+)?)(_?f(32|64))?\s*[,)]")
+FN = re.compile(r"\bfn\s+([A-Za-z0-9_]+)")
+RECEIPT = re.compile(r"receipt:.*\b20[0-9]{2}-[0-9]{2}-[0-9]{2}\b")
+TEST_PATH = re.compile(r"(^|/)tests?/|(^|/)(tests?_[^/]*|[^/]*_tests?|test_[^/]*)\.rs$")
+COMMENT = re.compile(r"^\s*(//|/\*|\*)")
+CFG_TEST = re.compile(r"^#\[cfg\(test\)\]\s*$")
 
-# `--untracked` IS NOT DECORATION. Plain `git grep` scans tracked files only, so
-# a brand-new .rs file carrying a fabricated baseline is invisible until someone
-# commits it — the tracked-only-universe free pass this repo has now hit four
-# times (SHIM-2644-03, check_bench_threshold.sh in PARITY-008/009, and this
-# guard's own shell universe, which is why the sweep above unions a find).
-# Measured before fixing: `git grep` rc=1 on an untracked fabrication, `git grep
-# --untracked` rc=0. The shell universe was already immune; the Rust block was
-# born with the hole, one screen away from the comment explaining it.
-#
-# FULL-LINE `//` COMMENTS ARE DROPPED HERE TOO, and for the reason this epic has
-# now hit three times: a guard's own documentation quoting the banned pattern
-# reddens a sibling. gpu_showcase_benchmark.rs:463 is literally
-# `// Use default Ollama baseline from spec` sitting one line above the println
-# that does it. Ledgering the comment as well as the code would mean any future
-# Rust comment EXPLAINING this ban becomes a violation of it. The println on 464
-# is the fabrication; the comment is a description of one.
-# ONE DECISION FUNCTION, CALLED BY BOTH THE SCAN AND THE CASE TABLE. Until this
-# pass the table re-implemented the scan's name extraction and denylist inline —
-# twice, once per direction. A table that exercises a COPY of the rule proves the
-# copy, and the two can drift apart in the direction that matters (the copy stays
-# strict, the shipped scan goes blind) with the table still green. `rust_is_fab`
-# is now the only place the rule exists.
-#
-# NO `... | grep -q` ANYWHERE ON A PRODUCED STREAM. `grep -q` exits at its first
-# match; under `set -o pipefail` the producer then takes SIGPIPE and the PIPELINE
-# reports 141, so the test reads FALSE though the pattern matched. The old
-# `printf '%s\n' "$nm" | grep -qE "$RUST_NAME_DENY"` was not exploitable — one
-# short name never fills a pipe buffer — but the construct is banned by this
-# file's own rule eight lines up, and a rule the file breaks itself is a rule
-# nobody else will keep. Herestrings throughout: no pipe, no SIGPIPE.
-rust_name_of() { # rust_name_of <line of rust>  -> the bound name, lowercased
-    sed -E 's/.*(let|const|static)[[:space:]]+(mut[[:space:]]+)?([A-Za-z0-9_]+).*/\3/' <<< "$1" \
-    | tr 'A-Z' 'a-z'
-}
-rust_is_fab() { # rust_is_fab <line of rust>  -> rc 0 if the line asserts a baseline
-    local line="$1" nm
-    grep -qE "$RUST_DEFAULT" <<< "$line" && return 0
-    grep -qE "$RUST_BIND"    <<< "$line" || return 1
-    nm=$(rust_name_of "$line")
-    grep -qE "$RUST_NAME_DENY" <<< "$nm" && return 1
-    return 0
-}
-rust_hits() {
-    { git grep --untracked -nIE "$RUST_BIND|$RUST_DEFAULT" -- 'crates/**/*.rs' 2>/dev/null || true; } \
-    | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|/\*|\*)' \
-    | while IFS= read -r ln; do
-        rust_is_fab "${ln#*:*:}" && printf '%s\n' "$ln"
-      done
+def nonzero(v):
+    return float(v) != 0.0
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    paths = [p for p in fh.read().split("\n") if p]
+for path in paths:
+    if TEST_PATH.search(path):
+        continue
+    try:
+        lines = open(path, encoding="utf-8", errors="replace").read().split("\n")
+    except OSError:
+        continue
+    fn = ""
+    for i, line in enumerate(lines):
+        if CFG_TEST.match(line) and any(l.lstrip().startswith("mod ") for l in lines[i + 1:i + 3]):
+            break  # the rest of the file is a test module
+        m = FN.search(line)
+        if m and not COMMENT.match(line):
+            fn = m.group(1).lower()
+        if COMMENT.match(line):
+            continue
+        hit = False
+        b = BIND.search(line)
+        if b and comp.search(b.group(3)) and not NAME_DENY.search(b.group(3).lower()):
+            hit = True  # R1
+        if DEFAULT.search(line):
+            hit = True  # R2
+        if fn and comp.search(fn):
+            li = LIT_INIT.search(line)
+            if li and TPUT_NAME.search(li.group(3).lower()) and nonzero(li.group(5)):
+                hit = True  # R3 binding
+        # A fallback is a COMPETITOR THROUGHPUT fallback when the statement it
+        # sits in (this line or the 3 above) is about throughput, and either the
+        # fn or that statement names a competitor: `let llamacpp_tps = …
+        # .map_or(200.0, …)` in `fn check_point_41` names it in the binding, not
+        # the fn. A default temperature or buffer size is a setting, not a claim.
+        stmt = "\n".join(lines[max(0, i - 3):i + 1])
+        fb = FALLBACK.search(line)
+        # "About throughput" is decided by what the fallback STANDS IN FOR: the
+        # value it defaults (`.map_or(318.0, |s| s.mean_throughput)`, on this
+        # line) or the binding it initialises (`let tps = … .map_or(200.0, …)`).
+        # A `min_speedup.unwrap_or(0.2)` next to a comment about Ollama is a
+        # ratio threshold, not a competitor's throughput.
+        binds_tput = any(
+            (m := LIT_BIND.search(l)) and TPUT_NAME.search(m.group(3).lower())
+            for l in lines[max(0, i - 3):i + 1])
+        if (fb and nonzero(fb.group(2))
+                and (TPUT_WORD.search(line) or binds_tput)
+                and ((fn and comp.search(fn)) or comp.search(stmt))):
+            hit = True  # R3 fallback
+        if not hit:
+            continue
+        window = lines[max(0, i - 3):i + 1]
+        if any(RECEIPT.search(w) for w in window):
+            print(f"RECEIPTED\t{path}:{i + 1}")
+        else:
+            print(f"HIT\t{path}:{i + 1}:{line.strip()[:140]}")
+PY
 }
 
-# ledger_verdict — BOTH RATCHET DIRECTIONS, AND BOTH ARE FAILURES.
-#
-# A STALE ENTRY USED TO BE A REPORT, AND A REPORT IS A FREE PASS WITH A NOTE ON
-# IT. The comment it replaced already stated the harm — "an entry left in the
-# ledger after its site is deleted silently re-admits a fabrication at that
-# location later" — and then set rc nowhere, so nothing stopped it. Measured on
-# the parent commit, three runs:
-#
-#   H1  append `crates/aprender-core/src/zz_probe.rs:2` to the ledger, no such
-#       file                                             -> rc=0, "REPORT 1 …"
-#   H2  now CREATE that file with `let ollama_baseline_tps = 407.0;` on line 2
-#       -> rc=0, "ok    rust     37 ledgered site(s), 0 new"
-#   H3  control: the same fabrication with the ledger line removed
-#       -> rc=1, "FAIL  NEW fabricated baseline in Rust: …zz_probe.rs:2"
-#
-# H2 is the whole defect in one line: a brand-new fabricated baseline entered the
-# tree and the guard printed ok, because a dangling `path:line` from some earlier
-# deletion happened to name its location. The ledger is a ratchet only if
-# shrinkage is BANKED at the moment it happens; tolerated staleness turns each
-# retired site into a permanent one-shot exemption at a fixed coordinate.
-#
-# So: new -> FAIL (the number may not grow), stale -> FAIL (the number may not
-# be claimed larger than it is). Between the two, `entries == known == the true
-# count` is enforced mechanically rather than narrated, which is what §5 means by
-# "commit the true count". No literal total is hardcoded anywhere in this script
-# — a hardcoded total is the same defect one level up, and the sibling guard
-# check_guards_are_wired.sh shipped exactly that (`total=72` against a real 73).
-#
-# A LINE-NUMBER SHIFT IS ALREADY A FAILURE, so making stale fatal adds no new
-# class of breakage: an edit above a ledgered site moves the fabrication to a new
-# line, which is NEW (rc=1) under the old code too, and merely also stale now.
-ledger_verdict() { # ledger_verdict <ledger-file> <hits-file>  -> rc 0 iff clean
-    local ledger="$1" hitsf="$2" ln loc all
-    LEDGER_NEW=0; LEDGER_KNOWN=0; LEDGER_STALE=0; LEDGER_ENTRIES=0
-    all=$(LC_ALL=C sort -u "$hitsf")
-    while IFS= read -r ln; do
-        [ -n "$ln" ] || continue
-        loc="${ln%%:*}:$(cut -d: -f2 <<< "$ln")"
-        if grep -qxF "$loc" "$ledger"; then
-            LEDGER_KNOWN=$((LEDGER_KNOWN + 1))
-        else
-            printf 'FAIL  NEW fabricated baseline in Rust: %s\n' "$(cut -c1-140 <<< "$ln")"
-            LEDGER_NEW=$((LEDGER_NEW + 1))
-        fi
-    done <<< "$all"
-    while IFS= read -r loc; do
-        [ -n "$loc" ] || continue
-        case "$loc" in '#'*) continue ;; esac
-        LEDGER_ENTRIES=$((LEDGER_ENTRIES + 1))
-        case " $all " in
-            *"$loc:"*) : ;;
-            *) printf 'FAIL  STALE ledger entry %s matches nothing. Prune it in the\n' "$loc"
-               printf '      commit that deleted the site, or it becomes a standing\n'
-               printf '      exemption for the next fabrication written at that line.\n'
-               LEDGER_STALE=$((LEDGER_STALE + 1)) ;;
-        esac
-    done < "$ledger"
-    [ "$LEDGER_NEW" -eq 0 ] && [ "$LEDGER_STALE" -eq 0 ]
+rust_universe() {
+    { git ls-files --cached --others --exclude-standard -- 'crates/*.rs' 'src/*.rs' 2>/dev/null; } \
+        | LC_ALL=C sort -u
 }
+
+rust_ban_sweep() {
+    local n hits receipted
+    rust_universe > "$TMPD/rust_universe"
+    n=$(grep -c . "$TMPD/rust_universe" || true)
+    # A universe that silently resolves to nothing reports a perfectly clean tree.
+    if [ "$n" -lt 1000 ]; then
+        printf 'FAIL  rust     scanned only %s file(s), floor is 1000. The universe\n' "$n"
+        printf '               query resolved to (almost) nothing — a vacuous PASS.\n'
+        rc=1
+        return
+    fi
+    # A scanner that dies (no python3, a syntax error) prints nothing, and
+    # nothing is exactly what a clean tree prints. Its status is the verdict.
+    if ! rust_ban_scan "$TMPD/rust_universe" > "$TMPD/rust_scan"; then
+        printf 'FAIL  rust     the scanner itself failed; the tree is UNMEASURED.\n'
+        rc=1
+        return
+    fi
+    hits=$(grep -c '^HIT' "$TMPD/rust_scan" || true)
+    receipted=$(grep -c '^RECEIPTED' "$TMPD/rust_scan" || true)
+    if [ "$hits" -gt 0 ]; then
+        while IFS=$'\t' read -r _ where; do
+            printf 'FAIL  rust     unreceipted competitor throughput: %s\n' "$where"
+        done < <(grep '^HIT' "$TMPD/rust_scan")
+        printf '      A comparator figure is MEASURED (the pinned comparator env,\n'
+        printf '      scripts/llama_bin.sh) or RECEIPTED (a `// receipt: <path> (YYYY-MM-DD)`\n'
+        printf '      comment within 3 lines above), or it is deleted. There is no ledger\n'
+        printf '      to append to (#3773).\n'
+        rc=1
+        return
+    fi
+    printf 'ok    rust     %s file(s), 0 unreceipted competitor throughput, %s receipted\n' \
+        "$n" "$receipted"
+}
+
+[ "$MODE" = full ] && rust_ban_sweep
 
 # ---------------------------------------------------------------------------
-# SHRINK-ONLY, ENFORCED — because for one commit it was only PRINTED.
+# THE PUBLISHED DOCS — the same ban, on the pages a user reads (#3773).
 #
-# This file called the ledger SHRINK-ONLY in four places and nothing compared it
-# to anything. `ledger_verdict` above enforces the two properties that are
-# checkable from the WORKING TREE — no unledgered fabrication (new), no ledger
-# entry without a fabrication (stale) — and both are real. Neither is the ratchet.
-# A ledger line and its matching fabrication, added in the same commit, satisfies
-# both: it is not new (it is ledgered) and it is not stale (the site exists).
+# crates/apr-cli/README.md is the crates.io page for the `apr` binary, and it
+# said "2.9x faster than Ollama" with nothing behind it; a sample-output block
+# further down said "755+ tok/s (2.6x Ollama)". check_no_claim_literals.sh bans
+# ratio claims over book/, docs/ and the ROOT README — and its universe never
+# included crates/*/README.md, which is where those two sat. So this guard owns
+# the published competitor figure directly, over the surfaces the cop's ruling
+# named: the root README.md, every crates/*/README.md, and docs/BEATS.md.
 #
-# Measured against the commit that added the stale->FAIL rule:
+#   D1  a line naming a competitor (ollama, llama.cpp / llama-server /
+#       llama-bench / llama-cli, vllm, tgi, sglang, tensorrt, pytorch, unsloth)
+#       that carries a THROUGHPUT figure — `N tok/s` (t/s, tokens/s), or a ratio
+#       fastened to the competitor's name (`2.6x Ollama`, `1.109× ollama`,
+#       `Ollama 1.2×`).
+#   D2  a figure in a TABLE CELL under a column whose HEADER names a competitor.
+#       main's apr-cli README carried `| Mode | Throughput | vs Ollama | Memory |`
+#       over rows like `| GPU (batched) | ~850 tok/s | 2.9x | 1.9 GB |`: the row
+#       names no competitor, so D1 alone reads every one of them as clean.
 #
-#     echo "crates/aprender-core/src/zz_grow.rs:2" >> $RUST_LEDGER
-#     printf '// p\nlet ollama_baseline_tps = 407.0;\n' > crates/…/zz_grow.rs
-#     bash scripts/check_no_fabricated_baselines.sh          -> rc=0
-#       ok    rust     37 ledgered site(s) = 37 ledger entr(ies), 0 new, 0 stale
-#                    (shrink-only, PERF-008-RUST; the count is enforced, not asserted)
+# Bare "llama" is deliberately NOT a competitor here: `TinyLlama 1.1B: 90 tok/s`
+# is apr's own number on a Llama-family model, and a docs rule that reads model
+# names as competitors reds every model card in the tree.
 #
-# A fabricated baseline entered the tree, the ledger grew 36 -> 37, and the guard
-# printed PASS while emitting the words "the count is enforced, not asserted".
-# It was asserted. That is this epic's own defect class — a property stated in
-# prose and absent from the mechanism — committed by one of the epic's guards,
-# and the printed claim is what made it invisible: the row read as a receipt.
+# A RECEIPT ON THE SAME LINE: a YYYY-MM-DD date AND a pointer to what was
+# measured (a .json/.yaml path, evidence/, results/, contracts/, or a
+# `beat-…-vN` contract id). Same line, not the paragraph: in a table the rows
+# share a paragraph, and a window that wide lets one row's receipt license its
+# neighbour — measured on BEATS.md, where the llama.cpp row's receipt would have
+# "receipted" the Ollama row above it.
 #
-# THE MISSING PROPERTY IS A SUBSET, NOT A COUNT. Counting alone passes a swap
-# (drop one coordinate, add another, total unchanged), which is an append wearing
-# the old total. The current entry set must be a SUBSET of the comparand's:
-# removal is the point of a ratchet and stays green; any entry not already on the
-# comparand fails, whether it arrived by append or by substitution.
-#
-# THE COMPARAND IS A REF A PULL REQUEST CANNOT REWRITE. Deriving it from the
-# working tree would compare the branch against itself. This mirrors
-# check_dogfood_coverage.sh, which exists because a floor and its universe both
-# lived in one editable file: "There is no baseline NUMBER in this repository for
-# a PR to edit. To lower a floor you must land the change on main first."
-#
-# MERGE-BASE PREFERRED, TIP AS FALLBACK, SELF NEVER.
-#   * merge-base(HEAD, origin/main) isolates THIS branch's edits, so a branch
-#     that is merely behind main is green. It needs shared history.
-#   * If the merge-base is not computable — CI checks this repo out at
-#     fetch-depth 1, and a grafted shallow head has no common ancestor — the
-#     comparand falls back to the origin/main TIP, which needs no history and is
-#     STRICTLY STRONGER (it also forbids re-adding an entry main has deleted).
-#     The cost is a false red on a branch that is behind a main which has already
-#     shrunk the ledger; the remedy is `git rebase origin/main`, and the FAIL
-#     text says so. A green local run can therefore red in CI. CI is the
-#     authoritative one.
-#   * If NEITHER resolves, this is a hard failure. It never degrades to comparing
-#     the branch against itself: that would disarm the ratchet permanently and
-#     silently, which is the failure mode this whole guard is about.
-#
-# Set FABBASE_BASE_REF to override the comparand. The banner then says the ref is
-# NOT protected, because a gate that keeps printing its guarantee while the
-# guarantee has been overridden is lying in exactly the way this block was.
-BASE_REF="${FABBASE_BASE_REF:-origin/main}"
-
-resolve_base_ref() { # resolve_base_ref <root> <ref> -> "<MODE>\t<commit-ish>"
-    local root="$1" ref="$2" mb
-    if ! git -C "$root" rev-parse --verify --quiet "${ref}^{commit}" >/dev/null 2>&1; then
-        printf 'UNRESOLVABLE\t%s\n' "$ref"; return 0
-    fi
-    mb=$(git -C "$root" merge-base HEAD "$ref" 2>/dev/null) || mb=""
-    if [ -n "$mb" ] && git -C "$root" cat-file -e "${mb}:${RUST_LEDGER}" 2>/dev/null; then
-        printf 'MERGEBASE\t%s\n' "$mb"; return 0
-    fi
-    if git -C "$root" cat-file -e "${ref}:${RUST_LEDGER}" 2>/dev/null; then
-        printf 'TIP\t%s\n' "$ref"; return 0
-    fi
-    # The ref exists and carries no ledger. NOT a bootstrap: this ledger has been
-    # on main since #2710, so the shape is either a branch cut from before it, or
-    # a ledger deleted to escape its own gate. Both must be loud — an absent
-    # comparand read as "no growth" is a missing measurement read as clean.
-    printf 'ABSENT\t%s\n' "$ref"; return 0
+# Code blocks are scanned: a sample-output block on a crates.io page is
+# published text, and one of the two README sites above was in one.
+docs_universe() {
+    { git ls-files --cached --others --exclude-standard -- \
+          ':(glob)README.md' ':(glob)crates/*/README.md' 'docs/BEATS.md' 2>/dev/null; } \
+        | LC_ALL=C sort -u
 }
 
-ledger_entries_of() { # ledger_entries_of <file> -> the entry lines, sorted
-    grep -vE '^[[:space:]]*(#|$)' "$1" 2>/dev/null | LC_ALL=C sort -u
+docs_ban_scan() { # docs_ban_scan <file-of-paths>  -> "HIT\tpath:line:text" | "RECEIPTED\tpath:line"
+    python3 - "$1" <<'PY'
+import re, sys
+COMP = r"(ollama|llama\.cpp|llama-server|llama-bench|llama-cli|llamacpp|vllm|tgi|sglang|tensorrt(-llm)?|pytorch|unsloth)"
+comp = re.compile(r"\b" + COMP + r"\b", re.I)
+TPUT = re.compile(r"\d[\d,]*(\.\d+)?\+?\s*(tok/s|tokens?/s(ec)?|t/s)\b", re.I)
+RATIO = re.compile(
+    r"\d+(\.\d+)?\s*[x×]\**\s+(faster\s+than\s+|vs\.?\s+|over\s+)?\**" + COMP + r"\b"
+    r"|\b" + COMP + r"\**\s+~?\d+(\.\d+)?\s*[x×]", re.I)
+DATE = re.compile(r"\b20[0-9]{2}-[0-9]{2}-[0-9]{2}\b")
+POINTER = re.compile(r"(\.json\b|\.ya?ml\b|evidence/|results/|contracts/|\bbeat-[a-z0-9-]+-v[0-9]+\b)")
+SEP = re.compile(r"^\s*\|?\s*:?-{3,}")
+CELL_FIG = re.compile(r"\d+(\.\d+)?\s*[x×]|^\W*~?\d+(\.\d+)?(\W|$)", re.I)
+
+def cells(row):
+    return [c.strip() for c in row.strip().strip("|").split("|")]
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    paths = [p for p in fh.read().split("\n") if p]
+for path in paths:
+    try:
+        lines = open(path, encoding="utf-8", errors="replace").read().split("\n")
+    except OSError:
+        continue
+    comp_cols = []  # D2: columns of the current table whose HEADER names a competitor
+    for i, line in enumerate(lines):
+        if not line.lstrip().startswith("|"):
+            comp_cols = []
+        elif i + 1 < len(lines) and SEP.match(lines[i + 1]) and not SEP.match(line):
+            comp_cols = [j for j, c in enumerate(cells(line)) if comp.search(c)]
+            continue
+        d2 = False
+        if comp_cols and not SEP.match(line):
+            row = cells(line)
+            d2 = any(j < len(row) and (CELL_FIG.search(row[j]) or TPUT.search(row[j]))
+                     for j in comp_cols)
+        d1 = comp.search(line) and (TPUT.search(line) or RATIO.search(line))
+        if not (d1 or d2):
+            continue
+        if DATE.search(line) and POINTER.search(line):
+            print(f"RECEIPTED\t{path}:{i + 1}")
+        else:
+            print(f"HIT\t{path}:{i + 1}:{line.strip()[:140]}")
+PY
 }
 
-ledger_shrink_only() { # ledger_shrink_only <base-entries> <current-entries> -> rc 0 iff subset
-    local basef="$1" curf="$2" added
-    added=$(LC_ALL=C comm -13 "$basef" "$curf")
-    LEDGER_ADDED=0
-    [ -n "$added" ] && LEDGER_ADDED=$(grep -c . <<< "$added")
-    LEDGER_REMOVED=$(LC_ALL=C comm -23 "$basef" "$curf" | grep -c . || true)
-    if [ "$LEDGER_ADDED" -gt 0 ]; then
-        printf 'FAIL  the Rust ledger GREW by %s entr(ies). It is SHRINK-ONLY:\n' "$LEDGER_ADDED"
-        while IFS= read -r a; do
-            [ -n "$a" ] || continue
-            printf '        + %s\n' "$a"
-        done <<< "$added"
-        return 1
-    fi
-    return 0
-}
-
-rust_ledger_sweep() {
-    if [ ! -f "$RUST_LEDGER" ]; then
-        printf 'FAIL  %s is missing. The Rust site count is\n' "$RUST_LEDGER"
-        printf '      UNMEASURED without it, and an unmeasured ratchet is not a ratchet.\n'
+docs_ban_sweep() {
+    local n hits receipted
+    docs_universe > "$TMPD/docs_universe"
+    n=$(grep -c . "$TMPD/docs_universe" || true)
+    # The universe is small by nature (one root README, one per crate, BEATS),
+    # so the floor is low; what it catches is the query resolving to nothing.
+    if [ "$n" -lt 20 ]; then
+        printf 'FAIL  docs     scanned only %s file(s), floor is 20. The universe\n' "$n"
+        printf '               query resolved to (almost) nothing — a vacuous PASS.\n'
         rc=1
         return
     fi
-    rust_hits | LC_ALL=C sort -u > "$TMPD/rust_hits"
-    if ledger_verdict "$RUST_LEDGER" "$TMPD/rust_hits"; then
-        printf 'ok    rust     %s ledgered site(s) = %s ledger entr(ies), 0 new, 0 stale\n' \
-            "$LEDGER_KNOWN" "$LEDGER_ENTRIES"
-    else
-        printf '      A comparator baseline is MEASURED or ABSENT, never asserted.\n'
-        printf '      The Rust ledger is SHRINK-ONLY: %s is not an\n' "$RUST_LEDGER"
-        printf '      allowlist to append to. Delete the literal, or derive it.\n'
-        rc=1
-    fi
-
-    # THE RATCHET ITSELF. Separate row, separate verdict: the block above can be
-    # green on a ledger that grew by one, which is exactly how the growth defect
-    # hid behind a row that said "enforced".
-    local resolution mode ref
-    resolution="$(resolve_base_ref . "$BASE_REF")"
-    mode="${resolution%%$'\t'*}"; ref="${resolution##*$'\t'}"
-    case "$mode" in
-        UNRESOLVABLE)
-            printf 'FAIL  ledger   cannot resolve the comparand ref <%s>, so shrink-only is\n' "$ref"
-            printf '               UNMEASURED. It is NOT degraded to comparing this branch\n'
-            printf '               against itself — that disarms the ratchet silently. In CI:\n'
-            printf '               git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main\n'
-            rc=1
-            return ;;
-        ABSENT)
-            printf 'FAIL  ledger   %s carries no %s, so there is\n' "$ref" "$RUST_LEDGER"
-            printf '               nothing to shrink from. A missing comparand is not "no\n'
-            printf '               growth". Either this branch predates the ledger (rebase\n'
-            printf '               onto main), or the ledger was deleted to escape its own\n'
-            printf '               gate. Retire the check in the same commit if it is genuinely\n'
-            printf '               being retired.\n'
-            rc=1
-            return ;;
-    esac
-    git show "${ref}:${RUST_LEDGER}" 2>/dev/null > "$TMPD/base_ledger" || {
-        printf 'FAIL  ledger   could not read %s:%s\n' "$ref" "$RUST_LEDGER"
+    if ! docs_ban_scan "$TMPD/docs_universe" > "$TMPD/docs_scan"; then
+        printf 'FAIL  docs     the scanner itself failed; the docs are UNMEASURED.\n'
         rc=1
         return
-    }
-    ledger_entries_of "$TMPD/base_ledger" > "$TMPD/base_entries"
-    ledger_entries_of "$RUST_LEDGER"     > "$TMPD/cur_entries"
-
-    local how note
-    case "$mode" in
-        MERGEBASE) how="merge-base with $BASE_REF" ;;
-        TIP)       how="tip of $BASE_REF (no merge-base available; stricter)" ;;
-        *)         how="$mode" ;;
-    esac
-    note="protected; a pull request cannot rewrite it"
-    [ "$BASE_REF" = "origin/main" ] || note="OVERRIDDEN via FABBASE_BASE_REF — NOT a protected ref"
-
-    if ledger_shrink_only "$TMPD/base_entries" "$TMPD/cur_entries"; then
-        printf 'ok    ledger   %s entr(ies), %s added, %s removed vs %s\n' \
-            "$(grep -c . "$TMPD/cur_entries" || true)" "$LEDGER_ADDED" "$LEDGER_REMOVED" \
-            "$(git rev-parse --short "$ref" 2>/dev/null || printf '%s' "$ref")"
-        printf '               comparand: %s (%s)\n' "$how" "$note"
-    else
-        printf '               comparand: %s (%s)\n' "$how" "$note"
-        printf '               An entry may only LEAVE this file. Delete the literal in\n'
-        printf '               crates/ or derive it from a receipt under evidence/; do not\n'
-        printf '               ledger it. If the branch is merely behind a main that has\n'
-        printf '               already shrunk the ledger: git rebase origin/main.\n'
-        rc=1
     fi
+    hits=$(grep -c '^HIT' "$TMPD/docs_scan" || true)
+    receipted=$(grep -c '^RECEIPTED' "$TMPD/docs_scan" || true)
+    if [ "$hits" -gt 0 ]; then
+        while IFS=$'\t' read -r _ where; do
+            printf 'FAIL  docs     unreceipted competitor throughput: %s\n' "$where"
+        done < <(grep '^HIT' "$TMPD/docs_scan")
+        printf '      A published competitor figure carries its date AND what it was\n'
+        printf '      measured from (a receipt path or the beat contract) on the same\n'
+        printf '      line, or it is deleted (#3773).\n'
+        rc=1
+        return
+    fi
+    printf 'ok    docs     %s file(s), 0 unreceipted competitor throughput, %s receipted\n' \
+        "$n" "$receipted"
 }
 
-[ "$MODE" = full ] && rust_ledger_sweep
+[ "$MODE" = full ] && docs_ban_sweep
 
 if [ "$rc" -ne 0 ]; then
     printf '      Invoke the comparator and record its output, or record the\n'
@@ -768,143 +718,120 @@ run_tbl "$ctl/must_not_match"      "$PATTERN"     nomatch
 run_tbl "$ctl/cfg_must_match"      "$PATTERN_CFG|$PATTERN_JSON" match
 run_tbl "$ctl/cfg_must_not_match"  "$PATTERN_CFG|$PATTERN_JSON" nomatch
 
-# The Rust ledger's detector gets a table too, on the same terms.
-cat > "$ctl/rust_must_match" <<'CASES'
-    let ollama_baseline = 137.0;
-const OLLAMA_BASELINE_TOKS: f64 = 318.0;
-    let llamacpp_tps: f64 = 407.0;
-    let ollama_toks = 44.5f32;
-        println!("Using default Ollama baseline (318 tok/s from spec)");
-    let llamacpp_decode_tps = 407.0_f64;
-CASES
-cat > "$ctl/rust_must_not_match" <<'CASES'
-    let ollama_tok_s = measure_ollama()?;
-const OLLAMA_TRIALS: usize = 5;
-    let ollama_ratio = ours / theirs;
-    let decode_tps = 407.0;
-CASES
-# THE TABLE CALLS THE SHIPPED FUNCTION. Both loops used to re-derive the bound
-# name and re-apply the denylist inline — a second implementation of the rule,
-# graded against itself. `rust_is_fab` is what rust_hits uses, so a change that
-# blinds the scan now reddens the table.
-run_rust_tbl() { # run_rust_tbl <file> <expect match|nomatch>
-    local file="$1" want="$2" line got
-    while IFS= read -r line; do
-        [ -n "$line" ] || continue
-        if rust_is_fab "$line"; then got=match; else got=nomatch; fi
+# THE RUST BAN'S TABLE CALLS THE SHIPPED FUNCTION on fixture FILES, because
+# R3 is a function-context rule and a one-line fixture has no function. Each row
+# is a file and its expected verdict. The literals avoid the ones the ban was
+# born from (35.0, 318, 200), for the reason given above the shell table.
+#
+# THE FIXTURES ARE SCANNED BY RELATIVE PATH from inside their own directory. The
+# test-path exclusion keys on a `tests/` component, so an absolute path under a
+# TMPDIR that happened to contain one would exclude EVERY fixture and the
+# must-HIT rows would fail loudly — correct, but for the wrong reason.
+rs="$ctl/rust"
+mkdir -p "$rs/tests" || exit 2
+: > "$ctl/rust_want"
+rs_case() { # rs_case <relative file> <expect HIT|RECEIPTED|none> <content, \n-escaped>
+    printf '%b' "$3" > "$rs/$1"
+    printf '%s\t%s\n' "$1" "$2" >> "$ctl/rust_want"
+}
+# R1 — a competitor-named binding to a bare literal (the ledger's shape).
+rs_case r1_let.rs         HIT 'fn main() {\n    let ollama_baseline = 137.0;\n}\n'
+rs_case r1_const.rs       HIT 'const OLLAMA_BASELINE_TOKS: f64 = 407.0;\n'
+rs_case r1_typed.rs       HIT 'fn main() {\n    let llamacpp_tps: f64 = 407.0;\n}\n'
+rs_case r1_suffix.rs      HIT 'fn main() {\n    let llamacpp_decode_tps = 407.0_f64;\n}\n'
+# R2 — the announcement.
+rs_case r2_default.rs     HIT 'fn main() {\n    println!("Using default Ollama baseline (137 tok/s from spec)");\n}\n'
+# R3 — the #3773 shapes: a generic name inside a competitor-named fn.
+rs_case r3_bind.rs        HIT 'fn run_llama_cpp_bench() -> f64 {\n    let tps = 44.0 + jitter();\n    tps\n}\n'
+rs_case r3_ttft.rs        HIT 'fn bench_vllm() {\n    let ttft_ms = 44.5;\n}\n'
+rs_case r3_fallback.rs    HIT 'fn ollama_tps(r: &str) -> f64 {\n    parse(r).map_or(137.0, |v| v.tps)\n}\n'
+rs_case r3_stmt.rs        HIT 'fn check_point_41(&self) -> bool {\n    let llamacpp_tps = self\n        .llamacpp_stats\n        .as_ref()\n        .map_or(407.0, |s| s.mean_throughput);\n    true\n}\n'
+# Not a claim: measured, a setting, an accumulator, a ratio, a comment.
+rs_case n_measured.rs     none 'fn main() {\n    let ollama_tok_s = measure_ollama()?;\n}\n'
+rs_case n_trials.rs       none 'const OLLAMA_TRIALS: usize = 5;\n'
+rs_case n_ratio.rs        none 'fn main() {\n    let ollama_ratio = ours / theirs;\n}\n'
+rs_case n_generic.rs      none 'fn decode() {\n    let decode_tps = 407.0;\n}\n'
+rs_case n_accum.rs        none 'fn run_llama_cpp_bench() {\n    let mut tps = 0.0;\n}\n'
+rs_case n_zero_fb.rs      none 'fn run_ollama() {\n    let tps = r.eval_count.map_or(0.0, |c| c as f64);\n}\n'
+rs_case n_setting.rs      none 'fn run_ollama(temp: Option<f32>) {\n    let t = temp.unwrap_or(0.7);\n}\n'
+rs_case n_ctx.rs          none 'fn ollama_config() {\n    let ctx = x.unwrap_or(4096);\n}\n'
+rs_case n_threshold.rs    none 'fn gate() {\n    // Ollama parity floor\n    let min = args.min_speedup.unwrap_or(0.2);\n}\n'
+rs_case n_comment.rs      none '// let ollama_baseline = 137.0;\n'
+# Test code is out of scope, by ruling: a tests/ path, a tests_* file, a
+# #[cfg(test)] module. The same line OUTSIDE the module is in scope.
+rs_case tests/r1_let.rs   none 'fn f() {\n    let ollama_baseline = 137.0;\n}\n'
+rs_case tests_fixture.rs  none 'fn f() {\n    let ollama_baseline = 137.0;\n}\n'
+rs_case n_cfgtest.rs      none 'fn real() {}\n\n#[cfg(test)]\nmod tests {\n    fn f() {\n        let ollama_baseline = 137.0;\n    }\n}\n'
+rs_case cfgtest_above.rs  HIT  'fn real() {\n    let ollama_baseline = 137.0;\n}\n\n#[cfg(test)]\nmod tests {}\n'
+# A receipt is dated and near. Undated, or too far above, is not a receipt.
+rs_case rc_dated.rs       RECEIPTED '// receipt: evidence/bootstrap.json (2026-04-05)\nconst LLAMA_CPP_TPS: f64 = 407.1;\n'
+rs_case rc_window.rs      RECEIPTED '// receipt: evidence/bootstrap.json (2026-04-05)\n//\n//\nconst LLAMA_CPP_TPS: f64 = 407.1;\n'
+rs_case rc_undated.rs     HIT '// receipt: evidence/bootstrap.json\nconst LLAMA_CPP_TPS: f64 = 407.1;\n'
+rs_case rc_far.rs         HIT '// receipt: evidence/bootstrap.json (2026-04-05)\n//\n//\n//\nconst LLAMA_CPP_TPS: f64 = 407.1;\n'
+cut -f1 "$ctl/rust_want" > "$ctl/rust_list"
+if ( cd "$rs" && rust_ban_scan "$ctl/rust_list" ) > "$ctl/rust_out"; then
+    while IFS=$'\t' read -r f want; do
+        got=none
+        grep -qF "RECEIPTED"$'\t'"$f:" "$ctl/rust_out" && got=RECEIPTED
+        grep -qF "HIT"$'\t'"$f:" "$ctl/rust_out" && got=HIT
         if [ "$got" != "$want" ]; then
-            printf 'FAIL  rust want %-7s got %-7s : %s\n' "$want" "$got" "$line"
+            printf 'FAIL  rust want %-9s got %-9s : %s\n' "$want" "$got" "$f"
             tbl_bad=1
         fi
-    done < "$file"
-}
-run_rust_tbl "$ctl/rust_must_match"     match
-run_rust_tbl "$ctl/rust_must_not_match" nomatch
-
-# ---------------------------------------------------------------------------
-# THE LEDGER RATCHET, BOTH DIRECTIONS — the case table for the H1/H2/H3 defect
-# above. Without these rows the stale->FAIL change has no failing test, and a
-# revert to `REPORT` passes every other row in this file.
-lr="$ctl/lr"
-mkdir -p "$lr"
-lr_case() { # lr_case <label> <expect ok|fail> <ledger-lines> <hit-lines>
-    local label="$1" want="$2" got=ok
-    printf '%b' "$3" > "$lr/ledger"
-    printf '%b' "$4" > "$lr/hits"
-    ledger_verdict "$lr/ledger" "$lr/hits" > "$lr/out" 2>&1 || got=fail
-    if [ "$got" != "$want" ]; then
-        printf 'FAIL  ledger %-22s want %-4s got %-4s (new=%s known=%s stale=%s)\n' \
-            "$label" "$want" "$got" "$LEDGER_NEW" "$LEDGER_KNOWN" "$LEDGER_STALE"
-        tbl_bad=1
-    fi
-}
-LR_HIT='crates/a/src/x.rs:2:    let ollama_baseline = 137.0;\n'
-lr_case 'ledgered site'    ok   'crates/a/src/x.rs:2\n'                    "$LR_HIT"
-lr_case 'comments ignored' ok   '# a comment\n\ncrates/a/src/x.rs:2\n'    "$LR_HIT"
-lr_case 'new site'         fail 'crates/a/src/x.rs:2\n'                    "$LR_HIT"'crates/b/src/y.rs:9:    let vllm_tps = 407.0;\n'
-lr_case 'stale entry'      fail 'crates/a/src/x.rs:2\ncrates/gone.rs:1\n'  "$LR_HIT"
-lr_case 'empty ledger'     fail ''                                         "$LR_HIT"
-lr_case 'no hits at all'   ok   '# nothing ledgered yet\n'                 ''
-# `crates/a/src/x.rs:2` must NOT be satisfied by a hit at line 20 — a prefix
-# match here would exempt a whole file from its first ledgered line onwards.
-lr_case 'line 2 != line 20' fail 'crates/a/src/x.rs:2\n' 'crates/a/src/x.rs:20:    let ollama_baseline = 137.0;\n'
-lr_rows=7
-
-# ---------------------------------------------------------------------------
-# THE SHRINK-ONLY RATCHET, AS A TABLE. The rows above prove new/stale; NONE of
-# them covers GROWTH, which is why the previous commit's green did not transfer
-# and the append defect survived it. Rule 6: re-mutate in the new scope.
-#
-# `ledger_shrink_only` is a set operation, so the fixtures are entry lists. The
-# end-to-end forms (append with and without the matching fabrication, at the real
-# ledger) are in the PR body's mutation table; these rows are what fails at merge
-# if someone deletes the comparison.
-so="$ctl/so"
-mkdir -p "$so"
-so_case() { # so_case <label> <expect ok|fail> <base-entries> <current-entries>
-    local label="$1" want="$2" got=ok
-    printf '%b' "$3" | LC_ALL=C sort -u > "$so/base"
-    printf '%b' "$4" | LC_ALL=C sort -u > "$so/cur"
-    ledger_shrink_only "$so/base" "$so/cur" > "$so/out" 2>&1 || got=fail
-    if [ "$got" != "$want" ]; then
-        printf 'FAIL  shrink-only %-30s want %-4s got %-4s (added=%s removed=%s)\n' \
-            "$label" "$want" "$got" "$LEDGER_ADDED" "$LEDGER_REMOVED"
-        tbl_bad=1
-    fi
-}
-SO_BASE='crates/a.rs:1\ncrates/b.rs:2\ncrates/c.rs:3\n'
-so_case 'unchanged'              ok   "$SO_BASE" "$SO_BASE"
-so_case 'one removed'            ok   "$SO_BASE" 'crates/a.rs:1\ncrates/b.rs:2\n'
-so_case 'all removed'            ok   "$SO_BASE" ''
-so_case 'one appended'           fail "$SO_BASE" "$SO_BASE"'crates/d.rs:4\n'
-so_case 'swap, count unchanged'  fail "$SO_BASE" 'crates/a.rs:1\ncrates/b.rs:2\ncrates/d.rs:4\n'
-so_case 'same file, new line'    fail "$SO_BASE" "$SO_BASE"'crates/a.rs:9\n'
-so_case 'remove one, add one'    fail "$SO_BASE" 'crates/a.rs:1\ncrates/d.rs:4\n'
-so_case 'empty base, one entry'  fail ''         'crates/a.rs:1\n'
-so_rows=8
-
-# THE COMPARAND RESOLVER, against a scratch repository — because the branch that
-# must NEVER be taken is "fall back to comparing this branch against itself", and
-# that branch cannot be exercised from inside a checkout that already satisfies
-# it. A missing comparand has to be provably LOUD.
-sr="$TMPD/scratch"
-sr_rows=0
-if mkdir -p "$sr/scripts" \
-   && git -C "$sr" init -q >/dev/null 2>&1 \
-   && git -C "$sr" config user.email selftest@example.invalid \
-   && git -C "$sr" config user.name selftest \
-   && printf 'x\n' > "$sr/scripts/unrelated.txt" \
-   && git -C "$sr" add -A \
-   && git -C "$sr" -c commit.gpgsign=false commit -qm 'no ledger yet' >/dev/null 2>&1; then
-    sr_noledger=$(git -C "$sr" rev-parse HEAD)
-    mkdir -p "$sr/$(dirname "$RUST_LEDGER")"
-    printf '# header\ncrates/a.rs:1\n' > "$sr/$RUST_LEDGER"
-    if git -C "$sr" add -A \
-       && git -C "$sr" -c commit.gpgsign=false commit -qm 'add ledger' >/dev/null 2>&1; then
-        sr_case() { # sr_case <label> <expect-mode> <ref>
-            local label="$1" want="$2" got
-            got=$(resolve_base_ref "$sr" "$3")
-            got="${got%%$'\t'*}"
-            sr_rows=$((sr_rows + 1))
-            if [ "$got" != "$want" ]; then
-                printf 'FAIL  comparand %-24s want %-12s got %s\n' "$label" "$want" "$got"
-                tbl_bad=1
-            fi
-        }
-        sr_case 'ref does not exist'   UNRESOLVABLE 'refs/heads/no-such-branch-xyzzy'
-        sr_case 'ref predates ledger'  ABSENT       "$sr_noledger"
-        sr_case 'ref carries ledger'   MERGEBASE    HEAD
-    else
-        printf 'FAIL  comparand table: could not commit in the scratch repo, so the\n'
-        printf '      UNRESOLVABLE/ABSENT branches are UNTESTED. That is not a skip.\n'
-        tbl_bad=1
-    fi
+    done < "$ctl/rust_want"
 else
-    printf 'FAIL  comparand table: could not build the scratch repo, so the branch\n'
-    printf '      that must never be taken is UNTESTED. A selftest that silently\n'
-    printf '      skips its hardest case is the defect this guard is about.\n'
+    printf 'FAIL  rust table: the scanner itself failed, so every rust row is UNTESTED.\n'
     tbl_bad=1
 fi
+rs_rows=$(grep -c . "$ctl/rust_want")
+
+# THE DOCS BAN'S TABLE, on the same terms: fixture files through the shipped
+# `docs_ban_scan`. The two README sites #3773 removed are rows here, with the
+# literals changed (2.9x -> 3.4x, 2.6x -> 1.7x) for the reason given above.
+ds="$ctl/docs"
+mkdir -p "$ds" || exit 2
+: > "$ctl/docs_want"
+ds_case() { # ds_case <file> <expect HIT|RECEIPTED|none> <content, \n-escaped>
+    printf '%b' "$3" > "$ds/$1"
+    printf '%s\t%s\n' "$1" "$2" >> "$ctl/docs_want"
+}
+ds_case d_headline.md     HIT  '- **Speed**: 3.4x faster than Ollama on GPU\n'
+ds_case d_sample.md       HIT  '```\nPerformance: 811+ tok/s (1.7x Ollama)\n```\n'
+ds_case d_tps.md          HIT  '| llama.cpp CUDA | 407 tok/s |\n'
+ds_case d_suffix_ratio.md HIT  'apr is at **1.3×** ollama on this host.\n'
+ds_case d_comp_first.md   HIT  'vs Ollama 1.2x on decode\n'
+ds_case d_date_only.md    HIT  'llama.cpp 407 tok/s, measured 2026-04-05\n'
+ds_case d_pointer_only.md HIT  'llama.cpp 407 tok/s (`results/bootstrap.json`)\n'
+ds_case d_row_leak.md     HIT  '| Ollama | 407 tok/s | - |\n| llama.cpp | 399 tok/s | 2026-04-05 `results/b.json` |\n'
+ds_case d_receipted.md    RECEIPTED 'llama.cpp 407 tok/s (receipt: `results/bootstrap.json`, 2026-04-05)\n'
+ds_case d_contract.md     RECEIPTED '| apr **1.02×** ollama (2026-07-31) | `beat-ollama-decode-throughput-speed-v1` |\n'
+ds_case d2_header.md      HIT  '| Mode | Throughput | vs Ollama | Memory |\n|------|------|------|------|\n| CPU | ~15 tok/s | - | 1.1 GB |\n| GPU (batched) | ~811 tok/s | 3.4x | 1.9 GB |\n'
+ds_case d2_bare_ratio.md  HIT  '| Engine | vs llama.cpp |\n|---|---|\n| apr | 0.82 |\n'
+ds_case d2_receipted.md   RECEIPTED '| Engine | vs llama.cpp |\n|---|---|\n| apr | 0.82 (2026-04-06, `results/bootstrap.json`) |\n'
+ds_case d2_no_comp.md     none '| Mode | Throughput | Memory |\n|------|------|------|\n| GPU (batched) | ~811 tok/s | 1.9 GB |\n'
+ds_case d2_other_col.md   none '| Engine | Notes | Memory |\n|---|---|---|\n| apr | same GGUF as Ollama | 1.9 GB |\n'
+ds_case d2_table_ends.md  none '| Engine | vs Ollama |\n|---|---|\n| apr | - |\n\n| Mode | Speed |\n|---|---|\n| GPU | 3.4x |\n'
+ds_case d2_prose_after.md none '| vs Ollama | Mode |\n|---|---|\n| - | CPU |\n\n2.5x more memory is held by the batched mode.\n'
+ds_case d_model_name.md   none '| Llama-3.2 1B Q4_K | 91 tok/s |\n'
+ds_case d_no_figure.md    none 'apr runs the same GGUF as Ollama and llama.cpp.\n'
+ds_case d_other_ratio.md  none 'Cold-start vs PyTorch: apr ~140× faster (ratio 0.007)\n'
+ds_case d_own_tps.md      none 'apr decodes at 407 tok/s on this host.\n'
+cut -f1 "$ctl/docs_want" > "$ctl/docs_list"
+if ( cd "$ds" && docs_ban_scan "$ctl/docs_list" ) > "$ctl/docs_out"; then
+    while IFS=$'\t' read -r f want; do
+        got=none
+        grep -qF "RECEIPTED"$'\t'"$f:" "$ctl/docs_out" && got=RECEIPTED
+        grep -qF "HIT"$'\t'"$f:" "$ctl/docs_out" && got=HIT
+        if [ "$got" != "$want" ]; then
+            printf 'FAIL  docs want %-9s got %-9s : %s\n' "$want" "$got" "$f"
+            tbl_bad=1
+        fi
+    done < "$ctl/docs_want"
+else
+    printf 'FAIL  docs table: the scanner itself failed, so every docs row is UNTESTED.\n'
+    tbl_bad=1
+fi
+ds_rows=$(grep -c . "$ctl/docs_want")
 
 # SIGPIPE REGRESSION CASE. Every fixture above is one line long, and on a
 # one-line file the `-q` form and the capture form behave identically — so the
@@ -951,9 +878,8 @@ if [ "$tbl_bad" -eq 0 ]; then
         "$(( $(grep -c . "$ctl/must_match") + $(grep -c . "$ctl/must_match_shapes") ))" \
         "$(grep -c . "$ctl/must_not_match")" \
         "$(( $(grep -c . "$ctl/cfg_must_match") + $(grep -c . "$ctl/cfg_must_not_match") ))" \
-        "$(( $(grep -c . "$ctl/rust_must_match") + $(grep -c . "$ctl/rust_must_not_match") ))"
-    printf '               %s ledger, %s shrink-only, %s comparand — all correct\n' \
-        "$lr_rows" "$so_rows" "$sr_rows"
+        "$rs_rows"
+    printf '               %s docs — all correct\n' "$ds_rows"
 else
     rc=1
 fi
@@ -980,7 +906,15 @@ fi
 #     a script, and a guard that flags everything is as broken as one that
 #     flags nothing.
 #
-#   RUST, beyond the one binding shape — see the ledger block above.
+#   DOCS, a figure split across lines — `(1.371× median,` on one line and
+#     `412.3 vs 300.7 tok/s` on the next, with the competitor named on a third.
+#     D1 is a line rule; BEATS.md's history paragraphs wrap exactly like that.
+#     They are dated prose about a withdrawn claim, and a paragraph window
+#     was rejected above because it lets one table row receipt its neighbour.
+#
+#   RUST, beyond R1-R3 — a fabrication assembled through a const table, a
+#     builder or a match arm, or a generic-named literal in a fn whose name
+#     does not name the competitor. See the ban block above.
 #
 printf '\n'
 # A SELFTEST PASS IS NOT A CLEAN TREE, and it must not be printable as one. The

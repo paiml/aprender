@@ -56,7 +56,7 @@ apr is at measured **parity** — not a win, not a loss — in this case:
 
 | Parity (no win claimed) | Result | Source (contract / evidence) |
 |-------------------------|--------|------------------------------|
-| **GPU decode vs Ollama** | apr **1.015–1.109×** ollama on RTX 4090 sm_89 (three post-#2323 medians: 1.109 / 1.042 / 1.015). Inside measurement noise — apr does **not** currently win GPU decode vs ollama. The earlier **1.371× headline is WITHDRAWN** (see [Withdrawn beats](#withdrawn-beats)) | `beat-ollama-decode-throughput-speed-v1.yaml` (`beat_threshold: 0.9000` — a **no-collapse floor**, not a beat) · `crates/aprender-serve/tests/beat_ollama_decode_throughput_speed.rs` (`ENFORCED_THRESHOLD: f64 = 0.90`) |
+| **GPU decode vs Ollama** | apr **1.015–1.109×** ollama on RTX 4090 sm_89 (three post-#2323 medians: 1.109 on 2026-07-29, 1.042 and 1.015 on 2026-07-31). Inside measurement noise — apr does **not** currently win GPU decode vs ollama. The earlier **1.371× headline is WITHDRAWN** (see [Withdrawn beats](#withdrawn-beats)) | `beat-ollama-decode-throughput-speed-v1.yaml` (`beat_threshold: 0.9000` — a **no-collapse floor**, not a beat) · `crates/aprender-serve/tests/beat_ollama_decode_throughput_speed.rs` (`ENFORCED_THRESHOLD: f64 = 0.90`) |
 
 apr **loses** speed in these **specific, narrow** cases (not a blanket concession):
 
@@ -128,7 +128,7 @@ named** set of losses — not a blanket speed concession. See
 
 | Beat | Metric | Result | Gate |
 |------|--------|--------|------|
-| **GPU decode throughput vs Ollama** | tok/s ratio (RTX-4090 sm_89) | 🟰 **PARITY (no-collapse floor)** — apr **1.015–1.109×** ollama, same qwen2.5-coder-1.5b Q4_K_M GGUF, same host. Gate = apr median-of-7 ≥ ollama median **× 0.90** (`beat_threshold: 0.9000`). That is a floor against collapse, **not** a win — a green run proves apr did not fall off a cliff, nothing more. ⛔ The prior **1.371× WON claim is WITHDRAWN** (see below) | manual/GPU gate (no NVIDIA CI runner) · `beat_ollama_decode_throughput_speed` · `beat-ollama-decode-throughput-speed-v1` |
+| **GPU decode throughput vs Ollama** | tok/s ratio (RTX-4090 sm_89) | 🟰 **PARITY (no-collapse floor)** — apr **1.015–1.109×** ollama (medians 2026-07-29 and 2026-07-31), same qwen2.5-coder-1.5b Q4_K_M GGUF, same host. Gate = apr median-of-7 ≥ ollama median **× 0.90** (`beat_threshold: 0.9000`). That is a floor against collapse, **not** a win — a green run proves apr did not fall off a cliff, nothing more. ⛔ The prior **1.371× WON claim is WITHDRAWN** (see below) | manual/GPU gate (no NVIDIA CI runner) · `beat_ollama_decode_throughput_speed` · `beat-ollama-decode-throughput-speed-v1` |
 | **Fail-closed correctness** (headline correctness) | broken-artifact classes rejected | ✅ **WON** — apr rejects **10/10** semantically-broken tensor classes (zero/NaN/Inf/L2~0/constant/shape) fail-closed; **llama.cpp accepts** the same (measured: zeroed-ffn GGUF → `apr validate` ✗ FAIL, `llama-cli` 0 errors + ran it) | CI `beat_fail_closed_garbage` · `apr-fail-closed-garbage-beat-v1` |
 | **llama.cpp** single-request c=1 decode | tok/s ratio (RTX-4090) | ⚖️ **NARROW LOSS** — llama.cpp ~1.55× *faster* (431 vs 277 tok/s) at concurrency=1 (llama.cpp figure receipt: paiml/candle-vs-apr `results/bootstrap-llama-cpp-b7746-fair-20260405-180222.json`, 2026-04-05); this is *llama.cpp*, not Ollama, against which apr measures at parity (1.015–1.109×) | — |
 | 7B-Q4K decode on GB10 Blackwell | tok/s | ⚖️ **NARROW LOSS** — ~12 tok/s (bandwidth-bound; DP4A path degraded on Blackwell) | — |
@@ -242,7 +242,7 @@ reader who saw the old claim deserves the retraction next to it.
 
 | | |
 |---|---|
-| **Claimed** | ✅ WON, apr **1.371×** ollama median (apr median-of-7 **412.3** vs ollama **300.7** tok/s; worst run 1.230×, best 1.523×), gate ≥ **1.10×** |
+| **Claimed** | ✅ WON, apr **1.371×** ollama median (measured 2026-06-15 under `beat-ollama-decode-throughput-speed-v1`; apr median-of-7 **412.3** vs ollama **300.7** tok/s; worst run 1.230×, best 1.523×), gate ≥ **1.10×** |
 | **Claimed on** | 2026-06-15 (measurement), published 2026-06-25 via #2067 (PMAT-755), promoted TRACKING → ENFORCED |
 | **Replaced by** | 🟰 PARITY, **1.015–1.109×**, gate `beat_threshold: 0.9000` (no-collapse floor) |
 | **Contract** | `contracts/beat-ollama-decode-throughput-speed-v1.yaml` v2.0.0 — `baseline_value: 1.0150`, `baseline_floor: 0.9000`, `beat_threshold: 0.9000` |
@@ -252,10 +252,10 @@ Four measurements on one host (lambda RTX 4090, sm_89), same GGUF on both sides:
 
 | Date | apr median | ollama median | ratio | Source |
 |------|-----------:|--------------:|------:|--------|
-| 2026-06-15 | 412.3 | 300.7 | **1.371×** | promotion claim (#2067) — **not reproducible** |
-| 2026-07-29 | 332.7 | 299.9 | 1.109× | cuda-nightly, PASSED |
-| 2026-07-31 | 342.4 | 328.6 | 1.042× | cuda-nightly, FAILED |
-| 2026-07-31 | 318.2 | 313.5 | 1.015× | idle box, this harness |
+| 2026-06-15 | 412.3 | 300.7 | **1.371×** | promotion claim (#2067) — **not reproducible** · `beat-ollama-decode-throughput-speed-v1` |
+| 2026-07-29 | 332.7 | 299.9 | 1.109× | cuda-nightly, PASSED · `beat-ollama-decode-throughput-speed-v1` |
+| 2026-07-31 | 342.4 | 328.6 | 1.042× | cuda-nightly, FAILED · `beat-ollama-decode-throughput-speed-v1` |
+| 2026-07-31 | 318.2 | 313.5 | 1.015× | idle box, this harness · `beat-ollama-decode-throughput-speed-v1` |
 
 **Why it is apr's number that moved, not the rig:** the *ollama* column reproduces
 across six weeks — 300.7 / 299.9 / 328.6 / 313.5. A measurement fault would drift

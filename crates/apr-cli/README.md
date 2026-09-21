@@ -204,7 +204,7 @@ Enabling optimized CUDA acceleration (PAR-111)...
   Pre-uploaded 934 MB weights to GPU
 CUDA optimized model ready
 
-Performance: 755+ tok/s (2.6x Ollama)
+Performance: 755+ tok/s
 ```
 
 #### Example GPU Request
