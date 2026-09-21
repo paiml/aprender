@@ -3,8 +3,9 @@
 
 scripts/apr_code_edit_verify.sh runs the agent and leaves an artifact
 directory behind. This module reads only those artifacts: the working copy,
-the independent test re-run, the --emit-trace records, and the serve child's
-own output. It writes <out>/cell.json and prints one summary line.
+the independent test re-run, the python-shim log of what the agent's shell
+ran, the final answer, and the serve child's own output. It writes
+<out>/cell.json and prints one summary line.
 
 The mechanisms are checked in pipeline order and the FIRST one that fails is
 the cell's mechanism, using the names from #3719 done_when 1:
@@ -16,6 +17,18 @@ the cell's mechanism, using the names from #3719 done_when 1:
 "serve child refused the forward" is not in #3719's list: it names a child
 that loaded every layer on CUDA and then answered the completion with an HTTP
 error, which none of the listed names describes.
+
+What each mechanism reads, and why:
+  * The --emit-trace file is NOT evidence of tool calls. It holds exactly four
+    records and the assistant turn is one text block, whatever the agent did
+    (crates/aprender-orchestrate/src/agent/code.rs emit_ccpa_trace). A judge
+    reading tool_use blocks from it could never pass.
+  * "tool call not parsed" needs a call the model emitted and the driver did
+    not execute: stats.py unchanged while the final answer still carries the
+    markup the driver parses (<tool_call> or a ```json block, see
+    agent/driver/realizar.rs parse_tool_calls).
+  * "test not run" reads the python shims' log: the agent's shell tool runs
+    `sh -c` with the inherited PATH, and the shims are first on it.
 
 Exit: 0 PASS, 1 FAIL, 2 decline (the GPU lock was never acquired).
 """
@@ -37,23 +50,32 @@ ANSI = re.compile(r"\x1b\[[0-9;]*m")
 # `Model ready: 0 layers` and `gpu-layers: requested=all resolved=0 total=0`,
 # and the first request then failed with HTTP 500 (#3571 step 1). So the
 # backend is `cuda` only when every layer is resident on CUDA and a completion
-# actually came back; the gpu-layers line is the evidence cited.
+# actually came back; the residency line is the evidence cited.
 CUDA_READY = re.compile(r"CUDA optimized model ready")
 CPU_MARKERS = re.compile(
     r"\[GPU->CPU FALLBACK\]|Using CPU inference|Q4K CPU inference ready"
+    r"|layers resident on the CPU"
 )
+# The generic GGUF route: a layer count, then the gpu-layers residency line.
 MODEL_LAYERS = re.compile(r"Model ready: (\d+) layers")
 GPU_LAYERS = re.compile(r"gpu-layers: requested=\S+ resolved=(\d+) total=(\d+) \(backend=(\w+)\)")
+# The Qwen35Session route (#3571 step 2, aprender-c7) states both in one line:
+# `Model ready: Qwen3.5 hybrid, N layers resident on the GPU|CPU, declared context C tokens`.
+HYBRID_READY = re.compile(r"Model ready: .*?(\d+) layers resident on the (GPU|CPU)")
 # The driver prints this once the child answers its health check.
 SERVE_READY = re.compile(r"apr serve ready \(")
 # The driver's error when the child answers a completion with an HTTP error.
 SERVE_HTTP_ERROR = re.compile(r"apr serve HTTP (\d+): (.*)")
-# The thinking mode the serve child renders. The driver strips <think> blocks
-# before parsing, so the trace cannot show it; only the child's own line can.
+# The thinking mode the serve child renders (the Qwen35Session route prints
+# `chat template: Qwen3NoThink (thinking off)`). The driver strips <think>
+# blocks before parsing, so nothing else can show it.
 THINKING_LINE = re.compile(r"chat template:.*\(thinking (on|off)\)")
 # A per-request prompt size printed by the child. session_end.tokens_in in the
 # trace is summed over turns (agent/result.rs accumulate), so it is not one.
 PROMPT_TOKENS_LINE = re.compile(r"\bprompt_tokens[=: ]+(\d+)")
+# Tool-call markup the driver parses. Left in the final answer, it is a call
+# the model made and the driver never executed.
+UNPARSED_CALL = re.compile(r"<tool_call>|```json|<function=")
 
 # The ladder's row keys (#3712 scripts/lib/model_ladder_cells.py, #3715): a
 # row is `4k` only if one request's measured prompt reached the rung. A
@@ -99,41 +121,6 @@ def project_files(root):
     return out
 
 
-def trace_records(path):
-    records, bad = [], 0
-    for ln in read(path).splitlines():
-        if not ln.strip():
-            continue
-        try:
-            records.append(json.loads(ln))
-        except json.JSONDecodeError:
-            bad += 1
-    return records, bad
-
-
-def tool_uses(records):
-    uses = []
-    for r in records:
-        if r.get("kind") != "assistant_turn":
-            continue
-        for b in r.get("blocks") or []:
-            if isinstance(b, dict) and b.get("type") == "tool_use":
-                uses.append(b)
-    return uses
-
-
-def ran_the_test(uses):
-    """A shell tool call whose input names the fixture's test."""
-    for u in uses:
-        name = str(u.get("name", "")).lower()
-        blob = json.dumps(u.get("input", {}))
-        if ("shell" in name or "bash" in name) and (
-            "unittest" in blob or "test_stats" in blob
-        ):
-            return blob[:200]
-    return ""
-
-
 def one_line_edit(before, after):
     """True iff `after` differs from `before` by exactly one replaced line."""
     a, b = before.splitlines(), after.splitlines()
@@ -161,6 +148,23 @@ def envelope(stdout):
         if isinstance(obj, dict) and obj.get("type") == "result":
             return obj
     return None
+
+
+def residency(child):
+    """(layers, resident_on_cuda, evidence line) from either serve route."""
+    hybrid = first_match(child, HYBRID_READY)
+    if hybrid:
+        n, where = HYBRID_READY.search(hybrid).groups()
+        return int(n), where == "GPU" and int(n) > 0, hybrid
+    layers_line = first_match(child, MODEL_LAYERS)
+    layers = int(MODEL_LAYERS.search(layers_line).group(1)) if layers_line else None
+    gpu_line = first_match(child, GPU_LAYERS)
+    if not gpu_line:
+        return layers, False, layers_line
+    resolved, total, backend = GPU_LAYERS.search(gpu_line).groups()
+    resident = (backend == "cuda" and int(resolved) == int(total) > 0
+                and bool(CUDA_READY.search(child)))
+    return layers, resident, "\n".join(x for x in (layers_line, gpu_line) if x)
 
 
 def judge(a):
@@ -192,31 +196,22 @@ def judge(a):
         return cell, 2
 
     timed_out = a.rc == 124
-    cuda_line = first_match(child, CUDA_READY)
     cpu_line = first_match(child, CPU_MARKERS)
-    layers_line = first_match(child, MODEL_LAYERS)
-    layers = int(MODEL_LAYERS.search(layers_line).group(1)) if layers_line else None
-    gpu_line = first_match(child, GPU_LAYERS)
-    resolved, total, gpu_backend = GPU_LAYERS.search(gpu_line).groups() if gpu_line else (None, None, None)
-    all_resident = (gpu_backend == "cuda" and resolved is not None
-                    and int(resolved) == int(total) and int(total) > 0)
+    layers, resident, residency_line = residency(child)
     http_error = SERVE_HTTP_ERROR.search(stderr)
-
-    records, bad = trace_records(out / "trace.jsonl")
-    uses = tool_uses(records)
-    turns = [r for r in records if r.get("kind") == "assistant_turn"]
-    cell.update(trace_records=len(records), trace_bad_lines=bad, tool_calls=len(uses),
-                tools_used=sorted({str(u.get("name")) for u in uses}))
+    env = envelope(stdout)
+    result = str(env.get("result", "")) if env else ""
+    answered = env is not None
 
     if cpu_line:
         backend = "cpu"
-    elif cuda_line and all_resident and turns:
+    elif resident and answered:
         backend = "cuda"
     else:
         backend = "unknown"
     cell.update(backend=backend, fallback=bool(cpu_line),
-                evidence=cpu_line or (gpu_line if backend == "cuda" else ""),
-                model_layers=layers, gpu_layers=gpu_line)
+                evidence=cpu_line or (residency_line if backend == "cuda" else ""),
+                model_layers=layers, answer_chars=len(result))
 
     thinking = THINKING_LINE.search(child)
     cell["thinking"] = thinking.group(1) if thinking else "unknown"
@@ -224,12 +219,9 @@ def judge(a):
     cell["prompt_tokens"] = max(sizes) if sizes else None
     cell["context"] = "4k" if sizes and max(sizes) >= RUNG_4K_TOKENS else "task"
     cell["max_tokens"] = DRIVER_MAX_TOKENS
-    ends = [r for r in records if r.get("kind") == "session_end"]
-    cell["tokens_in_total"] = ends[-1].get("tokens_in") if ends else None
 
-    env = envelope(stdout)
-    result = str(env.get("result", "")) if env else ""
-    cell["answer_chars"] = len(result)
+    calls = [ln for ln in read(out / "agent-python.log").splitlines() if ln.strip()]
+    cell["agent_python_calls"] = calls[:20]
 
     def fail(mechanism, reason, evidence=None):
         if timed_out:
@@ -246,36 +238,36 @@ def judge(a):
                     "the driver never reported `apr serve ready`",
                     last_lines(child) or last_lines(stderr))
     if layers == 0:
-        detail = f"; first request: HTTP {http_error.group(1)} {http_error.group(2)[:200]}" if http_error else ""
+        detail = (f"; first request: HTTP {http_error.group(1)} {http_error.group(2)[:200]}"
+                  if http_error else "")
         return fail("serve child did not load",
-                    f"the child reported ready with 0 layers{detail}",
-                    "\n".join(x for x in (layers_line, gpu_line) if x))
+                    f"the child reported ready with 0 layers{detail}", residency_line)
 
     # 2. fell back to CPU, or never showed every layer resident on CUDA
     if cpu_line:
         return fail("fell back to CPU", "serve child printed a CPU path", cpu_line)
-    if not (cuda_line and all_resident):
-        return fail("fell back to CPU",
-                    "serve child never showed every layer resident on CUDA",
-                    gpu_line or last_lines(child))
+    if not resident:
+        return fail("fell back to CPU", "serve child never showed every layer resident on CUDA",
+                    residency_line or last_lines(child))
 
     # 2b. the child loaded on CUDA but refused the completion
-    if http_error and not turns:
+    if http_error and not answered:
         return fail("serve child refused the forward",
-                    f"HTTP {http_error.group(1)}: {http_error.group(2)[:300]}",
-                    gpu_line)
+                    f"HTTP {http_error.group(1)}: {http_error.group(2)[:300]}", residency_line)
 
-    # 3. tool call not parsed
-    if not uses:
+    # 3. tool call not parsed: no edit landed, and the answer still carries
+    #    the markup of a call the driver should have executed
+    src_before, src_after = read(fixture / EDITED_FILE), read(work / EDITED_FILE)
+    unparsed = UNPARSED_CALL.search(result)
+    if src_after == src_before and unparsed:
         return fail("tool call not parsed",
-                    f"the trace holds {len(records)} records and no tool_use block",
-                    result[:300] or last_lines(stderr))
+                    f"{EDITED_FILE} unchanged and the final answer carries `{unparsed.group(0)}`",
+                    result[max(0, unparsed.start() - 80):unparsed.start() + 220])
 
     # 4. wrong edit
     before_files, after_files = project_files(fixture), project_files(work)
     cell["files_added"] = sorted(after_files - before_files)
     cell["files_removed"] = sorted(before_files - after_files)
-    src_before, src_after = read(fixture / EDITED_FILE), read(work / EDITED_FILE)
     diff = "".join(difflib.unified_diff(src_before.splitlines(True), src_after.splitlines(True),
                                         EDITED_FILE, EDITED_FILE))
     (out / "stats.diff").write_text(diff)
@@ -287,18 +279,20 @@ def judge(a):
         return fail("wrong edit",
                     f"files added {cell['files_added']} / removed {cell['files_removed']}")
     if src_after == src_before:
-        return fail("wrong edit", f"{EDITED_FILE} was not changed")
+        return fail("wrong edit", f"{EDITED_FILE} was not changed and no unparsed call was left",
+                    result[:300] or last_lines(stderr))
     if not one_line_edit(src_before, src_after):
         return fail("wrong edit", f"{EDITED_FILE} changed by more than one line", diff[:600])
     if a.test_rc != 0:
         return fail("wrong edit", "one-line edit made, but the independent test re-run still fails",
                     last_lines(read(out / "unittest.txt")))
 
-    # 5. test not run
-    ran = ran_the_test(uses)
-    cell["test_call"] = ran
+    # 5. test not run (by the agent; the harness's re-run is not in the log)
+    ran = [c for c in calls if "unittest" in c or "test_stats" in c]
+    cell["test_call"] = ran[0] if ran else ""
     if not ran:
-        return fail("test not run", "no shell tool call ran the fixture's test")
+        return fail("test not run", "the agent's shell never ran python on the fixture's test",
+                    "; ".join(calls[:3]) or "no python invocation at all")
 
     # 6. wrong final answer
     if env is None or env.get("subtype") != "success":

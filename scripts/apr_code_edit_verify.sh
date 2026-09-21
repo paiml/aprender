@@ -10,7 +10,12 @@
 # Nothing the agent SAYS counts as evidence:
 #   - the edit is judged by diffing the working copy against the fixture;
 #   - the test is re-run HERE, after the agent exits;
-#   - "the agent ran the test" is read from the --emit-trace tool calls;
+#   - "the agent ran the test" is read from logging python3/python shims put
+#     first on the agent's PATH (its shell tool runs `sh -c` with the
+#     inherited environment). The --emit-trace file cannot answer it: it
+#     holds one text block per run and never a tool call
+#     (crates/aprender-orchestrate/src/agent/code.rs emit_ccpa_trace), and
+#     the PreToolUse/PostToolUse hooks are not wired into the loop;
 #   - the backend is read from the serve CHILD's own output. `apr code` has no
 #     GPU flag: its driver spawns an `apr serve` child with `--gpu`
 #     (crates/aprender-orchestrate/src/agent/driver/apr_serve.rs), and a
@@ -93,6 +98,22 @@ wrapper="$OUT/apr-serve-child"
 } > "$wrapper"
 chmod +x "$wrapper"
 
+# The shims record every python invocation the agent's shell makes (cwd and
+# argv), then run the real interpreter. The harness's own re-run below calls
+# the real interpreter by path, so it never appears in the log.
+real_python="$(command -v python3)"
+shim_dir="$OUT/shim"
+mkdir -p "$shim_dir"
+for name in python3 python; do
+    {
+        printf '#!/usr/bin/env bash\n'
+        printf 'printf "%%s\\t%%s\\n" "$PWD" "$*" >> %q\n' "$OUT/agent-python.log"
+        printf 'exec %q "$@"\n' "$real_python"
+    } > "$shim_dir/$name"
+    chmod +x "$shim_dir/$name"
+done
+: > "$OUT/agent-python.log"
+
 "$APR" --version > "$OUT/apr-version.txt" 2>&1
 sha256sum "$MODEL" | cut -d' ' -f1 > "$OUT/model.sha256"
 hostname > "$OUT/hostname.txt"
@@ -109,7 +130,7 @@ set +e
     flock -w "$LOCK_WAIT" -E 75 "$GPU_LOCK" \
         choom -n 1000 -- \
         bash -c 'date -u +%FT%TZ > "$1"; shift; exec "$@"' _ "$OUT/lock-acquired" \
-        env APR_BIN="$wrapper" timeout "$TIMEOUT" \
+        env APR_BIN="$wrapper" PATH="$shim_dir:$PATH" timeout "$TIMEOUT" \
         "$APR" code -p \
             --model "$MODEL" \
             --project "$OUT/project" \
@@ -124,7 +145,7 @@ date -u +%FT%TZ > "$OUT/finished.txt"
 
 # The independent re-run: the agent's report of the test is not the test.
 set +e
-(cd "$OUT/project" && timeout 120 python3 -m unittest test_stats) > "$OUT/unittest.txt" 2>&1
+(cd "$OUT/project" && timeout 120 "$real_python" -m unittest test_stats) > "$OUT/unittest.txt" 2>&1
 test_rc=$?
 set -e
 
