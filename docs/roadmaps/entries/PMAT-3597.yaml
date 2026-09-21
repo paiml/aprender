@@ -1,0 +1,34 @@
+- id: PMAT-3597
+  github_issue: 3597
+  item_type: task
+  title: '0.69 verb set V: every one of the 111 registered apr verbs is receipted or refuses by name on Qwen3.5'
+  status: in_progress
+  priority: critical
+  assigned_to: null
+  created: 2026-09-21T00:00:00Z
+  updated: 2026-09-21T00:00:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE — QUOTED FROM gh#3597, not paraphrased (a quorum judges the diff against THIS text and
+    sees `pmat work status` output, not the issue; paraphrasing manufactures false findings). Operator ruling
+    2026-09-20: "0.69 is verbs that are true; 0.70 is verbs that are fast." done_when, verbatim: (1) "0 of the
+    111 registry verbs is unclassified. The *-lint family (32) may take one blanket disposition rather than 32
+    rows — propose it, do not assume it." (2) "Every V row has a receipt on both CUDA host classes (intel +
+    gx10), or has been moved to a refusal with removed_by. Partial coverage is a refusal, not a pass." (3)
+    "Every refusal states one line, an exit code, and removed_by. A refusal whose text names the wrong defect
+    is a fail-open." (4) "Backend: and other diagnostics go to stderr; Completed in ... goes to stdout. Any
+    receipt-capturing harness reads both, and says which stream each field came from." (5) "The classification
+    is committed as data the release notes are generated from, not as prose in a PR body." UNIVERSE, bound by
+    the issue: 111 registry commands (SSOT contracts/apr-cli-commands-v1.yaml), 112 in --help (the extra is
+    clap builtin `help`), 32 *-lint, 79 other. Use the registry, never --help. `apr agent` does NOT exist —
+    dropping it from any refusal table is a list defect fix, not a dogfood. THIS ROW covers done_when 1 and the
+    data form of done_when 5 ONLY; done_when 2 (receipts on intel + gx10) is the dogfood row and is NOT claimed
+    here. KNOWN-RED going in, inputs not discoveries: devices reports NotCompiled on a CUDA build (#3545); run
+    prints no Backend: on --no-gpu (#3541) and no tok/s (#3542); bench refuses qwen35 outright and STAYS a
+    refusal with removed_by v0.70; chat prints a #3090 refusal then contradicts it one line later (#3595). STOP:
+    a V row with dogfood:U is NOT a pass — it records that a receipt is owed and absent. Never infer a receipt.'
