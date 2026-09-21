@@ -1,0 +1,17 @@
+- id: PMAT-3460
+  github_issue: 3460
+  item_type: task
+  title: 'check_milestone_cut.sh: exempt the release epic by issue number from 06x §5, not title match (#3460)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T15:29:02Z
+  updated: 2026-09-17T15:29:02Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
