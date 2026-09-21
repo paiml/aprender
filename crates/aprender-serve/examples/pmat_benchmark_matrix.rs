@@ -3,27 +3,63 @@
 //! Tests: tiny (0.5B), small (1.5B), medium (3B) across CPU/GPU
 //! Target: APR 2x faster than llama.cpp for EVERY cell
 //!
-//! Run: cargo run --release --features cuda --example pmat_benchmark_matrix
+//! Run: `. scripts/llama_bin.sh && cargo run --release --features cuda --example pmat_benchmark_matrix`
+//!
+//! #3773: the llama.cpp side of every cell used to be a LITERAL ("Verified
+//! llama-bench baselines (RTX 4090, tg64)": 594.10 / 194.28, 377.75 / 86.43,
+//! 247.43 / 48.07) with no pin, date or receipt. It is now measured on this
+//! machine by the pinned `llama-bench` that `scripts/llama_bin.sh` exports as
+//! `$LLAMA_BENCH` after proving its build (#3740), in the same tg64 shape. With
+//! no `$LLAMA_BENCH`, the cell prints `UNMEASURED` and reports no speedup.
 
 use realizar::cuda::CudaExecutor;
 use realizar::gguf::{
     MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda, QuantizedGenerateConfig,
 };
 use std::path::Path;
+use std::process::Command;
 use std::time::Instant;
 
-/// Model tier configuration with verified llama.cpp baselines
+/// Model tier configuration
 #[derive(Debug, Clone)]
 struct ModelTier {
     name: &'static str,
     size: &'static str,
     gguf_path: &'static str,
-    /// llama.cpp GPU baseline (tg64, ngl=99)
-    llama_cpp_gpu_baseline: f64,
-    /// llama.cpp CPU baseline (tg64, ngl=0)
-    llama_cpp_cpu_baseline: f64,
     /// Prompt tokens for benchmark (static slice)
     prompt_tokens: &'static [u32],
+}
+
+/// llama.cpp's tg64 decode throughput for `model` at `ngl` GPU layers, measured
+/// by the pinned `llama-bench`, or the reason it was not measured. Never a
+/// constant (#3773); never a binary found on PATH (#3740).
+fn llama_bench_tg64(model: &str, ngl: u32) -> Result<f64, String> {
+    let bin = std::env::var("LLAMA_BENCH")
+        .ok()
+        .filter(|b| !b.is_empty())
+        .ok_or_else(|| {
+            "UNMEASURED: LLAMA_BENCH is not set — `. scripts/llama_bin.sh` exports the pinned, \
+             build-proven llama-bench"
+                .to_string()
+        })?;
+    let ngl = ngl.to_string();
+    let out = Command::new(&bin)
+        .args(["-m", model, "-p", "0", "-n", "64", "-ngl", &ngl, "-o", "json"])
+        .output()
+        .map_err(|e| format!("UNMEASURED: {bin} did not start: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "UNMEASURED: {bin} exited {:?}: {}",
+            out.status.code(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    let rows: serde_json::Value = serde_json::from_slice(&out.stdout)
+        .map_err(|e| format!("UNMEASURED: {bin} printed no JSON: {e}"))?;
+    rows.as_array()
+        .and_then(|r| r.iter().find(|row| row["n_gen"] == 64))
+        .and_then(|row| row["avg_ts"].as_f64())
+        .ok_or_else(|| format!("UNMEASURED: {bin}'s JSON has no n_gen=64 row with avg_ts"))
 }
 
 /// Qwen2.5-Coder chat prompt: "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n"
@@ -34,20 +70,12 @@ const QWEN_PROMPT: &[u32] = &[
 /// StarCoder2 prompt tokens
 const STARCODER_PROMPT: &[u32] = &[1, 1528, 349, 220, 17, 10, 17, 30];
 
-/// Verified llama-bench baselines (RTX 4090, tg64):
-/// | Model | CPU | GPU |
-/// |-------|-----|-----|
-/// | qwen2 0.5B Q4_0 | 194.28 | 594.10 |
-/// | qwen2 1.5B Q4_K_M | 86.43 | 377.75 |
-/// | starcoder2 3B Q4_K_M | 48.07 | 247.43 |
 const TIERS: &[ModelTier] = &[
     ModelTier {
         name: "tiny",
         size: "0.5B",
         gguf_path:
             "/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-0.5b-instruct-q4_0.gguf",
-        llama_cpp_gpu_baseline: 594.10,
-        llama_cpp_cpu_baseline: 194.28,
         prompt_tokens: QWEN_PROMPT,
     },
     ModelTier {
@@ -55,29 +83,48 @@ const TIERS: &[ModelTier] = &[
         size: "1.5B",
         gguf_path:
             "/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
-        llama_cpp_gpu_baseline: 377.75,
-        llama_cpp_cpu_baseline: 86.43,
         prompt_tokens: QWEN_PROMPT,
     },
     ModelTier {
         name: "medium",
         size: "3B",
         gguf_path: "/home/noah/src/single-shot-eval/models/raw/starcoder2-3b-q4_k_m.gguf",
-        llama_cpp_gpu_baseline: 247.43,
-        llama_cpp_cpu_baseline: 48.07,
         prompt_tokens: STARCODER_PROMPT,
     },
 ];
 
-/// Benchmark result for a single cell
+/// Benchmark result for a single cell. `llama` is the measured llama.cpp
+/// throughput, or the reason it was not measured; with no measurement there is
+/// no speedup and no pass/fail.
 #[derive(Debug, Clone)]
 struct BenchResult {
     tier: String,
     backend: String,
     apr_tok_s: f64,
-    llama_baseline: f64,
-    speedup: f64,
-    meets_2x: bool,
+    llama: Result<f64, String>,
+}
+
+impl BenchResult {
+    fn speedup(&self) -> Option<f64> {
+        self.llama.as_ref().ok().map(|l| self.apr_tok_s / l)
+    }
+    fn meets_2x(&self) -> Option<bool> {
+        self.speedup().map(|s| s >= 2.0)
+    }
+}
+
+/// Print one cell's APR number beside llama.cpp's measured one (or UNMEASURED).
+fn report_cell(backend: &str, tok_s: f64, llama: &Result<f64, String>) {
+    println!("         APR {backend}:      {tok_s:.1} tok/s");
+    match llama {
+        Ok(l) => {
+            let speedup = tok_s / l;
+            let status = if speedup >= 2.0 { "✅ PASS" } else { "❌ FAIL" };
+            println!("         llama.cpp:    {l:.1} tok/s (pinned llama-bench, tg64)");
+            println!("         Speedup:      {speedup:.2}x {status}");
+        },
+        Err(why) => println!("         llama.cpp:    {why}"),
+    }
 }
 
 fn benchmark_apr_gpu(
@@ -342,24 +389,13 @@ fn main() {
         println!("\n  [CPU] Running APR CPU benchmark...");
         match benchmark_apr_cpu(tier.gguf_path, tier.prompt_tokens, max_tokens) {
             Ok(tok_s) => {
-                let speedup = tok_s / tier.llama_cpp_cpu_baseline;
-                let meets_2x = speedup >= 2.0;
-                let status = if meets_2x { "✅ PASS" } else { "❌ FAIL" };
-
-                println!("         APR CPU:      {:.1} tok/s", tok_s);
-                println!(
-                    "         llama.cpp:    {:.1} tok/s",
-                    tier.llama_cpp_cpu_baseline
-                );
-                println!("         Speedup:      {:.2}x {}", speedup, status);
-
+                let llama = llama_bench_tg64(tier.gguf_path, 0);
+                report_cell("CPU", tok_s, &llama);
                 results.push(BenchResult {
                     tier: tier.name.to_string(),
                     backend: "CPU".to_string(),
                     apr_tok_s: tok_s,
-                    llama_baseline: tier.llama_cpp_cpu_baseline,
-                    speedup,
-                    meets_2x,
+                    llama,
                 });
             },
             Err(e) => {
@@ -372,24 +408,13 @@ fn main() {
             println!("\n  [GPU] Running APR GPU benchmark...");
             match benchmark_apr_gpu(tier.gguf_path, tier.prompt_tokens, max_tokens) {
                 Ok(tok_s) => {
-                    let speedup = tok_s / tier.llama_cpp_gpu_baseline;
-                    let meets_2x = speedup >= 2.0;
-                    let status = if meets_2x { "✅ PASS" } else { "❌ FAIL" };
-
-                    println!("         APR GPU:      {:.1} tok/s", tok_s);
-                    println!(
-                        "         llama.cpp:    {:.1} tok/s",
-                        tier.llama_cpp_gpu_baseline
-                    );
-                    println!("         Speedup:      {:.2}x {}", speedup, status);
-
+                    let llama = llama_bench_tg64(tier.gguf_path, 99);
+                    report_cell("GPU", tok_s, &llama);
                     results.push(BenchResult {
                         tier: tier.name.to_string(),
                         backend: "GPU".to_string(),
                         apr_tok_s: tok_s,
-                        llama_baseline: tier.llama_cpp_gpu_baseline,
-                        speedup,
-                        meets_2x,
+                        llama,
                     });
                 },
                 Err(e) => {
@@ -408,25 +433,41 @@ fn main() {
     println!("╠═════════╬═════════╬═══════════════╬═══════════════╬══════════╬══════════╣");
 
     let mut all_pass = true;
+    let mut unmeasured = 0usize;
     let mut failing_cells = Vec::new();
 
     for r in &results {
-        let status = if r.meets_2x { "✅ PASS" } else { "❌ FAIL" };
-        println!(
-            "║ {:7} ║ {:7} ║ {:>13.1} ║ {:>13.1} ║ {:>7.2}x ║ {:>8} ║",
-            r.tier, r.backend, r.apr_tok_s, r.llama_baseline, r.speedup, status
-        );
-
-        if !r.meets_2x {
-            all_pass = false;
-            failing_cells.push(r.clone());
+        match (&r.llama, r.speedup(), r.meets_2x()) {
+            (Ok(l), Some(speedup), Some(meets_2x)) => {
+                let status = if meets_2x { "✅ PASS" } else { "❌ FAIL" };
+                println!(
+                    "║ {:7} ║ {:7} ║ {:>13.1} ║ {:>13.1} ║ {:>7.2}x ║ {:>8} ║",
+                    r.tier, r.backend, r.apr_tok_s, l, speedup, status
+                );
+                if !meets_2x {
+                    all_pass = false;
+                    failing_cells.push(r.clone());
+                }
+            },
+            _ => {
+                unmeasured += 1;
+                println!(
+                    "║ {:7} ║ {:7} ║ {:>13.1} ║ {:>13} ║ {:>8} ║ {:>8} ║",
+                    r.tier, r.backend, r.apr_tok_s, "UNMEASURED", "—", "—"
+                );
+            },
         }
     }
 
     println!("╚═════════╩═════════╩═══════════════╩═══════════════╩══════════╩══════════╝");
     println!();
 
-    if all_pass {
+    if unmeasured > 0 {
+        println!(
+            "{unmeasured} cell(s) have no llama.cpp measurement and no verdict: \
+             `. scripts/llama_bin.sh` to measure them with the pinned llama-bench."
+        );
+    } else if all_pass {
         println!("╔══════════════════════════════════════════════════════════════════════════╗");
         println!("║                    ✅ ALL CELLS MEET 2x TARGET!                          ║");
         println!("╚══════════════════════════════════════════════════════════════════════════╝");
@@ -437,7 +478,9 @@ fn main() {
 
         // Five-whys for each failing cell
         for r in &failing_cells {
-            five_whys_analysis(&r.tier, &r.backend, r.apr_tok_s, r.llama_baseline * 2.0);
+            if let Ok(l) = r.llama {
+                five_whys_analysis(&r.tier, &r.backend, r.apr_tok_s, l * 2.0);
+            }
         }
     }
 }
