@@ -170,18 +170,21 @@ Start the server with GPU acceleration for maximum throughput:
 # Single-request GPU mode (~83 tok/s on RTX 4090)
 apr serve model.gguf --port 8080 --gpu
 
-# Batched GPU mode - 2.9x faster than Ollama (~850 tok/s)
+# Batched GPU mode (~850 tok/s)
 apr serve model.gguf --port 8080 --gpu --batch
 ```
 
-#### Performance Comparison
+#### Performance
 
-| Mode | Throughput | vs Ollama | Memory |
-|------|------------|-----------|--------|
-| CPU (baseline) | ~15 tok/s | 0.05x | 1.1 GB |
-| GPU (single) | ~83 tok/s | 0.25x | 1.5 GB |
-| GPU (batched) | ~850 tok/s | 2.9x | 1.9 GB |
-| Ollama | ~333 tok/s | 1.0x | - |
+| Mode | Throughput | Memory |
+|------|------------|--------|
+| CPU (baseline) | ~15 tok/s | 1.1 GB |
+| GPU (single) | ~83 tok/s | 1.5 GB |
+| GPU (batched) | ~850 tok/s | 1.9 GB |
+
+Comparisons against other engines are published only with a dated receipt, in
+[docs/BEATS.md](https://github.com/paiml/aprender/blob/main/docs/BEATS.md). An earlier "2.9x faster than Ollama" line here,
+set against an unreceipted "Ollama ~333 tok/s", was removed (#3773).
 
 #### GPU Server Output
 

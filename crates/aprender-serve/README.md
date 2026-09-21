@@ -211,11 +211,11 @@ Automatic template detection from model metadata:
 |-------|------|--------|---------|------------|
 | Qwen2.5-Coder Q4\_K\_M | 1.5B | APR | RTX 4090 (CUDA) | 240 tok/s |
 | Phi-2 Q4\_K\_M | 2.7B | GGUF | RTX 4090 (CUDA) | 276 tok/s |
-| Phi-2 Q4\_K\_M | 2.7B | GGUF | llama.cpp CUDA | 256 tok/s |
-| Phi-2 Q4\_K\_M | 2.7B | GGUF | Ollama CUDA | 228 tok/s |
 
-realizar achieves 8--21% faster inference than llama.cpp/Ollama via pure
-Rust CUDA PTX generation.
+Comparisons against other engines are published only with a dated receipt, in
+[docs/BEATS.md](https://github.com/paiml/aprender/blob/main/docs/BEATS.md). The
+llama.cpp (256 tok/s) and Ollama (228 tok/s) rows and the "8--21% faster" claim
+that stood here had no receipt and were removed (#3773).
 
 ### Classical ML (APR Format)
 

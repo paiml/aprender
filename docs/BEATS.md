@@ -62,7 +62,7 @@ apr **loses** speed in these **specific, narrow** cases (not a blanket concessio
 
 | Speed loss (narrow case) | Result | Note |
 |--------------------------|--------|------|
-| **llama.cpp** single-request c=1 decode | llama.cpp ~1.55× faster (431 vs 277 tok/s, RTX 4090) | This is *llama.cpp*, not Ollama; against Ollama on the same host apr is at **parity** (1.015–1.109×), not ahead — the 1.371× win previously cited here is withdrawn |
+| **llama.cpp** single-request c=1 decode | llama.cpp ~1.55× faster (431 vs 277 tok/s, RTX 4090; llama.cpp figure receipt: paiml/candle-vs-apr `results/bootstrap-llama-cpp-b7746-fair-20260405-180222.json`, 2026-04-05, mean 431.1) | This is *llama.cpp*, not Ollama; against Ollama on the same host apr is at **parity** (1.015–1.109×), not ahead — the 1.371× win previously cited here is withdrawn |
 | **7B-Q4K on GB10 Blackwell** | ~12 tok/s (bandwidth-bound; DP4A path degraded) | Memory-wall + degraded DP4A on Blackwell, not a kernel-design loss |
 | **Short-prompt one-shot wall-clock vs Ollama** | apr CLI ~2.7–3.9 s fixed startup vs Ollama's resident daemon | Decode-rate beat is steady-state; one-shot startup is a separate, scoped comparison (see Pillar 4) |
 | **PCA fit_transform vs sklearn** | apr ~18.6× *slower* | sklearn delegates to LAPACK-SVD; apr's decomposition is unoptimized |
@@ -130,7 +130,7 @@ named** set of losses — not a blanket speed concession. See
 |------|--------|--------|------|
 | **GPU decode throughput vs Ollama** | tok/s ratio (RTX-4090 sm_89) | 🟰 **PARITY (no-collapse floor)** — apr **1.015–1.109×** ollama, same qwen2.5-coder-1.5b Q4_K_M GGUF, same host. Gate = apr median-of-7 ≥ ollama median **× 0.90** (`beat_threshold: 0.9000`). That is a floor against collapse, **not** a win — a green run proves apr did not fall off a cliff, nothing more. ⛔ The prior **1.371× WON claim is WITHDRAWN** (see below) | manual/GPU gate (no NVIDIA CI runner) · `beat_ollama_decode_throughput_speed` · `beat-ollama-decode-throughput-speed-v1` |
 | **Fail-closed correctness** (headline correctness) | broken-artifact classes rejected | ✅ **WON** — apr rejects **10/10** semantically-broken tensor classes (zero/NaN/Inf/L2~0/constant/shape) fail-closed; **llama.cpp accepts** the same (measured: zeroed-ffn GGUF → `apr validate` ✗ FAIL, `llama-cli` 0 errors + ran it) | CI `beat_fail_closed_garbage` · `apr-fail-closed-garbage-beat-v1` |
-| **llama.cpp** single-request c=1 decode | tok/s ratio (RTX-4090) | ⚖️ **NARROW LOSS** — llama.cpp ~1.55× *faster* (431 vs 277 tok/s) at concurrency=1; this is *llama.cpp*, not Ollama, against which apr measures at parity (1.015–1.109×) | — |
+| **llama.cpp** single-request c=1 decode | tok/s ratio (RTX-4090) | ⚖️ **NARROW LOSS** — llama.cpp ~1.55× *faster* (431 vs 277 tok/s) at concurrency=1 (llama.cpp figure receipt: paiml/candle-vs-apr `results/bootstrap-llama-cpp-b7746-fair-20260405-180222.json`, 2026-04-05); this is *llama.cpp*, not Ollama, against which apr measures at parity (1.015–1.109×) | — |
 | 7B-Q4K decode on GB10 Blackwell | tok/s | ⚖️ **NARROW LOSS** — ~12 tok/s (bandwidth-bound; DP4A path degraded on Blackwell) | — |
 | Short-prompt one-shot wall-clock vs Ollama | end-to-end seconds | ⚖️ **NARROW LOSS** — apr CLI ~2.7–3.9 s fixed startup vs Ollama's resident daemon (separate from the steady-state decode beat above) | — |
 
