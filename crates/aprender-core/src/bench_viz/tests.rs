@@ -449,8 +449,8 @@ fn test_truncate_long_string() {
 }
 
 /// #3773: an absent Ollama / llama.cpp measurement used to render as a ratio
-/// against 318 / 200 tok/s "from spec" (scientific + profiling log) or against
-/// 1.0 (compact). Every renderer must say UNMEASURED and print no ratio.
+/// against hard-coded Ollama / llama.cpp constants "from spec" (scientific +
+/// profiling log) or against 1.0 (compact). Every renderer must say UNMEASURED and print no ratio.
 #[test]
 fn test_unmeasured_comparators_render_no_ratio() {
     let mut grid = BenchmarkGrid::new();

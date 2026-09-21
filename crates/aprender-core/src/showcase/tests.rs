@@ -397,7 +397,7 @@ fn test_showcase_runner_check_2x_ollama_with_gguf_fallback() {
 }
 
 /// #3773: with no Ollama measurement the 2x target used to be judged against a
-/// "default baseline" of 318 tok/s. An unmeasured comparison must not pass.
+/// hard-coded "default baseline". An unmeasured comparison must not pass.
 #[test]
 fn test_showcase_runner_check_2x_ollama_unmeasured_does_not_pass() {
     let config = ShowcaseConfig::default();
@@ -415,7 +415,7 @@ fn test_showcase_runner_check_2x_ollama_unmeasured_does_not_pass() {
 }
 
 /// #3773: with no llama.cpp measurement Point 41 used to be judged against a
-/// "default baseline" of 200 tok/s. An unmeasured comparison must not pass.
+/// hard-coded "default baseline". An unmeasured comparison must not pass.
 #[test]
 fn test_showcase_runner_check_point_41_unmeasured_does_not_pass() {
     let config = ShowcaseConfig::default();

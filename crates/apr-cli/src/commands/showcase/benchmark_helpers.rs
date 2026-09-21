@@ -54,9 +54,9 @@ pub(super) fn run_llama_cpp_bench(_config: &ShowcaseConfig) -> Result<(f64, f64)
 
 /// Ollama's throughput and TTFT from an `/api/generate` response body.
 ///
-/// #3773: a response without `eval_count`/`eval_duration` used to read as
-/// 200.0 tok/s and one without `prompt_eval_duration` as a 150.0 ms TTFT —
-/// constants printed as Ollama's measurement. Each is now `UNMEASURED`, naming
+/// #3773: a response without `eval_count`/`eval_duration`, or without
+/// `prompt_eval_duration`, used to fall back to a hard-coded constant —
+/// printed as Ollama's measurement. Each is now `UNMEASURED`, naming
 /// the field that was missing.
 pub(super) fn ollama_tps_ttft(response: &str) -> Result<(f64, f64)> {
     let unmeasured =

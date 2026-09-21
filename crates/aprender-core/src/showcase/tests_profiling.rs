@@ -200,8 +200,9 @@ fn test_pmat_verification_2x_ollama_pass() {
     assert!(verification.ollama_2x_pass);
 }
 
-/// #3773: an unmeasured comparator used to default to Ollama 318 / llama.cpp
-/// 200 tok/s. With neither recorded, no comparison may pass however fast APR is.
+/// #3773: an unmeasured comparator used to default to a hard-coded Ollama /
+/// llama.cpp constant. With neither recorded, no comparison may pass however
+/// fast APR is.
 #[test]
 fn test_pmat_verification_unmeasured_comparators_do_not_pass() {
     let config = ShowcaseConfig::default();

@@ -56,7 +56,8 @@ fn an_unrequested_baseline_is_absent_not_unmeasured() {
 }
 
 /// Ollama IS measured (its own eval counters), but a response that lacks them
-/// used to read as 200.0 tok/s and a 150.0 ms TTFT. Each gap is UNMEASURED now.
+/// used to fall back to hard-coded throughput and TTFT constants. Each gap is
+/// UNMEASURED now.
 #[test]
 fn ollama_counters_or_unmeasured_never_a_fallback_constant() {
     let ok = r#"{"eval_count":100,"eval_duration":2000000000,"prompt_eval_duration":250000000}"#;
