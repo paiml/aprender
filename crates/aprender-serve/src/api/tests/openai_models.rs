@@ -33,8 +33,7 @@ fn test_chat_chunk_choice_serialize_more_cov() {
         index: 0,
         delta: ChatDelta {
             role: Some("assistant".to_string()),
-            content: Some("Hello".to_string()),
-        },
+            content: Some("Hello".to_string()), reasoning_content: None },
         finish_reason: None,
     };
     let json = serde_json::to_string(&choice).expect("serialize");
@@ -46,8 +45,7 @@ fn test_chat_chunk_choice_serialize_more_cov() {
 fn test_chat_delta_empty_serialize_more_cov() {
     let delta = ChatDelta {
         role: None,
-        content: None,
-    };
+        content: None, reasoning_content: None };
     let json = serde_json::to_string(&delta).expect("serialize");
     assert_eq!(json, "{}");
 }

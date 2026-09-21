@@ -193,8 +193,7 @@ fn test_openai_model_fields_cov() {
 fn test_chat_delta_fields_cov() {
     let delta = ChatDelta {
         role: Some("assistant".to_string()),
-        content: Some("Hello".to_string()),
-    };
+        content: Some("Hello".to_string()), reasoning_content: None };
     assert!(delta.role.is_some());
     assert!(delta.content.is_some());
 }
@@ -205,8 +204,7 @@ fn test_chat_chunk_choice_fields_cov() {
         index: 0,
         delta: ChatDelta {
             role: Some("assistant".to_string()),
-            content: None,
-        },
+            content: None, reasoning_content: None },
         finish_reason: None,
     };
     assert_eq!(choice.index, 0);

@@ -279,8 +279,7 @@ fn test_chat_completion_chunk_serde() {
             index: 0,
             delta: ChatDelta {
                 role: Some("assistant".to_string()),
-                content: Some("Hello".to_string()),
-            },
+                content: Some("Hello".to_string()), reasoning_content: None },
             finish_reason: None,
         }],
     stream_mode: None,
@@ -333,8 +332,7 @@ fn test_chat_chunk_choice_serde() {
         index: 0,
         delta: ChatDelta {
             role: None,
-            content: Some("world".to_string()),
-        },
+            content: Some("world".to_string()), reasoning_content: None },
         finish_reason: Some("stop".to_string()),
     };
     let json = serde_json::to_string(&choice).expect("JSON serialization failed");
@@ -350,8 +348,7 @@ fn test_chat_chunk_choice_debug() {
         index: 5,
         delta: ChatDelta {
             role: Some("user".to_string()),
-            content: None,
-        },
+            content: None, reasoning_content: None },
         finish_reason: None,
     };
     let debug = format!("{:?}", choice);
@@ -363,8 +360,7 @@ fn test_chat_chunk_choice_debug() {
 fn test_chat_delta_serde() {
     let delta = ChatDelta {
         role: Some("assistant".to_string()),
-        content: Some("response".to_string()),
-    };
+        content: Some("response".to_string()), reasoning_content: None };
     let json = serde_json::to_string(&delta).expect("JSON serialization failed");
     assert!(json.contains("assistant"));
     assert!(json.contains("response"));
@@ -376,8 +372,7 @@ fn test_chat_delta_serde() {
 fn test_chat_delta_debug() {
     let delta = ChatDelta {
         role: None,
-        content: Some("text".to_string()),
-    };
+        content: Some("text".to_string()), reasoning_content: None };
     let debug = format!("{:?}", delta);
     assert!(debug.contains("ChatDelta"));
 }
@@ -386,8 +381,7 @@ fn test_chat_delta_debug() {
 fn test_chat_delta_clone() {
     let delta = ChatDelta {
         role: Some("user".to_string()),
-        content: Some("hello".to_string()),
-    };
+        content: Some("hello".to_string()), reasoning_content: None };
     let cloned = delta.clone();
     assert_eq!(cloned.role.as_deref(), Some("user"));
     assert_eq!(cloned.content.as_deref(), Some("hello"));

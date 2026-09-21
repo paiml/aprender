@@ -22,8 +22,11 @@ fn try_safetensors_cuda_backend(
         Err(r) => return Some(r),
     };
 
-    let prompt = crate::api::realize_handlers::format_chat_messages(&request.messages, Some(&request.model));
-    let input_ids = tokenizer.encode(&prompt);
+    let (input_ids, chat_prompt) =
+        match tokenize_chat_request(&tokenizer, request, Some(&request.model), state) {
+            Ok(p) => p,
+            Err(r) => return Some(r),
+        };
     let max_tokens = request.max_tokens.unwrap_or(256).min(4096) as usize;
 
     // Qwen2 EOS: 151645 (<|endoftext|>)
@@ -105,9 +108,9 @@ async fn try_cuda_backend(
     };
     // GH-319: Use actual model architecture for chat template detection
     let arch_hint = state.model_architecture();
-    let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), state) {
-            Ok(ids) => ids,
+    let (prompt_ids, chat_prompt) =
+        match tokenize_chat_request(&tokenizer, request, arch_hint.as_deref(), state) {
+            Ok(p) => p,
             Err(r) => return Some(r),
         };
     if let Some(t) = t0 {
@@ -191,6 +194,7 @@ async fn try_cuda_backend(
             max_tokens,
             prompt_tokens,
             Some(timing_rx),
+            Some(&chat_prompt),
         ));
     }
 
@@ -250,6 +254,12 @@ async fn try_cuda_backend(
         .await
         .ok()
         .and_then(|phases| phases.to_timings(prompt_tokens, completion_tokens));
+    // #3723: the reasoning is split out of the answer; an unclosed block is refused.
+    let (reasoning, response_text) =
+        match split_chat_completion(state, &chat_prompt, &response_text, max_tokens) {
+            Ok(split) => split,
+            Err(r) => return Some(r),
+        };
     Some(build_chat_response(
         request_id.to_string(),
         request.model.clone(),
@@ -263,6 +273,7 @@ async fn try_cuda_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         timings,
+        reasoning,
     ))
 }
 
@@ -303,9 +314,9 @@ fn try_quantized_backend(
     };
     // GH-319: Use actual model architecture for chat template detection
     let arch_hint = state.model_architecture();
-    let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), state) {
-            Ok(ids) => ids,
+    let (prompt_ids, chat_prompt) =
+        match tokenize_chat_request(&tokenizer, request, arch_hint.as_deref(), state) {
+            Ok(p) => p,
             Err(r) => return Some(r),
         };
     let prompt_tokens = prompt_ids.len();
@@ -352,6 +363,7 @@ fn try_quantized_backend(
             // The CPU quantized decode loop does not separate prefill from
             // decode, so §3 timings are absent rather than zero.
             None,
+            Some(&chat_prompt),
         ));
     }
 
@@ -370,6 +382,12 @@ fn try_quantized_backend(
 
     let latency = start.elapsed();
     state.metrics.record_success(completion_tokens, latency);
+    // #3723: the reasoning is split out of the answer; an unclosed block is refused.
+    let (reasoning, text) =
+        match split_chat_completion(state, &chat_prompt, &text, max_tokens) {
+            Ok(split) => split,
+            Err(r) => return Some(r),
+        };
     Some(build_chat_response(
         request_id.to_string(),
         request.model.clone(),
@@ -383,6 +401,7 @@ fn try_quantized_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         None,
+        reasoning,
     ))
 }
 
@@ -427,9 +446,9 @@ fn try_apr_transformer_backend(
         Err(r) => return Some(r),
     };
     let arch_hint = state.model_architecture();
-    let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), state) {
-            Ok(ids) => ids,
+    let (prompt_ids, chat_prompt) =
+        match tokenize_chat_request(&tokenizer, request, arch_hint.as_deref(), state) {
+            Ok(p) => p,
             Err(r) => return Some(r),
         };
     let prompt_tokens = prompt_ids.len();
@@ -468,6 +487,7 @@ fn try_apr_transformer_backend(
             request.stop.as_deref(),
             max_tokens,
             prompt_tokens,
+            Some(&chat_prompt),
         ));
     }
 
@@ -478,6 +498,12 @@ fn try_apr_transformer_backend(
 
     let latency = start.elapsed();
     state.metrics.record_success(completion_tokens, latency);
+    // #3723: the reasoning is split out of the answer; an unclosed block is refused.
+    let (reasoning, text) =
+        match split_chat_completion(state, &chat_prompt, &text, max_tokens) {
+            Ok(split) => split,
+            Err(r) => return Some(r),
+        };
     Some(build_chat_response(
         request_id.to_string(),
         request.model.clone(),
@@ -491,6 +517,7 @@ fn try_apr_transformer_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         None,
+        reasoning,
     ))
 }
 
@@ -550,11 +577,11 @@ fn registry_fallback(
         Err(e) => return fail_response(state, super::model_resolution_status(&e), e),
     };
 
-    let prompt_text = format_chat_messages(&request.messages, Some(&request.model));
-    let prompt_ids = tokenizer.encode(&prompt_text);
-    if prompt_ids.is_empty() {
-        return fail_response(state, StatusCode::BAD_REQUEST, "Messages cannot be empty");
-    }
+    let (prompt_ids, chat_prompt) =
+        match tokenize_chat_request(&tokenizer, request, Some(&request.model), state) {
+            Ok(p) => p,
+            Err(r) => return r,
+        };
 
     let prompt_tokens = prompt_ids.len();
     let prompt: Vec<usize> = prompt_ids.iter().map(|&id| id as usize).collect();
@@ -585,6 +612,7 @@ fn registry_fallback(
             request.stop.as_deref(),
             request.max_tokens.unwrap_or(256),
             prompt_tokens,
+            Some(&chat_prompt),
         );
     }
 
@@ -597,6 +625,12 @@ fn registry_fallback(
     state.metrics.record_success(completion_tokens, duration);
 
     let max_tokens = request.max_tokens.unwrap_or(256);
+    // #3723: the reasoning is split out of the answer; an unclosed block is refused.
+    let (reasoning, response_text) =
+        match split_chat_completion(state, &chat_prompt, &response_text, max_tokens) {
+            Ok(split) => split,
+            Err(r) => return r,
+        };
     build_chat_response(
         request_id.to_string(),
         request.model.clone(),
@@ -610,6 +644,7 @@ fn registry_fallback(
         request.tools.as_deref(),
         request_tool_choice(request),
         None,
+        reasoning,
     )
 }
 
@@ -696,9 +731,9 @@ async fn try_apr_q4k_chat_backend(
         Err(r) => return Some(r),
     };
     let arch_hint = state.model_architecture();
-    let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), state) {
-            Ok(ids) => ids,
+    let (prompt_ids, chat_prompt) =
+        match tokenize_chat_request(&tokenizer, request, arch_hint.as_deref(), state) {
+            Ok(p) => p,
             Err(r) => return Some(r),
         };
     let prompt_tokens = prompt_ids.len();
@@ -769,6 +804,18 @@ async fn try_apr_q4k_chat_backend(
         .metrics
         .record_success(completion_tokens, start.elapsed());
 
+    // #3723: the reasoning is split out of the answer; an unclosed block is refused.
+
+    let (reasoning, text) =
+
+        match split_chat_completion(state, &chat_prompt, &text, max_tokens) {
+
+            Ok(split) => split,
+
+            Err(r) => return Some(r),
+
+        };
+
     Some(build_chat_response(
         request_id.to_string(),
         request.model.clone(),
@@ -782,6 +829,9 @@ async fn try_apr_q4k_chat_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         None,
+
+        reasoning,
+
     ))
 }
 
@@ -991,13 +1041,13 @@ fn try_qwen3_moe_backend(
         Err(r) => return Some(r),
     };
 
-    let input_ids = match tokenize_chat_prompt(
+    let (input_ids, chat_prompt) = match tokenize_chat_request(
         &tokenizer,
-        &request.messages,
+        request,
         Some(&request.model),
         state,
     ) {
-        Ok(ids) => ids,
+        Ok(p) => p,
         Err(r) => return Some(r),
     };
     let prompt_token_count = input_ids.len();
@@ -1075,6 +1125,7 @@ fn try_qwen3_moe_backend(
             prompt_token_count,
             // The MoE generator reports no phase split; §3 timings are absent.
             None,
+            Some(&chat_prompt),
         ));
     }
 
@@ -1113,6 +1164,18 @@ fn try_qwen3_moe_backend(
     let duration = start.elapsed();
     state.metrics.record_success(completion_tokens, duration);
 
+    // #3723: the reasoning is split out of the answer; an unclosed block is refused.
+
+    let (reasoning, response_text) =
+
+        match split_chat_completion(state, &chat_prompt, &response_text, max_tokens) {
+
+            Ok(split) => split,
+
+            Err(r) => return Some(r),
+
+        };
+
     Some(build_chat_response(
         request_id.to_string(),
         request.model.clone(),
@@ -1126,6 +1189,9 @@ fn try_qwen3_moe_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         None,
+
+        reasoning,
+
     ))
 }
 

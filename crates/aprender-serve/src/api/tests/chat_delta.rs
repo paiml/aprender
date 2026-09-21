@@ -18,8 +18,7 @@ use crate::api::*;
 fn test_chat_delta_debug_clone_cov() {
     let delta = ChatDelta {
         role: Some("assistant".to_string()),
-        content: Some("Hello".to_string()),
-    };
+        content: Some("Hello".to_string()), reasoning_content: None };
     let debug = format!("{:?}", delta);
     assert!(debug.contains("ChatDelta"));
 
@@ -31,8 +30,7 @@ fn test_chat_delta_debug_clone_cov() {
 fn test_chat_delta_empty_cov() {
     let delta = ChatDelta {
         role: None,
-        content: None,
-    };
+        content: None, reasoning_content: None };
     let json = serde_json::to_string(&delta).expect("serialize");
     // Empty delta should have null fields
     assert!(json.contains("null") || !json.is_empty());
@@ -145,8 +143,7 @@ fn test_chat_chunk_choice_debug_clone_cov() {
         index: 0,
         delta: ChatDelta {
             role: Some("assistant".to_string()),
-            content: Some("Test".to_string()),
-        },
+            content: Some("Test".to_string()), reasoning_content: None },
         finish_reason: Some("stop".to_string()),
     };
     let debug = format!("{:?}", choice);

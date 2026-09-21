@@ -218,6 +218,9 @@ pub struct AppState {
     mapped_gguf_model: Option<Arc<crate::gguf::MappedGGUFModel>>,
     /// GH-330: Cached EOS token ID (avoids RwLock in hot path)
     cached_eos_token_id: Option<u32>,
+    /// #3755: the served model file's OWN chat template, rendered as HF renders it
+    /// (set by `with_chat_template`); the per-family template is only the fallback.
+    chat_template: Option<Arc<crate::chat_template::EmbeddedChatTemplate>>,
     /// GH-152: Enable verbose request/response logging
     verbose: bool,
     /// GH-103: Enable inference tracing (propagates into QuantizedGenerateConfig.trace)

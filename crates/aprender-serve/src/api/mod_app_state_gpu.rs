@@ -62,6 +62,7 @@ impl AppState {
             cached_architecture: None,
             mapped_gguf_model: None,
             cached_eos_token_id: None,
+            chat_template: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -119,6 +120,7 @@ impl AppState {
             cached_architecture: None,
             mapped_gguf_model: None,
             cached_eos_token_id: None,
+            chat_template: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -184,6 +186,7 @@ impl AppState {
             cached_architecture: arch,
             mapped_gguf_model: None,
             cached_eos_token_id: None,
+            chat_template: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -253,6 +256,7 @@ impl AppState {
             cached_architecture: arch,
             mapped_gguf_model: None,
             cached_eos_token_id: eos,
+            chat_template: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -310,6 +314,7 @@ impl AppState {
             cached_architecture: arch,
             mapped_gguf_model: None,
             cached_eos_token_id: eos,
+            chat_template: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -372,6 +377,7 @@ impl AppState {
             cached_architecture: None,
             mapped_gguf_model: None,
             cached_eos_token_id: None,
+            chat_template: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -596,6 +602,7 @@ impl AppState {
             cached_architecture: None,
             mapped_gguf_model: None,
             cached_eos_token_id: eos_id,
+            chat_template: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -645,6 +652,7 @@ impl AppState {
             cached_architecture: None,
             mapped_gguf_model: None,
             cached_eos_token_id: None,
+            chat_template: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -699,6 +707,23 @@ impl AppState {
     /// GH-319: Get model architecture from whichever backend is loaded.
     ///
     /// Used for chat template auto-detection instead of hardcoding "qwen".
+    /// Serve the model file's own chat template (#3755): every chat request is then
+    /// rendered through it, with the request's thinking mode (#3723).
+    #[must_use]
+    pub fn with_chat_template(
+        mut self,
+        template: Option<crate::chat_template::EmbeddedChatTemplate>,
+    ) -> Self {
+        self.chat_template = template.map(Arc::new);
+        self
+    }
+
+    /// The model file's own chat template, when it ships one (#3755).
+    #[must_use]
+    pub fn chat_template(&self) -> Option<&crate::chat_template::EmbeddedChatTemplate> {
+        self.chat_template.as_deref()
+    }
+
     /// Returns the architecture string (e.g., "qwen2", "llama", "phi2").
     #[must_use]
     pub fn model_architecture(&self) -> Option<String> {

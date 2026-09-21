@@ -301,6 +301,7 @@ fn test_chat_delta_only_role() {
     let delta = ChatDelta {
         role: Some("assistant".to_string()),
         content: None,
+        reasoning_content: None,
     };
     let json = serde_json::to_string(&delta).expect("serialize");
     assert!(json.contains("role"));
@@ -312,6 +313,7 @@ fn test_chat_delta_only_content() {
     let delta = ChatDelta {
         role: None,
         content: Some("hello".to_string()),
+        reasoning_content: None,
     };
     let json = serde_json::to_string(&delta).expect("serialize");
     assert!(!json.contains("role")); // skipped
@@ -323,6 +325,7 @@ fn test_chat_delta_both_none() {
     let delta = ChatDelta {
         role: None,
         content: None,
+        reasoning_content: None,
     };
     let json = serde_json::to_string(&delta).expect("serialize");
     assert_eq!(json, "{}");
@@ -333,6 +336,7 @@ fn test_chat_delta_empty_string_content_serializes() {
     let delta = ChatDelta {
         role: None,
         content: Some(String::new()),
+        reasoning_content: None,
     };
     let json = serde_json::to_string(&delta).expect("serialize");
     // Empty string is Some(""), not None, so it should serialize

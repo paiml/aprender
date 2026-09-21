@@ -359,8 +359,7 @@ fn test_chat_completion_chunk_serialize_more_cov() {
             index: 0,
             delta: ChatDelta {
                 role: None,
-                content: Some("world".to_string()),
-            },
+                content: Some("world".to_string()), reasoning_content: None },
             finish_reason: None,
         }],
     stream_mode: None,

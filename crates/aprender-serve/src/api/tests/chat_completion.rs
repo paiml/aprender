@@ -97,8 +97,7 @@ fn test_chat_chunk_choice_serialization() {
         index: 2,
         delta: ChatDelta {
             role: Some("user".to_string()),
-            content: Some("test content".to_string()),
-        },
+            content: Some("test content".to_string()), reasoning_content: None },
         finish_reason: None,
     };
 
@@ -118,8 +117,7 @@ fn test_chat_chunk_choice_with_finish_reason() {
         index: 0,
         delta: ChatDelta {
             role: None,
-            content: None,
-        },
+            content: None, reasoning_content: None },
         finish_reason: Some("length".to_string()),
     };
 
@@ -134,8 +132,7 @@ fn test_chat_chunk_choice_with_finish_reason() {
 fn test_chat_delta_empty() {
     let delta = ChatDelta {
         role: None,
-        content: None,
-    };
+        content: None, reasoning_content: None };
 
     let json = serde_json::to_string(&delta).expect("serialize");
     // Empty delta should still serialize (with skip_serializing_if)
@@ -148,8 +145,7 @@ fn test_chat_delta_empty() {
 fn test_chat_delta_clone_debug() {
     let delta = ChatDelta {
         role: Some("assistant".to_string()),
-        content: Some("response".to_string()),
-    };
+        content: Some("response".to_string()), reasoning_content: None };
     let cloned = delta.clone();
     assert_eq!(cloned.role, delta.role);
 

@@ -135,6 +135,15 @@ pub struct ChatCompletionRequest {
     /// Stop sequences
     #[serde(default)]
     pub stop: Option<Vec<String>>,
+    /// Per-request chat-template arguments, as vLLM and SGLang spell them (#3723):
+    /// `{"enable_thinking": true|false}` switches thinking for a model whose own chat
+    /// template has a thinking mode. Default: off wherever the model allows it; a
+    /// mode the model cannot honour is refused (HTTP 422), never ignored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_template_kwargs: Option<ChatTemplateKwargs>,
+    /// apr's top-level spelling of `chat_template_kwargs.enable_thinking` (#3723).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_thinking: Option<bool>,
     /// User identifier
     #[serde(default)]
     pub user: Option<String>,
@@ -160,6 +169,35 @@ pub struct StreamOptions {
     /// OpenAI's opt-in for usage on the terminal chunk.
     #[serde(default)]
     pub include_usage: bool,
+}
+
+/// `chat_template_kwargs` (#3723). Only `enable_thinking` is honoured, and any other
+/// key is rejected at deserialization rather than silently dropped.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChatTemplateKwargs {
+    /// Thinking ON (`true`) or OFF (`false`) for this request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_thinking: Option<bool>,
+}
+
+impl ChatCompletionRequest {
+    /// The thinking mode this request asks for (#3723): `chat_template_kwargs
+    /// .enable_thinking` or the top-level `enable_thinking`; `None` when neither is
+    /// set.
+    ///
+    /// # Errors
+    ///
+    /// Both spellings set to different values.
+    pub fn requested_thinking(&self) -> Result<Option<bool>, String> {
+        let kwarg = self.chat_template_kwargs.as_ref().and_then(|k| k.enable_thinking);
+        match (kwarg, self.enable_thinking) {
+            (Some(a), Some(b)) if a != b => Err(format!(
+                "chat_template_kwargs.enable_thinking ({a}) and enable_thinking ({b}) disagree"
+            )),
+            (a, b) => Ok(a.or(b)),
+        }
+    }
 }
 
 /// Chat message
@@ -188,6 +226,10 @@ pub struct ChatMessage {
     /// of the `tool_call` it answers. Lets tool results round-trip through the API.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    /// #3723: the model's reasoning (response side), kept out of `content`; the
+    /// field vLLM and DeepSeek use. Serialized only when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
 }
 
 // ============================================================================
@@ -746,6 +788,9 @@ pub struct ChatDelta {
     /// Content chunk
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
+    /// #3723: a reasoning chunk, streamed apart from `content` (vLLM/DeepSeek field)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
 }
 
 impl ChatCompletionChunk {
@@ -768,6 +813,7 @@ impl ChatCompletionChunk {
                         None
                     },
                     content,
+                    reasoning_content: None,
                 },
                 finish_reason,
             }],
@@ -798,6 +844,14 @@ impl ChatCompletionChunk {
     /// Create content chunk
     fn content(id: &str, model: &str, text: &str) -> Self {
         Self::new(id, model, Some(text.to_string()), None)
+    }
+
+    /// A reasoning chunk (#3723): the model's thinking, kept out of `content`.
+    fn reasoning(id: &str, model: &str, text: &str) -> Self {
+        let mut chunk = Self::new(id, model, None, None);
+        chunk.choices[0].delta.role = None;
+        chunk.choices[0].delta.reasoning_content = Some(text.to_string());
+        chunk
     }
 
     /// Create the terminal chunk, carrying the reason generation ACTUALLY ended.

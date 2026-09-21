@@ -83,6 +83,60 @@ fn tokenize_chat_prompt(
     Ok(ids)
 }
 
+/// Render, tokenize and validate a chat request's prompt, as every chat backend must
+/// (#3755, #3723): the served file's OWN template when it ships one, with the request's
+/// thinking mode resolved against it. A mode the model cannot honour, or conflicting
+/// spellings of it, is refused with HTTP 422 by name, never silently mapped.
+#[allow(clippy::result_large_err)]
+fn tokenize_chat_request(
+    tokenizer: &BPETokenizer,
+    request: &ChatCompletionRequest,
+    model_hint: Option<&str>,
+    state: &AppState,
+) -> Result<(Vec<u32>, crate::chat_template::ChatPrompt), Response> {
+    use crate::chat_template::{format_chat_prompt, ChatMessage as TemplateMessage};
+    let thinking = request
+        .requested_thinking()
+        .map_err(|e| fail_response(state, StatusCode::UNPROCESSABLE_ENTITY, e))?;
+    let messages: Vec<TemplateMessage> = request
+        .messages
+        .iter()
+        .map(|m| TemplateMessage::new(&m.role, &m.content))
+        .collect();
+    let prompt = format_chat_prompt(state.chat_template(), model_hint, &messages, thinking)
+        .map_err(|e| match e {
+            refused @ crate::error::RealizarError::ThinkingModeUnsupported { .. } => {
+                fail_response(state, StatusCode::UNPROCESSABLE_ENTITY, refused.to_string())
+            },
+            other => fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, other.to_string()),
+        })?;
+    let ids = tokenizer.encode(&prompt.text);
+    if ids.is_empty() {
+        return Err(fail_response(
+            state,
+            StatusCode::BAD_REQUEST,
+            "Messages cannot be empty",
+        ));
+    }
+    Ok((ids, prompt))
+}
+
+/// Split a chat completion into reasoning and answer, as production splits it (#3723).
+/// A think block still open when generation stopped is refused with HTTP 422 naming the
+/// `max_tokens` budget, never returned as an empty answer (#3720).
+#[allow(clippy::result_large_err)]
+fn split_chat_completion(
+    state: &AppState,
+    prompt: &crate::chat_template::ChatPrompt,
+    completion: &str,
+    max_tokens: usize,
+) -> Result<(Option<String>, String), Response> {
+    prompt
+        .split(completion, max_tokens)
+        .map(|split| (split.reasoning, split.answer))
+        .map_err(|e| fail_response(state, StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))
+}
+
 /// Extract common generation parameters from the request.
 ///
 /// GH-330: EOS resolution follows Design by Contract priority:
@@ -269,6 +323,7 @@ mod perf039_ignore_eos_tests {
                 name: None,
                 tool_calls: None,
                 tool_call_id: None,
+                reasoning_content: None,
             }],
             ignore_eos,
             ..Default::default()
@@ -436,6 +491,7 @@ mod pmat821_chat_handler_threading_tests {
                 name: None,
                 tool_calls: None,
                 tool_call_id: None,
+                reasoning_content: None,
             }],
             max_tokens: None,
             temperature: None,
@@ -452,6 +508,8 @@ mod pmat821_chat_handler_threading_tests {
             tools: None,
             tool_choice: None,
             stream_options: None,
+            chat_template_kwargs: None,
+            enable_thinking: None,
         }
     }
 
@@ -670,6 +728,7 @@ pub(crate) fn build_chat_response(
     tools: Option<&[super::OpenAiTool]>,
     tool_choice: Option<crate::grammar::ToolChoice>,
     timings: Option<super::Timings>,
+    reasoning: Option<String>,
 ) -> Response {
     let (brick_trace, step_trace, layer_trace) = build_trace_data(
         trace_level,
@@ -683,7 +742,7 @@ pub(crate) fn build_chat_response(
     // PMAT-801 no-regression: the tool-calling path is reached ONLY when the
     // request carried `tools`. Without tools the message is byte-identical to
     // pre-PMAT-801 (a plain assistant text turn + the original finish_reason).
-    let (message, finish_reason) = match tools {
+    let (mut message, finish_reason) = match tools {
         Some(tools) => build_tool_calling_message(text, finish_reason, tools, tool_choice.as_ref()),
         None => (
             ChatMessage {
@@ -694,6 +753,8 @@ pub(crate) fn build_chat_response(
             finish_reason,
         ),
     };
+    // #3723: the reasoning travels beside the answer, never inside it.
+    message.reasoning_content = reasoning;
 
     Json(ChatCompletionResponse {
         id: request_id,
@@ -748,6 +809,108 @@ fn decode_token(tokenizer: &BPETokenizer, token_id: u32) -> Option<String> {
     }
 }
 
+/// Routes streamed text to `reasoning_content` or `content` (#3723): inside the think
+/// block the prompt opened (Qwen3.5 ON) or the completion opened (Qwen3), text is
+/// reasoning; after `</think>` it is the answer. The non-streaming `ChatPrompt::split`
+/// is the same rule over the whole completion.
+struct ReasoningRouter {
+    in_think: bool,
+    may_open: bool,
+    trim_answer_start: bool,
+}
+
+impl ReasoningRouter {
+    fn new(prompt: Option<&crate::chat_template::ChatPrompt>) -> Self {
+        let opens = prompt.is_some_and(crate::chat_template::ChatPrompt::opens_think_block);
+        Self {
+            in_think: opens,
+            may_open: prompt.is_some() && !opens,
+            trim_answer_start: false,
+        }
+    }
+
+    /// Split one delta into `(is_reasoning, text)` pieces, in order.
+    fn route(&mut self, delta: &str) -> Vec<(bool, String)> {
+        let mut out = Vec::new();
+        let mut rest = delta;
+        if self.may_open {
+            if rest.trim().is_empty() {
+                return out;
+            }
+            self.may_open = false;
+            if let Some(after) = rest.trim_start().strip_prefix("<think>") {
+                self.in_think = true;
+                rest = after;
+            }
+        }
+        if self.in_think {
+            match rest.find("</think>") {
+                Some(close) => {
+                    if !rest[..close].is_empty() {
+                        out.push((true, rest[..close].to_string()));
+                    }
+                    self.in_think = false;
+                    self.trim_answer_start = true;
+                    rest = &rest[close + "</think>".len()..];
+                },
+                None => {
+                    if !rest.is_empty() {
+                        out.push((true, rest.to_string()));
+                    }
+                    return out;
+                },
+            }
+        }
+        if self.trim_answer_start {
+            rest = rest.trim_start();
+            if rest.is_empty() {
+                return out;
+            }
+            self.trim_answer_start = false;
+        }
+        if !rest.is_empty() {
+            out.push((false, rest.to_string()));
+        }
+        out
+    }
+
+    /// Whether the stream ended inside the think block (an error naming the budget).
+    fn unclosed(&self) -> bool {
+        self.in_think
+    }
+}
+
+/// The SSE events for one routed delta.
+fn routed_sse_events(
+    router: &mut ReasoningRouter,
+    request_id: &str,
+    model_name: &str,
+    delta: &str,
+) -> Vec<Result<Event, Infallible>> {
+    router
+        .route(delta)
+        .into_iter()
+        .filter_map(|(reasoning, text)| {
+            let chunk = if reasoning {
+                ChatCompletionChunk::reasoning(request_id, model_name, &text)
+            } else {
+                ChatCompletionChunk::content(request_id, model_name, &text)
+            };
+            sse_event(&chunk)
+        })
+        .collect()
+}
+
+/// The error event for a stream that ended inside its think block (#3723, #3720).
+fn unclosed_think_event(max_tokens: usize) -> Option<Result<Event, Infallible>> {
+    sse_event(&serde_json::json!({
+        "error": format!(
+            "think block unclosed within the {max_tokens}-token budget: the model was still \
+             reasoning when generation stopped"
+        )
+    }))
+}
+
 /// Build a pre-generated SSE streaming response (all tokens already generated).
 ///
 /// PMAT-759: precompute char-safe, stop-truncated deltas (the same fix as PMAT-758's
@@ -770,8 +933,10 @@ fn pregenerated_sse_response(
     stops: Option<&[String]>,
     max_tokens: usize,
     prompt_tokens: usize,
+    prompt: Option<&crate::chat_template::ChatPrompt>,
 ) -> Response {
     let completion_tokens = token_ids.len();
+    let mut router = ReasoningRouter::new(prompt);
     let StreamedText { deltas, stopped } = streaming_text_deltas(&tokenizer, &token_ids, stops);
     // #2375(6): `max_tokens` is a parameter so this path CANNOT emit a finish
     // reason without knowing the budget it was generated under. The terminal
@@ -792,8 +957,12 @@ fn pregenerated_sse_response(
         }
 
         for delta in &deltas {
-            let chunk = ChatCompletionChunk::content(&request_id, &model_name, delta);
-            if let Some(evt) = sse_event(&chunk) {
+            for evt in routed_sse_events(&mut router, &request_id, &model_name, delta) {
+                yield evt;
+            }
+        }
+        if router.unclosed() {
+            if let Some(evt) = unclosed_think_event(max_tokens) {
                 yield evt;
             }
         }
@@ -870,12 +1039,14 @@ pub(crate) fn true_streaming_sse_response(
     max_tokens: usize,
     prompt_tokens: usize,
     timings_rx: Option<tokio::sync::oneshot::Receiver<super::PhaseTimings>>,
+    prompt: Option<&crate::chat_template::ChatPrompt>,
 ) -> Response {
     use tokio_stream::wrappers::ReceiverStream;
     use tokio_stream::StreamExt;
 
     let token_stream = ReceiverStream::new(rx);
     let mut completion_tokens = 0usize;
+    let mut router = ReasoningRouter::new(prompt);
 
     let stream = async_stream::stream! {
         if let Some(evt) = sse_event(&ChatCompletionChunk::initial_with_mode(
@@ -892,8 +1063,7 @@ pub(crate) fn true_streaming_sse_response(
                 Ok(token_id) => {
                     completion_tokens += 1;
                     if let Some(text) = decode_token(&tokenizer, token_id) {
-                        let chunk = ChatCompletionChunk::content(&request_id, &model_name, &text);
-                        if let Some(evt) = sse_event(&chunk) {
+                        for evt in routed_sse_events(&mut router, &request_id, &model_name, &text) {
                             yield evt;
                         }
                     }
@@ -904,6 +1074,12 @@ pub(crate) fn true_streaming_sse_response(
                     }
                     break;
                 }
+            }
+        }
+
+        if router.unclosed() {
+            if let Some(evt) = unclosed_think_event(max_tokens) {
+                yield evt;
             }
         }
 
@@ -970,9 +1146,9 @@ fn try_gpu_backend(
     };
     // GH-319: Use actual model architecture for chat template detection
     let arch_hint = state.model_architecture();
-    let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), state) {
-            Ok(ids) => ids,
+    let (prompt_ids, chat_prompt) =
+        match tokenize_chat_request(&tokenizer, request, arch_hint.as_deref(), state) {
+            Ok(p) => p,
             Err(r) => return Some(r),
         };
     let prompt_tokens = prompt_ids.len();
@@ -1026,6 +1202,7 @@ fn try_gpu_backend(
             request.stop.as_deref(),
             max_tokens,
             prompt_tokens,
+            Some(&chat_prompt),
         ));
     }
 
@@ -1036,6 +1213,11 @@ fn try_gpu_backend(
 
     let latency = start.elapsed();
     state.metrics.record_success(completion_tokens, latency);
+    // #3723: the reasoning is split out of the answer; an unclosed block is refused.
+    let (reasoning, text) = match split_chat_completion(state, &chat_prompt, &text, max_tokens) {
+        Ok(split) => split,
+        Err(r) => return Some(r),
+    };
     Some(build_chat_response(
         request_id.to_string(),
         request.model.clone(),
@@ -1051,6 +1233,7 @@ fn try_gpu_backend(
         // This backend does not separate prefill from decode; §3 timings are
         // absent rather than zero.
         None,
+        reasoning,
     ))
 }
 
@@ -1073,9 +1256,9 @@ fn try_cached_backend(
     };
     // GH-319: Use actual model architecture for chat template detection
     let arch_hint = state.model_architecture();
-    let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), state) {
-            Ok(ids) => ids,
+    let (prompt_ids, chat_prompt) =
+        match tokenize_chat_request(&tokenizer, request, arch_hint.as_deref(), state) {
+            Ok(p) => p,
             Err(r) => return Some(r),
         };
     let prompt_tokens = prompt_ids.len();
@@ -1116,6 +1299,7 @@ fn try_cached_backend(
             request.stop.as_deref(),
             max_tokens,
             prompt_tokens,
+            Some(&chat_prompt),
         ));
     }
 
@@ -1126,6 +1310,11 @@ fn try_cached_backend(
 
     let latency = start.elapsed();
     state.metrics.record_success(completion_tokens, latency);
+    // #3723: the reasoning is split out of the answer; an unclosed block is refused.
+    let (reasoning, text) = match split_chat_completion(state, &chat_prompt, &text, max_tokens) {
+        Ok(split) => split,
+        Err(r) => return Some(r),
+    };
     Some(build_chat_response(
         request_id.to_string(),
         request.model.clone(),
@@ -1141,6 +1330,7 @@ fn try_cached_backend(
         // This backend does not separate prefill from decode; §3 timings are
         // absent rather than zero.
         None,
+        reasoning,
     ))
 }
 

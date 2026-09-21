@@ -420,8 +420,7 @@ fn test_chat_choice_with_large_index() {
 fn test_chat_delta_empty() {
     let delta = ChatDelta {
         role: None,
-        content: None,
-    };
+        content: None, reasoning_content: None };
 
     let json = serde_json::to_string(&delta).expect("serialize");
     // Should be empty object
@@ -432,8 +431,7 @@ fn test_chat_delta_empty() {
 fn test_chat_delta_both_present() {
     let delta = ChatDelta {
         role: Some("assistant".to_string()),
-        content: Some("Hello".to_string()),
-    };
+        content: Some("Hello".to_string()), reasoning_content: None };
 
     let json = serde_json::to_string(&delta).expect("serialize");
     assert!(json.contains("assistant"));
@@ -450,8 +448,7 @@ fn test_chat_chunk_choice_with_length_finish_reason() {
         index: 0,
         delta: ChatDelta {
             role: None,
-            content: None,
-        },
+            content: None, reasoning_content: None },
         finish_reason: Some("length".to_string()),
     };
 

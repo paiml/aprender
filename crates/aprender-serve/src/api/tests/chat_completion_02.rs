@@ -31,8 +31,7 @@ fn test_chat_completion_chunk_serialization() {
 fn test_chat_delta_serialization_skip_none() {
     let delta = ChatDelta {
         role: None,
-        content: Some("test".to_string()),
-    };
+        content: Some("test".to_string()), reasoning_content: None };
     let json = serde_json::to_string(&delta).expect("test");
 
     // Should not contain "role" when it's None
@@ -46,8 +45,7 @@ fn test_chat_chunk_choice_serialization() {
         index: 0,
         delta: ChatDelta {
             role: Some("assistant".to_string()),
-            content: None,
-        },
+            content: None, reasoning_content: None },
         finish_reason: None,
     };
     let json = serde_json::to_string(&choice).expect("test");

@@ -289,8 +289,7 @@ async fn test_generate_wrong_content_type() {
 fn test_chunk_delta_role_only() {
     let delta = ChatDelta {
         role: Some("assistant".to_string()),
-        content: None,
-    };
+        content: None, reasoning_content: None };
 
     let json = serde_json::to_string(&delta).expect("serialize");
     assert!(json.contains("assistant"));
@@ -300,8 +299,7 @@ fn test_chunk_delta_role_only() {
 fn test_chunk_delta_content_only() {
     let delta = ChatDelta {
         role: None,
-        content: Some("test content".to_string()),
-    };
+        content: Some("test content".to_string()), reasoning_content: None };
 
     let json = serde_json::to_string(&delta).expect("serialize");
     assert!(json.contains("test content"));
@@ -313,8 +311,7 @@ fn test_chunk_choice_structure() {
         index: 0,
         delta: ChatDelta {
             role: None,
-            content: Some("hi".to_string()),
-        },
+            content: Some("hi".to_string()), reasoning_content: None },
         finish_reason: None,
     };
 

@@ -170,8 +170,7 @@ fn test_chat_completion_chunk_serde() {
             index: 0,
             delta: crate::api::ChatDelta {
                 role: Some("assistant".to_string()),
-                content: None,
-            },
+                content: None, reasoning_content: None },
             finish_reason: None,
         }],
     stream_mode: None,
@@ -195,8 +194,7 @@ fn test_chat_completion_chunk_serde() {
 fn test_chat_delta_with_content() {
     let delta = crate::api::ChatDelta {
         role: None,
-        content: Some("Hello ".to_string()),
-    };
+        content: Some("Hello ".to_string()), reasoning_content: None };
     let json = serde_json::to_string(&delta).expect("JSON serialization failed");
     // role is None → should be skipped in serialization
     assert!(!json.contains("role"));
@@ -211,8 +209,7 @@ fn test_chat_chunk_choice_with_finish_reason() {
         index: 0,
         delta: crate::api::ChatDelta {
             role: None,
-            content: None,
-        },
+            content: None, reasoning_content: None },
         finish_reason: Some("stop".to_string()),
     };
     let json = serde_json::to_string(&choice).expect("JSON serialization failed");

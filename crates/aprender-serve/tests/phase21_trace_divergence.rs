@@ -140,6 +140,7 @@ mod tests {
             q4k_layers: None,
             lm_head_weight_q4k: None,
             lm_head_weight_q6k: None,
+            lm_head_tied: None,
         }
     }
 

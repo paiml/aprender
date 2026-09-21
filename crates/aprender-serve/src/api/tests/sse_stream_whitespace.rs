@@ -87,8 +87,7 @@ async fn sse_deltas_reassemble_with_whitespace_intact() {
         // Budget far above the token count: this stream ends on EOS, not length.
         256,
         0,
-        None,
-    );
+        None, None);
 
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await

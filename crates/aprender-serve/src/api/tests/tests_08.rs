@@ -321,8 +321,7 @@ fn test_chat_completion_chunk_created_timestamp() {
 fn test_chat_delta_role_only() {
     let delta = ChatDelta {
         role: Some("assistant".to_string()),
-        content: None,
-    };
+        content: None, reasoning_content: None };
 
     let json = serde_json::to_string(&delta).expect("serialize");
     assert!(json.contains("assistant"));
@@ -334,8 +333,7 @@ fn test_chat_delta_role_only() {
 fn test_chat_delta_content_only() {
     let delta = ChatDelta {
         role: None,
-        content: Some("Hello world".to_string()),
-    };
+        content: Some("Hello world".to_string()), reasoning_content: None };
 
     let json = serde_json::to_string(&delta).expect("serialize");
     assert!(json.contains("Hello world"));
@@ -347,8 +345,7 @@ fn test_chat_delta_content_only() {
 fn test_chat_delta_both_none() {
     let delta = ChatDelta {
         role: None,
-        content: None,
-    };
+        content: None, reasoning_content: None };
 
     let json = serde_json::to_string(&delta).expect("serialize");
     // Should produce empty object
@@ -365,8 +362,7 @@ fn test_chat_chunk_choice_with_finish_reason() {
         index: 0,
         delta: ChatDelta {
             role: None,
-            content: None,
-        },
+            content: None, reasoning_content: None },
         finish_reason: Some("length".to_string()),
     };
 
@@ -380,8 +376,7 @@ fn test_chat_chunk_choice_without_finish_reason() {
         index: 0,
         delta: ChatDelta {
             role: None,
-            content: Some("token".to_string()),
-        },
+            content: Some("token".to_string()), reasoning_content: None },
         finish_reason: None,
     };
 

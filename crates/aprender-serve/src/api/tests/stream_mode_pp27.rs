@@ -313,8 +313,7 @@ async fn nonstream_response_carries_timings_when_measured() {
         std::time::Duration::from_millis(240),
         None,
         None,
-        Some(timings),
-    );
+        Some(timings), None);
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("read body");

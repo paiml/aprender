@@ -323,8 +323,7 @@ async fn true_streaming_terminal_chunk_distinguishes_length_from_stop() {
             // No prompt was tokenized in this fixture; the terminal chunk's
             // usage reports the truth (0 prompt tokens), not a guess.
             0,
-            None,
-        );
+            None, None);
         let body = body_text(response).await;
         sse_payloads(&body)
             .last()
