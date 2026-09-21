@@ -112,6 +112,17 @@ fn start_qwen35_server(
     mapped_model: std::sync::Arc<realizar::gguf::MappedGGUFModel>,
     config: &ServerConfig,
 ) -> Result<()> {
+    let state = build_qwen35_state(mapped_model, config)?;
+    serve_router(state, config)
+}
+
+/// The serving state for the Qwen3.5 hybrid: the resident session, its resolution report
+/// and its measured source — everything [`start_qwen35_server`] serves, short of the socket.
+#[cfg(feature = "inference")]
+fn build_qwen35_state(
+    mapped_model: std::sync::Arc<realizar::gguf::MappedGGUFModel>,
+    config: &ServerConfig,
+) -> Result<realizar::api::AppState> {
     use realizar::api::AppState;
     use realizar::gguf::qwen35_session::Qwen35Session;
 
@@ -154,7 +165,46 @@ fn start_qwen35_server(
         .with_model_source(model_source)
         .with_verbose(config.verbose)
         .with_offload_report(offload);
-    serve_router(state, config)
+    Ok(state)
+}
+
+/// #3571 unit (2), the cop's condition (b): the hybrid's generic stack is legitimately zero
+/// layers, so `apr serve` must route it to its resident session BEFORE the zero-layer refusal
+/// of unit (1) — and must still refuse any other zero-layer stack.
+#[cfg(test)]
+mod qwen35_serve_route_tests {
+    use super::*;
+
+    const MODEL: &str = "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf";
+
+    #[test]
+    fn qwen35_serve_passes_the_zero_layer_refusal_through_its_session() {
+        if !Path::new(MODEL).exists() {
+            eprintln!("SKIP: {MODEL} is absent");
+            return;
+        }
+        let mapped = std::sync::Arc::new(
+            realizar::gguf::MappedGGUFModel::from_path(MODEL).expect("map the GGUF"),
+        );
+        // start_gguf_server takes the hybrid branch first ...
+        assert!(realizar::gguf::hybrid_forward_handles(
+            mapped.model.architecture().unwrap_or_default()
+        ));
+        // ... because the dense loader would (rightly) refuse its zero-layer base,
+        match build_serve_model(&mapped) {
+            Err(CliError::ModelLoadFailed(msg)) => assert!(msg.contains("#3571"), "{msg}"),
+            other => panic!("the dense loader must refuse the base: {:?}", other.map(|m| m.layers().len())),
+        }
+        // ... and the hybrid route builds a state that serves every layer from the session.
+        let config = ServerConfig {
+            no_gpu: true,
+            ..ServerConfig::default()
+        };
+        let state = build_qwen35_state(mapped, &config).expect("qwen35 serve passes");
+        let served = state.qwen35_session().expect("a resident session");
+        let layers = served.session.lock().expect("lock").num_layers();
+        assert!(layers > 0, "the session holds the hybrid's layers: {layers}");
+    }
 }
 
 /// Serve realizar's full router over `state` until Ctrl+C.

@@ -927,11 +927,11 @@ fn try_start_wgpu_backend(model_path: &Path, config: &ServerConfig) -> Result<bo
     );
 
     // Step 1: Load GGUF model
-    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
+    use realizar::gguf::MappedGGUFModel;
     let mapped = MappedGGUFModel::from_path(model_path)
         .map_err(|e| CliError::ModelLoadFailed(format!("GGUF load: {e}")))?;
-    let quantized = OwnedQuantizedModel::from_mapped(&mapped)
-        .map_err(|e| CliError::ModelLoadFailed(format!("Quantized model: {e}")))?;
+    // #3571: the same loader — and the same zero-layer refusal — as every other GGUF route.
+    let quantized = build_serve_model(&mapped)?;
     let num_layers = quantized.layers().len();
     println!(
         "{}",
@@ -1224,6 +1224,12 @@ fn load_apr_model_state(model_path: &Path, config: &ServerConfig) -> Result<AprS
     let transformer = if is_transformer {
         match realizar::apr_transformer::AprTransformer::from_apr_file(model_path) {
             Ok(t) => {
+                // #3571: a stack with no layers has no answer to give — refused at load.
+                if let Some(refusal) =
+                    zero_layer_refusal(&t.config.architecture, t.config.num_layers)
+                {
+                    return Err(refusal);
+                }
                 println!(
                     "{}",
                     format!(
