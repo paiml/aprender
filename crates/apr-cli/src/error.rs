@@ -49,6 +49,21 @@ pub enum CliError {
     #[error("Invalid input: {0}")]
     InvalidInput(String),
 
+    /// A model file that failed to parse, named by what its magic bytes say
+    /// it is: "GGUF", "SafeTensors", "APR", or "model" when they match none.
+    ///
+    /// #3661: `apr inspect` and `apr tensors` wrapped every parse failure in
+    /// [`CliError::InvalidFormat`], so a truncated GGUF was reported as
+    /// "Invalid APR format". Build it with [`CliError::invalid_model_file`].
+    /// Shares exit code 4, the same failure class.
+    #[error("Invalid {format} file: {message}")]
+    InvalidModelFile {
+        /// The format the file's magic bytes identify, or "model".
+        format: &'static str,
+        /// What failed, without the core error's own "Invalid model format:" prefix.
+        message: String,
+    },
+
     /// IO error
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -131,7 +146,7 @@ impl CliError {
     pub fn exit_code_value(&self) -> u8 {
         match self {
             Self::FileNotFound(_) | Self::NotAFile(_) => 3,
-            Self::InvalidFormat(_) | Self::InvalidInput(_) => 4,
+            Self::InvalidFormat(_) | Self::InvalidInput(_) | Self::InvalidModelFile { .. } => 4,
             Self::Io(_) => 7,
             Self::ValidationFailed(_) => 5,
             Self::Aprender(_) => 1,
@@ -151,6 +166,28 @@ impl CliError {
             Self::ParityFailed(_) => 13,
             // R-0b: compiled but not Ready on this host (registry reason in the message).
             Self::BackendUnavailable(_) => 14,
+        }
+    }
+}
+
+impl CliError {
+    /// A parse failure of the model file at `path` (#3661).
+    ///
+    /// The format is read from the file's magic bytes, never assumed. A
+    /// core `FormatError` contributes its message, not its Display, so the
+    /// result never reads "Invalid … file: …: Invalid model format: …".
+    pub(crate) fn invalid_model_file(
+        path: &std::path::Path,
+        context: &str,
+        e: &aprender::error::AprenderError,
+    ) -> Self {
+        let inner = match e {
+            aprender::error::AprenderError::FormatError { message } => message.clone(),
+            other => other.to_string(),
+        };
+        Self::InvalidModelFile {
+            format: crate::commands::hex::detected_model_format(path),
+            message: format!("{context}: {inner}"),
         }
     }
 }

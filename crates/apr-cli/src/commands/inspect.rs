@@ -378,7 +378,7 @@ fn run_rosetta_inspect(
     let rosetta = RosettaStone::new();
     let report = rosetta
         .inspect(path)
-        .map_err(|e| CliError::InvalidFormat(format!("Inspection failed: {e}")))?;
+        .map_err(|e| CliError::invalid_model_file(path, "Inspection failed", &e))?;
 
     if json_output {
         output_rosetta_json(path, &report);
