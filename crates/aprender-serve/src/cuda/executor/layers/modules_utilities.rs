@@ -27,37 +27,31 @@ impl CudaExecutor {
 
         // 5. LM head (hidden_dim -> vocab_size) - pre-load both Q4K and Q6K
         let mwv_lm_head_q4k_key = format!("mwv_q4k_gemv_{}_{}_{}", hidden_dim, vocab_size, nw);
-        if !self.modules.contains_key(&mwv_lm_head_q4k_key) {
+        {
             let kernel_type = KernelType::MwvQ4KGemv {
                 k: hidden_dim,
                 n: vocab_size,
                 num_warps: nw,
             };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(mwv_lm_head_q4k_key, module);
+            self.ensure_kernel_module(&mwv_lm_head_q4k_key, &kernel_type)?;
         }
         let lm_head_q6k_key = format!("q6k_gemv_{}_{}", hidden_dim, vocab_size);
-        if !self.modules.contains_key(&lm_head_q6k_key) {
+        {
             let kernel_type = KernelType::Q6KGemv {
                 k: hidden_dim,
                 n: vocab_size,
             };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(lm_head_q6k_key, module);
+            self.ensure_kernel_module(&lm_head_q6k_key, &kernel_type)?;
         }
         if hidden_dim.is_multiple_of(256) {
             let coalesced_lm_head_q6k_key =
                 format!("coalesced_q6k_gemv_{}_{}", hidden_dim, vocab_size);
-            if !self.modules.contains_key(&coalesced_lm_head_q6k_key) {
+            {
                 let kernel_type = KernelType::CoalescedQ6KGemv {
                     k: hidden_dim,
                     n: vocab_size,
                 };
-                let ptx = self.kernels.generate_ptx(&kernel_type);
-                let module = self.compile_ptx(&ptx)?;
-                self.modules.insert(coalesced_lm_head_q6k_key, module);
+                self.ensure_kernel_module(&coalesced_lm_head_q6k_key, &kernel_type)?;
             }
         }
 
@@ -66,79 +60,65 @@ impl CudaExecutor {
 
         // 7. SwiGLU kernel
         let swiglu_key = format!("fused_swiglu_{}", intermediate_dim);
-        if !self.modules.contains_key(&swiglu_key) {
+        {
             let kernel_type = KernelType::FusedSwiglu { n: intermediate_dim };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(swiglu_key, module);
+            self.ensure_kernel_module(&swiglu_key, &kernel_type)?;
         }
 
         // 8. Residual add kernel
         // GH-129: PTX is n-independent, use constant cache key
         let residual_key = "residual_add".to_string();
-        if !self.modules.contains_key(&residual_key) {
+        {
             let kernel_type = KernelType::ResidualAdd { n: hidden_dim };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(residual_key, module);
+            self.ensure_kernel_module(&residual_key, &kernel_type)?;
         }
 
         // 9. KV cache scatter kernel
         let scatter_key = format!("kv_scatter_{}_{}", num_kv_heads, head_dim);
-        if !self.modules.contains_key(&scatter_key) {
+        {
             let kernel_type = KernelType::KvCacheScatter { num_kv_heads, head_dim, max_len };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(scatter_key, module);
+            self.ensure_kernel_module(&scatter_key, &kernel_type)?;
         }
 
         // 10. Incremental attention kernel (direct + indirect)
         let attn_key = format!("incremental_attention_{}_{}_{}_{}",
             max_len, head_dim, num_heads, num_kv_heads);
-        if !self.modules.contains_key(&attn_key) {
+        {
             let kernel_type = KernelType::IncrementalAttention {
                 max_seq_len: max_len, head_dim,
                 n_heads: num_heads, n_kv_heads: num_kv_heads, indirect: false,
             };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(attn_key, module);
+            self.ensure_kernel_module(&attn_key, &kernel_type)?;
         }
         let attn_indirect_key = format!("incremental_attention_indirect_{}_{}_{}_{}",
             max_len, head_dim, num_heads, num_kv_heads);
-        if !self.modules.contains_key(&attn_indirect_key) {
+        {
             let kernel_type = KernelType::IncrementalAttention {
                 max_seq_len: max_len, head_dim,
                 n_heads: num_heads, n_kv_heads: num_kv_heads, indirect: true,
             };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(attn_indirect_key, module);
+            self.ensure_kernel_module(&attn_indirect_key, &kernel_type)?;
         }
 
         // Multi-warp attention kernels (for head_dim > 64)
         let num_warps_per_head = 4u32;
         let multi_warp_key = format!("multi_warp_attention_{}_{}_{}_{}_{}", max_len, head_dim, num_heads, num_kv_heads, num_warps_per_head);
-        if !self.modules.contains_key(&multi_warp_key) {
+        {
             let kernel_type = KernelType::MultiWarpAttention {
                 max_seq_len: max_len, head_dim,
                 n_heads: num_heads, n_kv_heads: num_kv_heads,
                 num_warps_per_head, indirect: false,
             };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(multi_warp_key, module);
+            self.ensure_kernel_module(&multi_warp_key, &kernel_type)?;
         }
         let multi_warp_indirect_key = format!("multi_warp_attention_indirect_{}_{}_{}_{}_{}", max_len, head_dim, num_heads, num_kv_heads, num_warps_per_head);
-        if !self.modules.contains_key(&multi_warp_indirect_key) {
+        {
             let kernel_type = KernelType::MultiWarpAttention {
                 max_seq_len: max_len, head_dim,
                 n_heads: num_heads, n_kv_heads: num_kv_heads,
                 num_warps_per_head, indirect: true,
             };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(multi_warp_indirect_key, module);
+            self.ensure_kernel_module(&multi_warp_indirect_key, &kernel_type)?;
         }
 
         // 11. Batched prefill kernels (GH-129)
@@ -171,34 +151,26 @@ impl CudaExecutor {
     ) -> Result<(), GpuError> {
         let theta = self.rope_theta;
 
-        let rope_q_key = format!("rope_{}_{}", num_heads, head_dim);
-        if !self.modules.contains_key(&rope_q_key) {
+        let rope_q_key = format!("rope_{}_{}_{}", num_heads, head_dim, Self::f32_bits_tag(theta));
+        {
             let kernel_type = KernelType::Rope { num_heads, head_dim, theta };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(rope_q_key, module);
+            self.ensure_kernel_module(&rope_q_key, &kernel_type)?;
         }
-        let rope_k_key = format!("rope_{}_{}", num_kv_heads, head_dim);
-        if !self.modules.contains_key(&rope_k_key) {
+        let rope_k_key = format!("rope_{}_{}_{}", num_kv_heads, head_dim, Self::f32_bits_tag(theta));
+        {
             let kernel_type = KernelType::Rope { num_heads: num_kv_heads, head_dim, theta };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(rope_k_key, module);
+            self.ensure_kernel_module(&rope_k_key, &kernel_type)?;
         }
 
-        let rope_q_indirect_key = format!("rope_indirect_{}_{}", num_heads, head_dim);
-        if !self.modules.contains_key(&rope_q_indirect_key) {
+        let rope_q_indirect_key = format!("rope_indirect_{}_{}_{}", num_heads, head_dim, Self::f32_bits_tag(theta));
+        {
             let kernel_type = KernelType::RopeIndirect { num_heads, head_dim, theta };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(rope_q_indirect_key, module);
+            self.ensure_kernel_module(&rope_q_indirect_key, &kernel_type)?;
         }
-        let rope_k_indirect_key = format!("rope_indirect_{}_{}", num_kv_heads, head_dim);
-        if !self.modules.contains_key(&rope_k_indirect_key) {
+        let rope_k_indirect_key = format!("rope_indirect_{}_{}_{}", num_kv_heads, head_dim, Self::f32_bits_tag(theta));
+        {
             let kernel_type = KernelType::RopeIndirect { num_heads: num_kv_heads, head_dim, theta };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(rope_k_indirect_key, module);
+            self.ensure_kernel_module(&rope_k_indirect_key, &kernel_type)?;
         }
 
         if self.rope_type == 2 {
@@ -219,49 +191,37 @@ impl CudaExecutor {
         let theta = self.rope_theta;
 
         if use_precise {
-            let rope_precise_q_indirect_key = format!("rope_precise_indirect_{}_{}", num_heads, head_dim);
-            if !self.modules.contains_key(&rope_precise_q_indirect_key) {
+            let rope_precise_q_indirect_key = format!("rope_precise_indirect_{}_{}_{}", num_heads, head_dim, Self::f32_bits_tag(theta));
+            {
                 let kernel_type = KernelType::PreciseRopeNeoxIndirect { num_heads, head_dim, theta };
-                let ptx = self.kernels.generate_ptx(&kernel_type);
-                let module = self.compile_ptx(&ptx)?;
-                self.modules.insert(rope_precise_q_indirect_key, module);
+                self.ensure_kernel_module(&rope_precise_q_indirect_key, &kernel_type)?;
             }
-            let rope_precise_k_indirect_key = format!("rope_precise_indirect_{}_{}", num_kv_heads, head_dim);
-            if !self.modules.contains_key(&rope_precise_k_indirect_key) {
+            let rope_precise_k_indirect_key = format!("rope_precise_indirect_{}_{}_{}", num_kv_heads, head_dim, Self::f32_bits_tag(theta));
+            {
                 let kernel_type = KernelType::PreciseRopeNeoxIndirect { num_heads: num_kv_heads, head_dim, theta };
-                let ptx = self.kernels.generate_ptx(&kernel_type);
-                let module = self.compile_ptx(&ptx)?;
-                self.modules.insert(rope_precise_k_indirect_key, module);
+                self.ensure_kernel_module(&rope_precise_k_indirect_key, &kernel_type)?;
             }
         } else {
-            let rope_neox_q_indirect_key = format!("rope_neox_indirect_{}_{}", num_heads, head_dim);
-            if !self.modules.contains_key(&rope_neox_q_indirect_key) {
+            let rope_neox_q_indirect_key = format!("rope_neox_indirect_{}_{}_{}", num_heads, head_dim, Self::f32_bits_tag(theta));
+            {
                 let kernel_type = KernelType::RopeNeoxIndirect { num_heads, head_dim, theta };
-                let ptx = self.kernels.generate_ptx(&kernel_type);
-                let module = self.compile_ptx(&ptx)?;
-                self.modules.insert(rope_neox_q_indirect_key, module);
+                self.ensure_kernel_module(&rope_neox_q_indirect_key, &kernel_type)?;
             }
-            let rope_neox_k_indirect_key = format!("rope_neox_indirect_{}_{}", num_kv_heads, head_dim);
-            if !self.modules.contains_key(&rope_neox_k_indirect_key) {
+            let rope_neox_k_indirect_key = format!("rope_neox_indirect_{}_{}_{}", num_kv_heads, head_dim, Self::f32_bits_tag(theta));
+            {
                 let kernel_type = KernelType::RopeNeoxIndirect { num_heads: num_kv_heads, head_dim, theta };
-                let ptx = self.kernels.generate_ptx(&kernel_type);
-                let module = self.compile_ptx(&ptx)?;
-                self.modules.insert(rope_neox_k_indirect_key, module);
+                self.ensure_kernel_module(&rope_neox_k_indirect_key, &kernel_type)?;
             }
         }
-        let rope_neox_q_key = format!("rope_neox_{}_{}", num_heads, head_dim);
-        if !self.modules.contains_key(&rope_neox_q_key) {
+        let rope_neox_q_key = format!("rope_neox_{}_{}_{}", num_heads, head_dim, Self::f32_bits_tag(theta));
+        {
             let kernel_type = KernelType::RopeNeox { num_heads, head_dim, theta };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(rope_neox_q_key, module);
+            self.ensure_kernel_module(&rope_neox_q_key, &kernel_type)?;
         }
-        let rope_neox_k_key = format!("rope_neox_{}_{}", num_kv_heads, head_dim);
-        if !self.modules.contains_key(&rope_neox_k_key) {
+        let rope_neox_k_key = format!("rope_neox_{}_{}_{}", num_kv_heads, head_dim, Self::f32_bits_tag(theta));
+        {
             let kernel_type = KernelType::RopeNeox { num_heads: num_kv_heads, head_dim, theta };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(rope_neox_k_key, module);
+            self.ensure_kernel_module(&rope_neox_k_key, &kernel_type)?;
         }
 
         Ok(())
@@ -286,52 +246,42 @@ impl CudaExecutor {
         // #3759: the model's epsilon, keyed like the launch (was a hardcoded 1e-5 under an
         // epsilon-less key, which every later 1e-6 launch then reused).
         let batched_rmsnorm_key =
-            format!("batched_rmsnorm_vectorized_{}_{}", hidden_dim, Self::eps_tag(epsilon));
-        if !self.modules.contains_key(&batched_rmsnorm_key) {
+            format!("batched_rmsnorm_vectorized_{}_{}", hidden_dim, Self::f32_bits_tag(epsilon));
+        {
             let kernel_type = KernelType::BatchedVectorizedRmsNorm {
                 hidden_size: hidden_dim, batch_size: 1, epsilon,
             };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(batched_rmsnorm_key, module);
+            self.ensure_kernel_module(&batched_rmsnorm_key, &kernel_type)?;
         }
 
         // Batched RoPE (for non-NEOX rope_type; batch_size is grid-only)
-        let batched_rope_q_key = format!("batched_rope_{}_{}", num_heads, head_dim);
-        if !self.modules.contains_key(&batched_rope_q_key) {
+        let batched_rope_q_key = format!("batched_rope_{}_{}_{}", num_heads, head_dim, Self::f32_bits_tag(self.rope_theta));
+        {
             let kernel_type = KernelType::BatchedRope {
                 num_heads, head_dim, batch_size: 1, theta: self.rope_theta,
             };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(batched_rope_q_key, module);
+            self.ensure_kernel_module(&batched_rope_q_key, &kernel_type)?;
         }
-        let batched_rope_k_key = format!("batched_rope_{}_{}", num_kv_heads, head_dim);
-        if !self.modules.contains_key(&batched_rope_k_key) {
+        let batched_rope_k_key = format!("batched_rope_{}_{}_{}", num_kv_heads, head_dim, Self::f32_bits_tag(self.rope_theta));
+        {
             let kernel_type = KernelType::BatchedRope {
                 num_heads: num_kv_heads, head_dim, batch_size: 1, theta: self.rope_theta,
             };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(batched_rope_k_key, module);
+            self.ensure_kernel_module(&batched_rope_k_key, &kernel_type)?;
         }
 
         // Batched residual add
         let batched_residual_key = format!("batched_residual_add_{}", hidden_dim);
-        if !self.modules.contains_key(&batched_residual_key) {
+        {
             let kernel_type = KernelType::BatchedResidualAdd { n: hidden_dim, batch_size: 1 };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(batched_residual_key, module);
+            self.ensure_kernel_module(&batched_residual_key, &kernel_type)?;
         }
 
         // Batched SwiGLU
         let batched_swiglu_key = format!("batched_swiglu_{}", intermediate_dim);
-        if !self.modules.contains_key(&batched_swiglu_key) {
+        {
             let kernel_type = KernelType::BatchedSwiglu { n: intermediate_dim, batch_size: 1 };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(batched_swiglu_key, module);
+            self.ensure_kernel_module(&batched_swiglu_key, &kernel_type)?;
         }
 
         Ok(())
@@ -347,26 +297,22 @@ impl CudaExecutor {
         });
 
         if use_precise {
-            let rmsnorm_key = format!("rmsnorm_precise_{}_{}", hidden_dim, Self::eps_tag(epsilon));
-            if !self.modules.contains_key(&rmsnorm_key) {
+            let rmsnorm_key = format!("rmsnorm_precise_{}_{}", hidden_dim, Self::f32_bits_tag(epsilon));
+            {
                 let kernel_type = KernelType::PreciseRmsNorm {
                     hidden_size: hidden_dim,
                     epsilon,
                 };
-                let ptx = self.kernels.generate_ptx(&kernel_type);
-                let module = self.compile_ptx(&ptx)?;
-                self.modules.insert(rmsnorm_key, module);
+                self.ensure_kernel_module(&rmsnorm_key, &kernel_type)?;
             }
         } else {
-            let rmsnorm_key = format!("rmsnorm_vectorized_{}_{}", hidden_dim, Self::eps_tag(epsilon));
-            if !self.modules.contains_key(&rmsnorm_key) {
+            let rmsnorm_key = format!("rmsnorm_vectorized_{}_{}", hidden_dim, Self::f32_bits_tag(epsilon));
+            {
                 let kernel_type = KernelType::VectorizedRmsNorm {
                     hidden_size: hidden_dim,
                     epsilon,
                 };
-                let ptx = self.kernels.generate_ptx(&kernel_type);
-                let module = self.compile_ptx(&ptx)?;
-                self.modules.insert(rmsnorm_key, module);
+                self.ensure_kernel_module(&rmsnorm_key, &kernel_type)?;
             }
         }
         Ok(())
@@ -384,38 +330,30 @@ impl CudaExecutor {
     ) -> Result<(), GpuError> {
         // MWV Q4K for Q and KV projections
         let mwv_q4k_q_key = format!("mwv_q4k_gemv_{}_{}_{}", hidden_dim, q_dim, nw);
-        if !self.modules.contains_key(&mwv_q4k_q_key) {
+        {
             let kernel_type = KernelType::MwvQ4KGemv {
                 k: hidden_dim, n: q_dim, num_warps: nw,
             };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(mwv_q4k_q_key, module);
+            self.ensure_kernel_module(&mwv_q4k_q_key, &kernel_type)?;
         }
         let mwv_q4k_kv_key = format!("mwv_q4k_gemv_{}_{}_{}", hidden_dim, kv_dim, nw);
-        if !self.modules.contains_key(&mwv_q4k_kv_key) {
+        {
             let kernel_type = KernelType::MwvQ4KGemv {
                 k: hidden_dim, n: kv_dim, num_warps: nw,
             };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(mwv_q4k_kv_key, module);
+            self.ensure_kernel_module(&mwv_q4k_kv_key, &kernel_type)?;
         }
 
         // Q5_0 GEMV (for Qwen 0.5B which uses Q5_0 for Q/K)
         let q5_0_q_key = format!("q5_0_gemv_{}_{}", hidden_dim, q_dim);
-        if !self.modules.contains_key(&q5_0_q_key) {
+        {
             let kernel_type = KernelType::Q5_0Gemv { k: hidden_dim, n: q_dim };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(q5_0_q_key, module);
+            self.ensure_kernel_module(&q5_0_q_key, &kernel_type)?;
         }
         let q5_0_kv_key = format!("q5_0_gemv_{}_{}", hidden_dim, kv_dim);
-        if !self.modules.contains_key(&q5_0_kv_key) {
+        {
             let kernel_type = KernelType::Q5_0Gemv { k: hidden_dim, n: kv_dim };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(q5_0_kv_key, module);
+            self.ensure_kernel_module(&q5_0_kv_key, &kernel_type)?;
         }
 
         // Q6K GEMV — original + coalesced variants
@@ -424,49 +362,39 @@ impl CudaExecutor {
 
         // Q8_0 GEMV
         let q8_0_q_key = format!("q8_0_gemv_{}_{}", hidden_dim, q_dim);
-        if !self.modules.contains_key(&q8_0_q_key) {
+        {
             let kernel_type = KernelType::Q8_0Gemv { k: hidden_dim, n: q_dim };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(q8_0_q_key, module);
+            self.ensure_kernel_module(&q8_0_q_key, &kernel_type)?;
         }
         let q8_0_kv_key = format!("q8_0_gemv_{}_{}", hidden_dim, kv_dim);
-        if !self.modules.contains_key(&q8_0_kv_key) {
+        {
             let kernel_type = KernelType::Q8_0Gemv { k: hidden_dim, n: kv_dim };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(q8_0_kv_key, module);
+            self.ensure_kernel_module(&q8_0_kv_key, &kernel_type)?;
         }
 
         // Output projection (q_dim -> hidden_dim)
         let mwv_q4k_o_key = format!("mwv_q4k_gemv_{}_{}_{}", q_dim, hidden_dim, nw);
-        if !self.modules.contains_key(&mwv_q4k_o_key) {
+        {
             let kernel_type = KernelType::MwvQ4KGemv {
                 k: q_dim, n: hidden_dim, num_warps: nw,
             };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(mwv_q4k_o_key, module);
+            self.ensure_kernel_module(&mwv_q4k_o_key, &kernel_type)?;
         }
 
         // FFN gate/up (hidden->intermediate) and down (intermediate->hidden)
         let mwv_q4k_up_key = format!("mwv_q4k_gemv_{}_{}_{}", hidden_dim, intermediate_dim, nw);
-        if !self.modules.contains_key(&mwv_q4k_up_key) {
+        {
             let kernel_type = KernelType::MwvQ4KGemv {
                 k: hidden_dim, n: intermediate_dim, num_warps: nw,
             };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(mwv_q4k_up_key, module);
+            self.ensure_kernel_module(&mwv_q4k_up_key, &kernel_type)?;
         }
         let mwv_q4k_down_key = format!("mwv_q4k_gemv_{}_{}_{}", intermediate_dim, hidden_dim, nw);
-        if !self.modules.contains_key(&mwv_q4k_down_key) {
+        {
             let kernel_type = KernelType::MwvQ4KGemv {
                 k: intermediate_dim, n: hidden_dim, num_warps: nw,
             };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(mwv_q4k_down_key, module);
+            self.ensure_kernel_module(&mwv_q4k_down_key, &kernel_type)?;
         }
 
         // Q6K FFN down + coalesced variant
@@ -495,11 +423,9 @@ impl CudaExecutor {
         // Q8 quantize for all GEMV input dimensions
         for &q8_n in &[hidden_dim, q_dim, intermediate_dim] {
             let q8_key = format!("q8_quantize_{}", q8_n);
-            if !self.modules.contains_key(&q8_key) {
+            {
                 let kernel_type = KernelType::Q8Quantize { n: q8_n };
-                let ptx = self.kernels.generate_ptx(&kernel_type);
-                let module = self.compile_ptx(&ptx)?;
-                self.modules.insert(q8_key, module);
+                self.ensure_kernel_module(&q8_key, &kernel_type)?;
             }
         }
         // HW DP4A Q4K for all dimension pairs
@@ -512,23 +438,19 @@ impl CudaExecutor {
         ];
         for &(k, n) in &hw_dims {
             let key = format!("hw_dp4a_q4k_gemv_{}_{}_{}", k, n, nw);
-            if !self.modules.contains_key(&key) {
+            {
                 let kernel_type = KernelType::HwDp4aQ4KGemv { k, n, num_warps: nw };
-                let ptx = self.kernels.generate_ptx(&kernel_type);
-                let module = self.compile_ptx(&ptx)?;
-                self.modules.insert(key, module);
+                self.ensure_kernel_module(&key, &kernel_type)?;
             }
         }
         // Fused gate+up+SwiGLU kernel (PMAT-034)
         if self.gpu_profile.fused_gate_up {
             let fused_key = format!("fused_gate_up_swiglu_hw_dp4a_q4k_{}_{}", hidden_dim, intermediate_dim);
-            if !self.modules.contains_key(&fused_key) {
+            {
                 let kernel_type = KernelType::FusedGateUpSwigluHwDp4aQ4KGemv {
                     k: hidden_dim, n: intermediate_dim,
                 };
-                let ptx = self.kernels.generate_ptx(&kernel_type);
-                let module = self.compile_ptx(&ptx)?;
-                self.modules.insert(fused_key, module);
+                self.ensure_kernel_module(&fused_key, &kernel_type)?;
             }
         }
         Ok(())
@@ -537,19 +459,15 @@ impl CudaExecutor {
     /// Pre-load Q6K GEMV (original + coalesced if K is 256-aligned) for given dimensions.
     fn preload_q6k_gemv_pair(&mut self, k: u32, n: u32) -> Result<(), GpuError> {
         let q6k_key = format!("q6k_gemv_{}_{}", k, n);
-        if !self.modules.contains_key(&q6k_key) {
+        {
             let kernel_type = KernelType::Q6KGemv { k, n };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(q6k_key, module);
+            self.ensure_kernel_module(&q6k_key, &kernel_type)?;
         }
         if k.is_multiple_of(256) {
             let coalesced_key = format!("coalesced_q6k_gemv_{}_{}", k, n);
-            if !self.modules.contains_key(&coalesced_key) {
+            {
                 let kernel_type = KernelType::CoalescedQ6KGemv { k, n };
-                let ptx = self.kernels.generate_ptx(&kernel_type);
-                let module = self.compile_ptx(&ptx)?;
-                self.modules.insert(coalesced_key, module);
+                self.ensure_kernel_module(&coalesced_key, &kernel_type)?;
             }
         }
         Ok(())
@@ -573,11 +491,9 @@ impl CudaExecutor {
         // Q8 quantize for GEMV input dimensions (shared by both DP4A variants)
         for &q8_n in &[hidden_dim, intermediate_dim] {
             let q8_key = format!("q8_quantize_{}", q8_n);
-            if !self.modules.contains_key(&q8_key) {
+            {
                 let kernel_type = KernelType::Q8Quantize { n: q8_n };
-                let ptx = self.kernels.generate_ptx(&kernel_type);
-                let module = self.compile_ptx(&ptx)?;
-                self.modules.insert(q8_key, module);
+                self.ensure_kernel_module(&q8_key, &kernel_type)?;
             }
         }
         // Preload variant-specific Q6K GEMV kernels for FFN down + LM head
@@ -593,11 +509,7 @@ impl CudaExecutor {
                     KernelType::Dp4aQ6KGemv { k: k_dim, n: n_dim, num_warps },
                 ),
             };
-            if !self.modules.contains_key(&key) {
-                let ptx = self.kernels.generate_ptx(&kernel_type);
-                let module = self.compile_ptx(&ptx)?;
-                self.modules.insert(key, module);
-            }
+            self.ensure_kernel_module(&key, &kernel_type)?;
         }
         Ok(())
     }

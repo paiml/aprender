@@ -230,11 +230,9 @@ impl CudaExecutor {
     ) -> Result<(), GpuError> {
         let num_sb = (k + 255) / 256;
         let cache_key = format!("q4k_dequant_{k}_{n}");
-        if !self.modules.contains_key(&cache_key) {
+        {
             let kernel_type = KernelType::Q4KDequant { k, n };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
+            self.ensure_kernel_module(&cache_key, &kernel_type)?;
         }
 
         let module = self
@@ -279,11 +277,9 @@ impl CudaExecutor {
     ) -> Result<(), GpuError> {
         let num_sb = (k + 255) / 256;
         let cache_key = format!("q4k_dequant_fp16_{k}_{n}");
-        if !self.modules.contains_key(&cache_key) {
+        {
             let kernel_type = KernelType::Q4KDequantFp16 { k, n };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
+            self.ensure_kernel_module(&cache_key, &kernel_type)?;
         }
 
         let module = self
@@ -353,11 +349,9 @@ impl CudaExecutor {
     ) -> Result<(), GpuError> {
         let num_sb = (k + 255) / 256;
         let cache_key = format!("q6k_dequant_{k}_{n}");
-        if !self.modules.contains_key(&cache_key) {
+        {
             let kernel_type = KernelType::Q6KDequant { k, n };
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
+            self.ensure_kernel_module(&cache_key, &kernel_type)?;
         }
 
         let module = self
@@ -733,11 +727,7 @@ impl CudaExecutor {
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         let cache_key = format!("tensor_core_q4k_gemm_{m_padded}_{n_padded}_{k}");
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         // If padding needed, allocate temp buffer BEFORE borrowing modules
         let actual_output_ptr = if needs_padding {
@@ -836,11 +826,7 @@ impl CudaExecutor {
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         let cache_key = format!("mw_tensor_core_q4k_gemm_{m_padded}_{n_padded}_{k}");
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         // If padding needed, allocate temp buffer
         let actual_output_ptr = if needs_padding {
@@ -948,11 +934,7 @@ impl CudaExecutor {
             let kernel_name = self.kernels.kernel_name(&kernel_type);
             let cache_key = format!("q8_quantize_{total_f32_elements}");
 
-            if !self.modules.contains_key(&cache_key) {
-                let ptx = self.kernels.generate_ptx(&kernel_type);
-                let module = self.compile_ptx(&ptx)?;
-                self.modules.insert(cache_key.clone(), module);
-            }
+            self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
             let module = self
                 .modules
@@ -987,11 +969,7 @@ impl CudaExecutor {
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         let cache_key = format!("dp4a_q4k_gemm_{m}_{n}_{k}");
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -1067,11 +1045,7 @@ impl CudaExecutor {
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         let cache_key = format!("q4k_gemm_ggml_tiled_{m}_{n}_{k}_{tile_m}");
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules

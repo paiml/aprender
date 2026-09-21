@@ -50,14 +50,10 @@ impl CudaExecutor {
             "fused_rmsnorm_gate_up_swiglu_q4k_{}_{}_{}",
             hidden_size,
             intermediate_size,
-            Self::eps_tag(epsilon)
+            Self::f32_bits_tag(epsilon)
         );
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -170,11 +166,7 @@ impl CudaExecutor {
         let kernel_name = self.kernels.kernel_name(&kernel_type);
         let cache_key = format!("fused_gate_up_{}_{}", hidden_size, intermediate_size);
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -237,13 +229,9 @@ impl CudaExecutor {
             theta,
         };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("rope_{}_{}", num_heads, head_dim);
+        let cache_key = format!("rope_{}_{}_{}", num_heads, head_dim, Self::f32_bits_tag(theta));
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -319,13 +307,9 @@ impl CudaExecutor {
             theta,
         };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("rope_indirect_{}_{}", num_heads, head_dim);
+        let cache_key = format!("rope_indirect_{}_{}_{}", num_heads, head_dim, Self::f32_bits_tag(theta));
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules
@@ -388,13 +372,9 @@ impl CudaExecutor {
             theta,
         };
         let kernel_name = self.kernels.kernel_name(&kernel_type);
-        let cache_key = format!("rope_neox_{}_{}", num_heads, head_dim);
+        let cache_key = format!("rope_neox_{}_{}_{}", num_heads, head_dim, Self::f32_bits_tag(theta));
 
-        if !self.modules.contains_key(&cache_key) {
-            let ptx = self.kernels.generate_ptx(&kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
 
         let module = self
             .modules

@@ -126,3 +126,49 @@ fn preload_compiles_the_models_epsilon_not_1e5() {
     check("batched after preload(1e-6)", batched, want, &mut failures);
     assert!(failures.is_empty(), "#3759:\n{}", failures.join("\n"));
 }
+
+/// The guard itself (debug builds): one key asked for two epsilons is refused.
+#[test]
+fn the_module_key_guard_refuses_one_key_for_two_epsilons() {
+    use crate::cuda::KernelType;
+    let Ok(mut exec) = CudaExecutor::new(0) else {
+        eprintln!("SKIP #3759 guard row: no CUDA device");
+        return;
+    };
+    let e5 = KernelType::VectorizedRmsNorm {
+        hidden_size: 1536,
+        epsilon: 1e-5,
+    };
+    let e6 = KernelType::VectorizedRmsNorm {
+        hidden_size: 1536,
+        epsilon: 1e-6,
+    };
+    exec.ensure_kernel_module("guard_probe_3759", &e5)
+        .expect("compile");
+    let refused = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        exec.ensure_kernel_module("guard_probe_3759", &e6)
+    }));
+    assert!(
+        refused.is_err(),
+        "one key, two epsilons: the guard must refuse (this is #3759's shape)"
+    );
+}
+
+/// ...and a grid-only difference (same PTX) passes, so the guard has no false positive there.
+#[test]
+fn the_module_key_guard_passes_a_grid_only_difference() {
+    use crate::cuda::KernelType;
+    let Ok(mut exec) = CudaExecutor::new(0) else {
+        eprintln!("SKIP #3759 guard row: no CUDA device");
+        return;
+    };
+    for batch_size in [1u32, 8, 49] {
+        let kt = KernelType::BatchedVectorizedRmsNorm {
+            hidden_size: 1536,
+            batch_size,
+            epsilon: 1e-6,
+        };
+        exec.ensure_kernel_module("guard_probe_grid_3759", &kt)
+            .expect("batch_size is a grid dimension, not a PTX parameter");
+    }
+}

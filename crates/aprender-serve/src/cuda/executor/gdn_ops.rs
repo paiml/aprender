@@ -201,7 +201,10 @@ impl CudaExecutor {
             head_dim,
             n_rot,
         };
-        let cache_key = format!("gdn_partial_neox_rope_{num_heads}_{head_dim}_{n_rot}");
+        let cache_key = format!(
+            "gdn_partial_neox_rope_{num_heads}_{head_dim}_{n_rot}_{}",
+            Self::f32_bits_tag(theta_scale)
+        );
         let kernel_name = self.gdn_prepare(&kernel_type, &cache_key)?;
         let (gx, _, _) = kernel.grid();
         let (bx, _, _) = kernel.block();

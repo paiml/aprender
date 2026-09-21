@@ -115,11 +115,7 @@ impl CudaExecutor {
         let up_kernel_name = self.kernels.kernel_name(&up_kernel_type);
         let up_cache_key = format!("q4k_gemv_{}_{}", hidden_dim, intermediate_dim);
 
-        if !self.modules.contains_key(&up_cache_key) {
-            let ptx = self.kernels.generate_ptx(&up_kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(up_cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&up_cache_key, &up_kernel_type)?;
 
         {
             let module = self.modules.get_mut(&up_cache_key).expect("just inserted");
@@ -159,11 +155,7 @@ impl CudaExecutor {
         let down_kernel_name = self.kernels.kernel_name(&down_kernel_type);
         let down_cache_key = format!("q4k_gemv_{}_{}", intermediate_dim, hidden_dim);
 
-        if !self.modules.contains_key(&down_cache_key) {
-            let ptx = self.kernels.generate_ptx(&down_kernel_type);
-            let module = self.compile_ptx(&ptx)?;
-            self.modules.insert(down_cache_key.clone(), module);
-        }
+        self.ensure_kernel_module(&down_cache_key, &down_kernel_type)?;
 
         {
             let module = self

@@ -265,6 +265,7 @@ mod bound_dispatch;
 mod core;
 // #3727: PMAT-084 FP8 activation reuse, opt-in per shared-input group.
 mod fp8_activation_cache;
+// #3759: one module-cache key, one PTX text (debug builds prove it).
 /// PMAT-3477 (#3090): wrappers for the six Gated `DeltaNet` device kernels.
 mod gdn_ops;
 mod gemm;
@@ -275,6 +276,7 @@ mod graph_dispatch;
 mod kv_cache;
 mod layer;
 mod layers;
+mod module_key_guard;
 mod q4k;
 mod q_basic;
 mod quantized;
@@ -359,6 +361,9 @@ pub struct CudaExecutor {
     // Thousands of cuModuleUnload cycles exhaust the CUDA driver.
     // Leaked modules (~KB each) are cleaned up at process exit.
     modules: std::mem::ManuallyDrop<HashMap<String, CudaModule>>,
+    /// #3759: debug and test builds record what each module key was compiled from.
+    #[cfg(any(debug_assertions, test))]
+    module_key_ledger: module_key_guard::ModuleKeyLedger,
     // Persistent weight buffers on GPU (PARITY-037)
     // These are loaded once at startup and reused for all forward passes
     weight_cache: HashMap<String, GpuBuffer<f32>>,
