@@ -1,0 +1,25 @@
+{
+  "schema": "crux-inference-prompts/v1",
+  "source": "crates/apr-cli/src/commands/golden_output.rs::golden_test_cases, the same three cases given as USER MESSAGES rather than pre-rendered ChatML: each engine applies the chat template it reads from the GGUF, and that step is part of what is under test (#3672 is a template defect a pre-rendered prompt would hide). scripts/check_crux_inference_judge.sh refuses drift between the two lists.",
+  "max_tokens": 64,
+  "prompts": [
+    {
+      "id": "golden-2plus2",
+      "rung": "golden",
+      "messages": [{"role": "user", "content": "What is 2+2?"}],
+      "expect_any": ["4"]
+    },
+    {
+      "id": "golden-greeting",
+      "rung": "golden",
+      "messages": [{"role": "user", "content": "Hello there, how are you doing today my friend?"}],
+      "expect_any": ["Hello", "Hi", "hey", "hello", "well", "!"]
+    },
+    {
+      "id": "golden-paris",
+      "rung": "golden",
+      "messages": [{"role": "user", "content": "What is the capital of France?"}],
+      "expect_any": ["Paris"]
+    }
+  ]
+}

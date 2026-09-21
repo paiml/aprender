@@ -1,0 +1,18 @@
+- id: PMAT-3739
+  github_issue: 3739
+  item_type: task
+  title: 'CRUX inference dogfood slice 1: the SAME GGUF + SAME golden prompts through apr, llama.cpp@pin and ollama on the `run` verb, judged by one rule: a competitor right and apr wrong is RED'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-76
+  created: 2026-09-21T17:10:00Z
+  updated: 2026-09-21T17:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'PLACEHOLDER — rewritten before the quorum'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Refs #3739 (slice 1 of the issue; not a closing keyword).'
