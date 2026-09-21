@@ -244,7 +244,12 @@ selection() { # $1 = reason prefix (names the event and how the diff was derived
 # base..HEAD and base...HEAD name the same tree comparison, and the two-dot form
 # needs no merge-base — which a shallow CI checkout usually cannot compute.
 diff_into() { # $1 = out file, $2 = base rev
-    git -C "$ROOT" diff --name-only "$2" HEAD > "$1" 2>/dev/null
+    # --no-renames (#3664, found by aprender-b3): git's default rename
+    # detection makes --name-only print only the NEW path of a rename, so a
+    # move crates/x/src/lib.rs -> docs/audits/lib.rs would list one docs path
+    # and read as docs-only (tier=none: zero tests for a removed source file).
+    # Both sides of every rename are touched paths.
+    git -C "$ROOT" diff --no-renames --name-only "$2" HEAD > "$1" 2>/dev/null
 }
 
 decide() {
@@ -490,6 +495,28 @@ self_test() {
     row 0 "  ...and roadmap + ANY non-docs path is not docs-only -> quick" '^tier=quick$' bash "$T" --event pull_request --diff-from "$td/d-docs-mixed.txt"
     printf 'docs/specifications/aprender-monorepo-consolidation.md\n' > "$td/d-spec.txt"
     row 0 "  ...and docs/specifications/ is NOT docs-only (falsification_spec_v10_tests reads it)" '^tier=quick$' bash "$T" --event pull_request --diff-from "$td/d-spec.txt"
+    # #3664 RENAME: a source file moved INTO docs/audits/ removes the source.
+    # With rename detection on, --name-only lists only the new (docs) path.
+    mkrename() { # $1 dir -> HEAD = squash of "move crates/<leaf>/src/lib.rs to docs/audits/lib.rs" on a moved main
+        local d=$1
+        git init -q -b main "$d"
+        ( cd "$d" \
+          && export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
+          && export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null \
+          && mkdir -p "crates/$leaf/src" && printf 'pub fn f() {}\n' > "crates/$leaf/src/lib.rs" && git add -A && git commit -q -m base \
+          && git branch pr \
+          && printf 'moved\n' > main-moved.txt && git add -A && git commit -q -m "main moved under the PR" \
+          && git checkout -q pr && mkdir -p docs/audits && git mv "crates/$leaf/src/lib.rs" docs/audits/lib.rs && git commit -q -m "the PR: a rename out of a crate" \
+          && git checkout -q main && git merge -q --squash pr && git commit -q -m "queue squash" )
+    }
+    mkrename "$td/s-rename"
+    row 0 "  (fixture) default git diff --name-only on the rename lists ONLY the new docs path -- the trap is real" '^docs/audits/lib\.rs$' git -C "$td/s-rename" diff --name-only HEAD^1 HEAD
+    cap sq-rename bash "$T" --event merge_group --repo-root "$td/s-rename" --pr-head "$(qh "$td/s-rename")" --pr-head-conclusion success
+    row 0 "merge_group, a crate source RENAMED into docs/audits/ -> NOT none (the removed source is a touched path)" '^tier=quick$' bash -c "$(replay sq-rename)"
+    row 0 "  ...and the crate it left is in the selection" "^crates=.*$leaf" bash -c "$(replay sq-rename)"
+    sed 's| diff --no-renames --name-only | diff --name-only |' "$T" > "$td/mutant-renames.sh"
+    row 0 "mutant without --no-renames reads the rename as docs-only (tier=none) -- the rows discriminate" 'MUTANT-NONE' bash -c "o=\$(bash '$td/mutant-renames.sh' --event merge_group --repo-root '$td/s-rename' --pr-head '$(qh "$td/s-rename")' --pr-head-conclusion success 2>&1); case \"\$o\" in *tier=none*) echo MUTANT-NONE ;; *) echo MUTANT-NOT-NONE ;; esac"
+    row 0 "ci.yml builds the pull_request touched list with --no-renames (the list docs_only judges)" '^ALL-PRESENT$' contains_all "$TREE/.github/workflows/ci.yml" 'git diff --no-renames --name-only "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"'
     # MUTANT: a copy whose queue branch ignores the re-derived diff and always
     # says full is exactly today's behaviour — the rows above must lose the crates.
     sed 's|^\( *\)selection "merge_group|\1printf "tier=full\\nreason=MUTANT\\n"; return 0; selection "merge_group|' "$T" > "$td/mutant-queue.sh"
