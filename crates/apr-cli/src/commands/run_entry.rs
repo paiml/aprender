@@ -18,6 +18,13 @@ pub(crate) fn run(
     task: Option<&str>,
     output_format: &str,
     no_gpu: bool,
+    // #3602: the user EXPLICITLY asked for an accelerator, classified by
+    // `crate::registry::Request::wanted` rather than re-derived here — two
+    // spellings of one rule is how they drift apart. For THIS command that
+    // means `--gpu` or `--backend cuda|wgpu|gpu`; `apr run` has no
+    // `--gpu-layers` flag (that is `apr serve`'s), so the classifier's fourth
+    // input is genuinely absent here rather than stubbed.
+    accel_forced: bool,
     offline: bool,
     benchmark: bool,
     verbose: bool,
@@ -128,15 +135,111 @@ pub(crate) fn run(
         print_roofline_profile(&result, max_tokens);
     }
 
-    print_run_output(
+    // #3602: reconcile what was ASKED FOR with what RAN, then emit. Extracted because
+    // inlining it took `run`'s cognitive complexity to 27 against a ceiling of 25 — the
+    // ratchet is measured against origin/main and there is nothing to edit in a baseline
+    // to make that pass, which is the point of it.
+    reconcile_and_emit(
         &result,
         source,
         output_format,
         max_tokens,
         benchmark,
         stream,
+        accel_forced,
     )?;
 
+    Ok(())
+}
+
+/// Reconcile the requested accelerator against the one that ran, then emit the run's output.
+///
+/// The two are one step because their ORDER is the decision: `after_generation`'s contract says a
+/// forced refusal prints no output, and #3602 item 1 wants the rejection visible in `--json`.
+///
+/// DELIBERATE DEVIATION, named rather than quiet. The no-output rule protects a reader from
+/// mistaking a fallback for success. A structured document carrying `"backend": {"fell_back": true}`
+/// beside exit 14 cannot be misread that way, while a human-formatted success blob can. So the
+/// MACHINE surfaces still emit and the HUMAN surface stays silent — the protective half of the
+/// contract is kept, and a `--json` consumer stops having to infer a refusal from an exit code.
+///
+/// # Errors
+/// [`crate::error::CliError::BackendUnavailable`] when an accelerator was forced and CPU ran, and
+/// whatever [`print_run_output`] returns.
+#[allow(clippy::too_many_arguments)]
+fn reconcile_and_emit(
+    result: &super::run::RunResult,
+    source: &str,
+    output_format: &str,
+    max_tokens: usize,
+    benchmark: bool,
+    stream: bool,
+    accel_forced: bool,
+) -> Result<()> {
+    let reconciled = reconcile_accelerator(accel_forced, result);
+    if reconciled.is_ok() || emits_machine_output(stream, output_format, benchmark) {
+        print_run_output(
+            result,
+            source,
+            output_format,
+            max_tokens,
+            benchmark,
+            stream,
+            accel_forced,
+        )?;
+    }
+    reconciled
+}
+
+/// Does [`print_run_output`] emit a MACHINE-readable document for these flags?
+///
+/// The refusal path above needs to know this, and the first draft answered it
+/// with its own copy — `stream || output_format == "json"` — which omitted
+/// `!benchmark`. A quorum lane found the consequence: `--json --benchmark` on a
+/// refused run took the branch, matched neither machine arm inside
+/// `print_run_output`, and fell through to the HUMAN benchmark blob, printing a
+/// success rendering for a run being refused. Two spellings of one condition,
+/// drifting apart in the gap between them.
+///
+/// One spelling now. `the_machine_output_predicate_matches_print_run_output`
+/// pins it to the arms it describes over every flag combination, so a change to
+/// either side that does not change the other turns the test red.
+pub(crate) fn emits_machine_output(stream: bool, output_format: &str, benchmark: bool) -> bool {
+    !benchmark && (stream || output_format == "json")
+}
+
+/// Compare the accelerator the user ASKED for against the one that RAN.
+///
+/// Delegates the decision to [`crate::registry::after_generation`], which is
+/// where it is recorded (R-0b, #3002/#3042) and unit-tested: a FORCED
+/// accelerator that fell to CPU is a refusal (exit 14, no output), a DEFAULT
+/// selection that fell to CPU returns a corrective line to print.
+///
+/// **This wires the FORCED half only, and says so rather than carrying a branch
+/// that cannot run.** Under `forced = true`, `after_generation` returns either
+/// `Err` (the refusal) or `Ok(None)`; its corrective-line branch requires
+/// `forced == false` *and* a non-`cpu` announcement, so it is unreachable from
+/// here by construction.
+///
+/// That case is deliberately not wired. Nothing in the run path calls
+/// `registry::announce`, so there is no recorded announcement for a default
+/// selection to be compared against, and manufacturing one would assert a
+/// choice this process never made. Wiring `announce` is the larger REG-8 job.
+///
+/// An earlier draft of this function returned `Result<Option<String>>` and the
+/// caller did `if let Some(note) = …`. A quorum lane caught that the `Some` arm
+/// could never execute — **a branch with no reachable caller, which is the exact
+/// defect this PR exists to fix, reproduced one layer down while fixing it.**
+///
+/// # Errors
+/// [`crate::error::CliError::BackendUnavailable`] when an accelerator was
+/// forced and the generation ran on CPU.
+fn reconcile_accelerator(accel_forced: bool, result: &super::run::RunResult) -> Result<()> {
+    if !accel_forced {
+        return Ok(());
+    }
+    let _unreachable_here: Option<String> =
+        crate::registry::after_generation(true, Some("gpu"), result.used_gpu)?;
     Ok(())
 }
 
@@ -355,17 +458,18 @@ fn print_run_output(
     max_tokens: usize,
     benchmark: bool,
     stream: bool,
+    accel_forced: bool,
 ) -> Result<()> {
     // --stream takes precedence — emit JSONL stream. This implies json-style
     // structured output regardless of --format. (--stream --json is the same
     // as --stream alone.)
     if stream && !benchmark {
-        return print_stream_output(result, source, max_tokens);
+        return print_stream_output(result, source, max_tokens, accel_forced);
     }
 
     // GH-240/GH-250: JSON output mode with accurate token counts
     if output_format == "json" && !benchmark {
-        let json = build_final_json(result, source, max_tokens);
+        let json = build_final_json(result, source, max_tokens, accel_forced);
         println!(
             "{}",
             serde_json::to_string_pretty(&json).unwrap_or_default()
@@ -397,7 +501,12 @@ fn print_run_output(
 }
 
 /// Build the terminal JSON blob shared by `--json` and `--stream` final events.
-fn build_final_json(result: &RunResult, source: &str, max_tokens: usize) -> serde_json::Value {
+fn build_final_json(
+    result: &RunResult,
+    source: &str,
+    max_tokens: usize,
+    accel_forced: bool,
+) -> serde_json::Value {
     let tokens_generated = result.tokens_generated.unwrap_or(0);
     let tok_per_sec = result.tok_per_sec.unwrap_or_else(|| {
         if result.duration_secs > 0.0 {
@@ -418,6 +527,22 @@ fn build_final_json(result: &RunResult, source: &str, max_tokens: usize) -> serd
         "inference_time_ms": (result.duration_secs * 1000.0 * 100.0).round() / 100.0,
         "used_gpu": result.used_gpu.unwrap_or(false),
         "cached": result.cached,
+        // #3602: `used_gpu: false` alone collapses two different outcomes — "no
+        // accelerator was asked for" and "one was asked for, attempted, and
+        // REFUSED at runtime". A consumer cannot tell a CPU run from a rejected
+        // GPU run, which is how a 33.6 s fallback was read as a GPU timing.
+        //
+        // `requested` is what the USER asked for, `ran` is what executed, and
+        // `fell_back` is true only when those disagree. The rejection's REASON
+        // (e.g. `cosine 0.4153` at a named position) is on stderr but not yet
+        // here: it is produced inside realizar's F2 gate and no channel carries
+        // it to the CLI. Adding one is the #3606-shaped follow-up named in the
+        // PR — NOT silently approximated with a guess.
+        "backend": {
+            "requested": if accel_forced { "gpu" } else { "default" },
+            "ran": if result.used_gpu == Some(true) { "gpu" } else { "cpu" },
+            "fell_back": accel_forced && result.used_gpu == Some(false),
+        },
     })
 }
 
@@ -436,11 +561,16 @@ fn build_final_json(result: &RunResult, source: &str, max_tokens: usize) -> serd
 /// only when no tokenizer could be resolved for the model; the token id is
 /// always present and exact, and the terminal `final` event always carries the
 /// authoritative full text.
-fn print_stream_output(result: &RunResult, source: &str, max_tokens: usize) -> Result<()> {
+fn print_stream_output(
+    result: &RunResult,
+    source: &str,
+    max_tokens: usize,
+    accel_forced: bool,
+) -> Result<()> {
     use std::io::Write;
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
-    write_stream_output(&mut out, result, source, max_tokens)?;
+    write_stream_output(&mut out, result, source, max_tokens, accel_forced)?;
     out.flush()?;
     Ok(())
 }
@@ -452,6 +582,7 @@ pub(crate) fn write_stream_output<W: std::io::Write>(
     result: &RunResult,
     source: &str,
     max_tokens: usize,
+    accel_forced: bool,
 ) -> std::io::Result<()> {
     if let Some(tokens) = result.generated_tokens.as_deref() {
         let texts = result.token_texts.as_deref().unwrap_or(&[]);
@@ -466,7 +597,7 @@ pub(crate) fn write_stream_output<W: std::io::Write>(
         }
     }
 
-    let mut final_blob = build_final_json(result, source, max_tokens);
+    let mut final_blob = build_final_json(result, source, max_tokens, accel_forced);
     if let Some(obj) = final_blob.as_object_mut() {
         obj.insert(
             "event".to_string(),
