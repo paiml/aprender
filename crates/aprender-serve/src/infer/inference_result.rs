@@ -232,8 +232,10 @@ fn run_gguf_inference(
     // run_gguf_generate as before. This replaces M32c.2.1's
     // gguf_gpu_generate.rs short-circuit with an actual forward pass.
     let infer_start = Instant::now();
-    let canonical_arch = crate::tensor_names::normalize_architecture(&model.config.architecture);
-    let (tokens, used_gpu) = if canonical_arch == "qwen3_moe" {
+    // #3714 R2: `moe_forward_handles` is the one dispatch predicate — `apr
+    // parity` and `apr qa` ask the same function, so no tool can route this
+    // architecture differently from `apr run`.
+    let (tokens, used_gpu) = if crate::gguf::moe_forward_handles(&model.config.architecture) {
         // #3714: the CUDA forward serves unless --no-gpu; a GPU that cannot
         // serve prints its reason before the CPU chain runs. This site used to
         // hard-code `(tokens, false)` and never try CUDA at all.

@@ -423,7 +423,7 @@ pub(crate) fn hybrid_loader_architecture(_path: &Path) -> bool {
 #[cfg(feature = "inference")]
 pub(crate) fn moe_loader_architecture(path: &Path) -> bool {
     super::model_header::gguf_arch_and_tensors(path)
-        .is_some_and(|(a, _)| realizar::tensor_names::normalize_architecture(&a) == "qwen3_moe")
+        .is_some_and(|(a, _)| realizar::gguf::moe_forward_handles(&a))
 }
 
 /// Without `inference` there is no runtime to route to.

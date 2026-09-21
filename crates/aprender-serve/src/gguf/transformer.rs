@@ -125,6 +125,21 @@ pub fn hybrid_forward_handles(architecture: &str) -> bool {
     architecture == "qwen35"
 }
 
+/// Is this an architecture string the routed-expert (Qwen3-MoE) forward
+/// handles — CPU `run_qwen3_moe_generate` (#3367), CUDA `Qwen3MoeCudaModel`
+/// (#3714)?
+///
+/// The runtime dispatches on the canonical key: `inference_result.rs` compares
+/// `normalize_architecture(..)` to `"qwen3_moe"`, so this asks the same
+/// normalizer rather than listing spellings. Other MoE architectures
+/// (`ArchConstraints::is_moe` also matches e.g. `qwen3_5moe`) reach no MoE
+/// forward and are NOT handled — a tool must keep refusing them. `apr parity`
+/// and `apr qa` ask this, next to [`hybrid_forward_handles`] (#3714 R2).
+#[must_use]
+pub fn moe_forward_handles(architecture: &str) -> bool {
+    crate::tensor_names::normalize_architecture(architecture) == "qwen3_moe"
+}
+
 /// Why the DENSE loader ([`QuantizedGGUFTransformer::from_gguf`]) cannot load
 /// this file, even though the hybrid forward can run it.
 ///
@@ -1077,3 +1092,37 @@ mod unsupported_architecture_tests {
 }
 
 include!("transformer_quantized_layer_field.rs");
+
+#[cfg(test)]
+mod moe_forward_handles_tests {
+    use super::{hybrid_forward_handles, moe_forward_handles};
+
+    /// #3714 R2: the spellings the routed-expert forward serves, and the MoE
+    /// spellings it does not — `ArchConstraints::is_moe` matches those too, so
+    /// a tool that asked `is_moe` instead of this would admit a file no forward
+    /// can run.
+    #[test]
+    fn moe_forward_handles_exactly_what_the_runtime_dispatches() {
+        for arch in ["qwen3moe", "qwen3_moe"] {
+            assert!(moe_forward_handles(arch), "{arch} runs the MoE forward");
+        }
+        for arch in [
+            "qwen35moe",
+            "qwen3_5moe",
+            "qwen3",
+            "qwen35",
+            "qwen2",
+            "llama",
+            "mixtral",
+        ] {
+            assert!(
+                !moe_forward_handles(arch),
+                "{arch} is not the qwen3moe forward"
+            );
+        }
+        // The two dispatch predicates never claim the same spelling.
+        for arch in ["qwen3moe", "qwen3_moe", "qwen35"] {
+            assert!(!(moe_forward_handles(arch) && hybrid_forward_handles(arch)));
+        }
+    }
+}

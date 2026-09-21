@@ -124,8 +124,11 @@ pub fn run(file: &Path, prompt: &str, _assert: bool, verbose: bool, json: bool) 
     // HAS both forwards — but it is not the dense pair. `OwnedQuantizedModel::
     // from_mapped` below would hand it straight to `dense_loader_refusal`,
     // which is the FAIL this dispatch replaces with a measurement.
-    if parity_arm(mapped.model.architecture().unwrap_or_default()) == ParityArm::Hybrid {
-        return run_hybrid(file, &mapped, &tokens, verbose, json);
+    match parity_arm(mapped.model.architecture().unwrap_or_default()) {
+        ParityArm::Hybrid => return run_hybrid(file, &mapped, &tokens, verbose, json),
+        // #3714 R2: the routed-expert pair — the one the runtime F2 guard judges.
+        ParityArm::Moe => return run_moe(file, &mapped, &tokens, verbose, json),
+        ParityArm::Dense => {},
     }
 
     let model = OwnedQuantizedModel::from_mapped(&mapped)
