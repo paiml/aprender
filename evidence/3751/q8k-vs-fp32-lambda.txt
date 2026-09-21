@@ -1,0 +1,39 @@
+qwen2.5-coder-0.5b-instruct-q4_k_m.gguf | chat-france | positions 18 | min cosine 0.999726 at pos 16 | argmax mismatches 0 | greedy identical for 16 tokens | ok
+qwen2.5-coder-0.5b-instruct-q4_k_m.gguf | chat-zorblat | positions 27 | min cosine 0.999460 at pos 7 | argmax mismatches 0 | greedy identical for 16 tokens | ok
+qwen2.5-coder-0.5b-instruct-q4_k_m.gguf | plain | positions 30 | min cosine 0.999532 at pos 0 | argmax mismatches 1 | greedy DIVERGES at generated token 1 | ok
+qwen2.5-1.5b-instruct-q4_k_m.gguf | chat-france | positions 18 | min cosine 0.994416 at pos 11 | argmax mismatches 0 | greedy identical for 16 tokens | BELOW 0.999
+qwen2.5-1.5b-instruct-q4_k_m.gguf | chat-zorblat | positions 27 | min cosine 0.997210 at pos 19 | argmax mismatches 0 | greedy identical for 16 tokens | BELOW 0.999
+qwen2.5-1.5b-instruct-q4_k_m.gguf | plain | positions 30 | min cosine 0.999525 at pos 27 | argmax mismatches 0 | greedy identical for 16 tokens | ok
+qwen2.5-coder-1.5b-instruct-q4_k_m.gguf | chat-france | positions 18 | min cosine 0.999547 at pos 1 | argmax mismatches 0 | greedy identical for 16 tokens | ok
+qwen2.5-coder-1.5b-instruct-q4_k_m.gguf | chat-zorblat | positions 27 | min cosine 0.999285 at pos 3 | argmax mismatches 1 | greedy identical for 16 tokens | ok
+qwen2.5-coder-1.5b-instruct-q4_k_m.gguf | plain | positions 30 | min cosine 0.999875 at pos 14 | argmax mismatches 0 | greedy identical for 16 tokens | ok
+Qwen3-1.7B-Q4_K_M.gguf | chat-france | positions 18 | min cosine 0.997029 at pos 16 | argmax mismatches 0 | greedy identical for 16 tokens | BELOW 0.999
+Qwen3-1.7B-Q4_K_M.gguf | chat-zorblat | positions 27 | min cosine 0.996158 at pos 23 | argmax mismatches 1 | greedy identical for 16 tokens | BELOW 0.999
+Qwen3-1.7B-Q4_K_M.gguf | plain | positions 30 | min cosine 0.983782 at pos 27 | argmax mismatches 1 | greedy DIVERGES at generated token 13 | BELOW 0.999
+qwen2.5-coder-7b-instruct-q4_k_m.gguf | chat-france | positions 18 | min cosine 0.999841 at pos 16 | argmax mismatches 0 | greedy identical for 16 tokens | ok
+qwen2.5-coder-7b-instruct-q4_k_m.gguf | chat-zorblat | positions 27 | min cosine 0.999350 at pos 22 | argmax mismatches 0 | greedy identical for 16 tokens | ok
+qwen2.5-coder-7b-instruct-q4_k_m.gguf | plain | positions 30 | min cosine 0.999907 at pos 11 | argmax mismatches 1 | greedy identical for 16 tokens | ok
+Qwen3-8B-Q4_K_M.gguf | chat-france | positions 18 | min cosine 0.999177 at pos 16 | argmax mismatches 1 | greedy identical for 16 tokens | ok
+Qwen3-8B-Q4_K_M.gguf | chat-zorblat | positions 27 | min cosine 0.997848 at pos 24 | argmax mismatches 0 | greedy identical for 16 tokens | BELOW 0.999
+Qwen3-8B-Q4_K_M.gguf | plain | positions 30 | min cosine 0.999481 at pos 14 | argmax mismatches 0 | greedy identical for 16 tokens | ok
+Qwen3.5-0.8B-Q4_K_M.gguf | chat-france | positions 18 | min cosine 0.996487 at pos 15 | argmax mismatches 0 | greedy identical for 16 tokens | BELOW 0.999
+Qwen3.5-0.8B-Q4_K_M.gguf | chat-zorblat | positions 27 | min cosine 0.997178 at pos 0 | argmax mismatches 0 | greedy identical for 16 tokens | BELOW 0.999
+Qwen3.5-0.8B-Q4_K_M.gguf | plain | positions 30 | min cosine 0.999170 at pos 0 | argmax mismatches 0 | greedy DIVERGES at generated token 3 | ok
+Qwen3.5-2B-Q4_K_M.gguf | chat-france | positions 18 | min cosine 0.998921 at pos 16 | argmax mismatches 0 | greedy identical for 16 tokens | BELOW 0.999
+Qwen3.5-2B-Q4_K_M.gguf | chat-zorblat | positions 27 | min cosine 0.998529 at pos 25 | argmax mismatches 0 | greedy identical for 16 tokens | BELOW 0.999
+Qwen3.5-2B-Q4_K_M.gguf | plain | positions 30 | min cosine 0.999167 at pos 23 | argmax mismatches 0 | greedy identical for 16 tokens | ok
+Qwen3.5-4B-Q4_K_M.gguf | chat-france | positions 18 | min cosine 0.998407 at pos 15 | argmax mismatches 0 | greedy identical for 16 tokens | BELOW 0.999
+Qwen3.5-4B-Q4_K_M.gguf | chat-zorblat | positions 27 | min cosine 0.998986 at pos 1 | argmax mismatches 2 | greedy identical for 16 tokens | BELOW 0.999
+Qwen3.5-4B-Q4_K_M.gguf | plain | positions 30 | min cosine 0.999572 at pos 29 | argmax mismatches 0 | greedy identical for 16 tokens | ok
+Qwen3.5-9B-Q4_K_M.gguf | chat-france | positions 18 | min cosine 0.998221 at pos 0 | argmax mismatches 0 | greedy identical for 16 tokens | BELOW 0.999
+Qwen3.5-9B-Q4_K_M.gguf | chat-zorblat | positions 27 | min cosine 0.833554 at pos 23 | argmax mismatches 2 | greedy identical for 16 tokens | BELOW 0.999
+Qwen3.5-9B-Q4_K_M.gguf | plain | positions 30 | min cosine 0.999335 at pos 21 | argmax mismatches 2 | greedy DIVERGES at generated token 14 | ok
+Qwen3.5-27B-Q4_K_M.gguf | chat-france | positions 18 | min cosine 0.999528 at pos 16 | argmax mismatches 0 | greedy identical for 16 tokens | ok
+Qwen3.5-27B-Q4_K_M.gguf | chat-zorblat | positions 27 | min cosine 0.999507 at pos 11 | argmax mismatches 1 | greedy identical for 16 tokens | ok
+Qwen3.5-27B-Q4_K_M.gguf | plain | positions 30 | min cosine 0.999684 at pos 8 | argmax mismatches 0 | greedy identical for 16 tokens | ok
+Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf | chat-france | positions 18 | min cosine 0.872551 at pos 1 | argmax mismatches 1 | greedy identical for 16 tokens | BELOW 0.999
+Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf | chat-zorblat | positions 27 | min cosine 0.872551 at pos 1 | argmax mismatches 1 | greedy identical for 16 tokens | BELOW 0.999
+Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf | plain | positions 30 | min cosine 0.958454 at pos 0 | argmax mismatches 1 | greedy identical for 16 tokens | BELOW 0.999
+Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf | chat-france | positions 18 | min cosine 0.985436 at pos 2 | argmax mismatches 0 | greedy identical for 16 tokens | BELOW 0.999
+Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf | chat-zorblat | positions 27 | min cosine 0.985436 at pos 2 | argmax mismatches 1 | greedy identical for 16 tokens | BELOW 0.999
+Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf | plain | positions 30 | min cosine 0.925310 at pos 0 | argmax mismatches 1 | greedy identical for 16 tokens | BELOW 0.999

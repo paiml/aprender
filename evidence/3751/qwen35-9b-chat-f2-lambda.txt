@@ -1,0 +1,6 @@
+22:32:49Z submitted
+22:35:10Z hold acquired on noah-Lambda-Vector
+22:35:49Z before rc=0 | apr 0.69.0 (5615e7afe) | Backend: GPU (CUDA, NVIDIA GeForce RTX 4090, 24035 MB VRAM) [qwen35 hybrid forward, #3090] F2 guard: validating on this run (no receipt for this model) [source=fresh] warning: GPU output diverges from CPU at position 23 (argmax 248045 != 248045, cosine 0.8338); min cosine 0.8338, validated via seria
+22:36:16Z after rc=0 | apr 0.69.0 (86e54afcc) | Backend: GPU (CUDA, NVIDIA GeForce RTX 4090, 24035 MB VRAM) [qwen35 hybrid forward, #3090] F2 guard: validating on this run (no receipt for this model) [source=fresh] F2 guard: passed in 7823 ms on 28 positions; receipt written to /mnt/nvme-raid0/agent-wt/eb-3714-logs/q35chat-lambda/rd-after/03b7472
+22:36:16Z hold released
+22:36:16Z batch exit=0
