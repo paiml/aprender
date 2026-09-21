@@ -27,7 +27,7 @@ pub struct HfTokenizer {
 enum Inner {
     /// aprender's BPE (a whitespace pre-split). It refuses a byte-level vocabulary by name
     /// (#3742), so it only ever holds one it encodes canonically.
-    Core(HfBpeTokenizer),
+    Core(Box<HfBpeTokenizer>),
     /// #3742: a byte-level tokenizer.json (Qwen, Llama 3, ...) through realizar's canonical
     /// byte-level BPE: the model's own pre-tokenizer and ranked merges, identical to
     /// llama.cpp. Training on aprender's whitespace split gave ids the model never saw.
@@ -45,7 +45,7 @@ impl Inner {
                 return Ok(Self::Canonical(tok));
             }
         }
-        load_hf_from_json(json).map(Self::Core).map_err(|e| e.to_string())
+        load_hf_from_json(json).map(|t| Self::Core(Box::new(t))).map_err(|e| e.to_string())
     }
 
     fn vocab_size(&self) -> usize {
@@ -92,7 +92,7 @@ impl HfTokenizer {
     #[must_use]
     pub fn gpt2() -> Self {
         Self {
-            inner: Inner::Core(HfBpeTokenizer::gpt2_base()),
+            inner: Inner::Core(Box::new(HfBpeTokenizer::gpt2_base())),
             pad_id: GPT2_VOCAB_SIZE,
             eos_id: Some(GPT2_VOCAB_SIZE),
             bos_id: None,
@@ -103,7 +103,7 @@ impl HfTokenizer {
     #[must_use]
     pub fn qwen2() -> Self {
         Self {
-            inner: Inner::Core(HfBpeTokenizer::new(HfBpeConfig::qwen2())),
+            inner: Inner::Core(Box::new(HfBpeTokenizer::new(HfBpeConfig::qwen2()))),
             pad_id: Qwen2BpeTokenizer::ENDOFTEXT_ID,
             eos_id: Some(Qwen2BpeTokenizer::IM_END_ID),
             bos_id: Some(Qwen2BpeTokenizer::IM_START_ID),
