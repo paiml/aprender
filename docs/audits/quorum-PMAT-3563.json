@@ -1,0 +1,199 @@
+{
+  "ticket": "PMAT-3563",
+  "base": "52f43da71745eedacde2f86e1903ea81d6fa34ad",
+  "base_resolved": "52f43da71745eedacde2f86e1903ea81d6fa34ad",
+  "base_note": "no origin/52f43da71745eedacde2f86e1903ea81d6fa34ad exists; judged against the local ref",
+  "head": "47658dbabadec0377de5c8829d022ea1a9c00aa3",
+  "diff_sha256": "01777306f86394e1dc8d9afaf3139409091d9a130093b81207dc0d3442244f75",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 28299,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements the requested changes for PMAT-3563, clause (A). The `llama_bin.sh` script correctly resolves the canonical pinned path (`${LLAMA_PIN_SRC_ROOT:-$HOME/src}/llama.cpp-<build_commit>/build/bin/llama-bench`) when nothing is specified in `LLAMA_BENCH_PATH`. It also handles git hash abbreviation lengths accurately (>= 7 hex digits) to support different environments like `gx10` and `lambda`, and prints explicit failure reasons and resolution steps as requested. The test suite (`check_llama_pin.sh`) was meticulously updated with explicit tests and mutants verifying this exact behaviour, and evidence files proving real-world execution on both host machines are properly included. No claims were unbacked, no tests were weakened, and all ticket constraints are fully satisfied.",
+      "findings": [],
+      "raw_bytes": 2903,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "NO-VERDICT",
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": [],
+      "raw_bytes": 8923,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "transport_status": "SUCCESS",
+      "transport_error": "",
+      "salvageable": "/home/noah/.gemini/antigravity-cli/brain/899a9ace-057a-4b3c-910b-bead7b3fb9f5 (27681118 bytes)",
+      "carried_verdict": "",
+      "blind_reason": "",
+      "agy_exit": "",
+      "model": "gpt-oss-120b-medium",
+      "model_measured": "gpt-oss-120b-medium",
+      "model_source": "measured",
+      "family": "openai",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gpt-oss-120b-medium",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
+            "outcome": "capacity",
+            "reason": "Our servers are experiencing high traffic right now, please try again in a minute. (UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server)"
+          },
+          {
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff accurately implements clause 2 (A) of the ticket, splitting the requirements into separate PRs as directed by the cop ruling. It updates `llama_bin.sh` to resolve to the canonical location `${LLAMA_PIN_SRC_ROOT:-$HOME/src}/llama.cpp-<build_commit>` when no binary is named, verifies the build correctly (accounting for different git abbreviation lengths), and includes robust testing of this functionality in `check_llama_pin.sh` with mutants to prevent regressions. The evidence files prove it operates correctly on both lambda and gx10. There is no evidence of it implementing forbidden logic.",
+      "findings": [],
+      "raw_bytes": 3152,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-low",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-low",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [
+    {
+      "lane": 2,
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": []
+    }
+  ],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 2: no verdict object found in lane file (status=SUCCESS) salvageable=/home/noah/.gemini/antigravity-cli/brain/899a9ace-057a-4b3c-910b-bead7b3fb9f5 (27681118 bytes) [UNREVIEWED CLAIM MATERIAL — never a PASS]",
+    "lane 3: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (3152 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)",
+    "lane 2: judged by gpt-oss-120b-medium after falling through gpt-oss-120b-medium (capacity: Our servers are experiencing high traffic right now, please try again in a minute. (UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server)) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
