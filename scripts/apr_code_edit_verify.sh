@@ -27,8 +27,12 @@
 #
 # Usage:
 #   scripts/apr_code_edit_verify.sh --model FILE --host NAME --out DIR
-#       [--max-turns N] [--lock-wait SEC] [--timeout SEC]
+#       [--max-turns N] [--lock-wait SEC] [--timeout SEC] [--gpu-q PRIO]
 #   DIR must not exist yet; the run writes every artifact into it.
+#   --gpu-q PRIO queues the run through `gpu-q --prio PRIO` (the cop's ordered
+#   front of the same lock, rule rev 5; release-blocking rows run at 1) instead
+#   of a bare bounded flock. gpu-q itself takes the lock and choom, so the
+#   harness must not take it again: two flocks on one file deadlock.
 #
 # Exit: 0 PASS; 1 FAIL (cell.json names the first failing mechanism);
 #       2 decline (GPU lock not acquired, missing input); 3 usage error.
@@ -45,6 +49,7 @@ OUT=""
 MAX_TURNS=12
 LOCK_WAIT=3600
 TIMEOUT=900
+GPU_Q_PRIO=""
 
 usage() {
     sed -n '/^# Usage:/,/^# Exit:/p' "$0" | sed 's/^# \{0,1\}//' >&2
@@ -59,6 +64,7 @@ while [ "$#" -gt 0 ]; do
         --max-turns) MAX_TURNS="${2:-}"; shift 2 ;;
         --lock-wait) LOCK_WAIT="${2:-}"; shift 2 ;;
         --timeout) TIMEOUT="${2:-}"; shift 2 ;;
+        --gpu-q) GPU_Q_PRIO="${2:-}"; shift 2 ;;
         -h|--help) usage ;;
         *) printf 'unknown argument: %s\n' "$1" >&2; usage ;;
     esac
@@ -73,6 +79,10 @@ if [ ! -f "$MODEL" ]; then
 fi
 if ! command -v python3 >/dev/null 2>&1; then
     printf 'DECLINE  python3 not found: the fixture test and the judge need it\n' >&2
+    exit 2
+fi
+if [ -n "$GPU_Q_PRIO" ] && ! command -v gpu-q >/dev/null 2>&1; then
+    printf 'DECLINE  --gpu-q given but gpu-q is not on PATH\n' >&2
     exit 2
 fi
 
@@ -121,14 +131,19 @@ date -u +%FT%TZ > "$OUT/started.txt"
 
 prompt="$(cat "$FIXTURE/task.txt")"
 
-# Every GPU call takes the fleet lock with a bounded wait and runs choom'd to
-# 1000, so this run and never a CI job is the OOM victim. The lock-acquired
-# marker separates "never got the GPU" from "apr exited 75".
+# Every GPU call takes the fleet lock and runs choom'd to 1000, so this run and
+# never a CI job is the OOM victim: through gpu-q when asked, else a bounded
+# flock. The lock-acquired marker, written once the lock is held, separates
+# "never got the GPU" from "apr exited 75".
+if [ -n "$GPU_Q_PRIO" ]; then
+    gate=(gpu-q --prio "$GPU_Q_PRIO" --)
+else
+    gate=(flock -w "$LOCK_WAIT" -E 75 "$GPU_LOCK" choom -n 1000 --)
+fi
 set +e
 (
     cd "$OUT/project" &&
-    flock -w "$LOCK_WAIT" -E 75 "$GPU_LOCK" \
-        choom -n 1000 -- \
+    "${gate[@]}" \
         bash -c 'date -u +%FT%TZ > "$1"; shift; exec "$@"' _ "$OUT/lock-acquired" \
         env APR_BIN="$wrapper" PATH="$shim_dir:$PATH" timeout "$TIMEOUT" \
         "$APR" code -p \
