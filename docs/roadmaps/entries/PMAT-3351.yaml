@@ -1,4 +1,4 @@
-- id: PMAT-3347
+- id: PMAT-3351
   github_issue: 3347
   item_type: task
   title: pv's L2 column reads an obligation-to-test link, not an index
