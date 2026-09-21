@@ -290,6 +290,8 @@ name = "ptx_parity_validation"
 required-features = ["inference"]
 
 [dev-dependencies]
+# #3745 S3 (#3752): the hand-list guard reads the release gates from [package.metadata.dogfood]
+toml = { workspace = true }
 jsonschema = "0.28"  # apr devices --json validated against contracts/schemas/apr-devices-v1.schema.json (PP-066 R-0a)
 assert_cmd = "2.0"
 predicates = "3.1"

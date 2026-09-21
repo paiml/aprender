@@ -314,6 +314,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "toml 0.8.23",
  "tower 0.5.3",
  "unicode-normalization",
  "ureq 2.12.1",

@@ -50,6 +50,9 @@ pub mod verbosity;
 mod accel;
 mod commands;
 pub mod error;
+#[cfg(test)]
+// #3745 S3 (#3752): release surfaces may not hand-list apr's verbs or flags (a lib test, so workspace-test runs it)
+mod hand_list_guard;
 mod output;
 pub mod pipe;
 // #3745 S1: the surface the binary actually has, emitted by the binary.
