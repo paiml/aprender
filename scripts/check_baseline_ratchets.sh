@@ -94,6 +94,7 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         test_fixture_path_baseline.txt)          printf 'count\n' ;;
         tracked_ignored_baseline.txt)            printf 'count\n' ;;
         unwired_guards_baseline.txt)             printf 'set-aperture\tscripts/check_guards_are_wired.sh\n' ;;   # NAME entries: a guard file that predates the comparand may be ledgered when the meta-guard itself widens (#3644)
+        wallclock_assert_baseline.txt)           printf 'keyed\n' ;;   # #3703: <assertion text><TAB><count>; keyed on TEXT so a line moving is not growth
         # NOT a ratchet either, and for the same reason one level along: this
         # registry is DERIVED from the test sources on every run
         # (scripts/check_tree_reader_tests.sh) and must equal that derivation

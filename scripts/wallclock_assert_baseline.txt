@@ -1,0 +1,67 @@
+# tool_version=none (grep over git ls-files crates/*/src/**.rs; not a versioned analyser)
+# Lib-test assertions that an INTEGER duration is positive (`> 0`, `>= 1`, `!= 0`) which PREDATE
+# check_no_timing_in_required.sh PART 4 (#3703, 2026-09-21). That shape fails on a fast host: an
+# `as_millis()` taken over sub-millisecond work reads 0. It stopped the v0.69.0 clean-room on
+# gx10-pool1 (aprender-verify-ml test_pipeline_generate_small), and three such lines were FIXED in
+# the same commit rather than recorded (pipeline.rs, bug_hunter tests_patterns.rs, instruct_trainer.rs).
+#
+# Every occurrence below was read and classified. None measures elapsed time that can truncate to 0:
+# each is a declared constant, a configured value, an epoch timestamp, an estimate, a fixture input,
+# or a real measurement taken AFTER a sleep of at least the unit it is truncated to.
+#
+# FORMAT: `<assertion text, trimmed><TAB><occurrences across crates/*/src>`. The key is the TEXT,
+# never a coordinate. A `<path>:<line>` key goes stale on any edit above the line, and re-pointing it
+# is an addition the shrink-only ratchet refuses unless the guard itself changes, so an unrelated
+# one-line edit in any of ~50 files would have turned guard-tree red with no in-branch remedy
+# (measured on this branch before it was re-keyed). Keyed on text, a move, an insertion above, or a
+# file split changes nothing here.
+#
+# THE RATCHET (`keyed`): no key may appear and no count may rise. So a NEW timing-shaped assertion
+# fails, and so does a COPY of a recorded one (the count rises): assert what the code promises
+# instead, e.g. `assert_eq!(budget.total_ms, 16)`, never `> 0`. PART 4 also fails when a count here
+# exceeds the tree (fixed or edited lines): lower or delete the entry in the same commit, which the
+# ratchet allows. Editing a recorded line's text is a new key: fix that assertion rather than record it.
+
+# -- declared render budgets: BrickBudget::uniform(N) / BrickBudget constants returned by budget(); set in code, never measured (76)
+assert!(CpuStateBreakdown::default().budget().measure_ms > 0);	1
+assert!(FreqTempHeatmap::default().budget().measure_ms > 0);	1
+assert!(LoadAverageTimeline::default().budget().measure_ms > 0);	1
+assert!(PerCoreSparklineGrid::default().budget().measure_ms > 0);	1
+assert!(TopProcessesMini::default().budget().measure_ms > 0);	1
+assert!(budget.layout_ms > 0);	22
+assert!(budget.measure_ms > 0);	9
+assert!(budget.paint_ms > 0);	19
+assert!(budget.total_ms > 0);	13
+assert!(input.budget().paint_ms > 0);	1
+assert!(panel.budget().paint_ms > 0);	7
+
+# -- configured values (a timeout, window, interval, chunk size or option read back from config); never a clock (9)
+assert!(chunk_size_ms > 0);	1
+assert!(config.idle_timeout_ms > 0, "D.44: Idle timeout must be set");	1
+assert!(config.timeout_ms > 0);	1
+assert!(config.window_ms > 0);	1
+assert!(interval.as_millis() > 0);	3
+assert!(options.time_ms > 0 || !options.paused);	1
+assert!(options.time_ms > 0);	1
+
+# -- epoch timestamps (ms since 1970 from SystemTime::now()); positive for any real clock, not a duration (7)
+assert!(report.timestamp_ms > 0);	3
+assert!(snap.timestamp_ms > 0);	1
+assert!(snapshot.timestamp_ms > 0);	1
+assert!(writer.snapshot.start_timestamp_ms > 0);	1
+assert!(writer.snapshot.timestamp_ms > 0);	1
+
+# -- an estimate computed from a cost model, not measured (1)
+assert!(estimate.estimated_cold_start_ms > 0);	1
+
+# -- durations that are fixture INPUTS to the code under test (the test supplies the value) (4)
+assert!(event.duration.as_micros() > 0);	1
+assert!(health.latency_p50.as_millis() > 0);	1
+assert!(stats.total_time_us > 0);	1
+assert!(trace.total_time_us > 0);	1
+
+# -- real measurements taken after a sleep of at least the truncation unit; a monotonic clock cannot read 0 (4)
+assert!(item.duration_ms >= 1, "Duration should be at least 1ms");	1
+assert!(meta.actual_us > 0);	1
+assert!(meta.age().as_millis() >= 1);	1
+assert!(result.metadata.unwrap().actual_us > 0);	1

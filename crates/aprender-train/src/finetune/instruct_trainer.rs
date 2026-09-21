@@ -561,7 +561,8 @@ mod tests {
 
         assert_eq!(result.epoch_metrics.len(), 2);
         assert!(result.best_val_loss >= 0.0);
-        assert!(result.total_time_ms > 0);
+        // #3703: `total_time_ms` is a truncated wall-clock `as_millis()`, 0 on a host that trains
+        // this tiny config in under a millisecond, so it is not asserted. The epoch count is.
     }
 
     #[test]
