@@ -3002,11 +3002,23 @@ jobs:
       - name: Render the fixture and write this host's receipt
         run: cargo test -p aprender-viz --features text-path,raster --test render_determinism
 
-      - name: Upload this host's receipt
+      # APEX-001 EV-2d (#3666): the SVG -> PNG path through the pinned, font-free resvg. The
+      # receipt above measured the crate's own Framebuffer rasteriser, not resvg/tiny-skia, and
+      # tiny-skia picks its pipeline per architecture — so resvg's cross-architecture PNG identity
+      # is measured here and RECORDED by raster-compare.sh, never asserted.
+      - name: Rasterise the SVG fixture and write this host's raster receipt
+        run: cargo test -p aprender-viz --features raster --test raster_determinism
+
+      # One artifact per arch carries both receipts, so the compare job's `determinism-*`
+      # download sees them together. With two paths, `if-no-files-found` only fires when BOTH
+      # are missing; a missing raster receipt is caught by raster-compare.sh's count instead.
+      - name: Upload this host's receipts
         uses: actions/upload-artifact@v7
         with:
           name: determinism-${{ matrix.arch }}
-          path: target/aprender-viz/determinism-*.json
+          path: |
+            target/aprender-viz/determinism-*.json
+            target/aprender-viz/raster-*.json
           if-no-files-found: error   # a missing receipt is a failure, not an empty comparison
 
   # Compare the two hosts and write the receipt APEX-001 EV-2a's accept command reads.
@@ -3048,6 +3060,27 @@ jobs:
         with:
           name: determinism-receipt
           path: target/aprender-viz/determinism-receipt.json
+          if-no-files-found: error
+
+      # APEX-001 EV-2d: the raster half. The script exits 0 whether or not the two PNGs agree —
+      # png_identical is recorded, not asserted — and exits 1 on anything that would make the
+      # comparison meaningless (not exactly two hosts, one architecture twice, different SVG
+      # inputs, a malformed digest). Its self-test proves that, and that a design which ASSERTED
+      # PNG identity would be caught.
+      - name: The raster compare must be able to fail
+        run: bash scripts/ci/raster-compare.sh --self-test
+
+      - name: Compare the hosts' rasters and write the raster receipt
+        run: |
+          set -euo pipefail
+          mkdir -p target/aprender-viz
+          bash scripts/ci/raster-compare.sh receipts target/aprender-viz/raster-receipt.json
+
+      - name: Upload the raster receipt
+        uses: actions/upload-artifact@v7
+        with:
+          name: raster-receipt
+          path: target/aprender-viz/raster-receipt.json
           if-no-files-found: error
 
   gate:
