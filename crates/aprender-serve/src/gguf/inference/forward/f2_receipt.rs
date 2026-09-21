@@ -70,7 +70,11 @@ pub struct F2Receipt {
 }
 
 /// The current receipt schema. Bump it and every old receipt re-validates.
-pub const F2_RECEIPT_SCHEMA: u32 = 1;
+///
+/// 2 (#3596): the GPU half of the qwen35 guard is now the batched prefill plus one
+/// decode step. A schema-1 receipt vouched for the per-token path, which a run no
+/// longer takes, so it must not let the batched path skip validation.
+pub const F2_RECEIPT_SCHEMA: u32 = 2;
 
 /// Why a run is validating instead of reading the receipt.
 #[derive(Debug, Clone, PartialEq, Eq)]

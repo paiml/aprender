@@ -1,0 +1,17 @@
+- id: PMAT-3596
+  github_issue: 3596
+  item_type: task
+  title: 'Qwen3.5 hybrid has NO batched CUDA prefill — qwen35_gpu_decode loops forward_single over every prompt token (9B: 235 s for one output token on an ~5.7k-token brief, ~24 tok/s prefill); batched/chunked prefill usable to the declared context'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-3e
+  created: 2026-09-21T16:20:00Z
+  updated: 2026-09-21T16:20:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE — transcribed VERBATIM from issue #3596 "## done_when (added)" (comment 2026-09-21T15:57:35Z, the 0.69.1 P0 move): "- [ ] a batched (chunked) CUDA prefill for the Qwen3.5 hybrid (attention layers batched; the Gated DeltaNet recurrence in chunked form) on lambda and gx10, parity-checked against the per-token path at ≥ 64 positions and at 20k" · "- [ ] TTFT for a 20k-token prompt on the 9B measured on both hosts and recorded in the receipt, against llama.cpp at the pinned comparator on the same prompt (the ratio is reported, never claimed as a target)" · "- [ ] `apr run --json` reports `prefill_ms` and `prompt_tokens` (with #3718)". COP ADDITION (aprender-04, relayed 2026-09-21 ~16:05Z, quoting the operator "lets ensure this release has MORE than enough tokens for our needs (overdo it)"): record TTFT at 20k, 60k, 148k and the declared context length (qwen35.context_length = 262144) on both hosts; the design note carries the full-attention KV memory plan at the declared length on the 4090 (24 GB) and GB10. This addition is NOTICE from the cop, not yet on the issue body — it must be posted on #3596 before a quorum judges against it. The ORIGINAL done_when items 1–6 of #3596 (TTFT in BEATS.md, apr bench accepting hybrids, the (cached) suffix, the pinned comparator, root-causing the 14 s) belong to #3598/#3604/#3606 rows and are NOT claimed here; this row uses `Refs #3596` unless the issue owner rules the whole issue closable. File boundaries agreed with aprender-c3 (#3693): new kernel files under aprender-gpu/src/kernels/gdn/, new gguf/cuda/forward_qwen35_cuda_prefill.rs, edits limited to forward_qwen35.rs (qwen35_gpu_decode + F2 GPU probe) and forward_qwen35_cuda.rs (state sizing); decode_attention.rs untouched. prefill_ms definition agreed with aprender-a8 (#3718, #3606 StageTimings): forward over post-template prompt tokens up to the first generated token logits, excluding load/h2d/validate/tokenization; null never 0.'

@@ -20,7 +20,7 @@ impl CudaExecutor {
     ///
     /// For token i (ctaid.y), valid positions are j < base_seq_len + i + 1.
     /// Sets invalid positions to -inf, then computes in-place softmax.
-    const CAUSAL_MASK_SOFTMAX_PTX: &str = r#"
+    pub(crate) const CAUSAL_MASK_SOFTMAX_PTX: &str = r#"
 .version 7.5
 .target sm_75
 .address_size 64
