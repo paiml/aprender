@@ -660,3 +660,78 @@ mod qa_capability_ssm_tests {
         }
     }
 }
+
+#[cfg(all(test, feature = "inference"))]
+mod moe_loader_architecture_tests {
+    use super::moe_loader_architecture;
+
+    fn gguf_str(out: &mut Vec<u8>, s: &str) {
+        out.extend_from_slice(&(s.len() as u64).to_le_bytes());
+        out.extend_from_slice(s.as_bytes());
+    }
+
+    /// A GGUF v3 header whose architecture key comes AFTER a string array and
+    /// a scalar. The file ENDS right after the header: no tensor infos, no data.
+    fn header_with_arch_last(arch: &str) -> Vec<u8> {
+        let mut h = b"GGUF".to_vec();
+        h.extend_from_slice(&3u32.to_le_bytes());
+        h.extend_from_slice(&0u64.to_le_bytes()); // tensor count
+        h.extend_from_slice(&3u64.to_le_bytes()); // kv count
+        gguf_str(&mut h, "tokenizer.ggml.tokens");
+        h.extend_from_slice(&9u32.to_le_bytes()); // array
+        h.extend_from_slice(&8u32.to_le_bytes()); // of strings
+        h.extend_from_slice(&3u64.to_le_bytes());
+        for t in ["<|im_start|>", "hello", "world"] {
+            gguf_str(&mut h, t);
+        }
+        gguf_str(&mut h, "qwen3moe.expert_count");
+        h.extend_from_slice(&4u32.to_le_bytes()); // u32
+        h.extend_from_slice(&128u32.to_le_bytes());
+        gguf_str(&mut h, "general.architecture");
+        h.extend_from_slice(&8u32.to_le_bytes()); // string
+        gguf_str(&mut h, arch);
+        h
+    }
+
+    fn write(tag: &str, bytes: &[u8]) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!("moe-pred-{tag}-{}", std::process::id()));
+        std::fs::write(&p, bytes).expect("write fixture");
+        p
+    }
+
+    /// #3714: routed-expert files are recognised from the header alone; dense
+    /// ones, non-GGUF files and truncated headers are not.
+    #[test]
+    fn the_moe_predicate_reads_only_the_header() {
+        let moe = write("moe", &header_with_arch_last("qwen3moe"));
+        let dense = write("dense", &header_with_arch_last("qwen3"));
+        let bad = write("bad", b"NOTGGUF-at-all");
+        let mut cut = header_with_arch_last("qwen3moe");
+        cut.truncate(cut.len() - 3);
+        let cut = write("cut", &cut);
+        assert!(
+            moe_loader_architecture(&moe),
+            "qwen3moe is the routed-expert arch"
+        );
+        assert!(!moe_loader_architecture(&dense), "dense qwen3 is not");
+        assert!(!moe_loader_architecture(&bad), "a non-GGUF file is not");
+        assert!(
+            !moe_loader_architecture(&cut),
+            "a truncated header is not, never a guess"
+        );
+        for p in [moe, dense, bad, cut] {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+
+    /// The real file, when `APR_QWEN3MOE_GGUF` names one. Run under
+    /// `/usr/bin/time -v` for the peak-RSS row the #3714 receipt cites.
+    #[test]
+    fn the_moe_predicate_answers_the_real_file_from_its_header() {
+        let Some(path) = std::env::var_os("APR_QWEN3MOE_GGUF") else {
+            eprintln!("SKIP: APR_QWEN3MOE_GGUF is not set");
+            return;
+        };
+        assert!(moe_loader_architecture(std::path::Path::new(&path)));
+    }
+}

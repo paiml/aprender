@@ -67,6 +67,8 @@ The golden gate's PASS text on this base still reads "(GPU hybrid forward, #3090
 - FP32 scope across join, par_iter and nested joins; restored on panic.
 - capacity adapter: a busy 4090 → CoTenant with the arithmetic; the measured gx10 → Fits; a starved GB10 → refused naming MemAvailable.
 - `dispatch_gate` records an erroring gate as FAILED and continues.
+- qa's MoE predicate reads `general.architecture` through the ONE bounded-prefix header reader, `model_header::gguf_arch_and_tensors` (#3750 PR A, which this branch is stacked on). The first cut called realizar's `MappedGGUFModel::from_path`, whose MAP_POPULATE + mlock faults in the whole file (#3761). On Instruct-2507 (18.5 GB) the helper path peaks at **58,836 kB** RSS for the whole test process in 0.08 s. The qa rows above were measured with the populated map, and the routing decision is identical.
+- **Stacked on #3750 PR A** (`efe74818d`, AGREED 3/3), which folds first. Quorum base = `efe74818d`. The R1 commits are cherry-picked from `PMAT-3714-qwen3moe-cuda` (their `-x` trailers name the originals). The only resolved conflict is `qa_capability.rs`, where #3750 A moved the header parse into `model_header`.
 - Existing `qwen3_moe` (38) and `moe` (139) unit tests unchanged-green.
 
 ## Not measured / not in this row
