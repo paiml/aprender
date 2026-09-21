@@ -1,0 +1,25 @@
+Backend: GPU (CUDA, NVIDIA GB10, 122502 MB VRAM) [qwen35 hybrid forward, #3090]
+F2 guard: receipt matches (model sha256 00fe7986ff5f…, apr 0.69.0, NVIDIA GB10) — validated 11656s ago on 16 positions; CPU reference forward skipped [source=receipt, sha256 4788 ms]. `apr run --revalidate` forces a fresh run.
+[GH-559] RmsNorm PTX (1888 bytes)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 5 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround

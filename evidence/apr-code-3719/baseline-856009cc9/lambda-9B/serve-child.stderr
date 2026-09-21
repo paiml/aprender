@@ -1,0 +1,6 @@
+[GH-129] Early kernel preload: 44 modules compiled
+[PMAT-044] Batch scheduler started: max_batch=32, window=0ms
+[PMAT-044] Batch m=1 done in 0.0ms (37257824.1 tok/s/slot)
+[PMAT-044] Batch m=1 done in 0.0ms (56126171.6 tok/s/slot)
+[PMAT-044] Batch m=1 done in 0.0ms (54089138.9 tok/s/slot)
+[PMAT-044] Batch m=1 done in 0.0ms (56827868.4 tok/s/slot)

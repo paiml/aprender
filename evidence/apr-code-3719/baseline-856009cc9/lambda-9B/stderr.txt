@@ -1,0 +1,3 @@
+Launched apr serve on port 19465 (pid 1005393)
+apr serve ready (6.5s)
+Error: driver error: network error: apr serve HTTP 500: {"error":"Operation 'generate_gpu_resident_streaming' not supported: Model architecture not supported for GPU-resident path"}
