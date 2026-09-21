@@ -20145,3 +20145,24 @@ roadmap:
   labels:
   - kind:code
   notes: "Refs #3577 (ONT-4c3; its ledger binding is infra's row, bound after this merges) and #3624 (the by_entity_type sibling, not closed here). R-3 of ONT-001: pc_extract is one planted defect per registered extractor, every run."
+- id: PMAT-3748
+  github_issue: 3748
+  item_type: task
+  title: 'F2 receipts are keyed per MODEL, not per (model, apr version, device) as #3604 specified — versions overwrite each other and every run re-pays the 64-position CPU forward (24.5 s of a 56 s run)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-eb
+  created: 2026-09-21T21:45:00Z
+  updated: 2026-09-21T21:45:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3748 done_when 1, as AMENDED by the issue author (cop aprender-04, 2026-09-21T21:27:14Z comment), verbatim: "The key is now **(model sha256, sha256 of the RUNNING executable (`/proc/self/exe`), device)**. This is strictly finer than apr version+git sha: a different binary can never skip. The version and git sha (where the binary carries one) are recorded beside the key for humans, never as the key. Schema bumps to 2, so every existing receipt revalidates once. There''s one receipt file per (model, executable, device), so A→B→A never overwrites. Both the executable''s and the model''s sha256 are cached by (canonical path, size, mtime, inode), so a warm run doesn''t re-hash. Mutants: key on the version → RED; key on the model only → RED; a stale cache after the binary changes in place → RED."'
+  - 'done_when 2 (issue body), verbatim: "The model sha256 is cached by (canonical path, size, mtime, inode), so a warm run doesn''t re-hash 5.7 GB. It is invalidated on any of the four changing, with a mutant that turns it RED."'
+  - 'done_when 3 (issue body), verbatim: "Measured on lambda and gx10: the warm-run F2 cost is ≈0 s, and the cold run is unchanged. The before/after wall time is cited with the binary''s version and sha."'
+  - 'Cop re-scope (2026-09-21T21:20:57Z comment), verbatim: "(a) a receipt from a different binary sha never skips F2; a mutant keying on the model alone goes RED; (b) every correctness cell and receipt records F2''s `source` (fresh | receipt, with the receipt''s binary sha)."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'SCOPE: crates/aprender-serve/src/gguf/inference/forward/f2_receipt.rs (+ _tests.rs), the one receipt caller f2_validate_qwen35_receipted in forward_qwen35.rs, MappedGGUFModel::path (model.rs, so the model hash can be cached by file identity), and apr-cli dispatch.rs (record_f2_build_label: apr sets "apr <version> (<git sha>)" as the human label, since realizar has no build-time sha). HOW: F2ReceiptKey = {model_sha256, exe_sha256, device}; decide compares the three and names the one that differs (ExeSha256Mismatch replaces AprVersionMismatch); receipt_path(dir, key) = <model>-<exe16>-<device-slug>.json; F2_RECEIPT_SCHEMA = 2; the receipt carries build + exe_path for humans; cached_sha256(cache_dir, path, compute) keys a cache entry by FileIdentity {canonical path, size, mtime_ns, inode}, re-stats after hashing and never caches a file that changed mid-hash, and falls back to hashing on any cache failure; exe_sha256 hashes current_exe() through the same cache. (b) is met in the F2 log line ([source=receipt exe=<sha16>] / [source=fresh exe=<sha16>], plus how each hash was obtained) and F2Outcome.exe_sha256; recording it in the ladder/derived cells is the judge''s side (#3745 S2 / #3712 B2), not this row. Only the qwen35 path writes receipts today; the qwen3moe F2 (#3714) validates every run and is unaffected.'
