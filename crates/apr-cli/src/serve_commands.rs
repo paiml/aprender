@@ -17,7 +17,7 @@ pub enum ServeCommands {
     Plan {
         /// Model source: local path or HuggingFace repo (hf://org/repo, org/repo)
         #[arg(value_name = "MODEL")]
-        model: String,
+        model: ModelRef,
         /// Detect GPU via nvidia-smi for VRAM budget
         #[arg(long)]
         gpu: bool,
@@ -29,10 +29,10 @@ pub enum ServeCommands {
         seq_len: usize,
         /// Output format: text, json, yaml
         #[arg(long, default_value = "text")]
-        format: String,
+        format: FreeText,
         /// Quantization override for HF models (e.g., Q4_K_M, Q6_K, F16)
         #[arg(long)]
-        quant: Option<String>,
+        quant: Option<FreeText>,
     },
     /// Start inference server (REST API, streaming, metrics)
     Run {
@@ -41,13 +41,13 @@ pub enum ServeCommands {
         /// Not required with `--list-devices`, which asks what this BUILD can
         /// dispatch to and needs no model to answer.
         #[arg(value_name = "FILE", required_unless_present = "list_devices")]
-        file: Option<PathBuf>,
+        file: Option<ModelPath>,
         /// Port to listen on
         #[arg(short, long, default_value = "8080")]
         port: u16,
         /// Host to bind to
         #[arg(long, default_value = "127.0.0.1")]
-        host: String,
+        host: FreeText,
         /// Disable CORS
         #[arg(long)]
         no_cors: bool,
@@ -76,7 +76,7 @@ pub enum ServeCommands {
         /// Mirrors llama.cpp's `-ngl`, which takes an integer, `auto` or `all`
         /// and reports what it resolved. Neither comparator has a boolean.
         #[arg(long, value_name = "N|auto|all|0")]
-        gpu_layers: Option<String>,
+        gpu_layers: Option<FreeText>,
         /// List the accelerators this BUILD can dispatch to, then exit.
         ///
         /// Answers "what does this binary actually support" without starting a
@@ -91,7 +91,7 @@ pub enum ServeCommands {
         trace: bool,
         /// Trace detail level (none, basic, layer)
         #[arg(long, value_name = "LEVEL", default_value = "basic")]
-        trace_level: String,
+        trace_level: FreeText,
         /// Enable inline Roofline profiling (adds X-Profile headers)
         #[arg(long)]
         profile: bool,
@@ -107,7 +107,7 @@ pub enum ServeCommands {
         /// Each request = parent span, each layer = child span with TensorStats.
         /// Example: --otlp-endpoint http://localhost:4317
         #[arg(long, value_name = "URL")]
-        otlp_endpoint: Option<String>,
+        otlp_endpoint: Option<FreeText>,
         /// GH-286: Max context/sequence length for KV cache. Lower = less RSS.
         #[arg(long, default_value = "4096")]
         context_length: usize,

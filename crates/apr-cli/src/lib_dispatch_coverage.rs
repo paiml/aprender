@@ -10,7 +10,7 @@
     fn test_dispatch_model_commands_returns_none_for_inspect() {
         // Inspect is an inspection command, not a model management command
         let cli = make_cli(Commands::Inspect {
-            file: PathBuf::from("model.apr"),
+            file: PathBuf::from("model.apr").into(),
             vocab: false,
             filters: false,
             weights: false,
@@ -32,7 +32,7 @@
     #[test]
     fn test_dispatch_model_commands_pull_nonexistent() {
         let cli = make_cli(Commands::Pull {
-            model_ref: "nonexistent-model-that-does-not-exist-xyz123".to_string(),
+            model_ref: "nonexistent-model-that-does-not-exist-xyz123".to_string().into(),
             repo: None,
             force: false,
             dry_run: false,
@@ -50,7 +50,7 @@
     #[test]
     fn test_dispatch_model_commands_rm_nonexistent() {
         let cli = make_cli(Commands::Rm {
-            model_ref: "nonexistent-model-xyz789".to_string(),
+            model_ref: "nonexistent-model-xyz789".to_string().into(),
         });
         let result = dispatch_model_commands(&cli);
         assert!(result.is_some(), "Rm should be handled by dispatch_model_commands");
@@ -66,7 +66,7 @@
     #[test]
     fn test_dispatch_model_commands_tui_with_file() {
         let cli = make_cli(Commands::Tui {
-            file: Some(PathBuf::from("/tmp/nonexistent_tui_model.apr")),
+            file: Some(PathBuf::from("/tmp/nonexistent_tui_model.apr").into()),
         });
         let result = dispatch_model_commands(&cli);
         assert!(result.is_some(), "Tui with file should be handled by dispatch_model_commands");
@@ -76,11 +76,11 @@
     fn test_dispatch_model_commands_merge_nonexistent() {
         let cli = make_cli(Commands::Merge {
             files: vec![
-                PathBuf::from("/tmp/nonexistent_merge_a.apr"),
-                PathBuf::from("/tmp/nonexistent_merge_b.apr"),
+                PathBuf::from("/tmp/nonexistent_merge_a.apr").into(),
+                PathBuf::from("/tmp/nonexistent_merge_b.apr").into(),
             ],
-            strategy: "average".to_string(),
-            output: Some(PathBuf::from("/tmp/merged_out.apr")),
+            strategy: "average".to_string().into(),
+            output: Some(PathBuf::from("/tmp/merged_out.apr").into()),
             weights: None,
             base_model: None,
             drop_rate: 0.9,
@@ -99,10 +99,10 @@
     fn test_dispatch_model_commands_merge_plan_mode() {
         let cli = make_cli(Commands::Merge {
             files: vec![
-                PathBuf::from("/tmp/nonexistent_merge_plan_a.apr"),
-                PathBuf::from("/tmp/nonexistent_merge_plan_b.apr"),
+                PathBuf::from("/tmp/nonexistent_merge_plan_a.apr").into(),
+                PathBuf::from("/tmp/nonexistent_merge_plan_b.apr").into(),
             ],
-            strategy: "slerp".to_string(),
+            strategy: "slerp".to_string().into(),
             output: None, // plan mode doesn't need output
             weights: Some(vec![0.5, 0.5]),
             base_model: None,
@@ -119,7 +119,7 @@
     #[test]
     fn test_dispatch_model_commands_returns_none_for_validate() {
         let cli = make_cli(Commands::Validate {
-            file: PathBuf::from("model.apr"),
+            file: PathBuf::from("model.apr").into(),
             quality: false,
             strict: false,
             min_score: None,
@@ -131,7 +131,7 @@
     #[test]
     fn test_dispatch_model_commands_returns_none_for_debug() {
         let cli = make_cli(Commands::Debug {
-            file: Some(PathBuf::from("model.apr")),
+            file: Some(PathBuf::from("model.apr").into()),
             action: None,
             drama: false,
             hex: false,
@@ -145,11 +145,11 @@
     #[test]
     fn test_dispatch_model_commands_prune_nonexistent() {
         let cli = make_cli(Commands::ModelOps(ModelOpsCommands::Prune {
-            file: PathBuf::from("/tmp/nonexistent_prune_model.apr"),
-            method: "magnitude".to_string(),
+            file: PathBuf::from("/tmp/nonexistent_prune_model.apr").into(),
+            method: "magnitude".to_string().into(),
             target_ratio: 0.5,
             sparsity: 0.0,
-            output: Some(PathBuf::from("/tmp/pruned_out.apr")),
+            output: Some(PathBuf::from("/tmp/pruned_out.apr").into()),
             remove_layers: None,
             analyze: false,
             plan: false,
@@ -173,7 +173,7 @@
     fn test_dispatch_analysis_returns_none_for_chat() {
         // Chat is Extended but not an analysis command
         let cli = make_cli(Commands::Extended(ExtendedCommands::Chat {
-            file: PathBuf::from("model.apr"),
+            file: PathBuf::from("model.apr").into(),
             temperature: 0.7,
             top_p: 0.9,
             max_tokens: 512,
@@ -196,7 +196,7 @@
     #[test]
     fn test_dispatch_analysis_tree_nonexistent_file() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Tree {
-            file: PathBuf::from("/tmp/nonexistent_tree_model.apr"),
+            file: PathBuf::from("/tmp/nonexistent_tree_model.apr").into(),
             filter: None,
             format: crate::commands::tree::TreeFormat::Ascii,
             sizes: false,
@@ -210,7 +210,7 @@
     #[test]
     fn test_dispatch_analysis_hex_nonexistent_file() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Hex {
-            file: PathBuf::from("/tmp/nonexistent_hex_model.apr"),
+            file: PathBuf::from("/tmp/nonexistent_hex_model.apr").into(),
             tensor: None,
             limit: 64,
             stats: false,
@@ -222,7 +222,7 @@
             contract: false,
             entropy: false,
             raw: false,
-            offset: "0".to_string(),
+            offset: "0".to_string().into(),
             width: 16,
             slice: None,
         }));
@@ -234,9 +234,9 @@
     #[test]
     fn test_dispatch_analysis_flow_nonexistent_file() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Flow {
-            file: PathBuf::from("/tmp/nonexistent_flow_model.apr"),
+            file: PathBuf::from("/tmp/nonexistent_flow_model.apr").into(),
             layer: None,
-            component: "full".to_string(),
+            component: "full".to_string().into(),
             verbose: false,
             json: false,
         }));
@@ -248,8 +248,8 @@
     #[test]
     fn test_dispatch_analysis_qualify_nonexistent_file() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Qualify {
-            file: PathBuf::from("/tmp/nonexistent_qualify_model.apr"),
-            tier: "basic".to_string(),
+            file: PathBuf::from("/tmp/nonexistent_qualify_model.apr").into(),
+            tier: "basic".to_string().into(),
             timeout: 30,
             json: false,
             verbose: false,
@@ -263,7 +263,7 @@
     #[test]
     fn test_dispatch_analysis_diagnose_nonexistent() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Diagnose {
-            checkpoint_dir: PathBuf::from("/tmp/nonexistent_diagnose_dir"),
+            checkpoint_dir: PathBuf::from("/tmp/nonexistent_diagnose_dir").into(),
             data: None,
             model_size: None,
             num_classes: 5,
@@ -335,9 +335,9 @@
     fn test_dispatch_analysis_probar_rejects_unknown_format() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Test {
             command: TestSubcommand::Tensor {
-                file: PathBuf::from("/tmp/nonexistent_probar_model.apr"),
-                output: PathBuf::from("/tmp/nonexistent_probar_out"),
-                format: "bogus".to_string(),
+                file: PathBuf::from("/tmp/nonexistent_probar_model.apr").into(),
+                output: PathBuf::from("/tmp/nonexistent_probar_out").into(),
+                format: "bogus".to_string().into(),
                 golden: None,
                 layer: None,
                 assert: false,
@@ -362,9 +362,9 @@
         for format in ["json", "png", "both", "all"] {
             let cli = make_cli(Commands::Extended(ExtendedCommands::Test {
                 command: TestSubcommand::Tensor {
-                    file: PathBuf::from("/tmp/nonexistent_probar_model.apr"),
-                    output: PathBuf::from("/tmp/nonexistent_probar_out"),
-                    format: format.to_string(),
+                    file: PathBuf::from("/tmp/nonexistent_probar_model.apr").into(),
+                    output: PathBuf::from("/tmp/nonexistent_probar_out").into(),
+                    format: format.to_string().into(),
                     golden: None,
                     layer: None,
                     assert: false,
@@ -384,8 +384,8 @@
     #[test]
     fn test_dispatch_analysis_compare_hf_offline_rejected() {
         let mut cli = make_cli(Commands::Extended(ExtendedCommands::CompareHf {
-            file: PathBuf::from("/tmp/nonexistent_compare_hf.apr"),
-            hf: "org/repo".to_string(),
+            file: PathBuf::from("/tmp/nonexistent_compare_hf.apr").into(),
+            hf: "org/repo".to_string().into(),
             tensor: None,
             threshold: 0.01,
             json: false,
@@ -409,7 +409,7 @@
     #[test]
     fn test_dispatch_profiling_returns_none_for_chat() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Chat {
-            file: PathBuf::from("model.apr"),
+            file: PathBuf::from("model.apr").into(),
             temperature: 0.7,
             top_p: 0.9,
             max_tokens: 512,
@@ -441,7 +441,7 @@
     #[test]
     fn ptx_without_analyzer_reports_the_feature_not_the_path() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Ptx {
-            file: Some(PathBuf::from("/nonexistent_ptx_source_xyz.ptx")),
+            file: Some(PathBuf::from("/nonexistent_ptx_source_xyz.ptx").into()),
             kernel: None,
             strict: false,
             bugs: false,
@@ -473,7 +473,7 @@
     fn ptx_without_analyzer_reports_remedy_for_kernel_form_too() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Ptx {
             file: None,
-            kernel: Some("Q4KGemv".to_string()),
+            kernel: Some("Q4KGemv".to_string().into()),
             strict: false,
             bugs: false,
             json: false,
@@ -492,7 +492,7 @@
     #[test]
     fn test_dispatch_profiling_bench_nonexistent() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Bench {
-            file: PathBuf::from("/tmp/nonexistent_bench_model.apr"),
+            file: PathBuf::from("/tmp/nonexistent_bench_model.apr").into(),
             warmup: 1,
             iterations: 1,
             max_tokens: 10,
@@ -509,9 +509,9 @@
     #[test]
     fn test_dispatch_profiling_profile_nonexistent() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Profile {
-            file: PathBuf::from("/tmp/nonexistent_profile_model.apr"),
+            file: PathBuf::from("/tmp/nonexistent_profile_model.apr").into(),
             granular: false,
-            format: "text".to_string(),
+            format: "text".to_string().into(),
             focus: None,
             detect_naive: false,
             threshold: 0.01,
@@ -540,8 +540,8 @@
     #[test]
     fn test_dispatch_profiling_eval_nonexistent() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Eval {
-            file: PathBuf::from("/tmp/nonexistent_eval_model.apr"),
-            dataset: "test".to_string(),
+            file: PathBuf::from("/tmp/nonexistent_eval_model.apr").into(),
+            dataset: "test".to_string().into(),
             text: None,
             max_tokens: 32,
             threshold: 90.0,
@@ -562,7 +562,7 @@
     #[test]
     fn test_dispatch_profiling_qa_nonexistent() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Qa {
-            file: PathBuf::from("/tmp/nonexistent_qa_model.apr"),
+            file: PathBuf::from("/tmp/nonexistent_qa_model.apr").into(),
             assert_tps: None,
             assert_speedup: None,
             assert_gpu_speedup: None,
@@ -599,14 +599,14 @@
         // Train Plan with nonexistent data — tests train routing path
         let cli = make_cli(Commands::Extended(ExtendedCommands::Train {
             command: TrainCommands::Plan {
-                data: Some(PathBuf::from("/tmp/nonexistent_train_data.jsonl")),
-                model_size: "tiny".to_string(),
+                data: Some(PathBuf::from("/tmp/nonexistent_train_data.jsonl").into()),
+                model_size: "tiny".to_string().into(),
                 model_path: None,
                 num_classes: 5,
-                task: "classify".to_string(),
+                task: "classify".to_string().into(),
                 config: None,
-                output: PathBuf::from("/tmp/train_plan_out"),
-                strategy: "auto".to_string(),
+                output: PathBuf::from("/tmp/train_plan_out").into(),
+                strategy: "auto".to_string().into(),
                 budget: 100,
                 scout: false,
                 max_epochs: 3,
@@ -615,7 +615,7 @@
                 batch_size: Some(4),
                 val_data: None,
                 test_data: None,
-                format: "text".to_string(),
+                format: "text".to_string().into(),
             },
         }));
         let result = dispatch_analysis_commands(&cli);
@@ -627,10 +627,10 @@
     fn test_dispatch_train_sweep() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Train {
             command: TrainCommands::Sweep {
-                config: PathBuf::from("/tmp/nonexistent_sweep_config.toml"),
-                strategy: "grid".to_string(),
+                config: PathBuf::from("/tmp/nonexistent_sweep_config.toml").into(),
+                strategy: "grid".to_string().into(),
                 num_configs: 5,
-                output_dir: PathBuf::from("/tmp/sweep_out"),
+                output_dir: PathBuf::from("/tmp/sweep_out").into(),
                 seed: 42,
             },
         }));
@@ -643,7 +643,7 @@
     fn test_dispatch_train_cluster_status() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Train {
             command: TrainCommands::ClusterStatus {
-                cluster: PathBuf::from("/tmp/nonexistent_cluster_config.yaml"),
+                cluster: PathBuf::from("/tmp/nonexistent_cluster_config.yaml").into(),
             },
         }));
         let result = dispatch_analysis_commands(&cli);
@@ -657,7 +657,7 @@
     #[test]
     fn test_dispatch_inspection_routes_inspect() {
         let cli = make_cli(Commands::Inspect {
-            file: PathBuf::from("/tmp/nonexistent_pmat540.apr"),
+            file: PathBuf::from("/tmp/nonexistent_pmat540.apr").into(),
             vocab: false,
             filters: false,
             weights: false,
@@ -671,7 +671,7 @@
     #[test]
     fn test_dispatch_inspection_routes_debug() {
         let cli = make_cli(Commands::Debug {
-            file: Some(PathBuf::from("/tmp/nonexistent_pmat540.apr")),
+            file: Some(PathBuf::from("/tmp/nonexistent_pmat540.apr").into()),
             action: None,
             drama: false,
             hex: false,
@@ -685,7 +685,7 @@
     #[test]
     fn test_dispatch_inspection_routes_validate() {
         let cli = make_cli(Commands::Validate {
-            file: PathBuf::from("/tmp/nonexistent_pmat540.apr"),
+            file: PathBuf::from("/tmp/nonexistent_pmat540.apr").into(),
             strict: false,
             quality: false,
             min_score: None,
@@ -697,7 +697,7 @@
     #[test]
     fn test_dispatch_inspection_routes_lint() {
         let cli = make_cli(Commands::Lint {
-            file: PathBuf::from("/tmp/nonexistent_pmat540.apr"),
+            file: PathBuf::from("/tmp/nonexistent_pmat540.apr").into(),
                 strict: false,
         });
         let result = dispatch_inspection_commands(&cli);
@@ -707,8 +707,8 @@
     #[test]
     fn test_dispatch_inspection_returns_none_for_export() {
         let cli = make_cli(Commands::Export {
-            file: Some(PathBuf::from("/tmp/nonexistent_pmat540.apr")),
-            format: "gguf".to_string(),
+            file: Some(PathBuf::from("/tmp/nonexistent_pmat540.apr").into()),
+            format: "gguf".to_string().into(),
             output: None,
             quantize: None,
             list_formats: false,
@@ -728,7 +728,7 @@
     #[test]
     fn test_dispatch_diagnostic_routes_trace() {
         let cli = make_cli(Commands::Trace {
-            file: PathBuf::from("/tmp/nonexistent_pmat540.apr"),
+            file: PathBuf::from("/tmp/nonexistent_pmat540.apr").into(),
             layer: None,
             reference: None,
             json: false,
@@ -738,7 +738,7 @@
             interactive: false,
             save_tensor: None,
             save_tensor_dir: None,
-            save_tensor_layers: "0..1".to_string(),
+            save_tensor_layers: "0..1".to_string().into(),
         });
         let result = dispatch_diagnostic_commands(&cli);
         assert!(result.is_some(), "Trace should be handled by diagnostic dispatcher");
@@ -747,7 +747,7 @@
     #[test]
     fn test_dispatch_diagnostic_routes_tensors() {
         let cli = make_cli(Commands::Tensors {
-            file: PathBuf::from("/tmp/nonexistent_pmat540.apr"),
+            file: PathBuf::from("/tmp/nonexistent_pmat540.apr").into(),
             stats: false,
             filter: None,
             limit: 0,
@@ -760,8 +760,8 @@
     #[test]
     fn test_dispatch_diagnostic_routes_diff() {
         let cli = make_cli(Commands::Diff {
-            file1: PathBuf::from("/tmp/nonexistent_a.apr"),
-            file2: PathBuf::from("/tmp/nonexistent_b.apr"),
+            file1: PathBuf::from("/tmp/nonexistent_a.apr").into(),
+            file2: PathBuf::from("/tmp/nonexistent_b.apr").into(),
             weights: false,
             values: false,
             filter: None,
@@ -779,7 +779,7 @@
     #[test]
     fn test_dispatch_diagnostic_returns_none_for_inspect() {
         let cli = make_cli(Commands::Inspect {
-            file: PathBuf::from("/tmp/nonexistent_pmat540.apr"),
+            file: PathBuf::from("/tmp/nonexistent_pmat540.apr").into(),
             vocab: false,
             filters: false,
             weights: false,
@@ -797,9 +797,9 @@
     #[test]
     fn test_dispatch_format_routes_import() {
         let cli = make_cli(Commands::Import {
-            source: "/tmp/nonexistent_pmat540.safetensors".to_string(),
+            source: "/tmp/nonexistent_pmat540.safetensors".to_string().into(),
             output: None,
-            arch: "auto".to_string(),
+            arch: "auto".to_string().into(),
             quantize: None,
             strict: false,
             preserve_q4k: false,
@@ -814,10 +814,10 @@
     #[test]
     fn test_dispatch_format_routes_convert() {
         let cli = make_cli(Commands::Convert {
-            file: PathBuf::from("/tmp/nonexistent_pmat540.apr"),
+            file: PathBuf::from("/tmp/nonexistent_pmat540.apr").into(),
             quantize: None,
             compress: None,
-            output: PathBuf::from("/tmp/nonexistent_pmat540_out.apr"),
+            output: PathBuf::from("/tmp/nonexistent_pmat540_out.apr").into(),
             force: false,
         });
         let result = dispatch_format_commands(&cli);
@@ -827,8 +827,8 @@
     #[test]
     fn test_dispatch_format_routes_export() {
         let cli = make_cli(Commands::Export {
-            file: Some(PathBuf::from("/tmp/nonexistent_pmat540.apr")),
-            format: "gguf".to_string(),
+            file: Some(PathBuf::from("/tmp/nonexistent_pmat540.apr").into()),
+            format: "gguf".to_string().into(),
             output: None,
             quantize: None,
             list_formats: false,
@@ -844,7 +844,7 @@
     #[test]
     fn test_dispatch_format_returns_none_for_inspect() {
         let cli = make_cli(Commands::Inspect {
-            file: PathBuf::from("/tmp/nonexistent_pmat540.apr"),
+            file: PathBuf::from("/tmp/nonexistent_pmat540.apr").into(),
             vocab: false,
             filters: false,
             weights: false,
@@ -862,7 +862,7 @@
     #[test]
     fn test_dispatch_runtime_routes_check() {
         let cli = make_cli(Commands::Check {
-            file: PathBuf::from("/tmp/nonexistent_pmat540.gguf"),
+            file: PathBuf::from("/tmp/nonexistent_pmat540.gguf").into(),
             no_gpu: true,
             json: false,
         });
@@ -873,7 +873,7 @@
     #[test]
     fn test_dispatch_runtime_returns_none_for_inspect() {
         let cli = make_cli(Commands::Inspect {
-            file: PathBuf::from("/tmp/nonexistent_pmat540.apr"),
+            file: PathBuf::from("/tmp/nonexistent_pmat540.apr").into(),
             vocab: false,
             filters: false,
             weights: false,
@@ -891,7 +891,7 @@
     #[test]
     fn test_dispatch_core_routes_inspect_via_inspection() {
         let cli = make_cli(Commands::Inspect {
-            file: PathBuf::from("/tmp/nonexistent_pmat540.apr"),
+            file: PathBuf::from("/tmp/nonexistent_pmat540.apr").into(),
             vocab: false,
             filters: false,
             weights: false,
@@ -906,7 +906,7 @@
     #[test]
     fn test_dispatch_core_routes_tensors_via_diagnostic() {
         let cli = make_cli(Commands::Tensors {
-            file: PathBuf::from("/tmp/nonexistent_pmat540.apr"),
+            file: PathBuf::from("/tmp/nonexistent_pmat540.apr").into(),
             stats: false,
             filter: None,
             limit: 0,
@@ -919,9 +919,9 @@
     #[test]
     fn test_dispatch_core_routes_import_via_format() {
         let cli = make_cli(Commands::Import {
-            source: "/tmp/nonexistent_pmat540.safetensors".to_string(),
+            source: "/tmp/nonexistent_pmat540.safetensors".to_string().into(),
             output: None,
-            arch: "auto".to_string(),
+            arch: "auto".to_string().into(),
             quantize: None,
             strict: false,
             preserve_q4k: false,
@@ -936,7 +936,7 @@
     #[test]
     fn test_dispatch_core_returns_none_for_extended() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Chat {
-            file: PathBuf::from("/tmp/nonexistent_pmat540.gguf"),
+            file: PathBuf::from("/tmp/nonexistent_pmat540.gguf").into(),
             temperature: 0.7,
             top_p: 0.9,
             max_tokens: 512,

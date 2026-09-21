@@ -103,8 +103,16 @@ impl Marker {
 macro_rules! path_role {
     ($(#[$doc:meta])* $name:ident) => {
         $(#[$doc])*
-        #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        #[derive(Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
         pub struct $name(PathBuf);
+
+        // `Debug` is the inner value's, so `{:?}` of a migrated field prints
+        // `"m.gguf"` exactly as the raw `PathBuf` did, never `ModelPath("m.gguf")`.
+        impl fmt::Debug for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                fmt::Debug::fmt(&self.0, f)
+            }
+        }
 
         impl $name {
             /// Wrap a path.
@@ -124,9 +132,12 @@ macro_rules! path_role {
             }
         }
 
+        // `Path`, not `PathBuf`: the same target `PathBuf` derefs to, so
+        // `Option<ModelPath>::as_deref()` is `Option<&Path>` exactly as
+        // `Option<PathBuf>::as_deref()` was, and a migrated field reads the same.
         impl Deref for $name {
-            type Target = PathBuf;
-            fn deref(&self) -> &PathBuf {
+            type Target = Path;
+            fn deref(&self) -> &Path {
                 &self.0
             }
         }
@@ -187,8 +198,15 @@ macro_rules! path_role {
 macro_rules! text_role {
     ($(#[$doc:meta])* $name:ident) => {
         $(#[$doc])*
-        #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        #[derive(Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
         pub struct $name(String);
+
+        // `Debug` is the inner value's: `{:?}` prints `"text"`, as `String` did.
+        impl fmt::Debug for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                fmt::Debug::fmt(&self.0, f)
+            }
+        }
 
         impl $name {
             /// Wrap a string.
@@ -213,9 +231,12 @@ macro_rules! text_role {
             }
         }
 
+        // `str`, not `String`: the same target `String` derefs to, so
+        // `Option<PromptText>::as_deref()` is `Option<&str>` exactly as
+        // `Option<String>::as_deref()` was.
         impl Deref for $name {
-            type Target = String;
-            fn deref(&self) -> &String {
+            type Target = str;
+            fn deref(&self) -> &str {
                 &self.0
             }
         }
@@ -312,6 +333,20 @@ text_role!(
     /// Any other free text: a name, id, tag, URL, pattern or list.
     FreeText
 );
+
+/// Owned `String`s from a slice of text role values, for callees that take
+/// `&[String]`.
+#[must_use]
+pub fn strings<T: AsRef<str>>(values: &[T]) -> Vec<String> {
+    values.iter().map(|v| v.as_ref().to_string()).collect()
+}
+
+/// Owned `PathBuf`s from a slice of path role values, for callees that take
+/// `&[PathBuf]`.
+#[must_use]
+pub fn path_bufs<T: AsRef<Path>>(values: &[T]) -> Vec<PathBuf> {
+    values.iter().map(|v| v.as_ref().to_path_buf()).collect()
+}
 
 /// Every role type, in one table. `apr surface` reads roles through it, and the
 /// marker guard refuses a free-form argument whose parser yields none of these.
@@ -459,6 +494,28 @@ mod tests {
         }
     }
 
+    /// A migrated field must print the same under `{:?}` as the raw type did:
+    /// error messages and tests format arguments that way.
+    #[test]
+    fn debug_output_is_the_raw_types() {
+        assert_eq!(
+            format!("{:?}", ModelPath::from("m.gguf")),
+            format!("{:?}", PathBuf::from("m.gguf"))
+        );
+        assert_eq!(
+            format!("{:?}", Some(OutputPath::from("o"))),
+            format!("{:?}", Some(PathBuf::from("o")))
+        );
+        assert_eq!(
+            format!("{:?}", PromptText::from("hi")),
+            format!("{:?}", String::from("hi"))
+        );
+        assert_eq!(
+            format!("{:?}", vec![FreeText::from("a")]),
+            format!("{:?}", vec![String::from("a")])
+        );
+    }
+
     #[test]
     fn derive_picks_the_marker_parser_for_a_marker_field() {
         #[derive(clap::Parser)]
@@ -484,7 +541,7 @@ mod tests {
         let t = T::try_parse_from(["t", "a.apr", "--prompt", "hi", "--inputs", "x.wav"])
             .expect("parses");
         assert_eq!(t.model.as_path(), Path::new("a.apr"));
-        assert_eq!(t.prompt.as_deref().map(String::as_str), Some("hi"));
+        assert_eq!(t.prompt.as_deref(), Some("hi"));
         assert_eq!(t.inputs.len(), 1);
     }
 }

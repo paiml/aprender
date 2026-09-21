@@ -503,6 +503,7 @@ dependencies = [
 name = "aprender-contracts-cli"
 version = "0.69.0"
 dependencies = [
+ "aprender-common",
  "aprender-contracts",
  "clap",
  "serde",
@@ -1255,6 +1256,7 @@ name = "aprender-rag-cli"
 version = "0.69.0"
 dependencies = [
  "anyhow",
+ "aprender-common",
  "aprender-rag",
  "assert_cmd",
  "blake3",

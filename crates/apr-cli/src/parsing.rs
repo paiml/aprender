@@ -42,7 +42,7 @@
                 assert!(print, "-p must still set print");
                 assert_eq!(
                     model,
-                    Some(PathBuf::from("/tmp/named.gguf")),
+                    Some(PathBuf::from("/tmp/named.gguf")).map(Into::into),
                     "--model written after the prompt must be honoured, not swallowed"
                 );
                 assert_eq!(
@@ -149,7 +149,7 @@
                 ..
             } => {
                 assert_eq!(source, "hf://openai/whisper-tiny");
-                assert_eq!(prompt, Some("Hello".to_string()));
+                assert_eq!(prompt, Some("Hello".to_string()).map(Into::into));
                 assert_eq!(max_tokens, 64);
             }
             _ => panic!("Expected Run command"),
@@ -481,7 +481,7 @@
             } => {
                 assert_eq!(files.len(), 2);
                 assert_eq!(strategy, "weighted");
-                assert_eq!(output, Some(PathBuf::from("merged.apr")));
+                assert_eq!(output, Some(PathBuf::from("merged.apr")).map(Into::into));
                 assert_eq!(weights, Some(vec![0.7, 0.3]));
             }
             _ => panic!("Expected Merge command"),

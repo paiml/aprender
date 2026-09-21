@@ -3,9 +3,9 @@
     #[test]
     fn test_execute_export_file_not_found() {
         let cli = make_cli(Commands::Export {
-            file: Some(PathBuf::from("/tmp/nonexistent_model_export_test.apr")),
-            format: "safetensors".to_string(),
-            output: Some(PathBuf::from("/tmp/out.safetensors")),
+            file: Some(PathBuf::from("/tmp/nonexistent_model_export_test.apr").into()),
+            format: "safetensors".to_string().into(),
+            output: Some(PathBuf::from("/tmp/out.safetensors").into()),
             quantize: None,
             list_formats: false,
             batch: None,
@@ -21,10 +21,10 @@
     #[test]
     fn test_execute_convert_file_not_found() {
         let cli = make_cli(Commands::Convert {
-            file: PathBuf::from("/tmp/nonexistent_model_convert_test.apr"),
+            file: PathBuf::from("/tmp/nonexistent_model_convert_test.apr").into(),
             quantize: None,
             compress: None,
-            output: PathBuf::from("/tmp/out.apr"),
+            output: PathBuf::from("/tmp/out.apr").into(),
             force: false,
         });
         let result = execute_command(&cli);
@@ -38,7 +38,7 @@
     #[test]
     fn test_execute_hex_file_not_found() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Hex {
-            file: PathBuf::from("/tmp/nonexistent_model_hex_test.apr"),
+            file: PathBuf::from("/tmp/nonexistent_model_hex_test.apr").into(),
             tensor: None,
             limit: 64,
             stats: false,
@@ -50,7 +50,7 @@
             contract: false,
             entropy: false,
             raw: false,
-            offset: String::new(),
+            offset: String::new().into(),
             width: 16,
             slice: None,
         }));
@@ -62,7 +62,7 @@
     #[test]
     fn test_execute_tree_file_not_found() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Tree {
-            file: PathBuf::from("/tmp/nonexistent_model_tree_test.apr"),
+            file: PathBuf::from("/tmp/nonexistent_model_tree_test.apr").into(),
             filter: None,
             format: crate::commands::tree::TreeFormat::Ascii,
             sizes: false,
@@ -76,9 +76,9 @@
     #[test]
     fn test_execute_flow_file_not_found() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Flow {
-            file: PathBuf::from("/tmp/nonexistent_model_flow_test.apr"),
+            file: PathBuf::from("/tmp/nonexistent_model_flow_test.apr").into(),
             layer: None,
-            component: "full".to_string(),
+            component: "full".to_string().into(),
             verbose: false,
             json: false,
         }));
@@ -93,9 +93,9 @@
         use TestSubcommand;
         let cli = make_cli(Commands::Extended(ExtendedCommands::Test {
             command: TestSubcommand::Tensor {
-                file: PathBuf::from("/tmp/nonexistent_model_probar_test.apr"),
-                output: PathBuf::from("/tmp/probar-out"),
-                format: "both".to_string(),
+                file: PathBuf::from("/tmp/nonexistent_model_probar_test.apr").into(),
+                output: PathBuf::from("/tmp/probar-out").into(),
+                format: "both".to_string().into(),
                 golden: None,
                 layer: None,
                 assert: false,
@@ -110,7 +110,7 @@
     #[test]
     fn test_execute_check_file_not_found() {
         let cli = make_cli(Commands::Check {
-            file: PathBuf::from("/tmp/nonexistent_model_check_test.apr"),
+            file: PathBuf::from("/tmp/nonexistent_model_check_test.apr").into(),
             no_gpu: true,
             json: false,
         });
@@ -148,7 +148,7 @@
     #[test]
     fn test_execute_explain_with_code() {
         let cli = make_cli(Commands::Explain {
-            code_or_file: Some("E001".to_string()),
+            code_or_file: Some("E001".to_string().into()),
             file: None,
             tensor: None,
             kernel: false,
@@ -166,18 +166,18 @@
     fn test_execute_tune_plan_no_file() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Tune {
             file: None,
-            method: "auto".to_string(),
+            method: "auto".to_string().into(),
             rank: None,
             vram: 16.0,
             plan: true,
-            model: Some("7B".to_string()),
+            model: Some("7B".to_string().into()),
             freeze_base: false,
             train_data: None,
             json: false,
             task: None,
             budget: 10,
-            strategy: "tpe".to_string(),
-            scheduler: "asha".to_string(),
+            strategy: "tpe".to_string().into(),
+            scheduler: "asha".to_string().into(),
             scout: false,
             data: None,
             num_classes: 5,
@@ -200,7 +200,7 @@
     #[test]
     fn test_execute_qa_all_skips_succeeds() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Qa {
-            file: PathBuf::from("/tmp/nonexistent_model_qa_test.gguf"),
+            file: PathBuf::from("/tmp/nonexistent_model_qa_test.gguf").into(),
             assert_tps: None,
             assert_speedup: None,
             assert_gpu_speedup: None,
@@ -236,7 +236,7 @@
     #[test]
     fn test_execute_qa_with_gates_file_not_found() {
         let cli = make_cli(Commands::Extended(ExtendedCommands::Qa {
-            file: PathBuf::from("/tmp/nonexistent_model_qa_gates_test.gguf"),
+            file: PathBuf::from("/tmp/nonexistent_model_qa_gates_test.gguf").into(),
             assert_tps: None,
             assert_speedup: None,
             assert_gpu_speedup: None,
@@ -272,9 +272,9 @@
     #[test]
     fn test_execute_import_invalid_source() {
         let cli = make_cli(Commands::Import {
-            source: "/tmp/nonexistent_model_import_test.gguf".to_string(),
+            source: "/tmp/nonexistent_model_import_test.gguf".to_string().into(),
             output: None,
-            arch: "auto".to_string(),
+            arch: "auto".to_string().into(),
             quantize: None,
             strict: false,
             preserve_q4k: false,

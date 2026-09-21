@@ -430,8 +430,9 @@ pub enum Commands {
         contract_dir: PathBuf,
         #[arg(long)]
         config: Option<PathBuf>,
+        /// #3745 S1: typed `ModelPath`, which is how `apr surface` knows this is a model.
         #[arg(long)]
-        model: Option<PathBuf>,
+        model: Option<batuta_common::cli_roles::ModelPath>,
     },
     /// Verify compositional shape flow across contract dependency graph
     #[command(name = "verify-pipeline")]

@@ -105,16 +105,16 @@ pub enum Commands {
     Run {
         /// Model source: local path, hf://org/repo, or URL
         #[arg(value_name = "SOURCE")]
-        source: String,
+        source: ModelRef,
         /// Text prompt (positional): `apr run model.gguf "What is 2+2?"`
         #[arg(value_name = "PROMPT")]
-        positional_prompt: Option<String>,
+        positional_prompt: Option<PromptText>,
         /// Input file (audio, text, etc.)
         #[arg(short, long)]
-        input: Option<PathBuf>,
+        input: Option<InputFile>,
         /// Text prompt for generation (for LLM models)
         #[arg(short, long)]
-        prompt: Option<String>,
+        prompt: Option<PromptText>,
         /// Maximum tokens to generate (default: 32)
         #[arg(short = 'n', long, default_value = "32")]
         max_tokens: usize,
@@ -123,10 +123,10 @@ pub enum Commands {
         stream: bool,
         /// Language code (for ASR models)
         #[arg(short, long)]
-        language: Option<String>,
+        language: Option<FreeText>,
         /// Task (transcribe, translate)
         #[arg(short, long)]
-        task: Option<String>,
+        task: Option<FreeText>,
         /// Output format (text, json, srt, vtt)
         #[arg(short = 'f', long, default_value = "text", value_parser = RUN_FORMAT_VALUES)]
         format: String,
@@ -151,13 +151,13 @@ pub enum Commands {
         trace: bool,
         /// Trace specific steps only (comma-separated)
         #[arg(long, value_delimiter = ',')]
-        trace_steps: Option<Vec<String>>,
+        trace_steps: Option<Vec<FreeText>>,
         /// Verbose tracing (show tensor values)
         #[arg(long)]
         trace_verbose: bool,
         /// Save trace output to JSON file
         #[arg(long, value_name = "FILE")]
-        trace_output: Option<PathBuf>,
+        trace_output: Option<OutputPath>,
         /// Trace detail level (none, basic, layer, payload, chrome)
         /// "chrome" outputs chrome://tracing JSON integrating layer trace + brick profile.
         /// F-CLIPARITY-01 / PMAT-386 / paiml/aprender#574
@@ -207,7 +207,7 @@ pub enum Commands {
         /// Each input line: {"prompt": "...", "task_id": "..."}
         /// Chat template is applied automatically.
         #[arg(long, value_name = "FILE")]
-        batch_jsonl: Option<PathBuf>,
+        batch_jsonl: Option<InputFile>,
         /// Show verbose output (model loading, backend info)
         #[arg(short, long)]
         verbose: bool,
@@ -224,7 +224,7 @@ pub enum Commands {
     Inspect {
         /// Path to .apr model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Show vocabulary details
         #[arg(long)]
         vocab: bool,
@@ -259,7 +259,7 @@ pub enum Commands {
     Debug {
         /// Path to .apr model file (omit only when using a subcommand)
         #[arg(value_name = "FILE")]
-        file: Option<PathBuf>,
+        file: Option<ModelPath>,
         /// Debug subcommand, e.g. `embed-viz`
         #[command(subcommand)]
         action: Option<DebugCommands>,
@@ -280,7 +280,7 @@ pub enum Commands {
     Validate {
         /// Path to .apr model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Show 100-point quality assessment
         #[arg(long)]
         quality: bool,
@@ -298,10 +298,10 @@ pub enum Commands {
     ValidateManifest {
         /// Path to manifest YAML
         #[arg(value_name = "MANIFEST")]
-        file: PathBuf,
+        file: ConfigPath,
         /// Optional local .apr artifact to discharge FALSIFY-PM-002 (sha256 match)
         #[arg(long, value_name = "APR_FILE")]
-        artifact: Option<PathBuf>,
+        artifact: Option<InputFile>,
         /// Discharge FALSIFY-PM-003 via network: HTTP HEAD + streaming sha256.
         /// Default is DEFERRED (offline-safe). Ignored when --offline is set.
         /// Closes F-PUBLISH-EXTRA-001::dogfood_ex05 (no Python in ex-05).
@@ -312,10 +312,10 @@ pub enum Commands {
     Diff {
         /// First model file
         #[arg(value_name = "FILE1")]
-        file1: PathBuf,
+        file1: ModelPath,
         /// Second model file
         #[arg(value_name = "FILE2")]
-        file2: PathBuf,
+        file2: ModelPath,
         /// Show weight-level differences
         #[arg(long)]
         weights: bool,
@@ -324,7 +324,7 @@ pub enum Commands {
         values: bool,
         /// Filter tensors by name pattern (for --values)
         #[arg(long)]
-        filter: Option<String>,
+        filter: Option<FreeText>,
         /// Maximum number of tensors to compare (for --values)
         #[arg(long, default_value = "10")]
         limit: usize,
@@ -351,13 +351,13 @@ pub enum Commands {
     Tensors {
         /// Path to .apr model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Show tensor statistics (mean, std, min, max)
         #[arg(long)]
         stats: bool,
         /// Filter tensors by name pattern
         #[arg(long)]
-        filter: Option<String>,
+        filter: Option<FreeText>,
         /// Limit number of tensors shown (0 = unlimited)
         #[arg(long, default_value = "0")]
         limit: usize,
@@ -369,13 +369,13 @@ pub enum Commands {
     Trace {
         /// Path to .apr model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Filter layers by name pattern
         #[arg(long)]
-        layer: Option<String>,
+        layer: Option<FreeText>,
         /// Compare with reference model
         #[arg(long)]
-        reference: Option<PathBuf>,
+        reference: Option<ModelPath>,
         /// Output as JSON
         #[arg(long)]
         json: bool,
@@ -398,22 +398,22 @@ pub enum Commands {
         /// stage. Output goes to `--save-tensor-dir` if provided,
         /// else `<file_dir>/trace-tensors/<run_id>/`.
         #[arg(long, value_name = "STAGES")]
-        save_tensor: Option<String>,
+        save_tensor: Option<FreeText>,
         /// Output directory for `--save-tensor` (default: sibling
         /// `trace-tensors/<run_id>/`).
         #[arg(long, value_name = "DIR")]
-        save_tensor_dir: Option<PathBuf>,
+        save_tensor_dir: Option<OutputPath>,
         /// Layer-id range for `--save-tensor` (default: 0..1, i.e.
         /// layer 0 only). Format: `START..END` (Rust range syntax,
         /// END exclusive).
         #[arg(long, value_name = "RANGE", default_value = "0..1")]
-        save_tensor_layers: String,
+        save_tensor_layers: FreeText,
     },
     /// Check for best practices and conventions
     Lint {
         /// Path to .apr model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Fail on warnings as well as errors.
         ///
         /// By default only ERROR-level findings fail the run. Every real model
@@ -428,7 +428,7 @@ pub enum Commands {
     BeatRun {
         /// Path to a beat-benchmark contract YAML (e.g. contracts/beat-sklearn-iris-v1.yaml)
         #[arg(value_name = "CONTRACT")]
-        contract: PathBuf,
+        contract: ConfigPath,
         /// Measured metric value; when given, emit a WON/REGRESSED verdict and
         /// exit non-zero on regression. Omit to just report the pinned baseline.
         #[arg(long, value_name = "VALUE")]
@@ -438,22 +438,22 @@ pub enum Commands {
     Manifest {
         /// Files to include in the manifest (one entry per file)
         #[arg(value_name = "FILES", num_args = 1..)]
-        files: Vec<PathBuf>,
+        files: Vec<InputFile>,
         /// Output JSON manifest path
         #[arg(short, long, value_name = "MAN_JSON")]
-        output: PathBuf,
+        output: OutputPath,
     },
     /// Explain errors, architecture, tensors, and kernel dispatch
     Explain {
         /// Error code, model file path, or family name (auto-detected)
         #[arg(value_name = "CODE_OR_FILE")]
-        code_or_file: Option<String>,
+        code_or_file: Option<FreeText>,
         /// Path to .apr model file (optional context for --tensor)
         #[arg(short, long)]
-        file: Option<PathBuf>,
+        file: Option<ModelPath>,
         /// Explain a specific tensor
         #[arg(long)]
-        tensor: Option<String>,
+        tensor: Option<FreeText>,
         /// Explain kernel dispatch pipeline for architecture
         #[arg(long)]
         kernel: bool,
@@ -476,22 +476,22 @@ pub enum Commands {
     Export {
         /// Path to .apr model file
         #[arg(value_name = "FILE", required_unless_present = "list_formats")]
-        file: Option<PathBuf>,
+        file: Option<ModelPath>,
         /// Output format (safetensors, gguf, mlx, onnx, openvino, coreml)
         #[arg(long, default_value = "safetensors")]
-        format: String,
+        format: FreeText,
         /// Output file/directory path
         #[arg(short, long)]
-        output: Option<PathBuf>,
+        output: Option<OutputPath>,
         /// Apply quantization during export (int8, int4, fp16)
         #[arg(long)]
-        quantize: Option<String>,
+        quantize: Option<FreeText>,
         /// List all supported export formats
         #[arg(long)]
         list_formats: bool,
         /// Batch export to multiple formats (comma-separated: gguf,mlx,safetensors)
         #[arg(long)]
-        batch: Option<String>,
+        batch: Option<FreeText>,
         /// Output in JSON format
         #[arg(long)]
         json: bool,
@@ -506,16 +506,16 @@ pub enum Commands {
     Import {
         /// Source: hf://org/repo, local file, or URL
         #[arg(value_name = "SOURCE")]
-        source: String,
+        source: ModelRef,
         /// Output .apr file path (default: derived from source name)
         #[arg(short, long)]
-        output: Option<PathBuf>,
+        output: Option<OutputPath>,
         /// Model architecture (whisper, llama, bert, qwen2, qwen3, gpt2, starcoder, gpt-neox, opt, phi, gemma, falcon, mamba, t5, auto)
         #[arg(long, default_value = "auto")]
-        arch: String,
+        arch: FreeText,
         /// Quantization (int8, int4, fp16)
         #[arg(long)]
-        quantize: Option<String>,
+        quantize: Option<FreeText>,
         /// Strict mode: reject unverified architectures and fail on validation errors
         #[arg(long)]
         strict: bool,
@@ -526,7 +526,7 @@ pub enum Commands {
         /// PMAT-232: External tokenizer.json for weights-only GGUF files.
         /// Required if the GGUF has no embedded tokenizer vocabulary.
         #[arg(long)]
-        tokenizer: Option<PathBuf>,
+        tokenizer: Option<InputFile>,
         /// F-GT-001: Enforce provenance chain. Rejects pre-baked GGUF imports
         /// (only SafeTensors sources allowed). Ensures single-provenance testing.
         #[arg(long)]
@@ -544,11 +544,11 @@ pub enum Commands {
         /// string "dataset", the next positional `repo` is the
         /// HuggingFace dataset repo and dataset-pull semantics apply.
         #[arg(value_name = "MODEL_OR_ASSET_TYPE")]
-        model_ref: String,
+        model_ref: ModelRef,
         /// Dataset repository (used only when model_ref == "dataset").
         /// Per `apr-cli-pull-dataset-v1.yaml`.
         #[arg(value_name = "REPO")]
-        repo: Option<String>,
+        repo: Option<FreeText>,
         /// Force re-download even if cached
         #[arg(long)]
         force: bool,
@@ -570,7 +570,7 @@ pub enum Commands {
         /// CRUX-A-03: pin to a specific branch, tag, or git SHA on the remote
         /// (HuggingFace Hub). Defaults to "main" when omitted.
         #[arg(long, value_name = "REV")]
-        revision: Option<String>,
+        revision: Option<FreeText>,
         /// CRUX-A-20: offline mode — forbid any outbound network I/O.
         /// Equivalent to APR_OFFLINE=1 or HF_HUB_OFFLINE=1 in the environment.
         #[arg(long)]
@@ -579,11 +579,11 @@ pub enum Commands {
         /// multiple times; matches are unioned. fnmatch-compatible
         /// (`*`, `?`, `[a-z]`). No-match is fail-fast.
         #[arg(long, value_name = "GLOB")]
-        include: Vec<String>,
+        include: Vec<FreeText>,
         /// (dataset mode) Output directory. Default:
         /// `~/.cache/aprender/datasets/<repo>/`.
         #[arg(short = 'o', long)]
-        output: Option<PathBuf>,
+        output: Option<OutputPath>,
     },
     /// Registry operations (CRUX-A-01): inspect alias map, etc.
     Registry {
@@ -598,22 +598,22 @@ pub enum Commands {
     Rm {
         /// Model reference to remove
         #[arg(value_name = "MODEL")]
-        model_ref: String,
+        model_ref: ModelRef,
     },
     /// Convert/optimize model
     Convert {
         /// Path to .apr model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Quantize to format (int8, int4, fp16, q4k)
         #[arg(long)]
-        quantize: Option<String>,
+        quantize: Option<FreeText>,
         /// Compress output (none, zstd, zstd-max, lz4)
         #[arg(long)]
-        compress: Option<String>,
+        compress: Option<FreeText>,
         /// Output file path
         #[arg(short, long)]
-        output: PathBuf,
+        output: OutputPath,
         /// Force overwrite existing files
         #[arg(short, long)]
         force: bool,
@@ -627,16 +627,16 @@ pub enum Commands {
     Stamp {
         /// Path to input .apr model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// SPDX license identifier (e.g., Apache-2.0)
         #[arg(long)]
-        license: Option<String>,
+        license: Option<FreeText>,
         /// Training-data source (e.g., huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct)
         #[arg(long = "data-source")]
-        data_source: Option<String>,
+        data_source: Option<FreeText>,
         /// SPDX license for data_source (e.g., Apache-2.0)
         #[arg(long = "data-license")]
-        data_license: Option<String>,
+        data_license: Option<FreeText>,
         /// HuggingFace class name (e.g., Qwen2ForCausalLM, LlamaForCausalLM).
         ///
         /// PMAT-690 P0-K extension (SPEC §86): patch the upstream
@@ -644,12 +644,12 @@ pub enum Commands {
         /// consumers (apr inspect --quality, apr pretrain --init,
         /// apr export → llama-cli) see the correct HF identity.
         #[arg(long = "hf-architecture")]
-        hf_architecture: Option<String>,
+        hf_architecture: Option<FreeText>,
         /// HuggingFace model_type slug (e.g., qwen2, llama).
         ///
         /// PMAT-690 P0-K extension (SPEC §86).
         #[arg(long = "hf-model-type")]
-        hf_model_type: Option<String>,
+        hf_model_type: Option<FreeText>,
         /// Lowercase architecture family slug (e.g., qwen2, llama).
         ///
         /// PMAT-690 P0-K extension (SPEC §86). This is the field
@@ -657,7 +657,7 @@ pub enum Commands {
         /// patching it, pre-P0-K checkpoints with the P0-H "LlamaForCausalLM"
         /// fallback in this field cannot be loaded as Qwen2 inits.
         #[arg(long)]
-        architecture: Option<String>,
+        architecture: Option<FreeText>,
         /// Directory containing tokenizer files (vocab.json + merges.txt
         /// OR tokenizer.json). When provided, embeds the vocabulary +
         /// BPE merges into the APR's `custom.tokenizer.vocabulary` /
@@ -670,10 +670,10 @@ pub enum Commands {
         /// the tokenizer post-hoc so the artifact is self-contained
         /// for inference (the apr binary's headline use case).
         #[arg(long = "tokenizer", value_name = "DIR")]
-        tokenizer_dir: Option<PathBuf>,
+        tokenizer_dir: Option<InputFile>,
         /// Output file path
         #[arg(short, long)]
-        output: PathBuf,
+        output: OutputPath,
         /// Force overwrite existing files
         #[arg(short, long)]
         force: bool,
@@ -682,16 +682,16 @@ pub enum Commands {
     Compile {
         /// Input .apr model file
         #[arg(value_name = "FILE", required_unless_present = "list_targets")]
-        file: Option<PathBuf>,
+        file: Option<ModelPath>,
         /// Output binary path (default: derived from model name)
         #[arg(short, long)]
-        output: Option<PathBuf>,
+        output: Option<OutputPath>,
         /// Target triple (e.g., x86_64-unknown-linux-musl)
         #[arg(long)]
-        target: Option<String>,
+        target: Option<FreeText>,
         /// Quantize weights before embedding (int8, int4, fp16)
         #[arg(long)]
-        quantize: Option<String>,
+        quantize: Option<FreeText>,
         /// Release mode (optimized)
         #[arg(long)]
         release: bool,
@@ -709,19 +709,19 @@ pub enum Commands {
     Merge {
         /// Model files to merge
         #[arg(value_name = "FILES", num_args = 2..)]
-        files: Vec<PathBuf>,
+        files: Vec<ModelPath>,
         /// Merge strategy (average, weighted, slerp, ties, dare)
         #[arg(long, default_value = "average")]
-        strategy: String,
+        strategy: FreeText,
         /// Output file path (optional in --plan mode)
         #[arg(short, long, required_unless_present = "plan")]
-        output: Option<PathBuf>,
+        output: Option<OutputPath>,
         /// Weights for weighted merge (comma-separated, e.g., "0.7,0.3")
         #[arg(long, value_delimiter = ',')]
         weights: Option<Vec<f32>>,
         /// Base model for TIES/DARE (task vectors computed as delta from base)
         #[arg(long)]
-        base_model: Option<PathBuf>,
+        base_model: Option<ModelPath>,
         /// DARE drop probability (default: 0.9)
         #[arg(long, default_value = "0.9")]
         drop_rate: f32,
@@ -742,19 +742,19 @@ pub enum Commands {
     Quantize {
         /// Input model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Quantization scheme: int8, int4, fp16, q4k
         #[arg(long, short = 's', default_value = "int4")]
-        scheme: String,
+        scheme: FreeText,
         /// Output file path (required unless --plan)
         #[arg(short, long)]
-        output: Option<PathBuf>,
+        output: Option<OutputPath>,
         /// Output format override (apr, gguf, safetensors)
         #[arg(long)]
-        format: Option<String>,
+        format: Option<FreeText>,
         /// Batch quantization (comma-separated schemes)
         #[arg(long)]
-        batch: Option<String>,
+        batch: Option<FreeText>,
         /// Plan mode (estimate only, no execution)
         #[arg(long)]
         plan: bool,
@@ -774,13 +774,13 @@ pub enum Commands {
     Tui {
         /// Path to .apr model file
         #[arg(value_name = "FILE")]
-        file: Option<PathBuf>,
+        file: Option<ModelPath>,
     },
     /// Model self-test: 10-stage pipeline integrity check (APR-TRACE-001)
     Check {
         /// Path to model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Disable GPU acceleration
         #[arg(long)]
         no_gpu: bool,
@@ -800,19 +800,19 @@ pub enum Commands {
     Code {
         /// Path to local GGUF/APR model file (prefers .apr format)
         #[arg(long)]
-        model: Option<PathBuf>,
+        model: Option<ModelPath>,
 
         /// Project directory (loads APR.md/CLAUDE.md from this path)
         #[arg(long, default_value = ".")]
-        project: PathBuf,
+        project: DirPath,
 
         /// Resume previous session (optionally by ID)
         #[arg(long)]
-        resume: Option<Option<String>>,
+        resume: Option<Option<FreeText>>,
 
         /// Agent manifest (advanced — overrides defaults)
         #[arg(long)]
-        manifest: Option<PathBuf>,
+        manifest: Option<ConfigPath>,
 
         /// Initial prompt (non-interactive: print response and exit)
         #[arg(short, long)]
@@ -826,7 +826,7 @@ pub enum Commands {
         /// — a wrong-model execution with no diagnostic — and typo'd flags
         /// produced no parse error at all. Options are now parsed in any
         /// position; a prompt that genuinely starts with `-` needs `--`.
-        prompt: Vec<String>,
+        prompt: Vec<PromptText>,
 
         /// Max turns before stopping
         #[arg(long, default_value = "50")]
@@ -838,7 +838,7 @@ pub enum Commands {
         /// (`§ trace_schema`). Used by `ccpa measure` to score apr-code
         /// against canonical Claude Code reference fixtures.
         #[arg(long)]
-        emit_trace: Option<PathBuf>,
+        emit_trace: Option<OutputPath>,
 
         /// Output format for non-interactive (`-p`) mode (PMAT-CODE-OUTPUT-FORMAT-001).
         /// `text` (default): plain assistant text.
@@ -921,10 +921,10 @@ pub enum DebugCommands {
     EmbedViz {
         /// Model file holding the embedding table
         #[arg(long, value_name = "FILE")]
-        model: PathBuf,
+        model: ModelPath,
         /// Embedding tensor name (default: auto-detect the known names)
         #[arg(long, value_name = "NAME")]
-        tensor: Option<String>,
+        tensor: Option<FreeText>,
         /// Projection method: exact `pca`, seeded `random`, or `umap` (refused)
         #[arg(long, value_enum, default_value_t = EmbedProjection::Pca)]
         projection: EmbedProjection,
@@ -937,10 +937,10 @@ pub enum DebugCommands {
         /// Token text, one per line, for the `token_str` column. Without it apr
         /// reads the GGUF vocabulary, or writes `<unresolved>`
         #[arg(long, value_name = "FILE")]
-        tokens: Option<PathBuf>,
+        tokens: Option<InputFile>,
         /// Write the CSV here instead of stdout
         #[arg(short, long, value_name = "FILE")]
-        output: Option<PathBuf>,
+        output: Option<OutputPath>,
         /// Overwrite an existing --output file (refused without it)
         #[arg(short, long)]
         force: bool,

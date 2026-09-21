@@ -14,19 +14,19 @@ pub enum TokenizeCommands {
     Plan {
         /// Path to training corpus (text file, one document per line)
         #[arg(long, value_name = "FILE")]
-        data: PathBuf,
+        data: InputFile,
         /// Target vocabulary size
         #[arg(long, default_value = "32000")]
         vocab_size: usize,
         /// Tokenizer algorithm: bpe, wordpiece, unigram
         #[arg(long, default_value = "bpe")]
-        algorithm: String,
+        algorithm: FreeText,
         /// Output directory for trained tokenizer
         #[arg(short, long, default_value = "./tokenizer-output")]
-        output: PathBuf,
+        output: OutputPath,
         /// Output format: text, json, yaml
         #[arg(long, default_value = "text")]
-        format: String,
+        format: FreeText,
     },
 
     /// Train a tokenizer on the corpus.
@@ -38,16 +38,16 @@ pub enum TokenizeCommands {
     Apply {
         /// Path to training corpus (text file, one document per line)
         #[arg(long, value_name = "FILE")]
-        data: PathBuf,
+        data: InputFile,
         /// Target vocabulary size
         #[arg(long, default_value = "32000")]
         vocab_size: usize,
         /// Tokenizer algorithm: bpe, wordpiece, unigram
         #[arg(long, default_value = "bpe")]
-        algorithm: String,
+        algorithm: FreeText,
         /// Output directory for trained tokenizer
         #[arg(short, long, default_value = "./tokenizer-output")]
-        output: PathBuf,
+        output: OutputPath,
         /// Maximum number of lines to read from corpus (0 = all)
         #[arg(long, default_value = "0")]
         max_lines: usize,
@@ -64,7 +64,7 @@ pub enum TokenizeCommands {
         /// Path to corpus: a `.jsonl` file or a directory containing `.jsonl` files.
         /// Each line must be a JSON object with a `content` field.
         #[arg(long, value_name = "PATH")]
-        corpus: PathBuf,
+        corpus: InputFile,
         /// Target vocabulary size. Default 50_257 matches GPT-2 convention
         /// (50_000 BPE merges + 256 byte-level fallback tokens + 1 sentinel)
         /// and the MODEL-2 albor tokenizer contract (tokenizer-bpe-v1 v1.2.0).
@@ -78,10 +78,10 @@ pub enum TokenizeCommands {
         min_frequency: usize,
         /// Output directory; will contain vocab.json and merges.txt.
         #[arg(long, default_value = "./tokenizer-output")]
-        output: PathBuf,
+        output: OutputPath,
         /// Unicode normalization form applied to each document before training.
         #[arg(long, default_value = "nfc")]
-        normalization: String,
+        normalization: FreeText,
     },
 
     /// Import a HuggingFace tokenizer.json into aprender's two-file
@@ -104,10 +104,10 @@ pub enum TokenizeCommands {
     ImportHf {
         /// Path to input HuggingFace tokenizer.json (BPE model required).
         #[arg(long, value_name = "FILE")]
-        input: PathBuf,
+        input: InputFile,
         /// Output directory; will contain vocab.json + merges.txt + manifest.json.
         #[arg(long, value_name = "DIR")]
-        output: PathBuf,
+        output: OutputPath,
         /// Include `added_tokens` in vocab.json (default: BPE state machine only).
         /// Use this when the downstream consumer needs special tokens (e.g.,
         /// `<|im_start|>`, `<|endoftext|>`) materialized in vocab.json itself.
@@ -136,25 +136,25 @@ pub enum TokenizeCommands {
         /// are encoded in command-line order and shard numbering is
         /// continuous across sources.
         #[arg(long, value_name = "PATH", required = true)]
-        corpus: Vec<PathBuf>,
+        corpus: Vec<InputFile>,
         /// Directory containing vocab.json + merges.txt from `apr tokenize train`.
         #[arg(long, value_name = "DIR")]
-        tokenizer: PathBuf,
+        tokenizer: InputFile,
         /// Output directory for shard-NNNN.bin + manifest.json.
         #[arg(long, value_name = "DIR")]
-        output: PathBuf,
+        output: OutputPath,
         /// Target tokens per shard (shard closes once this limit is reached).
         #[arg(long, default_value = "10000000")]
         shard_tokens: usize,
         /// JSONL field to encode (default: `content`).
         #[arg(long, default_value = "content")]
-        content_field: String,
+        content_field: FreeText,
         /// Unicode normalization (must match tokenizer training).
         #[arg(long, default_value = "nfc")]
-        normalization: String,
+        normalization: FreeText,
         /// EOS insertion policy: none|between|after.
         #[arg(long, default_value = "between")]
-        eos_policy: String,
+        eos_policy: FreeText,
         /// Number of rayon workers for per-document BPE encoding.
         ///
         /// Defaults to `std::thread::available_parallelism()` (logical CPU count).
@@ -222,13 +222,13 @@ pub enum TokenizeCommands {
         /// Output directory containing shard-NNNN.bin files.
         /// `manifest.json` will be written into this directory.
         #[arg(long, value_name = "DIR")]
-        output: PathBuf,
+        output: OutputPath,
         /// Optional tokenizer directory; when provided, `vocab.json`
         /// is read for the manifest's `vocab_size` field. Without it,
         /// `vocab_size` is recorded as `null` (provenance-incomplete
         /// but otherwise valid).
         #[arg(long, value_name = "DIR")]
-        tokenizer: Option<PathBuf>,
+        tokenizer: Option<InputFile>,
         /// Emit the manifest body as JSON to stdout (in addition to
         /// writing to disk).
         #[arg(long, default_value_t = false)]

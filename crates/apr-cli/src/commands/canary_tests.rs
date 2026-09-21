@@ -255,9 +255,9 @@ fn test_build_failure_message_std_drift() {
 #[test]
 fn test_canary_commands_create() {
     let cmd = CanaryCommands::Create {
-        file: PathBuf::from("model.safetensors"),
-        input: PathBuf::from("input.wav"),
-        output: PathBuf::from("canary.json"),
+        file: PathBuf::from("model.safetensors").into(),
+        input: PathBuf::from("input.wav").into(),
+        output: PathBuf::from("canary.json").into(),
     };
     match cmd {
         CanaryCommands::Create {
@@ -276,8 +276,8 @@ fn test_canary_commands_create() {
 #[test]
 fn test_canary_commands_check() {
     let cmd = CanaryCommands::Check {
-        file: PathBuf::from("model.safetensors"),
-        canary: PathBuf::from("canary.json"),
+        file: PathBuf::from("model.safetensors").into(),
+        canary: PathBuf::from("canary.json").into(),
     };
     match cmd {
         CanaryCommands::Check { file, canary } => {
@@ -291,9 +291,9 @@ fn test_canary_commands_check() {
 #[test]
 fn test_canary_commands_clone() {
     let cmd = CanaryCommands::Create {
-        file: PathBuf::from("model.safetensors"),
-        input: PathBuf::from("input.wav"),
-        output: PathBuf::from("canary.json"),
+        file: PathBuf::from("model.safetensors").into(),
+        input: PathBuf::from("input.wav").into(),
+        output: PathBuf::from("canary.json").into(),
     };
     let cloned = cmd.clone();
     match cloned {
@@ -307,8 +307,8 @@ fn test_canary_commands_clone() {
 #[test]
 fn test_canary_commands_debug() {
     let cmd = CanaryCommands::Check {
-        file: PathBuf::from("model.safetensors"),
-        canary: PathBuf::from("canary.json"),
+        file: PathBuf::from("model.safetensors").into(),
+        canary: PathBuf::from("canary.json").into(),
     };
     let debug = format!("{cmd:?}");
     assert!(debug.contains("Check"));
@@ -323,9 +323,9 @@ fn test_run_create_model_not_found() {
     let output = NamedTempFile::with_suffix(".json").expect("create output");
     let input = NamedTempFile::with_suffix(".wav").expect("create input");
     let cmd = CanaryCommands::Create {
-        file: PathBuf::from("/nonexistent/model.safetensors"),
-        input: input.path().to_path_buf(),
-        output: output.path().to_path_buf(),
+        file: PathBuf::from("/nonexistent/model.safetensors").into(),
+        input: input.path().to_path_buf().into(),
+        output: output.path().to_path_buf().into(),
     };
     let result = run(cmd);
     assert!(result.is_err());
@@ -341,9 +341,9 @@ fn test_run_create_invalid_model() {
     let input = NamedTempFile::with_suffix(".wav").expect("create input");
 
     let cmd = CanaryCommands::Create {
-        file: model.path().to_path_buf(),
-        input: input.path().to_path_buf(),
-        output: output.path().to_path_buf(),
+        file: model.path().to_path_buf().into(),
+        input: input.path().to_path_buf().into(),
+        output: output.path().to_path_buf().into(),
     };
     let result = run(cmd);
     assert!(result.is_err());
@@ -357,8 +357,8 @@ fn test_run_check_model_not_found() {
         .expect("write");
 
     let cmd = CanaryCommands::Check {
-        file: PathBuf::from("/nonexistent/model.safetensors"),
-        canary: canary.path().to_path_buf(),
+        file: PathBuf::from("/nonexistent/model.safetensors").into(),
+        canary: canary.path().to_path_buf().into(),
     };
     let result = run(cmd);
     assert!(result.is_err());
@@ -370,8 +370,8 @@ fn test_run_check_canary_not_found() {
     model.write_all(b"fake model").expect("write");
 
     let cmd = CanaryCommands::Check {
-        file: model.path().to_path_buf(),
-        canary: PathBuf::from("/nonexistent/canary.json"),
+        file: model.path().to_path_buf().into(),
+        canary: PathBuf::from("/nonexistent/canary.json").into(),
     };
     let result = run(cmd);
     assert!(result.is_err());
@@ -385,8 +385,8 @@ fn test_run_check_invalid_canary() {
     canary.write_all(b"not valid json").expect("write");
 
     let cmd = CanaryCommands::Check {
-        file: model.path().to_path_buf(),
-        canary: canary.path().to_path_buf(),
+        file: model.path().to_path_buf().into(),
+        canary: canary.path().to_path_buf().into(),
     };
     let result = run(cmd);
     assert!(result.is_err());
@@ -1169,9 +1169,9 @@ fn test_run_create_input_not_found() {
     let output = NamedTempFile::with_suffix(".json").expect("create output");
 
     let cmd = CanaryCommands::Create {
-        file: model.path().to_path_buf(),
-        input: PathBuf::from("/nonexistent/input.wav"),
-        output: output.path().to_path_buf(),
+        file: model.path().to_path_buf().into(),
+        input: PathBuf::from("/nonexistent/input.wav").into(),
+        output: output.path().to_path_buf().into(),
     };
     let result = run(cmd);
     assert!(result.is_err(), "missing input file should error");
@@ -1185,9 +1185,9 @@ fn test_run_create_empty_input_path() {
     let output = NamedTempFile::with_suffix(".json").expect("create output");
 
     let cmd = CanaryCommands::Create {
-        file: model.path().to_path_buf(),
-        input: PathBuf::from(""),
-        output: output.path().to_path_buf(),
+        file: model.path().to_path_buf().into(),
+        input: PathBuf::from("").into(),
+        output: output.path().to_path_buf().into(),
     };
     // Will fail on format detection, not input validation
     let result = run(cmd);

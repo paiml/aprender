@@ -21,9 +21,9 @@
                 task,
                 ..
             } => {
-                assert_eq!(input, Some(PathBuf::from("audio.wav")));
-                assert_eq!(language, Some("en".to_string()));
-                assert_eq!(task, Some("transcribe".to_string()));
+                assert_eq!(input, Some(PathBuf::from("audio.wav")).map(Into::into));
+                assert_eq!(language, Some("en".to_string()).map(Into::into));
+                assert_eq!(task, Some("transcribe".to_string()).map(Into::into));
             }
             _ => panic!("Expected Run command"),
         }
@@ -89,7 +89,7 @@
                 assert!(skip_gpu_speedup);
                 assert!(skip_contract);
                 assert!(skip_format_parity);
-                assert_eq!(safetensors_path, Some(PathBuf::from("model.safetensors")));
+                assert_eq!(safetensors_path, Some(PathBuf::from("model.safetensors")).map(Into::into));
                 assert_eq!(iterations, 20);
                 assert_eq!(warmup, 5);
                 assert_eq!(max_tokens, 64);
@@ -185,9 +185,9 @@
                 assert_eq!(warmup, 10);
                 assert_eq!(iterations, 20);
                 assert_eq!(max_tokens, 64);
-                assert_eq!(prompt, Some("The quick brown fox".to_string()));
+                assert_eq!(prompt, Some("The quick brown fox".to_string()).map(Into::into));
                 assert!(fast);
-                assert_eq!(brick, Some("attention".to_string()));
+                assert_eq!(brick, Some("attention".to_string()).map(Into::into));
             }
             _ => panic!("Expected Bench command"),
         }
@@ -221,10 +221,10 @@
                 simulated,
                 ..
             }) => {
-                assert_eq!(model_path, Some(PathBuf::from("model.gguf")));
+                assert_eq!(model_path, Some(PathBuf::from("model.gguf")).map(Into::into));
                 assert!(speculative);
                 assert_eq!(speculation_k, 8);
-                assert_eq!(draft_model, Some(PathBuf::from("draft.gguf")));
+                assert_eq!(draft_model, Some(PathBuf::from("draft.gguf")).map(Into::into));
                 assert_eq!(concurrent, 4);
                 assert!(simulated);
             }
@@ -260,8 +260,8 @@
                 assert!(energy);
                 assert!(perf_grade);
                 assert!(callgraph);
-                assert_eq!(compare_hf, Some("openai/whisper-tiny".to_string()));
-                assert_eq!(output, Some(PathBuf::from("/tmp/flame.svg")));
+                assert_eq!(compare_hf, Some("openai/whisper-tiny".to_string()).map(Into::into));
+                assert_eq!(output, Some(PathBuf::from("/tmp/flame.svg")).map(Into::into));
             }
             _ => panic!("Expected Profile command"),
         }
@@ -300,15 +300,15 @@
                 profile,
                 ..
             }) => {
-                assert_eq!(system, Some("You are a helpful assistant.".to_string()));
+                assert_eq!(system, Some("You are a helpful assistant.".to_string()).map(Into::into));
                 assert!(inspect);
                 assert!(trace);
                 assert_eq!(
                     trace_steps,
-                    Some(vec!["Tokenize".to_string(), "Decode".to_string()])
+                    Some(vec!["Tokenize".to_string(), "Decode".to_string()]).map(|v| v.into_iter().map(Into::into).collect())
                 );
                 assert!(trace_verbose);
-                assert_eq!(trace_output, Some(PathBuf::from("/tmp/chat-trace.json")));
+                assert_eq!(trace_output, Some(PathBuf::from("/tmp/chat-trace.json")).map(Into::into));
                 assert_eq!(trace_level, "payload");
                 assert!(profile);
             }
@@ -335,7 +335,7 @@
                 quiet,
                 ..
             })) => {
-                assert_eq!(step, Some("bench".to_string()));
+                assert_eq!(step, Some("bench".to_string()).map(Into::into));
                 assert_eq!(tier, "tiny");
                 assert!(zram);
                 assert_eq!(runs, 50);
@@ -423,7 +423,7 @@
                     assert_eq!(model_b, PathBuf::from("test.apr"));
                     assert!(mismatches_only);
                     assert_eq!(show_values, 5);
-                    assert_eq!(filter, Some("lm_head".to_string()));
+                    assert_eq!(filter, Some("lm_head".to_string()).map(Into::into));
                     assert!(json);
                 }
                 _ => panic!("Expected DiffTensors subcommand"),

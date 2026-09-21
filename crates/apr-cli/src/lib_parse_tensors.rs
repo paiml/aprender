@@ -24,7 +24,7 @@
             } => {
                 assert_eq!(file, PathBuf::from("model.apr"));
                 assert!(stats);
-                assert_eq!(filter, Some("encoder".to_string()));
+                assert_eq!(filter, Some("encoder".to_string()).map(Into::into));
                 assert_eq!(limit, 20);
                 assert!(json);
             }
@@ -44,7 +44,7 @@
                 tensor,
                 ..
             } => {
-                assert_eq!(code_or_file, Some("E001".to_string()));
+                assert_eq!(code_or_file, Some("E001".to_string()).map(Into::into));
                 assert!(file.is_none());
                 assert!(tensor.is_none());
             }
@@ -72,8 +72,8 @@
                 ..
             } => {
                 assert!(code_or_file.is_none());
-                assert_eq!(file, Some(PathBuf::from("model.apr")));
-                assert_eq!(tensor, Some("embed.weight".to_string()));
+                assert_eq!(file, Some(PathBuf::from("model.apr")).map(Into::into));
+                assert_eq!(tensor, Some("embed.weight".to_string()).map(Into::into));
             }
             _ => panic!("Expected Explain command"),
         }
@@ -112,8 +112,8 @@
                 save_tensor_layers: _,
             } => {
                 assert_eq!(file, PathBuf::from("model.apr"));
-                assert_eq!(layer, Some("layer.0".to_string()));
-                assert_eq!(reference, Some(PathBuf::from("ref.apr")));
+                assert_eq!(layer, Some("layer.0".to_string()).map(Into::into));
+                assert_eq!(reference, Some(PathBuf::from("ref.apr")).map(Into::into));
                 assert!(json);
                 assert!(verbose);
                 assert!(payload);
@@ -171,7 +171,7 @@
                 assert_eq!(file1, PathBuf::from("a.apr"));
                 assert_eq!(file2, PathBuf::from("b.apr"));
                 assert!(values);
-                assert_eq!(filter, Some("embed".to_string()));
+                assert_eq!(filter, Some("embed".to_string()).map(Into::into));
                 assert_eq!(limit, 5);
                 assert!(transpose_aware);
                 assert!(json);
@@ -200,7 +200,7 @@
                 ..
             } => {
                 assert!(chat);
-                assert_eq!(prompt, Some("Hello world".to_string()));
+                assert_eq!(prompt, Some("Hello world".to_string()).map(Into::into));
                 assert_eq!(source, "model.gguf");
             }
             _ => panic!("Expected Run command"),
@@ -248,7 +248,7 @@
                 ..
             } => {
                 assert_eq!(source, "model.gguf");
-                assert_eq!(positional_prompt, Some("What is 2+2?".to_string()));
+                assert_eq!(positional_prompt, Some("What is 2+2?".to_string()).map(Into::into));
                 assert_eq!(prompt, None);
             }
             _ => panic!("Expected Run command"),
@@ -273,8 +273,8 @@
                 prompt,
                 ..
             } => {
-                assert_eq!(positional_prompt, Some("positional text".to_string()));
-                assert_eq!(prompt, Some("flag text".to_string()));
+                assert_eq!(positional_prompt, Some("positional text".to_string()).map(Into::into));
+                assert_eq!(prompt, Some("flag text".to_string()).map(Into::into));
             }
             _ => panic!("Expected Run command"),
         }
@@ -293,7 +293,7 @@
                 ..
             } => {
                 assert_eq!(source, "model.gguf");
-                assert_eq!(positional_prompt, Some("What is 2+2?".to_string()));
+                assert_eq!(positional_prompt, Some("What is 2+2?".to_string()).map(Into::into));
                 assert_eq!(max_tokens, 64);
             }
             _ => panic!("Expected Run command"),
@@ -366,10 +366,10 @@
                         "Tokenize".to_string(),
                         "Embed".to_string(),
                         "Attention".to_string()
-                    ])
+                    ]).map(|v| v.into_iter().map(Into::into).collect())
                 );
                 assert!(trace_verbose);
-                assert_eq!(trace_output, Some(PathBuf::from("/tmp/trace.json")));
+                assert_eq!(trace_output, Some(PathBuf::from("/tmp/trace.json")).map(Into::into));
                 assert_eq!(trace_level, "layer");
             }
             _ => panic!("Expected Run command"),

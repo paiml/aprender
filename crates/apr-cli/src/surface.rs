@@ -442,7 +442,8 @@ fn in_backend_group(arg: &clap::Arg, cmd: &clap::Command) -> bool {
 /// shrink-only (cop ruling on #3745).
 ///
 /// A mount is found by TYPE: each listed type renders its own subcommand set,
-/// and a subtree of `root` whose children are exactly that set is its mount.
+/// and a subtree of `root` whose children are exactly that set (order ignored)
+/// is its mount.
 /// The list fails closed both ways. A foreign CLI missing from it has its
 /// untyped arguments counted as apr-cli's, which the marker guard refuses. A
 /// listed type that is mounted zero times or more than once is reported in
@@ -471,7 +472,10 @@ fn foreign_mounts(root: &clap::Command) -> ForeignScan {
     ];
     let mut scan = ForeignScan::default();
     for (ty, p) in &probes {
-        let want: Vec<&str> = p.get_subcommands().map(clap::Command::get_name).collect();
+        // A set, not a sequence: declaration order is not identity, and clap's
+        // own `mut_subcommand` moves the child it mutates to the end.
+        let mut want: Vec<&str> = p.get_subcommands().map(clap::Command::get_name).collect();
+        want.sort_unstable();
         let mut hits = Vec::new();
         find_mounts(root, &mut Vec::new(), &want, &mut hits);
         if hits.len() != 1 {
@@ -518,7 +522,8 @@ fn find_mounts(
 ) {
     for sub in cmd.get_subcommands() {
         path.push(sub.get_name().to_string());
-        let names: Vec<&str> = sub.get_subcommands().map(clap::Command::get_name).collect();
+        let mut names: Vec<&str> = sub.get_subcommands().map(clap::Command::get_name).collect();
+        names.sort_unstable();
         if !names.is_empty() && names == want {
             hits.push(path.clone());
         }
@@ -566,3 +571,7 @@ fn write_surface(out: &mut impl std::io::Write) -> std::io::Result<()> {
 #[cfg(test)]
 #[path = "surface_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "surface_guard_tests.rs"]
+mod guard;

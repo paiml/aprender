@@ -32,7 +32,7 @@
             }) => {
                 assert_eq!(file, PathBuf::from("model.gguf"));
                 assert_eq!(dataset, "lambada");
-                assert_eq!(text, Some("The quick brown fox".to_string()));
+                assert_eq!(text, Some("The quick brown fox".to_string()).map(Into::into));
                 assert_eq!(max_tokens, 256);
                 assert!((threshold - 15.5).abs() < f32::EPSILON);
                 assert!(task.is_none());
@@ -90,7 +90,7 @@
                 json: _,
             }) => {
                 assert_eq!(file, PathBuf::from("model.apr"));
-                assert_eq!(layer, Some("encoder.0".to_string()));
+                assert_eq!(layer, Some("encoder.0".to_string()).map(Into::into));
                 assert_eq!(component, "encoder");
                 assert!(verbose);
             }
@@ -145,7 +145,7 @@
                 ..
             }) => {
                 assert_eq!(file, PathBuf::from("model.apr"));
-                assert_eq!(tensor, Some("embed.weight".to_string()));
+                assert_eq!(tensor, Some("embed.weight".to_string()).map(Into::into));
                 assert_eq!(limit, 128);
                 assert!(stats);
                 assert!(list);
@@ -204,7 +204,7 @@
                 depth,
             }) => {
                 assert_eq!(file, PathBuf::from("model.apr"));
-                assert_eq!(filter, Some("encoder".to_string()));
+                assert_eq!(filter, Some("encoder".to_string()).map(Into::into));
                 assert_eq!(format, crate::commands::tree::TreeFormat::Mermaid);
                 assert!(sizes);
                 assert_eq!(depth, Some(3));
@@ -273,8 +273,8 @@
                     assert_eq!(file, PathBuf::from("model.apr"));
                     assert_eq!(output, PathBuf::from("/tmp/probar"));
                     assert_eq!(format, "json");
-                    assert_eq!(golden, Some(PathBuf::from("/refs/golden")));
-                    assert_eq!(layer, Some("layer.0".to_string()));
+                    assert_eq!(golden, Some(PathBuf::from("/refs/golden")).map(Into::into));
+                    assert_eq!(layer, Some("layer.0".to_string()).map(Into::into));
                     assert!(!assert);
                     assert!((tolerance - 0.98).abs() < 0.01);
                 },
@@ -333,7 +333,7 @@
                 strings,
                 limit,
             } => {
-                assert_eq!(file, Some(PathBuf::from("model.apr")));
+                assert_eq!(file, Some(PathBuf::from("model.apr")).map(Into::into));
                 assert!(action.is_none(), "no subcommand was given");
                 assert!(drama);
                 assert!(hex);
@@ -373,7 +373,7 @@
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
             Commands::Tui { file } => {
-                assert_eq!(file, Some(PathBuf::from("model.apr")));
+                assert_eq!(file, Some(PathBuf::from("model.apr")).map(Into::into));
             }
             _ => panic!("Expected Tui command"),
         }
@@ -424,12 +424,12 @@
                 allow_no_config,
             } => {
                 assert_eq!(source, "hf://openai/whisper-tiny");
-                assert_eq!(output, Some(PathBuf::from("whisper.apr")));
+                assert_eq!(output, Some(PathBuf::from("whisper.apr")).map(Into::into));
                 assert_eq!(arch, "whisper");
-                assert_eq!(quantize, Some("int8".to_string()));
+                assert_eq!(quantize, Some("int8".to_string()).map(Into::into));
                 assert!(strict);
                 assert!(preserve_q4k);
-                assert_eq!(tokenizer, Some(PathBuf::from("/path/to/tokenizer.json")));
+                assert_eq!(tokenizer, Some(PathBuf::from("/path/to/tokenizer.json")).map(Into::into));
                 assert!(!enforce_provenance);
                 assert!(!allow_no_config);
             }

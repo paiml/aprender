@@ -13,6 +13,9 @@ use aprender::format::rosetta::{
     ConversionOptions, ConversionPath, ConversionReport, FormatType, InspectionReport,
     RosettaStone, TensorInfo, VerificationReport,
 };
+use batuta_common::cli_roles::{
+    ConfigPath, DirPath, FreeText, InputFile, ModelPath, OutputPath, PromptText,
+};
 use clap::Subcommand;
 use colored::Colorize;
 use std::fmt::Write;
@@ -25,7 +28,7 @@ pub enum RosettaCommands {
     Inspect {
         /// Path to model file (GGUF, SafeTensors, or APR)
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
 
         /// Show hex dump of file header
         #[arg(long)]
@@ -40,15 +43,15 @@ pub enum RosettaCommands {
     Convert {
         /// Source model file
         #[arg(value_name = "SOURCE")]
-        source: PathBuf,
+        source: ModelPath,
 
         /// Target output file (format inferred from extension)
         #[arg(value_name = "TARGET")]
-        target: PathBuf,
+        target: OutputPath,
 
         /// Apply quantization during conversion (int8, int4, fp16)
         #[arg(long)]
-        quantize: Option<String>,
+        quantize: Option<FreeText>,
 
         /// Verify conversion with round-trip check
         #[arg(long)]
@@ -60,22 +63,22 @@ pub enum RosettaCommands {
 
         /// External tokenizer.json for weights-only models (PMAT-232)
         #[arg(long, value_name = "TOKENIZER")]
-        tokenizer: Option<PathBuf>,
+        tokenizer: Option<InputFile>,
     },
 
     /// Execute multi-step conversion chain
     Chain {
         /// Source model file
         #[arg(value_name = "SOURCE")]
-        source: PathBuf,
+        source: ModelPath,
 
         /// Format chain (e.g., gguf safetensors apr)
         #[arg(value_name = "FORMATS", num_args = 2..)]
-        formats: Vec<String>,
+        formats: Vec<FreeText>,
 
         /// Working directory for intermediate files
         #[arg(long, default_value = "./rosetta-work")]
-        work_dir: PathBuf,
+        work_dir: DirPath,
 
         /// Output as JSON
         #[arg(long)]
@@ -86,11 +89,11 @@ pub enum RosettaCommands {
     Verify {
         /// Source model file
         #[arg(value_name = "SOURCE")]
-        source: PathBuf,
+        source: ModelPath,
 
         /// Intermediate format for round-trip (gguf, safetensors, apr)
         #[arg(long, default_value = "safetensors")]
-        intermediate: String,
+        intermediate: FreeText,
 
         /// Tolerance for numerical differences (default: 1e-5)
         #[arg(long, default_value = "1e-5",
@@ -106,15 +109,15 @@ pub enum RosettaCommands {
     CompareInference {
         /// Reference model (typically GGUF)
         #[arg(value_name = "MODEL_A")]
-        model_a: PathBuf,
+        model_a: ModelPath,
 
         /// Test model (typically APR)
         #[arg(value_name = "MODEL_B")]
-        model_b: PathBuf,
+        model_b: ModelPath,
 
         /// Test prompt
         #[arg(long, default_value = "2+2=")]
-        prompt: String,
+        prompt: PromptText,
 
         /// Maximum tokens to generate
         #[arg(long, default_value = "5")]
@@ -142,11 +145,11 @@ pub enum RosettaCommands {
     DiffTensors {
         /// Reference model (typically GGUF - the one that works)
         #[arg(value_name = "MODEL_A")]
-        model_a: PathBuf,
+        model_a: ModelPath,
 
         /// Test model (typically APR - the one producing garbage)
         #[arg(value_name = "MODEL_B")]
-        model_b: PathBuf,
+        model_b: ModelPath,
 
         /// Only show tensors with dimension mismatches
         #[arg(long)]
@@ -158,7 +161,7 @@ pub enum RosettaCommands {
 
         /// Filter tensors by name pattern (e.g., "embed", "lm_head", "layer.0")
         #[arg(long)]
-        filter: Option<String>,
+        filter: Option<FreeText>,
 
         /// Output as JSON
         #[arg(long)]
@@ -173,19 +176,19 @@ pub enum RosettaCommands {
     Fingerprint {
         /// Model file to fingerprint
         #[arg(value_name = "MODEL")]
-        model: PathBuf,
+        model: ModelPath,
 
         /// Second model to compare (optional - enables diff mode)
         #[arg(value_name = "MODEL_B")]
-        model_b: Option<PathBuf>,
+        model_b: Option<ModelPath>,
 
         /// Output fingerprints to JSON file
         #[arg(long, short)]
-        output: Option<PathBuf>,
+        output: Option<OutputPath>,
 
         /// Filter tensors by name pattern
         #[arg(long)]
-        filter: Option<String>,
+        filter: Option<FreeText>,
 
         /// Show detailed statistics for each tensor
         #[arg(long)]
@@ -203,15 +206,15 @@ pub enum RosettaCommands {
     ValidateStats {
         /// Model to validate
         #[arg(value_name = "MODEL")]
-        model: PathBuf,
+        model: ModelPath,
 
         /// Reference model for comparison
         #[arg(long)]
-        reference: Option<PathBuf>,
+        reference: Option<ModelPath>,
 
         /// Fingerprint JSON file for comparison
         #[arg(long)]
-        fingerprints: Option<PathBuf>,
+        fingerprints: Option<ConfigPath>,
 
         /// Deviation threshold in standard deviations (default: 3.0)
         #[arg(long, default_value = "3.0",

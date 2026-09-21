@@ -479,7 +479,7 @@ async fn dispatch_band(command: &LlmSubcommand) -> Result<()> {
         accelerator,
         quantization,
         compute_class,
-        server_features,
+        server_features: &batuta_common::cli_roles::strings(server_features),
         tokenization,
         tokenizer_sha256: tokenizer_sha256.as_deref(),
         counts_special_tokens: *counts_special_tokens,

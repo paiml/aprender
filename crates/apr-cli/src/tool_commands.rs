@@ -8,16 +8,16 @@ pub enum ToolCommands {
         auto_verify: bool,
         /// Run specific step
         #[arg(long)]
-        step: Option<String>,
+        step: Option<FreeText>,
         /// Model tier: tiny (0.5B), small (1.5B), medium (7B), large (32B)
         #[arg(long, default_value = "small")]
-        tier: String,
+        tier: FreeText,
         /// Model directory
         #[arg(long, default_value = "./models")]
-        model_dir: PathBuf,
+        model_dir: DirPath,
         /// Baselines to compare: llama-cpp,ollama
         #[arg(long, default_value = "llama-cpp,ollama")]
-        baseline: String,
+        baseline: FreeText,
         /// Enable ZRAM compression
         #[arg(long)]
         zram: bool,
@@ -46,28 +46,28 @@ pub enum ToolCommands {
     Publish {
         /// Directory containing model files to publish
         #[arg(value_name = "DIRECTORY")]
-        directory: PathBuf,
+        directory: DirPath,
         /// HuggingFace repository ID (e.g., paiml/whisper-apr-tiny)
         #[arg(value_name = "REPO_ID")]
-        repo_id: String,
+        repo_id: FreeText,
         /// Model display name
         #[arg(long)]
-        model_name: Option<String>,
+        model_name: Option<FreeText>,
         /// License (SPDX identifier, default: mit)
         #[arg(long, default_value = "mit")]
-        license: String,
+        license: FreeText,
         /// Pipeline tag (e.g., automatic-speech-recognition, text-generation)
         #[arg(long, default_value = "text-generation")]
-        pipeline_tag: String,
+        pipeline_tag: FreeText,
         /// Library name (e.g., whisper-apr, aprender)
         #[arg(long)]
-        library_name: Option<String>,
+        library_name: Option<FreeText>,
         /// Additional tags (comma-separated)
         #[arg(long, value_delimiter = ',')]
-        tags: Option<Vec<String>>,
+        tags: Option<Vec<FreeText>>,
         /// Commit message
         #[arg(long)]
-        message: Option<String>,
+        message: Option<FreeText>,
         /// Dry run (preview without uploading)
         #[arg(long)]
         dry_run: bool,
@@ -84,13 +84,13 @@ pub enum ToolCommands {
     Oracle {
         /// Model file path or hf:// URI
         #[arg(value_name = "SOURCE")]
-        source: Option<String>,
+        source: Option<ModelRef>,
         /// Show contract for a model family (e.g., qwen2, llama, whisper, bert)
         #[arg(long)]
-        family: Option<String>,
+        family: Option<FreeText>,
         /// Filter to a specific size variant (e.g., 0.5b, 7b)
         #[arg(long)]
-        size: Option<String>,
+        size: Option<FreeText>,
         /// Run full contract compliance check
         #[arg(long)]
         compliance: bool,
@@ -121,15 +121,15 @@ pub enum ToolCommands {
     Encrypt {
         /// Path to model file (safetensors, GGUF, etc.)
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: InputFile,
 
         /// Output path for encrypted file
         #[arg(short, long, value_name = "FILE")]
-        output: PathBuf,
+        output: OutputPath,
 
         /// Encryption key file (32 bytes). If omitted, reads passphrase from stdin.
         #[arg(long, value_name = "FILE")]
-        key_file: Option<PathBuf>,
+        key_file: Option<ConfigPath>,
 
         /// Force overwrite if output file exists
         #[arg(long)]
@@ -140,15 +140,15 @@ pub enum ToolCommands {
     Decrypt {
         /// Path to encrypted `.enc` file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: InputFile,
 
         /// Output path for decrypted model
         #[arg(short, long, value_name = "FILE")]
-        output: PathBuf,
+        output: OutputPath,
 
         /// Decryption key file (32 bytes). If omitted, reads passphrase from stdin.
         #[arg(long, value_name = "FILE")]
-        key_file: Option<PathBuf>,
+        key_file: Option<ConfigPath>,
 
         /// Force overwrite if output file exists
         #[arg(long)]

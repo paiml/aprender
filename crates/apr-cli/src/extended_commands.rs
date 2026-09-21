@@ -40,7 +40,7 @@ pub enum ExtendedCommands {
     Chat {
         /// Path to .apr model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Sampling temperature (0 = greedy, higher = more random)
         #[arg(long, default_value = "0.7")]
         temperature: f32,
@@ -52,7 +52,7 @@ pub enum ExtendedCommands {
         max_tokens: usize,
         /// System prompt to set model behavior
         #[arg(long)]
-        system: Option<String>,
+        system: Option<PromptText>,
         /// Show inspection info (top-k probs, tokens/sec)
         #[arg(long)]
         inspect: bool,
@@ -67,13 +67,13 @@ pub enum ExtendedCommands {
         trace: bool,
         /// Trace specific steps only (comma-separated)
         #[arg(long, value_delimiter = ',')]
-        trace_steps: Option<Vec<String>>,
+        trace_steps: Option<Vec<FreeText>>,
         /// Verbose tracing
         #[arg(long)]
         trace_verbose: bool,
         /// Save trace output to JSON file
         #[arg(long, value_name = "FILE")]
-        trace_output: Option<PathBuf>,
+        trace_output: Option<OutputPath>,
         /// Trace detail level (none, basic, layer, payload)
         #[arg(long, value_name = "LEVEL", default_value = "basic", value_parser = TRACE_LEVEL_VALUES)]
         trace_level: String,
@@ -88,7 +88,7 @@ pub enum ExtendedCommands {
     Bench {
         /// Path to model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Number of warmup iterations
         #[arg(long, default_value = "3")]
         warmup: usize,
@@ -100,13 +100,13 @@ pub enum ExtendedCommands {
         max_tokens: usize,
         /// Test prompt
         #[arg(long)]
-        prompt: Option<String>,
+        prompt: Option<PromptText>,
         /// Use realizar for fast inference (vs aprender baseline)
         #[arg(long)]
         fast: bool,
         /// Benchmark specific brick
         #[arg(long)]
-        brick: Option<String>,
+        brick: Option<FreeText>,
         /// Comma-separated latency percentile points for JSON output
         /// (CRUX-E-07). Default: `50,95,99`. Values must be in (0, 100].
         #[arg(
@@ -121,13 +121,13 @@ pub enum ExtendedCommands {
     Eval {
         /// Path to model file or checkpoint directory
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Dataset: wikitext-2, lambada, or custom
         #[arg(long, default_value = "wikitext-2")]
-        dataset: String,
+        dataset: FreeText,
         /// Custom text (when dataset=custom)
         #[arg(long)]
-        text: Option<String>,
+        text: Option<PromptText>,
         /// Maximum tokens to evaluate
         #[arg(long, default_value = "512")]
         max_tokens: usize,
@@ -137,13 +137,13 @@ pub enum ExtendedCommands {
         threshold: f32,
         /// Task type: omit for perplexity, "classify" for classification eval
         #[arg(long)]
-        task: Option<String>,
+        task: Option<FreeText>,
         /// Test data file (JSONL) for classification evaluation
         #[arg(long, value_name = "FILE")]
-        data: Option<PathBuf>,
+        data: Option<InputFile>,
         /// Model size hint: "0.5B", "tiny" (for classification eval)
         #[arg(long)]
-        model_size: Option<String>,
+        model_size: Option<FreeText>,
         /// Number of output classes (default: 5)
         #[arg(long, default_value = "5")]
         num_classes: usize,
@@ -165,16 +165,16 @@ pub enum ExtendedCommands {
     Profile {
         /// Path to model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Layer-by-layer granular analysis
         #[arg(long)]
         granular: bool,
         /// Output format (human, json, flamegraph)
         #[arg(long, default_value = "human")]
-        format: String,
+        format: FreeText,
         /// Focus on specific operation
         #[arg(long)]
-        focus: Option<String>,
+        focus: Option<FreeText>,
         /// Detect naive implementations
         #[arg(long)]
         detect_naive: bool,
@@ -184,7 +184,7 @@ pub enum ExtendedCommands {
         threshold: f64,
         /// [NOT IMPLEMENTED — accepted and ignored] Compare against HuggingFace baseline
         #[arg(long)]
-        compare_hf: Option<String>,
+        compare_hf: Option<FreeText>,
         /// [NOT IMPLEMENTED — accepted and ignored] Measure energy consumption (requires RAPL)
         #[arg(long)]
         energy: bool,
@@ -199,7 +199,7 @@ pub enum ExtendedCommands {
         fail_on_naive: bool,
         /// Output file path for flamegraph SVG (GH-174, PMAT-182)
         #[arg(long, short = 'o')]
-        output: Option<PathBuf>,
+        output: Option<OutputPath>,
 
         // PMAT-192: CI Assertion Mode (GH-180)
         /// Enable CI mode with assertion checks (exits 1 on failure)
@@ -232,13 +232,13 @@ pub enum ExtendedCommands {
         no_gpu: bool,
         /// Compare against another model format (F-PROFILE-011)
         #[arg(long, value_name = "FILE")]
-        compare: Option<PathBuf>,
+        compare: Option<ModelPath>,
     },
     /// Falsifiable QA checklist for model releases
     Qa {
         /// Path to model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Minimum throughput threshold in tok/s
         #[arg(long, value_name = "TPS",
               value_parser = commands::threshold_arg::parse_tolerance)]
@@ -274,7 +274,7 @@ pub enum ExtendedCommands {
         skip_ptx_parity: bool,
         /// SafeTensors model path for cross-format parity test (F-QUAL-032)
         #[arg(long, value_name = "PATH")]
-        safetensors_path: Option<PathBuf>,
+        safetensors_path: Option<ModelPath>,
         /// Number of benchmark iterations
         #[arg(long, default_value = "10")]
         iterations: usize,
@@ -295,7 +295,7 @@ pub enum ExtendedCommands {
         min_executed: Option<usize>,
         /// Previous QA report for regression detection
         #[arg(long, value_name = "FILE")]
-        previous_report: Option<PathBuf>,
+        previous_report: Option<ConfigPath>,
         /// Maximum allowed performance regression ratio (default: 0.10 = 10%)
         #[arg(long, value_name = "RATIO",
               value_parser = commands::threshold_arg::parse_fraction)]
@@ -317,10 +317,10 @@ pub enum ExtendedCommands {
     Parity {
         /// Path to GGUF model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Prompt text (default: "What is 2+2?")
         #[arg(short, long, default_value = "What is 2+2?")]
-        prompt: String,
+        prompt: PromptText,
         /// Assert parity (exit non-zero on divergence)
         #[arg(long)]
         assert: bool,
@@ -330,7 +330,7 @@ pub enum ExtendedCommands {
         per_op: bool,
         /// Where --per-op writes the two APRT trees (default: a temp dir)
         #[arg(long, value_name = "DIR")]
-        out: Option<PathBuf>,
+        out: Option<OutputPath>,
         /// Cosine threshold for --per-op (basis: evidence/parity/thresholds.yaml)
         #[arg(long, default_value_t = 0.98)]
         threshold: f32,
@@ -340,13 +340,13 @@ pub enum ExtendedCommands {
     PtxMap {
         /// Path to GGUF model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Filter to specific kernel (e.g., --kernel Q4KGemv)
         #[arg(long)]
-        kernel: Option<String>,
+        kernel: Option<FreeText>,
         /// Reverse lookup: kernel name -> which layers/steps use it
         #[arg(long)]
-        reverse: Option<String>,
+        reverse: Option<FreeText>,
         /// Output as JSON
         #[arg(long)]
         json: bool,
@@ -372,10 +372,10 @@ pub enum ExtendedCommands {
     Ptx {
         /// Path to a PTX source file
         #[arg(value_name = "FILE")]
-        file: Option<PathBuf>,
+        file: Option<InputFile>,
         /// Analyze a named kernel from trueno-gpu
         #[arg(long, short)]
-        kernel: Option<String>,
+        kernel: Option<FreeText>,
         /// Strict mode (no performance whitelist)
         #[arg(long)]
         strict: bool,
@@ -394,10 +394,10 @@ pub enum ExtendedCommands {
     Tune {
         /// Path to model file (optional if using --model)
         #[arg(value_name = "FILE")]
-        file: Option<PathBuf>,
+        file: Option<ModelPath>,
         /// Tuning method: auto, full, lora, qlora
         #[arg(long, short = 'm', default_value = "auto")]
-        method: String,
+        method: FreeText,
         /// LoRA rank (default: auto-selected)
         #[arg(long, short = 'r')]
         rank: Option<u32>,
@@ -409,56 +409,56 @@ pub enum ExtendedCommands {
         plan: bool,
         /// Model size for planning (e.g., "7B", "1.5B")
         #[arg(long, value_name = "SIZE")]
-        model: Option<String>,
+        model: Option<FreeText>,
         /// Freeze base model weights
         #[arg(long)]
         freeze_base: bool,
         /// Training data file (JSONL format)
         #[arg(long, value_name = "FILE")]
-        train_data: Option<PathBuf>,
+        train_data: Option<InputFile>,
         /// Output as JSON (for CI integration)
         #[arg(long)]
         json: bool,
         /// Task type for HPO: classify (SPEC-TUNE-2026-001)
         #[arg(long)]
-        task: Option<String>,
+        task: Option<FreeText>,
         /// Number of HPO trials (default: 10)
         #[arg(long, default_value = "10")]
         budget: usize,
         /// HPO search strategy: tpe, grid, random
         #[arg(long, default_value = "tpe")]
-        strategy: String,
+        strategy: FreeText,
         /// HPO scheduler: asha, median, none
         #[arg(long, default_value = "asha")]
-        scheduler: String,
+        scheduler: FreeText,
         /// Scout mode: 1 epoch per trial for fast exploration
         #[arg(long)]
         scout: bool,
         /// Training data file for HPO (JSONL format)
         #[arg(long, value_name = "FILE")]
-        data: Option<PathBuf>,
+        data: Option<InputFile>,
         /// Number of output classes for classification
         #[arg(long, default_value = "5")]
         num_classes: usize,
         /// Model size hint for HPO (e.g., "0.5B", "1.5B")
         #[arg(long)]
-        model_size: Option<String>,
+        model_size: Option<FreeText>,
         /// Warm-start from scout phase results directory
         #[arg(long, value_name = "DIR")]
-        from_scout: Option<PathBuf>,
+        from_scout: Option<DirPath>,
         /// Maximum epochs per trial (full mode, default: 20)
         #[arg(long, default_value = "20")]
         max_epochs: usize,
         /// Maximum wall-clock time (e.g., "8h", "30m")
         #[arg(long)]
-        time_limit: Option<String>,
+        time_limit: Option<FreeText>,
     },
     /// Attach live TUI to a running training session
     #[cfg(feature = "training")]
     Monitor {
         /// Experiment output directory (same as finetune -o)
         #[arg(value_name = "DIR")]
-        dir: Option<PathBuf>,
+        dir: Option<DirPath>,
         /// Refresh interval in milliseconds
         #[arg(long, default_value = "500")]
         refresh_ms: u64,
@@ -470,7 +470,7 @@ pub enum ExtendedCommands {
         json: bool,
         /// Output format: tui (default), json, text
         #[arg(long, default_value = "tui")]
-        format: String,
+        format: FreeText,
     },
     /// List, show, and compare training experiment runs
     #[cfg(feature = "training")]
@@ -488,13 +488,13 @@ pub enum ExtendedCommands {
     Cbtop {
         /// Model name (e.g., qwen2.5-coder-1.5b)
         #[arg(long)]
-        model: Option<String>,
+        model: Option<FreeText>,
         /// Attach to running realizar process
         #[arg(long)]
-        attach: Option<String>,
+        attach: Option<FreeText>,
         /// Path to GGUF model file for real profiling
         #[arg(long, value_name = "MODEL")]
-        model_path: Option<PathBuf>,
+        model_path: Option<ModelPath>,
         /// Run in headless mode (no TUI, for CI/automation)
         #[arg(long)]
         headless: bool,
@@ -503,7 +503,7 @@ pub enum ExtendedCommands {
         json: bool,
         /// Output file path (requires --headless)
         #[arg(long, value_name = "FILE", requires = "headless")]
-        output: Option<PathBuf>,
+        output: Option<OutputPath>,
         /// CI mode: exit non-zero if thresholds are not met or the report status is FAIL
         #[arg(long)]
         ci: bool,
@@ -528,7 +528,7 @@ pub enum ExtendedCommands {
         speculation_k: usize,
         /// PAR-099: Path to draft model for speculative decoding
         #[arg(long, value_name = "DRAFT_MODEL")]
-        draft_model: Option<PathBuf>,
+        draft_model: Option<ModelPath>,
         /// PAR-102: Number of concurrent requests
         #[arg(long, default_value = "1")]
         concurrent: usize,
@@ -573,13 +573,13 @@ pub enum ExtendedCommands {
     CompareHf {
         /// Path to .apr model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// HuggingFace repo ID (e.g., openai/whisper-tiny)
         #[arg(long)]
-        hf: String,
+        hf: ModelRef,
         /// Filter tensors by name pattern
         #[arg(long)]
-        tensor: Option<String>,
+        tensor: Option<FreeText>,
         /// Comparison threshold (default: 1e-5)
         #[arg(long, default_value = "1e-5",
               value_parser = commands::threshold_arg::parse_tolerance)]
@@ -597,10 +597,10 @@ pub enum ExtendedCommands {
     Hex {
         /// Path to model file (APR, GGUF, or SafeTensors)
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Filter tensors by name pattern
         #[arg(long)]
-        tensor: Option<String>,
+        tensor: Option<FreeText>,
         /// Limit bytes/values to display
         #[arg(long, default_value = "64")]
         limit: usize,
@@ -633,13 +633,13 @@ pub enum ExtendedCommands {
         raw: bool,
         /// Start at byte offset (supports 0x prefix for hex)
         #[arg(long, default_value = "0")]
-        offset: String,
+        offset: FreeText,
         /// Bytes per row for raw output (default: 16)
         #[arg(long, default_value = "16")]
         width: usize,
         /// Slice range for partial tensor reads (e.g., 0:3 for first 3 elements)
         #[arg(long)]
-        slice: Option<String>,
+        slice: Option<FreeText>,
     },
     /// Backend discovery: probe, enumerate, print — every kind is a line (PP-066 R-0)
     #[cfg(feature = "inference")]
@@ -652,10 +652,10 @@ pub enum ExtendedCommands {
     Tree {
         /// Path to .apr model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Filter by component pattern
         #[arg(long)]
-        filter: Option<String>,
+        filter: Option<FreeText>,
         /// Output format: ascii, dot, mermaid, json
         ///
         /// #2394 finding 15: this was a `String` that the dispatcher parsed
@@ -677,13 +677,13 @@ pub enum ExtendedCommands {
     Flow {
         /// Path to .apr model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Filter by layer pattern
         #[arg(long)]
-        layer: Option<String>,
+        layer: Option<FreeText>,
         /// Component to visualize: full, encoder, decoder, etc.
         #[arg(long, default_value = "full")]
-        component: String,
+        component: FreeText,
         /// Verbose output with statistics
         #[arg(short, long)]
         verbose: bool,
@@ -695,10 +695,10 @@ pub enum ExtendedCommands {
     Qualify {
         /// Path to model file (APR, GGUF, or SafeTensors)
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Testing tier: smoke (Phase 1), standard (+contracts), full (+playbook)
         #[arg(long, default_value = "smoke")]
-        tier: String,
+        tier: FreeText,
         /// Timeout per gate in seconds
         #[arg(long, default_value = "120")]
         timeout: u64,
@@ -710,7 +710,7 @@ pub enum ExtendedCommands {
         verbose: bool,
         /// Skip specific gates (comma-separated)
         #[arg(long, value_delimiter = ',')]
-        skip: Option<Vec<String>>,
+        skip: Option<Vec<FreeText>>,
     },
     /// Training pipeline (plan/apply) — forjar-style pre-flight validation
     #[cfg(feature = "training")]
@@ -729,13 +729,13 @@ pub enum ExtendedCommands {
     Pretrain {
         /// Dataset path (tokenized shard index or raw corpus).
         #[arg(long, value_name = "PATH")]
-        dataset: PathBuf,
+        dataset: InputFile,
         /// Tokenizer directory (vocab.json + merges.txt).
         #[arg(long, value_name = "DIR")]
-        tokenizer: PathBuf,
+        tokenizer: InputFile,
         /// Run output directory — checkpoints + metadata go to `{run_dir}/ckpt/`.
         #[arg(long, value_name = "DIR")]
-        run_dir: PathBuf,
+        run_dir: OutputPath,
         /// Training regime — finetune (MODEL-1) or from-scratch (MODEL-2 cold start).
         /// Per contract training-loop-pretrain-v1 §hyperparameter_defaults,
         /// this atomically flips (regime, lr_max, warmup_steps, target_val_loss)
@@ -783,7 +783,7 @@ pub enum ExtendedCommands {
         /// spelling that may fall back silently — all other values
         /// hard-fail on missing runtime per GATE-GPUTRAIN-002).
         #[arg(long, default_value = "auto")]
-        device: String,
+        device: FreeText,
         /// Initial weights from a pretrained APR file
         /// (contract `apr-pretrain-from-init-v1`). Per spec §49's
         /// MODEL-2 pretrained-init pivot: when present, load weights
@@ -793,7 +793,7 @@ pub enum ExtendedCommands {
         /// corrupted, or arch-mismatched APR files exit non-zero
         /// before step 1 (no silent random-init fallback).
         #[arg(long, value_name = "PATH")]
-        init: Option<PathBuf>,
+        init: Option<ModelPath>,
         /// SPEC §83 P0-J: bypass the Chinchilla compute-optimal hard
         /// gate (`chinchilla-gate-v1`). Default is fail-fast when
         /// D/N < 10× (severely under-provisioned per Hoffmann et al.
@@ -822,7 +822,7 @@ pub enum ExtendedCommands {
         /// When omitted, falls back to the historical "first 16
         /// batches of --dataset" behaviour for backwards compatibility.
         #[arg(long, value_name = "DIR")]
-        val_shard: Option<PathBuf>,
+        val_shard: Option<InputFile>,
     },
     /// Tokenizer training pipeline (plan/apply) — BPE vocabulary learning
     Tokenize {
@@ -843,13 +843,13 @@ pub enum ExtendedCommands {
     Diagnose {
         /// Path to checkpoint directory
         #[arg(value_name = "CHECKPOINT_DIR")]
-        checkpoint_dir: PathBuf,
+        checkpoint_dir: ModelPath,
         /// Test data file (JSONL) for evaluation
         #[arg(long, value_name = "FILE")]
-        data: Option<PathBuf>,
+        data: Option<InputFile>,
         /// Model size hint: "0.5B", "tiny"
         #[arg(long)]
-        model_size: Option<String>,
+        model_size: Option<FreeText>,
         /// Number of output classes (default: 5)
         #[arg(long, default_value = "5")]
         num_classes: usize,
@@ -858,7 +858,7 @@ pub enum ExtendedCommands {
     OllamaChatLint {
         /// Path to captured /api/chat response (JSON object, or NDJSON if --stream)
         #[arg(long, value_name = "FILE")]
-        response_file: PathBuf,
+        response_file: InputFile,
         /// Treat input as NDJSON stream (one frame per line)
         #[arg(long)]
         stream: bool,
@@ -867,12 +867,12 @@ pub enum ExtendedCommands {
     OllamaToolsLint {
         /// Path to captured /api/chat response (JSON object, or NDJSON if --stream)
         #[arg(long, value_name = "FILE")]
-        response_file: PathBuf,
+        response_file: InputFile,
         /// Captured request JSON, required unless --stream — supplies the
         /// tool-name allowlist (every called tool name must appear in
         /// request.tools[*].function.name)
         #[arg(long, value_name = "FILE")]
-        request_file: Option<PathBuf>,
+        request_file: Option<InputFile>,
         /// Treat input as NDJSON stream (one frame per line)
         #[arg(long)]
         stream: bool,
@@ -881,46 +881,46 @@ pub enum ExtendedCommands {
     DrySamplingLint {
         /// Path to observation JSON
         #[arg(long, value_name = "FILE")]
-        observation_file: PathBuf,
+        observation_file: InputFile,
     },
     /// Lint a captured AWQ quality/compression/flags observation (CRUX-B-08)
     AwqLint {
         /// Path to captured AWQ observation JSON
         #[arg(long, value_name = "FILE")]
-        observation_file: PathBuf,
+        observation_file: InputFile,
     },
     /// Lint a captured FP8 (E4M3) round-trip + SM-capability observation (CRUX-B-11)
     Fp8Lint {
         /// Path to captured observation JSON (frobenius, capability blocks)
         #[arg(long, value_name = "FILE")]
-        observation_file: PathBuf,
+        observation_file: InputFile,
     },
     /// Lint a captured NF4 codebook/roundtrip/storage/parity observation (CRUX-B-10)
     Nf4Lint {
         /// Path to captured NF4 observation JSON
         #[arg(long, value_name = "FILE")]
-        observation_file: PathBuf,
+        observation_file: InputFile,
     },
     /// Lint a captured GPTQ compression/cosine/flags observation (CRUX-B-09)
     GptqLint {
         /// Path to captured GPTQ observation JSON
         #[arg(long, value_name = "FILE")]
-        observation_file: PathBuf,
+        observation_file: InputFile,
     },
     /// Lint a captured CUDA OOM postmortem report (CRUX-F-13)
     OomLint {
         /// Path to captured OOM postmortem JSON (e.g. /tmp/apr-oom-<ts>.json)
         #[arg(long, value_name = "FILE")]
-        report_file: PathBuf,
+        report_file: InputFile,
         /// Optional captured stderr log to verify the OOM_REPORT breadcrumb
         #[arg(long, value_name = "FILE")]
-        stderr_file: Option<PathBuf>,
+        stderr_file: Option<InputFile>,
     },
     /// Lint a captured NCCL failure-diagnostics JSON from stderr (CRUX-F-15)
     NcclDiagLint {
         /// Path to captured stderr JSON diagnostic
         #[arg(long, value_name = "FILE")]
-        diag_file: PathBuf,
+        diag_file: InputFile,
         /// Optional observed exit code (gate: >= 128 = NCCL class)
         #[arg(long, value_name = "I32")]
         exit_code: Option<i32>,
@@ -932,7 +932,7 @@ pub enum ExtendedCommands {
     ReactTraceLint {
         /// Path to captured trace JSON
         #[arg(long, value_name = "FILE")]
-        trace_file: PathBuf,
+        trace_file: InputFile,
         /// Optional max_iterations budget the trace was produced under
         #[arg(long, value_name = "N")]
         max_iterations: Option<i64>,
@@ -944,10 +944,10 @@ pub enum ExtendedCommands {
     HangTraceLint {
         /// Path to the captured trace directory
         #[arg(long, value_name = "DIR")]
-        trace_dir: PathBuf,
+        trace_dir: DirPath,
         /// Inspection mode: `timeout` (expects per-rank dumps) or `success` (expects empty dir)
         #[arg(long, value_name = "MODE", default_value = "timeout")]
-        mode: String,
+        mode: FreeText,
         /// Expected world_size when mode=timeout (number of rank{N}.py.txt files)
         #[arg(long, value_name = "N", default_value_t = 2)]
         world_size: usize,
@@ -962,10 +962,10 @@ pub enum ExtendedCommands {
     DdpMetricsLint {
         /// Path to N=1 metrics JSON
         #[arg(long, value_name = "FILE")]
-        metrics_1gpu_file: PathBuf,
+        metrics_1gpu_file: InputFile,
         /// Path to N=world_size metrics JSON
         #[arg(long, value_name = "FILE")]
-        metrics_ngpu_file: PathBuf,
+        metrics_ngpu_file: InputFile,
         /// World size used for --metrics-ngpu-file run (>= 2)
         #[arg(long, value_name = "N")]
         world_size: i64,
@@ -993,7 +993,7 @@ pub enum ExtendedCommands {
     AudioInspectLint {
         /// Path to the JSON body written by `apr dataset audio-inspect --format json`
         #[arg(long, value_name = "FILE")]
-        json_file: PathBuf,
+        json_file: InputFile,
         /// Optional expected sample_rate (typically the `--resample-to` arg)
         #[arg(long, value_name = "U32")]
         expected_sample_rate: Option<u32>,
@@ -1007,16 +1007,16 @@ pub enum ExtendedCommands {
         /// Parity JSON body (`max_abs_diff`, `cosine_sim`), as written by
         /// `apr kernel parity --json`
         #[arg(long, value_name = "FILE")]
-        parity_file: Option<PathBuf>,
+        parity_file: Option<InputFile>,
         /// Provenance JSON body (`attn_impl`, `kernel_source`, `fallback`).
         /// `apr kernel parity --json` writes both gates' fields into one body,
         /// so the same file may be passed here and to --parity-file
         #[arg(long, value_name = "FILE")]
-        provenance_file: Option<PathBuf>,
+        provenance_file: Option<InputFile>,
         /// head_dim refusal JSON, as written by
         /// `apr kernel parity --impl flash2 --head-dim 96 --json` (which exits non-zero)
         #[arg(long, value_name = "FILE")]
-        head_dim_error_file: Option<PathBuf>,
+        head_dim_error_file: Option<InputFile>,
         /// Max absolute diff tolerance (default 5e-3, FlashAttention-2 bound)
         #[arg(long, value_name = "F", default_value_t = 5e-3,
               value_parser = commands::threshold_arg::parse_tolerance)]
@@ -1030,10 +1030,10 @@ pub enum ExtendedCommands {
     AttnVizLint {
         /// Path to attention dump in JSON form (4-D [layers][heads][rows][cols] floats)
         #[arg(long, value_name = "FILE")]
-        attn_file: Option<PathBuf>,
+        attn_file: Option<InputFile>,
         /// Path to HTML heatmap output
         #[arg(long, value_name = "FILE")]
-        html_file: Option<PathBuf>,
+        html_file: Option<OutputPath>,
         /// Minimum <svg|<canvas open-tag count expected in HTML (|layers|*|heads|)
         #[arg(long, value_name = "N", default_value_t = 1)]
         expected_heatmaps: usize,
@@ -1050,10 +1050,10 @@ pub enum ExtendedCommands {
     CheckFiniteLint {
         /// Externally captured check-finite stderr JSON from a poisoned model
         #[arg(long, value_name = "FILE")]
-        error_file: Option<PathBuf>,
+        error_file: Option<InputFile>,
         /// Externally captured check-finite layer-coverage JSON
         #[arg(long, value_name = "FILE")]
-        list_file: Option<PathBuf>,
+        list_file: Option<InputFile>,
         /// Minimum layer-coverage count when `--list-file` is supplied (default 100)
         #[arg(long, value_name = "N", default_value_t = 100)]
         min_layers: usize,
@@ -1063,19 +1063,19 @@ pub enum ExtendedCommands {
     EmbedVizLint {
         /// Path to the `token_id,token_str,x,y` CSV written by `apr debug embed-viz`
         #[arg(long, value_name = "FILE")]
-        csv_file: PathBuf,
+        csv_file: InputFile,
         /// Expected row count == vocab_size (optional)
         #[arg(long, value_name = "N")]
         expected_vocab_size: Option<usize>,
         /// Second CSV from a rerun at the same --seed, for the determinism gate (optional)
         #[arg(long, value_name = "FILE")]
-        csv_file_b: Option<PathBuf>,
+        csv_file_b: Option<InputFile>,
     },
     /// Lint an externally captured token-selection JSONL trace (CRUX-F-19 — no apr producer yet)
     ExplainTokenLint {
         /// Path to captured JSONL body (one sampled-token record per line)
         #[arg(long, value_name = "FILE")]
-        jsonl_file: PathBuf,
+        jsonl_file: InputFile,
         /// Tolerance for `Σ post_prob ≈ 1.0` (default 1e-5)
         #[arg(long, value_name = "F64", default_value_t = 1e-5,
               value_parser = commands::threshold_arg::parse_tolerance)]
@@ -1088,13 +1088,13 @@ pub enum ExtendedCommands {
     GpuMemtraceLint {
         /// Path to an externally captured GPU-memory Chrome Trace JSON (no apr producer yet)
         #[arg(long, value_name = "FILE")]
-        trace_file: PathBuf,
+        trace_file: InputFile,
     },
     /// Lint a captured KV-cache utilization timeline (CRUX-F-06)
     KvTimelineLint {
         /// Path to an externally captured KV-cache timeline JSON body (no apr producer yet)
         #[arg(long, value_name = "FILE")]
-        timeline_file: PathBuf,
+        timeline_file: InputFile,
         /// Preemption threshold (default 0.95, vLLM canonical)
         #[arg(long, value_name = "FRACTION", default_value_t = 0.95,
               value_parser = commands::threshold_arg::parse_fraction)]
@@ -1107,7 +1107,7 @@ pub enum ExtendedCommands {
     OtlpLint {
         /// Path to captured OTLP/JSON export body
         #[arg(long, value_name = "FILE")]
-        otlp_file: PathBuf,
+        otlp_file: InputFile,
         /// Require at least one `apr.inference` span to be present
         #[arg(long)]
         require_apr_span: bool,
@@ -1116,16 +1116,16 @@ pub enum ExtendedCommands {
         require_genai_attrs: bool,
         /// Verify W3C trace-context propagation: expect this 32-hex traceId
         #[arg(long, value_name = "HEX32")]
-        expect_trace_id: Option<String>,
+        expect_trace_id: Option<FreeText>,
     },
     /// Lint a captured Prometheus /metrics response (CRUX-K-07)
     PrometheusLint {
         /// Path to captured /metrics response body (text/plain; version=0.0.4)
         #[arg(long, value_name = "FILE")]
-        metrics_file: PathBuf,
+        metrics_file: InputFile,
         /// Optional captured Content-Type header to verify against version=0.0.4
         #[arg(long, value_name = "HEADER")]
-        content_type: Option<String>,
+        content_type: Option<FreeText>,
         /// Require the K-07 metric set (apr_num_requests_running, ...) to be present
         #[arg(long)]
         require_k07_metrics: bool,
@@ -1134,26 +1134,26 @@ pub enum ExtendedCommands {
     ToolUseLint {
         /// Path to captured OpenAI tool-use response JSON
         #[arg(long, value_name = "FILE")]
-        observation_file: PathBuf,
+        observation_file: InputFile,
     },
     /// Lint a GBNF grammar-constrained observation (CRUX-C-10)
     GbnfLint {
         /// Path to captured GBNF observation JSON
         #[arg(long, value_name = "FILE")]
-        observation_file: PathBuf,
+        observation_file: InputFile,
     },
     /// Lint a typical-p sampling observation (CRUX-C-22)
     TypicalPLint {
         /// Path to captured typical-p observation JSON, with any of the
         /// sections range/identity/mass/sort/renorm
         #[arg(long, value_name = "FILE")]
-        observation_file: PathBuf,
+        observation_file: InputFile,
     },
     /// Gradient-norm telemetry analysis (CRUX-F-09)
     GradNorm {
         /// Path to JSON file of per-step grad-norm records
         #[arg(long, value_name = "FILE")]
-        history_file: PathBuf,
+        history_file: InputFile,
         /// Maximum allowed clipped grad-norm (for cap-violation check)
         #[arg(long, value_name = "M",
               value_parser = commands::threshold_arg::parse_tolerance)]
@@ -1170,66 +1170,66 @@ pub enum ExtendedCommands {
     RegistryQuotaLint {
         /// Path to captured quota/atomic/ceiling observation JSON
         #[arg(long, value_name = "FILE")]
-        observation_file: PathBuf,
+        observation_file: InputFile,
     },
     /// Lint a captured imatrix calibration observation (CRUX-B-07)
     ImatrixLint {
         /// Path to captured imatrix observation JSON
         #[arg(long, value_name = "FILE")]
-        observation_file: PathBuf,
+        observation_file: InputFile,
     },
     /// Lint a captured /v1/embeddings observation (CRUX-C-13)
     EmbeddingsLint {
         /// Path to captured /v1/embeddings observation JSON, with any of the
         /// sections shape/determinism/usage/flag
         #[arg(long, value_name = "FILE")]
-        observation_file: PathBuf,
+        observation_file: InputFile,
     },
     /// Lint a captured Hub+local unified-search merge observation (CRUX-A-23)
     UnifiedSearchLint {
         /// Path to captured unified-search observation JSON
         #[arg(long, value_name = "FILE")]
-        observation_file: PathBuf,
+        observation_file: InputFile,
     },
     /// Lint a captured `apr rm` / externally captured gc blob-GC observation (CRUX-A-25)
     RmGcLint {
         /// Path to captured rm/gc observation JSON
         #[arg(long, value_name = "FILE")]
-        observation_file: PathBuf,
+        observation_file: InputFile,
     },
     /// Lint a captured APR_MODELS shared-cache observation (CRUX-A-21)
     SharedCacheLint {
         /// Path to captured dedup/permission observation JSON
         #[arg(long, value_name = "FILE")]
-        observation_file: PathBuf,
+        observation_file: InputFile,
     },
     /// Perplexity classifier (CRUX-E-02)
     Ppl {
         /// JSON file containing an array of per-token natural-log
         /// probabilities (e.g. `[-1.2, -0.5, -2.1, ...]`). Required.
         #[arg(long, value_name = "FILE")]
-        log_probs_file: PathBuf,
+        log_probs_file: InputFile,
     },
     /// Validate dequant→requant metadata preservation (CRUX-B-19)
     QuantPreservationLint {
         /// Reference GGUF (pre-roundtrip)
         #[arg(long, value_name = "REF.gguf")]
-        reference: PathBuf,
+        reference: ModelPath,
         /// Requantized GGUF (post-roundtrip)
         #[arg(long, value_name = "REQ.gguf")]
-        requant: PathBuf,
+        requant: ModelPath,
     },
     /// Split a safetensors file into shards + weight-map index (CRUX-B-05)
     Shard {
         /// Single-file safetensors model to split
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Maximum size of each shard (e.g. 5GB, 500MB, 1.5GiB)
         #[arg(long, value_name = "SIZE", default_value = "5GB")]
-        max_shard_size: String,
+        max_shard_size: FreeText,
         /// Output directory for shards + model.safetensors.index.json
         #[arg(short, long, value_name = "DIR")]
-        output: PathBuf,
+        output: OutputPath,
         /// #2392: Overwrite an existing shard set in the output directory
         #[arg(short, long)]
         force: bool,
@@ -1238,10 +1238,10 @@ pub enum ExtendedCommands {
     Unshard {
         /// Sharded directory containing model.safetensors.index.json
         #[arg(value_name = "DIR")]
-        input: PathBuf,
+        input: ModelPath,
         /// Output single-file safetensors path
         #[arg(short, long, value_name = "FILE")]
-        output: PathBuf,
+        output: OutputPath,
         /// #2392: Overwrite an existing output file (refused without it)
         #[arg(short, long)]
         force: bool,
@@ -1262,26 +1262,26 @@ pub enum ExtendedCommands {
     Rerank {
         /// Path to the APR file containing the cross-encoder weights.
         #[arg(value_name = "MODEL")]
-        model: PathBuf,
+        model: ModelPath,
         /// Pre-tokenised input ids (comma-separated `u32`s). Mutually
         /// exclusive with `--query`+`--passage`+`--vocab` (Phase 3b).
         /// Example: `--input-ids 101,2024,102,3456,102` for `[CLS] q [SEP] p [SEP]`.
         #[arg(long, value_name = "IDS")]
-        input_ids: Option<String>,
+        input_ids: Option<PromptText>,
         /// Pre-tokenised token-type ids (comma-separated `u32`s).
         /// Same length as `--input-ids`. 0 for query side, 1 for passage.
         #[arg(long, value_name = "IDS")]
-        token_type_ids: Option<String>,
+        token_type_ids: Option<PromptText>,
         /// Phase 3b — query text. Pair with `--passage` + `--vocab` to enable
         /// in-process WordPiece tokenisation. The tokeniser builds
         /// `[CLS] query [SEP] passage [SEP]` with `token_type_ids = 0` for
         /// the query side and `1` for the passage side.
         #[arg(long, value_name = "TEXT")]
-        query: Option<String>,
+        query: Option<PromptText>,
         /// Phase 3b — passage text. Required when `--query` is supplied
         /// in single-pair mode (use `--passages` for batch ranking).
         #[arg(long, value_name = "TEXT")]
-        passage: Option<String>,
+        passage: Option<PromptText>,
         /// Phase 5 — batch ranking mode (#326). Passage candidates to
         /// score against `--query`. May be supplied multiple times:
         /// `apr rerank model.apr --query "..." --passages "p1" --passages "p2"`.
@@ -1290,7 +1290,7 @@ pub enum ExtendedCommands {
         /// of `{passage, logit, score}` objects sorted by descending
         /// score when `--sort` is set.
         #[arg(long, value_name = "TEXT")]
-        passages: Vec<String>,
+        passages: Vec<PromptText>,
         /// Phase 5 — sort batch output by descending score (highest
         /// relevance first). Only meaningful with `--passages` and
         /// `--json`. Default: preserve input order.
@@ -1305,7 +1305,7 @@ pub enum ExtendedCommands {
         /// Must contain entries for `[CLS]`, `[SEP]`, and `[UNK]`.
         /// Phase 4 accepts HuggingFace `tokenizer.json` (extension-detected).
         #[arg(long, value_name = "FILE")]
-        vocab: Option<PathBuf>,
+        vocab: Option<InputFile>,
         /// Override hidden_dim (default: 384 / MiniLM-L-6).
         #[arg(long, default_value_t = 384)]
         hidden_dim: usize,
@@ -1367,10 +1367,10 @@ pub enum ExtendedCommands {
     Embed {
         /// Path to the APR file containing the encoder weights (BertModel).
         #[arg(value_name = "MODEL")]
-        model: PathBuf,
+        model: ModelPath,
         /// Text to encode. Repeatable: `apr embed model.apr --text "a" --text "b" --vocab tok.json`.
         #[arg(long, value_name = "TEXT")]
-        text: Vec<String>,
+        text: Vec<PromptText>,
         /// Phase 7 (GH-326) — read texts from a file, one per line.
         /// Concatenated with `--text` inputs in order: `--text` first,
         /// then `--text-file` rows. Blank lines and lines starting
@@ -1378,14 +1378,14 @@ pub enum ExtendedCommands {
         /// retrieval where the second-stage rerank candidate set
         /// (50-100 documents) is the embed input.
         #[arg(long, value_name = "FILE")]
-        text_file: Option<PathBuf>,
+        text_file: Option<InputFile>,
         /// Path to a WordPiece `vocab.txt` or HF `tokenizer.json`.
         #[arg(long, value_name = "FILE")]
-        vocab: PathBuf,
+        vocab: InputFile,
         /// Pooling strategy (`cls` or `mean`). Default: `mean`
         /// (matches sentence-transformers convention).
         #[arg(long, default_value = "mean")]
-        pool: String,
+        pool: FreeText,
         /// L2-normalise the output embedding. Default: true (matches
         /// sentence-transformers convention). Pass `--normalize false`
         /// to keep raw magnitudes.
@@ -1450,14 +1450,14 @@ pub enum DatasetCommands {
     AudioInspect {
         /// Path to the .wav file to decode
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: InputFile,
         /// Output format: `json` for the lint-readable body, `text` for humans
         #[arg(long, value_name = "FORMAT", default_value = "text",
               value_parser = ["json", "text"])]
         format: String,
         /// Write the observation here instead of stdout
         #[arg(short, long, value_name = "FILE")]
-        output: Option<PathBuf>,
+        output: Option<OutputPath>,
         /// Overwrite an existing --output file (refused without it)
         #[arg(short, long)]
         force: bool,
@@ -1505,7 +1505,7 @@ pub enum KernelCommands {
         json: bool,
         /// Write the observation here instead of stdout
         #[arg(short, long, value_name = "FILE")]
-        output: Option<PathBuf>,
+        output: Option<OutputPath>,
         /// Overwrite an existing --output file (refused without it)
         #[arg(short, long)]
         force: bool,
@@ -1520,13 +1520,13 @@ pub enum RunsCommands {
     Ls {
         /// Directory to scan for experiments (default: current dir)
         #[arg(long, value_name = "DIR")]
-        dir: Option<PathBuf>,
+        dir: Option<DirPath>,
         /// Read from global experiment registry (~/.entrenar/experiments.db)
         #[arg(long)]
         global: bool,
         /// Filter by status: all, pending, running, completed, failed, cancelled
         #[arg(long, default_value = "all")]
-        status: String,
+        status: FreeText,
         /// Output as JSON
         #[arg(long)]
         json: bool,
@@ -1538,10 +1538,10 @@ pub enum RunsCommands {
     Show {
         /// Run ID
         #[arg(value_name = "RUN_ID")]
-        run_id: String,
+        run_id: FreeText,
         /// Directory containing experiment DB
         #[arg(long, value_name = "DIR")]
-        dir: Option<PathBuf>,
+        dir: Option<DirPath>,
         /// Read from global registry
         #[arg(long)]
         global: bool,
@@ -1553,13 +1553,13 @@ pub enum RunsCommands {
     Diff {
         /// First run ID
         #[arg(value_name = "RUN_A")]
-        run_a: String,
+        run_a: FreeText,
         /// Second run ID
         #[arg(value_name = "RUN_B")]
-        run_b: String,
+        run_b: FreeText,
         /// Directory containing experiment DB
         #[arg(long, value_name = "DIR")]
-        dir: Option<PathBuf>,
+        dir: Option<DirPath>,
         /// Read from global registry
         #[arg(long)]
         global: bool,
@@ -1577,7 +1577,7 @@ pub enum ExperimentCommands {
     View {
         /// Path to experiment database file
         #[arg(long, value_name = "FILE")]
-        db: Option<PathBuf>,
+        db: Option<InputFile>,
         /// Read from global experiment registry (~/.entrenar/experiments.db)
         #[arg(long)]
         global: bool,
@@ -1599,10 +1599,10 @@ pub enum ModelfileSubcommand {
     Parse {
         /// Path to the Modelfile
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ConfigPath,
         /// Output format: `json` or `human`
         #[arg(long, default_value = "json")]
-        format: String,
+        format: FreeText,
     },
 }
 
@@ -1632,19 +1632,19 @@ pub enum TestSubcommand {
     Tensor {
         /// Path to .apr model file
         #[arg(value_name = "FILE")]
-        file: PathBuf,
+        file: ModelPath,
         /// Output directory for test artifacts
         #[arg(short, long, default_value = "./probar-export")]
-        output: PathBuf,
+        output: OutputPath,
         /// Export format: json, png, or both
         #[arg(long, default_value = "both")]
-        format: String,
+        format: FreeText,
         /// Golden reference directory for comparison
         #[arg(long)]
-        golden: Option<PathBuf>,
+        golden: Option<DirPath>,
         /// Filter layers by name pattern
         #[arg(long)]
-        layer: Option<String>,
+        layer: Option<FreeText>,
         /// Exit non-zero on golden divergence (CI mode, PMAT-481)
         #[arg(long)]
         assert: bool,
@@ -1680,15 +1680,15 @@ pub enum LlmSubcommand {
     Bench {
         /// Endpoint to measure.
         #[arg(short, long, default_value = "http://127.0.0.1:8080")]
-        url: String,
+        url: FreeText,
         /// Model name sent in the request body. Most OpenAI-compatible
         /// servers ignore it; `apr serve` and vLLM do not.
         #[arg(short, long, default_value = "default")]
-        model: String,
+        model: FreeText,
         /// Command that starts the runtime. Omit to measure something already
         /// running.
         #[arg(long)]
-        start: Option<String>,
+        start: Option<FreeText>,
         /// Seconds to wait for the endpoint to become healthy.
         #[arg(long, default_value = "120")]
         health_timeout: u64,
@@ -1713,16 +1713,16 @@ pub enum LlmSubcommand {
         cooldown: u64,
         /// Label recorded in the report, e.g. `apr-cuda` or `llamacpp-39173bcac`.
         #[arg(long, default_value = "apr")]
-        runtime_name: String,
+        runtime_name: FreeText,
         /// Prior report to compare against.
         #[arg(long)]
-        baseline: Option<PathBuf>,
+        baseline: Option<ConfigPath>,
         /// Fractional regression that fails the run, e.g. 0.10 for 10%.
         #[arg(long)]
         fail_on_regression: Option<f64>,
         /// Write the JSON report here.
         #[arg(short, long)]
-        output: Option<PathBuf>,
+        output: Option<OutputPath>,
         /// Use streaming responses (measures TTFT and TPOT).
         #[arg(long)]
         stream: bool,
@@ -1734,7 +1734,7 @@ pub enum LlmSubcommand {
         /// knob with a recorded value rather than a constant buried in a
         /// helper.
         #[arg(long, default_value = "medium")]
-        profile: String,
+        profile: FreeText,
         /// Prompt corpus, JSONL: one JSON object per line, `{"prompt": "..."}`,
         /// with optional `max_tokens`, `temperature`, `seed`, `ignore_eos`.
         /// Overrides `--profile`.
@@ -1749,7 +1749,7 @@ pub enum LlmSubcommand {
         /// so an operator who followed the help produced a file the loader
         /// refused.
         #[arg(long)]
-        prompts: Option<PathBuf>,
+        prompts: Option<InputFile>,
 
         // ------------------------------------------------------------------
         // PERF-025 — the APR-PERF-GATE-001 v2.2 §4.4 conformant mode.
@@ -1795,10 +1795,10 @@ pub enum LlmSubcommand {
         band: bool,
         /// Directory receiving `receipt.rN.json` and the gzipped JSONL samples.
         #[arg(long)]
-        receipt: Option<PathBuf>,
+        receipt: Option<OutputPath>,
         /// Concurrency levels for --band. Arm A needs `c=1` to be present.
         #[arg(long, default_value = "1,4,8,16")]
-        bands: String,
+        bands: FreeText,
         /// Full band replicates per cell (PP-LLAMA-001 v3.0 §4.3: n >= 5).
         /// Each replicate writes its own independently judgeable receipt.
         ///
@@ -1816,13 +1816,13 @@ pub enum LlmSubcommand {
         workload: String,
         /// Join key: which machine measured. Required by the receipt schema.
         #[arg(long, required_if_eq("band", "true"), default_value = "")]
-        host: String,
+        host: FreeText,
         /// Join key: which accelerator served the request.
         #[arg(long, required_if_eq("band", "true"), default_value = "")]
-        accelerator: String,
+        accelerator: FreeText,
         /// Join key: which quantization the served model uses.
         #[arg(long, required_if_eq("band", "true"), default_value = "")]
-        quantization: String,
+        quantization: FreeText,
         /// The dispatch path the SERVER took — not the hardware present.
         #[arg(long, default_value = "unknown",
               value_parser = ["cpu", "cuda", "metal", "wgpu", "unknown"])]
@@ -1834,14 +1834,14 @@ pub enum LlmSubcommand {
         /// pointing that check at the measuring binary instead of the measured
         /// one would make it read green while checking nothing.
         #[arg(long = "server-feature")]
-        server_features: Vec<String>,
+        server_features: Vec<FreeText>,
         /// How tokens were counted (§4.4.6). Absence of a valid value is fatal.
         #[arg(long, default_value = "server_usage",
               value_parser = ["server_usage", "client_tokenizer"])]
         tokenization: String,
         /// Tokenizer digest, required when --tokenization client_tokenizer.
         #[arg(long)]
-        tokenizer_sha256: Option<String>,
+        tokenizer_sha256: Option<FreeText>,
         /// Whether the token counts include special tokens (§4.4.6).
         #[arg(long)]
         counts_special_tokens: bool,
@@ -1857,7 +1857,7 @@ pub enum LlmSubcommand {
         /// `$(git rev-parse HEAD)`: a full 40-character lowercase object name,
         /// because an abbreviated sha cannot be tested for ancestry (PP-18).
         #[arg(long)]
-        commit: Option<String>,
+        commit: Option<FreeText>,
         /// Who owes the comparator measurement this producer refuses to invent.
         ///
         /// §4.7.1: without `--comparator-url` every cell is NOT_APPLICABLE or
@@ -1865,7 +1865,7 @@ pub enum LlmSubcommand {
         /// SAME run (PP-3), joined on the PP-22 key and driven by this same
         /// client binary (PP-25); one lane cannot produce one.
         #[arg(long, default_value = "perf-gate")]
-        comparator_owner: String,
+        comparator_owner: FreeText,
 
         // ------------------------------------------------------------------
         // PP-LLAMA-001 v3.0 §4.3 / §5.3 — the COMPARATOR LANE.
@@ -1888,25 +1888,25 @@ pub enum LlmSubcommand {
         /// Comparator endpoint. Measured by THIS binary, interleaved with the
         /// subject lane band by band, and joined on a shared `run_id`.
         #[arg(long)]
-        comparator_url: Option<String>,
+        comparator_url: Option<FreeText>,
         /// Model name the comparator server expects in the request body.
         /// Defaults to --model; `llama-server` serves whatever it was
         /// launched with and ignores the field.
         #[arg(long)]
-        comparator_model: Option<String>,
+        comparator_model: Option<FreeText>,
         /// PP-20: the comparator build's upstream commit.
         #[arg(long)]
-        comparator_commit: Option<String>,
+        comparator_commit: Option<FreeText>,
         /// PP-20: the `cmake` line the comparator was configured with.
         #[arg(long)]
-        comparator_cmake: Option<String>,
+        comparator_cmake: Option<FreeText>,
         /// PP-20: the comparator binary's sha256, 64 lowercase hex.
         #[arg(long)]
-        comparator_sha256: Option<String>,
+        comparator_sha256: Option<FreeText>,
         /// PP-20: the instant after which every ratio against this pin is
         /// COMPARATOR_STALE, as `YYYY-MM-DDTHH:MM:SS.mmmZ`.
         #[arg(long)]
-        comparator_pin_expiry: Option<String>,
+        comparator_pin_expiry: Option<FreeText>,
 
         // ------------------------------------------------------------------
         // PP-22 / §5.3 — the comparator lane's CONFIGURATION, declared.
@@ -1938,10 +1938,10 @@ pub enum LlmSubcommand {
         /// server resolved it to, and a guessed join-key field silently joins
         /// two different configurations.
         #[arg(long)]
-        comparator_fa: Option<String>,
+        comparator_fa: Option<FreeText>,
         /// §5.3: `-ctk/-ctv` as launched, e.g. `f16`.
         #[arg(long)]
-        comparator_kv_type: Option<String>,
+        comparator_kv_type: Option<FreeText>,
 
         /// PP-26: `witness.json` from
         /// `scripts/perf041_batched_parity_probe.py`.
@@ -1952,12 +1952,12 @@ pub enum LlmSubcommand {
         /// emitting one token id forever at full speed, and every throughput
         /// number it produced was arithmetically correct and meaningless.
         #[arg(long)]
-        witness_json: Option<PathBuf>,
+        witness_json: Option<ConfigPath>,
 
         /// PP-18: the `apr serve` binary that served the bands, when it is not
         /// this same `apr`. Hashed into `provenance.subject`.
         #[arg(long)]
-        subject_binary: Option<PathBuf>,
+        subject_binary: Option<InputFile>,
 
         /// PP-21: sign each receipt with this key id after writing it.
         ///
@@ -1966,11 +1966,11 @@ pub enum LlmSubcommand {
         /// non-zero exit is fatal: an unsigned receipt reported as signed is
         /// exactly the document `ArmC-sig` exists to catch.
         #[arg(long)]
-        key_id: Option<String>,
+        key_id: Option<FreeText>,
         /// PP-21: keyring for --key-id. Defaults to
         /// `$APR_PERF_RECEIPT_KEYRING` inside the signing script.
         #[arg(long)]
-        keyring: Option<PathBuf>,
+        keyring: Option<ConfigPath>,
     },
 }
 

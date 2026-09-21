@@ -266,11 +266,12 @@ or drop `--backend`."
 
             // GH-240: merge global --json flag into output format
             let effective_format = if cli.json { "json" } else { format.as_str() };
+            let trace_steps = trace_steps.as_deref().map(batuta_common::cli_roles::strings);
             dispatch_run(
                 source,
-                positional_prompt.as_ref(),
+                positional_prompt.as_ref().map(PromptText::as_string),
                 input.as_deref(),
-                prompt.as_ref(),
+                prompt.as_ref().map(PromptText::as_string),
                 *max_tokens,
                 *stream,
                 language.as_deref(),
@@ -285,7 +286,7 @@ or drop `--backend`."
                 *trace_payload,
                 trace_steps.as_deref(),
                 *trace_verbose,
-                trace_output.clone(),
+                trace_output.as_deref().map(Path::to_path_buf),
                 trace_level.as_str(),
                 *profile,
                 *chat,
@@ -316,14 +317,14 @@ or drop `--backend`."
             output_format,
             input_format,
         } => dispatch_code_command(CodeArgs {
-            model,
+            model: &model.as_deref().map(Path::to_path_buf),
             project,
-            resume,
-            prompt,
+            resume: &resume.as_ref().map(|r| r.as_ref().map(FreeText::to_string)),
+            prompt: &batuta_common::cli_roles::strings(prompt),
             print: *print,
             max_turns: *max_turns,
-            manifest,
-            emit_trace,
+            manifest: &manifest.as_deref().map(Path::to_path_buf),
+            emit_trace: &emit_trace.as_deref().map(Path::to_path_buf),
             output_format: *output_format,
             input_format: *input_format,
         }),
@@ -433,13 +434,13 @@ fn dispatch_debug(
     }) = action
     {
         return commands::embed_viz::run(&commands::embed_viz::EmbedVizArgs {
-            model: model.clone(),
-            tensor: tensor.clone(),
+            model: model.to_path_buf(),
+            tensor: tensor.as_deref().map(str::to_string),
             projection: *projection,
             seed: *seed,
             limit: *limit,
-            tokens: tokens.clone(),
-            output: output.clone(),
+            tokens: tokens.as_deref().map(Path::to_path_buf),
+            output: output.as_deref().map(Path::to_path_buf),
             force: *force,
         });
     }
@@ -521,7 +522,7 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
         Commands::Manifest { files, output } => {
             // CRUX-G-05 — SHA-256 manifest of the input file set.
-            commands::manifest::run(files, output, cli.json)
+            commands::manifest::run(&batuta_common::cli_roles::path_bufs(files), output, cli.json)
         }
         Commands::Explain {
             code_or_file,
@@ -532,8 +533,8 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             verbose,
             proof_status,
         } => explain::run(
-            code_or_file.clone(),
-            file.clone(),
+            code_or_file.as_deref().map(str::to_string),
+            file.as_deref().map(Path::to_path_buf),
             tensor.as_deref(),
             *kernel,
             *json || cli.json,
@@ -780,7 +781,7 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 quantize.as_deref(),
                 *strict,
                 *preserve_q4k,
-                tokenizer.as_ref(),
+                tokenizer.as_deref().map(Path::to_path_buf).as_ref(),
                 *enforce_provenance,
                 *allow_no_config,
                 cli.json,
@@ -913,7 +914,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                     strategy,
                     output.as_deref(),
                     weights.clone(),
-                    base_model.clone(),
+                    base_model.as_deref().map(Path::to_path_buf),
                     *drop_rate,
                     *density,
                     *seed,
@@ -988,7 +989,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 coordinator.as_deref(),
                 *expect_workers,
                 *wait_gpu,
-                adapters,
+                &batuta_common::cli_roles::strings(adapters),
                 adapters_config.as_deref(),
                 cli.json,
                 *experimental_mps,
@@ -1078,7 +1079,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                     // full downloads in violation of the contract.
                     Some(r) => pull::run_dataset(
                         r,
-                        include,
+                        &batuta_common::cli_roles::strings(include),
                         revision.as_deref(),
                         output.as_deref(),
                         *dry_run,
@@ -1106,7 +1107,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         Commands::Registry { command } => crate::commands::registry::run(command.clone()),
         Commands::List => pull::list(cli.json, cli.quiet),
         Commands::Rm { model_ref } => pull::remove(model_ref, cli.json),
-        Commands::Tui { file } => tui::run(file.clone()),
+        Commands::Tui { file } => tui::run(file.as_deref().map(Path::to_path_buf)),
         Commands::Mcp {} => mcp::run(),
 
         _ => return None,

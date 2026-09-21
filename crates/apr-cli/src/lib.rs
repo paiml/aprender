@@ -31,6 +31,12 @@
 )]
 
 use clap::{Parser, Subcommand, ValueEnum};
+// #3745 S1: every free-form argument of the clap tree below is declared through
+// one of these role types (`batuta_common::cli_roles`), which is how `apr
+// surface` reads its role. A raw `PathBuf`/`String` there is RED in the marker guard.
+pub use batuta_common::cli_roles::{
+    ConfigPath, DirPath, FreeText, InputFile, ModelPath, ModelRef, OutputPath, PromptText,
+};
 use std::path::{Path, PathBuf};
 
 // Contract assertions from YAML (pv codegen)

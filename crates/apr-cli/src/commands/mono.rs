@@ -9,6 +9,7 @@
 //! Contract: contracts/publish-workspace-v1.yaml
 
 use crate::error::CliError;
+use batuta_common::cli_roles::FreeText;
 use clap::Subcommand;
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -28,7 +29,7 @@ pub enum MonoCommands {
     Shims {
         /// Output directory for shim crates
         #[arg(long, default_value = "shims")]
-        output: String,
+        output: FreeText,
     },
 
     /// Verify workspace invariants (FALSIFY-MONO-* and FALSIFY-BUILD-*)

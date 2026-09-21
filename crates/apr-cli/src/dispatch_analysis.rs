@@ -461,7 +461,7 @@ fn dispatch_data_command(command: &DataCommands, json: bool) -> std::result::Res
             ngram,
             threshold,
             json: json_flag,
-        } => data::run_decontaminate(file, reference, *ngram, *threshold, *json_flag || json),
+        } => data::run_decontaminate(file, &batuta_common::cli_roles::path_bufs(reference), *ngram, *threshold, *json_flag || json),
         DataCommands::Dedup {
             file,
             output,
@@ -682,7 +682,7 @@ fn dispatch_analysis_commands_rest(cli: &Cli) -> Option<Result<(), CliError>> {
                 *timeout,
                 *json || cli.json,
                 *verbose || cli.verbose,
-                skip.as_deref(),
+                skip.as_deref().map(batuta_common::cli_roles::strings).as_deref(),
             )
         }),
 
@@ -698,9 +698,9 @@ fn dispatch_analysis_commands_rest(cli: &Cli) -> Option<Result<(), CliError>> {
             validate,
             full,
         }) => oracle::run(
-            source.as_ref(),
-            family.as_ref(),
-            size.as_ref(),
+            source.as_ref().map(ModelRef::as_string),
+            family.as_ref().map(FreeText::as_string),
+            size.as_ref().map(FreeText::as_string),
             *compliance,
             *tensors,
             cli.json,
@@ -896,20 +896,20 @@ fn dispatch_runs_command(command: &RunsCommands, cli: &Cli) -> std::result::Resu
             status,
             json,
             limit,
-        } => commands::runs::run_ls(dir, *global, status, *json || cli.json, *limit),
+        } => commands::runs::run_ls(&dir.as_deref().map(Path::to_path_buf), *global, status, *json || cli.json, *limit),
         RunsCommands::Show {
             run_id,
             dir,
             global,
             json,
-        } => commands::runs::run_show(run_id, dir, *global, *json || cli.json),
+        } => commands::runs::run_show(run_id, &dir.as_deref().map(Path::to_path_buf), *global, *json || cli.json),
         RunsCommands::Diff {
             run_a,
             run_b,
             dir,
             global,
             json,
-        } => commands::runs::run_diff(run_a, run_b, dir, *global, *json || cli.json),
+        } => commands::runs::run_diff(run_a, run_b, &dir.as_deref().map(Path::to_path_buf), *global, *json || cli.json),
     }
 }
 
@@ -921,7 +921,7 @@ fn dispatch_experiment_command(
 ) -> std::result::Result<(), CliError> {
     match command {
         ExperimentCommands::View { db, global, json } => {
-            commands::experiment::experiment_view(db, *global, *json || cli.json)
+            commands::experiment::experiment_view(&db.as_deref().map(Path::to_path_buf), *global, *json || cli.json)
         }
     }
 }
@@ -1087,7 +1087,7 @@ fn dispatch_train_command(command: &TrainCommands, cli: &Cli) -> std::result::Re
             budget_mb,
             dry_run,
         } => train::run_submit(
-            cluster, model, adapters, *rank, *epochs, *budget_mb, *dry_run, cli.json,
+            cluster, model, &batuta_common::cli_roles::strings(adapters), *rank, *epochs, *budget_mb, *dry_run, cli.json,
         ),
         TrainCommands::ClusterStatus { cluster } => train::run_cluster_status(cluster, cli.json),
     }
@@ -1148,7 +1148,7 @@ fn dispatch_tokenize_command(
             estimate_only,
             estimate_sample_docs,
         } => tokenize::run_encode_corpus(
-            corpus.as_slice(),
+            batuta_common::cli_roles::path_bufs(corpus).as_slice(),
             tokenizer,
             output,
             *shard_tokens,
@@ -1483,14 +1483,14 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *skip_contract,
             *skip_format_parity,
             *skip_ptx_parity,
-            safetensors_path.clone(),
+            safetensors_path.as_deref().map(Path::to_path_buf),
             *iterations,
             *warmup,
             *max_tokens,
             *json || cli.json,
             *verbose || cli.verbose,
             *min_executed,
-            previous_report.clone(),
+            previous_report.as_deref().map(Path::to_path_buf),
             *regression_threshold,
             *skip_gpu_state,
             *skip_metadata,
@@ -1680,9 +1680,9 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
                 *inspect,
                 effective_no_gpu,
                 *trace,
-                trace_steps.as_deref(),
+                trace_steps.as_deref().map(batuta_common::cli_roles::strings).as_deref(),
                 *trace_verbose,
-                trace_output.clone(),
+                trace_output.as_deref().map(Path::to_path_buf),
                 trace_level.as_str(),
                 *profile,
                 cli.offline,
@@ -1737,7 +1737,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             license,
             pipeline_tag,
             library_name.as_deref(),
-            tags.as_ref().map_or(&[], std::vec::Vec::as_slice),
+            &tags.as_deref().map(batuta_common::cli_roles::strings).unwrap_or_default(),
             message.as_deref(),
             *dry_run || *plan,
             cli.verbose,
@@ -1789,7 +1789,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             token_type_ids.as_deref(),
             query.as_deref(),
             passage.as_deref(),
-            passages,
+            &batuta_common::cli_roles::strings(passages),
             *sort,
             *top_k,
             vocab.as_deref(),
@@ -1823,7 +1823,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             json,
         } => commands::embed::run(
             model,
-            text,
+            &batuta_common::cli_roles::strings(text),
             text_file.as_deref(),
             vocab,
             pool,

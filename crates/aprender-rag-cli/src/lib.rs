@@ -243,8 +243,9 @@ pub enum Commands {
         jobs: usize,
 
         /// Path to Whisper .apr model file (e.g. base.apr, large-v3-turbo.apr)
+        // #3745 S1: typed `ModelRef`, which is how `apr surface` knows this is a model.
         #[arg(short, long)]
-        model: Option<String>,
+        model: Option<batuta_common::cli_roles::ModelRef>,
 
         /// Compute backend (cpu, gpu, cuda)
         #[arg(short, long, value_enum, default_value = "cpu")]
