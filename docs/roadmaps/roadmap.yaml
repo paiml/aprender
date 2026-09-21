@@ -20124,3 +20124,24 @@ roadmap:
   labels:
   - kind:code
   notes: 'Found by aprender-7a seat-filling #3657; the cop ruled it a small 0.70 row stacked on #3657''s 6fd241645, which is not touched (this commit is its child). SCOPE: scripts/release/publish_strict.sh (4 lines before the mapfile) and this fragment. HOW IT IS MET: awk lists every line of publish-order.txt that is empty or whitespace-only, by number; any hit stops with `die "blank line <N[, N…]> in publish-order.txt: an empty crate name is not a crate"` before ORDER is built, so no empty string reaches the set checks or bash''s associative-array subscript. publish_strict.sh has no --self-test on purpose (one would make it a guard that must be workflow-invoked), so the proof is end to end. MEASURED in a private clone (its own refs; tag v9.9.9 in the clone only; RELEASE_AP in scratch; --plan reads the sparse index and uploads nothing). BEFORE, at 6fd241645, a blank line at line 36: rc 1, "scripts/release/publish_strict.sh: line 47: EXPECT: bad array subscript" and "STOP publish: in the publish order but not in the universe:  " (an empty name). AFTER, at this commit: the clean file gives rc 0 and 74 rows; a blank line at 36 gives rc 1, "STOP publish: blank line 36 in publish-order.txt: an empty crate name is not a crate", with 0 subscript errors; a whitespace-only line at 3 plus a blank line (now at 37) gives rc 1, "STOP publish: blank line 3, 37 in publish-order.txt: an empty crate name is not a crate". `bash scripts/check_release_scripts_derive_identity.sh`: PASS (no literal count, no identity literal).'
+- id: PMAT-3704
+  github_issue: 3704
+  item_type: task
+  title: 'ONT-4c3: pc_extract draws the parity-receipt positive control every gate run, and every extractor the gate runs has a control'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-21T14:16:17Z
+  updated: 2026-09-21T14:16:17Z
+  spec: null
+  acceptance_criteria:
+  - "cargo test -p aprender-contracts --lib lint::shapes_gate::tests::every_implemented_entity_type_in_sigma_has_an_extract_control_and_it_fires passes: the pc_extract key set EQUALS contracts/ontology.yaml's implemented entity types (7) and every control is fired — red on main (4 vs 7)"
+  - "cargo test -p aprender-contracts-cli --test ont4c3_parity_receipts the_parity_extractor_control_is_drawn_by_the_gate_every_run passes: top-level pc_extract[\"parity-receipt\"] == \"fired\" on aprender's contracts/, the ONT-001 v4.10 ONT-4c3 probe's question"
+  - "pv lint contracts/ --gate shapes --format json: verdict Pass, pc_extract 7/7 fired, by_entity_type[\"parity-receipt\"] == 7"
+  - "Mutation: each of the three new controls goes not-fired when its extractor regresses the way it watches (parity drops the comparator edge; json infers a class for an unmapped nested key; pv-contract infers metadata.kind) and the gate declines exit 2 naming pc_extract.<key>; dropping a control key turns the \u03a3-tie test red"
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: "Refs #3577 (ONT-4c3; its ledger binding is infra's row, bound after this merges) and #3624 (the by_entity_type sibling, not closed here). R-3 of ONT-001: pc_extract is one planted defect per registered extractor, every run."

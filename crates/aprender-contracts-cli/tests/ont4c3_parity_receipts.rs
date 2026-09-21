@@ -181,6 +181,27 @@ fn the_entity_type_is_counted_in_by_entity_type_not_merely_registered() {
 }
 
 #[test]
+fn the_parity_extractor_control_is_drawn_by_the_gate_every_run() {
+    // PMAT-3704. ONT-001 v4.10's probe also asks `.pc_extract["parity-receipt"] == "fired"`, at the TOP level
+    // of the report, exactly as read here. The control existed from #3600 on — `parity_receipt::positive_control`
+    // — but only a unit test called it, so the gate never reported it and an extractor that stopped reading the
+    // v2 layout would have been counted, never refused. R-3: one planted defect per registered extractor, every
+    // run.
+    let out = Command::new(pv_bin())
+        .args(["lint", "contracts", "--gate", "shapes", "--format", "json"])
+        .current_dir(repo_root())
+        .output()
+        .expect("failed to spawn pv");
+    let v: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&out.stdout)).expect("json report");
+    assert_eq!(
+        v["pc_extract"]["parity-receipt"], "fired",
+        "pc_extract carries no fired `parity-receipt` control: {}",
+        v["pc_extract"]
+    );
+}
+
+#[test]
 fn every_fixture_carries_the_real_contract_byte_for_byte() {
     // A fixture copy that drifts from `contracts/parity-receipt-v2.yaml` would let the real shape be mutated
     // while the case table stayed green — the mutation control's blind spot, closed here.
