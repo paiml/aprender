@@ -9,8 +9,13 @@ own output. It writes <out>/cell.json and prints one summary line.
 The mechanisms are checked in pipeline order and the FIRST one that fails is
 the cell's mechanism, using the names from #3719 done_when 1:
 
-  serve child did not load -> fell back to CPU -> tool call not parsed
-  -> wrong edit -> test not run -> wrong final answer
+  serve child did not load -> fell back to CPU -> (serve child refused the
+  forward) -> tool call not parsed -> wrong edit -> test not run
+  -> wrong final answer
+
+"serve child refused the forward" is not in #3719's list: it names a child
+that loaded every layer on CUDA and then answered the completion with an HTTP
+error, which none of the listed names describes.
 
 Exit: 0 PASS, 1 FAIL, 2 decline (the GPU lock was never acquired).
 """
@@ -26,12 +31,23 @@ ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 # What the serve child prints on its CUDA path, and on each way it can end up
 # on the CPU instead (crates/apr-cli/src/commands/serve/).
+#
+# `CUDA optimized model ready` is a LOAD-time line and is not evidence of a CUDA
+# forward: measured on 856009cc9, the child printed it for Qwen3.5-4B after
+# `Model ready: 0 layers` and `gpu-layers: requested=all resolved=0 total=0`,
+# and the first request then failed with HTTP 500 (#3571 step 1). So the
+# backend is `cuda` only when every layer is resident on CUDA and a completion
+# actually came back; the gpu-layers line is the evidence cited.
 CUDA_READY = re.compile(r"CUDA optimized model ready")
 CPU_MARKERS = re.compile(
     r"\[GPU->CPU FALLBACK\]|Using CPU inference|Q4K CPU inference ready"
 )
+MODEL_LAYERS = re.compile(r"Model ready: (\d+) layers")
+GPU_LAYERS = re.compile(r"gpu-layers: requested=\S+ resolved=(\d+) total=(\d+) \(backend=(\w+)\)")
 # The driver prints this once the child answers its health check.
 SERVE_READY = re.compile(r"apr serve ready \(")
+# The driver's error when the child answers a completion with an HTTP error.
+SERVE_HTTP_ERROR = re.compile(r"apr serve HTTP (\d+): (.*)")
 # The thinking mode the serve child renders. The driver strips <think> blocks
 # before parsing, so the trace cannot show it; only the child's own line can.
 THINKING_LINE = re.compile(r"chat template:.*\(thinking (on|off)\)")
@@ -178,13 +194,29 @@ def judge(a):
     timed_out = a.rc == 124
     cuda_line = first_match(child, CUDA_READY)
     cpu_line = first_match(child, CPU_MARKERS)
-    backend = "cpu" if cpu_line else ("cuda" if cuda_line else "unknown")
-    cell.update(backend=backend, fallback=bool(cpu_line), evidence=cpu_line or cuda_line)
+    layers_line = first_match(child, MODEL_LAYERS)
+    layers = int(MODEL_LAYERS.search(layers_line).group(1)) if layers_line else None
+    gpu_line = first_match(child, GPU_LAYERS)
+    resolved, total, gpu_backend = GPU_LAYERS.search(gpu_line).groups() if gpu_line else (None, None, None)
+    all_resident = (gpu_backend == "cuda" and resolved is not None
+                    and int(resolved) == int(total) and int(total) > 0)
+    http_error = SERVE_HTTP_ERROR.search(stderr)
 
     records, bad = trace_records(out / "trace.jsonl")
     uses = tool_uses(records)
+    turns = [r for r in records if r.get("kind") == "assistant_turn"]
     cell.update(trace_records=len(records), trace_bad_lines=bad, tool_calls=len(uses),
                 tools_used=sorted({str(u.get("name")) for u in uses}))
+
+    if cpu_line:
+        backend = "cpu"
+    elif cuda_line and all_resident and turns:
+        backend = "cuda"
+    else:
+        backend = "unknown"
+    cell.update(backend=backend, fallback=bool(cpu_line),
+                evidence=cpu_line or (gpu_line if backend == "cuda" else ""),
+                model_layers=layers, gpu_layers=gpu_line)
 
     thinking = THINKING_LINE.search(child)
     cell["thinking"] = thinking.group(1) if thinking else "unknown"
@@ -207,18 +239,31 @@ def judge(a):
             cell["evidence"] = evidence
         return cell, 1
 
-    # 1. serve child did not load
+    # 1. serve child did not load (a model with no layers is not loaded, even
+    #    when the child calls itself ready)
     if not SERVE_READY.search(stderr):
         return fail("serve child did not load",
                     "the driver never reported `apr serve ready`",
                     last_lines(child) or last_lines(stderr))
+    if layers == 0:
+        detail = f"; first request: HTTP {http_error.group(1)} {http_error.group(2)[:200]}" if http_error else ""
+        return fail("serve child did not load",
+                    f"the child reported ready with 0 layers{detail}",
+                    "\n".join(x for x in (layers_line, gpu_line) if x))
 
-    # 2. fell back to CPU, or never showed its CUDA path at all
-    if backend != "cuda":
+    # 2. fell back to CPU, or never showed every layer resident on CUDA
+    if cpu_line:
+        return fail("fell back to CPU", "serve child printed a CPU path", cpu_line)
+    if not (cuda_line and all_resident):
         return fail("fell back to CPU",
-                    "serve child printed a CPU path" if cpu_line
-                    else "serve child never printed `CUDA optimized model ready`",
-                    cpu_line or last_lines(child))
+                    "serve child never showed every layer resident on CUDA",
+                    gpu_line or last_lines(child))
+
+    # 2b. the child loaded on CUDA but refused the completion
+    if http_error and not turns:
+        return fail("serve child refused the forward",
+                    f"HTTP {http_error.group(1)}: {http_error.group(2)[:300]}",
+                    gpu_line)
 
     # 3. tool call not parsed
     if not uses:
