@@ -353,12 +353,11 @@ pub fn cmd_code(
     // operator believed it was scoped to another tree. Fail closed instead.
     if project.as_os_str() != "." {
         if !project.is_dir() {
-            return Err(CodeOutcome::refused(
+            anyhow::bail!(CodeOutcome::refused(
                 "invalid_input",
                 format!("--project: not a directory: {}", project.display()),
                 exit_code::AGENT_ERROR,
-            )
-            .into());
+            ));
         }
         std::env::set_current_dir(&project)?;
     }
@@ -505,12 +504,11 @@ pub fn cmd_code(
             }
         }
         crate::agent::hooks::HookDecision::Block(reason) => {
-            return Err(CodeOutcome::refused(
+            anyhow::bail!(CodeOutcome::refused(
                 "hook_blocked",
                 format!("SessionStart hook blocked session: {reason}"),
                 exit_code::AGENT_ERROR,
-            )
-            .into());
+            ));
         }
     }
 

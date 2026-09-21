@@ -82,3 +82,18 @@ fn an_empty_completion_fails_with_the_inference_failure_code() {
     assert_eq!(d["status"], "failed");
     assert_eq!(d["num_turns"], 2, "the loop's counters are kept when the loop ran");
 }
+
+/// `anyhow::bail!(CodeOutcome …)` is how cmd_code's early refusals leave it;
+/// the caller's `emit_error_document` recovers the kind by downcasting. If
+/// bail! stopped preserving the value, every early refusal would become
+/// `agent_error`.
+#[test]
+fn a_bailed_outcome_survives_as_a_downcastable_error() {
+    fn refuse() -> anyhow::Result<()> {
+        anyhow::bail!(CodeOutcome::refused("invalid_input", "--project: not a directory: x", 1));
+    }
+    let err = refuse().expect_err("bail! returns Err");
+    let o = err.downcast_ref::<CodeOutcome>().expect("the outcome is recoverable by downcast");
+    assert_eq!((o.status, o.kind), ("refused", "invalid_input"));
+    assert_eq!(err.to_string(), "--project: not a directory: x", "stderr text is unchanged");
+}
