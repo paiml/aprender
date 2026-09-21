@@ -387,7 +387,7 @@ case "$got" in "False degenerate output"*) ok "hf's degenerate '!!!!' cannot vou
 # C1-C3. the chat verb (#3739 slice 3): judged on the FINAL turn; apr's backend is
 #        recorded as unverified until apr chat reports one (#3794).
 apr_chat_out() { # apr_chat_out <dir> <pid> <reply 1> <reply 2> — apr chat's transcript shape
-  printf 'Detected ChatML chat template\nYou: [3.9s, ~2 tok/s]\nAssistant: %s\nYou: [5.9s, ~1 tok/s]\nAssistant: %s\nYou: \nGoodbye!\n' "$3" "$4" > "$1/apr-$2.out"
+  printf 'Detected ChatML chat template\nYou: \nAssistant: %s\nYou: \nAssistant: %s\nYou: \nGoodbye!\n' "$3" "$4" > "$1/apr-$2.out"
   : > "$1/apr-$2.err"
 }
 chat_json() { # chat_json <dir> <engine> <pid> <reply 1> <reply 2> — the pty helper's JSON
@@ -415,6 +415,39 @@ ROW_VERB=chat row "$d/manifest.jsonl" apr $CP 0 "$d/apr-$CP.out" "$d/apr-$CP.err
 ROW_VERB=chat row "$d/manifest.jsonl" llama.cpp $CP 0 "$d/llama-$CP.json" ""
 run_judge "$d"; GOT_RC=$?
 expect "an apr chat transcript with no Assistant turn is no answer (RED)" "$d" 1 $CP RED
+
+# S1-S3. the serve verb (#3739 slice 4): every server through the ONE OpenAI client,
+#        nonstream and stream as distinct cells (the key's additive `mode`).
+serve_json() { # serve_json <dir> <engine> <pid> <mode> <text|""> [error] — crux_openai_client.py's output shape
+  python3 -c 'import json,sys
+t = sys.argv[5] or None
+d = {"text": t, "reported": {"device": "fixture", "stream": sys.argv[4] == "stream", "finish_reason": "stop" if t else None, "usage": None, "chunks": 0}}
+if len(sys.argv) > 6: d["error"] = sys.argv[6]
+json.dump(d, open(sys.argv[1], "w"))' "$1/$2-$3-$4.json" "$2" "$3" "$4" "$5" "${@:6}"
+}
+serve_row() { # serve_row <manifest> <engine> <pid> <mode> <rc> <json>
+  python3 - "$@" <<'PY2'
+import json, sys
+m, eng, pid, mode, rc, o = sys.argv[1:7]
+open(m, "a").write(json.dumps({"kind": "gen", "engine": eng, "prompt_id": pid, "rc": int(rc), "stdout": o, "stderr": None,
+    "refused": None, "model_sha256": "%s", "host": "fixture", "verb": "serve run", "thinking": "off", "backend": "gpu",
+    "mode": mode}) + "\n")
+PY2
+}
+d=$(newcase serve_green); control_green "$d"
+for mode in nonstream stream; do
+  serve_json "$d" apr $P $mode "4"; serve_json "$d" llama $P $mode "2 + 2 equals 4."
+  serve_row "$d/manifest.jsonl" apr $P $mode 0 "$d/apr-$P-$mode.json"; serve_row "$d/manifest.jsonl" llama.cpp $P $mode 0 "$d/llama-$P-$mode.json"
+done
+run_judge "$d"; GOT_RC=$?
+got=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(sorted((c["key"].get("mode"), c["verdict"], c["engines"]["apr"].get("backend_verified")) for c in r["cells"] if c["key"]["verb"]=="serve run"))' "$d/receipt.json" 2>/dev/null)
+[ "$GOT_RC" = 0 ] && [ "$got" = "[('nonstream', 'GREEN', False), ('stream', 'GREEN', False)]" ] && ok "serve nonstream and stream are distinct GREEN cells; apr serve's backend unverified" || broke "serve green: rc $GOT_RC '$got'"
+d=$(newcase serve_apr_refused); control_green "$d"
+serve_json "$d" apr $P nonstream "" "URLError: [Errno 111] Connection refused"; serve_json "$d" llama $P nonstream "2 + 2 equals 4."
+serve_row "$d/manifest.jsonl" apr $P nonstream 3 "$d/apr-$P-nonstream.json"; serve_row "$d/manifest.jsonl" llama.cpp $P nonstream 0 "$d/llama-$P-nonstream.json"
+run_judge "$d"; GOT_RC=$?
+got=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print([c["verdict"] for c in r["cells"] if c["key"]["verb"]=="serve run"])' "$d/receipt.json" 2>/dev/null)
+[ "$GOT_RC" = 1 ] && [ "$got" = "['RED']" ] && ok "an apr serve that answered nothing while llama-server answered is RED" || broke "serve apr refused: rc $GOT_RC '$got'"
 
 # D1-D4. tok: raw-text ids, BYTE-EQUAL or RED.
 d=$(newcase tok_equal); control_green "$d"

@@ -12,7 +12,8 @@ engines:
 - ollama
 - hf
 - llamafile
-rule: 'every leaf of the surface has exactly one entry; every entry states every engine, as a mapping or {none: <reason>}. A mapped engine is a required :CruxCell (#3715/#3745 S2 reads this file).'
+rule: 'every leaf of the surface has exactly one entry; every entry states every engine, as a mapping or {none: <reason>}. A mapped engine is a required :CruxCell (#3715/#3745 S2 reads this file). An entry
+  with `modes` owes at least one :CruxCell per declared mode; an entry without owes rows with no mode.'
 verbs:
 - key: attn-parity-lint
   comparators:
@@ -2251,25 +2252,38 @@ verbs:
       none: a pre-flight capacity plan (VRAM budget, roofline); it runs no model
 - key: serve run
   judged_by: golden
+  modes:
+  - nonstream
+  - stream
   comparators:
     llama.cpp:
       binary: llama-server
       args:
         --port: --port
         --context-length: -c
+      modes:
+      - nonstream
+      - stream
     ollama:
       subcommand: serve
       args: {}
+      modes:
+      - nonstream
+      - stream
     hf:
       api: transformers serve
       args:
         --port: --port
+      modes:
+      - nonstream
     llamafile:
       binary: llamafile
       args:
         <none>: --server
         --port: --port
         --context-length: -c
+      modes:
+      - nonstream
 - key: shard
   comparators:
     llama.cpp:

@@ -104,7 +104,8 @@ def parse_apr(stdout, stderr):
         "reported_by": "apr",
         "prompt_tokens": out["prompt_token_count"],
         "completion_tokens": doc.get("tokens_generated"),
-        "decode_rate_tokens_per_second": doc.get("tok_per_sec"),
+        "decode_rate": doc.get("tok_per_sec"),
+        "rate_unit": "tokens per second, as the engine reported it",
         "inference_ms": doc.get("inference_time_ms"),
     }
     text = doc.get("text")
@@ -137,8 +138,9 @@ def parse_llamacpp_cli(stdout, prompt_text):
     out["answer"] = rest[:m.start()].strip()
     out["reported"] = {
         "reported_by": "llama.cpp",
-        "prompt_rate_tokens_per_second": float(m.group(1)),
-        "decode_rate_tokens_per_second": float(m.group(2)),
+        "prompt_rate": float(m.group(1)),
+        "decode_rate": float(m.group(2)),
+        "rate_unit": "tokens per second, as the engine reported it",
         "prompt_tokens": None,
         "completion_tokens": None,
     }
@@ -162,8 +164,9 @@ def parse_ollama(stdout, stderr):
         "reported_by": "ollama",
         "prompt_tokens": int(pe) if pe is not None else None,
         "completion_tokens": int(ev) if ev is not None else None,
-        "prompt_rate_tokens_per_second": num("prompt eval rate"),
-        "decode_rate_tokens_per_second": num("eval rate"),
+        "prompt_rate": num("prompt eval rate"),
+        "decode_rate": num("eval rate"),
+        "rate_unit": "tokens per second, as the engine reported it",
         "load_duration": stats.get("load duration"),
         "total_duration": stats.get("total duration"),
     }
@@ -245,7 +248,17 @@ def engine_entry(row, prompt):
     stdout, stderr = read_text(row.get("stdout")), read_text(row.get("stderr"))
     content = prompt["messages"][-1]["content"]
     engine = row["engine"]
-    if row.get("verb") == "chat":
+    if row.get("verb") == "serve run":
+        # serve (#3739 slice 4): every server, apr's included, is read through the ONE
+        # OpenAI client's contract JSON (scripts/lib/crux_openai_client.py).
+        p = parse_engine_json(stdout)
+        if engine == "apr":
+            # apr serve's responses report no backend: recorded, not scored as verified.
+            e["backend_verified"] = False
+        elif engine not in COMPARATORS:
+            e["why"] = "unknown engine %r" % engine
+            return e
+    elif row.get("verb") == "chat":
         # chat (#3739 slice 3): apr's own transcript; every other engine writes the
         # row-contract JSON (the pty helper for llama.cpp/ollama, the plugin drivers).
         if engine == "apr":
@@ -503,7 +516,10 @@ def collect(args):
     keys = []
     by_key = {}
     for r in gens:
-        k = (r["model_sha256"], r["host"], r["verb"], r["thinking"], prompts[r["prompt_id"]]["rung"], r["prompt_id"])
+        # serve cells come in two modes (nonstream, stream): an additive key part,
+        # absent for run and chat. Plugin serve rows are non-streaming.
+        mode = r.get("mode") or ("nonstream" if r["verb"] == "serve run" else "")
+        k = (r["model_sha256"], r["host"], r["verb"], r["thinking"], prompts[r["prompt_id"]]["rung"], r["prompt_id"], mode)
         if k not in by_key:
             keys.append(k)
             by_key[k] = {}
@@ -525,7 +541,8 @@ def collect(args):
             entries[eng]["correct"] = ok[eng]
         said = {e: norm(v["answer"]) for e, v in entries.items() if v.get("answered")}
         cells.append({
-            "key": dict(zip(("model_sha256", "host", "verb", "thinking", "rung", "prompt_id"), k)),
+            "key": dict(zip(("model_sha256", "host", "verb", "thinking", "rung", "prompt_id"), k[:6]),
+                        **({"mode": k[6]} if k[6] else {})),
             "verdict": verdict,
             # additive (aprender-97, #3715): pv reads the control by this flag, never by a prompt name
             "positive_control": bool(prompt.get("control")),
@@ -633,7 +650,8 @@ def render_md(r):
         else:
             tps = "unmeasured: " + tp.get("why", "")
         lines.append("| %s | %s | %s | %s | **%s** | %s | %s |" % (
-            names.get(k["model_sha256"], k["model_sha256"][:12]), k["verb"], k["thinking"], k["prompt_id"],
+            names.get(k["model_sha256"], k["model_sha256"][:12]), k["verb"], k["thinking"],
+            k["prompt_id"] + ("@" + k["mode"] if k.get("mode") else ""),
             c["verdict"], " | ".join(cols), tps))
     if r.get("deterministic"):
         lines += ["", "Deterministic rows (byte-equal or RED): %s" % s.get("deterministic"), "",

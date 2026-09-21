@@ -99,11 +99,12 @@ done
 [ -n "$VERSION" ] || decline "usage: $0 <version> --model <gguf> ..."
 [ "${#MODELS[@]}" -gt 0 ] || decline "no --model given; this slice takes models by path"
 case "$BACKEND" in gpu|cpu) ;; *) decline "--backend is gpu or cpu, got '$BACKEND'" ;; esac
-case ",$VERBS," in
-  ,run,|,run,chat,|,chat,run,) ;;
-  *,chat,*) decline "verbs '$VERBS': chat needs run beside it (--verbs run,chat), because the positive control lives in the run verb" ;;
-  *) decline "verbs '$VERBS': this driver runs 'run' and 'chat'; serve and code are later slices of #3739 and are listed as not covered in every receipt" ;;
-esac
+# Verbs: run (always: the positive control lives there), chat, serve (the
+# correspondence key `serve run`). code is a later slice of #3739.
+case ",$VERBS," in *,run,*) ;; *) decline "verbs '$VERBS': run must be included, because the positive control lives in the run verb" ;; esac
+for v in ${VERBS//,/ }; do
+  case "$v" in run|chat|serve) ;; *) decline "verb '$v': this driver runs run, chat and serve; code is a later slice of #3739" ;; esac
+done
 want() { case ",$ENGINES," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 want apr || decline "apr is the subject; --engines must include it"
 [ -f "$PROMPTS" ] || decline "prompt set $PROMPTS not found"
@@ -302,13 +303,13 @@ run_cell() { # run_cell <cell script>; sets CELL_WHY when the lock was not had
   fi
   return "$rc"
 }
-cell_result() { # cell_result <engine> <prompt id> <prefix> [stdout file] — the engine's row from its cell files
+cell_result() { # cell_result <engine> <prompt id> <prefix> [stdout file] [mode] — the engine's row from its cell files
   local rc unl=""
-  if [ -n "$CELL_WHY" ]; then emit_gen "$1" "$2" "" "" "" "$CELL_WHY"; return; fi
-  if [ ! -f "$3.rc" ]; then emit_gen "$1" "$2" "" "" "" "the cell ran but this engine's line never finished"; return; fi
+  if [ -n "$CELL_WHY" ]; then emit_gen "$1" "$2" "" "" "" "$CELL_WHY" "" "${5:-}"; return; fi
+  if [ ! -f "$3.rc" ]; then emit_gen "$1" "$2" "" "" "" "the cell ran but this engine's line never finished" "" "${5:-}"; return; fi
   rc=$(cat "$3.rc")
   [ -f "$3.unloaded" ] && unl=$(cat "$3.unloaded")
-  emit_gen "$1" "$2" "$rc" "${4:-$3.out}" "$3.err" "" "$unl"
+  emit_gen "$1" "$2" "$rc" "${4:-$3.out}" "$3.err" "" "$unl" "${5:-}"
 }
 cell_add_stdin() { # cell_add_stdin <cell> <prefix> <stdin file> cmd... — like cell_add, fed a file
   local cell="$1" prefix="$2" input="$3"; shift 3
@@ -316,29 +317,32 @@ cell_add_stdin() { # cell_add_stdin <cell> <prefix> <stdin file> cmd... — like
     printf '> %q 2> %q < %q; echo $? > %q\n' "$prefix.out" "$prefix.err" "$input" "$prefix.rc"; } >> "$cell"
 }
 
-emit_gen() { # emit_gen <engine> <prompt_id> <rc> <stdout> <stderr> <refused> [ollama_unloaded]
-  python3 - "$MANIFEST" "$1" "$2" "$3" "$4" "$5" "$6" "${7:-}" "$SHA" "$HOST" "$VERB" "$THINK" "$BACKEND" <<'PY'
+emit_gen() { # emit_gen <engine> <prompt_id> <rc> <stdout> <stderr> <refused> [ollama_unloaded] [mode]
+  python3 - "$MANIFEST" "$1" "$2" "$3" "$4" "$5" "$6" "${7:-}" "$SHA" "$HOST" "${VERB_KEY:-$VERB}" "$THINK" "$BACKEND" "${8:-}" <<'PY'
 import json, sys
-m, eng, pid, rc, o, e, ref, unl, sha, host, verb, think, be = sys.argv[1:14]
+m, eng, pid, rc, o, e, ref, unl, sha, host, verb, think, be, mode = sys.argv[1:15]
 row = {"kind": "gen", "engine": eng, "prompt_id": pid,
        "rc": int(rc) if rc.lstrip("-").isdigit() else None,
        "stdout": o or None, "stderr": e or None, "refused": ref or None,
        "model_sha256": sha, "host": host, "verb": verb, "thinking": think, "backend": be}
 if unl:
     row["ollama_unloaded"] = unl == "true"
+if mode:
+    row["mode"] = mode
 open(m, "a").write(json.dumps(row) + "\n")
 PY
 }
 
-rows_for() { # rows_for <engine> <prompt_id>: how many gen rows that engine has for the prompt
-  python3 - "$MANIFEST" "$1" "$2" "$SHA" <<'PY'
+rows_for() { # rows_for <engine> <prompt_id>: how many gen rows that engine has for the prompt in this verb
+  python3 - "$MANIFEST" "$1" "$2" "$SHA" "${VERB_KEY:-$VERB}" <<'PY'
 import json, sys
-m, eng, pid, sha = sys.argv[1:5]
+m, eng, pid, sha, verb = sys.argv[1:6]
 n = 0
 for line in open(m):
     if line.strip():
         r = json.loads(line)
-        n += r.get("kind") == "gen" and r.get("engine") == eng and r.get("prompt_id") == pid and r.get("model_sha256") == sha
+        n += (r.get("kind") == "gen" and r.get("engine") == eng and r.get("prompt_id") == pid
+              and r.get("model_sha256") == sha and r.get("verb") == verb)
 print(n)
 PY
 }
@@ -384,6 +388,92 @@ PY
   fi
   kill "$SRV_PID" 2>/dev/null; wait "$SRV_PID" 2>/dev/null; SRV_PID=""
   [ "$ok" = 1 ]
+}
+
+# ---- the serve verb: ONE cell per model -------------------------------------------
+# The issue, verbatim: "serve: `apr serve` · `llama-server` · `ollama serve`, all through
+# the SAME OpenAI `/v1/chat/completions` client, streaming + non-streaming". Each server
+# loads the model ONCE per cell, every run prompt goes through scripts/lib/
+# crux_openai_client.py twice (nonstream, stream), then the servers stop and ollama
+# unloads, all inside one hold of the GPU lock. The plugin engines (hf, llamafile) are
+# `gen --verb 'serve run'`: they run their own server per call, non-streaming.
+serve_wait_line() { # serve_wait_line <cell> <port> <health path> <server pid file>
+  printf 'for i in $(seq 1 %q); do curl -sf http://127.0.0.1:%q%s > /dev/null 2>&1 && break; kill -0 "$(cat %q)" 2>/dev/null || break; sleep 1; done\n' \
+    "$TMO" "$2" "$3" "$4" >> "$1"
+}
+serve_cell() {
+  local d="$WORK/$SHA12/serve" cell pa pl pid mode st ext_extra
+  mkdir -p "$d"
+  cell="$d/cell-serve.sh"
+  pa=$(free_port); pl=$(free_port)
+  printf '#!/usr/bin/env bash\n# one CRUX serve cell: every server loads the model once; every prompt, nonstream + stream\n' > "$cell"
+  { printf '%q ' "$APR" serve run "$M" --port "$pa" "$APR_BE"; printf '> %q 2>&1 < /dev/null &\necho $! > %q\n' "$d/apr-serve.log" "$d/apr-serve.pid"; } >> "$cell"
+  serve_wait_line "$cell" "$pa" /health "$d/apr-serve.pid"
+  if [ "$LLAMA_OK" = 1 ]; then
+    { printf '%q ' "$LLAMA_SERVER" -m "$M" --port "$pl" --host 127.0.0.1 -c "$CTX" -ngl "$NGL" "${LLAMA_DEV[@]}"
+      printf '> %q 2>&1 < /dev/null &\necho $! > %q\n' "$d/llama-serve.log" "$d/llama-serve.pid"; } >> "$cell"
+    serve_wait_line "$cell" "$pl" /health "$d/llama-serve.pid"
+  fi
+  for pid in $PIDS; do
+    for mode in nonstream stream; do
+      st=(); [ "$mode" = stream ] && st=(--stream)
+      cell_add "$cell" "$d/apr-$pid-$mode" python3 scripts/lib/crux_openai_client.py --url "http://127.0.0.1:$pa" \
+        --model default --messages "$WORK/messages-$pid.json" --max-tokens "$MAXTOK" --temperature "$TEMP" \
+        --seed "$SEED" "${st[@]}" --device "apr serve $APR_BE" --out "$d/apr-$pid-$mode.json"
+      [ "$LLAMA_OK" = 1 ] && cell_add "$cell" "$d/llama-$pid-$mode" python3 scripts/lib/crux_openai_client.py \
+        --url "http://127.0.0.1:$pl" --model gguf --messages "$WORK/messages-$pid.json" --max-tokens "$MAXTOK" \
+        --temperature "$TEMP" --seed "$SEED" "${st[@]}" --device "$LLAMA_DEVICE" --out "$d/llama-$pid-$mode.json"
+      [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ] && cell_add "$cell" "$d/ollama-$pid-$mode" python3 scripts/lib/crux_openai_client.py \
+        --url "$OLLAMA_HOST_URL" --model "$OL_NAME" --messages "$WORK/messages-$pid.json" --max-tokens "$MAXTOK" \
+        --temperature "$TEMP" --seed "$SEED" "${st[@]}" --device "$OL_DEVICE" --extra '{"keep_alive": 0}' \
+        --out "$d/ollama-$pid-$mode.json"
+    done
+  done
+  # Stop EVERY server before waiting, and wait on those pids only: a bare `wait` after
+  # the first kill blocks on the other server, which is still running (found on the
+  # first real serve run: the cell hung at teardown with every request answered).
+  srv_pids=("$d/apr-serve.pid"); [ "$LLAMA_OK" = 1 ] && srv_pids+=("$d/llama-serve.pid")
+  { printf 'srv=""; for f in'; printf ' %q' "${srv_pids[@]}"; printf '; do srv="$srv $(cat "$f")"; done\n'
+    printf 'kill $srv 2> /dev/null; wait $srv 2> /dev/null\n'; } >> "$cell"
+  [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ] && cell_add_ollama_unload "$cell" "$d/ollama-serve" "$OL_NAME"
+  for eng in hf llamafile; do
+    want "$eng" && [ "${EXT_OK[$eng]}" = 1 ] || continue
+    [ "$eng" = hf ] && [ -n "$HF_MODEL_WHY" ] && continue
+    case "${EXT_SCRIPT[$eng]}" in *.py) ext_run=(python3) ;; *) ext_run=(bash) ;; esac
+    ext_extra=()
+    [ "$eng" = llamafile ] && ext_extra=(--interface server)
+    [ "$eng" = hf ] && ext_extra=("${HF_SRC[@]}")
+    for pid in $PIDS; do
+      cell_add "$cell" "$d/$eng-$pid.driver" "${ext_run[@]}" "${EXT_SCRIPT[$eng]}" gen \
+        --model "$M" --model-sha256 "$SHA" --verb "serve run" --prompt-id "$pid" \
+        --messages "$WORK/messages-$pid.json" --prompt-file "$WORK/prompt-$pid.txt" \
+        --thinking "$THINK" --backend "$BACKEND" --host "$HOST" \
+        --max-tokens "$MAXTOK" --seed "$SEED" --temperature "$TEMP" --context "$CTX" "${ext_extra[@]}"
+    done
+  done
+  printf 'exit 0\n' >> "$cell"
+
+  declare -A before=()
+  for pid in $PIDS; do before[hf-$pid]=$(rows_for hf "$pid"); before[llamafile-$pid]=$(rows_for llamafile "$pid"); done
+  run_cell "$cell"
+  for pid in $PIDS; do
+    for mode in nonstream stream; do
+      cell_result apr "$pid" "$d/apr-$pid-$mode" "$d/apr-$pid-$mode.json" "$mode"
+      if [ "$LLAMA_OK" = 1 ]; then cell_result llama.cpp "$pid" "$d/llama-$pid-$mode" "$d/llama-$pid-$mode.json" "$mode"
+      elif want llama.cpp; then emit_gen llama.cpp "$pid" "" "" "" "$LLAMA_WHY" "" "$mode"; fi
+      if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then cell_result ollama "$pid" "$d/ollama-$pid-$mode" "$d/ollama-$pid-$mode.json" "$mode"
+      elif want ollama; then emit_gen ollama "$pid" "" "" "" "${OL_REFUSED:-$OLLAMA_WHY}" "" "$mode"; fi
+    done
+    for eng in hf llamafile; do
+      want "$eng" || continue
+      if [ "${EXT_OK[$eng]}" != 1 ]; then emit_gen "$eng" "$pid" "" "" "" "${EXT_WHY[$eng]}" "" nonstream; continue; fi
+      if [ "$eng" = hf ] && [ -n "$HF_MODEL_WHY" ]; then emit_gen hf "$pid" "" "" "" "$HF_MODEL_WHY" "" nonstream; continue; fi
+      if [ -n "$CELL_WHY" ]; then emit_gen "$eng" "$pid" "" "" "" "$CELL_WHY" "" nonstream
+      elif [ "$(rows_for "$eng" "$pid")" -le "${before[$eng-$pid]}" ]; then
+        emit_gen "$eng" "$pid" "" "" "" "engine driver ${EXT_SCRIPT[$eng]} gen exited $(cat "$d/$eng-$pid.driver.rc" 2>/dev/null || echo '?') without appending a row: $(tail -c 200 "$d/$eng-$pid.driver.err" 2>/dev/null | tr '\n' ' ')" "" nonstream
+      fi
+    done
+  done
 }
 
 # ---- the run ---------------------------------------------------------------------
@@ -498,6 +588,12 @@ PY
   fi
 
   for VERB in ${VERBS//,/ }; do
+  VERB_KEY=$VERB
+  if [ "$VERB" = serve ]; then
+    VERB_KEY="serve run"
+    serve_cell
+    continue
+  fi
   for pid in $(pids_for "$VERB"); do
     content=$(cat "$WORK/prompt-$pid.txt")
     d="$WORK/$SHA12/$VERB"
@@ -607,12 +703,12 @@ meta = {
     **json.load(open(ext)),
     "models": [json.loads(l) for l in open(models) if l.strip()],
     "not_covered": [
-        ("verbs serve and code (later slices of #3739)" if "chat" in verbs.split(",")
-         else "verbs chat, serve and code (later slices of #3739)"),
+        "verbs not run here: " + ", ".join(v for v in ("chat", "serve", "code") if v not in verbs.split(",")),
+        *(["apr serve's backend is unverified: its responses report none"] if "serve" in verbs.split(",") else []),
         *(["apr chat's backend is unverified: apr chat reports none (#3794)"] if "chat" in verbs.split(",") else []),
         "thinking ON (apr has no toggle until #3723)",
         "consumer-brief context rungs (#3716) and each engine's max accepted context",
-        "TTFT, which belongs to the serve verb's single OpenAI client",
+        "TTFT and decode rate: the serve verb's measurement goes through `apr test llm bench` (PERF-009), the next increment",
     ],
 }
 json.dump(meta, open(out, "w"), indent=2)
