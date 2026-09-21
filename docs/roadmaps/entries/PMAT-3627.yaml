@@ -1,0 +1,17 @@
+- id: PMAT-3627
+  github_issue: 3627
+  item_type: task
+  title: 'rmsnorm_contract::prop_scale_invariance asserts the ε=0 theorem against the ε=1e-6 implementation — fails whenever α²·mean(x²) ≈ ε (killed #3621 shard 1/3)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-20T21:27:27Z
+  updated: 2026-09-20T21:27:27Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ACCEPTANCE (hand-entered from issue #3627 done_when; minted on the PR branch so the AD-04 quorum can run -- pmat work status refuses a missing item). Done when: contracts/rmsnorm-kernel-v1.yaml Scale invariance obligation carries either the ε>0 formal or the α²·mean(x²) ≫ ε precondition; pv validate passes ~~regenerated with pv probar --binding~~ **WITHDRAWN 21:40Z** — b3 measured that pv probar --binding emits 7 #[ignore = "no binding available"] stubs for this contract; the tracked file''s 5 real tests were produced by the pre-monorepo external generator (20dda945b, 2026-02-18) and the header is false (class row: #3630). Instead: the tracked test is edited **directly**, the commit says so, and the file''s header is replaced by a true one (hand-maintained, contract-bound) the minimal input above ([0.0, -0.15964308], α=0.012254778) is a committed regression case that PASSES under the new assertion (i.e. the fixed test is exercised on the exact input that killed #3621), and a mutation that restores the ε=0 assertion turns it RED cargo'

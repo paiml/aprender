@@ -1,0 +1,208 @@
+{
+  "ticket": "PMAT-3118",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "e94aa59006c78b3889b1de312cd175696fbb163e",
+  "diff_sha256": "2fb324557d4059effd056f85f7aa9b8792cbbdcb66e262bd81173d41be766e22",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 6282,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff accurately implements the required filter. By fetching the `files` array via `gh pr list --json` and filtering DIRTY PRs with `select(any(.files[]?; .path == \"docs/roadmaps/roadmap.yaml\"))`, it restricts the merge driver resolution script to PRs that actually touch the roadmap file. This perfectly aligns with the ticket's goal to prevent the by-ID driver from pointlessly attempting to resolve PRs whose conflicts are strictly elsewhere. Tests cover the expected exclusion logic accurately.",
+      "findings": [],
+      "raw_bytes": 3270,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements the required selector refinement for ci_resolve_dirty.sh under PMAT-3118 (spec §6.4), ensuring that only DIRTY PRs that actually touch docs/roadmaps/roadmap.yaml are selected. All hermetic self-tests and static analysis gates pass, with no gates weakened or unrequested changes introduced.",
+      "findings": [
+        {
+          "claim": "gh_cmd requests the 'files' field from gh pr list --json to retrieve files changed by candidate PRs",
+          "file": "scripts/ci_resolve_dirty.sh",
+          "grounding": "cited",
+          "line": 81
+        },
+        {
+          "claim": "select_dirty filters candidates with select(any(.files[]?; .path == \"docs/roadmaps/roadmap.yaml\")) in both --pr and general selection branches",
+          "file": "scripts/ci_resolve_dirty.sh",
+          "grounding": "cited",
+          "line": 105
+        },
+        {
+          "claim": "Hermetic self-test passes 11/11 rows, verifying that DIRTY PRs not touching docs/roadmaps/roadmap.yaml are excluded in general selection and when explicitly passed via --pr 104",
+          "command": "bash scripts/ci_resolve_dirty.sh --self-test",
+          "file": "scripts/ci_resolve_dirty.sh",
+          "grounding": "measured",
+          "line": 326,
+          "output": "PASS  row 1  3-way-by-id driver fixture under init.defaultBranch=main\nPASS  row 2  3-way-by-id driver fixture under init.defaultBranch=master\nPASS  row 3  --pr 103 selects exactly that DIRTY PR (canned gh payload)\nPASS  row 4  no --pr selects both DIRTY PRs, never the CLEAN one\nPASS  row 5  a DIRTY PR that does not touch roadmap.yaml is NEVER selected (104)\nPASS  row 6    ...even when named explicitly with --pr 104: an empty selection, not a pass-through\nPASS  row 7  --apply pushes to origin\nPASS  row 8  --apply --no-push leaves local branch and does not push\nPASS  row 9  apply fails when push fails (mutation)\nPASS  row 10 gh is never invoked under --selftest (PATH shim engages)\nPASS  row 11 union binds on a branch older than the declaration (both polarities)\n11/11 rows, 0 failed"
+        },
+        {
+          "claim": "check_bashrs_gate passes with zero SEC/DET/IDEM errors on the modified script",
+          "command": "bash scripts/check_bashrs_gate.sh",
+          "file": "scripts/ci_resolve_dirty.sh",
+          "grounding": "measured",
+          "line": 1,
+          "output": "bashrs-gate: PASS 350 file(s) linted, receipt matched, 0 SEC/DET/IDEM errors (1 SC10xx suppressed - bashrs#226; 17 other)"
+        },
+        {
+          "claim": "check_shell_lint_ratchet passes with no baseline growth",
+          "command": "bash scripts/check_shell_lint_ratchet.sh",
+          "file": "scripts/ci_resolve_dirty.sh",
+          "grounding": "measured",
+          "line": 1,
+          "output": "=== bashrs must see every script in scripts/ (check_shell_lint_ratchet.sh) ===\n222 script(s) scanned, 6 error line(s)\nok    ratchet  scripts/shell_lint_baseline.txt did not grow (0 removed) vs 00e5d2dde\n               comparand: merge-base with origin/main (protected; a pull request cannot rewrite it)\nbaseline 6\nPASS (ratcheted)"
+        }
+      ],
+      "raw_bytes": 7717,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements PMAT-3118 (spec §6.4) by narrowing `ci_resolve_dirty.sh` to only select PRs that are DIRTY and touch `docs/roadmaps/roadmap.yaml`. All hermetic self-tests and quality gates pass. No refuting evidence or gate weakening found.",
+      "findings": [
+        {
+          "claim": "gh_cmd includes 'files' in gh pr list --json to fetch the list of changed files for each PR",
+          "file": "scripts/ci_resolve_dirty.sh",
+          "grounding": "cited",
+          "line": 81
+        },
+        {
+          "claim": "select_dirty filters candidates with select(any(.files[]?; .path == \"docs/roadmaps/roadmap.yaml\")) in both --pr restricted and unrestricted modes",
+          "file": "scripts/ci_resolve_dirty.sh",
+          "grounding": "cited",
+          "line": 105
+        },
+        {
+          "claim": "Hermetic self-test passes 11/11 rows, validating that DIRTY PRs not touching docs/roadmaps/roadmap.yaml are excluded even when passed explicitly via --pr",
+          "command": "bash scripts/ci_resolve_dirty.sh --selftest",
+          "file": "scripts/ci_resolve_dirty.sh",
+          "grounding": "measured",
+          "line": 330,
+          "output": "PASS  row 1  3-way-by-id driver fixture under init.defaultBranch=main\nPASS  row 2  3-way-by-id driver fixture under init.defaultBranch=master\nPASS  row 3  --pr 103 selects exactly that DIRTY PR (canned gh payload)\nPASS  row 4  no --pr selects both DIRTY PRs, never the CLEAN one\nPASS  row 5  a DIRTY PR that does not touch roadmap.yaml is NEVER selected (104)\nPASS  row 6    ...even when named explicitly with --pr 104: an empty selection, not a pass-through\nPASS  row 7  --apply pushes to origin\nPASS  row 8  --apply --no-push leaves local branch and does not push\nPASS  row 9  apply fails when push fails (mutation)\nPASS  row 10 gh is never invoked under --selftest (PATH shim engages)\nPASS  row 11 union binds on a branch older than the declaration (both polarities)\n11/11 rows, 0 failed"
+        },
+        {
+          "claim": "Static analysis and shell lint quality gates pass with zero SEC/DET/IDEM errors and no baseline growth",
+          "command": "bash scripts/check_bashrs_gate.sh && bash scripts/check_shell_lint_ratchet.sh",
+          "file": "scripts/ci_resolve_dirty.sh",
+          "grounding": "measured",
+          "line": 1,
+          "output": "bashrs-gate: PASS 350 file(s) linted, receipt matched, 0 SEC/DET/IDEM errors (1 SC10xx suppressed - bashrs#226; 17 other)\n=== bashrs must see every script in scripts/ (check_shell_lint_ratchet.sh) ===\n222 script(s) scanned, 6 error line(s)\nok    ratchet  scripts/shell_lint_baseline.txt did not grow (0 removed) vs 00e5d2dde\n               comparand: merge-base with origin/main (protected; a pull request cannot rewrite it)\nbaseline 6\nPASS (ratcheted)"
+        }
+      ],
+      "raw_bytes": 7467,
+      "err_bytes": 59,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "scripts/ci_resolve_dirty.sh",
+      "line": 1,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "Static analysis and shell lint quality gates pass with zero SEC/DET/IDEM errors and no baseline growth",
+        "check_bashrs_gate passes with zero SEC/DET/IDEM errors on the modified script",
+        "check_shell_lint_ratchet passes with no baseline growth"
+      ]
+    },
+    {
+      "file": "scripts/ci_resolve_dirty.sh",
+      "line": 81,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "gh_cmd includes 'files' in gh pr list --json to fetch the list of changed files for each PR",
+        "gh_cmd requests the 'files' field from gh pr list --json to retrieve files changed by candidate PRs"
+      ]
+    },
+    {
+      "file": "scripts/ci_resolve_dirty.sh",
+      "line": 105,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "select_dirty filters candidates with select(any(.files[]?; .path == \"docs/roadmaps/roadmap.yaml\")) in both --pr and general selection branches",
+        "select_dirty filters candidates with select(any(.files[]?; .path == \"docs/roadmaps/roadmap.yaml\")) in both --pr restricted and unrestricted modes"
+      ]
+    },
+    {
+      "file": "scripts/ci_resolve_dirty.sh",
+      "line": 326,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Hermetic self-test passes 11/11 rows, verifying that DIRTY PRs not touching docs/roadmaps/roadmap.yaml are excluded in general selection and when explicitly passed via --pr 104"
+      ]
+    },
+    {
+      "file": "scripts/ci_resolve_dirty.sh",
+      "line": 330,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Hermetic self-test passes 11/11 rows, validating that DIRTY PRs not touching docs/roadmaps/roadmap.yaml are excluded even when passed explicitly via --pr"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
