@@ -39,7 +39,6 @@ const MEASUREMENT_TIME_SECS: u64 = 30;
 const WARMUP_TIME_SECS: u64 = 5;
 const TOKENS_PER_ITERATION: usize = 50;
 
-
 #[cfg(feature = "cuda")]
 struct BenchContext {
     cuda_model: OwnedQuantizedModelCuda,

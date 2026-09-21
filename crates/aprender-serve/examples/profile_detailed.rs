@@ -148,31 +148,13 @@ fn main() -> Result<(), RealizarError> {
         1000.0 / min_time_ddr5
     );
 
-    // llama.cpp comparison
-    let llamacpp_toks = 100.0;
-    let gap = llamacpp_toks / (1000.0 / median);
-    println!("\n=== llama.cpp Comparison ===");
-    println!("llama.cpp: ~{:.0} tok/s (reported baseline)", llamacpp_toks);
-    println!("realizar:  ~{:.1} tok/s", 1000.0 / median);
-    println!("Gap:       {:.1}x slower", gap);
-
-    // Breakdown of what's needed to close the gap
-    println!("\n=== Gap Analysis ===");
-    if gap > 3.0 {
-        println!("Performance gap suggests:");
-        println!(
-            "  1. Memory bandwidth not saturated ({:.0}% DDR4)",
-            (effective_bw_gbs / ddr4_bw_gbs) * 100.0
-        );
-        println!("  2. Possible CPU stalls (branch mispredicts, cache misses)");
-        println!("  3. Missing optimizations (tiled matmul, Q8 activations)");
-    } else if gap > 1.5 {
-        println!("Performance gap suggests:");
-        println!("  1. Single-threaded vs multi-threaded difference");
-        println!("  2. Missing L3 cache optimizations");
-    } else {
-        println!("Within acceptable range of llama.cpp performance!");
-    }
+    // #3773: a "llama.cpp Comparison" and "Gap Analysis" keyed on an asserted
+    // "~100 tok/s (reported baseline)" were removed; the measured figure stays.
+    println!("\nrealizar:  ~{:.1} tok/s", 1000.0 / median);
+    println!(
+        "Memory bandwidth used: {:.0}% of DDR4",
+        (effective_bw_gbs / ddr4_bw_gbs) * 100.0
+    );
 
     // Architecture-specific recommendations
     println!("\n=== Optimization Recommendations ===");

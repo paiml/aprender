@@ -204,12 +204,14 @@ fn main() -> Result<(), RealizarError> {
         overhead_ms / actual_ms * 100.0
     );
 
-    // Compare to Ollama
-    let ollama_ms = 14.2; // 70.59 tok/s
-    println!("\n=== vs Ollama ===");
-    println!("Ollama:         {:>8.1} ms (70.59 tok/s)", ollama_ms);
-    println!("realizar:       {:>8.1} ms (18.2 tok/s)", actual_ms);
-    println!("Ratio:          {:>8.1}x slower", actual_ms / ollama_ms);
+    // #3773: a "vs Ollama" ratio against an asserted 14.2 ms, printed beside a
+    // hard-coded "(18.2 tok/s)" for realizar, was removed; the measured value
+    // and its own throughput are printed instead.
+    println!(
+        "\nrealizar:       {:>8.1} ms ({:.1} tok/s)",
+        actual_ms,
+        1000.0 / actual_ms
+    );
 
     // Matmul GFLOPS analysis
     let qkv_flops = 2.0 * qkv_dim as f64 * hidden_dim as f64;

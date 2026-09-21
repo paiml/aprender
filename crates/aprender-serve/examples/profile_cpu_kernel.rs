@@ -161,29 +161,9 @@ fn main() {
     );
     println!("28 layers: {:.1} ms", total_us / 1000.0);
     println!("Estimated: {:.1} tok/s", tok_s);
-
-    // Target analysis
-    let ollama_tok_s = 265.0;
-    let target_tok_s = ollama_tok_s * 2.0;
-    println!("\n=== Target Analysis ===");
-    println!("Ollama CPU: {:.0} tok/s", ollama_tok_s);
-    println!("2x target: {:.0} tok/s", target_tok_s);
-    println!("Current: {:.1} tok/s", tok_s);
-    println!("Gap: {:.1}x", target_tok_s / tok_s);
-
-    // Required improvement
-    let required_speedup = target_tok_s / tok_s;
-    let required_matmul_us = matmul_us / required_speedup;
-    println!("\nTo reach 2x:");
-    println!(
-        "  Need matmul: {:.1} µs (currently {:.1} µs)",
-        required_matmul_us, matmul_us
-    );
-    println!(
-        "  Need per-dot: {:.1} ns (currently {:.1} ns)",
-        per_dot_ns / required_speedup,
-        per_dot_ns
-    );
+    println!("Per dot: {:.1} ns, matmul: {:.1} µs", per_dot_ns, matmul_us);
+    // #3773: a "Target Analysis" against an asserted Ollama CPU 265 tok/s (and a
+    // 2x target derived from it) was removed; only measured figures remain.
 }
 
 fn quantize_to_q8k(values: &[f32]) -> (Vec<f32>, Vec<i8>) {

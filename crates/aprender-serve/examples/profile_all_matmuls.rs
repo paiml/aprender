@@ -174,22 +174,8 @@ fn main() -> Result<(), RealizarError> {
         other_ms / actual_ms * 100.0
     );
 
-    // Ollama comparison
-    let ollama_ms = 14.2;
-    println!("\n=== vs Ollama ===");
-    println!("Ollama: {:.1} ms/tok (70.59 tok/s)", ollama_ms);
-    println!("realizar matmuls: {:.1} ms", model_matmul_ms);
-    println!("Matmul ratio: {:.1}x", model_matmul_ms / ollama_ms);
-
-    // If our matmuls alone take longer than Ollama's full forward pass,
-    // our kernels are the bottleneck
-    if model_matmul_ms > ollama_ms {
-        println!(
-            "\n⚠️  Our matmuls alone ({:.1} ms) exceed Ollama total ({:.1} ms)",
-            model_matmul_ms, ollama_ms
-        );
-        println!("   Root cause: Matmul kernels need optimization");
-    }
+    // #3773: the "vs Ollama" ratio used an asserted 14.2 ms/tok; removed.
+    println!("\nrealizar matmuls: {:.1} ms", model_matmul_ms);
 
     Ok(())
 }

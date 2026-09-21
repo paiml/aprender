@@ -85,7 +85,6 @@ fn main() {
     println!("  Throughput: {:.2} tok/s", test_tps);
     println!();
 
-
     // Analysis
     println!("=== Gap Breakdown ===");
     println!("1. test model underestimates real transformer cost");

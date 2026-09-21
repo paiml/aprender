@@ -270,26 +270,12 @@ fn main() -> Result<(), RealizarError> {
         unexplained_ms / actual_ms * 100.0
     );
 
-    // Ollama comparison
-    let ollama_ms = 14.05;
-    println!("\n=== vs Ollama ===");
-    println!("Ollama:    {:.2} ms/tok (71.2 tok/s)", ollama_ms);
+    // #3773: the "vs Ollama" / "Path to Parity" section divided by an asserted
+    // Ollama 14.05 ms/tok; only the measured side is reported.
     println!(
-        "realizar:  {:.2} ms/tok ({:.1} tok/s)",
+        "\nrealizar:  {:.2} ms/tok ({:.1} tok/s)",
         actual_ms,
         1000.0 / actual_ms
-    );
-    println!("Gap:       {:.2}x", actual_ms / ollama_ms);
-
-    // What would it take to match?
-    println!("\n=== Path to Parity ===");
-    println!(
-        "Our matmuls alone ({:.1} ms) exceed Ollama total ({:.1} ms)",
-        per_forward_ms, ollama_ms
-    );
-    println!(
-        "Root cause: Matmul kernels are {:.2}x slower than llama.cpp",
-        per_forward_ms / ollama_ms
     );
 
     // ComputeBlocks/sec calculation

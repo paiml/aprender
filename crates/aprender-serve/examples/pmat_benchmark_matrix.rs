@@ -44,7 +44,9 @@ fn llama_bench_tg64(model: &str, ngl: u32) -> Result<f64, String> {
         })?;
     let ngl = ngl.to_string();
     let out = Command::new(&bin)
-        .args(["-m", model, "-p", "0", "-n", "64", "-ngl", &ngl, "-o", "json"])
+        .args([
+            "-m", model, "-p", "0", "-n", "64", "-ngl", &ngl, "-o", "json",
+        ])
         .output()
         .map_err(|e| format!("UNMEASURED: {bin} did not start: {e}"))?;
     if !out.status.success() {
@@ -119,7 +121,11 @@ fn report_cell(backend: &str, tok_s: f64, llama: &Result<f64, String>) {
     match llama {
         Ok(l) => {
             let speedup = tok_s / l;
-            let status = if speedup >= 2.0 { "✅ PASS" } else { "❌ FAIL" };
+            let status = if speedup >= 2.0 {
+                "✅ PASS"
+            } else {
+                "❌ FAIL"
+            };
             println!("         llama.cpp:    {l:.1} tok/s (pinned llama-bench, tg64)");
             println!("         Speedup:      {speedup:.2}x {status}");
         },

@@ -60,32 +60,8 @@ fn main() -> Result<(), RealizarError> {
     println!("Per token:    {:.2} ms", per_token_ms);
     println!("Throughput:   {:.1} tok/s", tok_per_sec);
 
-    // Compare to Ollama
-    let ollama_tok_s = 71.17;
-    let ollama_ms = 1000.0 / ollama_tok_s;
-    println!("\n=== vs Ollama (CPU) ===");
-    println!(
-        "Ollama:       {:.2} ms/tok ({:.1} tok/s)",
-        ollama_ms, ollama_tok_s
-    );
-    println!(
-        "realizar:     {:.2} ms/tok ({:.1} tok/s)",
-        per_token_ms, tok_per_sec
-    );
-    println!("Gap:          {:.2}x", per_token_ms / ollama_ms);
-
-    // What we need
-    let target_2x = ollama_tok_s * 2.0;
-    let target_ms = 1000.0 / target_2x;
-    println!("\n=== Target: 2x Ollama ===");
-    println!(
-        "Target:       {:.2} ms/tok ({:.1} tok/s)",
-        target_ms, target_2x
-    );
-    println!(
-        "Gap:          {:.2}x speedup needed",
-        per_token_ms / target_ms
-    );
+    // #3773: "vs Ollama (CPU)" and a "2x Ollama" target were computed from an
+    // asserted 71.17 tok/s; removed. The measured summary above stands.
 
     Ok(())
 }

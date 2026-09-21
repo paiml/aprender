@@ -137,20 +137,12 @@ fn main() -> Result<(), RealizarError> {
     );
     println!("(sum = {} to prevent optimization)", sum); // Prevent dead code elimination
 
-    // Comparison
-    println!("\n=== Ollama Comparison ===");
-    let ollama_ms = 14.05;
-    println!("Ollama:       {:.2} ms/tok (71.2 tok/s)", ollama_ms);
+    // #3773: the "Ollama Comparison" divided by an asserted 14.05 ms/tok; only
+    // the measured side is reported.
     println!(
-        "realizar:     {:.2} ms/tok ({:.1} tok/s)",
+        "\nrealizar:     {:.2} ms/tok ({:.1} tok/s)",
         per_token_ms, tok_per_s
     );
-    println!("Gap:          {:.2}x", per_token_ms / ollama_ms);
-
-    // What would it take to match Ollama?
-    let overhead_to_remove = per_token_ms - ollama_ms;
-    println!("\n=== Path to Parity ===");
-    println!("Overhead to remove: {:.1} ms/token", overhead_to_remove);
     println!(
         "If Rayon overhead ({:.1} ms) removed: {:.1} ms/tok ({:.1} tok/s)",
         rayon_overhead_ms,

@@ -118,12 +118,8 @@ fn main() -> Result<(), RealizarError> {
         (toks_per_sec / max_toks) * 100.0
     );
 
-    // Compare to llama.cpp
-    let llamacpp_toks = 100.0;
-    println!("\nllama.cpp comparison:");
-    println!("  llama.cpp: ~{:.0} tok/s", llamacpp_toks);
-    println!("  realizar:  ~{:.0} tok/s", toks_per_sec);
-    println!("  Gap:       {:.1}x", llamacpp_toks / toks_per_sec);
+    // #3773: a "llama.cpp comparison" against an asserted ~100 tok/s was removed.
+    println!("\n  realizar:  ~{:.0} tok/s", toks_per_sec);
 
     Ok(())
 }

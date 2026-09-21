@@ -365,13 +365,16 @@ fn print_pmat_verification(
     }
     println!();
 
-    let all_pass = point_41 && point_42 && point_49;
+    // An unmeasured Point 41 leaves the verdict INCOMPLETE, never PASS (#3773).
+    let point_41 = llamacpp_stats
+        .as_ref()
+        .map(|l| apr_stats.mean_throughput >= l.mean_throughput * 1.25);
     println!(
         "  Overall: {}",
-        if all_pass {
-            "✓ ALL CORE POINTS PASS"
-        } else {
-            "✗ NEEDS WORK"
+        match point_41 {
+            None => "○ INCOMPLETE (Point 41 UNMEASURED)",
+            Some(true) if point_42 && point_49 => "✓ ALL CORE POINTS PASS",
+            Some(_) => "✗ NEEDS WORK",
         }
     );
     println!();

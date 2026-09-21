@@ -47,17 +47,8 @@ fn main() -> Result<(), RealizarError> {
         overhead_per_token_us, overhead_per_token_ms
     );
 
-    // Impact on gap
-    let actual_ms = 31.0; // Current performance
-    let ollama_ms = 14.0; // Ollama baseline
-    let gap_ms = actual_ms - ollama_ms;
-    println!("\n=== Impact Analysis ===");
-    println!("Current gap to Ollama: {:.1} ms", gap_ms);
-    println!(
-        "Q8K overhead: {:.2} ms ({:.0}% of gap)",
-        overhead_per_token_ms,
-        overhead_per_token_ms / gap_ms * 100.0
-    );
+    // #3773: an "Impact Analysis" against a typed-in "gap to Ollama" (31.0 ms
+    // current vs 14.0 ms Ollama, neither measured here) was removed.
 
     // Could we skip Q8K?
     // The Q8K path gives VNNI acceleration but adds quantization overhead
