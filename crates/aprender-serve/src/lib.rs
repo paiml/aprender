@@ -226,6 +226,8 @@ pub mod cache;
 /// Models declare required operations via `ArchConstraints`; GPU backends
 /// declare supported operations. Mismatch = refuse at load time.
 pub mod capability;
+/// PMAT-3596: will a request fit on the GPU — decided before loading (#3596).
+pub mod capacity;
 /// FALSIFY-CB-008 (aprender#2753): "No frozen slots — all M slots produce distinct
 /// tokens per decode step (not constant)", as a checker whose discrimination controls
 /// run in the ordinary workspace `--lib` line rather than only on a nightly GPU lane.
