@@ -2,3 +2,22 @@
 check_book_examples_executable.sh
 check_mcp_never_path_resolves_apr.sh
 check_multiplatform_dogfood.sh
+# --- revealed by #3644, not added by it: check_guards_are_wired.sh read the step
+# name `guard_tree.sh's own case table` as a bare guard_tree.sh dispatch and
+# counted the whole cargo-classified population as wired. These three were dark
+# at the comparand and are recorded so the gap is VISIBLE; each may only leave.
+# check_pathonly_devdeps_unused_in_src.sh was the fourth and is NOT here: it
+# invokes no build tool, its CARGO_RE match was three comments, and rewording
+# them put it in the --no-cargo population guard-tree runs.
+check_model_ladder.sh
+# ^ the T-2 release gate over contracts/model-capability-ladder-v1.yaml, declared in
+#   Cargo.toml [package.metadata.dogfood]; a release-time gate, not a PR gate --
+#   the same class as check_multiplatform_dogfood.sh above.
+check_pr_review_counts.sh
+# ^ dark since the receipt job left ci.yml (PRQ-013/#2982); that change's comment
+#   says guard_tree.sh runs it, but a comment naming the build tool classified it
+#   out of --no-cargo. RED on main today ("6 row(s) disagree with the tree"), so
+#   it cannot be wired until that is fixed: #3646.
+check_pr_review_receipt.sh
+# ^ same move; takes a receipt path, so a bare run is RED by design (S6.3) and
+#   nothing invokes it with one: #3646.
