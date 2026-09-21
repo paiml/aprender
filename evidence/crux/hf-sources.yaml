@@ -1,0 +1,18 @@
+# evidence/crux/hf-sources.yaml (#3774, the hf engine of #3739).
+# The HF column runs the SOURCE weights a GGUF was quantized from (the 19:03Z
+# amendment: "GGUF Q4_K cells ... HF runs the source bf16 weights"). This maps each
+# GGUF, by its sha256, to that source at a PINNED revision; a moving branch is not
+# a pin. The GGUF side is provenance: its repo's LFS sha256 must equal the file's.
+# A GGUF with no entry here is a refused hf row naming the gap, never an absence.
+schema: crux-hf-sources/v1
+sources:
+  cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046:
+    gguf:
+      repo: Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF
+      revision: f86cb2c1fa58255f8052cc32aeede1b7482d4361
+      file: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+      lfs_sha256_matches: true   # measured 2026-09-21 via the HF API (?blobs=true)
+    hf:
+      repo: Qwen/Qwen2.5-Coder-1.5B-Instruct
+      revision: 2e1fd397ee46e1388853d2af2c993145b0f1098a
+      dtype: bfloat16

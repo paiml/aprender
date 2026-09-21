@@ -196,6 +196,20 @@ def parse_engine_json(stdout):
 # ------------------------------------------------------------------ judge --
 
 
+def degenerate(text):
+    """A degenerate answer is NO answer, from any engine. Measured on #3774's
+    integration run: a broken HF load emitted token id 0 ("!") 64 times, and
+    the golden greeting's own pattern "!" (golden_output.rs) scored that CORRECT.
+    apr's #3726 failure mode is the same shape. Threshold: at least 8 non-space
+    characters, 90% or more of them one character, which no real answer to the
+    golden prompts ("4", "The capital of France is Paris.") comes near."""
+    chars = [ch for ch in (text or "") if not ch.isspace()]
+    if len(chars) < 8:
+        return False
+    top = max(chars.count(ch) for ch in set(chars))
+    return top >= 0.9 * len(chars)
+
+
 def correct(entry, expect_any):
     return entry.get("answered", False) and any(p in (entry.get("answer") or "") for p in expect_any)
 
@@ -237,6 +251,9 @@ def engine_entry(row, prompt):
         return e
     if p["answer"] is None:
         e["why"] = p["why"]
+        return e
+    if degenerate(p["answer"]):
+        e["why"] = "degenerate output (one character is >=90%% of it): %r" % p["answer"][:24]
         return e
     be = p.get("backend") if engine == "apr" else None
     if be and (be.get("fell_back") or (row.get("backend") and be.get("ran") != row.get("backend"))):
