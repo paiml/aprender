@@ -214,8 +214,8 @@ Automatic template detection from model metadata:
 
 Comparisons against other engines are published only with a dated receipt, in
 [docs/BEATS.md](https://github.com/paiml/aprender/blob/main/docs/BEATS.md). The
-llama.cpp (256 tok/s) and Ollama (228 tok/s) rows and the "8--21% faster" claim
-that stood here had no receipt and were removed (#3773).
+competitor rows and the relative-speed claim that stood here had no receipt and
+were removed (#3773).
 
 ### Classical ML (APR Format)
 

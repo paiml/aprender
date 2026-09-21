@@ -183,8 +183,8 @@ apr serve model.gguf --port 8080 --gpu --batch
 | GPU (batched) | ~850 tok/s | 1.9 GB |
 
 Comparisons against other engines are published only with a dated receipt, in
-[docs/BEATS.md](https://github.com/paiml/aprender/blob/main/docs/BEATS.md). An earlier "2.9x faster than Ollama" line here,
-set against an unreceipted "Ollama ~333 tok/s", was removed (#3773).
+[docs/BEATS.md](https://github.com/paiml/aprender/blob/main/docs/BEATS.md). An earlier
+competitor ratio here had no receipt and was removed (#3773).
 
 #### GPU Server Output
 
