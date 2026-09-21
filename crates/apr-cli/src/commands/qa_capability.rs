@@ -421,6 +421,31 @@ pub(crate) fn hybrid_loader_architecture(_path: &Path) -> bool {
     false
 }
 
+/// #3714: is this a Qwen3-MoE file? The dense loader BUILDS it (the MoE
+/// placeholder fills its dense FFN) but cannot FORWARD it, so its golden and
+/// throughput gates go through the runtime entry point — the routed-expert
+/// forward, CUDA (#3714) or CPU (#3367) — and every gate measured through the
+/// dense `OwnedQuantizedModel`/`OwnedQuantizedModelCuda` skips, saying so.
+///
+/// Reads the header through the mmap, never the whole file: the siblings
+/// above `std::fs::read` all 18.5 GB of a 30B-A3B file to ask the same kind
+/// of question.
+#[cfg(feature = "inference")]
+pub(crate) fn moe_loader_architecture(path: &Path) -> bool {
+    realizar::gguf::MappedGGUFModel::from_path(path).is_ok_and(|mapped| {
+        mapped
+            .model
+            .architecture()
+            .is_some_and(|a| realizar::tensor_names::normalize_architecture(a) == "qwen3_moe")
+    })
+}
+
+/// Without `inference` there is no runtime to route to.
+#[cfg(not(feature = "inference"))]
+pub(crate) fn moe_loader_architecture(_path: &Path) -> bool {
+    false
+}
+
 /// Extract the architecture string and the tensor table from GGUF metadata.
 ///
 /// Uses aprender's GGUF reader to parse metadata without loading tensors.

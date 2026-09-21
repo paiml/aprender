@@ -168,6 +168,62 @@ impl CudaExecutor {
         Ok(output)
     }
 
+    /// [`Self::elementwise_mul_gpu`] into a caller-owned buffer: the same
+    /// kernel, no allocation, enqueued on the stream (no sync).
+    ///
+    /// #3714: the qwen3moe CUDA forward scales each routed expert's SwiGLU
+    /// activation by its router weight this way, 8 experts × 48 layers per
+    /// token, where an allocation per call would dominate the decode.
+    pub fn elementwise_mul_into(
+        &mut self,
+        input1: &GpuBuffer<f32>,
+        input2: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        n: u32,
+    ) -> Result<(), GpuError> {
+        let kernel_type = KernelType::ElementwiseMul { n };
+        let kernel_name = self.kernels.kernel_name(&kernel_type);
+        let cache_key = format!("elementwise_mul_{}", n);
+
+        if !self.modules.contains_key(&cache_key) {
+            let ptx = self.kernels.generate_ptx(&kernel_type);
+            let module = self.compile_ptx(&ptx)?;
+            self.modules.insert(cache_key.clone(), module);
+        }
+
+        let module = self
+            .modules
+            .get_mut(&cache_key)
+            .expect("module just inserted");
+
+        let threads = 256;
+        let blocks = (n + threads - 1) / threads;
+        let config = LaunchConfig::grid_2d(blocks, 1, threads, 1);
+
+        let mut ptr_input1 = input1.as_ptr();
+        let mut ptr_input2 = input2.as_ptr();
+        let mut ptr_output = output.as_ptr();
+        let mut n_val = n;
+
+        // SAFETY: the caller's three buffers each hold at least `n` f32 (the
+        // same contract `elementwise_mul_gpu` meets by allocating the output).
+        unsafe {
+            self.stream.launch_kernel(
+                module,
+                kernel_name,
+                &config,
+                &mut [
+                    std::ptr::from_mut(&mut ptr_input1) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_input2) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_output) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void,
+                ],
+            )?;
+        }
+
+        Ok(())
+    }
+
     /// PAR-023: Fused SwiGLU activation on GPU buffers
     ///
     /// Computes: output[i] = silu(gate[i]) * up[i]

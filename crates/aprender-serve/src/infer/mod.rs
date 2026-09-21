@@ -574,4 +574,6 @@ include!("mod_log_transformer_eos.rs");
 include!("mod_05.rs");
 include!("batch.rs");
 
+/// #3714: qwen3moe backend selection — the CUDA forward, or the CPU chain with a printed reason.
+pub mod qwen3_moe_dispatch;
 pub mod qwen3_moe_generate;

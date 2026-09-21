@@ -234,13 +234,16 @@ fn run_gguf_inference(
     let infer_start = Instant::now();
     let canonical_arch = crate::tensor_names::normalize_architecture(&model.config.architecture);
     let (tokens, used_gpu) = if canonical_arch == "qwen3_moe" {
-        let tokens = crate::infer::qwen3_moe_generate::run_qwen3_moe_generate(
+        // #3714: the CUDA forward serves unless --no-gpu; a GPU that cannot
+        // serve prints its reason before the CPU chain runs. This site used to
+        // hard-code `(tokens, false)` and never try CUDA at all.
+        crate::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(
             &mapped,
             &model,
             &input_tokens,
             &gen_config,
-        )?;
-        (tokens, false) // CPU-only path; GPU MoE wiring is M32d follow-up
+            config.no_gpu,
+        )?
     } else if is_qwen35 {
         // #3477: the hybrid now has a GPU forward (#3090), so `apr run --gpu`
         // routes to it and reports CUDA; the CPU forward (#3091) serves

@@ -121,9 +121,10 @@ pub use fused_q5k_q6k::{
 // Re-export parallel K-quant operations (PMAT-802)
 // LAYOUT-002: All kernels are ROW-MAJOR. No colmajor/auto aliases.
 pub use parallel_k::{
-    fused_q4k_parallel_matvec, fused_q4k_parallel_matvec_into, fused_q4k_q8k_ffn_up_gate_into,
-    fused_q4k_q8k_parallel_matvec_into, fused_q4k_tiled_matvec, fused_q5k_parallel_matvec,
-    fused_q5k_parallel_matvec_into, fused_q6k_parallel_matvec, fused_q6k_parallel_matvec_into,
+    fp32_activations_scoped, fused_q4k_parallel_matvec, fused_q4k_parallel_matvec_into,
+    fused_q4k_q8k_ffn_up_gate_into, fused_q4k_q8k_parallel_matvec_into, fused_q4k_tiled_matvec,
+    fused_q5k_parallel_matvec, fused_q5k_parallel_matvec_into, fused_q6k_parallel_matvec,
+    fused_q6k_parallel_matvec_into, with_fp32_activations,
 };
 
 // Re-export activation functions (PMAT-802)

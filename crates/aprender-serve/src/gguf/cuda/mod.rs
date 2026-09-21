@@ -37,6 +37,8 @@ mod backend;
 mod forward;
 /// PMAT-3477 (#3090): Qwen3.5's Gated `DeltaNet` block on the GPU.
 mod forward_qwen35_cuda;
+/// #3714: the Qwen3-MoE decoder resident on the GPU.
+mod forward_qwen3_moe_resident;
 mod generation;
 mod speculative;
 mod weights;
@@ -45,6 +47,8 @@ mod weights;
 pub use backend::CudaBackend;
 // PMAT-3477 (#3090): the Gated DeltaNet GPU model and its device state.
 pub use forward_qwen35_cuda::{Qwen35CudaModel, Qwen35CudaState};
+// #3714: the Qwen3-MoE GPU model, its device state, and the MoE shape it is built for.
+pub use forward_qwen3_moe_resident::{Qwen3MoeCudaModel, Qwen3MoeCudaState, Qwen3MoeShape};
 // PMAT-072: Step-wise batched decode state for lock-releasing scheduler
 pub use generation::BatchedDecodeState;
 

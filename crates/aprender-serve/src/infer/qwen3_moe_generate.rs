@@ -49,7 +49,7 @@ use rand::{Rng, SeedableRng};
 /// Mirrors the dense path's `Self::sample_advanced` (in
 /// `gguf/inference/fails.rs:100`) but uses a seeded `StdRng`
 /// instead of `rand::rng()` for reproducibility.
-fn sample_from_logits(
+pub(crate) fn sample_from_logits(
     logits: &[f32],
     config: &QuantizedGenerateConfig,
     rng: &mut StdRng,
