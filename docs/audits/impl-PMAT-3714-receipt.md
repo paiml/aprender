@@ -28,6 +28,7 @@ The reference is `forward_single_qwen3_moe_with_cache` with FP32 activations. Ev
 | lambda | Instruct-2507 | `<\|im_start\|>user\n` + text | **1.000000** | **0** | 5.1 s / 0.78 s |
 | gx10 | Coder-30B-A3B | plain text | **1.000000** | **0** | 24.8 s / 1.89 s |
 | gx10 | Coder-30B-A3B | `<\|im_start\|>user\n` + text | **1.000000** | **0** | 43.4 s / 1.83 s |
+| gx10 | Instruct-2507 | `<\|im_start\|>user\n` + text | **1.000000** | **0** | 23.2 s / 1.89 s |
 
 ### The oracle still bites: routing faults injected in test builds only
 A control and three faults, the same GPU model and the same reference, on both hosts. lambda and gx10 agree to 5 decimals; the one 6th-decimal difference is shown:
@@ -49,6 +50,7 @@ A control and three faults, the same GPU model and the same reference, on both h
 | lambda | Instruct-2507 | **0** | CUDA RTX 4090, weights resident in 929 ms | 50 positions, min cosine 1.0000 | "The capital of France is Paris." | 87 tok/s incl. token-by-token prefill |
 | lambda | Coder-30B-A3B | **0** | CUDA RTX 4090, 942 ms | 50 positions, 1.0000 | "Paris" | 88 tok/s |
 | gx10 | Coder-30B-A3B | **0** | CUDA GB10, 3974 ms | 50 positions, 1.0000 | "Paris" | 36.5 tok/s |
+| gx10 | Instruct-2507 | **0** | CUDA GB10, 3634 ms | 50 positions, 1.0000 | "The capital of France is Paris." | 35.7 tok/s |
 
 ### `apr qa --json` (the ladder's flags: `--offline --skip-throughput --skip-ollama --skip-gpu-speedup --skip-ptx-parity --skip-gpu-state --skip-format-parity`)
 | host | file | rc | report | capability_match | golden_output | served by |
@@ -56,6 +58,7 @@ A control and three faults, the same GPU model and the same reference, on both h
 | lambda | Instruct-2507 | 0 | 12 gates, 5 executed | PASS | PASS | 3 of 3 golden runs print `Backend: GPU` + F2 1.0000 |
 | lambda | Coder-30B-A3B | 0 | 12 gates, 5 executed | PASS | PASS | 3 of 3 on the GPU |
 | gx10 | Coder-30B-A3B | 0 | 12 gates, 5 executed | PASS | PASS | 3 of 3 on the GPU, 36 tok/s |
+| gx10 | Instruct-2507 | 0 | 12 gates, 5 executed | PASS | PASS | 3 of 3 on the GPU |
 
 The golden gate's PASS text on this base still reads "(GPU hybrid forward, #3090)". That is main's stale string, and #3711 (aprender-0e, in the 0.69.1 fold) replaces it with the backend taken from `used_gpu`. The `Backend: GPU` lines are what show the GPU served.
 
@@ -67,7 +70,7 @@ The golden gate's PASS text on this base still reads "(GPU hybrid forward, #3090
 - Existing `qwen3_moe` (38) and `moe` (139) unit tests unchanged-green.
 
 ## Not measured / not in this row
-- **Instruct-2507 on gx10:** the file is not on gx10 (the issue body lists only the Coder file there), so that cell of done_when 1 is open. Either copy the file (18.5 GB onto a root fs at 88%) or have the operator rule.
+- (Closed at 21:52Z.) **Instruct-2507 on gx10:** the cop ruled to copy the file. The copy used `ionice -c3 nice -n 19 rsync --partial` with gx10 free = 116G ≥ the 100G guard, and the sha256 was verified identical on both hosts before use (`6c997b8af17debdfb01d890214400ccbab00db6acc0ba8da5de1cc906c4774d0`). The file is added to gx10's inventory for #3714. Measured at gpu-q prio 1, hold 21:45:59Z–21:52:32Z (`date -u`): all three cells are in the tables above.
 - done_when 2 (`apr parity` for qwen3moe) is R2. done_when 4 (ladder rungs) is R4, with aprender-62.
 - `apr chat --gpu` / `apr serve` for qwen3moe still use the CPU chain. They need a persistent resident model.
 - RMSNorm ε (aprender-37's defect: modules cached without ε): not triggered here, because the model builds on a fresh executor and every norm launch uses the model's ε = 1e-6. Measured: position 0 = `<|im_start|>`, cosine 1.000000. It would matter if this model ever shared an executor with the dense path.
