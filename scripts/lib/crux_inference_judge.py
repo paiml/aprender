@@ -45,13 +45,16 @@ Exit: 0 no RED, no UNJUDGED, every model's control measured and not ALL_WRONG;
 """
 
 import argparse
+import ast
 import datetime
 import json
+import math
 import re
+import struct
 import sys
 
-ENGINES = ("apr", "llama.cpp", "ollama")
-COMPARATORS = ("llama.cpp", "ollama")
+COMPARATORS = ("llama.cpp", "ollama", "hf", "llamafile")
+ENGINES = ("apr",) + COMPARATORS
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07|\r")
 
 
@@ -172,6 +175,24 @@ def parse_ollama(stdout, stderr):
     return out
 
 
+def parse_engine_json(stdout):
+    """hf and llamafile rows (row contract v1, #3739 issuecomment-5765991210):
+    the engine driver writes `{"text": <the answer only>, "reported": {...}}`."""
+    out = {"answer": None, "why": None, "reported": {}}
+    try:
+        doc = json.loads(stdout)
+    except ValueError as exc:
+        out["why"] = "stdout is not the contract's JSON: %s" % exc
+        return out
+    if not isinstance(doc, dict) or not isinstance(doc.get("text"), str):
+        out["why"] = "stdout JSON has no text field"
+        return out
+    rep = doc.get("reported")
+    out["reported"] = rep if isinstance(rep, dict) else {}
+    out["answer"] = doc["text"]
+    return out
+
+
 # ------------------------------------------------------------------ judge --
 
 
@@ -202,6 +223,10 @@ def engine_entry(row, prompt):
         p = parse_llamacpp_cli(stdout, content)
     elif engine == "ollama":
         p = parse_ollama(stdout, stderr)
+    elif engine in ("hf", "llamafile"):
+        p = parse_engine_json(stdout)
+        if row.get("source"):
+            e["source"] = row["source"]
     else:
         e["why"] = "unknown engine %r" % engine
         return e
@@ -251,6 +276,138 @@ def token_parity(apr_entry, tok_row):
     }
 
 
+# ------------------------------------------- deterministic rows (row contract v1) --
+# tok and tmpl are BYTE-EQUAL or RED (#3739, 19:03Z): an engine that produced
+# ids / a rendering and an apr that produced a different one, or none, is RED.
+# greedy is REPORTED: the judge holds no tokenizer, so it cannot decide from ids
+# alone whether a divergence changed the answer; that verdict stays with `gen`.
+
+
+def _load_json(path, field):
+    with open(path, encoding="utf-8") as fh:
+        v = json.load(fh).get(field)
+    if not isinstance(v, list):
+        raise ValueError("%s has no list %r" % (path, field))
+    return v
+
+
+def _load_bytes(path):
+    with open(path, "rb") as fh:
+        return fh.read()
+
+
+def _first_diff(a, b):
+    i = next((i for i, (x, y) in enumerate(zip(a, b)) if x != y), None)
+    if i is None and len(a) != len(b):
+        i = min(len(a), len(b))
+    return i
+
+
+def _det_side(row, loader, field):
+    if row is None:
+        return None, "missing: no row for this engine"
+    if row.get("refused"):
+        return None, "refused: " + row["refused"]
+    try:
+        return (loader(row[field]) if field else None), None
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return None, "unreadable: %s" % exc
+
+
+def judge_deterministic(rows, kind):
+    """kind 'tok': rows carrying `input` (raw-text ids). kind 'tmpl': chat renderings."""
+    if kind == "tok":
+        rows = [r for r in rows if r.get("kind") == "tok" and "input" in r]
+        keyf = lambda r: (r["model_sha256"], r["host"], r["prompt_id"])
+        names = ("model_sha256", "host", "prompt_id")
+        load = lambda r: _det_side(r, lambda p: _load_json(p, "tokens"), "ids")
+    else:
+        rows = [r for r in rows if r.get("kind") == "tmpl"]
+        keyf = lambda r: (r["model_sha256"], r["host"], r["prompt_id"], r.get("thinking", "unset"))
+        names = ("model_sha256", "host", "prompt_id", "thinking")
+        load = lambda r: _det_side(r, _load_bytes, "rendered")
+    groups = {}
+    for r in rows:
+        groups.setdefault(keyf(r), {})[r["engine"]] = r
+    out = []
+    for key in sorted(groups):
+        by = groups[key]
+        apr_val, apr_why = load(by.get("apr"))
+        refs = {}
+        for eng, r in sorted(by.items()):
+            if eng == "apr":
+                continue
+            val, why = load(r)
+            refs[eng] = {"produced": val is not None, "why": why}
+            if val is not None and apr_val is not None:
+                d = _first_diff(apr_val, val)
+                refs[eng]["equal"] = d is None
+                refs[eng]["first_difference"] = d
+        produced = [e for e, v in refs.items() if v["produced"]]
+        if not produced:
+            verdict = "UNJUDGED"
+        elif apr_val is None or any(not refs[e]["equal"] for e in produced):
+            verdict = "RED"
+        else:
+            verdict = "GREEN"
+        out.append({"kind": kind, "key": dict(zip(names, key)), "verdict": verdict,
+                    "apr": {"produced": apr_val is not None, "why": apr_why}, "references": refs})
+    return out
+
+
+def _npy_rows(path):
+    """A float32 C-order 2-D .npy, read with the stdlib (runners have no numpy)."""
+    data = _load_bytes(path)
+    if data[:6] != b"\x93NUMPY":
+        raise ValueError("not an .npy file")
+    major = data[6]
+    hlen = struct.unpack("<H" if major == 1 else "<I", data[8:10] if major == 1 else data[8:12])[0]
+    start = (10 if major == 1 else 12) + hlen
+    hdr = ast.literal_eval(data[(10 if major == 1 else 12):start].decode("latin1"))
+    if hdr.get("descr") != "<f4" or hdr.get("fortran_order") or len(hdr.get("shape", ())) != 2:
+        raise ValueError("expected little-endian float32 C-order 2-D, got %r" % (hdr,))
+    n, m = hdr["shape"]
+    flat = struct.unpack("<%df" % (n * m), data[start:start + 4 * n * m])
+    return [flat[i * m:(i + 1) * m] for i in range(n)]
+
+
+def _cosine(a, b):
+    num = sum(x * y for x, y in zip(a, b))
+    den = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
+    return num / den if den else None
+
+
+def report_greedy(rows):
+    rows = [r for r in rows if r.get("kind") == "greedy"]
+    groups = {}
+    for r in rows:
+        groups.setdefault((r["model_sha256"], r["host"], r["prompt_id"]), {})[r["engine"]] = r
+    out = []
+    for key in sorted(groups):
+        by = groups[key]
+        rep = {"key": dict(zip(("model_sha256", "host", "prompt_id"), key)), "engines": sorted(by)}
+        apr = by.get("apr")
+        for eng, r in sorted(by.items()):
+            if eng == "apr":
+                continue
+            try:
+                if apr is None or apr.get("refused") or r.get("refused"):
+                    raise ValueError("apr or %s has no greedy row" % eng)
+                a = _load_json(apr["tokens"], "generated_ids")
+                b = _load_json(r["tokens"], "generated_ids")
+                d = _first_diff(a, b)
+                item = {"first_divergence": d, "steps_compared": min(len(a), len(b))}
+                if d is not None and apr.get("logits") and r.get("logits"):
+                    la, lb = _npy_rows(apr["logits"]), _npy_rows(r["logits"])
+                    if d < len(la) and d < len(lb):
+                        item["logit_cosine_at_divergence"] = _cosine(la[d], lb[d])
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                item = {"why": "not compared: %s" % exc}
+            rep[eng] = item
+        out.append(rep)
+    return out
+
+
 def judge_cell(entries, expect_any):
     ok = {k: correct(v, expect_any) for k, v in entries.items()}
     answered = {k: v.get("answered", False) for k, v in entries.items()}
@@ -274,7 +431,12 @@ def collect(args):
             if line.strip():
                 rows.append(json.loads(line))
     gens = [r for r in rows if r.get("kind") == "gen"]
-    toks = {(r["model_sha256"], r["prompt_id"]): r for r in rows if r.get("kind") == "tok"}
+    # llama.cpp's template-level ids feed the REPORTED token_parity field; raw-text
+    # `tok` rows (they carry `input`) are the byte-equal deterministic rows below.
+    toks = {(r["model_sha256"], r["prompt_id"]): r for r in rows
+            if r.get("kind") == "tok" and r.get("engine") == "llama.cpp" and "input" not in r}
+    det = judge_deterministic(rows, "tok") + judge_deterministic(rows, "tmpl")
+    greedy = report_greedy(rows)
     requested = meta.get("engines", list(ENGINES))
 
     keys = []
@@ -336,11 +498,12 @@ def collect(args):
         declined_because = "no positive-control cell was measured for model(s) " + ", ".join(uncontrolled)
     elif broken:
         declined_because = "positive control came back ALL_WRONG (a broken harness, not a model limit): " + ", ".join(broken)
-    if counts["RED"]:
+    det_counts = {v: sum(1 for d in det if d["verdict"] == v) for v in ("RED", "GREEN", "UNJUDGED")}
+    if counts["RED"] or det_counts["RED"]:
         verdict, rc = "RED", 1
     elif declined_because:
         verdict, rc = "DECLINE", 2
-    elif counts["UNJUDGED"]:
+    elif counts["UNJUDGED"] or det_counts["UNJUDGED"]:
         # An UNJUDGED cell was never compared to anything: under the amended
         # scope (#3739, 17:19Z) "a missing cell is a NO-GO", and an unmeasured
         # cell is a missing one. (A run with no GREEN cannot reach PASS: every
@@ -354,7 +517,9 @@ def collect(args):
         "schema": "crux-inference-receipt/v1",
         "judged_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
         "cells": cells,
-        "summary": dict(counts, cells=len(cells), judged=judged, verdict=verdict,
+        "deterministic": det,
+        "greedy": greedy,
+        "summary": dict(counts, cells=len(cells), judged=judged, verdict=verdict, deterministic=det_counts,
                         all_wrong_by_model=all_wrong_by_model, controls=controls,
                         declined_because=declined_because if verdict == "DECLINE" else None),
     })
@@ -378,15 +543,16 @@ def render_md(r):
     lines = [
         "# CRUX inference dogfood: %s on %s (%s lane)" % (r.get("version"), r.get("host"), r.get("backend")),
         "",
-        "apr `%s` · llama.cpp `%s` · ollama `%s` · judged %s" % (
+        "apr `%s` · llama.cpp `%s` · ollama `%s` · hf `%s` · llamafile `%s` · judged %s" % (
             r.get("apr", {}).get("version_line"), r.get("llama_cpp", {}).get("build"),
-            r.get("ollama", {}).get("server_version"), r["judged_at"]),
+            r.get("ollama", {}).get("server_version"), r.get("hf", {}).get("probe"),
+            r.get("llamafile", {}).get("probe"), r["judged_at"]),
         "",
         "**%s**: %d cells, %d RED, %d GREEN, %d ALL_WRONG, %d UNJUDGED." % (
             s["verdict"], s["cells"], s["RED"], s["GREEN"], s["ALL_WRONG"], s["UNJUDGED"]),
         "",
-        "| model | verb | thinking | prompt | verdict | apr | llama.cpp | ollama | token parity |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| model | verb | thinking | prompt | verdict | %s | token parity |" % " | ".join(ENGINES),
+        "|---|---|---|---|---|%s---|" % ("---|" * len(ENGINES)),
     ]
     names = {m["sha256"]: m.get("name", m["sha256"][:12]) for m in r.get("models", [])}
     for c in r["cells"]:
@@ -405,6 +571,19 @@ def render_md(r):
         lines.append("| %s | %s | %s | %s | **%s** | %s | %s |" % (
             names.get(k["model_sha256"], k["model_sha256"][:12]), k["verb"], k["thinking"], k["prompt_id"],
             c["verdict"], " | ".join(cols), tps))
+    if r.get("deterministic"):
+        lines += ["", "Deterministic rows (byte-equal or RED): %s" % s.get("deterministic"), "",
+                  "| kind | model | prompt | thinking | verdict | apr | references |", "|---|---|---|---|---|---|---|"]
+        for d in r["deterministic"]:
+            k = d["key"]
+            refs = "; ".join("%s: %s" % (e, ("= " if v.get("equal") else "≠ at %s" % v.get("first_difference"))
+                                          if v["produced"] else short(v.get("why"), 50))
+                             for e, v in d["references"].items())
+            lines.append("| %s | %s | %s | %s | **%s** | %s | %s |" % (
+                d["kind"], names.get(k["model_sha256"], k["model_sha256"][:12]), k["prompt_id"], k.get("thinking", ""),
+                d["verdict"], "produced" if d["apr"]["produced"] else short(d["apr"]["why"], 50), refs))
+    if r.get("greedy"):
+        lines += ["", "Greedy divergence (REPORTED, not judged): %s" % json.dumps(r["greedy"])[:600]]
     lines += ["", "✅ correct · ❌ answered, wrong · ⛔ did not answer (reason shown).",
               "Rates and token counts are in the JSON, as each engine reported them, and are not judged.", ""]
     nc = r.get("not_covered")

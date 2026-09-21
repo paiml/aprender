@@ -10,7 +10,7 @@
 # ollama for same model: chat/serve/run/code, etc".
 #
 # Usage: bash scripts/crux_inference_dogfood.sh <version> --model <gguf> [--model <gguf>]...
-#          [--host <id>] [--backend gpu|cpu] [--engines apr,llama.cpp,ollama]
+#          [--host <id>] [--backend gpu|cpu] [--engines apr,llama.cpp,ollama,hf,llamafile]
 #          [--verbs run] [--out <dir>] [--prompts <file>] [--timeout <s>]
 #          [--keep-ollama-models] [--keep-work]
 #   <version>  the apr version under test; `apr --version` must report it, or
@@ -37,6 +37,12 @@
 #   llama   scripts/llama_bin.sh ONLY ($LLAMA_BENCH_PATH names the pinned build).
 #   ollama  $OLLAMA_BIN, else the forjar-declared $HOME/.local/bin/ollama, else
 #           /usr/local/bin/ollama; the SERVER's /api/version is what is recorded.
+#   hf, llamafile  (the 19:03Z / 19:04Z amendments) are PLUGIN engines: the
+#           engine worker's scripts/crux_engine_<e>.{sh,py} (row contract v1,
+#           #3739 issuecomment-5765991210) with `probe` and `gen` subcommands. It
+#           appends its own rows to $CRUX_MANIFEST. An absent script, a failing
+#           probe or a gen that appends no row is a REFUSED row naming why, never
+#           an absence.
 #   sampling temperature, seed and context come from scripts/llama_pin.toml
 #           [protocol], the declaration the parity gates already read.
 #
@@ -62,7 +68,7 @@ decline() { printf 'decline: %s\n' "$*" >&2; exit 2; }
 VERSION=""
 HOST_ID=""
 BACKEND="gpu"
-ENGINES="apr,llama.cpp,ollama"
+ENGINES="apr,llama.cpp,ollama,hf,llamafile"
 VERBS="run"
 OUT_DIR=""
 PROMPTS="scripts/crux_inference_prompts.json"
@@ -166,7 +172,33 @@ if want ollama; then
     fi
   fi
 fi
-[ "$LLAMA_OK" = 1 ] || [ "$OLLAMA_OK" = 1 ] || decline "no comparator: llama.cpp (${LLAMA_WHY:-not requested}); ollama (${OLLAMA_WHY:-not requested})"
+# ---- plugin engines (hf, llamafile): resolved by script, recorded by their probe --
+declare -A EXT_OK EXT_WHY EXT_SCRIPT EXT_PROBE
+for eng in hf llamafile; do
+  want "$eng" || continue
+  EXT_OK[$eng]=0
+  for f in "scripts/crux_engine_$eng.sh" "scripts/crux_engine_$eng.py"; do
+    [ -f "$f" ] && { EXT_SCRIPT[$eng]="$f"; break; }
+  done
+  if [ -z "${EXT_SCRIPT[$eng]:-}" ]; then
+    EXT_WHY[$eng]="engine driver scripts/crux_engine_$eng.{sh,py} is not present (the engine worker's row, #3739)"
+    continue
+  fi
+  case "${EXT_SCRIPT[$eng]}" in *.py) ext_run=(python3) ;; *) ext_run=(bash) ;; esac
+  probe_out=$("${ext_run[@]}" "${EXT_SCRIPT[$eng]}" probe 2> /tmp/crux-probe-$$-$eng.err)
+  prc=$?
+  if [ "$prc" -eq 0 ] && [ -n "$probe_out" ]; then
+    EXT_OK[$eng]=1
+    EXT_PROBE[$eng]=$(printf '%s\n' "$probe_out" | head -1)
+  else
+    EXT_WHY[$eng]="probe exit $prc: $(head -c 300 /tmp/crux-probe-$$-$eng.err 2>/dev/null | tr '\n' ' ')"
+  fi
+  rm -f /tmp/crux-probe-$$-$eng.err
+done
+EXT_ANY=0
+for eng in "${!EXT_OK[@]}"; do [ "${EXT_OK[$eng]}" = 1 ] && EXT_ANY=1; done
+
+[ "$LLAMA_OK" = 1 ] || [ "$OLLAMA_OK" = 1 ] || [ "$EXT_ANY" = 1 ] || decline "no comparator: llama.cpp (${LLAMA_WHY:-not requested}); ollama (${OLLAMA_WHY:-not requested})"
 
 # ---- work dir -------------------------------------------------------------------
 WORK=$(mktemp -d) || decline "mktemp failed"
@@ -188,6 +220,8 @@ _cleanup() {
 }
 trap _cleanup EXIT
 MANIFEST="$WORK/manifest.jsonl"; : > "$MANIFEST"
+# The plugin engines append their own rows here (row contract v1).
+export CRUX_MANIFEST="$MANIFEST" CRUX_WORK="$WORK"
 MODELS_JSONL="$WORK/models.jsonl"; : > "$MODELS_JSONL"
 
 # One file per prompt: its id list, and each prompt's last user message.
@@ -252,6 +286,19 @@ row = {"kind": "gen", "engine": eng, "prompt_id": pid,
 if unl:
     row["ollama_unloaded"] = unl == "true"
 open(m, "a").write(json.dumps(row) + "\n")
+PY
+}
+
+rows_for() { # rows_for <engine> <prompt_id>: how many gen rows that engine has for the prompt
+  python3 - "$MANIFEST" "$1" "$2" "$SHA" 9>&- <<'PY'
+import json, sys
+m, eng, pid, sha = sys.argv[1:5]
+n = 0
+for line in open(m):
+    if line.strip():
+        r = json.loads(line)
+        n += r.get("kind") == "gen" and r.get("engine") == eng and r.get("prompt_id") == pid and r.get("model_sha256") == sha
+print(n)
 PY
 }
 
@@ -416,6 +463,29 @@ PY
     elif want ollama; then
       emit_gen ollama "$pid" "" "" "" "${OL_REFUSED:-$OLLAMA_WHY}"
     fi
+
+    for eng in hf llamafile; do
+      want "$eng" || continue
+      if [ "${EXT_OK[$eng]}" != 1 ]; then
+        emit_gen "$eng" "$pid" "" "" "" "${EXT_WHY[$eng]}"
+        continue
+      fi
+      case "${EXT_SCRIPT[$eng]}" in *.py) ext_run=(python3) ;; *) ext_run=(bash) ;; esac
+      # llamafile's `--cli` ignores the thinking switch and does not bound output
+      # with -n (infra-3c, measured on 0.10.6); its server honours both.
+      ext_extra=()
+      [ "$eng" = llamafile ] && ext_extra=(--interface server)
+      before=$(rows_for "$eng" "$pid")
+      eng_run "$d/$eng-$pid.driver.out" "$d/$eng-$pid.driver.err" "${ext_run[@]}" "${EXT_SCRIPT[$eng]}" gen \
+        --model "$M" --model-sha256 "$SHA" --verb "$VERB" --prompt-id "$pid" \
+        --messages "$WORK/messages-$pid.json" --prompt-file "$WORK/prompt-$pid.txt" \
+        --thinking "$THINK" --backend "$BACKEND" --host "$HOST" \
+        --max-tokens "$MAXTOK" --seed "$SEED" --temperature "$TEMP" --context "$CTX" "${ext_extra[@]}"
+      rc=$?
+      if [ "$(rows_for "$eng" "$pid")" -le "$before" ]; then
+        emit_gen "$eng" "$pid" "" "" "" "engine driver ${EXT_SCRIPT[$eng]} gen exited $rc without appending a row: $(tail -c 200 "$d/$eng-$pid.driver.err" 2>/dev/null | tr '\n' ' ')"
+      fi
+    done
     cell_unlock
   done
 
@@ -427,12 +497,19 @@ done
 # ---- judge --------------------------------------------------------------------------
 GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
 HARNESS_SHA=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null) || HARNESS_SHA=""
+EXT_META="$WORK/ext-engines.json"
+python3 - "$EXT_META" "${EXT_PROBE[hf]:-}" "${EXT_WHY[hf]:-}" "${EXT_PROBE[llamafile]:-}" "${EXT_WHY[llamafile]:-}" <<'PY'
+import json, sys
+out, hp, hw, lp, lw = sys.argv[1:6]
+json.dump({"hf": {"probe": hp or None, "unavailable": hw or None},
+           "llamafile": {"probe": lp or None, "unavailable": lw or None}}, open(out, "w"))
+PY
 python3 - "$WORK/meta.json" "$MODELS_JSONL" "$VERSION" "$HOST" "$BACKEND" "$ENGINES" "$VERBS" \
   "$APR_VERSION_LINE" "${LLAMA_BUILD:-}" "$(llama_pin_get build_commit 2>/dev/null)" "$LLAMA_WHY" \
-  "$OLLAMA_SERVER" "$OLLAMA_CLIENT" "$OLLAMA_WHY" "$TEMP" "$SEED" "$CTX" "$MAXTOK" "${GPU_NAME:-}" "$HARNESS_SHA" <<'PY'
+  "$OLLAMA_SERVER" "$OLLAMA_CLIENT" "$OLLAMA_WHY" "$TEMP" "$SEED" "$CTX" "$MAXTOK" "${GPU_NAME:-}" "$HARNESS_SHA" "$EXT_META" <<'PY'
 import json, platform, sys
 (out, models, version, host, backend, engines, verbs, apr_line, lbuild, lpin, lwhy,
- osrv, ocli, owhy, temp, seed, ctx, maxtok, gpu, hsha) = sys.argv[1:21]
+ osrv, ocli, owhy, temp, seed, ctx, maxtok, gpu, hsha, ext) = sys.argv[1:22]
 meta = {
     "version": version, "host": host, "backend": backend, "isa": platform.machine(), "gpu": gpu or None,
     "engines": engines.split(","), "verbs": verbs.split(","), "thinking": ["off"],
@@ -442,6 +519,7 @@ meta = {
     "harness": {"sha": hsha or None, "driver": "scripts/crux_inference_dogfood.sh"},
     "llama_cpp": {"build": lbuild or None, "pin": lpin or None, "unavailable": lwhy or None},
     "ollama": {"server_version": osrv or None, "client_version": ocli or None, "unavailable": owhy or None},
+    **json.load(open(ext)),
     "models": [json.loads(l) for l in open(models) if l.strip()],
     "not_covered": [
         "verbs chat, serve and code (the next slices of #3739)",

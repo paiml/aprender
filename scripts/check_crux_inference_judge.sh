@@ -78,8 +78,55 @@ tokrow() { # tokrow <manifest> <dir> <pid> <ids csv>
 # The manifest rows carry the literal "%s" for the sha; fill it in one place.
 seal() { sed -i "s/\"%s\"/\"$SHA\"/g" "$1"; }
 
+engine_out() { # engine_out <dir> <engine> <pid> <answer> — row contract v1: {"text": ...}
+  python3 -c 'import json,sys; json.dump({"text": sys.argv[2], "reported": {"reported_by": "fixture"}}, open(sys.argv[1], "w"))' \
+    "$1/$2-$3.json" "$4"
+}
+detrow() { # detrow <manifest> <kind> <engine> <pid> <artifact path> [thinking] [refused]
+  python3 - "$@" <<'PY'
+import json, sys
+m, kind, eng, pid, path = sys.argv[1:6]
+thinking = sys.argv[6] if len(sys.argv) > 6 else "unset"
+ref = sys.argv[7] if len(sys.argv) > 7 else ""
+row = {"kind": kind, "engine": eng, "model_sha256": "%s", "host": "fixture", "prompt_id": pid, "refused": ref or None}
+if kind == "tok":
+    row.update({"input": path + ".txt", "ids": path})
+elif kind == "tmpl":
+    row.update({"thinking": thinking, "messages": path + ".messages.json", "rendered": path})
+else:
+    row.update({"steps": 4, "tokens": path, "logits": path + ".npy"})
+open(m, "a").write(json.dumps(row) + "\n")
+PY
+}
+npy() { # npy <path> <rows as a,b,c;d,e,f> — a float32 C-order 2-D .npy, stdlib only
+  python3 - "$1" "$2" <<'PY'
+import struct, sys
+rows = [[float(x) for x in r.split(",")] for r in sys.argv[2].split(";")]
+n, m = len(rows), len(rows[0])
+hdr = ("{'descr': '<f4', 'fortran_order': False, 'shape': (%d, %d), }" % (n, m)).encode("latin1")
+hdr += b" " * ((64 - (10 + len(hdr) + 1) % 64) % 64) + b"\n"
+with open(sys.argv[1], "wb") as fh:
+    fh.write(b"\x93NUMPY\x01\x00" + struct.pack("<H", len(hdr)) + hdr)
+    fh.write(struct.pack("<%df" % (n * m), *[v for r in rows for v in r]))
+PY
+}
+control_green() { # control_green <dir>: the positive control answered right by apr and llama.cpp
+  apr_out "$1" golden-2plus2 "4" gpu false; llama_out "$1" golden-2plus2 "What is 2+2?" "4"
+  row "$1/manifest.jsonl" apr golden-2plus2 0 "$1/apr-golden-2plus2.out" "$1/apr-golden-2plus2.err"
+  row "$1/manifest.jsonl" llama.cpp golden-2plus2 0 "$1/llama-golden-2plus2.out" "$1/llama-golden-2plus2.err"
+}
+det_verdict() { # det_verdict <case dir> <kind> <prompt id> -> "<verdict> <first_difference of the first reference>"
+  python3 -c 'import json,sys
+r = json.load(open(sys.argv[1]))
+d = next((x for x in r.get("deterministic", []) if x["kind"] == sys.argv[2] and x["key"]["prompt_id"] == sys.argv[3]), None)
+if d is None: print("ABSENT"); sys.exit(0)
+ref = next(iter(d["references"].values()), {})
+print(d["verdict"], ref.get("first_difference"))' "$1/receipt.json" "$2" "$3" 2>/dev/null
+}
+
 run_judge() { # run_judge <case dir> — prints the receipt path; returns the judge's rc
-  printf '{"version": "0.0.0", "host": "fixture", "backend": "gpu", "engines": ["apr", "llama.cpp", "ollama"]}\n' > "$1/meta.json"
+  printf '{"version": "0.0.0", "host": "fixture", "backend": "gpu", "engines": %s}\n' \
+    "${META_ENGINES:-[\"apr\", \"llama.cpp\", \"ollama\"]}" > "$1/meta.json"
   seal "$1/manifest.jsonl"
   python3 "$JUDGE" collect --manifest "$1/manifest.jsonl" --prompts "$PROMPTS" --meta "$1/meta.json" \
     --out-json "$1/receipt.json" --out-md "$1/receipt.md" > "$1/judge.out" 2> "$1/judge.err"
@@ -264,6 +311,88 @@ row "$d/manifest.jsonl" apr golden-paris 0 "$d/apr-golden-paris.out" "$d/apr-gol
 row "$d/manifest.jsonl" llama.cpp golden-paris 0 "$d/llama-golden-paris.out" "$d/llama-golden-paris.err"
 run_judge "$d"; GOT_RC=$?
 expect "a model with no measured control cell declines" "$d" 2 golden-paris GREEN
+
+# ---- the 19:03Z / 19:04Z engines: hf and llamafile (row contract v1) --------------
+META_ENGINES='["apr", "llama.cpp", "ollama", "hf", "llamafile"]'
+
+# E1. hf right, apr wrong: RED, exactly as for llama.cpp or ollama.
+d=$(newcase hf_right_apr_wrong)
+apr_out "$d" $P "5" gpu false; engine_out "$d" hf $P "2 + 2 = 4"
+row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"
+row "$d/manifest.jsonl" hf $P 0 "$d/hf-$P.json" ""
+run_judge "$d"; GOT_RC=$?
+expect "hf right and apr wrong is RED" "$d" 1 $P RED
+
+# E2. llamafile refuses the model (its own text quoted); llama.cpp answers: still judged, refusal named.
+d=$(newcase llamafile_refused)
+apr_out "$d" $P "4" gpu false; llama_out "$d" $P "$Q" "4"
+row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"
+row "$d/manifest.jsonl" llama.cpp $P 0 "$d/llama-$P.out" "$d/llama-$P.err"
+row "$d/manifest.jsonl" llamafile $P "" "" "" "error loading model architecture: unknown model architecture: 'qwen35'"
+row "$d/manifest.jsonl" hf $P 0 "$d/hf-$P.json" ""; engine_out "$d" hf $P "4"
+run_judge "$d"; GOT_RC=$?
+expect "a llamafile refusal beside a right llama.cpp is GREEN" "$d" 0 $P GREEN
+why=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cells"][0]["engines"]["llamafile"]["why"])' "$d/receipt.json" 2>/dev/null)
+case "$why" in *"unknown model architecture: 'qwen35'"*) ok "llamafile's refusal is quoted, not dropped" ;; *) broke "llamafile refusal: '$why'" ;; esac
+
+# E3. an hf answer that is not the contract's JSON is no answer, so it cannot vouch.
+d=$(newcase hf_bad_json)
+apr_out "$d" $P "5" gpu false; printf '2 + 2 = 4\n' > "$d/hf-$P.json"
+row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"
+row "$d/manifest.jsonl" hf $P 0 "$d/hf-$P.json" ""
+run_judge "$d"; GOT_RC=$?
+expect "hf output that is not the contract JSON is no oracle (UNJUDGED)" "$d" 2 $P UNJUDGED
+
+# E3b. valid JSON that is not the contract's shape (no "text") is no answer either.
+d=$(newcase hf_json_without_text)
+apr_out "$d" $P "5" gpu false; printf '{"answer": "4"}\n' > "$d/hf-$P.json"
+row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"
+row "$d/manifest.jsonl" hf $P 0 "$d/hf-$P.json" ""
+run_judge "$d"; GOT_RC=$?
+expect "hf JSON without a text field is no oracle (UNJUDGED)" "$d" 2 $P UNJUDGED
+
+# D1-D4. tok: raw-text ids, BYTE-EQUAL or RED.
+d=$(newcase tok_equal); control_green "$d"
+printf '{"tokens": [9707, 11, 1879]}\n' > "$d/apr-tok.json"; printf '{"tokens": [9707, 11, 1879]}\n' > "$d/hf-tok.json"
+detrow "$d/manifest.jsonl" tok apr tok-cjk-01 "$d/apr-tok.json"; detrow "$d/manifest.jsonl" tok hf tok-cjk-01 "$d/hf-tok.json"
+run_judge "$d"; GOT_RC=$?; got=$(det_verdict "$d" tok tok-cjk-01)
+[ "$GOT_RC" = 0 ] && [ "$got" = "GREEN None" ] && ok "tok ids equal to HF are GREEN (rc 0)" || broke "tok equal: rc $GOT_RC, '$got'"
+d=$(newcase tok_differ); control_green "$d"
+printf '{"tokens": [9707, 0, 0, 0]}\n' > "$d/apr-tok.json"; printf '{"tokens": [9707, 11, 1879]}\n' > "$d/hf-tok.json"
+detrow "$d/manifest.jsonl" tok apr tok-cjk-01 "$d/apr-tok.json"; detrow "$d/manifest.jsonl" tok hf tok-cjk-01 "$d/hf-tok.json"
+run_judge "$d"; GOT_RC=$?; got=$(det_verdict "$d" tok tok-cjk-01)
+[ "$GOT_RC" = 1 ] && [ "$got" = "RED 1" ] && ok "tok ids differing from HF are RED at the first differing index (1)" || broke "tok differ: rc $GOT_RC, '$got'"
+d=$(newcase tok_apr_missing); control_green "$d"
+printf '{"tokens": [9707]}\n' > "$d/hf-tok.json"; detrow "$d/manifest.jsonl" tok hf tok-cjk-01 "$d/hf-tok.json"
+run_judge "$d"; GOT_RC=$?; got=$(det_verdict "$d" tok tok-cjk-01)
+[ "$GOT_RC" = 1 ] && [ "${got%% *}" = RED ] && ok "an HF tok row with no apr row is RED (absence)" || broke "tok apr missing: rc $GOT_RC, '$got'"
+d=$(newcase tok_hf_refused); control_green "$d"
+printf '{"tokens": [9707]}\n' > "$d/apr-tok.json"; detrow "$d/manifest.jsonl" tok apr tok-cjk-01 "$d/apr-tok.json"
+detrow "$d/manifest.jsonl" tok hf tok-cjk-01 "$d/hf-tok.json" unset "no tokenizer.json in the source repo"
+run_judge "$d"; GOT_RC=$?; got=$(det_verdict "$d" tok tok-cjk-01)
+[ "$GOT_RC" = 2 ] && [ "${got%% *}" = UNJUDGED ] && ok "a tok row HF refused is UNJUDGED and declines" || broke "tok hf refused: rc $GOT_RC, '$got'"
+
+# D5-D6. tmpl: the chat rendering, BYTE-EQUAL or RED (the #3672 double wrap is the RED case).
+d=$(newcase tmpl_equal); control_green "$d"
+printf '<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n' > "$d/apr-t"; cp "$d/apr-t" "$d/hf-t"
+detrow "$d/manifest.jsonl" tmpl apr golden-2plus2 "$d/apr-t" off; detrow "$d/manifest.jsonl" tmpl hf golden-2plus2 "$d/hf-t" off
+run_judge "$d"; GOT_RC=$?; got=$(det_verdict "$d" tmpl golden-2plus2)
+[ "$GOT_RC" = 0 ] && [ "$got" = "GREEN None" ] && ok "a rendering byte-equal to apply_chat_template is GREEN" || broke "tmpl equal: rc $GOT_RC, '$got'"
+d=$(newcase tmpl_double_wrap); control_green "$d"
+printf '<|im_start|>user\n<\xe2\x80\x8b|im_start|>user\nhi' > "$d/apr-t"; printf '<|im_start|>user\nhi<|im_end|>\n' > "$d/hf-t"
+detrow "$d/manifest.jsonl" tmpl apr golden-2plus2 "$d/apr-t" off; detrow "$d/manifest.jsonl" tmpl hf golden-2plus2 "$d/hf-t" off
+run_judge "$d"; GOT_RC=$?; got=$(det_verdict "$d" tmpl golden-2plus2)
+[ "$GOT_RC" = 1 ] && [ "$got" = "RED 17" ] && ok "a double-wrapped rendering is RED at byte 17, where the second wrap starts" || broke "tmpl differ: rc $GOT_RC, '$got'"
+
+# R1. greedy: the first divergence and the logit cosine there are REPORTED, never a verdict.
+d=$(newcase greedy_report); control_green "$d"
+printf '{"prompt_ids": [1], "generated_ids": [5, 6, 7, 8]}\n' > "$d/apr-g.json"; npy "$d/apr-g.json.npy" "1,0;0,1;1,1;0,0"
+printf '{"prompt_ids": [1], "generated_ids": [5, 6, 9, 8]}\n' > "$d/hf-g.json";  npy "$d/hf-g.json.npy" "1,0;0,1;1,0;0,0"
+detrow "$d/manifest.jsonl" greedy apr golden-paris "$d/apr-g.json"; detrow "$d/manifest.jsonl" greedy hf golden-paris "$d/hf-g.json"
+run_judge "$d"; GOT_RC=$?
+got=$(python3 -c 'import json,sys; g=json.load(open(sys.argv[1]))["greedy"][0]["hf"]; print(g.get("first_divergence"), round(g.get("logit_cosine_at_divergence") or -9, 4))' "$d/receipt.json" 2>/dev/null)
+[ "$GOT_RC" = 0 ] && [ "$got" = "2 0.7071" ] && ok "greedy divergence at step 2 is reported with its logit cosine (0.7071), not judged" || broke "greedy: rc $GOT_RC, '$got'"
+unset META_ENGINES
 
 # 10-11. token parity: equal ids agree; a divergence is located, never averaged away.
 d=$(newcase parity)
