@@ -261,69 +261,18 @@ impl AprV2Model {
     }
 
     fn load_tokenizer_from_value(json: &serde_json::Value) -> Option<BpeTokenizer> {
-
-        // Extract vocabulary
-        let vocab_obj = json.get("model")?.get("vocab")?;
-        let vocab_map = vocab_obj.as_object()?;
-
-        let mut token_to_id: HashMap<String, u32> = HashMap::new();
-        let mut id_to_token: Vec<String> = Vec::new();
-
-        let mut vocab_vec: Vec<(String, u32)> = vocab_map
-            .iter()
-            .filter_map(|(token, id)| Some((token.clone(), id.as_u64()? as u32)))
-            .collect();
-        vocab_vec.sort_by_key(|(_, id)| *id);
-
-        for (token, id) in vocab_vec {
-            token_to_id.insert(token.clone(), id);
-            // Pad id_to_token if needed
-            while id_to_token.len() <= id as usize {
-                id_to_token.push(String::new());
-            }
-            id_to_token[id as usize] = token;
-        }
-
-        // Extract merges
-        let merges = json.get("model")?.get("merges")?.as_array()?;
-        let merge_rules: Vec<(String, String)> = merges
+        let (token_to_id, id_to_token) = read_vocab(json)?;
+        let merge_rules: Vec<(String, String)> = json
+            .get("model")?
+            .get("merges")?
+            .as_array()?
             .iter()
             .filter_map(merge_pair)
             .collect();
-
-        // GH-189: Extract ALL added_tokens as special tokens for atomic tokenization
-        let mut bos_id = None;
-        let mut eos_id = None;
-        let mut special_tokens: HashMap<String, u32> = HashMap::new();
-        let mut added: Vec<(String, u32, bool)> = Vec::new();
-
-        if let Some(added_tokens) = json.get("added_tokens").and_then(|v| v.as_array()) {
-            for token in added_tokens {
-                let content = token.get("content").and_then(|v| v.as_str());
-                let id = token
-                    .get("id")
-                    .and_then(serde_json::Value::as_u64)
-                    .map(|v| v as u32);
-
-                if let (Some(content), Some(id)) = (content, id) {
-                    // Add ALL added_tokens to special_tokens map for atomic tokenization
-                    special_tokens.insert(content.to_string(), id);
-                    let special = token
-                        .get("special")
-                        .and_then(serde_json::Value::as_bool)
-                        .unwrap_or(true);
-                    added.push((content.to_string(), id, special));
-
-                    // Also track bos/eos specifically
-                    if content == "<|endoftext|>" || content == "</s>" || content == "<eos>" {
-                        eos_id = Some(id);
-                    }
-                    if content == "<s>" || content == "<bos>" {
-                        bos_id = Some(id);
-                    }
-                }
-            }
-        }
+        let (added, bos_id, eos_id) = read_added_tokens(json);
+        // GH-189: ALL added_tokens are special tokens, for atomic tokenization.
+        let special_tokens: HashMap<String, u32> =
+            added.iter().map(|(content, id, _)| (content.clone(), *id)).collect();
 
         // #3742: the tokenizer.json's own pre-tokenizer and ranked merges, when implemented.
         let canonical = crate::apr::canonical_tokenizer::canonical_for_tokenizer_json(
@@ -343,6 +292,64 @@ impl AprV2Model {
             canonical,
         })
     }
+}
+
+/// A tokenizer.json `model.vocab` as (token -> id, id -> token); an id the map skips is an
+/// empty string.
+fn read_vocab(json: &serde_json::Value) -> Option<(HashMap<String, u32>, Vec<String>)> {
+    let mut vocab_vec: Vec<(String, u32)> = json
+        .get("model")?
+        .get("vocab")?
+        .as_object()?
+        .iter()
+        .filter_map(|(token, id)| Some((token.clone(), id.as_u64()? as u32)))
+        .collect();
+    vocab_vec.sort_by_key(|(_, id)| *id);
+
+    let mut token_to_id: HashMap<String, u32> = HashMap::new();
+    let mut id_to_token: Vec<String> = Vec::new();
+    for (token, id) in vocab_vec {
+        token_to_id.insert(token.clone(), id);
+        if id_to_token.len() <= id as usize {
+            id_to_token.resize(id as usize + 1, String::new());
+        }
+        id_to_token[id as usize] = token;
+    }
+    Some((token_to_id, id_to_token))
+}
+
+/// A tokenizer.json's `added_tokens` as (content, id, special), and the bos and eos ids among
+/// them (the last match wins, as before).
+fn read_added_tokens(json: &serde_json::Value) -> (Vec<(String, u32, bool)>, Option<u32>, Option<u32>) {
+    let mut added = Vec::new();
+    let (mut bos_id, mut eos_id) = (None, None);
+    for token in json
+        .get("added_tokens")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+    {
+        let content = token.get("content").and_then(|v| v.as_str());
+        let id = token
+            .get("id")
+            .and_then(serde_json::Value::as_u64)
+            .map(|v| v as u32);
+        let (Some(content), Some(id)) = (content, id) else {
+            continue;
+        };
+        let special = token
+            .get("special")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(true);
+        if matches!(content, "<|endoftext|>" | "</s>" | "<eos>") {
+            eos_id = Some(id);
+        }
+        if matches!(content, "<s>" | "<bos>") {
+            bos_id = Some(id);
+        }
+        added.push((content.to_string(), id, special));
+    }
+    (added, bos_id, eos_id)
 }
 
 /// One tokenizer.json merge: the string form `"a b"` or the array form `["a", "b"]` that
