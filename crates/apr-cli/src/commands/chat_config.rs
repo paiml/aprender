@@ -309,6 +309,7 @@
         let result = run(
             path, 0.7, 0.9, 512, None, false, false, false, None, false, None, "info", false,
             false, // offline
+            None,  // thinking
         );
         assert!(result.is_err());
         match result {
@@ -338,6 +339,7 @@
             "debug",
             true,
             false, // offline
+            None,  // thinking
         );
         assert!(result.is_err());
     }

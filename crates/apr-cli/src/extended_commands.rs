@@ -62,6 +62,14 @@ pub enum ExtendedCommands {
         /// Force GPU acceleration (requires CUDA)
         #[arg(long)]
         gpu: bool,
+        /// Thinking mode for a model whose own chat template has one (#3723)
+        ///
+        /// Default: off wherever the model allows it. What the model offers is read
+        /// from its chat template; a mode it cannot honour is refused with exit code 15
+        /// before the first turn, never ignored. With `on` each turn's reasoning is
+        /// printed apart from the answer and kept out of the conversation history.
+        #[arg(long, value_enum)]
+        thinking: Option<crate::ThinkingArg>,
         /// Enable inference tracing (APR-TRACE-001)
         #[arg(long)]
         trace: bool,

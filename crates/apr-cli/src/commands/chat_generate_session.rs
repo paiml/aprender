@@ -84,6 +84,17 @@ fn session_exit_result(had_generate_error: bool) -> Result<(), CliError> {
 #[cfg(feature = "inference")]
 fn generate_and_print(session: &mut ChatSession, input: &str, config: &ChatConfig) {
     let response = session.generate(input, config);
+    // #3723: the reasoning is shown apart and kept out of the history (the model's own
+    // template drops past turns' reasoning too); an unclosed block is a failed turn.
+    let response = match session.split_response(&response, config) {
+        Ok((reasoning, answer)) => {
+            if let Some(reasoning) = reasoning {
+                println!("{} {}", "Reasoning:".cyan().bold(), reasoning.dimmed());
+            }
+            answer
+        }
+        Err(e) => render_assistant_turn(Err(e), session.had_generate_error_mut()),
+    };
     session.add_to_history("user", input);
     session.add_to_history("assistant", &response);
     println!("{} {}", "Assistant:".blue().bold(), response);
@@ -113,6 +124,7 @@ fn process_repl_input(
 #[cfg(feature = "inference")]
 fn run_repl(path: &Path, config: &ChatConfig) -> Result<(), CliError> {
     let mut session = ChatSession::new(path)?;
+    session.resolve_thinking(config.thinking)?;
 
     while let Some(input) = read_repl_line()? {
         if input.is_empty() {

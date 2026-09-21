@@ -57,7 +57,12 @@ impl ChatSession {
 
             // Detect chat template from model architecture
             let model_name = detect_model_architecture(format, &model_bytes, path);
-            let (chat_template, template_format) = select_chat_template(&model_name);
+            // #3755: the file's own template (refused by name if hostile or invalid).
+            let embedded_template = realizar::chat_template::EmbeddedChatTemplate::for_model_file(path)
+                .transpose()
+                .map_err(|e| CliError::InvalidFormat(format!("chat template: {e}")))?;
+            let (chat_template, template_format) =
+                select_chat_template(&model_name, embedded_template.as_ref());
 
             // GH-224: Eagerly initialize GPU models during "Loading model..." phase
             let model_path_buf = path.to_path_buf();
@@ -122,6 +127,9 @@ impl ChatSession {
                 #[cfg(feature = "cuda")]
                 cuda_init_failed,
                 had_generate_error: false,
+                embedded_template,
+                thinking: false,
+                prompt_opens_think: false,
             };
             contract_post_session_persistence!(&());
             Ok(session)

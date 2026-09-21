@@ -60,6 +60,8 @@ pub(crate) struct ChatConfig {
     pub trace: bool,
     /// Trace output file path
     pub trace_output: Option<std::path::PathBuf>,
+    /// #3723: thinking ON/OFF; None = OFF wherever the model's template allows it.
+    pub thinking: Option<bool>,
 }
 
 impl Default for ChatConfig {
@@ -73,6 +75,7 @@ impl Default for ChatConfig {
             force_cpu: false, // F-GPU-134b: Default to GPU when available
             trace: false,
             trace_output: None,
+            thinking: None,
         }
     }
 }
@@ -127,6 +130,7 @@ pub(crate) fn run(
     trace_level: &str,
     profile: bool,
     offline: bool,
+    thinking: Option<bool>,
 ) -> Result<(), CliError> {
     contract_pre_temperature_bounds!();
     contract_pre_session_state_machine!();
@@ -191,6 +195,7 @@ pub(crate) fn run(
         force_cpu,
         trace,
         trace_output,
+        thinking,
     };
 
     print_welcome_banner_for(path, format, &config);

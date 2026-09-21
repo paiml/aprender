@@ -251,6 +251,7 @@
             force_cpu: true,
             trace: true,
             trace_output: Some(PathBuf::from("/tmp/all_fields.json")),
+            thinking: None,
         };
         assert!((config.temperature - 1.5).abs() < f32::EPSILON);
         assert!((config.top_p - 0.95).abs() < f32::EPSILON);
@@ -332,6 +333,7 @@
         let result = run(
             path, 0.7, 0.9, 512, None, false, false, false, None, false, None, "info", false,
             false, // offline
+            None, // thinking
         );
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -348,6 +350,7 @@
         let result = run(
             path, 0.5, 0.8, 256, None, false, false, false, None, false, None, "info", false,
             false, // offline
+            None, // thinking
         );
         assert!(result.is_err());
     }
@@ -358,6 +361,7 @@
         let result = run(
             path, 1.0, 1.0, 1024, None, true, true, false, None, false, None, "warn", false,
             false, // offline
+            None, // thinking
         );
         assert!(result.is_err());
     }
@@ -388,6 +392,7 @@
             "debug",
             true,
             false, // offline
+            None, // thinking
         );
         assert!(result.is_err());
     }
@@ -398,6 +403,7 @@
         let result = run(
             path, 0.7, 0.9, 512, None, false, false, false, None, false, None, "info", false,
             false, // offline
+            None, // thinking
         );
         assert!(result.is_err());
     }
@@ -421,6 +427,7 @@
             "info",
             false,
             false, // offline
+            None, // thinking
         );
         assert!(result.is_err());
     }
@@ -435,6 +442,7 @@
             None,  // no trace output
             "info", false, // no profile
             false, // offline
+            None, // thinking
         );
         assert!(result.is_err());
     }
@@ -447,6 +455,7 @@
             true, // trace must be on for profile to print
             None, false, None, "info", true, // profile enabled
             false, // offline
+            None, // thinking
         );
         assert!(result.is_err());
     }

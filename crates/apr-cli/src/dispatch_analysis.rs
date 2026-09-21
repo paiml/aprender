@@ -1649,6 +1649,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             inspect,
             no_gpu,
             gpu,
+            thinking,
             trace,
             trace_steps,
             trace_verbose,
@@ -1686,6 +1687,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
                 trace_level.as_str(),
                 *profile,
                 cli.offline,
+                crate::ThinkingArg::choice(*thinking),
             )
         }
 

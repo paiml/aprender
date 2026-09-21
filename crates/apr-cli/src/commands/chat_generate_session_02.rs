@@ -60,10 +60,14 @@ impl ChatSession {
             messages.extend(self.history.iter().cloned());
             messages.push(ChatMessage::user(user_input));
 
-            let formatted_prompt = self
-                .chat_template
-                .format_conversation(&messages)
-                .map_err(|e| format!("[Template error: {}]", e))?;
+            // #3755: the model's own template when the file ships one.
+            let formatted_prompt = match self.render_embedded(&messages) {
+                Some(rendered) => rendered?,
+                None => self
+                    .chat_template
+                    .format_conversation(&messages)
+                    .map_err(|e| format!("[Template error: {}]", e))?,
+            };
 
             if config.trace {
                 eprintln!(

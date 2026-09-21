@@ -466,26 +466,41 @@ impl ChatPrompt {
     ///
     /// [`RealizarError::InferenceError`] when a think block is still open at the end.
     pub fn split(&self, completion: &str, budget: usize) -> Result<SplitCompletion, RealizarError> {
-        let reasoning = if self.opens_think_block() {
-            Some(completion)
-        } else {
-            completion.trim_start().strip_prefix("<think>")
-        };
-        let Some(reasoning) = reasoning else {
-            return Ok(SplitCompletion {
-                reasoning: None,
-                answer: completion.trim().to_string(),
-            });
-        };
-        match reasoning.find("</think>") {
-            Some(close) => Ok(SplitCompletion {
-                reasoning: Some(reasoning[..close].trim().to_string()),
-                answer: reasoning[close + "</think>".len()..].trim().to_string(),
-            }),
-            None => Err(RealizarError::InferenceError(format!(
-                "think block unclosed within the {budget}-token budget: the model was still \
-                 reasoning when generation stopped"
-            ))),
-        }
+        split_completion(completion, self.opens_think_block(), budget)
+    }
+}
+
+/// [`ChatPrompt::split`] for a caller that knows whether its prompts leave a `<think>`
+/// block open (a chat session: the generation prompt's shape is fixed per template
+/// and mode) rather than holding the prompt text.
+///
+/// # Errors
+///
+/// [`RealizarError::InferenceError`] when a think block is still open at the end.
+pub fn split_completion(
+    completion: &str,
+    prompt_opens_think: bool,
+    budget: usize,
+) -> Result<SplitCompletion, RealizarError> {
+    let reasoning = if prompt_opens_think {
+        Some(completion)
+    } else {
+        completion.trim_start().strip_prefix("<think>")
+    };
+    let Some(reasoning) = reasoning else {
+        return Ok(SplitCompletion {
+            reasoning: None,
+            answer: completion.trim().to_string(),
+        });
+    };
+    match reasoning.find("</think>") {
+        Some(close) => Ok(SplitCompletion {
+            reasoning: Some(reasoning[..close].trim().to_string()),
+            answer: reasoning[close + "</think>".len()..].trim().to_string(),
+        }),
+        None => Err(RealizarError::InferenceError(format!(
+            "think block unclosed within the {budget}-token budget: the model was still \
+             reasoning when generation stopped"
+        ))),
     }
 }

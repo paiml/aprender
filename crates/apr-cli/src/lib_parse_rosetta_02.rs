@@ -246,6 +246,7 @@
             inspect: false,
             no_gpu: false,
             gpu: false,
+            thinking: None,
             trace: false,
             trace_steps: None,
             trace_verbose: false,

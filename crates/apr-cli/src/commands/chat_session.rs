@@ -51,6 +51,14 @@ mod realizar_chat {
         /// once, at session end, to decide the command's exit code. Not reset by
         /// `/clear` — a failed generation happened whether or not the history is kept.
         had_generate_error: bool,
+        /// #3755: the model FILE's own chat template, rendered as HF renders it; the
+        /// per-family `chat_template` above is only the fallback for a file with none.
+        embedded_template: Option<realizar::chat_template::EmbeddedChatTemplate>,
+        /// #3723: the resolved thinking mode (`resolve_thinking`, before the first turn).
+        thinking: bool,
+        /// #3723: whether this mode's generation prompt leaves `<think>` open (Qwen3.5
+        /// ON), so each completion starts inside the reasoning.
+        prompt_opens_think: bool,
     }
 
 include!("chat_load_tokenizers.rs");
