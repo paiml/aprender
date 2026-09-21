@@ -251,6 +251,15 @@ llama_pin_is_expired() { # llama_pin_is_expired <expiry> <today>
 # LLAMA_PIN_REASON names WHICH of these fired, so a caller and the case table
 # can tell `pin_cmake_mismatch` from `wrong build` without re-deriving it.
 # LLAMA_PIN_EXPIRY carries the declared expiry on every path that read one.
+# llama_commit_match WANT GOT -> 0 when one commit abbreviation is a prefix of the
+# other and both are at least 7 hex digits (git's minimum abbreviation).
+llama_commit_match() {
+    [ "${#1}" -ge 7 ] && [ "${#2}" -ge 7 ] || return 1
+    case "$1" in "$2"*) return 0 ;; esac
+    case "$2" in "$1"*) return 0 ;; esac
+    return 1
+}
+
 llama_bin_resolve() {
     LLAMA_BENCH=""
     LLAMA_BUILD=""
@@ -306,9 +315,10 @@ llama_bin_resolve() {
         fi
     fi
 
-    # NEVER PATH. $LLAMA_BENCH_PATH is the only input, and it is still
+    # NEVER PATH. $LLAMA_BENCH_PATH names the candidate, and it is still
     # verified below — it cannot smuggle an unverified binary past the pin.
     llama_bin_candidate="${LLAMA_BENCH_PATH:-}"
+    LLAMA_PIN_CANON=""
     if [ -z "$llama_bin_candidate" ]; then
         # No candidate named. If the repo has not pinned yet, that is the
         # honest bootstrap state; otherwise it is a missing comparator.
@@ -317,9 +327,21 @@ llama_bin_resolve() {
             LLAMA_PIN_RC=2
             return 2
         fi
-        LLAMA_PIN_REASON=no_binary_named
-        LLAMA_PIN_RC=1
-        return 1
+        # THE CANONICAL LOCATION (#3563): with nothing named, the build of the
+        # PINNED commit at ${LLAMA_PIN_SRC_ROOT:-$HOME/src}/llama.cpp-<build_commit>,
+        # a path DERIVED FROM THE PIN, not a search. Nothing on PATH is asked, and
+        # no other checkout is considered: on lambda ~/src/llama.cpp was a 60b06ab9a
+        # tree whose llama-cli died on "undefined symbol: llama_memory_breakdown_print",
+        # and a session compared tokenizers against it. The candidate found here is
+        # verified by the SAME oracle, commit and cmake checks as a named one, and a
+        # named $LLAMA_BENCH_PATH always wins over it.
+        LLAMA_PIN_CANON="${LLAMA_PIN_SRC_ROOT:-$HOME/src}/llama.cpp-$llama_bin_want/build/bin/llama-bench"
+        if [ ! -f "$LLAMA_PIN_CANON" ]; then
+            LLAMA_PIN_REASON=no_binary_named
+            LLAMA_PIN_RC=1
+            return 1
+        fi
+        llama_bin_candidate="$LLAMA_PIN_CANON"
     fi
 
     # BEHAVIOUR, not existence: it must run and say something.
@@ -378,14 +400,20 @@ llama_bin_resolve() {
         return 2
     fi
 
-    case "$LLAMA_BUILD" in
-        *"$llama_bin_want"*) ;;
-        *)
-            LLAMA_PIN_REASON=wrong_build
-            LLAMA_PIN_RC=1
-            return 1
-            ;;
-    esac
+    # THE COMMIT, HOWEVER MANY HEX DIGITS GIT CHOSE (#3563). The oracle prints
+    # `git rev-parse --short` of the tree it was configured in, and git lengthens
+    # that abbreviation until it is unique IN THAT CLONE: the same d1d3c3396 printed
+    # `commit d1d3c3396` on lambda and `commit d1d3c339` on gx10 (a smaller clone),
+    # and the old substring test refused gx10's correct build as wrong_build. Like the
+    # build NUMBER (llama_pin.toml), the abbreviation LENGTH is not an identity; the
+    # commit is. So the token is read out of either --version shape and matched when
+    # one abbreviates the other, at git's own minimum of 7 hex digits.
+    llama_bin_got=$(printf '%s\n' "$LLAMA_BUILD" | sed -nE 's/.*commit ([0-9a-f]{7,40}).*/\1/p;t;s/.*\(([0-9a-f]{7,40})\).*/\1/p' | head -n 1)
+    if ! llama_commit_match "$llama_bin_want" "$llama_bin_got"; then
+        LLAMA_PIN_REASON=wrong_build
+        LLAMA_PIN_RC=1
+        return 1
+    fi
 
     # HOW IT WAS BUILT, NOT JUST WHICH COMMIT (PP-20). `build_flags_<host>` was
     # a declaration no execution path read, and it was WRONG on both CUDA
@@ -484,6 +512,12 @@ if llama_bin_is_main; then
            printf '      pin expires %s\n' "$LLAMA_PIN_EXPIRY" ;;
         1) printf 'FAIL  llama.cpp named but NOT the declared build (%s).\n' \
                "${LLAMA_PIN_REASON:-unknown}" >&2
+           if [ "${LLAMA_PIN_REASON:-}" = no_binary_named ]; then
+               printf '      nothing named, and the pinned build is absent at its canonical location:\n' >&2
+               printf '        %s\n' "${LLAMA_PIN_CANON:-<none>}" >&2
+               printf '      build it there from %s, with the declared cmake line below, or name one in LLAMA_BENCH_PATH\n' \
+                   "$(llama_pin_get build_commit)" >&2
+           fi
            printf '      declared: %s\n      reported: %s\n' \
                "$(llama_pin_get build_commit)" "${LLAMA_BUILD:-<no output>}" >&2
            printf '      declared cmake: %s\n      cache: GGML_CUDA=%s CMAKE_CUDA_ARCHITECTURES=%s\n' \
