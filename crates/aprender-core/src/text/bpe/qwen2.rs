@@ -287,31 +287,58 @@ struct HfTokenizerJson {
     model: HfModel,
     #[serde(default)]
     added_tokens: Vec<HfAddedToken>,
-    /// #3742: read only to refuse a regex pre-tokenizer this crate cannot reproduce.
+    /// #3742: read only to refuse a pre-tokenizer this crate cannot reproduce.
     #[serde(default)]
     pre_tokenizer: Option<serde_json::Value>,
 }
 
-/// #3742: the regex a tokenizer.json pre-tokenizer splits with, if any: a `Split` with a
-/// `Regex` pattern (Qwen2, Qwen3.5, Llama 3, ...) or GPT-2's `ByteLevel` with `use_regex`.
-/// `BpeTokenizer::pre_tokenize` only splits on whitespace, so a vocabulary whose merges were
-/// learned over one of these pieces cannot be encoded here canonically.
-fn regex_pre_tokenizer(node: &serde_json::Value) -> Option<String> {
+/// #3742: the split a tokenizer.json pre-tokenizer declares, when it is one
+/// `BpeTokenizer::pre_tokenize` (whitespace only) does not reproduce: a `Split` with a `Regex`
+/// pattern (Qwen2, Qwen3.5, Llama 3, ...), GPT-2's `ByteLevel` regex, or a `ByteLevel` with no
+/// regex (no split at all: the merges ran over the whole text).
+fn declared_pre_tokenizer(node: &serde_json::Value) -> Option<String> {
     match node.get("type").and_then(|t| t.as_str()) {
         Some("Split") => node
             .get("pattern")
             .and_then(|p| p.get("Regex"))
             .and_then(|r| r.as_str())
-            .map(|r| format!("Split regex {r:?}")),
+            .map(|r| format!("a Split regex {r:?}")),
         Some("ByteLevel")
-            if node.get("use_regex").and_then(serde_json::Value::as_bool) != Some(false) =>
+            if node.get("use_regex").and_then(serde_json::Value::as_bool) == Some(false) =>
         {
-            Some("ByteLevel with GPT-2's built-in regex".to_string())
+            Some("a ByteLevel with no regex, which does not split at all".to_string())
         }
+        Some("ByteLevel") => Some("a ByteLevel with GPT-2's built-in regex".to_string()),
         _ => node
             .get("pretokenizers")
             .and_then(|a| a.as_array())
-            .and_then(|a| a.iter().find_map(regex_pre_tokenizer)),
+            .and_then(|a| a.iter().find_map(declared_pre_tokenizer)),
+    }
+}
+
+/// #3742: a GPT-2 byte-level vocabulary spells space and newline with the glyphs `Ġ` (U+0120)
+/// and `Ċ` (U+010A), and both are tokens. Every such vocabulary aprender loads comes from
+/// HuggingFace and was trained over a split `pre_tokenize` does not reproduce (aprender's own
+/// `apr tokenize train` writes hex-byte vocabularies, which have neither glyph).
+fn is_gpt2_byte_level<'a>(mut tokens: impl Iterator<Item = &'a str>) -> bool {
+    let (mut space, mut newline) = (false, false);
+    tokens.any(|t| {
+        space |= t == "\u{0120}";
+        newline |= t == "\u{010A}";
+        space && newline
+    })
+}
+
+/// #3742: the refusal, never a silent whitespace split: `why` is what makes the vocabulary
+/// one `BpeTokenizer` would give ids the model never saw (the defect #3726 removed from the
+/// GGUF path).
+fn byte_level_refusal(why: &str) -> AprenderError {
+    AprenderError::FormatError {
+        message: format!(
+            "{why}; aprender's BpeTokenizer only splits on whitespace and would not reproduce this \
+             model's token ids. Encode it with realizar's canonical byte-level BPE from the \
+             model's tokenizer.json (#3742)"
+        ),
     }
 }
 
@@ -361,21 +388,24 @@ pub fn load_from_json(json: &str) -> Result<BpeTokenizer> {
             message: format!("Failed to parse tokenizer JSON: {e}"),
         })?;
 
-    // #3742: refuse, never silently whitespace-split, a vocabulary whose pre-tokenizer is a
-    // regex. Its ids would not be the model's (the defect #3726 removed from the GGUF path).
-    // apr-cli encodes these through realizar's canonical byte-level BPE instead.
-    if let Some(regex) = hf_tokenizer
+    // #3742: refuse, never silently whitespace-split, a byte-level vocabulary. apr-cli and
+    // entrenar encode these through realizar's canonical byte-level BPE instead.
+    if let Some(declared) = hf_tokenizer
         .pre_tokenizer
         .as_ref()
-        .and_then(regex_pre_tokenizer)
+        .and_then(declared_pre_tokenizer)
     {
-        return Err(AprenderError::FormatError {
-            message: format!(
-                "tokenizer.json declares a regex pre-tokenizer ({regex}); aprender's BpeTokenizer \
-                 only splits on whitespace and would not reproduce this model's token ids. Encode \
-                 it with realizar's canonical byte-level BPE (#3742)"
-            ),
-        });
+        return Err(byte_level_refusal(&format!(
+            "tokenizer.json declares {declared} as its pre-tokenizer"
+        )));
+    }
+    let tokens = hf_tokenizer.model.vocab.keys().map(String::as_str);
+    if is_gpt2_byte_level(
+        tokens.chain(hf_tokenizer.added_tokens.iter().map(|t| t.content.as_str())),
+    ) {
+        return Err(byte_level_refusal(
+            "tokenizer.json has a GPT-2 byte-level vocabulary",
+        ));
     }
 
     let vocab_size = hf_tokenizer.model.vocab.len();
@@ -476,6 +506,16 @@ pub fn load_from_files(vocab_json: &str, merges_txt: &str) -> Result<BpeTokenize
         serde_json::from_str(vocab_json).map_err(|e| AprenderError::FormatError {
             message: format!("Failed to parse vocabulary JSON: {e}"),
         })?;
+
+    // #3742: the two-file layout carries no pre-tokenizer, so a GPT-2 byte-level vocabulary
+    // (`apr tokenize import-hf` output) is refused here; the tokenizer.json beside it is the
+    // encodable form.
+    if is_gpt2_byte_level(vocab.keys().map(String::as_str)) {
+        return Err(byte_level_refusal(
+            "vocab.json is a GPT-2 byte-level vocabulary and the vocab.json + merges.txt layout \
+             carries no pre-tokenizer",
+        ));
+    }
 
     let config = config_from_vocab_size(vocab.len());
     let mut tokenizer = BpeTokenizer::new(config);

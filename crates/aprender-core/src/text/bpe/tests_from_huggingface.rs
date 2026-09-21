@@ -241,8 +241,17 @@ fn test_ssc023_encode_decode_roundtrip_loaded() {
     all_vocab.push(("ll", 257));
     all_vocab.push(("Hell", 258));
     all_vocab.push(("Hello", 259));
+    let merges = ["H e", "l l", "He ll", "Hell o"];
 
-    let json = mock_tokenizer_json(&all_vocab, &["H e", "l l", "He ll", "Hell o"], &[]);
+    // #3742: every GPT-2 byte glyph, `Ġ` and `Ċ` included, makes this a byte-level
+    // vocabulary, which `pre_tokenize` (whitespace only) cannot encode canonically: refused.
+    let json = mock_tokenizer_json(&all_vocab, &merges, &[]);
+    let err = BpeTokenizer::from_huggingface_json(&json).expect_err("byte-level: refused");
+    assert!(err.to_string().contains("#3742"), "{err}");
+
+    // Without the whitespace glyphs the vocabulary is not byte-level: it loads and round-trips.
+    all_vocab.retain(|(t, _)| *t != "\u{0120}" && *t != "\u{010A}");
+    let json = mock_tokenizer_json(&all_vocab, &merges, &[]);
 
     let tokenizer =
         BpeTokenizer::from_huggingface_json(&json).expect("should load from valid JSON");

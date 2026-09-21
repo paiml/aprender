@@ -92,6 +92,10 @@ impl AprV2Model {
             },
         };
 
+        // #3742: the same loader as every other tokenizer.json consumer, so the model's own
+        // pre-tokenizer and ranked merges encode the prompt (the canonical byte-level BPE)
+        // whenever they are implemented. This branch ran the legacy merge loop over the whole
+        // text, which is not the model's tokenization.
         let json: serde_json::Value = match serde_json::from_str(&content) {
             Ok(j) => j,
             Err(e) => {
@@ -99,48 +103,14 @@ impl AprV2Model {
                 return None;
             },
         };
-
-        // Extract vocabulary (token -> id)
-        let vocab_obj = json.get("model")?.get("vocab")?;
-        let vocab_map = vocab_obj.as_object()?;
-        let token_to_id: HashMap<String, u32> = vocab_map
-            .iter()
-            .filter_map(|(token, id)| Some((token.clone(), id.as_u64()? as u32)))
-            .collect();
-
-        // F-REGR-231: Extract added_tokens (special tokens like <|im_start|>, <|im_end|>)
-        let special_tokens: HashMap<String, u32> = json
-            .get("added_tokens")
-            .and_then(|arr| arr.as_array())
-            .map(|tokens| {
-                tokens
-                    .iter()
-                    .filter_map(|t| {
-                        let content = t.get("content")?.as_str()?;
-                        let id = t.get("id")?.as_u64()? as u32;
-                        Some((content.to_string(), id))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        // Extract merges
-        let merges = json.get("model")?.get("merges")?.as_array()?;
-        let merge_rules: Vec<(String, String)> = merges
-            .iter()
-            .filter_map(|m| {
-                let s = m.as_str()?;
-                let parts: Vec<&str> = s.splitn(2, ' ').collect();
-                if parts.len() == 2 {
-                    Some((parts[0].to_string(), parts[1].to_string()))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        let tokens = bpe_encode(text, &token_to_id, &merge_rules, &special_tokens);
-        Some(tokens)
+        let Some(tokenizer) = Self::load_tokenizer_from_value(&json) else {
+            eprintln!(
+                "[PMAT-172] Error: {} is not a BPE tokenizer.json (no model.vocab / model.merges)",
+                tokenizer_path.display()
+            );
+            return None;
+        };
+        Some(tokenizer.encode(text))
     }
 
     // PMAT-172: Removed find_tokenizer_json_in_cache() — loading a stale
@@ -275,7 +245,22 @@ impl AprV2Model {
         }
 
         let content = fs::read_to_string(tokenizer_path).ok()?;
-        let json: serde_json::Value = serde_json::from_str(&content).ok()?;
+        let tokenizer = Self::load_tokenizer_from_json(&content)?;
+        eprintln!(
+            "[GH-189] Loaded tokenizer from {}: {} special tokens",
+            tokenizer_path.display(),
+            tokenizer.special_tokens.len()
+        );
+        Some(tokenizer)
+    }
+
+    /// Load a tokenizer from the text of a HuggingFace tokenizer.json (#3742: entrenar's
+    /// tokenizer reaches the canonical byte-level BPE through here).
+    pub fn load_tokenizer_from_json(content: &str) -> Option<BpeTokenizer> {
+        Self::load_tokenizer_from_value(&serde_json::from_str(content).ok()?)
+    }
+
+    fn load_tokenizer_from_value(json: &serde_json::Value) -> Option<BpeTokenizer> {
 
         // Extract vocabulary
         let vocab_obj = json.get("model")?.get("vocab")?;
@@ -303,15 +288,7 @@ impl AprV2Model {
         let merges = json.get("model")?.get("merges")?.as_array()?;
         let merge_rules: Vec<(String, String)> = merges
             .iter()
-            .filter_map(|m| {
-                let s = m.as_str()?;
-                let parts: Vec<&str> = s.splitn(2, ' ').collect();
-                if parts.len() == 2 {
-                    Some((parts[0].to_string(), parts[1].to_string()))
-                } else {
-                    None
-                }
-            })
+            .filter_map(merge_pair)
             .collect();
 
         // GH-189: Extract ALL added_tokens as special tokens for atomic tokenization
@@ -348,14 +325,9 @@ impl AprV2Model {
             }
         }
 
-        eprintln!(
-            "[GH-189] Loaded tokenizer from {}: {} special tokens",
-            tokenizer_path.display(),
-            special_tokens.len()
-        );
         // #3742: the tokenizer.json's own pre-tokenizer and ranked merges, when implemented.
         let canonical = crate::apr::canonical_tokenizer::canonical_for_tokenizer_json(
-            &json,
+            json,
             &id_to_token,
             &merge_rules,
             &added,
@@ -371,6 +343,20 @@ impl AprV2Model {
             canonical,
         })
     }
+}
+
+/// One tokenizer.json merge: the string form `"a b"` or the array form `["a", "b"]` that
+/// `tokenizers` 0.20+ writes (#3742). Reading only the string form built a canonical encoder
+/// with no merges from every array-form file, without a word.
+fn merge_pair(m: &serde_json::Value) -> Option<(String, String)> {
+    if let Some(pair) = m.as_array() {
+        return match pair.as_slice() {
+            [a, b] => Some((a.as_str()?.to_string(), b.as_str()?.to_string())),
+            _ => None,
+        };
+    }
+    let (a, b) = m.as_str()?.split_once(' ')?;
+    Some((a.to_string(), b.to_string()))
 }
 
 include!("loading_mmap.rs");

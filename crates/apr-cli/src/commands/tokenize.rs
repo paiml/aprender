@@ -2208,6 +2208,21 @@ pub(crate) fn run_import_hf(
         ))
     })?;
 
+    // #3742: the source tokenizer.json, verbatim. vocab.json + merges.txt carry no
+    // pre-tokenizer, so aprender-core refuses a byte-level pair by name; the encoders find
+    // the model's pre-tokenizer here instead (`apr tokenize encode-corpus` prefers it).
+    let tokenizer_json_path = output.join("tokenizer.json");
+    let same_file =
+        std::fs::canonicalize(input).ok() == std::fs::canonicalize(&tokenizer_json_path).ok();
+    if !same_file {
+        std::fs::write(&tokenizer_json_path, &raw).map_err(|e| {
+            CliError::ValidationFailed(format!(
+                "[apr-cli-tokenize-import-hf-v1] cannot write {}: {e}",
+                tokenizer_json_path.display()
+            ))
+        })?;
+    }
+
     // Write manifest.json with provenance.
     let manifest = serde_json::json!({
         "schema": "apr-cli-tokenize-import-hf-v1",
@@ -2256,6 +2271,10 @@ pub(crate) fn run_import_hf(
         output::kv(
             "  manifest.json",
             format!("{}/manifest.json", output.display()),
+        );
+        output::kv(
+            "  tokenizer.json",
+            format!("{}/tokenizer.json", output.display()),
         );
     }
 
@@ -2625,6 +2644,27 @@ mod tests {
             merge_lines, 800,
             "FALSIFY-TOK-IMPORT-HF-002: merges.txt must have 800 merge lines, got {merge_lines}"
         );
+        // #3742: the pre-tokenizer only lives in the source file; it is kept verbatim.
+        assert_eq!(
+            std::fs::read(output.join("tokenizer.json")).expect("tokenizer.json written"),
+            std::fs::read(&input).expect("read input"),
+            "#3742: import-hf keeps the source tokenizer.json beside vocab.json + merges.txt"
+        );
+    }
+
+    /// #3742: importing in place (the source already IS `<output>/tokenizer.json`) must not
+    /// write the file onto itself.
+    #[test]
+    fn import_hf_into_the_source_directory_leaves_the_source_intact() {
+        let tmp = TempDir::new().expect("tempdir");
+        let written = write_minimal_bpe_tokenizer_json(tmp.path(), 300, 200);
+        let input = tmp.path().join("tokenizer.json");
+        if written != input {
+            std::fs::rename(&written, &input).expect("rename");
+        }
+        let before = std::fs::read(&input).expect("read");
+        run_import_hf(&input, tmp.path(), false, true).expect("import-hf in place");
+        assert_eq!(std::fs::read(&input).expect("read"), before);
     }
 
     /// FALSIFY-TOK-IMPORT-HF-003: vocab.json entry count == |tokenizer.json:model.vocab|.

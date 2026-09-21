@@ -109,7 +109,9 @@ cuda-batch = ["cuda"]
 wgpu = ["inference"]
 visualization = ["renacer", "trueno-viz"]
 zram = ["trueno-zram-core"]
-training = ["dep:entrenar", "dep:entrenar-lora", "dep:aprender-train-distill", "dep:aprender-train-common", "aprender-train-distill?/shard-batch-source"]
+# #3742: entrenar/realizar lets entrenar's tokenizer encode a byte-level tokenizer.json through
+# realizar's canonical byte-level BPE (aprender-core refuses one by name).
+training = ["dep:entrenar", "entrenar/realizar", "dep:entrenar-lora", "dep:aprender-train-distill", "dep:aprender-train-common", "aprender-train-distill?/shard-batch-source"]
 training-gpu = ["training"]
 dhat-heap = ["dep:dhat"]
 full = ["inference", "cuda", "cuda-batch", "visualization", "zram", "training", "training-gpu", "code", "xet", "trueno-explain"]

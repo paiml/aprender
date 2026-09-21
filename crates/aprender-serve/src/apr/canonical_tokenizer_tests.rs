@@ -131,3 +131,28 @@ fn apr_without_token_types_infers_the_specials_structurally() {
     // have come out as the single id of "<p>".
     assert_eq!(bpe.encode("<p>"), vec![id("<p"), id(">")]);
 }
+
+/// #3742: `tokenizers` 0.20+ writes merges as `["a", "b"]`. Reading only the `"a b"` form
+/// built a canonical encoder with no merges from every such file, without a word.
+#[test]
+fn tokenizer_json_merges_are_read_in_both_forms() {
+    let base = byte_level_vocab(&["ab"]);
+    let vocab: serde_json::Map<String, serde_json::Value> = base
+        .iter()
+        .enumerate()
+        .map(|(id, t)| (t.clone(), serde_json::json!(id)))
+        .collect();
+    let ab = base.len() as u32 - 1;
+    for merges in [serde_json::json!(["a b"]), serde_json::json!([["a", "b"]])] {
+        let doc = serde_json::json!({
+            "model": {"type": "BPE", "vocab": vocab, "merges": merges},
+            "added_tokens": [],
+            "pre_tokenizer": {"type": "Split", "pattern": {"Regex": QWEN2_HF_REGEX}}
+        })
+        .to_string();
+        let tok = super::super::AprV2Model::load_tokenizer_from_json(&doc).expect("loads");
+        assert!(tok.canonical.is_some(), "{merges}: canonical");
+        assert_eq!(tok.merge_rules.len(), 1, "{merges}: the merge is read");
+        assert_eq!(tok.encode("ab"), vec![ab], "{merges}: the merge is applied");
+    }
+}

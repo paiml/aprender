@@ -1,16 +1,11 @@
 use super::*;
 
-/// FALSIFY-BPE-UPSTREAM-002 (load_from_files vs load_from_json parity):
-/// Loading the SAME Qwen2 vocab via vocab.json+merges.txt MUST produce
-/// the same encode behavior as loading via tokenizer.json. The encoder
-/// pipeline downstream is the same; only the load path differs.
-///
-/// CONTEXT: PR #1596 routes encode-corpus through `load_from_files`
-/// when tokenizer.json is absent. PR #1596's LIVE smoke produced 99%
-/// `<unk>` despite `load_from_json` producing 0% on the same vocab
-/// (FALSIFY-BPE-UPSTREAM-001 above). This test bisects: if RED, the
-/// gap is in `load_from_files`'s setup (likely missing added_tokens
-/// / merge format / pretokenizer config).
+/// FALSIFY-BPE-UPSTREAM-002 (load_from_files vs load_from_json parity), superseded by #3742:
+/// the SAME Qwen2 vocabulary must get the SAME answer from both loaders, and since #3742 that
+/// answer is a refusal by name. `load_from_json` refuses it for its declared regex
+/// pre-tokenizer; `load_from_files` (the `apr tokenize import-hf` layout, PR #1596) refuses it
+/// for its GPT-2 byte glyphs, because that layout carries no pre-tokenizer. Host-dependent:
+/// skipped where the extracted files are absent.
 #[test]
 fn falsify_bpe_load_from_files_matches_load_from_json_encode() {
     let vocab_path = "/tmp/qwen-0.5b-tokenizer-extracted/vocab.json";
@@ -32,61 +27,14 @@ fn falsify_bpe_load_from_files_matches_load_from_json_encode() {
 
     let vocab_json = std::fs::read_to_string(vocab_path).expect("read vocab");
     let merges_txt = std::fs::read_to_string(merges_path).expect("read merges");
-    let from_files = load_from_files(&vocab_json, &merges_txt).expect("load_from_files ok");
-
     let json = std::fs::read_to_string(&json_path).expect("read tokenizer.json");
-    let from_json = load_from_json(&json).expect("load_from_json ok");
-
-    let text = "def fibonacci(n):\n    return n\n";
-    let ids_files = from_files.encode(text);
-    let ids_json = from_json.encode(text);
-
-    eprintln!("[upstream-002] from_files: {ids_files:?}");
-    eprintln!("[upstream-002] from_json:  {ids_json:?}");
-    eprintln!(
-        "[upstream-002] from_files vocab_size={}, from_json vocab_size={}",
-        from_files.vocab_size(),
-        from_json.vocab_size()
-    );
-
-    // Find unk count in each — Qwen2 unk is <|endoftext|> id 151643.
-    let unk_id = 151643_u32;
-    let unk_in_files = ids_files.iter().filter(|&&id| id == unk_id).count();
-    let unk_in_json = ids_json.iter().filter(|&&id| id == unk_id).count();
-    let total_files = ids_files.len();
-    let total_json = ids_json.len();
-    eprintln!(
-        "[upstream-002] from_files: {total_files} tokens, {unk_in_files} unks ({:.3}%)",
-        if total_files > 0 {
-            unk_in_files as f32 / total_files as f32 * 100.0
-        } else {
-            0.0
-        }
-    );
-    eprintln!(
-        "[upstream-002] from_json:  {total_json} tokens, {unk_in_json} unks ({:.3}%)",
-        if total_json > 0 {
-            unk_in_json as f32 / total_json as f32 * 100.0
-        } else {
-            0.0
-        }
-    );
-
-    let ratio_files = unk_in_files as f32 / total_files.max(1) as f32;
-    let ratio_json = unk_in_json as f32 / total_json.max(1) as f32;
-
-    // Assert: load_from_files's unk_ratio is within 5% of load_from_json's.
-    // load_from_json achieves ~0% on this input (verified by upstream-001).
-    // If load_from_files diverges by >5%, the load path is broken.
-    let divergence = (ratio_files - ratio_json).abs();
-    assert!(
-        divergence < 0.05,
-        "FALSIFY-BPE-UPSTREAM-002: load_from_files unk_ratio={ratio_files:.4} \
-         diverges from load_from_json unk_ratio={ratio_json:.4} by {divergence:.4} \
-         (>0.05). The two loaders SHOULD produce equivalent encoders for the \
-         same vocab. Fix scope: align load_from_files setup with load_from_json \
-         (likely added_tokens registration, merge format, or pretokenizer config)."
-    );
+    for (loader, result) in [
+        ("load_from_files", load_from_files(&vocab_json, &merges_txt)),
+        ("load_from_json", load_from_json(&json)),
+    ] {
+        let err = result.expect_err("a Qwen2 byte-level vocabulary is refused (#3742)");
+        assert!(err.to_string().contains("#3742"), "{loader}: {err}");
+    }
 }
 
 /// FALSIFY-BPE-UPSTREAM-001, superseded by #3742: this crate's `BpeTokenizer` must REFUSE a
@@ -111,7 +59,7 @@ fn falsify_bpe_qwen_encode_python_does_not_unk_99pct() {
         load_from_json(&json).expect_err("a regex pre-tokenizer vocabulary is refused (#3742)");
     let msg = err.to_string();
     assert!(
-        msg.contains("regex pre-tokenizer") && msg.contains("#3742"),
+        msg.contains("Split regex") && msg.contains("#3742"),
         "{msg}"
     );
 }
@@ -453,36 +401,60 @@ fn test_pmat751_prefix_space_after_special_token() {
     );
 }
 
-/// #3742: the refusal is the enforcement. A tokenizer.json whose pre-tokenizer is a regex
-/// (a `Split`, or GPT-2's `ByteLevel` with its built-in regex) is refused by name; one without
-/// a regex pre-tokenizer still loads (aprender's own whitespace pre-split is canonical for it).
+/// #3742: the refusal is the enforcement. `BpeTokenizer::pre_tokenize` only splits on
+/// whitespace, so every byte-level vocabulary is refused by name: a declared `Split` regex, a
+/// `ByteLevel` of either kind, or GPT-2 byte glyphs (`Ġ` and `Ċ`) in the vocabulary, through
+/// either loader. A vocabulary that is none of these still loads.
 #[test]
-fn load_from_json_refuses_a_regex_pre_tokenizer_and_keeps_the_rest() {
-    let body = |pre: &str| {
+fn load_from_json_refuses_every_byte_level_vocabulary_and_keeps_the_rest() {
+    let body = |vocab: &str, pre: &str| {
         format!(
-            r#"{{"model": {{"type": "BPE", "vocab": {{"a": 0, "b": 1, "ab": 2}}, "merges": ["a b"]}},
+            r#"{{"model": {{"type": "BPE", "vocab": {vocab}, "merges": ["a b"]}},
                 "added_tokens": [], "pre_tokenizer": {pre}}}"#
         )
     };
-    let split = body(
-        r#"{"type": "Sequence", "pretokenizers": [{"type": "Split", "pattern": {"Regex": "\\p{N}"}, "behavior": "Isolated"}]}"#,
+    let plain = r#"{"a": 0, "b": 1, "ab": 2}"#;
+    let glyphs = r#"{"a": 0, "b": 1, "ab": 2, "\u0120": 3, "\u010a": 4}"#;
+    let refused = |json: &str, why: &str| {
+        let err = load_from_json(json).expect_err(why);
+        assert!(err.to_string().contains("#3742"), "{why}: {err}");
+    };
+    refused(
+        &body(
+            plain,
+            r#"{"type": "Sequence", "pretokenizers": [{"type": "Split", "pattern": {"Regex": "\\p{N}"}, "behavior": "Isolated"}]}"#,
+        ),
+        "a Split regex is refused",
     );
-    let err = load_from_json(&split).expect_err("a Split regex is refused");
+    refused(
+        &body(plain, r#"{"type": "ByteLevel", "add_prefix_space": false}"#),
+        "GPT-2's ByteLevel regex is refused",
+    );
+    refused(
+        &body(
+            plain,
+            r#"{"type": "ByteLevel", "add_prefix_space": false, "use_regex": false}"#,
+        ),
+        "a ByteLevel with no regex does not split at all: refused",
+    );
+    refused(
+        &body(glyphs, "null"),
+        "GPT-2 byte glyphs with no pre-tokenizer are refused",
+    );
+    refused(
+        &body(glyphs, r#"{"type": "Whitespace"}"#),
+        "GPT-2 byte glyphs under a whitespace pre-tokenizer are refused",
+    );
+    assert!(
+        load_from_json(&body(plain, "null")).is_ok(),
+        "a vocabulary that is not byte-level still loads"
+    );
+
+    // The vocab.json + merges.txt layout carries no pre-tokenizer: the glyphs decide.
+    let err = load_from_files(glyphs, "a b\n").expect_err("byte-level vocab.json is refused");
     assert!(err.to_string().contains("#3742"), "{err}");
-
-    let byte_level = body(r#"{"type": "ByteLevel", "add_prefix_space": false}"#);
     assert!(
-        load_from_json(&byte_level).is_err(),
-        "GPT-2's ByteLevel regex is refused"
-    );
-
-    let no_regex = body(r#"{"type": "ByteLevel", "add_prefix_space": false, "use_regex": false}"#);
-    assert!(
-        load_from_json(&no_regex).is_ok(),
-        "a ByteLevel without its regex still loads"
-    );
-    assert!(
-        load_from_json(&body("null")).is_ok(),
-        "no pre-tokenizer still loads"
+        load_from_files(plain, "a b\n").is_ok(),
+        "a vocab.json that is not byte-level still loads"
     );
 }

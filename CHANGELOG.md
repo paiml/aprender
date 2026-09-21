@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: tokenization is the model's own (#3726, #3742)
+
+- **Qwen fine-tuning trains on the model's real token ids.** `apr finetune` and entrenar's other pipelines tokenized a byte-level `tokenizer.json` (Qwen, Llama 3) with aprender-core's whitespace pre-split, which is not the model's tokenization. They now use realizar's canonical byte-level BPE, which is identical to llama.cpp. **Adapters that 0.69.0 or earlier trained on a Qwen `tokenizer.json` saw whitespace-split ids and are not compatible: re-train them.**
+- aprender-core's `BpeTokenizer` refuses a byte-level vocabulary by name instead of whitespace-splitting it. That covers a `tokenizer.json` declaring a `Split` regex or a `ByteLevel` pre-tokenizer, or with a GPT-2 byte-level vocabulary, and a byte-level `vocab.json` + `merges.txt`. A fine-tune whose `.apr` embeds a tokenizer that cannot be loaded now stops with that error. It no longer reports that the file has no tokenizer.
+- `apr run` on a SafeTensors model, and every apr-cli consumer of a `tokenizer.json`, encode with the model's own pre-tokenizer and ranked merges. Array-form merges (`["a", "b"]`, written by `tokenizers` 0.20+) are read; they used to be dropped without a word.
+- `apr tokenize import-hf` also writes the source `tokenizer.json` into its output directory, and `apr tokenize encode-corpus` encodes from it.
+
 ## [0.69.0] - 2026-09-21
 
 0.69.0 folds every remaining 0.68.x row into one train (EPIC #3080). The headline goal is Qwen models usable on pure CUDA. This release makes the CUDA path honest and routable:

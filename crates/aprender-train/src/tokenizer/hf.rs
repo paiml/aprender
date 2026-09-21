@@ -13,13 +13,78 @@ pub use aprender::text::bpe::{
 
 /// HuggingFace-compatible tokenizer wrapper
 ///
-/// Wraps aprender's BPE tokenizer to provide training batch utilities.
+/// Wraps a BPE tokenizer to provide training batch utilities.
 #[derive(Debug, Clone)]
 pub struct HfTokenizer {
-    inner: HfBpeTokenizer,
+    inner: Inner,
     pad_id: u32,
     eos_id: Option<u32>,
     bos_id: Option<u32>,
+}
+
+/// The encoder behind [`HfTokenizer`].
+#[derive(Debug, Clone)]
+enum Inner {
+    /// aprender's BPE (a whitespace pre-split). It refuses a byte-level vocabulary by name
+    /// (#3742), so it only ever holds one it encodes canonically.
+    Core(HfBpeTokenizer),
+    /// #3742: a byte-level tokenizer.json (Qwen, Llama 3, ...) through realizar's canonical
+    /// byte-level BPE: the model's own pre-tokenizer and ranked merges, identical to
+    /// llama.cpp. Training on aprender's whitespace split gave ids the model never saw.
+    #[cfg(feature = "realizar")]
+    Canonical(realizar::apr::BpeTokenizer),
+}
+
+impl Inner {
+    /// The canonical encoder when the tokenizer.json is byte-level BPE with an implemented
+    /// pre-tokenizer, else aprender's BPE, which refuses any other byte-level vocabulary.
+    fn from_json(json: &str) -> std::result::Result<Self, String> {
+        #[cfg(feature = "realizar")]
+        if let Some(tok) = realizar::apr::AprV2Model::load_tokenizer_from_json(json) {
+            if tok.canonical.is_some() {
+                return Ok(Self::Canonical(tok));
+            }
+        }
+        load_hf_from_json(json).map(Self::Core).map_err(|e| e.to_string())
+    }
+
+    fn vocab_size(&self) -> usize {
+        match self {
+            Self::Core(t) => t.vocab_size(),
+            #[cfg(feature = "realizar")]
+            Self::Canonical(t) => {
+                let top_special =
+                    t.special_tokens.values().map(|&id| id as usize + 1).max().unwrap_or(0);
+                t.id_to_token.len().max(top_special)
+            }
+        }
+    }
+
+    fn encode(&self, text: &str) -> Vec<u32> {
+        match self {
+            Self::Core(t) => t.encode(text),
+            #[cfg(feature = "realizar")]
+            Self::Canonical(t) => t.encode(text),
+        }
+    }
+
+    fn decode(&self, ids: &[u32]) -> String {
+        match self {
+            Self::Core(t) => t.decode(ids),
+            #[cfg(feature = "realizar")]
+            Self::Canonical(t) => t.decode(ids),
+        }
+    }
+
+    fn token_to_id(&self, token: &str) -> Option<u32> {
+        match self {
+            Self::Core(t) => t.token_to_id(token),
+            #[cfg(feature = "realizar")]
+            Self::Canonical(t) => {
+                t.special_tokens.get(token).or_else(|| t.token_to_id.get(token)).copied()
+            }
+        }
+    }
 }
 
 impl HfTokenizer {
@@ -27,7 +92,7 @@ impl HfTokenizer {
     #[must_use]
     pub fn gpt2() -> Self {
         Self {
-            inner: HfBpeTokenizer::gpt2_base(),
+            inner: Inner::Core(HfBpeTokenizer::gpt2_base()),
             pad_id: GPT2_VOCAB_SIZE,
             eos_id: Some(GPT2_VOCAB_SIZE),
             bos_id: None,
@@ -38,7 +103,7 @@ impl HfTokenizer {
     #[must_use]
     pub fn qwen2() -> Self {
         Self {
-            inner: HfBpeTokenizer::new(HfBpeConfig::qwen2()),
+            inner: Inner::Core(HfBpeTokenizer::new(HfBpeConfig::qwen2())),
             pad_id: Qwen2BpeTokenizer::ENDOFTEXT_ID,
             eos_id: Some(Qwen2BpeTokenizer::IM_END_ID),
             bos_id: Some(Qwen2BpeTokenizer::IM_START_ID),
@@ -56,13 +121,29 @@ impl HfTokenizer {
 
     /// Load tokenizer from JSON string
     ///
+    /// A byte-level BPE tokenizer.json (Qwen, Llama 3, ...) is encoded by realizar's
+    /// canonical byte-level BPE when the `realizar` feature is on; without it, or when its
+    /// pre-tokenizer is not implemented, it is refused by name (#3742).
+    ///
     /// # Errors
-    /// Returns error if JSON parsing fails.
+    /// Returns error if JSON parsing fails, or the vocabulary is byte-level and cannot be
+    /// encoded canonically.
     pub fn from_json(json: &str) -> Result<Self> {
-        let inner = load_hf_from_json(json).map_err(|e| {
+        let inner = Inner::from_json(json).map_err(|e| {
             TokenizerError::Serialization(format!("Failed to parse tokenizer JSON: {e}"))
         })?;
+        Ok(Self::with_inner(inner))
+    }
 
+    /// #3742: wrap a tokenizer realizar already built, when it is the canonical byte-level
+    /// BPE (an `.apr`'s embedded tables with a named pre-tokenizer). `None` when it is not.
+    #[cfg(feature = "realizar")]
+    #[must_use]
+    pub fn from_canonical(tokenizer: realizar::apr::BpeTokenizer) -> Option<Self> {
+        tokenizer.canonical.is_some().then(|| Self::with_inner(Inner::Canonical(tokenizer)))
+    }
+
+    fn with_inner(inner: Inner) -> Self {
         // Detect special tokens from vocab
         let pad_id =
             inner.token_to_id("<pad>").or_else(|| inner.token_to_id("<|endoftext|>")).unwrap_or(0);
@@ -72,7 +153,7 @@ impl HfTokenizer {
             .or_else(|| inner.token_to_id("<|endoftext|>"));
         let bos_id = inner.token_to_id("<s>").or_else(|| inner.token_to_id("<|im_start|>"));
 
-        Ok(Self { inner, pad_id, eos_id, bos_id })
+        Self { inner, pad_id, eos_id, bos_id }
     }
 
     /// Get vocabulary size

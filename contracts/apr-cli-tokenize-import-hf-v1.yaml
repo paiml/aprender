@@ -1,9 +1,9 @@
 metadata:
   kind: schema
-  version: 1.1.0
+  version: 1.2.0
   status: PARTIAL_ALGORITHM_LEVEL
   created: '2026-05-05'
-  updated: '2026-05-05'
+  updated: '2026-09-21'
   author: PAIML Engineering
   registry: true
   changelog:
@@ -97,10 +97,15 @@ equations:
                          extraction_timestamp)
         postcondition_4: vocab.json entry count == |tokenizer.json:model.vocab|
         postcondition_5: merges.txt line count == |tokenizer.json:model.merges|
+        postcondition_6: <DIR>/tokenizer.json is the source file, byte for byte
+                         (#3742: vocab.json + merges.txt carry no pre-tokenizer,
+                         so a byte-level pair is refused by aprender-core and
+                         encoded from this file); importing in place leaves the
+                         source unchanged
       Non-BPE inputs MUST fail-fast with a clear error citing the
       `model.type` value found and the contract id.
     domain: HF tokenizer.json (BPE)
-    codomain: aprender BPE tokenizer dir (vocab.json + merges.txt + manifest.json)
+    codomain: aprender BPE tokenizer dir (vocab.json + merges.txt + manifest.json + tokenizer.json)
     invariants:
     - "BPE model only — Unigram + WordPiece reject fail-fast"
     - "byte-for-byte extraction; no normalization, no merging, no truncation"
@@ -158,6 +163,12 @@ falsification_tests:
   prediction: "running `apr tokenize import-hf` on a tokenizer.json with model.type != \"BPE\" returns Err with a clear message naming the actual type and citing this contract"
   test: "cargo test -p apr-cli --lib commands::tokenize::tests::import_hf_unigram_input_errors"
   if_fails: "non-BPE input silently extracts garbage — operator gets a wrong-format dir that breaks downstream"
+
+- id: FALSIFY-TOK-IMPORT-HF-006
+  rule: the source tokenizer.json is kept verbatim beside vocab.json + merges.txt (#3742)
+  prediction: "<DIR>/tokenizer.json is byte-identical to the input, and importing in place (input == <DIR>/tokenizer.json) leaves the input unchanged"
+  test: "cargo test -p apr-cli --lib commands::tokenize::tests::import_hf_"
+  if_fails: "the pre-tokenizer is lost: a byte-level import can only be refused (aprender-core) or whitespace-split, never encoded as the model tokenizes"
 
 proof_obligations:
 - id: ACTIH-INV-001

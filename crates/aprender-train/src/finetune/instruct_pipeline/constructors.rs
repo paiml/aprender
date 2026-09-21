@@ -210,7 +210,7 @@ impl InstructPipeline {
         // Fallback 2: Error — training requires a BPE tokenizer.
         let tokenizer = {
             // PRIMARY: Extract embedded tokenizer from APR metadata
-            let embedded = Self::extract_embedded_tokenizer(apr_path);
+            let embedded = Self::extract_embedded_tokenizer(apr_path)?;
 
             if let Some(tok) = embedded {
                 eprintln!(
@@ -301,22 +301,46 @@ impl InstructPipeline {
     ///
     /// CONTRACT: apr_tokenizer_embedding (model-format-conversion-v1.yaml, PMAT-154)
     /// APR files store tokenizer vocabulary and merges in the metadata section.
-    /// This reconstructs a HuggingFace-compatible tokenizer.json from those fields.
     ///
-    /// Returns None if the APR file lacks embedded tokenizer data (pre-PMAT-154 files).
+    /// A byte-level vocabulary whose pre-tokenizer the file names (or its architecture
+    /// implies) is built by realizar's canonical byte-level BPE (#3742). Any other vocabulary
+    /// is rebuilt as a HuggingFace tokenizer.json from those fields.
+    ///
+    /// `Ok(None)` if the APR file lacks embedded tokenizer data (pre-PMAT-154 files): the
+    /// caller then looks for a sibling tokenizer.json.
+    ///
+    /// # Errors
+    /// The file embeds a vocabulary that cannot be loaded, e.g. a byte-level one with no
+    /// implemented pre-tokenizer (#3742). A fine-tune never proceeds past its own tokenizer
+    /// silently, and never swaps in a sibling file in its place.
     // CONTRACT L5: If tokenizer is extracted, it must have non-zero vocab
-    #[ensures(ret.as_ref().is_none_or(|t| t.vocab_size() > 0))]
-    fn extract_embedded_tokenizer(apr_path: &Path) -> Option<HfTokenizer> {
+    #[ensures(ret.as_ref().ok().and_then(Option::as_ref).is_none_or(|t| t.vocab_size() > 0))]
+    fn extract_embedded_tokenizer(apr_path: &Path) -> crate::Result<Option<HfTokenizer>> {
         use aprender::serialization::apr::AprReader;
 
-        let reader = AprReader::open(apr_path).ok()?;
+        let Ok(reader) = AprReader::open(apr_path) else {
+            return Ok(None);
+        };
 
         // Extract vocabulary: tokenizer.vocabulary is an array of token strings
-        let vocab_array = reader.metadata.get("tokenizer.vocabulary")?;
-        let vocab: Vec<&str> = vocab_array.as_array()?.iter().filter_map(|v| v.as_str()).collect();
+        let vocab: Vec<&str> = reader
+            .metadata
+            .get("tokenizer.vocabulary")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+            .unwrap_or_default();
 
         if vocab.is_empty() {
-            return None;
+            return Ok(None);
+        }
+
+        #[cfg(feature = "realizar")]
+        if let Some(tok) = realizar::apr::AprV2Model::load(apr_path)
+            .ok()
+            .and_then(|apr| apr.load_embedded_bpe_tokenizer())
+            .and_then(HfTokenizer::from_canonical)
+        {
+            return Ok(Some(tok));
         }
 
         // Extract merges: tokenizer.merges is an array of "token1 token2" strings
@@ -349,8 +373,13 @@ impl InstructPipeline {
             "added_tokens": [],
         });
 
-        let json_str = serde_json::to_string(&tokenizer_json).ok()?;
-        HfTokenizer::from_json(&json_str).ok()
+        HfTokenizer::from_json(&tokenizer_json.to_string()).map(Some).map_err(|e| {
+            crate::Error::ConfigError(format!(
+                "'{}' embeds a tokenizer that cannot be loaded: {e}. Training requires the \
+                 model's own tokenization.",
+                apr_path.display(),
+            ))
+        })
     }
 
     /// Build LoRA layers for Q and V projections (same pattern as ClassifyPipeline).
@@ -449,3 +478,7 @@ impl InstructPipeline {
         eprintln!("[adapter] Injected {loaded}/{} weight tensors", weights.len());
     }
 }
+
+#[cfg(test)]
+#[path = "constructors_tests_3742.rs"]
+mod tests_3742;
