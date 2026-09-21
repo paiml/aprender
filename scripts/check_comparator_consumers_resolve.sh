@@ -264,7 +264,7 @@ STUB
         d="$TMP/gate-$rows"; mkdir -p "$d/scripts"; cp -- "$g" "$d/scripts/dogfood_comparator_env_tests.sh"
         printf '#!/bin/sh\n' > "$d/llama-cli"; chmod +x "$d/llama-cli"
         # the stub resolver: sets what llama_bin.sh exports, returns what a row picks
-        printf 'LLAMA_CLI="${FX_LLAMA_CLI-%s}"; LLAMA_BUILD="version: fixture"; export LLAMA_CLI LLAMA_BUILD\nreturn "${FX_PIN_RC:-0}"\n' \
+        printf 'LLAMA_COMPLETION="${FX_LLAMA_CLI-%s}"; LLAMA_BUILD="version: fixture"; export LLAMA_COMPLETION LLAMA_BUILD\nreturn "${FX_PIN_RC:-0}"\n' \
             "$d/llama-cli" > "$d/scripts/llama_bin.sh"
         # PATH is set AFTER the row's variables: FX_PATH is one of them
         out=$( export FX_LOG="$d/log"; for kv in "$@"; do export "${kv?}"; done; export PATH="${FX_PATH:-$SBNQ}:/usr/bin:/bin"
@@ -277,7 +277,7 @@ STUB
     gate_row 'D3 a test that did not run is a FAIL' "$GATE" 1 'did not run' FX_TEST=none
     gate_row 'D4 a failing test is a FAIL' "$GATE" 1 'exited 101' FX_TEST=fail
     gate_row 'D5 an unresolved pin is a FAIL' "$GATE" 1 'does not resolve' FX_PIN_RC=1
-    gate_row 'D6 no LLAMA_CLI exported is a FAIL' "$GATE" 1 'exported no executable LLAMA_CLI' FX_LLAMA_CLI=
+    gate_row 'D6 no LLAMA_COMPLETION exported is a FAIL' "$GATE" 1 'exported no executable LLAMA_COMPLETION' FX_LLAMA_CLI=
     gate_row 'D7 the run queues through gpu-q at release priority 1' "$GATE" 0 'PASS' "FX_PATH=$SB"
     grep -qx 'gpu-q --prio 1' "$GATE_LAST/log"; ok_row 'D7b the gpu-q call is --prio 1' $? "$(cat "$GATE_LAST/log")"
 
@@ -297,7 +297,7 @@ PY
         local g=$1 want=$2 needle=$3 d out rc; shift 3
         MUT_N=$((MUT_N + 1)); d="$TMP/mut-$MUT_N"; GATE_TRY_LAST=$d; mkdir -p "$d/scripts"; cp -- "$g" "$d/scripts/dogfood_comparator_env_tests.sh"
         printf '#!/bin/sh\n' > "$d/llama-cli"; chmod +x "$d/llama-cli"
-        printf 'LLAMA_CLI="${FX_LLAMA_CLI-%s}"; LLAMA_BUILD="version: fixture"; export LLAMA_CLI LLAMA_BUILD\nreturn "${FX_PIN_RC:-0}"\n' "$d/llama-cli" > "$d/scripts/llama_bin.sh"
+        printf 'LLAMA_COMPLETION="${FX_LLAMA_CLI-%s}"; LLAMA_BUILD="version: fixture"; export LLAMA_COMPLETION LLAMA_BUILD\nreturn "${FX_PIN_RC:-0}"\n' "$d/llama-cli" > "$d/scripts/llama_bin.sh"
         # PATH is set AFTER the row's variables: FX_PATH is one of them
         out=$( export FX_LOG="$d/log"; for kv in "$@"; do export "${kv?}"; done; export PATH="${FX_PATH:-$SBNQ}:/usr/bin:/bin"
                bash "$d/scripts/dogfood_comparator_env_tests.sh" 2>&1 ); rc=$?
