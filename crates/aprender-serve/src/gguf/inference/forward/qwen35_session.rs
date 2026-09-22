@@ -280,14 +280,7 @@ impl Qwen35Session {
         // A session may be driven from any thread (it is `Send`; `apr serve` runs
         // every request on a blocking-pool worker), and a CUDA context is current
         // per thread: bind it here, before the first allocation or launch.
-        #[cfg(feature = "cuda")]
-        if let Backend::Gpu(gpu) = &self.backend {
-            if let Err(e) = gpu.model.make_current() {
-                self.fall_back_to_cpu(&format!(
-                    "the CUDA context would not bind to this thread: {e}"
-                ))?;
-            }
-        }
+        self.bind_cuda_context_or_fall_back()?;
         self.ensure_capacity_or_fall_back()?;
 
         let (mut logits, reused) = self.advance_to(prompt)?;
@@ -427,6 +420,27 @@ impl Qwen35Session {
     }
 
     /// Make room for the current turn, moving to the CPU if the device cannot.
+    /// Bind the CUDA context to THIS thread before the first allocation or launch.
+    ///
+    /// A CUDA context is per-thread, and `generate` runs under `spawn_blocking`, so the
+    /// thread that binds is not the thread that built the model. A bind failure falls
+    /// back to the CPU rather than failing the turn.
+    ///
+    /// Extracted from `generate` (#3844): `cfg` -> `if let Backend::Gpu` -> `if let Err`
+    /// was three levels of nesting for a single precondition, and cognitive complexity
+    /// counts nesting. Behaviour unchanged; a no-op without the `cuda` feature.
+    fn bind_cuda_context_or_fall_back(&mut self) -> Result<()> {
+        #[cfg(feature = "cuda")]
+        if let Backend::Gpu(gpu) = &self.backend {
+            if let Err(e) = gpu.model.make_current() {
+                self.fall_back_to_cpu(&format!(
+                    "the CUDA context would not bind to this thread: {e}"
+                ))?;
+            }
+        }
+        Ok(())
+    }
+
     fn ensure_capacity_or_fall_back(&mut self) -> Result<()> {
         match self.ensure_capacity() {
             Ok(()) => Ok(()),

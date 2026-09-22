@@ -1,3 +1,42 @@
+/// APR-TRACE-001's prompt-token dump. Extracted from `generate_gguf_with_prompt`
+/// (#3844) to bring its cognitive complexity under the ratchet's ceiling of 25: a
+/// two-`eprintln!` debug block with its own slice arithmetic, inside a function whose
+/// job is generation. A no-op unless `--trace` is on.
+fn trace_prompt_tokens(trace: bool, model: &realizar::gguf::GGUFModel, prompt_tokens: &[u32]) {
+    if !trace {
+        return;
+    }
+    let prompt_len = prompt_tokens.len();
+    eprintln!(
+        "[APR-TRACE] Prompt tokens ({} tokens): {:?}",
+        prompt_len,
+        &prompt_tokens[..prompt_len.min(50)]
+    );
+    let decoded = model.decode(prompt_tokens);
+    eprintln!(
+        "[APR-TRACE] Decoded: {:?}",
+        &decoded[..decoded.len().min(200)]
+    );
+}
+
+/// APR-TRACE-001's generated-token dump. Extracted from `generate_gguf_with_prompt`
+/// (#3844): a `for` nested inside an `if`, purely for tracing, in the middle of the
+/// generation path. A no-op unless `--trace` is on.
+fn trace_generated_tokens(trace: bool, model: &realizar::gguf::GGUFModel, new_tokens: &[u32]) {
+    if !trace {
+        return;
+    }
+    eprintln!(
+        "[APR-TRACE] Generated {} new tokens: {:?}",
+        new_tokens.len(),
+        &new_tokens[..new_tokens.len().min(50)]
+    );
+    for (i, &tok) in new_tokens.iter().take(20).enumerate() {
+        let decoded = model.decode(&[tok]);
+        eprintln!("[APR-TRACE] Token {}: {} -> {:?}", i, tok, decoded);
+    }
+}
+
 impl ChatSession {
 
         pub(super) fn generate(&mut self, user_input: &str, config: &ChatConfig) -> String {
@@ -211,18 +250,7 @@ impl ChatSession {
             let prompt_len = prompt_tokens.len();
 
             // APR-TRACE-001: Debug token IDs
-            if config.trace {
-                eprintln!(
-                    "[APR-TRACE] Prompt tokens ({} tokens): {:?}",
-                    prompt_len,
-                    &prompt_tokens[..prompt_len.min(50)]
-                );
-                let decoded = mapped.model.decode(&prompt_tokens);
-                eprintln!(
-                    "[APR-TRACE] Decoded: {:?}",
-                    &decoded[..decoded.len().min(200)]
-                );
-            }
+            trace_prompt_tokens(config.trace, &mapped.model, &prompt_tokens);
 
             // C-06 (Meyer DbC): EOS from GGUF metadata, not hardcoded.
             let stop_tokens = mapped
@@ -281,17 +309,7 @@ impl ChatSession {
                         &output_tokens[..]
                     };
 
-                    if config.trace {
-                        eprintln!(
-                            "[APR-TRACE] Generated {} new tokens: {:?}",
-                            new_tokens.len(),
-                            &new_tokens[..new_tokens.len().min(50)]
-                        );
-                        for (i, &tok) in new_tokens.iter().take(20).enumerate() {
-                            let decoded = mapped.model.decode(&[tok]);
-                            eprintln!("[APR-TRACE] Token {}: {} -> {:?}", i, tok, decoded);
-                        }
-                    }
+                    trace_generated_tokens(config.trace, &mapped.model, new_tokens);
 
                     return Ok(mapped.model.decode(new_tokens));
                 }

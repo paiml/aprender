@@ -1,6 +1,72 @@
 // #3571: /v1/chat/completions for the Qwen3.5 hybrid, served from the resident
 // `Qwen35Session` the server built once at startup.
 
+/// Spawn the blocking generate that feeds the SSE stream.
+///
+/// Extracted from `try_qwen35_backend` (#3844). This was the function's deepest
+/// nesting -- `if` -> `spawn_blocking` closure -> `match lock()` -> `Ok` arm ->
+/// `generate` callback closure -> `if let Err` -- and cognitive complexity counts
+/// NESTING, which is why flattening the nine flat `unwrap_or` arms alone did not move
+/// the number. Behaviour is unchanged: same lock, same stop-token-ends-the-turn
+/// callback, same `on_gpu` store, same error forwarded down the channel.
+fn spawn_streaming_generate(
+    session: Arc<crate::api::Qwen35Served>,
+    input_ids: Vec<u32>,
+    gen_config: crate::gguf::QuantizedGenerateConfig,
+    stop_tokens: Vec<u32>,
+    tx: tokio::sync::mpsc::Sender<Result<u32, String>>,
+    sink_metrics: Arc<crate::metrics::MetricsCollector>,
+) {
+    tokio::task::spawn_blocking(move || {
+        let mut sink = crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics);
+        let result = match session.session.lock() {
+            Ok(mut s) => {
+                let r = s.generate(&input_ids, &gen_config, &mut |tok| {
+                    // The stop token ends the turn; it is not content.
+                    stop_tokens.contains(&tok) || sink(tok)
+                });
+                session
+                    .on_gpu
+                    .store(s.on_gpu(), std::sync::atomic::Ordering::Relaxed);
+                r.map(|_| ()).map_err(|e| e.to_string())
+            },
+            Err(_) => Err(POISONED.to_string()),
+        };
+        if let Err(e) = result {
+            let _ = tx.blocking_send(Err(e));
+        }
+    });
+}
+
+/// Build the generate config from a chat request, with the CONTEXT-BOUNDED budget.
+///
+/// Extracted from `try_qwen35_backend` (#3844): nine `unwrap_or(defaults.*)` arms are
+/// nine branches inside a function whose job is dispatch, which is what put it over the
+/// complexity ratchet's cognitive ceiling of 25. `budget` arrives already bounded, so
+/// what is decoded and what `finish_reason` is judged against remain the same count.
+fn gen_config_from_request(
+    request: &ChatCompletionRequest,
+    budget: usize,
+    stop_tokens: Vec<u32>,
+    cancel: CancelToken,
+) -> crate::gguf::QuantizedGenerateConfig {
+    use crate::gguf::QuantizedGenerateConfig;
+    let defaults = QuantizedGenerateConfig::default();
+    QuantizedGenerateConfig {
+        max_tokens: budget,
+        temperature: request.temperature.unwrap_or(defaults.temperature),
+        top_k: request.top_k.unwrap_or(defaults.top_k),
+        top_p: request.top_p.unwrap_or(defaults.top_p),
+        repeat_penalty: request.repeat_penalty.unwrap_or(defaults.repeat_penalty),
+        repeat_last_n: request.repeat_last_n.unwrap_or(defaults.repeat_last_n),
+        seed: request.seed.unwrap_or(defaults.seed),
+        stop_tokens,
+        cancel,
+        ..defaults
+    }
+}
+
+
 /// The Qwen3.5 arm of the chat backend chain (#3571).
 ///
 /// `None` when this state serves no hybrid, so the chain falls through
@@ -66,43 +132,22 @@ async fn try_qwen35_backend(
     // What the context leaves — the budget the session will actually decode.
     let budget = max_tokens.min(context_length - prompt_token_count);
 
-    let defaults = QuantizedGenerateConfig::default();
     let stop_tokens = stop_tokens_unless_ignore_eos(request, state.model_eos_token_id());
-    let gen_config = QuantizedGenerateConfig {
-        // The context-bounded budget, not the request's number: what is decoded and what
-        // `finish_reason` is judged against are the same count.
-        max_tokens: budget,
-        temperature: request.temperature.unwrap_or(defaults.temperature),
-        top_k: request.top_k.unwrap_or(defaults.top_k),
-        top_p: request.top_p.unwrap_or(defaults.top_p),
-        repeat_penalty: request.repeat_penalty.unwrap_or(defaults.repeat_penalty),
-        repeat_last_n: request.repeat_last_n.unwrap_or(defaults.repeat_last_n),
-        seed: request.seed.unwrap_or(defaults.seed),
-        stop_tokens: stop_tokens.clone(),
-        cancel: cancel.clone(),
-        ..defaults
-    };
+    // The context-bounded budget, not the request's number: what is decoded and what
+    // `finish_reason` is judged against are the same count.
+    let gen_config = gen_config_from_request(request, budget, stop_tokens.clone(), cancel.clone());
 
     if request.stream {
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(64);
         let sink_metrics = state.metrics.clone();
-        tokio::task::spawn_blocking(move || {
-            let mut sink = crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics);
-            let result = match session.session.lock() {
-                Ok(mut s) => {
-                    let r = s.generate(&input_ids, &gen_config, &mut |tok| {
-                        // The stop token ends the turn; it is not content.
-                        stop_tokens.contains(&tok) || sink(tok)
-                    });
-                    session.on_gpu.store(s.on_gpu(), std::sync::atomic::Ordering::Relaxed);
-                    r.map(|_| ()).map_err(|e| e.to_string())
-                },
-                Err(_) => Err(POISONED.to_string()),
-            };
-            if let Err(e) = result {
-                let _ = tx.blocking_send(Err(e));
-            }
-        });
+        spawn_streaming_generate(
+            session,
+            input_ids,
+            gen_config,
+            stop_tokens,
+            tx,
+            sink_metrics,
+        );
         return Some(crate::api::openai_handlers::true_streaming_sse_response(
             rx,
             tokenizer,
