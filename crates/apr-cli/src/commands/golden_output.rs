@@ -401,6 +401,14 @@ fn validate_golden_test_case(
         )));
     };
 
+    // #3870: judge the CPU leg BEFORE the GPU message is composed.
+    //
+    // This block used to sit AFTER the GPU early return, so on a GPU failure the
+    // CPU answer was never judged — while the GPU message hardcoded "(CPU
+    // passed)". tinyllama was reported as a CUDA correctness defect blocking the
+    // tag on that basis, and it fails identically on CPU.
+    let cpu = CpuGoldenVerdict::judge(&output_text, prompt, expected_patterns, golden_max_tokens);
+
     // #3711: a GPU leg that errored is a FAIL naming the error, never a skip.
     let gpu_leg = gpu_golden_leg(
         prompt,
@@ -412,7 +420,7 @@ fn validate_golden_test_case(
         cuda_available,
         golden_max_tokens,
     )?;
-    if let Some(failure) = gpu_leg.failure() {
+    if let Some(failure) = gpu_leg.failure_given_cpu(&cpu) {
         return Ok(GoldenCaseOutcome::Verdict(GateResult::failed(
             "golden_output",
             &failure,
@@ -422,36 +430,28 @@ fn validate_golden_test_case(
         )));
     }
 
-    // GH-279-4: generate_with_cache returns prompt + generated tokens.
-    // Strip the prompt echo so we verify only the model's generated output.
-    let generated_text = output_text
-        .strip_prefix(prompt)
-        .unwrap_or(&output_text);
-    // GH-279-4 / #3724: a block that never closed is REPORTED with its budget. It
-    // used to be truncated away, which made "still reasoning at the cut" and "the
-    // model answered nothing" the same report ("Empty output").
-    let answer_text = match split_thinking_blocks(generated_text) {
-        ThinkingSplit::Answer(answer) => answer,
-        ThinkingSplit::Unclosed => {
+    // The CPU verdict, already computed above, now decides. Same messages as
+    // before; only the ORDER changed.
+    match cpu {
+        CpuGoldenVerdict::Unclosed { budget, generated_chars } => {
             return Ok(GoldenCaseOutcome::Verdict(GateResult::failed(
                 "golden_output",
-                &unclosed_think_reason("golden_output", golden_max_tokens, generated_text.len()),
+                &unclosed_think_reason("golden_output", budget, generated_chars),
                 None,
                 None,
                 start.elapsed(),
             )));
-        }
-    };
-    if let OutputVerification::Fail { reason } =
-        verify_output(&answer_text, "golden_output", expected_patterns)
-    {
-        return Ok(GoldenCaseOutcome::Verdict(GateResult::failed(
-            "golden_output",
-            &reason,
-            None,
-            None,
-            start.elapsed(),
-        )));
+        },
+        CpuGoldenVerdict::WrongAnswer(reason) => {
+            return Ok(GoldenCaseOutcome::Verdict(GateResult::failed(
+                "golden_output",
+                &reason,
+                None,
+                None,
+                start.elapsed(),
+            )));
+        },
+        CpuGoldenVerdict::Passed => {},
     }
 
     Ok(GoldenCaseOutcome::Passed(gpu_leg))
@@ -850,7 +850,7 @@ mod golden_output_tests {
             leg,
             GpuGoldenLeg::Errored("GPU generation: CUDA_ERROR_ILLEGAL_ADDRESS".to_string())
         );
-        let failure = leg.failure().expect("a GPU generation error must FAIL the gate");
+        let failure = leg.failure_given_cpu(&CpuGoldenVerdict::Passed).expect("a GPU generation error must FAIL the gate");
         assert!(failure.contains("CUDA_ERROR_ILLEGAL_ADDRESS"), "{failure}");
         assert!(failure.contains("not a skip"), "{failure}");
     }
@@ -862,7 +862,7 @@ mod golden_output_tests {
             TWO_PLUS_TWO,
             512,
         );
-        let failure = leg.failure().expect("a CUDA init error must FAIL the gate");
+        let failure = leg.failure_given_cpu(&CpuGoldenVerdict::Passed).expect("a CUDA init error must FAIL the gate");
         assert!(failure.contains("CUDA_ERROR_OUT_OF_MEMORY"), "{failure}");
     }
 
@@ -870,8 +870,128 @@ mod golden_output_tests {
     fn gpu_wrong_answer_fails_the_gate() {
         let leg = GpuGoldenLeg::judge(Ok("2 + 2 = 5".to_string()), TWO_PLUS_TWO, 512);
         assert!(matches!(leg, GpuGoldenLeg::WrongAnswer(_)), "{leg:?}");
-        let failure = leg.failure().expect("a wrong GPU answer must FAIL the gate");
+        let failure = leg.failure_given_cpu(&CpuGoldenVerdict::Passed).expect("a wrong GPU answer must FAIL the gate");
         assert!(failure.starts_with("GPU output failed (CPU passed)"), "{failure}");
+    }
+
+    // =========================================================================
+    // #3870: a GPU failure message may not ASSERT the CPU leg's verdict
+    //
+    // `failure()` hardcoded "(CPU passed)" and `validate_golden_test_case`
+    // returned on a GPU failure BEFORE the CPU pattern check ran, so the claim
+    // was made about a leg that had never been judged. That inverted a release
+    // verdict once already (tinyllama, below), so both directions are asserted:
+    // the false claim must be impossible, and the TRUE one must survive.
+    // =========================================================================
+
+    /// The golden capital case's patterns — the case tinyllama failed.
+    const CAPITAL_OF_FRANCE: &[&str] = &["Paris"];
+
+    /// What `tinyllama-1.1b-chat-v1.0.Q4_K_M` actually produced for the capital
+    /// case: a `[S][INST]` loop with no "Paris" anywhere. Measured 2026-09-22 on
+    /// `apr 0.69.1 (87d9d5484)` and produced IDENTICALLY by the GPU leg and by
+    /// the CPU leg under `CUDA_VISIBLE_DEVICES=""`. The old message reported this
+    /// as "GPU output failed (CPU passed)" and it was escalated as a CUDA
+    /// correctness defect blocking the 0.69.1 tag.
+    const TINYLLAMA_LOOP: &str = "[S][INST][S][INST][S][INST][S][INST][S][INST]";
+
+    #[test]
+    fn a_gpu_failure_may_not_claim_a_cpu_pass_when_the_cpu_failed_too() {
+        let gpu = GpuGoldenLeg::judge(Ok(TINYLLAMA_LOOP.to_string()), CAPITAL_OF_FRANCE, 512);
+        assert!(matches!(gpu, GpuGoldenLeg::WrongAnswer(_)), "{gpu:?}");
+
+        // The SAME text on the CPU leg, because that is what the model does on
+        // both backends.
+        let cpu = CpuGoldenVerdict::judge(TINYLLAMA_LOOP, "", CAPITAL_OF_FRANCE, 512);
+        assert!(matches!(cpu, CpuGoldenVerdict::WrongAnswer(_)), "{cpu:?}");
+
+        let failure = gpu
+            .failure_given_cpu(&cpu)
+            .expect("a wrong GPU answer must still FAIL the gate");
+        assert!(
+            !failure.contains("CPU passed"),
+            "#3870: the CPU leg produced the same wrong answer, so this message \
+             claims a measurement that did not happen and reads as a GPU-specific \
+             defect: {failure}"
+        );
+        assert!(
+            failure.contains("CPU failed too") && failure.contains("not a GPU-specific"),
+            "the message must say what was actually measured: {failure}"
+        );
+    }
+
+    #[test]
+    fn a_gpu_failure_still_names_a_genuine_cpu_pass() {
+        // The converse, and the reason the gate exists (#3477): the GPU is wrong
+        // and the CPU is RIGHT on the same prompt. Losing this wording to fix the
+        // case above would be the over-correction.
+        let gpu = GpuGoldenLeg::judge(Ok(TINYLLAMA_LOOP.to_string()), CAPITAL_OF_FRANCE, 512);
+        let cpu = CpuGoldenVerdict::judge(
+            "The capital of France is Paris.",
+            "",
+            CAPITAL_OF_FRANCE,
+            512,
+        );
+        assert_eq!(cpu, CpuGoldenVerdict::Passed, "{cpu:?}");
+
+        let failure = gpu.failure_given_cpu(&cpu).expect("a GPU-only defect FAILS the gate");
+        assert!(
+            failure.starts_with("GPU output failed (CPU passed)"),
+            "#3477's signature — a real GPU-specific defect — must survive #3870's fix: {failure}"
+        );
+    }
+
+    #[test]
+    fn a_gpu_failure_says_so_when_the_cpu_reached_no_verdict() {
+        // The third CPU state: still inside an unclosed <think> at the budget.
+        // There is no CPU pass AND no CPU wrong answer to compare against, and
+        // claiming either would be the same defect in a different direction.
+        let gpu = GpuGoldenLeg::judge(Ok(TINYLLAMA_LOOP.to_string()), CAPITAL_OF_FRANCE, 512);
+        let cpu = CpuGoldenVerdict::judge(
+            "<think>the capital of France is",
+            "",
+            CAPITAL_OF_FRANCE,
+            512,
+        );
+        assert!(matches!(cpu, CpuGoldenVerdict::Unclosed { .. }), "{cpu:?}");
+
+        let failure = gpu.failure_given_cpu(&cpu).expect("the GPU leg still FAILS");
+        assert!(!failure.contains("CPU passed"), "{failure}");
+        assert!(!failure.contains("CPU failed too"), "{failure}");
+        assert!(
+            failure.contains("no CPU verdict to compare against"),
+            "the message must name the absence rather than pick a side: {failure}"
+        );
+    }
+
+    #[test]
+    fn the_cpu_verdict_cannot_be_omitted_from_the_claim() {
+        // A structural row, not a behavioural one. The ordering defect was that
+        // `validate_golden_test_case` composed the GPU message before the CPU
+        // leg had been judged. `failure_given_cpu` takes the verdict BY ARGUMENT,
+        // so that ordering is now a type error rather than a review item: there is
+        // no way to obtain the message without a CpuGoldenVerdict in hand.
+        //
+        // This test exists to state that intent where a future edit will read it.
+        // Reintroducing a `failure(&self)` that guesses would compile — and would
+        // make the three rows above dead. If you are here because you added one,
+        // that is what this row is objecting to.
+        let gpu = GpuGoldenLeg::judge(Ok(TINYLLAMA_LOOP.to_string()), CAPITAL_OF_FRANCE, 512);
+        let messages: Vec<String> = [
+            CpuGoldenVerdict::Passed,
+            CpuGoldenVerdict::WrongAnswer("no Paris".to_string()),
+            CpuGoldenVerdict::Unclosed { budget: 512, generated_chars: 30 },
+        ]
+        .iter()
+        .map(|cpu| gpu.failure_given_cpu(cpu).expect("all three still FAIL"))
+        .collect();
+
+        // Three CPU verdicts, three DISTINCT messages. If any two coincide, the
+        // message is not carrying the CPU leg's verdict and the reader cannot
+        // tell which was measured.
+        assert_ne!(messages[0], messages[1]);
+        assert_ne!(messages[1], messages[2]);
+        assert_ne!(messages[0], messages[2]);
     }
 
     #[test]
@@ -879,7 +999,7 @@ mod golden_output_tests {
         for text in ["2 + 2 = 4", "<think>two and two</think>The answer is 4."] {
             let leg = GpuGoldenLeg::judge(Ok(text.to_string()), TWO_PLUS_TWO, 512);
             assert_eq!(leg, GpuGoldenLeg::Passed, "{text:?}");
-            assert_eq!(leg.failure(), None);
+            assert_eq!(leg.failure_given_cpu(&CpuGoldenVerdict::Passed), None);
             assert_eq!(leg.describe(), "GPU leg judged on CUDA device 0");
         }
     }
@@ -889,7 +1009,7 @@ mod golden_output_tests {
         let why = gpu_golden_not_run(true, false, true).expect("no device: the leg never starts");
         assert_eq!(why, "no CUDA device on this host");
         let leg = GpuGoldenLeg::NotRun(why);
-        assert_eq!(leg.failure(), None, "a leg that never started is not a failure");
+        assert_eq!(leg.failure_given_cpu(&CpuGoldenVerdict::Passed), None, "a leg that never started is not a failure");
         assert_eq!(leg.describe(), "GPU leg SKIPPED: no CUDA device on this host");
     }
 
@@ -973,19 +1093,19 @@ mod golden_output_tests {
         assert_eq!(passed, GpuGoldenLeg::Passed);
 
         // #3711: an error FAILS and names the error, and is not a skip.
-        let e = errored.failure().expect("an error fails the gate");
+        let e = errored.failure_given_cpu(&CpuGoldenVerdict::Passed).expect("an error fails the gate");
         assert!(e.contains("OOM") && e.contains("not a skip"), "{e}");
 
         // #3724: an unclosed block FAILS by name WITH the budget, and never reads
         // as an empty answer.
-        let u = unclosed.failure().expect("an unclosed block fails the gate");
+        let u = unclosed.failure_given_cpu(&CpuGoldenVerdict::Passed).expect("an unclosed block fails the gate");
         assert!(u.contains("think block unclosed within 512 tokens"), "{u}");
         assert!(!u.contains("Empty output"), "{u}");
         assert_ne!(u, e, "an unclosed block must not report as an error");
 
         // A leg that never started is the ONLY thing that does not fail.
-        assert!(not_run.failure().is_none());
-        assert!(passed.failure().is_none());
+        assert!(not_run.failure_given_cpu(&CpuGoldenVerdict::Passed).is_none());
+        assert!(passed.failure_given_cpu(&CpuGoldenVerdict::Passed).is_none());
         assert!(not_run.describe().contains("SKIPPED"), "{}", not_run.describe());
         assert!(!unclosed.describe().contains("SKIPPED"), "an unclosed block is not a skip");
     }

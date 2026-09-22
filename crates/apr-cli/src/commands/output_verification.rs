@@ -554,6 +554,52 @@ pub fn unclosed_think_reason(leg: &str, budget: usize, generated_chars: usize) -
 /// was absence scored as conformance, on the one gate that has to prove every
 /// Q4_K model works on CUDA. Only a leg that never STARTED is not run, and it
 /// says why.
+/// #3870: the CPU leg's verdict, computed BEFORE the GPU message is composed.
+///
+/// It exists so `GpuGoldenLeg::failure_given_cpu` cannot claim anything about
+/// the CPU leg that was not measured. The variants mirror the CPU path's own
+/// outcomes exactly.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum CpuGoldenVerdict {
+    /// The CPU answer matched the golden patterns.
+    Passed,
+    /// The CPU answer is wrong, and why.
+    WrongAnswer(String),
+    /// Still inside an unclosed `<think>` at the budget, so the CPU leg reached
+    /// no verdict. Not a pass and not a wrong answer.
+    Unclosed {
+        /// The token budget the generation was given.
+        budget: usize,
+        /// How much text it produced without reaching an answer.
+        generated_chars: usize,
+    },
+}
+
+impl CpuGoldenVerdict {
+    /// Judge the CPU leg's text with the same split-then-verify shape
+    /// `GpuGoldenLeg::judge` uses for the GPU's, so the two legs cannot drift
+    /// apart in how they decide.
+    pub(crate) fn judge(
+        output_text: &str,
+        prompt: &str,
+        expected_patterns: &[&str],
+        budget: usize,
+    ) -> Self {
+        // GH-279-4: generate_with_cache returns prompt + generated tokens.
+        let generated = output_text.strip_prefix(prompt).unwrap_or(output_text);
+        let answer = match split_thinking_blocks(generated) {
+            ThinkingSplit::Unclosed => {
+                return Self::Unclosed { budget, generated_chars: generated.len() }
+            },
+            ThinkingSplit::Answer(a) => a,
+        };
+        match verify_output(&answer, "golden_output", expected_patterns) {
+            OutputVerification::Pass => Self::Passed,
+            OutputVerification::Fail { reason } => Self::WrongAnswer(reason),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum GpuGoldenLeg {
     /// Generated on the device, and the answer matches the golden patterns.
@@ -608,10 +654,41 @@ impl GpuGoldenLeg {
     }
 
     /// `Some(reason)` fails the golden gate: a wrong answer, or an error.
-    pub(crate) fn failure(&self) -> Option<String> {
+    /// #3870: the GPU leg's failure message, composed WITH the CPU leg's verdict
+    /// in hand.
+    ///
+    /// This used to be `failure(&self)` and it hardcoded "(CPU passed)" into the
+    /// `WrongAnswer` arm. Nothing measured that. Worse, `validate_golden_test_case`
+    /// returned on a GPU failure BEFORE the CPU pattern check ran, so the claim
+    /// was made about a leg that had not been judged at all.
+    ///
+    /// That inverted a release verdict: `tinyllama-1.1b-chat-v1.0.Q4_K_M` was
+    /// reported as a CUDA correctness defect blocking the tag under the
+    /// all-Q4_K-on-CUDA rule, when it fails IDENTICALLY on CPU — the same
+    /// `[S][INST]` loop, no "Paris", on both backends. One measurement and one
+    /// string, read as two measurements.
+    ///
+    /// Taking the CPU verdict by argument is the point: the claim cannot be
+    /// composed without it, so the ordering defect cannot return by someone
+    /// reintroducing an early return.
+    pub(crate) fn failure_given_cpu(&self, cpu: &CpuGoldenVerdict) -> Option<String> {
         match self {
             Self::Passed | Self::NotRun(_) => None,
-            Self::WrongAnswer(reason) => Some(format!("GPU output failed (CPU passed): {reason}")),
+            Self::WrongAnswer(reason) => Some(match cpu {
+                // The #3477 signature, and now actually measured: GPU wrong,
+                // CPU right. That discrimination is the reason this gate exists,
+                // so it keeps its exact wording.
+                CpuGoldenVerdict::Passed => format!("GPU output failed (CPU passed): {reason}"),
+                CpuGoldenVerdict::WrongAnswer(cpu_reason) => format!(
+                    "GPU output failed AND CPU failed too, so this is not a GPU-specific \
+                     defect — CPU: {cpu_reason} — GPU: {reason}"
+                ),
+                CpuGoldenVerdict::Unclosed { budget, .. } => format!(
+                    "GPU output failed and the CPU leg was still reasoning at its \
+                     {budget}-token budget, so there is no CPU verdict to compare \
+                     against — GPU: {reason}"
+                ),
+            }),
             Self::Errored(e) => Some(format!(
                 "GPU golden generation ERRORED on a cuda build with a CUDA device: a broken \
                  GPU, not a skip (#3711): {e}"
