@@ -71,6 +71,29 @@ if not hosts: print("decline: ladder names no required host"); sys.exit(2)
 if not rungs: print("decline: ladder has no rungs"); sys.exit(2)
 rc = 0
 import re
+def clip(s, n=500):
+    """Bound a diagnostic WITHOUT lying about it (#3872).
+
+    This line is the JUDGE'S DISPLAY -- what a release driver reads. It used to
+    be `[:60]`, which cut 29 of 86 reasons across both receipts, and the same
+    class of slice one layer down turned `GGML type 18` into `type 1`. Type 1
+    is a real, WHITELISTED ggml type, so the cut read as the gate contradicting
+    itself rather than as a truncated string: a cut sentence announces itself,
+    a cut number does not.
+
+    Back off to a word boundary (never mid-token, therefore never inside a
+    number) and append an ellipsis so any loss is VISIBLE. 500 is above every
+    message this tree emits (longest measured: 280), so in practice nothing is
+    cut -- the bound only stops a runaway string wrecking a terminal.
+    """
+    s = str(s)
+    if len(s) <= n:
+        return s
+    cut = s[:n]
+    sp = cut.rfind(" ")
+    if sp > n // 2:
+        cut = cut[:sp]
+    return cut.rstrip(" ,;:-") + " \u2026"
 def is_q4k(r):  # a Q4_K model, by its file or its id (#3712)
     return bool(re.search(r"q4_?k", f"{r.get('gguf', '')} {r.get('id', '')}", re.I))
 def why_of(x, backends):  # every reason a measured row is not green on the claimed backends
@@ -78,8 +101,8 @@ def why_of(x, backends):  # every reason a measured row is not green on the clai
     cm, go = x.get("capability_match") or {}, x.get("golden_output") or {}
     claims_gpu = bool({"cuda", "gpu"} & set(backends))
     cap_ok = (cm.get("passed") and not cm.get("skipped")) or (cm.get("skipped") and not claims_gpu)
-    if not cap_ok: why.append("capability_match " + ("SKIPPED" if cm.get("skipped") else "FAIL") + ": " + str(cm.get("message", ""))[:60])
-    if not (go.get("passed") and not go.get("skipped")): why.append("golden_output " + ("SKIPPED" if go.get("skipped") else "FAIL") + ": " + str(go.get("message", ""))[:60])
+    if not cap_ok: why.append("capability_match " + ("SKIPPED" if cm.get("skipped") else "FAIL") + ": " + clip(cm.get("message", "")))
+    if not (go.get("passed") and not go.get("skipped")): why.append("golden_output " + ("SKIPPED" if go.get("skipped") else "FAIL") + ": " + clip(go.get("message", "")))
     be = x.get("backends") or {}
     for b in backends:
         v = be.get(b)

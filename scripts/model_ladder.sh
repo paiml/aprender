@@ -374,7 +374,11 @@ def gate(n):
     # `apr qa --json` marks a skipped gate passed:true. Skipped is not passed.
     return {"passed": bool(x.get("passed")) and not x.get("skipped") and not str(x.get("message","")).startswith("Skipped"),
             "skipped": bool(x.get("skipped")) or str(x.get("message","")).startswith("Skipped"),
-            "message": str(x.get("message",""))[:200]}
+            # #3872: was `[:200]`. A JSON field has no width constraint and the
+            # receipt is the artifact of record -- it carried the diagnosis and
+            # dropped whatever the author wrote SECOND, which is where the
+            # classification and the instruction live. Stored whole.
+            "message": str(x.get("message",""))}
 # EVERY gate `apr qa` reported, not two by name (#3863 item 16). The receipt used to
 # record `capability_match` + `golden_output` only, so a row could carry the SYMPTOM
 # ("gibberish (fragment ...)") while the DIAGNOSIS computed in the same process --
@@ -598,10 +602,33 @@ PY
     RED=$((RED + 1))
     why=$(printf '%s' "$row" | python3 -c '
 import json,sys; r=json.load(sys.stdin); w=[]
+def clip(s, n=500):
+    """Bound a diagnostic WITHOUT lying about it (#3872).
+
+    A hard slice is a correctness bug, not a formatting one: `[:70]` cut
+    `GGML type 18` to `type 1`, and type 1 is a real, WHITELISTED ggml type,
+    so the cut read as the gate contradicting itself. A cut sentence announces
+    itself; a cut number does not.
+
+    So: back off to a word boundary (never mid-token, therefore never inside a
+    number) and append an ellipsis so any loss is VISIBLE. 500 is above every
+    message this tree emits (longest measured: 280), so in practice nothing is
+    cut at all -- the bound exists only so a runaway string cannot wreck a
+    terminal, not to keep lines short.
+    """
+    s = str(s)
+    if len(s) <= n:
+        return s
+    cut = s[:n]
+    sp = cut.rfind(" ")
+    if sp > n // 2:
+        cut = cut[:sp]
+    return cut.rstrip(" ,;:-") + " \u2026"
+
 cap=r["capability_match"] or {}; claims_gpu=bool({"cuda","gpu"} & set(r["backends"]))
-if not (cap.get("passed") and not cap.get("skipped")) and not (cap.get("skipped") and not claims_gpu): w.append("capability_match: "+("SKIPPED on a GPU-claiming model: " if cap.get("skipped") else "")+str(cap.get("message",""))[:70])
+if not (cap.get("passed") and not cap.get("skipped")) and not (cap.get("skipped") and not claims_gpu): w.append("capability_match: "+("SKIPPED on a GPU-claiming model: " if cap.get("skipped") else "")+clip(cap.get("message","")))
 gold=r["golden_output"] or {}
-if not gold.get("passed"): w.append("golden_output: "+("SKIPPED: " if gold.get("skipped") else "")+str(gold.get("message",""))[:70])
+if not gold.get("passed"): w.append("golden_output: "+("SKIPPED: " if gold.get("skipped") else "")+clip(gold.get("message","")))
 for b,v in r["backends"].items():
     if v["fallback"]: w.append(b+": FELL BACK (claimed backend did not run)")
     elif v.get("escaped_special"): w.append(b+": escaped special token in the formatted prompt: templated twice (#3743)")
