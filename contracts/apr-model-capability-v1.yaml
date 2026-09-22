@@ -137,64 +137,43 @@ ops:
 # turned out to be a test. A count of a symbol name is not a call graph, so only
 # rows verified by READING their references are stated here.
 op_implementation:
+  # ONLY ROWS ESTABLISHED BY READING THE CALL GRAPH. aprender-5e owns the measured
+  # op → symbol map (`scripts/capability_op_impl_map.txt`, maintained by the gate
+  # that checks it) and their standard is the right one: a row that is neither
+  # measured nor checked does not belong in a contract. So the eleven
+  # `unestablished` placeholders this section first carried are GONE rather than
+  # committed — the op UNIVERSE is already enumerated in `ops:` above, and
+  # completeness of the implementation map is their gate's map-completeness check,
+  # not a second list here.
+  #
+  # These two rows are a DERIVED MIRROR, not a second home: 5e's gate gains a mode
+  # that fails when they disagree with what it measures. That is the same
+  # arrangement as #3077's GPU-SUPPORT.md, committed prose whose byte-equality
+  # with the rendered table is asserted in CI.
   - op: LayerNorm
     symbol: Executor::layer_norm_gpu
     path: crates/aprender-serve/src/cuda/executor/layer_norm_gpu.rs
     status: unwired
     evidence: >
-      Every reference is a test or a comment. Two of those comments say why:
+      Every reference is a test or a comment, and two of those comments say why:
       "layer_norm_gpu tests removed — kernel function naming issue
       (FunctionNotFound)" (tests_cov005_incremental.rs:360) and "layer_norm_gpu
-      requires \"layernorm\" kernel which isn't available"
+      requires the \"layernorm\" kernel which isn't available"
       (tests_cov017_residual.rs:323). The symbol exists; the kernel it needs does
       not. This is #3075's instance, and it is why `unwired` must be
-      distinguishable from `unimplemented`.
+      distinguishable from `unimplemented`. First classified `wired` off a grep
+      COUNT; reading the references corrected it, because a count of a symbol name
+      is not a call graph.
     refs: ['#3075']
-  # RETRACTED BEFORE IT SHIPPED. This row first read
-  #   `symbol: Executor::gelu_host, status: unwired`
-  # which was WRONG, and wrong in the specific way aprender-5e warned about an
-  # hour after it was written: an op name matched to a symbol by SUBSTRING.
-  # `RequiredOp::GeluMlp` is the GELU-MLP BLOCK PATH; `gelu_host`
-  # (cuda/executor/kernel.rs:105) is a host-side wrapper around the GELU
-  # ACTIVATION kernel — `&[f32] -> gelu_async -> &mut [f32]` — and `gelu_gpu`
-  # (q4k_q8_gemv.rs:317) is the activation on-device and IS wired
-  # (gpu/adapters/using.rs:409, cuda/executor/batched_q4k_gemv.rs:148). They
-  # share four letters and are different things.
-  #
-  # 5e hit the same trap, marked the claim unverified, checked it and refuted it;
-  # I hit it and did not notice until they said so. That is why `unestablished`
-  # exists in this file: a contract states an implementation only when someone
-  # has READ the call graph, because a wrong symbol here carries more authority
-  # than a wrong comment ever did.
-  - op: GeluMlp
-    status: unestablished
-    note: >
-      Do not match this op to a symbol by name. The block path is not the
-      activation kernel; see the retraction above.
   - op: SwiGLU
     symbol: Executor::batched_swiglu_into
     path: crates/aprender-serve/src/cuda/executor/residual.rs
     status: wired
-  - op: RoPE
-    status: unestablished
-  - op: GQA
-    status: unestablished
-  - op: MHA
-    status: unestablished
-  - op: RMSNorm
-    status: unestablished
-  - op: BiasAdd
-    status: unestablished
-  - op: CausalMask
-    status: unestablished
-  - op: QkNorm
-    status: unestablished
-  - op: AbsolutePos
-    status: unestablished
-  - op: AttnFinalSoftcap
-    status: unestablished
-  - op: PostAttnFfnNorm
-    status: unestablished
+    evidence: >
+      Called from production at cuda/executor/graph_dispatch.rs:395
+      (`self.batched_swiglu_into(&gate_buf, &up_buf, &out_buf, ...)`), inside graph
+      dispatch rather than a test. Verified by reading the call site, not by
+      counting references.
 
 # ── ggml quantisation type → GPU support ─────────────────────────────────────
 # ONE ROW PER TYPE, each with its numeric ggml id. `capability.rs:611`'s
