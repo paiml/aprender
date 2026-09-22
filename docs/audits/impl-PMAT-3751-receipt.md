@@ -46,7 +46,7 @@ The rejection line now names the reference: `… validated via serial prefill ag
 | drift falsifier on a known-divergent file | RED (above); GREEN control on a clean file |
 
 ## End to end: `apr run --gpu`, released 0.69.0 (`5615e7afe`, Q8_K dense reference) vs this branch
-lambda (`ef8963016`), `--prompt` = aprender-37's Zorblat question, `--max-tokens 16 --format json`, under `gpu-q` (`e2e-apr-run-gpu-lambda.txt`). Neither binary contains #3672 (`a9502d992`), so both auto-template the prompt with the inner ChatML escaped (aprender-37, measured). The F2 probe here is that token list, NOT the harness's `chat-zorblat` sequence. This is an A/B of the two binaries on one input, and does not re-run the harness rows:
+lambda (`ef8963016`), `--prompt` = aprender-37's Zorblat question, `--max-tokens 16 --format json`, under `gpu-q` (`e2e-apr-run-gpu-lambda.txt`). Neither binary contains #3672 (`a9502d992`), so both auto-template the prompt with the inner ChatML escaped (aprender-37, measured). The F2 probe here is that token list, NOT the harness's `chat-zorblat` sequence. This is an A/B of the two binaries on one input, and does not re-run the harness rows. **The harness rows themselves are unaffected**: they build tokens via `mapped.model.encode(text)` directly, never through `apr run`'s auto-templating, so the double-templating bug never reached them. aprender-37 confirmed this independently on main (`a9502d992` + their stack): `apr run coder-7b --chat` encodes exactly the harness's 18-token chat-france sequence and the production F2 prints the same 0.8134 cosine reject at position 1 that the harness measured. The harness rows are the production cells, value for value.
 
 | file | probe path | 0.69.0 | this branch |
 |---|---|---|---|
