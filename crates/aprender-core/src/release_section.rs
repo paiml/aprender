@@ -171,36 +171,55 @@ mod release_section_doc {
             .expect("repo root")
     }
 
+    /// The version directories under `evidence/dogfood/models`, sorted.
+    fn version_dirs(base: &std::path::Path) -> Vec<String> {
+        let Ok(rd) = std::fs::read_dir(base) else {
+            return Vec::new();
+        };
+        let mut v: Vec<String> = rd
+            .filter_map(Result::ok)
+            .filter(|e| e.path().is_dir())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        v.sort();
+        v
+    }
+
+    /// Every parseable receipt in one version directory.
+    ///
+    /// A `filter_map` chain rather than a nest. Cognitive complexity charges for
+    /// DEPTH, not branch count: the original was six levels
+    /// (`for` → `if let` → `for` → `if` → `if let` → `if let`) and scored cognitive
+    /// 26 against cyclomatic 8 — the gap between those two numbers *is* the nesting.
+    /// Flattening the same eight branches into chained combinators and a `let … else`
+    /// costs the same work and almost no depth.
+    ///
+    /// Unreadable or unparseable files are skipped rather than failing the load: a
+    /// receipt directory is written by `scripts/model_ladder.sh` on several hosts and
+    /// a partial write must not make the whole version invisible. The *caller* decides
+    /// what an empty result means, and `the_table_discriminates_…` asserts that an
+    /// empty set renders as "no receipt" rather than as a pass.
+    fn receipts_in(dir: &std::path::Path) -> Vec<Receipt> {
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return Vec::new();
+        };
+        rd.filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "json"))
+            .filter_map(|p| std::fs::read_to_string(p).ok())
+            .filter_map(|txt| serde_json::from_str::<Receipt>(&txt).ok())
+            .collect()
+    }
+
     /// Every `evidence/dogfood/models/<v>/*.json`, newest version that has any.
     fn load_newest() -> (String, Vec<Receipt>) {
         let base = repo_root().join("evidence/dogfood/models");
-        let mut versions: Vec<String> = std::fs::read_dir(&base)
-            .map(|rd| {
-                rd.filter_map(Result::ok)
-                    .filter(|e| e.path().is_dir())
-                    .map(|e| e.file_name().to_string_lossy().into_owned())
-                    .collect()
-            })
-            .unwrap_or_default();
-        versions.sort();
-        for v in versions.iter().rev() {
-            let mut rs = Vec::new();
-            if let Ok(rd) = std::fs::read_dir(base.join(v)) {
-                for e in rd.filter_map(Result::ok) {
-                    if e.path().extension().is_some_and(|x| x == "json") {
-                        if let Ok(txt) = std::fs::read_to_string(e.path()) {
-                            if let Ok(r) = serde_json::from_str::<Receipt>(&txt) {
-                                rs.push(r);
-                            }
-                        }
-                    }
-                }
-            }
-            if !rs.is_empty() {
-                return (v.clone(), rs);
-            }
-        }
-        (String::new(), Vec::new())
+        version_dirs(&base)
+            .iter()
+            .rev()
+            .map(|v| (v.clone(), receipts_in(&base.join(v))))
+            .find(|(_, rs)| !rs.is_empty())
+            .unwrap_or_default()
     }
 
     /// THE ANTI-VACUITY CONTROL. Written before the renderer, and the reason the
