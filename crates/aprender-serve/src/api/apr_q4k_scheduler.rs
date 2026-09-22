@@ -182,7 +182,6 @@ pub fn spawn_apr_q4k_inference_thread(
     Ok(tx)
 }
 
-/// Run a single Q4K generation request (called on the inference thread).
 #[cfg(feature = "cuda")]
 /// The weights the Q4K forward reads on the HOST: the embedding table, the final
 /// norm, and per layer the two norms, the optional Q/K norms and the optional QKV
@@ -195,6 +194,7 @@ pub(crate) struct Q4kHostWeights {
     pub(crate) qkv_biases: Vec<(Option<Vec<f32>>, Option<Vec<f32>>, Option<Vec<f32>>)>,
 }
 
+#[cfg(feature = "cuda")]
 /// Load [`Q4kHostWeights`] for `num_layers` layers from `model`.
 ///
 /// # Errors
@@ -299,6 +299,7 @@ pub(crate) fn load_q4k_host_weights(
     })
 }
 
+#[cfg(feature = "cuda")]
 /// #3791: an OPTIONAL per-layer tensor (QKV bias, Q/K norm) under any of its names.
 ///
 /// `Ok(None)` means the file has none of the names — the architecture has no such
@@ -319,6 +320,8 @@ fn optional_f32(
     }
 }
 
+/// Run a single Q4K generation request (called on the inference thread).
+#[cfg(feature = "cuda")]
 fn generate_q4k(
     executor: &mut crate::cuda::CudaExecutor,
     config: &crate::gpu::adapters::apr_q4k::AprQ4KConfig,
