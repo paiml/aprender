@@ -266,7 +266,7 @@ impl CudaExecutor {
 
     /// PMAT-045: Batched GPU argmax — process M logit vectors with ONE sync.
     ///
-    /// Five-Whys root cause: c=4 decode regression (140→50 tok/s per request).
+    // Five-Whys root cause: c=4 decode regression (140→50 tok/s per request).
     /// Why? Sequential `gpu_argmax` calls: M syncs × ~0.3ms = 1.2ms/token at c=4.
     /// Why? Each `gpu_argmax` calls `stream.synchronize()` + `copy_to_host`.
     /// Why? API designed for single-sequence M=1 path.

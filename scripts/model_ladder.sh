@@ -489,7 +489,7 @@ import json, sys
 rid, rfile, sha, req, inv, qa_rc, qa_bytes = sys.argv[1:8]
 why = (f"apr qa --json wrote 0 bytes (exit {qa_rc}) — no document to judge"
        if qa_bytes == "0" else
-       f"the receipt row could not be built from a {qa_bytes}-byte qa document (apr qa exit {qa_rc})")
+       f"the receipt row could not be built from a {qa_bytes}-byte qa document, exit {qa_rc} from apr qa")
 print(json.dumps({
     "id": rid, "file": rfile, "inventory_only": inv == "1", "present": True,
     "sha_ok": True, "sha256": sha, "required": req == "1", "qa_rc": int(qa_rc),

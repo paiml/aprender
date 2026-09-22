@@ -319,7 +319,7 @@ impl GpuProfile {
     /// PMAT-090: FP8 batched decode — cuBLASLt FP8 GEMM replaces DP4A Q4K GEMV at M>=2.
     ///
     /// DP4A GEMV is compute-bound at M>1: 4 independent DP4A accumulation chains
-    /// saturate INT32 units. DP4A ceiling = 306 tok/s at M=4 (theoretical).
+    // saturate INT32 units. DP4A ceiling = 306 tok/s at M=4 (theoretical).
     /// FP8 cuBLASLt reads 1.78× more BW (1 B/elem vs Q4K 0.5625) but stays
     /// memory-bound via tensor cores. Expected: ~1.5× c=4 aggregate improvement.
     ///
@@ -345,7 +345,7 @@ impl GpuProfile {
     /// HGEMM decode: use cuBLAS HGEMM (cached FP16 weights) for M=1 decode.
     ///
     /// PMAT-037 RESULT: cuBLAS HGEMM for M=1 is SLOWER than Q4K GEMV on both
-    /// 4090 (109 vs 193 tok/s) and Jetson Orin. FP16 reads 3.56x more data
+    // 4090 (109 vs 193 tok/s) and Jetson Orin. FP16 reads 3.56x more data
     /// and cuBLAS launch overhead dominates at M=1. Disabled by default.
     fn detect_hgemm_decode(_has_dp4a: bool, _num_sms: u32) -> bool {
         // Env var override (for experimentation)
@@ -399,7 +399,7 @@ mod pmat806_q4k_variant_tests {
     ///
     /// Consequence of the old default: the fail-closed F2 gate rejects CUDA, the
     /// run falls to wgpu (which fails its own 0.99 parity gate), then to CPU —
-    /// ~20 tok/s instead of ~400 on the most common discrete GPU there is.
+    // ~20 tok/s instead of ~400 on the most common discrete GPU there is.
     #[test]
     fn discrete_dp4a_gpus_default_to_mwv_not_hwdp4a() {
         for (cc, name) in [

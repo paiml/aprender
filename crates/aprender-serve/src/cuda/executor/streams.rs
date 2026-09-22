@@ -395,7 +395,7 @@ impl CudaExecutor {
     /// GH-174: GEMM using named FP16 cached weights via cuBLAS HGEMM.
     ///
     /// FP16 weights × FP16 activations → FP32 output using tensor cores.
-    /// ~3.5x faster than FP32 GemmTiled for SafeTensors F16 models
+    // ~3.5x faster than FP32 GemmTiled for SafeTensors F16 models
     /// (2x bandwidth savings + tensor core acceleration).
     ///
     /// Falls back to FP32 `gemm_b_cached()` if FP16 weights are not

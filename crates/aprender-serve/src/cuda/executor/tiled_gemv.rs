@@ -320,7 +320,7 @@ impl CudaExecutor {
     /// PAR-PERF-DP4A: Q8 quantize into PRE-ALLOCATED buffer (zero allocation)
     ///
     /// Five-Whys root cause (2026-02-09):
-    /// 1. Why is DP4A path 10.7 tok/s (8x slower than MWV)?
+    // 1. Why is DP4A path 10.7 tok/s (8x slower than MWV)?
     /// 2. Why so slow? → q8_quantize_async allocates a new GpuBuffer per call
     /// 3. Why per call? → GpuBuffer::new calls cudaMalloc (10-50us each)
     /// 4. Why 280x per token? → Called for every GEMV (10/layer × 28 layers)

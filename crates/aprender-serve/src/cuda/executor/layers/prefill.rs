@@ -1057,7 +1057,7 @@ impl CudaExecutor {
     /// 5. Why not batch all launches? → CUDA graph: capture 728 launches, replay as 1.
     ///
     /// Expected: 47ms CPU overhead → ~1ms graph launch overhead.
-    /// TTFT: 78ms → ~32ms (within 2x of llama.cpp's 17ms).
+    // TTFT: 78ms → ~32ms (within 2x of llama.cpp's 17ms).
     #[allow(clippy::too_many_arguments)]
     fn try_prefill_graph_capture(
         &mut self,

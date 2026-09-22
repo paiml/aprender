@@ -140,7 +140,7 @@ impl CudaExecutor {
     ///
     /// Like `rmsnorm_gpu` but writes into a pre-allocated output buffer.
     ///
-    /// PAR-081: Uses VectorizedRmsNorm with 256 threads for ~8x speedup
+    // PAR-081: Uses VectorizedRmsNorm with 256 threads for ~8x speedup
     /// over single-warp kernel (23µs → ~3µs for hidden_size=1536)
     ///
     /// CORRECTNESS-013: When CORRECTNESS_MODE=1, uses PreciseRmsNorm kernel

@@ -35,7 +35,7 @@ use super::super::*;
 /// then runs SGEMM. Batched GEMV reads Q4K directly (0.5625 B/elem) — 7.1x
 /// less bandwidth. SGEMM only wins at large M where compute dominates.
 ///
-/// Default=4: cuBLAS SGEMM beats batched GEMV at M=4 (51 vs 35 tok/s).
+// Default=4: cuBLAS SGEMM beats batched GEMV at M=4 (51 vs 35 tok/s).
 /// Batched Q4K GEMV at M<=8 uses single warp (32 threads/block) — insufficient
 /// parallelism. Multi-warp specializations only exist for M=16/32.
 /// Deferred (PMAT-759): Add M=4 multi-warp kernel, then raise threshold to 8+.
@@ -143,7 +143,7 @@ impl CudaExecutor {
     ///
     /// cuBLAS internally allocates workspace for fast algorithm selection.
     /// During CUDA graph capture, dynamic allocation is forbidden, so cuBLAS
-    /// falls back to workspace-free algorithms (7x slower on RTX 4060L).
+    // falls back to workspace-free algorithms (7x slower on RTX 4060L).
     ///
     /// This allocates a 32 MB GPU buffer and registers it with cuBLAS via
     /// `cublasSetWorkspace`. Must be called before prefill graph capture.

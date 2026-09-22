@@ -259,7 +259,7 @@ impl CudaExecutor {
 
     /// PAR-132: Wide Q4_K GEMV with 256 threads (8 warps) per output
     ///
-    /// Root cause fix for 3x Ollama performance gap:
+    // Root cause fix for 3x Ollama performance gap:
     /// - Previous: 32 threads/block = 33% SM occupancy, can't hide memory latency
     /// - New: 256 threads/block = 67-100% occupancy, 8 warps hide latency
     ///
