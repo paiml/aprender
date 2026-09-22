@@ -3,126 +3,25 @@
 //! Uses forward_traced for CPU to get layer-by-layer stats,
 //! then manually traces GPU at the same checkpoints.
 
+// #3809: the fixture now lives in `tests/common/` so the GPU-free CPU control
+// (`apr_trace_fixture_cpu_half.rs`) drives the SAME model rather than a copy.
+mod common;
+
 #[cfg(all(test, feature = "cuda"))]
 mod tests {
     use realizar::apr_transformer::{
         ActivationStats,
-        AprTransformer,
-        AprTransformerConfig,
-        AprTransformerLayer,
         TracedForward, // PMAT-216: Import the trait
     };
     use realizar::gpu::adapters::AprF32ToGpuAdapter;
+
+    use crate::common::create_test_model;
 
     fn compute_stats(data: &[f32]) -> ActivationStats {
         ActivationStats::from_slice(data)
     }
 
     /// Create a minimal test model
-    fn create_test_model() -> AprTransformer {
-        let hidden_dim = 64;
-        let num_heads = 4;
-        let num_kv_heads = 2;
-        let head_dim = hidden_dim / num_heads;
-        let kv_dim = num_kv_heads * head_dim;
-        let intermediate_dim = 128;
-        let vocab_size = 256;
-
-        let config = AprTransformerConfig {
-            architecture: "test".to_string(),
-            hidden_dim,
-            num_layers: 1,
-            num_heads,
-            num_kv_heads,
-            vocab_size,
-            intermediate_dim,
-            context_length: 32,
-            rope_theta: 10000.0,
-            eps: 1e-5,
-            ..Default::default()
-        };
-
-        let token_embedding: Vec<f32> = (0..vocab_size * hidden_dim)
-            .map(|i| ((i as f32) * 0.01).sin())
-            .collect();
-
-        let output_norm_weight = vec![1.0f32; hidden_dim];
-
-        let lm_head_weight: Vec<f32> = (0..vocab_size * hidden_dim)
-            .map(|i| ((i as f32) * 0.001).cos())
-            .collect();
-
-        let qkv_out_dim = hidden_dim + 2 * kv_dim;
-        let qkv_weight: Vec<f32> = (0..qkv_out_dim * hidden_dim)
-            .map(|i| ((i as f32) * 0.01).sin() * 0.1)
-            .collect();
-
-        let attn_output_weight: Vec<f32> = (0..hidden_dim * hidden_dim)
-            .map(|i| ((i as f32) * 0.02).cos() * 0.1)
-            .collect();
-
-        let attn_norm_weight = vec![1.0f32; hidden_dim];
-
-        let ffn_up_weight: Vec<f32> = (0..intermediate_dim * hidden_dim)
-            .map(|i| ((i as f32) * 0.03).sin() * 0.1)
-            .collect();
-        let ffn_down_weight: Vec<f32> = (0..hidden_dim * intermediate_dim)
-            .map(|i| ((i as f32) * 0.04).cos() * 0.1)
-            .collect();
-        let ffn_gate_weight: Vec<f32> = (0..intermediate_dim * hidden_dim)
-            .map(|i| ((i as f32) * 0.05).sin() * 0.1)
-            .collect();
-        let ffn_norm_weight = vec![1.0f32; hidden_dim];
-
-        let layer = AprTransformerLayer {
-            qkv_weight,
-            qkv_bias: None,
-            attn_output_weight,
-            attn_output_bias: None,
-            attn_norm_weight,
-            attn_norm_bias: None,
-            ffn_up_weight,
-            ffn_up_bias: None,
-            ffn_down_weight,
-            ffn_down_bias: None,
-            ffn_gate_weight: Some(ffn_gate_weight),
-            ffn_gate_bias: None,
-            ffn_norm_weight: Some(ffn_norm_weight),
-            ffn_norm_bias: None,
-            attn_q_norm_weight: None,
-            attn_k_norm_weight: None,
-            linear_attn_z_weight: None,
-            linear_attn_b_weight: None,
-            linear_attn_a_weight: None,
-            linear_attn_conv1d_weight: None,
-            linear_attn_a_log: None,
-            linear_attn_dt_bias: None,
-            linear_attn_norm_weight: None,
-            moe_gate_weight: None,
-            moe_expert_gate_up: None,
-            moe_expert_down: None,
-            moe_shared_gate: None,
-            moe_shared_up: None,
-            moe_shared_down: None,
-            moe_shared_expert_gate_weight: None,
-        };
-
-        AprTransformer {
-            config,
-            // This fixture materialises a separate `lm_head_weight`, so the tied
-            // path is off — the field's own documented default.
-            lm_head_tied: false,
-            token_embedding,
-            layers: vec![layer],
-            output_norm_weight,
-            output_norm_bias: None,
-            lm_head_weight,
-            lm_head_bias: None,
-            q4k_layers: None,
-            lm_head_weight_q4k: None,
-            lm_head_weight_q6k: None,
-        }
-    }
 
     #[test]
     fn test_trace_comparison() {
