@@ -60,10 +60,14 @@ extract_builder() {
 }
 
 # A backend whose serve probe is healthy, and the knobs each case turns.
-be_json() { # be_json <probed> <teardown> <http-of-first-route>
+be_json() { # be_json <probed> <teardown> <http-of-first-route> [chat-rc]
+  # #3902: the chat rc is a knob because `chat` and `code` joined the verdict. A row
+  # green on every other axis with `chat rc=3` is the live gx10 case.
+  local _chat_rc="${4:-0}" _chat_ran=true
+  [ "$_chat_rc" = "0" ] || _chat_ran=false
   cat <<JSON
 {"cuda":{"ran":true,"fallback":false,"escaped_special":false,"rc":0,
-  "verbs":{"run":{"ran":true,"rc":0},"chat":{"ran":true,"rc":0},
+  "verbs":{"run":{"ran":true,"rc":0},"chat":{"ran":$_chat_ran,"rc":$_chat_rc},
            "code":{"ran":true,"rc":0,"backend":"inherited-from-spawned-serve"},
            "serve":{"probed":$1,"teardown":"$2","routes":{
              "/api/chat|stream=false":{"http":$3,"ok":true},
@@ -101,29 +105,48 @@ extract_why() {
 }
 
 # A row that is green on EVERY other axis and red only because a serve route 500s.
+# Each reason fixture is green on EVERY axis but one, so the reason it produces
+# isolates a single cause. The first version omitted `chat`/`code` entirely and the
+# reason came back naming three causes — which would have passed a substring check
+# while proving nothing about which clause fired.
+_verbs_ok='"run":{"ran":true,"rc":0},"chat":{"ran":true,"rc":0},"code":{"ran":true,"rc":0},'
 RED_ONLY_ON_SERVE='{"capability_match":{"passed":true,"skipped":false,"message":"ok"},
  "golden_output":{"passed":true,"skipped":false,"message":"ok"},
  "backends":{"cuda":{"ran":true,"fallback":false,"escaped_special":false,"rc":0,
-   "verbs":{"serve":{"probed":true,"teardown":"clean","routes":{
+   "verbs":{'"$_verbs_ok"'"serve":{"probed":true,"teardown":"clean","routes":{
      "/v1/completions|stream=false":{"http":500},"/api/chat|stream=false":{"http":200}}}}}}}'
+
+# #3902: green everywhere except `chat`, with serve healthy.
+RED_ONLY_ON_CHAT='{"capability_match":{"passed":true,"skipped":false,"message":"ok"},
+ "golden_output":{"passed":true,"skipped":false,"message":"ok"},
+ "backends":{"cuda":{"ran":true,"fallback":false,"escaped_special":false,"rc":0,
+   "verbs":{"run":{"ran":true,"rc":0},"chat":{"ran":false,"rc":3},"code":{"ran":true,"rc":0},
+     "serve":{"probed":true,"teardown":"clean","routes":{
+       "/v1/completions|stream=false":{"http":200}}}}}}}'
 
 why_of() { # why_of <src> -> the reason line that row would print
   # The builder already reads its row from STDIN, so it just gets piped. (The first
   # version of this helper rebuilt it through `exec` and string-splitting, which is
   # more machinery than the thing under test.)
-  local src="$1" why
+  local src="$1" fixture="${2:-$RED_ONLY_ON_SERVE}" why
   why=$(extract_why "$src") || return 2
-  printf '%s' "$RED_ONLY_ON_SERVE" | python3 -c "$why" 2>/dev/null
+  printf '%s' "$fixture" | python3 -c "$why" 2>/dev/null
 }
 
 # A row red ONLY on serve must EXPLAIN itself. `unknown` is the failure this
 # guards: the verdict says red and the operator is told nothing.
 check_reason() { # check_reason <src> -> 0 explained, 1 not
-  local src="$1" got
+  local src="$1" got chat
+  # #3902: a chat-only red must name the VERB, not fall through to `unknown`.
+  chat=$(why_of "$src" "$RED_ONLY_ON_CHAT") || return 2
+  case "$chat" in
+    *'verb `chat` did not run'*) printf '  ok    %-16s %s\n' "reason:chat" "$chat" ;;
+    *) printf '  FAIL  %-16s chat-only red says: %s\n' "reason:chat" "${chat:-empty}"; return 1 ;;
+  esac
   got=$(why_of "$src") || return 2
   case "$got" in
     *"serve routes non-200"*)
-      printf '  ok    %-16s %s\n' "reason" "$got"; return 0 ;;
+      printf '  ok    %-16s %s\n' "reason:serve" "$got"; return 0 ;;
     ""|unknown)
       printf '  FAIL  %-16s reason is %s — the row is red and says nothing\n' "reason" "${got:-empty}"; return 1 ;;
     *)
@@ -132,17 +155,18 @@ check_reason() { # check_reason <src> -> 0 explained, 1 not
 }
 
 # case: <name> <probed> <teardown> <http> <expected green>
-CASES='healthy|true|clean|200|true
-route-503|true|clean|503|false
-route-500|true|clean|500|false
-not-probed|false|clean|200|false
-teardown-failed|true|failed|200|false'
+CASES='healthy|true|clean|200|0|true
+route-503|true|clean|503|0|false
+route-500|true|clean|500|0|false
+not-probed|false|clean|200|0|false
+teardown-failed|true|failed|200|0|false
+chat-rc3|true|clean|200|3|false'
 
 run_table() { # run_table <src> -> 0 all as expected, 1 otherwise
   local src="$1" rc=0 name probed td http want got
-  while IFS='|' read -r name probed td http want; do
+  while IFS='|' read -r name probed td http chatrc want; do
     [ -n "$name" ] || continue
-    got=$(run_row "$src" "$(be_json "$probed" "$td" "$http")") || return 2
+    got=$(run_row "$src" "$(be_json "$probed" "$td" "$http" "$chatrc")") || return 2
     if [ "$got" = "$want" ]; then
       printf '  ok    %-16s green=%s\n' "$name" "$got"
     else
@@ -188,7 +212,35 @@ if [ "$SELF_TEST" = 1 ]; then
     echo "  RED (expected)"
   fi
 
-  echo "self-test: PASS — red when green stops reading serve, AND when the reason stops naming it"
+  # Mutant D (#3902): the verdict stops consulting the other two verbs — the state
+  # that shipped in #3886, where serve was folded in and its two siblings were not.
+  mutant_d=$(mktemp); trap 'rm -f "$mutant" "$mutant_c" "$mutant_d" "$mutant_e"' EXIT
+  sed 's/ and verb_ok(v, "chat") and verb_ok(v, "code")//' "$SCRIPT" > "$mutant_d"
+  if cmp -s "$SCRIPT" "$mutant_d"; then
+    echo "SELF-TEST INCONCLUSIVE: mutant D changed nothing" >&2; exit 1
+  fi
+  echo "self-test: mutant D (green no longer consults chat/code)"
+  if run_table "$mutant_d" > /dev/null 2>&1; then
+    echo "SELF-TEST FAILED: mutant D passed the table — a chat-only failure would stay green" >&2; exit 1
+  else
+    echo "  RED (expected)"
+  fi
+
+  # Mutant E (#3902): the verdict keeps the verbs, the EXPLANATION drops them —
+  # #3901's shape applied to the new axis, planted deliberately this time.
+  mutant_e=$(mktemp)
+  sed '/verb `%s` did not run/d' "$SCRIPT" > "$mutant_e"
+  if cmp -s "$SCRIPT" "$mutant_e"; then
+    echo "SELF-TEST INCONCLUSIVE: mutant E changed nothing" >&2; exit 1
+  fi
+  echo "self-test: mutant E (verdict keeps chat/code, explanation drops them)"
+  if check_reason "$mutant_e" > /dev/null 2>&1; then
+    echo "SELF-TEST FAILED: mutant E still explained a chat-only red" >&2; exit 1
+  else
+    echo "  RED (expected)"
+  fi
+
+  echo "self-test: PASS — red on all four plantings: verdict/explanation x serve/verbs"
   exit 0
 fi
 
