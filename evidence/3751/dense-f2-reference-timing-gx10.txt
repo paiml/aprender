@@ -1,0 +1,18 @@
+qwen2.5-1.5b-instruct-q4_k_m.gguf | chat-france | via serial prefill | 19 positions | vs Q8_K: ACCEPT (min cos 0.994731) | vs FP32: ACCEPT (min cos 0.999255) | CPU reference Q8_K 2996 ms, FP32 3118 ms (decode step excluded: FP32 chose 785, the GPU was fed 59604)
+qwen2.5-1.5b-instruct-q4_k_m.gguf | chat-zorblat | via serial prefill | 28 positions | vs Q8_K: ACCEPT (min cos 0.993899) | vs FP32: ACCEPT (min cos 0.999078) | CPU reference Q8_K 3694 ms, FP32 2931 ms
+qwen2.5-1.5b-instruct-q4_k_m.gguf | plain | via serial prefill | 31 positions | vs Q8_K: ACCEPT (min cos 0.999257) | vs FP32: ACCEPT (min cos 0.999700) | CPU reference Q8_K 2911 ms, FP32 3490 ms
+qwen2.5-coder-1.5b-instruct-q4_k_m.gguf | chat-france | via serial prefill | 19 positions | vs Q8_K: ACCEPT (min cos 0.999683) | vs FP32: ACCEPT (min cos 0.999847) | CPU reference Q8_K 2922 ms, FP32 3245 ms
+qwen2.5-coder-1.5b-instruct-q4_k_m.gguf | chat-zorblat | via serial prefill | 28 positions | vs Q8_K: ACCEPT (min cos 0.999628) | vs FP32: ACCEPT (min cos 0.999841) | CPU reference Q8_K 4236 ms, FP32 4759 ms
+qwen2.5-coder-1.5b-instruct-q4_k_m.gguf | plain | via serial prefill | 31 positions | vs Q8_K: ACCEPT (min cos 0.999852) | vs FP32: ACCEPT (min cos 0.999943) | CPU reference Q8_K 4590 ms, FP32 5154 ms
+Qwen3-1.7B-Q4_K_M.gguf | chat-france | via serial prefill | 19 positions | vs Q8_K: ACCEPT (min cos 0.991481) | vs FP32: ACCEPT (min cos 0.999583) | CPU reference Q8_K 2903 ms, FP32 3353 ms
+Qwen3-1.7B-Q4_K_M.gguf | chat-zorblat | via serial prefill | 28 positions | vs Q8_K: ACCEPT (min cos 0.997498) | vs FP32: ACCEPT (min cos 0.998705) | CPU reference Q8_K 4525 ms, FP32 5085 ms
+Qwen3-1.7B-Q4_K_M.gguf | plain | via serial prefill | 31 positions | vs Q8_K: ACCEPT (min cos 0.994690) | vs FP32: ACCEPT (min cos 0.999410) | CPU reference Q8_K 4862 ms, FP32 5509 ms (decode step excluded: FP32 chose 576, the GPU was fed 1096)
+qwen2.5-coder-7b-instruct-q4_k_m.gguf | chat-france | via serial prefill | 19 positions | vs Q8_K: ACCEPT (min cos 0.999560) | vs FP32: ACCEPT (min cos 0.999712) | CPU reference Q8_K 7874 ms, FP32 7759 ms
+qwen2.5-coder-7b-instruct-q4_k_m.gguf | chat-zorblat | via serial prefill | 28 positions | vs Q8_K: ACCEPT (min cos 0.999335) | vs FP32: ACCEPT (min cos 0.999675) | CPU reference Q8_K 8921 ms, FP32 12989 ms
+qwen2.5-coder-7b-instruct-q4_k_m.gguf | plain | via serial prefill | 31 positions | vs Q8_K: ACCEPT (min cos 0.999779) | vs FP32: ACCEPT (min cos 0.999932) | CPU reference Q8_K 12213 ms, FP32 14467 ms
+Qwen3-8B-Q4_K_M.gguf | chat-france | via serial prefill | 19 positions | vs Q8_K: ACCEPT (min cos 0.998555) | vs FP32: ACCEPT (min cos 0.999611) | CPU reference Q8_K 6615 ms, FP32 11786 ms
+Qwen3-8B-Q4_K_M.gguf | chat-zorblat | via serial prefill | 28 positions | vs Q8_K: ACCEPT (min cos 0.996714) | vs FP32: ACCEPT (min cos 0.997151) | CPU reference Q8_K 16230 ms, FP32 19614 ms
+Qwen3-8B-Q4_K_M.gguf | plain | via serial prefill | 31 positions | vs Q8_K: ACCEPT (min cos 0.999398) | vs FP32: ACCEPT (min cos 0.999712) | CPU reference Q8_K 18099 ms, FP32 21408 ms
+qwen2.5-coder-32b-instruct-q4_k_m.gguf | chat-france | via serial prefill | 19 positions | vs Q8_K: ACCEPT (min cos 0.999811) | vs FP32: ACCEPT (min cos 0.999852) | CPU reference Q8_K 36413 ms, FP32 44208 ms
+qwen2.5-coder-32b-instruct-q4_k_m.gguf | chat-zorblat | via serial prefill | 28 positions | vs Q8_K: ACCEPT (min cos 0.999480) | vs FP32: ACCEPT (min cos 0.999852) | CPU reference Q8_K 47570 ms, FP32 63020 ms
+qwen2.5-coder-32b-instruct-q4_k_m.gguf | plain | via serial prefill | 31 positions | vs Q8_K: ACCEPT (min cos 0.999765) | vs FP32: ACCEPT (min cos 0.999892) | CPU reference Q8_K 56662 ms, FP32 71937 ms

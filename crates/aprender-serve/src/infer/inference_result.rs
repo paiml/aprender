@@ -661,6 +661,29 @@ impl F2ProbePath {
             Self::Batched => "batched prefill",
         }
     }
+
+    /// #3751: whether the CPU reference this path is judged against runs its
+    /// Q4_K matvecs with FP32 activations (`quantize::with_fp32_activations`)
+    /// rather than the default Q8_K.
+    ///
+    /// `Serial` → FP32. `forward_gpu_resident` runs Q4_K on fp32 MWV, and on all
+    /// 24 serial rows measured (evidence/3751/dense-f2-reference-choice-*.txt,
+    /// both hosts) the GPU sits at least as close to the FP32 CPU as to the Q8_K
+    /// one. The qwen35 and qwen3moe F2s, which reach this path's message, are
+    /// FP32 too. `Batched` → Q8_K: its FP8/int8 prefill tracks neither reference
+    /// uniformly, and it is re-measured after its prefill fixes land.
+    pub(crate) fn reference_uses_fp32_activations(self) -> bool {
+        matches!(self, Self::Serial)
+    }
+
+    /// How the reference reads in a log line.
+    pub(crate) fn reference_str(self) -> &'static str {
+        if self.reference_uses_fp32_activations() {
+            "FP32"
+        } else {
+            "Q8_K"
+        }
+    }
 }
 
 /// Pure: which probe the F2 gate must run, from the prefill path the engine
@@ -692,19 +715,21 @@ pub(crate) fn f2_select_probe_path(
 pub(crate) fn f2_divergence_msg(report: &F2PositionReport, via: F2ProbePath) -> String {
     format!(
         "warning: GPU output diverges from CPU at position {} (argmax {} != {}, cosine {:.4}); \
-min cosine {:.4}, validated via {} — falling back to CPU",
+min cosine {:.4}, validated via {} against the {}-activation CPU reference — falling back to CPU",
         report.first_bad_pos,
         report.first_bad_gpu_argmax,
         report.first_bad_cpu_argmax,
         report.first_bad_cosine,
         report.min_cosine_real,
         via.as_str(),
+        via.reference_str(),
     )
 }
 
 /// CPU reference logits for every probe position, forwarded one token at a time
-/// through `forward_single_with_cache` (unchanged from before #3413 C — the
-/// reference side is the same on both paths). `None` when the CPU forward
+/// through `forward_single_with_cache`. Both probe paths use this forward; the
+/// activation precision it runs at is the caller's scope (#3751,
+/// `F2ProbePath::reference_uses_fp32_activations`). `None` when the CPU forward
 /// itself failed, in which case nothing can be validated.
 #[cfg(feature = "cuda")]
 fn f2_cpu_reference_logits(
@@ -1004,19 +1029,6 @@ fn validate_gpu_first_token(
         return true;
     };
 
-    // CPU reference: forward the whole probe (plus one greedy decode step),
-    // KEEPING THE LOGITS AT EVERY POSITION.
-    let Some(cpu_logits_per_pos) =
-        f2_cpu_reference_logits(cuda_model.model(), &probe, kv_dim, num_layers)
-    else {
-        return true; // CPU forward failed — can't validate, assume GPU is fine
-    };
-    // The decode token both sides take after the probe: CPU's own greedy choice,
-    // so the GPU is measured on the continuation a real run would generate.
-    let decode_token = cpu_logits_per_pos
-        .get(probe.len().saturating_sub(1))
-        .map_or(0, |l| argmax_u32(l));
-
     // #3413 C: judge the prefill path the ENGINE resolved for this process. On a
     // batched-prefill GPU the prompt is served by `prefill_all_layers_gpu` /
     // `batched_qkv_rope_phase`, which the old token-by-token probe never ran.
@@ -1025,6 +1037,36 @@ fn validate_gpu_first_token(
             == crate::cuda::gpu_profile::PrefillPath::Batched,
         probe.len(),
     );
+
+    // CPU reference: forward the whole probe (plus one greedy decode step),
+    // KEEPING THE LOGITS AT EVERY POSITION.
+    //
+    // #3751: on the SERIAL probe path the reference runs with FP32 activations.
+    // Measured with the runtime's own probe (dense_f2_reference_choice), all 24
+    // serial rows — gx10's 18 (6 dense files x 3 prompts) and lambda's 6
+    // (Qwen3-1.7B, Qwen3-8B) — track the FP32 CPU at least as closely as the
+    // Q8_K one: the worst position's 1 - cos is a median 2.5x smaller (1.15x to
+    // 72x; Qwen3-1.7B plain on lambda: 0.9811 -> 0.9997), and no row rejects.
+    // Its cost: flat on lambda (x86, AVX2 FP32 dot), a median 1.17x on gx10,
+    // where `fused_q4k_dot_simd` has no NEON path and takes the scalar dot.
+    // The BATCHED path keeps the Q8_K reference: its FP8/int8 prefill tracks
+    // neither uniformly (lambda, qwen2.5: two false rejects cleared by FP32,
+    // one accept turned into a reject), and its own prefill defects
+    // (#3727/#3728/#3759) are being fixed; it is re-measured after they land.
+    let reference = || f2_cpu_reference_logits(cuda_model.model(), &probe, kv_dim, num_layers);
+    let cpu_ref = if via.reference_uses_fp32_activations() {
+        crate::quantize::with_fp32_activations(reference)
+    } else {
+        reference()
+    };
+    let Some(cpu_logits_per_pos) = cpu_ref else {
+        return true; // CPU forward failed — can't validate, assume GPU is fine
+    };
+    // The decode token both sides take after the probe: CPU's own greedy choice,
+    // so the GPU is measured on the continuation a real run would generate.
+    let decode_token = cpu_logits_per_pos
+        .get(probe.len().saturating_sub(1))
+        .map_or(0, |l| argmax_u32(l));
 
     cuda_model.executor.reset_kv_cache_gpu();
     let gpu_result =
@@ -1799,6 +1841,28 @@ mod trace_output_events_tests {
 #[cfg(test)]
 mod pmat3477_f2_prefill_path_tests {
     use super::{f2_divergence_msg, f2_select_probe_path, F2PositionReport, F2ProbePath};
+
+    /// #3751: the serial probe is judged against the FP32-activation CPU
+    /// reference and the batched probe against the Q8_K one, and the rejection
+    /// line says which. Swapping either arm must turn this RED.
+    #[test]
+    fn f2_reference_precision_follows_the_probe_path() {
+        assert!(F2ProbePath::Serial.reference_uses_fp32_activations());
+        assert!(!F2ProbePath::Batched.reference_uses_fp32_activations());
+        let report = F2PositionReport {
+            accepted: false,
+            pos0_argmax_flip: false,
+            min_cosine_real: 0.8338,
+            first_bad_pos: 23,
+            first_bad_cpu_argmax: 248_045,
+            first_bad_gpu_argmax: 248_045,
+            first_bad_cosine: 0.8338,
+        };
+        let serial = f2_divergence_msg(&report, F2ProbePath::Serial);
+        assert!(serial.contains("against the FP32-activation CPU reference"), "{serial}");
+        let batched = f2_divergence_msg(&report, F2ProbePath::Batched);
+        assert!(batched.contains("against the Q8_K-activation CPU reference"), "{batched}");
+    }
 
     /// The probe follows the ENGINE's resolved prefill path, not a constant.
     ///
