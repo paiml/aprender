@@ -436,8 +436,11 @@ fn run_apr_measurement(
 
 /// APR format CUDA benchmark using fused Q4K kernels (GH-87)
 ///
-/// F-KERNEL-DISPATCH-001: Uses OwnedQuantizedModelCuda (fused Q4K/Q6K GEMV,
-/// 190+ tok/s) instead of AprV2ModelCuda (generic transformer, 0.5 tok/s).
+/// F-KERNEL-DISPATCH-001: Uses OwnedQuantizedModelCuda (fused Q4K/Q6K GEMV)
+/// instead of AprV2ModelCuda (generic transformer). The two paths differ by
+/// orders of magnitude, but no rate literal belongs here: a number in a comment
+/// is a claim no measurement resolves, and these were never re-measured after
+/// the kernels changed. `apr bench` reports the rate for the build in hand.
 /// Loading path: MappedAprModel → OwnedQuantizedModel::from_apr() → OwnedQuantizedModelCuda.
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]

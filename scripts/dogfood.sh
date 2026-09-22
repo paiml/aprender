@@ -334,6 +334,23 @@ elif [ "$DG_PLAN" = "EMPTY" ]; then
 elif [ "$DG_PLAN" = "BADSHAPE" ]; then
   mark dogfood-gates FAIL "[package.metadata.dogfood] gates must be a non-empty list of script paths — a malformed declaration verifies nothing"
 else
+  # The declared gates that resolve an `apr` binary through scripts/apr_bin.sh need
+  # target/release/apr to EXIST and to carry HEAD's sha. This loop used to run ~293
+  # lines BEFORE the release build below, so `declared:float16_greedy_parity` and
+  # `declared:tokenizer_parity` fell through to whatever target/debug/apr was lying
+  # around, saw a stale sha, and printed STALE apr BINARY -- a REFUSAL to measure, not
+  # a measurement. On any tree that has ever built a debug binary (every dev box, and
+  # any release runner that has built before) that made pre-publish dogfood unable to
+  # reach GO, so check_publish_preflight R5 could never accept a receipt and the tag
+  # could never be gated. Measured by aprender-d8 in the 0.69.1 tail rehearsal.
+  #
+  # Build it here, before the gates that read it. FEATS is set far above (the feature
+  # resolution around line 130), and the `cargo build --release` further down is then a
+  # cache hit rather than a second compile.
+  # shellcheck disable=SC2086
+  if ! cargo build --release $FEATS --bin apr > "$WORKLOG/prebuild-apr.log" 2>&1; then
+    mark dogfood-gates FAIL "could not build target/release/apr before the declared gates ($WORKLOG/prebuild-apr.log) -- the gates that resolve an apr binary would refuse on a stale one instead of measuring"
+  fi
   DG_N=0; DG_BAD=0
   while read -r dg_kind dg_path; do
     [ "$dg_kind" = "GATE" ] || continue

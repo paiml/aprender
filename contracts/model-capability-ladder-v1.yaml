@@ -105,7 +105,10 @@ ladder:
       gguf: Qwen3-8B-Q4_K_M.gguf
       sha256: d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785
       backends: [cpu, cuda]
-      required: false   # REFUSED by check_model_ladder.sh (#3712): T-2 is RED while this key stands
+      required: true    # flipped 2026-09-22 (#3724): the empty-output defect this key was hiding is FIXED
+                        # and MEASURED green 8/8 on BOTH lambda (where it failed) and gx10 at 3ebb1c61e.
+                        # `required: false` on a Q4_K rung is what let 0.69.0 ship it as a note instead of a
+                        # failure -- FALSIFY-MCL-011's own if_fails says so -- and no Q4_K model is optional.
       note: "second dense-Qwen3 size. No Q4_K model is optional (#3712), so the release gate refuses this key and the release cannot ship on it. It is not flipped here because the ARMED ladder-green shape reads the committed 0.68.2 lambda receipt (golden_output: Empty output — the 0.69.0 hold) and would turn pv lint red on every PR; the flip to true lands with the Qwen3-8B CUDA fix and a committed green lambda receipt"
     - id: qwen35-0.8b-q4km
       family: qwen3.5
