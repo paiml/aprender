@@ -317,3 +317,139 @@ async fn gpu_a_chat_request_answers_from_the_gpu_session() {
         "/health's flag agrees with the session"
     );
 }
+
+// ── #3715: the OLLAMA wire reaches the hybrid too ──────────────────────────
+//
+// Alfredo reported `/api/chat` 500ing on a Qwen3.5 hybrid, on the grounds that
+// `ollama_handlers.rs` holds zero references to `qwen35` or the hybrid session
+// while `cuda_chat_backend.rs` holds one. The reference count is correct and
+// the conclusion does not follow: `ollama_chat_handler` DELEGATES to
+// `openai_chat_completions_handler`, which calls `try_qwen35_backend` first and
+// unconditionally, so the Ollama wire reaches the hybrid through the OpenAI
+// handler rather than by naming it.
+//
+// Measured on `71421b6e5` before writing these tests — `apr serve run
+// Qwen3.5-0.8B-Q4_K_M.gguf`, both a default build and a `--features cuda`
+// build: `/api/chat`, `/api/generate`, `/api/chat` streaming and `/api/tags`
+// all answered 200, and `/api/chat` returned "4" to "What is 2+2?".
+//
+// What IS true is the risk Alfredo names: `/api/chat` has its own translation
+// layer which has diverged from the OpenAI one twice independently (this
+// report, and the `tool_calls` gap fixed in #3825). Nothing asserted that the
+// two wires stay on one path, so the next refactor that gives `/api/chat` its
+// own generation is a silent regression. These tests are that assertion: they
+// fail the moment the Ollama wire stops answering from the hybrid, whatever
+// the reason.
+
+/// The `/api/chat` wire answers from the hybrid session, not a 500 and not a
+/// dense decode. RED if the Ollama handler ever grows its own generation path.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_ollama_chat_wire_answers_from_the_hybrid() {
+    let Some((state, mapped)) = state_or_skip(true) else {
+        return;
+    };
+    let want = one_shot_answer(&mapped, 16, true);
+    assert!(!want.trim().is_empty(), "reference answer empty: {want:?}");
+
+    let (status, body) = post(
+        create_router(state),
+        "/api/chat",
+        serde_json::json!({
+            "model": "anything-the-client-likes",
+            "messages": [{"role": "user", "content": QUESTION}],
+            "options": {"temperature": 0.0, "top_k": 1, "num_predict": 16},
+            "stream": false,
+        }),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "#3715: /api/chat must reach the Qwen3.5 hybrid, not fail: {body}"
+    );
+    let json: serde_json::Value = serde_json::from_str(&body).expect("JSON");
+    let got = json["message"]["content"].as_str().expect("content");
+    assert_eq!(
+        got, want,
+        "#3715: /api/chat must hand the model the same tokens the OpenAI wire \
+         does — one predicate, two callers. Divergence here is the defect: {body}"
+    );
+}
+
+/// `/api/generate`, the other ollama-compat generation route, on the same path.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_ollama_generate_wire_answers_from_the_hybrid() {
+    let Some((state, _mapped)) = state_or_skip(true) else {
+        return;
+    };
+    let (status, body) = post(
+        create_router(state),
+        "/api/generate",
+        serde_json::json!({
+            "model": "anything-the-client-likes",
+            "prompt": QUESTION,
+            "options": {"temperature": 0.0, "top_k": 1, "num_predict": 16},
+            "stream": false,
+        }),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "#3715: /api/generate must reach the hybrid: {body}"
+    );
+    let json: serde_json::Value = serde_json::from_str(&body).expect("JSON");
+    let got = json["response"].as_str().expect("response");
+    assert!(
+        !got.trim().is_empty(),
+        "#3715: /api/generate answered 200 with an empty body: {body}"
+    );
+}
+
+/// The two wires must agree. This is the one that catches a divergence whose
+/// symptom is a WRONG answer rather than an error — the shape a status-code
+/// assertion cannot see, and the shape #3825's `tool_calls` gap had.
+#[tokio::test(flavor = "multi_thread")]
+async fn both_chat_wires_agree_on_the_same_request() {
+    let Some((state, mapped)) = state_or_skip(true) else {
+        return;
+    };
+    let openai = post(
+        create_router(state),
+        "/v1/chat/completions",
+        chat_body(false, 16),
+    )
+    .await;
+
+    let Some((state2, _)) = state_or_skip(true) else {
+        return;
+    };
+    let ollama = post(
+        create_router(state2),
+        "/api/chat",
+        serde_json::json!({
+            "model": "anything-the-client-likes",
+            "messages": [{"role": "user", "content": QUESTION}],
+            "options": {"temperature": 0.0, "top_k": 1, "num_predict": 16},
+            "stream": false,
+        }),
+    )
+    .await;
+
+    assert_eq!(openai.0, StatusCode::OK, "openai wire: {}", openai.1);
+    assert_eq!(ollama.0, StatusCode::OK, "ollama wire: {}", ollama.1);
+
+    let a: serde_json::Value = serde_json::from_str(&openai.1).expect("JSON");
+    let b: serde_json::Value = serde_json::from_str(&ollama.1).expect("JSON");
+    let a_content = a["choices"][0]["message"]["content"].as_str().expect("a");
+    let b_content = b["message"]["content"].as_str().expect("b");
+    assert_eq!(
+        a_content, b_content,
+        "#3715: the two chat wires disagree on one request against one model. \
+         /api/chat has its own translation layer and has diverged from the \
+         OpenAI one twice before (#3715 report, #3825 tool_calls)."
+    );
+    let _ = mapped;
+}
