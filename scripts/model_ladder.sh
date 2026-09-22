@@ -449,12 +449,24 @@ PY
     be_json="$be_json,\"verbs\":{\"run\":{\"ran\":$ran,\"rc\":$run_rc}"
     be_json="$be_json,\"chat\":{\"ran\":$chat_ran,\"rc\":$chat_rc}"
     be_json="$be_json,\"code\":{\"ran\":$code_ran,\"rc\":$code_rc,\"backend\":\"inherited-from-spawned-serve\"}"
+    # #3847: an EMPTY `serve_json` yields `"serve":}}` — invalid JSON that only
+    # surfaces three steps later as "the row could not be built", with the backend
+    # long out of scope. `ladder_serve_probe` prints an object on every one of its
+    # return paths, so an empty value here means it produced none at all (it hit a
+    # path that exits rather than returns — inside `$( )` that ends only the
+    # SUBSHELL, so the parent carries on with an empty string). Substitute a
+    # well-formed refusal, at the point where we still know which backend it was.
+    if [ -z "$serve_json" ] || ! python3 -c 'import json,sys; json.load(sys.stdin)' <<< "$serve_json" 2>/dev/null; then
+      serve_json='{"probed":false,"why":"the serve probe produced no parseable object for backend '"$b"' — it exited rather than returned","routes":{}}'
+      serve_rc=1
+    fi
     be_json="$be_json,\"serve\":$serve_json}}"
   done
   be_json="$be_json}"
   # The receipt carries the MEASURED file hash (ONT-4c1): a resolver joining the ladder contract to
   # this receipt compares two measurements instead of trusting the receipt's own claim that it checked.
-  row=$(python3 - "$rid" "$qa_row" "$be_json" "$qa_rc" "$rreq" "$got" "$rfile" "$rinv" <<'PY'
+  row_err="$WORK/${rid//[^A-Za-z0-9._-]/_}.rowbuild.err"
+  row=$(python3 - "$rid" "$qa_row" "$be_json" "$qa_rc" "$rreq" "$got" "$rfile" "$rinv" 2>"$row_err" <<'PY'
 import json, sys
 rid, qa, be, qa_rc = sys.argv[1], json.loads(sys.argv[2]), json.loads(sys.argv[3]), int(sys.argv[4])
 req, sha, rfile, inv_only = sys.argv[5] == "1", sys.argv[6], sys.argv[7], sys.argv[8] == "1"
@@ -484,18 +496,29 @@ PY
   # builder crashed".
   if [ -z "$row" ] || ! python3 -c 'import json,sys; json.load(sys.stdin)' <<< "$row" 2>/dev/null; then
     qa_bytes=$(stat -c %s "$qa_json" 2>/dev/null || echo 0)
-    row=$(python3 - "$rid" "$rfile" "$got" "$rreq" "$rinv" "$qa_rc" "$qa_bytes" <<'PY'
+    # #3847: KEEP THE INPUTS. The first version of this row named the symptom
+    # ("could not be built from a 3452-byte qa document") and threw away the
+    # exception and the inputs, so diagnosing `qwen35-27b-q4km` meant rebuilding
+    # the whole pipeline by hand to find out that `be_json` was malformed. A row
+    # that says a build failed without saying why is the same shape as a red that
+    # cannot name itself — one layer further in.
+    printf '%s' "$be_json" > "$WORK/${rid//[^A-Za-z0-9._-]/_}.be.json"
+    printf '%s' "$qa_row"  > "$WORK/${rid//[^A-Za-z0-9._-]/_}.qarow.json"
+    row_cause=$(tail -1 "$row_err" 2>/dev/null | tr -d '\000' | cut -c1-200)
+    row=$(python3 - "$rid" "$rfile" "$got" "$rreq" "$rinv" "$qa_rc" "$qa_bytes" "$row_cause" "$row_err" <<'PY'
 import json, sys
-rid, rfile, sha, req, inv, qa_rc, qa_bytes = sys.argv[1:8]
-why = (f"apr qa --json wrote 0 bytes (exit {qa_rc}) — no document to judge"
+rid, rfile, sha, req, inv, qa_rc, qa_bytes, cause, errlog = sys.argv[1:10]
+why = (f"apr qa --json wrote 0 bytes, exit {qa_rc} from apr qa — no document to judge"
        if qa_bytes == "0" else
-       f"the receipt row could not be built from a {qa_bytes}-byte qa document, exit {qa_rc} from apr qa")
+       f"the receipt row could not be built from a {qa_bytes}-byte qa document, "
+       f"exit {qa_rc} from apr qa; builder said: {cause or 'nothing on stderr'}")
 print(json.dumps({
     "id": rid, "file": rfile, "inventory_only": inv == "1", "present": True,
     "sha_ok": True, "sha256": sha, "required": req == "1", "qa_rc": int(qa_rc),
     "capability_match": {"passed": False, "skipped": False, "message": why},
     "golden_output": {"passed": False, "skipped": False, "message": why},
-    "backends": {}, "green": False, "row_synthesized": True, "why": why}))
+    "backends": {}, "green": False, "row_synthesized": True, "why": why,
+    "row_build_error": cause or None, "row_build_error_log": errlog}))
 PY
 )
   fi
