@@ -1,0 +1,21 @@
+- id: PMAT-3811
+  github_issue: 3811
+  item_type: task
+  title: 'The CPU default (Q8_K activations) changes the greedy answer on 4 pairs on lambda and 7 on gx10, different sets — the FP32 default is blocked on aarch64 having no NEON FP32 Q4_K dot'
+  status: pending
+  priority: high
+  assigned_to: null
+  created: 2026-09-22T03:20:00Z
+  updated: 2026-09-22T03:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3811 done_when 1, verbatim: "A NEON FP32 Q4_K dot for `fused_q4k_dot_simd` on aarch64, with a differential test against the scalar path, so FP32 activations are not an ARM tax. Report the gx10 delta before and after."'
+  - 'done_when 2, verbatim: "Decide the default from measurement, not preference: with the NEON path in, re-measure decode tok/s at both precisions on lambda AND gx10, and state the cost of FP32-by-default on each."'
+  - 'done_when 3, verbatim: "If adopted: `APR_3751_ASSERT=1` is GREEN on both hosts over the #3751 prompt set, and the CPU answer no longer depends on the host. If NOT adopted, this row closes with the measurement and the reason, and #3751''s amendment stands as the permanent answer."'
+  - 'done_when 4, verbatim: "Either way, the FP32 F2 references (#3751, #3714) get the NEON speedup on gx10 — they run FP32 today."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Deferred half of #3751 done_when 3, split out by the cop''s ruling (aprender-3e, 2026-09-22T03:14Z): #3751 accepts the divergences for 0.69.1 as the Q8_K approximation (option b) and this row is option (a), the fix. NOT a new investigation: the measurement is done (evidence/3751/q8k-vs-fp32-{lambda,gx10}.txt, 39 rows per host) and the falsifier is shipped (APR_3751_ASSERT=1 over crates/aprender-serve/src/infer/q8k_reference_drift_tests.rs, RED on qwen2.5-coder-0.5b plain, GREEN on qwen2.5-1.5b). This row turns it GREEN or closes with the reason it should not be. ORDER MATTERS: the NEON dot comes first, because today `fused_q4k_dot_simd` (crates/aprender-serve/src/quantize/fused_k.rs) has an AVX2 arm and a scalar fallback only, so every FP32-activation path is an aarch64 tax — measured at a median 1.17x per row / +24% total for #3751''s F2 reference on gx10 while flat on lambda. x86 cost of the default flip is PMAT-305''s -17% decode. Beneficiaries beyond the default question: the qwen35 and qwen3moe F2 references already run FP32 (#3751, #3714) and pay the scalar path on gx10 today.'

@@ -20024,9 +20024,31 @@ roadmap:
   - 'Issue #3751 done_when 1, verbatim: "Measured, not assumed: for every model in the host inventory, the per-position cosine of CPU(Q8_K activations) vs CPU(FP32 activations) over a fixed prompt set incl. a chat-template start. Report the min per model, and name where it is < 0.999."'
   - 'done_when 2, verbatim: "Every F2 / CPU-reference validator site is listed, with the activation precision it uses. A validator that can false-reject an exact GPU on outlier tokens uses the scoped FP32 reference (eb''s thread-local switch), or is justified."'
   - 'done_when 3, verbatim: "If any model''s CPU answer changes (greedy tokens differ from FP32), that is a correctness defect with its own falsifier, not a note."'
+  - 'done_when 3 as RULED by the cop (aprender-3e, issue body AMENDMENT 2026-09-22 03:14Z), verbatim: "Ruling for 0.69.1 — (b): these pairs are the accepted Q8_K activation approximation, the same trade llama.cpp makes on its Q4_K dot. done_when 3 is met by *the falsifier existing and being RED-provable on demand*, not by the divergences being zero." and: "(a) is DEFERRED, not dropped ... It is filed as its own row and carries this falsifier." — filed as #3811 (PMAT-3811).'
   phases: []
   subtasks: []
   estimated_effort: null
   labels:
   - kind:code
   notes: 'Owner routed by the cop (aprender-04, issue comment 2026-09-21T17:55:49Z): aprender-eb after #3714, together with #3757. The validator list is my issue comment of 2026-09-21T17:34:42Z. This branch is stacked on #3714 R1 (01989323d), which introduced quantize::with_fp32_activations, and it is Refs, not Closes: done_when 3 stays open. done_when 1: infer/q8k_reference_drift_tests.rs (env APR_3751_MODELS) runs each model''s OWN CPU forward (dense, qwen35, qwen3moe) over chat-france, chat-zorblat and plain, as shipped and under with_fp32_activations; evidence/3751/q8k-vs-fp32-{lambda,gx10}.txt, 39 rows each. done_when 2, per site: (3) the qwen35 F2 reference now runs under with_fp32_activations (forward_qwen35.rs), and the Qwen3.5-9B pos-23 false reject is verified cleared (qwen35-9b-chat-f2-lambda.txt); (5) the qwen3moe F2 was FP32 from #3714; (1) the dense runtime F2 judges its SERIAL probe against FP32 and its BATCHED probe against Q8_K (F2ProbePath::reference_uses_fp32_activations, measured by infer/dense_f2_reference_choice_tests.rs, env APR_3751_DENSE_MODELS: all 24 serial rows on both hosts are at least as close to FP32; the batched rows track neither uniformly and are re-measured after aprender-37''s prefill fixes); (2) the load-time parity gate KEEPS Q8_K, justified: one BOS token, GPU >= 0.999531 against both references on 6 files, floor 0.98, FP32 not uniformly closer; (4) wgpu is not a reference problem: it rejects against both references with the cosine moved <= 0.0066 (wgpu_reference_choice_tests.rs, posted on #3757). done_when 3 (greedy divergences: 4 pairs on lambda, 7 on gx10, different sets) needs its falsifier and a ruling on the fix, since making the CPU default FP32 costs decode throughput (PMAT-305 measured -17% on x86), and that choice is the cop''s.'
+- id: PMAT-3811
+  github_issue: 3811
+  item_type: task
+  title: 'The CPU default (Q8_K activations) changes the greedy answer on 4 pairs on lambda and 7 on gx10, different sets — the FP32 default is blocked on aarch64 having no NEON FP32 Q4_K dot'
+  status: pending
+  priority: high
+  assigned_to: null
+  created: 2026-09-22T03:20:00Z
+  updated: 2026-09-22T03:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3811 done_when 1, verbatim: "A NEON FP32 Q4_K dot for `fused_q4k_dot_simd` on aarch64, with a differential test against the scalar path, so FP32 activations are not an ARM tax. Report the gx10 delta before and after."'
+  - 'done_when 2, verbatim: "Decide the default from measurement, not preference: with the NEON path in, re-measure decode tok/s at both precisions on lambda AND gx10, and state the cost of FP32-by-default on each."'
+  - 'done_when 3, verbatim: "If adopted: `APR_3751_ASSERT=1` is GREEN on both hosts over the #3751 prompt set, and the CPU answer no longer depends on the host. If NOT adopted, this row closes with the measurement and the reason, and #3751''s amendment stands as the permanent answer."'
+  - 'done_when 4, verbatim: "Either way, the FP32 F2 references (#3751, #3714) get the NEON speedup on gx10 — they run FP32 today."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Deferred half of #3751 done_when 3, split out by the cop''s ruling (aprender-3e, 2026-09-22T03:14Z): #3751 accepts the divergences for 0.69.1 as the Q8_K approximation (option b) and this row is option (a), the fix. NOT a new investigation: the measurement is done (evidence/3751/q8k-vs-fp32-{lambda,gx10}.txt, 39 rows per host) and the falsifier is shipped (APR_3751_ASSERT=1 over crates/aprender-serve/src/infer/q8k_reference_drift_tests.rs, RED on qwen2.5-coder-0.5b plain, GREEN on qwen2.5-1.5b). This row turns it GREEN or closes with the reason it should not be. ORDER MATTERS: the NEON dot comes first, because today `fused_q4k_dot_simd` (crates/aprender-serve/src/quantize/fused_k.rs) has an AVX2 arm and a scalar fallback only, so every FP32-activation path is an aarch64 tax — measured at a median 1.17x per row / +24% total for #3751''s F2 reference on gx10 while flat on lambda. x86 cost of the default flip is PMAT-305''s -17% decode. Beneficiaries beyond the default question: the qwen35 and qwen3moe F2 references already run FP32 (#3751, #3714) and pay the scalar path on gx10 today.'

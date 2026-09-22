@@ -12,6 +12,7 @@
   - 'Issue #3751 done_when 1, verbatim: "Measured, not assumed: for every model in the host inventory, the per-position cosine of CPU(Q8_K activations) vs CPU(FP32 activations) over a fixed prompt set incl. a chat-template start. Report the min per model, and name where it is < 0.999."'
   - 'done_when 2, verbatim: "Every F2 / CPU-reference validator site is listed, with the activation precision it uses. A validator that can false-reject an exact GPU on outlier tokens uses the scoped FP32 reference (eb''s thread-local switch), or is justified."'
   - 'done_when 3, verbatim: "If any model''s CPU answer changes (greedy tokens differ from FP32), that is a correctness defect with its own falsifier, not a note."'
+  - 'done_when 3 as RULED by the cop (aprender-3e, issue body AMENDMENT 2026-09-22 03:14Z), verbatim: "Ruling for 0.69.1 — (b): these pairs are the accepted Q8_K activation approximation, the same trade llama.cpp makes on its Q4_K dot. done_when 3 is met by *the falsifier existing and being RED-provable on demand*, not by the divergences being zero." and: "(a) is DEFERRED, not dropped ... It is filed as its own row and carries this falsifier." — filed as #3811 (PMAT-3811).'
   phases: []
   subtasks: []
   estimated_effort: null

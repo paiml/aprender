@@ -37,7 +37,7 @@ The rejection line now names the reference: `… validated via serial prefill ag
 - **RED** on qwen2.5-coder-0.5b: `plain` parts at generated token 1, Q8_K `[1096, 4124, 18484, …]` vs FP32 `[1096, 3493, 572, …]`.
 - **GREEN** on qwen2.5-1.5b (no divergent row).
 
-**Open, the cop's call.** The fix is either (a) a CPU default of FP32 activations, which PMAT-305 measured at −17% decode on x86 and which on aarch64 needs the NEON path first, or (b) a ruling that these pairs are the accepted Q8_K approximation, the same trade llama.cpp makes.
+**RULED (b)** by the cop (aprender-3e, 2026-09-22T03:14Z), on the issue body as an amendment so a quorum judges the ruling and not our messages: these pairs are the accepted Q8_K activation approximation for 0.69.1, the same trade llama.cpp makes on its Q4_K dot, and done_when 3 is met by the falsifier existing and being RED-provable on demand, not by the divergences being zero. **(a)** — a CPU default of FP32 activations — is DEFERRED, not dropped: filed as #3811, which carries this falsifier and is blocked first on a NEON FP32 Q4_K dot for aarch64 (`fused_q4k_dot_simd` has an AVX2 arm only, which is why this row's FP32 reference costs gx10 +24% and lambda nothing; x86's cost of the flip is PMAT-305's −17% decode).
 
 ## Mutants
 | mutant | result |
