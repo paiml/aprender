@@ -193,7 +193,7 @@ $case | $expected | $actual | $ok"
     else
       actual_b="RED"
     fi
-    if [ "$actual_b" = "RED" ] && printf '%s\n' "$out_b" | grep -q 'fontdb'; then
+    if [ "$actual_b" = "RED" ] && case $out_b in *fontdb*) true;; *) false;; esac; then
       add_row "(b) planted tree RED, names fontdb" "RED+fontdb" "RED+fontdb"
     else
       add_row "(b) planted tree RED, names fontdb" "RED+fontdb" "$actual_b"
@@ -217,7 +217,7 @@ $case | $expected | $actual | $ok"
   local actual_c="unknown"
   local msg_c
   msg_c=$(check_tree empty_cargo_tree 2>&1) && actual_c="GREEN" || actual_c="RED"
-  if [ "$actual_c" = "RED" ] && printf '%s\n' "$msg_c" | grep -q 'printed NOTHING'; then
+  if [ "$actual_c" = "RED" ] && case $msg_c in *'printed NOTHING'*) true;; *) false;; esac; then
     actual_c="RED-empty-reason"
   fi
   add_row "(c) empty cargo-tree output" "RED-empty-reason" "$actual_c"
