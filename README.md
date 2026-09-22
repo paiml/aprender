@@ -73,7 +73,7 @@ A non-`pass` cell names the gates the receipt records, which is not always the c
 | `inv:Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf` | **FAIL** | **FAIL** |
 | `inv:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf` | **FAIL** | **FAIL** |
 | `inv:qwen2.5-coder-0.5b-instruct-q4_k_m.gguf` | pass | pass |
-| `inv:qwen2.5-coder-1.5b-instruct-fp16.apr` | pass | — |
+| `inv:qwen2.5-coder-1.5b-instruct-fp16.apr` | **FAIL** | — |
 | `inv:qwen2.5-coder-1.5b-instruct-q4_k_m.apr` | pass | — |
 | `inv:qwen2.5-coder-1.5b-instruct-q4_k_m.gguf` | pass | pass |
 | `inv:qwen2.5-coder-1.5b-instruct-q4k.apr` | pass | pass |
@@ -92,8 +92,8 @@ A non-`pass` cell names the gates the receipt records, which is not always the c
 | `inv:qwen2.5-coder-1.5b-q4k.apr` | — | pass |
 | `inv:tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf` | — | **FAIL** |
 
-- **gx10**: 17 rung(s), 17 required, 2 not green — `apr 0.69.1 (ab4ba54ec)`
-- **lambda**: 26 rung(s), 26 required, 10 not green — `apr 0.69.1 (ab4ba54ec)`
+- **gx10**: 17 rung(s), 17 required, 3 not green — `apr 0.69.1 (712f6d433)`
+- **lambda**: 26 rung(s), 26 required, 10 not green — `apr 0.69.1 (712f6d433)`
 
 <!-- RELEASE_MATRIX_END -->
 
