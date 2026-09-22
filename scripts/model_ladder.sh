@@ -557,8 +557,29 @@ def serve_ok(v):
         return False
     return all(r.get("http") == 200 for r in (sv.get("routes") or {}).values())
 
+# THE OTHER TWO VERBS (#3902). The operator's bar names FOUR verbs — run, chat,
+# code, serve. `v["ran"]` is the RUN verb and #3886 added serve; `chat` and `code`
+# are written into the receipt and never read by the verdict. Measured: gx10's
+# `qwen2.5-coder-1.5b-instruct-q4k.apr` is `green: true` with `chat rc=3`, and the
+# judge FAILs it — which is the whole of the producer/judge asymmetry (#3897). The
+# two do not hold different opinions; the producer reads a strict subset.
+#
+# I fixed a THIRD of this in #3886: folded serve in and did not notice two siblings
+# in the same structure with the same defect. "Assert the count, then check the
+# shape" applies to a fix as much as to a mechanical edit.
+#
+# A MISSING verb record is RED, not passed. The producer writes all three on every
+# row it emits, so this cannot fire spuriously — but "absent" must never read as
+# "fine", which is the rule serve_ok already follows for `probed`.
+def verb_ok(v, name):
+    x = (v.get("verbs") or {}).get(name)
+    if not isinstance(x, dict):
+        return False
+    return bool(x.get("ran")) and (x.get("rc") or 0) == 0
+
 green = cap_ok and qa.get("golden_output", {}).get("passed", False) \
         and all(v["ran"] and not v["fallback"] and not v.get("escaped_special") and serve_ok(v)
+                and verb_ok(v, "chat") and verb_ok(v, "code")
                 for v in be.values())
 # ANTI-VACUITY (#3863 item 16). `apr qa` exiting non-zero means at least one gate
 # failed. If the row records NO failed gate, the receipt cannot account for its own
@@ -639,6 +660,31 @@ for b,v in r["backends"].items():
     if v["fallback"]: w.append(b+": FELL BACK (claimed backend did not run)")
     elif v.get("escaped_special"): w.append(b+": escaped special token in the formatted prompt: templated twice (#3743)")
     elif not v["ran"]: w.append(b+": did not run (rc=%s)"%v["rc"])
+    # SERVE IS A SEPARATE CHECK, NOT PART OF THE elif CHAIN (#3901). A backend can
+    # `ran: true` with every HTTP route failing — that is exactly the fp16 `.apr`
+    # case — so chaining it would hide the only cause the row has.
+    #
+    # #3886 folded serve into `green` and did NOT teach this builder about it, so a
+    # row red SOLELY on serve printed `unknown`: the verdict moved and the
+    # explanation did not. That is the defect the comment above this block warns
+    # about in a different form — "a red line prints its whole reason".
+    # #3902: the same omission #3901 found for serve, caught in the SAME pass this
+    # time rather than after. A verdict that starts consulting a field while the
+    # explanation builder does not is precisely how a row becomes red and silent.
+    for _vn in ("chat", "code"):
+        _x=(v.get("verbs") or {}).get(_vn)
+        if not isinstance(_x, dict): w.append(b+": verb `%s` absent from the receipt"%_vn)
+        elif not _x.get("ran") or (_x.get("rc") or 0)!=0: w.append(b+": verb `%s` did not run (rc=%s)"%(_vn,_x.get("rc")))
+    sv=(v.get("verbs") or {}).get("serve") or {}
+    if not sv.get("probed"):
+        w.append(b+": serve NOT PROBED: "+_disp(sv.get("why","")))
+    elif sv.get("teardown")=="failed":
+        w.append(b+": serve teardown FAILED (the server would not die — a real property of the verb)")
+    else:
+        routes=sv.get("routes") or {}
+        bad=sorted(k for k,x in routes.items() if (x or {}).get("http")!=200)
+        if bad:
+            w.append(b+": serve routes non-200: "+", ".join("%s=%s"%(k,(routes[k] or {}).get("http")) for k in bad))
 print("; ".join(w) or "unknown")')
     printf '  [FAIL  ] %-30s %s\n' "$rid" "$why"
   fi
