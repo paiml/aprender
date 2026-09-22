@@ -317,6 +317,50 @@ fn detect_gibberish(output: &str, test_id: &str) -> Option<String> {
     gibberish_non_ascii_saturation(output, test_id)
         .or_else(|| gibberish_repeated_fragment(output, test_id))
         .or_else(|| gibberish_replacement_density(output, test_id))
+        .or_else(|| gibberish_dominant_character(output, test_id))
+}
+
+/// Signal 4 (#3782): a degenerate completion — 8+ non-space characters, 90%+ of
+/// them the SAME character.
+///
+/// Signal 2 only examines an output once it is 12 bytes long and only in 4-byte
+/// fragments, so everything from 1 to 11 characters of a single repeated
+/// character reached the answer check untouched. That matters because two golden
+/// patterns are a SINGLE character: the greeting case lists `"!"`, and the
+/// arithmetic case's whole expected answer is `"4"`. Substring-any then scores
+/// a dead-logit loop as correct:
+///
+/// * `"!!!!!!!!"` satisfies the greeting case — `!` is token id 0 in the Qwen
+///   vocab, which is exactly what a model with dead logits emits, and #3726's
+///   non-ASCII-to-id-0 shape lands here too.
+/// * `"44444444"` satisfies the ARITHMETIC case, which the issue does not
+///   mention and which is the flagship golden test.
+///
+/// Dropping `"!"` fixes the first and cannot fix the second: `"4"` is the
+/// legitimate answer to 2+2 and has to stay. So the check belongs here, ahead of
+/// the answer check, where it covers every case including ones added later.
+///
+/// The threshold is CRUX's (#3774), deliberately, so the two judges cannot
+/// disagree about what "degenerate" means on the same completion.
+fn gibberish_dominant_character(output: &str, test_id: &str) -> Option<String> {
+    let chars: Vec<char> = output.chars().filter(|c| !c.is_whitespace()).collect();
+    if chars.len() < 8 {
+        return None;
+    }
+    let mut counts: std::collections::HashMap<char, usize> = std::collections::HashMap::new();
+    for c in &chars {
+        *counts.entry(*c).or_insert(0) += 1;
+    }
+    let (dominant, hits) = counts.into_iter().max_by_key(|&(_, n)| n)?;
+    let ratio = hits as f64 / chars.len() as f64;
+    if ratio >= 0.9 {
+        return Some(format!(
+            "{test_id}: degenerate output ({hits}/{} non-space characters are {dominant:?}, {:.0}% >= 90%)",
+            chars.len(),
+            ratio * 100.0
+        ));
+    }
+    None
 }
 
 /// Signal 1: non-ASCII saturation (> 60% of a 16+ char completion).
@@ -807,4 +851,109 @@ fn golden_output_apr(path: &Path, prompt: &str, max_tokens: usize) -> Result<(Ve
         .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?;
 
     Ok((result.tokens, result.text))
+}
+
+/// #3782: a degenerate completion is not a correct answer, on ANY golden case.
+///
+/// The issue names the greeting case's `"!"`. Measured against all three cases
+/// first, the hole was wider: the ARITHMETIC case's whole expected answer is the
+/// single character `"4"`, so `"44444444"` scored correct on the flagship golden
+/// test and nothing in the issue mentions it. `"4"` cannot be dropped the way
+/// `"!"` can — it is the right answer — so the guard has to be general.
+///
+/// Boundary measured on the pre-fix gate: `"!"` repeated 1..=11 all PASSED;
+/// 12 and up were caught by `gibberish_repeated_fragment`, whose
+/// `bytes.len() >= 12` / 4-byte-fragment shape is exactly the gap.
+#[cfg(test)]
+mod pmat3782_degenerate_is_not_an_answer {
+    use super::{verify_output, OutputVerification};
+
+    fn rejected(output: &str, patterns: &[&str]) -> bool {
+        matches!(
+            verify_output(output, "PMAT-3782", patterns),
+            OutputVerification::Fail { .. }
+        )
+    }
+
+    /// The three live golden cases, with the degenerate completion that the
+    /// substring-any check would otherwise score as correct for each.
+    /// `(case, patterns, degenerate output, why it was accepted)`
+    const DEGENERATE: &[(&str, &[&str], &str, &str)] = &[
+        (
+            "arithmetic",
+            &["4"],
+            "44444444",
+            "the expected answer IS a single character, so any run of it matches — \
+             the flagship golden case, and not mentioned in #3782",
+        ),
+        (
+            "arithmetic (11, just under the old 12-byte floor)",
+            &["4"],
+            "44444444444",
+            "gibberish_repeated_fragment needs 12 bytes; this is 11",
+        ),
+        (
+            "greeting",
+            &["Hello", "Hi", "hey", "hello", "well"],
+            "!!!!!!!!",
+            "#3782 as filed: `!` is token id 0 in the Qwen vocab, what dead logits emit",
+        ),
+    ];
+
+    /// Every case at once, so a regression names each golden case it re-opened.
+    #[test]
+    fn no_golden_case_accepts_a_degenerate_completion() {
+        let accepted: Vec<String> = DEGENERATE
+            .iter()
+            .filter(|(_, pats, out, _)| !rejected(out, pats))
+            .map(|(case, _, out, why)| format!("\n  - {case}: {out:?} scored CORRECT. {why}"))
+            .collect();
+        assert!(
+            accepted.is_empty(),
+            "#3782 REGRESSION: {} of {} golden cases accept a degenerate completion, \
+             so a model emitting a dead-logit loop passes apr qa's golden_output:{}",
+            accepted.len(),
+            DEGENERATE.len(),
+            accepted.join("")
+        );
+    }
+
+    /// A token-0 loop at the gate's real generation length.
+    #[test]
+    fn a_token_zero_loop_is_rejected() {
+        for n in [8usize, 12, 32, 64] {
+            assert!(
+                rejected(&"!".repeat(n), &["Hello", "Hi", "hey", "hello", "well"]),
+                "#3782: a {n}-token loop of `!` (token id 0) scored correct"
+            );
+        }
+    }
+
+    /// The over-correction: a real answer must still pass. A guard that rejects
+    /// everything is not a guard, and the arithmetic case answers with ONE
+    /// character, which is the case most at risk from a careless length rule.
+    #[test]
+    fn real_answers_still_pass() {
+        let ok: &[(&str, &[&str])] = &[
+            ("4", &["4"]),
+            ("2 + 2 = 4", &["4"]),
+            ("The answer is 4.", &["4"]),
+            ("Hello! How are you doing today?", &["Hello", "Hi"]),
+            ("The capital of France is Paris.", &["Paris"]),
+            // 90% is a floor, not a ceiling: heavy but legitimate punctuation.
+            ("Hello!!!!!!!!", &["Hello"]),
+        ];
+        let wrongly: Vec<String> = ok
+            .iter()
+            .filter(|(out, pats)| rejected(out, pats))
+            .map(|(out, _)| format!("\n  - {out:?}"))
+            .collect();
+        assert!(
+            wrongly.is_empty(),
+            "#3782 OVER-CORRECTION: the degenerate guard rejected {} legitimate \
+             answer(s):{}",
+            wrongly.len(),
+            wrongly.join("")
+        );
+    }
 }

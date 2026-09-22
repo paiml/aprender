@@ -119,7 +119,13 @@ fn golden_test_cases() -> Vec<(&'static str, Vec<&'static str>)> {
         // with enough context that the first generated token is not a near-tie.
         (
             "<|im_start|>user\nHello there, how are you doing today my friend?<|im_end|>\n<|im_start|>assistant\n",
-            vec!["Hello", "Hi", "hey", "hello", "well", "!"],
+            // #3782: `"!"` removed. Substring-any made it satisfiable by
+            // `"!!!!!!!!"` — token id 0 in the Qwen vocab, i.e. exactly what a
+            // model with dead logits emits. A bare exclamation mark was never
+            // evidence of a greeting anyway. `gibberish_dominant_character`
+            // (output_verification.rs) is the general guard; this is the
+            // case-local half, so neither alone has to carry it.
+            vec!["Hello", "Hi", "hey", "hello", "well"],
         ),
         // Factual recall: a wide-margin argmax and a check that the model is
         // actually reasoning over its weights rather than emitting boilerplate.
