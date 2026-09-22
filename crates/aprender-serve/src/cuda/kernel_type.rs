@@ -349,6 +349,11 @@ pub enum KernelType {
         k: u32,
         n: u32,
     },
+    /// IQ4_XS GEMV (codebook + split 6-bit scales) - #3477
+    Iq4XsGemv {
+        k: u32,
+        n: u32,
+    },
     /// Incremental attention for M=1 autoregressive decoding (PAR-020 + PAR-021)
     IncrementalAttention {
         max_seq_len: u32,

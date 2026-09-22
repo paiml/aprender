@@ -29,6 +29,7 @@ mod gemv_entry_name_tests_3477 {
             KernelType::Q4_0Gemv { k, n },
             KernelType::Q4_1Gemv { k, n },
             KernelType::F16Gemv { k, n },
+            KernelType::Iq4XsGemv { k, n },
         ]
     }
 
@@ -97,6 +98,114 @@ mod gemv_entry_name_tests_3477 {
         assert!(
             crate::gguf::gpu_unsupported_quant_qtype(1),
             "F16 must still be refused until the A/B proves this kernel on real bytes"
+        );
+    }
+
+    /// The IQ4_XS kernel's INDEX MATH, executed in Rust exactly as the PTX
+    /// executes it, checked against the verified CPU decoder on the same bytes.
+    ///
+    /// WHAT THIS PROVES: the thread mapping is right — that `ib == m` and
+    /// `jj == tid` (which holds only because `tid < 32`), that `tid >> 4`
+    /// selects the nibble and `tid & 15` the byte, that the 6-bit scale is
+    /// reassembled from `scales_l`/`scales_h` correctly, and that the codebook
+    /// is indexed correctly. Index math is the likely bug class in a port and
+    /// it is checkable with no GPU.
+    ///
+    /// WHAT IT DOES NOT PROVE: that the PTX *text* implements this model. That
+    /// gap closes with the tensor-level A/B on real device bytes, and nothing
+    /// on a CPU-only box can close it. Recorded rather than glossed.
+    #[test]
+    fn the_iq4_xs_thread_mapping_reproduces_the_cpu_decoder() {
+        use crate::quantize::iq4_xs::{dequantize_iq4_xs_block, IQ4_XS_BLOCK_BYTES};
+
+        // KVALUES_IQ4NL, the 16 non-linear levels, as the PTX embeds them.
+        const KV: [i32; 16] =
+            [-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113];
+
+        // A deterministic pseudo-random block; byte 0..2 is the f16 scale, kept
+        // to a cleanly representable value so the comparison is about indexing.
+        let mut block = [0u8; IQ4_XS_BLOCK_BYTES];
+        let mut x: u32 = 0x1234_5678;
+        for b in block.iter_mut() {
+            x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            *b = (x >> 24) as u8;
+        }
+        block[0] = 0x00;
+        block[1] = 0x3c; // f16 1.0
+
+        let mut expected = [0f32; 256];
+        dequantize_iq4_xs_block(&block, &mut expected);
+
+        // ---- exactly what the PTX does, one lane at a time ----
+        let d = f32::from(half_from_le(block[0], block[1]));
+        let scales_h = u32::from(u16::from_le_bytes([block[2], block[3]]));
+        let mut got = [0f32; 256];
+        for tid in 0..32usize {
+            let jhalf = tid >> 4;
+            let jlow = tid & 15;
+            for m in 0..8usize {
+                let ls_low = (u32::from(block[4 + (m >> 1)]) >> (4 * (m & 1))) & 0xf;
+                let ls_high = ((scales_h >> (2 * m)) & 3) << 4;
+                #[allow(clippy::cast_precision_loss)]
+                let dl = d * ((ls_low | ls_high) as f32 - 32.0);
+                let byte = u32::from(block[8 + 16 * m + jlow]);
+                let nib = (byte >> (jhalf * 4)) & 15;
+                #[allow(clippy::cast_precision_loss)]
+                let w = dl * KV[nib as usize] as f32;
+                got[32 * m + tid] = w;
+            }
+        }
+
+        let mut wrong = Vec::new();
+        for i in 0..256 {
+            if (got[i] - expected[i]).abs() > 1e-6 {
+                wrong.push(format!("\n  - element {i}: kernel {} vs decoder {}", got[i], expected[i]));
+            }
+        }
+        assert!(
+            wrong.is_empty(),
+            "{} of 256 elements disagree with dequantize_iq4_xs_block — the kernel's \
+             index math does not match the reference it was ported from:{}",
+            wrong.len(),
+            wrong.join("")
+        );
+    }
+
+    /// f16 bits -> f32, for the test's own scale. Kept local so the test does
+    /// not depend on a `pub(crate)` helper's visibility.
+    fn half_from_le(lo: u8, hi: u8) -> f32 {
+        let bits = u16::from_le_bytes([lo, hi]);
+        let sign = f32::from_bits(u32::from(bits & 0x8000) << 16);
+        let exp = i32::from((bits >> 10) & 0x1f);
+        let frac = f32::from(bits & 0x3ff);
+        let mag = if exp == 0 {
+            frac * 2f32.powi(-24)
+        } else {
+            (1.0 + frac / 1024.0) * 2f32.powi(exp - 15)
+        };
+        if sign.is_sign_negative() { -mag } else { mag }
+    }
+
+    /// IQ4_XS must be registered with the right block size. 136 bytes per 256
+    /// elements: a wrong number here walks the row at the wrong stride and
+    /// every block after the first is misread.
+    #[test]
+    fn iq4_xs_is_registered_with_the_right_block_size() {
+        use crate::cuda::types::{GemvKernel, WeightQuantType};
+        assert_eq!(WeightQuantType::from_ggml_type(23), Some(WeightQuantType::IQ4XS));
+        assert_eq!(WeightQuantType::IQ4XS.bytes_per_superblock(), 136);
+        // [2560, 9216] ffn_gate — the real shape in the UD model.
+        let nsb = 2560 * (9216 / 256);
+        assert!(WeightQuantType::IQ4XS.matches_size(nsb * 136, 2560, 9216));
+        assert_eq!(WeightQuantType::from_size(nsb * 136, 2560, 9216), Some(WeightQuantType::IQ4XS));
+        assert_eq!(
+            crate::cuda::types::BoundWeight::bind(0x1000, nsb * 136, WeightQuantType::IQ4XS, 2560, 9216)
+                .kernel(),
+            GemvKernel::IQ4XS
+        );
+        assert!(
+            crate::gguf::gpu_unsupported_quant_qtype(23),
+            "IQ4_XS must still be refused until the A/B proves this kernel on real bytes"
         );
     }
 
