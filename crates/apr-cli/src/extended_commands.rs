@@ -641,6 +641,12 @@ pub enum ExtendedCommands {
         #[arg(long)]
         slice: Option<String>,
     },
+    /// What this build can and cannot do, and why — read from the capability contract (#3856)
+    Capability {
+        /// Print the registry as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Backend discovery: probe, enumerate, print — every kind is a line (PP-066 R-0)
     #[cfg(feature = "inference")]
     Devices {

@@ -529,6 +529,15 @@ async fn completions_inner(
         return Ok(r);
     }
 
+    // #3874: the Qwen3.5 arm. Ahead of every path that currently 503s on this
+    // architecture, and `Ok(None)` when no session is present so a non-hybrid state
+    // falls through unchanged.
+    if let Some(r) =
+        try_qwen35_completions(&state, &request, max_tokens, temperature, start, &cancel).await?
+    {
+        return Ok(r);
+    }
+
     if let Some(r) =
         try_quantized_completions(&state, &request, max_tokens, temperature, start, &cancel)?
     {
@@ -811,3 +820,5 @@ mod pmat795_finish_reason_tests {
         assert_eq!(reason("abXc", Some(&stops), 256, 256), "length");
     }
 }
+
+include!("qwen35_completions_backend.rs");
