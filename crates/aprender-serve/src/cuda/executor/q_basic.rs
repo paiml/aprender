@@ -10,3 +10,4 @@ use super::*;
 
 include!("device.rs");
 include!("q8_gemv_tests.rs");
+include!("iq4_nl_device_ab_tests.rs");

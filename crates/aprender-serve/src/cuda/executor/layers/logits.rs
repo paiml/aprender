@@ -134,6 +134,11 @@ impl CudaExecutor {
                     lm_head_ptr, normed_hidden, logits_gpu, vocab_size, hidden_dim,
                 )?;
             },
+            WeightQuantType::IQ4NL => {
+                self.iq4_nl_gemv_into(
+                    lm_head_ptr, normed_hidden, logits_gpu, vocab_size, hidden_dim,
+                )?;
+            },
         }
         Ok(())
     }

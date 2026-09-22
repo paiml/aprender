@@ -30,6 +30,7 @@ mod gemv_entry_name_tests_3477 {
             KernelType::Q4_1Gemv { k, n },
             KernelType::F16Gemv { k, n },
             KernelType::Iq4XsGemv { k, n },
+            KernelType::Iq4NlGemv { k, n },
         ]
     }
 
@@ -183,10 +184,15 @@ mod gemv_entry_name_tests_3477 {
     /// map to `None`, which is what `resolve_qtype` now refuses on. Before this
     /// it fell through to Q4_K and the bytes were read as a different scheme.
     ///
-    /// These are not hypothetical: all five were measured in lambda's
-    /// inventory. Q5_1 and IQ4_NL sit in `Qwen2.5-0.5B-Instruct-IQ4_XS`,
-    /// BF16 in `Qwen3-0.6B-BF16`, IQ2_XXS/IQ3_XXS/Q2_K in
-    /// `Qwen3.5-0.8B-UD-IQ2_XXS`, IQ3_S in two more.
+    /// These are not hypothetical: all were measured in lambda's inventory.
+    /// Q5_1 sits in `Qwen2.5-0.5B-Instruct-IQ4_XS`, BF16 in `Qwen3-0.6B-BF16`,
+    /// IQ2_XXS/IQ3_XXS/Q2_K in `Qwen3.5-0.8B-UD-IQ2_XXS`, IQ3_S in two more.
+    ///
+    /// #3869: IQ4_NL was on this list and has been REMOVED because it now has a
+    /// kernel. It is not deleted from the guard - it moved to
+    /// `iq4_nl_has_a_kernel_but_is_not_admitted_until_it_is_measured` below,
+    /// which asserts the other half. A row that outlives its premise is
+    /// converted, never dropped.
     #[test]
     fn the_types_found_in_the_wild_without_kernels_resolve_to_none() {
         use crate::cuda::types::WeightQuantType;
@@ -196,7 +202,6 @@ mod gemv_entry_name_tests_3477 {
             (11, "Q3_K"),
             (16, "IQ2_XXS"),
             (18, "IQ3_XXS"),
-            (20, "IQ4_NL"),
             (21, "IQ3_S"),
             (22, "IQ2_S"),
             (30, "BF16"),
@@ -207,6 +212,128 @@ mod gemv_entry_name_tests_3477 {
             .map(|(t, n)| format!("\n  - {n} (type {t}) claims a kernel it does not have"))
             .collect();
         assert!(admitted.is_empty(), "census drift:{}", admitted.join(""));
+    }
+
+    /// #3869: IQ4_NL is admitted BECAUSE its kernel was measured.
+    ///
+    /// This row was `iq4_nl_has_a_kernel_but_is_not_admitted_until_it_is_measured`
+    /// and it said, in its own body, to flip this assertion and open the
+    /// whitelist in the same commit once the device A/B passed. It has:
+    ///
+    /// ```text
+    /// #3869 A/B: 64 rows, worst relative disagreement 0.000e0
+    /// ```
+    ///
+    /// EXACT against `iq_parallel_matvec` on the same bytes, RTX 4090 sm_89, plus
+    /// a k=100 shape whose last block is padding. Proved able to fail rather than
+    /// trusted for passing first time:
+    ///   FAULT (nibble select disabled): worst row 10, GPU -6614 vs CPU -571
+    ///   FAULT (row stride 18 -> 17):    worst row 47, GPU -166775700 vs CPU -225
+    ///
+    /// Both halves stay asserted together. "Has a kernel" and "is admitted" are
+    /// the two claims whose conflation produced #3850 — an open whitelist in
+    /// front of a `from_ggml_type` returning `None` is how every F16 tensor
+    /// nearly got decoded as Q4_K — so they remain separate, simultaneously
+    /// checked facts rather than one implying the other.
+    #[test]
+    fn iq4_nl_is_admitted_because_its_kernel_was_measured() {
+        use crate::cuda::types::{GemvKernel, WeightQuantType};
+
+        assert_eq!(
+            WeightQuantType::from_ggml_type(20),
+            Some(WeightQuantType::IQ4NL),
+            "#3869: the kernel exists, so the type must resolve"
+        );
+        assert_eq!(
+            WeightQuantType::IQ4NL.bytes_per_block(),
+            18,
+            "IQ4_NL is natively 18 bytes per 32 elements"
+        );
+        assert_eq!(
+            crate::cuda::types::BoundWeight::bind(
+                0x1000,
+                2560 * (9216 / 32) * 18,
+                WeightQuantType::IQ4NL,
+                2560,
+                9216
+            )
+            .kernel(),
+            GemvKernel::IQ4NL
+        );
+        assert!(
+            !crate::gguf::gpu_unsupported_quant_qtype(20),
+            "#3869: the kernel was measured EXACT against the CPU decoder on device \
+             (iq4_nl_device_ab_tests), so IQ4_NL is GPU-eligible"
+        );
+    }
+
+    /// The IQ4_NL kernel's INDEX MATH, executed in Rust exactly as the PTX
+    /// executes it, checked against the verified CPU decoder on the same bytes.
+    ///
+    /// Same contract as the IQ4_XS row below, and the same limit: this proves
+    /// the thread mapping, not that the PTX TEXT implements it. That gap closes
+    /// only with a device A/B.
+    ///
+    /// The mapping it pins is the one most likely to be wrong, because it is the
+    /// one the format makes counter-intuitive: byte `j`'s two nibbles land at
+    /// elements `j` and `j + 16`, NOT at `2j` and `2j + 1`. Reading them
+    /// adjacently transposes every block's halves and still yields plausible
+    /// magnitudes, so nothing downstream would look obviously broken.
+    #[test]
+    fn the_iq4_nl_thread_mapping_reproduces_the_cpu_decoder() {
+        use crate::quantize::iq4_nl::{
+            dequantize_iq4_nl_block, IQ4_NL_BLOCK_BYTES, IQ4_NL_BLOCK_ELEMS,
+        };
+
+        // KVALUES_IQ4NL, the 16 non-linear levels, as the PTX embeds them.
+        const KV: [i32; 16] =
+            [-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113];
+
+        let mut block = [0u8; IQ4_NL_BLOCK_BYTES];
+        let mut x: u32 = 0x1234_5678;
+        for b in block.iter_mut() {
+            x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            *b = (x >> 24) as u8;
+        }
+        block[0] = 0x00;
+        block[1] = 0x3c; // f16 1.0
+
+        let mut expected = [0f32; IQ4_NL_BLOCK_ELEMS];
+        dequantize_iq4_nl_block(&block, &mut expected);
+
+        // ---- exactly what the PTX does, one lane at a time ----
+        // jlow = tid & 15 (byte index), jhalf = tid >> 4 (nibble select),
+        // element index = tid. There is no sub-block loop and no scale
+        // reassembly: one f16 d covers all 32 elements.
+        let d = f32::from(half_from_le(block[0], block[1]));
+        let mut got = [0f32; IQ4_NL_BLOCK_ELEMS];
+        for tid in 0..IQ4_NL_BLOCK_ELEMS {
+            let jhalf = tid >> 4;
+            let jlow = tid & 15;
+            let byte = u32::from(block[2 + jlow]);
+            let nib = (byte >> (jhalf * 4)) & 15;
+            #[allow(clippy::cast_precision_loss)]
+            let w = d * (KV[nib as usize] as f32);
+            got[tid] = w;
+        }
+
+        for (i, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
+            assert!(
+                (g - e).abs() <= 1e-6,
+                "element {i}: kernel mapping {g}, CPU decoder {e}"
+            );
+        }
+
+        // State the counter-intuitive half as its own assertion, so a failure
+        // names the mechanism rather than an index.
+        assert_eq!(
+            got[0], expected[0],
+            "byte 0's LOW nibble is element 0"
+        );
+        assert_eq!(
+            got[16], expected[16],
+            "byte 0's HIGH nibble is element 16, not element 1"
+        );
     }
 
     /// The IQ4_XS kernel's INDEX MATH, executed in Rust exactly as the PTX
@@ -310,6 +437,64 @@ mod gemv_entry_name_tests_3477 {
             crate::cuda::types::BoundWeight::bind(0x1000, nsb * 136, WeightQuantType::IQ4XS, 2560, 9216)
                 .kernel(),
             GemvKernel::IQ4XS
+        );
+    }
+
+    /// #3869: IQ4_NL MUST NOT be inferred from size, and this records why.
+    ///
+    /// `block_iq4_nl` and `block_q4_0` are the **identical C struct** —
+    /// `{ ggml_half d; uint8_t qs[16]; }`, 18 bytes per 32 elements. They are
+    /// byte-for-byte indistinguishable. Only the DECODE differs: Q4_0 is linear,
+    /// `(q - 8) * d`; IQ4_NL indexes the non-linear codebook,
+    /// `d * kvalues_iq4nl[q]`.
+    ///
+    /// Normalized to 256 elements that is 144 bytes, which is ALSO Q4_K's
+    /// super-block size. So three types collide:
+    ///
+    /// | type | block | bytes | bytes per 256 elems |
+    /// |---|---|---|---|
+    /// | Q4_0   |  32 |  18 | **144** |
+    /// | IQ4_NL |  32 |  18 | **144** |
+    /// | Q4_K   | 256 | 144 | **144** |
+    ///
+    /// `from_size` already documents the Q4_0/Q4_K half of this
+    /// (CORRECTNESS-002) and resolves it by trying super-block formats first.
+    /// Adding IQ4_NL to that ladder would make a THIRD indistinguishable member
+    /// and hand a wrong codebook to a real tensor — the #3850
+    /// `resolve_qtype().unwrap_or(Q4K)` failure mode arriving by size inference
+    /// instead of by fallback, and just as silent: the wrong decode of a valid
+    /// block produces plausible numbers, not an error.
+    ///
+    /// **When the IQ4_NL GPU path lands, its type must come from the DECLARED
+    /// ggml type id and never from `from_size`.** This test exists to say that
+    /// where the person adding it will read it.
+    #[test]
+    fn iq4_nl_is_byte_identical_to_q4_0_so_size_can_never_name_it() {
+        use crate::cuda::types::WeightQuantType;
+        use crate::gguf::ggml_type_table;
+
+        let q4_0 = ggml_type_table::traits(2).expect("Q4_0 is in the loader table");
+        let iq4_nl = ggml_type_table::traits(20).expect("IQ4_NL is in the loader table");
+        assert_eq!(
+            (q4_0.blck_size, q4_0.type_size),
+            (iq4_nl.blck_size, iq4_nl.type_size),
+            "if these ever differ, this whole hazard is gone and the test should say so"
+        );
+
+        // A tensor that is 18 bytes per 32 elements. Size alone cannot say which
+        // of the three it is.
+        let (rows, cols) = (2560usize, 9216usize);
+        let size = rows * (cols / 32) * 18;
+        assert_eq!(size, rows * (cols / 256) * 144, "the 144-per-256 collision");
+
+        let inferred = WeightQuantType::from_size(size, rows, cols);
+        assert!(
+            matches!(
+                inferred,
+                Some(WeightQuantType::Q4K | WeightQuantType::Q4_0)
+            ),
+            "size inference resolves this to Q4_K or Q4_0 today; it got {inferred:?}. It must \
+             never resolve it to IQ4_NL, because nothing in the bytes distinguishes them"
         );
     }
 
