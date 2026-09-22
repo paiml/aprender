@@ -706,7 +706,7 @@ meta = {
         "verbs not run here: " + ", ".join(v for v in ("chat", "serve", "code") if v not in verbs.split(",")),
         *(["apr serve's backend is unverified: its responses report none"] if "serve" in verbs.split(",") else []),
         *(["apr chat's backend is unverified: apr chat reports none (#3794)"] if "chat" in verbs.split(",") else []),
-        "thinking ON (apr has no toggle until #3723)",
+        "thinking ON until #3723 adds an apr toggle",
         "consumer-brief context rungs (#3716) and each engine's max accepted context",
         "TTFT and decode rate: the serve verb's measurement goes through `apr test llm bench` (PERF-009), the next increment",
     ],

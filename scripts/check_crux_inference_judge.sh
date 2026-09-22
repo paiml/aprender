@@ -441,7 +441,7 @@ for mode in nonstream stream; do
 done
 run_judge "$d"; GOT_RC=$?
 got=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(sorted((c["key"].get("mode"), c["verdict"], c["engines"]["apr"].get("backend_verified")) for c in r["cells"] if c["key"]["verb"]=="serve run"))' "$d/receipt.json" 2>/dev/null)
-[ "$GOT_RC" = 0 ] && [ "$got" = "[('nonstream', 'GREEN', False), ('stream', 'GREEN', False)]" ] && ok "serve nonstream and stream are distinct GREEN cells; apr serve's backend unverified" || broke "serve green: rc $GOT_RC '$got'"
+[ "$GOT_RC" = 0 ] && [ "$got" = "[('nonstream', 'GREEN', False), ('stream', 'GREEN', False)]" ] && ok "serve nonstream and stream are distinct GREEN cells, and the apr serve backend is unverified" || broke "serve green: rc $GOT_RC '$got'"
 d=$(newcase serve_apr_refused); control_green "$d"
 serve_json "$d" apr $P nonstream "" "URLError: [Errno 111] Connection refused"; serve_json "$d" llama $P nonstream "2 + 2 equals 4."
 serve_row "$d/manifest.jsonl" apr $P nonstream 3 "$d/apr-$P-nonstream.json"; serve_row "$d/manifest.jsonl" llama.cpp $P nonstream 0 "$d/llama-$P-nonstream.json"
