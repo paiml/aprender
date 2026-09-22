@@ -488,6 +488,7 @@ fn dispatch_analysis_commands_rest(cli: &Cli) -> Option<Result<(), CliError>> {
         // file because dispatch.rs's runtime dispatcher carries pre-existing
         // complexity debt the pre-commit gate refuses to let any edit ride on.
         #[cfg(feature = "inference")]
+        ExtendedCommands::Capability { json } => commands::capability::run(*json || cli.json),
         ExtendedCommands::Devices { json } => commands::devices::run(*json || cli.json),
         ExtendedCommands::OtlpLint {
             otlp_file,
