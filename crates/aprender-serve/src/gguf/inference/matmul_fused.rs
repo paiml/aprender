@@ -129,7 +129,7 @@ impl OwnedQuantizedModel {
 
     /// Fused dequantize + matmul for quantized weights
     ///
-    /// Supports F32, BF16, F16, Q4_0, Q8_0, Q4_1, Q5_0, Q4_K, Q5_K, Q6_K formats.
+    /// Supports F32, BF16, F16, Q4_0, Q8_0, Q4_1, Q5_0, Q5_1, Q4_K, Q5_K, Q6_K formats.
     /// Uses SIMD-accelerated implementations for optimal performance.
     pub(crate) fn fused_matmul(
         &self,
