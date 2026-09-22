@@ -47,6 +47,8 @@ name = "realizar"
 # High-performance SIMD compute library with GPU support
 # PAR-073: Using local path for development, version for crates.io
 trueno = { workspace = true, features = ["gpu"] }
+# #3726: Unicode general categories for the canonical byte-level BPE pre-tokenizer
+unicode-properties = { workspace = true }
 # CUDA PTX generation and runtime for NVIDIA GPUs (optional, pure Rust, no LLVM/nvcc)
 # v0.4.12: BatchedQ6K, MultiWarp, RopeNeox, FlashDecoding kernels
 trueno-gpu = { version = "0.69.0", path = "../aprender-gpu", package = "aprender-gpu", optional = true, features = ["cuda"] }  # APR-MONO single-source-of-truth
@@ -105,6 +107,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # #3604: the F2 guard receipt is keyed on the model file's sha256.
 sha2 = { workspace = true }
+
+# #3568: schema-constrained decoding. llguidance (MIT) masks logits against a JSON schema or a Lark
+# grammar; it sits behind `constrain::TokenConstraint`, so the engine stays swappable. Optional, enabled
+# by `structured-output`, which apr-cli's `inference` feature turns on (cop ruling, 2026-09-21).
+llguidance = { version = "1.8.0", optional = true, default-features = false, features = ["lark", "rayon", "ahash"] }
 
 # Lock-free concurrent data structures
 arc-swap = { version = "1.7", optional = true }
@@ -234,6 +241,7 @@ visualization = ["dep:trueno-viz"]  # Terminal/PNG benchmark visualization
 registry = ["dep:pacha"]  # Model registry with Pacha (pull/push/cache)
 tui = ["dep:presentar-terminal", "dep:crossterm", "dep:ureq", "dep:clap"]  # PARITY-107: Real-time monitoring TUI (presentar-terminal)
 bench-http = ["dep:reqwest"]  # Real HTTP benchmarking of external model servers
+structured-output = ["dep:llguidance"]  # #3568: schema-constrained decoding (`constrain` module)
 
 # Testing features
 load-test-enabled = ["server"]  # Enable load tests (requires running server)
@@ -339,6 +347,11 @@ required-features = ["cuda"]
 [[example]]
 name = "imp800_gpu_parity"
 required-features = ["cuda"]
+
+# #3568: per-token cost of schema-constrained decoding on a real vocabulary
+[[example]]
+name = "constrain_mask_overhead"
+required-features = ["structured-output"]
 
 [[example]]
 name = "imp900_optimized_gpu"

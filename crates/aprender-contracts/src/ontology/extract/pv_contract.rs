@@ -106,6 +106,37 @@ pub fn extract_one(g: &mut Graph, stem: &str, file: &str, doc: &serde_yaml::Valu
     }
 }
 
+/// The positive control (R-3, PMAT-3704), in memory every gate run: a contract carrying `metadata.kind` and a
+/// `depends_on` relation must come out with `ont:kind` and the typed edge, and the planted copy with `metadata`
+/// removed must carry NO `ont:kind` — "nothing is inferred", measured rather than stated.
+#[must_use]
+pub fn positive_control() -> bool {
+    const STEM: &str = "__pc_extract__";
+    let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(
+        "metadata: {kind: kernel}\nrelations: {depends_on: [contracts/__pc_target__-v1.yaml]}\n",
+    ) else {
+        return false;
+    };
+    let s = iri("contract", STEM);
+    let mut g = Graph::new();
+    extract_one(&mut g, STEM, "contracts/__pc_extract__.yaml", &doc);
+    let kind = g
+        .objects(&s, &ont("kind"))
+        .iter()
+        .any(|t| t.as_literal().is_some_and(|l| l.0 == "kernel"));
+    let edge = g
+        .objects(&s, &ont("depends_on"))
+        .iter()
+        .any(|t| t.as_iri() == Some(iri("contract", "__pc_target__-v1").as_str()));
+    let mut planted = doc;
+    if let Some(m) = planted.as_mapping_mut() {
+        m.remove("metadata");
+    }
+    let mut g2 = Graph::new();
+    extract_one(&mut g2, STEM, "contracts/__pc_extract__.yaml", &planted);
+    kind && edge && g2.objects(&s, &ont("kind")).is_empty()
+}
+
 /// §4.2 `entity: {type, ref, properties}` — the entity's OWN properties, as `<type>:<key>` on the contract node.
 ///
 /// A contract may carry the properties of the thing it is a contract FOR, and for a pre-registration the
@@ -291,5 +322,11 @@ mod tests {
         let b = extract(&dir).to_ntriples();
         assert_eq!(a, b);
         assert!(a.contains("/contract/a> <https://ont.paiml.dev/v1alpha1/contradicts> <https://ont.paiml.dev/v1alpha1/contract/d>"), "{a}");
+    }
+
+    #[test]
+    fn the_positive_control_fires() {
+        // PMAT-3704: drawn by the shapes gate every run as pc_extract["pv-contract"].
+        assert!(positive_control());
     }
 }

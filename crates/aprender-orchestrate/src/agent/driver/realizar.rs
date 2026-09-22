@@ -86,6 +86,7 @@ impl LlmDriver for RealizarDriver {
             trace_steps: None,
             verbose: false,
             use_mock_backend: false,
+            force_chat_template: false,
             stop_tokens: vec![],
         };
 

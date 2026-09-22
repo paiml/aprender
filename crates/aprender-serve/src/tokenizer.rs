@@ -130,8 +130,13 @@ pub struct BPETokenizer {
     token_to_id: HashMap<String, u32>,
     /// ID to token mapping
     id_to_token: HashMap<u32, String>,
-    /// Unknown token ID
-    unk_token_id: u32,
+    /// The model's unknown token, or `None` when it has none (#3609).
+    ///
+    /// An unknown token belongs to a model family, not to BPE. LLaMA-style vocabularies
+    /// declare `<unk>`; byte-level ones (GPT-2, Qwen) need none, because every byte has a
+    /// token, and Qwen3.5 declares none. When this is `None`, construction has proved
+    /// that every byte has a token, so `encode` never needs a stand-in.
+    unk_token_id: Option<u32>,
     /// Cached vocabulary size (PMAT-805: vLLM pattern)
     vocab_size: usize,
     /// Cached maximum token ID (PMAT-805: vLLM pattern)
@@ -151,15 +156,21 @@ impl BPETokenizer {
     ///
     /// * `vocab` - List of tokens (index = token ID)
     /// * `merges` - List of merge pairs in priority order
-    /// * `unk_token` - Unknown token string
+    /// * `unk_token` - The model's unknown token if it has one (`"<unk>"` or
+    ///   `Some("<unk>")`), or `None` if it has none. Having one is a property of the
+    ///   model, not a requirement of this type (#3609).
     ///
     /// # Errors
     ///
-    /// Returns error if vocabulary is empty or unknown token not found
-    pub fn new(
+    /// Returns an error if the vocabulary is empty, or if `unk_token` names a token the
+    /// vocabulary does not contain. With no unknown token, also returns an error naming
+    /// the first byte that has neither a `<0xNN>` token nor a byte-level glyph token,
+    /// because `encode` would have nothing to emit for it. Absent means absent: no
+    /// stand-in is synthesised and no input is dropped.
+    pub fn new<'a>(
         vocab: Vec<String>,
         _merges: Vec<(String, String)>,
-        unk_token: &str,
+        unk_token: impl Into<Option<&'a str>>,
     ) -> Result<Self> {
         if vocab.is_empty() {
             return Err(RealizarError::UnsupportedOperation {
@@ -181,12 +192,31 @@ impl BPETokenizer {
         }
 
         let unk_token_id =
-            *token_to_id
-                .get(unk_token)
-                .ok_or_else(|| RealizarError::UnsupportedOperation {
-                    operation: "create_bpe_tokenizer".to_string(),
-                    reason: format!("Unknown token '{unk_token}' not in vocabulary"),
-                })?;
+            match unk_token.into() {
+                Some(unk) => Some(*token_to_id.get(unk).ok_or_else(|| {
+                    RealizarError::UnsupportedOperation {
+                        operation: "create_bpe_tokenizer".to_string(),
+                        reason: format!(
+                        "unknown token '{unk}' was named, but the vocabulary does not contain it"
+                    ),
+                    }
+                })?),
+                None => {
+                    if let Some(byte) =
+                        (0u8..=255).find(|&b| byte_token_id(&token_to_id, b).is_none())
+                    {
+                        return Err(RealizarError::UnsupportedOperation {
+                            operation: "create_bpe_tokenizer".to_string(),
+                            reason: format!(
+                            "the model has no unknown token, and byte 0x{byte:02X} has neither a \
+                             '<0x{byte:02X}>' token nor a byte-level glyph token, so encode would \
+                             have nothing to emit for it"
+                        ),
+                        });
+                    }
+                    None
+                },
+            };
 
         // PMAT-805: Cache vocabulary properties at construction (vLLM pattern)
         // This avoids repeated HashMap operations during inference
@@ -209,12 +239,28 @@ impl BPETokenizer {
     /// HuggingFace vocabularies require merge-based BPE (not greedy longest-match).
     /// When merge rules are provided, `encode()` delegates to `bpe_encode()` from
     /// `apr::tokenizer` which handles special tokens atomically and applies merges.
-    pub fn with_merges(
+    pub fn with_merges<'a>(
         vocab: Vec<String>,
         merges: Vec<(String, String)>,
-        unk_token: &str,
+        unk_token: impl Into<Option<&'a str>>,
     ) -> Result<Self> {
         let mut tokenizer = Self::new(vocab, vec![], unk_token)?;
+        // #3609: the merge path (`bpe_encode`) maps each byte to its byte-level glyph and
+        // nothing else, so with no unknown token every glyph must be in the vocabulary,
+        // or that byte would be dropped from the input.
+        if tokenizer.unk_token_id.is_none() {
+            if let Some(byte) =
+                (0u8..=255).find(|&b| byte_glyph_id(&tokenizer.token_to_id, b).is_none())
+            {
+                return Err(RealizarError::UnsupportedOperation {
+                    operation: "create_bpe_tokenizer".to_string(),
+                    reason: format!(
+                        "the model has no unknown token, and byte 0x{byte:02X} has no byte-level \
+                         glyph token, which merge-based encoding needs"
+                    ),
+                });
+            }
+        }
         // Extract special tokens from vocabulary for atomic tokenization
         let special_tokens: HashMap<String, u32> = tokenizer
             .token_to_id
@@ -317,12 +363,7 @@ impl BPETokenizer {
                 let ch_len = ch.len_utf8();
 
                 for byte in remaining[..ch_len].bytes() {
-                    let byte_token = format!("<0x{byte:02X}>");
-                    if let Some(&id) = self.token_to_id.get(&byte_token) {
-                        tokens.push(id);
-                    } else {
-                        tokens.push(self.unk_token_id);
-                    }
+                    tokens.push(self.byte_fallback_id(byte));
                 }
                 remaining = &remaining[ch_len..];
             }
@@ -433,6 +474,27 @@ impl BPETokenizer {
         self.token_to_id.get(token).copied()
     }
 
+    /// The unknown token's ID, or `None` when the model has none (#3609).
+    #[must_use]
+    pub fn unk_token_id(&self) -> Option<u32> {
+        self.unk_token_id
+    }
+
+    /// The token for one byte that no vocabulary entry covers: its `<0xNN>` token, else the
+    /// model's unknown token, else its byte-level glyph (#3609). With no unknown token,
+    /// `new` proved that every byte has a `<0xNN>` or a glyph token, so this cannot miss.
+    fn byte_fallback_id(&self, byte: u8) -> u32 {
+        if let Some(&id) = self.token_to_id.get(&format!("<0x{byte:02X}>")) {
+            return id;
+        }
+        if let Some(unk) = self.unk_token_id {
+            return unk;
+        }
+        byte_glyph_id(&self.token_to_id, byte).expect(
+            "BPETokenizer::new proved every byte encodable without an unknown token (#3609)",
+        )
+    }
+
     /// Get token for a token ID
     #[must_use]
     pub fn get_token(&self, id: u32) -> Option<&str> {
@@ -448,6 +510,38 @@ impl BPETokenizer {
     pub fn is_special_token(&self, id: u32) -> bool {
         self.special_tokens.values().any(|&v| v == id)
     }
+}
+
+/// The token for one raw byte that no vocabulary token covers: SentencePiece's `<0xNN>`
+/// byte-fallback token, else the GPT-2 byte-level glyph (#3609).
+fn byte_token_id(token_to_id: &HashMap<String, u32>, byte: u8) -> Option<u32> {
+    token_to_id
+        .get(&format!("<0x{byte:02X}>"))
+        .copied()
+        .or_else(|| byte_glyph_id(token_to_id, byte))
+}
+
+/// The GPT-2 byte-level glyph token for one byte (`é`'s 0xC3 → `Ã`), if the vocabulary has it.
+fn byte_glyph_id(token_to_id: &HashMap<String, u32>, byte: u8) -> Option<u32> {
+    let glyph = crate::gguf::utils::gpt2_byte_to_unicode(byte);
+    token_to_id
+        .get(glyph.encode_utf8(&mut [0u8; 4]) as &str)
+        .copied()
+}
+
+/// The unknown token to pass to [`BPETokenizer::new`] when the caller has only a token list.
+///
+/// That is the vocabulary's own `<unk>` entry if it has one, and `None` if it does not.
+/// Nothing is synthesised: a vocabulary without `<unk>` (Qwen3.5, GPT-2) gets no unknown
+/// token, and `BPETokenizer::new` then proves that every byte has a token (#3609).
+///
+/// This finds the token by NAME. It is the interim for callers that receive a `Vec<String>`
+/// and nothing else. The model's DECLARATION (`tokenizer.ggml.unknown_token_id`, or
+/// `tokenizer.json`'s `unk_token`) is the design, and threading it through every loader
+/// is #3675.
+#[must_use]
+pub fn vocabulary_unk_token(vocab: &[String]) -> Option<&'static str> {
+    vocab.iter().any(|t| t == "<unk>").then_some("<unk>")
 }
 
 /// Viterbi algorithm state: `(best_score, best_token)` at each position

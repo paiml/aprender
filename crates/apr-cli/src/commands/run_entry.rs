@@ -42,6 +42,8 @@ pub(crate) fn run(
     repeat_penalty: f32,
     repeat_last_n: usize,
     split_prompt: bool,
+    // #3672: apply the model's chat template once, in realizar; the prompt is raw text.
+    chat_template: bool,
 ) -> Result<()> {
     // GH-516: Warn on --language/--task since whisper integration is not yet wired up
     if language.is_some() {
@@ -105,6 +107,7 @@ pub(crate) fn run(
         repeat_penalty,
         repeat_last_n,
         split_prompt,
+        chat_template,
         stream,
     };
 
@@ -527,6 +530,15 @@ fn build_final_json(
         "inference_time_ms": (result.duration_secs * 1000.0 * 100.0).round() / 100.0,
         "used_gpu": result.used_gpu.unwrap_or(false),
         "cached": result.cached,
+        // #3718: what the model read and why it stopped writing. `prompt_tokens` is
+        // the post-chat-template count (BOS included) fed to the model, so a
+        // consumer no longer rebuilds the tokenizer to learn it. `finish_reason`
+        // is "length" when the budget ended the reply, so a cut answer is never
+        // mistaken for a finished one. Each is null when the path did not report it.
+        "prompt_tokens": result.usage.prompt_tokens,
+        "completion_tokens": result.usage.completion_tokens,
+        "finish_reason": result.usage.finish_reason,
+        "context_length": result.usage.context_length,
         // #3602: `used_gpu: false` alone collapses two different outcomes — "no
         // accelerator was asked for" and "one was asked for, attempted, and
         // REFUSED at runtime". A consumer cannot tell a CPU run from a rejected

@@ -85,7 +85,7 @@ xet = ["hf-hub", "aprender/xet"]
 code = []
 dev = []  # Enable `apr mono` subcommands (publish, shims, audit, archive)
 safetensors-compare = ["aprender/safetensors-compare"]
-inference = ["realizar", "trueno", "tokio", "axum", "futures-util"]
+inference = ["realizar", "realizar/structured-output", "trueno", "tokio", "axum", "futures-util"]
 # #3545: `trueno/cuda` is NOT optional here, and leaving it out was the defect. The inference
 # stack got CUDA through `realizar/cuda` and WORKED, while `trueno`'s backend registry — the thing
 # `apr devices` reads — was built without its cuda feature, so `default_factories()` omitted

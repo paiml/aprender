@@ -181,6 +181,27 @@ fn the_entity_type_is_counted_in_by_entity_type_not_merely_registered() {
 }
 
 #[test]
+fn the_parity_extractor_control_is_drawn_by_the_gate_every_run() {
+    // PMAT-3704. ONT-001 v4.10's probe also asks `.pc_extract["parity-receipt"] == "fired"`, at the TOP level
+    // of the report, exactly as read here. The control existed from #3600 on — `parity_receipt::positive_control`
+    // — but only a unit test called it, so the gate never reported it and an extractor that stopped reading the
+    // v2 layout would have been counted, never refused. R-3: one planted defect per registered extractor, every
+    // run.
+    let out = Command::new(pv_bin())
+        .args(["lint", "contracts", "--gate", "shapes", "--format", "json"])
+        .current_dir(repo_root())
+        .output()
+        .expect("failed to spawn pv");
+    let v: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&out.stdout)).expect("json report");
+    assert_eq!(
+        v["pc_extract"]["parity-receipt"], "fired",
+        "pc_extract carries no fired `parity-receipt` control: {}",
+        v["pc_extract"]
+    );
+}
+
+#[test]
 fn every_fixture_carries_the_real_contract_byte_for_byte() {
     // A fixture copy that drifts from `contracts/parity-receipt-v2.yaml` would let the real shape be mutated
     // while the case table stayed green — the mutation control's blind spot, closed here.
@@ -210,19 +231,9 @@ fn the_committed_tree_agrees_with_its_own_denominator() {
         .current_dir(repo_root())
         .output()
         .expect("failed to spawn the denominator predicate");
-    // #3695: exit 3 is fleet state, not a verdict. This runner has no python3 (the fleet is
-    // python-free for automation, infra#708), so the predicate could not classify anything.
-    // It is accepted ONLY with the UNMEASURED line naming the interpreter; exits 1 and 2 still
-    // fail. The T-2 ledger requires the MEASURED "PASS 7 receipt(s)" at the release commit, and
-    // #3694 removes this path once classify() needs no python.
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    if out.status.code() == Some(3)
-        && stderr.contains("UNMEASURED runner=")
-        && stderr.contains("reason=no-interpreter interpreter=")
-    {
-        eprintln!("{}", stderr.trim());
-        return;
-    }
+    // #3694: the classifier is awk, so a python-free runner (infra#708) measures the count like any
+    // other. The UNMEASURED exit 3 that #3695 accepted here as a stop-gap is gone: anything but
+    // success is RED.
     assert!(
         out.status.success(),
         "exit {:?}\n{}{}",

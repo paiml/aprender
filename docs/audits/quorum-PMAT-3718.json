@@ -1,0 +1,241 @@
+{
+  "ticket": "PMAT-3718",
+  "base": "225b2a9ab",
+  "base_resolved": "225b2a9ab",
+  "base_note": "no origin/225b2a9ab exists; judged against the local ref",
+  "head": "187b390e1dcfcd6c565d3f27aa779c06a60f8c82",
+  "diff_sha256": "20f9de301805687f8fb0e6c0853636df2b1aa308c0fbc03c28fe5ff343120b8f",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 65794,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements PMAT-3718, correctly adding `prompt_tokens`, `completion_tokens`, and `finish_reason` to `apr run --json` and fixing `apr serve` endpoints to accurately report truncations. It resolves the silent stream cuts for clamped requests by judging the finish against the actual ran budget, maps unfittable prompts to a proper 400 error, and stops the APR CPU handler from echoing the prompt when no tokens are generated. The implementation conforms to all acceptance criteria and the provided receipt claims.",
+      "findings": [
+        {
+          "claim": "Adds accurate token counts and finish_reason to CLI usage output using the actual engine count.",
+          "file": "crates/apr-cli/src/commands/inference_output.rs",
+          "grounding": "cited",
+          "line": 184
+        },
+        {
+          "claim": "Shadows max_tokens with clamped budget for correct length evaluation, and maps unfittable prompt errors to a 400 response.",
+          "file": "crates/aprender-serve/src/api/cuda_chat_backend.rs",
+          "grounding": "cited",
+          "line": 322
+        },
+        {
+          "claim": "Implements budget-aware finish reason determination correctly handling clamped runs and intrinsic stop token consumption.",
+          "file": "crates/aprender-serve/src/infer/run_report.rs",
+          "grounding": "cited",
+          "line": 39
+        },
+        {
+          "claim": "Fixes APR CPU fallback to yield empty instead of the prompt when nothing is generated, and uses `from_decode` to determine stop reason accurately.",
+          "file": "crates/apr-cli/src/commands/serve/handlers.rs",
+          "grounding": "cited",
+          "line": 1129
+        }
+      ],
+      "raw_bytes": 4150,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff strictly conforms to the acceptance criteria of PMAT-3718 and makes no unauthorized changes. `RunUsage` is implemented and emitted by `apr run --json` with `null` fallbacks. `FinishReason` correctly distinguishes cuts from stops via `from_decode`, fixing silent cuts in both CPU non-streaming and streaming `serve` paths. The context-clamped budgets are correctly used to evaluate the finish reason for the dense CPU loop, and over-long prompts now return a 400 error. The `a_fixed_text_prompt_counts_the_tokens_the_tokenizer_feeds` test adequately verifies the token count via the newly exposed `build_executable_pygmy_gguf_with` metadata hook. All receipt claims are backed by the code and tests.",
+      "findings": [],
+      "raw_bytes": 2788,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-low",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-low",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements the requested features from PMAT-3718. It adds `prompt_tokens`, `completion_tokens`, `finish_reason`, and `context_length` to `apr run --json` using the new `RunUsage` structure and the `run_inference_report` hook, returning `null` when a specific backend does not report these metrics. \nFor `apr serve`, it correctly calculates the `finish_reason` in `/v1/chat/completions` against the effective clamped budget rather than the requested one, preventing context-clamped responses from being falsely reported as `stop`. It correctly throws a 400 error (instead of truncating or throwing a 500 after the fact) when the prompt exceeds the context window. \nThe comprehensive test additions and updates enforce these behaviors properly, including the exact `a_fixed_text_prompt_counts_the_tokens_the_tokenizer_feeds` case row required by the ticket's done criteria.",
+      "findings": [],
+      "raw_bytes": 3040,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/apr-cli/src/commands/inference_output.rs",
+      "line": 184,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Adds accurate token counts and finish_reason to CLI usage output using the actual engine count."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/serve/handlers.rs",
+      "line": 1129,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Fixes APR CPU fallback to yield empty instead of the prompt when nothing is generated, and uses `from_decode` to determine stop reason accurately."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/api/cuda_chat_backend.rs",
+      "line": 322,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Shadows max_tokens with clamped budget for correct length evaluation, and maps unfittable prompt errors to a 400 response."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/infer/run_report.rs",
+      "line": 39,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Implements budget-aware finish reason determination correctly handling clamped runs and intrinsic stop token consumption."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (gemini-3.1-pro-high, gemini-3.1-pro-low) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

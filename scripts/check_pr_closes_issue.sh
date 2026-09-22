@@ -37,9 +37,15 @@
 # Exit 2 is reserved for usage errors and vacuity: no body was given at all
 # (missing --body file, or an empty body).
 #
+# --list-owed judges nothing. It prints, one "#N" per line, the references a
+# keep-open line has to answer for (cited, no closing keyword, not proven a pull
+# request or a closed issue), whether or not the body already has one, and exits
+# 0 -- 2 on an empty body. A body generator uses it to name those refs (#3699).
+#
 # usage:
 #   check_pr_closes_issue.sh --body FILE
 #   check_pr_closes_issue.sh < body.txt
+#   check_pr_closes_issue.sh --list-owed --body FILE
 #   check_pr_closes_issue.sh --self-test
 
 set -euo pipefail
@@ -47,7 +53,7 @@ set -euo pipefail
 SELF_PATH="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 
 usage() {
-    printf 'usage: %s (--body FILE | < body-on-stdin) | --self-test\n' "$(basename "$0")" >&2
+    printf 'usage: %s [--list-owed] (--body FILE | < body-on-stdin) | --self-test\n' "$(basename "$0")" >&2
     exit 2
 }
 
@@ -127,6 +133,35 @@ drop_pull_request_refs() {
     printf '%s' "$_dpr_out"
 }
 
+# classify_refs BODY -> sets all_nums (every cited number not proven a pull
+# request or a closed issue, one per line) and non_closing (" #A #B", the ones
+# of those with no closing keyword). non_closing is exactly what a keep-open
+# line has to answer for.
+#
+# ONE CLASSIFIER, TWO READERS (#3699). check_body_text judges a body with it;
+# --list-owed prints it so a body GENERATOR -- scripts/release/prepare_bump.sh,
+# whose bump PR failed this guard on 0.68.2 (#3498) and 0.69.0 (#3698) -- names
+# the refs from this function instead of a second copy of CLOSE_RE that could
+# drift from the one that judges it.
+classify_refs() {
+    closing_nums="$(printf '%s\n' "$1" | grep -oiE "$CLOSE_RE" | grep -oE '[0-9]+$' | LC_ALL=C sort -u || true)"
+    all_nums="$(printf '%s\n' "$1" | grep -oE "$REF_RE" | tr -d '#' | LC_ALL=C sort -u || true)"
+    all_nums="$(drop_pull_request_refs "$all_nums")"
+
+    closing_sp=" $(printf '%s' "$closing_nums" | tr '\n' ' ') "
+
+    non_closing=""
+    while IFS= read -r num; do
+        [ -z "$num" ] && continue
+        case "$closing_sp" in
+            *" $num "*) ;;
+            *) non_closing="$non_closing #$num" ;;
+        esac
+    done <<EOF_NUMS
+$all_nums
+EOF_NUMS
+}
+
 # check_body_text BODY
 # Prints a one-line report to stdout. Returns 0 (pass), 1 (fail), or 2
 # (vacuous: empty body).
@@ -148,27 +183,12 @@ check_body_text() {
         return 1
     fi
 
-    closing_nums="$(printf '%s\n' "$body" | grep -oiE "$CLOSE_RE" | grep -oE '[0-9]+$' | LC_ALL=C sort -u || true)"
-    all_nums="$(printf '%s\n' "$body" | grep -oE "$REF_RE" | tr -d '#' | LC_ALL=C sort -u || true)"
-    all_nums="$(drop_pull_request_refs "$all_nums")"
+    classify_refs "$body"
 
     if [ -z "$(printf '%s' "$all_nums" | tr -d '[:space:]')" ]; then
         printf 'PASS: body cites no issue.\n'
         return 0
     fi
-
-    closing_sp=" $(printf '%s' "$closing_nums" | tr '\n' ' ') "
-
-    non_closing=""
-    while IFS= read -r num; do
-        [ -z "$num" ] && continue
-        case "$closing_sp" in
-            *" $num "*) ;;
-            *) non_closing="$non_closing #$num" ;;
-        esac
-    done <<EOF_NUMS
-$all_nums
-EOF_NUMS
 
     if [ -z "$non_closing" ]; then
         printf 'PASS: every cited issue has a closing keyword.\n'
@@ -322,12 +342,35 @@ STUB
         fails=$((fails + 1))
     fi
 
+    # --- --list-owed: what a keep-open line has to answer for (#3699) --------
+    # Owed: the open issue (9002) and the unresolvable one (9003, fails closed,
+    # exactly as the judge treats it). Not owed: the PR (9001), the closed issue
+    # (9004), the ref under a closing keyword (9005). The keep-open line already
+    # in the body changes nothing -- the list is what it must NAME, not whether
+    # one exists. A classifier that listed every #N, or none, fails this row.
+    printf '%s' $'builds on #9001, see #9002 and #9004, Closes #9005, refs #9003\nkeep-open: already here' > "${tmp}/owed.txt"
+    cases=$((cases + 1))
+    owed="$(PR_CLOSES_REF_KIND_CMD="${tmp}/kindstub.sh" \
+        bash "$SELF_PATH" --list-owed --body "${tmp}/owed.txt" 2>/dev/null | tr '\n' ' ')" || owed="exit!=0"
+    if [ "$owed" != "#9002 #9003 " ]; then
+        printf 'FAIL case list-owed: expected "#9002 #9003 ", got "%s"\n' "$owed" >&2
+        fails=$((fails + 1))
+    fi
+
     : > "${tmp}/empty.txt"
     got=0
     cases=$((cases + 1))
     bash "$SELF_PATH" --body "${tmp}/empty.txt" >/dev/null 2>&1 || got=$?
     if [ "$got" -ne 2 ]; then
         printf 'FAIL case empty-body: expected exit 2, got %s\n' "$got" >&2
+        fails=$((fails + 1))
+    fi
+
+    got=0
+    cases=$((cases + 1))
+    bash "$SELF_PATH" --list-owed --body "${tmp}/empty.txt" >/dev/null 2>&1 || got=$?
+    if [ "$got" -ne 2 ]; then
+        printf 'FAIL case list-owed-empty-body: expected exit 2, got %s\n' "$got" >&2
         fails=$((fails + 1))
     fi
 
@@ -370,11 +413,16 @@ main() {
     fi
 
     body_file=""
+    list_owed=0
     while [ $# -gt 0 ]; do
         case "$1" in
             --body)
                 body_file="${2:-}"
                 shift 2
+                ;;
+            --list-owed)
+                list_owed=1
+                shift
                 ;;
             -h|--help)
                 usage
@@ -396,6 +444,18 @@ main() {
             usage
         fi
         body="$(cat -)"
+    fi
+
+    if [ "$list_owed" -eq 1 ]; then
+        if [ -z "$(printf '%s' "$body" | tr -d '[:space:]')" ]; then
+            printf 'VACUOUS: empty PR body, nothing to list.\n' >&2
+            exit 2
+        fi
+        classify_refs "$body"
+        for ref in $non_closing; do
+            printf '%s\n' "$ref"
+        done
+        exit 0
     fi
 
     rc=0

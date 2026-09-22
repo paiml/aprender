@@ -1,0 +1,260 @@
+{
+  "ticket": "PMAT-3711",
+  "base": "225b2a9ab",
+  "base_resolved": "225b2a9ab",
+  "base_note": "no origin/225b2a9ab exists; judged against the local ref",
+  "head": "8e1214835c8f8ec265c8625092a22b1595a4d172",
+  "diff_sha256": "f5ccce3821ff2ff9bd5f5f873c995959840f440c67c3143a4bced938e599c46a",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 45697,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements exactly what is requested in PMAT-3711 and the Cop ruling. It introduces `GpuGoldenLeg` and updates the pipeline to classify CUDA initialization and GPU generation errors as gate failures (`FAIL`) instead of skipping. It successfully separates cases into actual errors vs intended skips (no device, no cuda feature, non-GGUF). The runtime gate is also updated to use the measured backend via `InferenceResult::used_gpu`, satisfying the Cop ruling to label the actual dispatch outcome instead of the intent. All required test cases and mutations are covered in the new tests. No gates were weakened; instead, the GPU validation gate has been strengthened.",
+      "findings": [],
+      "raw_bytes": 3329,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements the requirements of PMAT-3711. It fixes the critical bug where GPU generation errors were incorrectly reported as a SKIP, allowing broken GPUs to pass the gate. Now, `validate_gpu_golden_output` uses `GpuGoldenLeg` to correctly distinguish between `Passed`, `WrongAnswer`, `Errored`, and `NotRun`. Only valid skipped states (\"no cuda feature\", \"no CUDA device on this host\", \"judges GGUF only\") result in a skip. Furthermore, it implements the Cop ruling for `run_golden_output_gate_runtime` by properly asserting that the GPU actually served the request (`used_gpu` signal from dispatch), failing if it silently falls back to CPU. Comprehensive tests have been added to verify these behaviors. No gates are weakened and no unexpected behaviors are introduced.",
+      "findings": [
+        {
+          "claim": "GPU golden generation error correctly fails the gate naming the error, instead of skipping, through `GpuGoldenLeg::judge` mapping `Err` to `Errored` and `failure()` returning the error string.",
+          "file": "crates/apr-cli/src/commands/output_verification.rs",
+          "grounding": "cited",
+          "line": 606
+        },
+        {
+          "claim": "SKIP stays only for \"no GPU on this host / no cuda feature\" and names which, implemented cleanly in `gpu_golden_not_run`.",
+          "file": "crates/apr-cli/src/commands/output_verification.rs",
+          "grounding": "cited",
+          "line": 531
+        },
+        {
+          "claim": "`run_golden_output_gate_runtime` correctly names the backend that actually ran based on `used_gpu` and fails if it unexpectedly falls back, fulfilling the Cop ruling.",
+          "file": "crates/apr-cli/src/commands/output_verification.rs",
+          "grounding": "cited",
+          "line": 554
+        },
+        {
+          "claim": "Case rows (tests) added to verify GPU errors, skips, correct generation, and wrong answers.",
+          "file": "crates/apr-cli/src/commands/golden_output.rs",
+          "grounding": "cited",
+          "line": 673
+        }
+      ],
+      "raw_bytes": 4894,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
+            "outcome": "capacity",
+            "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+          },
+          {
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
+            "outcome": "capacity",
+            "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+          },
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-3711: The diff satisfies all acceptance criteria and the folded cop ruling without refutation. (1) In `output_verification.rs` and `golden_output.rs`, CUDA init and GPU generation errors in the dense golden gate now yield `GpuGoldenLeg::Errored`, which fails the gate naming the error rather than skipping/hiding behind CPU pass. (2) Skips are strictly restricted to cases where the leg never starts (`!cuda_feature`, `!cuda_device`, or dense-loader on non-GGUF/hybrid). (3) In the runtime gate (`run_golden_output_gate_runtime`), the reported backend is measured directly from `InferenceResult::used_gpu`; any fallback to CPU when the GPU was expected fails the gate, and runs without a device are accurately labeled CPU. (4) All 14 unit tests in `golden_output_tests` pass cleanly under both default features and `--features cuda`, and `check_roadmap_completion_is_cited.sh` and `cargo fmt` pass. Verdict: PASS.",
+      "findings": [],
+      "raw_bytes": 3225,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "crates/apr-cli/src/commands/golden_output.rs",
+      "line": 673,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Case rows (tests) added to verify GPU errors, skips, correct generation, and wrong answers."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/output_verification.rs",
+      "line": 531,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "SKIP stays only for \"no GPU on this host / no cuda feature\" and names which, implemented cleanly in `gpu_golden_not_run`."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/output_verification.rs",
+      "line": 554,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "`run_golden_output_gate_runtime` correctly names the backend that actually ran based on `used_gpu` and fails if it unexpectedly falls back, fulfilling the Cop ruling."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/output_verification.rs",
+      "line": 606,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "GPU golden generation error correctly fails the gate naming the error, instead of skipping, through `GpuGoldenLeg::judge` mapping `Err` to `Errored` and `failure()` returning the error string."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (gemini-3.1-pro-high, gemini-3.7-flash-high) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 1: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (3329 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)",
+    "lane 2: judged by gemini-3.1-pro-high after falling through gpt-oss-120b-medium (capacity: UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server); gpt-oss-120b-medium (capacity: UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

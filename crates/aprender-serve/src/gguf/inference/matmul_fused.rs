@@ -1,15 +1,22 @@
+include!("float16_dot.rs");
+
 /// CPU matmul for 2-byte-per-element float formats (BF16, F16)
 /// Shared by BF16 and F16 paths — same structure, different decode.
-fn float16_matmul(
+///
+/// #3076: each row is one `float16_row_dot` over the row's bytes. The per-element loop it
+/// replaces called the decode through a `fn` pointer. A row that runs past the end of `data`
+/// is dotted over the whole elements that exist, as that loop's per-element bounds check did.
+pub(super) fn float16_matmul(
     input: &[f32],
     data: &[u8],
     in_dim: usize,
     out_dim: usize,
     seq_len: usize,
-    decode: fn(u16) -> f32,
+    kind: Float16Kind,
 ) -> Vec<f32> {
     use rayon::prelude::*;
 
+    let row_bytes = in_dim * 2;
     let mut all_output = Vec::with_capacity(seq_len * out_dim);
     for s in 0..seq_len {
         let x = &input[s * in_dim..(s + 1) * in_dim];
@@ -17,16 +24,9 @@ fn float16_matmul(
         let row_output: Vec<f32> = (0..out_dim)
             .into_par_iter()
             .map(|row| {
-                let row_byte_start = row * in_dim * 2;
-                let mut sum = 0.0f32;
-                for col in 0..in_dim {
-                    let offset = row_byte_start + col * 2;
-                    if offset + 1 < data.len() {
-                        let bits = u16::from_le_bytes([data[offset], data[offset + 1]]);
-                        sum += decode(bits) * x[col];
-                    }
-                }
-                sum
+                let start = (row * row_bytes).min(data.len());
+                let end = (start + row_bytes).min(data.len());
+                float16_row_dot(kind, &data[start..end], x)
             })
             .collect();
 
@@ -169,12 +169,22 @@ impl OwnedQuantizedModel {
         let data = &weight.data;
         match weight.qtype {
             GGUF_TYPE_F32 => Ok(self.fused_matmul_f32(input, data, in_dim, out_dim, seq_len)),
-            GGUF_TYPE_BF16 => Ok(float16_matmul(input, data, in_dim, out_dim, seq_len, |b| {
-                f32::from_bits((b as u32) << 16)
-            })),
-            GGUF_TYPE_F16 => Ok(float16_matmul(input, data, in_dim, out_dim, seq_len, |b| {
-                half::f16::from_bits(b).to_f32()
-            })),
+            GGUF_TYPE_BF16 => Ok(float16_matmul(
+                input,
+                data,
+                in_dim,
+                out_dim,
+                seq_len,
+                Float16Kind::Bf16,
+            )),
+            GGUF_TYPE_F16 => Ok(float16_matmul(
+                input,
+                data,
+                in_dim,
+                out_dim,
+                seq_len,
+                Float16Kind::F16,
+            )),
             GGUF_TYPE_Q4_0 | GGUF_TYPE_Q8_0 => {
                 self.fused_matmul_q4_q8(input, weight, in_dim, out_dim, seq_len)
             },

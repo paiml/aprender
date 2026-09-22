@@ -74,8 +74,14 @@ pub(crate) fn load_safetensors_tokenizer(path: &Path) -> Option<SafeTensorsToken
     let mut vocab = vocab;
     let (bos_token_id, eos_token_id) = merge_special_tokens_into_vocab(added_tokens, &mut vocab);
 
-    // Create BPE tokenizer with vocab and merge rules
-    let tokenizer = realizar::tokenizer::BPETokenizer::new(vocab.clone(), merges, "<unk>").ok()?;
+    // Create BPE tokenizer with vocab and merge rules. #3609: the unknown token is the one
+    // tokenizer.json DECLARES (`model.unk_token`, null for byte-level models like Qwen),
+    // not a literal "<unk>" every model is assumed to have.
+    let unk_token = json
+        .get("model")
+        .and_then(|m| m.get("unk_token"))
+        .and_then(|v| v.as_str());
+    let tokenizer = realizar::tokenizer::BPETokenizer::new(vocab.clone(), merges, unk_token).ok()?;
 
     Some(SafeTensorsTokenizerInfo {
         tokenizer: std::sync::Arc::new(tokenizer),

@@ -221,6 +221,19 @@ pub fn iri(kind: &str, id: &str) -> String {
     format!("{ONT_BASE}{kind}/{}", percent_encode(id))
 }
 
+/// A multi-segment instance IRI, `<base><kind>/<s1>/<s2>/…`, each segment percent-encoded on its own so a `/`
+/// inside one (a file name, a host) cannot fake a boundary — and the path still reads as the cell it names
+/// (`release-cell/0.69.1/lambda/<file>/chat/consumer-max`, aprender#3715).
+#[must_use]
+pub fn iri_path(kind: &str, segments: &[&str]) -> String {
+    let mut out = format!("{ONT_BASE}{kind}");
+    for s in segments {
+        out.push('/');
+        out.push_str(&percent_encode(s));
+    }
+    out
+}
+
 /// A vocabulary term: `https://ont.paiml.dev/v1alpha1/<name>`. `ont:Contract`, `ont:id`, `ont:depends_on`, ….
 #[must_use]
 pub fn ont(name: &str) -> String {

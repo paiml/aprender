@@ -1,0 +1,10 @@
+{
+ "crate": "aprender",
+ "version": "0.69.1",
+ "timestamp": "2026-09-21T00:00:00Z",
+ "commit": "1111111111111111111111111111111111111111",
+ "gates": [],
+ "phase": "pre-publish",
+ "deferred": [],
+ "verdict": "GO"
+}

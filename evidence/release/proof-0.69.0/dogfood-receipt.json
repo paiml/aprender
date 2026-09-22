@@ -1,0 +1,239 @@
+{
+  "crate": "aprender",
+  "version": "0.68.2",
+  "timestamp": "20260921T121638Z",
+  "commit": "5f9bd9344f07f6c6388f03f04fa61e0d93d3b411",
+  "gates": [
+    {
+      "gate": "git-clean",
+      "result": "PASS",
+      "note": "working tree clean"
+    },
+    {
+      "gate": "declared:check_multiplatform_dogfood",
+      "result": "DEFER",
+      "note": "scripts/check_multiplatform_dogfood.sh: 0.68.2 is not on crates.io yet, so no host can have run `cargo install aprender --version 0.68.2`; owed by the post-publish dogfood as evidence/dogfood/0.68.2/{"
+    },
+    {
+      "gate": "declared:check_model_ladder",
+      "result": "PASS",
+      "note": "scripts/check_model_ladder.sh exit=0"
+    },
+    {
+      "gate": "declared:check_verifier_pinning",
+      "result": "PASS",
+      "note": "scripts/check_verifier_pinning.sh exit=0"
+    },
+    {
+      "gate": "declared:check_dogfood_shim",
+      "result": "PASS",
+      "note": "scripts/check_dogfood_shim.sh exit=0"
+    },
+    {
+      "gate": "declared:check_bench_receipt",
+      "result": "PASS",
+      "note": "scripts/check_bench_receipt.sh exit=0"
+    },
+    {
+      "gate": "declared:check_parity_receipt",
+      "result": "PASS",
+      "note": "scripts/check_parity_receipt.sh exit=0"
+    },
+    {
+      "gate": "declared:check_no_claim_literals",
+      "result": "PASS",
+      "note": "scripts/check_no_claim_literals.sh exit=0"
+    },
+    {
+      "gate": "declared:check_perf041_marker",
+      "result": "PASS",
+      "note": "scripts/check_perf041_marker.sh exit=0"
+    },
+    {
+      "gate": "dogfood-gates",
+      "result": "PASS",
+      "note": "8 declared gate(s) discovered and all green"
+    },
+    {
+      "gate": "version-unpublished",
+      "result": "FAIL",
+      "note": "aprender 0.68.2 is ALREADY in the crates.io index \u2014 bump the version"
+    },
+    {
+      "gate": "changelog",
+      "result": "PASS",
+      "note": "CHANGELOG has 0.68.2"
+    },
+    {
+      "gate": "feature-scope",
+      "result": "INFO",
+      "note": "clippy/test run with: --features cli"
+    },
+    {
+      "gate": "fmt",
+      "result": "PASS",
+      "note": "Warning: can't set `wrap_comments = true`, unstable features are only available in nightly channel."
+    },
+    {
+      "gate": "clippy",
+      "result": "PASS",
+      "note": "   Compiling thiserror-impl v2.0.18"
+    },
+    {
+      "gate": "test",
+      "result": "PASS",
+      "note": "   Compiling thiserror-impl v2.0.18"
+    },
+    {
+      "gate": "coverage",
+      "result": "PASS",
+      "note": "warning: aprender-compute@0.68.2: provable-contracts binding.yaml not found at /mnt/nvme-raid0/agent-wt/rel-069-state/pr"
+    },
+    {
+      "gate": "security",
+      "result": "PASS",
+      "note": "advisories ok"
+    },
+    {
+      "gate": "security-2nd-source",
+      "result": "PASS",
+      "note": "GitHub Advisory DB (independent of RustSec): 0 open Dependabot alerts"
+    },
+    {
+      "gate": "pmat-pin",
+      "result": "PASS",
+      "note": "fleet pmat is the correct verifier for a non-pmat crate (exported to declared gates)"
+    },
+    {
+      "gate": "release-binary",
+      "result": "PASS",
+      "note": "built: /mnt/nvme-raid0/agent-wt/rel-069/target/release/apr"
+    },
+    {
+      "gate": "deterministic-tools",
+      "result": "PASS",
+      "note": "pv 0.68.2, bashrs 7.4.1, pmat 3.41.1, probador 1.0.3"
+    },
+    {
+      "gate": "pv-contracts",
+      "result": "PASS",
+      "note": "1878 contract(s) valid (positive control fired)"
+    },
+    {
+      "gate": "pv-lint",
+      "result": "PASS",
+      "note": "Summary: 0 errors, 11531 warnings, 0 suppressed, 10054 new"
+    },
+    {
+      "gate": "pv-bindings",
+      "result": "REPORT",
+      "note": "aprender: 58/60 binding functions verified in source; 2 ghost(s) \u2014 NOT gating: pv 0.49.0 misses pub(super) fn and is module-blind (paiml/provable-contracts, re-arm when fixed). Triage each ghost by ha"
+    },
+    {
+      "gate": "bashrs",
+      "result": "PASS",
+      "note": "361 file(s) linted (receipt confirmed), 0 SEC/DET/IDEM errors (1 SC10xx suppressed \u2014 bashrs#226; 11 other)"
+    },
+    {
+      "gate": "renacer",
+      "result": "SKIP",
+      "note": "no renacer.toml \u2014 golden tracing not configured for this crate"
+    },
+    {
+      "gate": "pmat-verify",
+      "result": "PASS",
+      "note": "}"
+    },
+    {
+      "gate": "pmat-comply",
+      "result": "PASS",
+      "note": "CB-200 at or under its recorded baseline \u2014 debt held flat, NOT a clean tree; 16 other fail(s), 91 skip(s) of which 3 are Error-severity (#1008). Run `pmat comply check` (without --failures-only) for t"
+    },
+    {
+      "gate": "reachability",
+      "result": "WARN",
+      "note": "unreachable files/tests: 984 13213 (a file the build never compiles cannot be tested)"
+    },
+    {
+      "gate": "contracts-exit-integrity",
+      "result": "PASS",
+      "note": "`contracts:` recipe propagates failure (no bare for-loop, no `|| true`)"
+    },
+    {
+      "gate": "contracts",
+      "result": "PASS",
+      "note": "lint-provenance: self-test ok (markdown + yaml, marked passes, unmarked fails, exempt keys pass, count non-zero)"
+    },
+    {
+      "gate": "publish-dry-run",
+      "result": "DEFER",
+      "note": "a workspace root cannot dry-run before its members are on the registry; discharged by the cascade's own per-tier publish and the post-publish dogfood"
+    },
+    {
+      "gate": "release-assets",
+      "result": "SKIP",
+      "note": "assets exist only after the tag; measured by the post-publish dogfood (DOGFOOD_PHASE=post-publish), not by this phase"
+    },
+    {
+      "gate": "cli-surface",
+      "result": "PASS",
+      "note": "111 advertised subcommand(s) answer --help"
+    },
+    {
+      "gate": "transport-decl",
+      "result": "PASS",
+      "note": "declared: cli http mcp "
+    },
+    {
+      "gate": "transport-absence",
+      "result": "PASS",
+      "note": "no undeclared mcp/http surface advertised by the binary"
+    },
+    {
+      "gate": "interface-parity",
+      "result": "PASS",
+      "note": "3 transport(s), 4 e2e test(s) against the spawned release binary"
+    },
+    {
+      "gate": "transport-invariance",
+      "result": "SKIP",
+      "note": "no [package.metadata.unified_surface] \u2014 declare list/cli/http/probe to enable the simultaneous cross-transport check"
+    },
+    {
+      "gate": "surface-derivation",
+      "result": "REPORT",
+      "note": "no manifest declared in [package.metadata.transports] \u2014 the interface may be hand-rolled per transport; nothing here can tell single-sourcing from three lists that agree (declare manifest = { path, re"
+    },
+    {
+      "gate": "probador-suite",
+      "result": "PASS",
+      "note": "PASSED 4 tests in 73.88s (4 passed, 0 failed, 0 skipped)"
+    },
+    {
+      "gate": "dogfood-use",
+      "result": "PASS",
+      "note": "  7 pass / 0 fail / 0 skip"
+    },
+    {
+      "gate": "model-parity-falsifier",
+      "result": "PASS",
+      "note": "the must-RED twin turns C14 RED (tests/fixtures/parity/defective/one-position-at-0.5.json)"
+    },
+    {
+      "gate": "model-parity",
+      "result": "REPORT",
+      "note": "C14 UNMEASURED on noah-Lambda-Vector: C14: measured=5 rc=1 \u2014 proven on lambda and gx10 by make fleet-verify ROW=release, never here"
+    },
+    {
+      "gate": "clean-room",
+      "result": "MANUAL",
+      "note": "run `make -C ../infra/machines/clean-room clean-room-aprender` (MANDATORY release gate)"
+    }
+  ],
+  "phase": "pre-publish",
+  "deferred": [
+    "declared:check_multiplatform_dogfood",
+    "publish-dry-run"
+  ],
+  "verdict": "NO-GO"
+}

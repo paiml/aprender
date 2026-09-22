@@ -15,14 +15,17 @@
 #               planted-violation control fired, when pv reports it)
 #   FAIL        a verdict from the PINNED binary: lint's verdict is not Pass, or pv's control
 #               did not fire. PASS and FAIL are reserved for a verdict from a binary that
-#               matches the pin, so a real shape violation still reds the gate.
+#               matches the pin, so a real shape violation still reds the gate. Also FAIL
+#               (reason=pv-no-verdict): the pinned binary gave no JSON and exited with anything
+#               but 2 -- a panic or a signal can be caused by a contract in this tree (#3671).
 #   UNMEASURED  FLEET STATE, not a verdict -- exit 0, with `reason=` naming which:
 #                 no-pin        this runner was never converged (infra#708)
 #                 no-binary     the pin declares pv and no fleet path has it (forjar drift)
 #                 pin-mismatch  the fleet binary is not the pinned version
 #                 incapable     the pinned binary cannot do `--gate` / `extract`
-#                 pv-env        the pinned binary returned no JSON verdict (e.g. it refused
-#                               input records and exited 2)
+#                 pv-env        the pinned binary refused its input: no JSON verdict AND
+#                               pv's own exit 2 (e.g. un-migrated input records). Keyed on
+#                               pv's rc, never the parser's alone (#3671)
 #                 judge-env     the verdict parser itself did not run (no python3, a crash)
 #               ANDON 2026-09-21 (main run 35563956223, intel-clean-room-2): intel's pin was
 #               rewritten to 0.65.2 by another repo's CI (paiml-implement#315) and every
@@ -78,7 +81,7 @@ resolve_fleet_pv() {
 
 # judge -> prints ONE verdict row and returns 0 (PASS or UNMEASURED) / 1 (FAIL) / 2 (ENV)
 judge() {
-    local pin ver why out rc d PV_BIN
+    local pin ver why out rc pvrc d PV_BIN
     if [ ! -r "$PV_PIN" ]; then
         printf 'UNMEASURED runner=%s reason=no-pin pin=%s -- this runner was never converged (infra#708); the shapes gate is not measured here, and this row is not a pass\n' "$RUNNER" "$PV_PIN"
         return 0
@@ -101,8 +104,8 @@ judge() {
         return 0
     fi
     d=$(mktemp -d) || return 2
-    "$PV_BIN" lint "$CONTRACTS" --gate shapes --format json > "$d/lint.json" 2> "$d/lint.err"; rc=$?
-    out=$("$PV_PYTHON" - "$d/lint.json" "$rc" <<'PY'
+    "$PV_BIN" lint "$CONTRACTS" --gate shapes --format json > "$d/lint.json" 2> "$d/lint.err"; pvrc=$?
+    out=$("$PV_PYTHON" - "$d/lint.json" "$pvrc" <<'PY'
 import json, sys
 p, rc = sys.argv[1], int(sys.argv[2])
 try:
@@ -129,18 +132,26 @@ PY
     local err1=""
     [ -s "$d/lint.err" ] && err1=$(sed -n 1p "$d/lint.err" | cut -c1-200)
     rmtree "$d"
-    case "$rc" in
-        0) printf '%s runner=%s pin=%s pv=%s version=%s\n' "$out" "$RUNNER" "$pin" "$PV_BIN" "$ver" ;;
-        1) printf '%s runner=%s pin=%s pv=%s version=%s\n' "$out" "$RUNNER" "$pin" "$PV_BIN" "$ver" >&2 ;;
-        2) printf 'UNMEASURED runner=%s reason=pv-env pin=%s pv=%s version=%s -- %s; pv stderr: %s; fleet state, not a verdict\n' "$RUNNER" "$pin" "$PV_BIN" "$ver" "${out:-no output}" "${err1:-none}"
+    # Keyed on the PAIR <parser rc>:<pv rc> (#3671). The parser's 2 says only "no JSON"; whose
+    # state that is, pv's own rc says. pv's 2 is its refusal of its input (the lambda case) and
+    # stays fleet state. Any other rc -- a panic (101), a signal (128+n), 1 or 0 with no output --
+    # can be caused by a contract in this tree, so it is RED and names pv's rc and stderr.
+    case "$rc:$pvrc" in
+        0:*) printf '%s runner=%s pin=%s pv=%s version=%s\n' "$out" "$RUNNER" "$pin" "$PV_BIN" "$ver" ;;
+        1:*) printf '%s runner=%s pin=%s pv=%s version=%s\n' "$out" "$RUNNER" "$pin" "$PV_BIN" "$ver" >&2 ;;
+        2:2) printf 'UNMEASURED runner=%s reason=pv-env pin=%s pv=%s version=%s -- %s; pv stderr: %s; fleet state, not a verdict\n' "$RUNNER" "$pin" "$PV_BIN" "$ver" "${out:-no output}" "${err1:-none}"
            return 0 ;;
+        2:*) printf 'FAIL runner=%s reason=pv-no-verdict pin=%s pv=%s version=%s -- %s; pv exited %s, and only its exit 2 (a refusal of its input) is fleet state -- a panic or a signal can be caused by this tree; pv stderr: %s\n' "$RUNNER" "$pin" "$PV_BIN" "$ver" "${out#ENV }" "$pvrc" "${err1:-none}" >&2
+           return 1 ;;
         *) printf 'UNMEASURED runner=%s reason=judge-env pin=%s pv=%s version=%s -- the verdict parser (%s) did not run (rc=%s): %s; not a verdict\n' "$RUNNER" "$pin" "$PV_BIN" "$ver" "$PV_PYTHON" "$rc" "${out:-no output}"
            return 0 ;;
     esac
     return "$rc"
 }
 
-case "${1:-}" in -h|--help) sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;; esac
+# The header is every leading comment line, found rather than counted: a hardcoded range
+# ('2,44p') cut the header off the moment #3671 grew it.
+case "${1:-}" in -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;; esac
 
 if [ "${1:-}" = "--self-test" ]; then
     echo "=== fleet pv shapes gate: case table (stub pvs, no network, no real fleet binary) ==="
@@ -224,11 +235,38 @@ STUB
     chmod 755 "$d/pv_env"
     out=$(FLEET_PV_BIN="$d/pv_env" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" RUNNER_NAME=probe-runner bash "$0" 2>&1); rc=$?
     [ "$rc" -eq 0 ] && grep -q '^UNMEASURED runner=probe-runner reason=pv-env .*no JSON verdict .*UNMIGRATED logit-parity record' <<<"$out" && ! grep -qE '^(SUMMARY )?PASS' <<<"$out" && ok "pinned pv exits 2 with no JSON -> UNMEASURED reason=pv-env with pv's stderr, never PASS" || nok "expected UNMEASURED reason=pv-env, got rc=$rc: $out"
-    #    ...and its mutant: restore the ENV exit and the row goes RED
-    sed 's/^\( *\)2) printf .UNMEASURED runner=%s reason=pv-env/\1 2) return 2; printf "unreached/' "$0" > "$d/mut_env.sh"
+    #    ...and its mutant: restore the ENV exit and the row goes RED. The mutant keeps the
+    #    arm's own text (a backreference, never a re-typed quote) and must parse: until #3671
+    #    it swapped the line's ' for ", so the mutant was a syntax error that "exited non-zero"
+    #    without ever reaching the arm it claimed to test.
+    sed 's/^\( *\)2:2) \(printf .UNMEASURED runner=%s reason=pv-env\)/\1 2:2) return 2; \2/' "$0" > "$d/mut_env.sh"
     if cmp -s "$0" "$d/mut_env.sh"; then nok "mutant (pv-env -> ENV exit) did not apply; the discrimination row proves nothing"
+    elif ! bash -n "$d/mut_env.sh" 2>/dev/null; then nok "mutant (pv-env -> ENV exit) is not valid bash; its exit would be the syntax error, not the arm"
     else out=$(FLEET_PV_BIN="$d/pv_env" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" bash "$d/mut_env.sh" 2>&1); rc=$?
-         [ "$rc" -ne 0 ] && ok "mutant restoring the ENV exit on pv-env exits $rc -- the pv-env row would go RED under it" || nok "mutant restoring the ENV exit still exits 0: $out"; fi
+         [ "$rc" -eq 2 ] && grep -q '^ENV (rc=2)' <<<"$out" && ok "mutant restoring the ENV exit on pv-env exits 2 (ENV) -- the pv-env row would go RED under it" || nok "mutant restoring the ENV exit did not exit 2 ENV: rc=$rc: $out"; fi
+
+    # 8d. #3671: the pinned pv produces NO JSON and exits with anything but 2 -- a panic (101),
+    #     a signal, or 1 with no output. That can be caused by a contract in this tree, so it is
+    #     RED, never UNMEASURED, and the row names pv's rc and its first stderr line.
+    mkcrash() { # mkcrash <path> <body run for `lint`>
+        printf '#!/usr/bin/env bash\ncase "$1" in\n  --version) echo "pv 0.68.2 (stub)";;\n  lint) case "$2" in --help) echo "--gate <G>  gate to run";; *) %s;; esac;;\n  extract) exit 0;;\nesac\n' "$2" > "$1"
+        chmod 755 "$1"
+    }
+    mkcrash "$d/pv_panic" "echo \"thread 'main' panicked at crates/aprender-contracts/src/shapes.rs:1:1: index out of bounds\" >&2; exit 101"
+    mkcrash "$d/pv_killed" 'kill -KILL $$'
+    mkcrash "$d/pv_silent1" 'exit 1'
+    for c in "pv_panic 101 panicked" "pv_killed 137 none" "pv_silent1 1 none"; do
+        read -r stub want err <<<"$c"
+        out=$(FLEET_PV_BIN="$d/$stub" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" RUNNER_NAME=probe-runner bash "$0" 2>&1); rc=$?
+        [ "$rc" -eq 1 ] && grep -q "^FAIL runner=probe-runner reason=pv-no-verdict .*pv exited ${want}[ ,].*pv stderr: .*$err" <<<"$out" && ! grep -qE '^(SUMMARY )?(PASS|UNMEASURED)' <<<"$out" && ok "pinned pv, no JSON, rc $want -> RED naming pv's rc and stderr, never UNMEASURED (#3671)" || nok "expected RED reason=pv-no-verdict for rc $want, got rc=$rc: $out"
+    done
+    #     ...and the mutant that drops pv's rc from the pv-env arm sends the panic back to
+    #     UNMEASURED, exit 0: the panic row discriminates
+    sed 's/^\( *\)2:2) \(printf .UNMEASURED runner=%s reason=pv-env\)/\1 2:*) \2/' "$0" > "$d/mut_rc.sh"
+    if cmp -s "$0" "$d/mut_rc.sh"; then nok "mutant (pv-env for any pv rc) did not apply; the discrimination row proves nothing"
+    elif ! bash -n "$d/mut_rc.sh" 2>/dev/null; then nok "mutant (pv-env for any pv rc) is not valid bash; the row would prove nothing"
+    else out=$(FLEET_PV_BIN="$d/pv_panic" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" bash "$d/mut_rc.sh" 2>&1); rc=$?
+         [ "$rc" -eq 0 ] && grep -q '^UNMEASURED .*reason=pv-env' <<<"$out" && ok "mutant keying pv-env on the parser alone turns the panic into UNMEASURED exit 0 -- the panic row would go RED under it" || nok "mutant keying pv-env on the parser alone did not reproduce #3671: rc=$rc: $out"; fi
 
     # 8c. the verdict parser cannot run (no python3 on the runner) -> UNMEASURED reason=judge-env
     out=$(FLEET_PV_BIN="$d/pv_ok" FLEET_PV_PIN="$d/pin" FLEET_PV_CONTRACTS="$d/contracts" FLEET_PV_PYTHON="$d/no-such-python" bash "$0" 2>&1); rc=$?

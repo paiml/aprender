@@ -1,0 +1,8 @@
+# scripts/llama_bin.sh on gx10, #3563 (A): nothing named, the canonical location resolves
+# measured: 2026-09-21T16:51:53Z  host: gx10-a5b5  files: scripts/llama_bin.sh + scripts/llama_pin.toml from aprender tree 52f43da71 + the #3563 change, copied to a scratch dir (gx10's own checkout is stale at de0e3e182)
+# command: env -u LLAMA_BENCH_PATH bash scripts/llama_bin.sh
+ok    llama.cpp pinned: /home/noah/src/llama.cpp-d1d3c3396/build/bin/llama-bench
+      build: version: 0.4.1-dev (build 2423, commit d1d3c339)
+      cmake: GGML_CUDA=ON CMAKE_CUDA_ARCHITECTURES=121
+      pin expires 2026-12-01
+# rc=0

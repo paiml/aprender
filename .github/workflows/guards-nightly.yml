@@ -170,6 +170,8 @@ jobs:
         run: bash scripts/check_hermetic_stdin_tests.sh
       - name: Publish safety (binary/oversize files in published packages)
         run: bash scripts/check_publish_safety.sh
+      - name: Perf gate can still discriminate (APR-PERF-GATE-001, case table)
+        run: bash scripts/perf_gate.sh --selftest
       - name: Book rust examples compile
         run: bash scripts/check_book_examples_compile.sh
       - name: aprender-profile lib tests (was gated by nothing)

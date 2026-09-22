@@ -248,3 +248,318 @@
     ] ;
 .
 
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.release> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/release/Release> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/requiredHost> ;
+        sh:minCount 1 ;
+        sh:class <https://ont.paiml.dev/v1alpha1/release/Host> ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/contextRung> ;
+        sh:minCount 1 ;
+        sh:class <https://ont.paiml.dev/v1alpha1/release/ContextRung> ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/dogfoodReceipt> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.release/node> ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.release/node> a sh:NodeShape ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "GO" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/fresh> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.host> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/release/Host> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/hostReceipt> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.host/node> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/holds> ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/unmeasuredModel> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/unkeyedRow> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/kernelReceipt> ;
+        sh:minCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.host/node> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/dispatchKernel> ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/modelWithoutDispatch> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.host/node> a sh:NodeShape ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/schema> ;
+        sh:minCount 1 ;
+        sh:in ( "apr-model-ladder-receipt/v2" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/fresh> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.host/node> a sh:NodeShape ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/fresh> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.context> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/release/ContextRung> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/tokens> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/derivedFrom> ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/unmeasuredConsumer> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.model> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/release/Model> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/contextLength> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/arch> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/thinkingContradiction> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/longRungsMismatch> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.coverage> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/release/RungCoverage> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/owedOn> ;
+        sh:minCount 1 ;
+        sh:class <https://ont.paiml.dev/v1alpha1/release/Host> ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.tokenizer> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/release/TokenizerCell> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/row> ;
+        sh:minCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.tokenizer/node> ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.tokenizer/node> a sh:NodeShape ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "pass" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/parityExact> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/roundTrip> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/corpusSha> ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/comparatorSha> ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/fresh> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.kernel> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/release/KernelCell> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/row> ;
+        sh:minCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.kernel/node> ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.kernel/node> a sh:NodeShape ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "pass" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/withinBound> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/boundSource> ;
+        sh:minCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/fresh> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.refusal> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/release/RefusalCell> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/row> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.refusal/node> ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1.refusal/node> a sh:NodeShape ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "refused" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/arithmeticNamed> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/fresh> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/release/Cell> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/row> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1/node> ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/release-readiness-v1/node> a sh:NodeShape ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/verdict> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "pass" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/backend> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "cuda" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/fallback> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "false"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/fresh> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/contextMet> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/thinkOk> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/release/answered> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+

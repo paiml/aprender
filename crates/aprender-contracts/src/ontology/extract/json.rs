@@ -160,17 +160,62 @@ pub fn extract_into(
         path: path.clone(),
         why: e.to_string(),
     })?;
+    extract_text(g, stem, &path, &text, &vocab)
+}
+
+/// Everything after the read: the document's text as nodes. Shared by [`extract_into`] and [`positive_control`],
+/// so the control exercises the code the gate runs rather than a copy of it.
+fn extract_text(
+    g: &mut Graph,
+    stem: &str,
+    path: &str,
+    text: &str,
+    vocab: &Vocabulary,
+) -> Result<Vec<Warning>, ExtractError> {
     if path.ends_with(".jsonl") {
-        return extract_jsonl(g, stem, &path, &text, &vocab);
+        return extract_jsonl(g, stem, path, text, vocab);
     }
     let value: serde_json::Value =
-        serde_json::from_str(&text).map_err(|e| ExtractError::NotJson {
+        serde_json::from_str(text).map_err(|e| ExtractError::NotJson {
             contract: stem.to_string(),
-            path: path.clone(),
+            path: path.to_string(),
             why: e.to_string(),
         })?;
-    node(g, stem, stem, &vocab.root_class, true, &value, &vocab)?;
+    node(g, stem, stem, &vocab.root_class, true, &value, vocab)?;
     Ok(Vec::new())
+}
+
+/// The positive control (R-3, PMAT-3704), in memory every gate run: a document whose nested key the vocabulary
+/// maps must extract with that child typed by its class, and the planted copy whose nested key the vocabulary
+/// does NOT map must be refused naming the key — the "no inference" rule this module states, measured.
+#[must_use]
+pub fn positive_control() -> bool {
+    let vocab = Vocabulary {
+        prefix: "pc".into(),
+        root_class: "pc:Root".into(),
+        nested: vec![("child".into(), "pc:Child".into())],
+    };
+    let mut g = Graph::new();
+    let mapped = extract_text(
+        &mut g,
+        "__pc_extract__",
+        "pc.json",
+        r#"{"a":1,"child":{"b":true}}"#,
+        &vocab,
+    )
+    .is_ok()
+        && g.objects(&iri("pc", "__pc_extract__.child"), RDF_TYPE)
+            .iter()
+            .any(|t| t.as_iri() == Some(expand("pc:Child").as_str()));
+    let planted = extract_text(
+        &mut Graph::new(),
+        "__pc_extract__",
+        "pc.json",
+        r#"{"a":1,"orphan":{"b":true}}"#,
+        &vocab,
+    );
+    let refused = matches!(planted, Err(ExtractError::Unmapped { ref key, .. }) if key == "orphan");
+    mapped && refused
 }
 
 fn extract_jsonl(
@@ -515,5 +560,11 @@ mod tests {
         assert!(!applies(&other));
         let none: serde_yaml::Value = serde_yaml::from_str("name: x").unwrap();
         assert!(!applies(&none));
+    }
+
+    #[test]
+    fn the_positive_control_fires() {
+        // PMAT-3704: drawn by the shapes gate every run as pc_extract.json.
+        assert!(positive_control());
     }
 }

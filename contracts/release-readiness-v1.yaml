@@ -1,0 +1,262 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# release-readiness-v1 — the tag is REFUSED unless every cell of the release matrix has a Pass receipt
+# (aprender#3715, EPIC #3710, measured side #3712, T-1/T-4 wiring #3708/#3717)
+#
+# Operator, 2026-09-21, verbatim: "you need to improve our dogfood process and pv SHACL so leaks don't exist
+# pre-release. this is clown town." Every 0.69.0 leak was ABSENCE READ AS CONFORMANCE — a rung marked optional, a
+# GPU golden error read as a skip (#3711), an inherited dogfood (#3708), models on a host that were not on the
+# ladder (#3712), qwen3moe with no CUDA path and no ticket (#3714). So every obligation is a focus node, and a
+# missing receipt is a missing edge that `minCount 1` rejects BY CONSTRUCTION.
+#
+# WHAT IT GOVERNS
+#   provable_contracts::ontology::extract::release_evidence — the release's receipts as a graph (Σ extractor
+#       `release_evidence`, entity type `release-evidence`), built ONLY when a release subject is given
+#       (`pv lint --gate shapes --shape release-readiness-v1 --release-version V --release-commit MC …`).
+#   provable_contracts::ontology::extract::release_inputs  — the subject, the consumer-derived context rungs
+#       (evidence/release/context-rungs.json), the dogfood receipt R5 judged, the kernel-diff receipts.
+#   provable_contracts::ontology::receipts                 — apr-model-ladder-receipt v1 AND v2 (#3712's).
+#
+# THE UNIVERSE (computed, never listed). Hosts = every `ladder.hosts[]` entry with `required: true`. Per host,
+# models = its measured `inventory[]` ∪ the ladder's cuda rungs listed for it. Per model: verbs {run, chat, serve,
+# code} × thinking {on, off} (only off when the host MEASURED no thinking mode, from the template's markers) ×
+# context rungs: the SHORT ones {4k, 8k, 20k} for every model, the LONG ones {60k, consumer-max (computed = max
+# over the consumer records), declared (the model's own GGUF context_length)} for the models
+# `ladder.cells.long_rungs_for` names (every model when the ladder names none) — minus any rung larger than the
+# model's measured length. Kernels = every (kernel, quant) on ANY required host's dispatch path, owed on EVERY
+# required host (each GPU arch).
+#
+# THE FAMILY. `--shape release-readiness-v1` grades these nine shapes, armed whatever `armed_shapes` says, and
+# reports them in this declaration order: release → host → context → model → coverage → tokenizer → kernel →
+# refusal → cell, so a tokenizer that disagrees with llama.cpp (#3726) or a kernel that diverges across arches is
+# named before any model cell it breaks (#3715 addenda).
+#
+# THE MEMORY RULE (#3710, operator decision "a"): a (model, host, rung) cell is owed on a host only if it FITS —
+# weights + KV-per-token × rung + workspace ≤ the host's measured GPU memory, all carried in the host receipt.
+# Where it does not fit, the owed cell is a `release:RefusalCell`: an honest pre-load refusal naming the
+# arithmetic. Every rung a model declares must be owed on ≥ 1 required host. An unmeasured term leaves the cell
+# owed in full (the stricter reading).
+#
+# NO WAIVERS. #3710 allows "a FAIL for the release unless the operator waives that cell by name", but every agent
+# session posts through the operator's gh token, so a comment-based waiver is forgeable by any of them. Cop
+# ruling (c): no waiver input exists; a red cell is released over only by the operator overriding the gate
+# himself. The operator-only surface is #3722.
+#
+# KIND: pattern. Vocabulary, extractor and shapes over a graph; the proof is the gate's own case table.
+# ─────────────────────────────────────────────────────────────────────────────
+name: release-readiness
+version: "1.0.0"
+scope: >
+  Whether a release's evidence proves every (model, host, verb, thinking, context) cell, every (kernel, GPU
+  arch) cell and every model's tokenizer-parity cell, from receipts measured at the release commit. Out of scope: producing the receipts (#3712,
+  scripts/model_ladder.sh), calling the gate (#3708/#3717, autopilot T-1 and check_publish_preflight T-4),
+  waivers (#3722), the intel-CPU column (#3710, aprender-a8).
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-21'
+  last_modified: '2026-09-21'
+  author: PAIML Engineering
+  description: >
+    The release matrix as focus nodes: every obligation of a release is a node derived from measured
+    inventory, consumer records and dispatch paths, and each needs exactly one fresh Pass receipt; absence,
+    a skip, a fallback, a stale sha, an unclosed think block, an empty answer or an unmet context size is a
+    violation naming the cell.
+  references:
+    - 'aprender#3715 (this row), #3710 (the 0.69.1 bar, issuecomment-5763489958), #3712 (the receipt format, issuecomment-5763332078 / -5763412455 / -5763540875), #3716 (consumer records), #3722 (waivers)'
+    - 'contracts/ont-model-receipts-v1.yaml (the ladder join this generalises), contracts/model-capability-ladder-v1.yaml (the required hosts)'
+    - 'crates/aprender-contracts/src/ontology/extract/{release_evidence.rs, release_inputs.rs}, ontology/receipts.rs, lint/shapes_gate.rs'
+
+entity:
+  type: release-evidence
+
+relations:
+  depends_on: [ont-shapes-v1, ont-model-receipts-v1, model-capability-ladder-v1]
+
+shapes:
+  - id: release-readiness-v1.release
+    targetClass: release:Release
+    properties:
+      - {path: release:requiredHost, minCount: 1, nodeKind: IRI, class: release:Host}
+      - {path: release:contextRung, minCount: 1, nodeKind: IRI, class: release:ContextRung}
+      # the dogfood receipt R5 judged: GO, at THIS commit and version — an inherited GO is stale (#3708)
+      - {path: release:dogfoodReceipt, minCount: 1, maxCount: 1, nodeKind: IRI,
+         node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [GO]},
+                             {path: release:fresh, minCount: 1, maxCount: 1, in: [true]}]}}
+  - id: release-readiness-v1.host
+    targetClass: release:Host
+    properties:
+      - {path: release:hostReceipt, minCount: 1, maxCount: 1, nodeKind: IRI,
+         node: {properties: [{path: release:schema, minCount: 1, in: ["apr-model-ladder-receipt/v2"]},
+                             {path: release:fresh, minCount: 1, maxCount: 1, in: [true]}]}}
+      # a host that holds nothing proved nothing
+      - {path: release:holds, minCount: 1}
+      - {path: release:unmeasuredModel, maxCount: 0}
+      - {path: release:unkeyedRow, maxCount: 0}
+      - {path: release:kernelReceipt, minCount: 1, nodeKind: IRI,
+         node: {properties: [{path: release:fresh, minCount: 1, maxCount: 1, in: [true]}]}}
+      - {path: release:dispatchKernel, minCount: 1}
+      - {path: release:modelWithoutDispatch, maxCount: 0}
+  - id: release-readiness-v1.context
+    targetClass: release:ContextRung
+    properties:
+      - {path: release:tokens, minCount: 1, maxCount: 1}
+      - {path: release:derivedFrom, minCount: 1}
+      - {path: release:unmeasuredConsumer, maxCount: 0}
+  - id: release-readiness-v1.model
+    targetClass: release:Model
+    properties:
+      # the declared rung's size is read from the GGUF on the host, never picked
+      - {path: release:contextLength, minCount: 1, maxCount: 1}
+      # `long_rungs_for` keys on general.architecture (#3712 amendment 2)
+      - {path: release:arch, minCount: 1, maxCount: 1}
+      # thinking must be what its template evidence says, and the producer's long-rung echo what pv derives
+      - {path: release:thinkingContradiction, maxCount: 0}
+      - {path: release:longRungsMismatch, maxCount: 0}
+  # the memory rule (#3710, operator "a"): every rung a model declares is owed — and so must Pass — on ≥ 1
+  # required host; a rung that fits NOWHERE by the declared arithmetic is named here
+  - id: release-readiness-v1.coverage
+    targetClass: release:RungCoverage
+    properties:
+      - {path: release:owedOn, minCount: 1, nodeKind: IRI, class: release:Host}
+  # tokenizer parity (#3726): apr's ids against the pinned llama.cpp, one cell per model — the blind spot of every
+  # apr-vs-apr gate. Zero tokens compared is no measurement, never parity; the round trip must hold too.
+  - id: release-readiness-v1.tokenizer
+    targetClass: release:TokenizerCell
+    properties:
+      - {path: release:row, minCount: 1, nodeKind: IRI,
+         node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [pass]},
+                             {path: release:parityExact, minCount: 1, maxCount: 1, in: [true]},
+                             {path: release:roundTrip, minCount: 1, maxCount: 1, in: [true]},
+                             {path: release:corpusSha, minCount: 1},
+                             {path: release:comparatorSha, minCount: 1},
+                             {path: release:fresh, minCount: 1, maxCount: 1, in: [true]}]}}
+  - id: release-readiness-v1.kernel
+    targetClass: release:KernelCell
+    properties:
+      - {path: release:row, minCount: 1, nodeKind: IRI,
+         node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [pass]},
+                             {path: release:withinBound, minCount: 1, maxCount: 1, in: [true]},
+                             {path: release:boundSource, minCount: 1},
+                             {path: release:fresh, minCount: 1, maxCount: 1, in: [true]}]}}
+  # a cell that does not FIT the host is owed as an HONEST PRE-LOAD REFUSAL naming its arithmetic — never an OOM
+  # mid-run, never a silent truncation, never a pass (#3710 rule)
+  - id: release-readiness-v1.refusal
+    targetClass: release:RefusalCell
+    properties:
+      - {path: release:row, minCount: 1, maxCount: 1, nodeKind: IRI,
+         node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [refused]},
+                             {path: release:arithmeticNamed, minCount: 1, maxCount: 1, in: [true]},
+                             {path: release:fresh, minCount: 1, maxCount: 1, in: [true]}]}}
+  - id: release-readiness-v1
+    targetClass: release:Cell
+    properties:
+      - {path: release:row, minCount: 1, maxCount: 1, nodeKind: IRI,
+         node: {properties: [{path: release:verdict, minCount: 1, maxCount: 1, in: [pass]},
+                             {path: release:backend, minCount: 1, maxCount: 1, in: [cuda]},
+                             {path: release:fallback, minCount: 1, maxCount: 1, in: [false]},
+                             {path: release:fresh, minCount: 1, maxCount: 1, in: [true]},
+                             {path: release:contextMet, minCount: 1, maxCount: 1, in: [true]},
+                             {path: release:thinkOk, minCount: 1, maxCount: 1, in: [true]},
+                             {path: release:answered, minCount: 1, maxCount: 1, in: [true]}]}}
+
+equations:
+  cell_universe:
+    formula: "Cells = ⋃_{h ∈ H_req} ⋃_{m ∈ inv(h) ∪ rungs_cuda(h)} VERBS × modes(m) × ({r ∈ R : (¬long(r) ∨ owes_long(m)) ∧ (tokens(r) ≤ len(m) ∨ len(m) = ⊥)} ∪ {declared | owes_long(m)})"
+    domain: "H_req = ladder.hosts with required: true; inv(h) = the host receipt's inventory[] with a sha256; R = the declared context rungs"
+    codomain: "one release:Cell node per element, each with 0..n release:row edges"
+    invariants:
+      - "an inventory row without sha256 is a named unmeasuredModel, never dropped"
+      - "modes(m) = {off} iff the host measured thinking = false; otherwise {on, off}"
+      - "owes_long(m) ⇔ long_rungs_for absent ∨ arch(m) ∈ families ∨ representatives[arch(m)] = file(m)"
+    preconditions:
+      - "a release subject was given: version and a full 40-hex commit"
+    postconditions:
+      - "two extractions of the same inputs are byte-identical (R-15)"
+    lean_theorem: none — L4 not declared
+  cell_pass:
+    formula: "Pass(c) ⇔ |rows(c)| = 1 ∧ verdict = pass ∧ backend = cuda ∧ fallback = false ∧ fresh ∧ contextMet ∧ thinkOk ∧ answered"
+    domain: "every release:Cell"
+    codomain: "a PV-ONT-011 violation naming the cell, or none"
+    invariants:
+      - "fresh ⇔ receipt.version = V ∧ receipt.apr_sha = (receipts_commit ∨ release_commit)"
+      - "thinkOk ⇔ thinking = off ∨ think_closed = true"
+      - "answered ⇔ answer_chars > 0"
+      - "contextMet ⇔ prompt_tokens ≥ tokens(rung), or for declared prompt_tokens + max_tokens ≥ context_length"
+    preconditions:
+      - "an absent field is never the passing value"
+    postconditions:
+      - "the gate is Pass only if every cell of every required host passes"
+    lean_theorem: none — L4 not declared
+  kernel_pass:
+    formula: "Pass(k, h) ⇔ |rows(k, h)| ≥ 1 ∧ ∀ row: verdict = pass ∧ max_err ≤ bound ∧ bound_source ≠ ⊥ ∧ fresh"
+    domain: "K × H_req, K = ⋃_h dispatch kernels(h)"
+    codomain: "a violation naming (kernel, host) — the arch that diverges"
+    invariants:
+      - "a kernel measured on one arch only is a missing row on the other"
+    preconditions:
+      - "every required host has a kernel-diff receipt listing its dispatch path"
+    postconditions:
+      - "kernel violations are reported before model-cell violations"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: RR-INV-001
+    property: a missing cell receipt fails the gate naming the cell
+    formal: '|rows(c)| = 0 ⇒ Fail(release-readiness-v1, c)'
+    prose: false
+  - id: RR-INV-002
+    property: a skipped, errored, fallback or stale receipt fails the gate naming the cell
+    formal: 'verdict(row) ≠ pass ∨ fallback(row) ∨ ¬fresh(row) ⇒ Fail(release-readiness-v1, c)'
+    prose: false
+  - id: RR-INV-003
+    property: a thinking-ON row with an unclosed block or an empty answer fails
+    formal: 'thinking(c) = on ∧ (¬think_closed(row) ∨ answer_chars(row) = 0) ⇒ Fail(release-readiness-v1, c)'
+    prose: false
+  - id: RR-INV-004
+    property: a kernel that passes on one arch and fails on another fails on the failing arch
+    formal: 'Pass(k, gx10) ∧ ¬Pass(k, lambda) ⇒ Fail(release-readiness-v1.kernel, (k, lambda))'
+    prose: false
+  - id: RR-INV-005
+    property: a required host with no receipt, or an empty inventory, fails naming the host
+    formal: '|hostReceipt(h)| = 0 ∨ |holds(h)| = 0 ⇒ Fail(release-readiness-v1.host, h)'
+    prose: false
+  - id: RR-INV-007
+    property: a model whose tokenizer disagrees with the pinned llama.cpp on one id fails
+    formal: 'mismatches(model) ≥ 1 ∨ tokens_compared(model) = 0 ⇒ Fail(release-readiness-v1.tokenizer, model)'
+    prose: false
+  - id: RR-INV-006
+    property: no release subject, no verdict
+    formal: 'subject = ⊥ ⇒ verdict(--shape release-readiness-v1) = Unknown{NoFocus}'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-RR-001
+    rule: the universe and the join
+    prediction: inventory ∪ cuda rungs per host, both thinking modes unless measured otherwise, rungs up to the declared length, rows keyed by (sha256, verb, thinking, rung); a foreign schema is refused by name
+    test: cargo test -p aprender-contracts --lib ontology::extract::release_evidence
+    if_fails: a model, mode or rung silently drops out of the universe, or a row keys onto the wrong cell
+  - id: FALSIFY-RR-002
+    rule: v1 and v2 receipts
+    prediction: a v2 receipt joins its rungs like v1 and carries inventory, apr_sha and cells; a v3 is refused by name
+    test: cargo test -p aprender-contracts --lib ontology::receipts
+    if_fails: the first committed v2 receipt turns every PR's shapes gate into exit 3
+  - id: FALSIFY-RR-003
+    rule: every single-cell failure turns the gate RED
+    prediction: "the all-green fixture passes with every cell named; a missing, skipped, fallback, stale-sha, unclosed-think, empty-answer, short-context cell each fail naming that cell; a kernel green on sm_121 and red on sm_89 fails naming lambda; a missing host receipt, an inherited dogfood and an absent declared length each fail; no subject declines"
+    test: cargo test -p aprender-contracts-cli --test ont_release_readiness
+    if_fails: a leak class from 0.69.0 reaches the tag again
+
+qa_gate:
+  id: F-RR-001
+  name: release-readiness
+  description: 'Every release cell is a focus node with exactly one fresh Pass receipt (aprender#3715)'
+  checks:
+    - universe_derived_not_listed
+    - absence_is_a_violation
+    - single_cell_failures_turn_red
+    - kernel_arch_divergence_named_first
+    - no_subject_declines
+  pass_criteria: All 3 falsification tests pass; `pv lint contracts --gate shapes --shape release-readiness-v1 --release-version V --release-commit MC --receipts DIR --dogfood-receipt FILE` exits 0 only when every cell passes
+  falsification: 'flip one cell row of tests/fixtures/ont/release-green to verdict skip → the gate exits 1 naming that cell'

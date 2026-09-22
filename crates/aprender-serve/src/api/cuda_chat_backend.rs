@@ -319,7 +319,16 @@ fn try_quantized_backend(
         state.should_trace(trace_level),
         cancel,
     );
-    let max_tokens = q_config.max_tokens;
+    // #3718: the dense CPU loop spends `effective_max_tokens` (the request clamped
+    // to the context room), so the finish is judged against THAT budget. Judged
+    // against the request's number, every context-clamped cut read as "stop". A
+    // prompt that cannot fit at all is the request's fault: refused here with 400,
+    // not a 500 after the fact or a streamed error that still ends "stop" at 200.
+    let max_tokens = match quantized_model.effective_max_tokens(prompt_tokens, q_config.max_tokens)
+    {
+        Ok(budget) => budget,
+        Err(e) => return Some(fail_response(state, crate::api::generation_error_status(&e), e)),
+    };
 
     if request.stream {
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(16);
@@ -358,7 +367,7 @@ fn try_quantized_backend(
     // Non-streaming quantized
     let generated = match quantized_model.generate_with_cache(&prompt_ids, &q_config) {
         Ok(g) => g,
-        Err(e) => return Some(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e)),
+        Err(e) => return Some(fail_response(state, crate::api::generation_error_status(&e), e)),
     };
 
     let token_ids: Vec<u32> = generated.iter().skip(prompt_tokens).copied().collect();

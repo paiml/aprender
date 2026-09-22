@@ -3,39 +3,45 @@
   "base": "origin/main",
   "base_resolved": "origin/main",
   "base_note": "no origin/origin/main exists; judged against the local ref",
-  "head": "24d49bb1ca3d2636b4997a1a92c2ff712b323686",
-  "diff_sha256": "c0034ef873e67740c5e67305d98842390edb4cae544c87212a5b4e5f0d4d54f2",
+  "head": "7e6bc1a50d3d314202d0eefb271e4777c7243a97",
+  "diff_sha256": "11ab75b50065e70855c0d0da4cca6e82a8e5527729c0c9ff2ad0017ec3b5cbc6",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "inline",
-  "prompt_bytes": 7598,
+  "prompt_bytes": 22433,
   "author": {
-    "model": "Opus 5 (1M context)",
+    "model": "claude-opus-5",
     "family": "claude",
-    "source": "measured"
+    "source": "flag"
   },
-  "agreed": true,
+  "agreed": false,
   "lanes": [
     {
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "I reviewed the diff against the acceptance criteria for PMAT-3571. The diff implements exactly what was asked: branching in `handler_gpu_completion.rs` to route Qwen3.5 to `Qwen35Model::create_base_model` while maintaining the existing dense path for others. Furthermore, the newly added LOADER evidence strictly obeys the ticket's instruction to not claim end-to-end success, correctly capturing the next tokenizer failure instead. I found no assertions that weaken gates, contradict the ticket, or claim unfounded successes.",
+      "summary": "The diff precisely implements Unit 1 of the ticket's acceptance criteria. It introduces `zero_layer_refusal` to reject 0-layer transformer stacks at load across all `apr serve` entry points, names the architecture and #3571 in the error, and provides the mandated case row and mutant tests. The implementation correctly limits its scope to Unit 1 (refusal) without prematurely modifying the Qwen35 routing logic reserved for Unit 2. No regressions, weakened gates, or forbidden modifications were found.",
       "findings": [
         {
-          "claim": "The code correctly branches on `is_qwen35` and calls `Qwen35Model::create_base_model` instead of falling through to the dense `OwnedQuantizedModel` path.",
+          "claim": "The zero_layer_refusal function is correctly implemented to reject models with 0 transformer layers, explicitly naming the architecture and ticket #3571 in the CliError.",
           "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
           "grounding": "cited",
-          "line": 396
+          "line": 492
         },
         {
-          "claim": "The receipt accurately documents the subsequent BPE tokenizer failure (`Unknown token '<unk>'`) and explicitly adheres to the requirement not to claim the serve path is end-to-end green.",
-          "file": "evidence/serve/3571/LOADER.md",
+          "claim": "The required case row test ('zero_layers_is_refused_by_name_and_any_layer_is_admitted') and mutant test ('serve_refuses_the_qwen35_base_at_load') are included.",
+          "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
           "grounding": "cited",
-          "line": 34
+          "line": 463
+        },
+        {
+          "claim": "The refusal check is correctly integrated across all specified GGUF, APR, and Safetensors serve entry points, including pre-checking the declared layer count for APR Q4K pool GPU before spawning its thread.",
+          "file": "crates/apr-cli/src/commands/serve/handlers_include_01.rs",
+          "grounding": "cited",
+          "line": 146
         }
       ],
-      "raw_bytes": 4324,
+      "raw_bytes": 4046,
       "err_bytes": 100,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -43,170 +49,193 @@
       "model": "gemini-3.1-pro-high",
       "model_measured": "gemini-3.1-pro-high",
       "model_source": "measured",
-      "family": "gemini"
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
     },
     {
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "PASS: The diff implements PMAT-3571 exactly as specified. In crates/apr-cli/src/commands/serve/handler_gpu_completion.rs, start_gguf_server now checks if the GGUF model architecture is 'qwen35' and dispatches to Qwen35Model::create_base_model instead of falling through to the dense OwnedQuantizedModel::from_mapped path. No gates were weakened, no extra scope was added, and the change compiles and passes tests cleanly.",
-      "findings": [
-        {
-          "claim": "The Qwen3.5 hybrid architecture check routes to Qwen35Model::create_base_model instead of falling through to OwnedQuantizedModel::from_mapped, matching the acceptance criteria of PMAT-3571.",
-          "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
-          "fix": "N/A",
-          "grounding": "cited",
-          "line": 396
-        },
-        {
-          "claim": "CARGO_TARGET_DIR=/tmp/target_rel3571 cargo check -p apr-cli --features inference,cuda compiles cleanly without errors.",
-          "command": "CARGO_TARGET_DIR=/tmp/target_rel3571 cargo check -p apr-cli --features inference,cuda",
-          "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
-          "fix": "N/A",
-          "grounding": "measured",
-          "line": 387,
-          "output": "Finished dev profile [unoptimized + debuginfo] target(s) in 1m 00s"
-        },
-        {
-          "claim": "PMAT-3571 task entry and roadmap entries define the exact single-layer scope and acceptance criteria.",
-          "file": "docs/roadmaps/entries/PMAT-3571.yaml",
-          "fix": "N/A",
-          "grounding": "cited",
-          "line": 1
-        },
-        {
-          "claim": "Evidence file LOADER.md accurately documents before and after state for apr serve on Qwen3.5 without overclaiming end-to-end readiness.",
-          "file": "evidence/serve/3571/LOADER.md",
-          "fix": "N/A",
-          "grounding": "cited",
-          "line": 1
-        }
-      ],
-      "raw_bytes": 5920,
+      "summary": "The diff accurately implements the PMAT-3571 requirement. It ensures that any model stack resolving to 0 transformer layers is refused at load on all serve paths, preventing the Qwen3.5 hybrid model from incorrectly proceeding through the generic serve path.\n\nSpecifically, it checks:\n1. `build_serve_model` catches the 0-layer architecture, covering `start_gguf_server`, `start_gguf_server_cuda` and `try_start_wgpu_backend`.\n2. SafeTensors & APR handlers manually perform `zero_layer_refusal` as requested before finalizing initialization, catching the problem early.\n3. It names the architecture and references #3571 in the refusal message, along with the required `apr chat` hint for `qwen35`.\n4. It implements the two requested test criteria: the case row table `zero_layers_is_refused_by_name_and_any_layer_is_admitted` and the mutant test `serve_refuses_the_qwen35_base_at_load`.\n5. All sibling endpoints specified in the issue are accounted for and adequately guarded.\n\nNo refute found.",
+      "findings": [],
+      "raw_bytes": 3385,
       "err_bytes": 100,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
-      "model": "gemini-3.7-flash-high",
-      "model_measured": "gemini-3.7-flash-high",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
       "model_source": "measured",
-      "family": "gemini"
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-low",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-low",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
     },
     {
       "lane": 3,
-      "status": "SUCCESS",
-      "verdict": "PASS",
-      "summary": "Lane 3 judgment for PMAT-3571: PASS. The diff correctly routes Qwen3.5 hybrid models in `apr serve` to `Qwen35Model::create_base_model` in `handler_gpu_completion.rs` lines 396-408, fulfilling the ticket acceptance criteria. All repository gates, roadmap verification scripts, and `cargo check -p apr-cli` pass cleanly with no gate weakening or unrequested changes.",
-      "findings": [
-        {
-          "claim": "`crates/apr-cli/src/commands/serve/handler_gpu_completion.rs` branches on `is_qwen35` and invokes `realizar::gguf::forward_qwen35::Qwen35Model::create_base_model`, resolving the loader defect where Qwen3.5 hybrid models failed to load in `apr serve`.",
-          "command": "cargo check -p apr-cli",
-          "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
-          "fix": "Added conditional check for architecture 'qwen35' to build Qwen35Model base model instead of falling through to OwnedQuantizedModel::from_mapped.",
-          "grounding": "measured",
-          "line": 396,
-          "output": "Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 10s"
-        },
-        {
-          "claim": "`docs/roadmaps/entries/PMAT-3571.yaml` and `docs/roadmaps/roadmap.yaml` correctly document task PMAT-3571 acceptance criteria and scope boundary (Layer 1 loading fix).",
-          "command": "bash scripts/check_roadmap_diff_additive.sh && bash scripts/check_roadmap_ids_unique.sh && bash scripts/check_roadmap_sorted.sh && bash scripts/check_roadmap_fragment_required.sh",
-          "file": "docs/roadmaps/entries/PMAT-3571.yaml",
-          "fix": "Added entry fragment PMAT-3571.yaml and aggregated into roadmap.yaml cleanly.",
-          "grounding": "measured",
-          "line": 1,
-          "output": "PASS check_roadmap_fragment_required.sh: 1 changed entry/entries, each with its fragment; the aggregate is regenerated"
-        },
-        {
-          "claim": "`evidence/serve/3571/LOADER.md` records manual before/after verification logs of `apr serve` with Qwen3.5.",
-          "file": "evidence/serve/3571/LOADER.md",
-          "grounding": "cited",
-          "line": 1
-        }
-      ],
-      "raw_bytes": 6020,
+      "status": "NO-VERDICT",
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": [],
+      "raw_bytes": 1754,
       "err_bytes": 100,
       "envelope_status": "SUCCESS",
-      "verdict_source": "structured_output",
-      "grounding_check": "parity",
-      "model": "gemini-3.6-flash-high",
-      "model_measured": "gemini-3.6-flash-high",
+      "transport_status": "SUCCESS",
+      "transport_error": "",
+      "salvageable": "/home/noah/.gemini/antigravity-cli/brain/612e5b75-9884-4d4b-8f4c-af249538f9d7 (1280489 bytes)",
+      "carried_verdict": "",
+      "blind_reason": "",
+      "agy_exit": "",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
       "model_source": "measured",
-      "family": "gemini"
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
     }
   ],
-  "dissent": [],
+  "dissent": [
+    {
+      "lane": 3,
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": []
+    }
+  ],
   "dedup": [
     {
       "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
-      "line": 387,
-      "lanes_agreeing": [
-        2
-      ],
-      "claims": [
-        "CARGO_TARGET_DIR=/tmp/target_rel3571 cargo check -p apr-cli --features inference,cuda compiles cleanly without errors."
-      ]
-    },
-    {
-      "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
-      "line": 396,
-      "lanes_agreeing": [
-        1,
-        2,
-        3
-      ],
-      "claims": [
-        "The Qwen3.5 hybrid architecture check routes to Qwen35Model::create_base_model instead of falling through to OwnedQuantizedModel::from_mapped, matching the acceptance criteria of PMAT-3571.",
-        "The code correctly branches on `is_qwen35` and calls `Qwen35Model::create_base_model` instead of falling through to the dense `OwnedQuantizedModel` path.",
-        "`crates/apr-cli/src/commands/serve/handler_gpu_completion.rs` branches on `is_qwen35` and invokes `realizar::gguf::forward_qwen35::Qwen35Model::create_base_model`, resolving the loader defect where Qwen3.5 hybrid models failed to load in `apr serve`."
-      ]
-    },
-    {
-      "file": "docs/roadmaps/entries/PMAT-3571.yaml",
-      "line": 1,
-      "lanes_agreeing": [
-        2,
-        3
-      ],
-      "claims": [
-        "PMAT-3571 task entry and roadmap entries define the exact single-layer scope and acceptance criteria.",
-        "`docs/roadmaps/entries/PMAT-3571.yaml` and `docs/roadmaps/roadmap.yaml` correctly document task PMAT-3571 acceptance criteria and scope boundary (Layer 1 loading fix)."
-      ]
-    },
-    {
-      "file": "evidence/serve/3571/LOADER.md",
-      "line": 1,
-      "lanes_agreeing": [
-        2,
-        3
-      ],
-      "claims": [
-        "Evidence file LOADER.md accurately documents before and after state for apr serve on Qwen3.5 without overclaiming end-to-end readiness.",
-        "`evidence/serve/3571/LOADER.md` records manual before/after verification logs of `apr serve` with Qwen3.5."
-      ]
-    },
-    {
-      "file": "evidence/serve/3571/LOADER.md",
-      "line": 34,
+      "line": 463,
       "lanes_agreeing": [
         1
       ],
       "claims": [
-        "The receipt accurately documents the subsequent BPE tokenizer failure (`Unknown token '<unk>'`) and explicitly adheres to the requirement not to claim the serve path is end-to-end green."
+        "The required case row test ('zero_layers_is_refused_by_name_and_any_layer_is_admitted') and mutant test ('serve_refuses_the_qwen35_base_at_load') are included."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/serve/handler_gpu_completion.rs",
+      "line": 492,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The zero_layer_refusal function is correctly implemented to reject models with 0 transformer layers, explicitly naming the architecture and ticket #3571 in the CliError."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/serve/handlers_include_01.rs",
+      "line": 146,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The refusal check is correctly integrated across all specified GGUF, APR, and Safetensors serve entry points, including pre-checking the declared layer count for APR Q4K pool GPU before spawning its thread."
       ]
     }
   ],
   "uncovered": [],
   "coverage_source": "lanes",
-  "partial": false,
-  "partial_reasons": [],
+  "partial": true,
+  "partial_reasons": [
+    "lane 3: no verdict object found in lane file (status=SUCCESS) salvageable=/home/noah/.gemini/antigravity-cli/brain/612e5b75-9884-4d4b-8f4c-af249538f9d7 (1280489 bytes) [UNREVIEWED CLAIM MATERIAL — never a PASS]"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
   "auto_merge": {
-    "checked": true,
+    "checked": false,
     "was_armed": false,
     "disarmed": false,
-    "note": "auto-merge not armed"
+    "note": "no --pr given: nothing to disarm"
   },
   "lint": {
     "ok": true,
-    "output": "receipt complete: kind=artifact lanes=3 author=Opus 5 (1M context)/claude"
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
   }
 }

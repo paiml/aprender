@@ -15,6 +15,7 @@
             used_gpu: Some(false),
             generated_tokens: Some(vec![1, 2, 3, 4, 5]),
             token_texts: None,
+            usage: Default::default(),
         };
         assert_eq!(output.text, "hello");
         assert_eq!(output.tokens_generated, Some(5));
@@ -32,6 +33,7 @@
             used_gpu: None,
             generated_tokens: None,
             token_texts: None,
+            usage: Default::default(),
         };
         assert!(output.tokens_generated.is_none());
         assert!(output.inference_ms.is_none());

@@ -1,0 +1,25 @@
+# #3726 tokenizer parity on gx10 (GB10, aarch64) with the 4 real briefs; the pinned build prints its commit as d1d3c339
+# host: gx10-a5b5  measured: 2026-09-21T17:22:16Z
+# command: bash scripts/tokenizer_parity.sh --apr <apr 0.69.0 (9026b70a5), aarch64> --corpus <7 committed + 4 briefs>
+
+apr:            /mnt/nvme-raid0/work-c3/apr-fixed-9026b70a5 (apr 0.69.0 (9026b70a5))
+llama-tokenize: /home/noah/src/llama.cpp-d1d3c3396/build/bin/llama-tokenize (version: 0.4.1-dev (build 2423, commit d1d3c339))
+models: 12   corpus files: 11
+# PASS lines condensed: 132 PASS over 12 model(s), 11 file(s) each.
+# full per-pair log: gx10:/mnt/nvme-raid0/work-c3/3726-parity-gx10.log
+# model                                          files-passed  total-ids
+#   qwen2.5-1.5b-instruct-q4_k_m.gguf                  11            48993
+#   qwen2.5-coder-1.5b-instruct-q4_k_m.gguf            11            48993
+#   qwen2.5-coder-32b-instruct-q4_k_m.gguf             11            48993
+#   qwen2.5-coder-7b-instruct-q4_k_m.gguf              11            48993
+#   Qwen3-1.7B-Q4_K_M.gguf                             11            48991
+#   Qwen3.5-0.8B-Q4_K_M.gguf                           11            51252
+#   Qwen3.5-27B-Q4_K_M.gguf                            11            51252
+#   Qwen3.5-2B-Q4_K_M.gguf                             11            51252
+#   Qwen3.5-4B-Q4_K_M.gguf                             11            51252
+#   Qwen3.5-9B-Q4_K_M.gguf                             11            51252
+#   Qwen3-8B-Q4_K_M.gguf                               11            48991
+#   Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf           11            48991
+# files: brief-review.txt, brief18-ascii.txt, brief18.txt, c9-lane.txt, chat-template.txt, code-rust-token.txt, code-shell-llama_bin.txt, identifiers.txt, nonascii.txt, r891-lane.txt, whitespace.txt
+--- tokenizer parity: 132 pass, 0 fail, 0 uncovered ---
+rc=0

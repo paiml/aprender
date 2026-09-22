@@ -1,0 +1,46 @@
+{
+ "schema": "apr-kernel-diff-receipt/v1",
+ "host": "lambda",
+ "version": "0.69.1",
+ "apr_sha": "1111111111111111111111111111111111111111",
+ "cc": "8.9",
+ "sm": "sm_89",
+ "dispatch": [
+  {
+   "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "file": "tiny-qwen35.gguf",
+   "kernels": [
+    {
+     "kernel": "q4k_gemv",
+     "quant": "q4_k"
+    },
+    {
+     "kernel": "rmsnorm",
+     "quant": "f32"
+    }
+   ]
+  }
+ ],
+ "rows": [
+  {
+   "kernel": "q4k_gemv",
+   "quant": "q4_k",
+   "reference": "cpu",
+   "max_err": 0.001,
+   "bound": 0.004,
+   "bound_source": "fixture://q4k-pair",
+   "verdict": "pass",
+   "reason": ""
+  },
+  {
+   "kernel": "rmsnorm",
+   "quant": "f32",
+   "reference": "cpu",
+   "max_err": 1e-06,
+   "bound": 1e-05,
+   "bound_source": "fixture://rmsnorm-pair",
+   "verdict": "pass",
+   "reason": ""
+  }
+ ]
+}

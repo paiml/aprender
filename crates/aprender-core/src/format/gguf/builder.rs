@@ -161,10 +161,13 @@ fn test_from_bytes_tensor_at_max_dims() {
 }
 
 // ========================================================================
-// skip_metadata_value Tests (via from_bytes with non-parsed keys)
+// Keys outside the parse allowlist (via from_bytes with non-parsed keys).
+// They were skipped by length arithmetic until #3733; they are now decoded into
+// `display_only_metadata`, so `apr inspect` shows them, and still kept out of
+// `metadata`, which the config accessors read.
 // ========================================================================
 
-/// Build a GGUF with metadata that will be skipped (key prefix not in parsed set)
+/// Build a GGUF with one metadata key outside the parse allowlist
 fn build_gguf_with_skipped_metadata(key: &str, value_type: u32, value_bytes: &[u8]) -> Vec<u8> {
     let mut data = Vec::new();
 
@@ -175,7 +178,7 @@ fn build_gguf_with_skipped_metadata(key: &str, value_type: u32, value_bytes: &[u
     data.extend_from_slice(&1u64.to_le_bytes()); // metadata_count = 1
 
     // Metadata KV: key with prefix that does NOT match tokenizer./general./llama./qwen2./phi./mistral.
-    // so it will be skipped via skip_metadata_value
+    // so it lands in display_only_metadata (#3733)
     data.extend_from_slice(&(key.len() as u64).to_le_bytes());
     data.extend_from_slice(key.as_bytes());
     data.extend_from_slice(&value_type.to_le_bytes());
@@ -189,6 +192,7 @@ fn test_skip_metadata_value_uint8() {
     let data = build_gguf_with_skipped_metadata("custom.u8", 0, &[42u8]);
     let reader = GgufReader::from_bytes(data).expect("skip uint8");
     assert!(!reader.metadata.contains_key("custom.u8"));
+    assert!(reader.display_only_metadata.contains_key("custom.u8"));
 }
 
 #[test]
@@ -196,6 +200,7 @@ fn test_skip_metadata_value_int8() {
     let data = build_gguf_with_skipped_metadata("custom.i8", 1, &[0xFEu8]);
     let reader = GgufReader::from_bytes(data).expect("skip int8");
     assert!(!reader.metadata.contains_key("custom.i8"));
+    assert!(reader.display_only_metadata.contains_key("custom.i8"));
 }
 
 #[test]
@@ -203,6 +208,7 @@ fn test_skip_metadata_value_uint16() {
     let data = build_gguf_with_skipped_metadata("custom.u16", 2, &1000u16.to_le_bytes());
     let reader = GgufReader::from_bytes(data).expect("skip uint16");
     assert!(!reader.metadata.contains_key("custom.u16"));
+    assert!(reader.display_only_metadata.contains_key("custom.u16"));
 }
 
 #[test]
@@ -210,6 +216,7 @@ fn test_skip_metadata_value_int16() {
     let data = build_gguf_with_skipped_metadata("custom.i16", 3, &(-500i16).to_le_bytes());
     let reader = GgufReader::from_bytes(data).expect("skip int16");
     assert!(!reader.metadata.contains_key("custom.i16"));
+    assert!(reader.display_only_metadata.contains_key("custom.i16"));
 }
 
 #[test]
@@ -217,6 +224,7 @@ fn test_skip_metadata_value_bool() {
     let data = build_gguf_with_skipped_metadata("custom.flag", 7, &[1u8]);
     let reader = GgufReader::from_bytes(data).expect("skip bool");
     assert!(!reader.metadata.contains_key("custom.flag"));
+    assert!(reader.display_only_metadata.contains_key("custom.flag"));
 }
 
 #[test]
@@ -229,6 +237,7 @@ fn test_skip_metadata_value_string() {
     let data = build_gguf_with_skipped_metadata("custom.str", 8, &value_bytes);
     let reader = GgufReader::from_bytes(data).expect("skip string");
     assert!(!reader.metadata.contains_key("custom.str"));
+    assert!(reader.display_only_metadata.contains_key("custom.str"));
 }
 
 #[test]
@@ -236,6 +245,7 @@ fn test_skip_metadata_value_uint64() {
     let data = build_gguf_with_skipped_metadata("custom.u64", 10, &999u64.to_le_bytes());
     let reader = GgufReader::from_bytes(data).expect("skip uint64");
     assert!(!reader.metadata.contains_key("custom.u64"));
+    assert!(reader.display_only_metadata.contains_key("custom.u64"));
 }
 
 #[test]
@@ -243,6 +253,7 @@ fn test_skip_metadata_value_int64() {
     let data = build_gguf_with_skipped_metadata("custom.i64", 11, &(-1i64).to_le_bytes());
     let reader = GgufReader::from_bytes(data).expect("skip int64");
     assert!(!reader.metadata.contains_key("custom.i64"));
+    assert!(reader.display_only_metadata.contains_key("custom.i64"));
 }
 
 #[test]
@@ -251,6 +262,7 @@ fn test_skip_metadata_value_float64() {
         build_gguf_with_skipped_metadata("custom.f64", 12, &std::f64::consts::E.to_le_bytes());
     let reader = GgufReader::from_bytes(data).expect("skip float64");
     assert!(!reader.metadata.contains_key("custom.f64"));
+    assert!(reader.display_only_metadata.contains_key("custom.f64"));
 }
 
 #[test]
@@ -259,6 +271,7 @@ fn test_skip_metadata_value_unknown_type() {
     let data = build_gguf_with_skipped_metadata("custom.unk", 99, &[0u8; 4]);
     let reader = GgufReader::from_bytes(data).expect("skip unknown");
     assert!(!reader.metadata.contains_key("custom.unk"));
+    assert!(reader.display_only_metadata.contains_key("custom.unk"));
 }
 
 #[test]

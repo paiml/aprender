@@ -1,0 +1,54 @@
+{
+  "schema": "apr-release-context-rungs/v1",
+  "_doc": "aprender#3715. The context rungs release-readiness-v1 requires of every (model, host, verb, thinking) cell. `consumer-max` carries no number: pv COMPUTES it as the max over `consumers[]`, and a consumer with no number is a named violation. The per-model `declared` rung is each model's own GGUF context_length and is never written here (pv refuses it). A `long` rung (and `declared`) is owed only by the models the ladder's `cells.long_rungs_for` names (#3712 amendment 2); a rung larger than a model's measured context_length is not owed by that model (cop ruling, 2026-09-21: 'correct at every rung up to the model's own declared context length', #3710).",
+  "consumers": [
+    {
+      "consumer": "rah",
+      "max_prompt_tokens": 148000,
+      "basis": "measured",
+      "source": "https://github.com/paiml/aprender/issues/3716#issuecomment-5763300198",
+      "quote": "max (PMAT-216) | 454,761 | diff alone 120,745 measured; whole ≈ 148k"
+    },
+    {
+      "consumer": "rmedia",
+      "max_prompt_tokens": 128000,
+      "basis": "plan",
+      "source": "https://github.com/paiml/aprender/issues/3716#issuecomment-5763407650",
+      "quote": "Ask: 64k usable context minimum, 128k to cover the specialization-scale case."
+    },
+    {
+      "consumer": "arbiter",
+      "max_prompt_tokens": 7000,
+      "basis": "plan",
+      "source": "https://github.com/paiml/aprender/issues/3716#issuecomment-5763449814",
+      "quote": "Planned synthesis input = template + top-8 chunks: 9,150 and 21,703 chunk characters for those two questions ... That is ≈3k–7k tokens"
+    }
+  ],
+  "rungs": [
+    {
+      "id": "4k",
+      "tokens": 4096,
+      "derived_from": ["https://github.com/paiml/aprender/issues/3710#issuecomment-5763489958 (operator: \"MORE than enough tokens for our needs (overdo it)\"; required rungs 4k · 8k · 20k · 60k · 148k · declared)"]
+    },
+    {
+      "id": "8k",
+      "tokens": 8192,
+      "derived_from": ["https://github.com/paiml/aprender/issues/3710#issuecomment-5763489958 (operator: \"overdo it\"; required rungs 4k · 8k · 20k · 60k · 148k · declared)"]
+    },
+    {
+      "id": "20k",
+      "tokens": 20480,
+      "derived_from": ["https://github.com/paiml/aprender/issues/3716#issuecomment-5763300198 (RAH p50 quorum brief: whole brief ≈ 20k; sized up to 20480 with the binary rungs, #3712 aprender-62)"]
+    },
+    {
+      "id": "60k",
+      "tokens": 61440,
+      "long": true,
+      "derived_from": ["https://github.com/paiml/aprender/issues/3716#issuecomment-5763300198 (RAH p90 quorum brief: whole ≈ 60k; sized up to 61440, #3712 aprender-62)"]
+    },
+    {
+      "id": "consumer-max",
+      "long": true
+    }
+  ]
+}

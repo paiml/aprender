@@ -21,6 +21,8 @@ pub mod json;
 pub mod lean;
 pub mod parity_receipt;
 pub mod pv_contract;
+pub mod release_evidence;
+pub mod release_inputs;
 
 /// Every extractor's output over `contract_dir`, plus the input-side warnings the extractors chose to carry
 /// rather than hide (a torn JSONL line), plus what the model extractors and the receipt resolver counted.
@@ -44,6 +46,8 @@ pub struct Extraction {
     pub lean: lean::LeanStats,
     /// ONT-4c3: the logit-parity receipts under `evidence/parity/**`, and the files this extractor refused.
     pub parity: parity_receipt::ParityStats,
+    /// aprender#3715: the release evidence — `None` unless a release subject was given (an ordinary PR has none).
+    pub release: Option<release_evidence::ReleaseStats>,
 }
 
 /// What a walk could not do. Every variant is the DECLARATION's fault (exit 3), never a corpus verdict.
@@ -53,6 +57,8 @@ pub enum ExtractFailure {
     Json(json::ExtractError),
     /// A ladder receipt under `evidence/dogfood/models/` is unreadable or carries a foreign schema.
     Receipt(receipts::ReceiptError),
+    /// aprender#3715: the release subject is malformed, or a release input is unreadable or foreign.
+    Release(release_inputs::ReleaseError),
 }
 
 impl std::fmt::Display for ExtractFailure {
@@ -60,6 +66,7 @@ impl std::fmt::Display for ExtractFailure {
         match self {
             Self::Json(e) => write!(f, "{e}"),
             Self::Receipt(e) => write!(f, "receipt {e}"),
+            Self::Release(e) => write!(f, "{e}"),
         }
     }
 }
@@ -70,6 +77,15 @@ impl std::error::Error for ExtractFailure {}
 /// contract dir's parent — the repo root, the same base `ont:file` uses); then the `gguf` and `apr-model`
 /// entities and the ladder receipts joined to the rungs. `Err` is a declaration's fault.
 pub fn all(contract_dir: &Path) -> Result<Extraction, ExtractFailure> {
+    all_with(contract_dir, None)
+}
+
+/// [`all`], plus — when `release` names a release subject — `extract:release-evidence` (aprender#3715): the
+/// release's receipts as the graph `release-readiness-v1` grades. Same one walk (R-18).
+pub fn all_with(
+    contract_dir: &Path,
+    release: Option<&release_inputs::Subject>,
+) -> Result<Extraction, ExtractFailure> {
     let mut out = Extraction {
         graph: pv_contract::extract(contract_dir),
         ..Extraction::default()
@@ -91,6 +107,12 @@ pub fn all(contract_dir: &Path) -> Result<Extraction, ExtractFailure> {
     out.code = code::extract(contract_dir, &mut out.graph);
     out.lean = lean::extract(contract_dir, &mut out.graph);
     out.parity = parity_receipt::extract(root, &mut out.graph);
+    if let Some(subject) = release {
+        out.release = Some(
+            release_evidence::extract(&mut out.graph, contract_dir, subject)
+                .map_err(ExtractFailure::Release)?,
+        );
+    }
     Ok(out)
 }
 

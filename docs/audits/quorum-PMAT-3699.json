@@ -1,0 +1,194 @@
+{
+  "ticket": "PMAT-3699",
+  "base": "225b2a9ab",
+  "base_resolved": "225b2a9ab",
+  "base_note": "no origin/225b2a9ab exists; judged against the local ref",
+  "head": "030af09a2b563551e980d38f2ea0a6f217f703ec",
+  "diff_sha256": "131d2c92dd2af10f488e0a37d6f1b0ccb12c1011c762366bad517f157604bf3d",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 45012,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements all acceptance criteria in PMAT-3699.\n1. `prepare_bump.sh` uses `check_pr_closes_issue.sh --list-owed` to correctly derive the owed `#N` list and appends exactly ONE `keep-open:` line using the verbatim reason requested.\n2. Before any commits, pushes, or PR creations, `prepare_bump.sh` runs `check_pr_closes_issue.sh --body` and correctly aborts (via `die`) if the return code is non-zero.\n3. `scripts/check_release_bump_pr_body.sh` provides the required case-table row validating that the EPIC ref along with a `refs #N` produces a PASSing PR body, and explicitly includes a test for a mutant that drops the `keep-open` line, verifying that it goes RED.\n4. No requirements or negative constraints from the ticket are violated.",
+      "findings": [],
+      "raw_bytes": 2781,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff completely and correctly implements the acceptance criteria for PMAT-3699. It modifies `prepare_bump.sh` to determine owed references via the new `check_pr_closes_issue.sh --list-owed` seam, constructs exactly one `keep-open` line with the required reason string, and runs the guard on the PR body before any commit/push/PR creation, refusing to proceed if the body fails. It also includes the comprehensive `check_release_bump_pr_body.sh` case table verifying these behaviors and their corresponding mutant failures (e.g., epic-and-refs passing, drop-keep-open going RED, landmine blocking PR push). No violations or deviations were found.",
+      "findings": [],
+      "raw_bytes": 2670,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
+            "outcome": "capacity",
+            "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+          },
+          {
+            "model": "gpt-oss-120b-medium",
+            "family": "openai",
+            "outcome": "capacity",
+            "reason": "Our servers are experiencing high traffic right now, please try again in a minute. (UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server)"
+          },
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff meets all acceptance criteria for PMAT-3699. The script now calculates the un-closed references using the guard's logic, appends exactly ONE keep-open line with the specified reason before opening the PR, and validates the generated body against the guard beforehand. The check script includes case table rows that test both positive and negative cases as specified.",
+      "findings": [],
+      "raw_bytes": 1789,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "response",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-low",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-low",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (gemini-3.1-pro-high, gemini-3.1-pro-low) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 3: verdict counted from .response past a non-JSON residue of 269 bytes ('``` I am waiting for the background search to lo') — agy emitted no structured_output for this lane (PMAT-261)",
+    "lane 2: judged by gemini-3.1-pro-high after falling through gpt-oss-120b-medium (capacity: UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server); gpt-oss-120b-medium (capacity: Our servers are experiencing high traffic right now, please try again in a minute. (UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server)) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

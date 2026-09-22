@@ -227,8 +227,9 @@ impl AppState {
                 }
             })
             .collect();
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
         let tokenizer =
-            BPETokenizer::new(vocab, vec![], "<unk>").expect("Failed to create tokenizer");
+            BPETokenizer::new(vocab, vec![], unk).expect("Failed to create tokenizer");
 
         let (audit_logger, audit_sink) = create_audit_state();
         Self {
@@ -298,7 +299,8 @@ impl AppState {
                 }
             })
             .collect();
-        let tokenizer = BPETokenizer::new(vocab, vec![], "<unk>")?;
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
+        let tokenizer = BPETokenizer::new(vocab, vec![], unk)?;
 
         // Create demo APR model (real inference, not mock)
         // Simple model: sum of inputs with bias
@@ -424,7 +426,8 @@ impl AppState {
                 }
             })
             .collect();
-        let tokenizer = BPETokenizer::new(vocab, vec![], "<unk>")?;
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
+        let tokenizer = BPETokenizer::new(vocab, vec![], unk)?;
 
         let (audit_logger, audit_sink) = create_audit_state();
         Ok(Self {
@@ -480,7 +483,8 @@ impl AppState {
         gpu_model: crate::gpu::GpuModel,
         vocab: Vec<String>,
     ) -> Result<Self, RealizarError> {
-        let tokenizer = BPETokenizer::new(vocab, vec![], "<unk>")?;
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
+        let tokenizer = BPETokenizer::new(vocab, vec![], unk)?;
 
         let (audit_logger, audit_sink) = create_audit_state();
         Ok(Self {
@@ -545,7 +549,8 @@ impl AppState {
                 }
             })
             .collect();
-        let tokenizer = BPETokenizer::new(vocab, vec![], "<unk>")?;
+        let unk = crate::tokenizer::vocabulary_unk_token(&vocab); // #3609: never a literal
+        let tokenizer = BPETokenizer::new(vocab, vec![], unk)?;
 
         let (audit_logger, audit_sink) = create_audit_state();
         Ok(Self {
