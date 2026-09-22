@@ -28,97 +28,13 @@
      "ran": true,
      "fallback": false,
      "rc": 0,
-     "verbs": {
-      "run": {
-       "ran": true,
-       "rc": 0
-      },
-      "chat": {
-       "ran": true,
-       "rc": 0
-      },
-      "code": {
-       "ran": true,
-       "rc": 0
-      },
-      "serve": {
-       "probed": true,
-       "routes": {
-        "/api/chat|stream=false": {
-         "http": 200,
-         "ok": true
-        },
-        "/api/chat|stream=true": {
-         "http": 200,
-         "ok": true
-        },
-        "/v1/chat/completions|stream=false": {
-         "http": 200,
-         "ok": true
-        },
-        "/v1/chat/completions|stream=true": {
-         "http": 200,
-         "ok": true
-        },
-        "/v1/completions|stream=false": {
-         "http": 200,
-         "ok": true
-        },
-        "/v1/completions|stream=true": {
-         "http": 200,
-         "ok": true
-        }
-       }
-      }
-     }
+     "verbs": {"run":{"ran":true,"rc":0},"chat":{"ran":true,"rc":0},"code":{"ran":true,"rc":0},"serve":{"probed":true,"routes":{"/api/chat|stream=false":{"http":200,"ok":true},"/api/chat|stream=true":{"http":200,"ok":true},"/v1/chat/completions|stream=false":{"http":200,"ok":true},"/v1/chat/completions|stream=true":{"http":200,"ok":true},"/v1/completions|stream=false":{"http":200,"ok":true},"/v1/completions|stream=true":{"http":200,"ok":true}}}}
     },
     "cuda": {
      "ran": true,
      "fallback": false,
      "rc": 0,
-     "verbs": {
-      "run": {
-       "ran": true,
-       "rc": 0
-      },
-      "chat": {
-       "ran": true,
-       "rc": 0
-      },
-      "code": {
-       "ran": true,
-       "rc": 0
-      },
-      "serve": {
-       "probed": true,
-       "routes": {
-        "/api/chat|stream=false": {
-         "http": 200,
-         "ok": true
-        },
-        "/api/chat|stream=true": {
-         "http": 200,
-         "ok": true
-        },
-        "/v1/chat/completions|stream=false": {
-         "http": 200,
-         "ok": true
-        },
-        "/v1/chat/completions|stream=true": {
-         "http": 200,
-         "ok": true
-        },
-        "/v1/completions|stream=false": {
-         "http": 200,
-         "ok": true
-        },
-        "/v1/completions|stream=true": {
-         "http": 200,
-         "ok": true
-        }
-       }
-      }
-     }
+     "verbs": {"run":{"ran":true,"rc":0},"chat":{"ran":true,"rc":0},"code":{"ran":true,"rc":0},"serve":{"probed":true,"routes":{"/api/chat|stream=false":{"http":200,"ok":true},"/api/chat|stream=true":{"http":200,"ok":true},"/v1/chat/completions|stream=false":{"http":200,"ok":true},"/v1/chat/completions|stream=true":{"http":200,"ok":true},"/v1/completions|stream=false":{"http":200,"ok":true},"/v1/completions|stream=true":{"http":200,"ok":true}}}}
     }
    },
    "green": true,
@@ -144,97 +60,13 @@
      "ran": true,
      "fallback": false,
      "rc": 0,
-     "verbs": {
-      "run": {
-       "ran": true,
-       "rc": 0
-      },
-      "chat": {
-       "ran": true,
-       "rc": 0
-      },
-      "code": {
-       "ran": true,
-       "rc": 0
-      },
-      "serve": {
-       "probed": true,
-       "routes": {
-        "/api/chat|stream=false": {
-         "http": 200,
-         "ok": true
-        },
-        "/api/chat|stream=true": {
-         "http": 200,
-         "ok": true
-        },
-        "/v1/chat/completions|stream=false": {
-         "http": 200,
-         "ok": true
-        },
-        "/v1/chat/completions|stream=true": {
-         "http": 200,
-         "ok": true
-        },
-        "/v1/completions|stream=false": {
-         "http": 200,
-         "ok": true
-        },
-        "/v1/completions|stream=true": {
-         "http": 200,
-         "ok": true
-        }
-       }
-      }
-     }
+     "verbs": {"run":{"ran":true,"rc":0},"chat":{"ran":true,"rc":0},"code":{"ran":true,"rc":0},"serve":{"probed":true,"routes":{"/api/chat|stream=false":{"http":200,"ok":true},"/api/chat|stream=true":{"http":200,"ok":true},"/v1/chat/completions|stream=false":{"http":200,"ok":true},"/v1/chat/completions|stream=true":{"http":200,"ok":true},"/v1/completions|stream=false":{"http":200,"ok":true},"/v1/completions|stream=true":{"http":200,"ok":true}}}}
     },
     "cuda": {
      "ran": true,
      "fallback": false,
      "rc": 0,
-     "verbs": {
-      "run": {
-       "ran": true,
-       "rc": 0
-      },
-      "chat": {
-       "ran": true,
-       "rc": 0
-      },
-      "code": {
-       "ran": true,
-       "rc": 0
-      },
-      "serve": {
-       "probed": true,
-       "routes": {
-        "/api/chat|stream=false": {
-         "http": 200,
-         "ok": true
-        },
-        "/api/chat|stream=true": {
-         "http": 200,
-         "ok": true
-        },
-        "/v1/chat/completions|stream=false": {
-         "http": 200,
-         "ok": true
-        },
-        "/v1/chat/completions|stream=true": {
-         "http": 200,
-         "ok": true
-        },
-        "/v1/completions|stream=false": {
-         "http": 200,
-         "ok": true
-        },
-        "/v1/completions|stream=true": {
-         "http": 200,
-         "ok": true
-        }
-       }
-      }
-     }
+     "verbs": {"run":{"ran":true,"rc":0},"chat":{"ran":true,"rc":0},"code":{"ran":true,"rc":0},"serve":{"probed":true,"routes":{"/api/chat|stream=false":{"http":200,"ok":true},"/api/chat|stream=true":{"http":200,"ok":true},"/v1/chat/completions|stream=false":{"http":200,"ok":true},"/v1/chat/completions|stream=true":{"http":200,"ok":true},"/v1/completions|stream=false":{"http":200,"ok":true},"/v1/completions|stream=true":{"http":200,"ok":true}}}}
     }
    },
    "green": true,
