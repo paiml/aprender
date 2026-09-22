@@ -65,6 +65,16 @@ compare() {
   jq -se '[.[].scale]|unique|length==1' "$dir"/raster-*.json >/dev/null \
     || { fail "scale differs across hosts"; return 1; }
 
+  # Both hosts must have used the SAME rasteriser version, or the PNG comparison measures the
+  # resvg version, not the architecture.
+  jq -se '[.[].resvg]|unique|length==1' "$dir"/raster-*.json >/dev/null \
+    || { fail "the two hosts used different rasteriser (resvg) versions — a PNG comparison between them measures the version, not the architecture"; return 1; }
+
+  # Both hosts must have run the SAME operating system, or the PNG comparison measures the OS,
+  # not the architecture.
+  jq -se '[.[].os]|unique|length==1' "$dir"/raster-*.json >/dev/null \
+    || { fail "the two hosts ran different operating systems"; return 1; }
+
   # Every assertion above this line has passed. Write to a temp file first, so a mid-write
   # failure (including the diagnostic mutant check below) leaves the caller's <out> untouched.
   tmp=$(mktemp "$dir/.raster-compare.XXXXXX")
@@ -117,6 +127,20 @@ receipt_no_png() {
       width:640, height:400, scale:2.0, resvg:"0.45.1"}' > "$d/raster-$arch.json"
 }
 
+# receipt_variant <dir> <arch> <svg-hex-char> <png-hex-char> <resvg> <os> — a planted receipt
+# with an explicit resvg/os, for cases that must differ in exactly one of those two fields.
+# A new helper, not a change to receipt()'s defaults: every pre-existing arm keeps its
+# resvg="0.45.1"/os="linux" expectation untouched.
+receipt_variant() {
+  local d=$1 arch=$2 svgc=$3 pngc=$4 rv=$5 os=$6
+  local svg png
+  svg=$(printf '%064d' 0 | tr 0 "$svgc")
+  png=$(printf '%064d' 0 | tr 0 "$pngc")
+  jq -n --arg a "$arch" --arg s "$svg" --arg p "$png" --arg rv "$rv" --arg os "$os" \
+    '{row:"EV-2d", host_arch:$a, os:$os, svg_sha256:$s, png_sha256:$p, png_bytes:98765,
+      width:640, height:400, scale:2.0, resvg:$rv}' > "$d/raster-$arch.json"
+}
+
 # plant_determinism_noise <dir> — two well-formed determinism-*.json siblings that must be
 # ignored by name (compare() only globs raster-*.json).
 plant_determinism_noise() {
@@ -144,6 +168,10 @@ plant() {
     svg-differs)       receipt "$d" x86_64 a b; receipt "$d" aarch64 d b ;;
     width-differs)     receipt "$d" x86_64 a b 640 400 2.0; receipt "$d" aarch64 a b 800 400 2.0 ;;
     noise-ignored)     receipt "$d" x86_64 a b; receipt "$d" aarch64 a b; plant_determinism_noise "$d" ;;
+    resvg-differs)     receipt_variant "$d" x86_64 a b 0.45.1 linux
+                       receipt_variant "$d" aarch64 a b 0.44.0 linux ;;
+    os-differs)        receipt_variant "$d" x86_64 a b 0.45.1 linux
+                       receipt_variant "$d" aarch64 a b 0.45.1 macos ;;
   esac
 }
 
@@ -216,6 +244,8 @@ self_test() {
   run_case svg-differs    1 -     || failed=$((failed + 1))
   run_case width-differs  1 -     || failed=$((failed + 1))
   run_case noise-ignored  0 true  || failed=$((failed + 1))
+  run_case resvg-differs  1 -     || failed=$((failed + 1))
+  run_case os-differs     1 -     || failed=$((failed + 1))
 
   # Case 10: a failing case leaves NO output file — assert absence, not just a non-zero exit.
   run_case_no_output one-host || failed=$((failed + 1))
@@ -229,7 +259,7 @@ self_test() {
   # normally exit 1 — as if it were valid, proving the table would catch that regression.
   run_case svg-differs 0 true skip_svg_check || failed=$((failed + 1))
 
-  printf 'raster-compare self-test: %s cases, %s mutants, failed: %s\n' 10 2 "$failed"
+  printf 'raster-compare self-test: %s cases, %s mutants, failed: %s\n' 12 2 "$failed"
   [ "$failed" -eq 0 ]
 }
 
