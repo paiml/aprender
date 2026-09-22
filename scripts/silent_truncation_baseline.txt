@@ -1,0 +1,128 @@
+# silent_truncation_baseline.txt -- the surface #3904 ratchets down.
+#
+# THE RULE IS NOT "NEVER TRUNCATE", IT IS "NEVER TRUNCATE SILENTLY". A bare slice makes a
+# decapitated message indistinguishable from a complete short one, so the reader cannot
+# know to go looking. `... and N more chars` costs nothing and removes the ambiguity --
+# that shape already existed four lines below the 5th instance, in the same function.
+#
+# THE DIVIDING LINE is whether a human reads the string later, DETACHED from what produced
+# it. A die() is fine: the reader is present and the command is still on screen. A receipt
+# is not: it is read hours later, on another host, by someone who cannot re-run it.
+#
+# WHY A BASELINE. #3872 fixed the four instances that had been FOUND. Nobody enumerated the
+# surface, so the 5th sat untouched in the ladder's own cells judge. Fixing six without a
+# guard just waits for the seventh. This file is the enumeration; the guard refuses
+# anything not in it.
+#
+# SHRINK-ONLY. Rows leave when a truncation is fixed and never arrive by regeneration.
+# check_no_claim_literals.sh records what happens otherwise: a baseline regenerated to
+# clear churn launders whatever genuine violation shares the commit.
+#
+# KEY = <file>|<sha1-8 of the normalized line>|<n-th identical line in that file>.
+# NOT file:line -- inserting a 6-line helper renumbered every row below it and the guard
+# reported one NEW violation plus one STALE fix for a line nobody touched. That churn is
+# what provokes a regeneration. The occurrence index keeps two identical lines in one file
+# from collapsing into one row (the collapse that hid two claims in #3867). Because the key
+# hashes the text, the text below is tamper-evident: editing a row to look innocent breaks
+# its own key, and the guard checks that.
+#
+# CLASSES are advisory -- they record a human's reading, and the guard does not take a
+# verdict from them, with ONE exception: a row classed `loud` must demonstrably say how
+# much it dropped. Without that check `loud` would just be an exemption keyword.
+#   display    goes to a human as prose. THE CLASS THAT MATTERS; the PASS line prints it so
+#              the ratchet's direction is visible.
+#   loud       truncates and SAYS SO. The sanctioned pattern; checked, not taken on trust.
+#   fatal      dies immediately -- reader present, context on screen.
+#   id-prefix  a deliberate short sha/id; the convention carries the length.
+#   numeric    a fixed-width number or a labelled tensor prefix ("First 5:").
+#
+#
+# 86 rows: display=34, fatal=6, id-prefix=7, loud=3, numeric=36
+#
+# class	key	text
+display	crates/aprender-train/scripts/benchmark_cuda_training.py|0500258e|0	print(f" stderr: {result.stderr[:500]}")
+display	crates/aprender-train/scripts/benchmark_cuda_training.py|4a0c7150|0	print(f" Output preview: {output[:1000]}")
+display	crates/aprender-train/src/transformer/cuda_block.rs|4d37766d|0	eprintln!("[TRACE] uploaded ptr={:?} len={} copy_ok={verify_ok} nonzero={nz} verify[:5]={verify5:?}", buf.as_ptr(), buf.len());
+display	scripts/check_crux_inference_judge.sh|f487c027|0	got=$(python3 -c 'import json,sys; c=[x for x in json.load(open(sys.argv[1]))["cells"] if x["key"]["prompt_id"]=="golden-greeting"][0]; print(c["engines"]["hf"]["answered"], c["engines"]["hf"]["why"][:18])' "$d/receipt.json" 2>/dev/null)
+display	scripts/check_kind_labels_derived.sh|b81ad491|0	undecidable.append((r['id'], pid, [str(x)[:70] for x in (r.get('A') or ['-'])][:2]))
+display	scripts/check_pathonly_devdeps_unused_in_src.sh|e29ba384|0	print(f"{rel_m}|{alias}|{rel_s}:{n}:{stripped[:100]}")
+display	scripts/check_thresholds_in_matrix.sh|553c4ce1|0	"constant `%s`" % stripped[:96]))
+display	scripts/check_thresholds_in_matrix.sh|9acbe18d|0	"literal in `%s`" % stripped[:96]))
+display	scripts/check_verifier_pinning.sh|5196de0f|0	print("ROW FAIL bypass at line %d: %s" % (n, l[:80]))
+display	scripts/generate_golden_traces.py|32e68fd4|0	print(f"Processing: {test_input[:50]}...")
+display	scripts/invariance.py|4ae75dee|0	print(f" {n}: {results[n][:300]!r}")
+display	scripts/invariance.py|b8440556|0	print(f"INVARIANCE_FAIL all transports agree but the payload is not JSON: {first[:200]!r}")
+display	scripts/invariance.py|e8ea38ec|0	print(f" {names[0]}: {first[:300]!r}")
+display	scripts/lib/crux_inference_judge.py|75527fee|0	lines += ["", "Greedy divergence (REPORTED, not judged): %s" % json.dumps(r["greedy"])[:600]]
+display	scripts/lib/crux_inference_judge.py|877ad529|0	e["why"] = "degenerate output (one character is >=90%% of it): %r" % p["answer"][:24]
+display	scripts/lib/crux_openai_client.py|72931f36|0	out["error"] = "HTTP %s: %s" % (exc.code, exc.read().decode("utf-8", "replace")[:300])
+display	scripts/lib/dogfood_coverage_gate.py|37f625cd|0	+ "\n".join(f" - {b}" for b in bad[:10]))
+display	scripts/lib/dogfood_coverage_gate.py|5bcaa073|0	+ "\n".join(f" - {b}: {f}" for b, f in gone[:20])
+display	scripts/lib/dogfood_coverage_gate.py|6ab190e6|0	+ "\n".join(f" - {g}" for g in gone[:10]))
+display	scripts/lib/dogfood_coverage_gate.py|7437edb6|0	+ "\n".join(f" - {w}" for w in wrong[:20]))
+display	scripts/lib/dogfood_coverage_gate.py|b2cca5e8|0	+ "\n".join(f" - {b}" for b in blank[:10]))
+display	scripts/lib/dogfood_coverage_gate.py|b471bf1d|0	+ "\n".join(f" | {ln.rstrip()}" for ln in offenders[:10]))
+display	scripts/lib/dogfood_coverage_gate.py|fd8533f8|0	return "\n".join(f" - {f}" for f in features[:20])
+display	scripts/lib/roadmap_diff.py|109308dd|0	lines.append(f"reserialised={len(reserialised)} first_ids=" + ", ".join(reserialised[:3]))
+display	scripts/lib/roadmap_fragments.py|e70fba51|0	"duplicate id among fragments" in str(e), str(e)[:44])
+display	scripts/pp066_state.sh|5dd416a1|0	hits = [f"{r['id']}/{r.get('pmat_id')}" for r in d["rows"] if any(k and k.lower() in line for k in [str(r.get("contract") or "")[:40]] + [a[:40] for a in (r.get("A") or []) if isinstance(a, str)])]
+display	scripts/reference_embedding.py|02c5464a|0	print("Transform first 10:", [f"{v:.8f}" for v in emb[:10]])
+display	scripts/reference_embedding.py|3beae368|0	print("[" + ", ".join(f"{v:.8f}" for v in emb[:10]) + "]")
+display	scripts/session_docs_commit.sh|fec0657e|0	print(f"ADD\t{row['id']}\t#{gh}\t{(row.get('title') or '')[:100]}")
+display	scripts/ship-two-001/eval-shard-merge.py|3dd37a83|0	f"{sorted(missing)[:5]}{'...' if len(missing) > 5 else ''}",
+display	scripts/ship-two-001/eval-shard-merge.py|6aeb3705|0	f"{sorted(extra)[:5]}",
+display	scripts/tests/model_ladder_diagnostic_not_truncated_test.sh|74f3435a|0	printf ' receipt message: %s\n' "$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print([g.get("message") for r in d.get("rungs",[])+d.get("inventory",[]) if isinstance(r,dict) for g in [r.get("golden_output") or {}]][:1])' "$receipt")" >&2
+display	scripts/tests/model_ladder_diagnostic_not_truncated_test.sh|e6946f47|0	# two [:70] `why` lines, and the judge's two [:60] display lines. The judge half
+display	scripts/tests/model_ladder_diagnostic_not_truncated_test.sh|eb43ab55|0	printf 'FAIL producer reason TRUNCATED (the [:70] why line)\n' >&2
+fatal	scripts/check_model_parity.sh|93646ee1|0	print(f"FAIL {model}: {len(bad)} of {len(cos)} positions below cosine {mc} (basis {basis}); min {mn[1]:.4f} at position {mn[0]}; first: " + ", ".join(f"{p}:{c:.4f}" for p, c in bad[:5])); sys.exit(1)
+fatal	scripts/invariance.py|0288f0bf|0	die(f"cli invoke failed ({r.returncode}): {r.stderr.strip()[:200]}")
+fatal	scripts/invariance.py|631a3cc1|0	die(f"http invoke returned {e.code}: {e.read()[:200]!r}")
+fatal	scripts/invariance.py|7a337516|0	die(f"`{list_cmd}` exited {r.returncode}: {r.stderr.strip()[:200]}")
+fatal	scripts/invariance.py|dd9a7577|0	die(f"probe verb `{verb}` is not in the binary's own list ({', '.join(verbs[:6])}…)")
+fatal	scripts/render_dag.py|42dbf339|0	print(f"NOT ARMED: {spec_path} carries no `{BEGIN[:22]}…` / `{END}` marker pair; the §5/§6 tables are still hand-typed (SPEC-1.6 inserts them). exit 3, not a pass.")
+id-prefix	scripts/check_no_silent_truncation.sh|dda62789|0	k = "%s|%s|%s" % (k.split("|")[0], hashlib.sha1(t.encode()).hexdigest()[:8], k.split("|")[2])
+id-prefix	scripts/check_perf041_marker.sh|b774b180|0	str(marker.get("commit"))[:12], marker.get("max_m"), age_days,
+id-prefix	scripts/derive_model_manifest.sh|5556cac7|0	for c in cites[:12]: lines.append(f" - {c}")
+id-prefix	scripts/lib/crux_inference_judge.py|704d9042|0	broken = sorted({"%s/%s" % (c["key"]["model_sha256"][:12], c["key"]["prompt_id"])
+id-prefix	scripts/lib/model_ladder_cells.py|c3205e9b|0	out(f"FAIL cell {verb}/{mode}/{rid} of model {str(sha)[:12]} PASSES on no required host -- every declared rung must pass somewhere (#3710 'a')")
+id-prefix	scripts/lib/obligation_ids.py|2fd73de0|0	f"{base}{hashlib.sha256(me.encode()).hexdigest()[:4].upper()}"
+id-prefix	scripts/release/ledger.py|6844e991|0	out = f"{ap}/{mc[:9]}-lambda-vector-train.json"
+loud	scripts/check_no_silent_truncation.sh|6db1b160|0	return s if len(s) <= n else f"{s[:n]} ... and {len(s) - n} more chars"
+loud	scripts/lib/model_ladder_cells.py|6db1b160|0	return s if len(s) <= n else f"{s[:n]} ... and {len(s) - n} more chars"
+loud	scripts/lib/perf_receipt.py|a05beb43|0	return s if len(s) <= n else f"[... and {len(s) - n} more chars before this] {s[-n:]}"
+numeric	scripts/generate_qwen3_moe_fp16_logits.py|e6fd4547|0	print(f" logits[:5]: {logits[:5].tolist()}")
+numeric	scripts/golden_layer0_2plus2.py|0a89e741|0	print(f" V bias first 5: {layer0.self_attn.v_proj.bias[:5].tolist()}")
+numeric	scripts/golden_layer0_2plus2.py|113af131|0	print(f"\n Q bias first 5: {layer0.self_attn.q_proj.bias[:5].tolist()}")
+numeric	scripts/golden_layer0_2plus2.py|132a4174|0	print(f" First 5: {attn_out[:5].tolist()}")
+numeric	scripts/golden_layer0_2plus2.py|1bdfa91e|0	print(f" First 5: {o_out[:5].tolist()}")
+numeric	scripts/golden_layer0_2plus2.py|26d45b18|0	print(f" First 5: {k[:5].tolist()}")
+numeric	scripts/golden_layer0_2plus2.py|2ac072d8|0	print(f" SwiGLU first 5: {swiglu[:5].tolist()}")
+numeric	scripts/golden_layer0_2plus2.py|40857f5b|0	print(f" First 5: {v[:5].tolist()}")
+numeric	scripts/golden_layer0_2plus2.py|45a12d3b|0	print(f" Gate first 5: {gate[:5].tolist()}")
+numeric	scripts/golden_layer0_2plus2.py|4e180c91|0	print(f" First 5: {q[:5].tolist()}")
+numeric	scripts/golden_layer0_2plus2.py|54e765cc|0	print(f" FFN out first 5: {ffn_out[:5].tolist()}")
+numeric	scripts/golden_layer0_2plus2.py|62232e50|0	print(f" Last 5: {layer0_output[-5:].tolist()}")
+numeric	scripts/golden_layer0_2plus2.py|6bb6faff|0	print(f" Up first 5: {up[:5].tolist()}")
+numeric	scripts/golden_layer0_2plus2.py|9a8d0228|0	print(f" First 5: {residual1[:5].tolist()}")
+numeric	scripts/golden_layer0_2plus2.py|a2c2bb8a|0	print(f"First 10: {layer0_output[:10].tolist()}")
+numeric	scripts/golden_layer0_2plus2.py|a3d46d35|0	print(f" First 5: {layer_out_manual[:5].tolist()}")
+numeric	scripts/golden_layer0_2plus2.py|a605ebc6|0	print(f" First 10: {layer0_output[:10].tolist()}")
+numeric	scripts/golden_layer0_2plus2.py|a6d01dc6|0	print(f" K bias first 5: {layer0.self_attn.k_proj.bias[:5].tolist()}")
+numeric	scripts/golden_layer0_2plus2.py|b4dbedf4|0	print(f" First 5: {ffn_normed[:5].tolist()}")
+numeric	scripts/golden_layer0_2plus2.py|ce5caed4|0	print(f" First 5: {embedding.squeeze()[:5].tolist()}")
+numeric	scripts/golden_layer0_2plus2.py|d08d2359|0	print(f" First 5: {normed.squeeze()[:5].tolist()}")
+numeric	scripts/reference_layer0.py|00f8c286|0	print(f"Residual1 first 3: {residual1[:3].numpy().tolist()}")
+numeric	scripts/reference_layer0.py|0cc2e2f1|0	print(f"SwiGLU first 3: {swiglu[:3].numpy().tolist()}")
+numeric	scripts/reference_layer0.py|1ae0f772|0	print(f"FFN gate first 3: {gate[:3].numpy().tolist()}")
+numeric	scripts/reference_layer0.py|1e593c04|0	print(f"V first 5: {v[:5].numpy().tolist()}")
+numeric	scripts/reference_layer0.py|4271a408|0	print(f"FFN down first 3: {ffn_down[:3].numpy().tolist()}")
+numeric	scripts/reference_layer0.py|4a0c3b59|0	print(f"Layer output first 3: {layer_output[:3].numpy().tolist()}")
+numeric	scripts/reference_layer0.py|64a6392e|0	print(f"Attn out first 3: {attn_out[:3].numpy().tolist()}")
+numeric	scripts/reference_layer0.py|857b5409|0	print(f"FFN up first 3: {up[:3].numpy().tolist()}")
+numeric	scripts/reference_layer0.py|9aed2ccd|0	print(f"K first 5: {k[:5].numpy().tolist()}")
+numeric	scripts/reference_layer0.py|9f0847c9|0	print(f"Manual RMSNorm first 3: {manual_normed[:3].tolist()}")
+numeric	scripts/reference_layer0.py|c52f171b|0	print(f"Embedding first 5: {emb_np[:5].tolist()}")
+numeric	scripts/reference_layer0.py|c8104aca|0	print(f"Q first 3: {q[:3].numpy().tolist()}")
+numeric	scripts/reference_layer0.py|cdb76739|0	print(f"Out proj first 3: {out_proj[:3].numpy().tolist()}")
+numeric	scripts/reference_layer0.py|e442df29|0	print(f"Norm weight first 5: {norm_weight[:5].tolist()}")
+numeric	scripts/reference_layer0.py|e8a6edf1|0	print(f"Layer RMSNorm first 3: {normed_np[:3].tolist()}")
