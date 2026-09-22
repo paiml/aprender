@@ -31,7 +31,9 @@
 set -uo pipefail
 
 LADDER="contracts/model-capability-ladder-v1.yaml"
-CASES_DIR="scripts/lib/model_ladder_cases"
+# Overridable so the floor below can be PROVEN against a planted case in a temp dir
+# rather than by planting a permanently-failing case in the real table (#3887).
+CASES_DIR="${MODEL_LADDER_CASES_DIR:-scripts/lib/model_ladder_cases}"
 SELF_TEST=0; ONLY_CASE=""; RECEIPT_DIR=""; LADDER_MAIN_OVERRIDE=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -371,14 +373,34 @@ if [ "$SELF_TEST" = 1 ]; then
     [ -z "$ONLY_CASE" ] || [ "$name" = "$ONLY_CASE" ] || continue
     [ -f "$c/expected_rc" ] || { echo "FAIL  case $name has no expected_rc"; bad=$((bad+1)); continue; }
     want=$(cat "$c/expected_rc")
+    # #3887 THE FLOOR. A case expecting a REFUSAL must assert WHY. Judged on rc alone it
+    # cannot tell "the gate refused for my planted reason" from "the gate was already
+    # refusing for some other reason", so it passes for the wrong reason, permanently and
+    # invisibly. Measured: proving #3880's stale-deferral check, a mutant disabling the
+    # refusal left red-deferral-stale at rc=1 anyway -- from an unrelated pre-existing
+    # failure in the same fixture -- and `expected_rc` alone would have let that mutant
+    # SURVIVE. Only the must_match on the STALE text killed it.
+    if [ "$want" != "0" ] && [ ! -f "$c/must_match" ]; then
+      echo "FAIL  case $name expects rc=$want and carries no must_match -- a case that cannot say WHY it is red has no floor under it (#3887)"
+      bad=$((bad+1)); continue
+    fi
     lad="$c/ladder.yaml"; [ -f "$lad" ] || lad="$LADDER"
     main=""; [ -f "$c/ladder_main.yaml" ] && main="$c/ladder_main.yaml"
     out=$(judge "$lad" "$main" "$c/receipts" "$(cat "$c/version" 2>/dev/null || echo 0.0.0-case)" "$c/context-rungs.json" "$c/context-rungs_main.json"); got=$?
     n=$((n+1))
-    if [ "$got" = "$want" ] && { [ ! -f "$c/must_match" ] || grep -qE "$(cat "$c/must_match")" <<< "$out"; }; then
+    # #3887 THE OTHER POLARITY. A case that exists to prove a gate stays QUIET rests on rc
+    # alone otherwise, and that works only because an over-eager check happens to flip rc.
+    # A check printing a spurious line WITHOUT changing rc would pass it. Not required of
+    # every green case -- most assert normal operation, not silence -- but honoured wherever
+    # a case declares one. Here-strings throughout: never a pipe into grep -q.
+    if [ "$got" = "$want" ] \
+       && { [ ! -f "$c/must_match" ] || grep -qE "$(cat "$c/must_match")" <<< "$out"; } \
+       && { [ ! -f "$c/must_not_match" ] || ! grep -qE "$(cat "$c/must_not_match")" <<< "$out"; }; then
       printf 'ok    case %-28s rc=%s\n' "$name" "$got"
     else
-      printf 'FAIL  case %-28s rc=%s want=%s%s\n' "$name" "$got" "$want" "$([ -f "$c/must_match" ] && printf ' must_match=/%s/' "$(cat "$c/must_match")")"
+      printf 'FAIL  case %-28s rc=%s want=%s%s%s\n' "$name" "$got" "$want" \
+        "$([ -f "$c/must_match" ] && printf ' must_match=/%s/' "$(cat "$c/must_match")")" \
+        "$([ -f "$c/must_not_match" ] && printf ' must_not_match=/%s/' "$(cat "$c/must_not_match")")"
       printf '%s\n' "$out" | sed 's/^/        /'; bad=$((bad+1))
     fi
   done
@@ -395,6 +417,29 @@ if [ "$SELF_TEST" = 1 ]; then
       if MODEL_LADDER_ROOT="$PWD" bash "$m" --self-test --case "$2" >/dev/null 2>&1; then echo "FAIL  mutant $1 SURVIVED: case $2 stays ok with the rule deleted"; bad=$((bad+1))
       else printf 'ok    mutant %-28s killed by case %s\n' "$1" "$2"; fi
     }
+    # #3887: the FLOOR itself, proven against a PLANTED case rather than by planting a
+    # permanently-failing case in the real table. A red-expecting case with no must_match
+    # must be refused; a red-expecting case WITH one must still run. Both directions,
+    # because a floor that refuses everything is as useless as one that refuses nothing.
+    floor_case() { # floor_case <dir> <expected_rc> [must_match text]
+      mkdir -p "$1/receipts"
+      printf '%s\n' "$2" > "$1/expected_rc"
+      [ -z "${3:-}" ] || printf '%s\n' "$3" > "$1/must_match"
+    }
+    fdir="$mdir/floor"; mkdir -p "$fdir"
+    floor_case "$fdir/red-no-reason" 2
+    if MODEL_LADDER_CASES_DIR="$fdir" MODEL_LADDER_ROOT="$PWD" bash "$SELF" --self-test --case red-no-reason >/dev/null 2>&1; then
+      echo "FAIL  the #3887 floor did not refuse a red-expecting case with no must_match"; bad=$((bad+1))
+    else
+      printf 'ok    floor: a red-expecting case with no must_match is refused (#3887)\n'
+    fi
+    floor_case "$fdir/red-with-reason" 2 'decline'
+    out_fr=$(MODEL_LADDER_CASES_DIR="$fdir" MODEL_LADDER_ROOT="$PWD" bash "$SELF" --self-test --case red-with-reason 2>&1)
+    if grep -qE 'carries no must_match' <<< "$out_fr"; then
+      echo "FAIL  the #3887 floor refused a red-expecting case that DOES carry a must_match -- it refuses everything"; bad=$((bad+1))
+    else
+      printf 'ok    floor: a red-expecting case WITH a must_match is not refused by the floor (#3887)\n'
+    fi
     mutant q4k-required-false red-q4k-required-false 's/if is_q4k(r) and r.get("required") is not True:/if False:/'
     mutant q4k-without-cuda   red-q4k-rung-cpu-only  's/if is_q4k(r) and "cuda" not in (r.get("backends") or \[\]):/if False:/'
     mutant inventory-missing  red-inventory-model-missing 's/if x is None or not x.get("present"):  # held by the host, absent from the run/if False:/'
