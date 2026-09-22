@@ -1967,18 +1967,19 @@ fn verification_summary_counts_are_not_a_verification_record() {
     );
 }
 
-/// FORWARD GUARD, AND CURRENTLY VACUOUS — say so rather than let it look load-bearing.
+/// ARMED as of #3888's reconciliation. Was vacuous when written; is not now.
 ///
-/// Measured: under a mutant restoring the old `has_kani -> Proven` rule, the two tests
-/// above go RED and **this one stays GREEN**. It survives because the nine embedded
-/// contracts are TRUNCATED copies that contain no `kani_harness` string at all, so
-/// neither the old rule nor the new one reaches Proven for them. It passes because its
-/// subject is absent, which is the exact defect class #3863 is about.
+/// WHEN WRITTEN it was VACUOUS and said so: under a mutant restoring the old
+/// `has_kani -> Proven` rule the two tests above went RED and this one stayed GREEN,
+/// because the nine embedded contracts were TRUNCATED and contained no `kani_harness`
+/// string at all. It passed because its subject was absent — the exact defect class
+/// #3863 is about — and it was kept, labelled NOT ARMED, because the arming event was
+/// already scheduled.
 ///
-/// It is kept because it becomes load-bearing the moment the shipped contracts are
-/// reconciled with their root siblings (#3888) — that reconciliation is precisely what
-/// would have flipped six of them to Proven, and this is the assertion that catches it.
-/// Until then it is NOT ARMED, and a green here is not evidence.
+/// THAT EVENT HAS NOW HAPPENED. #3888 reconciled six contracts with their root
+/// siblings, which added the `kani_harnesses` sections. Re-measured under the same
+/// mutant: this test now FAILS. Its subject is present, it passes on merit, and it is
+/// the assertion standing between a `pv validate` fix and six false Proven claims.
 ///
 /// If it starts failing after real verification exists, that is the good outcome:
 /// delete the assertion, do not weaken it.
