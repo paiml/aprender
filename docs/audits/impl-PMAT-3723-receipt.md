@@ -21,6 +21,36 @@ feature done_when 1 asks for.)
 The fragments hold each issue's done_when verbatim: `docs/roadmaps/entries/PMAT-3723.yaml`,
 `PMAT-3755.yaml`, `PMAT-3801.yaml`.
 
+## Quorum round 2, lane 1 (gpt-oss-120b-medium): FAIL, DISPUTED — unadjudicated
+
+The cop's standing ruling: an author's dispute does NOT waive a lane's FAIL. This row does
+not arm until a non-author seat adjudicates it. The dispute is recorded here, finding by
+finding, with counter-evidence.
+
+Lane 1's summary: "The diff adds a user-visible thinking toggle (`--thinking`) to the CLI
+and runtime, directly violating ticket PMAT-3723 which explicitly forbids any thinking
+toggle."
+
+The ticket forbids nothing. Its title names the DEFECT ("apr has NO thinking toggle:
+realizar hard-routes every Qwen3/Qwen3.5 to the no-think template … so run/chat/code/serve
+can't be dogfooded with thinking ON"), and its done_when 1 asks for the toggle, verbatim:
+"`--thinking on|off` on `apr run`, `apr chat` and `apr code`, documented in `--help`.
+Default = OFF (today's production behaviour, unchanged); ON selects the model's own
+thinking-capable template."
+
+| # | lane 1's finding (cited to the prompt file) | what the line is | counter-evidence |
+|---|---|---|---|
+| 1 | "Introduces a `thinking` field in `ChatConfig` making the `--thinking` flag available to users" | `crates/apr-cli/src/commands/chat.rs:65` `pub thinking: Option<bool>` | This IS done_when 1 for `apr chat`. The flag is `crates/apr-cli/src/commands_enum.rs:204` (run) and `:891` (code); `extended_commands.rs:72` (chat) |
+| 2 | "Defaults `thinking` to `None` (i.e. OFF where the model template allows it) but still permits ON mode when explicitly requested, which contradicts the ticket's requirement of *no* thinking toggle" | `crates/apr-cli/src/commands/chat.rs:79` `thinking: None` | done_when 1 requires exactly this default: "Default = OFF (today's production behaviour, unchanged); ON selects the model's own thinking-capable template". `None` resolves to OFF wherever the template allows it: `crates/aprender-serve/src/chat_template_embedded.rs:54-63` (`ThinkingModes::resolve`) |
+| 3 | "Calls `session.resolve_thinking(config.thinking)?` enabling runtime handling of the newly added thinking flag" | `crates/apr-cli/src/commands/chat_generate_session.rs:127` | Resolving the requested mode against the model's own template is done_when 3: "thinking-capable is DERIVED from the model's `tokenizer.chat_template` … ON on a model whose template has no thinking mode is REFUSED by name". The refusal is `chat_load_tokenizers.rs:156` → exit 15 |
+
+Lane 3 (gpt-oss-120b-medium) PASSED the same diff: "the thinking toggle is correctly
+derived from model templates, default thinking is OFF where allowed, untrusted templates
+are limited, and no prohibited behavior was introduced." Lane 2 (claude-opus-4-6-thinking)
+PASSED and was refused by receipt-lint as the author's own family. Round 3 was
+NO-VERDICT ×3 (gpt-oss 503, claude 429, gemini out for ~27h). Rounds are archived in the
+session scratchpad, not committed.
+
 ## Design (one seam)
 
 - `realizar::chat_template::EmbeddedChatTemplate` (`crates/aprender-serve/src/chat_template_embedded.rs`) renders the model file's own template (GGUF metadata, a sibling `tokenizer_config.json`, APR metadata) with minijinja configured the way HF's environment is: trim_blocks, lstrip_blocks, pycompat, loop_controls, `raise_exception`, `strftime_now`, and a Python-`json.dumps` `tojson`.
