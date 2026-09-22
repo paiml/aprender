@@ -546,6 +546,164 @@ $L_iq_exit:
     )
 }
 
+/// #3869: IQ4_NL (GGML type 20) GEMV, row-major.
+///
+/// The odd one out: IQ4_NL is a **32-element** block in 18 bytes
+/// (`ggml-common.h`: `#define QK4_NL 32`, and `sizeof(block_iq4_nl) ==
+/// sizeof(ggml_half) + QK4_NL/2` = 18), while every other IQ type here is a
+/// 256-element super-block. There are no sub-block scales: one f16 `d` covers
+/// the whole block.
+///
+/// It shares IQ4_XS's codebook exactly. IQ4_XS is this layout with a 6-bit
+/// per-sub-block scale layered on (`dl = d * (ls - 32)`), so the nibble decode
+/// below is what `iq4_xs_gemv_warp_reduce` does inside one of its eight
+/// sub-blocks, with `dl` replaced by `d`.
+///
+/// Thread mapping: 32 threads, 32 elements per block, one element each. Element
+/// `tid` takes byte `tid & 15`, low nibble when `tid < 16` and high nibble when
+/// `tid >= 16`, which is the reference's `y[j]` / `y[j + QK4_NL/2]` split and
+/// NOT adjacent nibbles. Reading them adjacently transposes each block's halves
+/// and still produces plausible numbers.
+///
+/// LAYOUT-001: row-major. Row `ctaid` of an `[n, k]` weight starts at
+/// `w_ptr + ctaid * ceil(k/32) * 18` and runs contiguously. No transpose and no
+/// `*_colmajor` path.
+///
+/// NOTE FOR THE DISPATCH: `block_iq4_nl` is the identical C struct to
+/// `block_q4_0`, so a tensor's SIZE can never tell them apart. The quant type
+/// must come from the declared ggml type id, never from `from_size`.
+fn generate_iq4_nl_gemv_ptx(k: u32, n: u32) -> String {
+    let _ = (k, n);
+
+    String::from(
+        r"
+.version 7.5
+.target sm_70
+.address_size 64
+
+// The 16 non-linear IQ4_NL levels: quantize::iq_grids::KVALUES_IQ4NL.
+.global .align 4 .s32 kvalues_iq4nl_b[16] = {-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113};
+
+.visible .entry iq4_nl_gemv_warp_reduce(
+    .param .u64 y_ptr,
+    .param .u64 w_ptr,
+    .param .u64 x_ptr,
+    .param .u32 k_dim,
+    .param .u32 n_dim
+)
+{
+    .reg .u32 %r<40>;
+    .reg .u64 %rd<24>;
+    .reg .f32 %f<20>;
+    .reg .b16 %h<4>;
+    .reg .pred %p<10>;
+
+    mov.u32 %r0, %tid.x;
+    mov.u32 %r1, %ctaid.x;
+
+    ld.param.u32 %r2, [n_dim];
+    ld.param.u32 %r3, [k_dim];
+    ld.param.u64 %rd0, [y_ptr];
+    ld.param.u64 %rd1, [w_ptr];
+    ld.param.u64 %rd2, [x_ptr];
+
+    setp.ge.u32 %p0, %r1, %r2;
+    @%p0 bra $L_nl_exit;
+
+    mov.f32 %f0, 0f00000000;
+
+    // nb = ceil(k_dim / 32)
+    add.u32 %r4, %r3, 31;
+    shr.u32 %r4, %r4, 5;
+
+    // row_base = w_ptr + ctaid * nb * 18
+    mul.lo.u32 %r5, %r4, 18;
+    mul.wide.u32 %rd3, %r1, %r5;
+    add.u64 %rd3, %rd1, %rd3;
+
+    // per-thread: jlow = tid & 15 (byte index), jhalf = tid >> 4 (nibble select)
+    and.b32 %r7, %r0, 15;
+    shr.u32 %r6, %r0, 4;
+
+    // nibble shift = jhalf * 4
+    shl.b32 %r19, %r6, 2;
+
+    // codebook base
+    mov.u64 %rd10, kvalues_iq4nl_b;
+
+    mov.u32 %r8, 0;
+
+$L_nl_blk:
+    setp.ge.u32 %p1, %r8, %r4;
+    @%p1 bra $L_nl_blk_end;
+
+    // blk_addr = row_base + blk * 18
+    mul.wide.u32 %rd4, %r8, 18;
+    add.u64 %rd4, %rd3, %rd4;
+
+    // d (f16 at +0)
+    ld.global.b16 %h0, [%rd4];
+    cvt.f32.f16 %f1, %h0;
+
+    // byte = qs[jlow], qs starts at +2
+    cvt.u64.u32 %rd7, %r7;
+    add.u64 %rd7, %rd4, %rd7;
+    add.u64 %rd7, %rd7, 2;
+    ld.global.u8 %r18, [%rd7];
+
+    // nib = jhalf ? (byte >> 4) : (byte & 0xf)
+    shr.u32 %r20, %r18, %r19;
+    and.b32 %r20, %r20, 15;
+
+    // w = d * kvalues_iq4nl[nib]
+    mul.wide.u32 %rd8, %r20, 4;
+    add.u64 %rd8, %rd10, %rd8;
+    ld.global.s32 %r21, [%rd8];
+    cvt.rn.f32.s32 %f4, %r21;
+    mul.f32 %f5, %f1, %f4;
+
+    // x_idx = blk*32 + tid
+    shl.b32 %r22, %r8, 5;
+    add.u32 %r22, %r22, %r0;
+
+    setp.ge.u32 %p3, %r22, %r3;
+    @%p3 bra $L_nl_skip;
+
+    mul.wide.u32 %rd9, %r22, 4;
+    add.u64 %rd9, %rd2, %rd9;
+    ld.global.f32 %f6, [%rd9];
+    fma.rn.f32 %f0, %f5, %f6, %f0;
+
+$L_nl_skip:
+    add.u32 %r8, %r8, 1;
+    bra $L_nl_blk;
+
+$L_nl_blk_end:
+    shfl.sync.down.b32 %f10, %f0, 16, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f10;
+    shfl.sync.down.b32 %f11, %f0, 8, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f11;
+    shfl.sync.down.b32 %f12, %f0, 4, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f12;
+    shfl.sync.down.b32 %f13, %f0, 2, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f13;
+    shfl.sync.down.b32 %f14, %f0, 1, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f14;
+
+    setp.ne.u32 %p4, %r0, 0;
+    @%p4 bra $L_nl_exit;
+
+    mul.wide.u32 %rd11, %r1, 4;
+    add.u64 %rd11, %rd0, %rd11;
+    st.global.f32 [%rd11], %f0;
+
+$L_nl_exit:
+    ret;
+}
+",
+    )
+}
+
 /// #3477 / "no model left behind": F16 (GGML type 1) GEMV, row-major.
 ///
 /// `Qwen3.5-4B-UD-Q4_K_XL` stores `ssm_alpha` and `ssm_beta` as F16 while the

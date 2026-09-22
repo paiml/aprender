@@ -30,6 +30,7 @@ mod gemv_entry_name_tests_3477 {
             KernelType::Q4_1Gemv { k, n },
             KernelType::F16Gemv { k, n },
             KernelType::Iq4XsGemv { k, n },
+            KernelType::Iq4NlGemv { k, n },
         ]
     }
 
@@ -207,6 +208,75 @@ mod gemv_entry_name_tests_3477 {
             .map(|(t, n)| format!("\n  - {n} (type {t}) claims a kernel it does not have"))
             .collect();
         assert!(admitted.is_empty(), "census drift:{}", admitted.join(""));
+    }
+
+    /// The IQ4_NL kernel's INDEX MATH, executed in Rust exactly as the PTX
+    /// executes it, checked against the verified CPU decoder on the same bytes.
+    ///
+    /// Same contract as the IQ4_XS row below, and the same limit: this proves
+    /// the thread mapping, not that the PTX TEXT implements it. That gap closes
+    /// only with a device A/B.
+    ///
+    /// The mapping it pins is the one most likely to be wrong, because it is the
+    /// one the format makes counter-intuitive: byte `j`'s two nibbles land at
+    /// elements `j` and `j + 16`, NOT at `2j` and `2j + 1`. Reading them
+    /// adjacently transposes every block's halves and still yields plausible
+    /// magnitudes, so nothing downstream would look obviously broken.
+    #[test]
+    fn the_iq4_nl_thread_mapping_reproduces_the_cpu_decoder() {
+        use crate::quantize::iq4_nl::{
+            dequantize_iq4_nl_block, IQ4_NL_BLOCK_BYTES, IQ4_NL_BLOCK_ELEMS,
+        };
+
+        // KVALUES_IQ4NL, the 16 non-linear levels, as the PTX embeds them.
+        const KV: [i32; 16] =
+            [-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113];
+
+        let mut block = [0u8; IQ4_NL_BLOCK_BYTES];
+        let mut x: u32 = 0x1234_5678;
+        for b in block.iter_mut() {
+            x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            *b = (x >> 24) as u8;
+        }
+        block[0] = 0x00;
+        block[1] = 0x3c; // f16 1.0
+
+        let mut expected = [0f32; IQ4_NL_BLOCK_ELEMS];
+        dequantize_iq4_nl_block(&block, &mut expected);
+
+        // ---- exactly what the PTX does, one lane at a time ----
+        // jlow = tid & 15 (byte index), jhalf = tid >> 4 (nibble select),
+        // element index = tid. There is no sub-block loop and no scale
+        // reassembly: one f16 d covers all 32 elements.
+        let d = f32::from(half_from_le(block[0], block[1]));
+        let mut got = [0f32; IQ4_NL_BLOCK_ELEMS];
+        for tid in 0..IQ4_NL_BLOCK_ELEMS {
+            let jhalf = tid >> 4;
+            let jlow = tid & 15;
+            let byte = u32::from(block[2 + jlow]);
+            let nib = (byte >> (jhalf * 4)) & 15;
+            #[allow(clippy::cast_precision_loss)]
+            let w = d * (KV[nib as usize] as f32);
+            got[tid] = w;
+        }
+
+        for (i, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
+            assert!(
+                (g - e).abs() <= 1e-6,
+                "element {i}: kernel mapping {g}, CPU decoder {e}"
+            );
+        }
+
+        // State the counter-intuitive half as its own assertion, so a failure
+        // names the mechanism rather than an index.
+        assert_eq!(
+            got[0], expected[0],
+            "byte 0's LOW nibble is element 0"
+        );
+        assert_eq!(
+            got[16], expected[16],
+            "byte 0's HIGH nibble is element 16, not element 1"
+        );
     }
 
     /// The IQ4_XS kernel's INDEX MATH, executed in Rust exactly as the PTX
