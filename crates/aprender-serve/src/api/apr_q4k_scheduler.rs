@@ -125,83 +125,12 @@ pub fn spawn_apr_q4k_inference_thread(
         upload_result.total_bytes as f64 / (1024.0 * 1024.0)
     );
 
-    // Extract CPU-side weights (embedding, norms)
-    // Use find_tensor_name to handle GGUF/SafeTensors/HF naming variants (#167)
-    let embed_name = model
-        .find_tensor_name(&[
-            "model.embed_tokens.weight",
-            "embed_tokens.weight",
-            "transformer.wte.weight",
-            "embeddings.word_embeddings.weight",
-            "tok_embeddings.weight",
-            "token_embd.weight",
-        ])
-        .map_err(|e| format!("Missing embedding: {e}"))?;
-    let embedding_weight = model
-        .get_tensor_f32(&embed_name)
-        .map_err(|e| format!("Missing embedding: {e}"))?;
-
-    let norm_name = model
-        .find_tensor_name(&[
-            "model.norm.weight",
-            "norm.weight",
-            "transformer.ln_f.weight",
-            "output_norm.weight",
-        ])
-        .map_err(|e| format!("Missing output norm: {e}"))?;
-    let output_norm_weight = model
-        .get_tensor_f32(&norm_name)
-        .map_err(|e| format!("Missing output norm: {e}"))?;
-
-    let mut layer_norm_weights: Vec<(Vec<f32>, Vec<f32>, Option<Vec<f32>>, Option<Vec<f32>>)> =
-        Vec::with_capacity(config.num_layers);
-    for layer_idx in 0..config.num_layers {
-        let attn_norm_name = model
-            .find_tensor_name(&[
-                &format!("model.layers.{layer_idx}.input_layernorm.weight"),
-                &format!("layers.{layer_idx}.input_layernorm.weight"),
-                &format!("blk.{layer_idx}.attn_norm.weight"),
-            ])
-            .map_err(|e| format!("Missing attn norm layer {layer_idx}: {e}"))?;
-        let attn_norm = model
-            .get_tensor_f32(&attn_norm_name)
-            .map_err(|e| format!("Missing attn norm layer {layer_idx}: {e}"))?;
-
-        let ffn_norm_name = model
-            .find_tensor_name(&[
-                &format!("model.layers.{layer_idx}.post_attention_layernorm.weight"),
-                &format!("layers.{layer_idx}.post_attention_layernorm.weight"),
-                &format!("blk.{layer_idx}.ffn_norm.weight"),
-            ])
-            .map_err(|e| format!("Missing FFN norm layer {layer_idx}: {e}"))?;
-        let ffn_norm = model
-            .get_tensor_f32(&ffn_norm_name)
-            .map_err(|e| format!("Missing FFN norm layer {layer_idx}: {e}"))?;
-
-        let q_norm = model
-            .get_tensor_f32(&format!("model.layers.{layer_idx}.self_attn.q_norm.weight"))
-            .ok();
-        let k_norm = model
-            .get_tensor_f32(&format!("model.layers.{layer_idx}.self_attn.k_norm.weight"))
-            .ok();
-        layer_norm_weights.push((attn_norm, ffn_norm, q_norm, k_norm));
-    }
-
-    // PMAT-315: Extract QKV biases (required for Qwen2, optional for LLaMA/Mistral)
-    let mut layer_qkv_biases: Vec<(Option<Vec<f32>>, Option<Vec<f32>>, Option<Vec<f32>>)> =
-        Vec::with_capacity(config.num_layers);
-    for layer_idx in 0..config.num_layers {
-        let q_bias = model
-            .get_tensor_f32(&format!("model.layers.{layer_idx}.self_attn.q_proj.bias"))
-            .ok();
-        let k_bias = model
-            .get_tensor_f32(&format!("model.layers.{layer_idx}.self_attn.k_proj.bias"))
-            .ok();
-        let v_bias = model
-            .get_tensor_f32(&format!("model.layers.{layer_idx}.self_attn.v_proj.bias"))
-            .ok();
-        layer_qkv_biases.push((q_bias, k_bias, v_bias));
-    }
+    let Q4kHostWeights {
+        embedding: embedding_weight,
+        output_norm: output_norm_weight,
+        layer_norms: layer_norm_weights,
+        qkv_biases: layer_qkv_biases,
+    } = load_q4k_host_weights(&model, config.num_layers)?;
 
     // Release mmap pages — weights are on GPU now
     let _ = model.release_cpu_pages();
@@ -254,6 +183,144 @@ pub fn spawn_apr_q4k_inference_thread(
     });
 
     Ok(tx)
+}
+
+#[cfg(feature = "cuda")]
+/// The weights the Q4K forward reads on the HOST: the embedding table, the final
+/// norm, and per layer the two norms, the optional Q/K norms and the optional QKV
+/// biases. The serve thread and the parity test load them through this one
+/// function, so the test drives exactly what `apr serve` drives (#3791).
+pub(crate) struct Q4kHostWeights {
+    pub(crate) embedding: Vec<f32>,
+    pub(crate) output_norm: Vec<f32>,
+    pub(crate) layer_norms: Vec<(Vec<f32>, Vec<f32>, Option<Vec<f32>>, Option<Vec<f32>>)>,
+    pub(crate) qkv_biases: Vec<(Option<Vec<f32>>, Option<Vec<f32>>, Option<Vec<f32>>)>,
+}
+
+#[cfg(feature = "cuda")]
+/// Load [`Q4kHostWeights`] for `num_layers` layers from `model`.
+///
+/// # Errors
+/// A required tensor is missing, or an optional one is present and will not read.
+pub(crate) fn load_q4k_host_weights(
+    model: &crate::apr::AprV2Model,
+    num_layers: usize,
+) -> Result<Q4kHostWeights, String> {
+    // Extract CPU-side weights (embedding, norms)
+    // Use find_tensor_name to handle GGUF/SafeTensors/HF naming variants (#167)
+    let embed_name = model
+        .find_tensor_name(&[
+            "model.embed_tokens.weight",
+            "embed_tokens.weight",
+            "transformer.wte.weight",
+            "embeddings.word_embeddings.weight",
+            "tok_embeddings.weight",
+            "token_embd.weight",
+        ])
+        .map_err(|e| format!("Missing embedding: {e}"))?;
+    let embedding_weight = model
+        .get_tensor_f32(&embed_name)
+        .map_err(|e| format!("Missing embedding: {e}"))?;
+
+    let norm_name = model
+        .find_tensor_name(&[
+            "model.norm.weight",
+            "norm.weight",
+            "transformer.ln_f.weight",
+            "output_norm.weight",
+        ])
+        .map_err(|e| format!("Missing output norm: {e}"))?;
+    let output_norm_weight = model
+        .get_tensor_f32(&norm_name)
+        .map_err(|e| format!("Missing output norm: {e}"))?;
+
+    let mut layer_norm_weights: Vec<(Vec<f32>, Vec<f32>, Option<Vec<f32>>, Option<Vec<f32>>)> =
+        Vec::with_capacity(num_layers);
+    for layer_idx in 0..num_layers {
+        let attn_norm_name = model
+            .find_tensor_name(&[
+                &format!("model.layers.{layer_idx}.input_layernorm.weight"),
+                &format!("layers.{layer_idx}.input_layernorm.weight"),
+                &format!("blk.{layer_idx}.attn_norm.weight"),
+            ])
+            .map_err(|e| format!("Missing attn norm layer {layer_idx}: {e}"))?;
+        let attn_norm = model
+            .get_tensor_f32(&attn_norm_name)
+            .map_err(|e| format!("Missing attn norm layer {layer_idx}: {e}"))?;
+
+        let ffn_norm_name = model
+            .find_tensor_name(&[
+                &format!("model.layers.{layer_idx}.post_attention_layernorm.weight"),
+                &format!("layers.{layer_idx}.post_attention_layernorm.weight"),
+                &format!("blk.{layer_idx}.ffn_norm.weight"),
+            ])
+            .map_err(|e| format!("Missing FFN norm layer {layer_idx}: {e}"))?;
+        let ffn_norm = model
+            .get_tensor_f32(&ffn_norm_name)
+            .map_err(|e| format!("Missing FFN norm layer {layer_idx}: {e}"))?;
+
+        let q_norm = optional_f32(
+            &model,
+            &[
+                &format!("model.layers.{layer_idx}.self_attn.q_norm.weight"),
+                &format!("blk.{layer_idx}.attn_q_norm.weight"),
+            ],
+        )?;
+        let k_norm = optional_f32(
+            &model,
+            &[
+                &format!("model.layers.{layer_idx}.self_attn.k_norm.weight"),
+                &format!("blk.{layer_idx}.attn_k_norm.weight"),
+            ],
+        )?;
+        layer_norm_weights.push((attn_norm, ffn_norm, q_norm, k_norm));
+    }
+
+    // PMAT-315: Extract QKV biases (required for Qwen2, optional for LLaMA/Mistral)
+    let mut layer_qkv_biases: Vec<(Option<Vec<f32>>, Option<Vec<f32>>, Option<Vec<f32>>)> =
+        Vec::with_capacity(num_layers);
+    for layer_idx in 0..num_layers {
+        let bias = |hf: &str, gguf: &str| {
+            optional_f32(
+                &model,
+                &[
+                    &format!("model.layers.{layer_idx}.self_attn.{hf}.bias"),
+                    &format!("blk.{layer_idx}.{gguf}.bias"),
+                ],
+            )
+        };
+        let q_bias = bias("q_proj", "attn_q")?;
+        let k_bias = bias("k_proj", "attn_k")?;
+        let v_bias = bias("v_proj", "attn_v")?;
+        layer_qkv_biases.push((q_bias, k_bias, v_bias));
+    }
+    Ok(Q4kHostWeights {
+        embedding: embedding_weight,
+        output_norm: output_norm_weight,
+        layer_norms: layer_norm_weights,
+        qkv_biases: layer_qkv_biases,
+    })
+}
+
+#[cfg(feature = "cuda")]
+/// #3791: an OPTIONAL per-layer tensor (QKV bias, Q/K norm) under any of its names.
+///
+/// `Ok(None)` means the file has none of the names — the architecture has no such
+/// tensor. A name that exists but will not read is an error. This used to be
+/// `get_tensor_f32(<HF name>).ok()`: a GGUF-named file (`blk.N.attn_q.bias`, which is
+/// what an imported Qwen2 `.apr` carries — 84 of them) read as having NO biases, and
+/// the forward decoded "helf helf helf…" without a word.
+fn optional_f32(
+    model: &crate::apr::AprV2Model,
+    names: &[&str],
+) -> Result<Option<Vec<f32>>, String> {
+    match model.find_tensor_name(names) {
+        Err(_) => Ok(None),
+        Ok(name) => model
+            .get_tensor_f32(&name)
+            .map(Some)
+            .map_err(|e| format!("'{name}' is in the file but would not read: {e}")),
+    }
 }
 
 /// Run a single Q4K generation request (called on the inference thread).
@@ -476,5 +543,115 @@ mod sampled_token_3786 {
     #[test]
     fn a_sampled_step_draws_off_the_argmax() {
         assert!(run(7).iter().any(|&t| t != 2));
+    }
+}
+
+/// #3791: the APR Q4K pool path (ALB-095) against the CPU forward, and its
+/// health. Both measured wrong at 0.69.0: NaN logits (every Q6_K weight decoded
+/// as Q4_K), then degenerate text (every GGUF-named QKV bias dropped), and
+/// `/health` 503 while serving.
+#[cfg(all(test, feature = "cuda"))]
+mod q4k_path_tests {
+    use super::*;
+    use crate::apr::{AprV2Model, MappedAprModel};
+    use crate::cuda::CudaExecutor;
+    use crate::gguf::{OwnedQuantizedKVCache, OwnedQuantizedModel};
+    use crate::gpu::adapters::apr_q4k::{
+        forward_token_apr_q4k, parse_apr_q4k_config, upload_apr_q4k_weights,
+    };
+    use std::path::Path;
+
+    /// A Q4_K_M `.apr` with Q6_K `attn_v`/`ffn_down`/`output.weight` and 84
+    /// GGUF-named QKV biases — the file #3791 was measured on.
+    const MODEL: &str = "/home/noah/models/qwen2.5-coder-1.5b-instruct-q4k.apr";
+
+    /// done_when 2: the GPU forward matches the CPU forward (`apr run --no-gpu`'s)
+    /// on this file, judged by the F2 rule over 64 real positions.
+    #[test]
+    fn q4k_gpu_forward_matches_the_cpu_forward_under_the_f2_rule() {
+        if !Path::new(MODEL).exists() || !CudaExecutor::is_available() {
+            eprintln!("SKIP: {MODEL} or a CUDA device is absent");
+            return;
+        }
+        let path = Path::new(MODEL);
+        let model = AprV2Model::load(path).expect("load the .apr");
+        let config = parse_apr_q4k_config(&model).expect("Q4K config");
+        let mut executor = CudaExecutor::new(0).expect("CUDA");
+        upload_apr_q4k_weights(&model, &mut executor).expect("upload");
+        let host = load_q4k_host_weights(&model, config.num_layers).expect("host weights");
+
+        let text = "The sea is vast and deep. Write one sentence about it, then explain \
+                    why the tide rises twice a day, in plain words, for a child of ten.";
+        // Two passes of the text: 64 real positions, the F2 guard's probe width.
+        let mut tokens = AprV2Model::encode_text(path, &format!("{text} {text}")).expect("encode");
+        tokens.truncate(64);
+        assert_eq!(tokens.len(), 64, "a full-width probe");
+
+        let mapped = MappedAprModel::from_path(MODEL).expect("map the .apr");
+        let cpu = OwnedQuantizedModel::from_apr(&mapped).expect("CPU model");
+        let kv_dim = config.num_kv_heads * config.head_dim;
+        let mut cache = OwnedQuantizedKVCache::new(config.num_layers, kv_dim, tokens.len() + 1);
+        let mut k_cache = vec![Vec::new(); config.num_layers];
+        let mut v_cache = vec![Vec::new(); config.num_layers];
+
+        let (mut gpu, mut cpu_logits) = (Vec::new(), Vec::new());
+        for (pos, &token) in tokens.iter().enumerate() {
+            gpu.push(
+                forward_token_apr_q4k(
+                    &mut executor,
+                    &config,
+                    &host.embedding,
+                    &host.output_norm,
+                    &host.layer_norms,
+                    &host.qkv_biases,
+                    &mut k_cache,
+                    &mut v_cache,
+                    token,
+                    pos,
+                )
+                .expect("GPU forward"),
+            );
+            cpu_logits.push(
+                cpu.forward_single_with_cache(token, &mut cache, pos)
+                    .expect("CPU forward"),
+            );
+        }
+        assert!(
+            gpu.iter().flatten().all(|x| x.is_finite()),
+            "the GPU logits carry NaN/inf"
+        );
+        let report = crate::infer::f2_multi_position_report(&cpu_logits, &gpu);
+        eprintln!(
+            "[#3791] {} positions: accepted={} min cosine {:.4}, first bad pos {} (cpu {} gpu {} cos {:.4})",
+            tokens.len(),
+            report.accepted,
+            report.min_cosine_real,
+            report.first_bad_pos,
+            report.first_bad_cpu_argmax,
+            report.first_bad_gpu_argmax,
+            report.first_bad_cosine
+        );
+        assert!(
+            report.accepted,
+            "the Q4K GPU forward disagrees with the CPU forward"
+        );
+    }
+
+    /// done_when 4: a serving Q4K state is loaded and on the GPU — through the one
+    /// predicate `/health` reads (#3571's). No device needed: the state holds only
+    /// the inference thread's channel.
+    #[test]
+    fn a_q4k_state_reports_loaded_and_gpu() {
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        let state = crate::api::AppState::with_apr_q4k_and_vocab_eos(
+            tx,
+            vec!["<unk>".to_string(), "a".to_string()],
+            None,
+        )
+        .expect("state");
+        assert!(
+            state.model_loaded(),
+            "a serving Q4K state is a loaded model"
+        );
     }
 }
