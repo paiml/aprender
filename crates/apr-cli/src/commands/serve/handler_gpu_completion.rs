@@ -507,53 +507,6 @@ pub(super) fn zero_layer_refusal(architecture: &str, layers: usize) -> Option<Cl
     })
 }
 
-#[cfg(test)]
-mod zero_layer_refusal_tests {
-    use super::*;
-
-    /// The case table: zero layers is refused naming the architecture and #3571; any layer
-    /// at all is admitted.
-    #[test]
-    fn zero_layers_is_refused_by_name_and_any_layer_is_admitted() {
-        let cases: [(&str, usize, bool); 5] = [
-            ("qwen35", 0, true),
-            ("llama", 0, true),
-            ("qwen2", 1, false),
-            ("qwen3", 28, false),
-            ("qwen35", 24, false),
-        ];
-        for (arch, layers, refused) in cases {
-            let got = zero_layer_refusal(arch, layers);
-            assert_eq!(got.is_some(), refused, "({arch}, {layers})");
-            if let Some(CliError::ModelLoadFailed(msg)) = got {
-                assert!(msg.contains(&format!("'{arch}' resolved to 0 transformer layers")), "{msg}");
-                assert!(msg.contains("#3571"), "{msg}");
-                assert_eq!(msg.contains("apr chat"), arch == "qwen35", "the hint is the hybrid's: {msg}");
-            }
-        }
-    }
-
-    /// The load path itself refuses, before any route is chosen. Delete the check in
-    /// `build_serve_model` and this goes RED: the zero-layer base loads. Needs the real
-    /// Qwen3.5 file, whose base IS a zero-layer stack.
-    #[test]
-    fn serve_refuses_the_qwen35_base_at_load() {
-        const MODEL: &str = "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf";
-        if !Path::new(MODEL).exists() {
-            eprintln!("SKIP: {MODEL} is absent");
-            return;
-        }
-        let mapped = realizar::gguf::MappedGGUFModel::from_path(MODEL).expect("map the GGUF");
-        match build_serve_model(&mapped) {
-            Err(CliError::ModelLoadFailed(msg)) => {
-                assert!(msg.contains("'qwen35' resolved to 0 transformer layers"), "{msg}");
-            }
-            Err(other) => panic!("refused for the wrong reason: {other}"),
-            Ok(model) => panic!("a {}-layer stack reached the serve routes", model.layers().len()),
-        }
-    }
-}
-
 /// Extract vocabulary from GGUF model, falling back to placeholder tokens.
 ///
 /// GH-226: When the GGUF lacks `tokenizer.ggml.tokens` metadata, the placeholder
@@ -817,5 +770,52 @@ mod ctx_length_2762_tests {
         assert_eq!(resolve_serve_max_seq_len(None, Some("banana")), 2048);
         assert_eq!(resolve_serve_max_seq_len(None, Some("0")), 2048);
         assert_eq!(resolve_serve_max_seq_len(Some("0"), None), 2048);
+    }
+}
+
+#[cfg(test)]
+mod zero_layer_refusal_tests {
+    use super::*;
+
+    /// The case table: zero layers is refused naming the architecture and #3571; any layer
+    /// at all is admitted.
+    #[test]
+    fn zero_layers_is_refused_by_name_and_any_layer_is_admitted() {
+        let cases: [(&str, usize, bool); 5] = [
+            ("qwen35", 0, true),
+            ("llama", 0, true),
+            ("qwen2", 1, false),
+            ("qwen3", 28, false),
+            ("qwen35", 24, false),
+        ];
+        for (arch, layers, refused) in cases {
+            let got = zero_layer_refusal(arch, layers);
+            assert_eq!(got.is_some(), refused, "({arch}, {layers})");
+            if let Some(CliError::ModelLoadFailed(msg)) = got {
+                assert!(msg.contains(&format!("'{arch}' resolved to 0 transformer layers")), "{msg}");
+                assert!(msg.contains("#3571"), "{msg}");
+                assert_eq!(msg.contains("apr chat"), arch == "qwen35", "the hint is the hybrid's: {msg}");
+            }
+        }
+    }
+
+    /// The load path itself refuses, before any route is chosen. Delete the check in
+    /// `build_serve_model` and this goes RED: the zero-layer base loads. Needs the real
+    /// Qwen3.5 file, whose base IS a zero-layer stack.
+    #[test]
+    fn serve_refuses_the_qwen35_base_at_load() {
+        const MODEL: &str = "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf";
+        if !Path::new(MODEL).exists() {
+            eprintln!("SKIP: {MODEL} is absent");
+            return;
+        }
+        let mapped = realizar::gguf::MappedGGUFModel::from_path(MODEL).expect("map the GGUF");
+        match build_serve_model(&mapped) {
+            Err(CliError::ModelLoadFailed(msg)) => {
+                assert!(msg.contains("'qwen35' resolved to 0 transformer layers"), "{msg}");
+            }
+            Err(other) => panic!("refused for the wrong reason: {other}"),
+            Ok(model) => panic!("a {}-layer stack reached the serve routes", model.layers().len()),
+        }
     }
 }
