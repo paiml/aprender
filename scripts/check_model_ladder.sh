@@ -89,6 +89,43 @@ def why_of(x, backends):  # every reason a measured row is not green on the clai
     cap_ok = (cm.get("passed") and not cm.get("skipped")) or (cm.get("skipped") and not claims_gpu)
     if not cap_ok: why.append("capability_match " + ("SKIPPED" if cm.get("skipped") else "FAIL") + ": " + _disp(cm.get("message", "")))
     if not (go.get("passed") and not go.get("skipped")): why.append("golden_output " + ("SKIPPED" if go.get("skipped") else "FAIL") + ": " + _disp(go.get("message", "")))
+    # #3898: THE RECEIPT RECORDED THE FAILURE AND NOTHING READ IT.
+    #
+    # The producer runs `apr qa`, captures its exit code in `qa_rc`, records WHICH gates
+    # failed in `gates_failed`, and runs the #3830-class check that the rc is explained
+    # (`gates_account_for_rc`). Three correctly populated fields describing a real
+    # validation failure — and this function consulted none of them, because a row's
+    # `green` is `capability_match AND golden_output` only.
+    #
+    # Measured instance, evidence/dogfood/models/0.69.1/lambda.json @ ab4ba54ec:
+    #     inv:Qwen3.5-4B-UD-Q4_K_XL.gguf   green=True  qa_rc=5
+    #                                      gates_failed=['tensor_contract']
+    #                                      gates_account_for_rc=True
+    # and the gate printed `ok lambda inv:Qwen3.5-4B-UD-Q4_K_XL.gguf green on cuda`.
+    # That is the Q4_K UD model — inside Rule A's scope, and the "no model left behind"
+    # model most likely to be cited as proof.
+    #
+    # KEYED ON qa_rc, NEVER ON A NAMED GATE. Naming `tensor_contract` reproduces the
+    # defect at n+1 the moment a different gate matters, which is exactly why
+    # `gates_account_for_rc` is an invariant over WHICHEVER gate goes missing rather than
+    # over a listed one. Ten gates are in scope and a future regression in any of them
+    # could not fail the release: tensor_contract, metadata_plausibility,
+    # performance_regression, throughput, format_parity, ptx_parity, gpu_state_isolation,
+    # classifier_head, ollama_parity, gpu_speedup.
+    #
+    # An accepted refusal is DECLARED, not ignored: a row matching an `inventory.deferred`
+    # reason is printed DEFERRED and never counted green (#3846/#3880). A gate that cannot
+    # tell an accepted refusal from a new regression is not reading either.
+    qa_rc = x.get("qa_rc")
+    if qa_rc not in (0, None):
+        gf = x.get("gates_failed") or []
+        named = ", ".join(str(g) for g in gf) if gf else "NO GATE NAMED"
+        why.append(f"apr qa exited {qa_rc} — gates_failed: {named} (#3898)")
+    # `gates_account_for_rc: false` is worse than a named failure: the recorded gates do
+    # not explain the rc, so MORE failed than the row accounts for. Refused on its own,
+    # independently of the rc, because a row can be rc=0 and still not add up.
+    if x.get("gates_account_for_rc") is False:
+        why.append("`gates_account_for_rc` is FALSE — the recorded gates do not explain `qa_rc`, so more failed than this row accounts for (#3898)")
     be = x.get("backends") or {}
     for b in backends:
         v = be.get(b)
@@ -452,6 +489,24 @@ if [ "$SELF_TEST" = 1 ]; then
     mutant q4k-required-false red-q4k-required-false 's/if is_q4k(r) and r.get("required") is not True:/if False:/'
     mutant q4k-without-cuda   red-q4k-rung-cpu-only  's/if is_q4k(r) and "cuda" not in (r.get("backends") or \[\]):/if False:/'
     mutant inventory-missing  red-inventory-model-missing 's/if x is None or not x.get("present"):  # held by the host, absent from the run/if False:/'
+    # #3898: the rule that reads `qa_rc`. Deleting it must break the case that names it.
+    mutant qa-rc-ignored      red-qa-rc-nonzero-refused 's/if qa_rc not in (0, None):/if False:/'
+    mutant gates-unaccounted  red-gates-do-not-account-for-rc 's|if x.get("gates_account_for_rc") is False:|if False:|'
+    # AND THE CROSS-CHECK THAT MAKES THE MUTANT MEAN SOMETHING (#3898).
+    # A mutant killed by its own case only proves the case reads the rule. It does NOT
+    # prove the rule covers a surface nothing else covers — and #3842's reconcile is the
+    # nearest neighbour, close enough that "we already had that" is the obvious objection.
+    # So: delete the qa_rc rule and require the #3842 case to stay GREEN. If #3842 went red
+    # too, the two rules would be redundant and this one would be unjustified.
+    qa_mut="$mdir/cross-qa-rc.sh"
+    sed 's/if qa_rc not in (0, None):/if False:/' "$SELF" > "$qa_mut"
+    if cmp -s "$SELF" "$qa_mut"; then
+      echo "FAIL  cross-check mutant did not apply -- the #3842 independence claim proves nothing"; bad=$((bad+1))
+    elif MODEL_LADDER_ROOT="$PWD" bash "$qa_mut" --self-test --case red-receipt-red-not-recorded >/dev/null 2>&1; then
+      printf 'ok    cross: #3842 reconcile stays GREEN with the qa_rc rule deleted — #3898 covers a surface it cannot\n'
+    else
+      echo "FAIL  cross: deleting the qa_rc rule also broke red-receipt-red-not-recorded -- the two rules are not independent, so #3898 is not the separate surface it claims"; bad=$((bad+1))
+    fi
     # The lock: the real producer passes both halves; each producer mutant must fail at least one.
     prod=scripts/model_ladder.sh
     if lock_audit "$prod" > "$mdir/audit.out"; then echo "ok    lock: $prod makes no GPU apr call outside apr_locked"
