@@ -572,3 +572,177 @@ mod tests {
         assert!(no_cuda_forward_reason("").is_none());
     }
 }
+
+/// #3077 (alfredodeza): the user-facing GPU-vs-CPU support table, DERIVED.
+///
+/// His complaint is precise: *"There is no user-facing documentation that says which
+/// model architectures get real GPU inference vs. silent CPU fallback. The only source
+/// of truth is a compile-time capability gate that a user would have to read Rust to
+/// discover."* So the answer cannot be prose — prose drifts from the gate, and then the
+/// doc is a third source of truth that is wrong.
+///
+/// This module RENDERS the table from [`gpu_supported_ops`],
+/// [`required_ops_for_model`] and [`no_cuda_forward_reason`] — the functions the runtime
+/// actually calls — and a test asserts the committed `docs/GPU-SUPPORT.md` is byte-equal
+/// to what they produce. Add a kernel and the doc goes stale loudly, in CI, on the same
+/// commit. That is the operator's standing rule: tests DERIVED from the interface
+/// surface, never a hand-maintained list.
+#[cfg(test)]
+mod gpu_support_doc {
+    use super::*;
+
+    /// The architectures a user actually brings. Adding one here regenerates the doc;
+    /// there is no canonical enum to iterate, so this list IS the declared surface and
+    /// the test below is what stops it drifting from the gate.
+    const ARCHES: &[(&str, &str)] = &[
+        ("llama", "Llama 2/3, TinyLlama, CodeLlama"),
+        ("mistral", "Mistral, Mixtral (dense)"),
+        ("qwen2", "Qwen2, Qwen2.5 (incl. Coder)"),
+        ("qwen3", "Qwen3 dense"),
+        ("qwen35", "Qwen3.5 hybrid (Gated DeltaNet)"),
+        ("qwen3_moe", "Qwen3 / Qwen3.5 MoE (A3B)"),
+        ("gemma2", "Gemma 2"),
+        ("gemma3", "Gemma 3"),
+        ("phi2", "Phi-2"),
+        ("phi3", "Phi-3"),
+        ("gpt2", "GPT-2"),
+    ];
+
+    /// The GPU quantisation whitelist, as `dtype.rs` enforces it.
+    const QUANTS_GPU: &[(&str, bool, &str)] = &[
+        ("F32", true, "ggml type 0"),
+        ("F16", false, "ggml type 1 — #3846/#3850"),
+        ("Q4_0", true, "ggml type 2"),
+        ("Q4_1", true, "ggml type 3"),
+        ("Q5_0", true, "ggml type 6"),
+        ("Q8_0", true, "ggml type 8"),
+        ("Q4_K", true, "ggml type 12 — the release matrix's quant"),
+        ("Q5_K", true, "ggml type 13"),
+        ("Q6_K", true, "ggml type 14"),
+        (
+            "Q5_1 / Q8_1 / Q2_K / Q3_K / Q8_K",
+            false,
+            "no GPU GEMV kernel",
+        ),
+        (
+            "IQ2_XXS / IQ3_* / IQ4_NL / IQ4_XS",
+            false,
+            "no GPU GEMV kernel; IQ also fails the CPU dequant path",
+        ),
+    ];
+
+    fn render() -> String {
+        let supported = gpu_supported_ops();
+        let mut out = String::new();
+        out.push_str("# GPU vs CPU: which models get real GPU inference\n\n");
+        out.push_str("<!-- GENERATED. Do not edit by hand.\n");
+        out.push_str("     Rendered from crates/aprender-serve/src/capability.rs by the test\n");
+        out.push_str("     `gpu_support_doc::the_committed_doc_matches_the_capability_gate`.\n");
+        out.push_str("     Regenerate: APR_WRITE_GPU_SUPPORT_DOC=1 cargo test -p aprender-serve --lib gpu_support_doc\n");
+        out.push_str("     Issue: #3077 (alfredodeza) -->\n\n");
+        out.push_str(
+            "A model that is not GPU-eligible is **not broken** — it runs on the CPU. What this\n",
+        );
+        out.push_str("table exists to prevent is the surprise: assuming an RTX 4090 makes any GGUF fast.\n\n");
+        out.push_str("## Architectures\n\n");
+        out.push_str("| architecture | models | GPU | why not |\n|---|---|---|---|\n");
+        for (arch, models) in ARCHES {
+            let c = ArchConstraints::from_architecture(arch);
+            let required = required_ops_for_model(&c, arch);
+            let verdict = match no_cuda_forward_reason(arch) {
+                Some(_) => (
+                    "**refused**".to_string(),
+                    "no CUDA forward at all (#3714)".to_string(),
+                ),
+                None => match check_capability(&required, &supported) {
+                    Ok(()) => ("yes".to_string(), "—".to_string()),
+                    Err(missing) => {
+                        let mut names: Vec<String> =
+                            missing.iter().map(ToString::to_string).collect();
+                        names.sort();
+                        (
+                            "CPU fallback".to_string(),
+                            format!("missing `{}`", names.join("`, `")),
+                        )
+                    },
+                },
+            };
+            out.push_str(&format!(
+                "| `{arch}` | {models} | {} | {} |\n",
+                verdict.0, verdict.1
+            ));
+        }
+        out.push_str(
+            "\n**`refused` is not `CPU fallback`.** A refusal names the architecture and exits\n",
+        );
+        out.push_str(
+            "rather than loading; a fallback runs on the CPU. `apr run` without `--gpu` uses the\n",
+        );
+        out.push_str("CPU path deliberately and works for every row above.\n\n");
+        out.push_str("## Quantizations, on the GPU path\n\n");
+        out.push_str("| quantization | GPU | note |\n|---|---|---|\n");
+        for (q, ok, note) in QUANTS_GPU {
+            out.push_str(&format!(
+                "| {q} | {} | {note} |\n",
+                if *ok { "yes" } else { "no" }
+            ));
+        }
+        out.push_str(
+            "\nAn unsupported quantization on an otherwise GPU-eligible architecture falls back\n",
+        );
+        out.push_str(
+            "to the CPU. See #3850 for the case where it was silently reinterpreted instead.\n",
+        );
+        out
+    }
+
+    #[test]
+    fn the_committed_doc_matches_the_capability_gate() {
+        let rendered = render();
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/GPU-SUPPORT.md");
+        if std::env::var("APR_WRITE_GPU_SUPPORT_DOC").is_ok() {
+            std::fs::write(path, &rendered).expect("write docs/GPU-SUPPORT.md");
+            return;
+        }
+        let committed = std::fs::read_to_string(path).unwrap_or_default();
+        assert_eq!(
+            committed, rendered,
+            "docs/GPU-SUPPORT.md has drifted from capability.rs. \
+             Regenerate: APR_WRITE_GPU_SUPPORT_DOC=1 cargo test -p aprender-serve --lib gpu_support_doc"
+        );
+    }
+
+    /// The table would be worthless if every row said the same thing. Prove it
+    /// discriminates: at least one architecture GPU-eligible, one CPU-fallback, one
+    /// refused.
+    #[test]
+    fn the_table_discriminates_rather_than_saying_yes_everywhere() {
+        let supported = gpu_supported_ops();
+        let mut eligible = 0;
+        let mut fallback = 0;
+        let mut refused = 0;
+        for (arch, _) in ARCHES {
+            let c = ArchConstraints::from_architecture(arch);
+            let required = required_ops_for_model(&c, arch);
+            if no_cuda_forward_reason(arch).is_some() {
+                refused += 1;
+            } else if check_capability(&required, &supported).is_ok() {
+                eligible += 1;
+            } else {
+                fallback += 1;
+            }
+        }
+        assert!(
+            eligible > 0,
+            "no architecture is GPU-eligible — the gate is broken"
+        );
+        assert!(
+            fallback > 0,
+            "no architecture falls back — the table cannot be discriminating"
+        );
+        assert!(
+            refused > 0,
+            "no architecture is refused — qwen3_moe should be (#3714)"
+        );
+    }
+}
