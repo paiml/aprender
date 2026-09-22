@@ -114,9 +114,27 @@ export PR_CLOSES_REF_KIND_CMD="$TMP/bin/kind"
 
 # write_receipt DIR HOST -> a green apr-model-ladder-receipt/v2 for 9.9.9: the fixture rung's file is
 # the host's whole measured inventory, read from its header as a Q4_K member (#3712 rows A, A2)
+#
+# THE `verbs` AND `teardown` BLOCKS ARE NOT DECORATION. This fixture exists to exercise
+# prepare_bump.sh's PR-BODY rules, and it reaches them only if the ladder judge accepts the
+# receipt first. When #3828 armed the verbs refusal and #3838 the teardown refusal, this
+# fixture was not updated, so check_model_ladder.sh began refusing it by name:
+#   "receipt records no `verbs` object -- the release matrix claims {run, chat, serve, code}
+#    and this rung measured only `run` (#3828)"
+# and five of the twelve rows below went red on a receipt shape, never reaching the body
+# rules they were written to test. Measured: the guard is rc=0 at origin/main and RED on the
+# release branch, so this was the batch's own arming of two refusals against a stale fixture
+# -- arming over a dirty universe, one layer down, in the guard's own test data.
+#
+# So this shape must track the judge's requirements: all four verbs present; `serve` probed
+# with a non-empty route set including an `/api/chat*` probe (which cannot inherit /v1
+# coverage, #3715/#3828); every route `ok`; and a `teardown` of clean|escalated. Adding a
+# refusal to check_model_ladder.sh without updating this function silently disarms twelve
+# body rules, which is why this comment names them rather than leaving the next person to
+# rediscover it from five confusing FAIL rows.
 write_receipt() {
     mkdir -p "$1"
-    printf '{"schema":"apr-model-ladder-receipt/v2","host":"%s","version":"9.9.9","sha":"fixture","executed":1,"red":0,"inventory":[{"file":"fx.gguf","sha256":"0000000000000000000000000000000000000000000000000000000000000000","bytes":1}],"candidates":[{"file":"fx.gguf","bytes":1,"dtype_counts":{"Q4_K":1},"dominant":["Q4_K"],"member":true}],"rungs":[{"id":"fx-rung","file":"fx.gguf","present":true,"sha_ok":true,"required":true,"capability_match":{"passed":true,"skipped":false},"golden_output":{"passed":true,"skipped":false},"backends":{"cpu":{"ran":true,"fallback":false,"rc":0}},"green":true}]}\n' \
+    printf '{"schema":"apr-model-ladder-receipt/v2","host":"%s","version":"9.9.9","sha":"fixture","executed":1,"red":0,"inventory":[{"file":"fx.gguf","sha256":"0000000000000000000000000000000000000000000000000000000000000000","bytes":1}],"candidates":[{"file":"fx.gguf","bytes":1,"dtype_counts":{"Q4_K":1},"dominant":["Q4_K"],"member":true}],"rungs":[{"id":"fx-rung","file":"fx.gguf","present":true,"sha_ok":true,"required":true,"capability_match":{"passed":true,"skipped":false},"golden_output":{"passed":true,"skipped":false},"backends":{"cpu":{"ran":true,"fallback":false,"rc":0,"verbs":{"run":{"ran":true,"rc":0},"chat":{"ran":true,"rc":0},"code":{"ran":true,"rc":0},"serve":{"probed":true,"teardown":"clean","routes":{"/api/chat|stream=false":{"http":200,"ok":true},"/api/chat|stream=true":{"http":200,"ok":true},"/v1/chat/completions|stream=false":{"http":200,"ok":true},"/v1/completions|stream=false":{"http":200,"ok":true}}}}}},"green":true}]}\n' \
         "$2" > "$1/$2.json"
 }
 
