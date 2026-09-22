@@ -15,6 +15,8 @@
 # Semantic validation (data quality) prevents garbage data that parses correctly.
 
 metadata:
+  references:
+    - Internal contract
   version: "2.0.0"
   created: "2026-02-04"
   updated: "2026-02-05"
@@ -707,3 +709,130 @@ toyota_way_principles:
     "Continuous improvement" - When PMAT-234 revealed a new failure mode
     (94.5% zeros), we added F-DATA-QUALITY-004 and FALSIFY-004. The contract
     evolves to prevent every observed failure mode.
+
+equations:
+  identity:
+    formula: f(x) = x
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Identity
+  validated_tensor_construction:
+    formula: |
+      validate: (RawData, Shape, Name) -> Result<ValidatedTensor, ContractError>
+        data.len() == shape.product() -> Ok(ValidatedTensor)
+        contains_nan(data) -> Err(NaN)
+        contains_inf(data) -> Err(Inf)
+        zero_pct(data) > threshold -> Err(DensityFailure)
+    domain: Raw f32 data with expected dimensions
+    codomain: Result<ValidatedTensor, ContractError>
+    invariants:
+    - Private inner field prevents bypass
+    - No NaN or Inf values pass validation
+    - Density thresholds enforced (50% for embeddings, 80% for weights)
+    preconditions:
+    - data.len() > 0
+    - shape dimensions are positive
+    lean_theorem: Theorems.ValidatedTensorConstruction
+  transpose_invariant:
+    formula: |
+      transpose: (GgufShape, Format) -> AprShape
+        For 2D tensors: apr_shape == swap(gguf_shape)
+        For 1D tensors: apr_shape == gguf_shape
+    domain: GGUF tensor shape with format metadata
+    codomain: APR tensor shape
+    invariants:
+    - 2D transpose swaps dimensions exactly
+    - 1D tensors are identity
+    - Byte size preserved across transpose
+    preconditions:
+    - gguf_shape has 1 or 2 dimensions
+    lean_theorem: Theorems.TransposeInvariant
+  quant_dispatch_exhaustiveness:
+    formula: |
+      dispatch: WeightQuantType -> Kernel
+        For every variant V of WeightQuantType:
+          exists exactly one kernel K in dispatch table
+        No wildcard/catch-all arm
+    domain: WeightQuantType enum
+    codomain: Specific kernel function
+    invariants:
+    - Exhaustive match — every variant handled
+    - No catch-all arm (no _ =>)
+    - Each variant maps to exactly one kernel
+    preconditions:
+    - WeightQuantType is non-empty enum
+    lean_theorem: Theorems.QuantDispatchExhaustiveness
+
+proof_obligations:
+- id: TL7266-INV-001
+  type: invariant
+  property: Validated tensor rejects NaN and Inf
+  formal: for all v in ValidatedTensor, not contains_nan(v.data) and not contains_inf(v.data)
+  applies_to: all
+- id: TL7266-INV-002
+  type: invariant
+  property: Transpose shape correctness
+  formal: for all 2D tensors, apr_shape[0] == gguf_shape[1] and apr_shape[1] == gguf_shape[0]
+  applies_to: all
+  lean:
+    theorem: TensorLayout.transpose_shape_swap
+    module: ProvableContracts.Theorems.TensorLayout.IndexAlgebra
+    status: proved
+    depends_on:
+    - TensorLayout.transpose_size_preserved
+    - TensorLayout.transpose_shape_1d_identity
+    - TensorLayout.idx_lt
+    - TensorLayout.unrow_idx
+    - TensorLayout.uncol_idx
+    - TensorLayout.idx_unrow_uncol
+    - TensorLayout.idx_injective
+    - TensorLayout.transpose_reindex_bijective
+    - TensorLayout.row_stride
+    - TensorLayout.col_stride
+    notes: >-
+      Core-only Lean (no imports), verifies with `lean <file>`. Proves the
+      full row-major index algebra: 2-D transpose swaps the shape pair exactly
+      (apr_shape[0]=gguf_shape[1], apr_shape[1]=gguf_shape[0]), 1-D is identity,
+      element count preserved; and the underlying idx(i,j)=i*ncols+j is a
+      bijection on the valid rectangle (range + two-sided inverse unidx =
+      (·/ncols, ·%ncols) ⇒ injective/surjective), the transpose reindex
+      out[r*cols+c]=in[c*rows+r] is an element-preserving bijection, and strides
+      are contiguous (row=ncols, col=1).
+- id: TL7266-POST-003
+  type: postcondition
+  property: Density enforcement
+  formal: for ValidatedEmbedding, zero_pct(data) < 50%; for ValidatedWeight, zero_pct(data) < 80%
+  tolerance: 1e-6
+  applies_to: all
+- id: TL7266-INV-004
+  type: invariant
+  property: Quant dispatch exhaustiveness — no catch-all
+  formal: WeightQuantType match has zero wildcard arms across all dispatch sites
+  applies_to: all
+
+kani_harnesses:
+- id: KANI-LAYOUT-001
+  obligation: Validated tensor rejects NaN and Inf
+  property: No NaN or Inf passes ValidatedTensor::new()
+  bound: 16
+  strategy: stub_float
+  harness: verify_nan_inf_rejection
+- id: KANI-LAYOUT-002
+  obligation: Transpose shape correctness
+  property: apr_shape == swap(gguf_shape) for 2D tensors
+  bound: 8
+  strategy: exhaustive
+  harness: verify_transpose_shape_swap
+- id: KANI-LAYOUT-003
+  obligation: Density enforcement
+  property: "zero_pct < threshold for ValidatedEmbedding and ValidatedWeight"
+  bound: 8
+  strategy: exhaustive
+  harness: verify_density_enforcement
+- id: KANI-LAYOUT-004
+  obligation: "Quant dispatch exhaustiveness \u2014 no catch-all"
+  property: WeightQuantType match has zero wildcard arms
+  bound: 8
+  strategy: exhaustive
+  harness: verify_quant_dispatch_exhaustive
