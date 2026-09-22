@@ -21191,3 +21191,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3855
+  github_issue: 3855
+  item_type: task
+  title: 'ONE GATE FRAMEWORK: one and only one way to build a gate (143 gates, 25 baselines, 39 ratchets)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-22T15:13:29Z
+  updated: 2026-09-22T15:13:29Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
