@@ -114,6 +114,23 @@ def why_of(x, backends):  # every reason a measured row is not green on the clai
                     why.append(f"{b}: verb `serve` recorded no /api/chat probe — the ollama-compat route is the one real Ollama harnesses hit and it cannot inherit /v1 coverage (alfredodeza, #3715; #3828)")
                 for rk, rv in sorted(rts.items()):
                     if not rv.get("ok"): why.append(f"{b}: serve route {rk} returned http {rv.get('http')} (#3828)")
+            # #3838: the teardown is part of the measurement, and the JUDGE has to read it.
+            # The producer marks its own cell red on a failed teardown, but that enforces the
+            # rule only in the code that happened to observe the failure -- a receipt written
+            # by any other path would carry the field with nothing reading it, and the decision
+            # surface for a receipt is this judge. `failed` means the server outlived its
+            # launcher and could not be attributed to the run's own tree, so the route results
+            # above were read off a process that was still running when they were taken.
+            # A receipt with NO teardown key predates #3838 and is refused by name rather than
+            # tolerated: absence scored as conformance is the shape this whole gate exists for.
+            if sv is not None:
+                td = sv.get("teardown")
+                if td is None:
+                    why.append(f"{b}: verb `serve` records no `teardown` — a probe that does not say whether its server died is not a completed measurement (#3838)")
+                elif td == "failed":
+                    why.append(f"{b}: verb `serve` teardown FAILED — the server outlived its launcher and could not be proven to belong to this tree, so the route results were taken from a process still running (#3838)")
+                elif td not in ("clean", "escalated"):
+                    why.append(f"{b}: verb `serve` teardown is {td!r}, which is not one of clean/escalated/failed (#3838)")
     return why
 # #3712: no Q4_K rung is optional, and every one claims cuda. The key is refused, not tolerated.
 for r in rungs:
