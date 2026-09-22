@@ -165,32 +165,46 @@ fn test_privacy_tier_is_sovereign() {
     assert_eq!(PrivacyTier::Sovereign, PrivacyTier::Sovereign);
 }
 
-// ═══ FALSIFY-CT-003: strip_thinking_blocks contract (PMAT-187) ═══
+// ═══ FALSIFY-CT-003: thinking-block contract (PMAT-187, reshaped by #3801c) ═══
+//
+// The contract's cases are unchanged; only the shape of the answer is. The
+// function returns `ThinkingSplit` now, because an unclosed block is a DISTINCT
+// outcome rather than a truncated string — see the #3801c tests at the end of
+// this file. Every case below is one whose block closed (or had none), so each
+// reads through this helper.
+fn answer(text: &str) -> String {
+    match split_thinking_blocks(text) {
+        ThinkingSplit::Answer(a) => a,
+        ThinkingSplit::Unclosed => {
+            panic!("FALSIFY-CT-003 case {text:?} has a CLOSED block; got Unclosed")
+        }
+    }
+}
 
 #[test]
 fn falsify_ct_003_strips_closing_think_tag() {
-    assert_eq!(strip_thinking_blocks("</think>\n\n4"), "4");
+    assert_eq!(answer("</think>\n\n4"), "4");
 }
 
 #[test]
 fn falsify_ct_003_strips_full_think_block() {
-    assert_eq!(strip_thinking_blocks("<think>reasoning here</think>answer"), "answer");
+    assert_eq!(answer("<think>reasoning here</think>answer"), "answer");
 }
 
 #[test]
 fn falsify_ct_003_strips_repeated_closing_tags() {
-    let result = strip_thinking_blocks("</think></think></think>");
+    let result = answer("</think></think></think>");
     assert!(!result.contains("</think>"), "must strip all </think> tags");
 }
 
 #[test]
 fn falsify_ct_003_preserves_clean_text() {
-    assert_eq!(strip_thinking_blocks("clean text"), "clean text");
+    assert_eq!(answer("clean text"), "clean text");
 }
 
 #[test]
 fn falsify_ct_003_strips_mixed_content() {
-    let result = strip_thinking_blocks("<think>x</think>y</think>z");
+    let result = answer("<think>x</think>y</think>z");
     assert!(!result.contains("<think>"), "no <think> tags");
     assert!(!result.contains("</think>"), "no </think> tags");
     assert!(result.contains('y'), "content between tags preserved");
@@ -200,17 +214,17 @@ fn falsify_ct_003_strips_mixed_content() {
 #[test]
 fn falsify_ct_003_strips_multiline_think_block() {
     let input = "<think>\nline1\nline2\n</think>\nAnswer: 42";
-    assert_eq!(strip_thinking_blocks(input), "Answer: 42");
+    assert_eq!(answer(input), "Answer: 42");
 }
 
 #[test]
 fn falsify_ct_003_handles_empty_input() {
-    assert_eq!(strip_thinking_blocks(""), "");
+    assert_eq!(answer(""), "");
 }
 
 #[test]
 fn falsify_ct_003_handles_only_think_tags() {
-    assert_eq!(strip_thinking_blocks("<think></think>"), "");
+    assert_eq!(answer("<think></think>"), "");
 }
 
 // ═══ http-api-v1 contract: request/response schema (PMAT-189) ═══
@@ -479,4 +493,76 @@ fn ready_timeout_qwen3_coder_30b_real_size() {
         "Qwen3-Coder-30B (18.5 GB) must get >= 50s budget; got {secs}s — fix paiml/claude-code-parity-apr M260"
     );
     assert!(secs <= 90, "Default scaling must not exceed reasonable max; got {secs}s");
+}
+
+// =============================================================================
+// #3801c: an unclosed <think> is REPORTED, never truncated into a silent turn
+// =============================================================================
+
+/// A complete block is removed and the answer survives — unchanged behaviour.
+#[test]
+fn a_closed_block_leaves_the_answer() {
+    assert_eq!(
+        split_thinking_blocks("<think>2+2 is basic</think>2 + 2 = 4."),
+        ThinkingSplit::Answer("2 + 2 = 4.".to_string())
+    );
+    assert_eq!(
+        split_thinking_blocks("<think>a</think>X<think>b</think>Y"),
+        ThinkingSplit::Answer("XY".to_string())
+    );
+}
+
+/// A BARE `</think>` is the no-think scaffold echoed back, not an unclosed
+/// block. Measured on Qwen3.5-0.8B in #3571's serve receipt, where every reply
+/// began `Lima.⏎</think>⏎⏎Lima.`. Treating it as unclosed would refuse a good
+/// answer — the opposite defect, and just as wrong.
+#[test]
+fn a_bare_closing_tag_is_the_scaffold_and_still_an_answer() {
+    assert_eq!(
+        split_thinking_blocks("</think>\n\n2 + 2 = 4."),
+        ThinkingSplit::Answer("2 + 2 = 4.".to_string())
+    );
+}
+
+/// THE DEFECT. The budget ran out inside the reasoning: there is no answer.
+#[test]
+fn an_unclosed_block_is_its_own_outcome() {
+    assert_eq!(
+        split_thinking_blocks("<think>Let me work through this carefully"),
+        ThinkingSplit::Unclosed
+    );
+    // Answered, then thought again and was cut: still no final answer.
+    assert_eq!(
+        split_thinking_blocks("<think>a</think>4 <think>wait, reconsider"),
+        ThinkingSplit::Unclosed
+    );
+}
+
+/// THE MUTANT. Restoring the truncation means `split_thinking_blocks` answering
+/// `Answer("")` — or any `Answer` — for an unclosed block. This test is what
+/// goes RED, and it names the agent-loop symptom rather than the string shape.
+#[test]
+fn truncating_an_unclosed_block_would_hand_the_agent_loop_a_silent_turn() {
+    let still_reasoning = "<think>The user asked for a fix. First I should read the file";
+    match split_thinking_blocks(still_reasoning) {
+        ThinkingSplit::Unclosed => {}
+        ThinkingSplit::Answer(text) => panic!(
+            "MUTANT CAUGHT: an unclosed <think> was truncated to {text:?} and handed back as an \
+             ANSWER. The agent loop cannot tell that from a model that answered nothing: it sees \
+             an empty assistant turn, records it as the model's reply, and plans its next step \
+             against silence. That is the #3724 defect in the driver (#3801c)."
+        ),
+    }
+}
+
+/// The reported reason names the budget, what was produced, and that it is NOT
+/// an empty answer — the three things the loop's operator needs.
+#[test]
+fn the_reason_names_the_budget_and_refuses_the_empty_reading() {
+    let reason = unclosed_think_reason(4096, 4096, 17_432);
+    assert!(reason.contains("4096-token budget"), "{reason}");
+    assert!(reason.contains("17432 chars"), "{reason}");
+    assert!(reason.contains("NOT an empty answer"), "{reason}");
+    assert!(reason.contains("not a tool call"), "{reason}");
+    assert!(reason.contains("#3801"), "{reason}");
 }

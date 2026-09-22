@@ -426,14 +426,23 @@ impl LlmDriver for AprServeDriver {
         // Extract response from OpenAI format
         let raw_text = json["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string();
 
-        // PMAT-180: Strip Qwen3 thinking blocks. The model may emit
-        // <think>...</think> or bare </think> tokens. Remove them before
-        // parsing tool calls — thinking content is internal reasoning.
-        let text = strip_thinking_blocks(&raw_text);
-
         let usage = json.get("usage").cloned().unwrap_or(serde_json::json!({}));
         let input_tokens = usage["prompt_tokens"].as_u64().unwrap_or(0);
         let output_tokens = usage["completion_tokens"].as_u64().unwrap_or(0);
+
+        // PMAT-180: Strip Qwen3 thinking blocks. The model may emit
+        // <think>...</think> or bare </think> tokens. Remove them before
+        // parsing tool calls — thinking content is internal reasoning.
+        // #3801c: a block that never CLOSED is reported, never truncated away —
+        // truncation handed this loop an empty assistant turn.
+        let text = match split_thinking_blocks(&raw_text) {
+            ThinkingSplit::Answer(text) => text,
+            ThinkingSplit::Unclosed => {
+                return Err(AgentError::Driver(DriverError::InferenceFailed(
+                    unclosed_think_reason(request.max_tokens as u64, output_tokens, raw_text.len()),
+                )))
+            }
+        };
 
         // Parse tool calls from text (same parser as RealizarDriver)
         let (clean_text, tool_calls) = super::realizar::parse_tool_calls_pub(&text);
@@ -459,22 +468,64 @@ impl LlmDriver for AprServeDriver {
     }
 }
 
-/// Strip Qwen3 thinking blocks (`<think>...</think>`) and bare `</think>` tags.
-fn strip_thinking_blocks(text: &str) -> String {
+/// What the model's text held once complete `<think>...</think>` blocks were
+/// removed: an answer, or a block that never closed.
+///
+/// #3801c. The previous shape returned a `String` and, on an unclosed `<think>`,
+/// **truncated at it** — so a model that was still reasoning when the budget ran
+/// out handed the agent loop an EMPTY assistant turn, indistinguishable from a
+/// model that answered nothing. The loop then plans its next step against
+/// silence. This is the third copy of that defect: #3724 fixed it in `apr qa`'s
+/// golden gate, where the same collapse reported "Empty output" for a model that
+/// had not finished thinking.
+///
+/// The vocabulary is deliberately the same as the gate's `GpuGoldenLeg`
+/// (`crates/apr-cli/src/commands/output_verification.rs`): **`Unclosed` is a
+/// distinct outcome, never a truncated answer.** Three places, one discipline.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ThinkingSplit {
+    /// Every `<think>` block closed (or there were none). The answer to use.
+    Answer(String),
+    /// A `<think>` opened and no `</think>` followed: the budget ended inside
+    /// the reasoning. There is no answer to hand back.
+    Unclosed,
+}
+
+/// Split the model's text into the answer and the reasoning.
+///
+/// A **bare** `</think>` with no opening tag is NOT unclosed — it is the
+/// no-think scaffold's own closing tag echoed back by the model (measured on
+/// Qwen3.5-0.8B in #3571's serve receipt), and it is removed like before.
+pub(crate) fn split_thinking_blocks(text: &str) -> ThinkingSplit {
     let mut result = text.to_string();
-    // Strip <think>...</think> blocks (may span multiple lines)
+    // Strip complete <think>...</think> blocks (may span multiple lines)
     while let Some(start) = result.find("<think>") {
-        if let Some(end) = result[start..].find("</think>") {
-            result.replace_range(start..start + end + "</think>".len(), "");
-        } else {
-            // Unclosed <think> — strip to end
-            result.truncate(start);
-            break;
-        }
+        let Some(end) = result[start..].find("</think>") else {
+            // An opening tag with no closer: the budget ended mid-reasoning.
+            return ThinkingSplit::Unclosed;
+        };
+        result.replace_range(start..start + end + "</think>".len(), "");
     }
-    // Strip bare </think> tags (model sometimes emits just closing tags)
+    // Strip bare </think> tags (the no-think scaffold, echoed)
     result = result.replace("</think>", "");
-    result.trim().to_string()
+    ThinkingSplit::Answer(result.trim().to_string())
+}
+
+/// The error an agent driver reports when generation ended inside a `<think>`
+/// block, naming the budget and the symptom the loop would otherwise see.
+pub(crate) fn unclosed_think_reason(
+    budget: u64,
+    completion_tokens: u64,
+    generated_chars: usize,
+) -> String {
+    format!(
+        "apr serve: think block unclosed within the {budget}-token budget \
+         ({completion_tokens} completion tokens, {generated_chars} chars generated, no answer \
+         reached). The model was still reasoning when generation stopped — this is NOT an empty \
+         answer, and it is not a tool call. Truncating it would hand the agent loop a silent turn \
+         to plan against. Raise --max-tokens, or use a model whose production template closes the \
+         block (#3801, #3724)."
+    )
 }
 
 /// Issue #1712: ask the kernel to SIGTERM the child when the parent dies.
