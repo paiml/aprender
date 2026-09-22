@@ -469,6 +469,13 @@ pub async fn realize_reload_handler(
 /// and had no effect at all. Threading the stops through the ONE builder every
 /// backend already calls makes forgetting them a compile error rather than a
 /// silently ignored field.
+/// `used_gpu` is a REQUIRED parameter rather than a defaulted field, deliberately
+/// (#3894). A field defaulting to `None` lets an arm stay silent forever, which is
+/// exactly how the serve dimension came to have no backend attribution at all. As a
+/// parameter the compiler makes every arm answer the question, and an arm that
+/// genuinely cannot answer says so at its call site, in front of a reader, with the
+/// reason next to it.
+#[allow(clippy::too_many_arguments)]
 fn completion_resp(
     id_prefix: &str,
     model: String,
@@ -477,6 +484,7 @@ fn completion_resp(
     completion_tokens: usize,
     max_tokens: usize,
     stops: Option<&[String]>,
+    used_gpu: Option<bool>,
 ) -> CompletionResponse {
     let (text, finish_reason) = apply_stop_sequences(text, stops, completion_tokens, max_tokens);
     let finish_reason = finish_reason.as_str();
@@ -496,6 +504,7 @@ fn completion_resp(
             completion_tokens,
             total_tokens: prompt_tokens + completion_tokens,
         },
+        used_gpu,
     }
 }
 
@@ -555,6 +564,8 @@ async fn try_batch_completion(
         completion_tokens,
         max_tokens,
         stops,
+        // The batch arm's response carries no backend flag.
+        None,
     )))
 }
 
@@ -757,6 +768,10 @@ async fn try_cached_completions(
         completion_tokens,
         max_tokens,
         request.stop.as_deref(),
+        // `generate_with_cache` returns tokens only. `is_gpu_cache_warm()` exists on
+        // the model but is a STATE, not a record of what this generation did, so it is
+        // deliberately NOT used here (#3894).
+        None,
     )))
 }
 
@@ -825,6 +840,8 @@ fn try_quantized_completions(
         completion_tokens,
         max_tokens,
         request.stop.as_deref(),
+        // `generate_with_cache` returns tokens only — nothing records the backend.
+        None,
     )))
 }
 

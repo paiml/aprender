@@ -509,6 +509,24 @@ pub struct CompletionResponse {
     pub choices: Vec<CompletionChoice>,
     /// Usage statistics
     pub usage: Usage,
+    /// Whether THIS generation ran on the accelerator (#3894).
+    ///
+    /// `Some(true)`/`Some(false)` only when the arm that answered MEASURED it;
+    /// `None` when the arm cannot say. The three states are deliberate and the
+    /// absent one is the point: a ladder cell recording `200` proved only that
+    /// serve answered, never that it answered on CUDA — and #3889 is the measured
+    /// case where those differ (six 200s on a model whose accelerator attempt had
+    /// failed and whose generation ran on CPU, recorded in a `cuda` cell).
+    ///
+    /// `run` has had this since R-0b: it reconciles announced-vs-actual through
+    /// `registry::after_generation` and REFUSES a forced accelerator that fell
+    /// back. Serve has no equivalent, so it reports 200. This field is the
+    /// reporting half; the refusing half is a separate change with HTTP semantics.
+    ///
+    /// Additive: `skip_serializing_if` keeps the JSON byte-identical for any arm
+    /// that does not report, so no existing client sees a change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub used_gpu: Option<bool>,
 }
 
 /// Completion choice
