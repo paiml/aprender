@@ -478,7 +478,22 @@ fn dispatch_gate(
     let result = if skip {
         GateResult::skipped(name, skip_reason)
     } else {
-        runner()?
+        // #3817: a gate that cannot RUN is a FAILED gate, never an aborted
+        // report. `apr qa` on a qwen3moe GGUF used to propagate the dense
+        // loader's error out of `run_qa`, so the process exited 5 having printed
+        // **zero bytes of JSON** — `capability_match` and `golden_output` were
+        // absent rather than red, and absence reads as conformance to anything
+        // parsing the report. The error is now the gate's message.
+        match runner() {
+            Ok(result) => result,
+            Err(e) => GateResult::failed(
+                name,
+                &format!("{name} could not run: {e}"),
+                None,
+                None,
+                std::time::Duration::ZERO,
+            ),
+        }
     };
     if !json {
         print_gate_result(&result);

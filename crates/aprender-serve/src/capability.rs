@@ -248,6 +248,37 @@ pub fn format_mismatch(architecture: &str, missing: &[RequiredOp]) -> String {
     )
 }
 
+/// Why this build's CUDA path has no forward for `architecture`, or `None` when
+/// it has one.
+///
+/// #3817. This is not a capability *mismatch* — no kernel is missing and no
+/// arithmetic fails. The path simply was not built: `qwen3_moe` dispatches to
+/// `infer::qwen3_moe_generate`, which is CPU-only and returns `used_gpu = false`
+/// unconditionally (`infer/inference_result.rs`, "CPU-only path; GPU MoE wiring
+/// is M32d follow-up"). A caller that forced the GPU must be told that **before**
+/// a load, by name, instead of receiving a CPU generation and an exit code.
+///
+/// The dispatch site calls this function too, so the refusal and the routing
+/// cannot drift apart: if a GPU MoE forward lands (#3714), deleting the arm here
+/// is what turns the refusal off, and the dispatch follows.
+///
+/// The argument is a raw `general.architecture`; it is normalised here, so every
+/// spelling the loader accepts (`qwen3moe`, `qwen3_moe`, `Qwen3MoeForCausalLM`,
+/// `Qwen3CoderForCausalLM`, …) resolves to the same answer.
+#[must_use]
+pub fn no_cuda_forward_reason(architecture: &str) -> Option<String> {
+    match crate::tensor_names::normalize_architecture(architecture) {
+        "qwen3_moe" => Some(format!(
+            "this build has no CUDA forward for architecture '{architecture}' (canonical \
+             'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 \
+             runs this architecture on the CPU only. Re-run without --gpu to use the CPU path \
+             deliberately, or use a dense Q4_K model on the GPU. This is a refusal, not a \
+             fallback: nothing was loaded and nothing was generated."
+        )),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -481,5 +512,63 @@ mod tests {
     fn test_new_required_op_display() {
         assert_eq!(RequiredOp::AttnFinalSoftcap.to_string(), "AttnFinalSoftcap");
         assert_eq!(RequiredOp::PostAttnFfnNorm.to_string(), "PostAttnFfnNorm");
+    }
+
+    // ---- #3817: the architectures with no CUDA forward ---------------------
+
+    /// Every spelling the loader accepts must reach the same refusal — a user
+    /// who names the model one way and the file another gets one answer.
+    #[test]
+    fn every_qwen3moe_spelling_has_no_cuda_forward() {
+        for spelling in [
+            "qwen3moe",
+            "qwen3_moe",
+            "Qwen3MoeForCausalLM",
+            "Qwen3MoEForCausalLM",
+            "Qwen3CoderForCausalLM",
+            "qwen3_5_moe",
+        ] {
+            let reason = no_cuda_forward_reason(spelling).unwrap_or_else(|| {
+                panic!("{spelling} normalises to qwen3_moe and has no GPU forward")
+            });
+            assert!(
+                reason.contains(spelling),
+                "the refusal names what the user gave: {reason}"
+            );
+            assert!(
+                reason.contains("qwen3_moe"),
+                "and the canonical name: {reason}"
+            );
+            assert!(reason.contains("#3714"), "and the ticket: {reason}");
+            assert!(reason.contains("0.70.0"), "and when it lands: {reason}");
+            assert!(
+                reason.contains("refusal, not a fallback"),
+                "and that nothing ran: {reason}"
+            );
+        }
+    }
+
+    /// The architectures that DO have a CUDA forward must not be refused. This
+    /// is the other half of the case table done_when 4 asks for: one dense
+    /// Q4_K family, the hybrid, and a non-qwen model.
+    #[test]
+    fn architectures_with_a_cuda_forward_are_not_refused() {
+        for arch in [
+            "qwen2", "qwen2.5", "qwen3", "qwen35", "llama", "mistral", "phi2", "gemma", "gpt2",
+        ] {
+            assert!(
+                no_cuda_forward_reason(arch).is_none(),
+                "{arch} has a GPU forward and must not be refused"
+            );
+        }
+    }
+
+    /// An unknown architecture is not refused by this predicate: it is not the
+    /// list of what we support, it is the list of what we know we did not build.
+    /// Refusing the unknown here would be a claim we cannot back.
+    #[test]
+    fn an_unknown_architecture_is_not_refused_by_this_predicate() {
+        assert!(no_cuda_forward_reason("some-new-arch").is_none());
+        assert!(no_cuda_forward_reason("").is_none());
     }
 }

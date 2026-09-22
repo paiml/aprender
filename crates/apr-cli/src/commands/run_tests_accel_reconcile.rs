@@ -190,3 +190,71 @@ fn json_plus_benchmark_is_not_a_machine_surface() {
     assert!(emits_machine_output(true, "text", false));
     assert!(!emits_machine_output(true, "json", true));
 }
+
+// =============================================================================
+// #3817: --gpu on an architecture with no CUDA forward refuses BEFORE the load
+// =============================================================================
+
+#[cfg(test)]
+mod forced_accelerator_refusal_tests {
+    use crate::commands::run::forced_accelerator_refusal;
+
+    /// done_when 1: refused by name, naming the architecture, the ticket and the
+    /// release — and saying it is a refusal rather than a fallback.
+    #[test]
+    fn gpu_forced_on_qwen3moe_is_refused_by_name() {
+        let reason = forced_accelerator_refusal(true, Some("qwen3moe"))
+            .expect("--gpu on qwen3moe must refuse");
+        assert!(reason.contains("qwen3moe"), "{reason}");
+        assert!(reason.contains("#3714"), "{reason}");
+        assert!(reason.contains("0.70.0"), "{reason}");
+        assert!(reason.contains("refusal, not a fallback"), "{reason}");
+        assert!(reason.contains("--gpu"), "names the flag to drop: {reason}");
+    }
+
+    /// done_when 2: the working CPU path must not be touched. Without the forced
+    /// accelerator there is nothing to refuse, whatever the architecture.
+    #[test]
+    fn without_a_forced_accelerator_nothing_is_refused() {
+        for arch in ["qwen3moe", "qwen3_moe", "qwen2", "llama"] {
+            assert!(
+                forced_accelerator_refusal(false, Some(arch)).is_none(),
+                "{arch}: a run that did not force the GPU is the CPU path, which works"
+            );
+        }
+    }
+
+    /// done_when 4: every other architecture's `--gpu` behaviour is unchanged.
+    /// A case table, not an inspection — one dense Q4_K family, the hybrid, and
+    /// a non-qwen model, as the ticket asks.
+    #[test]
+    fn every_other_architecture_is_unaffected_by_the_refusal() {
+        for arch in ["qwen2", "qwen2.5", "qwen3", "qwen35", "llama", "mistral", "gpt2", "gemma"] {
+            assert!(
+                forced_accelerator_refusal(true, Some(arch)).is_none(),
+                "{arch} has a CUDA forward and must still reach it under --gpu"
+            );
+        }
+    }
+
+    /// A source whose architecture we cannot read (a hub id, a non-GGUF file) is
+    /// not refused: the refusal must never be a guess.
+    #[test]
+    fn an_unreadable_architecture_is_not_refused() {
+        assert!(forced_accelerator_refusal(true, None).is_none());
+    }
+
+    /// THE MUTANT THIS ROW OWNS. Restoring the CPU fallback under `--gpu` means
+    /// `forced_accelerator_refusal` answering `None` for qwen3moe; this test is
+    /// what goes RED, and it says what it caught.
+    #[test]
+    fn removing_the_refusal_would_restore_the_silent_cpu_fallback() {
+        let refused = forced_accelerator_refusal(true, Some("qwen3moe"));
+        assert!(
+            refused.is_some(),
+            "MUTANT CAUGHT: --gpu on qwen3moe no longer refuses. Without this refusal the run \
+             loads 18 GB, generates on the CPU, and exits 14 AFTER the fact — the user asked for \
+             the GPU and was told the wrong thing about their own hardware (#3817)."
+        );
+    }
+}
