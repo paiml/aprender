@@ -313,6 +313,64 @@ mod gemv_entry_name_tests_3477 {
         );
     }
 
+    /// #3869: IQ4_NL MUST NOT be inferred from size, and this records why.
+    ///
+    /// `block_iq4_nl` and `block_q4_0` are the **identical C struct** —
+    /// `{ ggml_half d; uint8_t qs[16]; }`, 18 bytes per 32 elements. They are
+    /// byte-for-byte indistinguishable. Only the DECODE differs: Q4_0 is linear,
+    /// `(q - 8) * d`; IQ4_NL indexes the non-linear codebook,
+    /// `d * kvalues_iq4nl[q]`.
+    ///
+    /// Normalized to 256 elements that is 144 bytes, which is ALSO Q4_K's
+    /// super-block size. So three types collide:
+    ///
+    /// | type | block | bytes | bytes per 256 elems |
+    /// |---|---|---|---|
+    /// | Q4_0   |  32 |  18 | **144** |
+    /// | IQ4_NL |  32 |  18 | **144** |
+    /// | Q4_K   | 256 | 144 | **144** |
+    ///
+    /// `from_size` already documents the Q4_0/Q4_K half of this
+    /// (CORRECTNESS-002) and resolves it by trying super-block formats first.
+    /// Adding IQ4_NL to that ladder would make a THIRD indistinguishable member
+    /// and hand a wrong codebook to a real tensor — the #3850
+    /// `resolve_qtype().unwrap_or(Q4K)` failure mode arriving by size inference
+    /// instead of by fallback, and just as silent: the wrong decode of a valid
+    /// block produces plausible numbers, not an error.
+    ///
+    /// **When the IQ4_NL GPU path lands, its type must come from the DECLARED
+    /// ggml type id and never from `from_size`.** This test exists to say that
+    /// where the person adding it will read it.
+    #[test]
+    fn iq4_nl_is_byte_identical_to_q4_0_so_size_can_never_name_it() {
+        use crate::cuda::types::WeightQuantType;
+        use crate::gguf::ggml_type_table;
+
+        let q4_0 = ggml_type_table::traits(2).expect("Q4_0 is in the loader table");
+        let iq4_nl = ggml_type_table::traits(20).expect("IQ4_NL is in the loader table");
+        assert_eq!(
+            (q4_0.blck_size, q4_0.type_size),
+            (iq4_nl.blck_size, iq4_nl.type_size),
+            "if these ever differ, this whole hazard is gone and the test should say so"
+        );
+
+        // A tensor that is 18 bytes per 32 elements. Size alone cannot say which
+        // of the three it is.
+        let (rows, cols) = (2560usize, 9216usize);
+        let size = rows * (cols / 32) * 18;
+        assert_eq!(size, rows * (cols / 256) * 144, "the 144-per-256 collision");
+
+        let inferred = WeightQuantType::from_size(size, rows, cols);
+        assert!(
+            matches!(
+                inferred,
+                Some(WeightQuantType::Q4K | WeightQuantType::Q4_0)
+            ),
+            "size inference resolves this to Q4_K or Q4_0 today; it got {inferred:?}. It must \
+             never resolve it to IQ4_NL, because nothing in the bytes distinguishes them"
+        );
+    }
+
     /// ASSEMBLE every emitted kernel with `ptxas`. This is the check the
     /// em-dash defect actually needed: `ptxas` is a compiler, it needs **no
     /// GPU**, and it is present on any box that can build `--features cuda`
