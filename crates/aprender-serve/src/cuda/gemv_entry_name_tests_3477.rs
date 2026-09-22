@@ -184,10 +184,15 @@ mod gemv_entry_name_tests_3477 {
     /// map to `None`, which is what `resolve_qtype` now refuses on. Before this
     /// it fell through to Q4_K and the bytes were read as a different scheme.
     ///
-    /// These are not hypothetical: all five were measured in lambda's
-    /// inventory. Q5_1 and IQ4_NL sit in `Qwen2.5-0.5B-Instruct-IQ4_XS`,
-    /// BF16 in `Qwen3-0.6B-BF16`, IQ2_XXS/IQ3_XXS/Q2_K in
-    /// `Qwen3.5-0.8B-UD-IQ2_XXS`, IQ3_S in two more.
+    /// These are not hypothetical: all were measured in lambda's inventory.
+    /// Q5_1 sits in `Qwen2.5-0.5B-Instruct-IQ4_XS`, BF16 in `Qwen3-0.6B-BF16`,
+    /// IQ2_XXS/IQ3_XXS/Q2_K in `Qwen3.5-0.8B-UD-IQ2_XXS`, IQ3_S in two more.
+    ///
+    /// #3869: IQ4_NL was on this list and has been REMOVED because it now has a
+    /// kernel. It is not deleted from the guard - it moved to
+    /// `iq4_nl_has_a_kernel_but_is_not_admitted_until_it_is_measured` below,
+    /// which asserts the other half. A row that outlives its premise is
+    /// converted, never dropped.
     #[test]
     fn the_types_found_in_the_wild_without_kernels_resolve_to_none() {
         use crate::cuda::types::WeightQuantType;
@@ -197,7 +202,6 @@ mod gemv_entry_name_tests_3477 {
             (11, "Q3_K"),
             (16, "IQ2_XXS"),
             (18, "IQ3_XXS"),
-            (20, "IQ4_NL"),
             (21, "IQ3_S"),
             (22, "IQ2_S"),
             (30, "BF16"),
@@ -208,6 +212,56 @@ mod gemv_entry_name_tests_3477 {
             .map(|(t, n)| format!("\n  - {n} (type {t}) claims a kernel it does not have"))
             .collect();
         assert!(admitted.is_empty(), "census drift:{}", admitted.join(""));
+    }
+
+    /// #3869: the intermediate state, asserted so it cannot be skipped past.
+    ///
+    /// IQ4_NL now HAS a kernel, so `from_ggml_type(20)` resolves and
+    /// `resolve_qtype` no longer refuses it by name. It is NOT yet admitted to
+    /// the GPU whitelist, because the kernel has not been measured against the
+    /// CPU decoder on real device bytes, and the standing rule is that a qtype
+    /// enters `gpu_unsupported_quant_qtype`'s allow-list only after that.
+    ///
+    /// Both halves are asserted together on purpose. "Has a kernel" and "is
+    /// admitted" are the two claims whose conflation produced #3850: an open
+    /// whitelist in front of a `from_ggml_type` returning `None` is how every
+    /// F16 tensor nearly got decoded as Q4_K. Keeping them as separate,
+    /// simultaneously-checked facts is what stops the pair drifting.
+    ///
+    /// WHEN THE DEVICE A/B PASSES: flip the second assertion to
+    /// `!gpu_unsupported_quant_qtype(20)` and open the whitelist in the same
+    /// commit, citing the measurement. Not before.
+    #[test]
+    fn iq4_nl_has_a_kernel_but_is_not_admitted_until_it_is_measured() {
+        use crate::cuda::types::{GemvKernel, WeightQuantType};
+
+        assert_eq!(
+            WeightQuantType::from_ggml_type(20),
+            Some(WeightQuantType::IQ4NL),
+            "#3869: the kernel exists, so the type must resolve"
+        );
+        assert_eq!(
+            WeightQuantType::IQ4NL.bytes_per_block(),
+            18,
+            "IQ4_NL is natively 18 bytes per 32 elements"
+        );
+        assert_eq!(
+            crate::cuda::types::BoundWeight::bind(
+                0x1000,
+                2560 * (9216 / 32) * 18,
+                WeightQuantType::IQ4NL,
+                2560,
+                9216
+            )
+            .kernel(),
+            GemvKernel::IQ4NL
+        );
+        assert!(
+            crate::gguf::gpu_unsupported_quant_qtype(20),
+            "#3869: the kernel is written but NOT measured on a device. It must stay out of \
+             the whitelist until a tensor-level A/B against the CPU decoder passes. Opening \
+             it earlier is the #3850 shape."
+        );
     }
 
     /// The IQ4_NL kernel's INDEX MATH, executed in Rust exactly as the PTX

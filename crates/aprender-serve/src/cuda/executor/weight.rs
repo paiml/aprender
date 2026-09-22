@@ -817,6 +817,73 @@ impl CudaExecutor {
         Ok(())
     }
 
+    /// #3869: Execute IQ4_NL GEMV into an existing buffer (zero-allocation, async).
+    ///
+    /// CONTRACT: `weight_ptr` points at `N * ceil(K/32)` blocks of **18** bytes,
+    /// ROW-MAJOR - row `i` starts at `weight_ptr + i * nb * 18`. Note the 32,
+    /// not 256: IQ4_NL is the one type here whose block is not a super-block.
+    /// LAYOUT-001 applies exactly as for every other GEMV in this file.
+    ///
+    /// The block layout is a port of `quantize::iq4_nl::dequantize_iq4_nl_block`,
+    /// which is checked against llama.cpp's `dequantize_row_iq4_nl` and, more
+    /// usefully, against the independently transcribed IQ4_XS decoder. That
+    /// function is the oracle: a disagreement is this kernel's bug.
+    pub fn iq4_nl_gemv_into(
+        &mut self,
+        weight_ptr: u64,
+        input: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
+        validate_device_ptr(weight_ptr, "iq4_nl_gemv_into")?;
+        let kernel_type = KernelType::Iq4NlGemv { k, n };
+        let kernel_name = self.kernels.kernel_name(&kernel_type);
+        let cache_key = format!("iq4_nl_gemv_{}_{}", k, n);
+        let config = LaunchConfig::grid_2d(n, 1, 32, 1);
+
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
+
+        let module = self
+            .modules
+            .get_mut(&cache_key)
+            .expect("module just inserted");
+
+        let mut ptr_output = output.as_ptr();
+        let mut ptr_weights = weight_ptr;
+        let mut ptr_input = input.as_ptr();
+        let mut k_val = k;
+        let mut n_val = n;
+
+        // SAFETY: pointers validated above; params match the PTX entry signature.
+        unsafe {
+            self.stream.launch_kernel(
+                module,
+                kernel_name,
+                &config,
+                &mut [
+                    std::ptr::from_mut(&mut ptr_output) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_weights) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_input) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void,
+                ],
+            )?;
+        }
+
+        if self.graph_recording {
+            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let func = module.get_function(kernel_name)?;
+            self.graph_recorded_kernels.push(RecordedKernel {
+                func: SendCUfunction(func),
+                config,
+                arg_data: vec![ptr_output, ptr_weights, ptr_input, k_val as u64, n_val as u64],
+            });
+        }
+
+        Ok(())
+    }
+
     /// #3477: Execute F16 GEMV into an existing buffer (zero-allocation, async).
     ///
     /// CONTRACT: `weight_ptr` points at N*K f16 values, 2 bytes each, ROW-MAJOR —
