@@ -20145,3 +20145,60 @@ roadmap:
   labels:
   - kind:code
   notes: "Refs #3577 (ONT-4c3; its ledger binding is infra's row, bound after this merges) and #3624 (the by_entity_type sibling, not closed here). R-3 of ONT-001: pc_extract is one planted defect per registered extractor, every run."
+- id: PMAT-3724
+  github_issue: 3724
+  item_type: task
+  title: 'qwen3-8b-q4km golden_output ''Empty output'' on lambda: the gate ran Qwen3 in thinking mode
+    no production path uses (0.69.0 stopper)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-c7
+  created: 2026-09-22 07:05:40+00:00
+  updated: 2026-09-22 07:05:40+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3724 done_when 1, verbatim: "qwen3-8b-q4km produces correct output on lambda CUDA, and `apr
+    qa` (ladder flags) passes on **lambda AND gx10**. The five Qwen3.5 Q4_K_M rungs (0.8b/2b/4b/9b/27b)
+    stay green on both."'
+  - 'Issue #3724 done_when 2, verbatim: "the golden gate builds its prompts with the SAME detector and
+    template production uses, keyed on `general.architecture`. Every other architecture keeps byte-identical
+    ChatML, pinned by a test. No check is relaxed."'
+  - 'Issue #3724 done_when 3, verbatim: "a thinking-capable model is judged in BOTH modes: OFF (production
+    no-think prompt, answer correct) and ON (think block closes and the answer after it is correct, with
+    a budget that overdoes it). A block that doesn''t close is REPORTED by name with the budget ("think
+    block unclosed within N tokens"), never stripped to an empty answer."'
+  - 'Issue #3724 done_when 4, verbatim: "`apr chat`, `apr serve` and `apr run --chat` on qwen3-8b on lambda
+    CUDA are reported."'
+  - 'Issue #3724 done_when 5, verbatim: "the x86-vs-aarch64 think-length difference (545 vs < 512) is
+    recorded on the row."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'ROOT: the gate hardcoded three ChatML prompts, which leaves Qwen3 in thinking mode - a mode
+    no production path uses, because realizar''s detector gives every qwen3* except qwen3moe the Qwen3NoThink
+    template (PMAT-181). On x86 the greedy reasoning for "What is 2+2?" ran the whole 512-token budget
+    (527 tokens, 15 of prompt) and was still inside <think>; strip_thinking_blocks truncated at the unclosed
+    tag, so the answer was "" and verify_output reported "Empty output". aarch64 closes the same block
+    under 512. SAME CODE, DIFFERENT TOKEN COUNTS - which is why a prompt defect presented as a host defect
+    (done_when 5). FIX, and no budget was raised: (1) golden_prompt_for renders through the SAME detector
+    production uses, keyed on general.architecture; every ChatML-mapped architecture is byte-identical
+    to the old hardcoded strings, pinned by chatml_architectures_render_the_legacy_prompt_byte_for_byte,
+    which classifies by ASKING the detector rather than by a hand-written list. Cop ruled option (A),
+    the detector for every architecture, 2026-09-22. (2) split_thinking_blocks -> ThinkingSplit{Answer,Unclosed}
+    replaces the truncating strip on all three legs (CPU, CUDA, runtime); an unclosed block is reported
+    as "think block unclosed within N tokens" with the chars generated. (3) thinking_on_case judges the
+    other mode at 2048 tokens, with the suppression detected by READING production''s rendered prompt
+    (without_thinking_prefill) rather than matching a template name, so #3755''s replacement template
+    is followed rather than bypassed. MEASURED at 3ebb1c61e on both hosts: model_ladder.sh 8/8 green,
+    red 0, on lambda (x86_64, RTX 4090 sm_89) and gx10 (aarch64, GB10 cc 12.1); qwen3-8b-q4km green on
+    the host where it failed. Falsification on a no-cuda build, zero GPU time: reverting the prompt alone
+    is RED naming the unclosed block; reverting both changes reproduces the issue''s exact "Empty output".
+    done_when 4 REPORTED, and it is the interesting half: apr serve, apr run --chat and (now) the golden
+    gate all take realizar''s detector and get Qwen3NoThink; apr chat takes aprender-core''s detector
+    (crates/apr-cli/src/commands/chat.rs:34), whose TemplateFormat has seven variants and NO Qwen3NoThink
+    at all, so no-think is unrepresentable there and the model thinks. Measured: apr chat on Qwen3-1.7B
+    prints "Detected ChatML chat template" and answers "<think>Okay, the user is asking...". Thinking-on
+    therefore remains a reachable production mode; #3724 does not delete that cell. The unification is
+    #3801''s remedy, routed separately by the cop.'
