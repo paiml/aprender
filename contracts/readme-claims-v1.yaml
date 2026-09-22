@@ -25,6 +25,59 @@ metadata:
   depends_on: []
 equations:
   # ─────────────────────────────────────────────────────────────────────────
+  # #3867: EVERY numeric claim in README.md, each GATED or EXEMPT WITH A REASON.
+  #
+  # README.md was never ungated — it was gated in a REGION, and the boundary was
+  # invisible in the rendered file. Measured at 766326360 the boundary ran THROUGH
+  # the `At HEAD` table, between adjacent rows: L45 gated, L46/L47 not, and both
+  # drifted (112 vs 113, 71 vs 72). #3769's cookbook count escaped the same way and
+  # was wrong by 5.4x.
+  #
+  # `scripts/check_readme_numeric_claims.sh` enumerates the claims and requires each
+  # to appear here. A claim with neither `gated_by` nor `exempt_because` is REJECTED:
+  # an exemption with no reason is the seam #3769 deliberately refused.
+  #
+  # THE KEY IS THE WHOLE LINE with numbers replaced by N, so the inventory does not
+  # churn when a count changes, and two claims about the same noun stay distinct.
+  # Keying on the phrase alone collapsed L46 and L47 (both `**N** chapters`) into one
+  # entry — a collision that would have let a drifted claim ride on its neighbour.
+  #
+  # `readme_line_when_written` is a NAVIGATION AID, not a key. Line numbers move; the
+  # gate never reads it.
+  # ─────────────────────────────────────────────────────────────────────────
+  numeric_claims_inventory:
+    formula: |
+      every_numeric_claim(README.md) is gated_by(x) or exempt_because(reason)
+    domain: |
+      The claim set is what scripts/check_readme_numeric_claims.sh enumerates: a
+      number followed by a countable noun, INCLUDING inside fenced blocks. Fenced
+      lines are scanned rather than skipped — a skip rule is an unwritten coverage
+      boundary, which is the defect this inventory exists to end.
+    invariants:
+    - "every enumerated claim has an entry here"
+    - "every entry has gated_by or exempt_because; neither is a rejection"
+    - "parsing zero claims is an instrument failure, never a pass"
+    preconditions: []
+    claims:
+      "| Workspace crates | **N** workspace crates | `cargo metadata --no-deps` (NOT `ls crates/` — N are":
+        gated_by: crate_count
+        readme_line_when_written: 43
+      "| CLI commands | **N** CLI commands | `contracts/apr-cli-commands-vN.yaml` §`commands` (parse the l":
+        gated_by: cli_command_count
+        readme_line_when_written: 45
+      "| Book CLI chapters | **N** chapters | `ls book/src/cli/*.md` |":
+        gated_by: book_cli_chapter_count
+        readme_line_when_written: 46
+      "| Book lib chapters | **N** chapters | `ls book/src/lib/*.md` (parity with `pub mod`) |":
+        gated_by: book_lib_chapter_count
+        readme_line_when_written: 47
+      "[`paiml/apr-cookbook`](https://github.com/paiml/apr-cookbook) — **N** worked examples (apr-cookboo":
+        gated_by: cookbook_recipe_count
+        readme_line_when_written: 93
+      "│ └── ... (**N** directories — NOT the crate count: see the table above)":
+        gated_by: crates_directory_count
+        readme_line_when_written: 260
+  # ─────────────────────────────────────────────────────────────────────────
   # THE COOKBOOK RECIPE COUNT IS A PIN, NOT A MEASUREMENT (#3769).
   #
   # The source of truth is in ANOTHER REPOSITORY (paiml/apr-cookbook). A guard

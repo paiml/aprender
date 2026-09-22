@@ -229,6 +229,24 @@ measured_cookbook_recipe_count() {
   echo "$pin"
 }
 
+# #3867: three claims that sat OUTSIDE the gated region. L46/L47 were inside the very
+# same `At HEAD` table as gated claims, one row below, and both had drifted by one.
+# The crates-directory count was the DIRECTORY count mislabelled as the crate count —
+# CLAUDE.md documents that exact trap ("A directory is not a crate"), so it is gated
+# as what it IS rather than replaced by the crate count, which would have discarded a
+# true fact to satisfy a guard.
+measured_book_cli_chapter_count() { ls "$REPO_ROOT"/book/src/cli/*.md 2>/dev/null | grep -c . ; }
+measured_book_lib_chapter_count() { ls "$REPO_ROOT"/book/src/lib/*.md 2>/dev/null | grep -c . ; }
+measured_crates_directory_count() { ls -1d "$REPO_ROOT"/crates/*/ 2>/dev/null | grep -c . ; }
+
+claimed_book_cli_chapter_count() { grep -oE '\| Book CLI chapters \| \*\*[0-9]+\*\*' "$README" | grep -oE '[0-9]+' | head -1; }
+claimed_book_lib_chapter_count() { grep -oE '\| Book lib chapters \| \*\*[0-9]+\*\*' "$README" | grep -oE '[0-9]+' | head -1; }
+claimed_crates_directory_count() { grep -oE '\*\*[0-9]+\*\* directories' "$README" | grep -oE '[0-9]+' | head -1; }
+
+check_book_cli_chapter_count() { compare_count FALSIFY-README-009 book_cli_chapter_count "$(claimed_book_cli_chapter_count)" "$(measured_book_cli_chapter_count)" "book/src/cli/*.md"; }
+check_book_lib_chapter_count() { compare_count FALSIFY-README-010 book_lib_chapter_count "$(claimed_book_lib_chapter_count)" "$(measured_book_lib_chapter_count)" "book/src/lib/*.md"; }
+check_crates_directory_count() { compare_count FALSIFY-README-011 crates_directory_count "$(claimed_crates_directory_count)" "$(measured_crates_directory_count)" "ls -1d crates/*/"; }
+
 # --- claim extractors (read the README) ---
 
 claimed_crate_count() {
@@ -505,7 +523,7 @@ for arg in "$@"; do
     --regen) mode="regen" ;;
     --exact) EXACT=1 ;;
     --self-test) mode="selftest" ;;
-    crate_count|contract_count|cli_command_count|cookbook_link|cookbook_recipe_count|install_line) claim="$arg" ;;
+    crate_count|contract_count|cli_command_count|cookbook_link|cookbook_recipe_count|book_cli_chapter_count|book_lib_chapter_count|crates_directory_count|install_line) claim="$arg" ;;
     *) echo "unknown arg: $arg" >&2; exit 2 ;;
   esac
 done
@@ -634,6 +652,9 @@ case "$mode" in
       cli_command_count) check_cli_command_count ;;
       cookbook_link)     check_cookbook_link ;;
       cookbook_recipe_count) check_cookbook_recipe_count ;;
+      book_cli_chapter_count) check_book_cli_chapter_count ;;
+      book_lib_chapter_count) check_book_lib_chapter_count ;;
+      crates_directory_count) check_crates_directory_count ;;
       install_line)      check_install_line ;;
       *) echo "--claim requires one of: crate_count, contract_count, cli_command_count, cookbook_link, cookbook_recipe_count, install_line" >&2; exit 2 ;;
     esac
@@ -645,6 +666,9 @@ case "$mode" in
     check_cli_command_count || fail=1
     check_cookbook_link     || fail=1
     check_cookbook_recipe_count || fail=1
+    check_book_cli_chapter_count || fail=1
+    check_book_lib_chapter_count || fail=1
+    check_crates_directory_count || fail=1
     check_install_line      || fail=1
     exit "$fail"
     ;;
