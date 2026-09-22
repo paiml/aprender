@@ -59,7 +59,14 @@ die_env() { printf '%s: ENV %s\n' "$PROG" "$*" >&2; exit 2; }
 # The only rows a pre-publish dogfood receipt may DEFER (PMAT-745): both need the
 # crate to be ON the registry before they can be measured, so before a cascade
 # they are recorded with their obligation instead of failing by construction.
-PREPUBLISH_DEFERRABLE="publish-dry-run declared:check_multiplatform_dogfood"
+# `coverage` added 2026-09-22 by operator ruling for 0.69.1 (#3839). It is the FIRST row
+# here that is deferred because it FAILS rather than because it is unmeasurable before
+# publication -- the other two need the published crate to exist. That is a real widening
+# of this whitelist and it is temporary: #3839 owes the repaired measurement, a re-derived
+# COV_FLOOR, and the REMOVAL of `coverage` from this line. The whitelist stays a whitelist,
+# so this does not loosen anything else; a row not named here is still refused whatever it
+# is called.
+PREPUBLISH_DEFERRABLE="publish-dry-run declared:check_multiplatform_dogfood coverage"
 
 root_version() { # root -> the root manifest's package version, from cargo metadata
     local root="$1"
