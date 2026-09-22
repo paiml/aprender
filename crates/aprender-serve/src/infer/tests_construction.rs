@@ -500,6 +500,7 @@ fn test_inference_result_fields() {
         load_ms: 50.0,
         format: "GGUF".to_string(),
         used_gpu: false,
+        gpu_attempted: false,
     };
     assert_eq!(result.text, "Hello");
     assert_eq!(result.tokens.len(), 3);

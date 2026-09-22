@@ -389,7 +389,12 @@ fn run_gguf_generate(
     input_tokens: &[u32],
     gen_config: &crate::gguf::QuantizedGenerateConfig,
     config: &InferenceConfig,
-) -> Result<(Vec<u32>, bool)> {
+) -> Result<(Vec<u32>, bool, bool)> {
+    // #3826: the third element is `gpu_attempted` — whether a GPU backend was
+    // ENTERED, whatever the outcome. `used_gpu` alone collapses "never tried"
+    // and "tried and refused" into one `false`, which is how
+    // `apr run --format json` reported `"fell_back": false` on a run whose own
+    // stderr said `attempting fallback`.
     // M32c.2.1: short-circuit MoE forward attempts BEFORE any GPU/CPU
     // dispatch. M32c.2 made `from_gguf` succeed for qwen3_moe by routing
     // to `from_gguf_for_moe` (which leaves dense FFN tensor refs as
@@ -421,10 +426,17 @@ fn run_gguf_generate(
     let has_legacy_quant = model_has_legacy_quant(&model);
 
     // GPU path: pass model by value (zero-clone) — model is returned on failure for CPU fallback
+    // #3826: an ATTEMPT is recorded before the outcome is known. Both arms below
+    // are attempts: `Ok` produced the tokens, `Err` had its result refused and
+    // handed the model back for the CPU to redo. Only the second is a fallback,
+    // and it is the one that reported nothing.
+    #[allow(unused_mut)]
+    let mut gpu_attempted = false;
     #[cfg(feature = "cuda")]
     let model = if !config.no_gpu && !has_legacy_quant {
+        gpu_attempted = true;
         match try_gguf_gpu_generate(model, input_tokens, gen_config, config.verbose) {
-            Ok(result) => return result,
+            Ok(result) => return result.map(|(t, u)| (t, u, true)),
             Err(returned_model) => *returned_model, // GPU failed, use returned model for CPU
         }
     } else {
@@ -456,8 +468,9 @@ fn run_gguf_generate(
     if wgpu_fallback_allowed(config.no_gpu, config.accel_forced, has_legacy_quant)
         && wgpu_can_serve(gen_config.temperature, gen_config.top_k)
     {
+        gpu_attempted = true;
         match try_wgpu_generate(&model, input_tokens, gen_config, config.verbose) {
-            Ok(result) => return Ok(result),
+            Ok((t, u)) => return Ok((t, u, true)),
             Err(e) => {
                 if config.verbose {
                     eprintln!("Backend: CPU (wgpu unavailable: {})", e);
@@ -470,7 +483,10 @@ fn run_gguf_generate(
     let tokens = model
         .generate_with_cache(input_tokens, gen_config)
         .map_err(|e| RealizarError::InferenceError(format!("CPU generation failed: {}", e)))?;
-    Ok((tokens, false))
+    // #3826: the CPU answered. `gpu_attempted` distinguishes "CPU because
+    // nothing else was tried" from "CPU because the accelerator's result was
+    // refused" — the second is the fallback a consumer needs to see.
+    Ok((tokens, false, gpu_attempted))
 }
 
 /// Run APR model inference (PAR-302, PMAT-APR-CUDA-001)
@@ -789,6 +805,7 @@ fn try_apr_wgpu_inference(
         tok_per_sec: if inference_ms > 0.0 { tokens_generated as f64 / (inference_ms / 1000.0) } else { 0.0 },
         format: "APR".to_string(),
         used_gpu: true,
+        gpu_attempted: true,
     }))
 }
 
@@ -954,6 +971,7 @@ fn try_apr_cuda_inference(
         load_ms,
         format: "APR".to_string(),
         used_gpu: true,
+        gpu_attempted: true,
     }))
 }
 
@@ -1037,6 +1055,7 @@ fn run_apr_quantized_cpu_inference(
         load_ms,
         format: "APR".to_string(),
         used_gpu: false,
+        gpu_attempted: false,
     })
 }
 
@@ -1228,6 +1247,7 @@ fn try_safetensors_cuda_inference(
         load_ms,
         format: "SafeTensors".to_string(),
         used_gpu: true,
+        gpu_attempted: true,
     }))
 }
 

@@ -85,6 +85,7 @@
             load_ms: 1.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            gpu_attempted: false,
         };
         assert_eq!(result.format, "GGUF");
     }
@@ -101,6 +102,7 @@
             load_ms: 1.0,
             format: "APR".to_string(),
             used_gpu: false,
+            gpu_attempted: false,
         };
         assert_eq!(result.format, "APR");
     }
@@ -117,6 +119,7 @@
             load_ms: 1.0,
             format: "SafeTensors".to_string(),
             used_gpu: false,
+            gpu_attempted: false,
         };
         assert_eq!(result.format, "SafeTensors");
     }
@@ -135,6 +138,7 @@
             load_ms: 1.0,
             format: "GGUF".to_string(),
             used_gpu: true,
+            gpu_attempted: true,
         };
         assert!(result.used_gpu);
     }
@@ -151,6 +155,7 @@
             load_ms: 1.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            gpu_attempted: false,
         };
         assert!(!result.used_gpu);
     }

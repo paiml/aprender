@@ -53,6 +53,7 @@ mod tests {
             load_ms: 5.0,
             format: "GGUF".to_string(),
             used_gpu: false,
+            gpu_attempted: false,
         };
         assert_eq!(result.tok_per_sec, 0.0);
     }

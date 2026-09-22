@@ -60,6 +60,7 @@ fn a_forced_accelerator_that_ran_on_cpu_is_refused() {
         tokens_generated: Some(1),
         tok_per_sec: Some(0.0),
         used_gpu: Some(false),
+        gpu_attempted: None,
         generated_tokens: Some(vec![9707]),
         token_texts: None,
         usage: Default::default(),
@@ -147,6 +148,7 @@ fn gpu_result(used_gpu: Option<bool>) -> RunResult {
         tokens_generated: Some(1),
         tok_per_sec: Some(1.0),
         used_gpu,
+        gpu_attempted: None,
         generated_tokens: Some(vec![9707]),
         token_texts: None,
         usage: Default::default(),
@@ -255,6 +257,123 @@ mod forced_accelerator_refusal_tests {
             "MUTANT CAUGHT: --gpu on qwen3moe no longer refuses. Without this refusal the run \
              loads 18 GB, generates on the CPU, and exits 14 AFTER the fact — the user asked for \
              the GPU and was told the wrong thing about their own hardware (#3817)."
+        );
+    }
+}
+
+// ── #3826: `fell_back` must name a fallback that HAPPENED ──────────────────
+//
+// `apr run --format json` reported `"fell_back": false` on a run whose own
+// stderr said `attempting fallback`, because the field required the user to
+// have ASKED: `accel_forced && used_gpu == Some(false)`. A bare `apr run` on a
+// cuda build attempts CUDA unasked, and when the F2 gate refuses that result
+// (cosine 0.4153 on qwen2.5-coder-0.5b, #3804/#3602) the run falls back to CPU
+// — with `accel_forced == false`, so the field said no fallback occurred.
+//
+// A consumer counting fallbacks therefore saw NONE, on every host, forever:
+// #3720 makes this JSON an explicit consumer contract, so the number it reads
+// was not merely imprecise, it was unreachable.
+#[cfg(test)]
+mod pmat3826_fell_back_names_a_real_fallback {
+    use super::*;
+
+    fn result(gpu_attempted: Option<bool>, used_gpu: Option<bool>) -> RunResult {
+        let mut r = gpu_result(used_gpu);
+        r.gpu_attempted = gpu_attempted;
+        r
+    }
+
+    fn fell_back(accel_forced: bool, attempted: Option<bool>, used: Option<bool>) -> bool {
+        let json = build_final_json(&result(attempted, used), "m.gguf", 8, accel_forced);
+        json["backend"]["fell_back"].as_bool().expect("fell_back is a bool")
+    }
+
+    /// Every `(attempted, used_gpu)` state, with its expectation under BOTH
+    /// `accel_forced` values — because the two terms are a disjunction and the
+    /// interesting rows are the ones where they disagree.
+    ///
+    /// `(attempted, used_gpu, want_when_forced, want_when_not, what this run is)`
+    const CASES: &[(Option<bool>, Option<bool>, bool, bool, &str)] = &[
+        (
+            Some(true), Some(false), true, true,
+            "THE #3826 CASE: an accelerator was entered and its result refused, \
+             so the CPU redid the work. A fallback WHETHER OR NOT it was asked \
+             for — this is the row where the old predicate reported none",
+        ),
+        (
+            Some(true), Some(true), false, false,
+            "the accelerator was entered and produced the answer — not a fallback",
+        ),
+        (
+            Some(false), Some(false), true, false,
+            "nothing was attempted. Asked for: the user did not get the backend \
+             they named, so it is a fallback (#3602). Not asked for: a plain CPU \
+             run, and calling that a fallback is the over-correction of dropping \
+             `accel_forced` outright",
+        ),
+        (
+            None, Some(false), true, false,
+            "the path did not say whether it attempted. #3602's own fixture — \
+             under --gpu the run still did not reach the GPU, which is the \
+             finding; unasked, there is nothing to report",
+        ),
+        (
+            Some(true), None, false, false,
+            "entered an accelerator, never reported whether it produced tokens. \
+             Absent is Unknown, never Fail: `reconcile_accelerator` refuses to \
+             call this a fallback and the JSON beside it must agree",
+        ),
+    ];
+
+    /// Asking is SUFFICIENT, never NECESSARY. #3826 was that `fell_back`
+    /// treated it as necessary, so a refused accelerator nobody asked for
+    /// reported nothing. The fix must not swing the other way and retire
+    /// #3602's row, which is exactly what the narrower predicate did.
+    #[test]
+    fn asking_for_the_gpu_is_sufficient_for_a_fallback_never_necessary() {
+        let wrong: Vec<String> = CASES
+            .iter()
+            .flat_map(|(a, u, want_forced, want_unforced, why)| {
+                [(true, *want_forced), (false, *want_unforced)]
+                    .into_iter()
+                    .filter_map(move |(forced, want)| {
+                        let got = fell_back(forced, *a, *u);
+                        (got != want).then(|| {
+                            format!(
+                                "\n  - attempted={a:?} used_gpu={u:?} accel_forced={forced}: \
+                                 expected fell_back={want}, got {got}. {why}"
+                            )
+                        })
+                    })
+            })
+            .collect();
+        assert!(
+            wrong.is_empty(),
+            "#3826 REGRESSION: {} of {} (state x accel_forced) combinations report \
+             the wrong fallback. A harness counting fallbacks reads this field and \
+             nothing else:{}",
+            wrong.len(),
+            CASES.len() * 2,
+            wrong.join("")
+        );
+    }
+
+    /// The consumer symptom, asserted as a symptom rather than as a field value:
+    /// an unasked-for, refused accelerator must be COUNTABLE.
+    #[test]
+    fn a_harness_counting_fallbacks_sees_the_unasked_one() {
+        let runs = [
+            fell_back(false, Some(true), Some(false)), // bare run, CUDA refused
+            fell_back(false, Some(false), Some(false)), // plain CPU run
+            fell_back(true, Some(true), Some(false)),  // --gpu, refused
+        ];
+        let counted = runs.iter().filter(|b| **b).count();
+        assert_eq!(
+            counted, 2,
+            "#3826: a harness counting fallbacks across these three runs must see 2 \
+             (the bare run whose CUDA result was refused, and the explicit --gpu one). \
+             Seeing 1 means the unasked-for fallback is invisible again — which is the \
+             defect, not a rounding difference."
         );
     }
 }

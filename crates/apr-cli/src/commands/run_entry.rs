@@ -633,15 +633,44 @@ fn build_final_json(
         // GPU run, which is how a 33.6 s fallback was read as a GPU timing.
         //
         // `requested` is what the USER asked for, `ran` is what executed, and
-        // `fell_back` is true only when those disagree. The rejection's REASON
-        // (e.g. `cosine 0.4153` at a named position) is on stderr but not yet
-        // here: it is produced inside realizar's F2 gate and no channel carries
-        // it to the CLI. Adding one is the #3606-shaped follow-up named in the
-        // PR — NOT silently approximated with a guess.
+        // `fell_back` is whether an accelerator was tried and did not produce
+        // the answer. The rejection's REASON (e.g. `cosine 0.4153` at a named
+        // position) is on stderr but not yet here: it is produced inside
+        // realizar's F2 gate and no channel carries it to the CLI. Adding one is
+        // the #3606-shaped follow-up named in the PR — NOT silently
+        // approximated with a guess.
+        //
+        // #3826: `fell_back` used to be `accel_forced && used_gpu == Some(false)`
+        // — it required the user to have ASKED. A bare `apr run` on a cuda build
+        // attempts CUDA without being asked, and when the F2 gate refuses that
+        // result (cosine 0.4153 on qwen2.5-coder-0.5b, #3804/#3602) the run fell
+        // back to CPU and reported `"fell_back": false`. Its own stderr said
+        // `attempting fallback` on the same run, so the machine-readable surface
+        // contradicted the human-readable one and a consumer counting fallbacks
+        // saw none, ever.
+        //
+        // Dropping `accel_forced` alone would be the opposite error: `used_gpu`
+        // records whether the GPU PRODUCED tokens, so every CPU-only run would
+        // then claim a fallback. `gpu_attempted` is the missing term — set by
+        // whichever path ENTERS a GPU backend, before its result is judged.
+        //
+        // So asking is SUFFICIENT but not NECESSARY, and the two terms are a
+        // disjunction rather than a replacement. `accel_forced` alone still
+        // carries #3602 — a requested GPU that never ran is a fallback even
+        // when nothing reported entering one. Making `gpu_attempted` the sole
+        // term would have silently retired that, which is how this was caught:
+        // `the_json_distinguishes_a_deliberate_cpu_run_from_a_rejected_gpu_run`
+        // went RED against the narrower predicate.
+        //
+        // `used_gpu == Some(false)`, not `!= Some(true)`: absent is Unknown,
+        // never Fail, so a backend that did not report has not reported a
+        // fallback. That is `reconcile_accelerator`'s own rule, and the JSON
+        // must not contradict the check that runs beside it.
         "backend": {
             "requested": if accel_forced { "gpu" } else { "default" },
             "ran": if result.used_gpu == Some(true) { "gpu" } else { "cpu" },
-            "fell_back": accel_forced && result.used_gpu == Some(false),
+            "fell_back": result.used_gpu == Some(false)
+                && (accel_forced || result.gpu_attempted == Some(true)),
         },
     })
 }

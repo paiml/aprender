@@ -10,6 +10,7 @@ fn result_with(usage: RunUsage) -> RunResult {
         tokens_generated: Some(1),
         tok_per_sec: None,
         used_gpu: Some(false),
+        gpu_attempted: None,
         generated_tokens: None,
         token_texts: None,
         usage,

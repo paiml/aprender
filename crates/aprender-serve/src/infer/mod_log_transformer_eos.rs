@@ -120,6 +120,7 @@ fn run_safetensors_cpu_inference(
         load_ms,
         format: "SafeTensors".to_string(),
         used_gpu: false,
+        gpu_attempted: false,
     })
 }
 
@@ -188,6 +189,7 @@ fn run_sharded_safetensors_inference(
         load_ms,
         format: "SafeTensors".to_string(),
         used_gpu: false,
+        gpu_attempted: false,
     })
 }
 
@@ -442,6 +444,7 @@ pub fn run_mock_inference(config: &InferenceConfig) -> Result<InferenceResult> {
         load_ms,
         format: "Mock".to_string(),
         used_gpu: false,
+        gpu_attempted: false,
     })
 }
 
