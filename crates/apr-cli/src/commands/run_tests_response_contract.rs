@@ -79,8 +79,9 @@ fn a_run_that_ended_ok_says_so_and_carries_no_error() {
 
 #[test]
 fn an_empty_completion_is_a_failure_that_names_why_and_keeps_the_reasoning() {
-    let nothing = contract_result("", None);
-    let err = require_answer(&nothing).expect_err("empty is not ok");
+    let mut nothing = contract_result("", None);
+    nothing.tokens_generated = Some(0);
+    let err = require_answer(&nothing).expect_err("zero tokens is not ok");
     assert_eq!(err.kind(), "empty_completion");
     assert_eq!(err.exit_code_value(), 8);
     assert!(err.to_string().contains("generation produced no text"), "{err}");
@@ -96,6 +97,8 @@ fn an_empty_completion_is_a_failure_that_names_why_and_keeps_the_reasoning() {
     assert_eq!(doc["reasoning"], "2 plus 2");
 
     require_answer(&contract_result("4", None)).expect("an answer is ok");
+    // A whitespace answer the model generated is what it said, not an empty completion.
+    require_answer(&contract_result(" ", None)).expect("generated whitespace is an answer");
 }
 
 #[test]

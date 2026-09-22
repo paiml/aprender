@@ -261,8 +261,13 @@ async fn timings_absent_is_null_not_zero() {
 
     let nonstream = r#"{"model":"default","messages":[{"role":"user","content":"token5 token6"}],"max_tokens":4,"temperature":0.0}"#;
     let (status, body) = post_sse(quantized_state(), "/v1/chat/completions", nonstream).await;
-    assert_eq!(status, StatusCode::OK, "{body}");
+    // #3720: this fixture's random model answers nothing, and an empty completion is
+    // the named `empty_completion` failure (422), never a 200 with "". The claim here,
+    // no zero timings, must hold on that body too. The 200 shape is pinned by
+    // `nonstream_response_carries_timings_when_measured`.
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     let parsed: serde_json::Value = serde_json::from_str(&body).expect("json body");
+    assert_eq!(parsed["error_kind"], "empty_completion", "{parsed}");
     assert!(
         parsed["timings"].is_null(),
         "the CPU quantized backend does not measure a phase split; it must report \
@@ -314,11 +319,8 @@ async fn nonstream_response_carries_timings_when_measured() {
         None,
         None,
         Some(timings), None);
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-        .await
-        .expect("read body");
-    let parsed: serde_json::Value =
-        serde_json::from_slice(&bytes).expect("json body");
+    // #3720: build_chat_response returns the body; what goes on the wire is its JSON.
+    let parsed: serde_json::Value = serde_json::to_value(&response).expect("json body");
 
     let t = &parsed["timings"];
     assert!(!t.is_null(), "measured timings must reach the wire:\n{parsed}");

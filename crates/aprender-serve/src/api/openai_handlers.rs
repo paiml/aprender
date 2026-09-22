@@ -43,6 +43,27 @@ fn fail_response(state: &AppState, status: StatusCode, msg: impl std::fmt::Displ
         .into_response()
 }
 
+/// #3720: an error response under the apr response contract: the message in `error`, as
+/// every existing client reads it, plus `status` (`refused` | `failed`) and `error_kind`.
+fn contract_fail_response(
+    state: &AppState,
+    code: StatusCode,
+    status: &str,
+    kind: &str,
+    msg: impl std::fmt::Display,
+) -> Response {
+    state.metrics.record_failure();
+    (
+        code,
+        Json(super::ContractErrorResponse {
+            error: msg.to_string(),
+            status: status.to_string(),
+            error_kind: kind.to_string(),
+        }),
+    )
+        .into_response()
+}
+
 /// Current Unix timestamp.
 fn unix_timestamp() -> i64 {
     std::time::SystemTime::now()
@@ -95,9 +116,15 @@ fn tokenize_chat_request(
     state: &AppState,
 ) -> Result<(Vec<u32>, crate::chat_template::ChatPrompt), Response> {
     use crate::chat_template::{format_chat_prompt, ChatMessage as TemplateMessage};
-    let thinking = request
-        .requested_thinking()
-        .map_err(|e| fail_response(state, StatusCode::UNPROCESSABLE_ENTITY, e))?;
+    let thinking = request.requested_thinking().map_err(|e| {
+        contract_fail_response(
+            state,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "refused",
+            "invalid_request",
+            e,
+        )
+    })?;
     let messages: Vec<TemplateMessage> = request
         .messages
         .iter()
@@ -106,7 +133,13 @@ fn tokenize_chat_request(
     let prompt = format_chat_prompt(state.chat_template(), model_hint, &messages, thinking)
         .map_err(|e| match e {
             refused @ crate::error::RealizarError::ThinkingModeUnsupported { .. } => {
-                fail_response(state, StatusCode::UNPROCESSABLE_ENTITY, refused.to_string())
+                contract_fail_response(
+                    state,
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "refused",
+                    "thinking_mode_unsupported",
+                    refused,
+                )
             },
             other => fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, other.to_string()),
         })?;
@@ -127,13 +160,41 @@ fn respond_with_split(
     state: &AppState,
     prompt: &crate::chat_template::ChatPrompt,
     completion: &str,
+    completion_tokens: usize,
     max_tokens: usize,
-    build: impl FnOnce(String, Option<String>) -> Response,
+    build: impl FnOnce(String, Option<String>) -> ChatCompletionResponse,
 ) -> Response {
     match split_chat_completion(state, prompt, completion, max_tokens) {
-        Ok((reasoning, answer)) => build(answer, reasoning),
+        // #3720 `empty_completion`: zero tokens generated, or only a think block.
+        Ok((reasoning, answer))
+            if completion_tokens == 0 || (reasoning.is_some() && answer.trim().is_empty()) =>
+        {
+            contract_fail_response(
+                state,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "failed",
+                "empty_completion",
+                "empty completion: generation ran and produced no answer",
+            )
+        },
+        Ok((reasoning, answer)) => contract_ok_response(state, build(answer, reasoning)),
         Err(refused) => refused,
     }
+}
+
+/// #3720: a completion under the apr response contract: `status: "ok"`, and what
+/// produced it (`model_digest`, `apr_version`, `apr_git_sha`) when the server knows.
+fn contract_ok_response(state: &AppState, response: ChatCompletionResponse) -> Response {
+    let Ok(mut body) = serde_json::to_value(&response) else {
+        return Json(response).into_response();
+    };
+    body["status"] = "ok".into();
+    if let Some(identity) = state.model_identity() {
+        body["model_digest"] = identity.digest.clone().into();
+        body["apr_version"] = identity.apr_version.clone().into();
+        body["apr_git_sha"] = identity.apr_git_sha.clone().into();
+    }
+    Json(body).into_response()
 }
 
 /// Split a chat completion into reasoning and answer, as production splits it (#3723).
@@ -149,7 +210,15 @@ fn split_chat_completion(
     prompt
         .split(completion, max_tokens)
         .map(|split| (split.reasoning, split.answer))
-        .map_err(|e| fail_response(state, StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))
+        .map_err(|e| {
+            contract_fail_response(
+                state,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "failed",
+                "think_block_unclosed",
+                e,
+            )
+        })
 }
 
 /// Extract common generation parameters from the request.
@@ -238,6 +307,200 @@ fn resolve_chat_top_k(temperature: f32, requested: Option<usize>) -> usize {
         1
     } else {
         requested.unwrap_or(40)
+    }
+}
+
+#[cfg(test)]
+mod response_contract_3720_tests {
+    use super::{contract_ok_response, respond_with_split, tokenize_chat_request};
+    use crate::api::{create_router, AppState, ChatCompletionRequest, ModelIdentity};
+    use crate::chat_template::{ChatPrompt, EmbeddedChatTemplate};
+    use axum::http::StatusCode;
+
+    fn identity() -> ModelIdentity {
+        ModelIdentity {
+            digest: "ab".repeat(32),
+            apr_version: "0.69.0".into(),
+            apr_git_sha: "deadbeef".into(),
+        }
+    }
+
+    async fn body(response: axum::response::Response) -> (StatusCode, serde_json::Value) {
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        (status, serde_json::from_slice(&bytes).expect("json"))
+    }
+
+    fn completion(state: &AppState, text: &str, tokens: usize) -> axum::response::Response {
+        let prompt = ChatPrompt {
+            text: "<|im_start|>assistant\n".into(),
+            thinking: false,
+        };
+        respond_with_split(state, &prompt, text, tokens, 16, |answer, reasoning| {
+            super::build_chat_response(
+                "id".into(),
+                "m".into(),
+                answer,
+                3,
+                1,
+                16,
+                None,
+                None,
+                std::time::Duration::from_millis(1),
+                None,
+                None,
+                None,
+                reasoning,
+            )
+        })
+    }
+
+    #[tokio::test]
+    async fn a_completion_is_status_ok_and_names_what_produced_it() {
+        let state = AppState::demo()
+            .expect("demo")
+            .with_model_identity(Some(identity()));
+        let (code, v) = body(completion(&state, "4", 1)).await;
+        assert_eq!(code, StatusCode::OK);
+        assert_eq!(v["status"], "ok");
+        assert_eq!(v["model_digest"], "ab".repeat(32));
+        assert_eq!(v["apr_version"], "0.69.0");
+        assert_eq!(v["apr_git_sha"], "deadbeef");
+        assert_eq!(v["choices"][0]["message"]["content"], "4");
+
+        let bare = AppState::demo().expect("demo");
+        let (_, v) = body(contract_ok_response(
+            &bare,
+            super::build_chat_response(
+                "id".into(),
+                "m".into(),
+                "4".into(),
+                1,
+                1,
+                16,
+                None,
+                None,
+                std::time::Duration::from_millis(1),
+                None,
+                None,
+                None,
+                None,
+            ),
+        ))
+        .await;
+        assert_eq!(v["status"], "ok");
+        assert!(
+            v.get("model_digest").is_none(),
+            "a server given no identity claims none"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_empty_answer_is_a_named_failure_never_200_with_nothing() {
+        let state = AppState::demo().expect("demo");
+        // #3720's rule: zero tokens, or only a think block. A whitespace answer the model
+        // did generate is what it said, not an empty completion.
+        let (code, _) = body(completion(&state, "  ", 1)).await;
+        assert_eq!(
+            code,
+            StatusCode::OK,
+            "a generated whitespace token is an answer"
+        );
+        for (text, tokens) in [("", 0), ("<think>\nonly reasoning\n</think>\n\n", 5)] {
+            let (code, v) = body(completion(&state, text, tokens)).await;
+            assert_eq!(code, StatusCode::UNPROCESSABLE_ENTITY, "{text:?}: {v}");
+            assert_eq!(v["status"], "failed");
+            assert_eq!(v["error_kind"], "empty_completion");
+            assert!(
+                v["error"]
+                    .as_str()
+                    .is_some_and(|e| e.contains("empty completion")),
+                "{v}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unclosed_think_block_is_a_named_failure() {
+        let state = AppState::demo().expect("demo");
+        let prompt = ChatPrompt {
+            text: "<|im_start|>assistant\n<think>\n".into(),
+            thinking: true,
+        };
+        let response = respond_with_split(&state, &prompt, "still going", 16, 16, |_, _| {
+            unreachable!("an unclosed block builds no completion")
+        });
+        let (code, v) = body(response).await;
+        assert_eq!(code, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(v["status"], "failed");
+        assert_eq!(v["error_kind"], "think_block_unclosed");
+        assert!(
+            v["error"]
+                .as_str()
+                .is_some_and(|e| e.contains("16-token budget")),
+            "{v}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_thinking_mode_the_model_cannot_honour_is_refused_by_kind() {
+        let template = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/chat_templates/cd8e9439f057.jinja"),
+        )
+        .expect("Qwen2.5 template fixture (off only)");
+        let state = AppState::demo()
+            .expect("demo")
+            .with_chat_template(Some(EmbeddedChatTemplate::new(template).expect("template")));
+        let request: ChatCompletionRequest = serde_json::from_value(serde_json::json!({
+            "model": "m",
+            "messages": [{"role": "user", "content": "hi"}],
+            "chat_template_kwargs": {"enable_thinking": true},
+        }))
+        .expect("request");
+        let tokenizer = state.tokenizer.clone().expect("demo tokenizer");
+        let refused = tokenize_chat_request(&tokenizer, &request, None, &state)
+            .expect_err("ON on an off-only template is refused");
+        let (code, v) = body(refused).await;
+        assert_eq!(code, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(v["status"], "refused");
+        assert_eq!(v["error_kind"], "thinking_mode_unsupported");
+    }
+
+    #[tokio::test]
+    async fn every_response_carries_the_model_digest_header() {
+        use tower::util::ServiceExt;
+        let state = AppState::demo()
+            .expect("demo")
+            .with_model_identity(Some(identity()));
+        let response = create_router(state)
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/health")
+                    .body(axum::body::Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("dispatch");
+        assert_eq!(
+            response
+                .headers()
+                .get("x-apr-model-digest")
+                .and_then(|v| v.to_str().ok()),
+            Some("ab".repeat(32).as_str())
+        );
+        let bare = create_router(AppState::demo().expect("demo"))
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/health")
+                    .body(axum::body::Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("dispatch");
+        assert!(bare.headers().get("x-apr-model-digest").is_none());
     }
 }
 
@@ -828,7 +1091,7 @@ pub(crate) fn build_chat_response(
     tool_choice: Option<crate::grammar::ToolChoice>,
     timings: Option<super::Timings>,
     reasoning: Option<String>,
-) -> Response {
+) -> ChatCompletionResponse {
     let (brick_trace, step_trace, layer_trace) = build_trace_data(
         trace_level,
         latency.as_micros() as u64,
@@ -855,7 +1118,7 @@ pub(crate) fn build_chat_response(
     // #3723: the reasoning travels beside the answer, never inside it.
     message.reasoning_content = reasoning;
 
-    Json(ChatCompletionResponse {
+    ChatCompletionResponse {
         id: request_id,
         object: "chat.completion".to_string(),
         created: unix_timestamp(),
@@ -874,8 +1137,7 @@ pub(crate) fn build_chat_response(
         step_trace,
         layer_trace,
         timings,
-    })
-    .into_response()
+    }
 }
 
 /// Serialize a value to an SSE event, returning `None` if serialization fails.
@@ -1031,7 +1293,10 @@ fn unclosed_think_event(max_tokens: usize) -> Option<Result<Event, Infallible>> 
         "error": format!(
             "think block unclosed within the {max_tokens}-token budget: the model was still \
              reasoning when generation stopped"
-        )
+        ),
+        // #3720: the same status and kind the non-streaming response carries.
+        "status": "failed",
+        "error_kind": "think_block_unclosed",
     }))
 }
 
@@ -1342,6 +1607,7 @@ fn try_gpu_backend(
         state,
         &chat_prompt,
         &text,
+        completion_tokens,
         max_tokens,
         |text, reasoning| {
             build_chat_response(
@@ -1443,6 +1709,7 @@ fn try_cached_backend(
         state,
         &chat_prompt,
         &text,
+        completion_tokens,
         max_tokens,
         |text, reasoning| {
             build_chat_response(

@@ -74,6 +74,47 @@ fn served_gguf_chat_template(
     )
 }
 
+/// #3720: the identity a served model answers with (`x-apr-model-digest`, and
+/// `model_digest` / `apr_version` / `apr_git_sha` in completion bodies): the sha256 of
+/// the GGUF's mapped bytes, i.e. exactly what was loaded, hashed once at startup.
+fn served_gguf_identity(
+    mapped: &realizar::gguf::MappedGGUFModel,
+) -> Option<realizar::api::ModelIdentity> {
+    use sha2::{Digest, Sha256};
+    let start = std::time::Instant::now();
+    let digest: String = Sha256::digest(mapped.data()).iter().map(|b| format!("{b:02x}")).collect();
+    announce_served_identity(Some(digest), start)
+}
+
+/// #3720: [`served_gguf_identity`] for an APR/SafeTensors file served by path. `None`
+/// (and no header) for a path that is not one readable file.
+fn served_file_identity(model_path: &Path) -> Option<realizar::api::ModelIdentity> {
+    let start = std::time::Instant::now();
+    let digest = model_path
+        .is_file()
+        .then(|| crate::commands::manifest::sha256_of_file(model_path).ok())
+        .flatten()
+        .map(|(_, hex)| hex);
+    announce_served_identity(digest, start)
+}
+
+fn announce_served_identity(
+    digest: Option<String>,
+    start: std::time::Instant,
+) -> Option<realizar::api::ModelIdentity> {
+    let digest = digest?;
+    println!(
+        "{} {digest} ({:.1}s)",
+        "Model sha256:".green(),
+        start.elapsed().as_secs_f64()
+    );
+    Some(realizar::api::ModelIdentity {
+        digest,
+        apr_version: env!("CARGO_PKG_VERSION").to_string(),
+        apr_git_sha: env!("APR_GIT_SHA").to_string(),
+    })
+}
+
 /// The served APR/SafeTensors file's own chat template (#3755).
 fn served_file_chat_template(
     model_path: &Path,
@@ -118,10 +159,12 @@ fn run_cpu_server(
         Some(mapped) => served_gguf_chat_template(mapped)?,
         None => None,
     };
+    let identity = mapped_model.as_deref().and_then(served_gguf_identity);
     let mut state = AppState::with_quantized_model_and_vocab(quantized_model, vocab)
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?
         .with_model_source(model_source)
-        .with_chat_template(chat_template);
+        .with_chat_template(chat_template)
+        .with_model_identity(identity);
     if let Some(mapped) = mapped_model {
         state = state.with_mapped_gguf_model(mapped);
     }
@@ -231,9 +274,11 @@ fn start_gguf_server_gpu_batched(
     // aprender#1789 Option B: attach mapped GGUF so qwen3_moe chat dispatch
     // via `try_qwen3_moe_backend` can borrow per-expert tensors.
     let chat_template = served_gguf_chat_template(&mapped_model)?;
+    let identity = served_gguf_identity(&mapped_model);
     let state = AppState::with_cached_model_and_vocab(cached_model, vocab)
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?
         .with_chat_template(chat_template)
+        .with_model_identity(identity)
         .with_mapped_gguf_model(mapped_model)
         .with_verbose(config.verbose); // GH-152: Pass verbose flag
 

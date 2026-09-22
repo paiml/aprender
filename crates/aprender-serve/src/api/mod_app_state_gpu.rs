@@ -63,6 +63,7 @@ impl AppState {
             mapped_gguf_model: None,
             cached_eos_token_id: None,
             chat_template: None,
+            model_identity: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -121,6 +122,7 @@ impl AppState {
             mapped_gguf_model: None,
             cached_eos_token_id: None,
             chat_template: None,
+            model_identity: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -187,6 +189,7 @@ impl AppState {
             mapped_gguf_model: None,
             cached_eos_token_id: None,
             chat_template: None,
+            model_identity: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -257,6 +260,7 @@ impl AppState {
             mapped_gguf_model: None,
             cached_eos_token_id: eos,
             chat_template: None,
+            model_identity: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -315,6 +319,7 @@ impl AppState {
             mapped_gguf_model: None,
             cached_eos_token_id: eos,
             chat_template: None,
+            model_identity: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -378,6 +383,7 @@ impl AppState {
             mapped_gguf_model: None,
             cached_eos_token_id: None,
             chat_template: None,
+            model_identity: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -603,6 +609,7 @@ impl AppState {
             mapped_gguf_model: None,
             cached_eos_token_id: eos_id,
             chat_template: None,
+            model_identity: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -653,6 +660,7 @@ impl AppState {
             mapped_gguf_model: None,
             cached_eos_token_id: None,
             chat_template: None,
+            model_identity: None,
             verbose: false,
             trace: false,
             model_source: None,
@@ -716,6 +724,19 @@ impl AppState {
     ) -> Self {
         self.chat_template = template.map(Arc::new);
         self
+    }
+
+    /// #3720: the served model's identity (file sha256 + apr build).
+    #[must_use]
+    pub fn with_model_identity(mut self, identity: Option<ModelIdentity>) -> Self {
+        self.model_identity = identity.map(Arc::new);
+        self
+    }
+
+    /// #3720: the served model's identity, when the server was given one.
+    #[must_use]
+    pub fn model_identity(&self) -> Option<&ModelIdentity> {
+        self.model_identity.as_deref()
     }
 
     /// The model file's own chat template, when it ships one (#3755).

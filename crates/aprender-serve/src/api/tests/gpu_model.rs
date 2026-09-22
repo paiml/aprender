@@ -56,11 +56,21 @@ async fn test_gpu_model_tokenizer_missing_error() {
 
     // Should handle gracefully (may succeed or fail with proper error)
     let status = response.status();
+    // #3720: this fixture's model generates zero tokens, which is the named
+    // `empty_completion` failure (422), never a 200 with "". Only THAT 422 is accepted.
+    let empty_completion = status == StatusCode::UNPROCESSABLE_ENTITY
+        && serde_json::from_slice::<serde_json::Value>(
+            &axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .is_ok_and(|v| v["error_kind"] == "empty_completion");
     assert!(
         status == StatusCode::OK
             || status == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
-            || status == StatusCode::BAD_REQUEST,
+            || status == StatusCode::NOT_FOUND
+            || status == StatusCode::BAD_REQUEST
+            || empty_completion,
         "Should handle gracefully, got {}",
         status
     );
@@ -176,8 +186,17 @@ async fn test_quantized_model_temperature_zero() {
         .expect("send");
 
     let status = response.status();
+    // #3720: this fixture's model generates zero tokens, which is the named
+    // `empty_completion` failure (422), never a 200 with "". Only THAT 422 is accepted.
+    let empty_completion = status == StatusCode::UNPROCESSABLE_ENTITY
+        && serde_json::from_slice::<serde_json::Value>(
+            &axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("body"),
+        )
+        .is_ok_and(|v| v["error_kind"] == "empty_completion");
     assert!(
-        status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR,
+        status == StatusCode::OK || status == StatusCode::INTERNAL_SERVER_ERROR || empty_completion,
         "Temperature=0 should use greedy sampling, got {}",
         status
     );

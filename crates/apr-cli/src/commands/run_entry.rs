@@ -197,7 +197,11 @@ fn reconcile_and_emit(
 /// #3720 `empty_completion`: a run that produced no answer (zero tokens, or only a think
 /// block, whose reasoning is still reported) is a FAILURE naming why, never exit 0 with "".
 fn require_answer(result: &super::run::RunResult) -> Result<()> {
-    if !result.text.trim().is_empty() {
+    // #3720's rule: zero tokens generated, or only a think block. A whitespace answer the
+    // model did generate is what it said.
+    let no_tokens = result.tokens_generated == Some(0);
+    let only_reasoning = result.reasoning.is_some() && result.text.trim().is_empty();
+    if !no_tokens && !only_reasoning {
         return Ok(());
     }
     let why = if result.reasoning.is_some() {

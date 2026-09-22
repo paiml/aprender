@@ -255,7 +255,7 @@ async fn try_cuda_backend(
         .ok()
         .and_then(|phases| phases.to_timings(prompt_tokens, completion_tokens));
     // #3723: the reasoning is split out of the answer; an unclosed block is refused.
-    Some(respond_with_split(state, &chat_prompt, &response_text, max_tokens, |text, reasoning| {
+    Some(respond_with_split(state, &chat_prompt, &response_text, completion_tokens, max_tokens, |text, reasoning| {
         build_chat_response(
             request_id.to_string(),
             request.model.clone(),
@@ -380,7 +380,7 @@ fn try_quantized_backend(
     let latency = start.elapsed();
     state.metrics.record_success(completion_tokens, latency);
     // #3723: the reasoning is split out of the answer; an unclosed block is refused.
-    Some(respond_with_split(state, &chat_prompt, &text, max_tokens, |text, reasoning| {
+    Some(respond_with_split(state, &chat_prompt, &text, completion_tokens, max_tokens, |text, reasoning| {
         build_chat_response(
             request_id.to_string(),
             request.model.clone(),
@@ -493,7 +493,7 @@ fn try_apr_transformer_backend(
     let latency = start.elapsed();
     state.metrics.record_success(completion_tokens, latency);
     // #3723: the reasoning is split out of the answer; an unclosed block is refused.
-    Some(respond_with_split(state, &chat_prompt, &text, max_tokens, |text, reasoning| {
+    Some(respond_with_split(state, &chat_prompt, &text, completion_tokens, max_tokens, |text, reasoning| {
         build_chat_response(
             request_id.to_string(),
             request.model.clone(),
@@ -617,7 +617,7 @@ fn registry_fallback(
 
     let max_tokens = request.max_tokens.unwrap_or(256);
     // #3723: the reasoning is split out of the answer; an unclosed block is refused.
-    respond_with_split(state, &chat_prompt, &response_text, max_tokens, |text, reasoning| {
+    respond_with_split(state, &chat_prompt, &response_text, completion_tokens, max_tokens, |text, reasoning| {
         build_chat_response(
             request_id.to_string(),
             request.model.clone(),
@@ -793,7 +793,7 @@ async fn try_apr_q4k_chat_backend(
         .record_success(completion_tokens, start.elapsed());
 
     // #3723: the reasoning is split out of the answer; an unclosed block is refused.
-    Some(respond_with_split(state, &chat_prompt, &text, max_tokens, |text, reasoning| {
+    Some(respond_with_split(state, &chat_prompt, &text, completion_tokens, max_tokens, |text, reasoning| {
         build_chat_response(
             request_id.to_string(),
             request.model.clone(),
@@ -1142,7 +1142,7 @@ fn try_qwen3_moe_backend(
     state.metrics.record_success(completion_tokens, duration);
 
     // #3723: the reasoning is split out of the answer; an unclosed block is refused.
-    Some(respond_with_split(state, &chat_prompt, &response_text, max_tokens, |text, reasoning| {
+    Some(respond_with_split(state, &chat_prompt, &response_text, completion_tokens, max_tokens, |text, reasoning| {
         build_chat_response(
             request_id.to_string(),
             request.model.clone(),

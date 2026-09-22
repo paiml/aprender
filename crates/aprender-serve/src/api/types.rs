@@ -121,6 +121,21 @@ pub struct ErrorResponse {
     pub error: String,
 }
 
+/// #3720: an error under the apr response contract (`contracts/apr-response-contract-v1.yaml`).
+/// Additive to [`ErrorResponse`]: `error` is still the message string every existing
+/// client reads, and `status` + `error_kind` say whether the request was REFUSED (a
+/// capability, limit or policy said no before the work ran) or FAILED (it ran and
+/// produced no answer).
+#[derive(Serialize, Deserialize)]
+pub struct ContractErrorResponse {
+    /// Error message (the same field [`ErrorResponse`] carries)
+    pub error: String,
+    /// "refused" or "failed"
+    pub status: String,
+    /// The contract's snake_case kind, e.g. `thinking_mode_unsupported`
+    pub error_kind: String,
+}
+
 /// Batch tokenize request
 #[derive(Serialize, Deserialize)]
 pub struct BatchTokenizeRequest {

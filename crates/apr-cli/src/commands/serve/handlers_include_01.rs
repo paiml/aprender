@@ -74,6 +74,7 @@ fn start_apr_server_gpu(
     }
     .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
     .with_chat_template(served_file_chat_template(model_path)?)
+        .with_model_identity(served_file_identity(model_path))
     .with_verbose(false) // with_batch_config deferred until realizar API stabilizes
     .with_verbose(config.verbose);
 
@@ -138,6 +139,7 @@ fn start_apr_q4k_server_gpu(
     let state = AppState::with_apr_q4k_and_vocab_eos(q4k_tx, vocab, eos_id)
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
         .with_chat_template(served_file_chat_template(model_path)?)
+        .with_model_identity(served_file_identity(model_path))
         .with_verbose(config.verbose);
 
     println!("{}", "Q4K GPU inference ready (ALB-095)".green());
@@ -219,6 +221,7 @@ fn start_safetensors_server_gpu(
     }
     .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
     .with_chat_template(served_file_chat_template(model_path)?)
+        .with_model_identity(served_file_identity(model_path))
     .with_verbose(false) // with_batch_config deferred until realizar API stabilizes
     .with_verbose(config.verbose);
 

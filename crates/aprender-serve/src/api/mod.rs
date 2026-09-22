@@ -138,9 +138,22 @@ pub use types::{default_max_tokens, default_top_k};
 pub(crate) use types::{default_strategy, default_temperature, default_top_p};
 pub use types::{
     BatchGenerateRequest, BatchGenerateResponse, BatchTokenizeRequest, BatchTokenizeResponse,
-    ChoiceCount, ErrorResponse, FinishReason, GenerateRequest, GenerateResponse, HealthResponse,
-    ModelsResponse, StreamDoneEvent, StreamTokenEvent, TokenizeRequest, TokenizeResponse,
+    ChoiceCount, ContractErrorResponse, ErrorResponse, FinishReason, GenerateRequest,
+    GenerateResponse, HealthResponse, ModelsResponse, StreamDoneEvent, StreamTokenEvent,
+    TokenizeRequest, TokenizeResponse,
 };
+
+/// #3720: the identity of the model a server answers with: the sha256 (lower-case hex,
+/// what `sha256sum` prints) of the file it loaded, and the apr build that loaded it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelIdentity {
+    /// sha256 of the served model file
+    pub digest: String,
+    /// apr's version, e.g. "0.69.0"
+    pub apr_version: String,
+    /// the git sha apr was built from
+    pub apr_git_sha: String,
+}
 
 /// Application state shared across handlers
 #[derive(Clone)]
@@ -221,6 +234,9 @@ pub struct AppState {
     /// #3755: the served model file's OWN chat template, rendered as HF renders it
     /// (set by `with_chat_template`); the per-family template is only the fallback.
     chat_template: Option<Arc<crate::chat_template::EmbeddedChatTemplate>>,
+    /// #3720: what serves this model: the loaded file's sha256 and the apr build (set by
+    /// `with_model_identity`). Sent as `x-apr-model-digest` and in completion bodies.
+    model_identity: Option<Arc<ModelIdentity>>,
     /// GH-152: Enable verbose request/response logging
     verbose: bool,
     /// GH-103: Enable inference tracing (propagates into QuantizedGenerateConfig.trace)

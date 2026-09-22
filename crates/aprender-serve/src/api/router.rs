@@ -307,6 +307,23 @@ pub fn create_router_with_config(state: AppState, config: RouterConfig) -> Route
         router = router.layer(tower_http::cors::CorsLayer::permissive());
     }
 
+    // #3720: every response names the model that answered it (streaming ones too: the
+    // header is sent before the first event). A server given no identity sends none.
+    if let Some(digest) = state
+        .model_identity()
+        .and_then(|identity| axum::http::HeaderValue::from_str(&identity.digest).ok())
+    {
+        router = router.layer(axum::middleware::map_response(
+            move |mut response: axum::response::Response| {
+                let digest = digest.clone();
+                async move {
+                    response.headers_mut().insert("x-apr-model-digest", digest);
+                    response
+                }
+            },
+        ));
+    }
+
     // #2506 (SURF-7/R14): contain handler panics.
     //
     // OUTERMOST, deliberately: a panic in any layer below -- including the
