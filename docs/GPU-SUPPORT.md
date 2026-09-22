@@ -36,7 +36,7 @@ CPU path deliberately and works for every row above.
 | quantization | GPU | note |
 |---|---|---|
 | F32 | yes | ggml type 0 |
-| F16 | no | ggml type 1 — no GPU GEMV kernel |
+| F16 | yes | ggml type 1 — Opened in the GPU whitelist on the 0.69.1 release branch. This row read `false` with reason "no GPU GEMV kernel" until FALSIFY-CAP-002 caught the disagreement with `gpu_unsupported_quant_qtype` after the kernel landed. |
 | Q4_0 | yes | ggml type 2 |
 | Q4_1 | yes | ggml type 3 |
 | Q5_0 | yes | ggml type 6 |
@@ -56,7 +56,7 @@ CPU path deliberately and works for every row above.
 | IQ4_NL | no | ggml type 20 — no GPU GEMV kernel; IQ also fails the CPU dequant path |
 | IQ3_S | no | ggml type 21 — no GPU GEMV kernel; IQ also fails the CPU dequant path |
 | IQ2_S | no | ggml type 22 — no GPU GEMV kernel; IQ also fails the CPU dequant path |
-| IQ4_XS | no | ggml type 23 — no GPU GEMV kernel; IQ also fails the CPU dequant path |
+| IQ4_XS | yes | ggml type 23 — Opened in the GPU whitelist on the 0.69.1 release branch. The CPU dequant path has existed all along (`iq_dispatch.rs`); only the GPU side was shut. |
 | BF16 | no | ggml type 30 — no GPU GEMV kernel |
 | IQ1_M | no | ggml type 29 — no GPU GEMV kernel; IQ also fails the CPU dequant path |
 | I8 | no | ggml type 24 — integer storage type, not a weight quantisation for inference |

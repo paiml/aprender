@@ -159,22 +159,76 @@ async fn a_streamed_chat_request_answers_what_apr_run_answers() {
     assert_eq!(got.trim(), want.trim(), "streamed: {body}");
 }
 
+/// Is this completion the shape #3571 measured — output that is present but carries
+/// no information?
+///
+/// The original defect answered `/v1/completions` with HTTP 200 and **1024 tokens of
+/// `"\n"`**: a dense endpoint decoding through a zero-layer base. Two ways that looks:
+/// nothing at all, or one character repeated.
+///
+/// This is a FUNCTION rather than an inline assertion so it can be proven RED against
+/// the historical output directly, without needing a model that reproduces the bug.
+fn is_degenerate_completion(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    let mut chars = trimmed.chars();
+    let first = chars.next().unwrap_or(' ');
+    chars.all(|c| c == first)
+}
+
+#[test]
+fn the_degeneracy_check_catches_the_defect_it_is_named_for() {
+    // #3571's exact output. If this line ever goes green, the test below has been
+    // replaced by one that cannot see the defect it is named for -- which is worse
+    // than the 503 it used to assert, because it would look like coverage.
+    assert!(is_degenerate_completion(&"\n".repeat(1024)), "1024 newlines");
+    assert!(is_degenerate_completion(""), "empty");
+    assert!(is_degenerate_completion("   \t  "), "whitespace only");
+    assert!(is_degenerate_completion("aaaaaaaa"), "one character repeated");
+    // And it must NOT fire on a real answer, or it would fail every green run.
+    assert!(!is_degenerate_completion(" Lima, and the capital of Haiti is"));
+    assert!(!is_degenerate_completion(" Paris"));
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_dense_endpoint_no_longer_decodes_through_the_zero_layer_base() {
     let Some((state, _)) = state_or_skip(true) else {
         return;
     };
     // #3571 measured this at batch-1: HTTP 200 with 1024 tokens of "\n".
+    //
+    // THIS TEST ASSERTED `status != 200` UNTIL #3874. That was a proxy, not the
+    // intent: when it was written there was no correct path for this endpoint on a
+    // Qwen3.5 hybrid, so "do not answer at all" was the only way to say "do not
+    // answer with garbage". It was green because the endpoint 503'd -- the same
+    // reason the feature was broken.
+    //
+    // #3874 added the Qwen3.5 arm, so the endpoint now answers correctly and the
+    // proxy is obsolete. The intent is unchanged and is now asserted directly: a
+    // dense endpoint must not answer with output decoded through a base that holds
+    // no model. `is_degenerate_completion` is proven against #3571's exact output in
+    // `the_degeneracy_check_catches_the_defect_it_is_named_for`.
+    //
+    // The assertion reads the FIELD, never a line or a position: aprender-55's
+    // must-RED fixture showed a "non-empty" check survive an empty-text mutant
+    // because it read the last line, and the last line became the id line when the
+    // text vanished.
     let (status, body) = post(
         create_router(state),
         "/v1/completions",
         serde_json::json!({"model": "x", "prompt": "The capital of Peru is", "max_tokens": 8}),
     )
     .await;
-    assert_ne!(
-        status,
-        StatusCode::OK,
-        "a dense endpoint answered through the base: {body}"
+    assert_eq!(status, StatusCode::OK, "the endpoint must answer: {body}");
+    let doc: serde_json::Value = serde_json::from_str(&body).expect("a JSON body");
+    let text = doc["choices"][0]["text"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no choices[0].text in {body}"));
+    assert!(
+        !is_degenerate_completion(text),
+        "a dense endpoint answered through the base (#3571): text={text:?}"
     );
 }
 
