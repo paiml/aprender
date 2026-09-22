@@ -31,10 +31,18 @@ use aprender::text::bpe::Qwen2BpeTokenizer;
 // PMAT-181: Read EOS token from APR metadata (fixes GH-170)
 use aprender::serialization::apr::AprReader;
 // Chat template support (Toyota Way: Standardized Work)
-use aprender::text::chat_template::{
+// #3801: ONE detector. `apr chat` used to import these from aprender-core, whose
+// `TemplateFormat` has seven variants and **no `Qwen3NoThink`** — so on this path
+// no-think was not merely unselected, it was unrepresentable, and every `qwen*`
+// became ChatML. `apr serve`, `apr run --chat` and `apr qa`'s golden gate all take
+// realizar's detector and give `qwen3`/`qwen35` the no-think template; chat alone
+// left the model in thinking mode, measured emitting `<think>Okay, the user is
+// asking…` on Qwen3-1.7B. Two functions with the same name, two enums, one of
+// which could not express the right answer.
+use colored::Colorize;
+use realizar::chat_template::{
     auto_detect_template, detect_format_from_name, ChatMessage, ChatTemplateEngine, TemplateFormat,
 };
-use colored::Colorize;
 use std::io::{self, Write};
 use std::path::Path;
 use std::time::Instant;
@@ -563,15 +571,10 @@ fn print_welcome_banner_for(path: &Path, format: ModelFormat, config: &ChatConfi
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
     let template_format = detect_format_from_name(model_name);
-    let template_name = match template_format {
-        TemplateFormat::ChatML => "ChatML",
-        TemplateFormat::Llama2 => "LLaMA2",
-        TemplateFormat::Mistral => "Mistral",
-        TemplateFormat::Phi => "Phi",
-        TemplateFormat::Alpaca => "Alpaca",
-        TemplateFormat::Custom => "Custom",
-        TemplateFormat::Raw => "Raw",
-    };
+    // #3801: ONE spelling of the name. This was a second copy of
+    // `template_format_name`, and two copies of a match over an enum are how a
+    // new variant gets handled in one place and not the other.
+    let template_name = crate::chat::realizar_chat::template_format_name(template_format);
 
     match format {
         ModelFormat::Apr => {

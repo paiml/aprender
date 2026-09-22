@@ -117,10 +117,15 @@ fn dir_name_fallback(path: &Path) -> String {
         .to_string()
 }
 
-fn template_format_name(tf: TemplateFormat) -> &'static str {
+pub(crate) fn template_format_name(tf: TemplateFormat) -> &'static str {
     match tf {
         TemplateFormat::ChatML => "ChatML",
+        // #3801: this arm could not be written before — aprender-core's enum had
+        // no such variant, which is why `apr chat` reported ChatML for a model
+        // production serves with thinking off.
+        TemplateFormat::Qwen3NoThink => "Qwen3NoThink (thinking off)",
         TemplateFormat::Llama2 => "LLaMA2",
+        TemplateFormat::Zephyr => "Zephyr",
         TemplateFormat::Mistral => "Mistral",
         TemplateFormat::Phi => "Phi",
         TemplateFormat::Alpaca => "Alpaca",
@@ -400,5 +405,82 @@ mod tests {
     #[test]
     fn test_chat_load_no_fallback_on_arch_refusal() {
         assert!(true);
+    }
+}
+
+// =============================================================================
+// #3801: ONE detector across every verb
+// =============================================================================
+
+#[cfg(test)]
+mod one_detector_tests {
+    use super::*;
+
+    /// THE DEFECT, as a test. `apr chat` imported `detect_format_from_name` from
+    /// aprender-core, whose `TemplateFormat` has seven variants and no
+    /// `Qwen3NoThink`; every `qwen*` became ChatML and the model reasoned. This
+    /// now resolves to realizar's detector — the one `apr serve`, `apr run --chat`
+    /// and `apr qa`'s golden gate already use.
+    #[test]
+    fn chat_gives_qwen3_the_no_think_template_like_every_other_verb() {
+        for arch in ["qwen3", "qwen35", "Qwen3-8B-Q4_K_M", "Qwen3.5-0.8B-Q4_K_M"] {
+            let got = detect_format_from_name(arch);
+            assert_eq!(
+                got,
+                TemplateFormat::Qwen3NoThink,
+                "{arch}: chat must select the template production selects"
+            );
+            assert_ne!(
+                got,
+                TemplateFormat::ChatML,
+                "{arch}: ChatML is the defect — it leaves the model in thinking mode"
+            );
+        }
+    }
+
+    /// The MoE exception survives the switch: PMAT-181 routes qwen3_moe to plain
+    /// ChatML because it was trained without `<think>` blocks. A unification that
+    /// swept it up would be a new defect.
+    #[test]
+    fn qwen3_moe_keeps_plain_chatml() {
+        for arch in ["qwen3_moe", "qwen3moe"] {
+            assert_eq!(detect_format_from_name(arch), TemplateFormat::ChatML, "{arch}");
+        }
+    }
+
+    /// Everything else chat used to name must still be named the same way: the
+    /// switch widens the enum, it does not re-label the formats that existed.
+    #[test]
+    fn the_formats_chat_already_reported_are_unchanged() {
+        assert_eq!(template_format_name(TemplateFormat::ChatML), "ChatML");
+        assert_eq!(template_format_name(TemplateFormat::Llama2), "LLaMA2");
+        assert_eq!(template_format_name(TemplateFormat::Mistral), "Mistral");
+        assert_eq!(template_format_name(TemplateFormat::Phi), "Phi");
+        assert_eq!(template_format_name(TemplateFormat::Alpaca), "Alpaca");
+        assert_eq!(template_format_name(TemplateFormat::Custom), "Custom");
+        assert_eq!(template_format_name(TemplateFormat::Raw), "Raw");
+    }
+
+    /// The two variants aprender-core could not express. `Qwen3NoThink` is the
+    /// one this row exists for: its name must SAY the thinking mode, because the
+    /// banner is what a user reads to know which mode they are in.
+    #[test]
+    fn the_variants_the_old_enum_could_not_express_are_named() {
+        let name = template_format_name(TemplateFormat::Qwen3NoThink);
+        assert!(name.contains("Qwen3NoThink"), "{name}");
+        assert!(name.contains("thinking off"), "{name}");
+        assert_eq!(template_format_name(TemplateFormat::Zephyr), "Zephyr");
+    }
+
+    /// The banner and the session must not disagree. The banner derives the
+    /// format from the FILE STEM and the session from `general.architecture`;
+    /// for a Qwen3 file both must land on the same template, or the line a user
+    /// reads describes a mode they are not in.
+    #[test]
+    fn the_banner_and_the_session_agree_on_a_qwen3_file() {
+        let from_file_stem = detect_format_from_name("Qwen3-1.7B-Q4_K_M");
+        let from_architecture = detect_format_from_name("qwen3");
+        assert_eq!(from_file_stem, from_architecture);
+        assert_eq!(from_file_stem, TemplateFormat::Qwen3NoThink);
     }
 }
