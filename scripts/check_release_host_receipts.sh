@@ -215,7 +215,7 @@ mutate "$AUTOPILOT" "$M/ap-steps-reordered.sh" \
 mutate "$AUTOPILOT" "$M/ap-no-receipts-env.sh" \
     '  DOGFOOD_RECEIPTS_DIR="$AP/receipts/dogfood" bash scripts/dogfood.sh --phase post-publish' '  bash scripts/dogfood.sh --phase post-publish'
 mutate "$AUTOPILOT" "$M/ap-hosts-literal.sh" \
-    "rhosts=\$(sed -n 's/^HOSTS=\"\\(.*\\)\"\$/\\1/p' scripts/check_multiplatform_dogfood.sh | head -n 1)" 'rhosts="lambda intel gx10"'
+    '  rhosts=$(matrix_hosts)' '  rhosts="lambda intel gx10"'
 mutate "$AUTOPILOT" "$M/ap-drop-mkdir.sh" \
     '  mkdir -p "$RDIR/dogfood" || die' '  true || die'
 mutate "$AUTOPILOT" "$M/ap-no-receipt-to.sh" \

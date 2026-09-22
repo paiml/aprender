@@ -17,6 +17,22 @@ set -uo pipefail
 # D2/D3: $0-derived root, resolved BEFORE any cd and before the params that need it.
 # NOT `git rev-parse --show-toplevel` -- git refuses a container bind-mounted tree (#3586).
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || { echo "cannot resolve the repo root from $0" >&2; exit 2; }
+# THE HOSTS THIS TRAIN VISITS, declared ONCE and walked by the hosts step below (#3732). The dogfood
+# matrix is derived from what the train reaches, so `autopilot.sh --visited` prints exactly these,
+# from these variables, and scripts/check_dogfood_matrix_is_visited.sh judges the gate's matrix
+# against them: a host visited but not demanded, or demanded but not visited, is RED.
+ASSET_HOSTS="gx10 aarch64-unknown-linux-gnu|yoga x86_64-unknown-linux-gnu"   # the CUDA release asset runs here
+INSTALLER_HOSTS="intel --cpu|gx10 --cpu"                                        # install.sh at the tag runs here
+TRAIN_HOST="${RELEASE_TRAIN_HOST:-lambda}"  # the host this train runs on (APR-RELEASE-001; ledger.py: host_class lambda)
+matrix_hosts() { sed -n 's/^HOSTS="\(.*\)"$/\1/p' "$REPO_ROOT/scripts/check_multiplatform_dogfood.sh" | head -n 1; }
+if [ "${1:-}" = "--visited" ]; then
+  # no gh, no network, nothing run: one line per (host, how) the hosts step would reach
+  printf '%s\n' "$ASSET_HOSTS" | tr '|' '\n' | while read -r h _; do printf 'VISITED %s release-asset\n' "$h"; done
+  printf '%s\n' "$INSTALLER_HOSTS" | tr '|' '\n' | while read -r h _; do printf 'VISITED %s installer\n' "$h"; done
+  mh=$(matrix_hosts); [ -n "$mh" ] || { echo "autopilot --visited: cannot read HOSTS from scripts/check_multiplatform_dogfood.sh" >&2; exit 2; }
+  for h in $mh; do if [ "$h" = "$TRAIN_HOST" ]; then printf 'VISITED %s host-receipt-local\n' "$h"; else printf 'VISITED %s host-receipt-ssh\n' "$h"; fi; done
+  exit 0
+fi
 # shellcheck source=scripts/release/lib_release_params.sh
 . "$REPO_ROOT/scripts/release/lib_release_params.sh" || exit 2
 release_params "${1:-}" "$REPO_ROOT" || { echo "usage: autopilot.sh <version> <bump-pr> [from-step] [to-step]" >&2; exit 2; }
@@ -284,7 +300,7 @@ if run_step hosts; then
   receipt_to() { : > "$1" 2> /dev/null || die "INFRA the receipt dir $(dirname "$1") is missing or unwritable -- a write into it failed, so no host was judged (not a host verdict)"; }
   fails=0; infra=""
   SSH_FAILED=255  # ssh(1) exits 255 when IT failed (no route, refused, auth) -- never the remote command's verdict
-  for hp in "gx10 aarch64-unknown-linux-gnu" "yoga x86_64-unknown-linux-gnu"; do
+  while IFS= read -r hp; do
     set -- $hp; h=$1; tgt=$2; a="apr-$T-$tgt-cuda"
     receipt_to "$RDIR/$h.txt"
     ssh -o BatchMode=yes -o ConnectTimeout=10 "$h" "bash -s" > "$RDIR/$h.txt" 2>&1 <<HOST
@@ -300,11 +316,11 @@ HOST
     if [ "$rc" -eq "$SSH_FAILED" ]; then infra="$infra $h(ssh-255)"; say "INFRA $h unreachable: ssh rc=255 -- not a host verdict"; continue; fi
     say "HOST $h rc=$rc: $(grep -m1 '^version:' "$RDIR/$h.txt")"
     [ $rc -eq 0 ] || fails=$((fails + 1))
-  done
+  done <<< "$(printf '%s\n' "$ASSET_HOSTS" | tr '|' '\n')"
   # T-2 installer rows (APR-RELEASE-001 §4, 2026-09-16, #3366): install.sh at THE TAG, on a clean intel
   # (x86_64) and a clean gx10 (aarch64): asset resolves, sha256 verifies (the script refuses otherwise),
   # `apr --version` prints the version. Fetched from the URL the script advertises, pinned to the tag.
-  for hv in "intel --cpu" "gx10 --cpu"; do
+  while IFS= read -r hv; do
     set -- $hv; h=$1; variant=$2
     receipt_to "$RDIR/install-$h.txt"
     ssh -o BatchMode=yes -o ConnectTimeout=10 "$h" "bash -s" > "$RDIR/install-$h.txt" 2>&1 <<HOST
@@ -318,7 +334,7 @@ HOST
     if [ "$rc" -eq "$SSH_FAILED" ]; then infra="$infra install-$h(ssh-255)"; say "INFRA $h unreachable: ssh rc=255 -- not a host verdict"; continue; fi
     say "INSTALLER $h rc=$rc: $(grep -m1 '^installer:' "$RDIR/install-$h.txt")"
     [ $rc -eq 0 ] || fails=$((fails + 1))
-  done
+  done <<< "$(printf '%s\n' "$INSTALLER_HOSTS" | tr '|' '\n')"
   # The post-publish host receipts (#3731, #3544 item 2). The matrix is READ from the gate that
   # judges it (check_multiplatform_dogfood.sh HOSTS), never listed a second time here. Each host runs
   # scripts/release/host_receipt.sh from a KIT archived from the release commit -- never its own
@@ -326,9 +342,9 @@ HOST
   # ssh. Its GPU measurements queue at --gpu-prio 1: these receipts are release-blocking (rule rev 5).
   # A receipt's CONTENT is judged by the gate in `postpub`, not here: here a host either returned
   # a parseable receipt for ($V, itself), or it is an INFRA line.
-  rhosts=$(sed -n 's/^HOSTS="\(.*\)"$/\1/p' scripts/check_multiplatform_dogfood.sh | head -n 1)
+  rhosts=$(matrix_hosts)
   [ -n "$rhosts" ] || die "INFRA cannot read the HOSTS matrix from scripts/check_multiplatform_dogfood.sh"
-  train_host="${RELEASE_TRAIN_HOST:-lambda}"  # the host this train runs on (APR-RELEASE-001; ledger.py: host_class lambda)
+  train_host="$TRAIN_HOST"
   # The kit is the release commit's manifest and its WHOLE scripts/ tree (~1.5 MB gzipped): the block
   # producers source and read helpers beside them, and a hand-kept file list had already drifted --
   # the 0.68.2 first-green run's parity died on gx10 with "scripts/perf_isolation.sh: No such file".
