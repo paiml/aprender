@@ -273,9 +273,14 @@ self_test() {
   else
     bad "D1  partition broken: $nv variants, $ns supported, $nu unsupported"
   fi
-  if unsupported_ops | grep -qx 'LayerNorm'; then ok 'D2  LayerNorm derives as UNSUPPORTED'
+  # Here-string, never `producer | grep -q`: grep -q exits on its first match,
+  # the producer takes SIGPIPE, and under `pipefail` the pipeline reports the
+  # PRODUCER's death rather than grep's verdict -- so a row that MATCHED goes
+  # RED. Latent while the producer is small (13 lines fits the pipe buffer);
+  # it arms itself the day RequiredOp grows. scripts/check_no_pipe_into_grep_q.sh
+  if grep -qx 'LayerNorm' <<<"$(unsupported_ops)"; then ok 'D2  LayerNorm derives as UNSUPPORTED'
   else bad 'D2  LayerNorm did not derive as unsupported -- the parse missed it'; fi
-  if supported_ops | grep -qx 'RMSNorm'; then ok 'D3  RMSNorm derives as SUPPORTED'
+  if grep -qx 'RMSNorm' <<<"$(supported_ops)"; then ok 'D3  RMSNorm derives as SUPPORTED'
   else bad 'D3  RMSNorm did not derive as supported'; fi
 
   echo "=== rule 2: a set written as a PATTERN cannot be enumerated (the IQ1_M shape) ==="
@@ -294,7 +299,7 @@ self_test() {
   n_before=$(enum_variants | wc -l)
   CAP=$tmpcap
   n_after=$(enum_variants | wc -l)
-  if [ "$n_after" -eq $((n_before + 1)) ] && enum_variants | grep -qx 'SlidingWindowAttn'; then
+  if [ "$n_after" -eq $((n_before + 1)) ] && grep -qx 'SlidingWindowAttn' <<<"$(enum_variants)"; then
     ok "W1  a new RequiredOp variant is SEEN by the derivation ($n_before -> $n_after)"
   else
     bad "W1  a new variant was not seen: $n_before -> $n_after; the enum parse is not enumerating members"
