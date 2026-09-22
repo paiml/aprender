@@ -610,7 +610,33 @@ gate clippy           cargo clippy --all-targets $FEATS -- -D warnings
 gate test             cargo test $FEATS
 MAKEFILE_PATH=$(find_up Makefile)
 if [ -n "$MAKEFILE_PATH" ] && grep -qE '^coverage-check:' "$MAKEFILE_PATH" 2>/dev/null; then
-  gate coverage make -C "$(dirname "$MAKEFILE_PATH")" coverage-check
+  # #3839, operator ruling 2026-09-22: coverage is DEFERRABLE in the pre-publish phase only.
+  #
+  # It is still RUN, and its measured number is still recorded. What changes is that a
+  # miss is an OWED row rather than a NO-GO. The row is deferred, never passed: the
+  # DEFER note carries the measured percentage and the obligation, because a deferral
+  # that does not say what it measured is indistinguishable from a gate that passed.
+  #
+  # WHY. 87.82% (824853/939270) against COV_FLOOR 88, red in the nightly for 8
+  # consecutive runs back to 2026-09-15 and independent of any one release. The
+  # measurement itself is known wrong in both directions: COVERAGE_EXCLUDE_REGEX was
+  # last touched 2026-02-08 and APR-MONO moved realizar/entrenar/trueno in April, so
+  # `entrenar/` matches nothing at all and `trueno` matches 73 files in aprender-zram
+  # instead of 580 in aprender-compute. Repairing that moves a release gate's
+  # denominator in the direction that helps whoever moves it, so it is NOT done here.
+  #
+  # OUTSIDE pre-publish this is still a FAIL. `mark` refuses a DEFER in any other
+  # phase for exactly that reason -- a DEFER elsewhere is a FAIL wearing a softer word.
+  cov_out=$(make -C "$(dirname "$MAKEFILE_PATH")" coverage-check 2>&1); cov_rc=$?
+  cov_pct=$(printf '%s' "$cov_out" | grep -oE '[0-9]+(\.[0-9]+)?%' | tail -1)
+  cov_why=$(printf '%s' "$cov_out" | grep -iE 'REGRESSION|below the enforced floor|coverage [0-9]' | head -1)
+  if [ "$cov_rc" -eq 0 ]; then
+    mark coverage PASS "${cov_pct:+$cov_pct, }floor met"
+  elif [ "$DOGFOOD_PHASE" = pre-publish ]; then
+    mark coverage DEFER "measured ${cov_pct:-NO PERCENTAGE (the run died before parsing LCOV)} against floor ${COV_FLOOR:-88}; owed by #3839 (stale COVERAGE_EXCLUDE_REGEX + the real gap). ${cov_why:0:60}"
+  else
+    mark coverage FAIL "${cov_why:-coverage-check failed (rc $cov_rc)}"
+  fi
 else mark coverage FAIL "no coverage-check make target in ${MAKEFILE_PATH:-$PWD/Makefile} — the >=95% floor is UNVERIFIED, which is not the same as met (was a WARN, contradicting this skill's own rule that a missing capability is a NO-GO)"; fi
 if command -v cargo-deny >/dev/null 2>&1; then gate security cargo deny check advisories
 else mark security FAIL "cargo-deny not installed — the advisory scan did not run, and a scan that did not run is not a clean scan"; fi
