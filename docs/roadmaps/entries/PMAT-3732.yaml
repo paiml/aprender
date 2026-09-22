@@ -1,0 +1,60 @@
+- id: PMAT-3732
+  github_issue: 3732
+  item_type: task
+  title: '#3544 (c): derive the dogfood host matrix from the hosts the train visits (workflow job labels), NA{reason, decided_by, date} for declared absence; fails both ways'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-f0
+  created: 2026-09-21T16:24:49Z
+  updated: 2026-09-22T03:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3732 body, verbatim: "Child of **#3544**, split by the cop (aprender-04, 2026-09-21) into three separately receipted rows so each has its own fragment. Owner **aprender-f0** (release-tooling lane). The items below are quoted **verbatim** from #3544''s "Remaining work".
+
+## done_when (verbatim from #3544)
+- [ ] **Derive the host matrix** from the hosts the train actually visits, with `NA{reason, decided_by, date}` for declared absence — the fleet lane''s ruling, recorded in the comments. Fails in both directions: demanded-but-not-visited, and visited-but-not-demanded.
+
+The design is the fleet lane''s ruling of 2026-09-20, recorded in #3544''s first comment: the matrix is derived from the labels the train''s jobs select, a host with no job gets an explicit `NA{reason, decided_by, date}` row, and the proposed acceptance is `bash scripts/check_dogfood_matrix_is_visited.sh` (new) plus `check_multiplatform_dogfood.sh` exit 0 against receipts the train itself committed.
+
+## Also required (cop)
+- [ ] a red-turning case table, a mutant per row (demanded-but-not-visited AND visited-but-not-demanded)
+
+Order: fourth (cop, 2026-09-21).
+
+Refs #3544"'
+  - 'THE DESIGN PROPOSED BEFORE CODE (comment 5770601396, recorded before round 1), verbatim: "**Design to rule on before code (aprender-f0, 2026-09-22), because #3731 changed the premise of the fleet ruling.**
+
+The fleet lane''s ruling in #3544 (2026-09-20) derived the matrix "from the hosts the train actually visits — the labels its jobs select, read from the workflow", with `NA{reason, decided_by, date}` for a host no job targets, and it rejected "a `mini.json` for a host the train never visited". Since then the cop ruled on #3731 that **mini IS visited**: the train''s `hosts` step runs `scripts/release/host_receipt.sh` over ssh on every host of `check_multiplatform_dogfood.sh`''s `HOSTS` (lambda locally; intel, gx10, mini over ssh), and every one of the four produced a real receipt on the published 0.68.2. So "the hosts the train visits" is no longer a set of workflow runner labels; it is what `autopilot.sh` actually reaches, by ssh and by runner.
+
+**What "fails in both directions" means now:**
+- *demanded-but-not-visited*: under #3731 the `hosts` step READS `HOSTS` from the gate, so every demanded host is visited by construction; an unreachable one is an INFRA STOP, never a silent green. This direction is closed by #3731 and needs a guard only against regression: the visited set must still be derived from the gate''s list, never a second literal (row `ap-hosts-literal` in #3731''s table already kills that mutant).
+- *visited-but-not-demanded*: REAL today. `autopilot.sh` visits **yoga** (the CUDA release asset, `HOST yoga rc=…`) and runs the installer on intel and gx10, but yoga is in no matrix and has no receipt; its measurement is a `.txt` the gate never reads. Workflow runners also visit hosts (`clean-room.yml` on intel/gx10/yoga, `b2-gpu.yml`, `binary-release.yml`) that the matrix does not name.
+
+**Proposed:** `scripts/check_dogfood_matrix_is_visited.sh` (new, guard_tree-wired, a case table with a mutant per row):
+1. **VISITED** is derived: the ssh targets and local host of `autopilot.sh`''s `hosts` step (parsed from the script, never re-listed) ∪ the `runs-on` host labels of the release-path workflows (`binary-release.yml`, `clean-room.yml` via infra, `b2-gpu.yml`), mapped to host names by the same label table the fleet uses.
+2. **DEMANDED** = the gate''s `HOSTS` ∪ an explicit NA table in the gate, `NA="host:reason:decided_by:YYYY-MM-DD"` entries (declared absence).
+3. RED when VISITED ⊄ DEMANDED ∪ NA ("visited-but-not-demanded", naming the host, e.g. yoga today), and RED when DEMANDED ⊄ VISITED ("demanded-but-not-visited"). An NA host that becomes visited is RED too (the NA is stale and must leave), which is how mini re-enters the matrix automatically when its job lands.
+4. The matrix stays a grow-only set (the gate''s layer-2 floor against origin/main is untouched).
+
+**Two decisions for the cop:** (a) is **yoga** a matrix host (it then needs a host receipt from `host_receipt.sh`, which today would be its first cargo install there) or an NA row ("yoga: CUDA asset smoke only; decided_by …; date")? (b) do workflow runner labels count as "visited" for the matrix, or only the train''s own ssh/local visits? The fleet ruling says labels; #3731 makes the ssh visits the ones that produce receipts. I recommend: both count as VISITED (a host any release-path job touches must be demanded or declared NA), and yoga gets an NA row now with the reason above, to be lifted when the fleet decides it gets a receipt.
+
+Stacked on #3731 (they fold together, per the cop). Refs #3544."'
+  - 'THE FLEET LANE''S RULING this item implements (#3544 comment, 2026-09-20), verbatim: "**Decided (fleet lane + release lane, 2026-09-20): narrow the matrix, and derive the narrowing.** Recording it here so the implementation does not re-litigate it.
+
+Rejected — *emit a receipt for every host in the current list*: a `mini.json` for a host the train never visited is a receipt for a measurement nobody took. It turns "we do not test on mini" into a green tick. The present red is TRUE; that green would be a lie the gate manufactures — the exact defect class this repo keeps paying for.
+
+Rejected — *hand-narrow the list*: a constant that drifts from reality and nobody re-reads, which is the same failure one level up.
+
+**Adopted:** the matrix is **derived from the hosts the train actually visits** — the labels its jobs select, read from the workflow. A host with no job targeting it gets an explicit `NA{reason, decided_by, date}` row: *declared* absence, not silent absence. When #3518 lands and mini gets a job, mini re-enters the matrix automatically, because the derivation sees the new job rather than someone remembering.
+
+**The gate fails in both directions:** demanded-but-not-visited is today''s bug; visited-but-not-demanded is tomorrow''s. Proposed acceptance: `bash scripts/check_dogfood_matrix_is_visited.sh` (new), plus `check_multiplatform_dogfood.sh` exit 0 against receipts the train itself committed.
+
+**Do not let mini bury the serious half.** mini is a scoping error. **lambda, intel and gx10 having no receipt across two releases is a gate that has not run at all.** Fix that first — the train''s `hosts` step emitting `{host, arch, version_tested, date, install_rc}` and committing it in the ledger PR — and mini becomes a footnote.
+
+Ordering note: this is row 69-A1 of the 0.69 train (#3080), so it is scope, not overhead."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: '#3544 item (c), the fleet lane''s ruling of 2026-09-20 quoted above, STACKED ON #3731 (branch PMAT-3731-host-receipts-fail-closed, head 9b18a6da9; the cop ruled #3731 and #3732 fold together), so the quorum base is 9b18a6da9. THE PREMISE MOVED: the fleet ruling derived "the hosts the train actually visits" from workflow runner labels, at a time when the train visited no matrix host for a receipt. Under #3731 the train''s hosts step VISITS every HOSTS member for a receipt (the train host locally, the rest over ssh, mini included, per the cop''s ruling on #3731), so the visited set is what autopilot.sh reaches, by ssh, locally and by runner. The design comment on the issue (quoted above) records this and the two decisions it leaves the cop; it was written for aprender-04, which was shut down before reading it, and re-put to aprender-3e; the recommendations below stand as decided unless vetoed. SCOPE: scripts/release/autopilot.sh (the hosts it visits declared ONCE -- ASSET_HOSTS, INSTALLER_HOSTS, TRAIN_HOST, matrix_hosts() -- walked by the hosts step and printed by a new `--visited` mode, no gh, no network), scripts/check_multiplatform_dogfood.sh (NA_HOSTS), scripts/check_dogfood_matrix_is_visited.sh (new), scripts/check_release_host_receipts.sh (one mutant anchor moved with the refactor), and this fragment. HOW THE ITEM IS MET. DERIVED, NEVER RE-LISTED: `autopilot.sh --visited` prints one "VISITED <host> <how>" line per (host, how) the hosts step would reach, from the same variables the step walks (release-asset: gx10, yoga; installer: intel, gx10; host-receipt-local: lambda; host-receipt-ssh: intel, gx10, mini). The guard adds the hosts the release-path WORKFLOWS name: binary-release.yml''s matrix `host:` fields (yoga, gx10) and b2-gpu.yml''s runs-on host label (yoga). A POOL label (clean-room, "intel, yoga or gx10") names no host, so it is REPORTed, never demanded: whichever member takes a job is not a matrix visit. DEMANDED is the gate''s HOSTS; DECLARED ABSENCE is the gate''s NA_HOSTS, rows of "host:reason:decided_by:YYYY-MM-DD" (the ruling''s NA{reason, decided_by, date}). FAILS IN BOTH DIRECTIONS: R1 a visited host neither in HOSTS nor in NA_HOSTS is RED (visited-but-not-demanded: yoga today, absent the NA row); R2 a HOSTS member nothing visits is RED (demanded-but-not-visited: closed by construction under #3731, guarded here against regression, and #3731''s `ap-hosts-literal` mutant already kills a re-listed matrix in autopilot); R3 an NA host that is in HOSTS, or that nothing visits any more, is a STALE row and RED (so a host re-enters the matrix by its row LEAVING, which is what makes mini-style absence self-correcting); R4 an NA row without a reason, a decider or a date is RED; R0 an empty HOSTS or an empty visited set is RED. THE TWO DECISIONS, as recommended and built: (a) yoga is an NA row now ("the CUDA release asset is smoke-tested here but no cargo-install receipt is taken; a receipt needs the fleet to decide yoga is a supported-platform row"; decided_by aprender-f0 as a recommendation pending the cop; 2026-09-22), to be lifted by the fleet by deleting the row and adding yoga to HOSTS, at which point host_receipt.sh runs there like everywhere else; (b) workflow host NAMES count as visited beside the train''s own visits, pool labels do not. The ruling''s second acceptance, "check_multiplatform_dogfood.sh exit 0 against receipts the train itself committed", is #3731''s: its B1 row runs the real gate over receipts the real hosts step wrote, and evidence/dogfood/0.68.2/ holds the train''s receipts from the published 0.68.2. THE CASE TABLE, `bash scripts/check_dogfood_matrix_is_visited.sh --self-test`, 15 rows and mutants over a stub autopilot (--visited lines) and a stub gate: S1 the control (a, b demanded and visited; c visited and declared absent -> green with the REPORT line); S2 c visited, undemanded, undeclared -> R1; S3 d demanded, never visited -> R2; S4 c joined HOSTS while still declared absent -> R3; S5 an NA host nothing visits -> R3; S6 an NA row without decider/date -> R4; S7 a workflow-named host nothing demands -> R1 via the workflow; S8 empty HOSTS -> R0; S9 nothing visited -> R0; S10 a pool label is REPORTed, not demanded; mutants dropping R1, R2, R3, R4 and the workflow reader, each killed. MEASURED at this commit: `bash scripts/release/autopilot.sh --visited` prints the 8 lines above, rc 0; the guard on the tree: ok lambda/intel/gx10/mini (each visited and demanded, with how), "REPORT yoga visited (b2-gpu.yml runs-on label, binary-release.yml matrix host, release-asset) and DECLARED absent: ...", three "REPORT pool clean-room" lines, PASS; without the NA row it is "FAIL R1 yoga is VISITED (...) but neither in HOSTS nor declared absent" (the visited-but-not-demanded direction, measured on the real tree); #3731''s table on this tree: PASS 94 rows and mutants; guard_tree --no-cargo: 81 checks, 0 failed. Refs #3732 #3544.'
