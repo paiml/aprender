@@ -55,6 +55,98 @@ import sys
 
 COMPARATORS = ("llama.cpp", "ollama", "hf", "llamafile")
 ENGINES = ("apr",) + COMPARATORS
+
+#: Why an engine produced nothing (#3832). These are NOT interchangeable and the
+#: receipt must not collapse them:
+#:
+#:   not_on_PATH              a working install the harness could not NAME.
+#:   binary_not_found_at_path the install is genuinely absent.
+#:
+#: Measured 2026-09-22: `ssh lambda-labs llama-cli --version` says
+#: `command not found` while `~/.local/bin/llama-cli --version` prints the pinned
+#: `0.4.1-dev (build 10987, commit d1d3c3396)`. lambda's non-interactive PATH has
+#: no `~/.local/bin`; gx10's does. CRUX runs cross-host over ssh, so the harness
+#: would report an ABSENCE about a healthy comparator — and under the quorum floor
+#: that silently drops the cell to one engine while the receipt blames the
+#: comparator. One of these is a comparator gap; the other is a HARNESS DEFECT,
+#: and only the first is a fact about the fleet.
+NOT_RAN_REASONS = (
+    "not_installed",
+    "binary_not_found_at_path",
+    "not_on_PATH",
+    "model_not_pulled",
+    "refused",
+    "crashed",
+    "timed_out",
+    "not_requested",
+    "unclassified",
+)
+
+#: Text an engine's `why` may carry, mapped to the enum above. Ordered: the first
+#: match wins, and the PATH forms are tested before the generic "not found" ones,
+#: because `command not found` is a PATH answer wearing an absence's words.
+#: EVERY NEEDLE IS LOWERCASE because the haystack is lowercased before matching.
+#: Two of them shipped with "PATH" capitalised and could never fire; the case
+#: table below caught it on its first run, which is the whole reason a guard
+#: ships one (CLAUDE.md: re-run the table, do not re-read the pattern).
+_NOT_RAN_PATTERNS = (
+    ("not requested", "not_requested"),
+    ("command not found", "not_on_PATH"),
+    ("not found on path", "not_on_PATH"),
+    ("not on path", "not_on_PATH"),
+    ("no such file or directory", "binary_not_found_at_path"),
+    ("does not exist", "binary_not_found_at_path"),
+    ("not installed", "not_installed"),
+    ("model not pulled", "model_not_pulled"),
+    ("no such model", "model_not_pulled"),
+    ("refused", "refused"),
+    ("timed out", "timed_out"),
+    ("timeout", "timed_out"),
+    ("killed", "crashed"),
+    ("crashed", "crashed"),
+    ("exited", "crashed"),
+)
+
+
+def classify_not_ran(why):
+    """Map an engine's free-text `why` onto NOT_RAN_REASONS.
+
+    Unrecognised text is `unclassified`, never a guess: a wrong reason is worse
+    than an unknown one, because it reads as a fact someone measured.
+    """
+    if not why:
+        return "unclassified"
+    low = str(why).lower()
+    for needle, reason in _NOT_RAN_PATTERNS:
+        if needle in low:
+            return reason
+    return "unclassified"
+
+
+def engine_versions(meta):
+    """Per-engine version strings, pulled from the producer's meta block.
+
+    The receipt carried these ONLY at the top level, so a cell stated which
+    engines ran but never at which versions — and a comparator version is not
+    stable across a receipt's lifetime: ollama 0.34.1 changed GGUF creation from
+    safetensors, which is exactly the `Modelfile FROM <path>` mechanism CRUX
+    depends on. A cell that names a verdict without naming what produced it makes
+    the same class of claim as a cell judged on one engine.
+    """
+    ol = meta.get("ollama") or {}
+    lc = meta.get("llama_cpp") or {}
+    out = {
+        "apr": (meta.get("apr") or {}).get("version_line"),
+        # The SERVER's version, not the client's: `ollama --version` reports the
+        # daemon and names the client only in a mismatch warning (paiml/infra#911).
+        "ollama": ol.get("server_version"),
+        "llama.cpp": lc.get("build"),
+    }
+    for eng in ("hf", "llamafile"):
+        out[eng] = (meta.get(eng) or {}).get("version")
+    return {k: v for k, v in out.items()}
+
+
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07|\r")
 
 
@@ -482,9 +574,53 @@ def report_greedy(rows):
     return out
 
 
+#: The corroboration floor (#3832). CRUX exists to be an EXTERNAL oracle: apr
+#: judged against other engines on the same GGUF. This is the number of engines a
+#: cell needs before its verdict is CORROBORATED — recorded on every cell as
+#: `quorum.met` so a reader can see the coverage behind a verdict instead of
+#: inferring it. It is NOT applied to RED: see judge_cell for why that would
+#: suppress the finding CRUX exists for.
+CELL_QUORUM_FLOOR = 2
+
+
+def cell_quorum(entries):
+    """Who actually answered this cell, and did that clear the floor?"""
+    names = sorted(e for e in ENGINES if entries.get(e, {}).get("answered"))
+    return {
+        "floor": CELL_QUORUM_FLOOR,
+        "engines_answered": len(names),
+        "answered": names,
+        "comparators_answered": sorted(e for e in names if e in COMPARATORS),
+        "met": len(names) >= CELL_QUORUM_FLOOR,
+    }
+
+
 def judge_cell(entries, expect_any):
     ok = {k: correct(v, expect_any) for k, v in entries.items()}
     answered = {k: v.get("answered", False) for k, v in entries.items()}
+
+    # THE FLOOR IS ASYMMETRIC, and that is a correction to #3832 as I first
+    # wrote it. I implemented the rule literally — "a cell judged on fewer than
+    # two engines is UNJUDGED", checked before any comparison — and the case
+    # table turned SEVEN legitimate REDs into UNJUDGED in one run, among them
+    # "a missing apr row where llama.cpp is right is RED", which is CRUX's whole
+    # reason to exist. The fixtures were right and the rule was wrong.
+    #
+    # The asymmetry is not a compromise, it is the actual logic:
+    #
+    #   RED  needs ONE comparator. "llama.cpp answered correctly and apr did
+    #        not" is a complete claim on its own — the oracle spoke and apr
+    #        failed it. Requiring a second engine would suppress exactly the
+    #        finding CRUX was built for, and every way apr fails to answer (a
+    #        fallback, exit 14, a degenerate completion, a missing row) is a
+    #        cell where only one engine answered BY CONSTRUCTION.
+    #
+    #   GREEN and ALL_WRONG need an ORACLE. apr being right about itself is not
+    #        evidence, so a cell no comparator answered stays UNJUDGED.
+    #
+    # So the guarantee is "apr can never be GREEN on its own word", which is what
+    # the floor was for; the count is recorded on the cell either way, so a
+    # reader can see the coverage behind any verdict rather than infer it.
     if any(ok.get(c) for c in COMPARATORS) and not ok.get("apr"):
         return "RED", ok
     if not any(answered.get(c) for c in COMPARATORS):
@@ -512,6 +648,12 @@ def collect(args):
     det = judge_deterministic(rows, "tok") + judge_deterministic(rows, "tmpl")
     greedy = report_greedy(rows)
     requested = meta.get("engines", list(ENGINES))
+    # #3832: resolved once, stamped on every cell.
+    versions = engine_versions(meta)
+    # model sha256 -> development note, for models the operator has declared are
+    # under active development. Keyed by sha so a rename cannot silently drop it.
+    subject_dev = {m.get("sha256"): m.get("under_development")
+                   for m in (meta.get("models") or []) if m.get("under_development")}
 
     keys = []
     by_key = {}
@@ -539,11 +681,33 @@ def collect(args):
         verdict, ok = judge_cell(entries, prompt["expect_any"])
         for eng in ENGINES:
             entries[eng]["correct"] = ok[eng]
+            # #3832: one indivisible record per engine — WHICH engine, at WHICH
+            # version, and if it did not run, WHY, in a classified form. Split
+            # across fields a reader can see a count without provenance.
+            entries[eng]["version"] = versions.get(eng)
+            if not entries[eng].get("answered"):
+                entries[eng]["not_ran_reason"] = classify_not_ran(entries[eng].get("why"))
         said = {e: norm(v["answer"]) for e, v in entries.items() if v.get("answered")}
         cells.append({
             "key": dict(zip(("model_sha256", "host", "verb", "thinking", "rung", "prompt_id"), k[:6]),
                         **({"mode": k[6]} if k[6] else {})),
             "verdict": verdict,
+            # #3832: the cell states its own coverage, so a reader never has to
+            # infer how many engines produced the verdict they are reading.
+            "quorum": cell_quorum(entries),
+            # #3832: the SUBJECT of the comparison, stamped like the comparators.
+            # Without it `engines[]` documents the comparators rigorously and
+            # leaves what is being compared unqualified — the same asymmetry as a
+            # parity column carrying prompt_ids for only one side. `under_development`
+            # is not licence to ignore a red; it is what stops a red being read as
+            # a REGRESSION when it is development state (operator 2026-09-22:
+            # "qwen3.5 on our box is dicey as we are developing and testing").
+            "subject": {
+                "model_sha256": k[0],
+                "apr_version": versions.get("apr"),
+                "under_development": bool(subject_dev.get(k[0])),
+                "development_note": subject_dev.get(k[0]) or None,
+            },
             # additive (aprender-97, #3715): pv reads the control by this flag, never by a prompt name
             "positive_control": bool(prompt.get("control")),
             "expect_any": prompt["expect_any"],
