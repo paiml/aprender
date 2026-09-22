@@ -25,15 +25,20 @@ prompt — the printing-press paragraph, extended to clear 64 positions — unde
 Both files: every one of 92 positions PASSes, exceeding the ≥64 floor.
 Evidence: `evidence/3714/r2-apr-parity-64-lambda.txt`.
 
-**gx10**: build is done (`apr 0.69.0 (f6c84afd7)`), the run is queued but has
-not completed — measured queue depth on gx10 at time of writing: two prio-1
-`gpu-q` jobs from another session have been waiting on the flock for **4h18m**
-(`serve_e2e.sh`, aprender-c7), so the shared lock is severely backed up
-independent of anything in this branch. Reported to the cop as an operational
-finding. This receipt covers lambda; the gx10 row is a follow-up commit once
-the queue drains, or the cop's call to proceed without it (#3714's done_when
-2 does not itself name a host, unlike done_when 1, which R1 already
-satisfied on both hosts).
+**Measured on gx10** (GB10 aarch64, `apr 0.69.0 (f6c84afd7)`, same prompt and
+flags, under `gpu-q` — the run cleared the backlog and completed at 01:33Z):
+
+| file | tokens | passed | failed | min cosine | argmax mismatches | wall |
+|---|---|---|---|---|---|---|
+| Qwen3-Coder-30B-A3B-Instruct-Q4_K_M | 92 | 92 | 0 | 1.000000 | 0 | 82 s |
+| Qwen3-30B-A3B-Instruct-2507-Q4_K_M | 92 | 92 | 0 | 1.000000 | 0 | 49 s |
+
+Evidence: `evidence/3714/r2-apr-parity-64-gx10.txt`.
+
+**Both hosts, both files, 92 of 92 positions, cosine 1.000000, zero argmax
+mismatches.** done_when 2 is met on lambda and gx10, which is also what the
+operator's standing rule requires of an MoE CUDA path (cop ruling, aprender-3e,
+2026-09-22: the gx10 row is REQUIRED even though done_when 2 names no host).
 
 ## Bug found and fixed en route
 
@@ -66,5 +71,4 @@ it (plain `apr parity`, no `--per-op`).
 - cuda release build on lambda and gx10.
 
 ## Not in this row
-- gx10's `apr parity` confirmation (above — queue-blocked, not code-blocked).
 - R3 (v2 kernels), R4 (ladder rungs, #3712) are unstarted, per the R1 receipt's split.
