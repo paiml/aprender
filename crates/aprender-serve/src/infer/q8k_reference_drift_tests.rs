@@ -18,6 +18,10 @@
 //! and the first generated position where greedy decoding diverges (done_when
 //! 3: a divergence there is a CPU ANSWER that changed, a defect, not a note).
 //! One `[q8k-drift]` line per row, for the receipt.
+//!
+//! done_when 3's falsifier: with `APR_3751_ASSERT=1` as well, the test FAILS
+//! naming every (model, prompt) whose greedy answer differs between the two
+//! precisions. It is RED on both hosts today (evidence/3751/q8k-vs-fp32-*.txt).
 
 use crate::gguf::{MappedGGUFModel, OwnedQuantizedKVCache, OwnedQuantizedModel};
 
@@ -92,7 +96,9 @@ fn forward<'a>(cpu: &'a Cpu<'a>, max_seq: usize) -> Forward<'a> {
     }
 }
 
-fn measure(path: &str, cpu: &Cpu<'_>, mapped: &MappedGGUFModel) {
+/// Measures every prompt; returns the rows whose greedy answer changed.
+fn measure(path: &str, cpu: &Cpu<'_>, mapped: &MappedGGUFModel) -> Vec<String> {
+    let mut changed = Vec::new();
     for (name, text) in PROMPTS {
         let Some(tokens) = mapped.model.encode(text) else {
             eprintln!("[q8k-drift] {path} {name}: tokenizer refused the prompt");
@@ -119,6 +125,11 @@ fn measure(path: &str, cpu: &Cpu<'_>, mapped: &MappedGGUFModel) {
             }
         }
         let diverge = ga.iter().zip(&gb).position(|(x, y)| x != y);
+        if let Some(i) = diverge {
+            changed.push(format!(
+                "{path} | {name} | generated token {i}: {ga:?} vs {gb:?}"
+            ));
+        }
         eprintln!(
             "[q8k-drift] {} | {name} | positions {} | min cosine {min_cos:.6} at pos {min_pos} | \
              argmax mismatches {mismatches} | greedy {} | {}",
@@ -133,6 +144,7 @@ fn measure(path: &str, cpu: &Cpu<'_>, mapped: &MappedGGUFModel) {
             if min_cos < 0.999 { "BELOW 0.999" } else { "ok" },
         );
     }
+    changed
 }
 
 #[test]
@@ -141,6 +153,7 @@ fn q8k_reference_drift() {
         eprintln!("SKIP: APR_3751_MODELS is not set");
         return;
     };
+    let mut changed = Vec::new();
     for path in list.split(':').filter(|p| !p.is_empty()) {
         let Ok(mapped) = MappedGGUFModel::from_path(path) else {
             eprintln!("[q8k-drift] {path}: will not map");
@@ -158,7 +171,7 @@ fn q8k_reference_drift() {
                 eprintln!("[q8k-drift] {path}: qwen35 layers will not load");
                 continue;
             };
-            measure(path, &Cpu::Hybrid(&q), &mapped);
+            changed.extend(measure(path, &Cpu::Hybrid(&q), &mapped));
         } else if crate::tensor_names::normalize_architecture(&arch) == "qwen3_moe" {
             let Ok(m) = OwnedQuantizedModel::from_mapped(&mapped) else {
                 continue;
@@ -181,17 +194,26 @@ fn q8k_reference_drift() {
                 })
                 .collect();
             let Some(layers) = layers else { continue };
-            measure(
+            changed.extend(measure(
                 path,
                 &Cpu::Moe(&m, &layers, (e, k, d), mapped.data()),
                 &mapped,
-            );
+            ));
         } else {
             let Ok(m) = OwnedQuantizedModel::from_mapped(&mapped) else {
                 eprintln!("[q8k-drift] {path}: dense model will not load");
                 continue;
             };
-            measure(path, &Cpu::Dense(&m), &mapped);
+            changed.extend(measure(path, &Cpu::Dense(&m), &mapped));
         }
+    }
+    if std::env::var("APR_3751_ASSERT").as_deref() == Ok("1") {
+        assert!(
+            changed.is_empty(),
+            "#3751 done_when 3: the CPU answer changes with the activation precision on {} \
+             (model, prompt) pairs (Q8_K tokens vs FP32 tokens):\n{}",
+            changed.len(),
+            changed.join("\n")
+        );
     }
 }
