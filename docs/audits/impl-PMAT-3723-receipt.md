@@ -10,6 +10,14 @@ share one seam, the prompt a model file's OWN chat template renders:
 | PMAT-3723 | #3723 | `--thinking on\|off` on run/chat/code, per-request thinking on serve, modes **derived** by rendering, refusals by name, reasoning kept out of the answer |
 | PMAT-3801 | #3801 | the think-budget guard: thinking ON ends in an answer or a named refusal (run, chat, code, the golden gate; **serve is part 2, not in this diff**) |
 
+**Reading PMAT-3723's title.** The title, "apr has NO thinking toggle: realizar hard-routes every
+Qwen3/Qwen3.5 to the no-think template …", describes the DEFECT. The row ADDS the toggle. Its
+done_when 1, verbatim: "`--thinking on|off` on `apr run`, `apr chat` and `apr code`, documented
+in `--help`. Default = OFF (today's production behaviour, unchanged); ON selects the model's own
+thinking-capable template." (Quorum round 2's lane 1 read the title as a prohibition; its three
+findings cite the `thinking` field, its OFF default, and `resolve_thinking`, which is the
+feature done_when 1 asks for.)
+
 The fragments hold each issue's done_when verbatim: `docs/roadmaps/entries/PMAT-3723.yaml`,
 `PMAT-3755.yaml`, `PMAT-3801.yaml`.
 
