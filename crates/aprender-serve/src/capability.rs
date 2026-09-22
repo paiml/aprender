@@ -632,35 +632,71 @@ mod gpu_support_doc {
         ("gpt2", "GPT-2"),
     ];
 
-    /// The GPU quantisation whitelist, as `dtype.rs` enforces it.
-    const QUANTS_GPU: &[(&str, bool, &str)] = &[
-        ("F32", true, "ggml type 0"),
-        ("F16", false, "ggml type 1 — #3846/#3850"),
-        ("Q4_0", true, "ggml type 2"),
-        ("Q4_1", true, "ggml type 3"),
-        ("Q5_0", true, "ggml type 6"),
-        ("Q8_0", true, "ggml type 8"),
-        ("Q4_K", true, "ggml type 12 — the release matrix's quant"),
-        ("Q5_K", true, "ggml type 13"),
-        ("Q6_K", true, "ggml type 14"),
-        (
-            "Q5_1 / Q8_1 / Q2_K / Q3_K / Q8_K",
-            false,
-            "no GPU GEMV kernel",
-        ),
-        (
-            "IQ2_XXS / IQ3_* / IQ4_NL / IQ4_XS",
-            false,
-            "no GPU GEMV kernel; IQ also fails the CPU dequant path",
-        ),
-    ];
+    /// The quantisation table is READ FROM THE CONTRACT, not held here (#3856).
+    ///
+    /// `QUANTS_GPU` used to live at this spot: a hand-written table whose
+    /// unsupported entries were PROSE — "Q5_1 / Q8_1 / Q2_K / Q3_K / Q8_K" and
+    /// "IQ2_XXS / IQ3_* / IQ4_NL / IQ4_XS" — carrying no ggml type numbers, beside
+    /// F16's "ggml type 1". That is #3852's shape, and it made this doc a SECOND
+    /// representation of facts the code also held, free to disagree with it
+    /// (#3077's own concern). `IQ3_*` was a wildcard standing for several distinct
+    /// types, one of which (IQ1_M = 29) nothing in the tree named.
+    ///
+    /// The contract is now the single declaration, exhaustive over the ggml enum,
+    /// one row per type with its id.
+    fn quant_rows() -> Vec<(String, bool, String)> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../contracts/apr-model-capability-v1.yaml");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+        let doc: serde_yaml_ng::Value =
+            serde_yaml_ng::from_str(&text).unwrap_or_else(|e| panic!("contract is not YAML: {e}"));
+        doc.get("quant_types")
+            .and_then(|v| v.as_sequence())
+            .expect("contract has no `quant_types`")
+            .iter()
+            .map(|r| {
+                let name = r
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .expect("quant row has no name");
+                let id = r
+                    .get("ggml_type")
+                    .and_then(serde_yaml_ng::Value::as_u64)
+                    .expect("quant row has no ggml_type");
+                let ok = r
+                    .get("gpu_supported")
+                    .and_then(serde_yaml_ng::Value::as_bool)
+                    .unwrap_or(false);
+                let note = r
+                    .get("reason")
+                    .or_else(|| r.get("note"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                (
+                    name.to_string(),
+                    ok,
+                    format!(
+                        "ggml type {id}{}{note}",
+                        if note.is_empty() { "" } else { " — " }
+                    ),
+                )
+            })
+            .collect()
+    }
 
     fn render() -> String {
         let supported = gpu_supported_ops();
         let mut out = String::new();
         out.push_str("# GPU vs CPU: which models get real GPU inference\n\n");
         out.push_str("<!-- GENERATED. Do not edit by hand.\n");
-        out.push_str("     Rendered from crates/aprender-serve/src/capability.rs by the test\n");
+        out.push_str("     Architectures rendered from crates/aprender-serve/src/capability.rs;\n");
+        out.push_str(
+            "     quantizations read from contracts/apr-model-capability-v1.yaml (#3856).\n",
+        );
+        out.push_str("     Asserted byte-for-byte by the test\n");
         out.push_str("     `gpu_support_doc::the_committed_doc_matches_the_capability_gate`.\n");
         out.push_str("     Regenerate: APR_WRITE_GPU_SUPPORT_DOC=1 cargo test -p aprender-serve --lib gpu_support_doc\n");
         out.push_str("     Issue: #3077 (alfredodeza) -->\n\n");
@@ -705,10 +741,10 @@ mod gpu_support_doc {
         out.push_str("CPU path deliberately and works for every row above.\n\n");
         out.push_str("## Quantizations, on the GPU path\n\n");
         out.push_str("| quantization | GPU | note |\n|---|---|---|\n");
-        for (q, ok, note) in QUANTS_GPU {
+        for (q, ok, note) in quant_rows() {
             out.push_str(&format!(
                 "| {q} | {} | {note} |\n",
-                if *ok { "yes" } else { "no" }
+                if ok { "yes" } else { "no" }
             ));
         }
         out.push_str(
