@@ -509,7 +509,37 @@ def judge_deterministic(rows, kind):
                 d = _first_diff(apr_val, val)
                 refs[eng]["equal"] = d is None
                 refs[eng]["first_difference"] = d
+        # THE FLOOR HERE IS KEYED ON THE FIELD, NOT ON THE ENGINE (#3832).
+        #
+        # A parity cell compares SEQUENCES, so "did this engine answer?" is the
+        # wrong question: slice 1's defect was llama.cpp answering in TEXT while
+        # producing no `prompt_ids` at all. An engine-keyed floor counts that cell
+        # as two-engine and then compares one side. `produced` therefore counts
+        # engines that produced THIS FIELD, which is what the comparison needs.
+        #
+        # The asymmetry from judge_cell holds for the same reason it holds there:
+        # a DIVERGENCE against a single reference is a complete finding — the
+        # reference produced ids, apr differs, and the difference is a fact about
+        # apr.
+        #
+        # A two-reference floor for GREEN was proposed and TESTED here, on the
+        # theory that apr and one tokenizer reading the same GGUF vocab might
+        # agree structurally rather than evidentially. The fixtures killed it:
+        # `tok equal` and `tmpl equal` both went UNJUDGED, because CRUX's parity
+        # design IS apr against llama.cpp's tokenizer — one reference by
+        # construction (#3739 done_when 2, "token-id parity (apr vs
+        # llama-tokenize)"). Requiring a second would make every parity cell
+        # UNJUDGED and decline every run. The theory was reasonable and wrong,
+        # and it is recorded here so nobody re-derives it.
+        #
+        # What DID need fixing is the coverage record below: the cell reported a
+        # verdict without reporting how many engines produced the field it
+        # compared.
         produced = [e for e, v in refs.items() if v["produced"]]
+        coverage = {"field": "ids" if kind == "tok" else "rendered",
+                    "produced_by": sorted(produced),
+                    "references_producing": len(produced),
+                    "apr_produced": apr_val is not None}
         if not produced:
             verdict = "UNJUDGED"
         elif apr_val is None or any(not refs[e]["equal"] for e in produced):
@@ -517,6 +547,7 @@ def judge_deterministic(rows, kind):
         else:
             verdict = "GREEN"
         out.append({"kind": kind, "key": dict(zip(names, key)), "verdict": verdict,
+                    "coverage": coverage,
                     "apr": {"produced": apr_val is not None, "why": apr_why}, "references": refs})
     return out
 
