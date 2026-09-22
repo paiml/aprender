@@ -98,10 +98,24 @@ DOC_ASSERT='is now false|no longer|is wrong|used to .{0,80}now|(is|isn.t) *not? 
 FNDEF='^[[:space:]]*pub([[:space:]]*\([^)]*\))?[[:space:]]+(const[[:space:]]+|async[[:space:]]+|unsafe[[:space:]]+)*fn[[:space:]]+'
 
 # ------------------------------------------------------------------ helpers
-# A reference that lives in test code, not in what ships.
+# A reference that lives in test code -- or in an example -- not in what ships.
+#
+# EXAMPLES ARE NOT PRODUCTION CALLERS, and this was a measured false negative in
+# this very gate. On 2026-09-22 a diagnostic probe landed at
+# crates/aprender-core/examples/layout_guard_probe.rs which CALLS
+# enforce_embedding_contract to ask whether the unwired layout guards fire. Its
+# own header says "It does NOT wire them". But `examples/` matched none of the
+# test patterns, so the call counted as production, production_callers() went
+# 0 -> 1, and rule 1 STOPPED REPORTING the finding that prompted the probe.
+#
+# That is this gate committing the defect it exists to detect: a silence that
+# looked like evidence. An `examples/` binary proves a function is reachable; it
+# never proves the function is wired into a path a user reaches. Worse, it means
+# anyone can retire a finding by writing an example.
 is_test_path() {
   case "$1" in
     */tests/*|tests/*) return 0 ;;
+    */examples/*|examples/*) return 0 ;;
     *test*|*falsify*|*bench*) return 0 ;;
   esac
   return 1
@@ -164,6 +178,25 @@ rule2() {
       rc=1
     fi
   done < <(enum_variants)
+
+  # THE REVERSE DIRECTION. A row naming an op that is no longer a RequiredOp
+  # variant is dead data nothing consults -- and worse, it reads as coverage.
+  # Without this the map fails only when the enum GROWS; an op deleted from the
+  # enum leaves a row behind that says the capability is still mapped, and the
+  # next person to audit the map counts it as done. Drift must fail BOTH ways or
+  # the registry is only half a registry.
+  local known
+  known=$(enum_variants)
+  while IFS= read -r row; do
+    case "$row" in ''|'#'*) continue ;; esac
+    local mop=${row%%$'	'*}
+    [ -n "$mop" ] || continue
+    if ! grep -qx -- "$mop" <<<"$known"; then
+      echo "  MAP STALE: scripts/capability_op_impl_map.txt names '$mop', which is not a RequiredOp variant" >> "$findings"
+      echo "             The op was removed or renamed. Delete the row; a stale row reads as coverage." >> "$findings"
+      rc=1
+    fi
+  done < "$MAP"
 
   while IFS= read -r op; do
     [ -n "$op" ] || continue
@@ -273,9 +306,14 @@ self_test() {
   else
     bad "D1  partition broken: $nv variants, $ns supported, $nu unsupported"
   fi
-  if unsupported_ops | grep -qx 'LayerNorm'; then ok 'D2  LayerNorm derives as UNSUPPORTED'
+  # Here-string, never `producer | grep -q`: grep -q exits on its first match,
+  # the producer takes SIGPIPE, and under `pipefail` the pipeline reports the
+  # PRODUCER's death rather than grep's verdict -- so a row that MATCHED goes
+  # RED. Latent while the producer is small (13 lines fits the pipe buffer);
+  # it arms itself the day RequiredOp grows. scripts/check_no_pipe_into_grep_q.sh
+  if grep -qx 'LayerNorm' <<<"$(unsupported_ops)"; then ok 'D2  LayerNorm derives as UNSUPPORTED'
   else bad 'D2  LayerNorm did not derive as unsupported -- the parse missed it'; fi
-  if supported_ops | grep -qx 'RMSNorm'; then ok 'D3  RMSNorm derives as SUPPORTED'
+  if grep -qx 'RMSNorm' <<<"$(supported_ops)"; then ok 'D3  RMSNorm derives as SUPPORTED'
   else bad 'D3  RMSNorm did not derive as supported'; fi
 
   echo "=== rule 2: a set written as a PATTERN cannot be enumerated (the IQ1_M shape) ==="
@@ -294,7 +332,7 @@ self_test() {
   n_before=$(enum_variants | wc -l)
   CAP=$tmpcap
   n_after=$(enum_variants | wc -l)
-  if [ "$n_after" -eq $((n_before + 1)) ] && enum_variants | grep -qx 'SlidingWindowAttn'; then
+  if [ "$n_after" -eq $((n_before + 1)) ] && grep -qx 'SlidingWindowAttn' <<<"$(enum_variants)"; then
     ok "W1  a new RequiredOp variant is SEEN by the derivation ($n_before -> $n_after)"
   else
     bad "W1  a new variant was not seen: $n_before -> $n_after; the enum parse is not enumerating members"
@@ -310,6 +348,34 @@ self_test() {
     ok "W3  the real capability.rs is untouched by this row ($n_before variants)"
   else
     bad 'W3  the self-test leaked its mutant into the real scan'
+  fi
+
+  # THE REVERSE DIRECTION: a row naming an op the enum no longer has.
+  local tmpmap mapsave
+  tmpmap=$(mktemp) || return 2
+  mapsave=$MAP
+  cat "$MAP" > "$tmpmap"
+  printf 'RemovedOpXYZ\t-\tplanted by the case table\n' >> "$tmpmap"
+  MAP=$tmpmap
+  if [ -n "$(map_symbol RemovedOpXYZ)" ] && ! grep -qx 'RemovedOpXYZ' <<<"$(enum_variants)"; then
+    ok 'W4  a row naming a non-variant is readable from the map and absent from the enum'
+  else
+    bad 'W4  could not plant a stale row; the reverse check cannot be exercised'
+  fi
+  local rf; rf=$(mktemp) || return 2
+  rule2 "$rf" >/dev/null 2>&1
+  if grep -q 'MAP STALE' "$rf"; then
+    ok 'W5  ... and rule 2 reports MAP STALE and fails -- drift fails BOTH ways'
+  else
+    bad 'W5  a stale map row did NOT fail the gate; the registry is only half a registry'
+  fi
+  rm -f "$rf"
+  MAP=$mapsave
+  rm -f "$tmpmap"
+  if [ -z "$(map_symbol RemovedOpXYZ)" ]; then
+    ok 'W6  the real map is untouched by this row'
+  else
+    bad 'W6  the self-test leaked its planted row into the real map'
   fi
 
   echo "=== rule 2 MUST-MATCH: the known instance (aprender#3075) ==="

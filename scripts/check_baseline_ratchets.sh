@@ -86,6 +86,31 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         hardcoded_path_shipped_baseline.txt)     printf 'count\n' ;;
         lockfile_registry_siblings_baseline.txt) printf 'set\n' ;;
         perf_claim_citation_baseline.txt)        printf 'set-aperture\tscripts/check_perf_claims_cite_receipts.sh\n' ;;
+        # aprender#3686, scripts/check_unwired_capabilities.sh. Three files, three
+        # DIFFERENT contracts -- classified by what each one actually does, which
+        # is not the same answer for all three.
+        #
+        # A shrink-only integer: rule 1's site count. `--update` REFUSES to raise
+        # it ("--update may only lower the rule-1 baseline"), so `count` is exact.
+        unwired_doc_assert_baseline.txt)         printf 'count\n' ;;
+        # NOT a ratchet. This is a derived registry: every RequiredOp variant must
+        # appear exactly once, and the guard FAILS with "MAP INCOMPLETE" when the
+        # enum grows past it (case rows W1/W2, proven by planting a variant). It
+        # MUST grow when the enum grows, so freezing it against main would forbid
+        # adding an op. Enforced one way today -- a missing variant fails, a row
+        # naming a variant that no longer exists is dead data nothing consults.
+        capability_op_impl_map.txt)
+            printf 'none\tderived registry of op -> implementing symbol; exact-match against the RequiredOp enum, a missing variant FAILS as MAP INCOMPLETE (scripts/check_unwired_capabilities.sh)\n' ;;
+        # NOT a ratchet, and it must not become one. This is a SUPPRESSION LEDGER:
+        # each row names an unwired capability and the OPEN ISSUE that excuses it,
+        # and every row is printed on every run so a suppression cannot go quiet.
+        # Adding a row is a reviewed decision (it costs an issue number), and
+        # REMOVING a row is mandatory when its issue closes -- a row that outlives
+        # its defect silently exempts the next instance of that op. Freezing it
+        # against main would forbid acknowledging a newly-found capability; a
+        # count would say nothing about whether the rows are still true.
+        unwired_capabilities_acknowledged.txt)
+            printf 'none\tsuppression ledger; each row names an open issue and is printed every run, and a row MUST be deleted when its issue closes or it exempts the next instance (scripts/check_unwired_capabilities.sh)\n' ;;
         pipe_grep_q_baseline.txt)                printf 'count\n' ;;   # `producer | grep -q` sites under pipefail (scripts/check_no_pipe_into_grep_q.sh)
         pathonly_devdeps_baseline.txt)           printf 'set\n' ;;   # (manifest,alias) pairs whose src/ uses a publish-stripped dev-dep (scripts/check_pathonly_devdeps_unused_in_src.sh, #3305/#3306)
         roadmap_uncited_completion_baseline.txt) printf 'set\n' ;;
