@@ -299,21 +299,69 @@ guard. Scope call belongs to the cop/operator.
 fourth row. The third batched path — neither FP8 nor cuBLAS — diverges
 independently. Filed to 0.70.0.
 
-## 12. done_when status
+## 12. The planted mutant (done_when 2)
+
+`da218127b` already ships a falsifier — `pmat3477_f2_fp8_retry_tests::
+a_deep_fp8_miss_is_retried_on_fp16` — and restoring the pre-fix band gate does
+turn it RED. But its loop starts at **0.894**, which is 0.006 below
+`F2_CATASTROPHIC_COSINE`, so that is the cosine the panic names:
+
+```
+panicked at inference_result.rs:1182:13: cos 0.894
+test result: FAILED. 11 passed; 1 failed
+```
+
+A reader of that line cannot tell which model broke, and the test cannot
+distinguish "the band came back" from "someone nudged the threshold by a
+hundredth". So `pmat3804_measured_fp8_misses` keys the same falsifier to the two
+models measured below the floor (§8). **Mutant: restore the pre-`da218127b`
+band-gate conjuncts. RED:**
+
+```
+2 of 2 models measured below the FP8 floor were NOT re-measured on FP16:
+  - qwen2.5-coder-0.5b-instruct-q4_k_m at min cosine 0.415256: #3804: fell BELOW
+    the pre-fix band, so no retry fired and the model was pushed to CPU while
+    apr qa's golden gate shipped gibberish
+  - qwen2.5-coder-7b-instruct-q4_k_m at min cosine 0.587395: rescued only because
+    the retry fired (FP16 re-measure reached 0.9834); nothing else would have
+    caught a 7B model this far off
+```
+
+Every case is evaluated **before** the assert, so a regression names every model
+it broke. Asserting inside the loop stopped at the 0.5b and said nothing about
+the 7B — and a 7B at 0.587 rescued silently is the part nobody knew about.
+Mutant removed, all three tests green.
+
+**What it does NOT cover, so the green is not read as more than it is:** it
+falsifies the **retry policy**, not the FP8 path's quality. FP8 batched prefill
+is still lossy (§8: 2 of 6 swept models below the 0.95 floor), and a test
+asserting the FP8 path *itself* meets the floor would be RED on this branch
+today. That is a separate 0.70.0 row.
+
+## 13. done_when status
 
 | # | requirement | status |
 |---|---|---|
 | 1 | `apr qa` golden passes on lambda AND gx10 | **gx10 MET** (§9, on main). **sm_89 NOT MET** (§10) — `da218127b` alone does not close it; the gate must reach the guard |
-| 2 | root cause named at file:line + planted mutant turning a test RED | **named** (§4, §5) to route, file and line. **RED-turning mutant still owed** |
+| 2 | root cause named at file:line + planted mutant turning a test RED | **MET** — named (§4, §5) to route, file and line; mutant planted and RED line captured (§12) |
 | 3 | model-size-specific? sweep the neighbours | **MET** (§8) — not size-specific; coder-7b also diverges at 0.5874 and is rescued only by the retry band |
 | 4 | CPU/GPU parity on the fixed path, cited | **partially** — FP16 path reaches 0.999948 (§5) and 0.9834 on coder-7b (§8); not yet cited through a passing `apr qa` |
 
-## 9. Open, and owed
+## 14. Open, and owed
 
-* **A planted mutant that restores the defect and turns a test RED** (done_when
-  #2). Still owed; it is the one part of the row I have not delivered.
-* The scope decision in §10: whether the gate/guard routing (#3821) returns to
-  0.69.1, without which done_when 1 cannot close on sm_89.
+* **RULED (cop, 2026-09-22): the branch LANDS in batch-2; the ISSUE does not
+  close in 0.69.1 and moves to 0.70.0**, carrying two obligations — the
+  gate→guard routing (#3821) and done_when 1 re-measured after it. Routing
+  `apr qa` golden through the F2 guard was refused for 0.69.1 on principle, not
+  size: it would change the verdict of the gate that certifies the release, on
+  release night, in order to make that gate pass, with no first-green history on
+  a real release (#3731). The fix still lands on its own merit — it makes
+  `apr run --gpu` correct on sm_89.
+* gx10's cell is green on main (§9) but does **not** buy sm_89 a pass: the
+  operator's rule is both hosts, and reading it as "each host's own cell" is the
+  optional-rung move that rule exists to kill. If gx10's cell becomes
+  load-bearing for the tag, re-measure it from a snapshot — the `~/.cargo/bin`
+  pin is the weaker one.
 * Filed and out of this row: #3821 (verdict lattice / gate-guard), #3822
   (hardcoded Q4K for Q/K/O), #3823 (vacuous GEMV tests), #3824
   (`gpu_state_isolation`), plus the §11 both-off path.
