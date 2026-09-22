@@ -358,6 +358,9 @@ fn execute_with_realizar(
         refused @ RealizarError::ThinkingModeUnsupported { .. } => {
             CliError::ThinkingModeUnsupported(refused.to_string())
         }
+        unclosed @ RealizarError::ThinkBlockUnclosed { .. } => {
+            CliError::ThinkBlockUnclosed(unclosed.to_string())
+        }
         other => inference_error(other),
     })?;
     let (result, reasoning, thinking, reasoning_truncated) =

@@ -484,7 +484,7 @@ impl ChatPrompt {
     ///
     /// # Errors
     ///
-    /// [`RealizarError::InferenceError`] when a think block is still open at the end.
+    /// [`RealizarError::ThinkBlockUnclosed`] when a think block is still open at the end.
     pub fn split(&self, completion: &str, budget: usize) -> Result<SplitCompletion, RealizarError> {
         split_completion(completion, self.opens_think_block(), budget)
     }
@@ -496,7 +496,7 @@ impl ChatPrompt {
 ///
 /// # Errors
 ///
-/// [`RealizarError::InferenceError`] when a think block is still open at the end.
+/// [`RealizarError::ThinkBlockUnclosed`] when a think block is still open at the end.
 pub fn split_completion(
     completion: &str,
     prompt_opens_think: bool,
@@ -518,9 +518,6 @@ pub fn split_completion(
             reasoning: Some(reasoning[..close].trim().to_string()),
             answer: reasoning[close + "</think>".len()..].trim().to_string(),
         }),
-        None => Err(RealizarError::InferenceError(format!(
-            "think block unclosed within the {budget}-token budget: the model was still \
-             reasoning when generation stopped"
-        ))),
+        None => Err(RealizarError::ThinkBlockUnclosed { budget }),
     }
 }

@@ -131,6 +131,39 @@ pub enum CliError {
     /// cannot honour. The message names what the template offers.
     #[error("{0}")]
     ThinkingModeUnsupported(String),
+
+    /// #3723 / #3720 `think_block_unclosed`: the model was still reasoning when the whole
+    /// budget was spent, so there is no answer. The message names the budget.
+    #[error("{0}")]
+    ThinkBlockUnclosed(String),
+
+    /// #3720 `empty_completion`: generation ran and produced no answer (zero tokens, or
+    /// only a think block). Never exit 0 with "".
+    #[error("{0}")]
+    EmptyCompletion(String),
+}
+
+/// #3720: how a command ended, as every machine-readable apr output reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunStatus {
+    /// It finished.
+    Ok,
+    /// A capability, limit or policy said no before the work ran; the reason is named.
+    Refused,
+    /// The work ran and errored.
+    Failed,
+}
+
+impl RunStatus {
+    /// The contract's spelling (`contracts/apr-response-contract-v1.yaml`).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Refused => "refused",
+            Self::Failed => "failed",
+        }
+    }
 }
 
 impl CliError {
@@ -175,7 +208,78 @@ impl CliError {
             // Distinct so a caller can tell "this model does not do that" from a
             // failed inference (8) or bad input (4).
             Self::ThinkingModeUnsupported(_) => 15,
+            // #3720: both are "the work ran and produced no answer", the same code as
+            // a failed inference; the envelope's `error.kind` tells them apart.
+            Self::ThinkBlockUnclosed(_) | Self::EmptyCompletion(_) => 8,
         }
+    }
+
+    /// #3720 `error.kind`: one snake_case name per variant, never re-mapped.
+    #[must_use]
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::FileNotFound(_) => "file_not_found",
+            Self::NotAFile(_) => "not_a_file",
+            Self::InvalidFormat(_) => "invalid_format",
+            Self::InvalidInput(_) => "invalid_input",
+            Self::InvalidModelFile { .. } => "invalid_model_file",
+            Self::Io(_) => "io_error",
+            Self::ValidationFailed(_) => "validation_failed",
+            Self::Aprender(_) => "aprender_error",
+            Self::ModelLoadFailed(_) => "model_load_failed",
+            Self::InferenceFailed(_) => "inference_failed",
+            Self::FeatureDisabled(_) => "feature_disabled",
+            Self::NetworkError(_) => "network_error",
+            Self::HttpNotFound(_) => "http_not_found",
+            Self::NotImplemented(_) => "not_implemented",
+            Self::ParityFailed(_) => "parity_failed",
+            Self::BackendUnavailable(_) => "backend_unavailable",
+            Self::ThinkingModeUnsupported(_) => "thinking_mode_unsupported",
+            Self::ThinkBlockUnclosed(_) => "think_block_unclosed",
+            Self::EmptyCompletion(_) => "empty_completion",
+        }
+    }
+
+    /// #3720 `status`: REFUSED when a capability, limit or policy said no before the
+    /// work ran (no model, bad input, a build or host without the capability, a gate that
+    /// refused the backend, a mode the model cannot honour); FAILED when it ran and
+    /// errored.
+    #[must_use]
+    pub fn status(&self) -> RunStatus {
+        match self {
+            Self::FileNotFound(_)
+            | Self::NotAFile(_)
+            | Self::InvalidFormat(_)
+            | Self::InvalidInput(_)
+            | Self::InvalidModelFile { .. }
+            | Self::FeatureDisabled(_)
+            | Self::HttpNotFound(_)
+            | Self::NotImplemented(_)
+            | Self::ParityFailed(_)
+            | Self::BackendUnavailable(_)
+            | Self::ThinkingModeUnsupported(_) => RunStatus::Refused,
+            Self::Io(_)
+            | Self::ValidationFailed(_)
+            | Self::Aprender(_)
+            | Self::ModelLoadFailed(_)
+            | Self::InferenceFailed(_)
+            | Self::NetworkError(_)
+            | Self::ThinkBlockUnclosed(_)
+            | Self::EmptyCompletion(_) => RunStatus::Failed,
+        }
+    }
+
+    /// #3720: the `status` + `error` fields of a machine-readable document for this error.
+    #[must_use]
+    pub fn envelope(&self) -> serde_json::Value {
+        serde_json::json!({
+            "status": self.status().as_str(),
+            "error": {
+                "kind": self.kind(),
+                "message": self.to_string(),
+                "exit_code": self.exit_code_value(),
+            },
+        })
     }
 }
 

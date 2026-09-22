@@ -125,6 +125,17 @@ pub enum RealizarError {
         supported: String,
     },
 
+    /// A think block still open when the whole budget was spent (#3723). The #3720
+    /// response contract's `think_block_unclosed`: the work ran and produced no answer.
+    #[error(
+        "think block unclosed within the {budget}-token budget: the model was still \
+         reasoning when generation stopped"
+    )]
+    ThinkBlockUnclosed {
+        /// The `max_tokens` budget the completion ran out of
+        budget: usize,
+    },
+
     /// File format error
     #[error("Format error: {reason}")]
     FormatError {

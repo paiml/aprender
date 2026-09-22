@@ -113,7 +113,9 @@ pub(crate) fn run(
         stream,
     };
 
-    let result = run_model(source, &options)?;
+    // #3720 rule 1: a machine-readable run writes one document on EVERY exit.
+    let result = run_model(source, &options)
+        .map_err(|e| emit_error_document(e, source, output_format, benchmark, stream))?;
 
     if trace && trace_level == "layer" {
         print_layer_trace(&result, max_tokens);
@@ -181,19 +183,76 @@ fn reconcile_and_emit(
     stream: bool,
     accel_forced: bool,
 ) -> Result<()> {
-    let reconciled = reconcile_accelerator(accel_forced, result);
+    let reconciled = reconcile_accelerator(accel_forced, result).and_then(|()| require_answer(result));
     if reconciled.is_ok() || emits_machine_output(stream, output_format, benchmark) {
         print_run_output(
             result,
-            source,
-            output_format,
-            max_tokens,
-            benchmark,
-            stream,
-            accel_forced,
+            RunOutputFormat { source, output_format, max_tokens, benchmark, stream, accel_forced },
+            reconciled.as_ref().err(),
         )?;
     }
     reconciled
+}
+
+/// #3720 `empty_completion`: a run that produced no answer (zero tokens, or only a think
+/// block, whose reasoning is still reported) is a FAILURE naming why, never exit 0 with "".
+fn require_answer(result: &super::run::RunResult) -> Result<()> {
+    if !result.text.trim().is_empty() {
+        return Ok(());
+    }
+    let why = if result.reasoning.is_some() {
+        "the answer after the think block is empty (the reasoning is in `reasoning`)"
+    } else {
+        "generation produced no text"
+    };
+    Err(crate::error::CliError::EmptyCompletion(format!(
+        "empty completion: {why} ({} tokens generated)",
+        result.tokens_generated.unwrap_or(0)
+    )))
+}
+
+/// #3720 rule 1: with a machine-readable output mode, a run that ends before it has a
+/// result still writes exactly one document to stdout: the error envelope. Returns the
+/// error unchanged, so the exit code is the error's own.
+fn emit_error_document(
+    e: crate::error::CliError,
+    source: &str,
+    output_format: &str,
+    benchmark: bool,
+    stream: bool,
+) -> crate::error::CliError {
+    if emits_machine_output(stream, output_format, benchmark) {
+        let doc = error_document(&e, source, stream);
+        let text = if stream {
+            serde_json::to_string(&doc)
+        } else {
+            serde_json::to_string_pretty(&doc)
+        };
+        println!("{}", text.unwrap_or_default());
+    }
+    e
+}
+
+/// The one document a run that ended before it had a result writes: the model it was
+/// asked to run and the #3720 envelope (plus `"event": "final"` on a `--stream` run).
+fn error_document(e: &crate::error::CliError, source: &str, stream: bool) -> serde_json::Value {
+    let mut doc = e.envelope();
+    doc["model"] = source.into();
+    if stream {
+        doc["event"] = "final".into();
+    }
+    doc
+}
+
+/// How `apr run` was asked to present its result.
+#[derive(Clone, Copy)]
+struct RunOutputFormat<'a> {
+    source: &'a str,
+    output_format: &'a str,
+    max_tokens: usize,
+    benchmark: bool,
+    stream: bool,
+    accel_forced: bool,
 }
 
 /// Does [`print_run_output`] emit a MACHINE-readable document for these flags?
@@ -458,23 +517,21 @@ fn print_trace_config(
 /// emit point can move into the decode loop without touching consumers.
 fn print_run_output(
     result: &RunResult,
-    source: &str,
-    output_format: &str,
-    max_tokens: usize,
-    benchmark: bool,
-    stream: bool,
-    accel_forced: bool,
+    format: RunOutputFormat<'_>,
+    error: Option<&crate::error::CliError>,
 ) -> Result<()> {
+    let RunOutputFormat { source, output_format, max_tokens, benchmark, stream, accel_forced } =
+        format;
     // --stream takes precedence — emit JSONL stream. This implies json-style
     // structured output regardless of --format. (--stream --json is the same
     // as --stream alone.)
     if stream && !benchmark {
-        return print_stream_output(result, source, max_tokens, accel_forced);
+        return print_stream_output(result, source, max_tokens, accel_forced, error);
     }
 
     // GH-240/GH-250: JSON output mode with accurate token counts
     if output_format == "json" && !benchmark {
-        let json = build_final_json(result, source, max_tokens, accel_forced);
+        let json = final_document(result, source, max_tokens, accel_forced, error);
         println!(
             "{}",
             serde_json::to_string_pretty(&json).unwrap_or_default()
@@ -517,8 +574,38 @@ fn print_run_output(
     Ok(())
 }
 
-/// Build the terminal JSON blob shared by `--json` and `--stream` final events.
+/// [`final_document`] for a run that ended `ok`.
 fn build_final_json(
+    result: &RunResult,
+    source: &str,
+    max_tokens: usize,
+    accel_forced: bool,
+) -> serde_json::Value {
+    final_document(result, source, max_tokens, accel_forced, None)
+}
+
+/// The terminal JSON document shared by `--json` and `--stream` final events, with the
+/// #3720 envelope: `status` always, `error` iff the run did not end `ok`.
+fn final_document(
+    result: &RunResult,
+    source: &str,
+    max_tokens: usize,
+    accel_forced: bool,
+    error: Option<&crate::error::CliError>,
+) -> serde_json::Value {
+    let mut doc = run_result_json(result, source, max_tokens, accel_forced);
+    let envelope = error.map_or_else(
+        || serde_json::json!({ "status": crate::error::RunStatus::Ok.as_str() }),
+        crate::error::CliError::envelope,
+    );
+    if let (Some(doc), Some(envelope)) = (doc.as_object_mut(), envelope.as_object()) {
+        doc.extend(envelope.clone());
+    }
+    doc
+}
+
+/// The run's own fields (model, text, reasoning, tokens, timings, backend).
+fn run_result_json(
     result: &RunResult,
     source: &str,
     max_tokens: usize,
@@ -588,11 +675,12 @@ fn print_stream_output(
     source: &str,
     max_tokens: usize,
     accel_forced: bool,
+    error: Option<&crate::error::CliError>,
 ) -> Result<()> {
     use std::io::Write;
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
-    write_stream_output(&mut out, result, source, max_tokens, accel_forced)?;
+    write_stream_output_with(&mut out, result, source, max_tokens, accel_forced, error)?;
     out.flush()?;
     Ok(())
 }
@@ -605,6 +693,19 @@ pub(crate) fn write_stream_output<W: std::io::Write>(
     source: &str,
     max_tokens: usize,
     accel_forced: bool,
+) -> std::io::Result<()> {
+    write_stream_output_with(out, result, source, max_tokens, accel_forced, None)
+}
+
+/// [`write_stream_output`] for a run that may have ended in an error (#3720): the
+/// terminal `final` event carries the envelope.
+pub(crate) fn write_stream_output_with<W: std::io::Write>(
+    out: &mut W,
+    result: &RunResult,
+    source: &str,
+    max_tokens: usize,
+    accel_forced: bool,
+    error: Option<&crate::error::CliError>,
 ) -> std::io::Result<()> {
     if let Some(tokens) = result.generated_tokens.as_deref() {
         let texts = result.token_texts.as_deref().unwrap_or(&[]);
@@ -619,7 +720,7 @@ pub(crate) fn write_stream_output<W: std::io::Write>(
         }
     }
 
-    let mut final_blob = build_final_json(result, source, max_tokens, accel_forced);
+    let mut final_blob = final_document(result, source, max_tokens, accel_forced, error);
     if let Some(obj) = final_blob.as_object_mut() {
         obj.insert(
             "event".to_string(),
