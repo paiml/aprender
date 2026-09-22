@@ -337,6 +337,11 @@ pub(crate) fn realizar_config(
         config = config.without_gpu();
     }
 
+    // #3757: the wgpu fallback is attempted only on an explicit accelerator
+    // request, so the bare `apr run model.gguf` no longer pays a 1.7 GB F32
+    // dequant for a backend that fails its own cpu-parity gate.
+    config = config.with_accel_forced(options.accel_forced);
+
     if options.trace {
         config = config.with_trace(true);
     }

@@ -73,6 +73,31 @@ fn wgpu_can_serve(temperature: f32, top_k: usize) -> bool {
     false
 }
 
+/// #3757: may the GH-559 wgpu fallback be ATTEMPTED for this request?
+///
+/// Pure so the rule has a case table instead of living inline in two `if`s that
+/// drifted. `FALSIFY-BACKEND-CUDA-HONESTY-001` covers `--backend cuda` on a
+/// non-cuda build and asserts the run never prints `Backend: wgpu`; nothing
+/// covered the BARE `apr run model.gguf`, which is the invocation that shipped
+/// broken.
+///
+/// `accel_forced` is the decisive term and it is the same signal
+/// `reconcile_accelerator` already consumes — the user explicitly asked for an
+/// accelerator (`--gpu`, or `--backend cuda|wgpu|gpu`). Without it in this
+/// predicate, `realizar`'s `default = [… "gpu"]` (which every
+/// `cargo install aprender` gets, because apr-cli depends on realizar without
+/// `default-features = false`) made the default path dequantize the model to
+/// F32, fail wgpu's own cpu-parity gate, and fall back to CPU anyway.
+#[cfg(feature = "gpu")]
+#[must_use]
+pub(crate) fn wgpu_fallback_allowed(
+    no_gpu: bool,
+    accel_forced: bool,
+    has_legacy_quant: bool,
+) -> bool {
+    !no_gpu && accel_forced && !has_legacy_quant
+}
+
 /// GH-559: Try wgpu (Vulkan) generation as fallback when CUDA JIT fails.
 /// Uses trueno's WgslForwardPass with dequantized F32 weights.
 /// Proven: cosine=0.999863 on Blackwell sm_121.
@@ -389,9 +414,23 @@ fn run_gguf_generate(
     // Proven: wgpu cosine=0.999863 on Blackwell sm_121 where CUDA JIT fails.
     // #3760: the wgpu decode loop is greedy-only (an inline argmax over the LM head);
     // a sampled request runs on the CPU loop, which draws, and says so.
+    //
+    // #3757: attempted ONLY when the user explicitly asked for an accelerator.
+    // `realizar`'s own `default = ["server", "cli", "gpu"]` reaches every
+    // `cargo install aprender`, because apr-cli depends on it without
+    // `default-features = false` — so this block is compiled into the nominally
+    // CPU-only default binary and, gated on `!no_gpu` alone, ran on the BARE
+    // `apr run model.gguf`. It dequantized the model to F32 (1726.8 MB on
+    // qwen2.5-coder-1.5b), failed wgpu's own cpu-parity gate at cosine 0.9554,
+    // and fell back — 7607 ms against `--no-gpu`'s 3035 ms for the same answer
+    // from the same CPU backend. The same cosine to four figures on intel, gx10,
+    // mini and an RTX 4090, so it is the wgpu path's numerics, not a driver.
+    //
+    // `--gpu` on such a build already REFUSES ("no GPU backend compiled in") and
+    // `--backend wgpu` already refuses to report a fallback as success. The bare
+    // default was the only path that paid for wgpu silently.
     #[cfg(feature = "gpu")]
-    if !config.no_gpu
-        && !has_legacy_quant
+    if wgpu_fallback_allowed(config.no_gpu, config.accel_forced, has_legacy_quant)
         && wgpu_can_serve(gen_config.temperature, gen_config.top_k)
     {
         match try_wgpu_generate(&model, input_tokens, gen_config, config.verbose) {
@@ -440,8 +479,11 @@ fn run_apr_inference(
     }
 
     // GH-559: wgpu fallback for APR models — try Vulkan before CPU.
+    // #3757: explicit accelerator request only — see the GGUF path above.
     #[cfg(feature = "gpu")]
-    if !config.no_gpu && wgpu_can_serve(config.temperature, config.top_k) {
+    if wgpu_fallback_allowed(config.no_gpu, config.accel_forced, false)
+        && wgpu_can_serve(config.temperature, config.top_k)
+    {
         match try_apr_wgpu_inference(config, input_tokens, input_token_count, load_start) {
             Some(Ok(result)) => return Ok(result),
             Some(Err(e)) => {
@@ -1295,6 +1337,89 @@ mod tests {
             super::cpu_vs_gpu_cosine_similarity(&empty, &empty),
             0.0,
             "empty input must fail closed"
+        );
+    }
+}
+
+/// #3757: the case table for `wgpu_fallback_allowed`.
+///
+/// The row that shipped broken is `bare_apr_run_does_not_attempt_wgpu`. Deleting
+/// the `accel_forced` conjunct — the state `release/0.69.1-batch-2` @ `9f8836c71`
+/// was in — turns it RED.
+#[cfg(all(test, feature = "gpu"))]
+mod pmat3757_wgpu_attempt_gate {
+    use super::wgpu_fallback_allowed;
+
+    /// `(no_gpu, accel_forced, has_legacy_quant, allowed, what this invocation is)`
+    const CASES: &[(bool, bool, bool, bool, &str)] = &[
+        (
+            false, false, false, false,
+            "bare `apr run model.gguf` — the #3757 defect: on a default \
+             (non-cuda) install this dequantized 1726.8 MB to F32, failed wgpu's \
+             cpu-parity gate at cosine 0.9554 and fell back to CPU, costing \
+             7607 ms against --no-gpu's 3035 ms for the identical answer",
+        ),
+        (
+            false, true, false, true,
+            "`--backend wgpu` — an explicit request is still served, and still \
+             refuses to report a fallback as success (rc=14)",
+        ),
+        (
+            true, true, false, false,
+            "`--no-gpu --backend wgpu` — an explicit opt-out wins over an \
+             explicit request",
+        ),
+        (
+            true, false, false, false,
+            "`--no-gpu` — nothing to attempt",
+        ),
+        (
+            false, true, true, false,
+            "a legacy-quant model with `--gpu`: no GPU kernel exists for it, so \
+             the attempt would dequantize and fail",
+        ),
+    ];
+
+    #[test]
+    fn bare_apr_run_does_not_attempt_wgpu() {
+        let (no_gpu, accel_forced, legacy, _, why) = CASES[0];
+        assert!(
+            !wgpu_fallback_allowed(no_gpu, accel_forced, legacy),
+            "#3757 REGRESSION: {why}"
+        );
+    }
+
+    #[test]
+    fn an_explicit_accelerator_request_is_still_served() {
+        let (no_gpu, accel_forced, legacy, _, why) = CASES[1];
+        assert!(
+            wgpu_fallback_allowed(no_gpu, accel_forced, legacy),
+            "#3757 OVER-CORRECTION: the fix removed the backend instead of \
+             making it opt-in. {why}"
+        );
+    }
+
+    /// Every row at once, so a regression names each invocation it broke rather
+    /// than stopping at the first.
+    #[test]
+    fn the_whole_attempt_table_holds() {
+        let wrong: Vec<String> = CASES
+            .iter()
+            .filter(|(n, a, l, want, _)| wgpu_fallback_allowed(*n, *a, *l) != *want)
+            .map(|(n, a, l, want, why)| {
+                format!(
+                    "\n  - no_gpu={n} accel_forced={a} has_legacy_quant={l}: \
+                     expected allowed={want}, got {}. {why}",
+                    !*want
+                )
+            })
+            .collect();
+        assert!(
+            wrong.is_empty(),
+            "{} of {} wgpu-attempt cases are wrong:{}",
+            wrong.len(),
+            CASES.len(),
+            wrong.join("")
         );
     }
 }

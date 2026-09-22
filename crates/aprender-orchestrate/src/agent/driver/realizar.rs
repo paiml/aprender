@@ -82,6 +82,10 @@ impl LlmDriver for RealizarDriver {
             // PMAT-156/158: Disable GPU only for APR models (wgpu shader bug).
             // GGUF models work fine with CUDA — keep GPU enabled for them.
             no_gpu: self.model_path.extension().is_some_and(|e| e == "apr"),
+            // #3757: this driver exposes no accelerator flag, so nothing here is
+            // an explicit request — the wgpu fallback stays off, as it already
+            // effectively was (it failed its own cpu-parity gate and fell back).
+            accel_forced: false,
             trace: false,
             trace_verbose: false,
             trace_output: None,
