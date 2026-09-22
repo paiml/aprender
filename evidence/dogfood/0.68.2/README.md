@@ -22,3 +22,10 @@ each host for diagnosis; the refusal reasons are in each receipt's `bench_attemp
 This directory is NOT read by the gate for any cut (it reads `evidence/dogfood/<version being
 cut>/`); it is the evidence that the producer and the gate's new blocks were green on a real
 target before they were allowed to block.
+
+## lambda.json is not in this directory
+
+lambda's receipt is 424 KB (its parity block carries every replicate's per-request rows), which is
+larger than a reviewable diff, so it is kept out of the tree: https://gist.github.com/noahgift/47ff689975e9752afc58abb37872a71d (sha256 `e497e26a345df3520c64ad9fbb3663ea53e344aae20d37961ff72fa76850cec4`). The other three
+receipts are beside this file. `check_multiplatform_dogfood.sh` over all four (the preview in the
+PMAT-3731 fragment) was run with lambda.json present.
