@@ -3,12 +3,20 @@
 **Row:** GH #3804, epic #3710 (0.69.1), under the operator's all-Q4_K-on-CUDA rule.
 **Worker:** aprender-d8. **Cop:** aprender-3e.
 **Branch:** `PMAT-3804-q5-0-gpu-dispatch` off `origin/main` @ `a9502d992`.
+**Tip:** `85d8491f6` = my test/diagnostic commit + `da218127b` cherry-picked clean.
 
 ## Verdict
 
 **Root cause named: the FP8 E4M3 batched prefill path.** Not the quant types, not
 the 0.5B geometry, not the decode path. Established by a one-variable experiment
-in a single binary, not by reading code.
+in a single binary, not by reading code (§4, §5), and confirmed as a cause rather
+than an anecdote by the six-model sweep (§8), where coder-7b also diverges.
+
+**The row does NOT close on the ratified fix alone.** `da218127b` (#3807 (a))
+widens a retry that lives behind the F2 guard, and `apr qa`'s golden gate never
+reaches that guard — measured in §10, where the gate's verdict is byte-identical
+with and without the fix. **gx10 already passes on main** (§9); the outstanding
+cell is sm_89.
 
 ## Provenance of every measurement below
 
@@ -19,15 +27,21 @@ in a single binary, not by reading code.
 | Model | `/home/noah/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf` |
 | Lock | every GPU command through `gpu-q --prio 0`; builds run off-lock |
 
-Two binaries appear below and they are NOT the same artifact. `apr --version`
-reports `a9502d992` for both, because apr-cli embeds the git SHA of HEAD and my
-worktree's HEAD never moved (#2739's tree-attribution gap, restated):
+**Three binaries appear below and they are NOT the same artifact.** B0 and B1
+both self-report `a9502d992`, because apr-cli embeds the git SHA of HEAD and my
+worktree's HEAD had not moved yet — #2739's tree-attribution gap, restated. Which
+binary produced which number is therefore stated per section rather than inferred
+from `--version`:
 
-* **B0 — pristine `origin/main`.** Used for the reproduction in §1.
-* **B1 — B0 + two diagnostics I added** (`[PMAT-3804]` per-position cosine dump;
-  `APR_F2_PROBE_PATH` probe-path override). Used for §3–§5. Neither diagnostic
-  changes any kernel, route or numeric; both are inert unless `APR_DEV_TRACE` /
-  `APR_F2_PROBE_PATH` is set.
+* **B0 — pristine `origin/main`** (`a9502d992`). §1 only.
+* **B1 — B0 + two diagnostics** (`[PMAT-3804]` per-position cosine dump;
+  `APR_F2_PROBE_PATH` probe-path override), reports `a9502d992`. §3–§5. Neither
+  diagnostic changes any kernel, route or numeric; both are inert unless
+  `APR_DEV_TRACE` / `APR_F2_PROBE_PATH` is set, and §1's failure reproduces
+  identically under B0 and B1.
+* **B2 — B1 + `da218127b`** (the ratified #3807 (a) retry), reports `85d8491f6`,
+  snapshotted to a stable path so a later rebuild cannot silently replace it.
+  §7b's proof only.
 
 ## 1. Reproduced locally — the defect is host-independent
 
@@ -43,8 +57,15 @@ gpu-q --prio 0 -- "$APR" qa .../qwen2.5-coder-0.5b-instruct-q4_k_m.gguf \
 | `gpu_speedup` | pass — GPU 159.5× faster than CPU (419 vs 3 tok/s) |
 | `format_parity`, `ptx_parity`, `tensor_contract`, `metadata_plausibility`, `capability_match` | pass |
 
-Byte-identical fragment to the lambda main row in the ticket. **lambda and gx10
-are not the variable**, which takes this row out of the GPU queue.
+Byte-identical fragment to the lambda main row in the ticket.
+
+**CORRECTION — I first called this "host-independent" and that was wrong.** The
+evidence was this box's RTX 4090 plus lambda's RTX 4090: two instances of the
+SAME silicon, which is not two hosts in the sense #3715 means. §9 measures gx10
+(GB10, compute capability 12.1) and it **passes on pristine main**. The correct
+statement is that the defect is specific to **sm_89 / RTX 4090**. What the
+reproduction does buy is that lambda and this box are interchangeable for it, so
+the row did not need lambda's queue.
 
 `gpu_state_isolation` is a SECOND defect, not in the ticket. It is not on the
 path to this one (§3 shows the diverging forward is deterministic) and is filed
@@ -143,9 +164,9 @@ default configuration.
 `f2_should_retry_without_fp8` re-measures on the FP16 prefill only inside a
 non-catastrophic band. At 0.4153 this model falls below it, so the code that
 would have rescued it declined to, and the model was pushed off the GPU instead.
-**The remedy may therefore be routing (FP8 off when the only cuBLAS-eligible role
-is `ffn_down`) rather than a kernel fix** — that is a call for the cop/operator,
-not for me.
+**This is the defect the remedy targets** — see §7b: the ratified fix widens the
+retry to any FP8-batched miss, and §5's own `FP8_PREFILL=0` row is the evidence
+that the FP16 path it retries on reaches parity.
 
 ## 6. Gate/guard gap — `apr run` refuses what `apr qa` ships
 
@@ -167,22 +188,135 @@ model in the same binary, with the gate being the one that ships. Filed against
 | `crates/aprender-serve/src/infer/inference_result.rs` | `[PMAT-3804]` per-position cosine dump (dev-trace gated) — the verdict scores positions ≥1 only, so a rejection could not say whether pos0 also diverged, which was the whole diagnosis |
 | `crates/aprender-serve/src/infer/inference_result.rs` | `APR_F2_PROBE_PATH=serial\|batched` — judge the path the engine did not resolve, in ONE binary (the `APR_GRAPH_QTYPE_HARDCODE` idiom from #2753) |
 
-## 8. done_when status
+## 7b. The remedy: `da218127b` (#3807 (a)), cherry-picked
+
+Ratified by the cop; authored by aprender-37. `f2_should_retry_without_fp8`
+stops retrying only inside a non-catastrophic band and re-measures **any** FP8
+miss on `via == Batched && fp8_prefill_on`, freeing the FP8 cache first. The
+reasoning is exactly what §5 measures: a second measurement cannot turn
+orthogonal logits into parity, but **changing precision can** — this model sits
+at 0.4153, below the old band, so the code that would have rescued it declined
+to and it was pushed to CPU. FP16 reaches 0.999948.
+
+Cherry-picked onto this branch in a clean worktree: `Auto-merging
+inference_result.rs`, 1 file, 33+/30−, no conflict, despite both diagnostics
+living in that same file. `apr --version` then reports `apr 0.69.0 (85d8491f6)`,
+self-attributing to this branch tip rather than to `a9502d992`.
+
+**Routing FP8 off for ffn_down-only models is a possible follow-up, not the
+fix** — it is narrower than the retry and would be tuned to one model's tensor
+mix. The `is_cublas_qtype` = Q4K||Q6K reasoning and the
+`[PMAT-053] FP8 weight cache: 24 matrices cached` line in §5 are what such a
+rule would key on.
+
+## 7c. A measurement error of mine, recorded
+
+I rebuilt the shared `target/release/apr` **while the sibling sweep was running
+against it**, so that sweep was mixing a pre-fix and a post-fix binary across
+models. That is "never label a run by intent — prove the mechanism engaged"
+failing in my own hands. The partial results were **discarded unread** rather
+than interpreted; a stable binary was snapshotted and the sweep relaunched
+against only that. No sibling number in this receipt comes from the mixed run.
+
+Related hazard for others: my builds write to `/home/noah/src/aprender/target`,
+so that path's `release/apr` is currently this branch's build, not pristine main.
+
+## 8. The sibling sweep — the FP8 defect is NOT 0.5b-specific
+
+Batched probe, `[PMAT-3804]` dump (which prints the FIRST measurement, before
+any retry). Binary B2, `sha256 46741d3f3fe5347ac6f05685`.
+
+| model | pos0 | pos1 | verdict |
+|---|---|---|---|
+| **coder-0.5b** (this row) | **0.099921** | **0.415256** | diverges, **no retry** — below the band |
+| **coder-7b** | 0.996443 | **0.587395** | **diverges under FP8**, retry fired, rescued |
+| coder-1.5b | 0.991938 | 0.977885 | accepted |
+| qwen2.5-1.5b | 0.864074 | 0.992710 | accepted (pos0 is unscored) |
+| Qwen3-1.7B | 0.999920 | 0.998372 | clean |
+| Qwen3.5-2B, Qwen3.5-0.8B | n/a | n/a | **not evidence** — `qwen35 hybrid forward, #3090`, the probe never runs |
+
+coder-7b's own log:
+
+```
+note: FP8 batched prefill scored min cosine 0.5874 vs CPU (floor 0.95) — re-measuring on the FP16 prefill path
+note: FP16 prefill passes (min cosine 0.9834); FP8 stays OFF for this model
+```
+
+**A 7B model lands at 0.5874 against a 0.95 floor.** The FP8 E4M3 batched
+prefill is broadly lossy, not 0.5b-specific; the 0.5b is simply the one that fell
+BELOW the retry band and therefore got no rescue. This is the strongest argument
+for #3807 (a), and it also means "FP8 prefill" is a perf claim that silently
+degrades to FP16 on at least two of six swept models — worth its own 0.70.0 row.
+
+**Scope answer: this is not the epic.** Every other swept model is already
+rescued by the existing retry. #3804 stays a row.
+
+## 9. gx10 — PASSES on pristine main
+
+`apr qa` coder-0.5b on gx10 (**NVIDIA GB10, compute capability 12.1**, aarch64),
+binary `apr 0.69.0 (a9502d99)`, `sha256 2cdfd4e4a05cc5d65240401a`, mtime
+2026-09-22 01:38:42Z — a binary I did not build:
+
+```
+passed: True
+  PASS golden_output: 3 golden test cases passed
+  PASS gpu_state_isolation: GPU state properly isolated: 3 generations, deterministic replay confirmed
+  PASS gpu_speedup: GPU 59.8x faster than CPU (182 vs 3 tok/s)
+```
+
+The defect does not reproduce on GB10. #3715's gx10 cell for this model is
+satisfied **on main, with no fix**.
+
+**Weaker pin, stated rather than hidden:** that binary lives at
+`~/.cargo/bin/apr`, a path another session can rewrite. Its sha256 and mtime
+(hours before the run) are recorded, but under the standing rule this is a weaker
+pin than the local snapshot and is not presented as equal evidence.
+
+## 10. The ratified fix does NOT close this row — measured
+
+`apr qa` coder-0.5b **with `da218127b` in the binary** (B2):
+
+```
+rc=5   golden_output FAIL: GPU output failed (CPU passed):
+       golden_output_gpu: gibberish (fragment "```\n" repeats 3+ times)
+```
+
+**Byte-identical to pristine main (§1).** Proven, not inferred: grepping that
+run's stderr for the guard's and the retry's own lines — `re-measuring`,
+`FP16 prefill passes`, `diverges from CPU`, and the `[PMAT-3804]` dump — returns
+**zero occurrences**. The F2 guard never executes in `apr qa`'s golden path, so
+the retry behind it cannot fire, so widening the retry band cannot change this
+gate's verdict. FP8 is still active in that run (`FP8 weight cache: 24 matrices
+cached`) — it is the *guard* that is absent, not the path.
+
+This is what #3821 predicted in writing before it was run. **`da218127b` is
+necessary and not sufficient**: closing done_when 1 requires the gate to reach the
+guard. Scope call belongs to the cop/operator.
+
+## 11. Both-off anomaly reproduced
+
+`FP8_PREFILL=0 CUBLAS_PREFILL=0` → **rc=14** (GPU refused), reproducing §5's
+fourth row. The third batched path — neither FP8 nor cuBLAS — diverges
+independently. Filed to 0.70.0.
+
+## 12. done_when status
 
 | # | requirement | status |
 |---|---|---|
-| 1 | `apr qa` golden passes on lambda AND gx10 | **NOT MET** — no fix applied yet; cause named, remedy is a routing/kernel decision |
-| 2 | root cause named at file:line + planted mutant turning a test RED | **partially** — named to route and file:line (§5); the RED-turning mutant is owed |
-| 3 | model-size-specific? sweep the neighbours | **IN FLIGHT** — sweep running; §2 gives the static composition half |
-| 4 | CPU/GPU parity on the fixed path, cited | **not yet** — no fix applied |
+| 1 | `apr qa` golden passes on lambda AND gx10 | **gx10 MET** (§9, on main). **sm_89 NOT MET** (§10) — `da218127b` alone does not close it; the gate must reach the guard |
+| 2 | root cause named at file:line + planted mutant turning a test RED | **named** (§4, §5) to route, file and line. **RED-turning mutant still owed** |
+| 3 | model-size-specific? sweep the neighbours | **MET** (§8) — not size-specific; coder-7b also diverges at 0.5874 and is rescued only by the retry band |
+| 4 | CPU/GPU parity on the fixed path, cited | **partially** — FP16 path reaches 0.999948 (§5) and 0.9834 on coder-7b (§8); not yet cited through a passing `apr qa` |
 
 ## 9. Open, and owed
 
-* Sweep result for done_when #3 (running).
-* A planted mutant that restores the defect and turns a test RED (done_when #2).
-* gx10 confirmation for done_when #1.
-* Three separate filings: the hardcoded-Q4K Q/K/O dispatch, the vacuous GEMV
-  tests, the guard/gate gap (#3712).
-* **Not claimed:** that the siblings survive FP8. Until the sweep lands, "FP8 is
-  the cause" is supported by a one-variable experiment on ONE model, which by
-  the standing rule is an anecdote until varied.
+* **A planted mutant that restores the defect and turns a test RED** (done_when
+  #2). Still owed; it is the one part of the row I have not delivered.
+* The scope decision in §10: whether the gate/guard routing (#3821) returns to
+  0.69.1, without which done_when 1 cannot close on sm_89.
+* Filed and out of this row: #3821 (verdict lattice / gate-guard), #3822
+  (hardcoded Q4K for Q/K/O), #3823 (vacuous GEMV tests), #3824
+  (`gpu_state_isolation`), plus the §11 both-off path.
+* **Now claimed, with the sweep landed (§8):** FP8 batched prefill is the cause,
+  and it is not 0.5b-specific. Before §8 this rested on one model, which by the
+  standing rule was an anecdote.
