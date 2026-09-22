@@ -32,6 +32,11 @@
 //! way into the [`Framebuffer`], and the framebuffer is encoded with this crate's own pinned
 //! [`crate::output::PngEncoder`] — never `Pixmap::encode_png`, which is a different encoder with
 //! its own, unpinned defaults.
+//!
+//! [`svg_to_png`] is split into the `scale`/pre-scan checks and a private [`render_unscanned`]
+//! that does the actual rendering, so a unit test can observe a property (no font database
+//! compiled in) that the pre-scan would otherwise hide from anything reachable through the
+//! public entry point.
 
 use crate::error::{Error, Result};
 use crate::framebuffer::Framebuffer;
@@ -81,6 +86,18 @@ pub fn svg_to_png(svg: &str, scale: f64) -> Result<Vec<u8>> {
 
     prescan_refuse(svg)?;
 
+    render_unscanned(svg, scale)
+}
+
+/// The rendering mechanism with the pre-scan policy lifted off.
+///
+/// [`svg_to_png`] is the only production caller, and it always calls [`prescan_refuse`] first;
+/// this function does not repeat that check. It exists as a separate, private function so the
+/// unit test below can call it directly and observe a property the pre-scan otherwise hides:
+/// that no font database is compiled into this crate's `resvg`, so `usvg` silently drops any
+/// `<text>`-family element rather than rendering it. Through `svg_to_png` that document would
+/// never reach `usvg` at all, because the pre-scan refuses it first.
+fn render_unscanned(svg: &str, scale: f64) -> Result<Vec<u8>> {
     let mut opt = resvg::usvg::Options::default();
     // Rule 3: defence in depth. Never read the filesystem, even if REFUSED above is edited.
     opt.image_href_resolver = resvg::usvg::ImageHrefResolver {
@@ -162,4 +179,37 @@ fn prescan_refuse(svg: &str) -> Result<()> {
         return Err(Error::SvgElementRefused { element, count });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_unscanned;
+
+    /// Property observed: this crate's `resvg` has no font database compiled in (its
+    /// `text`/`system-fonts` features are off), so `usvg` silently *drops* a `<text>` element
+    /// rather than rendering it — the document renders identically with or without the text.
+    /// No test through `svg_to_png` can observe this, because its pre-scan refuses any
+    /// `<text>`-bearing document before `usvg` ever builds a tree, so this test calls the
+    /// private `render_unscanned` directly instead. Mutation M2 (turning resvg's default
+    /// features back on and loading system fonts inside the renderer) turns this test red,
+    /// because a loaded system font would paint glyph pixels and the two byte strings would
+    /// diverge.
+    #[test]
+    fn a_text_element_paints_nothing_because_no_font_database_is_compiled_in() {
+        let with_text = r#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20">
+            <text x="2" y="14" font-size="12">Hi</text>
+        </svg>"#;
+        let blank = r#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20">
+        </svg>"#;
+
+        let with_text_bytes =
+            render_unscanned(with_text, 1.0).expect("rendering a bare <text> element must succeed");
+        let blank_bytes = render_unscanned(blank, 1.0)
+            .expect("rendering the same document without <text> must succeed");
+
+        assert_eq!(
+            with_text_bytes, blank_bytes,
+            "a <text> element must contribute no pixels when no font database is compiled in"
+        );
+    }
 }

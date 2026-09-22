@@ -3009,6 +3009,21 @@ jobs:
       - name: Rasterise the SVG fixture and write this host's raster receipt
         run: cargo test -p aprender-viz --features raster --test raster_determinism
 
+      # The pre-scan refuses every text element before usvg builds a tree, so NOTHING reachable
+      # through svg_to_png can observe whether a font database exists: measured 2026-09-22,
+      # turning resvg's default features back on and calling load_system_fonts() leaves all 11
+      # tests above GREEN. These two steps are the arms that can fail. The unit test observes
+      # the behaviour (usvg with no fonts DROPS <text>) below the pre-scan; the ban observes the
+      # dependency graph, which is what actually pins `default-features = false` — an EMPTY font
+      # database renders the same as a missing one, so behaviour alone cannot pin the flag.
+      # `default = []`, so the raster module is not compiled in the workspace --lib shards and
+      # this is the only lane that runs it.
+      - name: No font may be resolved on the raster path
+        run: "cargo test -p aprender-viz --features raster --lib raster::"
+
+      - name: No font stack may be compiled into the raster path
+        run: bash scripts/ci/raster-fontdb-ban.sh
+
       # One artifact per arch carries both receipts, so the compare job's `determinism-*`
       # download sees them together. With two paths, `if-no-files-found` only fires when BOTH
       # are missing; a missing raster receipt is caught by raster-compare.sh's count instead.
