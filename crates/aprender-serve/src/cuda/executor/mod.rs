@@ -601,19 +601,15 @@ pub struct CudaExecutor {
     // PMAT-053: FP8 activation scratch for FP8 GEMM input conversion
     fp8_activation_scratch: Option<GpuBuffer<u8>>,
     fp8_activation_scratch_size: usize,
-    // PMAT-079: Per-tensor FP8 dequant scale = absmax / 448.0 (CPU float).
-    // Key: quantized weight GPU pointer → dequant scale.
-    // Used as GEMM alpha (constant per weight, no GPU→CPU sync needed).
-    fp8_weight_scales: HashMap<u64, f32>,
+    // #3807: per-output-channel FP8 weight absmax (f32 × N on the device), one per cached
+    // weight. Key: quantized weight GPU pointer. Applied in the GEMM's dequant step.
+    fp8_weight_row_absmax: HashMap<u64, GpuBuffer<f32>>,
     // PMAT-053b: Persistent activation scale buffer (single f32 on GPU).
     // Reused across prefill GEMMs to avoid alloc-per-matmul leak.
     fp8_act_scale_buf: Option<GpuBuffer<f32>>,
-    // PMAT-079: Persistent absmax result buffer (single u32 on GPU).
-    // Reused across prefill GEMMs — avoids alloc-per-matmul.
-    fp8_absmax_buf: Option<GpuBuffer<u32>>,
-    // PMAT-079: Persistent activation dequant scale buffer (single f32 on GPU).
-    // Holds act_absmax/448.0 — used as A_SCALE_POINTER for cuBLASLt scaled GEMM.
-    fp8_act_dequant_buf: Option<GpuBuffer<f32>>,
+    // #3807: persistent per-token FP8 activation absmax (f32 × rows on the GPU), reused
+    // across prefill GEMMs and by PMAT-084's K/V and up reuse. Grows, never shrinks.
+    fp8_act_row_absmax: Option<GpuBuffer<f32>>,
     // PMAT-091: Column-interleaved Q4K weight cache for coalesced WMMA GEMM.
     // Key: quantized weight GPU pointer → interleaved tile buffer.
     // Same size as original Q4K (ceil(N/16) × num_sb × 2304 bytes).

@@ -189,10 +189,9 @@ impl CudaExecutor {
             // PMAT-027: Q8 activation cache starts invalid
             q8_activation_valid: false,
             fp8_act_cache: Default::default(),
-            fp8_weight_scales: HashMap::new(),
+            fp8_weight_row_absmax: HashMap::new(),
             fp8_act_scale_buf: None,
-            fp8_absmax_buf: None,
-            fp8_act_dequant_buf: None,
+            fp8_act_row_absmax: None,
             graph_dispatch_positions: Vec::new(),
             batched_done_mask: Vec::new(),
             hgemm_batched_decode_active: false,

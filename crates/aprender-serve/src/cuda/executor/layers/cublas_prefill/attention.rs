@@ -1602,6 +1602,7 @@ DONE_NORM:
             / 1_048_576.0;
         let count = self.fp8_weight_cache.len();
         self.fp8_weight_cache.clear();
+        self.fp8_weight_row_absmax.clear();
         self.fp8_activation_scratch = None;
         self.fp8_activation_scratch_size = 0;
         if count > 0 {

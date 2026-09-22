@@ -6,10 +6,10 @@
 use super::super::super::*;
 
 impl CudaExecutor {
-    /// PMAT-053b: Get cached FP8 E4M3 weight with per-tensor scaling.
+    /// PMAT-053b / #3807: Get cached FP8 E4M3 weight with one scale per output channel.
     ///
-    /// On cache miss: dequant Q4K/Q6K → FP32 → absmax → scaled FP8 E4M3 → cache.
-    /// Also stores the dequant scale (absmax/448) in fp8_weight_scales for cuBLASLt.
+    /// On cache miss: dequant Q4K/Q6K → FP32 → row absmax → per-row scaled FP8 E4M3 → cache.
+    /// The row absmax vector is kept in `fp8_weight_row_absmax` for the GEMM's dequant step.
     pub(crate) fn get_or_cache_fp8_weight(
         &mut self,
         qtype: WeightQuantType,
@@ -33,46 +33,33 @@ impl CudaExecutor {
             },
         };
 
-        let count = n as usize * k as usize;
-
-        // PMAT-053b: Compute per-tensor absmax for scaling
-        let absmax = self.gpu_absmax(f32_ptr, count as u32)?;
-        let absmax = if absmax == 0.0 { 1.0 } else { absmax };
-        let quant_scale = 448.0 / absmax;
-        let dequant_scale = absmax / 448.0;
-
-        // Allocate persistent FP8 buffer [N × K] — 1 byte per element
-        let fp8_buf = GpuBuffer::<u8>::new(&self.context, count)?;
+        // #3807: one scale per output channel (a row of the [N × K] weight), not per tensor.
+        // Persistent FP8 buffer [N × K] — 1 byte per element.
+        let (fp8_buf, row_absmax) = self.fp8_quantize_weight(f32_ptr, n, k)?;
         let fp8_ptr = fp8_buf.as_ptr();
 
-        // Convert FP32 → scaled FP8 E4M3
-        self.convert_f32_to_e4m3_scaled(f32_ptr, fp8_ptr, count as u32, quant_scale)?;
-
-        // Store dequant scale as CPU float — used as GEMM alpha (constant, no sync needed)
-        self.fp8_weight_scales.insert(weight_ptr, dequant_scale);
-
+        self.fp8_weight_row_absmax.insert(weight_ptr, row_absmax);
         self.fp8_weight_cache.insert(weight_ptr, fp8_buf);
         Ok(fp8_ptr)
     }
 
-    /// PMAT-079: Fully async FP8 E4M3 GEMM — zero CPU syncs.
+    /// PMAT-079 / #3807: Fully async FP8 E4M3 GEMM — zero CPU syncs.
     ///
     /// Pipeline (all on device, no CPU readback):
-    ///   1. absmax_reduce → device absmax_buf (no sync)
-    ///   2. f32_to_e4m3_device_scaled → reads absmax from device, writes FP8 + act_dequant
-    ///   3. gemm_fp8_e4m3_to_bf16_cached → GEMM with alpha = w_absmax/448 into a BF16 D
-    ///   4. bf16_to_f32_act_scaled → reads act_dequant (act_absmax/448) from device
+    ///   1. fp8_absmax_rows → one absmax per token row of the activation
+    ///   2. fp8_quantize_rows → E4M3 with that row's scale, subnormals kept
+    ///   3. gemm_fp8_e4m3_to_bf16_cached → GEMM with alpha 1 into a BF16 D
+    ///   4. fp8_dequant_outer → Y = D × (act_absmax[t]/448) × (w_absmax[c]/448)
     ///
-    /// Step 3 folds the weight dequant into alpha, so D = true_result × 448/act_absmax: it
-    /// carries the activation gain until step 4 multiplies it out. That is why D is BF16
-    /// (#3728): an FP16 D saturated at 65,504 whenever act_absmax was small relative to the
-    /// output (qwen2.5-coder-7b layer-1 QKV: 85,807). This avoids both the GPU→CPU absmax sync
-    /// AND cuBLASLt scale pointer issues.
+    /// #3807: steps 1–2 used one scale for the whole batch and flushed E4M3 subnormals, so a
+    /// massive-activation outlier in one token zeroed the small inputs of every token
+    /// (qwen2.5-coder-7b: F2 cosine 0.8134 at position 1, then CPU). Both scales are outer
+    /// factors, so step 4 applies them exactly. D is BF16 (#3728) and now at most 448² × k.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn cublas_prefill_fp8_gemm(
         &mut self,
         w_fp8_ptr: u64,
-        weight_key: u64, // original weight_ptr used as key into fp8_weight_scales
+        weight_key: u64, // original weight_ptr used as key into fp8_weight_row_absmax
         packed_input_ptr: u64,
         packed_output_ptr: u64,
         m: u32, // sequence/batch length (tokens)
@@ -102,42 +89,35 @@ impl CudaExecutor {
             .expect("scratch just allocated")
             .as_ptr();
 
-        // Ensure persistent dequant buffer exists
-        if self.fp8_act_dequant_buf.is_none() {
-            self.fp8_act_dequant_buf = Some(GpuBuffer::<f32>::new(&self.context, 1)?);
-        }
-        let act_dequant_ptr = self
-            .fp8_act_dequant_buf
-            .as_ref()
-            .expect("just allocated")
-            .as_ptr();
+        // #3807: one absmax per token row, persistent across GEMMs (growing it drops the held
+        // activation, whose row scales lived in the old buffer).
+        let act_absmax_ptr = self.ensure_fp8_act_row_absmax(m as usize)?;
 
         if self.fp8_act_cache.hit(packed_input_ptr, input_actual_count) {
-            // PMAT-084: Reuse cached FP8 activation + dequant scale.
+            // PMAT-084: Reuse cached FP8 activation + its row scales.
             // QKV phase: Q computes, K+V reuse. FFN: gate computes, up reuses.
             // 3 hits/layer × 28 layers = 84 saved absmax+convert pairs.
             if detail_trace {
                 eprintln!("[PMAT-084] FP8 activation cache HIT ptr={packed_input_ptr:#x} count={input_actual_count}");
             }
         } else {
-            let absmax_ptr = self.gpu_absmax_device(packed_input_ptr, input_actual_count)?;
-            self.convert_f32_to_e4m3_device_scaled(
-                packed_input_ptr,
-                input_fp8_ptr,
-                input_actual_count,
-                absmax_ptr,
-                act_dequant_ptr,
-            )?;
+            self.fp8_absmax_rows(packed_input_ptr, m, k, act_absmax_ptr)?;
+            self.fp8_quantize_rows(packed_input_ptr, input_fp8_ptr, m, k, act_absmax_ptr)?;
+            self.zero_fp8_activation_tail(input_fp8_ptr, input_actual_count)?;
             self.fp8_act_cache
                 .record(packed_input_ptr, input_actual_count);
         }
 
-        // Look up weight dequant scale (CPU float, constant per weight, no sync needed)
-        let weight_dequant = *self.fp8_weight_scales.get(&weight_key).ok_or_else(|| {
-            GpuError::InvalidParameter(format!(
-                "FP8 weight scale not found for key {weight_key:#x}"
-            ))
-        })?;
+        // Per-channel weight absmax, kept on the device since the weight was cached.
+        let w_absmax_ptr = self
+            .fp8_weight_row_absmax
+            .get(&weight_key)
+            .map(GpuBuffer::as_ptr)
+            .ok_or_else(|| {
+                GpuError::InvalidParameter(format!(
+                    "FP8 weight row scales not found for key {weight_key:#x}"
+                ))
+            })?;
 
         let t1 = if detail_trace {
             self.stream.synchronize()?;
@@ -146,14 +126,10 @@ impl CudaExecutor {
             None
         };
 
-        // Step 3: cuBLASLt FP8 GEMM with alpha=weight_dequant → BF16 output
-        // #3728: D carries the activation gain 448/act_absmax until step 4, so it needs range, not
-        // precision: in FP16 it saturated at 65,504 (qwen2.5-coder-7b layer-1 QKV: 85,807 with
-        // input absmax 0.0602 — cos 0.5668 at position 1). BF16 has FP32's exponent range, and its
-        // 8-bit significand is still finer than the E4M3 operands' 4.
-        // weight_dequant is a constant CPU float (computed once at weight cache time).
-        // This partially dequants: D = (w_max/448) × FP8(A) × FP8(B)
-        // = (448/act_max) × true_result. The act_dequant (act_max/448) is applied in step 4.
+        // Step 3: cuBLASLt FP8 GEMM with alpha 1 → BF16 output.
+        // #3728: D carries both quantization gains (448/act_absmax[t] × 448/w_absmax[c]) until
+        // step 4, so it needs range, not precision: FP16 saturated at 65,504. BF16 has FP32's
+        // exponent range, and its 8-bit significand is still finer than the E4M3 operands' 4.
         let output_padded_count = n as usize * m_padded as usize;
         self.ensure_fp16_activation_scratch(output_padded_count)?;
         let f16_output_ptr = self
@@ -172,7 +148,7 @@ impl CudaExecutor {
             n as i32,
             m_padded as i32,
             k as i32,
-            weight_dequant, // alpha = w_absmax/448 (constant, no sync needed)
+            1.0, // both scales are applied per row/channel in step 4
             w_fp8_ptr,
             k as i32,
             input_fp8_ptr,
@@ -190,15 +166,14 @@ impl CudaExecutor {
             None
         };
 
-        // Step 4: Convert BF16→FP32 with device-side act_dequant scaling.
-        // Reads act_dequant (act_absmax/448) from device, multiplies each element by it.
-        // Combined with step 3 alpha: D_f32 = f16_val × act_dequant = true_result.
-        let output_actual_count = n as usize * m as usize;
-        self.convert_bf16_to_f32_act_scaled(
+        // Step 4: BF16→FP32 times both outer scales, for the m real tokens only.
+        self.fp8_dequant_outer(
             f16_output_ptr,
             packed_output_ptr,
-            output_actual_count as u32,
-            act_dequant_ptr,
+            m,
+            n,
+            act_absmax_ptr,
+            w_absmax_ptr,
         )?;
 
         if let (Some(t0), Some(t1), Some(t2)) = (t0, t1, t2) {

@@ -1,11 +1,11 @@
 //! #3728: the FP8 prefill GEMM's intermediate must not overflow when its activation is small.
 //!
-//! `cublas_prefill_fp8_gemm` quantizes the activation with `448/act_absmax`, folds the weight
-//! dequant into cuBLASLt's alpha, and writes `D = true_result × 448/act_absmax` before step 4
-//! multiplies `act_absmax/448` back out. With an FP16 D that gain saturates at 65,504:
+//! `cublas_prefill_fp8_gemm` writes the GEMM's `D` with the quantization gains still in it
+//! and multiplies them back out afterwards. With an FP16 D that gain saturated at 65,504:
 //! qwen2.5-coder-7b's layer-1 QKV (input absmax 0.0602, output up to 11.54) reached 85,807 and
-//! `apr run --gpu` fell back at cosine 0.5668. This row rebuilds that range on the real kernel.
-//! It needs a CUDA device and skips, loudly, without one.
+//! `apr run --gpu` fell back at cosine 0.5668. Since #3807 both gains stay in D
+//! (`448/act_absmax[t] × 448/w_absmax[c]`), so the range is larger still. This row rebuilds it
+//! on the real kernel. It needs a CUDA device and skips, loudly, without one.
 
 use crate::cuda::executor::CudaExecutor;
 use trueno_gpu::driver::GpuBuffer;
@@ -37,9 +37,10 @@ fn an_fp8_gemm_whose_activation_gain_overflows_fp16_still_matches_f32() {
         })
         .collect();
 
-    // Not vacuous: at this range the pre-fix FP16 D must overflow. D = true × 448/act_absmax.
+    // Not vacuous: at this range an FP16 D must overflow. Row 0's D = true × 448/act_absmax ×
+    // 448/w_absmax (w_absmax 1.0), the smallest gain of any row here.
     let peak = reference.iter().fold(0.0f32, |a, v| a.max(v.abs()));
-    let d_peak = peak * 448.0 / act_absmax;
+    let d_peak = peak * 448.0 / act_absmax * 448.0;
     assert!(
         d_peak > 65_504.0,
         "fixture must drive D past FP16's 65,504 (got {d_peak}); otherwise this row proves nothing"
@@ -49,7 +50,10 @@ fn an_fp8_gemm_whose_activation_gain_overflows_fp16_still_matches_f32() {
     let w_buf = GpuBuffer::from_host(&exec.context, &weights).expect("upload FP8 weight");
     let out = GpuBuffer::<f32>::new(&exec.context, (m * n) as usize).expect("alloc output");
     let weight_key = w_buf.as_ptr();
-    exec.fp8_weight_scales.insert(weight_key, 1.0 / 448.0);
+    // #3807: one absmax per output channel; 1.0 makes each 0x7E weight dequantize to 1.0.
+    let w_absmax =
+        GpuBuffer::from_host(&exec.context, &vec![1.0f32; n as usize]).expect("w absmax");
+    exec.fp8_weight_row_absmax.insert(weight_key, w_absmax);
 
     exec.cublas_prefill_fp8_gemm(
         w_buf.as_ptr(),
@@ -72,8 +76,9 @@ fn an_fp8_gemm_whose_activation_gain_overflows_fp16_still_matches_f32() {
         "D saturated: {non_finite} of {} outputs are inf/NaN",
         got.len()
     );
-    // FP8's own error on this input: 0.05 × 448/0.0602 = 372.1 rounds to the E4M3 grid point
-    // 384 (+3.2%), so 5% bounds the quantization and nothing else.
+    // FP8's own error on this input: in row 0, 0.05 × 448/0.0602 = 372.1 rounds to the E4M3
+    // grid point 384 (+3.2%); the other rows' 0.05 is their own absmax and encodes exactly. So
+    // 5% bounds the quantization and nothing else.
     let worst = got
         .iter()
         .zip(&reference)
