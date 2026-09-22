@@ -20145,6 +20145,28 @@ roadmap:
   labels:
   - kind:code
   notes: "Refs #3577 (ONT-4c3; its ledger binding is infra's row, bound after this merges) and #3624 (the by_entity_type sibling, not closed here). R-3 of ONT-001: pc_extract is one planted defect per registered extractor, every run."
+- id: PMAT-3720
+  github_issue: 3720
+  item_type: task
+  title: 'apr response contract for consumers (#3716): weights digest + seed determinism, empty completion = error, refused vs did-not-run distinguishable — on run --json and serve'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-fd
+  created: '2026-09-21T15:55:29Z'
+  updated: '2026-09-22T03:20:00Z'
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3720 done_when 1, verbatim: "**weights digest**: `apr run --json` and serve''s response (`/v1/chat/completions`, a `model_digest` field and the `x-apr-model-digest` header) carry the sha256 of the model file actually loaded, plus the apr version+sha. The case row checks it against `sha256sum` of the file."'
+  - 'Issue #3720 done_when 2, verbatim: "**seed determinism**: the same model, prompt, seed and sampling params give byte-identical output twice in a row, on each backend (CUDA on lambda and gx10, CPU on intel), for run and serve. A test runs each twice and diffs. Where a backend CAN''T guarantee it, the response says `deterministic: false` with the reason; it never silently differs."'
+  - 'Issue #3720 done_when 3, verbatim: "**empty completion = error**: a generation that produces zero tokens (or only a stripped think-block) exits non-zero from `apr run` / returns an HTTP error from serve, naming why. Never rc 0 with `""`. (The qwen3-8b gate defect today was this shape: an empty answer read as a model defect, and in production it would have read as success.)"'
+  - 'Issue #3720 done_when 4, verbatim: "**refused vs did-not-run**: distinct exit codes and JSON `status` values for REFUSED (a capability or limit, with the reason), FAILED (ran and errored) and OK. Documented in `--help` and the contract, with a case row per state."'
+  - 'Issue #3720 done_when 5, verbatim: "these become cells in the SHACL release shape (#3715)"'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Epic #3710 (0.69.1). Derived from the consumer requirements on #3716 (rmedia: "Without a digest to lock a generated asset to what produced it, rmedia cannot gate one and would not ship one"). The schema is the one accepted on the issue (issuecomment-5767765474), pinned as contracts/apr-response-contract-v1.yaml. Stacked on PMAT-3723-thinking-derived (#3723/#3755/#3801), which supplies the reasoning split. DONE_WHEN 1 (weights digest): apr run --json/--stream carries model_digest (sha256 of the resolved file, hashed beside inference, only for a machine-readable run), apr_version and apr_git_sha. apr serve hashes the served model ONCE at startup (the GGUF''s mapped bytes, or the APR/SafeTensors file) and sends x-apr-model-digest on EVERY response (a router layer, so streaming too), and model_digest/apr_version/apr_git_sha in completion bodies. Measured: equal to sha256sum on every hardware row. DONE_WHEN 2 (seed determinism): three samplers used process entropy and were fixed to draw from an RNG seeded by the request: the CUDA resident decode loop (next_token; it also dropped top_p), the logprobs loop, and the continuous-batching sampler. Completions carry `deterministic`, plus `nondeterminism_reason` when false: the wgpu GpuModel (its config carries no seed) and a scheduler admitting more than one request at a time say false and why. Measured with sampling ENGAGED (sampled != greedy on every row; apr run''s --top-k defaults to 1, so a --temperature-only check is vacuous): lambda RTX 4090, apr run + apr serve, greedy and temperature 0.7/top_k 40/top_p 0.9/seed 42, Qwen3-8B and qwen2.5-coder-1.5b, twice each: byte-identical. gx10 CUDA and CPU: recorded here when measured. DONE_WHEN 3 (empty completion = error): zero tokens, or only a think block (whose reasoning is still reported), is CliError::EmptyCompletion, kind empty_completion, exit 8 on apr run, HTTP 422 on serve. A whitespace answer the model did generate is an answer. think_block_unclosed is typed (RealizarError::ThinkBlockUnclosed), exit 8 / 422. DONE_WHEN 4 (refused vs did-not-run): every CliError has kind(), status() (refused = a capability/limit/policy said no before the work ran; failed = it ran and errored) and envelope() {status, error{kind, message, exit_code}} with exit_code never re-mapped. A --json/--stream run writes ONE document on every exit (success, refusal, failure). Serve errors are additive: `error` stays the message string, and `status` + `error_kind` are added beside it. DONE_WHEN 5 (SHACL release cells, #3715): not in this row. The cells are #3715''s shape to add, against contracts/apr-response-contract-v1.yaml. EXISTING TESTS CHANGED: four serve tests whose random-weight fixtures generate zero tokens now get the named empty_completion 422. Each accepts ONLY that 422, checked on error_kind. apr code''s envelope is #3775''s (same names).'
 - id: PMAT-3723
   github_issue: 3723
   item_type: task
