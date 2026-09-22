@@ -95,9 +95,16 @@ metadata:
 # Declaring the real subject fixes it honestly rather than by deleting the evidence.
 # The predicate's over-match is a separate defect and belongs on #3863, not here.
 entity:
-  type: gguf
+  # `pv-contract`, NOT `gguf`. The `type` tells the ONT extractor HOW to read `ref`:
+  # `gguf` makes it open the file as a GGUF binary and refuse on the magic bytes
+  # ("extractor refused ...: magic is not GGUF"). This contract IS a pv contract, so
+  # that is what it declares -- the same value `ont-shapes-v1` uses.
+  #
+  # The ratchet went 298 -> 297 because the block EXISTS; the type VALUE is a second,
+  # independent thing and it was wrong. A green ratchet and a red extractor,
+  # disagreeing about one edit -- neither gate alone would have shown it (#3863).
+  type: pv-contract
   ref: contracts/apr-model-capability-v1.yaml
-
 name: apr-model-capability
 version: 1.0.0
 status: ACTIVE
