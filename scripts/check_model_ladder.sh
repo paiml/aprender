@@ -55,7 +55,7 @@ cd "${MODEL_LADDER_ROOT:-$(dirname "$SELF")/..}" || exit 2
 # judge <ladder> <ladder_at_main_or_empty> <receipt_dir> <version> [context-rungs.json] [its origin/main copy]  → exit 0/1/2
 judge() {
   python3 - "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" <<'PY'
-import json, os, sys, yaml
+import fnmatch, json, os, sys, yaml
 ladder_p, main_p, rdir, version, rungs_p, rungs_main_p = sys.argv[1:7]
 sys.path.insert(0, os.environ.get("MODEL_LADDER_CELLS_LIB") or "scripts/lib")  # a mutant copy of the module, in --self-test
 import model_ladder_cells
@@ -139,6 +139,9 @@ for r in rungs:
     if is_q4k(r) and "cuda" not in (r.get("backends") or []):
         print(f"FAIL  rung {r['id']} is a Q4_K rung that does not claim cuda — every Q4_K model must be green on CUDA (#3712)"); rc = 1
 inv_backends = list((L.get("inventory") or {}).get("backends") or [])
+# #3846: the DECLARED inventory deferrals (glob -> reason). Empty when absent, so a
+# contract without the key defers nothing and every failing row is refused as before.
+inv_deferred = dict((L.get("inventory") or {}).get("deferred") or {})
 if not (L.get("inventory") or {}).get("patterns") or "cuda" not in inv_backends:
     print("FAIL  the ladder declares no inventory (patterns + backends incl. cuda) — the universe cannot be the host's measured Q4_K models (#3712)"); rc = 1
 # anti-shrink vs origin/main
@@ -240,7 +243,23 @@ for h in hosts:
         if f in ladder_files:
             continue  # a ladder rung: judged, required, in the rung loop below
         why = why_of(x, inv_backends)
-        if why: print(f"FAIL  {h['id']:7} inv:{f:22} " + "; ".join(why)); rc = 1
+        # #3846 / operator ruling 2026-09-22 ("we kick the MoE work to later"): a DECLARED
+        # deferral. `inventory.deferred` maps a filename glob to a REASON, and a failing row
+        # whose file matches one is printed DEFERRED with that reason instead of refusing.
+        # Three properties make this a mechanism rather than an escape hatch:
+        #   - it needs a non-empty reason, so an undocumented glob defers nothing;
+        #   - it is NOT counted in inv_green, so a deferral can never read as a pass;
+        #   - a row that fails and matches NOTHING here is still refused (case table).
+        # It only ever applies to a row that ALREADY failed: a matching row that is green is
+        # reported green, because deferring a passing model would hide a working capability.
+        defer_why = None
+        if why:
+            for pat, reason in (inv_deferred or {}).items():
+                if fnmatch.fnmatch(f.lower(), str(pat).lower()) and isinstance(reason, str) and reason.strip():
+                    defer_why = reason.strip(); break
+        if why and defer_why:
+            print(f"DEFER {h['id']:7} inv:{f:22} {defer_why} — was: " + "; ".join(why))
+        elif why: print(f"FAIL  {h['id']:7} inv:{f:22} " + "; ".join(why)); rc = 1
         else:   inv_green += 1; print(f"ok    {h['id']:7} inv:{f:22} green on {','.join(inv_backends)}")
     print(f"ok    {h['id']:7} inventory: {len(inv)} Q4_K model(s) held, every one in the run")
     for r in rungs:

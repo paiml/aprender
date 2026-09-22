@@ -60,7 +60,28 @@ ladder:
     - { id: gx10,   isa: aarch64, gpu: "GB10",     cc: sm_121, required: true }
   inventory:
     dirs: ["~/models", "~/.apr/models", "~/.cache/apr/models"]   # depth 1, the fleet's model dirs
-    patterns: ["*q4_k*.gguf", "*q4k*.gguf", "*q4_k*.apr", "*q4k*.apr"]   # case-insensitive
+    # WIDENED 2026-09-22 by operator ruling: "don't leave behind. if it fits on this machine
+    # and/or gx10 with CUDA we must support for Qwen 3.5 and 2.5. we kick the MoE work to later".
+    # MEASURED before the change: 28 models held on lambda, 18 swept, 10 INVISIBLE TO EVERY GATE,
+    # because the universe was a filename glob over q4_k/q4k only. That is #3712's own defect in a
+    # new form -- it replaced a hand-picked list with a glob, which has the same omission property,
+    # moved from a human decision to a string match nobody reviews (#3846). Escapees included
+    # Qwen3-Coder-30B-A3B-Instruct-Q4_0 (a Q4 quant `*q4_k*` does not match) and
+    # Qwen3.5-35B-A3B-UD-IQ4_XS (a 35B Qwen3.5 no gate had ever loaded). The two `.apr` files
+    # escaped in PRINCIPLE rather than by accident: an .apr filename need not carry its
+    # quantisation at all, so a name-based universe cannot see them. The durable fix is to derive
+    # the universe from the file HEADER, which `apr inspect --json` already reports (#3846); these
+    # four patterns close the 2.5/3.5 hole now. Adds 7 measurable models (0.34-7.11 GB: IQ2_XXS,
+    # IQ3_M, IQ4_XS x2, f16, and both .apr) plus one deferred MoE.
+    patterns: ["*q4_k*.gguf", "*q4k*.gguf", "*q4_k*.apr", "*q4k*.apr",
+               "*qwen2.5*.gguf", "*qwen3.5*.gguf", "*qwen2.5*.apr", "*qwen3.5*.apr"]   # case-insensitive
+    # DEFERRED, per the same ruling's "we kick the MoE work to later". A match is printed DEFERRED
+    # and NEVER counted green: this build has no CUDA forward for qwen3moe at all (#3714), so an
+    # A3B model owes cells no code can satisfy. This is a DECLARED deferral carrying a reason, not
+    # an exemption -- an inventory model that fails and is not named here is still refused, which
+    # the case table proves. Delete this key when #3714 lands.
+    deferred:
+      "*A3B*": "mixture-of-experts: no CUDA forward for qwen3moe in this build (#3714, lands 0.70.0); operator ruling 2026-09-22 kicks the MoE work to later"
     backends: [cuda]
   # #3712 row B (operator 2026-09-21: "MORE than enough tokens for our needs (overdo it), and our verbs are
   # dogfooded, i.e chat with and without thinking, ditto run, ditto code"). A cell is (model, host, verb,
