@@ -7,7 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### 0.69.1 — known limitation, stated by name
+## [0.69.1] - 2026-09-22
+
+0.69.1 is the stoppers train for 0.69.0 (#3080), assembled as one integration batch:
+87 commits, one CI run, one queue slot. Its theme is not a feature. It is **gates that
+could not fail** — and the reason that is the theme is that 0.69.0 shipped a model
+emitting empty output on CUDA as a *note* rather than a failure, because one contract
+key said the rung was optional.
+
+Four release gates in this tree turned out to be one defect wearing four faces
+(`contracts`, `pv lint`, `check_model_ladder`, and the clean-room contract test), all
+resolving to a single missing green witness. That is the good case: one cause, one fix.
+The bad cases are below, and they are the ones worth reading, because each was **green
+while being wrong**.
+
+### Gates that could not fail
+- **A Q4_K rung can no longer be optional.** `qwen3-8b-q4km` was `required: false`, which
+  is exactly how 0.69.0 shipped an empty-output CUDA model as a note. No Q4_K model is
+  optional (#3712); the key is now refused rather than tolerated, and arming it surfaced
+  the defect it had been masking since 0.69.0.
+- **The golden-output gate scored degenerate output as correct.** The greeting case
+  accepted a bare `"!"` by substring match — and `"!"` is token id 0 in the Qwen vocab,
+  i.e. precisely what a model with dead logits emits. Measured on the pre-fix gate,
+  `"!"`-repeated **passed at lengths 1..=11** and was caught only at 12+, because the
+  existing guard tested `bytes.len() >= 12`. So the gate was blind exactly where the real
+  failure lives: short degenerate output. A new `gibberish_dominant_character` check (8+
+  non-space characters, 90%+ identical) now runs *before* the answer check, so it covers
+  cases added later, and it reuses CRUX's own threshold so the two judges cannot disagree
+  about what "degenerate" means. (#3782, #3774)
+- **`make contracts` printed its verdict and did not enforce it.** The command was
+  `"$PV" lint contracts/ | tail -5`, so the recipe took **`tail`'s** exit status. The
+  armed-meet verdict was displayed on every run and could never fail the build. (#2336,
+  #2360 are the same idiom shipping twice before; this is the third.)
+- **The release ladder measured one verb while the contract declared four.** The release
+  matrix claims `{run, chat, serve, code}`; the ladder proved `run`. The receipt now
+  carries a `verbs` object, `serve` is probed against routes **derived from the router's
+  own source literals** rather than a hand-written list, and the judge refuses by name a
+  receipt that omits a verb, reports no routes, or probes `serve` without `/api/chat`.
+  The anti-shrink floor also gained a way to admit a *reasoned* removal instead of only
+  refusing every shrink. (#3828)
+- **A NO-GO release run destroyed the evidence it cited.** The dogfood worklog was removed
+  unconditionally, so the one verdict whose reasoning you need was the one with no
+  artifact left. It is now kept on any non-GO.
+- **Pre-publish dogfood could never reach GO.** Its declared gates resolved a stale debug
+  binary and refused, before anything built `target/release/apr`.
+
+### Qwen on CUDA — correctness
+- **APR Q4_K GPU serve no longer emits garbage.** (#3791, with #3571 units 1–2 and #3595)
+- **One template detector.** `apr chat` stopped routing Qwen3 through ChatML; `apr code`'s
+  embedded fallback now takes the production detector instead of guessing from a filename.
+  (#3801)
+- **The three spellings of a chat prompt now reach realizar identically.** A pre-templated
+  prompt was templated a second time, and `sanitize_special_tokens` inserted U+200B,
+  producing `<unk>` tokens and a token count that disagreed with llama.cpp's. (#3743)
+- **The golden gate asks the model the way production asks it.** It previously sent ChatML
+  to every architecture, which left `qwen3` in thinking mode — a mode no production path
+  uses — and on one host its greedy reasoning for "2+2" overran the token budget, so the
+  gate reported "Empty output" for a model that answers correctly through `apr serve`.
+  The GPU leg is now typed and can say `Errored`, `Unclosed` and `NotRun` distinctly.
+  (#3724)
+- **The ollama wire's delegation is asserted, not assumed.** (#3715, reported by Alfredo)
+
+### CLI honesty
+- `apr chat --no-gpu` no longer uploads the model to CUDA, and `--json` names the backend
+  it actually used. (#3794)
+- A bare `apr run` no longer pays 1.7 GB to initialise a backend it then rejects. (#3757)
+- `apr code --output-format json` writes exactly one JSON document on every exit path,
+  including failures. (#3775)
+- A sampling flag given alone now samples, instead of being silently ignored because the
+  other half of the pair was absent (`DEFAULT_TOP_K`). (#3754)
+- Seeded sampling is honoured on `run` over SafeTensors (#3760) and on `serve` for APR
+  Q4_K GPU chat (#3786).
+
+### Documentation accuracy
+- The README claimed **110** CLI commands and cited `apr --help` as its source of truth —
+  a command that prints **112**, because it lists `help` itself. The registry says **111**
+  and `grep -c '^  - name:'` says **117**. Three mechanisms answer the question and the
+  published number matched none of them. Now 111, sourced from the registry, with both
+  wrong counts named inline. The guard had been *passing while printing this finding*,
+  which is why nobody had to act on it.
+- Contract census regenerated: **1830**.
+
+### Known limitation, stated by name
 - **`qwen3moe` is not supported on CUDA.** `apr run --gpu` on a mixture-of-experts
   Q4_K_M model (`Qwen3-30B-A3B-Instruct-2507`, `Qwen3-Coder-30B-A3B-Instruct`)
   now **refuses before loading**, names the architecture, cites #3714 and exits 12.
