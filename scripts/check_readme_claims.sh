@@ -173,6 +173,35 @@ print(len(names))
 ' "$REPO_ROOT/contracts/apr-cli-commands-v1.yaml"
 }
 
+claimed_cookbook_recipe_count() {
+  # "**1,825** worked examples (apr-cookbook, 2026-09-12)" — the thousands comma
+  # is stripped so the README stays readable while the comparison stays numeric.
+  grep -oE '\*\*[0-9,]+\*\* worked examples' "$README" | grep -oE '[0-9,]+' | tr -d ',' | head -1
+}
+
+check_cookbook_recipe_count() {
+  local claimed measured
+  measured=$(measured_cookbook_recipe_count) || return 1
+  claimed=$(claimed_cookbook_recipe_count)
+  if [[ -z "$claimed" ]]; then
+    echo "FAIL FALSIFY-README-007 cookbook_recipe_count: README states no '**N** worked examples'" >&2
+    return 1
+  fi
+  # EQUALITY, not the ratchet: both sides are committed files in this repo, so a
+  # lag is just a wrong number. A ratchet here would let the README understate
+  # forever, which is how 341 survived.
+  if [[ "$claimed" != "$measured" ]]; then
+    echo "FAIL FALSIFY-README-007 cookbook_recipe_count: README claims $claimed, contracts/readme-claims-v1.yaml pins $measured" >&2
+    return 1
+  fi
+  # The as-of date is part of the claim: a count with no date is what drifted.
+  if ! grep -qE '\*\*[0-9,]+\*\* worked examples \(apr-cookbook, [0-9]{4}-[0-9]{2}-[0-9]{2}\)' "$README"; then
+    echo "FAIL FALSIFY-README-007 cookbook_recipe_count: the count must carry its as-of date, '(apr-cookbook, YYYY-MM-DD)'" >&2
+    return 1
+  fi
+  echo "PASS FALSIFY-README-007 cookbook_recipe_count: $measured (pinned)"
+}
+
 measured_cookbook_link_present() {
   # True if README mentions apr-cookbook anywhere (link, path, etc.)
   if grep -Fq "apr-cookbook" "$README"; then
@@ -180,6 +209,24 @@ measured_cookbook_link_present() {
   else
     echo 0
   fi
+}
+
+# #3769: the cookbook example count is PINNED in contracts/readme-claims-v1.yaml,
+# not measured, because its source of truth lives in paiml/apr-cookbook and this
+# repo has no clone of it in CI. Reading the pin here is the whole point: one
+# source, one gated consumer, a stated as-of date.
+measured_cookbook_recipe_count() {
+  local pin
+  pin=$(grep -oE '^[[:space:]]*cookbook_recipe_count_pin:[[:space:]]*[0-9]+' \
+        "$REPO_ROOT/contracts/readme-claims-v1.yaml" | grep -oE '[0-9]+$' | head -1)
+  # Fail loudly rather than echoing an empty string: an unset comparand that
+  # compares equal to an unset claim is the vacuous-green shape this file exists
+  # to prevent.
+  if [[ -z "$pin" ]]; then
+    echo "FAIL cookbook_recipe_count: no cookbook_recipe_count_pin in contracts/readme-claims-v1.yaml" >&2
+    return 1
+  fi
+  echo "$pin"
 }
 
 # --- claim extractors (read the README) ---
@@ -458,7 +505,7 @@ for arg in "$@"; do
     --regen) mode="regen" ;;
     --exact) EXACT=1 ;;
     --self-test) mode="selftest" ;;
-    crate_count|contract_count|cli_command_count|cookbook_link) claim="$arg" ;;
+    crate_count|contract_count|cli_command_count|cookbook_link|cookbook_recipe_count|install_line) claim="$arg" ;;
     *) echo "unknown arg: $arg" >&2; exit 2 ;;
   esac
 done
@@ -550,6 +597,21 @@ case "$mode" in
     fx "$((mc + 1))" "$((cc + 1))";    row 1 "README OVERSTATES the crate count by one: RED (the registered mutation)" crate_count
     fx "$mc" "$((cc + 1))";            row 1 "README overstates the contract count: RED"                       contract_count
     fx "$mc" "$cc" "and $((cc - 1)) contracts elsewhere"; row 1 "two different contract counts in one README: RED (self-contradiction)" contract_count
+    # #3769 cookbook pin. The comparison is README-vs-pin, one equality, so a fixture
+    # that disagrees with the real pin exercises BOTH directions of it: a wrong README
+    # and a wrong pin are the same failure seen from either side. No pin-override seam
+    # is offered on purpose — a knob that can fake the comparand is how a gate is told
+    # to pass.
+    pin=$(measured_cookbook_recipe_count) || pin=""
+    fxc() { printf '# apr\n\n**%s** workspace crates, **%s** provable contracts.\napr-cookbook %s\n' "$mc" "$cc" "$1" > "$TD/README.md"; }
+    fxc "— **${pin}** worked examples (apr-cookbook, 2026-09-12),"
+    row 0 "cookbook count equals the pin, with its date: PASS"                          cookbook_recipe_count
+    fxc "— **$((pin + 75))** worked examples (apr-cookbook, 2026-09-12),"
+    row 1 "README disagrees with the pin (either side wrong): RED"                      cookbook_recipe_count
+    fxc "— **${pin}** worked examples,"
+    row 1 "right number, NO as-of date: RED (a dateless count is how 341 survived)"     cookbook_recipe_count
+    fxc "has recipes."
+    row 1 "no count claimed at all: RED, not vacuously green"                           cookbook_recipe_count
     printf '%s/%s rows\n' "$((n - red))" "$n"
     [ "$red" = 0 ] || exit 1
     exit 0
@@ -563,6 +625,7 @@ case "$mode" in
       echo "apr --help subcmds:    <apr binary not available>"
     fi
     echo "apr-cookbook link:     $(measured_cookbook_link_present)"
+    echo "cookbook examples pin: $(measured_cookbook_recipe_count)"
     ;;
   one)
     case "$claim" in
@@ -570,8 +633,9 @@ case "$mode" in
       contract_count)    check_contract_count ;;
       cli_command_count) check_cli_command_count ;;
       cookbook_link)     check_cookbook_link ;;
+      cookbook_recipe_count) check_cookbook_recipe_count ;;
       install_line)      check_install_line ;;
-      *) echo "--claim requires one of: crate_count, contract_count, cli_command_count, cookbook_link, install_line" >&2; exit 2 ;;
+      *) echo "--claim requires one of: crate_count, contract_count, cli_command_count, cookbook_link, cookbook_recipe_count, install_line" >&2; exit 2 ;;
     esac
     ;;
   all)
@@ -580,6 +644,7 @@ case "$mode" in
     check_contract_count    || fail=1
     check_cli_command_count || fail=1
     check_cookbook_link     || fail=1
+    check_cookbook_recipe_count || fail=1
     check_install_line      || fail=1
     exit "$fail"
     ;;

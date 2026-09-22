@@ -90,6 +90,17 @@ pub fn render(receipts: &[Receipt]) -> String {
     out.push_str(&format!(
         "\nVerified matrix for **{version}**, from the ladder receipts:\n\n"
     ));
+    // What a cell MEANS, stated in the output rather than left to the reader. The
+    // ladder's `green` derives from `ran`/`fallback`/`escaped_special`, all from
+    // `apr run` — it never reads the receipt's `verbs`. So `chat`, `code` and `serve`
+    // are RECORDED in the receipt and not ENFORCED by it (d8 demonstrated a failed
+    // serve probe on a row still marked green). A generated table is trusted more
+    // than a hand-typed one, so an overclaim here is worse: say what was checked.
+    out.push_str(
+        "A `pass` cell means `apr run` completed on that host without falling back and \
+         its golden output matched. It does **not** mean `chat`, `code` and `serve` \
+         passed: the ladder records those verbs but its `green` does not read them.\n\n",
+    );
 
     // Rung order: the union across hosts, first-seen order preserved so the table is
     // stable under receipt reordering.

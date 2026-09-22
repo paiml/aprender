@@ -56,6 +56,8 @@ Drift between this table and live repo state fails `bash scripts/check_readme_cl
 
 Verified matrix for **0.68.2**, from the ladder receipts:
 
+A `pass` cell means `apr run` completed on that host without falling back and its golden output matched. It does **not** mean `chat`, `code` and `serve` passed: the ladder records those verbs but its `green` does not read them.
+
 | Model rung | gx10 | lambda |
 |---|---|---|
 | `qwen2-1.5b-q4km` | pass | pass |
@@ -88,8 +90,11 @@ Verified matrix for **0.68.2**, from the ladder receipts:
 ## Cookbook
 
 End-to-end recipes (data prep → train → quantize → publish → serve) live in
-[`paiml/apr-cookbook`](https://github.com/paiml/apr-cookbook) — 341 worked
-examples with local `book/src/` walkthroughs.
+[`paiml/apr-cookbook`](https://github.com/paiml/apr-cookbook) — **1,825** worked examples (apr-cookbook, 2026-09-12),
+with local `book/src/` walkthroughs. The count is the
+`[[example]]` entries the cookbook declares, pinned and gated by
+[`contracts/readme-claims-v1.yaml`](contracts/readme-claims-v1.yaml) — it lives in another
+repository, so it carries the date it was measured rather than pretending to be live.
 
 ```bash
 git clone https://github.com/paiml/apr-cookbook
