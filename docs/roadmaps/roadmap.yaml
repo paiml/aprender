@@ -20554,3 +20554,22 @@ roadmap:
   labels:
   - kind:code
   notes: 'ISSUE (#3770): folding #3721 + #3738 into release/0.69.1-batch-1 (ded8a932a) turned scripts/check_release_bump_pr_body.sh RED on 4 rows (epic-and-refs, prs-only, ladder-missing-gx10, ladder-ignored) + the drop-refusal mutant, all ''STOP model-ladder receipts for 9.9.9 are not green in the bump tree''. The table runs the REAL scripts/check_model_ladder.sh on fabricated receipts that were the pre-#3712 shape (v1, no inventory; a fixture ladder with no inventory block; a seed tree without the producer the judge''s GPU-lock audit reads and without the cells module the judge imports). done_when (the cop, 2026-09-21): fixtures green under the current judge; the two refusal rows name their intended reasons; every other table that fabricates ladder receipts swept in the same commit; guard_tree --no-cargo on the branch shows only the two known complexity REDs. WHAT THIS DOES: write_receipt writes apr-model-ladder-receipt/v2 (inventory = the fixture rung''s file, candidates = that file read as a Q4_K member, the rung row names its file); the fixture ladder COPIES the real contract''s `inventory` block (never retyped, so it follows the tree''s inventory shape: row A''s patterns today, #3763''s candidates + member_dtype after it folds) and its rung names a file; the seed tree gets real copies of scripts/model_ladder.sh and scripts/lib/model_ladder_cells.py. SWEEP: the other tables that reference the ladder judge were run and need nothing: check_publish_preflight.sh --selftest (R7 rows all ok; it uses a judge STUB) and check_release_models_t1.sh --self-test (rc 0; stubs). MEASURED: check_release_bump_pr_body.sh --self-test PASS 12 rows (all 4 formerly-red rows ok; ladder-missing-gx10 names evidence/dogfood/models/9.9.9/gx10.json and ladder-ignored names ''are gitignored''; mutants drop-keep-open, drop-refusal, drop-ladder, drop-ignored all killed); the same table with #3763''s judge, producer and contract swapped in: PASS 12 rows.'
+- id: PMAT-3792
+  github_issue: 3792
+  item_type: task
+  title: 'shapes_gate complexity ratchet: pure refactor of run_shapes_gate_with, no behaviour change'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-97
+  created: 2026-09-21T21:58:00Z
+  updated: 2026-09-21T21:58:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3792 done_when 1, verbatim: "`run_shapes_gate_with` is no longer RED in `bash scripts/check_complexity_ratchet.sh`, via a PURE refactor with no behaviour change: the same answers, in the same order."'
+  - 'done_when 2, verbatim: "`cargo test -p aprender-contracts --lib` is green, and `pv lint contracts --gate shapes` passes with 8/8 pc_extract controls fired."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'The cop (aprender-04) requested this, verbatim: "Please land a pure-refactor commit on a branch OFF release/0.69.1-batch-1 (not your old branch) that brings it under threshold with no behaviour change. Proof: `bash scripts/check_complexity_ratchet.sh` rc 0, `cargo test -p aprender-contracts --lib` green, and `pv lint contracts --gate shapes` 8/8 controls fired." SCOPE: this ticket IS the refactor. It is NOT #3715''s feature, which was already folded at ded8a932a; the diff against ded8a932a is only this refactor plus this fragment and receipt. The ratchet was RED on release/0.69.1-batch-1 (ded8a932a) vs main a9502d992: run_shapes_gate_with cyclomatic 13 cognitive 28 (the limit is 25). The fix moves the preamble (collect -> empty -> arming -> family, same order), the family ordering, the verdict rule and the two report maps into prepare / order_by_family / needs_receipts / verdict_of / by_shape / by_entity_type. MEASURED at 2a40dda85: the ratchet no longer lists run_shapes_gate_with (rc stays 1 only for crates/aprender-serve/src/constrain/tests.rs::generate_intent, not in this diff and not this ticket''s); cargo test -p aprender-contracts --lib 1701 passed; pv lint contracts --gate shapes Pass, 8/8 pc_extract fired; ont_release_readiness / ont4b / ont4c1 / ont4c3 CLI targets 34/11/12/10 passed; clippy -D warnings clean. A prior round under PMAT-3715 had a lane FAIL on SCOPE because it judged this delta against the #3715 feature ticket; the cop ruled that this refactor gets its own ticket.'
