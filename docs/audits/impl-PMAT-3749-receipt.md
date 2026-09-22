@@ -58,7 +58,7 @@ This branch changes 15 files the ledger cites. Each row citing one of them was r
 ## Gaps, stated
 - A model arg DECLARED as a non-model role type (`OtherPath`-class) is a typed lie that is visible in the diff but not machine-caught. The backstops are review and S2's runs-or-refuses cell.
 - Foreign subtrees (pv, alimentar `data x`, sim, rag, zram, cgp) still carry raw args other than the two typed ones. They are emitted as role `unknown` and counted by S2 under a shrink-only ratchet (cop ruling).
-- `validate.rs::extract_model_paths` (PMAT-237) is itself a hand-typed list of which commands load models. It could now be derived from `ModelPath`/`ModelRef` markers, and is left for a follow-up.
+- `validate.rs::extract_model_paths` (PMAT-237) is itself a hand-typed list of which commands load models. It could now be derived from `ModelPath`/`ModelRef` markers; filed as **#3799** (the surface reports 63 model-taking leaf commands).
 - v1 declares no stdin form. S2 records `stdin: undeclared` under its ratchet (97's ruling on #3745).
 
 ## Routing
@@ -81,5 +81,7 @@ All phases ran direct (the orchestrator implemented; no worker subagent), becaus
   - 22:16Z, `--lane-model gemini-3.1-pro-high ×2 --lane-model gemini-3.1-pro-low --fallback-model gpt-oss-120b-medium`: the gemini pre-check returned 429 "Individual quota reached … Resets in 30h14m6s", and gpt-oss returned 503 "No capacity". Every lane was skipped as quota-exhausted.
   - 22:22Z, `--lane-model gpt-oss-120b-medium ×3`: the pre-check returned 429 "Individual quota reached … Resets in 3h51m25s".
   - Both artifacts are archived outside the tree, never committed. A second seat-fill was requested from the cop at 22:23Z.
+  - **Both attempts violated PMAT-125 ("the three lane ids must be DISTINCT")**: pro-high ×2 + pro-low, then gpt-oss ×3. Neither reached a lane, and the violation was reported to the cop at 23:20Z.
+- **Round 3 (02:17Z, after the gpt-oss reset; head 0b1a3676c+):** gemini still returned 429 "Resets in 26h12m51s", and gpt-oss answered a one-line probe. So only one distinct non-author id was available, and the round is one seat, `--width 1 --lane-model gpt-oss-120b-medium --fallback-model gpt-oss-120b-medium`, with the 2 missing seats requested from the cop. Result recorded below.
 
 verdict: PARTIAL — gates green, quorum pending (round 1 NO-VERDICT on quota)
