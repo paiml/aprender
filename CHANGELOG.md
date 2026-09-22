@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 0.69.1 — known limitation, stated by name
+- **`qwen3moe` is not supported on CUDA.** `apr run --gpu` on a mixture-of-experts
+  Q4_K_M model (`Qwen3-30B-A3B-Instruct-2507`, `Qwen3-Coder-30B-A3B-Instruct`)
+  now **refuses before loading**, names the architecture, cites #3714 and exits 12.
+  It previously loaded 18 GB, generated on the CPU and exited 14 after the fact,
+  which told a user who asked for the GPU the wrong thing about their hardware.
+  `apr run` without `--gpu` is unchanged and still runs these models on the CPU.
+  `apr qa` on such a file now emits its gates with reasons instead of exiting 5
+  with an empty JSON document. The MoE GPU forward is #3714, in 0.70.0. (#3817)
+
 ## [0.69.0] - 2026-09-21
 
 0.69.0 folds every remaining 0.68.x row into one train (EPIC #3080). The headline goal is Qwen models usable on pure CUDA. This release makes the CUDA path honest and routable:

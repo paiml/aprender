@@ -162,6 +162,15 @@ apr inspect --json Qwen3-Coder-30B-A3B-Instruct     # arch=qwen3moe, 30 B params
 apr tensors --json Qwen3-Coder-30B-A3B-Instruct     # 579 tensors (MoE expert layout)
 ```
 
+> **0.69.1 does not support `qwen3moe` on CUDA.** Mixture-of-experts models
+> (`Qwen3-30B-A3B-Instruct-2507`, `Qwen3-Coder-30B-A3B-Instruct`) run on the
+> **CPU only**: `apr run <model>` works, and `apr run --gpu <model>` **refuses
+> before loading**, naming the architecture and exiting 12 rather than
+> generating on the CPU and reporting a fallback. The MoE GPU forward is
+> [#3714](https://github.com/paiml/aprender/issues/3714) and lands in 0.70.0.
+> Introspection above (`inspect`, `tensors`) is unaffected — it reads the
+> header, not a forward.
+
 ### Publish (separate flow)
 
 ```bash

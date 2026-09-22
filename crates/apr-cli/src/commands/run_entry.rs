@@ -220,17 +220,47 @@ pub(crate) fn forced_accelerator_refusal(
 
 /// Read the declared architecture from a model path without loading it.
 ///
-/// A GGUF header read is an mmap plus a metadata parse: it does not touch the
-/// 18 GB of weights behind it, which is what makes a PRE-load refusal cheap.
-/// Anything that is not a readable GGUF answers `None`.
+/// **A bounded PREFIX read, deliberately not an mmap.** The first draft called
+/// `MappedGGUFModel::from_path`, which maps with `MAP_POPULATE` (PMAT-304,
+/// matching llama.cpp) — that synchronously pre-faults *every* page. Measured on
+/// `Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf`: the refusal was correct (rc 12,
+/// nothing on stdout) and still touched **18 GB**, maxRSS 18,155,520 kB, 2.2 s
+/// warm and 8.8 s cold. A refusal that faults in the file it is refusing to load
+/// is not a pre-load refusal; it is the load, followed by a message.
+///
+/// GGUF places the header, the metadata KVs and the tensor INFO table before the
+/// tensor data, so a prefix carries `general.architecture`. The probe grows
+/// because a 579-tensor MoE has a larger info table than a 1.5B dense model, and
+/// stops at 64 MiB: past that we are reading weights, and an unread architecture
+/// is answered `None` — no refusal — rather than by paying for the whole file.
 fn declared_architecture(source: &str) -> Option<String> {
+    use std::io::Read;
+
     let path = Path::new(source);
     if !path.is_file() {
         return None;
     }
-    let mapped = realizar::gguf::MappedGGUFModel::from_path(path).ok()?;
-    let arch = mapped.model.architecture()?.to_string();
-    Some(arch)
+    for prefix in [1_usize << 20, 8 << 20, 64 << 20] {
+        let Ok(file) = std::fs::File::open(path) else {
+            return None;
+        };
+        let mut buf = Vec::with_capacity(prefix.min(1 << 22));
+        if file.take(prefix as u64).read_to_end(&mut buf).is_err() {
+            return None;
+        }
+        let read = buf.len();
+        if let Ok(reader) = aprender::format::gguf::reader::GgufReader::from_bytes(buf) {
+            if let Some(arch) = reader.architecture() {
+                return Some(arch);
+            }
+        }
+        // A prefix that did not reach the end of the file may simply have been
+        // too short for the metadata; one that did is as much as there is.
+        if read < prefix {
+            return None;
+        }
+    }
+    None
 }
 
 /// #3817: `apr run --gpu` on an architecture with no CUDA forward refuses by

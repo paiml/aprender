@@ -78,7 +78,10 @@ ladder:
       representatives:                        # one file per other arch the fleet holds
         qwen2: qwen2.5-coder-7b-instruct-q4_k_m.gguf      # lambda + gx10
         qwen3: Qwen3-8B-Q4_K_M.gguf                       # lambda + gx10
-        qwen3moe: Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf  # gx10 (128 GB unified); fits no 24 GB card long
+        # qwen3moe: REMOVED for 0.69.1 (#3817). Not a fit question — this build has no CUDA
+        # forward for the architecture at all (#3714, lands 0.70.0), so `apr run --gpu` refuses
+        # pre-load by name and there is no GPU cell to owe. The CPU path is unchanged and works.
+        # Restore this line with the GPU forward, not before.
   rungs:
     - id: qwen2-1.5b-q4km
       family: qwen2.5
