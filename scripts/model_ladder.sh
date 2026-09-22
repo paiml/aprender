@@ -171,8 +171,56 @@ PY
 #
 # Prints ONE json object; returns 0 if every probed route answered, 1 otherwise. A route
 # that could not be probed is recorded with its reason and is NOT counted as a pass.
+
+# ── teardown: kill the SERVER, not the WRAPPER ───────────────────────────────
+# `apr_locked serve run … &` makes $! the flock/choom WRAPPER, not `apr serve`.
+# Killing the wrapper does NOT take the server down. Measured 2026-09-22 on both
+# hosts, rung 1 of 8: the server survived, kept its port, was re-parented away
+# (`ps -o ppid=` showed it adopted by pid 1's subreaper), and the script blocked
+# in `wait` FOREVER — after the route loop had already finished, with the server
+# idle at 0 jiffies/5s and no curl in flight.
+#
+# Every bound this function states was holding at the time: the 90s health wait
+# and all six `curl --max-time 60`. The unbounded step was the one nobody wrote a
+# bound for, because it was assumed instantaneous. That is the same shape as the
+# two ollama gates fixed in paiml/infra#911 the same day: the bound, like the
+# check, was on the wrong process.
+#
+# Resolve the listener by PORT. The port is drawn at random per probe, so it can
+# never name another session's process — which is what makes escalating to a kill
+# safe on a box several agents share.
+ladder_serve_teardown() { # <wrapper-pid> <port> -> prints clean|escalated|failed
+    local pid="$1" port="$2" i spid
+    kill "$pid" 2>/dev/null
+    for i in $(seq 1 10); do
+        if ! curl -fsS --max-time 1 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
+            wait "$pid" 2>/dev/null
+            printf 'clean'; return 0
+        fi
+        sleep 1
+    done
+    # Still answering: the wrapper died and the server did not. Name it by port.
+    spid=$(ss -tlnpH "sport = :$port" 2>/dev/null | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
+    if [ -n "$spid" ]; then
+        kill "$spid" 2>/dev/null
+        for i in $(seq 1 10); do
+            if ! kill -0 "$spid" 2>/dev/null; then
+                wait "$pid" 2>/dev/null
+                printf 'escalated'; return 0
+            fi
+            sleep 1
+        done
+        kill -9 "$spid" 2>/dev/null
+        wait "$pid" 2>/dev/null
+        printf 'escalated'; return 0
+    fi
+    # Could not resolve a listener and /health still answers: do NOT `wait`, or we
+    # reproduce the hang this function exists to end. Report it as cell state.
+    printf 'failed'; return 1
+}
+
 ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <backend>
-    local path="$1" flag="$2" rid="$3" bname="$4"
+    local path="$1" flag="$2" rid="$3" bname="$4" td
     # The script cd's to the repo root at startup (line ~53), so this is relative by
     # design — there is no WS_ROOT in this script and inventing one would resolve to
     # "/crates/..." under `set -u`-less expansion and silently find nothing.
@@ -202,9 +250,9 @@ ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <ba
         sleep 1; waited=$((waited + 1))
     done
     if ! curl -fsS --max-time 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
-        kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
-        printf '{"probed":false,"why":"apr serve did not answer /health within %ss (log: %s)","routes":{}}' \
-            "$waited" "$WORK/serve-$rid-$bname.log"
+        td=$(ladder_serve_teardown "$pid" "$port")
+        printf '{"probed":false,"why":"apr serve did not answer /health within %ss (log: %s)","teardown":"%s","routes":{}}' \
+            "$waited" "$WORK/serve-$rid-$bname.log" "$td"
         return 1
     fi
 
@@ -223,8 +271,11 @@ ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <ba
             json="$json\"$r|stream=$stream\":{\"http\":$code,\"ok\":$([ "$code" = 200 ] && echo true || echo false)}"
         done
     done
-    kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
-    printf '{"probed":true,"routes":{%s}}' "${json#\{}"
+    # A server that will not die is a real property of the `serve` verb, and until
+    # now it was invisible: the script simply stopped. Record it in the cell.
+    td=$(ladder_serve_teardown "$pid" "$port")
+    [ "$td" = failed ] && rc=1
+    printf '{"probed":true,"teardown":"%s","routes":{%s}}' "$td" "${json#\{}"
     return $rc
 }
 
