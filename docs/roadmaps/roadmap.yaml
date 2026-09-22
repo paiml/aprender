@@ -20493,6 +20493,26 @@ roadmap:
   labels:
   - kind:code
   notes: 'ROOT CAUSE (traced, the RosettaStone path included): `apr inspect` sends every GGUF to `run_rosetta_inspect` (inspect.rs:162), then `RosettaStone::inspect_gguf` (rosetta/validate_inspect.rs:419) copies `load_gguf_raw(..).raw_metadata` unfiltered, and `load_gguf_raw` (gguf/api.rs) built that map from `GgufReader::metadata`. `GgufReader::from_bytes` parsed a key only if it started with `tokenizer.`, `general.`, `llama.`, `qwen2.`, `qwen3.`, `phi.`, `mistral.` or `gpt2.` (reader_parsing.rs) and length-skipped everything else, so `qwen35.*` (which does not start with `qwen3.`) and `quantize.*` never existed after the parse. No filter was in inspect or rosetta. FIX: nothing is skipped any more. Keys outside the allowlist are decoded into a new `GgufReader::display_only_metadata`, and `raw_metadata` is `metadata` chained with it. DELIBERATELY NOT `keep_all` on this path: the config accessors (`context_length()`, `num_layers()`, `hidden_size()`...) read `metadata`, and `load_gguf_raw` feeds them into the `apr import` model config, so widening `metadata` would give every unlisted architecture a config the import path has never been given. That is a behaviour change outside this row. A test pins it: `reader.context_length()` stays None on the qwen35 fixture while `display_only_metadata` holds the key. `from_file_full` (the shard merge) is unchanged and keeps everything in `metadata`. `skip_metadata_value` lost its only caller and is deleted; its ten builder tests now also assert that the key lands in `display_only_metadata`. HARDENING, which parsing instead of skipping makes necessary: `read_metadata_array` took its element count from the file, called `Vec::with_capacity(count)` and indexed `data[..]` directly for i32/f32 arrays. The span is now checked against the bytes left before any allocation, and the checked `read_i32_le`/`read_f32_le` are used. A hostile count returns FormatError "overruns the file" instead of panicking. The case row covers element types 4, 5, 6 and 8. CLI: `output_rosetta_json` is split into `rosetta_json(path, report) -> Value` plus the print, so the --json document is testable. It emits `report.metadata` unfiltered. MEASURED on lambda. Pre-fix instrument: `apr 0.68.2 (97093d2a5)`. It is a valid baseline because `git log v0.68.2..52f43da71` touches none of reader_parsing.rs, api.rs, validate_inspect.rs or inspect.rs. Qwen3.5-4B-Q4_K_M: .metadata|length = 24, qwen35.* keys = 0, qwen35.context_length = null, which reproduces #3733. Post-fix instrument: `apr 0.69.0 (336b7230b)`, resolved and HEAD-checked by `scripts/apr_bin.sh` under CARGO_TARGET_DIR=/mnt/nvme-raid0/targets/a8-3718. The header KV count comes independently from python `gguf` (GGUFReader.fields minus GGUF.*): 0.8B 46/46, 2B 46/46, 4B 46/46, 9B 46/46, 27B 49/49 (shown/header), each with all 18 qwen35.* keys, context_length 262144, full_attention_interval 4, block_count 24/24/32/32/64, head_count_kv 2/2/4/4/4, key_length 256. Control on an arch that was already on the allowlist: Qwen3-1.7B 32/32, context_length 40960, unchanged. TESTS: api_tests_all_keys_3733.rs covers a fixture whose header carries qwen35.*, quantize.*, an unheard-of prefix `zzz_never_heard_of.*`, general.* and tokenizer.*. It asserts load_gguf_raw and RosettaStone::inspect both show every header key with count == header length, the accessor firewall, and the hostile-count rows. inspect_tests adds rosetta_json_emits_every_metadata_key. Suites: `cargo test -p aprender-core --lib -- format::gguf format::rosetta` 645 passed; `cargo test -p apr-cli --lib -- inspect` 140 passed. MUTANTS, each run and each RED: (1) skip restored (display-only insert removed): 13 red, including both header-count rows and all 10 builder rows; (2) the `.chain(display_only_metadata)` union dropped: both header-count rows red; (3) the cop''s mutant, one prefix dropped (`quantize.*` not kept): both header-count rows red; (4) bounds check removed: the hostile-count row red; (5) a `qwen35.` filter in rosetta_json: rosetta_json_emits_every_metadata_key red. KNOWN, NOT CHANGED: arrays whose element type is 8/16/64-bit (types 0,1,2,3,7,10,11,12) still decode to an empty ArrayUint32 and so display `[len=0]`. This is pre-existing, and the shard merge also depends on that variant, so it is out of scope. Census of all 21 GGUFs in /home/noah/models: array element types are STRING (59) and INT32 (30) only, so no fleet file reaches it.'
+- id: PMAT-3743
+  github_issue: 3743
+  item_type: task
+  title: 'apr run --prompt P --chat templated twice: the three-shape equality test on top of #3672, plus a model-ladder check for escaped specials (#3743)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-a8
+  created: 2026-09-21T21:00:00Z
+  updated: 2026-09-21T21:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3743 done_when 1, verbatim: "**One templating site.** The prompt is templated exactly once, by the model''s own `tokenizer.chat_template`. `--prompt P --chat`, positional `P --chat` and `-i file --chat` (same text) produce **byte-identical formatted prompts and equal `prompt_tokens`**, asserted by a test that is RED at 0.69.0 (and RED again with the CLI-side wrap restored as a mutant)."'
+  - 'done_when 2, verbatim: "The thinking toggle (#3723) is honoured through that single site. Neither path may re-wrap or drop `enable_thinking`. Coordinate the seam with #3723''s owner (aprender-fd); this row owns the apr-cli side."'
+  - 'done_when 3, verbatim: "No escaped special token (`<​|` with a zero-width char) appears in any formatted prompt the model-ladder / CRUX run cells feed a model. That is a check in the dogfood, not only a unit test."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'SCOPE, as the cop ruled: the FIX already landed as #3672 in batch-1 #3707 (a9502d992). run_prompt_and_chat hands realizar the RAW prompt and `force_chat_template`, and prepare_tokens applies the model''s template once. This row does not re-fix dispatch_run.rs. It adds only what #3672 lacked: the three-shape equality test and the dogfood check. MEASURED (done_when 1) on lambda, CPU, Qwen3.5-0.8B-Q4_K_M, --verbose `[DEBUG] formatted_prompt` + `encoded N tokens`, same text "What is 2+2? Answer with one number.". `apr 0.69.0 (52f43da71)`: `--prompt P --chat` 56 tokens, positional `P --chat` 56, `-i file --chat` 24; the two 56s carry the zero-width escape and their formatted-prompt sha (cbbfe515524c) differs from the file shape (fe8052ef3bac). `apr 0.69.0 (a9502d992)` (batch-1): 24 == 24 == 24, identical formatted-prompt sha fe8052ef3bac on all three, no zero-width. TEST (done_when 1): lib_execute_export_convert.rs test_3743_three_prompt_shapes_build_the_same_realizar_config parses the three argv spellings with clap (on a 16 MB thread), feeds each through run_prompt_and_chat exactly as dispatch_run does, and builds realizar''s config through the new `commands::run::realizar_config` (execute_with_realizar''s config building, extracted unchanged). It asserts every shape reaches realizar as the raw text with force_chat_template set, so the formatted prompt, a pure function of that config and the model, is byte-identical. RED at 0.69.0, whose shape was the CLI-side ChatML wrap. The wrap-restored mutant (run_prompt_and_chat wrapping when chat_template) turns it RED: `left: Some("<|im_start|>user\nWhat is 2+2? ...")`. THINKING TOGGLE (done_when 2): on main neither `apr run` nor realizar''s InferenceConfig has an `enable_thinking`/thinking flag yet (#3723, aprender-fd). The apr-cli side no longer wraps anything, so nothing can re-wrap or drop it. `realizar_config()` is now the single place a thinking flag must be forwarded, and fd was told the seam. This criterion cannot be closed until #3723 adds the flag, so the PR says Refs, not Closes. DOGFOOD (done_when 3): scripts/model_ladder.sh''s per-backend run cell adds --verbose and sets `escaped_special` when realizar''s `formatted_prompt=` line carries `\u{200b}` (Debug-escaped) or the raw U+200B. The rung is then not green, and scripts/check_model_ladder.sh (the [package.metadata.dogfood] gate) fails it: "templated twice (#3743)". Old receipts without the field read as not escaped. New case scripts/lib/model_ladder_cases/red-escaped-special; `check_model_ladder.sh --self-test` 19 cases, 0 bad. Mutant: judge rule removed -> "FAIL case red-escaped-special rc=0 want=1". The ladder''s exact cell and grep on qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (instruct-named, so 0.69.0''s name heuristic wrapped it): 52f43da71 -> escaped_special=true (`<\u{200b}|im_start|>user` visible); a9502d992 -> false. CRUX: this repo holds no CRUX run cell that feeds `apr run` a prompt; the CRUX probes live in the nightly-ux-crux skill, and that check is named for its owner. SUITES at this commit: `cargo test -p apr-cli --lib` 7301 passed; `-p aprender-contracts --lib` 1689 passed; clippy -D warnings apr-cli clean; fmt clean; bashrs lint findings unchanged vs main (model_ladder.sh 45=45, check_model_ladder.sh 18=18).'
 - id: PMAT-3747
   github_issue: 3747
   item_type: task
@@ -20654,6 +20674,53 @@ roadmap:
   labels:
   - kind:code
   notes: 'The cop (aprender-04) requested this, verbatim: "Please land a pure-refactor commit on a branch OFF release/0.69.1-batch-1 (not your old branch) that brings it under threshold with no behaviour change. Proof: `bash scripts/check_complexity_ratchet.sh` rc 0, `cargo test -p aprender-contracts --lib` green, and `pv lint contracts --gate shapes` 8/8 controls fired." SCOPE: this ticket IS the refactor. It is NOT #3715''s feature, which was already folded at ded8a932a; the diff against ded8a932a is only this refactor plus this fragment and receipt. The ratchet was RED on release/0.69.1-batch-1 (ded8a932a) vs main a9502d992: run_shapes_gate_with cyclomatic 13 cognitive 28 (the limit is 25). The fix moves the preamble (collect -> empty -> arming -> family, same order), the family ordering, the verdict rule and the two report maps into prepare / order_by_family / needs_receipts / verdict_of / by_shape / by_entity_type. MEASURED at 2a40dda85: the ratchet no longer lists run_shapes_gate_with (rc stays 1 only for crates/aprender-serve/src/constrain/tests.rs::generate_intent, not in this diff and not this ticket''s); cargo test -p aprender-contracts --lib 1701 passed; pv lint contracts --gate shapes Pass, 8/8 pc_extract fired; ont_release_readiness / ont4b / ont4c1 / ont4c3 CLI targets 34/11/12/10 passed; clippy -D warnings clean. A prior round under PMAT-3715 had a lane FAIL on SCOPE because it judged this delta against the #3715 feature ticket; the cop ruled that this refactor gets its own ticket.'
+- id: PMAT-3801
+  github_issue: 3801
+  item_type: task
+  title: apr chat takes the detector every other verb takes (one TemplateFormat)
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-c7
+  created: 2026-09-22 08:01:24+00:00
+  updated: 2026-09-22 08:01:24+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3801 done_when 1, verbatim: "`--thinking on` on run, chat, code and serve always ends in an
+    answer or a named refusal. A block unclosed at the think budget is closed by the guard and reported
+    (`reasoning_truncated`). No verb hangs to max_tokens inside `<think>`."'
+  - 'Issue #3801 done_when 2, verbatim: "Qwen3.5-0.8B/2B/4B/9B/27B Q4_K_M golden, both legs, green on
+    lambda AND gx10 CUDA; the report names every guard-closed case."'
+  - 'Issue #3801 done_when 3, verbatim: "Mutants: the guard removed makes the 0.8B golden thinking leg
+    RED; a guard that fires silently (no `reasoning_truncated`) makes a case row RED."'
+  - 'Issue #3801 done_when 4, verbatim: "The llama.cpp comparison above is re-run as a case row (same
+    prompts, pinned d1d3c3396), so "the model does this too" stays measured, not remembered."'
+  - 'COP RULING (aprender-cop, 2026-09-22), verbatim: "Ruling on the fix: the detector unification IS
+    #3801''s remedy, and it is yours after #3817. `apr chat` switching to realizar''s `detect_format_from_name`
+    makes all four paths agree and deletes the blocker at its root, rather than making the non-terminating
+    mode terminate." and, on this row: "Unify the detector; do not bound the loop."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'DIVERGES FROM THE ISSUE''S ''Decided design (aprender-fd)'' BY COP RULING, recorded on the issue
+    before any round: issuecomment-5773096497. The four done_when clauses above describe the think-budget
+    guard; this row implements the cop''s ruling instead and does NOT claim them. ROOT: apr chat imported
+    detect_format_from_name from aprender-core, whose TemplateFormat has seven variants (ChatML, Llama2,
+    Mistral, Alpaca, Phi, Custom, Raw) and NO Qwen3NoThink - so no-think was unrepresentable on that path,
+    not merely unselected, and chat_load_tokenizers.rs:120''s template_format_name match compiled with
+    no arm for it because it matched the other crate''s enum. apr serve, apr run --chat and (since #3724)
+    apr qa''s golden gate all take realizar''s detector. MEASURED BEFORE, apr 0.69.0 (3ebb1c61e), apr
+    chat Qwen3-1.7B-Q4_K_M --temperature 0: ''Detected ChatML chat template'' then ''Assistant: <think>Okay,
+    the user is asking...''. MEASURED AFTER, apr 0.69.0 (1f992a5e3), same command: ''Detected Qwen3NoThink
+    (thinking off) chat template'' then ''Assistant: </think>\n\n2 + 2 = 4.''. The banner''s private copy
+    of the name match is deleted in favour of the one template_format_name, which gained the two variants
+    the old enum could not express (Qwen3NoThink, Zephyr) - two copies of a match over an enum are how
+    a new variant gets handled in one place and not the other, which is this defect. qwen3_moe keeps plain
+    ChatML (PMAT-181, trained without <think> blocks), pinned by a test. WHAT THIS DOES NOT DO: it does
+    not implement the think-budget guard and does not make the non-terminating mode terminate; it makes
+    that mode unreachable from the four verbs at their defaults. The guard remains the remedy for deliberate
+    --thinking on under #3723, a separate row not in 0.69.1.'
 - id: PMAT-3817
   github_issue: 3817
   item_type: task
