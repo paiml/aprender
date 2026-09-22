@@ -516,124 +516,6 @@ pub(super) fn zero_layer_refusal(architecture: &str, layers: usize) -> Option<Cl
     })
 }
 
-#[cfg(test)]
-mod zero_layer_refusal_tests {
-    use super::*;
-
-    /// The case table: zero layers is refused naming the architecture and #3571; any layer
-    /// at all is admitted.
-    #[test]
-    fn zero_layers_is_refused_by_name_and_any_layer_is_admitted() {
-        let cases: [(&str, usize, bool); 5] = [
-            ("qwen35", 0, true),
-            ("llama", 0, true),
-            ("qwen2", 1, false),
-            ("qwen3", 28, false),
-            ("qwen35", 24, false),
-        ];
-        for (arch, layers, refused) in cases {
-            let got = zero_layer_refusal(arch, layers);
-            assert_eq!(got.is_some(), refused, "({arch}, {layers})");
-            if let Some(CliError::ModelLoadFailed(msg)) = got {
-                assert!(msg.contains(&format!("'{arch}' resolved to 0 transformer layers")), "{msg}");
-                assert!(msg.contains("#3571"), "{msg}");
-                assert_eq!(msg.contains("apr chat"), arch == "qwen35", "the hint is the hybrid's: {msg}");
-            }
-        }
-    }
-
-    /// A synthetic Qwen3.5 header: its config declares a block, and it carries only the
-    /// embeddings, final norm and `lm_head` — so its BASE is the zero-layer stack #3571 found,
-    /// built from nothing but the writer, and CI (which has no model files) exercises the call
-    /// site too. It has to be the hybrid: the dense loader already refuses `block_count = 0`
-    /// at config validation ("num_layers must be > 0"), so the hybrid base — config says N,
-    /// layers are empty — is the one zero-layer stack this tree can build.
-    fn zero_block_gguf() -> tempfile::NamedTempFile {
-        use aprender::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
-        let (hidden, vocab) = (8u64, 4u64);
-        let f32s = |n: u64| vec![0u8; (n * 4) as usize];
-        let tensors = vec![
-            GgufTensor {
-                name: "token_embd.weight".to_string(),
-                shape: vec![hidden, vocab],
-                dtype: GgmlType::F32,
-                data: f32s(hidden * vocab),
-            },
-            GgufTensor {
-                name: "output_norm.weight".to_string(),
-                shape: vec![hidden],
-                dtype: GgmlType::F32,
-                data: f32s(hidden),
-            },
-            GgufTensor {
-                name: "output.weight".to_string(),
-                shape: vec![hidden, vocab],
-                dtype: GgmlType::F32,
-                data: f32s(hidden * vocab),
-            },
-        ];
-        let u = |k: &str, v: u32| (k.to_string(), GgufValue::Uint32(v));
-        let metadata = vec![
-            ("general.architecture".to_string(), GgufValue::String("qwen35".to_string())),
-            u("qwen35.block_count", 1),
-            u("qwen35.embedding_length", 8),
-            u("qwen35.feed_forward_length", 16),
-            u("qwen35.attention.head_count", 2),
-            u("qwen35.attention.head_count_kv", 2),
-            u("qwen35.context_length", 32),
-            u("qwen35.rope.dimension_count", 4),
-            (
-                "qwen35.attention.layer_norm_rms_epsilon".to_string(),
-                GgufValue::Float32(1e-5),
-            ),
-            (
-                "tokenizer.ggml.tokens".to_string(),
-                GgufValue::ArrayString(["<unk>", "a", "b", "c"].map(String::from).to_vec()),
-            ),
-        ];
-        let file = tempfile::NamedTempFile::with_suffix(".gguf").expect("temp file");
-        let mut writer = std::io::BufWriter::new(&file);
-        export_tensors_to_gguf(&mut writer, &tensors, &metadata).expect("write GGUF");
-        drop(writer);
-        file
-    }
-
-    /// CI's row for the call site: needs no model file. Delete the check in
-    /// `build_serve_model` and this goes RED — the zero-layer base loads.
-    #[test]
-    fn serve_refuses_a_synthetic_zero_layer_hybrid_base_at_load() {
-        let file = zero_block_gguf();
-        let mapped = realizar::gguf::MappedGGUFModel::from_path(file.path()).expect("map");
-        match build_serve_model(&mapped) {
-            Err(CliError::ModelLoadFailed(msg)) => {
-                assert!(msg.contains("'qwen35' resolved to 0 transformer layers"), "{msg}");
-            }
-            Err(other) => panic!("refused for the wrong reason: {other}"),
-            Ok(model) => panic!("a {}-layer stack reached the serve routes", model.layers().len()),
-        }
-    }
-
-    /// The load path itself refuses, before any route is chosen. Delete the check in
-    /// `build_serve_model` and this goes RED: the zero-layer base loads. Needs the real
-    /// Qwen3.5 file, whose base IS a zero-layer stack.
-    #[test]
-    fn serve_refuses_the_qwen35_base_at_load() {
-        const MODEL: &str = "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf";
-        if !Path::new(MODEL).exists() {
-            eprintln!("SKIP: {MODEL} is absent");
-            return;
-        }
-        let mapped = realizar::gguf::MappedGGUFModel::from_path(MODEL).expect("map the GGUF");
-        match build_serve_model(&mapped) {
-            Err(CliError::ModelLoadFailed(msg)) => {
-                assert!(msg.contains("'qwen35' resolved to 0 transformer layers"), "{msg}");
-            }
-            Err(other) => panic!("refused for the wrong reason: {other}"),
-            Ok(model) => panic!("a {}-layer stack reached the serve routes", model.layers().len()),
-        }
-    }
-}
-
 /// Extract the vocabulary from a GGUF model, or refuse to serve it (#3609).
 ///
 /// GH-226 once filled a missing `tokenizer.ggml.tokens` with `token0..tokenN` and put
@@ -898,5 +780,123 @@ mod ctx_length_2762_tests {
         assert_eq!(resolve_serve_max_seq_len(None, Some("banana")), 2048);
         assert_eq!(resolve_serve_max_seq_len(None, Some("0")), 2048);
         assert_eq!(resolve_serve_max_seq_len(Some("0"), None), 2048);
+    }
+}
+
+#[cfg(test)]
+mod zero_layer_refusal_tests {
+    use super::*;
+
+    /// The case table: zero layers is refused naming the architecture and #3571; any layer
+    /// at all is admitted.
+    #[test]
+    fn zero_layers_is_refused_by_name_and_any_layer_is_admitted() {
+        let cases: [(&str, usize, bool); 5] = [
+            ("qwen35", 0, true),
+            ("llama", 0, true),
+            ("qwen2", 1, false),
+            ("qwen3", 28, false),
+            ("qwen35", 24, false),
+        ];
+        for (arch, layers, refused) in cases {
+            let got = zero_layer_refusal(arch, layers);
+            assert_eq!(got.is_some(), refused, "({arch}, {layers})");
+            if let Some(CliError::ModelLoadFailed(msg)) = got {
+                assert!(msg.contains(&format!("'{arch}' resolved to 0 transformer layers")), "{msg}");
+                assert!(msg.contains("#3571"), "{msg}");
+                assert_eq!(msg.contains("apr chat"), arch == "qwen35", "the hint is the hybrid's: {msg}");
+            }
+        }
+    }
+
+    /// A synthetic Qwen3.5 header: its config declares a block, and it carries only the
+    /// embeddings, final norm and `lm_head` — so its BASE is the zero-layer stack #3571 found,
+    /// built from nothing but the writer, and CI (which has no model files) exercises the call
+    /// site too. It has to be the hybrid: the dense loader already refuses `block_count = 0`
+    /// at config validation ("num_layers must be > 0"), so the hybrid base — config says N,
+    /// layers are empty — is the one zero-layer stack this tree can build.
+    fn zero_block_gguf() -> tempfile::NamedTempFile {
+        use aprender::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
+        let (hidden, vocab) = (8u64, 4u64);
+        let f32s = |n: u64| vec![0u8; (n * 4) as usize];
+        let tensors = vec![
+            GgufTensor {
+                name: "token_embd.weight".to_string(),
+                shape: vec![hidden, vocab],
+                dtype: GgmlType::F32,
+                data: f32s(hidden * vocab),
+            },
+            GgufTensor {
+                name: "output_norm.weight".to_string(),
+                shape: vec![hidden],
+                dtype: GgmlType::F32,
+                data: f32s(hidden),
+            },
+            GgufTensor {
+                name: "output.weight".to_string(),
+                shape: vec![hidden, vocab],
+                dtype: GgmlType::F32,
+                data: f32s(hidden * vocab),
+            },
+        ];
+        let u = |k: &str, v: u32| (k.to_string(), GgufValue::Uint32(v));
+        let metadata = vec![
+            ("general.architecture".to_string(), GgufValue::String("qwen35".to_string())),
+            u("qwen35.block_count", 1),
+            u("qwen35.embedding_length", 8),
+            u("qwen35.feed_forward_length", 16),
+            u("qwen35.attention.head_count", 2),
+            u("qwen35.attention.head_count_kv", 2),
+            u("qwen35.context_length", 32),
+            u("qwen35.rope.dimension_count", 4),
+            (
+                "qwen35.attention.layer_norm_rms_epsilon".to_string(),
+                GgufValue::Float32(1e-5),
+            ),
+            (
+                "tokenizer.ggml.tokens".to_string(),
+                GgufValue::ArrayString(["<unk>", "a", "b", "c"].map(String::from).to_vec()),
+            ),
+        ];
+        let file = tempfile::NamedTempFile::with_suffix(".gguf").expect("temp file");
+        let mut writer = std::io::BufWriter::new(&file);
+        export_tensors_to_gguf(&mut writer, &tensors, &metadata).expect("write GGUF");
+        drop(writer);
+        file
+    }
+
+    /// CI's row for the call site: needs no model file. Delete the check in
+    /// `build_serve_model` and this goes RED — the zero-layer base loads.
+    #[test]
+    fn serve_refuses_a_synthetic_zero_layer_hybrid_base_at_load() {
+        let file = zero_block_gguf();
+        let mapped = realizar::gguf::MappedGGUFModel::from_path(file.path()).expect("map");
+        match build_serve_model(&mapped) {
+            Err(CliError::ModelLoadFailed(msg)) => {
+                assert!(msg.contains("'qwen35' resolved to 0 transformer layers"), "{msg}");
+            }
+            Err(other) => panic!("refused for the wrong reason: {other}"),
+            Ok(model) => panic!("a {}-layer stack reached the serve routes", model.layers().len()),
+        }
+    }
+
+    /// The load path itself refuses, before any route is chosen. Delete the check in
+    /// `build_serve_model` and this goes RED: the zero-layer base loads. Needs the real
+    /// Qwen3.5 file, whose base IS a zero-layer stack.
+    #[test]
+    fn serve_refuses_the_qwen35_base_at_load() {
+        const MODEL: &str = "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf";
+        if !Path::new(MODEL).exists() {
+            eprintln!("SKIP: {MODEL} is absent");
+            return;
+        }
+        let mapped = realizar::gguf::MappedGGUFModel::from_path(MODEL).expect("map the GGUF");
+        match build_serve_model(&mapped) {
+            Err(CliError::ModelLoadFailed(msg)) => {
+                assert!(msg.contains("'qwen35' resolved to 0 transformer layers"), "{msg}");
+            }
+            Err(other) => panic!("refused for the wrong reason: {other}"),
+            Ok(model) => panic!("a {}-layer stack reached the serve routes", model.layers().len()),
+        }
     }
 }
