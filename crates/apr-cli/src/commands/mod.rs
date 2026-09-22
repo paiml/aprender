@@ -26,6 +26,7 @@ pub mod beat_run;
 pub mod bench;
 pub(crate) mod blob_gc;
 pub mod canary;
+pub mod capability;
 pub mod cbtop;
 pub mod chat;
 pub mod check;
