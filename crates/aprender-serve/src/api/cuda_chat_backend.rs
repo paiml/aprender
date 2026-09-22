@@ -727,6 +727,8 @@ async fn try_apr_q4k_chat_backend(
             prompt_ids,
             max_tokens,
             temperature,
+            // #3786: the request seed reaches the APR Q4K sampler.
+            seed: request.seed.unwrap_or(crate::sampling::DEFAULT_SEED),
             eos_ids,
             cancel: cancel.clone(),
             response_tx,
