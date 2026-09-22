@@ -771,6 +771,7 @@ fn print_qa_summary(gates: &[GateResult], passed: bool, total_duration: Duration
 
 include!("qa_gguf.rs");
 include!("output_verification.rs");
+include!("gpu_correct_subject.rs");
 include!("golden_output.rs");
 include!("speedup.rs");
 include!("forward_error.rs");
