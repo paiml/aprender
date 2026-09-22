@@ -414,6 +414,8 @@ pub mod safetensors_cuda;
 /// Converts HuggingFace SafeTensors models to AprTransformer for inference.
 /// Requires config.json and tokenizer.json in the same directory.
 pub mod safetensors_infer;
+/// The one token sampler every format shares (#3760).
+pub mod sampling;
 /// Continuous batching scheduler
 ///
 /// Per spec §8: Implements continuous batching for LLM serving based on vLLM/Orca.

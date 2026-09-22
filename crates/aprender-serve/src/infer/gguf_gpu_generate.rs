@@ -58,6 +58,21 @@ pub(crate) fn cpu_vs_gpu_cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     }
 }
 
+/// Printed when a sampled request skips a greedy-only wgpu decoder (#3760).
+pub const WGPU_SAMPLING_NOTICE: &str = "[wgpu: the wgpu decoder is greedy-only; \
+     sampling (--temperature > 0 with --top-k != 1) runs on the CPU (#3760)]";
+
+/// Whether the greedy-only wgpu decoders may serve this request (#3760): a greedy one
+/// yes; a sampled one no, with the notice printed, so the CPU loop that draws runs it.
+#[cfg(feature = "gpu")]
+fn wgpu_can_serve(temperature: f32, top_k: usize) -> bool {
+    if crate::sampling::is_greedy(temperature, top_k) {
+        return true;
+    }
+    eprintln!("{WGPU_SAMPLING_NOTICE}");
+    false
+}
+
 /// GH-559: Try wgpu (Vulkan) generation as fallback when CUDA JIT fails.
 /// Uses trueno's WgslForwardPass with dequantized F32 weights.
 /// Proven: cosine=0.999863 on Blackwell sm_121.
@@ -372,8 +387,13 @@ fn run_gguf_generate(
 
     // GH-559: wgpu fallback — try Vulkan compute before CPU.
     // Proven: wgpu cosine=0.999863 on Blackwell sm_121 where CUDA JIT fails.
+    // #3760: the wgpu decode loop is greedy-only (an inline argmax over the LM head);
+    // a sampled request runs on the CPU loop, which draws, and says so.
     #[cfg(feature = "gpu")]
-    if !config.no_gpu && !has_legacy_quant {
+    if !config.no_gpu
+        && !has_legacy_quant
+        && wgpu_can_serve(gen_config.temperature, gen_config.top_k)
+    {
         match try_wgpu_generate(&model, input_tokens, gen_config, config.verbose) {
             Ok(result) => return Ok(result),
             Err(e) => {
@@ -421,7 +441,7 @@ fn run_apr_inference(
 
     // GH-559: wgpu fallback for APR models — try Vulkan before CPU.
     #[cfg(feature = "gpu")]
-    if !config.no_gpu {
+    if !config.no_gpu && wgpu_can_serve(config.temperature, config.top_k) {
         match try_apr_wgpu_inference(config, input_tokens, input_token_count, load_start) {
             Some(Ok(result)) => return Ok(result),
             Some(Err(e)) => {
@@ -1036,6 +1056,10 @@ fn tok_per_sec(count: usize, ms: f64) -> f64 {
 /// PMAT-236: Accepts `PreparedTokens` (compile-time enforced chat template).
 /// Previously, this function raw-encoded prompts WITHOUT chat template,
 /// producing garbage output for instruct models.
+/// Printed when a sampled request skips the greedy-only SafeTensors CUDA decoder (#3760).
+pub const SAFETENSORS_CUDA_SAMPLING_NOTICE: &str = "[safetensors: the CUDA decoder is greedy-only; \
+     sampling (--temperature > 0 with --top-k != 1) runs on the CPU (#3760)]";
+
 fn run_safetensors_inference(
     config: &InferenceConfig,
     prepared: &PreparedTokens,
@@ -1048,13 +1072,21 @@ fn run_safetensors_inference(
     let input_tokens = prepared.tokens().to_vec();
     let input_token_count = prepared.input_count();
 
-    // PMAT-129: Try GPU path first
+    // PMAT-129: Try GPU path first.
+    //
+    // #3760: `SafeTensorsCudaModel::generate(input, max_tokens, eos_id)` is greedy-only;
+    // it takes no sampling parameters. A sampled request used to go there and silently
+    // decode greedily. It now runs on the CPU loop, which draws, and says so.
     #[cfg(feature = "cuda")]
     if !config.no_gpu {
-        if let Some(result) =
-            try_safetensors_cuda_inference(config, &input_tokens, input_token_count)
-        {
-            return result;
+        if crate::sampling::is_greedy(config.temperature, config.top_k) {
+            if let Some(result) =
+                try_safetensors_cuda_inference(config, &input_tokens, input_token_count)
+            {
+                return result;
+            }
+        } else {
+            eprintln!("{SAFETENSORS_CUDA_SAMPLING_NOTICE}");
         }
     }
 

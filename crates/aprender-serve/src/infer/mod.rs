@@ -589,3 +589,8 @@ include!("batch.rs");
 
 pub mod qwen3_moe_generate;
 pub mod run_report;
+
+// #3760: `apr run` on a SafeTensors model samples.
+#[cfg(test)]
+#[path = "tests_sampling_3760.rs"]
+mod tests_sampling_3760;

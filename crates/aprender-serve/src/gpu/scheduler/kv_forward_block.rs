@@ -300,11 +300,16 @@ fn gqa_incremental_attention(
 
 /// Sample next token based on config (greedy or top-k)
 #[inline]
-fn sample_token(logits: &[f32], temperature: f32, top_k: usize) -> usize {
-    if temperature == 0.0 || top_k == 1 {
+fn sample_token(
+    logits: &[f32],
+    temperature: f32,
+    top_k: usize,
+    rng: &mut rand::rngs::StdRng,
+) -> usize {
+    if crate::sampling::is_greedy(temperature, top_k) {
         argmax(logits)
     } else {
-        sample_topk(logits, temperature, top_k)
+        sample_topk(logits, temperature, top_k, rng)
     }
 }
 
@@ -332,7 +337,8 @@ pub fn generate_with_cache(
 
     let mut tokens = prompt.to_vec();
     let logits = forward_gpu_with_cache(model, prompt, &mut kv_cache)?;
-    let mut next_token = sample_token(&logits, config.temperature, config.top_k);
+    let mut rng = <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(config.seed);
+    let mut next_token = sample_token(&logits, config.temperature, config.top_k, &mut rng);
 
     if config.stop_tokens.contains(&next_token) {
         return Ok(tokens);
@@ -346,7 +352,7 @@ pub fn generate_with_cache(
             break;
         }
         let logits = forward_gpu_incremental(model, next_token, &mut kv_cache)?;
-        next_token = sample_token(&logits, config.temperature, config.top_k);
+        next_token = sample_token(&logits, config.temperature, config.top_k, &mut rng);
 
         if config.stop_tokens.contains(&next_token) {
             break;
@@ -377,16 +383,13 @@ fn argmax(logits: &[f32]) -> usize {
         .map_or(0, |(idx, _)| idx)
 }
 
-/// Top-k sampling helper
-fn sample_topk(logits: &[f32], temperature: f32, top_k: usize) -> usize {
-    let scaled: Vec<f32> = logits.iter().map(|&x| x / temperature).collect();
-    let max_logit = scaled.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    let exp_logits: Vec<f32> = scaled.iter().map(|&x| (x - max_logit).exp()).collect();
-    let sum: f32 = exp_logits.iter().sum();
-    let probs: Vec<f32> = exp_logits.iter().map(|&x| x / sum).collect();
-
-    let mut indexed: Vec<(usize, f32)> = probs.iter().enumerate().map(|(i, &p)| (i, p)).collect();
-    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    indexed.truncate(top_k);
-    indexed.first().map_or(0, |&(idx, _)| idx)
+/// Top-k sampling: one seeded draw through the shared sampler (#3760; it used to
+/// return the highest-probability survivor, which is the argmax, and never drew).
+fn sample_topk(
+    logits: &[f32],
+    temperature: f32,
+    top_k: usize,
+    rng: &mut rand::rngs::StdRng,
+) -> usize {
+    crate::sampling::draw_seeded(logits, temperature, top_k, 1.0, rng) as usize
 }

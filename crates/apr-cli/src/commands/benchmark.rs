@@ -346,6 +346,8 @@ fn run_apr_benchmark(
         temperature: 0.0,
         top_p: 1.0,
         top_k: 0,
+        // #3760: the sampler draws now; no seed is plumbed from this caller.
+        seed: realizar::apr_transformer::DEFAULT_SEED,
         repetition_penalty: 1.0,
         trace: false,
         stop_tokens: vec![],

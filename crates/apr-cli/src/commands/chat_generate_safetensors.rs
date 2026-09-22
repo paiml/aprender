@@ -60,6 +60,8 @@ impl ChatSession {
                 temperature: config.temperature,
                 top_p: config.top_p,
                 top_k: 0,
+                // #3760: the sampler draws now; no seed is plumbed from this caller.
+                seed: realizar::apr_transformer::DEFAULT_SEED,
                 repetition_penalty: 1.0,
                 trace: config.trace,
             stop_tokens: vec![],
