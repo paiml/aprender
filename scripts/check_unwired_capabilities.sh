@@ -165,6 +165,25 @@ rule2() {
     fi
   done < <(enum_variants)
 
+  # THE REVERSE DIRECTION. A row naming an op that is no longer a RequiredOp
+  # variant is dead data nothing consults -- and worse, it reads as coverage.
+  # Without this the map fails only when the enum GROWS; an op deleted from the
+  # enum leaves a row behind that says the capability is still mapped, and the
+  # next person to audit the map counts it as done. Drift must fail BOTH ways or
+  # the registry is only half a registry.
+  local known
+  known=$(enum_variants)
+  while IFS= read -r row; do
+    case "$row" in ''|'#'*) continue ;; esac
+    local mop=${row%%$'	'*}
+    [ -n "$mop" ] || continue
+    if ! grep -qx -- "$mop" <<<"$known"; then
+      echo "  MAP STALE: scripts/capability_op_impl_map.txt names '$mop', which is not a RequiredOp variant" >> "$findings"
+      echo "             The op was removed or renamed. Delete the row; a stale row reads as coverage." >> "$findings"
+      rc=1
+    fi
+  done < "$MAP"
+
   while IFS= read -r op; do
     [ -n "$op" ] || continue
     sym=$(map_symbol "$op")
@@ -315,6 +334,34 @@ self_test() {
     ok "W3  the real capability.rs is untouched by this row ($n_before variants)"
   else
     bad 'W3  the self-test leaked its mutant into the real scan'
+  fi
+
+  # THE REVERSE DIRECTION: a row naming an op the enum no longer has.
+  local tmpmap mapsave
+  tmpmap=$(mktemp) || return 2
+  mapsave=$MAP
+  cat "$MAP" > "$tmpmap"
+  printf 'RemovedOpXYZ\t-\tplanted by the case table\n' >> "$tmpmap"
+  MAP=$tmpmap
+  if [ -n "$(map_symbol RemovedOpXYZ)" ] && ! grep -qx 'RemovedOpXYZ' <<<"$(enum_variants)"; then
+    ok 'W4  a row naming a non-variant is readable from the map and absent from the enum'
+  else
+    bad 'W4  could not plant a stale row; the reverse check cannot be exercised'
+  fi
+  local rf; rf=$(mktemp) || return 2
+  rule2 "$rf" >/dev/null 2>&1
+  if grep -q 'MAP STALE' "$rf"; then
+    ok 'W5  ... and rule 2 reports MAP STALE and fails -- drift fails BOTH ways'
+  else
+    bad 'W5  a stale map row did NOT fail the gate; the registry is only half a registry'
+  fi
+  rm -f "$rf"
+  MAP=$mapsave
+  rm -f "$tmpmap"
+  if [ -z "$(map_symbol RemovedOpXYZ)" ]; then
+    ok 'W6  the real map is untouched by this row'
+  else
+    bad 'W6  the self-test leaked its planted row into the real map'
   fi
 
   echo "=== rule 2 MUST-MATCH: the known instance (aprender#3075) ==="
