@@ -101,6 +101,28 @@ pub fn render(receipts: &[Receipt]) -> String {
          its golden output matched. It does **not** mean `chat`, `code` and `serve` \
          passed: the ladder records those verbs but its `green` does not read them.\n\n",
     );
+    // A NON-pass cell names the gates the RECEIPT RECORDS, which is not always the cause.
+    //
+    // Deliberately not "…is not always `tensor_contract`". Naming one gate reproduces the
+    // defect at n+1 the moment a different gate matters — which is why c7's producer-side
+    // fix (faecacee4) records `gates`/`gates_failed`/`gates_reported` and names none, with
+    // `gates_account_for_rc` as the invariant. That invariant is false for WHICHEVER cause
+    // goes missing, not for one listed in advance.
+    //
+    // Measured instance: aprender-55 traced the `-st.apr` row to a corrupt file — 27
+    // tensors failing data-quality, the same 27 on a Q4_K re-quantisation built to break
+    // the naming-vs-precision confound, so the damage is in the source bytes. `apr qa`
+    // computed that in the same process; the receipt kept the symptom (`gibberish
+    // (fragment "NavController")`) and dropped the diagnosis.
+    //
+    // Stated in the rendered output for the same reason as the caveat above: a generated
+    // table is trusted more than a hand-typed one, so publishing an incomplete reason from
+    // one is worse. Remove when every receipt in the rendered set accounts for its rc.
+    out.push_str(
+        "A non-`pass` cell names the gates the receipt records, which is not always the \
+         cause: a reason `apr qa` computed in the same run is not carried here unless the \
+         receipt accounts for it (`qa_rc` is the tell).\n\n",
+    );
 
     // Rung order: the union across hosts, first-seen order preserved so the table is
     // stable under receipt reordering.
