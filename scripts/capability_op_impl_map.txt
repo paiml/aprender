@@ -1,0 +1,38 @@
+# capability_op_impl_map.txt — which SYMBOL implements each RequiredOp.
+#
+# Read by scripts/check_unwired_capabilities.sh (aprender#3686 rule 2).
+#
+# WHY THIS FILE EXISTS RATHER THAN A REGEX. The first draft of the gate matched
+# RequiredOp names to function names by SUBSTRING and reported `GeluMlp` as an
+# unwired capability because `gelu_host` has no callers. It is wrong:
+# `RequiredOp::GeluMlp` is the GELU-MLP *block path*; `gelu_gpu` is the GELU
+# *activation kernel*, they share four letters and nothing else, and the
+# activation is wired (crates/aprender-serve/src/gpu/adapters/using.rs:409,
+# crates/aprender-serve/src/cuda/executor/batched_q4k_gemv.rs:148). A wrong
+# mapping must be visible in a table, not hidden in a pattern — this repo's
+# standing rule that guard regexes ship a case table (CLAUDE.md, Verification
+# Discipline #7), applied to a mapping.
+#
+# COLUMNS:  op <TAB> symbol <TAB> note
+#   symbol = the function that performs the op on the GPU.
+#   symbol = '-' means NO implementation exists. That is `unimplemented`, NOT
+#            `unwired`, and the gate must not confuse them: only "we wrote it
+#            and never called it" is a defect. "We never wrote it" is a
+#            roadmap item.
+#
+# EVERY RequiredOp variant must appear here. The gate FAILS if the enum grows
+# and this file does not — that is what keeps the map from silently rotting.
+
+RoPE	rope_gpu	wired; RequiredOp is in gpu_supported_ops()
+GQA	-	attention shape, not a distinct kernel symbol; supported
+MHA	-	attention shape, not a distinct kernel symbol; supported
+SwiGLU	fused_swiglu_gpu	wired; supported
+RMSNorm	rmsnorm_gpu	wired; supported
+BiasAdd	-	folded into the projection kernels; supported
+CausalMask	-	folded into the attention kernels; supported
+QkNorm	-	GH-280 trueno PerHeadRmsNormKernel; supported
+GeluMlp	-	UNSUPPORTED. No GELU-MLP BLOCK path exists. Do not map this to gelu_gpu/gelu_host: that is the activation kernel and it IS wired. See the header.
+LayerNorm	layer_norm_gpu	UNSUPPORTED, but crates/aprender-serve/src/cuda/executor/layer_norm_gpu.rs EXISTS and has ZERO production callers. This is aprender#3075 (Phi-2/Phi-3 never GPU-eligible).
+AbsolutePos	-	UNSUPPORTED and unimplemented; GPU uses RoPE
+AttnFinalSoftcap	-	UNSUPPORTED and unimplemented; PMAT-824
+PostAttnFfnNorm	-	UNSUPPORTED and unimplemented; PMAT-824

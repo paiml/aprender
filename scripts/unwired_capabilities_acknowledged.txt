@@ -1,0 +1,16 @@
+# unwired_capabilities_acknowledged.txt — rule-2 findings that are KNOWN and
+# already have an open issue. Read by scripts/check_unwired_capabilities.sh.
+#
+# This is the suppression path aprender#3686 done_when 4 requires: named and
+# auditable, never a blanket allow. A row costs you an issue number, and the
+# gate PRINTS every acknowledgement on every run, so a suppression cannot go
+# quiet. An unwired capability with NO row here is a hard failure.
+#
+# WHEN THE ISSUE CLOSES, DELETE THE ROW. If the capability was wired, the gate
+# stops finding it and the row is dead weight; if the row outlives the fix, the
+# next real instance of that op is suppressed by a stale acknowledgement. That
+# is the failure mode this file is most likely to have.
+#
+# COLUMNS:  op <TAB> issue <TAB> note
+
+LayerNorm	3075	Phi-2/Phi-3 GGUF never GPU-eligible: layer_norm_gpu exists, tested in isolation, never called from forward_gpu_resident. Open at 0.70.0.
