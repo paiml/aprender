@@ -406,7 +406,7 @@ fn try_tokenizer_at(path: &Path, label: &str) -> Option<Qwen2BpeTokenizer> {
     }
 }
 
-/// The tokenizer an `.apr` carries INSIDE it (#3903).
+/// The tokenizer an `.apr` carries INSIDE it (#3911).
 ///
 /// `None` for any model that is not an `.apr`, cannot be opened, or embeds no
 /// vocabulary/merges — all of which are "not my business", never an error: the
@@ -468,7 +468,7 @@ fn find_qwen_tokenizer(model_path: &Path) -> Result<Option<Qwen2BpeTokenizer>, C
         return Ok(Some(tok));
     }
 
-    // #3903: THE MODEL ITSELF — after the sibling files, BEFORE the machine-global
+    // #3911: THE MODEL ITSELF — after the sibling files, BEFORE the machine-global
     // caches. An `.apr` converted from GGUF embeds `tokenizer.vocabulary` AND
     // `tokenizer.merges` (PMAT-171), which is a complete BPE tokenizer. `apr serve`
     // has always used it; `chat` searched four FILESYSTEM locations and reported
@@ -894,7 +894,7 @@ mod hf_cache_search_survives_an_unreadable_entry_3881 {
     }
 }
 
-/// #3903: `find_qwen_tokenizer` must consult the MODEL, not only the filesystem.
+/// #3911: `find_qwen_tokenizer` must consult the MODEL, not only the filesystem.
 ///
 /// Hermetic on purpose — it writes a synthetic `.apr` carrying an embedded
 /// vocabulary and merges, so it needs no downloaded model, no GPU and no network,
@@ -940,7 +940,7 @@ mod embedded_tokenizer_tests {
     }
 
     /// THE GUARANTEE. A model with NO sibling tokenizer still resolves, because the
-    /// tokenizer is inside it. Before #3903 this returned
+    /// tokenizer is inside it. Before #3911 this returned
     /// `MissingCompanionFile("No Qwen tokenizer found …")` for a model carrying one.
     #[test]
     fn an_apr_with_an_embedded_tokenizer_and_no_sibling_resolves() {
