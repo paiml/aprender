@@ -143,6 +143,13 @@ esac
 [ -n "${LLAMA_SERVER:-}" ] || { printf 'FAIL  no llama-server beside the pinned llama-bench\n' >&2; exit 1; }
 
 PIN="$(dirname "$0")/llama_pin.toml"
+# THE FLEET GPU LOCK, PER BAND (#3731, rule rev 5). The caller names the host's GPU rule in
+# GPU_BAND_Q (e.g. "gpu-q --prio 8 --"; empty on a host with no GPU rule). The lock is held for the
+# accel probe and for each accel band, one at a time, bounded by GPUQ_WAIT and GPU_BAND_TIMEOUT_S
+# (<= 20 min); a cpu band never takes it. Holding it for a whole run kept lambda's lock 54+ min at
+# 1% GPU utilisation while release cells queued (2026-09-21).
+# shellcheck source=scripts/lib/gpu_band_lock.sh
+. "$(dirname "$0")/lib/gpu_band_lock.sh"
 ISOLATION="$(dirname "$0")/perf_isolation.sh"
 
 # The three ports this harness binds. Declared BEFORE the EXIT trap, because
@@ -204,6 +211,7 @@ WORK=$(mktemp -d)
 cleanup_work() {
     local rc=$?
     kill_servers
+    gpu_band_release
     if [ "$rc" -eq 0 ]; then
         rm -rf "${WORK:?}"
     else
@@ -337,7 +345,31 @@ MODEL_NAME=$(basename "$MODEL" .gguf)
 #   $WORK/{apr,llama}-<klass>-c<c>-r<k>.json one bench report per replicate
 #   $WORK/iso-<klass>-c<c>-{before,after}.json  the device record (§5.4)
 #   $WORK/band-<klass>-c<c>.json             what the band was, for the receipt
-run_band() { # run_band <klass> <apr-gpu-layers> <llama-ngl> <c>
+# run_band <klass> <apr-gpu-layers> <llama-ngl> <c> -- the fleet GPU lock is held for THIS band iff
+# it is an accel band, and released when it ends; a band that ran past GPU_BAND_TIMEOUT_S had its
+# servers killed by the lock holder and FAILS.
+run_band() {
+    local klass="$1" rc=0
+    if [ "$klass" = accel ] && [ "$DRY_RUN" -eq 0 ]; then
+        if ! gpu_band_acquire "$klass-c$4" "$WORK"; then
+            printf 'FAIL  band %s-c%s: the GPU queue did not admit it (GPUQ_WAIT=%s s): nothing was measured\n' \
+                "$klass" "$4" "${GPUQ_WAIT:-unbounded}" >&2
+            return 1
+        fi
+    fi
+    run_band_body "$@" || rc=$?
+    if [ "$klass" = accel ] && [ "$DRY_RUN" -eq 0 ]; then
+        if gpu_band_expired; then
+            printf 'FAIL  band %s-c%s ran past GPU_BAND_TIMEOUT_S=%s s: its servers were killed to release the GPU lock\n' \
+                "$klass" "$4" "${GPU_BAND_TIMEOUT_S:-1200}" >&2
+            rc=1
+        fi
+        gpu_band_release
+    fi
+    return "$rc"
+}
+
+run_band_body() { # run_band_body <klass> <apr-gpu-layers> <llama-ngl> <c>
     local klass="$1" gl="$2" ngl="$3" c="$4"
     local tag="$klass-c$c"
     local lflags
@@ -350,6 +382,12 @@ run_band() { # run_band <klass> <apr-gpu-layers> <llama-ngl> <c>
 
     if [ "$DRY_RUN" -eq 1 ]; then
         printf 'band %s\n' "$tag"
+        if [ "$klass" = accel ]; then
+            printf '  gpu-lock  : held for THIS band only, via %s (GPUQ_WAIT=%s s, band bound %s s)\n' \
+                "${GPU_BAND_Q:-<no GPU rule on this host>}" "${GPUQ_WAIT:-unbounded}" "${GPU_BAND_TIMEOUT_S:-1200}"
+        else
+            printf '  gpu-lock  : none (a cpu band never takes /tmp/apr-gpu.lock)\n'
+        fi
         printf '  isolation : %s before %s/iso-%s-before.json\n' "$ISOLATION" "$WORK" "$tag"
         # shellcheck disable=SC2086
         printf '  comparator: %s -m %s --port %s %s\n' "$LLAMA_SERVER" "$MODEL" "$LPORT" "$lflags"
@@ -390,7 +428,7 @@ run_band() { # run_band <klass> <apr-gpu-layers> <llama-ngl> <c>
     # shellcheck disable=SC2086
     "$LLAMA_SERVER" -m "$MODEL" --port "$LPORT" $lflags \
         > "$WORK/llama-$tag.log" 2>&1 &
-    SERVER_PIDS="$SERVER_PIDS $!"
+    SERVER_PIDS="$SERVER_PIDS $!"; gpu_band_track "$!"
     wait_healthy "$LPORT" 300 || {
         printf 'FAIL  band %s: llama-server did not become healthy\n' "$tag" >&2
         kill_servers; return 1
@@ -426,7 +464,7 @@ run_band() { # run_band <klass> <apr-gpu-layers> <llama-ngl> <c>
     # shellcheck disable=SC2086
     "$APR" serve run "$MODEL" --gpu-layers "$gl" --port "$APORT" --context-length "$CTX" \
         > "$WORK/apr-$tag.log" 2>&1 &
-    SERVER_PIDS="$SERVER_PIDS $!"
+    SERVER_PIDS="$SERVER_PIDS $!"; gpu_band_track "$!"
     wait_healthy "$APORT" 300 || {
         printf 'FAIL  band %s: apr did not become healthy\n' "$tag" >&2
         kill_servers; return 1
@@ -532,12 +570,18 @@ run_lane() { # run_lane <klass> <apr-gpu-layers> <llama-ngl>
 # `--gpu-layers all`, reports `resolved > 0` about itself.
 probe_accel() {
     local pl="$PROBE_PORT" r
+    # the probe loads every layer onto the accelerator: it holds the GPU lock, and only for itself.
+    # (Called as $(probe_accel), so the holder's stdout is closed: the substitution must not wait on it.)
+    # A probe the queue never admitted measured NOTHING: it leaves a marker the caller refuses on,
+    # never a "0 layers resolved" that would read as "this host has no accelerator".
+    gpu_band_acquire probe "$WORK" > /dev/null || { : > "$WORK/probe-not-admitted"; return 0; }
     "$APR" serve run "$MODEL" --gpu-layers all --port "$pl" --context-length "$CTX" \
         > "$WORK/apr-probe.log" 2>&1 &
-    SERVER_PIDS="$SERVER_PIDS $!"
+    SERVER_PIDS="$SERVER_PIDS $!"; gpu_band_track "$!"
     wait_healthy "$pl" 300 || true
     r=$(gpu_layers_field "$WORK/apr-probe.log" resolved)
     kill_servers
+    gpu_band_release
     printf '%s' "${r:-0}"
 }
 
@@ -564,6 +608,11 @@ fi
 run_lane cpu 0 0
 
 ACCEL_RESOLVED=$(probe_accel)
+if [ -e "$WORK/probe-not-admitted" ]; then
+    printf 'FAIL  the accel probe: the GPU queue did not admit it (GPUQ_WAIT=%s s); whether this host has an\n' "${GPUQ_WAIT:-unbounded}" >&2
+    printf '      accel lane is UNMEASURED, and that is not the same as "no accelerator"\n' >&2
+    exit 1
+fi
 case "$ACCEL_RESOLVED" in ''|*[!0-9]*) ACCEL_RESOLVED=0 ;; esac
 if [ "$ACCEL_RESOLVED" -gt 0 ]; then
     run_lane accel all 999

@@ -1,0 +1,279 @@
+{
+  "host": "intel",
+  "arch": "x86_64",
+  "os": "Linux 6.8.0-138-generic",
+  "cpu": "Intel(R) Xeon(R) W-3245 CPU @ 3.20GHz",
+  "nproc": 32,
+  "accelerator": "none",
+  "driver": "n/a",
+  "version_tested": "0.68.2",
+  "date": "2026-09-21",
+  "produced_by": "scripts/release/host_receipt.sh (the release train, #3731)",
+  "provenance": "crates.io",
+  "asset": "aprender-0.68.2.crate",
+  "install_command": "cargo install aprender --version =0.68.2 --locked --root <scratch>",
+  "install_rc": 0,
+  "install_wall_seconds": 365,
+  "crates_compiled": 533,
+  "sha256_published": "5dc9e30761d0fa2c7b82f69d4a2da16a6301c1273f4f7878f85243758a44ae85",
+  "sha256_measured": "5dc9e30761d0fa2c7b82f69d4a2da16a6301c1273f4f7878f85243758a44ae85",
+  "binary_path": "/tmp/tmp.ZxK3vai530/.receipt-work/root/bin/apr",
+  "binary_sha256": "fe736713c87af03b527ca2c46b2526d1dca4e4be396bd67c511cf93458c7ceae",
+  "binary_version_output": "apr 0.68.2 (v0.68.2+no-git)",
+  "devices": {
+    "schema": "apr-devices-v1",
+    "discovered_at_unix": 1790015630,
+    "source": "machine",
+    "reserve_bytes": 3758096384,
+    "reserve_basis": "[U] default until master row 6 measures vram_peak",
+    "entries": [
+      {
+        "kind": "cpu",
+        "api": "cpu",
+        "device_index": null,
+        "device_uid": "host-cpu",
+        "device_name": "x86_64 host cpu, 32 threads",
+        "vendor": "host",
+        "vendor_id": null,
+        "device_type": "cpu",
+        "mem_total": 304018542592,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "unified",
+          "working_set_limit": null
+        },
+        "compute_class": "avx512",
+        "caps": [],
+        "source": {
+          "kind": "compiled-in"
+        },
+        "status": {
+          "state": "ready"
+        },
+        "transport": null
+      },
+      {
+        "kind": "cuda",
+        "api": "cuda-driver",
+        "device_index": null,
+        "device_uid": null,
+        "device_name": "",
+        "vendor": "",
+        "vendor_id": null,
+        "device_type": "",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "discrete"
+        },
+        "compute_class": null,
+        "caps": [],
+        "source": {
+          "kind": "not-compiled"
+        },
+        "status": {
+          "state": "unavailable",
+          "kind": "not-compiled"
+        },
+        "transport": null
+      },
+      {
+        "kind": "wgpu",
+        "api": "wgpu",
+        "device_index": 0,
+        "device_uid": "amd:amd-unknown--radv-navi10#0",
+        "device_name": "AMD Unknown (RADV NAVI10)",
+        "vendor": "AMD",
+        "vendor_id": 4098,
+        "device_type": "discrete-gpu",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "discrete"
+        },
+        "compute_class": null,
+        "caps": [
+          "max_buffer_size=2147483647"
+        ],
+        "source": {
+          "kind": "compiled-in"
+        },
+        "status": {
+          "state": "ready"
+        },
+        "transport": "vulkan"
+      },
+      {
+        "kind": "wgpu",
+        "api": "wgpu",
+        "device_index": 1,
+        "device_uid": "amd:amd-unknown--radv-navi10#1",
+        "device_name": "AMD Unknown (RADV NAVI10)",
+        "vendor": "AMD",
+        "vendor_id": 4098,
+        "device_type": "discrete-gpu",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "discrete"
+        },
+        "compute_class": null,
+        "caps": [
+          "max_buffer_size=2147483647"
+        ],
+        "source": {
+          "kind": "compiled-in"
+        },
+        "status": {
+          "state": "ready"
+        },
+        "transport": "vulkan"
+      },
+      {
+        "kind": "wgpu",
+        "api": "wgpu",
+        "device_index": 2,
+        "device_uid": "unknown:llvmpipe--llvm-15-0-7--256-bits",
+        "device_name": "llvmpipe (LLVM 15.0.7, 256 bits)",
+        "vendor": "unknown",
+        "vendor_id": null,
+        "device_type": "software",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "discrete"
+        },
+        "compute_class": null,
+        "caps": [
+          "max_buffer_size=2147483647"
+        ],
+        "source": {
+          "kind": "compiled-in"
+        },
+        "status": {
+          "state": "unavailable",
+          "kind": "no-backend",
+          "vendor": "software rasteriser (llvmpipe (LLVM 15.0.7, 256 bits)) is not a GPU"
+        },
+        "transport": "vulkan"
+      },
+      {
+        "kind": "metal",
+        "api": "metal",
+        "device_index": null,
+        "device_uid": null,
+        "device_name": "",
+        "vendor": "",
+        "vendor_id": null,
+        "device_type": "",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "discrete"
+        },
+        "compute_class": null,
+        "caps": [],
+        "source": {
+          "kind": "not-compiled"
+        },
+        "status": {
+          "state": "unavailable",
+          "kind": "no-backend",
+          "vendor": "no native Metal backend in 0.66 (a Metal adapter appears under wgpu)"
+        },
+        "transport": null
+      },
+      {
+        "kind": "hip",
+        "api": "hip",
+        "device_index": null,
+        "device_uid": null,
+        "device_name": "",
+        "vendor": "",
+        "vendor_id": null,
+        "device_type": "",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "discrete"
+        },
+        "compute_class": null,
+        "caps": [],
+        "source": {
+          "kind": "not-compiled"
+        },
+        "status": {
+          "state": "unavailable",
+          "kind": "no-backend",
+          "vendor": "no HIP backend in 0.66"
+        },
+        "transport": null
+      }
+    ],
+    "selected": {
+      "kind": "wgpu",
+      "device_index": 0,
+      "device_uid": "amd:amd-unknown--radv-navi10#0",
+      "reason": "first Ready non-cpu entry; 2 physical device(s) Ready"
+    }
+  },
+  "unmeasured": [
+    "accelerator: nvidia-smi is present but failed (rc 9): NVIDIA-SMI has failed because it couldn't communicate with the NVIDIA driver. Make sure that the latest NVIDIA driver is installed and running.",
+    "accel lane: the crates.io build carries no `cuda` feature (apr-cli default features), so no CUDA lane is measured in this receipt; the CUDA binary is the release asset, which the train's hosts step runs",
+    "generate: apr's accelerated path was not used: warning: GPU (wgpu) path rejected, attempting fallback: cosine vs CPU = 0.955376 (< 0.99) at step 2/3",
+    "parity: parity_host_receipt.sh refused (rc 1)"
+  ],
+  "generate": {
+    "model": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+    "model_sha256": "cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046",
+    "backend_line_verbatim": "Backend: wgpu (Vulkan)",
+    "fallback_line_verbatim": "warning: GPU (wgpu) path rejected, attempting fallback: cosine vs CPU = 0.955376 (< 0.99) at step 2/3",
+    "used_gpu": false,
+    "tokens": 1,
+    "wall_ms": 24291,
+    "output_sane": true,
+    "prompt": "What is 2+2? Answer with just the number."
+  },
+  "bench": {
+    "model": "/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+    "tokens_per_second": 10.1,
+    "total_tokens": 160,
+    "total_time_ms": 15867.416000000001,
+    "time_to_first_token_ms": 95.95240600000001,
+    "iterations": 5,
+    "mean_time_ms": 3173.4832,
+    "median_time_ms": 3181.946,
+    "std_dev_ms": 59.097471999999996,
+    "passed": true,
+    "samples_ms": [
+      3070.477,
+      3193.833,
+      3181.946,
+      3253.0899999999997,
+      3168.07
+    ],
+    "n": 5,
+    "runs_discarded": 0,
+    "provenance": {
+      "binary_path": "/tmp/tmp.ZxK3vai530/.receipt-work/root/bin/apr",
+      "binary_sha256": "fe736713c87af03b527ca2c46b2526d1dca4e4be396bd67c511cf93458c7ceae",
+      "reported_version": "0.68.2",
+      "build_commit": "v0.68.2+no-git",
+      "resolution": "path",
+      "compute_class": "cpu",
+      "feature_set": [
+        "inference",
+        "training"
+      ]
+    },
+    "model_sha256": "cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046",
+    "latency_p50_ms": 3181.946,
+    "latency_p95_ms": 3253.0899999999997,
+    "latency_p99_ms": 3253.0899999999997
+  },
+  "parity_attempt": {
+    "status": "refused",
+    "rc": 1,
+    "reason": "FAIL  refusing to emit a block this repo's own gate would reject: |         band[16].aggregate_tok_per_sec.subject.aggregate_tok_per_sec: contains a non-positive rate -- a throughput of zero or less is not a measurement | REPORT exit 1: work directory kept for diagnosis: /tmp/tmp.afxAemMIUG"
+  }
+}

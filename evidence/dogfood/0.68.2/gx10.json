@@ -1,0 +1,212 @@
+{
+  "host": "gx10",
+  "arch": "aarch64",
+  "os": "Linux 6.17.0-1014-nvidia",
+  "cpu": "Cortex-X925",
+  "nproc": 20,
+  "accelerator": "NVIDIA GB10 sm_121",
+  "driver": "590.48.01",
+  "version_tested": "0.68.2",
+  "date": "2026-09-21",
+  "produced_by": "scripts/release/host_receipt.sh (the release train, #3731)",
+  "provenance": "crates.io",
+  "asset": "aprender-0.68.2.crate",
+  "install_command": "cargo install aprender --version =0.68.2 --locked --root <scratch>",
+  "install_rc": 0,
+  "install_wall_seconds": 133,
+  "crates_compiled": 532,
+  "sha256_published": "5dc9e30761d0fa2c7b82f69d4a2da16a6301c1273f4f7878f85243758a44ae85",
+  "sha256_measured": "5dc9e30761d0fa2c7b82f69d4a2da16a6301c1273f4f7878f85243758a44ae85",
+  "binary_path": "/tmp/tmp.VD7E4bJCbm/.receipt-work/root/bin/apr",
+  "binary_sha256": "a564abb87cd974869928e120e6ba3390f59a7c5cf5abcca498fe46960e5edd74",
+  "binary_version_output": "apr 0.68.2 (v0.68.2+no-git)",
+  "devices": {
+    "schema": "apr-devices-v1",
+    "discovered_at_unix": 1790026835,
+    "source": "machine",
+    "reserve_bytes": 3758096384,
+    "reserve_basis": "[U] default until master row 6 measures vram_peak",
+    "entries": [
+      {
+        "kind": "cpu",
+        "api": "cpu",
+        "device_index": null,
+        "device_uid": "host-cpu",
+        "device_name": "aarch64 host cpu, 20 threads",
+        "vendor": "host",
+        "vendor_id": null,
+        "device_type": "cpu",
+        "mem_total": 128453623808,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "unified",
+          "working_set_limit": null
+        },
+        "compute_class": "neon",
+        "caps": [],
+        "source": {
+          "kind": "compiled-in"
+        },
+        "status": {
+          "state": "ready"
+        },
+        "transport": null
+      },
+      {
+        "kind": "cuda",
+        "api": "cuda-driver",
+        "device_index": null,
+        "device_uid": null,
+        "device_name": "",
+        "vendor": "",
+        "vendor_id": null,
+        "device_type": "",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "discrete"
+        },
+        "compute_class": null,
+        "caps": [],
+        "source": {
+          "kind": "not-compiled"
+        },
+        "status": {
+          "state": "unavailable",
+          "kind": "not-compiled"
+        },
+        "transport": null
+      },
+      {
+        "kind": "wgpu",
+        "api": "wgpu",
+        "device_index": 0,
+        "device_uid": "nvidia:nvidia-gb10",
+        "device_name": "NVIDIA GB10",
+        "vendor": "NVIDIA",
+        "vendor_id": 4318,
+        "device_type": "integrated-gpu",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "unified",
+          "working_set_limit": 4503599627370496
+        },
+        "compute_class": null,
+        "caps": [
+          "max_buffer_size=4503599627370496"
+        ],
+        "source": {
+          "kind": "compiled-in"
+        },
+        "status": {
+          "state": "ready"
+        },
+        "transport": "vulkan"
+      },
+      {
+        "kind": "wgpu",
+        "api": "wgpu",
+        "device_index": 1,
+        "device_uid": "unknown:llvmpipe--llvm-20-1-2--128-bits",
+        "device_name": "llvmpipe (LLVM 20.1.2, 128 bits)",
+        "vendor": "unknown",
+        "vendor_id": null,
+        "device_type": "software",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "discrete"
+        },
+        "compute_class": null,
+        "caps": [
+          "max_buffer_size=2147483647"
+        ],
+        "source": {
+          "kind": "compiled-in"
+        },
+        "status": {
+          "state": "unavailable",
+          "kind": "no-backend",
+          "vendor": "software rasteriser (llvmpipe (LLVM 20.1.2, 128 bits)) is not a GPU"
+        },
+        "transport": "vulkan"
+      },
+      {
+        "kind": "metal",
+        "api": "metal",
+        "device_index": null,
+        "device_uid": null,
+        "device_name": "",
+        "vendor": "",
+        "vendor_id": null,
+        "device_type": "",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "discrete"
+        },
+        "compute_class": null,
+        "caps": [],
+        "source": {
+          "kind": "not-compiled"
+        },
+        "status": {
+          "state": "unavailable",
+          "kind": "no-backend",
+          "vendor": "no native Metal backend in 0.66 (a Metal adapter appears under wgpu)"
+        },
+        "transport": null
+      },
+      {
+        "kind": "hip",
+        "api": "hip",
+        "device_index": null,
+        "device_uid": null,
+        "device_name": "",
+        "vendor": "",
+        "vendor_id": null,
+        "device_type": "",
+        "mem_total": null,
+        "mem_free": null,
+        "mem_kind": {
+          "kind": "discrete"
+        },
+        "compute_class": null,
+        "caps": [],
+        "source": {
+          "kind": "not-compiled"
+        },
+        "status": {
+          "state": "unavailable",
+          "kind": "no-backend",
+          "vendor": "no HIP backend in 0.66"
+        },
+        "transport": null
+      }
+    ],
+    "selected": {
+      "kind": "wgpu",
+      "device_index": 0,
+      "device_uid": "nvidia:nvidia-gb10",
+      "reason": "first Ready non-cpu entry; 1 physical device(s) Ready"
+    }
+  },
+  "unmeasured": [
+    "accel lane: the crates.io build carries no `cuda` feature (apr-cli default features), so no CUDA lane is measured in this receipt; the CUDA binary is the release asset, which the train's hosts step runs",
+    "generate: `apr run --format json` exited 75: gpu-q: ENV waited 3600s in the queue (head ticket 1-1790030207478395665-3779659, pid 3779659: flock /tmp/apr-gpu.lock choom -n 1000 -- timeout 1200 bash -c     ",
+    "bench: bench_host_receipt.sh refused (rc 75)",
+    "parity: parity_host_receipt.sh refused (rc 1)"
+  ],
+  "generate": null,
+  "bench_attempt": {
+    "status": "refused",
+    "rc": 75,
+    "reason": "gpu-q: waiting (prio 8, 4/4 in queue) | gpu-q: waiting (prio 8, 4/4 in queue) | gpu-q: ENV waited 3600s in the queue (head ticket 1-1790033482386358661-3975179, pid 3975179: flock /tmp/apr-gpu.lock choom -n 1000 -- timeout 1200 env APR_3751_DENSE_MODELS=/home/noah/models/qwen2.5-1.5b-instruct-); not run"
+  },
+  "parity_attempt": {
+    "status": "refused",
+    "rc": 1,
+    "reason": "FAIL  the accel probe: the GPU queue did not admit it (GPUQ_WAIT=3600 s); whether this host has an |       accel lane is UNMEASURED, and that is not the same as \"no accelerator\" | REPORT exit 1: work directory kept for diagnosis: /tmp/tmp.GL2GOzHBRV"
+  }
+}

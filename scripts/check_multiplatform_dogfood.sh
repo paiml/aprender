@@ -56,7 +56,11 @@ if [ -z "$VERSION" ]; then
     printf 'FAIL  the version being cut cannot be resolved (cargo metadata names no root package version; Cargo.toml has no literal)\n'
     exit 1
 fi
-DIR="evidence/dogfood/$VERSION"
+# The receipts are read from the committed tree unless DOGFOOD_RECEIPTS_DIR names another dir
+# (#3731): the release train's post-publish dogfood runs in the TAG's worktree AFTER its hosts
+# step has produced the receipts in $AP/receipts, and the tag's tree cannot contain files made
+# after it. The same receipts are committed under evidence/dogfood/<version>/ by the ledger PR.
+DIR="${DOGFOOD_RECEIPTS_DIR:-evidence/dogfood/$VERSION}"
 # ONE validator, shared with scripts/check_bench_receipt.sh. Two readers of one
 # schema is the divergence class #2640 exists to close.
 REPO_BENCH_VALIDATOR="scripts/lib/bench_receipt.py"
@@ -66,6 +70,30 @@ REPO_BENCH_VALIDATOR="scripts/lib/bench_receipt.py"
 # requires parity lanes, and adding an entry here is a visible diff that has to
 # be argued for.
 PARITY_GRANDFATHERED="0.63.0 0.64.0"
+# Blocks that run as REPORT for ONE named version (cop ruling on #3731, 2026-09-21). The train's own
+# host_receipt.sh was run against the PUBLISHED 0.68.2 on all four hosts first; a block that went
+# green there BLOCKS from the next release on, and a (host, block) that could NOT go green is listed
+# here as VERSION:HOST:BLOCK:#ISSUE (BLOCK is bench or parity), the issue carrying the measured
+# refusal. The row is still printed, as REPORT; host_receipt.sh names it in the receipt's
+# unmeasured[], and autopilot's postpub step puts the REPORT rows into the release notes. An entry
+# applies only to its own version, and only to a block that is ABSENT or VALID-BUT-NOT-GREEN (a
+# required lane missing, or a lane below its floor): what the published 0.68.2 measured on lambda,
+# whose block was complete and valid and still 0.40x. A block that is INVALID is judged as always:
+# an entry never excuses a producer that wrote a malformed receipt. The list is closed.
+REPORT_ONLY="0.69.1:lambda:parity:#3805 0.69.1:gx10:parity:#3805 0.69.1:intel:parity:#2855 0.69.1:mini:parity:#2855 0.69.1:lambda:bench:#3758 0.69.1:intel:bench:#3758 0.69.1:gx10:bench:#3758 0.69.1:mini:bench:#3758"
+# report_only_for BLOCK -> the issue that owes BLOCK on host $h at $VERSION, or nothing
+report_only_for() {
+    local e
+    for e in $REPORT_ONLY; do
+        case "$e" in "$VERSION:$h:$1:"*) printf '%s' "${e##*:}"; return 0 ;; esac
+    done
+}
+# The blocks the release train's host_receipt.sh emits beyond install (#3731): a sane `generate`,
+# the .crate's sha256 as crates.io published it AND as the host downloaded it, equal, and a
+# non-empty unmeasured[]. All three went green on the published 0.68.2 on all four hosts, so they
+# BLOCK (the cop's first-green ruling). These versions' receipts were made by hand before the train
+# produced any; they carry none of the three. The list is closed.
+TRAIN_RECEIPT_GRANDFATHERED="0.63.0 0.64.0 0.65.2"
 rc=0
 
 printf -- '--- multi-platform dogfood receipts for %s -------------------------\n' "$VERSION"
@@ -159,6 +187,40 @@ for h in $HOSTS; do
         printf 'ok    %-7s %s verified %s (install rc=0)\n' "$h" "$VERSION" "${when:-undated}"
     fi
 
+    # ── the train's receipt blocks (#3731) ─────────────────────────────────
+    # "OK" is printed only when every block holds: a receipt this cannot read is a FAIL, never a pass.
+    case " $TRAIN_RECEIPT_GRANDFATHERED " in
+        *" $VERSION "*)
+            printf 'REPORT %-6s generate/sha256/unmeasured not required for %s (hand-made receipt, pre-#3731)\n' "$h" "$VERSION" ;;
+        *)
+            why=$(python3 - "$f" <<'PY'
+import json, re, sys
+r = json.load(open(sys.argv[1]))
+bad, hexre = [], re.compile(r"[0-9a-f]{64}")
+g = r.get("generate")
+if not isinstance(g, dict):
+    bad.append("generate is null: " + next((u for u in r.get("unmeasured") or [] if isinstance(u, str) and u.startswith("generate:")), "and no reason is recorded"))
+elif g.get("output_sane") is not True:
+    bad.append("generate.output_sane is not true: the answer to 2+2 did not contain 4")
+pub, mea = r.get("sha256_published"), r.get("sha256_measured")
+if not (isinstance(pub, str) and hexre.fullmatch(pub) and isinstance(mea, str) and hexre.fullmatch(mea)):
+    bad.append(f"sha256_published and sha256_measured are not both recorded ({pub!r}, {mea!r})")
+elif pub != mea:
+    bad.append(f"the .crate the host downloaded ({mea[:12]}) is not the one crates.io published ({pub[:12]})")
+u = r.get("unmeasured")
+if not (isinstance(u, list) and u and all(isinstance(x, str) and x for x in u)):
+    bad.append("unmeasured[] is empty or absent: a receipt names what its host could not prove")
+print(" | ".join(bad) if bad else "OK")
+PY
+)
+            if [ "$why" = OK ]; then
+                printf 'ok    %-7s generate sane, .crate sha256 published = measured, unmeasured[] named\n' "$h"
+            else
+                printf 'FAIL  %-7s %s\n' "$h" "${why:-the receipt could not be read}"
+                rc=1
+            fi ;;
+    esac
+
     # ── the bench block (PARITY-003, aprender#2670) ────────────────────────
     #
     # CPU-CLASS, apr-vs-apr, NO COMPARATOR — and that is a decision, not an
@@ -174,11 +236,27 @@ for h in $HOSTS; do
     # without inventing a number nobody will act on. The comparator ratio lives
     # in the pre-publish phase where --features cuda exists (#2677).
     #
-    # ABSENT is not FAIL yet: the block arrives with the first release cut
-    # after this lands, and a gate that fails for a version that predates it is
-    # a gate nobody can satisfy. It is REPORTed so the absence is visible.
+    # ABSENT was REPORT until the train produced the block (#3731). The hand-made
+    # receipts (TRAIN_RECEIPT_GRANDFATHERED) still REPORT it. From then on the block
+    # went green on the published 0.68.2 (lambda), so an absent block FAILs unless
+    # REPORT_ONLY names this (version, host) with the issue that owes it. Every row
+    # says WHY, from the producer's own refusal recorded in the train's receipt --
+    # REPORT rows reach the release notes (autopilot postpub).
     if ! python3 "$REPO_BENCH_VALIDATOR" --has-bench "$f" >/dev/null 2>&1; then
-        printf 'REPORT %-6s no bench block yet — arrives with the first cut after #2670\n' "$h"
+        brefused=$(python3 -c "import json,sys;a=json.load(open(sys.argv[1])).get('bench_attempt') or {};print(str(a.get('reason',''))[:200])" "$f" 2>/dev/null)
+        bwhy="${brefused:+the producer refused on this host: $brefused}"
+        bowed=$(report_only_for bench)
+        case " $TRAIN_RECEIPT_GRANDFATHERED " in
+            *" $VERSION "*)
+                printf 'REPORT %-6s no bench block (hand-made receipt, pre-#3731)%s\n' "$h" "${bwhy:+: $bwhy}" ;;
+            *)
+                if [ -n "$bowed" ]; then
+                    printf 'REPORT %-6s no bench block: runs as REPORT for %s, owed by %s; %s\n' "$h" "$VERSION" "$bowed" "${bwhy:-no bench_attempt recorded}"
+                else
+                    printf 'FAIL  %-7s no bench block: %s\n' "$h" "${bwhy:-no bench_attempt recorded}"
+                    rc=1
+                fi ;;
+        esac
     elif python3 "$REPO_BENCH_VALIDATOR" --bench "$f" >/dev/null 2>&1; then
         bmed=$(python3 "$REPO_BENCH_VALIDATOR" --bench-median "$f" 2>/dev/null)
         printf 'ok    %-7s bench: median %s ms, CPU-class self-ratchet\n' "$h" "${bmed:-?}"
@@ -220,7 +298,11 @@ for h in $HOSTS; do
             printf 'REPORT %-6s parity lanes not required for %s (pre-#2696 cut)\n' "$h" "$VERSION"
             ;;
         *)
-            if ! python3 "$REPO_BENCH_VALIDATOR" --has-parity "$f" >/dev/null 2>&1; then
+            report_only=$(report_only_for parity)
+            if [ -n "$report_only" ] && ! python3 "$REPO_BENCH_VALIDATOR" --has-parity "$f" >/dev/null 2>&1; then
+                printf 'REPORT %-6s no parity block: runs as REPORT for %s, owed by %s (it could not go green on the published 0.68.2)\n' \
+                    "$h" "$VERSION" "$report_only"
+            elif ! python3 "$REPO_BENCH_VALIDATOR" --has-parity "$f" >/dev/null 2>&1; then
                 printf 'FAIL  %-7s no parity block. A release with no measured ratio\n' "$h"
                 printf '        against a pinned comparator is a release whose speed\n'
                 printf '        claim nothing checked (#2696).\n'
@@ -244,7 +326,10 @@ for h in $HOSTS; do
                 for w in $want; do
                     case " $have " in *" $w "*) : ;; *) missing="$missing $w" ;; esac
                 done
-                if [ -n "$missing" ]; then
+                if [ -n "$missing" ] && [ -n "$report_only" ]; then
+                    printf 'REPORT %-6s parity: accelerator '"'"'%s'"'"' needs lane(s)%s, receipt has: %s -- runs as REPORT for %s, owed by %s\n' \
+                        "$h" "$accel" "$missing" "${have:-<none>}" "$VERSION" "$report_only"
+                elif [ -n "$missing" ]; then
                     printf 'FAIL  %-7s accelerator '%s' needs lane(s)%s, receipt has: %s\n' \
                         "$h" "$accel" "$missing" "${have:-<none>}"
                     rc=1
@@ -253,7 +338,9 @@ for h in $HOSTS; do
                     while read -r lane ratio verdict; do
                         printf '      %-7s parity %-6s %sx vs llama.cpp  %s\n' "$h" "$lane" "$ratio" "$verdict"
                     done
-                    if grep -q ' FAIL$' <<< "$(python3 "$REPO_BENCH_VALIDATOR" --parity-ratio "$f" 2>/dev/null)" ; then
+                    if grep -q ' FAIL$' <<< "$(python3 "$REPO_BENCH_VALIDATOR" --parity-ratio "$f" 2>/dev/null)" && [ -n "$report_only" ]; then
+                        printf 'REPORT %-6s parity: a lane is below its declared floor -- runs as REPORT for %s, owed by %s\n' "$h" "$VERSION" "$report_only"
+                    elif grep -q ' FAIL$' <<< "$(python3 "$REPO_BENCH_VALIDATOR" --parity-ratio "$f" 2>/dev/null)" ; then
                         printf 'FAIL  %-7s a parity lane is below its declared floor\n' "$h"
                         rc=1
                     else

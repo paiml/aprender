@@ -52,11 +52,12 @@ def matrix_path():
 
 
 def _matrix():
-    import yaml
+    # yaml_twin: PyYAML where the host has it, the kit's JSON twin where it does not (#3731)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import yaml_twin
     path = matrix_path()
     if path not in _MATRIX_CACHE:
-        with open(path, encoding="utf-8") as handle:
-            _MATRIX_CACHE[path] = yaml.safe_load(handle) or {}
+        _MATRIX_CACHE[path] = yaml_twin.load(path) or {}
     return _MATRIX_CACHE[path]
 
 
