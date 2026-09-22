@@ -68,7 +68,13 @@ else
   printf '      receipt message: %s\n' "$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print([g.get("message") for r in d.get("rungs",[])+d.get("inventory",[]) if isinstance(r,dict) for g in [r.get("golden_output") or {}]][:1])' "$receipt")" >&2
   fail=1
 fi
-if printf '%s' "$out" | grep -qF -- "$PHRASE"; then
+# Here-string, NOT a pipe. `producer | grep -q` under pipefail takes the
+# PRODUCER's status, and `grep -q` closes the pipe on its first match -- so a
+# MATCH can make the producer die and the `if` go false BECAUSE the check
+# succeeded. Measured at ~10,000 matching lines when the match is EARLY (#3864),
+# and this harness's `$out` is a whole ladder run's output. check_no_pipe_into_grep_q.sh
+# refuses the pipe form outright: do not raise its ceiling.
+if grep -qF -- "$PHRASE" <<< "$out"; then
   printf 'ok    the producer printed reason carries it too\n'
 else
   printf 'FAIL  producer reason TRUNCATED (the [:70] why line)\n' >&2
