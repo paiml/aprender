@@ -34,6 +34,13 @@ cd "$(dirname "$0")/.." || exit 2
 #   gx10        aarch64 Linux + GB10 (sm_121)        ARM server, unified memory
 #   mini        arm64 macOS   + Metal                Apple silicon, no /proc, APFS
 HOSTS="lambda intel gx10 mini"
+# DECLARED ABSENCE (#3732, fleet ruling on #3544): a host the release train VISITS but the matrix does
+# not DEMAND is listed here as "host:reason:decided_by:YYYY-MM-DD", or scripts/check_dogfood_matrix_is_
+# visited.sh is RED (visited-but-not-demanded). It is RED too when an NA host joins HOSTS (the row is
+# stale) and when a HOSTS member is not visited (demanded-but-not-visited). The matrix is derived from
+# what autopilot.sh reaches (`--visited`) and from the hosts the release workflows name; a row here is a
+# decision with a name and a date, never a silent gap.
+NA_HOSTS="yoga:the CUDA release asset is smoke-tested here (autopilot hosts step) but no cargo-install receipt is taken; a receipt needs the fleet to decide yoga is a supported-platform row:aprender-f0 (recommendation, pending the cop):2026-09-22"
 
 # The version comes from cargo, not from a grep of Cargo.toml: under
 # `version.workspace = true` the grep is empty and every receipt reads as STALE
