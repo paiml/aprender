@@ -33,8 +33,11 @@
 #                   line adds no closing reference (a reason reading "closes #9002" would
 #                   close the epic on the bump's merge, the #3400 shape).
 #   prs-only        a CHANGELOG citing only PRs gets no keep-open line and still passes.
-#   landmine        a CHANGELOG carrying "no-close: #9005" is REFUSED: non-zero exit, no
-#                   `gh pr create`, and no branch pushed to origin.
+#   landmine        a CHANGELOG carrying "no-close: #9005" is REFUSED BY THE R-2 BODY CHECK:
+#                   non-zero exit, the refusal names §6 R-2, `ap/r2.log` was written, no
+#                   `gh pr create`, and no branch pushed to origin. The reason matters --
+#                   without it the row is satisfied by the model-ladder refusal downstream
+#                   and the `drop-refusal` mutant survives.
 #   ladder-missing-gx10  (#3708) the bump tree holds lambda.json but no gx10.json for 9.9.9:
 #                   REFUSED by scripts/check_model_ladder.sh (the dogfood's own judge, real copy,
 #                   fixture ladder of the two required hosts), naming gx10.json; nothing pushed
@@ -58,6 +61,9 @@ KEEP_OPEN_ANCHOR='keep-open: %s'
 REFUSAL_ANCHOR='bash "$CLOSES_GUARD" --body'
 LADDER_ANCHOR='bash scripts/check_model_ladder.sh --version "$V"'
 IGNORED_ANCHOR='[ -z "$ignored" ] ||'
+# The R-2 refusal's own words (prepare_bump.sh:89). `landmine` asserts the
+# refusal is THIS one, not merely that some refusal happened.
+LANDMINE_NEEDLE='the bump PR body fails §6 R-2'
 LADDER_JUDGE="$ROOT/scripts/check_model_ladder.sh"
 # What the judge reads besides the receipts (#3712): the contract's inventory spec -- COPIED into the
 # fixture ladder, never retyped, so the fixture follows whichever inventory shape the tree's judge
@@ -240,11 +246,30 @@ d="$TMP/prs-only"
     && [ "$(guard_rc "$d/body.md")" = 0 ]
 row prs-only "$?" "rc=$(cat "$d/rc"); a PR-only CHANGELOG must open a PR with no keep-open line that passes the guard"
 
-# row_landmine NAME SUBJECT -> 0 when prepare_bump refused before push and before gh pr create
+# row_landmine NAME SUBJECT -> 0 when prepare_bump refused FOR THE R-2 REASON, before push and before gh pr create
+#
+# The reason is load-bearing and this row used to omit it. `rc != 0` + no PR +
+# no push is the shape of ANY refusal, and prepare_bump has more than one:
+# the R-2 body check at prepare_bump.sh:89 and the model-ladder check at :96,
+# in that order. Delete the first (the `drop-refusal` mutant) and the landmine
+# body simply falls through to the second, which refuses it for an unrelated
+# reason -- same rc, same absent PR, same unpushed branch. The row stayed green
+# and the mutant survived: the row was testing that SOMETHING refused, not that
+# the R-2 guard did.
+#
+# So assert the reason two independent ways, the same way `row_ladder` below
+# already names its needle:
+#   * the refusal message names §6 R-2, and
+#   * `ap/r2.log` exists -- prepare_bump.sh:89 redirects into it unconditionally,
+#     so the file is present iff that line ran at all. That one is an artifact
+#     rather than prose, and it is what the mutant cannot fake: with line 89
+#     deleted the run writes `ap/ladder.log` and no `ap/r2.log`.
 row_landmine() {
     local d="$TMP/$1"
     run_ship "$1" "$2" "$LANDMINE_SECTION" || return 2
     [ "$(cat "$d/rc")" != 0 ] || { printf 'prepare_bump.sh --ship exited 0 on a landmine body\n'; return 1; }
+    grep -qF -- "$LANDMINE_NEEDLE" "$d/out.log" || { printf 'the refusal never named the R-2 body check: %s\n' "$(tail -1 "$d/out.log")"; return 1; }
+    [ -f "$d/ap/r2.log" ] || { printf 'no ap/r2.log -- the R-2 body check never ran; something else refused\n'; return 1; }
     ! grep -q '^pr create' "$d/gh.log" || { printf 'gh pr create was issued for a body the guard fails\n'; return 1; }
     [ -z "$(git -C "$d/origin.git" branch --list 'release-9.9.9')" ] || { printf 'the branch was pushed before the refusal\n'; return 1; }
     return 0
