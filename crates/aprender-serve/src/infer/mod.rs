@@ -68,6 +68,18 @@ pub struct InferenceConfig {
     pub repeat_last_n: usize,
     /// Disable GPU acceleration
     pub no_gpu: bool,
+    /// #3757: the user EXPLICITLY asked for an accelerator (`--gpu`, or
+    /// `--backend cuda|wgpu|gpu`), as classified by
+    /// `apr-cli::registry::Request::wanted` — the same signal `reconcile_accelerator`
+    /// already consumes, threaded one step further so the ATTEMPT is gated by it
+    /// and not only the post-hoc verdict.
+    ///
+    /// Without this the bare `apr run model.gguf` enters the GH-559 wgpu
+    /// fallback, dequantizes the whole model to F32, fails wgpu's own cpu-parity
+    /// gate and falls back — paying 1.7 GB and 2.5x the wall time to reach the
+    /// identical CPU answer. Measured on `release/0.69.1-batch-2` @ 9f8836c71,
+    /// qwen2.5-coder-1.5b-q4_k_m: default 7607 ms vs `--no-gpu` 3035 ms.
+    pub accel_forced: bool,
     /// Enable inference tracing (APR-TRACE-001)
     pub trace: bool,
     /// Verbose tracing output
@@ -131,6 +143,7 @@ impl InferenceConfig {
             repeat_penalty: 1.0,
             repeat_last_n: 64,
             no_gpu: false,
+            accel_forced: false,
             trace: false,
             trace_verbose: false,
             trace_output: None,
@@ -209,6 +222,13 @@ impl InferenceConfig {
     #[must_use]
     pub fn without_gpu(mut self) -> Self {
         self.no_gpu = true;
+        self
+    }
+
+    /// #3757: record that the user explicitly asked for an accelerator.
+    #[must_use]
+    pub fn with_accel_forced(mut self, accel_forced: bool) -> Self {
+        self.accel_forced = accel_forced;
         self
     }
 

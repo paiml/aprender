@@ -146,6 +146,10 @@ pub(crate) struct RunOptions {
     pub force: bool,
     /// Disable GPU acceleration
     pub no_gpu: bool,
+    /// #3757: the user EXPLICITLY asked for an accelerator (`--gpu`, or
+    /// `--backend cuda|wgpu|gpu`). Gates the wgpu ATTEMPT, not just the
+    /// post-hoc `reconcile_accelerator` verdict.
+    pub accel_forced: bool,
     /// Offline mode: refuse any network access
     pub offline: bool,
     /// Benchmark mode: output performance metrics
@@ -199,6 +203,7 @@ impl Default for RunOptions {
             output_format: "text".to_string(),
             force: false,
             no_gpu: false,
+            accel_forced: false,
             offline: false,
             benchmark: false,
             verbose: false,

@@ -91,6 +91,7 @@ pub(crate) fn run(
         output_format: output_format.to_string(),
         force: false,
         no_gpu,
+        accel_forced,
         offline,
         benchmark,
         verbose,
