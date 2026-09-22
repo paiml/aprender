@@ -131,6 +131,10 @@ mod tests {
 
         AprTransformer {
             config,
+            // This fixture materialises a separate `lm_head_weight`, so the tied
+            // path is off — the field's own documented default for
+            // backward-compatible deserialization.
+            lm_head_tied: false,
             token_embedding,
             layers: vec![layer],
             output_norm_weight,
