@@ -14,7 +14,13 @@
 /// The pipeline (temperature → top-k truncate → top-p nucleus → softmax → sample) matches the
 /// canonical `sample_advanced` nucleus logic. With `top_p >= 1.0` the nucleus step is a no-op,
 /// so all-default and top_k-only requests behave exactly as the pre-fix `sample_topk` path.
-fn select_batched_token(logits: &[f32], temperature: f32, top_k: usize, top_p: f32) -> u32 {
+fn select_batched_token(
+    logits: &[f32],
+    temperature: f32,
+    top_k: usize,
+    top_p: f32,
+    rng: &mut rand::rngs::StdRng,
+) -> u32 {
     use rand::Rng;
 
     if temperature == 0.0 {
@@ -61,8 +67,8 @@ fn select_batched_token(logits: &[f32], temperature: f32, top_k: usize, top_p: f
         .map(|(i, v)| (*i, (v - max_val).exp() / exp_sum))
         .collect();
 
-    // 5. Inverse-CDF sample.
-    let mut rng = rand::rng();
+    // 5. Inverse-CDF sample, from the SLOT's own RNG seeded by its request (#3720: the
+    //    same request and seed give the same tokens; an unseeded thread RNG ignored it).
     let r: f32 = rng.random();
     let mut cumulative = 0.0;
     for &(idx, prob) in &probs {
@@ -72,6 +78,12 @@ fn select_batched_token(logits: &[f32], temperature: f32, top_k: usize, top_p: f
         }
     }
     probs.last().map_or(0, |(idx, _)| *idx as u32)
+}
+
+/// A slot's sampling RNG, seeded from its request (#3720 seed determinism).
+fn slot_rng(seed: u64) -> rand::rngs::StdRng {
+    use rand::SeedableRng;
+    rand::rngs::StdRng::seed_from_u64(seed)
 }
 
 /// FALSIFY-CB-008 (`contracts/continuous-batching-v1.yaml`): "All M slots produce distinct
@@ -120,6 +132,9 @@ pub struct BatchedDecodeState {
     pub prompts: Vec<Vec<u32>>,
     /// Generation config per slot (stop tokens, max tokens)
     pub configs: Vec<QuantizedGenerateConfig>,
+    /// #3720: each slot's sampling RNG, seeded from its request's `seed` when the slot
+    /// is admitted, so a seeded sampled request is reproducible.
+    pub rngs: Vec<rand::rngs::StdRng>,
     /// Per-slot streaming callbacks (SSE token delivery)
     pub on_tokens: Vec<Box<dyn FnMut(u32) -> bool + Send>>,
     /// Accumulated sequences per slot (prompt + generated tokens)
@@ -387,6 +402,7 @@ impl OwnedQuantizedModelCuda {
             eps,
             prompts: prompts.to_vec(),
             configs: configs.to_vec(),
+            rngs: configs.iter().map(|c| slot_rng(c.seed)).collect(),
             on_tokens,
             sequences,
             positions,
@@ -487,12 +503,15 @@ impl OwnedQuantizedModelCuda {
                     operation: "forward_batched_to_logits".to_string(),
                     reason: format!("Batched forward failed: {e}"),
                 })?;
-            (0..state.m)
-                .map(|slot| {
-                    let cfg = &state.configs[slot];
+            let (configs, rngs) = (&state.configs, &mut state.rngs);
+            rngs.iter_mut()
+                .zip(configs)
+                .take(state.m)
+                .enumerate()
+                .map(|(slot, (rng, cfg))| {
                     let base = slot * vocab;
                     let slot_logits = &logits[base..base + vocab];
-                    select_batched_token(slot_logits, cfg.temperature, cfg.top_k, cfg.top_p)
+                    select_batched_token(slot_logits, cfg.temperature, cfg.top_k, cfg.top_p, rng)
                 })
                 .collect()
         } else if use_graph {
@@ -706,6 +725,7 @@ impl OwnedQuantizedModelCuda {
         let last_token = prompt[prompt.len() - 1];
         state.sequences.push(prompt.clone());
         state.prompts.push(prompt);
+        state.rngs.push(slot_rng(config.seed));
         state.configs.push(config);
         state.on_tokens.push(on_token);
         state.positions.push(seq_len);
@@ -809,6 +829,7 @@ impl OwnedQuantizedModelCuda {
         let last_token = prompt[prompt.len() - 1];
         state.sequences[slot_idx].clone_from(&prompt);
         state.prompts[slot_idx] = prompt;
+        state.rngs[slot_idx] = slot_rng(config.seed);
         state.configs[slot_idx] = config;
         state.on_tokens[slot_idx] = on_token;
         state.positions[slot_idx] = seq_len;
@@ -976,6 +997,7 @@ impl OwnedQuantizedModelCuda {
             let seq_len = prompt.len().saturating_sub(1);
             state.sequences[slot_idx].clone_from(&prompt);
             state.prompts[slot_idx] = prompt;
+            state.rngs[slot_idx] = slot_rng(config.seed);
             state.configs[slot_idx] = config;
             state.on_tokens[slot_idx] = on_token;
             state.positions[slot_idx] = seq_len;
@@ -1158,28 +1180,28 @@ impl OwnedQuantizedModelCuda {
 
 #[cfg(test)]
 mod pmat764_select_batched_token_tests {
-    use super::select_batched_token;
+    use super::{select_batched_token, slot_rng};
 
     #[test]
     fn temperature_zero_is_greedy_argmax() {
         // temp==0 must pick the max-logit index (deterministic), NOT sample.
-        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 0.0, 40, 1.0), 1);
-        assert_eq!(select_batched_token(&[9.0, 5.0, 2.0], 0.0, 40, 1.0), 0);
+        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 0.0, 40, 1.0, &mut slot_rng(0)), 1);
+        assert_eq!(select_batched_token(&[9.0, 5.0, 2.0], 0.0, 40, 1.0, &mut slot_rng(0)), 0);
     }
 
     #[test]
     fn top_k_one_is_greedy_at_any_temperature() {
         // top_k==1 keeps only the single best token → deterministic argmax even when
         // temperature > 0 (the sampling branch with a 1-token nucleus).
-        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 1.5, 1, 1.0), 1);
-        assert_eq!(select_batched_token(&[9.0, 5.0, 2.0], 0.9, 1, 1.0), 0);
+        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 1.5, 1, 1.0, &mut slot_rng(0)), 1);
+        assert_eq!(select_batched_token(&[9.0, 5.0, 2.0], 0.9, 1, 1.0, &mut slot_rng(0)), 0);
     }
 
     #[test]
     fn temperature_zero_is_greedy_at_any_top_p() {
         // temp==0 must stay deterministic argmax regardless of top_p (greedy short-circuit).
-        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 0.0, 40, 0.1), 1);
-        assert_eq!(select_batched_token(&[9.0, 5.0, 2.0], 0.0, 40, 0.9), 0);
+        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 0.0, 40, 0.1, &mut slot_rng(0)), 1);
+        assert_eq!(select_batched_token(&[9.0, 5.0, 2.0], 0.0, 40, 0.9, &mut slot_rng(0)), 0);
     }
 
     #[test]
@@ -1195,8 +1217,9 @@ mod pmat764_select_batched_token_tests {
         // 512 draws a non-zero token is effectively certain (0.87^512 ≈ 0) → this loop fails.
         // AFTER the fix, the nucleus collapses to {token0} and every draw is deterministic.
         let logits = [3.0_f32, 0.0, 0.0, 0.0];
+        let mut rng = slot_rng(0);
         for _ in 0..512 {
-            let tok = select_batched_token(&logits, 1.0, 4, 0.85);
+            let tok = select_batched_token(&logits, 1.0, 4, 0.85, &mut rng);
             assert_eq!(
                 tok, 0,
                 "top_p=0.85 must collapse the nucleus to the dominant token 0, got {tok} \
@@ -1205,12 +1228,27 @@ mod pmat764_select_batched_token_tests {
         }
     }
 
+    /// #3720 seed determinism: the batched sampler draws from the slot's OWN RNG, seeded by
+    /// its request. Before, it drew from the unseeded thread RNG, and two identical seeded
+    /// requests to apr serve --gpu returned different text (measured on lambda, Qwen3-8B
+    /// and qwen2.5-coder-1.5b, temperature 0.7, seed 42).
+    #[test]
+    fn the_same_seed_draws_the_same_tokens_and_another_seed_does_not() {
+        let logits = [0.0_f32; 64]; // flat: every draw is the RNG's choice
+        let draws = |seed: u64| {
+            let mut rng = slot_rng(seed);
+            (0..64).map(|_| select_batched_token(&logits, 1.0, 0, 1.0, &mut rng)).collect::<Vec<_>>()
+        };
+        assert_eq!(draws(42), draws(42), "a seed is a promise of the same tokens");
+        assert_ne!(draws(42), draws(43), "a different seed must be able to differ");
+    }
+
     #[test]
     fn top_p_one_is_a_noop_nucleus() {
         // top_p==1.0 (and >1.0) skips the nucleus cutoff → identical to the pure top_k path.
         // top_k==1 always returns the argmax, verifying the no-regression equivalence.
-        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 1.5, 1, 1.0), 1);
-        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 1.5, 1, 2.0), 1);
+        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 1.5, 1, 1.0, &mut slot_rng(0)), 1);
+        assert_eq!(select_batched_token(&[1.0, 5.0, 2.0], 1.5, 1, 2.0, &mut slot_rng(0)), 1);
     }
 }
 
