@@ -946,6 +946,10 @@ fn f2_remeasure_without_fp8(
 ) -> Option<F2PositionReport> {
     cuda_model.executor.gpu_profile.fp8_prefill = false;
     cuda_model.executor.gpu_profile.fp8_decode = false;
+    // #3807: FP8 stays off for this model from here on, so its weight cache is dead
+    // weight. Free it first: the FP16 path caches its own weights (2 B/elem) and on a
+    // 7B model the two together exceed a 24 GB card.
+    cuda_model.executor.clear_fp8_weight_cache();
     cuda_model.executor.reset_kv_cache_gpu();
     let out = match f2_gpu_batched_logits(cuda_model, probe, decode_token, kv_dim, num_layers) {
         Ok(v) => {
@@ -1094,11 +1098,13 @@ fn validate_gpu_first_token(
     // decode step AFTER the prompt (the K/V it attends to were produced by FP8
     // GEMMs) and sits at the floor run-to-run: qwen2.5-1.5b "Write one sentence
     // about the ocean." → pos 27, cosine 0.9187 with the SAME argmax on one run,
-    // ≥ 0.95 on another (RTX 4090, 2026-09-18). A miss inside the non-catastrophic
-    // band on an FP8 path is re-measured on the FP16 HGEMM prefill before the model
-    // is pushed off the GPU — a precision fallback, not a backend fallback, printed,
-    // never silent; the floors themselves do not move. Anything below the
-    // catastrophic band (Qwen3-8B under FP8: −0.0972) is never retried.
+    // ≥ 0.95 on another (RTX 4090, 2026-09-18). A miss on an FP8 path is re-measured
+    // on the FP16 HGEMM prefill before the model is pushed off the GPU — a precision
+    // fallback, not a backend fallback, printed, never silent; the floors themselves
+    // do not move. #3807: this used to skip misses below 0.90 as "catastrophic", but
+    // the re-measure is a different precision path, not a second sample: E4M3 prefill
+    // put qwen2.5-coder-7b at 0.8134 and qwen2.5-coder-0.5b at 0.894, and FP16 passes
+    // both. A defect outside FP8 still fails the FP16 re-measure and still rejects.
     if f2_should_retry_without_fp8(&report, via, cuda_model.executor.gpu_profile.fp8_prefill) {
         eprintln!(
             "note: FP8 batched prefill scored min cosine {:.4} vs CPU (floor {F2_GATE_COSINE_MIN}) — re-measuring on the FP16 prefill path",
@@ -1120,22 +1126,18 @@ fn validate_gpu_first_token(
     f2_accept_or_reject(&report, via, cpu_logits_per_pos.len().saturating_sub(1))
 }
 
-/// #3413 C: retry the batched probe with FP8 prefill off iff the miss is inside the
-/// non-catastrophic band (`≥ F2_CATASTROPHIC_COSINE`), the path judged was the
-/// batched prefill, and FP8 was actually on — otherwise a retry could not change
-/// the answer and would only hide a real divergence behind a second measurement.
-/// Pure + GPU-free.
+/// #3413 C: retry the batched probe with FP8 prefill off iff the report was a miss,
+/// the path judged was the batched prefill, and FP8 was actually on — otherwise the
+/// retry would measure the same kernels again. Any cosine qualifies (#3807): the
+/// retry changes the precision, so it can tell an FP8 precision loss from a real
+/// divergence, and the FP16 report must still pass every floor. Pure + GPU-free.
 #[cfg(feature = "cuda")]
 pub(crate) fn f2_should_retry_without_fp8(
     report: &F2PositionReport,
     via: F2ProbePath,
     fp8_prefill_on: bool,
 ) -> bool {
-    !report.accepted
-        && via == F2ProbePath::Batched
-        && fp8_prefill_on
-        && report.min_cosine_real >= F2_CATASTROPHIC_COSINE
-        && report.first_bad_cosine >= F2_CATASTROPHIC_COSINE
+    !report.accepted && via == F2ProbePath::Batched && fp8_prefill_on
 }
 
 #[cfg(all(test, feature = "cuda"))]
@@ -1165,20 +1167,18 @@ mod pmat3477_f2_fp8_retry_tests {
         ));
     }
 
-    // A catastrophic miss (Qwen3-8B under FP8: −0.0972) is never retried: a
-    // second measurement cannot turn orthogonal logits into parity.
+    // #3807: a deep miss is retried too. The re-measure runs FP16, a different
+    // precision path, and it is what separates E4M3 precision loss (qwen2.5-coder-7b
+    // at 0.8134, qwen2.5-coder-0.5b at 0.894: FP16 passes both) from a real defect
+    // (FP16 fails as well, and the gate still rejects).
     #[test]
-    fn catastrophic_miss_is_not_retried() {
-        assert!(!f2_should_retry_without_fp8(
-            &miss(-0.0972),
-            F2ProbePath::Batched,
-            true
-        ));
-        assert!(!f2_should_retry_without_fp8(
-            &miss(0.40),
-            F2ProbePath::Batched,
-            true
-        ));
+    fn a_deep_fp8_miss_is_retried_on_fp16() {
+        for cos in [0.894, 0.8134, 0.40, -0.0972] {
+            assert!(
+                f2_should_retry_without_fp8(&miss(cos), F2ProbePath::Batched, true),
+                "cos {cos}"
+            );
+        }
     }
 
     // FP8 already off, or the serial path: nothing to switch, no retry.
@@ -1221,8 +1221,11 @@ pub(crate) const F2_GATE_COSINE_MIN: f32 = 0.95;
 /// "argmax flip below 0.98" reject window is exactly the degraded-cosine band.
 pub(crate) const F2_ARGMAX_MISMATCH_COSINE: f32 = 0.98;
 
-/// Catastrophic cosine floor (orthogonal garbage / NaN). Anything below this is a
-/// hard reject regardless of argmax, matching the `apr parity` catastrophic floor.
+/// Catastrophic cosine floor (orthogonal garbage / NaN), matching the `apr parity`
+/// catastrophic floor. Anything below it is already below `F2_GATE_COSINE_MIN`, so the
+/// gate rejects it regardless of argmax. The FP16 retry no longer consults it (#3807);
+/// it remains the band marker the PMAT-919 gate tests are written against.
+#[cfg(test)]
 pub(crate) const F2_CATASTROPHIC_COSINE: f32 = 0.90;
 
 /// Per-position F2 decision report. Pure + GPU-free → unit-testable without CUDA.
