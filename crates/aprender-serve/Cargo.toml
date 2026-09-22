@@ -179,6 +179,11 @@ serde_yaml_ng = "0.10"
 [dev-dependencies]
 # Contract trait enforcement (Section 23)
 provable-contracts = { path = "../aprender-contracts", package = "aprender-contracts" }
+# Reading contracts/apr-model-capability-v1.yaml in `capability_contract` tests, so
+# the contract is the ORIGIN of the capability facts and capability.rs is its
+# consumer. Already a build-dependency (build.rs parses binding.yaml); a
+# build-dependency is not linked into the test binary, so it is declared here too.
+serde_yaml_ng = "0.10"
 
 # Visual regression testing framework (playbooks, TUI testing, GPU pixel verification)
 jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib", features = ["tui", "gpu"] }
