@@ -639,7 +639,7 @@ for b,v in r["backends"].items():
     if v["fallback"]: w.append(b+": FELL BACK (claimed backend did not run)")
     elif v.get("escaped_special"): w.append(b+": escaped special token in the formatted prompt: templated twice (#3743)")
     elif not v["ran"]: w.append(b+": did not run (rc=%s)"%v["rc"])
-    # SERVE IS A SEPARATE CHECK, NOT PART OF THE elif CHAIN (#3899). A backend can
+    # SERVE IS A SEPARATE CHECK, NOT PART OF THE elif CHAIN (#3901). A backend can
     # `ran: true` with every HTTP route failing — that is exactly the fp16 `.apr`
     # case — so chaining it would hide the only cause the row has.
     #

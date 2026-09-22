@@ -84,7 +84,7 @@ run_row() { # run_row <src> <be-json> -> prints true|false (the row's green)
   python3 -c 'import json,sys; print(str(json.loads(sys.stdin.read())["green"]).lower())' <<< "$out"
 }
 
-# The WHY builder, lifted separately (#3899). A row can be RED with its only cause
+# The WHY builder, lifted separately (#3901). A row can be RED with its only cause
 # unexplained: #3886 folded serve into `green` and left this builder unchanged, so a
 # row red solely on serve printed `unknown`. The verdict moved; the explanation did
 # not. Measured live on gx10's fp16 `.apr` row.
@@ -171,7 +171,7 @@ if [ "$SELF_TEST" = 1 ]; then
   else
     echo "  RED (expected)"
   fi
-  # Mutant C (#3899): the verdict keeps serve, the EXPLANATION loses it — which is
+  # Mutant C (#3901): the verdict keeps serve, the EXPLANATION loses it — which is
   # exactly the state #3886 shipped and gx10 measured as `[FAIL] … unknown`.
   mutant_c=$(mktemp); trap 'rm -f "$mutant" "$mutant_c"' EXIT
   sed '/serve routes non-200/d' "$SCRIPT" > "$mutant_c"
