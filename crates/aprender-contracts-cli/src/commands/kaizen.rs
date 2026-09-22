@@ -954,3 +954,313 @@ fn resolve_repo_path(src_root: &Path, name: &str, binding_path: &Path) -> PathBu
         .filter(|p| p.exists())
         .unwrap_or_else(|| src_root.join(name))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A report whose level counts are consistent with its call-site count,
+    /// which is the only shape the scoring functions are ever handed in
+    /// production (`count_levels` derives e0/e1/e2 from the same slice
+    /// `call_sites_after` is the length of).
+    fn report(bindings: usize, e0: usize, e1: usize, e2: usize) -> RepoReport {
+        RepoReport {
+            name: "r".to_string(),
+            bindings,
+            call_sites_before: 0,
+            call_sites_after: e0 + e1 + e2,
+            e0,
+            e1,
+            e2,
+            assertions_before: 0,
+            assertions_after: 0,
+            codegen_ok: true,
+            check_ok: None,
+            injection_count: 0,
+        }
+    }
+
+    fn site(level: ELevel) -> CallSite {
+        CallSite {
+            file: PathBuf::from("f.rs"),
+            line: 1,
+            macro_name: "m".to_string(),
+            level,
+        }
+    }
+
+    /// `enforcement_grade` and `repo_grade` carry the SAME cutoffs —
+    /// 0.60/0.40/0.25/0.10 — written out twice, in two functions, 30 lines
+    /// apart, differing only in whether the answer is prefixed "Grade ". One
+    /// copy can be edited without the other, and nothing would report it: the
+    /// fleet line and the per-repo column would simply disagree about the same
+    /// score. This pins them to each other rather than to a literal, so a
+    /// deliberate change to the ladder only has to be made consistently, not
+    /// made here too.
+    #[test]
+    fn the_two_grade_ladders_cannot_drift_apart() {
+        // Scores chosen to land in every band and on every cutoff exactly:
+        // score reduces to (0.1*e0 + 0.5*e1 + e2) / bindings.
+        let cases = [
+            report(5, 0, 0, 3),  // 0.60 — exactly A
+            report(5, 0, 0, 2),  // 0.40 — exactly B
+            report(4, 0, 0, 1),  // 0.25 — exactly C
+            report(10, 0, 0, 1), // 0.10 — exactly D
+            report(20, 0, 0, 1), // 0.05 — F
+            report(10, 4, 2, 3), // 0.44 — mixed levels, B
+        ];
+        let disagreements: Vec<String> = cases
+            .iter()
+            .filter_map(|r| {
+                let score = compute_fleet_score(std::slice::from_ref(r));
+                let from_ladder = enforcement_grade(score).trim_start_matches("Grade ");
+                let from_repo = repo_grade(r);
+                (from_repo != from_ladder).then(|| {
+                    format!(
+                        "\n  - bindings={} e0={} e1={} e2={} score={score:.4}: \
+                         repo_grade said {from_repo}, enforcement_grade said {from_ladder}",
+                        r.bindings, r.e0, r.e1, r.e2
+                    )
+                })
+            })
+            .collect();
+        assert!(
+            disagreements.is_empty(),
+            "the two copies of the grade ladder have drifted: {} of {} scores are \
+             graded differently by repo_grade and enforcement_grade, so the per-repo \
+             column and the fleet line would disagree about the same number:{}",
+            disagreements.len(),
+            cases.len(),
+            disagreements.join("")
+        );
+    }
+
+    /// Every cutoff is `>=`, so the named score belongs to the HIGHER band. A
+    /// `>` would silently demote exactly the repos sitting on the line, which
+    /// are the ones a threshold exists to adjudicate.
+    #[test]
+    fn enforcement_cutoffs_include_the_score_they_name() {
+        let cases: &[(f64, &str)] = &[
+            (0.60, "Grade A"),
+            (0.599_999, "Grade B"),
+            (0.40, "Grade B"),
+            (0.399_999, "Grade C"),
+            (0.25, "Grade C"),
+            (0.249_999, "Grade D"),
+            (0.10, "Grade D"),
+            (0.099_999, "Grade F"),
+            (0.0, "Grade F"),
+            (1.0, "Grade A"),
+        ];
+        let wrong: Vec<String> = cases
+            .iter()
+            .filter_map(|(s, want)| {
+                let got = enforcement_grade(*s);
+                (got != *want).then(|| format!("\n  - score {s}: expected {want}, got {got}"))
+            })
+            .collect();
+        assert!(
+            wrong.is_empty(),
+            "enforcement_grade cutoffs moved:{}",
+            wrong.join("")
+        );
+    }
+
+    /// Same contract for the tool-tier ladder, which has its own cutoffs
+    /// (0.90/0.75/0.50/0.25) and is a separate table again.
+    #[test]
+    fn penetration_cutoffs_include_the_score_they_name() {
+        let cases: &[(f64, &str)] = &[
+            (0.90, "Grade A"),
+            (0.899_999, "Grade B"),
+            (0.75, "Grade B"),
+            (0.749_999, "Grade C"),
+            (0.50, "Grade C"),
+            (0.499_999, "Grade D"),
+            (0.25, "Grade D"),
+            (0.249_999, "Grade F"),
+        ];
+        let wrong: Vec<String> = cases
+            .iter()
+            .filter_map(|(s, want)| {
+                let got = pen_grade(*s);
+                (got != *want).then(|| format!("\n  - pen {s}: expected {want}, got {got}"))
+            })
+            .collect();
+        assert!(
+            wrong.is_empty(),
+            "pen_grade cutoffs moved:{}",
+            wrong.join("")
+        );
+    }
+
+    /// `compute_fleet_score` and `repo_grade` each compute penetration x
+    /// quality with the weights 0.1/0.5/1.0 — the same formula, written twice.
+    /// For one repo the fleet score must therefore BE that repo's score, or the
+    /// fleet line is not an aggregate of the column beside it.
+    #[test]
+    fn a_lone_repo_scores_the_same_in_the_fleet_as_it_does_alone() {
+        for r in [report(5, 0, 0, 3), report(10, 4, 2, 3), report(7, 7, 0, 0)] {
+            let fleet = compute_fleet_score(std::slice::from_ref(&r));
+            // (0.1*e0 + 0.5*e1 + 1.0*e2) / bindings — penetration's `sites`
+            // cancels against quality's, which is why adding E0 sites raises
+            // the score.
+            #[allow(clippy::cast_precision_loss)]
+            let expected = (r.e0 as f64).mul_add(0.1, (r.e1 as f64).mul_add(0.5, r.e2 as f64))
+                / r.bindings as f64;
+            assert!(
+                (fleet - expected).abs() < 1e-12,
+                "fleet score for a single repo (bindings={} e0={} e1={} e2={}) was {fleet}, \
+                 but the per-repo formula gives {expected}",
+                r.bindings,
+                r.e0,
+                r.e1,
+                r.e2
+            );
+        }
+    }
+
+    /// Both degenerate inputs divide by zero if they are not caught, and both
+    /// are reachable: a repo with a binding registry but no implemented
+    /// bindings, and one whose call sites were all removed.
+    #[test]
+    fn an_empty_fleet_scores_zero_instead_of_dividing_by_zero() {
+        assert!((compute_fleet_score(&[]) - 0.0).abs() < f64::EPSILON);
+        assert!((compute_fleet_score(&[report(0, 0, 0, 0)]) - 0.0).abs() < f64::EPSILON);
+        assert!(
+            (compute_fleet_score(&[report(5, 0, 0, 0)]) - 0.0).abs() < f64::EPSILON,
+            "bindings but no call sites must be 0.0, not NaN"
+        );
+    }
+
+    /// "No bindings" and "bindings but nothing enforcing them" are different
+    /// states and must not print the same character: the first is nothing to
+    /// report, the second is a failure.
+    #[test]
+    fn no_bindings_is_not_graded_but_no_call_sites_is_a_failure() {
+        assert_eq!(repo_grade(&report(0, 0, 0, 0)), "-");
+        assert_eq!(repo_grade(&report(5, 0, 0, 0)), "F");
+    }
+
+    /// e0+e1+e2 is used as the denominator's sibling everywhere downstream, so
+    /// the three counts must partition the slice — no site counted twice, none
+    /// dropped.
+    #[test]
+    fn counting_levels_partitions_every_site_exactly_once() {
+        let sites = vec![
+            site(ELevel::E0),
+            site(ELevel::E2),
+            site(ELevel::E1),
+            site(ELevel::E0),
+            site(ELevel::E2),
+            site(ELevel::E2),
+        ];
+        let (e0, e1, e2) = count_levels(&sites);
+        assert_eq!((e0, e1, e2), (2, 1, 3));
+        assert_eq!(
+            e0 + e1 + e2,
+            sites.len(),
+            "every site must land in exactly one level"
+        );
+        assert_eq!(count_levels(&[]), (0, 0, 0));
+    }
+
+    /// E2 requires BOTH a domain predicate and a matching post macro. The
+    /// ladder is what the fleet score weights 0.1/0.5/1.0, so a macro promoted
+    /// on one half alone inflates the score without enforcing anything more.
+    #[test]
+    fn a_macro_is_promoted_only_when_both_halves_are_present() {
+        let pre = "macro_rules! contract_pre_f {\n    ($x:expr) => { debug_assert!($x.is_finite()); };\n}\n";
+        let post = "macro_rules! contract_post_f {\n    ($x:expr) => { () };\n}\n";
+        let bare = "macro_rules! contract_pre_f {\n    ($x:expr) => { () };\n}\n";
+
+        let cases: &[(&str, &str, ELevel, &str)] = &[
+            (
+                "",
+                "contract_pre_f",
+                ELevel::E0,
+                "the macro is not in the file at all",
+            ),
+            (
+                bare,
+                "contract_pre_f",
+                ELevel::E0,
+                "present, but asserts no domain predicate",
+            ),
+            (
+                pre,
+                "contract_pre_f",
+                ELevel::E1,
+                "a domain predicate, but no post macro",
+            ),
+        ];
+        for (content, name, want, why) in cases {
+            assert_eq!(classify_macro(name, content), *want, "{why}");
+        }
+        let both = format!("{pre}{post}");
+        assert_eq!(
+            classify_macro("contract_pre_f", &both),
+            ELevel::E2,
+            "a domain predicate AND a matching post macro is the only route to E2"
+        );
+    }
+
+    /// The domain-predicate search reads only the first 20 lines of the macro
+    /// body. That bound is deliberate and invisible — a predicate below it is
+    /// not seen, so a macro can be demoted by having comments added above it.
+    /// Pinned so the number cannot change silently.
+    #[test]
+    fn only_the_first_twenty_lines_of_a_macro_body_are_inspected() {
+        let padding = "    // filler\n".repeat(25);
+        let late = format!(
+            "macro_rules! contract_pre_f {{\n{padding}    debug_assert!(x.is_finite());\n}}\n"
+        );
+        assert_eq!(
+            classify_macro("contract_pre_f", &late),
+            ELevel::E0,
+            "a domain predicate past the 20-line window is not seen"
+        );
+
+        let early = "macro_rules! contract_pre_f {\n    debug_assert!(x.is_finite());\n}\n";
+        assert_eq!(
+            classify_macro("contract_pre_f", early),
+            ELevel::E1,
+            "the same predicate inside the window promotes to E1"
+        );
+    }
+
+    /// `count_assertions` matches the literal `debug_assert!`, so the `_eq`
+    /// and `_ne` variants do NOT count. That is the behaviour the
+    /// before/after assertion delta is computed from; recorded here because it
+    /// is surprising, not because it is obviously right.
+    #[test]
+    fn counting_assertions_matches_the_bare_macro_and_not_its_eq_variant() {
+        let content = "debug_assert!(a);\n  debug_assert!(b);\ndebug_assert_eq!(c, d);\n\
+                       debug_assert_ne!(e, f);\nassert!(g);\n// debug_assert!(commented)\n";
+        assert_eq!(
+            count_assertions(content),
+            3,
+            "two bare calls plus the commented-out one — a substring match cannot \
+             tell code from a comment, and debug_assert_eq!/ne! are not counted"
+        );
+        assert_eq!(count_assertions(""), 0);
+    }
+
+    /// The injected call site is indented to match the line it is inserted
+    /// before, so whatever whitespace that line opens with has to come back
+    /// verbatim — mixing tabs and spaces here produces code that does not
+    /// match the file around it.
+    #[test]
+    fn indentation_is_returned_verbatim() {
+        assert_eq!(detect_indent("    let x = 1;"), "    ");
+        assert_eq!(detect_indent("\t\tlet x = 1;"), "\t\t");
+        assert_eq!(detect_indent(" \t let x = 1;"), " \t ");
+        assert_eq!(detect_indent("let x = 1;"), "");
+        assert_eq!(detect_indent(""), "");
+        assert_eq!(
+            detect_indent("      "),
+            "      ",
+            "an all-whitespace line is all indent — trim_start leaves nothing behind"
+        );
+    }
+}
