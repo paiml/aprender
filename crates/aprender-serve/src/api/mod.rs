@@ -294,6 +294,33 @@ impl AppState {
         self
     }
 
+    /// #3720 seed determinism: `Ok` when the same request (model, prompt, seed, sampling)
+    /// gives the same bytes on this server, measured on lambda CUDA; `Err(reason)` where a
+    /// backend cannot promise it, so a response says so rather than silently differing.
+    ///
+    /// # Errors
+    ///
+    /// The reason this server cannot promise byte-identical output for a repeated request.
+    pub fn determinism(&self) -> std::result::Result<(), &'static str> {
+        if self.has_gpu_model() {
+            return Err(
+                "the wgpu backend's sampler takes no seed (GpuGenerateConfig carries none)",
+            );
+        }
+        let concurrent = self
+            .effective
+            .scheduler
+            .as_ref()
+            .is_some_and(|s| s.max_in_flight > 1);
+        if concurrent {
+            return Err(
+                "continuous batching admits more than one request at a time: a request's \
+                 logits can depend on how many requests share its batch",
+            );
+        }
+        Ok(())
+    }
+
     /// The `/v1/effective-config` state carried on this server.
     #[must_use]
     pub(crate) fn effective_config_state(&self) -> &EffectiveConfigState {

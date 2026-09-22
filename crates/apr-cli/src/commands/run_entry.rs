@@ -631,6 +631,9 @@ fn run_result_json(
         "model_digest": result.model_digest,
         "apr_version": env!("CARGO_PKG_VERSION"),
         "apr_git_sha": env!("APR_GIT_SHA"),
+        // #3720 done_when 2: one request, one seeded sampler: the same model, prompt, seed
+        // and sampling give these bytes again (measured on CUDA and CPU).
+        "deterministic": true,
         "text": result.text,
         // #3723: the answer is `text`; the model's reasoning never leaks into it.
         "thinking": result.thinking,

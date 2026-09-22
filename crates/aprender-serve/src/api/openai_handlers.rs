@@ -189,6 +189,14 @@ fn contract_ok_response(state: &AppState, response: ChatCompletionResponse) -> R
         return Json(response).into_response();
     };
     body["status"] = "ok".into();
+    // #3720 done_when 2: whether a repeat of this request (same seed) gives these bytes.
+    match state.determinism() {
+        Ok(()) => body["deterministic"] = true.into(),
+        Err(reason) => {
+            body["deterministic"] = false.into();
+            body["nondeterminism_reason"] = reason.into();
+        },
+    }
     if let Some(identity) = state.model_identity() {
         body["model_digest"] = identity.digest.clone().into();
         body["apr_version"] = identity.apr_version.clone().into();
@@ -394,6 +402,37 @@ mod response_contract_3720_tests {
         assert!(
             v.get("model_digest").is_none(),
             "a server given no identity claims none"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_completion_says_whether_a_repeat_gives_the_same_bytes() {
+        let state = AppState::demo().expect("demo");
+        let (_, v) = body(completion(&state, "4", 1)).await;
+        assert_eq!(v["deterministic"], true, "{v}");
+        assert!(v.get("nondeterminism_reason").is_none());
+
+        let batching = AppState::demo().expect("demo").with_scheduler_report(
+            crate::api::effective_config::SchedulerReport {
+                kind: "continuous",
+                max_in_flight: 4,
+                window_ms: 5,
+                prefill_chunk_size: None,
+                token_budget: None,
+                slots_admitted: 4,
+                admission_ceiling_reason: "test",
+                in_flight_now: None,
+                peak_in_flight: None,
+            },
+            None,
+        );
+        let (_, v) = body(completion(&batching, "4", 1)).await;
+        assert_eq!(v["deterministic"], false, "{v}");
+        assert!(
+            v["nondeterminism_reason"]
+                .as_str()
+                .is_some_and(|r| r.contains("more than one request")),
+            "a server that cannot promise it says why: {v}"
         );
     }
 
