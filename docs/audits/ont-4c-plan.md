@@ -71,3 +71,81 @@ For each: answer with the decision you would take, the reason, and — this is w
 could be wrong**, i.e. what a later reader would find if the decision is the lazy one. Judge whether each
 proposal keeps the row's assertion or hollows it out. A decision that makes the probe pass while measuring
 nothing is the failure mode this repo is built to refuse.
+
+---
+
+# Round 2 — what the first grill refused, and the one question it did not settle
+
+One countable lane (`gemini-3.1-pro-low`, SUCCESS, witness verified) returned **FAIL with 5 cited findings**,
+one per decision. Five further gemini envelopes across three rounds carried FAIL too and were voided by 429s
+or by an external ref move; they are uncounted but they converge. The only PASS came from an author-family
+claude lane, ineligible on independence grounds. **I accept the FAIL. The plan above is withdrawn.**
+
+The findings, and what I have done with each:
+
+| # | Finding | Action |
+|---|---|---|
+| D1 | omitting `parityReceipt`/`arch`/`quant`/`contextLength` leaves a contract its target trivially satisfies | **accepted** — see below |
+| D2 | `golden_v2.apr` is the `pc_extract` control's own bytes | **accepted** — the entity becomes `crates/aprender-serve/models/mnist_784x2.apr` |
+| D3 | dropping `csv:producer` to fit `iris.csv` weakens B.8 | **accepted** — the entity becomes a CSV that HAS a producing step, and the constraint stays |
+| D4 | grading an author-declared `verified_commands` list is shrinkable at will | **accepted as a refutation; its proposed fix is unsatisfiable — measured below** |
+| D5 | same shape for `referencedPath` | **accepted, and the fix is satisfiable** — measured below |
+
+## D5 is satisfiable, so it is simply done
+
+`CLAUDE.md` mentions **45** distinct backticked slash-bearing paths. **39 exist; 6 do not**
+(`aprender-contracts/src/schema/`, `.cargo/config.toml`, `entrenar/cuda`, `examples/qwen_inference.rs`,
+`realizar/cuda`, `src/models/`). So grading every path in the PROSE — no frontmatter list — costs six
+corrections, and at least two of the six (`entrenar/cuda`, `realizar/cuda`) are not paths at all but
+crate/feature pairs, which is itself the kind of thing a path constraint should surface. Adopted as the lane
+wrote it.
+
+## D4's fix is unsatisfiable on this corpus, and that is a measured fact about the ROW
+
+The lane's fix was "grade every fenced command present in the actual README file". Measured on this tree:
+
+- README has **18** fenced blocks: 14 `bash`, 1 `yaml`, 1 `toml`, 1 `rust`. (Using the fence INFO STRING, not
+  a first-word heuristic, already kills the false positives — a `toml` fence's `aprender = "0.35"` is not a
+  command.)
+- The 14 `bash` fences hold **43 distinct command lines**.
+- **6 of the 43 appear verbatim in a workflow `run:` step. 37 do not.**
+
+The 37 are things like `apr chat qwen2.5-coder-1.5b-instruct-q4k` (an interactive REPL),
+`apr pull hf://Qwen/Qwen2.5-Coder-0.5B-Instruct` (a network fetch) and `apr --help`. ONT-4c's RED clause says
+a fenced command appearing in no workflow `run:` step is a **reject**. Applied literally to every fenced
+command, that clause cannot be satisfied by a product README: the only ways to green it are to delete the
+usage examples, or to add 37 workflow steps that run them — CI theatre, a worse defect than the one the
+clause is aimed at.
+
+So there are three candidate readings and **I want the quorum to pick one**, not me:
+
+**R-A — two predicates over the complete fenced set, neither author-declared.** Every `bash`-fenced command is
+extracted. One that resolves to a workflow `run:` step is emitted as `readme:verifiedCommand`; one that does
+not is emitted as `readme:documentedCommand` and resolves instead against the binary's own command surface
+(`apr --help` / `pv --help` subcommand list), so a README documenting a verb the binary does not have is a
+reject. Nothing is author-declared; the author cannot shrink either set without editing the fences, which is
+a visible change to the graded document. **Cost:** it does not implement the row's RED clause literally — a
+non-CI command is classified rather than rejected.
+
+**R-B — the row is literal, and the entity is not this README.** Keep `resolves: ci-step` over every fenced
+command exactly as written and accept that aprender's root README cannot be the `readme` entity; contract a
+document whose fenced commands genuinely are CI steps. **Cost:** §4.1 names `contracts/readme-root.yaml` and
+the probe asserts `present '^---' README.md`, so this reading contradicts the row's own artifacts.
+
+**R-C — the row is right and the README is wrong.** Take the 37 as 37 real findings and fix the README: move
+interactive and network examples out of `bash` fences into `text` fences, leaving only commands CI runs.
+**Cost:** a large README rewrite inside a row about extractors, and a fence language chosen to dodge a gate is
+the author-shrinkable move in a different costume — unless the rule is exactly that `text` fences are not
+commands, which is defensible but must be said out loud.
+
+Grade R-A, R-B and R-C against one question: **which one leaves a gate that can fail on a future README, and
+by what edit?** Name the edit. If your answer is R-A, say whether classifying rather than rejecting is a
+softening of ONT-4c's RED clause that needs the SPEC amended (infra, `docs/specifications/paiml-ontology.md`)
+rather than absorbed silently here — I would rather amend the row in the open than implement something the
+row does not say.
+
+Then re-grade D1 with the entity fixed to `crates/aprender-serve/models/mnist_784x2.apr`: no tracked `.apr`
+has any ladder receipt, so `model:parityReceipt minCount: 1, resolves: receipt` cannot pass on any of them
+today. Is the honest move to (i) drop `parityReceipt` and carry a different non-trivial constraint, (ii)
+produce a real receipt for that file in this PR, or (iii) declare the row `blocked_on:` a receipt the way
+R-25 made ONT-4c4 declare its blocker? Name which, and why the other two are worse.
