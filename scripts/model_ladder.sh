@@ -503,8 +503,38 @@ cap = qa.get("capability_match", {})
 # judge must not depend on that: a skipped gate counts only when no GPU backend is claimed.
 cap_ok = (cap.get("passed", False) and not cap.get("skipped", False)) \
          or (cap.get("skipped", False) and not ({"cuda", "gpu"} & set(be)))
+# THE SERVE VERDICT IS PART OF THE ROW'S VERDICT (#3886).
+#
+# `ladder_serve_probe` computes exactly this and returns it; the caller assigned it to
+# `serve_rc` at two sites and read it at none. So the probe was right, the receipt
+# recorded every route code faithfully, and `green` looked past all of it: measured on
+# lambda at 87d9d5484, `qwen35-0.8b-q4km` was green with /v1/completions 503 on both
+# backends and both stream modes. That is how #3874 survived to be found by a human
+# reading route data out of a GREEN row rather than by this gate, and it is why a
+# regression breaking every HTTP route while leaving `run`/`chat` intact produced an
+# all-green receipt.
+#
+# Recomputed here from the row's OWN data rather than by plumbing the shell rc through:
+# the codes are already in `be[b].verbs.serve`, so this reclassifies committed receipts
+# correctly without re-measuring anything.
+#
+# The three failing shapes are the probe's, not new ones invented here:
+#   probed=false      it could not test serve at all — the router source was missing, the
+#                     derivation matched no route, or /health never answered. "A gate that
+#                     cannot execute its own checks must not report green."
+#   teardown=failed   a server that will not die is a real property of the `serve` verb.
+#   any route != 200  the probe's own `[ "$code" = 200 ] || rc=1`.
+def serve_ok(v):
+    sv = (v.get("verbs") or {}).get("serve") or {}
+    if not sv.get("probed"):
+        return False
+    if sv.get("teardown") == "failed":
+        return False
+    return all(r.get("http") == 200 for r in (sv.get("routes") or {}).values())
+
 green = cap_ok and qa.get("golden_output", {}).get("passed", False) \
-        and all(v["ran"] and not v["fallback"] and not v.get("escaped_special") for v in be.values())
+        and all(v["ran"] and not v["fallback"] and not v.get("escaped_special") and serve_ok(v)
+                for v in be.values())
 # ANTI-VACUITY (#3863 item 16). `apr qa` exiting non-zero means at least one gate
 # failed. If the row records NO failed gate, the receipt cannot account for its own
 # exit code -- which is exactly the state that let `tensor_contract` vanish while

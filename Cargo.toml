@@ -617,6 +617,10 @@ gates = [
     # `sha256sum` follows a symlink and `stat -c %s` does not, so a symlinked model
     # recorded the 1.1 GB model's hash beside the 60-byte length of its target path.
     "scripts/check_ladder_provenance.sh",
+    # #3886 — and that gate's green must account for the serve probe. The probe
+    # computed the verdict and the caller discarded it, so every route could 503
+    # while the row stayed green — which is how #3874 reached a release.
+    "scripts/check_ladder_serve_verdict.sh",
     "scripts/check_verifier_pinning.sh",
     "scripts/check_dogfood_shim.sh",
     "scripts/check_bench_receipt.sh",
