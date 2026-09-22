@@ -545,5 +545,70 @@ PY
 )
 [ -z "$drift" ] && ok "the prompt set matches golden_test_cases (3 cases, same order)" || broke "prompt set vs golden: $drift"
 
+
+# ── #3832: the cell states its own COVERAGE and PROVENANCE ───────────────────
+# A verdict read three weeks later collapses to a colour. These rows keep the
+# count, the versions and the reason-an-engine-was-absent attached to it.
+cell_field() { # cell_field <case dir> <prompt id> <python expr over `c`>
+  python3 -c 'import json,sys
+r = json.load(open(sys.argv[1]))
+c = next((x for x in r["cells"] if x["key"]["prompt_id"] == sys.argv[2]), None)
+print("ABSENT" if c is None else eval(sys.argv[3]))' "$1/receipt.json" "$2" "$3" 2>/dev/null
+}
+field_is() { # field_is <name> <case dir> <prompt id> <expr> <want>
+  local got; got=$(cell_field "$2" "$3" "$4")
+  if [ "$got" = "$5" ]; then ok "$1 ($4 = $got)"; else broke "$1: want $5, got $got"; fi
+}
+
+# A corroborated GREEN records who corroborated it.
+d=$(newcase quorum_recorded)
+apr_out "$d" $P "2+2 equals 4." gpu false; llama_out "$d" $P "$Q" "2 + 2 equals 4."; ollama_out "$d" $P "4"
+row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"
+row "$d/manifest.jsonl" llama.cpp $P 0 "$d/llama-$P.out" "$d/llama-$P.err"
+row "$d/manifest.jsonl" ollama $P 0 "$d/ollama-$P.out" "$d/ollama-$P.err"
+run_judge "$d"; GOT_RC=$?
+field_is "a GREEN cell records the engines that corroborated it" "$d" $P 'c["quorum"]["engines_answered"]' 3
+field_is "and records that the floor was met"                    "$d" $P 'c["quorum"]["met"]' True
+
+# apr alone is not an oracle: UNJUDGED, and the cell SAYS it stood alone.
+d=$(newcase apr_alone_says_so)
+apr_out "$d" $P "2+2 equals 4." gpu false
+row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"
+row "$d/manifest.jsonl" llama.cpp $P "" "" "" "zsh:1: command not found: llama-cli"
+row "$d/manifest.jsonl" ollama $P "" "" "" "/usr/local/bin/ollama: No such file or directory"
+run_judge "$d"; GOT_RC=$?
+expect "apr correct but alone is UNJUDGED, never GREEN" "$d" 2 $P UNJUDGED
+field_is "and the cell records that only one engine answered" "$d" $P 'c["quorum"]["engines_answered"]' 1
+field_is "and that the floor was not met"                    "$d" $P 'c["quorum"]["met"]' False
+
+# THE DISTINCTION #3832 EXISTS FOR. lambda's pinned llama-cli WORKS and reports
+# `command not found` over ssh because ~/.local/bin is off the non-interactive
+# PATH. That is a HARNESS defect. An absent binary is a FLEET fact. One string
+# for both would blame the comparator for the harness's mistake.
+field_is "a working install the harness could not NAME is not_on_PATH" \
+  "$d" $P 'c["engines"]["llama.cpp"]["not_ran_reason"]' not_on_PATH
+field_is "an absent binary is binary_not_found_at_path"  \
+  "$d" $P 'c["engines"]["ollama"]["not_ran_reason"]' binary_not_found_at_path
+
+# MUTANT: collapse the two reasons to one, as the receipt used to. The row above
+# must go RED — otherwise the distinction is decoration.
+mut="$TMP/judge-collapsed.py"
+sed 's/("command not found", "not_on_PATH")/("command not found", "binary_not_found_at_path")/' "$JUDGE" > "$mut"
+if ! cmp -s "$JUDGE" "$mut"; then
+  mut_got=$(JUDGE="$mut" python3 "$mut" collect --manifest "$d/manifest.jsonl" --prompts "$PROMPTS" \
+              --meta "$d/meta.json" --out-json "$d/mut.json" --out-md "$d/mut.md" > /dev/null 2>&1;
+            python3 -c 'import json,sys
+r = json.load(open(sys.argv[1]))
+c = next(x for x in r["cells"] if x["key"]["prompt_id"] == sys.argv[2])
+print(c["engines"]["llama.cpp"]["not_ran_reason"])' "$d/mut.json" $P 2>/dev/null)
+  if [ "$mut_got" = "binary_not_found_at_path" ]; then
+    ok "MUTANT collapsing not_on_PATH into binary_not_found_at_path is detected (got $mut_got)"
+  else
+    broke "MUTANT not detected: collapsing the reasons still reported '$mut_got'"
+  fi
+else
+  broke "MUTANT could not be planted: the not_on_PATH pattern was not found in $JUDGE"
+fi
+
 printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
