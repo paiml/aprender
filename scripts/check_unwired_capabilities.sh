@@ -64,6 +64,25 @@
 # now that #3595 is fixed and its caller sits in the same file -- i.e. the
 # ticket's own flagship instance would stay RED after being repaired. Recording
 # this as a deviation rather than quietly satisfying the done_when.
+#
+# MAINTENANCE OBLIGATION -- READ THIS BEFORE CLOSING ANY CAPABILITY TICKET.
+# If the issue named by a row in scripts/unwired_capabilities_acknowledged.txt
+# is CLOSED, that row must be DELETED, not left behind. A stale acknowledgement
+# suppresses the NEXT real instance of that op: the gate finds an unwired
+# capability, sees a row naming an issue, prints ACKNOWLEDGED, and passes. The
+# row outlives the defect it was written for and silently exempts its successor.
+#
+# Concretely, today: LayerNorm is acknowledged against aprender#3075. When #3075
+# closes -- whether because `layer_norm_gpu` got wired or because the ticket was
+# resolved another way -- delete the LayerNorm row in the same commit. If the
+# kernel really was wired, the gate stops finding it and the row is dead weight;
+# if it was not, the row is now a silent exemption and the gate has stopped
+# being a gate for that op.
+#
+# This is the same shape as a ratchet baseline that only ever grows: a
+# suppression mechanism whose entries are never retired stops measuring and
+# starts excusing. The acknowledgement file is printed on EVERY run for exactly
+# this reason -- a suppression you can see is one you can retire.
 # Bare: judge the tree.  --self-test: the case table.  --update: restamp rule 1.
 set -uo pipefail
 
