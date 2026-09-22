@@ -1,4 +1,4 @@
-//! The packaged mirror of the thinking-budget table is byte-identical to its source (#3899).
+//! The packaged mirror of the thinking-budget table is byte-identical to its source (#3907).
 //!
 //! Same two-copy arrangement, and the same reason, as `capability_mirror.rs`:
 //! `include_str!` cannot escape a crate directory at package time, so a published `apr`
@@ -52,7 +52,7 @@ fn the_table_declares_a_default_with_a_basis_and_at_least_one_model() {
     assert!(
         !models.is_empty(),
         "an empty `models` map means every model silently takes the default — the defect \
-         #3899 exists to end"
+         #3907 exists to end"
     );
     // Every listed model either has a budget WITH a basis, or states why it is unmeasured.
     // A bare entry with neither is a silent refusal nobody can act on.

@@ -67,4 +67,4 @@ models:
       measurement must be on lambda: d8 measured that tinyllama-1.1b's CPU and GPU legs
       diverge at token 143 of 192 while Qwen3-1.7B does not, so a greedy token-level
       number is not host-portable and a yoga figure could not be used for lambda's gate.
-    owed_by: "aprender#3899"
+    owed_by: "aprender#3907 (the measurement is queued behind aprender#3899, d8's Rule A blocker, for the lambda slot)"

@@ -16,7 +16,34 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PHRASE='thinking-budgets-v1.yaml'
-MSG="golden_output_thinking_on: think block unclosed within 2048 tokens (the model was still reasoning at the budget; 8000 chars generated, no answer was reached). This is not an empty answer. Before treating it as a model defect, check whether 2048 is MEASURED for this model in contracts/${PHRASE} or inherited from \`default\` — the default's basis is one 8B model (#3899)."
+
+# THE FIXTURE MUST TRACK THE SOURCE (#3907).
+#
+# $MSG below is a LITERAL. That is deliberate — the harness needs a message long enough
+# to cross the old slices without running a model — but a self-supplied fixture cannot
+# fail when the real message regresses, which is the one event this guard exists for.
+# It happened: this file pinned the pre-#3907 wording and asserted in its own header that
+# the phrase sat "at char 208 of a message the code really emits". It passed anyway, green
+# against a message that no longer shipped. The fixture had become the thing it was
+# guarding — an artifact outliving what it describes, still passing.
+#
+# So the literal is now tied to the emitter: $PHRASE must still occur in the source that
+# builds the message. If someone rewrites `unclosed_think_reason` and drops it, this fails
+# HERE, naming the file, instead of going green over a fixture nothing produces.
+EMITTER="$ROOT/crates/apr-cli/src/commands/output_verification.rs"
+if [ ! -f "$EMITTER" ]; then
+  echo "FAIL fixture-tracks-source: $EMITTER not found — the fixture cannot be checked against its emitter"
+  exit 1
+fi
+if ! grep -qF -- "$PHRASE" "$EMITTER"; then
+  echo "FAIL fixture-tracks-source: this test's \$PHRASE ('$PHRASE') no longer occurs in"
+  echo "     $EMITTER."
+  echo "     The fixture below is a literal, so it would keep passing against a message the"
+  echo "     code no longer emits. Update \$MSG and \$PHRASE to the real message, or this"
+  echo "     guard is testing its own string (#3907)."
+  exit 1
+fi
+MSG="golden_output_thinking_on: think block unclosed within 2048 tokens (the model was still reasoning at the budget; 8000 chars generated, no answer was reached). This is not an empty answer. Before treating it as a model defect, check whether 2048 is MEASURED for this model in contracts/${PHRASE} or inherited from \`default\` — the default's basis is one 8B model (#3907)."
 
 T=$(mktemp -d) || exit 2
 # SEC011: validate before `rm -rf`. An empty or root $T must never reach it —

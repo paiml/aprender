@@ -536,7 +536,7 @@ pub fn split_thinking_blocks(output: &str) -> ThinkingSplit {
 /// #3724 requires the budget to be named: "think block unclosed within N tokens"
 /// tells the reader the model was still reasoning, which "Empty output" did not.
 ///
-/// #3899: the closing clause used to read "check that the prompt is the one production
+/// #3907: the closing clause used to read "check that the prompt is the one production
 /// sends for this architecture". That was #3724's own suspect and #3724 REMOVED it —
 /// `golden_prompt_for()` and `apr serve` both call `format_messages(.., Some(arch))`,
 /// one rendering with nothing to diverge from. A reader who followed the hint spent an
@@ -551,7 +551,7 @@ pub fn unclosed_think_reason(leg: &str, budget: usize, generated_chars: usize) -
          no answer was reached). This is not an empty answer. Before treating it as a model \
          defect, check whether {budget} is MEASURED for this model in \
          contracts/thinking-budgets-v1.yaml or inherited from `default` — the default's basis \
-         is one 8B model (#3899)."
+         is one 8B model (#3907)."
     )
 }
 

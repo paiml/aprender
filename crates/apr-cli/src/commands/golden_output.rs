@@ -235,7 +235,7 @@ fn golden_prompt_for(architecture: Option<&str>, question: &str) -> String {
 #[cfg(feature = "inference")]
 const THINKING_ON_BUDGET: usize = 2048;
 
-/// The per-model budgets, embedded from the packaged mirror (#3899).
+/// The per-model budgets, embedded from the packaged mirror (#3907).
 ///
 /// `crates/apr-cli/contracts/` and not the workspace root, for the reason
 /// `capability.rs` gives: `include_str!` cannot escape the crate directory at package
@@ -274,12 +274,12 @@ fn glob_match(pat: &str, name: &str) -> bool {
 fn thinking_on_budget_for(model_file: &str) -> std::result::Result<(usize, String), String> {
     if let Ok(raw) = std::env::var("APR_THINKING_ON_BUDGET") {
         let n: usize = raw.trim().parse().map_err(|_| {
-            format!("APR_THINKING_ON_BUDGET={raw:?} is not a token count (#3899)")
+            format!("APR_THINKING_ON_BUDGET={raw:?} is not a token count (#3907)")
         })?;
         return Ok((n, format!("PROBE OVERRIDE APR_THINKING_ON_BUDGET={n}, not a measurement")));
     }
     let doc: serde_yaml::Value = serde_yaml::from_str(THINKING_BUDGETS)
-        .map_err(|e| format!("the embedded thinking-budget table did not parse: {e} (#3899)"))?;
+        .map_err(|e| format!("the embedded thinking-budget table did not parse: {e} (#3907)"))?;
     if let Some(models) = doc.get("models").and_then(|m| m.as_mapping()) {
         for (k, v) in models {
             let Some(pat) = k.as_str() else { continue };
@@ -295,7 +295,7 @@ fn thinking_on_budget_for(model_file: &str) -> std::result::Result<(usize, Strin
                     "no measured thinking budget for `{model_file}` (matches `{pat}` in \
                      contracts/thinking-budgets-v1.yaml, which declares no `budget`). \
                      Refusing rather than inheriting the default, which was measured on a \
-                     different model: {} (#3899)",
+                     different model: {} (#3907)",
                     why.trim()
                 ));
             };
@@ -303,23 +303,23 @@ fn thinking_on_budget_for(model_file: &str) -> std::result::Result<(usize, Strin
             if basis.is_empty() {
                 return Err(format!(
                     "`{pat}` declares budget {b} with no `basis` — a budget without the \
-                     measurement behind it is not a budget (#3899)"
+                     measurement behind it is not a budget (#3907)"
                 ));
             }
             return Ok((usize::try_from(b).unwrap_or(0), format!("{pat}: {basis}")));
         }
     }
     let d = doc.get("default").ok_or_else(|| {
-        "contracts/thinking-budgets-v1.yaml has no `default` and this model is unlisted (#3899)"
+        "contracts/thinking-budgets-v1.yaml has no `default` and this model is unlisted (#3907)"
             .to_string()
     })?;
     let b = d
         .get("budget")
         .and_then(serde_yaml::Value::as_u64)
-        .ok_or_else(|| "`default` declares no `budget` (#3899)".to_string())?;
+        .ok_or_else(|| "`default` declares no `budget` (#3907)".to_string())?;
     let basis = d.get("basis").and_then(|x| x.as_str()).unwrap_or("").trim();
     if basis.is_empty() {
-        return Err("`default` declares a budget with no `basis` (#3899)".to_string());
+        return Err("`default` declares a budget with no `basis` (#3907)".to_string());
     }
     Ok((usize::try_from(b).unwrap_or(0), format!("default: {basis}")))
 }
@@ -661,7 +661,7 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 
         // #3724 done_when 3: a thinking-capable model is judged in BOTH modes.
         if let Some((on_prompt, on_patterns)) = thinking_on_case(architecture.as_deref()) {
-            // #3899: the budget is per-model with a basis, and a model with no measured
+            // #3907: the budget is per-model with a basis, and a model with no measured
             // budget REFUSES here rather than inheriting an 8B's number. The refusal is
             // reported as a budget gap, not as "the model was still reasoning" — the two
             // are different findings and only one of them is about the model.
