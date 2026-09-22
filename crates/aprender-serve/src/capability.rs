@@ -566,7 +566,8 @@ mod capability_contract {
         let actual: BTreeSet<String> = gpu_supported_ops().into_iter().map(op_name).collect();
 
         assert_eq!(
-            declared, actual,
+            declared,
+            actual,
             "contract `gpu_supported: true` disagrees with gpu_supported_ops().\n\
              declared only: {:?}\nin code only: {:?}\n\
              The contract is the origin: change it first, then this function.",
@@ -637,14 +638,18 @@ mod capability_contract {
             );
             if matches!(status, "wired" | "unwired") {
                 assert!(
-                    r.get("symbol").and_then(|v| v.as_str()).is_some_and(|s| !s.is_empty()),
+                    r.get("symbol")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|s| !s.is_empty()),
                     "op {op} is {status} but names no symbol — {status} is a statement \
                      about a specific function"
                 );
             }
             if status == "unwired" {
                 assert!(
-                    r.get("evidence").and_then(|v| v.as_str()).is_some_and(|s| !s.is_empty()),
+                    r.get("evidence")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|s| !s.is_empty()),
                     "op {op} is unwired with no evidence — `unwired` means every caller \
                      is a test, which is a thing someone had to go and read"
                 );
