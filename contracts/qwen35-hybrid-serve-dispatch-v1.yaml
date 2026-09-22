@@ -49,7 +49,7 @@ description: |
 empirical_status: |
   #3715's premise was MEASURED FALSE before this contract was written.
 
-  `apr serve run /home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf`, commit
+  `apr serve run "$APR_MODELS_DIR"/Qwen3.5-0.8B-Q4_K_M.gguf`, commit
   `71421b6e5`, RTX 4090 host, on BOTH a default-features build
   (sha256 41662d2619e4192c812ae134) and a `--features cuda` build
   (sha256 e89a9d80538553f5f83c5d1a). Server log: "Model ready: Qwen3.5 hybrid,
