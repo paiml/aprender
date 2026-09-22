@@ -103,6 +103,8 @@ fn try_gpu_completions(
             completion_tokens,
             total_tokens: prompt_tokens + completion_tokens,
         },
+        // This arm records no backend (#3894).
+        used_gpu: None,
     }))
 }
 
@@ -192,6 +194,9 @@ fn try_apr_transformer_completions(
         completion_tokens,
         max_tokens,
         request.stop.as_deref(),
+        // The APR transformer arm reports no backend: nothing in its path records
+        // whether the generation ran on the accelerator (#3894).
+        None,
     )))
 }
 
@@ -268,6 +273,8 @@ fn registry_completions(
         completion_tokens,
         max_tokens,
         request.stop.as_deref(),
+        // The registry arm is the CPU fallback of last resort and records nothing.
+        None,
     ))
 }
 
@@ -341,6 +348,9 @@ async fn try_apr_q4k_completions(
         completion_tokens,
         max_tokens,
         request.stop.as_deref(),
+        // `AprQ4kResponse` carries output_tokens/tokens_generated/timings and NO
+        // backend flag, so this arm cannot report what ran (#3894).
+        None,
     )))
 }
 
@@ -435,6 +445,8 @@ async fn try_cuda_gguf_completions(
         completion_tokens,
         max_tokens,
         request.stop.as_deref(),
+        // The CUDA GGUF batch arm records no backend flag on its response.
+        None,
     )))
 }
 
@@ -616,6 +628,8 @@ async fn completions_inner(
                 completion_tokens,
                 total_tokens: prompt_ids.len() + completion_tokens,
             },
+            // The inline CUDA block records no backend flag either (#3894).
+            used_gpu: None,
         });
     }
 

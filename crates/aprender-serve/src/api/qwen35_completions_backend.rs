@@ -151,6 +151,11 @@ pub(crate) async fn try_qwen35_completions(
         completion_tokens,
         budget,
         request.stop.as_deref(),
+        // MEASURED, not assumed: the blocking closure stored `s.on_gpu()` after the
+        // generation, so this reads what the session actually did (#3894).
+        state
+            .qwen35_session()
+            .map(|s| s.on_gpu.load(std::sync::atomic::Ordering::Relaxed)),
     )))
 }
 

@@ -833,6 +833,7 @@ fn test_completion_request_serialization() {
 #[test]
 fn test_completion_response_serialization() {
     let response = CompletionResponse {
+        used_gpu: None,
         id: "cmpl-123".to_string(),
         object: "text_completion".to_string(),
         created: 1234567890,
@@ -1442,6 +1443,7 @@ fn test_completion_request_minimal() {
 #[test]
 fn test_completion_response_multiple_choices() {
     let response = CompletionResponse {
+        used_gpu: None,
         id: "cmpl-multi".to_string(),
         object: "text_completion".to_string(),
         created: 1700000000,
@@ -3331,6 +3333,7 @@ fn test_openai_models_response_many_models() {
 #[test]
 fn test_completion_response_fields() {
     let response = CompletionResponse {
+        used_gpu: None,
         id: "cmpl-test".to_string(),
         object: "text_completion".to_string(),
         created: 1700000000,
@@ -4594,6 +4597,7 @@ fn test_embedding_response_with_multiple_embeddings() {
 #[test]
 fn test_completion_response_with_logprobs() {
     let response = CompletionResponse {
+        used_gpu: None,
         id: "cmpl-with-logprobs".to_string(),
         object: "text_completion".to_string(),
         created: 1700000000,

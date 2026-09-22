@@ -260,6 +260,7 @@ fn test_completion_choice_debug() {
 #[test]
 fn test_completion_response_serialization() {
     let response = CompletionResponse {
+        used_gpu: None,
         id: "cmpl-test-123".to_string(),
         object: "text_completion".to_string(),
         created: 1700000000,
@@ -291,6 +292,7 @@ fn test_completion_response_serialization() {
 #[test]
 fn test_completion_response_multiple_choices() {
     let response = CompletionResponse {
+        used_gpu: None,
         id: "cmpl-multi".to_string(),
         object: "text_completion".to_string(),
         created: 1700000000,
@@ -327,6 +329,7 @@ fn test_completion_response_multiple_choices() {
 #[test]
 fn test_completion_response_clone() {
     let response = CompletionResponse {
+        used_gpu: None,
         id: "test".to_string(),
         object: "text_completion".to_string(),
         created: 123,
@@ -347,6 +350,7 @@ fn test_completion_response_clone() {
 #[test]
 fn test_completion_response_debug() {
     let response = CompletionResponse {
+        used_gpu: None,
         id: "debug-test".to_string(),
         object: "text_completion".to_string(),
         created: 0,

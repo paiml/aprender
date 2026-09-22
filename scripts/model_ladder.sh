@@ -303,12 +303,30 @@ ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <ba
                 */chat/completions) body='{"model":"apr","messages":[{"role":"user","content":"What is 2+2?"}],"max_tokens":16,"stream":'"$stream"'}' ;;
                 *) body='{"model":"apr","prompt":"What is 2+2?","max_tokens":16,"stream":'"$stream"'}' ;;
             esac
-            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 60 \
+            # The BODY is kept now, not discarded (#3894): `http: 200` proves serve
+            # ANSWERED, never that it answered on the accelerator. #3889 is the
+            # measured case where those differ — six 200s recorded in a `cuda` cell
+            # while the accelerator attempt had failed and CPU generated.
+            bodyf="$WORK/probe-${rid//[^A-Za-z0-9._-]/_}-$bname.body"
+            code=$(curl -sS -o "$bodyf" -w '%{http_code}' --max-time 60 \
                 -H 'Content-Type: application/json' -d "$body" \
                 "http://127.0.0.1:$port$r" 2>/dev/null) || code=000
             [ "$code" = 200 ] || rc=1
+            # THREE states, and `null` is the honest one: the field is absent from a
+            # response whose arm does not measure its backend, and absent from every
+            # streaming body (SSE, not one JSON object). `null` records "this cell
+            # does not establish CUDA" rather than implying CPU.
+            ug=$(python3 -c '
+import json, sys
+try:
+    v = json.load(open(sys.argv[1])).get("used_gpu")
+except Exception:
+    v = None
+print("null" if v is None else ("true" if v else "false"))
+' "$bodyf" 2>/dev/null) || ug=null
+            [ -n "$ug" ] || ug=null
             [ $first = 1 ] || json="$json,"; first=0
-            json="$json\"$r|stream=$stream\":{\"http\":$code,\"ok\":$([ "$code" = 200 ] && echo true || echo false)}"
+            json="$json\"$r|stream=$stream\":{\"http\":$code,\"ok\":$([ "$code" = 200 ] && echo true || echo false),\"used_gpu\":$ug}"
         done
     done
     # A server that will not die is a real property of the `serve` verb, and until
