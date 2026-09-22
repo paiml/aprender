@@ -36,7 +36,7 @@ impl CudaExecutor {
         self.prepare_graph_buffers(input, position, hidden_dim, vocab_size)?;
 
         // PAR-054-FIX: Pre-load all kernel modules BEFORE graph capture
-        self.preload_modules_for_capture(num_layers, hidden_dim, intermediate_dim, vocab_size)?;
+        self.preload_modules_for_capture(num_layers, hidden_dim, intermediate_dim, vocab_size, epsilon)?;
 
         // PAR-064-DEBUG: Skip graph capture if SKIP_CUDA_GRAPH=1
         let skip_graph = std::env::var("SKIP_CUDA_GRAPH")

@@ -544,6 +544,7 @@ impl CudaExecutor {
             hidden_dim,
             intermediate_dim,
             vocab_size,
+            epsilon,
         )?;
 
         // Copy inputs to stable buffer

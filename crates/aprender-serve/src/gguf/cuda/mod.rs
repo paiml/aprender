@@ -524,11 +524,14 @@ impl OwnedQuantizedModelCuda {
         let hidden_dim = model.config.hidden_dim as u32;
         let intermediate_dim = model.config.intermediate_dim as u32;
         let vocab_size = model.config.vocab_size as u32;
+        // #3759: with the model's RMSNorm epsilon. This preload used to compile the norm kernels
+        // at a hardcoded 1e-5 under epsilon-less keys, and every later launch reused them.
         match executor.preload_modules_for_capture(
             num_layers,
             hidden_dim,
             intermediate_dim,
             vocab_size,
+            model.config.eps,
         ) {
             Ok(()) => eprintln!(
                 "[GH-129] Early kernel preload: {} modules compiled",
@@ -657,6 +660,21 @@ impl OwnedQuantizedModelCuda {
             eprintln!(
                 "[#3413] architecture '{}' uses per-head QK-norm: FP8 prefill off and serial prefill in use — its FP8 batched prefill fails CPU parity (#3483; FP8_PREFILL=1 / BATCHED_PREFILL=1 override)",
                 model.config.architecture
+            );
+        }
+
+        // #3785: name the prefill GEMM precision this process will use, and why. Unconditional,
+        // like the [GH-129]/[PMAT-053] lines beside it (verbose() is REALIZAR_VERBOSE, not -v).
+        {
+            let cc = executor.gpu_profile.cc;
+            let precision = if executor.gpu_profile.fp8_prefill {
+                "FP8 (E4M3)"
+            } else {
+                "FP16"
+            };
+            eprintln!(
+                "[#3785] prefill GEMM precision: {precision} (cc={cc}; FP8 prefill defaults on for cc 89..{} only, FP8_PREFILL=0/1 overrides)",
+                crate::cuda::gpu_profile::FP8_PREFILL_MAX_CC_EXCLUSIVE
             );
         }
 

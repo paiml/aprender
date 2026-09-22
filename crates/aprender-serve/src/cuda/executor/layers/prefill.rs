@@ -909,6 +909,8 @@ impl CudaExecutor {
                 intermediate_dim,
                 hidden_dim,
             )?;
+            // #3727: up reads the same hidden_buf1 gate just read — FP8 may reuse gate's conversion.
+            self.fp8_act_cache.share_next();
             self.batched_gemv_or_gemm(
                 layer_weights.ffn_up_qtype,
                 layer_weights.ffn_up_ptr,
