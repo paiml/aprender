@@ -144,6 +144,9 @@ entity_types:
   # it moves under a shared `Receipt` class once quorum and dispatch receipts join, so the three families
   # inherit common shapes. NOT the throughput parity receipts — a different family with a different validator.
   - {name: parity-receipt, extractor: parity_receipt, implemented: true}
+  # aprender#3715: a release's receipts (per-host inventory + cells, kernel diffs, context rungs, the dogfood
+  # receipt R5 judged), extracted ONLY when a release subject is given — an ordinary PR has no release.
+  - {name: release-evidence, extractor: release_evidence, implemented: true}
 
 extractors:
   - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: true}
@@ -156,6 +159,7 @@ extractors:
   - {name: gguf, reader: ontology/extract/gguf.rs, implemented: true}
   - {name: csv, reader: ontology/extract/csv.rs, implemented: false}
   - {name: parity_receipt, reader: ontology/extract/parity_receipt.rs, implemented: true}
+  - {name: release_evidence, reader: ontology/extract/release_evidence.rs, implemented: true}
 
 # What this ontology does NOT express, said out loud so nobody encodes it by accident. Each names the reader that
 # would have to change first.

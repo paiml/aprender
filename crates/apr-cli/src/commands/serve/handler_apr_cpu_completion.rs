@@ -376,7 +376,7 @@ async fn handle_apr_cpu_chat_completion(
     let latency_ms = start.elapsed().as_millis() as u64;
     let mut response = serde_json::json!({
         "id": request_id, "object": "chat.completion", "created": created, "model": &s.model_name,
-        "choices": [{"index": 0, "message": {"role": "assistant", "content": out.text}, "finish_reason": "stop"}],
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": out.text}, "finish_reason": out.finish_reason.as_str()}],
         "usage": {"prompt_tokens": out.input_token_count, "completion_tokens": out.tokens_generated, "total_tokens": out.input_token_count + out.tokens_generated},
         "_apr_metrics": {"latency_ms": latency_ms, "tok_per_sec": tok_per_sec}
     });

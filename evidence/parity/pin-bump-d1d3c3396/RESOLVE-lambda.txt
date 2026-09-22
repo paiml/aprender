@@ -1,0 +1,8 @@
+# scripts/llama_bin.sh on lambda, #3563 (A): nothing named, the canonical location resolves
+# measured: 2026-09-21T16:51:53Z  host: noah-Lambda-Vector  tree: 52f43da71 + the #3563 llama_bin.sh change (uncommitted at measure time)
+# command: env -u LLAMA_BENCH_PATH bash scripts/llama_bin.sh
+ok    llama.cpp pinned: /home/noah/src/llama.cpp-d1d3c3396/build/bin/llama-bench
+      build: version: 0.4.1-dev (build 10987, commit d1d3c3396)
+      cmake: GGML_CUDA=ON CMAKE_CUDA_ARCHITECTURES=unset
+      pin expires 2026-12-01
+# rc=0

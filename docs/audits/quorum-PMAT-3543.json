@@ -1,0 +1,207 @@
+{
+  "ticket": "PMAT-3543",
+  "base": "225b2a9ab",
+  "base_resolved": "225b2a9ab",
+  "base_note": "no origin/225b2a9ab exists; judged against the local ref",
+  "head": "6c8c1e8abace067d33d3b66eb53dc22e5a9b1bd3",
+  "diff_sha256": "204b599f2860e4bd858ed22add03c6c2f83143cee426b12245c52901a0642a11",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 45093,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": false,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements the requirements of PMAT-3543. It makes the version gate phase-aware by distinguishing between `pre-publish` (asserting `version-unpublished` PASS when absent) and `post-publish` (asserting `version-published` PASS when present AND installable via `cargo install --locked`). It properly resolves Defect 2 by fixing the banner to print the actual `DOGFOOD_PHASE`. Finally, it introduces a rigorous falsifier script that verifies both branches for both phases along with mutants to ensure the gates aren't vacuous.",
+      "findings": [],
+      "raw_bytes": 2334,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "NO-VERDICT",
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": [],
+      "raw_bytes": 1143,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "transport_status": "SUCCESS",
+      "transport_error": "",
+      "salvageable": "/home/noah/.gemini/antigravity-cli/brain/fa50f4d0-6d69-466c-947c-5477ecdd0f03 (234055 bytes)",
+      "carried_verdict": "",
+      "blind_reason": "",
+      "agy_exit": "",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gpt-oss-120b-medium",
+            "why": "no capacity: 503 on two pre-check probes (Eligibility check failed: UNAVAILABLE (code 503): The service is currently unavailable.)"
+          }
+        ]
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I have reviewed the diff against the PMAT-3543 ticket requirements and found that all acceptance criteria are met. \n\n1. `version-unpublished` is now phase-aware. The diff implements `mark_version_row` which correctly asserts that the version is ABSENT during `pre-publish` and PRESENT during `post-publish`.\n2. The `cargo install` requirement for `post-publish` is fully implemented in `published_install_check` with the exact flags specified (`--version =<v> --locked --root <scratch> --target-dir <scratch>`) and token unset. It also asserts that at least one binary is installed and that every binary reports the correct version.\n3. The banner logic is correctly updated via `phase_banner` to accurately output the `$DOGFOOD_PHASE`.\n4. The falsifier (`scripts/check_dogfood_version_row.sh`) is fully implemented with tests covering all expected mutant rows, verifying the new phase-aware behavior comprehensively.\n5. The `full` phase's existing dry-run functionality is correctly preserved through the `else` block and `elif grep ...` fallthrough.\n\nNo regressions or weakening of gates were found. The claims in the receipt accurately match the code changes.",
+      "findings": [],
+      "raw_bytes": 3668,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-low",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-low",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [
+    {
+      "lane": 2,
+      "verdict": "NO-VERDICT",
+      "summary": "",
+      "findings": []
+    }
+  ],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (gemini-3.1-pro-high, gemini-3.1-pro-low) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 2: no verdict object found in lane file (status=SUCCESS) salvageable=/home/noah/.gemini/antigravity-cli/brain/fa50f4d0-6d69-466c-947c-5477ecdd0f03 (234055 bytes) [UNREVIEWED CLAIM MATERIAL — never a PASS]",
+    "lane 2: judged by gemini-3.1-pro-high after falling through gpt-oss-120b-medium (skipped: no capacity: 503 on two pre-check probes (Eligibility check failed: UNAVAILABLE (code 503): The service is currently unavailable.)) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "capacity",
+        "reason": "UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 2,
+        "outcome": "capacity",
+        "reason": "Eligibility check failed: UNAVAILABLE (code 503): The service is currently unavailable."
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

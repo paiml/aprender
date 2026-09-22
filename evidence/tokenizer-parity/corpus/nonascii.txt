@@ -1,0 +1,12 @@
+CJK: 中文分词测试，日本語のテキスト、한국어 문장입니다。
+Accented Latin: café naïve Ærøskøbing Straße ñandú façade coöperate Dvořák Łódź.
+Emoji: 👋🏽 🧑‍💻 ❤️ 🇺🇸 🇩🇪 👨‍👩‍👧‍👦 ✅ 🚀 1️⃣
+Box drawing: ──────── ┌─┬─┐ │ │ │ └─┴─┘ ═══ ╔╗╚╝ ▓▒░█
+Zero-width: a​b c‌d e‍f ﻿g word⁠joiner
+Combining marks: é ä ñ Tiếng Việt có dấu, ǘ, Z̧͑ä͞lgo
+RTL: العربية نص تجريبي — עברית טקסט
+Indic and Thai: नमस्ते दुनिया, தமிழ், สวัสดีครับ
+Cyrillic and Greek: Привет, мир! Αλφάβητο αβγδε.
+Fullwidth and math: ＡＢＣ１２３ ∑∫∂≠≤≥∞ √2 ≈ 1.41421 ± 0.00001 → ⇒ ⟨x⟩
+Spaces: a b  c d　e f g h i
+Smart quotes: “double” ‘single’ «guillemets» „low” — en–dash … ellipsis

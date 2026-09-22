@@ -1,0 +1,24 @@
+{
+  "schema": "apr-release-context-rungs/v1",
+  "consumers": [
+    {
+      "consumer": "fixture-consumer",
+      "max_prompt_tokens": 8000,
+      "basis": "measured",
+      "source": "fixture://consumer"
+    }
+  ],
+  "rungs": [
+    {
+      "id": "4k",
+      "tokens": 4096,
+      "derived_from": [
+        "fixture://rung-4k"
+      ]
+    },
+    {
+      "id": "consumer-max",
+      "long": true
+    }
+  ]
+}

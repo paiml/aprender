@@ -435,7 +435,11 @@ mod tests {
 
         assert!(!programs.is_empty());
         assert!(stats.total_generated > 0);
-        assert!(stats.generation_time_ms > 0 || stats.total_generated < 10);
+        // #3703: what generate() promises, never elapsed wall time. `generation_time_ms` is
+        // `elapsed.as_millis()`, which reads 0 on a host that generates 10 programs in under a
+        // millisecond: `> 0` stopped the v0.69.0 clean-room on a fast gx10. The count is the
+        // invariant, and it holds by construction (`total_generated: all_programs.len()`).
+        assert_eq!(stats.total_generated, programs.len());
     }
 
     #[test]

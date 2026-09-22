@@ -88,6 +88,23 @@ mk_tree "$td/nocache"  "version: 4567 (abcdef1)" NOCACHE
 # The declared cmake line every row is checked against unless it says otherwise.
 DEFAULT_FLAGS="cmake -B build -DGGML_CUDA=ON"
 
+# THE CANONICAL LOCATION (#3563): with nothing named, the resolver looks for the pinned build
+# at ${LLAMA_PIN_SRC_ROOT:-$HOME/src}/llama.cpp-<build_commit>. Every row runs against a
+# FIXTURE root (empty unless the row says otherwise), never the operator's $HOME -- a row
+# whose verdict depends on what this box has built is the anecdote class. SUBJECT is the
+# resolver under test, so a mutant can be run through the same rows.
+mkdir -p "$td/src-empty"
+PIN_SRC_ROOT="$td/src-empty"
+SUBJECT=""
+mk_tree "$td/srcgood/llama.cpp-abcdef1/build"  "version: 4567 (abcdef1)"
+mk_tree "$td/srcwrong/llama.cpp-abcdef1/build" "version: 9999 (999999f)"
+mk_tree "$td/srccuda/llama.cpp-abcdef1/build"  "version: 4567 (abcdef1)" 'GGML_CUDA:BOOL=OFF'
+# THE ABBREVIATION LENGTH (#3563): git prints the shortest abbreviation unique IN THE CLONE, so the
+# same commit reads d1d3c3396 on lambda and d1d3c339 on gx10. New --version shape, three lengths.
+mk_tree "$td/abbr7"  "version: 0.4.1-dev (build 2423, commit abcdef1)"
+mk_tree "$td/abbr10" "version: 0.4.1-dev (build 2423, commit abcdef1234)"
+mk_tree "$td/abbr6"  "version: 0.4.1-dev (build 2423, commit abcdef)"
+
 run_case() {
     # run_case <name> <pin-value> <candidate> <expected-rc> [expiry] [expected-reason] [build-flags]
     local name="$1" pin="$2" cand="$3" want="$4"
@@ -108,8 +125,9 @@ run_case() {
         export LLAMA_BENCH_PATH="$cand"
         export LLAMA_PIN_HOST=lambda
         export LLAMA_PIN_TODAY="$TABLE_TODAY"
+        export LLAMA_PIN_SRC_ROOT="$PIN_SRC_ROOT"
         # shellcheck disable=SC1090
-        . "$OLDPWD/scripts/llama_bin.sh" 2>/dev/null || true
+        . "${SUBJECT:-$OLDPWD/scripts/llama_bin.sh}" 2>/dev/null || true
         llama_bin_resolve >/dev/null 2>&1
         printf '%s %s' "$?" "${LLAMA_PIN_REASON:-<none>}"
     )
@@ -141,6 +159,56 @@ run_case "named path does not exist"        "abcdef1"  "$td/nope"               
 run_case "unpinned, binary present"         "UNPINNED" "$td/good/bin/llama-bench"       2 "$FRESH_EXPIRY" unpinned
 run_case "unpinned, no binary named"        "UNPINNED" ""                               2 "$FRESH_EXPIRY" unpinned
 run_case "pinned but no binary named"       "abcdef1"  ""                               1 "$FRESH_EXPIRY" no_binary_named
+
+# ── #3563, the CANONICAL LOCATION ──────────────────────────────────────────
+# `scripts/llama_bin.sh` reported `no_binary_named` on lambda while the pinned build sat at
+# ~/src/llama.cpp-d1d3c3396, because nothing ever named it. With nothing named, the build of the
+# pinned commit at <src-root>/llama.cpp-<build_commit> is the candidate -- and it passes the same
+# oracle, commit and cmake checks as a named one, or it does not pass.
+printf '
+canonical location (#3563)
+'
+PIN_SRC_ROOT="$td/srcgood"  run_case "nothing named: the canonical build resolves"    "abcdef1" "" 0 "$FRESH_EXPIRY" ok
+PIN_SRC_ROOT="$td/srcwrong" run_case "the canonical build is the WRONG commit"         "abcdef1" "" 1 "$FRESH_EXPIRY" wrong_build
+PIN_SRC_ROOT="$td/srccuda"  run_case "the canonical build's cmake disagrees"           "abcdef1" "" 1 "$FRESH_EXPIRY" cmake_mismatch
+PIN_SRC_ROOT="$td/srcgood"  run_case "a NAMED path wins over the canonical build"      "abcdef1" "$td/wrong/bin/llama-bench" 1 "$FRESH_EXPIRY" wrong_build
+PIN_SRC_ROOT="$td/srcgood"  run_case "unpinned never falls back to a canonical build" "UNPINNED" "" 2 "$FRESH_EXPIRY" unpinned
+# The ABBREVIATION rows: a pin of 8 hex digits against an oracle printing 7, 10 and 6.
+run_case "oracle abbreviates SHORTER than the pin" "abcdef12" "$td/abbr7/bin/llama-bench"  0 "$FRESH_EXPIRY" ok
+run_case "oracle abbreviates LONGER than the pin"  "abcdef12" "$td/abbr10/bin/llama-bench" 0 "$FRESH_EXPIRY" ok
+run_case "6 hex digits is below git's minimum"     "abcdef12" "$td/abbr6/bin/llama-bench"  1 "$FRESH_EXPIRY" wrong_build
+run_case "a different commit, same length"         "abcdef12" "$td/wrong/bin/llama-bench"  1 "$FRESH_EXPIRY" wrong_build
+# THE ABBREVIATION MUTANT: the pre-#3563 substring test (the pin must appear inside the version
+# line). gx10's correct build was refused by exactly this; the SHORTER row must go RED under it.
+python3 - "$OLDPWD/scripts/llama_bin.sh" "$td/llama_bin.abbr-mutant.sh" <<'PY' || { printf 'FAIL  abbreviation mutant could not be built\n'; rc=1; }
+import sys
+src, dst = sys.argv[1:3]
+s = open(src).read()
+a = '    if ! llama_commit_match "$llama_bin_want" "$llama_bin_got"; then'
+assert s.count(a) == 1
+open(dst, "w").write(s.replace(a, '    if case "$LLAMA_BUILD" in *"$llama_bin_want"*) false ;; *) true ;; esac; then', 1))
+PY
+mutant_out=$(rc=0; SUBJECT="$td/llama_bin.abbr-mutant.sh" \
+    run_case "oracle abbreviates SHORTER than the pin" "abcdef12" "$td/abbr7/bin/llama-bench" 0 "$FRESH_EXPIRY" ok; echo "RC=$rc")
+case "$mutant_out" in
+    *"RC=1"*) printf 'ok    %-38s killed: %s\n' "substring-match mutant" "$(head -n 1 <<< "$mutant_out" | cut -c7-90)" ;;
+    *)        printf 'FAIL  %-38s SURVIVED -- the abbreviation row does not discriminate\n' "substring-match mutant"; rc=1 ;;
+esac
+# THE MUTANT: the canonical lookup pointed nowhere, as before #3563. The first row above must go
+# RED under it, or that row does not discriminate.
+sed 's|LLAMA_PIN_CANON="${LLAMA_PIN_SRC_ROOT:-$HOME/src}/llama.cpp-$llama_bin_want/build/bin/llama-bench"|LLAMA_PIN_CANON="/nonexistent/llama-bench"|' \
+    "$OLDPWD/scripts/llama_bin.sh" > "$td/llama_bin.mutant.sh"
+if cmp -s "$OLDPWD/scripts/llama_bin.sh" "$td/llama_bin.mutant.sh"; then
+    printf 'FAIL  %-38s the canonical-lookup anchor is gone -- the mutant is identical\n' "canonical-lookup mutant"
+    rc=1
+else
+    mutant_out=$(rc=0; SUBJECT="$td/llama_bin.mutant.sh" PIN_SRC_ROOT="$td/srcgood" \
+        run_case "nothing named: the canonical build resolves"    "abcdef1" "" 0 "$FRESH_EXPIRY" ok; echo "RC=$rc")
+    case "$mutant_out" in
+        *"RC=1"*) printf 'ok    %-38s killed: %s\n' "canonical-lookup mutant" "$(head -n 1 <<< "$mutant_out" | cut -c7-90)" ;;
+        *)        printf 'FAIL  %-38s SURVIVED -- the canonical row does not discriminate\n' "canonical-lookup mutant"; rc=1 ;;
+    esac
+fi
 
 # ── PP-20, the EXPIRY half ─────────────────────────────────────────────────
 # Nothing could ever emit COMPARATOR_STALE before these rows existed: the pin

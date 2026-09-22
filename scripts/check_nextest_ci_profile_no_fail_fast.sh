@@ -27,21 +27,30 @@
 # for the one key this guard judges; the shell side accepts a verdict only when the
 # judge SAID one (a VERDICT line), and anything else -- a traceback, a dead
 # interpreter -- is ENV rc=2 naming the runner. --self-test runs the whole case table
-# twice, once per reader, plus the death rows.
+# twice, once per reader, plus the death rows. NO python3 AT ALL is different (#3697):
+# the fleet is python-free for automation (infra#708), so that runner prints one
+# UNMEASURED line and exits 0 (scripts/lib/python_fleet_state.sh), never a verdict.
 #
 #   check_nextest_ci_profile_no_fail_fast.sh              judge .config/nextest.toml
 #   check_nextest_ci_profile_no_fail_fast.sh --self-test  the case table (fixtures, no cargo)
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
 CONF="${NEXTEST_CONF_OVERRIDE:-$ROOT/.config/nextest.toml}"
+# shellcheck source=lib/python_fleet_state.sh
+. "$ROOT/scripts/lib/python_fleet_state.sh" || exit 2
 # test seams (read per call, so a self-test row can set them): NEXTEST_GUARD_PYTHON, the
 # interpreter (a dead one reproduces the intel shape); NEXTEST_GUARD_FORCE_FALLBACK=1, a
 # real import failure of both TOML libraries (reproduces an old python on a new one).
 
-# judge <toml> -> 0 when [profile.ci].fail-fast is literally false; 1 otherwise; 2 ENV.
+# judge <toml> -> 0 when [profile.ci].fail-fast is literally false; 1 otherwise; 2 ENV;
+# 3 UNMEASURED: this runner has no python3 at all (#3697). The fleet is python-free for
+# automation (infra#708), so that is fleet state, never a verdict; a python3 that exists
+# and dies is still ENV.
 judge() {
-    local f=$1 out rc=0 PYTHON="${NEXTEST_GUARD_PYTHON:-python3}"
+    local f=$1 out rc=0 PYTHON="${NEXTEST_GUARD_PYTHON:-python3}" pyrc=0
     [ -r "$f" ] || { printf 'ENV   %s: not readable -- cannot judge, not a pass\n' "$f" >&2; return 2; }
+    PY_FLEET_PYTHON="$PYTHON" py_fleet_state check_nextest_ci_profile_no_fail_fast || pyrc=$?
+    [ "$pyrc" -eq 0 ] || return "$pyrc"
     out=$(NEXTEST_GUARD_RUNNER="${RUNNER_NAME:-unknown}" "$PYTHON" - "$f" 2>&1 <<'PY'
 import os, re, sys
 p = sys.argv[1]
@@ -212,25 +221,45 @@ if [ "${1:-}" = "--self-test" ]; then
         [ "$rc" -eq 0 ] && printf 'ok    row %-2s rc=0  [%s] the real %s is GREEN\n' "$n" "$READER" "${CONF#"$ROOT/"}" \
             || { printf 'FAIL  row %-2s rc=%s  [%s] the real %s is RED\n' "$n" "$rc" "$READER" "${CONF#"$ROOT/"}" >&2; bad=1; }
     }
-    READER=library;  table
-    READER=fallback; NEXTEST_GUARD_FORCE_FALLBACK=1 table
-    # what the purpose-built reader must REFUSE rather than guess (ENV, never a pass)
-    READER=fallback
-    NEXTEST_GUARD_FORCE_FALLBACK=1 row 2 "a multi-line string hiding a [profile.ci] header -> ENV, never a guess (a line reader that skipped it would say PASS)" \
-        $'[profile.default]\nnote = """title"\n[profile.ci]\nfail-fast = false\nx = """"\n'
-    NEXTEST_GUARD_FORCE_FALLBACK=1 row 2 "a value continuing past its line -> ENV, never a guess" \
-        $'[profile.ci]\nfail-fast = false\nslow-timeout = { period = "60s",\n  terminate-after = 20 }\n'
-    NEXTEST_GUARD_FORCE_FALLBACK=1 row 2 "fail-fast = fals (not a value it can type) -> ENV, never a guess" \
-        $'[profile.ci]\nfail-fast = fals\n'
+    # the readers are python: on a runner with none, the table is fleet state (#3697), and the
+    # python-free rows below still run
+    pyrc=0; PY_FLEET_PYTHON="${NEXTEST_GUARD_PYTHON:-python3}" py_fleet_state check_nextest_ci_profile_no_fail_fast 2> "$d/py.state" || pyrc=$?
+    if [ "$pyrc" -eq 0 ]; then
+        READER=library;  table
+        READER=fallback; NEXTEST_GUARD_FORCE_FALLBACK=1 table
+        # what the purpose-built reader must REFUSE rather than guess (ENV, never a pass)
+        READER=fallback
+        NEXTEST_GUARD_FORCE_FALLBACK=1 row 2 "a multi-line string hiding a [profile.ci] header -> ENV, never a guess (a line reader that skipped it would say PASS)" \
+            $'[profile.default]\nnote = """title"\n[profile.ci]\nfail-fast = false\nx = """"\n'
+        NEXTEST_GUARD_FORCE_FALLBACK=1 row 2 "a value continuing past its line -> ENV, never a guess" \
+            $'[profile.ci]\nfail-fast = false\nslow-timeout = { period = "60s",\n  terminate-after = 20 }\n'
+        NEXTEST_GUARD_FORCE_FALLBACK=1 row 2 "fail-fast = fals (not a value it can type) -> ENV, never a guess" \
+            $'[profile.ci]\nfail-fast = fals\n'
+    elif [ "$pyrc" -eq 3 ]; then
+        cat "$d/py.state"
+        printf 'UNMEASURED runner=%s reason=no-interpreter -- the reader case table (both readers) needs python3 and did not run here (#3697)\n' "${RUNNER_NAME:-unknown}"
+    else
+        cat "$d/py.state"; bad=1
+    fi
+    py_fleet_state_self_test "$d" || bad=1
     # the death rows: the shape that read as RED on intel-clean-room-6
     n=$((n + 1)); rc=0; printf '[profile.ci]\nfail-fast = false\n' > "$d/c.toml"
     NEXTEST_GUARD_PYTHON=/bin/false judge "$d/c.toml" > /dev/null 2>&1 || rc=$?
     [ "$rc" -eq 2 ] && printf 'ok    row %-2s rc=2  interpreter exits 1 with no verdict -> ENV rc=2, never 1\n' "$n" \
         || { printf 'FAIL  row %-2s rc=%s (wanted 2)  interpreter exits 1 with no verdict must be ENV, not RED\n' "$n" "$rc" >&2; bad=1; }
+    # no interpreter at all is fleet state (#3697): UNMEASURED rc=3 naming it, never ENV and never
+    # a verdict; the run then exits 0 with that line, and guard_tree surfaces it (#3651)
     n=$((n + 1)); rc=0
-    NEXTEST_GUARD_PYTHON="$d/no-such-interpreter" judge "$d/c.toml" > /dev/null 2>&1 || rc=$?
-    [ "$rc" -eq 2 ] && printf 'ok    row %-2s rc=2  no interpreter at all (rc=127) -> ENV rc=2\n' "$n" \
-        || { printf 'FAIL  row %-2s rc=%s (wanted 2)  no interpreter must be ENV\n' "$n" "$rc" >&2; bad=1; }
+    out=$(NEXTEST_GUARD_PYTHON="$d/no-such-interpreter" judge "$d/c.toml" 2>&1) || rc=$?
+    [ "$rc" -eq 3 ] && grep -q "^UNMEASURED runner=.* reason=no-interpreter interpreter=$d/no-such-interpreter " <<< "$out" \
+        && ! grep -qE '^(ENV|VERDICT|ok )' <<< "$out" \
+        && printf 'ok    row %-2s rc=3  no interpreter at all (rc=127) -> UNMEASURED naming it, never ENV (#3697)\n' "$n" \
+        || { printf 'FAIL  row %-2s rc=%s (wanted 3 + UNMEASURED)  no interpreter must be fleet state: %s\n' "$n" "$rc" "$out" >&2; bad=1; }
+    n=$((n + 1)); rc=0
+    out=$(NEXTEST_GUARD_PYTHON="$d/no-such-interpreter" NEXTEST_CONF_OVERRIDE="$d/c.toml" bash "$0" 2>&1) || rc=$?
+    [ "$rc" -eq 0 ] && grep -q '^UNMEASURED runner=.* reason=no-interpreter ' <<< "$out" && ! grep -q '^PASS' <<< "$out" \
+        && printf 'ok    row %-2s rc=0  the RUN with no interpreter exits 0 with the UNMEASURED line and no PASS line (#3697)\n' "$n" \
+        || { printf 'FAIL  row %-2s rc=%s  the run with no interpreter: %s\n' "$n" "$rc" "$out" >&2; bad=1; }
     n=$((n + 1)); rc=0; judge "$d/absent.toml" > /dev/null 2>&1 || rc=$?
     [ "$rc" -eq 2 ] && printf 'ok    row %-2s rc=2  missing file -> ENV rc=2, never a pass\n' "$n" \
         || { printf 'FAIL  row %-2s rc=%s (wanted 2)  missing file -> ENV\n' "$n" "$rc" >&2; bad=1; }
@@ -240,5 +269,6 @@ fi
 
 echo "=== nextest [profile.ci] must not discard verdicts on the first failure (check_nextest_ci_profile_no_fail_fast.sh) ==="
 judge "$CONF"; rc=$?
+[ "$rc" -eq 3 ] && exit 0   # UNMEASURED: the line is printed, fleet state, never a pass line (#3697)
 [ "$rc" -eq 0 ] && echo "PASS" || echo "FAIL (rc=$rc)" >&2
 exit "$rc"

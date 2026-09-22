@@ -108,9 +108,26 @@ pub(crate) fn validate_model_path(path: &std::path::Path) -> Result<()> {
 /// - Model format is unsupported
 /// - Generation fails
 pub fn run_inference(config: &InferenceConfig) -> Result<InferenceResult> {
+    run_inference_report(config).map(|(result, _)| result)
+}
+
+/// [`run_inference`], plus what only the decode path knows (#3718): why
+/// generation ended and the model's context window.
+///
+/// A separate entry point rather than new `InferenceResult` fields, so the
+/// dozens of places that build an `InferenceResult` literal are untouched.
+///
+/// # Errors
+///
+/// Exactly those of [`run_inference`].
+pub fn run_inference_report(
+    config: &InferenceConfig,
+) -> Result<(InferenceResult, run_report::RunReport)> {
     // PMAT-COV-95: Mock backend for testing without disk I/O
     if config.use_mock_backend {
-        return run_mock_inference(config);
+        let result = run_mock_inference(config)?;
+        let report = mock_run_report(config, &result);
+        return Ok((result, report));
     }
 
     // GH-213: Detect sharded SafeTensors index.json BEFORE reading the file.
@@ -123,7 +140,8 @@ pub fn run_inference(config: &InferenceConfig) -> Result<InferenceResult> {
 
         let format = ModelFormat::SafeTensors;
         let prepared = prepare_tokens(config, &format)?;
-        return run_sharded_safetensors_inference(config, &prepared);
+        return run_sharded_safetensors_inference(config, &prepared)
+            .map(|r| (r, run_report::RunReport::default()));
     }
 
     // Validate path to prevent traversal attacks (F-SEC-222)
@@ -163,8 +181,27 @@ pub fn run_inference(config: &InferenceConfig) -> Result<InferenceResult> {
 
     match format {
         ModelFormat::Gguf => run_gguf_inference(config, &prepared),
-        ModelFormat::Apr => run_apr_inference(config, &prepared),
-        ModelFormat::SafeTensors => run_safetensors_inference(config, &prepared),
+        // Not reported on these paths yet: `None`, never a guess.
+        ModelFormat::Apr => {
+            run_apr_inference(config, &prepared).map(|r| (r, run_report::RunReport::default()))
+        },
+        ModelFormat::SafeTensors => run_safetensors_inference(config, &prepared)
+            .map(|r| (r, run_report::RunReport::default())),
+    }
+}
+
+/// The report for the mock backend: it generates `min(max_tokens, 32)` tokens
+/// and no stop token, so a budget of 32 or less is spent and anything larger
+/// ended as if on a stop.
+fn mock_run_report(config: &InferenceConfig, result: &InferenceResult) -> run_report::RunReport {
+    let generated = result.tokens.get(result.input_token_count..).unwrap_or(&[]);
+    run_report::RunReport {
+        finish_reason: Some(run_report::FinishReason::from_decode(
+            generated,
+            &config.stop_tokens,
+            config.max_tokens,
+        )),
+        context_length: None,
     }
 }
 
@@ -174,7 +211,7 @@ pub fn run_inference(config: &InferenceConfig) -> Result<InferenceResult> {
 fn run_gguf_inference(
     config: &InferenceConfig,
     prepared: &PreparedTokens,
-) -> Result<InferenceResult> {
+) -> Result<(InferenceResult, run_report::RunReport)> {
     use crate::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
 
     if config.verbose {
@@ -291,17 +328,38 @@ fn run_gguf_inference(
         used_gpu,
     );
 
-    Ok(InferenceResult {
-        text,
-        tokens,
+    // #3718: only the dense CPU loop (`generate_with_cache`) shrinks the budget to
+    // the context room; the hybrid, MoE, CUDA and wgpu loops run `max_tokens`.
+    let clamps_to_context = !is_qwen35 && canonical_arch != "qwen3_moe" && !used_gpu;
+    let budget = run_report::decode_budget(
+        gen_config.max_tokens,
         input_token_count,
-        generated_token_count,
-        inference_ms,
-        tok_per_sec: tps,
-        load_ms,
-        format: "GGUF".to_string(),
-        used_gpu,
-    })
+        model_config.context_length,
+        clamps_to_context,
+    );
+    let report = run_report::RunReport {
+        finish_reason: Some(run_report::FinishReason::from_decode(
+            generated_tokens,
+            &gen_config.stop_tokens,
+            budget,
+        )),
+        context_length: Some(model_config.context_length),
+    };
+
+    Ok((
+        InferenceResult {
+            text,
+            tokens,
+            input_token_count,
+            generated_token_count,
+            inference_ms,
+            tok_per_sec: tps,
+            load_ms,
+            format: "GGUF".to_string(),
+            used_gpu,
+        },
+        report,
+    ))
 }
 
 /// Print verbose model info for GGUF inference

@@ -216,6 +216,9 @@ trybuild = "1"
 # apr-cli; hoisted here for the normalized content hash (`nfc-trim-ws-v1`).
 # Hoisting does not change either consumer's resolution.
 unicode-normalization = "0.1"
+# #3726: exact Unicode general categories (\p{L}/\p{N}/\p{M}) for the byte-level BPE
+# pre-tokenizer. Already in the lock through rustybuzz; no new crate.
+unicode-properties = { version = "0.1.4", default-features = false, features = ["general-category"] }
 
 # HuggingFace tokenizers (SetFit / MiniLM conformance, Phase 1 ENC-02).
 # `default-features = false` is load-bearing, not tidiness: the default set is
@@ -632,6 +635,13 @@ gates = [
     # runs this entry. The PR-time half, the comparison helpers' case table, is
     # scripts/check_float16_greedy_parity.sh, which guard_tree.sh dispatches.
     "scripts/float16_greedy_parity.sh",
+    # #3726: apr's token ids against the pinned llama-tokenize, for every GGUF on the
+    # release host and every file in evidence/tokenizer-parity/corpus/. A mismatch, a greedy
+    # fallback on a byte-level vocabulary, a failed round trip or a non-byte-level model is
+    # RED. `apr parity` cannot see a tokenizer defect: both of its sides share the tokenizer.
+    # Release time only, like the entry above; the PR-time half (the helpers' case table) is
+    # scripts/check_tokenizer_parity.sh, which guard_tree.sh dispatches.
+    "scripts/tokenizer_parity.sh",
 ]
 
 # The interfaces this release SHIPS, each paired with the e2e target that proves

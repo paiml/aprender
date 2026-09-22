@@ -1,0 +1,20 @@
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-21'
+  last_modified: '2026-09-21'
+  author: fixture
+  description: fixture ladder — two required hosts, no rungs (the universe is the inventory), long rungs for qwen35
+name: ladder
+version: "1.0.0"
+scope: fixture
+status: active
+entity:
+  type: gguf
+ladder:
+  hosts:
+    - {id: lambda, cc: sm_89, required: true}
+    - {id: gx10, cc: sm_121, required: true}
+  cells:
+    long_rungs_for: {families: [qwen35], representatives: {}}
+  rungs: []

@@ -33,6 +33,11 @@ on:
       - "crates/aprender-core/src/**"
       - "scripts/book-gate.sh"
       - ".github/workflows/book-contracts.yml"
+  # #3676 rule 3 (scripts/check_workflow_path_filters.sh): a path filter is a
+  # claim that nothing outside these paths can break this gate; the nightly run
+  # re-checks the claim every day. Set ~5h early for the dispatch delay (#3292).
+  schedule:
+    - cron: '45 22 * * *'
 
 permissions:
   contents: read

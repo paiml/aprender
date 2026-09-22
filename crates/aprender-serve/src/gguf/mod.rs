@@ -66,6 +66,8 @@ mod wgpu_model;
 
 // Pure math operations (shared between CPU and GPU paths)
 // UCBD §4: pub for re-export of rms_norm at crate root
+/// #3726: canonical byte-level BPE (pre-tokenizer + ranked merges) for `gpt2` vocabularies.
+pub mod byte_level_bpe;
 pub mod ops;
 
 // Test helpers module - shared utilities for GGUF tests

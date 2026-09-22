@@ -187,11 +187,12 @@ fn test_bh_mod_024_hunt_with_spec_basic() {
 
     let result = hunt_with_spec(&temp, &temp.join("spec.md"), None, config);
     assert!(result.is_ok());
-    let (hunt_result, parsed_spec) = result.unwrap();
+    let (_hunt_result, parsed_spec) = result.unwrap();
     assert!(!parsed_spec.claims.is_empty());
     assert_eq!(parsed_spec.claims[0].id, "TST-01");
-    // Hunt ran (non-zero duration) or produced no findings
-    assert!(hunt_result.duration_ms > 0);
+    // #3703: no wall-clock assertion. `duration_ms` is a truncated `as_millis()`, which reads 0
+    // when the hunt finishes in under a millisecond; `result.is_ok()` and the parsed claims above
+    // already prove the hunt ran.
 
     let _ = std::fs::remove_dir_all(&temp);
 }

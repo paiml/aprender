@@ -1,0 +1,57 @@
+# #3726 MUTANT: the old id-0 byte fallback reintroduced in byte_level_bpe.rs (bytes >= 0x80 -> id 0); the gate must be RED
+# host: noah-Lambda-Vector  measured: 2026-09-21T16:5xZ
+# command: bash scripts/tokenizer_parity.sh --model Qwen3.5-9B-Q4_K_M.gguf --model Qwen3-8B-Q4_K_M.gguf (11 corpus files)
+
+apr:            /mnt/nvme-raid0/targets/c3-3726/release/apr (apr 0.69.0 (262dfb2f6))
+llama-tokenize: /mnt/nvme-raid0/work-c3/llama-cpu-build/bin/llama-tokenize (version: 0.4.1-dev (build 10987, commit d1d3c3396))
+models: 2   corpus files: 11
+FAIL       Qwen3.5-9B-Q4_K_M.gguf  brief-review.txt  first id mismatch at 214 (apr 6774 ids, llama.cpp 6774)
+             apr:       64 25 321 263 [31780] 436 19 7199 20
+             llama.cpp: 64 25 321 263 [1892] 436 19 7199 20
+FAIL       Qwen3.5-9B-Q4_K_M.gguf  code-rust-token.txt  first id mismatch at 1170 (apr 3678 ids, llama.cpp 3690)
+             apr:       513 12215 440 328 [11726] 3158 198 262 1013
+             llama.cpp: 513 12215 440 328 [5513] 3158 198 262 1013
+FAIL       Qwen3.5-9B-Q4_K_M.gguf  code-shell-llama_bin.txt  first id mismatch at 4 (apr 7633 ids, llama.cpp 7633)
+             apr:       2 90448 21144 2318 [31780] 8563 279 90448 6982
+             llama.cpp: 2 90448 21144 2318 [1892] 8563 279 90448 6982
+FAIL       Qwen3.5-9B-Q4_K_M.gguf  nonascii.txt  first id mismatch at 2 (apr 308 ids, llama.cpp 358)
+             apr:       86274 25 [729] 48962 16582 67437 48962
+             llama.cpp: 86274 25 [220] 99986 95880 96919 99449
+FAIL       Qwen3.5-9B-Q4_K_M.gguf  brief18.txt  first id mismatch at 128 (apr 6267 ids, llama.cpp 6264)
+             apr:       12 23 24 16 [31780] 279 3515 369 42912
+             llama.cpp: 12 23 24 16 [1892] 279 3515 369 42912
+FAIL       Qwen3.5-9B-Q4_K_M.gguf  lane.json.prompt.txt  first id mismatch at 339 (apr 13498 ids, llama.cpp 13495)
+             apr:       31930 2136 16208 63 [31780] 1189 411 1558 11
+             llama.cpp: 31930 2136 16208 63 [1892] 1189 411 1558 11
+FAIL       Qwen3.5-9B-Q4_K_M.gguf  lane.json.prompt.txt  first id mismatch at 128 (apr 6267 ids, llama.cpp 6264)
+             apr:       12 23 24 16 [31780] 279 3515 369 42912
+             llama.cpp: 12 23 24 16 [1892] 279 3515 369 42912
+FAIL       Qwen3-8B-Q4_K_M.gguf  brief-review.txt  first id mismatch at 212 (apr 6475 ids, llama.cpp 6475)
+             apr:       64 25 323 263 [32870] 444 19 7434 20
+             llama.cpp: 64 25 323 263 [1959] 444 19 7434 20
+FAIL       Qwen3-8B-Q4_K_M.gguf  code-rust-token.txt  first id mismatch at 1084 (apr 3415 ids, llama.cpp 3423)
+             apr:       525 12575 448 330 [2928] 8958 624 262 1048
+             llama.cpp: 525 12575 448 330 [5691] 22956 262 1048 21008
+FAIL       Qwen3-8B-Q4_K_M.gguf  code-shell-llama_bin.txt  first id mismatch at 4 (apr 7402 ids, llama.cpp 7405)
+             apr:       2 93676 21816 2395 [32870] 8830 279 93676 7208
+             llama.cpp: 2 93676 21816 2395 [1959] 8830 279 93676 7208
+FAIL       Qwen3-8B-Q4_K_M.gguf  nonascii.txt  first id mismatch at 2 (apr 312 ids, llama.cpp 364)
+             apr:       89349 25 [753] 50667 17085 69800 50667
+             llama.cpp: 89349 25 [72858] 16744 17177 99689 81705
+FAIL       Qwen3-8B-Q4_K_M.gguf  brief18.txt  first id mismatch at 127 (apr 6114 ids, llama.cpp 6111)
+             apr:       12 23 24 16 [32870] 279 3638 374 44387
+             llama.cpp: 12 23 24 16 [1959] 279 3638 374 44387
+FAIL       Qwen3-8B-Q4_K_M.gguf  lane.json.prompt.txt  first id mismatch at 335 (apr 12484 ids, llama.cpp 12483)
+             apr:       33025 2205 16698 63 [32870] 1231 419 1614 11
+             llama.cpp: 33025 2205 16698 63 [1959] 1231 419 1614 11
+FAIL       Qwen3-8B-Q4_K_M.gguf  lane.json.prompt.txt  first id mismatch at 127 (apr 6114 ids, llama.cpp 6111)
+             apr:       12 23 24 16 [32870] 279 3638 374 44387
+             llama.cpp: 12 23 24 16 [1959] 279 3638 374 44387
+# PASS lines condensed: 8 PASS over 2 model(s), 4 file(s) each.
+# full per-pair log: lambda:/mnt/nvme-raid0/work-c3/3726-mutant-id0.log
+# model                                          files-passed  total-ids
+#   Qwen3.5-9B-Q4_K_M.gguf                              4             6774
+#   Qwen3-8B-Q4_K_M.gguf                                4             6619
+# files: brief18-ascii.txt, chat-template.txt, identifiers.txt, whitespace.txt
+--- tokenizer parity: 8 pass, 14 fail, 0 uncovered ---
+rc=1 elapsed=70s
