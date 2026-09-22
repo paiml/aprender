@@ -53,13 +53,19 @@ REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PY_LIB="${REPO_ROOT}/scripts/lib/roadmap_diff.py"
 PY_TRIM="${REPO_ROOT}/scripts/roadmap_trim.py"
 ROADMAP_FILE="docs/roadmaps/roadmap.yaml"
+GUARD=check_roadmap_diff_additive
+# The reader is python + PyYAML (roadmap_diff.py): the verdict needs the PARSED tree. On a runner
+# with no python3, or one without PyYAML, that is fleet state (infra#708): an UNMEASURED line and
+# exit 0, never a verdict; a python3 that exists and dies is ENV, exit 2 (#3697, #3806).
+# shellcheck source=lib/python_fleet_state.sh
+. "${REPO_ROOT}/scripts/lib/python_fleet_state.sh" || exit 2
 
 # ---------------------------------------------------------------------------
 # run_check <base> <head> [<file>] -> roadmap_diff.py's stdout+exit code.
 # ---------------------------------------------------------------------------
 run_check() {
     local base="$1" head="$2" file="${3:-$ROADMAP_FILE}"
-    python3 "$PY_LIB" check --base "$base" --head "$head" --file "$file"
+    "${PY_FLEET_PYTHON:-python3}" "$PY_LIB" check --base "$base" --head "$head" --file "$file"
 }
 
 # ---------------------------------------------------------------------------
@@ -146,7 +152,33 @@ EOF
         printf 'ok    row %-2s %s\n' "$row" "$label"
     }
 
-    # Row 1: append one entry -> PASS.
+    # The reader's fleet state (#3697, #3806), measured on every runner: no python3 is UNMEASURED
+    # exit 0 before the guard touches git or the roadmap; a python3 that dies is ENV exit 2.
+    fleet_row() {
+        row=$((row + 1))
+        local label=$1 want=$2 pat=$3 py=$4 frc=0 fout
+        fout=$(PY_FLEET_PYTHON=$py bash "$SELF" 2>&1) || frc=$?
+        if [ "$frc" = "$want" ] && grep -qE -- "$pat" <<< "$fout"; then
+            printf 'ok    row %-2s %s\n' "$row" "$label"
+        else
+            printf 'FAIL  row %-2s %s: wanted rc=%s matching /%s/, got rc=%s\n' "$row" "$label" "$want" "$pat" "$frc"
+            printf '%s\n' "$fout" | sed 's|^|             |'
+            fails=1
+        fi
+    }
+    fleet_row 'no python3 on the runner -> UNMEASURED exit 0, never a verdict (#3697)' 0 \
+        "^UNMEASURED runner=.* reason=no-interpreter .*guard=$GUARD" "$TD/no-such-python3"
+    fleet_row 'a python3 that dies -> ENV exit 2, never UNMEASURED (#3697)' 2 "^ENV   $GUARD: " /bin/false
+    py_fleet_state_self_test "$TD" || fails=1
+    py_ok=1
+    py_fleet_state "$GUARD" yaml 2>"$TD/py.state" || py_ok=0
+    if [ "$py_ok" = 0 ]; then
+        cat "$TD/py.state"
+        printf 'UNMEASURED runner=%s reason=no-reader -- the YAML rows (1-12, 19-22) need python3 + PyYAML and did not run here (#3697)\n' "${RUNNER_NAME:-unknown}"
+    fi
+
+    # Row 1: append one entry -> PASS. The fixture is python-free and the git-only rows 13-18 build
+    # their repo from it, so it is written before the YAML rows' gate.
     cp "$TD/base.yaml" "$TD/append.yaml"
     cat >>"$TD/append.yaml" <<'EOF'
 - id: A-4
@@ -154,6 +186,16 @@ EOF
   status: planned
   notes: null
 EOF
+    # Rows 10-12's base, a python-free fixture the git-only rows also build from.
+    cp "$TD/base.yaml" "$TD/base_dup.yaml"
+    cat >>"$TD/base_dup.yaml" <<'EOF'
+- id: A-2
+  title: 'second entry, minted twice'
+  status: planned
+  notes: null
+EOF
+    # Rows 1-12 read YAML: they run wherever the reader exists (the block is not re-indented).
+    if [ "$py_ok" = 1 ]; then
     assert_row 'append one entry' PASS "$TD/append.yaml" 'added=1'
 
     # Row 2: append + re-fold every existing entry's title + materialise
@@ -311,14 +353,8 @@ EOF
 
     # Rows 10-12: a duplicate id already in BASE is baselined, not this PR's
     # fault (main carried PMAT-966 twice on 2026-09-05); only a duplicate that
-    # GROWS at head is a violation; removing the extra copy is the remedy.
-    cp "$TD/base.yaml" "$TD/base_dup.yaml"
-    cat >>"$TD/base_dup.yaml" <<'EOF'
-- id: A-2
-  title: 'second entry, minted twice'
-  status: planned
-  notes: null
-EOF
+    # GROWS at head is a violation; removing the extra copy is the remedy. (base_dup.yaml is
+    # written before the YAML rows' gate: the git-only rows 17 and 18 build from it too.)
     cp "$TD/base_dup.yaml" "$TD/dup_kept.yaml"
     BASEF="$TD/base_dup.yaml"; assert_row 'pre-existing duplicate in base, unchanged at head' PASS "$TD/dup_kept.yaml" 'known duplicate-id: id=A-2 appears 2 times in base'; unset BASEF
     cp "$TD/base_dup.yaml" "$TD/dup_grown.yaml"
@@ -337,6 +373,8 @@ EOF
   notes: null
 EOF
     BASEF="$TD/base_dup.yaml"; assert_row 'the later copy re-minted (dedup PR): A-2 back to 1, A-4 added' PASS "$TD/dedup.yaml" 'added=1'; unset BASEF
+
+    fi  # end of the YAML rows 1-12
 
     # Rows 13-14: base resolution in a shallow checkout — a merge-commit head
     # resolves to its first parent; a non-merge head is exit 2, never HEAD.
@@ -421,6 +459,8 @@ EOF
     esac
     rm -rf "${Q:?}" "${Q:?}.clone"
 
+    # Rows 19-22 run the guard's YAML reader too (the block is not re-indented).
+    if [ "$py_ok" = 1 ]; then
     # Rows 19-22: --staged, the pre-commit entry point (B4, #3047). A scratch
     # repo carrying the REAL scripts in a real layout — REPO_ROOT is derived
     # from BASH_SOURCE, so the guard under test here is genuinely this file
@@ -428,7 +468,8 @@ EOF
     SR="$TD/staged"; mkdir -p "$SR/scripts/lib" "$SR/docs/roadmaps"
     cp "$REPO_ROOT/scripts/check_roadmap_diff_additive.sh" "$SR/scripts/"
     cp "$REPO_ROOT/scripts/roadmap_trim.py" "$SR/scripts/"
-    cp "$REPO_ROOT/scripts/lib/roadmap_diff.py" "$REPO_ROOT/scripts/lib/resolve_base.sh" "$SR/scripts/lib/"
+    cp "$REPO_ROOT/scripts/lib/roadmap_diff.py" "$REPO_ROOT/scripts/lib/resolve_base.sh" \
+        "$REPO_ROOT/scripts/lib/python_fleet_state.sh" "$SR/scripts/lib/"
     RM=docs/roadmaps/roadmap.yaml
     ( cd "$SR" && git init -q -b main . && git config user.email t@t && git config user.name t \
         && git config core.hooksPath /dev/null \
@@ -483,6 +524,8 @@ EOF
         *) printf 'FAIL  row %-2s --staged: wanted rc=0 with base=%s, got rc=%s\n%s\n' "$row" "$tip" "$rc" "$out" | sed 's|^|             |'; fails=1 ;;
     esac
 
+    fi  # end of the YAML rows 19-22
+
     if [ "$fails" -ne 0 ]; then
         printf '\nSELF-TEST FAILED (%s/%s rows)\n' "$((row - fails + fails))" "$row"
         exit 1
@@ -490,6 +533,12 @@ EOF
     printf '\n%s/%s rows\n' "$row" "$row"
     exit 0
 fi
+
+# #3697: no python3 or no PyYAML is fleet state (UNMEASURED, exit 0); a broken one is ENV. Asked
+# before git or the roadmap is touched, so the answer is the same in any checkout.
+pyrc=0
+py_fleet_state "$GUARD" yaml || pyrc=$?
+case "$pyrc" in 0) ;; 3) exit 0 ;; *) exit 2 ;; esac
 
 # ---------------------------------------------------------------------------
 # --staged — judge the INDEX, so the violation is caught at `git commit` and

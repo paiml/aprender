@@ -96,6 +96,12 @@ ENTRIES_DIR="docs/roadmaps/entries"
 
 # shellcheck source=scripts/lib/resolve_base.sh
 . "$REPO_ROOT/scripts/lib/resolve_base.sh" || exit 1
+GUARD=check_roadmap_fragment_required
+# The reader is python + PyYAML (roadmap_fragments.py): the verdict needs the PARSED tree. On a
+# runner with no python3, or one without PyYAML, that is fleet state (infra#708): an UNMEASURED
+# line and exit 0, never a verdict; a python3 that exists and dies is ENV, exit 2 (#3697, #3806).
+# shellcheck source=lib/python_fleet_state.sh
+. "$REPO_ROOT/scripts/lib/python_fleet_state.sh" || exit 2
 
 usage() {
     printf 'usage: %s [<base-ref> [<head-ref>]]  or  %s --self-test\n' "$PROG" "$PROG" >&2
@@ -188,7 +194,7 @@ judge() {
     printf '=== %s: base=%s head=%s ===\n' "$PROG" "$base" "$head"
 
     # --- RULE 1: every changed entry carries its fragment in the same diff ----
-    if ! out=$(python3 "$PY_LIB" changed --base "$td/base.yaml" --head "$td/head.yaml" 2>&1); then
+    if ! out=$("${PY_FLEET_PYTHON:-python3}" "$PY_LIB" changed --base "$td/base.yaml" --head "$td/head.yaml" 2>&1); then
         rm -rf -- "${td:?}"
         printf 'ENV   %s: the entry reader could not compare the two roadmaps:\n%s\n' "$PROG" "$out" >&2
         return 2
@@ -215,7 +221,7 @@ judge() {
     done < <(printf '%s\n' "$out")
 
     # --- RULE 2: the aggregate at head is REGENERATED, not drifting ----------
-    out=$(python3 "$PY_LIB" aggregate --check --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1)
+    out=$("${PY_FLEET_PYTHON:-python3}" "$PY_LIB" aggregate --check --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1)
     rc=$?
     rm -rf -- "${td:?}"
     if [ "$rc" = 0 ]; then
@@ -401,7 +407,33 @@ PY
         commit_all "$1"
     }
 
-    # ---- the case table --------------------------------------------------
+    # ---- the reader's fleet state (#3697, #3806), measured on every runner ----
+    # No python3 is UNMEASURED exit 0 before the guard touches git; a python3 that dies is ENV exit 2.
+    fleet_row() {
+        local label=$1 want=$2 pat=$3 py=$4 out rc=0
+        n=$((n + 1))
+        out=$(PY_FLEET_PYTHON=$py bash "$REPO_ROOT/scripts/$PROG" 2>&1) || rc=$?
+        if [ "$rc" = "$want" ] && grep -qE -- "$pat" <<<"$out"; then
+            printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
+        else
+            printf 'FAIL  row %-2s rc=%s (wanted %s, must match /%s/)  %s\n' "$n" "$rc" "$want" "$pat" "$label"
+            printf '%s\n' "$out" | sed 's/^/        /'
+            red=$((red + 1))
+        fi
+    }
+    fleet_row 'no python3 on the runner -> UNMEASURED exit 0, never a verdict (#3697)' 0 \
+        "^UNMEASURED runner=.* reason=no-interpreter .*guard=$GUARD" "$td/no-such-python3"
+    fleet_row 'a python3 that dies -> ENV exit 2, never UNMEASURED (#3697)' 2 "^ENV   $GUARD: " /bin/false
+    py_fleet_state_self_test "$td" || red=$((red + 1))
+    local py_ok=1
+    py_fleet_state "$GUARD" yaml 2>"$td/py.state" || py_ok=0
+    if [ "$py_ok" = 0 ]; then
+        cat "$td/py.state"
+        printf 'UNMEASURED runner=%s reason=no-reader -- the 11 table rows and the 2 dispatch rows need python3 + PyYAML and did not run here (#3697)\n' "${RUNNER_NAME:-unknown}"
+    fi
+
+    # ---- the case table (it reads YAML: runs wherever the reader exists; not re-indented) ----
+    if [ "$py_ok" = 1 ]; then
     row 'MEASURED SHAPE: entry added to roadmap.yaml only (what pmat work add writes) -> REFUSE' \
         1 'ADDED    PMAT-200 in docs/roadmaps/roadmap.yaml with NO change' b_monolith_only
     row 'fragment + regenerated aggregate, in sync -> PASS' \
@@ -424,6 +456,7 @@ PY
         1 'ADDED    PMAT-200 in docs/roadmaps/roadmap.yaml with NO change' b_wrong_fragment
     row 'supersession through the fragment, regenerated -> PASS' \
         0 'ok    CHANGED  PMAT-100 — docs/roadmaps/entries/PMAT-100.yaml changes in the same diff' b_supersede
+    fi  # end of the case table
 
     # An unresolvable ref is ENV (rc 2), never a pass.
     n=$((n + 1))
@@ -460,7 +493,7 @@ PY
             red=$((red + 1))
             return
         fi
-        for f in resolve_base.sh roadmap_fragments.py roadmap_diff.py roadmap_merge.py; do
+        for f in resolve_base.sh python_fleet_state.sh roadmap_fragments.py roadmap_diff.py roadmap_merge.py; do
             if ! cp "$REPO_ROOT/scripts/lib/$f" "$d/scripts/lib/$f"; then
                 printf 'FAIL  row %-2s %s: scripts/lib/%s could not be copied into the fixture\n' "$n" "$label" "$f"
                 red=$((red + 1))
@@ -479,10 +512,13 @@ PY
         printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
     }
 
+    # The dispatch rows run the guard's YAML reader too (not re-indented).
+    if [ "$py_ok" = 1 ]; then
     dispatch_row 'PUSH shape (origin/main IS this commit), last merge fragment-less -> SKIP, exit 0 (the row that would have red-lined main)' \
         0 'SKIP  push-shape' HEAD
     dispatch_row 'PR shape (origin/main is its parent), SAME fragment-less content -> REFUSE, exit 1' \
         1 'FAIL  ADDED    PMAT-200' HEAD~1
+    fi  # end of the dispatch rows
 
     printf '%s/%s rows, %s failed\n' "$((n - red))" "$n" "$red"
     [ "$red" = 0 ]
@@ -494,6 +530,12 @@ case "${1:-}" in
     --help|-h) usage ;;
     --*) usage ;;
 esac
+
+# #3697: no python3 or no PyYAML is fleet state (UNMEASURED, exit 0); a broken one is ENV. Asked
+# before git is touched, so the answer is the same in any checkout.
+pyrc=0
+py_fleet_state "$GUARD" yaml || pyrc=$?
+case "$pyrc" in 0) ;; 3) exit 0 ;; *) exit 2 ;; esac
 
 if ! git -C "$REPO_ROOT" rev-parse --verify -q origin/main >/dev/null; then
     printf '%s: origin/main is not resolvable here (no such remote-tracking ref).\n' "$PROG" >&2

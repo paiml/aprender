@@ -76,8 +76,12 @@
 # grep for `proof:` over the raw text is defeated by a fold; hand-rolling a
 # YAML reader in bash is the construct check_no_hand_rolled_parsers.sh bans.
 # python3 + PyYAML is the shape scripts/perf_gate.sh already uses for
-# perf-matrix.yaml. If PyYAML is missing this guard FAILS -- an unparsed
-# roadmap is UNMEASURED, and unmeasured is never "no unproven claims".
+# perf-matrix.yaml. A roadmap that CLAIMS the schema and does not parse still FAILS (exit 4):
+# unmeasured is never "no unproven claims". A RUNNER with no python3, or without PyYAML, is a
+# different thing: fleet state (infra#708), reported as one UNMEASURED line with exit 0 and
+# surfaced by guard_tree (#3651), never a verdict either way; a python3 that exists and dies is
+# ENV, exit 2 (#3697, #3806). This used to FAIL on a missing PyYAML; #3697 moved that case to
+# fleet state, and the guard still judges wherever the reader exists.
 #
 # THE UNIVERSE, AND THE FREE PASS IT WOULD OTHERWISE GIVE
 # -------------------------------------------------------
@@ -157,6 +161,9 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+GUARD=check_roadmap_completion_is_cited
+# shellcheck source=lib/python_fleet_state.sh
+. "$REPO_ROOT/scripts/lib/python_fleet_state.sh" || exit 2
 BASELINE_REL="scripts/roadmap_uncited_completion_baseline.txt"
 
 # Minimum in-scope roadmap files before the scan is believed. 21 today; a floor
@@ -180,7 +187,7 @@ MIN_ROADMAPS=10
 # schema detection or the status aliases, would leave the hard halves unproven.
 scan_roadmaps() { # scan_roadmaps <root> ; stdout records, stderr diagnostics
     local root="$1"
-    python3 - "$root" <<'PY'
+    "${PY_FLEET_PYTHON:-python3}" - "$root" <<'PY'
 import os, re, sys
 
 try:
@@ -466,6 +473,32 @@ if [ "${1:-}" = "--selftest" ] || [ "${1:-}" = "--self-test" ]; then
         fi
     }
 
+    short() { # short <verdict>   -> collapse dangling:<detail> to dangling
+        case "$1" in dangling:*) printf 'dangling\n' ;; *) printf '%s\n' "$1" ;; esac
+    }
+
+    # --- the reader's fleet state (#3697, #3806), measured on every runner ---
+    # No python3 is UNMEASURED exit 0 before the guard scans anything; a python3 that dies is ENV.
+    fleet_row() { # fleet_row <label> <want-rc> <pattern> <interpreter>
+        local frc=0 fout
+        fout=$(PY_FLEET_PYTHON=$4 bash "$0" 2>&1) || frc=$?
+        if [ "$frc" = "$2" ] && grep -qE -- "$3" <<< "$fout"; then row "$1" ok ok
+        else row "$1" "rc=$2" "rc=$frc"; printf '%s\n' "$fout" | sed 's/^/        /'; fi
+    }
+    fleet_row 'no python3 on the runner -> UNMEASURED exit 0, never a verdict (#3697)' 0 \
+        "^UNMEASURED runner=.* reason=no-interpreter .*guard=$GUARD" "$TD/no-such-python3"
+    fleet_row 'a python3 that dies -> ENV exit 2, never UNMEASURED (#3697)' 2 "^ENV   $GUARD: " /bin/false
+    py_fleet_state_self_test "$TD" || f=$((f + 1))
+    py_ok=1
+    py_fleet_state "$GUARD" yaml 2>"$TD/py.state" || py_ok=0
+    if [ "$py_ok" = 0 ]; then
+        cat "$TD/py.state"
+        printf 'UNMEASURED runner=%s reason=no-reader -- the rows that scan YAML need python3 + PyYAML and did not run here (#3697)\n' "${RUNNER_NAME:-unknown}"
+    fi
+
+    # The rows from here to the PR citations scan YAML: they run wherever the reader exists
+    # (the block is not re-indented).
+    if [ "$py_ok" = 1 ]; then
     # --- the fixture tree ---------------------------------------------------
     mkdir -p "$TD/scripts" "$TD/emptydir" "$TD/fulldir"
     printf 'real content\n' > "$TD/scripts/real_artifact.sh"
@@ -570,9 +603,6 @@ YAML
         toks=$(cut -f3 <<< "$rec")
         classify_record "$TD" "$toks"
     }
-    short() { # short <verdict>   -> collapse dangling:<detail> to dangling
-        case "$1" in dangling:*) printf 'dangling\n' ;; *) printf '%s\n' "$1" ;; esac
-    }
 
     printf -- '--- case table: what makes a completed claim provable ---------------\n'
     row 'resolving path citation'              cited    "$(short "$(verdict_of R-CITED)")"
@@ -639,6 +669,7 @@ YAML
     n_unp=$(grep -c '^UNPARSED   docs/roadmaps/broken.yaml' "$TD/scan2.err" || true)
     row 'and it is NAMED in the diagnostics'   1 "$n_unp"
     rm -f "$TD/docs/roadmaps/broken.yaml"
+    fi  # end of the rows that scan YAML
 
     printf -- '--- case table: PR citations ---------------------------------------\n'
     # Seeded through the resolver's own cache so the row is deterministic and
@@ -678,6 +709,11 @@ YAML
 fi
 
 # ------------------------------------------------------------------- gate --
+# #3697: no python3 or no PyYAML is fleet state (UNMEASURED, exit 0); a broken one is ENV.
+pyrc=0
+py_fleet_state "$GUARD" yaml || pyrc=$?
+case "$pyrc" in 0) ;; 3) exit 0 ;; *) exit 2 ;; esac
+
 printf -- '=== a completed roadmap status cites something (PERF-044) ===========\n'
 
 SCAN_ERR=$(mktemp) || exit 2
