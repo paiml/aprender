@@ -349,8 +349,12 @@ fn test_apr_arch_no_match_defaults_to_llama() {
 
 #[test]
 fn test_is_legacy_quant_boundary_below() {
-    // PMAT-783: F16 has no GGUF GPU GEMV kernel → fail closed (would be Q4K garbage).
-    assert!(is_legacy_gguf_quant(1)); // F16, no GPU kernel → gated
+    // PMAT-783 gated F16 here because it had no GGUF GPU GEMV kernel and would
+    // have been read as Q4K garbage. #3477 wrote that kernel and measured it
+    // (217/217 exact at `88d25d265`), so F16 is no longer the boundary case —
+    // BF16(30) is, and the boundary property is what this test is about.
+    assert!(!is_legacy_gguf_quant(1)); // F16 — now has a measured GPU kernel
+    assert!(is_legacy_gguf_quant(30)); // BF16 — still none, still gated
 }
 
 #[test]

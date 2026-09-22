@@ -46,6 +46,12 @@ impl CudaExecutor {
             GemvKernel::Q5_0 => {
                 self.q5_0_gemv_into(weight.ptr, input, output, weight.out_dim, weight.in_dim)
             },
+            GemvKernel::IQ4XS => {
+                self.iq4_xs_gemv_into(weight.ptr, input, output, weight.out_dim, weight.in_dim)
+            },
+            GemvKernel::F16 => {
+                self.f16_gemv_into(weight.ptr, input, output, weight.out_dim, weight.in_dim)
+            },
             GemvKernel::Q4_1 => {
                 self.q4_1_gemv_into(weight.ptr, input, output, weight.out_dim, weight.in_dim)
             },

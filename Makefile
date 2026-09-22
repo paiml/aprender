@@ -267,6 +267,9 @@ tier3:
 	@echo "Checking no test asserts about the fd 0 it inherited (aprender#2307)..."
 	@bash scripts/check_hermetic_stdin_tests.sh --self-test
 	@bash scripts/check_hermetic_stdin_tests.sh
+	@echo "Checking no declared-unsupported capability is already implemented (aprender#3686)..."
+	@bash scripts/check_unwired_capabilities.sh --self-test
+	@bash scripts/check_unwired_capabilities.sh
 	@if [ -d tests/golden ]; then \
 		if . scripts/apr_bin.sh 2>/dev/null; then \
 			echo "Running probar golden regression with profiling... ($$APR)"; \

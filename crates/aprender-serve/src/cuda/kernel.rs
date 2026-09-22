@@ -76,6 +76,8 @@ impl CudaKernels {
             KernelType::Q5_0Gemv { .. } => "q5_0_gemv_warp_reduce",
             KernelType::Q4_0Gemv { .. } => "q4_0_gemv_warp_reduce",
             KernelType::Q4_1Gemv { .. } => "q4_1_gemv_warp_reduce",
+            KernelType::F16Gemv { .. } => "f16_gemv_warp_reduce",
+            KernelType::Iq4XsGemv { .. } => "iq4_xs_gemv_warp_reduce",
             _ => return None,
         };
         Some(name)

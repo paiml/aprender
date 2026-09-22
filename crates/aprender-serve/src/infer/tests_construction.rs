@@ -167,7 +167,10 @@ fn test_is_legacy_gguf_quant() {
     assert!(!is_legacy_gguf_quant(14)); // Q6_K
 
     // No GPU kernel → MUST be gated to CPU (else silent Q4_K garbage):
-    assert!(is_legacy_gguf_quant(1)); // F16 (no GGUF f16 GEMV here)
+    // #3477 wrote the GGUF F16 GEMV this comment said did not exist, and
+    // measured it 217/217 exact at `88d25d265`. BF16(30) below is still gated
+    // and still carries the property this test is about.
+    assert!(!is_legacy_gguf_quant(1)); // F16 — GGUF f16 GEMV now exists
     assert!(is_legacy_gguf_quant(7)); // Q5_1 — no GPU kernel
     assert!(is_legacy_gguf_quant(9)); // Q8_1
     assert!(is_legacy_gguf_quant(10)); // Q2_K
