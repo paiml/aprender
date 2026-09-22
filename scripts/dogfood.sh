@@ -645,6 +645,11 @@ if [ -n "$MAKEFILE_PATH" ] && grep -qE '^coverage-check:' "$MAKEFILE_PATH" 2>/de
   # OUTSIDE pre-publish this is still a FAIL. `mark` refuses a DEFER in any other
   # phase for exactly that reason -- a DEFER elsewhere is a FAIL wearing a softer word.
   cov_out=$(make -C "$(dirname "$MAKEFILE_PATH")" coverage-check 2>&1); cov_rc=$?
+  # KEEP THE LOG (#3844, aprender-45). `gate()` rows now write $WORKLOG/<name>.log,
+  # but coverage is a `mark` row with its own command substitution, so it was still
+  # discarding everything but one grep'd line. This is the row whose deferral is being
+  # asked for, which makes it the row whose evidence matters most.
+  printf '%s\n' "$cov_out" > "${WORKLOG:-${TMPDIR:-/tmp}}/coverage.log" 2>/dev/null || :
   # ANCHOR the percentage to the line that ONLY EXISTS when LCOV was parsed.
   # A bare `grep -oE '[0-9.]+%' | tail -1` scraped the Makefile's own BANNER --
   # `@echo "Running coverage ($(COV_THRESHOLD)%+ threshold)..."`, COV_THRESHOLD := 95
