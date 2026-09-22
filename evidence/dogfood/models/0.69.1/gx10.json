@@ -2,15 +2,15 @@
   "schema": "apr-model-ladder-receipt/v2",
   "host": "gx10",
   "version": "0.69.1",
-  "sha": "ab4ba54ec",
-  "apr_sha": "ab4ba54ecb41e5f20d508f20fcbf2ddf13aa5360",
+  "sha": "712f6d433",
+  "apr_sha": "712f6d4337b8a32456b59d39002f90ab5dbd8e34",
   "isa": "aarch64",
   "gpu": "NVIDIA GB10",
   "cc": "12.1",
-  "date": "2026-09-22T19:32Z",
-  "apr_version": "apr 0.69.1 (ab4ba54ec)",
+  "date": "2026-09-22T22:57Z",
+  "apr_version": "apr 0.69.1 (712f6d433)",
   "executed": 17,
-  "red": 2,
+  "red": 3,
   "inventory": [
     {
       "file": "Qwen3-1.7B-Q4_K_M.gguf",
@@ -224,27 +224,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -275,27 +281,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -414,27 +426,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -465,27 +483,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -604,27 +628,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -655,27 +685,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -794,27 +830,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": false
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -845,27 +887,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": true
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -984,27 +1032,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": false
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -1035,27 +1089,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": true
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -1174,27 +1234,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": false
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -1225,27 +1291,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": true
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -1364,27 +1436,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": false
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -1415,27 +1493,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": true
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -1554,27 +1638,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": false
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -1605,27 +1695,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": true
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -1646,7 +1742,7 @@
       "capability_match": {
         "passed": false,
         "skipped": false,
-        "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run "
+        "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run without --gpu to use the CPU path deliberately, or use a dense Q4_K model on the GPU. This is a refusal, not a fallback: nothing was loaded and nothing was generated."
       },
       "golden_output": {
         "passed": false,
@@ -1657,7 +1753,7 @@
         "capability_match": {
           "passed": false,
           "skipped": false,
-          "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run "
+          "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run without --gpu to use the CPU path deliberately, or use a dense Q4_K model on the GPU. This is a refusal, not a fallback: nothing was loaded and nothing was generated."
         },
         "tensor_contract": {
           "passed": true,
@@ -1746,27 +1842,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 501,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 501,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 501,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 501,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 500,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 500,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 }
               }
             }
@@ -1787,7 +1889,7 @@
       "capability_match": {
         "passed": false,
         "skipped": false,
-        "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run "
+        "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run without --gpu to use the CPU path deliberately, or use a dense Q4_K model on the GPU. This is a refusal, not a fallback: nothing was loaded and nothing was generated."
       },
       "golden_output": {
         "passed": false,
@@ -1798,7 +1900,7 @@
         "capability_match": {
           "passed": false,
           "skipped": false,
-          "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run "
+          "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run without --gpu to use the CPU path deliberately, or use a dense Q4_K model on the GPU. This is a refusal, not a fallback: nothing was loaded and nothing was generated."
         },
         "tensor_contract": {
           "passed": true,
@@ -1887,27 +1989,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 501,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 501,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 501,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 501,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 500,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 500,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 }
               }
             }
@@ -2026,27 +2134,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -2165,34 +2279,40 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 500,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 500,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 500,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 500,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 500,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 500,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 }
               }
             }
           }
         }
       },
-      "green": true
+      "green": false
     },
     {
       "id": "inv:qwen2.5-coder-1.5b-instruct-q4_k_m.apr",
@@ -2304,27 +2424,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -2443,27 +2569,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -2569,7 +2701,7 @@
             },
             "chat": {
               "ran": false,
-              "rc": 4
+              "rc": 3
             },
             "code": {
               "ran": true,
@@ -2582,27 +2714,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -2721,27 +2859,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -2860,27 +3004,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
