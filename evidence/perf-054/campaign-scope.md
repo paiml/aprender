@@ -376,7 +376,7 @@ Land with the mutation that turns it RED, per the ratchet rule.
 ssh gx10
 git -C ~/src/aprender fetch && git checkout <commit-under-test>
 cargo build --release -p apr-cli --features cuda      # ~20 cores, 346 G free
-export LLAMA_BENCH_PATH=~/src/llama.cpp-pin/build/bin/llama-bench   # 7746 (39173bcac), sm_121
+export LLAMA_BENCH_PATH=~/src/llama.cpp-pin/build/bin/llama-bench   # 7746 (39173bcac), sm_121 -- HISTORICAL (2026-09-0x): the pin at the time; the pin of record is scripts/llama_pin.toml's build_commit, resolved by `. scripts/llama_bin.sh`
 # 4 bands x 3 replicates, apr lane + comparator lane  ->  ~1 h
 scripts/perf_receipt_sign.sh --receipt … --key-id gx10-2026a …
 ```
