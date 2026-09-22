@@ -35,7 +35,8 @@ On origin/main `a9502d992`, main's own guard prints `ok rust 36 ledgered site(s)
 ## Gaps, stated
 - The docs rule is line-scoped. BEATS.md's history paragraphs wrap a figure over lines (`(1.371× median,` / `412.3 vs 300.7 tok/s`); they are dated prose about a withdrawn claim. A paragraph window was rejected because it lets one table row receipt its neighbour. This is recorded under RESIDUAL in the guard.
 - The Rust rule is not a parser. A figure built through a const table, a builder or a match arm, or a generic-named literal in a fn whose name does not name the competitor, is RESIDUAL.
-- Internal docs and specs that quote competitor figures are a filed follow-up (cop ruling: "Internal docs/specs as a filed follow-up is fine; test fixtures stay"). `crates/aprender-serve/CLAUDE.md` still quotes Ollama/llama.cpp tok/s and is part of that follow-up.
+- Internal docs and specs that quote competitor figures are filed as **#3798** (cop ruling: "Internal docs/specs as a filed follow-up is fine; test fixtures stay"). Measured with this branch's D1 rule over every tracked `*.md` outside the published universe: 265 unreceipted lines in 88 files (97 docs/specifications, 51 crates/aprender-serve incl. its CLAUDE.md, 31 docs/qa, …).
+- `ch22_vs_llamacpp.rs`: this branch corrected the COMPETITOR figure to its receipt. Its apr-side "bootstrap statistics" (10 literal samples, mean ≈ 273.6, matching neither cited receipt) and "c=32 … 1,776 tok/s" are apr figures outside this ticket's competitor scope, filed as **#3800**.
 - `showcase_benchmark` still renders SYNTHETIC apr numbers, and now says so on every line it prints. It records no competitor.
 
 ## Coordination
