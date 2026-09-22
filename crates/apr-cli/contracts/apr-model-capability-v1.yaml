@@ -84,6 +84,20 @@ metadata:
     - 'https://github.com/ggerganov/ggml (ggml_type numeric ids)'
     - 'aprender#3075, #3077, #3418, #3421, #3850, #3852, #3853 (the symptoms this registry removes)'
 
+# ANCHOR (#3863). Without a top-level `entity:` this contract counted as
+# `unanchored_but_bindable` and pushed the ont ratchet 297 -> 298. The disjunct that
+# fired is "names a file", whose predicate is `^[[:space:]]*(file|path|source_file):`
+# — and `^[[:space:]]*` matches ANY indentation, so the two `path:` lines nested inside
+# `op_implementation` rows counted as if a file were this contract's SUBJECT. It is not:
+# those two paths are EVIDENCE (the unwired `layer_norm_gpu`, the wired
+# `batched_swiglu_into`), cited inside a list item.
+#
+# Declaring the real subject fixes it honestly rather than by deleting the evidence.
+# The predicate's over-match is a separate defect and belongs on #3863, not here.
+entity:
+  type: gguf
+  ref: contracts/apr-model-capability-v1.yaml
+
 name: apr-model-capability
 version: 1.0.0
 status: ACTIVE
