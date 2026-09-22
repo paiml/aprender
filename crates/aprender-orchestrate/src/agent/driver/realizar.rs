@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use std::path::PathBuf;
 use tracing::info;
 
-use super::chat_template::{format_prompt_with_template, ChatTemplate};
+use super::chat_template::{format_prompt_for_model, format_prompt_with_template, ChatTemplate};
 use super::validate::validate_model_file;
 use super::{CompletionRequest, CompletionResponse, LlmDriver, ToolCall};
 use crate::agent::result::{AgentError, DriverError, StopReason, TokenUsage};
@@ -61,7 +61,10 @@ impl RealizarDriver {
 impl LlmDriver for RealizarDriver {
     async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, AgentError> {
         // Format messages using auto-detected chat template
-        let prompt = format_prompt_with_template(&request, self.template);
+        // #3801: the prompt PRODUCTION would send for this model — realizar's
+        // detector keyed on `general.architecture`, not a filename guess. The
+        // stored `self.template` is kept for the Llama-3 exception inside.
+        let prompt = format_prompt_for_model(&request, &self.model_path);
 
         // Build inference config (explicit fields — no Default impl)
         let config = realizar::infer::InferenceConfig {
