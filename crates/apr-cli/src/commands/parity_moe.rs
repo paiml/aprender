@@ -190,7 +190,9 @@ mod parity_moe_tests {
     const PROMPT: &str = "<|im_start|>user\nThe history of the printing press begins in the \
         fifteenth century, when Johannes Gutenberg combined movable metal type, oil-based ink \
         and a wooden screw press into a system that could reproduce books quickly and cheaply. \
-        Within fifty years, presses operated in more than two hundred cities across Europe.";
+        Within fifty years, presses operated in more than two hundred cities across Europe. \
+        Printed pamphlets carried arguments about religion, science and politics to readers who \
+        had never owned a manuscript, and the price of a book fell by an order of magnitude.";
 
     #[test]
     fn parity_moe_holds_at_64_positions_on_the_real_file() {
