@@ -79,6 +79,7 @@ pub mod iq2_s;
 pub mod iq2_xxs;
 pub mod iq3_s;
 pub mod iq3_xxs;
+pub mod iq4_nl;
 pub mod iq4_xs;
 pub mod iq_dispatch;
 pub mod iq_grids;
