@@ -150,3 +150,82 @@ a **red row** in `apr-cli --lib`, and it is the row the IQ4_XS GEMV kernel work
 * The blast-radius table covers the four GGUFs in the local model cache, not the
   full release ladder. It is sufficient to establish the mechanism; it is not a
   ladder audit.
+
+---
+
+# Addendum — the stop-token fix, and what it did NOT fix
+
+Cop's ruling: fix the golden gate alone for 0.69.1. Done in `3307506e5`. The
+acceptance run then refuted the easy conclusion, so this section reports what
+was measured rather than what was intended.
+
+## The fix is correct and proven
+
+`golden_stop_tokens(gguf)` reads the model's own eos. Unit matrix over all four
+local GGUFs, both directions red (mutant D restores the constant, mutant E drops
+stop tokens entirely; E reds at the `checked > 0` vacuity guard). The Qwen
+control holds: Qwen still stops on exactly 151645, so the fix did not become
+"ignore stop tokens".
+
+## It is NOT sufficient for tinyllama, and I nearly said it was
+
+`apr qa` on tinyllama still FAILS `golden_output`. The displayed text is
+truncated, which made it *look* shorter than before. It is not:
+
+```
+apr=<scratchpad>/apr-3870 sha=740c65faf0918c699e5916c3 version=apr 0.69.1 (3307506e5)
+model sha=9fecc3b3cd76bba89d504f29   worktree clean
+
+apr run --max-tokens  64  →  wall  3.62 s   300 chars
+apr run --max-tokens 512  →  wall 22.11 s  1410 chars, cut off mid-word
+```
+
+512 tokens of budget, 512 tokens consumed. **tinyllama never emits its own eos
+under the prompt the gate builds**, so a correct stop token has nothing to stop
+on. Had I read the `apr qa` line alone I would have reported a fix that does not
+fix the symptom.
+
+## The residual cause, measured rather than hypothesized
+
+`golden_prompt_for` renders the template keyed on `general.architecture` —
+`"llama"` → Llama-2 `[INST]`. tinyllama-1.1b-chat-v1.0's GGUF declares a
+**Zephyr** template (`tokenizer.chat_template` = `{% ... %}<|user|>\n...`). The
+gate asks a Zephyr-tuned model in Llama-2 turn structure, so it never reaches a
+turn boundary and never emits eos.
+
+Asked with its **own declared template**, same binary, same model:
+
+| asked as | wall | chars | answer |
+|---|---|---|---|
+| `[INST]` (what the gate does) | 22.11 s | 1410 | `[S][INST]` loop, no "Paris" |
+| `<\|user\|>` (what the GGUF declares) | **2.45 s** | **170** | **"The capital of France is Paris."** |
+
+That output **passes** the golden pattern `["Paris"]`.
+
+**So tinyllama is not a broken model and was never a CUDA defect. It is a
+correct model being asked the wrong question by the gate**, twice over, in the
+same defect class both times: a constant keyed on architecture where the model
+carries the answer in its own metadata.
+
+## Why the second one is not a release-night change
+
+Rendering the model's declared jinja needs new plumbing:
+`chat_template/raw_template.rs` exposes `detect_format_from_name` /
+`detect_format_from_tokens` / `auto_detect_template` — name-and-architecture
+*detection*, not "render this model's declared template". And it would change
+the prompt the gate sends to **every** model, not just tinyllama.
+
+Filed for 0.70.0 alongside the ten other `SpecialTokens::qwen2()` call sites.
+
+## What this settles
+
+* tinyllama cannot be made green tonight by any small change. The cop's ruling
+  moving it off the tag blockers is correct, and now for a measured reason.
+* The two fixes are complementary, not alternatives. With the right template the
+  model emits eos — and for the gate to *observe* that, the stop token has to be
+  the model's own, which is what `3307506e5` fixed. Neither alone makes the row
+  green.
+* Not claimed: that `apr run`'s 2.45 s termination exercises `golden_stop_tokens`.
+  It does not — `apr run` has its own path. What it proves is that the model
+  terminates and answers correctly when asked properly; the gate's ability to
+  see that is what the stop-token fix restores.
