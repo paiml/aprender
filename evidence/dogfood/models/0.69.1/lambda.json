@@ -2,13 +2,13 @@
   "schema": "apr-model-ladder-receipt/v2",
   "host": "lambda",
   "version": "0.69.1",
-  "sha": "ab4ba54ec",
-  "apr_sha": "ab4ba54ecb41e5f20d508f20fcbf2ddf13aa5360",
+  "sha": "712f6d433",
+  "apr_sha": "712f6d4337b8a32456b59d39002f90ab5dbd8e34",
   "isa": "x86_64",
   "gpu": "NVIDIA GeForce RTX 4090",
   "cc": "8.9",
-  "date": "2026-09-22T19:22Z",
-  "apr_version": "apr 0.69.1 (ab4ba54ec)",
+  "date": "2026-09-22T22:40Z",
+  "apr_version": "apr 0.69.1 (712f6d433)",
   "executed": 26,
   "red": 10,
   "inventory": [
@@ -30,7 +30,7 @@
     {
       "file": "Qwen3-1.7B-Q4_K_M.gguf",
       "sha256": "b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897",
-      "bytes": 60
+      "bytes": 1107409472
     },
     {
       "file": "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
@@ -110,7 +110,7 @@
     {
       "file": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
       "sha256": "cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046",
-      "bytes": 104
+      "bytes": 1117320768
     },
     {
       "file": "qwen2.5-coder-1.5b-instruct-q4k-v2.apr",
@@ -269,27 +269,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -320,27 +326,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -459,27 +471,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -510,27 +528,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -649,27 +673,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -700,27 +730,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -839,27 +875,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": false
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -890,27 +932,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": true
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -1029,27 +1077,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": false
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -1080,27 +1134,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": true
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -1219,27 +1279,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": false
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -1270,27 +1336,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": true
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -1409,27 +1481,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": false
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -1460,27 +1538,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": true
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -1599,27 +1683,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": false
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -1650,27 +1740,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": true
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -1696,7 +1792,7 @@
       "golden_output": {
         "passed": false,
         "skipped": false,
-        "message": "golden_output could not run: Validation failed: CPU generation failed: Operation 'owned_fused_matmul' not supported: Fused matmul only supports F32/BF16/F16/Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K and the "
+        "message": "GPU golden generation ERRORED on a cuda build with a CUDA device: a broken GPU, not a skip (#3711): CUDA init on device 0: Capability mismatch for 'qwen2': missing GPU support for [GPU GEMV kernel for the model's quantization type]. Model carries a quant type without a verified GPU kernel (e.g. Q5_1/Q8_1/Q2_K/Q3_K/Q8_K/F16/IQ*). It will use CPU inference to avoid silent Q4_K-decode garbage (PMAT-785). Requantize to a GPU-supported type (Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K) for GPU acceleration."
       },
       "gates": {
         "capability_match": {
@@ -1707,7 +1803,7 @@
         "tensor_contract": {
           "passed": false,
           "skipped": false,
-          "message": "117 contract violations in 117 tensors: blk.0.ffn_gate.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.ffn_gate.weight' is IQ4_NL (ggml type 20): aprender-core has no d"
+          "message": "117 contract violations in 117 tensors: blk.0.ffn_gate.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.ffn_gate.weight' is IQ4_NL (ggml type 20): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; blk.0.ffn_up.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.ffn_up.weight' is IQ4_NL (ggml type 20): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; blk.0.attn_k.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.attn_k.weight' is IQ4_NL (ggml type 20): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; ... and 114 more"
         },
         "metadata_plausibility": {
           "passed": true,
@@ -1722,7 +1818,7 @@
         "golden_output": {
           "passed": false,
           "skipped": false,
-          "message": "golden_output could not run: Validation failed: CPU generation failed: Operation 'owned_fused_matmul' not supported: Fused matmul only supports F32/BF16/F16/Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K and the "
+          "message": "GPU golden generation ERRORED on a cuda build with a CUDA device: a broken GPU, not a skip (#3711): CUDA init on device 0: Capability mismatch for 'qwen2': missing GPU support for [GPU GEMV kernel for the model's quantization type]. Model carries a quant type without a verified GPU kernel (e.g. Q5_1/Q8_1/Q2_K/Q3_K/Q8_K/F16/IQ*). It will use CPU inference to avoid silent Q4_K-decode garbage (PMAT-785). Requantize to a GPU-supported type (Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K) for GPU acceleration."
         },
         "throughput": {
           "passed": false,
@@ -1771,19 +1867,19 @@
           "ran": false,
           "fallback": false,
           "escaped_special": false,
-          "rc": 8,
+          "rc": 14,
           "verbs": {
             "run": {
               "ran": false,
-              "rc": 8
+              "rc": 14
             },
             "chat": {
-              "ran": false,
-              "rc": 8
+              "ran": true,
+              "rc": 0
             },
             "code": {
-              "ran": false,
-              "rc": 1,
+              "ran": true,
+              "rc": 0,
               "backend": "inherited-from-spawned-serve"
             },
             "serve": {
@@ -1791,28 +1887,34 @@
               "teardown": "escalated",
               "routes": {
                 "/api/chat|stream=false": {
-                  "http": 500,
-                  "ok": false
+                  "http": 200,
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
-                  "http": 500,
-                  "ok": false
+                  "http": 200,
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
-                  "http": 500,
-                  "ok": false
+                  "http": 200,
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
-                  "http": 500,
-                  "ok": false
+                  "http": 200,
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
-                  "http": 500,
-                  "ok": false
+                  "http": 200,
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -1838,7 +1940,7 @@
       "golden_output": {
         "passed": false,
         "skipped": false,
-        "message": "golden_output could not run: Validation failed: CPU generation failed: Operation 'owned_fused_matmul' not supported: Fused matmul only supports F32/BF16/F16/Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K and the "
+        "message": "GPU golden generation ERRORED on a cuda build with a CUDA device: a broken GPU, not a skip (#3711): CUDA init on device 0: Capability mismatch for 'qwen2': missing GPU support for [GPU GEMV kernel for the model's quantization type]. Model carries a quant type without a verified GPU kernel (e.g. Q5_1/Q8_1/Q2_K/Q3_K/Q8_K/F16/IQ*). It will use CPU inference to avoid silent Q4_K-decode garbage (PMAT-785). Requantize to a GPU-supported type (Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K) for GPU acceleration."
       },
       "gates": {
         "capability_match": {
@@ -1849,7 +1951,7 @@
         "tensor_contract": {
           "passed": false,
           "skipped": false,
-          "message": "144 contract violations in 144 tensors: blk.0.ffn_down.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.ffn_down.weight' is IQ4_XS (ggml type 23): aprender-core has no d"
+          "message": "144 contract violations in 144 tensors: blk.0.ffn_down.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.ffn_down.weight' is IQ4_XS (ggml type 23): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; blk.0.ffn_gate.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.ffn_gate.weight' is IQ4_NL (ggml type 20): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; blk.0.ffn_up.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.ffn_up.weight' is IQ4_NL (ggml type 20): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; ... and 141 more"
         },
         "metadata_plausibility": {
           "passed": true,
@@ -1864,7 +1966,7 @@
         "golden_output": {
           "passed": false,
           "skipped": false,
-          "message": "golden_output could not run: Validation failed: CPU generation failed: Operation 'owned_fused_matmul' not supported: Fused matmul only supports F32/BF16/F16/Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K and the "
+          "message": "GPU golden generation ERRORED on a cuda build with a CUDA device: a broken GPU, not a skip (#3711): CUDA init on device 0: Capability mismatch for 'qwen2': missing GPU support for [GPU GEMV kernel for the model's quantization type]. Model carries a quant type without a verified GPU kernel (e.g. Q5_1/Q8_1/Q2_K/Q3_K/Q8_K/F16/IQ*). It will use CPU inference to avoid silent Q4_K-decode garbage (PMAT-785). Requantize to a GPU-supported type (Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K) for GPU acceleration."
         },
         "throughput": {
           "passed": false,
@@ -1913,19 +2015,19 @@
           "ran": false,
           "fallback": false,
           "escaped_special": false,
-          "rc": 8,
+          "rc": 14,
           "verbs": {
             "run": {
               "ran": false,
-              "rc": 8
+              "rc": 14
             },
             "chat": {
-              "ran": false,
-              "rc": 8
+              "ran": true,
+              "rc": 0
             },
             "code": {
-              "ran": false,
-              "rc": 1,
+              "ran": true,
+              "rc": 0,
               "backend": "inherited-from-spawned-serve"
             },
             "serve": {
@@ -1933,28 +2035,34 @@
               "teardown": "escalated",
               "routes": {
                 "/api/chat|stream=false": {
-                  "http": 500,
-                  "ok": false
+                  "http": 200,
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
-                  "http": 500,
-                  "ok": false
+                  "http": 200,
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
-                  "http": 500,
-                  "ok": false
+                  "http": 200,
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
-                  "http": 500,
-                  "ok": false
+                  "http": 200,
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
-                  "http": 500,
-                  "ok": false
+                  "http": 200,
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -2073,27 +2181,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -2114,7 +2228,7 @@
       "capability_match": {
         "passed": false,
         "skipped": false,
-        "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run "
+        "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run without --gpu to use the CPU path deliberately, or use a dense Q4_K model on the GPU. This is a refusal, not a fallback: nothing was loaded and nothing was generated."
       },
       "golden_output": {
         "passed": false,
@@ -2125,7 +2239,7 @@
         "capability_match": {
           "passed": false,
           "skipped": false,
-          "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run "
+          "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run without --gpu to use the CPU path deliberately, or use a dense Q4_K model on the GPU. This is a refusal, not a fallback: nothing was loaded and nothing was generated."
         },
         "tensor_contract": {
           "passed": true,
@@ -2214,27 +2328,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 501,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 501,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 501,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 501,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 500,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 500,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 }
               }
             }
@@ -2255,7 +2375,7 @@
       "capability_match": {
         "passed": false,
         "skipped": false,
-        "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run "
+        "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run without --gpu to use the CPU path deliberately, or use a dense Q4_K model on the GPU. This is a refusal, not a fallback: nothing was loaded and nothing was generated."
       },
       "golden_output": {
         "passed": false,
@@ -2266,7 +2386,7 @@
         "capability_match": {
           "passed": false,
           "skipped": false,
-          "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run "
+          "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run without --gpu to use the CPU path deliberately, or use a dense Q4_K model on the GPU. This is a refusal, not a fallback: nothing was loaded and nothing was generated."
         },
         "tensor_contract": {
           "passed": true,
@@ -2355,27 +2475,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 501,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 501,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 501,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 501,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 500,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 500,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 }
               }
             }
@@ -2401,7 +2527,7 @@
       "golden_output": {
         "passed": false,
         "skipped": false,
-        "message": "golden_output_thinking_on: think block unclosed within 2048 tokens (the model was still reasoning at the budget; 8901 chars generated, no answer was reached). This is not an empty answer \u2014 raise nothi"
+        "message": "golden_output_thinking_on: think block unclosed within 2048 tokens (the model was still reasoning at the budget; 8901 chars generated, no answer was reached). This is not an empty answer \u2014 raise nothing, and check that the prompt is the one production sends for this architecture."
       },
       "gates": {
         "capability_match": {
@@ -2412,7 +2538,7 @@
         "tensor_contract": {
           "passed": false,
           "skipped": false,
-          "message": "126 contract violations in 126 tensors: blk.0.attn_gate.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.attn_gate.weight' is IQ4_XS (ggml type 23): aprender-core has no"
+          "message": "126 contract violations in 126 tensors: blk.0.attn_gate.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.attn_gate.weight' is IQ4_XS (ggml type 23): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; blk.0.attn_qkv.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.attn_qkv.weight' is IQ4_XS (ggml type 23): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; blk.0.ffn_down.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.ffn_down.weight' is IQ4_XS (ggml type 23): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; ... and 123 more"
         },
         "metadata_plausibility": {
           "passed": true,
@@ -2427,7 +2553,7 @@
         "golden_output": {
           "passed": false,
           "skipped": false,
-          "message": "golden_output_thinking_on: think block unclosed within 2048 tokens (the model was still reasoning at the budget; 8901 chars generated, no answer was reached). This is not an empty answer \u2014 raise nothi"
+          "message": "golden_output_thinking_on: think block unclosed within 2048 tokens (the model was still reasoning at the budget; 8901 chars generated, no answer was reached). This is not an empty answer \u2014 raise nothing, and check that the prompt is the one production sends for this architecture."
         },
         "throughput": {
           "passed": false,
@@ -2497,27 +2623,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": true
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -2538,7 +2670,7 @@
       "capability_match": {
         "passed": false,
         "skipped": false,
-        "message": "Architecture 'qwen35': tensor 'blk.0.attn_gate.weight' has GGML type 18, which has no verified GPU GEMV kernel. The GPU weight upload would decode it as Q4_K and produce garbage logits (PMAT-781/783/7"
+        "message": "Architecture 'qwen35': tensor 'blk.0.attn_gate.weight' has GGML type 18, which has no verified GPU GEMV kernel. The GPU weight upload would decode it as Q4_K and produce garbage logits (PMAT-781/783/785). Run this model on the CPU (`apr run --no-gpu`), or requantize to Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K."
       },
       "golden_output": {
         "passed": false,
@@ -2549,12 +2681,12 @@
         "capability_match": {
           "passed": false,
           "skipped": false,
-          "message": "Architecture 'qwen35': tensor 'blk.0.attn_gate.weight' has GGML type 18, which has no verified GPU GEMV kernel. The GPU weight upload would decode it as Q4_K and produce garbage logits (PMAT-781/783/7"
+          "message": "Architecture 'qwen35': tensor 'blk.0.attn_gate.weight' has GGML type 18, which has no verified GPU GEMV kernel. The GPU weight upload would decode it as Q4_K and produce garbage logits (PMAT-781/783/785). Run this model on the CPU (`apr run --no-gpu`), or requantize to Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K."
         },
         "tensor_contract": {
           "passed": false,
           "skipped": false,
-          "message": "129 contract violations in 129 tensors: blk.0.attn_gate.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.attn_gate.weight' is IQ3_XXS (ggml type 18): aprender-core has n"
+          "message": "129 contract violations in 129 tensors: blk.0.attn_gate.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.attn_gate.weight' is IQ3_XXS (ggml type 18): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; blk.0.attn_qkv.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.attn_qkv.weight' is IQ2_XXS (ggml type 16): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; blk.0.ffn_gate.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.ffn_gate.weight' is IQ2_XXS (ggml type 16): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; ... and 126 more"
         },
         "metadata_plausibility": {
           "passed": true,
@@ -2639,27 +2771,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": false
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -2680,7 +2818,7 @@
       "capability_match": {
         "passed": false,
         "skipped": false,
-        "message": "Architecture 'qwen35moe' uses SSM/Gated Delta Net layers (detected tensor 'blk.0.ssm_a'). There is no CPU or GPU forward for architecture 'qwen35moe' with SSM tensors. Tracking issues: #3090 (GPU) and"
+        "message": "Architecture 'qwen35moe' uses SSM/Gated Delta Net layers (detected tensor 'blk.0.ssm_a'). There is no CPU or GPU forward for architecture 'qwen35moe' with SSM tensors. Tracking issues: #3090 (GPU) and #3091 (CPU) \u2014 both implement the Qwen3.5 hybrid ('qwen35'), not this architecture. Use a standard transformer model (e.g., Qwen2.5, LLaMA, Mistral) or wait for SSM support in a future release."
       },
       "golden_output": {
         "passed": false,
@@ -2691,12 +2829,12 @@
         "capability_match": {
           "passed": false,
           "skipped": false,
-          "message": "Architecture 'qwen35moe' uses SSM/Gated Delta Net layers (detected tensor 'blk.0.ssm_a'). There is no CPU or GPU forward for architecture 'qwen35moe' with SSM tensors. Tracking issues: #3090 (GPU) and"
+          "message": "Architecture 'qwen35moe' uses SSM/Gated Delta Net layers (detected tensor 'blk.0.ssm_a'). There is no CPU or GPU forward for architecture 'qwen35moe' with SSM tensors. Tracking issues: #3090 (GPU) and #3091 (CPU) \u2014 both implement the Qwen3.5 hybrid ('qwen35'), not this architecture. Use a standard transformer model (e.g., Qwen2.5, LLaMA, Mistral) or wait for SSM support in a future release."
         },
         "tensor_contract": {
           "passed": false,
           "skipped": false,
-          "message": "120 contract violations in 120 tensors: blk.0.ffn_down_exps.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.ffn_down_exps.weight' is IQ4_XS (ggml type 23): aprender-cor"
+          "message": "120 contract violations in 120 tensors: blk.0.ffn_down_exps.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.ffn_down_exps.weight' is IQ4_XS (ggml type 23): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; blk.0.ffn_gate_exps.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.ffn_gate_exps.weight' is IQ3_S (ggml type 21): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; blk.0.ffn_up_exps.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.ffn_up_exps.weight' is IQ3_S (ggml type 21): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; ... and 117 more"
         },
         "metadata_plausibility": {
           "passed": true,
@@ -2777,7 +2915,7 @@
             },
             "serve": {
               "probed": false,
-              "why": "apr serve did not answer /health within 2s (log: /tmp/tmp.gg19yYAFYi/serve-inv:Qwen3.5-35B-A3B-UD-IQ4_XS.gguf-cuda.log)",
+              "why": "apr serve did not answer /health within 2s (log: /tmp/tmp.B3cSN6CTn2/serve-inv:Qwen3.5-35B-A3B-UD-IQ4_XS.gguf-cuda.log)",
               "teardown": "clean",
               "routes": {}
             }
@@ -2814,7 +2952,7 @@
         "tensor_contract": {
           "passed": false,
           "skipped": false,
-          "message": "10 contract violations in 10 tensors: blk.12.ffn_gate.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.12.ffn_gate.weight' is IQ4_XS (ggml type 23): aprender-core has no d"
+          "message": "10 contract violations in 10 tensors: blk.12.ffn_gate.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.12.ffn_gate.weight' is IQ4_XS (ggml type 23): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; blk.12.ffn_up.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.12.ffn_up.weight' is IQ4_XS (ggml type 23): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; blk.13.ffn_gate.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.13.ffn_gate.weight' is IQ4_XS (ggml type 23): aprender-core has no dequantizer for it, so it cannot be read as F32. Refusing rather than approximating, which would invent its weights; ... and 7 more"
         },
         "metadata_plausibility": {
           "passed": true,
@@ -2898,27 +3036,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": true
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -3037,27 +3181,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -3162,8 +3312,8 @@
               "rc": 14
             },
             "chat": {
-              "ran": false,
-              "rc": 4
+              "ran": true,
+              "rc": 0
             },
             "code": {
               "ran": true,
@@ -3176,27 +3326,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -3315,27 +3471,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -3454,27 +3616,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -3593,27 +3761,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -3650,7 +3824,7 @@
         "tensor_contract": {
           "passed": false,
           "skipped": false,
-          "message": "49 contract violations in 27 tensors: model.layers.0.mlp.down_proj.weight: [F-DATA-QUALITY-001] DENSITY: 100.0% zeros (max 80%); model.layers.0.self_attn.v_proj.weight: [F-DATA-QUALITY-001] All values"
+          "message": "49 contract violations in 27 tensors: model.layers.0.mlp.down_proj.weight: [F-DATA-QUALITY-001] DENSITY: 100.0% zeros (max 80%); model.layers.0.self_attn.v_proj.weight: [F-DATA-QUALITY-001] All values are zero (uninitialized?); model.layers.0.self_attn.v_proj.weight: [F-DATA-QUALITY-003] L2 norm ~0: tensor is effectively empty; ... and 46 more"
         },
         "metadata_plausibility": {
           "passed": true,
@@ -3735,27 +3909,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 500,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 500,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 500,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 500,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 500,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 500,
-                  "ok": false
+                  "ok": false,
+                  "used_gpu": null
                 }
               }
             }
@@ -3874,27 +4054,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -3999,8 +4185,8 @@
               "rc": 0
             },
             "chat": {
-              "ran": false,
-              "rc": 4
+              "ran": true,
+              "rc": 0
             },
             "code": {
               "ran": true,
@@ -4013,27 +4199,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
@@ -4154,27 +4346,33 @@
               "routes": {
                 "/api/chat|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
-                  "ok": true
+                  "ok": true,
+                  "used_gpu": null
                 }
               }
             }
