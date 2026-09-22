@@ -54,6 +54,21 @@ lambda (`ef8963016`), `--prompt` = aprender-37's Zorblat question, `--max-tokens
 | Qwen3-8B | serial | GPU, "Lima", 13.64 s | GPU, "Lima", 13.48 s |
 | qwen2.5-1.5b | batched (unchanged) | GPU, "Lima", 7.38 s | GPU, "Lima", 5.68 s |
 
+gx10 (GB10, `fae0e6d7a`), same prompt and flags (`e2e-apr-run-gpu-gx10.txt`).
+Every row stays on the GPU with the same answer; this is where the FP32
+reference costs something, and the cost is a fraction of the run:
+
+| file | probe path | 0.69.0 | this branch | delta |
+|---|---|---|---|---|
+| Qwen3-1.7B | serial | GPU, "…Lima", 7.04 s | GPU, same, 7.32 s | +4.0% |
+| Qwen3-8B | serial | GPU, "Lima", 26.88 s | GPU, "Lima", 29.18 s | +8.5% |
+| qwen2.5-1.5b | serial | GPU, "Lima", 12.46 s | GPU, "Lima", 12.85 s | +3.1% |
+| qwen2.5-coder-32b | serial | GPU, "Lima", 187.82 s | GPU, "Lima", 172.06 s | −8.4% |
+
+8/8 cells on both hosts run on CUDA with an unchanged answer. The 32B row
+came out faster, which is the box's load moving, not a speedup from this
+change — gx10 was at load average 26 during the harness runs.
+
 ## Checks
 - `cargo fmt --all -- --check`, `cargo deny check advisories`: clean.
 - `cargo test -p aprender-contracts --lib`: 1689 passed.

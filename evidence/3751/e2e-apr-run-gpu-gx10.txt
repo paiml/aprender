@@ -1,0 +1,16 @@
+=== Qwen3-1.7B-Q4_K_M.gguf | apr 0.69.0 (5615e7afe) | rc=0 | wall 7.037478338 s
+text: '</think>\n\nThe capital of Peru is **Lima**.' | used_gpu: True
+=== Qwen3-1.7B-Q4_K_M.gguf | apr 0.69.0 (fae0e6d7a) | rc=0 | wall 7.321381927 s
+text: '</think>\n\nThe capital of Peru is **Lima**.' | used_gpu: True
+=== Qwen3-8B-Q4_K_M.gguf | apr 0.69.0 (5615e7afe) | rc=0 | wall 26.880988713 s
+text: 'Lima' | used_gpu: True
+=== Qwen3-8B-Q4_K_M.gguf | apr 0.69.0 (fae0e6d7a) | rc=0 | wall 29.178397676 s
+text: 'Lima' | used_gpu: True
+=== qwen2.5-1.5b-instruct-q4_k_m.gguf | apr 0.69.0 (5615e7afe) | rc=0 | wall 12.457657411 s
+text: 'Lima' | used_gpu: True
+=== qwen2.5-1.5b-instruct-q4_k_m.gguf | apr 0.69.0 (fae0e6d7a) | rc=0 | wall 12.848331075 s
+text: 'Lima' | used_gpu: True
+=== qwen2.5-coder-32b-instruct-q4_k_m.gguf | apr 0.69.0 (5615e7afe) | rc=0 | wall 187.824643025 s
+text: 'Lima' | used_gpu: True
+=== qwen2.5-coder-32b-instruct-q4_k_m.gguf | apr 0.69.0 (fae0e6d7a) | rc=0 | wall 172.058968506 s
+text: 'Lima' | used_gpu: True
