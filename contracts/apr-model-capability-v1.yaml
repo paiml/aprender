@@ -253,8 +253,15 @@ quant_types:
     gpu_supported: true
   - name: Q5_1
     ggml_type: 7
-    gpu_supported: false
-    reason: no GPU GEMV kernel
+    gpu_supported: true
+    # Implemented for 0.69.1 (#3885). Device A/B against `dequantize_q5_1` plus
+    # an explicit row-major dot: 64 rows, worst relative disagreement 0.000e0 on
+    # RTX 4090 sm_89. Proved able to fail first on the two mechanisms that define
+    # the format -- 5th bit dropped (i.e. Q4_1): row 41 GPU 288 vs CPU -24;
+    # affine min `m` dropped: row 34 GPU -13.5 vs CPU -9.
+    # Q5_1 is the only AFFINE type here (`w = q*d + m`), so a kernel that drops
+    # the min gives the right spread around the wrong centre.
+    reason: ''
   - name: Q8_0
     ggml_type: 8
     gpu_supported: true
@@ -313,8 +320,15 @@ quant_types:
     reason: ''
   - name: IQ3_S
     ggml_type: 21
-    gpu_supported: false
-    reason: no GPU GEMV kernel; IQ also fails the CPU dequant path
+    gpu_supported: true
+    # Implemented for 0.69.1 (#3884). Device A/B against `iq_parallel_matvec`:
+    # 48 rows, worst relative disagreement 0.000e0 on RTX 4090 sm_89, at
+    # in_dim=512 so the row stride spans two super-blocks. Proved able to fail
+    # first on the three mechanisms this format has -- scale nibble inverted:
+    # row 13 GPU 9311 vs CPU 1209; 9th grid bit from 2l+1: row 13 GPU 11085 vs
+    # CPU 1209; sign bits ignored: row 1 GPU -17453 vs CPU 1523.
+    # The CPU dequant path has worked since PMAT-3477; only the GEMV was absent.
+    reason: ''
   - name: IQ2_S
     ggml_type: 22
     gpu_supported: false

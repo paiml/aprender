@@ -37,9 +37,10 @@ fn test_config() -> GGUFConfig {
 }
 
 /// The whitelist predicate is the single source of truth. GPU-eligible set is
-/// exactly {F32(0), F16(1), Q4_0(2), Q4_1(3), Q5_0(6), Q8_0(8), Q4_K(12),
-/// Q5_K(13), Q6_K(14), IQ4_XS(23)}; everything else gates to CPU. This is what the construction gate
-/// and the primary-path gate both consume — they MUST agree.
+/// exactly {F32(0), F16(1), Q4_0(2), Q4_1(3), Q5_0(6), Q5_1(7), Q8_0(8),
+/// Q4_K(12), Q5_K(13), Q6_K(14), IQ4_NL(20), IQ3_S(21), IQ4_XS(23)}; everything
+/// else gates to CPU. This is what the construction gate and the primary-path
+/// gate both consume — they MUST agree.
 #[test]
 fn gpu_unsupported_quant_qtype_whitelist_is_exact() {
     // Supported → NOT gated.
@@ -48,7 +49,12 @@ fn gpu_unsupported_quant_qtype_whitelist_is_exact() {
     // bytes — 217/217 tensors exact at `88d25d265` for F16, 10/10 exact at
     // `b782b4257` for IQ4_XS, each with a planted-fault control going RED on a
     // tensor of its own type. Not moved on the kernel's existence alone.
-    for &q in &[0u32, 1, 2, 3, 6, 8, 12, 13, 14, 23] {
+    // #3869/#3884/#3885: IQ4_NL(20), IQ3_S(21) and Q5_1(7) joined the supported
+    // set on the same terms — a GEMV kernel measured against the CPU decoder on
+    // device, each with planted faults proven RED first. Q5_1's were the 5th bit
+    // dropped and the affine min dropped; IQ3_S's were the scale nibble, the 9th
+    // grid bit and the sign bits. Never moved on a kernel's existence alone.
+    for &q in &[0u32, 1, 2, 3, 6, 7, 8, 12, 13, 14, 20, 21, 23] {
         assert!(
             !gpu_unsupported_quant_qtype(q),
             "qtype {q} has a verified GPU kernel and must be GPU-eligible"
@@ -56,11 +62,13 @@ fn gpu_unsupported_quant_qtype_whitelist_is_exact() {
     }
     // Unsupported → gated to CPU (would hit resolve_qtype's unwrap_or(Q4K)).
     for &q in &[
-        7u32, /*Q5_1*/
-        9,    /*Q8_1*/
+        9u32, /*Q8_1*/
         10,   /*Q2_K*/
         11,   /*Q3_K*/
         15,   /*Q8_K*/
+        16,   /*IQ2_XXS*/
+        18,   /*IQ3_XXS*/
+        22,   /*IQ2_S*/
         30,   /*BF16*/
         100,  /*IQ*/
     ] {
@@ -83,13 +91,19 @@ fn supported_q4k_model_is_gpu_eligible() {
 }
 
 /// An unsupported quant hidden in the lm_head must flag the whole model.
+///
+/// #3885: the example was Q5_1(7) until Q5_1 got a measured GEMV kernel, at
+/// which point this row asserted that a SUPPORTED type forces CPU. Re-aimed at
+/// IQ3_XXS(18), which genuinely has no kernel and is present in the fleet
+/// (`Qwen3.5-0.8B-UD-IQ2_XXS`, 24 tensors). Same treatment F16 got here in
+/// #3477 when BF16 replaced it — a row is re-aimed, never deleted.
 #[test]
 fn unsupported_quant_in_lm_head_forces_cpu() {
     let mut model = create_test_model_with_config(&test_config());
-    model.lm_head_weight.qtype = 7; // Q5_1 — no GPU kernel
+    model.lm_head_weight.qtype = 18; // IQ3_XXS — no GPU kernel
     assert!(
         model.has_gpu_unsupported_quant(),
-        "Q5_1 in lm_head must force CPU"
+        "IQ3_XXS in lm_head must force CPU"
     );
 }
 
@@ -162,8 +176,8 @@ fn first_gpu_unsupported_quant_names_the_type_and_stays_none_for_supported() {
     );
 
     let mut lm = create_test_model_with_config(&test_config());
-    lm.lm_head_weight.qtype = 7; // Q5_1
-    assert_eq!(lm.first_gpu_unsupported_quant(), Some(7));
+    lm.lm_head_weight.qtype = 18; // IQ3_XXS — was Q5_1(7) until #3885 gave it a kernel
+    assert_eq!(lm.first_gpu_unsupported_quant(), Some(18));
 
     let mut down = create_test_model_with_config(&test_config());
     // Was F16(1), the #3685 model. F16 now HAS a measured kernel (#3477), so

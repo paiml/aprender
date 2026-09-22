@@ -171,7 +171,15 @@ fn test_is_legacy_gguf_quant() {
     // measured it 217/217 exact at `88d25d265`. BF16(30) below is still gated
     // and still carries the property this test is about.
     assert!(!is_legacy_gguf_quant(1)); // F16 — GGUF f16 GEMV now exists
-    assert!(is_legacy_gguf_quant(7)); // Q5_1 — no GPU kernel
+    // #3869/#3884/#3885: IQ4_NL(20), IQ3_S(21) and Q5_1(7) likewise moved to the
+    // GPU-eligible side once each had a kernel measured EXACT against the CPU
+    // decoder on device, with planted faults proven RED first.
+    assert!(!is_legacy_gguf_quant(7)); // Q5_1 — #3885 GEMV kernel
+    assert!(!is_legacy_gguf_quant(20)); // IQ4_NL — #3869 GEMV kernel
+    assert!(!is_legacy_gguf_quant(21)); // IQ3_S — #3884 GEMV kernel
+    assert!(is_legacy_gguf_quant(16)); // IQ2_XXS — still no kernel
+    assert!(is_legacy_gguf_quant(18)); // IQ3_XXS — still no kernel
+    assert!(is_legacy_gguf_quant(22)); // IQ2_S — still no kernel
     assert!(is_legacy_gguf_quant(9)); // Q8_1
     assert!(is_legacy_gguf_quant(10)); // Q2_K
     assert!(is_legacy_gguf_quant(11)); // Q3_K
