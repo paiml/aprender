@@ -75,6 +75,39 @@ LOCK_BUSY=75   # flock -E: the lock was not free in LOCK_WAIT seconds (an apr ex
 command -v flock > /dev/null && command -v choom > /dev/null \
   || { echo "decline: flock and choom (util-linux) are required -- every apr call runs under the fleet GPU lock" >&2; exit 2; }
 apr_locked() { flock -E "$LOCK_BUSY" -w "$LOCK_WAIT" "$GPU_LOCK" choom -n 1000 -- "$APR" "$@"; }
+
+# ── #3843: ASK THE BINARY whether a verb takes a flag; never assume ───────────
+# The verb loop hard-coded one backend flag and passed it to all four verbs. Their
+# clap surfaces differ, so `apr code` got `--no-gpu`, exited 2 on a usage error,
+# and 48 of 48 cells recorded a harness defect as `ran: false` — a model result.
+# That is the operator's standing rule exactly: "tests DERIVED from the interface
+# surface (clap tree); hand-coded verb/flag lists are the leak." Deriving it from
+# `--help` means the ladder cannot be wrong about a verb again, because the answer
+# comes from the binary under test rather than from a table someone maintains.
+# Cached: one `--help` per (verb, flag), not one per cell.
+declare -A _VERB_FLAG_OK
+# <verb-path> may be several words ("serve run"): the flags live on the SUBCOMMAND,
+# not on its group. Asking `apr serve --help` reports no `--no-gpu` while
+# `apr serve run --help` lists it — querying the group would have re-introduced the
+# very defect this helper fixes, one level down. Measured, not assumed.
+verb_accepts_flag() { # <verb-path> <flag> -> 0 if that subcommand's --help lists the flag
+  local verb="$1" fl="$2" key="$1/$2" out
+  [ -z "$fl" ] && return 0
+  if [ -z "${_VERB_FLAG_OK[$key]:-}" ]; then
+    # shellcheck disable=SC2086
+    out=$("$APR" $verb --help 2>&1)
+    if grep -qE -- "(^|[[:space:],])${fl}([[:space:],=]|$)" <<< "$out"; then
+      _VERB_FLAG_OK[$key]=yes
+    else
+      _VERB_FLAG_OK[$key]=no
+    fi
+  fi
+  [ "${_VERB_FLAG_OK[$key]}" = yes ]
+}
+# The flag to pass to <verb>, or empty when that verb does not accept it.
+flag_for() { # <verb> <flag>
+  if verb_accepts_flag "$1" "$2"; then printf '%s' "$2"; else printf ''; fi
+}
 lock_timeout() { # lock_timeout <what> -> exit 2, naming the holder from /proc/locks (by inode; lslocks
   local ino pid holder   # leaves PATH empty for a file it cannot resolve, so it cannot be matched by path)
   ino=$(stat -c %i "$GPU_LOCK" 2> /dev/null)
@@ -347,12 +380,31 @@ PY
 )
   be_json="{"; first=1
   IFS=',' read -r -a bes <<< "$rbackends"
+  # ── #3843: `code` is measured ONCE per rung, and NOT per backend ─────────────
+  # `apr code` spawns its OWN `apr serve` ("Launched apr serve on port N (pid N)"),
+  # so the backend is chosen by the server it starts, not by its caller. There is
+  # no backend selector on `apr code` at all. Passing this loop's `--no-gpu`/`--gpu`
+  # to it produced `error: unexpected argument '--no-gpu' found`, clap exit 2, on
+  # 48 of 48 cells across both hosts — a HARNESS defect recorded as `ran: false`,
+  # i.e. as a model result. Running it per backend would also record one
+  # measurement twice under two labels.
+  #
+  # The cell still appears under each backend, because the judge requires all four
+  # verbs there, but it carries `backend: "inherited-from-spawned-serve"` so the
+  # receipt states what was actually measured instead of implying a backend.
+  code_out=$(apr_locked code -p "Reply with the single word: ok" --model "$path" \
+      --output-format json 2>&1); code_rc=$?
+  [ "$code_rc" = "$LOCK_BUSY" ] && lock_timeout "apr code $rid"
+  code_ran=true; [ $code_rc -eq 0 ] || code_ran=false
+
   for b in "${bes[@]}"; do
     case "$b" in cpu) flag="--no-gpu" ;; cuda|gpu) flag="--gpu" ;; *) flag="" ;; esac
     # --verbose prints realizar's `[DEBUG] formatted_prompt=…`, which the #3743 check reads.
     # apr_locked / LOCK_BUSY are KEPT from main: the GPU lock is what serialises the
     # ladder against every other session on the box. #3743's side dropped it.
-    run_out=$(apr_locked run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 --verbose $flag 2>&1); run_rc=$?
+    run_flag=$(flag_for run "$flag")
+    # shellcheck disable=SC2086
+    run_out=$(apr_locked run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 --verbose $run_flag 2>&1); run_rc=$?
     [ "$run_rc" = "$LOCK_BUSY" ] && lock_timeout "apr run $rid ($b)"
     fb=false; ran=true; esc=false
     if grep -qE 'falling back to CPU|path rejected, attempting fallback|runs on the CPU; the GPU backend' <<< "$run_out"; then fb=true; fi
@@ -374,16 +426,14 @@ PY
     # records its own rc and the judge refuses a receipt missing any of them.
 
     # chat: stdin-driven, one turn, machine envelope. `/exit` closes the session.
+    chat_flag=$(flag_for chat "$flag")
+    # shellcheck disable=SC2086
     chat_out=$(printf 'What is the capital of France? Answer briefly.\n/exit\n' \
-        | apr_locked chat "$path" --json --max-tokens 16 $flag 2>&1); chat_rc=$?
+        | apr_locked chat "$path" --json --max-tokens 16 $chat_flag 2>&1); chat_rc=$?
     [ "$chat_rc" = "$LOCK_BUSY" ] && lock_timeout "apr chat $rid ($b)"
     chat_ran=true; [ $chat_rc -eq 0 ] || chat_ran=false
 
-    # code: non-interactive, machine envelope (#3775 requires one on EVERY exit).
-    code_out=$(apr_locked code -p "Reply with the single word: ok" --model "$path" \
-        --output-format json $flag 2>&1); code_rc=$?
-    [ "$code_rc" = "$LOCK_BUSY" ] && lock_timeout "apr code $rid ($b)"
-    code_ran=true; [ $code_rc -eq 0 ] || code_ran=false
+    # code: measured once per rung, above this loop — see #3843.
 
     # serve: the route set is DERIVED from the router's registered paths, never a
     # hand-listed constant (alfredodeza's amendment, adopted on #3715) — a route that
@@ -391,14 +441,14 @@ PY
     # probed non-streaming and streaming, because the ollama-compat wire has its own
     # translation layer that has already diverged from the OpenAI-compat one twice
     # independently (#3825's tool_calls gap, and this defect).
-    serve_json=$(ladder_serve_probe "$path" "$flag" "$rid" "$b")
+    serve_json=$(ladder_serve_probe "$path" "$(flag_for "serve run" "$flag")" "$rid" "$b")
     serve_rc=$?
 
     [ $first = 1 ] || be_json="$be_json,"; first=0
     be_json="$be_json\"$b\":{\"ran\":$ran,\"fallback\":$fb,\"escaped_special\":$esc,\"rc\":$run_rc"
     be_json="$be_json,\"verbs\":{\"run\":{\"ran\":$ran,\"rc\":$run_rc}"
     be_json="$be_json,\"chat\":{\"ran\":$chat_ran,\"rc\":$chat_rc}"
-    be_json="$be_json,\"code\":{\"ran\":$code_ran,\"rc\":$code_rc}"
+    be_json="$be_json,\"code\":{\"ran\":$code_ran,\"rc\":$code_rc,\"backend\":\"inherited-from-spawned-serve\"}"
     be_json="$be_json,\"serve\":$serve_json}}"
   done
   be_json="$be_json}"
@@ -420,6 +470,35 @@ print(json.dumps({"id": rid, "file": rfile, "inventory_only": inv_only, "present
                   "golden_output": qa.get("golden_output"), "backends": be, "green": green}))
 PY
 )
+  # ── #3842: NEVER append an empty line ────────────────────────────────────────
+  # If the row builder above produced nothing — because `apr qa --json` wrote zero
+  # bytes, or the builder itself threw — this used to append an EMPTY LINE. The
+  # receipt assembler then dropped the empty line, the row vanished, and RED went
+  # on being counted separately: gx10's 0.69.1 receipt said `red: 3` while its rows
+  # held two, with the failed REQUIRED rung `qwen35-27b-q4km` absent from its own
+  # receipt. A red that hides is worse than a red that fails, because no per-row
+  # judging can find a row that was never written.
+  #
+  # So an unbuildable row becomes an explicit RED row that NAMES why, and carries
+  # the qa byte count so "apr qa wrote nothing" is distinguishable from "the row
+  # builder crashed".
+  if [ -z "$row" ] || ! python3 -c 'import json,sys; json.load(sys.stdin)' <<< "$row" 2>/dev/null; then
+    qa_bytes=$(stat -c %s "$qa_json" 2>/dev/null || echo 0)
+    row=$(python3 - "$rid" "$rfile" "$got" "$rreq" "$rinv" "$qa_rc" "$qa_bytes" <<'PY'
+import json, sys
+rid, rfile, sha, req, inv, qa_rc, qa_bytes = sys.argv[1:8]
+why = (f"apr qa --json wrote 0 bytes (exit {qa_rc}) — no document to judge"
+       if qa_bytes == "0" else
+       f"the receipt row could not be built from a {qa_bytes}-byte qa document (apr qa exit {qa_rc})")
+print(json.dumps({
+    "id": rid, "file": rfile, "inventory_only": inv == "1", "present": True,
+    "sha_ok": True, "sha256": sha, "required": req == "1", "qa_rc": int(qa_rc),
+    "capability_match": {"passed": False, "skipped": False, "message": why},
+    "golden_output": {"passed": False, "skipped": False, "message": why},
+    "backends": {}, "green": False, "row_synthesized": True, "why": why}))
+PY
+)
+  fi
   printf '%s\n' "$row" >> "$ROWS"
   EXECUTED=$((EXECUTED + 1))
   if grep -q '"green": true' <<< "$row"; then
