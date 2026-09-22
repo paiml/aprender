@@ -130,7 +130,7 @@ use crate::autograd::cuda_forward::{
     batched_softmax_forward, batched_to_interleaved_forward, batched_transpose_forward,
     cast_f32_to_f16_gpu, elementwise_mul_forward, expand_kv_heads, fused_residual_rmsnorm_forward,
     fused_swiglu_forward, gemm_f16_to_f32_forward, gemm_forward, interleaved_to_batched_forward,
-    per_head_rmsnorm_forward, residual_add_forward, rms_norm_forward, rms_norm_forward_with_eps,
+    per_head_rmsnorm_forward, residual_add_forward, rms_norm_forward_with_eps,
     scale_forward, silu_forward,
 };
 #[cfg(feature = "cuda")]
