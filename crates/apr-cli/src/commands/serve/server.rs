@@ -71,7 +71,7 @@ fn run_cpu_server(
     config: &ServerConfig,
     offload: Option<realizar::api::OffloadReport>,
 ) -> Result<()> {
-    use realizar::api::{create_router_with_config, AppState};
+    use realizar::api::AppState;
 
     // Measure the model BEFORE it is moved into AppState. Anything not
     // measurable here stays absent — `/realize/model` no longer substitutes
@@ -91,7 +91,184 @@ fn run_cpu_server(
     if let Some(offload) = offload {
         state = state.with_offload_report(offload);
     }
-    let state = state;
+    serve_router(state, config)
+}
+
+/// #3571: serve the Qwen3.5 hybrid from a resident session.
+///
+/// The dense servers cannot: the hybrid has no dense layers, and the base
+/// `apr serve` used to hand them (#3608) was the embeddings, the final norm and
+/// `lm_head` alone — HTTP 200 with 1024 tokens of `"\n"` on the CPU route, HTTP
+/// 500 on the GPU one. The session is the one `apr chat` holds (#3595): built,
+/// uploaded and F2-validated once, its decode state carried from one request to
+/// the next.
+///
+/// The hybrid places every layer on one backend or none, so `--gpu-layers`
+/// resolves to all of them or zero, and the line reports where they actually
+/// are — a GPU that could not take the model is the printed fallback and
+/// `resolved=0`, never a claim.
+#[cfg(feature = "inference")]
+fn start_qwen35_server(
+    mapped_model: std::sync::Arc<realizar::gguf::MappedGGUFModel>,
+    config: &ServerConfig,
+) -> Result<()> {
+    let state = build_qwen35_state(mapped_model, config)?;
+    serve_router(state, config)
+}
+
+/// The serving state for the Qwen3.5 hybrid: the resident session, its resolution report
+/// and its measured source — everything [`start_qwen35_server`] serves, short of the socket.
+#[cfg(feature = "inference")]
+fn build_qwen35_state(
+    mapped_model: std::sync::Arc<realizar::gguf::MappedGGUFModel>,
+    config: &ServerConfig,
+) -> Result<realizar::api::AppState> {
+    use realizar::api::AppState;
+    use realizar::gguf::qwen35_session::Qwen35Session;
+
+    let vocab = extract_gguf_vocab(&mapped_model)?;
+    let session = Qwen35Session::load(&mapped_model, !config.wants_accelerator())
+        .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load the Qwen3.5 hybrid: {e}")))?;
+    let total_layers = u32::try_from(session.num_layers()).unwrap_or(u32::MAX);
+    // Refuses a partial --gpu-layers before a request is ever served.
+    config.resolve_layers(total_layers)?;
+    let on_gpu = session.on_gpu();
+    let resolved_layers = if on_gpu { total_layers } else { 0 };
+    let context_length = session.context_length();
+    println!(
+        "{}",
+        format!(
+            "Model ready: Qwen3.5 hybrid, {total_layers} layers resident on the {}, declared context {context_length} tokens",
+            if on_gpu { "GPU" } else { "CPU" }
+        )
+        .green()
+    );
+    // #3719 (apr code) reads a cell's thinking mode from this line. It reports what the chat
+    // endpoint will render — the template the SHARED selection picks for this architecture
+    // (`format_messages` -> `detect_format_from_name`, the path run and chat use too, never a
+    // template named here: #3755 is replacing the one it picks today), and the thinking mode
+    // read off that template's own rendering. It is the server's DEFAULT; #3723 lets a
+    // request choose.
+    let architecture = mapped_model.model.architecture().unwrap_or("qwen35");
+    let template = realizar::chat_template::detect_format_from_name(architecture);
+    println!(
+        "chat template: {template:?} (thinking {})",
+        rendered_thinking_mode(architecture)
+    );
+    println!(
+        "gpu-layers: requested={} resolved={resolved_layers} total={total_layers} (backend={})",
+        config
+            .gpu_layers
+            .map_or_else(|| "none".to_string(), |r| r.to_string()),
+        if on_gpu { "cuda" } else { "cpu" }
+    );
+    let offload = super::offload_report(config, resolved_layers, total_layers);
+
+    let model_source = config
+        .model_path
+        .as_deref()
+        .map(realizar::api::ModelSourceInfo::from_path)
+        .unwrap_or_default()
+        .with_architecture("qwen35")
+        .with_model_max_context_length(context_length)
+        .with_context_length(config.context_length);
+    let state = AppState::with_qwen35_session(session, mapped_model, vocab)
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?
+        .with_model_source(model_source)
+        .with_verbose(config.verbose)
+        .with_offload_report(offload);
+    Ok(state)
+}
+
+/// #3571 unit (2), the cop's condition (b): the hybrid's generic stack is legitimately zero
+/// layers, so `apr serve` must route it to its resident session BEFORE the zero-layer refusal
+/// of unit (1) — and must still refuse any other zero-layer stack.
+/// The thinking mode a chat template actually renders for `architecture`: its assistant prefix
+/// ending in a closed `</think>` pre-fills an empty think block (thinking off), an open
+/// `<think>` forces one (on), anything else leaves it to the model. Read off the rendering, not
+/// the template's name, so a replacement template reports itself (#3755).
+#[cfg(feature = "inference")]
+fn rendered_thinking_mode(architecture: &str) -> &'static str {
+    // The render the chat endpoint does (`format_chat_messages` is this call).
+    let probe = [realizar::chat_template::ChatMessage::new("user", "x")];
+    let rendered =
+        realizar::chat_template::format_messages(&probe, Some(architecture)).unwrap_or_default();
+    let tail = rendered.trim_end();
+    if tail.ends_with("</think>") {
+        "off"
+    } else if tail.ends_with("<think>") {
+        "on"
+    } else {
+        "the model's choice"
+    }
+}
+
+#[cfg(test)]
+mod qwen35_serve_route_tests {
+    use super::*;
+
+    const MODEL: &str = "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf";
+
+    #[test]
+    fn qwen35_serve_passes_the_zero_layer_refusal_through_its_session() {
+        if !Path::new(MODEL).exists() {
+            eprintln!("SKIP: {MODEL} is absent");
+            return;
+        }
+        let mapped = std::sync::Arc::new(
+            realizar::gguf::MappedGGUFModel::from_path(MODEL).expect("map the GGUF"),
+        );
+        // start_gguf_server takes the hybrid branch first ...
+        assert!(realizar::gguf::hybrid_forward_handles(
+            mapped.model.architecture().unwrap_or_default()
+        ));
+        // ... because the dense loader would (rightly) refuse its zero-layer base,
+        match build_serve_model(&mapped) {
+            Err(CliError::ModelLoadFailed(msg)) => assert!(msg.contains("#3571"), "{msg}"),
+            other => panic!("the dense loader must refuse the base: {:?}", other.map(|m| m.layers().len())),
+        }
+        // ... and the hybrid route builds a state that serves every layer from the session.
+        let config = ServerConfig {
+            no_gpu: true,
+            ..ServerConfig::default()
+        };
+        let state = build_qwen35_state(mapped, &config).expect("qwen35 serve passes");
+        let served = state.qwen35_session().expect("a resident session");
+        let layers = served.session.lock().expect("lock").num_layers();
+        assert!(layers > 0, "the session holds the hybrid's layers: {layers}");
+    }
+
+    /// The startup line's thinking mode is read off what the template renders.
+    #[test]
+    fn the_thinking_mode_is_read_off_the_rendered_template() {
+        // Today's qwen35 selection pre-fills an empty think block; whichever template #3755
+        // puts in its place, the line must report what that one renders.
+        let rendered = realizar::chat_template::format_messages(
+            &[realizar::chat_template::ChatMessage::new("user", "x")],
+            Some("qwen35"),
+        )
+        .expect("the qwen35 template renders");
+        let want = if rendered.trim_end().ends_with("</think>") {
+            "off"
+        } else if rendered.trim_end().ends_with("<think>") {
+            "on"
+        } else {
+            "the model's choice"
+        };
+        assert_eq!(rendered_thinking_mode("qwen35"), want, "{rendered:?}");
+        // A plain ChatML model pre-fills nothing: the choice is the model's.
+        assert_eq!(rendered_thinking_mode("qwen2"), "the model's choice");
+    }
+}
+
+/// Serve realizar's full router over `state` until Ctrl+C.
+///
+/// The half of [`run_cpu_server`] that does not depend on which model the
+/// state holds — shared with [`start_qwen35_server`] (#3571), so the hybrid is
+/// served by the same router, banner and shutdown as every other GGUF.
+#[cfg(feature = "inference")]
+fn serve_router(state: realizar::api::AppState, config: &ServerConfig) -> Result<()> {
+    use realizar::api::create_router_with_config;
 
     // Create realizar's full inference router (Ollama-parity endpoints).
     // --no-cors / --no-metrics must reach the router, not stop at the banner.

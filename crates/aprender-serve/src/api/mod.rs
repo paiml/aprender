@@ -216,6 +216,12 @@ pub struct AppState {
     /// and any future streaming/batch backends.
     /// See `contracts/qwen3-moe-serve-dispatch-v1.yaml` (V1_001, V1_003).
     mapped_gguf_model: Option<Arc<crate::gguf::MappedGGUFModel>>,
+    /// #3571: the Qwen3.5 hybrid, resident for the server's lifetime. Its
+    /// Gated-DeltaNet and attention layers live here, not in
+    /// `quantized_model` — the hybrid has no dense layers — so a Qwen3.5
+    /// request is served from this session or refused, never decoded through
+    /// the base (embeddings, norm, `lm_head`) alone.
+    qwen35_session: Option<Arc<Qwen35Served>>,
     /// GH-330: Cached EOS token ID (avoids RwLock in hot path)
     cached_eos_token_id: Option<u32>,
     /// GH-152: Enable verbose request/response logging
@@ -361,6 +367,7 @@ pub(crate) fn generation_error_status(err: &RealizarError) -> StatusCode {
 }
 
 include!("mod_app_state_gpu.rs");
+include!("mod_app_state_qwen35.rs");
 include!("mod_create_demo.rs");
 include!("router.rs");
 include!("dispatch_metrics.rs");

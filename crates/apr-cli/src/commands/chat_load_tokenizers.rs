@@ -129,6 +129,115 @@ fn template_format_name(tf: TemplateFormat) -> &'static str {
     }
 }
 
+/// #3595: load a Qwen3.5 hybrid GGUF as a resident session, or `None` for any other
+/// architecture (which the dense GH-224 path below serves).
+///
+/// The session attempts CUDA unless `force_cpu`, exactly as `apr run` does, and it is
+/// the only thing that tells the user which backend the hybrid runs on: its route
+/// notice is `qwen35_route_notice`'s, and its `Backend:` or fallback line is printed
+/// once, by the code that took that route. This used to print "the GPU backend does
+/// not implement it yet (#3090)" unconditionally — a day after #3090 shipped — and
+/// then rebuild the model on the GPU for every turn anyway.
+fn try_init_qwen35_session(
+    mapped: &realizar::gguf::MappedGGUFModel,
+    force_cpu: bool,
+) -> Result<Option<realizar::gguf::qwen35_session::Qwen35Session>, crate::error::CliError> {
+    if !realizar::gguf::hybrid_forward_handles(mapped.model.architecture().unwrap_or_default()) {
+        return Ok(None);
+    }
+    realizar::gguf::qwen35_session::Qwen35Session::load(mapped, force_cpu)
+        .map(Some)
+        .map_err(|e| crate::error::CliError::ModelLoadFailed(format!("Qwen3.5 hybrid: {e}")))
+}
+
+/// #3595 done_when 2: what the session PRINTED about its route must agree with the
+/// route it TOOK. The defect was two lines on one run — "runs on the CPU; the GPU
+/// backend does not implement it yet" and then "Backend: GPU" — and every test passed,
+/// because nothing compared the banner with the route.
+#[cfg(test)]
+mod qwen35_route_banner_tests {
+    use super::*;
+    use realizar::gguf::forward_qwen35::QWEN35_GPU_FALLBACK_PREFIX;
+
+    const MODEL: &str = "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf";
+
+    /// The route a line states: `Some(true)` the GPU, `Some(false)` the CPU, `None`
+    /// a line that states no route.
+    fn states_route(line: &str) -> Option<bool> {
+        if line.starts_with("Backend: GPU (CUDA,") {
+            Some(true)
+        } else if line.starts_with(QWEN35_GPU_FALLBACK_PREFIX) || line.contains("runs on the CPU") {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
+    /// On the GPU, exactly one route line and it says GPU. On the CPU, the last route
+    /// line says CPU — a GPU line may precede it only as the route a fallback then
+    /// left — or there is none (the user asked for the CPU, which is not news).
+    fn banner_agrees_with_route(notices: &[String], on_gpu: bool) -> Result<(), String> {
+        let stated: Vec<bool> = notices.iter().filter_map(|l| states_route(l)).collect();
+        let agrees = if on_gpu {
+            stated == [true]
+        } else {
+            stated.last().map_or(true, |&gpu| !gpu)
+        };
+        if agrees {
+            Ok(())
+        } else {
+            Err(format!("printed {notices:?}, but the session is on the {}", if on_gpu { "GPU" } else { "CPU" }))
+        }
+    }
+
+    #[test]
+    fn the_check_rejects_the_banner_3595_reported() {
+        let reported = [
+            "[qwen35: Gated DeltaNet runs on the CPU; the GPU backend does not implement it yet (#3090)]".to_string(),
+            "Backend: GPU (CUDA, NVIDIA GeForce RTX 4090, 24035 MB VRAM) [qwen35 hybrid forward, #3090]".to_string(),
+        ];
+        assert!(banner_agrees_with_route(&reported, true).is_err(), "the #3595 pair must be RED");
+        assert!(banner_agrees_with_route(&reported[1..], true).is_ok());
+        assert!(banner_agrees_with_route(&reported[1..], false).is_err(), "a GPU line on a CPU session");
+        let fell_back = [
+            reported[1].clone(),
+            format!("{QWEN35_GPU_FALLBACK_PREFIX}, falling back to CPU: the F2 CPU-parity guard rejected the GPU path"),
+        ];
+        assert!(banner_agrees_with_route(&fell_back, false).is_ok(), "GPU, then a printed fallback");
+        assert!(banner_agrees_with_route(&[], false).is_ok(), "--no-gpu owes no notice");
+        assert!(banner_agrees_with_route(&[], true).is_err(), "a GPU run must say so");
+    }
+
+    #[test]
+    fn a_qwen35_session_prints_the_route_it_took() {
+        if !Path::new(MODEL).exists() {
+            eprintln!("SKIP: {MODEL} is absent");
+            return;
+        }
+        let mapped = realizar::gguf::MappedGGUFModel::from_path(MODEL).expect("map the GGUF");
+        #[cfg(feature = "cuda")]
+        let cuda_host = realizar::gguf::OwnedQuantizedModelCuda::is_available();
+        #[cfg(not(feature = "cuda"))]
+        let cuda_host = false;
+        for force_cpu in [false, true] {
+            let session = try_init_qwen35_session(&mapped, force_cpu)
+                .expect("the hybrid loads")
+                .expect("a qwen35 GGUF gets a session");
+            banner_agrees_with_route(session.notices(), session.on_gpu())
+                .unwrap_or_else(|e| panic!("force_cpu={force_cpu}: {e}"));
+            if force_cpu || !cuda_host {
+                assert!(!session.on_gpu(), "force_cpu={force_cpu}, cuda_host={cuda_host}");
+            } else {
+                // A CUDA binary on a CUDA host must reach the upload: either it serves
+                // from the GPU, or it printed why it could not.
+                let tried = session.on_gpu()
+                    || session.notices().iter().any(|l| l.starts_with(QWEN35_GPU_FALLBACK_PREFIX));
+                assert!(tried, "the GPU was never attempted: {:?}", session.notices());
+            }
+        }
+    }
+}
+
 /// GH-224: Try to initialize GGUF CUDA model from a mapped model.
 /// Returns (cuda_model, init_failed).
 #[cfg_attr(coverage_nightly, coverage(off))]
@@ -137,13 +246,6 @@ fn try_init_gguf_cuda(
     mapped: &realizar::gguf::MappedGGUFModel,
 ) -> Result<(Option<realizar::gguf::OwnedQuantizedModelCuda>, bool), crate::error::CliError> {
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
-    // #3091: Qwen3.5/Qwen3.8 hybrids have a CPU forward but no GPU one yet (#3090). Skip the
-    // CUDA attempt instead of failing it, so chat does not report a load error for a model
-    // it can run.
-    if mapped.model.architecture() == Some("qwen35") {
-        eprintln!("[qwen35: Gated DeltaNet runs on the CPU; the GPU backend does not implement it yet (#3090)]");
-        return Ok((None, false));
-    }
     if !OwnedQuantizedModelCuda::is_available() {
         return Ok((None, false));
     }

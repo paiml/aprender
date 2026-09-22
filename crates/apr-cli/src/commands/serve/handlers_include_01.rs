@@ -141,8 +141,12 @@ fn start_apr_q4k_server_gpu(
     // begun. Read the count the file declares first, so a zero-layer APR is refused at load
     // like every other route. A file that declares none is left to the pool path, which
     // refuses a missing `num_layers` by name (`parse_apr_q4k_config`).
+    // #3791: the declared architecture also picks the chat template — this state holds no
+    // model object for the shared selector to read it from.
+    let mut declared_architecture = None;
     if let Ok(apr) = AprV2Model::load(model_path) {
         let meta = apr.metadata();
+        declared_architecture = meta.architecture.clone();
         if let Some(refusal) = meta.num_layers.and_then(|layers| {
             zero_layer_refusal(meta.architecture.as_deref().unwrap_or("apr"), layers)
         }) {
@@ -154,9 +158,12 @@ fn start_apr_q4k_server_gpu(
     let q4k_tx = apr_q4k_scheduler::spawn_apr_q4k_inference_thread(&model_str)
         .map_err(|e| CliError::InferenceFailed(format!("Q4K inference thread failed: {e}")))?;
 
-    let state = AppState::with_apr_q4k_and_vocab_eos(q4k_tx, vocab, eos_id)
+    let mut state = AppState::with_apr_q4k_and_vocab_eos(q4k_tx, vocab, eos_id)
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
         .with_verbose(config.verbose);
+    if let Some(architecture) = declared_architecture {
+        state = state.with_architecture(architecture);
+    }
 
     println!("{}", "Q4K GPU inference ready (ALB-095)".green());
 

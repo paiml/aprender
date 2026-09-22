@@ -133,3 +133,7 @@ pub mod f2_receipt;
 /// Qwen3.5 / Qwen3.8 hybrid (Gated `DeltaNet` + gated attention) CPU forward (#3091).
 #[path = "inference/forward/forward_qwen35.rs"]
 pub mod forward_qwen35;
+/// The Qwen3.5 hybrid held resident across calls — one build, one F2 guard, a
+/// decode state that outlives the turn (#3595 `apr chat`, #3571 `apr serve`).
+#[path = "inference/forward/qwen35_session.rs"]
+pub mod qwen35_session;
