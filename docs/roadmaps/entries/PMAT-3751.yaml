@@ -1,0 +1,20 @@
+- id: PMAT-3751
+  github_issue: 3751
+  item_type: task
+  title: 'Every CPU-reference validator compares an FP32-activation GPU against a Q8_K-activation CPU — measure CPU Q8_K vs FP32 across the fleet, and move the validators that can false-reject an exact GPU onto the FP32 reference'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-eb
+  created: 2026-09-22T00:20:00Z
+  updated: 2026-09-22T00:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3751 done_when 1, verbatim: "Measured, not assumed: for every model in the host inventory, the per-position cosine of CPU(Q8_K activations) vs CPU(FP32 activations) over a fixed prompt set incl. a chat-template start. Report the min per model, and name where it is < 0.999."'
+  - 'done_when 2, verbatim: "Every F2 / CPU-reference validator site is listed, with the activation precision it uses. A validator that can false-reject an exact GPU on outlier tokens uses the scoped FP32 reference (eb''s thread-local switch), or is justified."'
+  - 'done_when 3, verbatim: "If any model''s CPU answer changes (greedy tokens differ from FP32), that is a correctness defect with its own falsifier, not a note."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Owner routed by the cop (aprender-04, issue comment 2026-09-21T17:55:49Z): aprender-eb after #3714, together with #3757. The validator list is my issue comment of 2026-09-21T17:34:42Z. This branch is stacked on #3714 R1 (01989323d), which introduced quantize::with_fp32_activations, and it is Refs, not Closes: done_when 3 stays open. done_when 1: infer/q8k_reference_drift_tests.rs (env APR_3751_MODELS) runs each model''s OWN CPU forward (dense, qwen35, qwen3moe) over chat-france, chat-zorblat and plain, as shipped and under with_fp32_activations; evidence/3751/q8k-vs-fp32-{lambda,gx10}.txt, 39 rows each. done_when 2, per site: (3) the qwen35 F2 reference now runs under with_fp32_activations (forward_qwen35.rs), and the Qwen3.5-9B pos-23 false reject is verified cleared (qwen35-9b-chat-f2-lambda.txt); (5) the qwen3moe F2 was FP32 from #3714; (1) the dense runtime F2 judges its SERIAL probe against FP32 and its BATCHED probe against Q8_K (F2ProbePath::reference_uses_fp32_activations, measured by infer/dense_f2_reference_choice_tests.rs, env APR_3751_DENSE_MODELS: all 24 serial rows on both hosts are at least as close to FP32; the batched rows track neither uniformly and are re-measured after aprender-37''s prefill fixes); (2) the load-time parity gate KEEPS Q8_K, justified: one BOS token, GPU >= 0.999531 against both references on 6 files, floor 0.98, FP32 not uniformly closer; (4) wgpu is not a reference problem: it rejects against both references with the cosine moved <= 0.0066 (wgpu_reference_choice_tests.rs, posted on #3757). done_when 3 (greedy divergences: 4 pairs on lambda, 7 on gx10, different sets) needs its falsifier and a ruling on the fix, since making the CPU default FP32 costs decode throughput (PMAT-305 measured -17% on x86), and that choice is the cop''s.'
