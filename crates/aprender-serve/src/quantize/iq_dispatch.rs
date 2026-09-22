@@ -410,6 +410,59 @@ mod tests {
         assert_eq!(iq_block_elems(GGML_TYPE_IQ4_XS), Some(256));
     }
 
+    /// #3869: the LOADER and the DISPATCH must agree about every type's block
+    /// layout, because they are two tables of the same facts and nothing
+    /// compared them.
+    ///
+    /// This is the guard the IQ4_NL defect walked straight through. The tree
+    /// already held the right numbers in TWO places — `ggml_type_table.rs:150`
+    /// (`blck_size: 32, type_size: 18`, which is how the loader sized the
+    /// tensor correctly) and `aprender-quant/src/ggml_type.rs:177`. Only this
+    /// module assumed 256. The loader read a row of 144 bytes and the matvec
+    /// read 18 of them, and no test in the tree could see the disagreement
+    /// because neither side ever looked at the other.
+    ///
+    /// A type is sized by the loader and decoded by the dispatch. If those two
+    /// answers differ, one of them is reading the file wrong, and which one
+    /// does not matter — the pair is unusable either way.
+    #[test]
+    fn the_dispatch_agrees_with_the_loader_about_every_block_layout() {
+        use crate::gguf::ggml_type_table;
+
+        let mut checked = 0usize;
+        for qtype in 0u32..=40 {
+            let Some(bytes) = iq_block_bytes(qtype) else {
+                continue;
+            };
+            let elems = iq_block_elems(qtype).expect("every sized type has an element count");
+            let loader = ggml_type_table::traits(qtype).unwrap_or_else(|| {
+                panic!(
+                    "type {qtype} has a dequantizer here but NO row in the loader's table, so \
+                     the loader cannot size a tensor this module claims it can decode"
+                )
+            });
+            assert_eq!(
+                bytes, loader.type_size,
+                "type {qtype} ({}): dispatch says {bytes} bytes per block, loader says {} — the \
+                 loader sizes the tensor and this module walks it, so they cannot differ",
+                loader.name, loader.type_size
+            );
+            assert_eq!(
+                elems, loader.blck_size,
+                "type {qtype} ({}): dispatch says {elems} elements per block, loader says {} — \
+                 this is exactly the IQ4_NL defect, where the tree held the right number and \
+                 the dispatch assumed 256",
+                loader.name, loader.blck_size
+            );
+            checked += 1;
+        }
+        assert!(
+            checked >= 6,
+            "expected at least the six IQ types to be compared, compared {checked} — a loop \
+             that checks nothing is not a guard"
+        );
+    }
+
     /// Elements per block, stated independently of the production code so this
     /// file's tests cannot be satisfied by agreeing with the thing they check.
     fn expected_block_elems(qtype: u32) -> usize {
