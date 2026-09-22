@@ -54,6 +54,12 @@ struct Model {
     /// `full_attention_interval = 4` — and 16 heads x 256 value_length = 4096
     /// against hidden 2560. The files were right and the expectation was mine.
     attn_in: usize,
+    arch: String,
+    kv_heads_key: usize,
+    qkv_width: usize,
+    ts_rank: usize,
+    conv_kernel: usize,
+    experts: usize,
     tensors: Vec<(String, Vec<usize>)>,
 }
 
@@ -79,12 +85,18 @@ fn read_models(input: impl std::io::BufRead) -> Vec<Model> {
     for line in input.lines().map_while(Result::ok) {
         let p: Vec<&str> = line.trim().split('|').collect();
         match p.as_slice() {
-            ["M", name, h, f, v, a] => models.push(Model {
+            ["M", name, h, f, v, a, arch, kvk, qkv, tsr, ck, ex] => models.push(Model {
                 name: (*name).to_string(),
                 hidden: h.parse().unwrap_or(0),
                 ffn: f.parse().unwrap_or(0),
                 vocab: v.parse().unwrap_or(0),
                 attn_in: a.parse().unwrap_or(0),
+                arch: (*arch).to_string(),
+                kv_heads_key: kvk.parse().unwrap_or(0),
+                qkv_width: qkv.parse().unwrap_or(0),
+                ts_rank: tsr.parse().unwrap_or(0),
+                conv_kernel: ck.parse().unwrap_or(0),
+                experts: ex.parse().unwrap_or(0),
                 tensors: Vec::new(),
             }),
             ["T", name, dims] => push_tensor(&mut models, name, dims),
@@ -115,17 +127,121 @@ fn probe_embedding(m: &Model) -> Vec<String> {
     .collect()
 }
 
-/// The dims the METADATA says a projection must have, or None if this tensor
-/// is not one the probe has an independent expectation for.
-fn expected_dims(m: &Model, name: &str) -> Option<(usize, usize)> {
-    if name.ends_with("ffn_gate.weight") || name.ends_with("ffn_up.weight") {
-        Some((m.ffn, m.hidden))
-    } else if name.ends_with("ffn_down.weight") {
-        Some((m.hidden, m.ffn))
-    } else if name.ends_with("attn_output.weight") {
-        Some((m.hidden, m.attn_in))
-    } else {
-        None
+/// #3863: the per-architecture expectation table, DERIVED from the inventory
+/// rather than assumed.
+///
+/// The naive version of this — `attn_output` expected as `[hidden, hidden]` —
+/// fires on every qwen3.5 hybrid at blk.3/7/11/15 (`full_attention_interval`)
+/// because that in_dim is `head_count * key_length`, 4096 against hidden 2560.
+/// So a wrong table is worse than no table, and the table below was obtained by
+/// fitting candidate metadata expressions against every model of each
+/// architecture and keeping only formulas that hold for ALL of them.
+///
+/// EVIDENCE PER ARCHITECTURE (lambda inventory, 21 models):
+/// ```text
+///   qwen35     n=8   zero ambiguity — every stem has exactly one fitting formula
+///   qwen2      n=7   unambiguous once `heads*head_dim` is read as `hidden`
+///   qwen3      n=3   same
+///   qwen3moe   n=2   same
+///   qwen35moe  n=1   NOT DETERMINED — see below
+/// ```
+///
+/// `heads*head_dim` and `hidden` are the same number BY CONSTRUCTION when
+/// head_dim is derived as hidden/heads, so a tie between them is definitional,
+/// not evidence of a choice.
+///
+/// REFUSE, NEVER DEFAULT. An architecture absent from this table returns
+/// `Unknown`, and the caller reports that rather than falling back to
+/// `hidden`. Falling back is exactly `resolve_qtype`'s
+/// `.unwrap_or(WeightQuantType::Q4K)` (#3850) one layer up: a plausible
+/// default silently applied to something it does not describe.
+enum Expect {
+    /// (out_dim, in_dim) the metadata says this tensor must have.
+    Dims(usize, usize),
+    /// This architecture, or this stem within it, has no derived expectation.
+    Unknown(String),
+    /// Not a tensor this table speaks for.
+    NotCovered,
+}
+
+/// Metadata-derived quantities, named as the table refers to them.
+struct Dims {
+    hidden: usize,
+    ffn: usize,
+    vocab: usize,
+    heads_key: usize,
+    kv_heads_key: usize,
+    qkv_width: usize,
+    ts_rank: usize,
+    conv_kernel: usize,
+    experts: usize,
+}
+
+fn expected_dims(m: &Model, arch: &str, name: &str) -> Expect {
+    let d = Dims {
+        hidden: m.hidden,
+        ffn: m.ffn,
+        vocab: m.vocab,
+        heads_key: m.attn_in,
+        kv_heads_key: m.kv_heads_key,
+        qkv_width: m.qkv_width,
+        ts_rank: m.ts_rank,
+        conv_kernel: m.conv_kernel,
+        experts: m.experts,
+    };
+    let stem = name.split('.').nth_back(1).unwrap_or(name);
+    match arch {
+        "qwen2" => qwen2_dims(&d, stem),
+        "qwen3" | "qwen3moe" => qwen3_dims(&d, stem),
+        "qwen35" => qwen35_dims(&d, stem),
+        // n=1. `attn_qkv` out fits BOTH `2*heads*key_len` and `qkv_width`, and
+        // `ffn_*_shexp` fits three different expressions, on the single model
+        // available. One model is an anecdote; this refuses until a second
+        // qwen35moe exists to separate them.
+        "qwen35moe" => Expect::Unknown(
+            "qwen35moe: derived from ONE model, so its formulas are coincidences".to_string(),
+        ),
+        other => Expect::Unknown(format!("architecture {other} is not in the derived table")),
+    }
+}
+
+fn qwen2_dims(d: &Dims, stem: &str) -> Expect {
+    match stem {
+        "attn_q" | "attn_output" => Expect::Dims(d.hidden, d.hidden),
+        "attn_k" | "attn_v" => Expect::Dims(d.kv_heads_key, d.hidden),
+        "ffn_gate" | "ffn_up" => Expect::Dims(d.ffn, d.hidden),
+        "ffn_down" => Expect::Dims(d.hidden, d.ffn),
+        "token_embd" | "output" => Expect::Dims(d.vocab, d.hidden),
+        _ => Expect::NotCovered,
+    }
+}
+
+fn qwen3_dims(d: &Dims, stem: &str) -> Expect {
+    match stem {
+        "attn_q" => Expect::Dims(d.heads_key, d.hidden),
+        "attn_output" => Expect::Dims(d.hidden, d.heads_key),
+        "attn_k" | "attn_v" => Expect::Dims(d.kv_heads_key, d.hidden),
+        "ffn_gate" | "ffn_up" => Expect::Dims(d.ffn, d.hidden),
+        "ffn_down" => Expect::Dims(d.hidden, d.ffn),
+        "ffn_gate_inp" => Expect::Dims(d.experts, d.hidden),
+        "token_embd" | "output" => Expect::Dims(d.vocab, d.hidden),
+        _ => Expect::NotCovered,
+    }
+}
+
+fn qwen35_dims(d: &Dims, stem: &str) -> Expect {
+    match stem {
+        "attn_q" => Expect::Dims(2 * d.heads_key, d.hidden),
+        "attn_gate" => Expect::Dims(d.heads_key, d.hidden),
+        "attn_output" | "ssm_out" => Expect::Dims(d.hidden, d.heads_key),
+        "attn_k" | "attn_v" => Expect::Dims(d.kv_heads_key, d.hidden),
+        "attn_qkv" => Expect::Dims(d.qkv_width, d.hidden),
+        "ssm_conv1d" => Expect::Dims(d.qkv_width, d.conv_kernel),
+        "ssm_alpha" | "ssm_beta" => Expect::Dims(d.ts_rank, d.hidden),
+        "ffn_gate" | "ffn_up" => Expect::Dims(d.ffn, d.hidden),
+        "ffn_down" => Expect::Dims(d.hidden, d.ffn),
+        "token_embd" | "output" => Expect::Dims(d.vocab, d.hidden),
+        _ => Expect::NotCovered,
     }
 }
 
@@ -134,15 +250,26 @@ fn probe_matmul(m: &Model) -> Vec<String> {
     m.tensors
         .iter()
         .filter(|(_, d)| d.len() == 2)
-        .filter_map(|(name, d)| {
-            let (eo, ei) = expected_dims(m, name)?;
+        .filter_map(|(name, d)| check_one(m, name, d))
+        .collect()
+}
+
+/// One tensor against its architecture's expectation. An architecture with no
+/// derived expectation REFUSES and says so; it never falls back to `hidden`.
+fn check_one(m: &Model, name: &str, d: &[usize]) -> Option<String> {
+    match expected_dims(m, &m.arch, name) {
+        Expect::NotCovered => None,
+        Expect::Unknown(why) => Some(format!(
+            "NO EXPECTATION for {name}: {why} — refusing rather than assuming"
+        )),
+        Expect::Dims(eo, ei) => {
             let shape = vec![d[1], d[0]];
             fired(|| {
                 aprender::format::layout_contract::enforce_matmul_contract(name, &shape, eo, ei);
             })
             .map(|why| format!("enforce_matmul_contract {name}: {why}"))
-        })
-        .collect()
+        }
+    }
 }
 
 /// `validate_ffn_shape_symmetry` on layer 0.
