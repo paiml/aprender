@@ -214,25 +214,29 @@ mod gemv_entry_name_tests_3477 {
         assert!(admitted.is_empty(), "census drift:{}", admitted.join(""));
     }
 
-    /// #3869: the intermediate state, asserted so it cannot be skipped past.
+    /// #3869: IQ4_NL is admitted BECAUSE its kernel was measured.
     ///
-    /// IQ4_NL now HAS a kernel, so `from_ggml_type(20)` resolves and
-    /// `resolve_qtype` no longer refuses it by name. It is NOT yet admitted to
-    /// the GPU whitelist, because the kernel has not been measured against the
-    /// CPU decoder on real device bytes, and the standing rule is that a qtype
-    /// enters `gpu_unsupported_quant_qtype`'s allow-list only after that.
+    /// This row was `iq4_nl_has_a_kernel_but_is_not_admitted_until_it_is_measured`
+    /// and it said, in its own body, to flip this assertion and open the
+    /// whitelist in the same commit once the device A/B passed. It has:
     ///
-    /// Both halves are asserted together on purpose. "Has a kernel" and "is
-    /// admitted" are the two claims whose conflation produced #3850: an open
-    /// whitelist in front of a `from_ggml_type` returning `None` is how every
-    /// F16 tensor nearly got decoded as Q4_K. Keeping them as separate,
-    /// simultaneously-checked facts is what stops the pair drifting.
+    /// ```text
+    /// #3869 A/B: 64 rows, worst relative disagreement 0.000e0
+    /// ```
     ///
-    /// WHEN THE DEVICE A/B PASSES: flip the second assertion to
-    /// `!gpu_unsupported_quant_qtype(20)` and open the whitelist in the same
-    /// commit, citing the measurement. Not before.
+    /// EXACT against `iq_parallel_matvec` on the same bytes, RTX 4090 sm_89, plus
+    /// a k=100 shape whose last block is padding. Proved able to fail rather than
+    /// trusted for passing first time:
+    ///   FAULT (nibble select disabled): worst row 10, GPU -6614 vs CPU -571
+    ///   FAULT (row stride 18 -> 17):    worst row 47, GPU -166775700 vs CPU -225
+    ///
+    /// Both halves stay asserted together. "Has a kernel" and "is admitted" are
+    /// the two claims whose conflation produced #3850 — an open whitelist in
+    /// front of a `from_ggml_type` returning `None` is how every F16 tensor
+    /// nearly got decoded as Q4_K — so they remain separate, simultaneously
+    /// checked facts rather than one implying the other.
     #[test]
-    fn iq4_nl_has_a_kernel_but_is_not_admitted_until_it_is_measured() {
+    fn iq4_nl_is_admitted_because_its_kernel_was_measured() {
         use crate::cuda::types::{GemvKernel, WeightQuantType};
 
         assert_eq!(
@@ -257,10 +261,9 @@ mod gemv_entry_name_tests_3477 {
             GemvKernel::IQ4NL
         );
         assert!(
-            crate::gguf::gpu_unsupported_quant_qtype(20),
-            "#3869: the kernel is written but NOT measured on a device. It must stay out of \
-             the whitelist until a tensor-level A/B against the CPU decoder passes. Opening \
-             it earlier is the #3850 shape."
+            !crate::gguf::gpu_unsupported_quant_qtype(20),
+            "#3869: the kernel was measured EXACT against the CPU decoder on device \
+             (iq4_nl_device_ab_tests), so IQ4_NL is GPU-eligible"
         );
     }
 
