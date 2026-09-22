@@ -53,7 +53,7 @@ CPU path deliberately and works for every row above.
 | IQ2_XS | no | ggml type 17 — no GPU GEMV kernel; IQ also fails the CPU dequant path |
 | IQ3_XXS | no | ggml type 18 — no GPU GEMV kernel; IQ also fails the CPU dequant path |
 | IQ1_S | no | ggml type 19 — no GPU GEMV kernel; IQ also fails the CPU dequant path |
-| IQ4_NL | no | ggml type 20 — no GPU GEMV kernel; IQ also fails the CPU dequant path |
+| IQ4_NL | yes | ggml type 20 |
 | IQ3_S | no | ggml type 21 — no GPU GEMV kernel; IQ also fails the CPU dequant path |
 | IQ2_S | no | ggml type 22 — no GPU GEMV kernel; IQ also fails the CPU dequant path |
 | IQ4_XS | yes | ggml type 23 — Opened in the GPU whitelist on the 0.69.1 release branch. The CPU dequant path has existed all along (`iq_dispatch.rs`); only the GPU side was shut. |

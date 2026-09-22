@@ -302,8 +302,15 @@ quant_types:
     reason: no GPU GEMV kernel; IQ also fails the CPU dequant path
   - name: IQ4_NL
     ggml_type: 20
-    gpu_supported: false
-    reason: no GPU GEMV kernel; IQ also fails the CPU dequant path
+    gpu_supported: true
+    # Implemented for 0.69.1. The dispatch predicate
+    # (`gguf/dtype.rs::gpu_unsupported_quant_qtype`) admits 20, and this row was
+    # stale against it until the contract test caught the divergence — which is
+    # what a co-evolution guard is for: the kernel landed, the fact about the
+    # kernel did not, and nothing else in the tree would have noticed.
+    # IQ4_NL needed elements-per-block as a TYPE PROPERTY (32/18), not the
+    # hardcoded 256 the dispatch assumed, or every row would be under-read 8x.
+    reason: ''
   - name: IQ3_S
     ggml_type: 21
     gpu_supported: false
