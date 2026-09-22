@@ -189,12 +189,29 @@ FAILED=0
 strip_ansi() { sed -e 's/\x1b\[[0-9;]*[A-Za-z]//g' -e 's/\x1b([A-Z]//g'; }
 gate() { # gate <name> <cmd...> — runs cmd, records pass/fail
   local name="$1"; shift
-  local out rc
+  local out rc log
+  # KEEP THE OUTPUT (#3841). This used to discard `out` into a shell variable, so
+  # `gate` was the ONLY row family writing nothing into $WORKLOG -- fmt, clippy, test
+  # and bashrs. d8's keep-the-worklog-on-NO-GO fix could not reach them because they
+  # never put anything there to keep. A red `test` row's real output was simply gone.
+  log="${WORKLOG:-${TMPDIR:-/tmp}}/$name.log"
   out=$("$@" 2>&1); rc=$?          # command substitution, NOT a pipeline: rc is cmd's
   out=$(printf '%s' "$out" | strip_ansi)
+  printf '%s\n' "$out" > "$log" 2>/dev/null || :
   local note
-  note=$(printf '%s' "$out" | grep -iE 'error|fail|warning:|denied|✗|regression' | head -1)
+  # ANCHORED picker (#3841). The old pattern was an unanchored case-insensitive
+  # 'error|fail|...' and it matched SUBSTRINGS INSIDE DEPENDENCY NAMES, so on a red
+  # row the entire visible explanation could be a `Compiling` line emitted minutes
+  # before the real diagnostic. Three instances measured on ONE yoga run:
+  #   clippy      -> "Compiling thiserror v1.0.69"            ("error" in thiserror)
+  #   test        -> "Compiling proc-macro-error-attr2 v2.0.0"
+  #   dogfood-use -> "2 pass / 0 fail / 2 skip"               ("fail" inside "0 fail")
+  # The last is the clearest: a FAILING row explained by a line saying zero failures.
+  note=$(printf '%s' "$out" | grep -nE '^(error|error\[|warning:)|^test result: FAILED|panicked at|^FAIL[: ]|^\s*✗|REGRESSION|^Error:' | head -1 | cut -d: -f2-)
+  # Fall back to the LAST line, never to an unanchored match: a trailing summary is
+  # a worse note than a real diagnostic but it cannot be a dependency's name.
   [ -z "$note" ] && note=$(printf '%s' "$out" | tail -1)
+  [ "$rc" -ne 0 ] && note="$note  [log: $log]"
   NAMES+=("$name")
   if [ $rc -eq 0 ]; then RESULTS+=("PASS"); else RESULTS+=("FAIL"); FAILED=1; fi
   NOTES+=("${note:0:120}")
@@ -628,7 +645,17 @@ if [ -n "$MAKEFILE_PATH" ] && grep -qE '^coverage-check:' "$MAKEFILE_PATH" 2>/de
   # OUTSIDE pre-publish this is still a FAIL. `mark` refuses a DEFER in any other
   # phase for exactly that reason -- a DEFER elsewhere is a FAIL wearing a softer word.
   cov_out=$(make -C "$(dirname "$MAKEFILE_PATH")" coverage-check 2>&1); cov_rc=$?
-  cov_pct=$(printf '%s' "$cov_out" | grep -oE '[0-9]+(\.[0-9]+)?%' | tail -1)
+  # ANCHOR the percentage to the line that ONLY EXISTS when LCOV was parsed.
+  # A bare `grep -oE '[0-9.]+%' | tail -1` scraped the Makefile's own BANNER --
+  # `@echo "Running coverage ($(COV_THRESHOLD)%+ threshold)..."`, COV_THRESHOLD := 95
+  # (Makefile:495,610) -- so an aborted run reported `measured 95% against floor 88`:
+  # a FABRICATED number, ABOVE the floor, for a gate that never ran. The
+  # `NO PERCENTAGE` fallback below was dead code, because the banner guarantees a
+  # match on every run. Found by aprender-45 on the yoga rehearsal.
+  # Measured: banner-only output -> new extractor yields "" (fallback fires);
+  #           `TOTAL: 824853/939270 lines covered (87.82%)` -> yields 87.82%.
+  cov_pct=$(printf '%s' "$cov_out" | grep -oE 'lines covered \([0-9]+(\.[0-9]+)?%\)' \
+            | grep -oE '[0-9]+(\.[0-9]+)?%' | tail -1)
   cov_why=$(printf '%s' "$cov_out" | grep -iE 'REGRESSION|below the enforced floor|coverage [0-9]' | head -1)
   if [ "$cov_rc" -eq 0 ]; then
     mark coverage PASS "${cov_pct:+$cov_pct, }floor met"
