@@ -28,7 +28,8 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     openai_chat_completions_handler, AppState, ChatCompletionRequest, ChatCompletionResponse,
-    ChatMessage, ChoiceCount, ModelSourceInfo,
+    ChatMessage, ChoiceCount, ModelSourceInfo, OpenAiTool, OpenAiToolChoice, ResponseFunctionCall,
+    ResponseToolCall,
 };
 
 // ============================================================================
@@ -49,15 +50,68 @@ pub struct OllamaChatRequest {
     /// Optional Ollama `options` block (temperature, num_predict, top_k, top_p, seed).
     #[serde(default)]
     pub options: Option<OllamaOptions>,
+    /// Tool/function definitions the model may call (aprender#3708). Same wire
+    /// shape as the OpenAI `tools` array — Ollama's own `/api/chat` accepts the
+    /// identical `{"type":"function","function":{...}}` entries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<OpenAiTool>>,
+    /// `tool_choice`, forwarded to the underlying OpenAI-compat request. Ollama
+    /// itself has no equivalent knob, so this is an aprender extension a client
+    /// may set the same way it would against `/v1/chat/completions`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_choice: Option<OpenAiToolChoice>,
 }
 
-/// Ollama message (`role` + `content`).
+/// Ollama message (`role` + `content`, optionally `tool_calls`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OllamaMessage {
-    /// "system" | "user" | "assistant".
+    /// "system" | "user" | "assistant" | "tool".
     pub role: String,
     /// Message text.
+    #[serde(default)]
     pub content: String,
+    /// Tool calls the assistant turn made (aprender#3708). Ollama's shape:
+    /// `[{"function":{"name":"...","arguments":{...}}}]` — note `arguments` is a
+    /// JSON OBJECT here, unlike OpenAI's arguments-as-string.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<OllamaToolCall>>,
+}
+
+/// One entry of `message.tool_calls[]` in Ollama's wire schema.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OllamaToolCall {
+    /// The called function.
+    pub function: OllamaFunctionCall,
+}
+
+/// The `function` payload inside an [`OllamaToolCall`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OllamaFunctionCall {
+    /// Function name.
+    pub name: String,
+    /// Arguments as a JSON OBJECT (Ollama wire format — contrast
+    /// [`ResponseFunctionCall`](super::ResponseFunctionCall), whose `arguments`
+    /// is a JSON-encoded string per the OpenAI spec).
+    #[serde(default)]
+    pub arguments: serde_json::Value,
+}
+
+impl From<ResponseToolCall> for OllamaToolCall {
+    /// Re-shape an OpenAI-style tool call (`arguments` as a JSON string) into
+    /// Ollama's shape (`arguments` as a JSON object). A string that fails to
+    /// parse as JSON (the model emitted malformed arguments) degrades to an
+    /// empty object rather than dropping the call outright — the caller still
+    /// needs the tool NAME to know a call was attempted.
+    fn from(tc: ResponseToolCall) -> Self {
+        let arguments = serde_json::from_str(&tc.function.arguments)
+            .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
+        Self {
+            function: OllamaFunctionCall {
+                name: tc.function.name,
+                arguments,
+            },
+        }
+    }
 }
 
 /// Ollama `options` block (subset that maps onto our sampling config).
@@ -325,6 +379,8 @@ fn to_chat_request(
     model: &str,
     messages: Vec<OllamaMessage>,
     options: &Option<OllamaOptions>,
+    tools: Option<Vec<OpenAiTool>>,
+    tool_choice: Option<OpenAiToolChoice>,
 ) -> ChatCompletionRequest {
     let opts = options.clone().unwrap_or_default();
     ChatCompletionRequest {
@@ -334,6 +390,25 @@ fn to_chat_request(
             .map(|m| ChatMessage {
                 role: m.role,
                 content: m.content,
+                // Ollama's `arguments` is a JSON OBJECT; the internal
+                // OpenAI-shaped `ChatMessage` wants it as a JSON-encoded
+                // STRING, so re-encode on the way in (mirrors the reverse
+                // conversion in `OllamaToolCall::from`).
+                tool_calls: m.tool_calls.map(|calls| {
+                    calls
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, tc)| ResponseToolCall {
+                            id: format!("call_{i}"),
+                            call_type: "function".to_string(),
+                            function: ResponseFunctionCall {
+                                name: tc.function.name,
+                                arguments: serde_json::to_string(&tc.function.arguments)
+                                    .unwrap_or_default(),
+                            },
+                        })
+                        .collect()
+                }),
                 ..Default::default()
             })
             .collect(),
@@ -347,6 +422,8 @@ fn to_chat_request(
         // non-streaming. `stream:true` on the Ollama request is honoured at the
         // WIRE level instead — see `ndjson_response` — never discarded.
         stream: false,
+        tools,
+        tool_choice,
         ..Default::default()
     }
 }
@@ -426,6 +503,7 @@ fn ndjson_response<T: Serialize>(objects: &[T]) -> Response {
 fn chat_stream_objects(
     model: &str,
     content: &str,
+    tool_calls: Option<Vec<OllamaToolCall>>,
     prompt_eval_count: usize,
     eval_count: usize,
 ) -> Vec<OllamaChatChunk> {
@@ -438,6 +516,7 @@ fn chat_stream_objects(
             message: OllamaMessage {
                 role: "assistant".to_string(),
                 content: fragment,
+                tool_calls: None,
             },
             done: false,
             done_reason: None,
@@ -445,15 +524,24 @@ fn chat_stream_objects(
             eval_count: None,
         })
         .collect();
+    // aprender#3708: a tool call has no incremental text to fragment, so it
+    // rides on the terminal chunk alone — same place OpenAI's streaming path
+    // puts `finish_reason: "tool_calls"` on the last SSE delta.
+    let done_reason = if tool_calls.is_some() {
+        "tool_calls"
+    } else {
+        "stop"
+    };
     out.push(OllamaChatChunk {
         model: model.to_string(),
         created_at,
         message: OllamaMessage {
             role: "assistant".to_string(),
             content: String::new(),
+            tool_calls,
         },
         done: true,
-        done_reason: Some("stop".to_string()),
+        done_reason: Some(done_reason.to_string()),
         prompt_eval_count: Some(prompt_eval_count),
         eval_count: Some(eval_count),
     });
@@ -544,22 +632,37 @@ fn modified_at(source: Option<&ModelSourceInfo>) -> Option<String> {
     )
 }
 
-/// Extract `(content, prompt_tokens, completion_tokens)` from the OpenAI chat
-/// response, or a fallback `(error_text, 0, 0)` when generation failed.
+/// Extract `(content, tool_calls, prompt_tokens, completion_tokens)` from the
+/// OpenAI chat response, or a fallback `(error_text, None, 0, 0)` when
+/// generation failed.
+///
+/// aprender#3708: previously dropped `choices[0].message.tool_calls` entirely,
+/// so `/api/chat` could never report a tool call even when the underlying
+/// `/v1/chat/completions` path parsed one — a harness driving apr over the
+/// Ollama wire had no structured call to act on and was left scraping tool
+/// invocations out of free-text `content`, which is how a model's genuinely
+/// incomplete arguments (or the harness's own ad hoc extraction) surfaces as
+/// "invalid arguments: missing required property" on the CLIENT side.
 ///
 /// Crucially this ALWAYS yields an Ollama-shaped body — even on a backend error
 /// or a missing model — so a wired route is observably distinct from the axum
 /// `not_found` fallback (which has no `done` field).
-fn chat_response_to_parts(status: StatusCode, body: &[u8]) -> (String, usize, usize) {
+fn chat_response_to_parts(
+    status: StatusCode,
+    body: &[u8],
+) -> (String, Option<Vec<OllamaToolCall>>, usize, usize) {
     if status.is_success() {
         if let Ok(resp) = serde_json::from_slice::<ChatCompletionResponse>(body) {
-            let content = resp
-                .choices
-                .first()
+            let choice = resp.choices.first();
+            let content = choice
                 .map(|c| c.message.content.clone())
                 .unwrap_or_default();
+            let tool_calls = choice
+                .and_then(|c| c.message.tool_calls.clone())
+                .map(|calls| calls.into_iter().map(OllamaToolCall::from).collect());
             return (
                 content,
+                tool_calls,
                 resp.usage.prompt_tokens,
                 resp.usage.completion_tokens,
             );
@@ -571,7 +674,7 @@ fn chat_response_to_parts(status: StatusCode, body: &[u8]) -> (String, usize, us
         .ok()
         .and_then(|v| v.get("error").and_then(|e| e.as_str().map(str::to_string)))
         .unwrap_or_else(|| "generation unavailable".to_string());
-    (msg, 0, 0)
+    (msg, None, 0, 0)
 }
 
 /// Stamp the upstream generation status onto an Ollama-shaped response.
@@ -624,13 +727,19 @@ pub async fn ollama_chat_handler(
 ) -> Response {
     let model = model_label(&request.model);
     let stream = request.stream;
-    let chat_req = to_chat_request(&model, request.messages, &request.options);
+    let chat_req = to_chat_request(
+        &model,
+        request.messages,
+        &request.options,
+        request.tools,
+        request.tool_choice,
+    );
 
     let inner =
         openai_chat_completions_handler(State(state), headers, Extension(cancel), Json(chat_req))
             .await;
     let (status, body) = split_response(inner).await;
-    let (content, prompt_tokens, eval_count) = chat_response_to_parts(status, &body);
+    let (content, tool_calls, prompt_tokens, eval_count) = chat_response_to_parts(status, &body);
 
     if stream {
         return with_upstream_status(
@@ -638,6 +747,7 @@ pub async fn ollama_chat_handler(
             ndjson_response(&chat_stream_objects(
                 &model,
                 &content,
+                tool_calls,
                 prompt_tokens,
                 eval_count,
             )),
@@ -652,6 +762,7 @@ pub async fn ollama_chat_handler(
             message: OllamaMessage {
                 role: "assistant".to_string(),
                 content,
+                tool_calls,
             },
             done: true,
             prompt_eval_count: prompt_tokens,
@@ -679,19 +790,24 @@ pub async fn ollama_generate_handler(
         messages.push(OllamaMessage {
             role: "system".to_string(),
             content: system,
+            tool_calls: None,
         });
     }
     messages.push(OllamaMessage {
         role: "user".to_string(),
         content: request.prompt,
+        tool_calls: None,
     });
 
-    let chat_req = to_chat_request(&model, messages, &request.options);
+    let chat_req = to_chat_request(&model, messages, &request.options, None, None);
     let inner =
         openai_chat_completions_handler(State(state), headers, Extension(cancel), Json(chat_req))
             .await;
     let (status, body) = split_response(inner).await;
-    let (content, prompt_tokens, eval_count) = chat_response_to_parts(status, &body);
+    // `/api/generate` has no tool-calling wire shape (flat `response` string),
+    // so any tool call the model attempted is simply not representable here —
+    // dropped, same as before aprender#3708. Use `/api/chat` for tool calling.
+    let (content, _tool_calls, prompt_tokens, eval_count) = chat_response_to_parts(status, &body);
 
     if stream {
         return with_upstream_status(
@@ -846,10 +962,12 @@ mod tests {
             OllamaMessage {
                 role: "system".to_string(),
                 content: "be brief".to_string(),
+                tool_calls: None,
             },
             OllamaMessage {
                 role: "user".to_string(),
                 content: "hi".to_string(),
+                tool_calls: None,
             },
         ];
         let opts = Some(OllamaOptions {
@@ -858,7 +976,7 @@ mod tests {
             num_predict: Some(32),
             ..Default::default()
         });
-        let req = to_chat_request("m", msgs, &opts);
+        let req = to_chat_request("m", msgs, &opts, None, None);
         assert_eq!(req.model, "m");
         assert_eq!(req.messages.len(), 2);
         assert_eq!(req.messages[0].role, "system");
@@ -873,6 +991,42 @@ mod tests {
         assert!(!req.stream, "internal chat path is driven non-streaming");
     }
 
+    /// aprender#3708: `tools`/`tool_choice` on the Ollama request must reach
+    /// the internal `ChatCompletionRequest` — previously dropped entirely, so
+    /// the model was never told what tools existed or given a grammar to
+    /// constrain its output against.
+    #[test]
+    fn to_chat_request_forwards_tools_and_tool_choice() {
+        let msgs = vec![OllamaMessage {
+            role: "user".to_string(),
+            content: "list files".to_string(),
+            tool_calls: None,
+        }];
+        let tools = vec![OpenAiTool {
+            tool_type: "function".to_string(),
+            function: crate::api::OpenAiFunctionDef {
+                name: "bash".to_string(),
+                description: "run a command".to_string(),
+                parameters: Some(serde_json::json!({
+                    "type": "object",
+                    "properties": {"command": {"type": "string"}},
+                    "required": ["command"]
+                })),
+            },
+        }];
+        let req = to_chat_request(
+            "m",
+            msgs,
+            &None,
+            Some(tools),
+            Some(OpenAiToolChoice::Mode("auto".to_string())),
+        );
+        let forwarded = req.tools.expect("tools must be forwarded");
+        assert_eq!(forwarded.len(), 1);
+        assert_eq!(forwarded[0].function.name, "bash");
+        assert!(req.tool_choice.is_some(), "tool_choice must be forwarded");
+    }
+
     #[test]
     fn chat_response_to_parts_extracts_content_on_success() {
         let body = br#"{
@@ -880,10 +1034,33 @@ mod tests {
             "choices":[{"index":0,"message":{"role":"assistant","content":"4"},"finish_reason":"stop"}],
             "usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}
         }"#;
-        let (content, p, c) = chat_response_to_parts(StatusCode::OK, body);
+        let (content, tool_calls, p, c) = chat_response_to_parts(StatusCode::OK, body);
         assert_eq!(content, "4");
+        assert!(tool_calls.is_none());
         assert_eq!(p, 3);
         assert_eq!(c, 1);
+    }
+
+    /// aprender#3708: a `tool_calls` block on the underlying OpenAI-shaped
+    /// response must survive the re-shape into Ollama's `message.tool_calls`,
+    /// with `arguments` converted from a JSON STRING (OpenAI) to a JSON
+    /// OBJECT (Ollama) — the exact conversion the harness reported broken.
+    #[test]
+    fn chat_response_to_parts_extracts_tool_calls_as_objects() {
+        let body = br#"{
+            "id":"x","object":"chat.completion","created":0,"model":"m",
+            "choices":[{"index":0,"message":{"role":"assistant","content":"",
+                "tool_calls":[{"id":"call_0","type":"function","function":
+                    {"name":"bash","arguments":"{\"command\":\"ls\",\"description\":\"list\"}"}}]},
+                "finish_reason":"tool_calls"}],
+            "usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}
+        }"#;
+        let (_content, tool_calls, ..) = chat_response_to_parts(StatusCode::OK, body);
+        let calls = tool_calls.expect("tool_calls must be populated");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].function.name, "bash");
+        assert_eq!(calls[0].function.arguments["command"], "ls");
+        assert_eq!(calls[0].function.arguments["description"], "list");
     }
 
     #[test]
@@ -891,8 +1068,9 @@ mod tests {
         // On a backend error (e.g. no model), the Ollama body must still be
         // well-formed: the error text becomes the assistant content, tokens 0.
         let body = br#"{"error":"model not found"}"#;
-        let (content, p, c) = chat_response_to_parts(StatusCode::NOT_FOUND, body);
+        let (content, tool_calls, p, c) = chat_response_to_parts(StatusCode::NOT_FOUND, body);
         assert_eq!(content, "model not found");
+        assert!(tool_calls.is_none());
         assert_eq!(p, 0);
         assert_eq!(c, 0);
     }
@@ -905,6 +1083,7 @@ mod tests {
             message: OllamaMessage {
                 role: "assistant".to_string(),
                 content: "hello".to_string(),
+                tool_calls: None,
             },
             done: true,
             prompt_eval_count: 1,
@@ -972,6 +1151,7 @@ mod tests {
             message: OllamaMessage {
                 role: "assistant".to_string(),
                 content: "hello".to_string(),
+                tool_calls: None,
             },
             done: true,
             prompt_eval_count: 1,
@@ -1046,7 +1226,7 @@ mod stream_and_discovery_tests {
     /// and is indistinguishable from a non-streaming reply.
     #[test]
     fn chat_stream_is_a_sequence_terminated_by_done_true() {
-        let objs = chat_stream_objects("apr", "The capital of France is Paris.", 21, 7);
+        let objs = chat_stream_objects("apr", "The capital of France is Paris.", None, 21, 7);
         assert!(
             objs.len() > 2,
             "a 6-word answer must arrive as several chunks, got {}",
@@ -1091,7 +1271,7 @@ mod stream_and_discovery_tests {
     /// loop hangs waiting for `done:true`.
     #[test]
     fn empty_generation_still_terminates_the_stream() {
-        let objs = chat_stream_objects("apr", "", 3, 0);
+        let objs = chat_stream_objects("apr", "", None, 3, 0);
         assert_eq!(objs.len(), 1);
         assert!(objs[0].done);
     }
@@ -1101,7 +1281,7 @@ mod stream_and_discovery_tests {
     /// halves in the client's line reader.
     #[test]
     fn each_object_serializes_to_exactly_one_json_line() {
-        for chunk in chat_stream_objects("apr", "a b\nc", 1, 3) {
+        for chunk in chat_stream_objects("apr", "a b\nc", None, 1, 3) {
             let line = serde_json::to_string(&chunk).expect("serialize");
             assert!(
                 !line.contains('\n'),
@@ -1116,7 +1296,7 @@ mod stream_and_discovery_tests {
     /// told the model generated nothing.
     #[test]
     fn non_terminal_chunks_omit_counts_and_done_reason() {
-        let objs = chat_stream_objects("apr", "two words", 5, 2);
+        let objs = chat_stream_objects("apr", "two words", None, 5, 2);
         let first = serde_json::to_value(&objs[0]).expect("serialize");
         assert!(first.get("eval_count").is_none());
         assert!(first.get("prompt_eval_count").is_none());
@@ -1128,7 +1308,7 @@ mod stream_and_discovery_tests {
     /// decodes every chunk into the same `api.ChatResponse`.
     #[test]
     fn stream_chunk_created_at_is_rfc3339() {
-        for chunk in chat_stream_objects("apr", "hi there", 1, 2) {
+        for chunk in chat_stream_objects("apr", "hi there", None, 1, 2) {
             let json = serde_json::to_value(&chunk).expect("serialize");
             let created_at = json["created_at"].as_str().expect("string");
             chrono::DateTime::parse_from_rfc3339(created_at)
