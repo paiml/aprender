@@ -85,6 +85,35 @@ def why_of(x, backends):  # every reason a measured row is not green on the clai
         elif v.get("fallback"): why.append(f"{b}: FELL BACK — the claimed backend did not run")
         elif v.get("escaped_special"): why.append(f"{b}: the formatted prompt carries a zero-width-escaped special token — templated twice (#3743)")
         elif not v.get("ran"): why.append(f"{b}: did not run (rc={v.get('rc')})")
+        # #3828: the release matrix claims verbs {run, chat, serve, code}. The producer used
+        # to measure `run` alone, so three columns were computed over nothing and a live
+        # /api/chat defect passed every gate we own. A verb ABSENT from a receipt is refused
+        # here by name: absence must never read as conformance, which is this epic's whole
+        # premise (#3712/#3715) applied to the instrument rather than to the models.
+        vb = (v or {}).get("verbs")
+        if vb is None:
+            why.append(f"{b}: receipt records no `verbs` object — the release matrix claims {{run, chat, serve, code}} and this rung measured only `run` (#3828)")
+        else:
+            for verb in ("run", "chat", "code"):
+                r = vb.get(verb)
+                if r is None: why.append(f"{b}: verb `{verb}` is MISSING from the receipt — not measured is not passed (#3828)")
+                elif not r.get("ran"): why.append(f"{b}: verb `{verb}` did not run (rc={r.get('rc')})")
+            sv = vb.get("serve")
+            if sv is None:
+                why.append(f"{b}: verb `serve` is MISSING from the receipt — no rung has ever asked apr serve to load a model (#3571, #3828)")
+            elif not sv.get("probed"):
+                why.append(f"{b}: verb `serve` was NOT PROBED: {sv.get('why', 'no reason recorded')} (#3828)")
+            else:
+                rts = sv.get("routes") or {}
+                if not rts:
+                    why.append(f"{b}: verb `serve` probed but recorded NO routes — an empty route set is the vacuous pass this gate exists to refuse (#3828)")
+                # The ollama-compat wire has its own translation layer and has diverged from
+                # the OpenAI-compat one twice independently (#3825, and the #3571 hybrid
+                # defect), so its coverage is never inherited from a representative route.
+                if not any(k.startswith("/api/chat") for k in rts):
+                    why.append(f"{b}: verb `serve` recorded no /api/chat probe — the ollama-compat route is the one real Ollama harnesses hit and it cannot inherit /v1 coverage (alfredodeza, #3715; #3828)")
+                for rk, rv in sorted(rts.items()):
+                    if not rv.get("ok"): why.append(f"{b}: serve route {rk} returned http {rv.get('http')} (#3828)")
     return why
 # #3712: no Q4_K rung is optional, and every one claims cuda. The key is refused, not tolerated.
 for r in rungs:

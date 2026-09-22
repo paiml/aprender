@@ -156,6 +156,78 @@ for f, p in seen.items():
 PY
 ) || { echo "decline: the inventory scan failed" >&2; exit 2; }
 
+# ── #3828: ladder_serve_probe — the `serve` verb, over the ROUTER'S OWN ROUTES ──────
+# The ladder never started `apr serve`, so no rung ever asked a server to load a model
+# (#3571's own words) and /api/chat could not reach the Qwen3.5 hybrid session while
+# every gate stayed green (alfredodeza, #3715, 2026-09-22).
+#
+# The route set is DERIVED from the string literals registered in
+# crates/aprender-serve/src/api/router.rs, never hand-listed here: a hand-listed set is
+# precisely how /api/chat went unprobed, and a constant in this file would drift from
+# the router the moment anyone adds an endpoint. Each generation route is probed
+# non-streaming AND streaming, because the ollama-compat wire has its own translation
+# layer that has already diverged from the OpenAI-compat one twice independently
+# (#3825's tool_calls gap, and this defect).
+#
+# Prints ONE json object; returns 0 if every probed route answered, 1 otherwise. A route
+# that could not be probed is recorded with its reason and is NOT counted as a pass.
+ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <backend>
+    local path="$1" flag="$2" rid="$3" bname="$4"
+    # The script cd's to the repo root at startup (line ~53), so this is relative by
+    # design — there is no WS_ROOT in this script and inventing one would resolve to
+    # "/crates/..." under `set -u`-less expansion and silently find nothing.
+    local router="crates/aprender-serve/src/api/router.rs"
+    local routes port pid rc=0 out first=1 json="{" waited=0 code body
+
+    if [ ! -f "$router" ]; then
+        printf '{"probed":false,"why":"router source not found at %s — the route set is derived from it, and a hand-listed set is what let /api/chat go unprobed","routes":{}}' "$router"
+        return 1
+    fi
+    # Generation routes only: the ones that take a prompt and return a completion.
+    routes=$(grep -oE '"/(v1|api)/[a-z0-9/._-]+"' "$router" \
+        | tr -d '"' | sort -u \
+        | grep -E '^/(v1/(chat/)?completions|api/chat)$' || true)
+    if [ -z "$routes" ]; then
+        printf '{"probed":false,"why":"no generation route matched in %s — the derivation found nothing, which is a defect in the derivation, not an empty surface","routes":{}}' "$router"
+        return 1
+    fi
+
+    port=$(( 20000 + (RANDOM % 20000) ))
+    apr_locked serve run "$path" --port "$port" $flag > "$WORK/serve-$rid-$bname.log" 2>&1 &
+    pid=$!
+    # Health, bounded. A server that never comes up is a FAIL naming the wait, never a skip.
+    while [ "$waited" -lt 90 ]; do
+        curl -fsS --max-time 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1 && break
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 1; waited=$((waited + 1))
+    done
+    if ! curl -fsS --max-time 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
+        kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+        printf '{"probed":false,"why":"apr serve did not answer /health within %ss (log: %s)","routes":{}}' \
+            "$waited" "$WORK/serve-$rid-$bname.log"
+        return 1
+    fi
+
+    for r in $routes; do
+        for stream in false true; do
+            case "$r" in
+                /api/chat) body='{"model":"apr","messages":[{"role":"user","content":"What is 2+2?"}],"stream":'"$stream"'}' ;;
+                */chat/completions) body='{"model":"apr","messages":[{"role":"user","content":"What is 2+2?"}],"max_tokens":16,"stream":'"$stream"'}' ;;
+                *) body='{"model":"apr","prompt":"What is 2+2?","max_tokens":16,"stream":'"$stream"'}' ;;
+            esac
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 60 \
+                -H 'Content-Type: application/json' -d "$body" \
+                "http://127.0.0.1:$port$r" 2>/dev/null) || code=000
+            [ "$code" = 200 ] || rc=1
+            [ $first = 1 ] || json="$json,"; first=0
+            json="$json\"$r|stream=$stream\":{\"http\":$code,\"ok\":$([ "$code" = 200 ] && echo true || echo false)}"
+        done
+    done
+    kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+    printf '{"probed":true,"routes":{%s}}' "${json#\{}"
+    return $rc
+}
+
 find_model() { # find_model <basename> — the inventory's copy first, then the fleet's other model dirs
   local f="$1" d p
   p=$(awk -F'|' -v f="$f" '$1 == f { print $2; exit }' <<< "$INVENTORY")
@@ -233,8 +305,43 @@ PY
     if grep -F 'formatted_prompt=' <<< "$run_out" | grep -qF -e '\u{200b}' -e $'\u200b'; then esc=true; fi
     if [ "$b" != cpu ] && [ -z "$GPU_NAME" ]; then ran=false; fi
     [ $run_rc -eq 0 ] || ran=false
+
+    # ── #3828: the OTHER THREE VERBS ────────────────────────────────────────────
+    # This loop ran `apr run` and nothing else, so `serve`, `chat` and `code` cells in
+    # release-readiness-v1 (#3715) were computed over a verb set of ONE. A live defect
+    # walked straight through: /api/chat could not reach the Qwen3.5 hybrid session at
+    # all (alfredodeza, #3715 comment 2026-09-22) while every gate we own stayed green,
+    # because no rung had ever asked `apr serve` to load a model (#3571's own words).
+    # A verb that is not probed must never read as a verb that passed, so each of these
+    # records its own rc and the judge refuses a receipt missing any of them.
+
+    # chat: stdin-driven, one turn, machine envelope. `/exit` closes the session.
+    chat_out=$(printf 'What is the capital of France? Answer briefly.\n/exit\n' \
+        | apr_locked chat "$path" --json --max-tokens 16 $flag 2>&1); chat_rc=$?
+    [ "$chat_rc" = "$LOCK_BUSY" ] && lock_timeout "apr chat $rid ($b)"
+    chat_ran=true; [ $chat_rc -eq 0 ] || chat_ran=false
+
+    # code: non-interactive, machine envelope (#3775 requires one on EVERY exit).
+    code_out=$(apr_locked code -p "Reply with the single word: ok" --model "$path" \
+        --output-format json $flag 2>&1); code_rc=$?
+    [ "$code_rc" = "$LOCK_BUSY" ] && lock_timeout "apr code $rid ($b)"
+    code_ran=true; [ $code_rc -eq 0 ] || code_ran=false
+
+    # serve: the route set is DERIVED from the router's registered paths, never a
+    # hand-listed constant (alfredodeza's amendment, adopted on #3715) — a route that
+    # exists but is not probed is exactly how /api/chat stayed broken. Each route is
+    # probed non-streaming and streaming, because the ollama-compat wire has its own
+    # translation layer that has already diverged from the OpenAI-compat one twice
+    # independently (#3825's tool_calls gap, and this defect).
+    serve_json=$(ladder_serve_probe "$path" "$flag" "$rid" "$b")
+    serve_rc=$?
+
     [ $first = 1 ] || be_json="$be_json,"; first=0
-    be_json="$be_json\"$b\":{\"ran\":$ran,\"fallback\":$fb,\"escaped_special\":$esc,\"rc\":$run_rc}"
+    be_json="$be_json\"$b\":{\"ran\":$ran,\"fallback\":$fb,\"escaped_special\":$esc,\"rc\":$run_rc"
+    be_json="$be_json,\"verbs\":{\"run\":{\"ran\":$ran,\"rc\":$run_rc}"
+    be_json="$be_json,\"chat\":{\"ran\":$chat_ran,\"rc\":$chat_rc}"
+    be_json="$be_json,\"code\":{\"ran\":$code_ran,\"rc\":$code_rc}"
+    be_json="$be_json,\"serve\":$serve_json}}"
   done
   be_json="$be_json}"
   # The receipt carries the MEASURED file hash (ONT-4c1): a resolver joining the ladder contract to

@@ -1,5 +1,5 @@
 {
- "schema": "apr-model-ladder-receipt/v1",
+ "schema": "apr-model-ladder-receipt/v2",
  "host": "gx10",
  "version": "1.2.3",
  "sha": "abc1234",
@@ -27,15 +27,102 @@
     "cpu": {
      "ran": true,
      "fallback": false,
-     "rc": 0
+     "rc": 0,
+     "verbs": {
+      "run": {
+       "ran": true,
+       "rc": 0
+      },
+      "chat": {
+       "ran": true,
+       "rc": 0
+      },
+      "code": {
+       "ran": true,
+       "rc": 0
+      },
+      "serve": {
+       "probed": true,
+       "routes": {
+        "/api/chat|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/api/chat|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        }
+       }
+      }
+     }
     },
     "cuda": {
      "ran": true,
      "fallback": false,
-     "rc": 0
+     "rc": 0,
+     "verbs": {
+      "run": {
+       "ran": true,
+       "rc": 0
+      },
+      "chat": {
+       "ran": true,
+       "rc": 0
+      },
+      "code": {
+       "ran": true,
+       "rc": 0
+      },
+      "serve": {
+       "probed": true,
+       "routes": {
+        "/api/chat|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/api/chat|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        }
+       }
+      }
+     }
     }
    },
-   "green": true
+   "green": true,
+   "file": "c.gguf"
   },
   {
    "id": "q3-q4km",
@@ -56,15 +143,114 @@
     "cpu": {
      "ran": true,
      "fallback": false,
-     "rc": 0
+     "rc": 0,
+     "verbs": {
+      "run": {
+       "ran": true,
+       "rc": 0
+      },
+      "chat": {
+       "ran": true,
+       "rc": 0
+      },
+      "code": {
+       "ran": true,
+       "rc": 0
+      },
+      "serve": {
+       "probed": true,
+       "routes": {
+        "/api/chat|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/api/chat|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        }
+       }
+      }
+     }
     },
     "cuda": {
      "ran": true,
      "fallback": false,
-     "rc": 0
+     "rc": 0,
+     "verbs": {
+      "run": {
+       "ran": true,
+       "rc": 0
+      },
+      "chat": {
+       "ran": true,
+       "rc": 0
+      },
+      "code": {
+       "ran": true,
+       "rc": 0
+      },
+      "serve": {
+       "probed": true,
+       "routes": {
+        "/api/chat|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/api/chat|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        }
+       }
+      }
+     }
     }
    },
-   "green": true
+   "green": true,
+   "file": "q.gguf"
+  }
+ ],
+ "inventory": [
+  {
+   "file": "c.gguf",
+   "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+   "bytes": 1
+  },
+  {
+   "file": "q.gguf",
+   "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+   "bytes": 1
   }
  ]
 }
