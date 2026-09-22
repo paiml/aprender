@@ -406,6 +406,47 @@ fn try_tokenizer_at(path: &Path, label: &str) -> Option<Qwen2BpeTokenizer> {
     }
 }
 
+/// The tokenizer an `.apr` carries INSIDE it (#3911).
+///
+/// `None` for any model that is not an `.apr`, cannot be opened, or embeds no
+/// vocabulary/merges — all of which are "not my business", never an error: the
+/// caller still has its own refusal to make.
+///
+/// The merges array holds `"left right"` strings, split on the FIRST space, which
+/// is how `realizar::apr::metadata::get_embedded_merges` reads the same field. Two
+/// readers of one format must agree about it, so this mirrors that split exactly
+/// rather than inventing a second interpretation.
+fn try_embedded_apr_tokenizer(model_path: &Path) -> Option<Qwen2BpeTokenizer> {
+    let reader = AprReader::open(model_path).ok()?;
+
+    let vocab: Vec<String> = reader
+        .get_metadata("tokenizer.vocabulary")?
+        .as_array()?
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+
+    let merges: Vec<(String, String)> = reader
+        .get_metadata("tokenizer.merges")?
+        .as_array()?
+        .iter()
+        .filter_map(|v| {
+            let s = v.as_str()?;
+            let mut parts = s.splitn(2, ' ');
+            Some((parts.next()?.to_string(), parts.next()?.to_string()))
+        })
+        .collect();
+
+    // Vocabulary WITHOUT merges is a decode-only tokenizer; `chat` must encode, so
+    // half an answer is not an answer. Fall through to the refusal, which names
+    // what was searched.
+    if vocab.is_empty() || merges.is_empty() {
+        return None;
+    }
+
+    Qwen2BpeTokenizer::from_vocab_merges_data(&vocab, &merges).ok()
+}
+
 /// PMAT-109: Find Qwen tokenizer from model dir, HF cache, or APR cache.
 /// Search for a Qwen tokenizer alongside the model file.
 fn find_qwen_tokenizer_sibling(model_path: &Path) -> Option<Qwen2BpeTokenizer> {
@@ -424,6 +465,29 @@ fn find_qwen_tokenizer_sibling(model_path: &Path) -> Option<Qwen2BpeTokenizer> {
 
 fn find_qwen_tokenizer(model_path: &Path) -> Result<Option<Qwen2BpeTokenizer>, CliError> {
     if let Some(tok) = find_qwen_tokenizer_sibling(model_path) {
+        return Ok(Some(tok));
+    }
+
+    // #3911: THE MODEL ITSELF — after the sibling files, BEFORE the machine-global
+    // caches. An `.apr` converted from GGUF embeds `tokenizer.vocabulary` AND
+    // `tokenizer.merges` (PMAT-171), which is a complete BPE tokenizer. `apr serve`
+    // has always used it; `chat` searched four FILESYSTEM locations and reported
+    // "No Qwen tokenizer found" for a model carrying one (measured on gx10:
+    // `…-q4k.apr` failed chat rc=3 while serve answered all six routes 200 on the
+    // same binary, minutes apart).
+    //
+    // THE ORDER IS THE CORRECTNESS, not a preference. The two searches below are
+    // MACHINE-GLOBAL: `~/.cache/huggingface/hub/models--Qwen--*` and
+    // `~/.apr/tokenizers/qwen2/` hold SOME Qwen tokenizer, from some other model.
+    // Using one for THIS model is a guess that happens to work while the vocabulary
+    // matches. The tokenizer inside the model is the model's own, so it must win
+    // over any cache — while an explicit sibling file, which an operator placed
+    // deliberately for this model, still wins over both.
+    //
+    // Placing it last instead (the first draft) meant it NEVER RAN on any box with
+    // a Qwen cache, and an end-to-end test on such a box passed for the wrong
+    // reason. That near-miss is why the test asserts `vocab_size`, not `is_some`.
+    if let Some(tok) = try_embedded_apr_tokenizer(model_path) {
         return Ok(Some(tok));
     }
 
@@ -827,5 +891,120 @@ mod hf_cache_search_survives_an_unreadable_entry_3881 {
             search_hf_cache_tokenizer(tmp.path()).is_none(),
             "a cache with no tokenizer must not report one"
         );
+    }
+}
+
+/// #3911: `find_qwen_tokenizer` must consult the MODEL, not only the filesystem.
+///
+/// Hermetic on purpose — it writes a synthetic `.apr` carrying an embedded
+/// vocabulary and merges, so it needs no downloaded model, no GPU and no network,
+/// and it runs in CI where the real fixture (`qwen2.5-coder-1.5b-instruct-q4k.apr`)
+/// does not exist.
+#[cfg(test)]
+mod embedded_tokenizer_tests {
+    use super::*;
+    use aprender::serialization::apr::AprWriter;
+    use serde_json::json;
+    use std::path::PathBuf;
+
+    fn write_apr(dir: &std::path::Path, name: &str, vocab: &[&str], merges: &[&str]) -> PathBuf {
+        let mut w = AprWriter::new();
+        w.set_metadata("architecture", json!("qwen2"));
+        if !vocab.is_empty() {
+            w.set_metadata("tokenizer.vocabulary", json!(vocab));
+        }
+        if !merges.is_empty() {
+            w.set_metadata("tokenizer.merges", json!(merges));
+        }
+        // A tensor, because an APR with none is a different kind of file.
+        w.add_tensor_f32("token_embd.weight", vec![2, 2], &[0.0, 1.0, 2.0, 3.0]);
+        let path = dir.join(name);
+        w.write(&path).expect("synthetic apr writes");
+        path
+    }
+
+    /// Id 0 is a SENTINEL no real Qwen vocabulary contains. That is what makes the
+    /// assertion below able to fail: see the comment at its use.
+    const SENTINEL: &str = "ZZ_EMBEDDED_FIXTURE_TOKEN";
+
+    fn vocab_fixture() -> Vec<&'static str> {
+        vec![
+            SENTINEL,
+            "a",
+            "b",
+            "ab",
+            "<|im_start|>",
+            "<|im_end|>",
+            "<|endoftext|>",
+        ]
+    }
+
+    /// THE GUARANTEE. A model with NO sibling tokenizer still resolves, because the
+    /// tokenizer is inside it. Before #3911 this returned
+    /// `MissingCompanionFile("No Qwen tokenizer found …")` for a model carrying one.
+    #[test]
+    fn an_apr_with_an_embedded_tokenizer_and_no_sibling_resolves() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let model = write_apr(dir.path(), "m.apr", &vocab_fixture(), &["a b"]);
+
+        // ANTI-VACUITY: the pass must not be able to come from the sibling branch.
+        // A fixture that has the file whose absence is the bug proves nothing.
+        assert!(
+            !dir.path().join("m.tokenizer.json").exists(),
+            "the fixture must have NO sibling tokenizer"
+        );
+        assert!(
+            !dir.path().join("tokenizer.json").exists(),
+            "the fixture directory must have no bare tokenizer.json either"
+        );
+
+        let tok = find_qwen_tokenizer(&model)
+            .expect("a model carrying vocab+merges must resolve without a sibling")
+            .expect("must be Some");
+
+        // THE DISCRIMINATOR, and the reason this assertion is not `is_some()`.
+        //
+        // `find_qwen_tokenizer` also searches two MACHINE-GLOBAL caches —
+        // `~/.cache/huggingface/hub/models--Qwen--*/…` and
+        // `~/.apr/tokenizers/qwen2/tokenizer.json`. On any box that ever pulled a
+        // Qwen model those exist, so `is_some()` PASSES WITH THE EMBEDDED BRANCH
+        // DELETED. Measured: the planted mutant passed 3/3 against `is_some()`.
+        //
+        // `vocab_size()` does NOT discriminate either, and that cost a second
+        // round: it reports the CONFIG's `vocab_size` (151936 by default), not the
+        // number of tokens loaded — so the fixture and a real cache report the same
+        // number. The only thing that separates them is CONTENT.
+        //
+        // Id 0 of this fixture is a sentinel string no Qwen vocabulary contains, so
+        // decoding it can only succeed if the embedded vocabulary was the one
+        // loaded.
+        assert_eq!(
+            tok.decode(&[0]),
+            SENTINEL,
+            "id 0 must decode to this fixture's sentinel — anything else means a \
+             machine-global Qwen cache answered and the embedded branch never ran"
+        );
+    }
+
+    /// Vocabulary WITHOUT merges is a DECODE-ONLY tokenizer, and `chat` encodes.
+    /// Half an answer must not be accepted as a whole one — the refusal still names
+    /// what it searched.
+    #[test]
+    fn vocabulary_without_merges_is_not_accepted_as_a_tokenizer() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let model = write_apr(dir.path(), "m.apr", &vocab_fixture(), &[]);
+        assert!(
+            try_embedded_apr_tokenizer(&model).is_none(),
+            "vocab alone cannot encode, so it must not satisfy the embedded branch"
+        );
+    }
+
+    /// An `.apr` embedding nothing is "not mine", never an error from this helper —
+    /// the caller still owns the refusal.
+    #[test]
+    fn an_apr_embedding_no_tokenizer_returns_none_rather_than_erroring() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let model = write_apr(dir.path(), "m.apr", &[], &[]);
+        assert!(try_embedded_apr_tokenizer(&model).is_none());
     }
 }

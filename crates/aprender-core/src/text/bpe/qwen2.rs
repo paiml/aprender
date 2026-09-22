@@ -207,6 +207,47 @@ impl Qwen2BpeTokenizer {
     ///
     /// # Errors
     /// Returns error if JSON parsing fails.
+    /// Build from vocabulary and merges already in memory — an `.apr`'s embedded
+    /// tokenizer, without a sibling `tokenizer.json` on disk.
+    ///
+    /// The special-token ids are derived from the vocabulary exactly as
+    /// [`Self::from_json`] does, so an embedded tokenizer and a sibling one that
+    /// carry the same vocabulary produce the same ids.
+    ///
+    /// # Errors
+    /// Returns an error when the vocabulary is empty.
+    pub fn from_vocab_merges_data(vocab: &[String], merges: &[(String, String)]) -> Result<Self> {
+        let base = load_from_vocab_merges(vocab, merges)?;
+        Ok(Self::with_special_ids_from(base))
+    }
+
+    /// The special-token derivation shared by every constructor: read the three
+    /// chat ids out of the vocabulary, falling back to the compiled-in defaults.
+    /// Factored so a second constructor cannot drift from the first.
+    fn with_special_ids_from(base: BpeTokenizer) -> Self {
+        let im_start_id = base
+            .vocab
+            .get("<|im_start|>")
+            .copied()
+            .unwrap_or(Self::IM_START_ID);
+        let im_end_id = base
+            .vocab
+            .get("<|im_end|>")
+            .copied()
+            .unwrap_or(Self::IM_END_ID);
+        let endoftext_id = base
+            .vocab
+            .get("<|endoftext|>")
+            .copied()
+            .unwrap_or(Self::ENDOFTEXT_ID);
+        Self {
+            base,
+            im_start_id,
+            im_end_id,
+            endoftext_id,
+        }
+    }
+
     pub fn from_json(json: &str) -> Result<Self> {
         let base = load_from_json(json)?;
 
@@ -443,6 +484,49 @@ pub fn load_from_files(vocab_json: &str, merges_txt: &str) -> Result<BpeTokenize
     Ok(tokenizer)
 }
 
+/// Build a tokenizer from vocabulary and merges ALREADY IN MEMORY.
+///
+/// `vocab[i]` is the token with id `i` — the layout an `.apr` embeds under
+/// `tokenizer.vocabulary`, and the layout GGUF uses. `merges` is the ordered
+/// merge table from `tokenizer.merges`.
+///
+/// WHY THIS EXISTS. `load_from_files` takes the two TEXT forms (`vocab.json`,
+/// `merges.txt`), so every caller holding structured data had to serialise it back
+/// to text to use the parser — or, as `apr chat` did, give up and report "no
+/// tokenizer found" for a model that carries one. An `.apr` with vocab and merges
+/// IS a complete tokenizer, and this is where the codebase says so once.
+///
+/// It reuses `load_from_files`'s own primitives — `config_from_vocab_size`,
+/// `load_vocab_into`, `add_merge` — rather than round-tripping through JSON, so
+/// there is one parser and not two.
+///
+/// # Errors
+/// Returns an error when `vocab` is empty: a tokenizer with no vocabulary would
+/// encode every input to the unknown token, which is worse than refusing.
+pub fn load_from_vocab_merges(
+    vocab: &[String],
+    merges: &[(String, String)],
+) -> Result<BpeTokenizer> {
+    if vocab.is_empty() {
+        return Err(AprenderError::FormatError {
+            message: "Empty embedded vocabulary".to_string(),
+        });
+    }
+    let map: HashMap<String, u32> = vocab
+        .iter()
+        .enumerate()
+        .map(|(id, token)| (token.clone(), u32::try_from(id).unwrap_or(u32::MAX)))
+        .collect();
+
+    let config = config_from_vocab_size(map.len());
+    let mut tokenizer = BpeTokenizer::new(config);
+    load_vocab_into(&mut tokenizer, &map);
+    for (left, right) in merges {
+        tokenizer.add_merge(left, right);
+    }
+    Ok(tokenizer)
+}
+
 /// Parse merge rules from merges.txt format (one "pair1 pair2" per line, skipping comments).
 fn load_merges_from_text(tokenizer: &mut BpeTokenizer, merges_txt: &str) {
     for line in merges_txt.lines() {
@@ -464,3 +548,66 @@ fn load_merges_from_text(tokenizer: &mut BpeTokenizer, merges_txt: &str) {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod embedded_vocab_merges_tests {
+    use super::*;
+
+    /// The constructor must produce a tokenizer that ENCODES — which is the whole
+    /// point: a vocabulary alone gives a decode-only tokenizer, and `chat` encodes.
+    #[test]
+    fn vocab_and_merges_build_an_encoding_tokenizer() {
+        let vocab: Vec<String> = vec![
+            "a".into(),
+            "b".into(),
+            "ab".into(),
+            "<|im_start|>".into(),
+            "<|im_end|>".into(),
+            "<|endoftext|>".into(),
+        ];
+        let merges = vec![("a".to_string(), "b".to_string())];
+        let tok = Qwen2BpeTokenizer::from_vocab_merges_data(&vocab, &merges)
+            .expect("vocab+merges is a complete tokenizer");
+        // NOT `vocab_size()`: that reports the CONFIG's field (151936 by default),
+        // not the number of tokens loaded, so it is the same for this 6-token
+        // fixture and for a full Qwen vocabulary. Assert CONTENT instead.
+        assert_eq!(
+            tok.decode(&[0]),
+            "a",
+            "id 0 must be the embedded vocab's first token"
+        );
+        assert_eq!(
+            tok.decode(&[2]),
+            "ab",
+            "id 2 must be the embedded vocab's third token"
+        );
+    }
+
+    /// The special ids come from the VOCABULARY, exactly as `from_json` derives
+    /// them — so an embedded tokenizer and a sibling one carrying the same
+    /// vocabulary cannot disagree about `<|im_start|>`.
+    #[test]
+    fn special_ids_are_read_from_the_vocabulary_not_defaulted() {
+        let mut vocab: Vec<String> = (0..40).map(|i| format!("t{i}")).collect();
+        vocab[7] = "<|im_start|>".into();
+        vocab[9] = "<|im_end|>".into();
+        let tok = Qwen2BpeTokenizer::from_vocab_merges_data(&vocab, &[]).expect("builds");
+        assert_eq!(
+            tok.im_start_id(),
+            7,
+            "im_start must come from the vocab, not the default"
+        );
+        assert_eq!(
+            tok.im_end_id(),
+            9,
+            "im_end must come from the vocab, not the default"
+        );
+    }
+
+    /// An empty vocabulary is refused rather than silently producing a tokenizer
+    /// that encodes everything to the unknown token.
+    #[test]
+    fn an_empty_vocabulary_is_refused() {
+        assert!(Qwen2BpeTokenizer::from_vocab_merges_data(&[], &[]).is_err());
+    }
+}
