@@ -142,6 +142,17 @@ inv_backends = list((L.get("inventory") or {}).get("backends") or [])
 # #3846: the DECLARED inventory deferrals (glob -> reason). Empty when absent, so a
 # contract without the key defers nothing and every failing row is refused as before.
 inv_deferred = dict((L.get("inventory") or {}).get("deferred") or {})
+# #3880: a deferral that nothing retires is an amnesty. Two counters per key, across ALL
+# hosts: how many held files the key MATCHED at all, and how many rows it actually
+# DEFERRED. They separate the two ways a key can go unused, and only one is a defect:
+#   matched 0  -> not applicable here (no such file on any host). NOT stale: the "*A3B*"
+#                 key is legitimately unused on a host holding no MoE model.
+#   matched >0, deferred 0 -> every file it covers is GREEN. The capability it excuses
+#                 arrived and the key outlived it. STALE, and refused below.
+# Self-retiring: nothing to date, no issue to look up, no network. Once support lands the
+# rows go green, the key stops deferring, and the next run demands its deletion.
+defer_matched = dict((k, 0) for k in inv_deferred)
+defer_used    = dict((k, 0) for k in inv_deferred)
 if not (L.get("inventory") or {}).get("patterns") or "cuda" not in inv_backends:
     print("FAIL  the ladder declares no inventory (patterns + backends incl. cuda) — the universe cannot be the host's measured Q4_K models (#3712)"); rc = 1
 # anti-shrink vs origin/main
@@ -253,10 +264,15 @@ for h in hosts:
         # It only ever applies to a row that ALREADY failed: a matching row that is green is
         # reported green, because deferring a passing model would hide a working capability.
         defer_why = None
+        # #3880: MATCH is counted for every held file the key covers, green or not -- that is
+        # what makes "no such file here" distinguishable from "every such file now passes".
+        for pat, reason in (inv_deferred or {}).items():
+            if fnmatch.fnmatch(f.lower(), str(pat).lower()):
+                defer_matched[pat] = defer_matched.get(pat, 0) + 1
         if why:
             for pat, reason in (inv_deferred or {}).items():
                 if fnmatch.fnmatch(f.lower(), str(pat).lower()) and isinstance(reason, str) and reason.strip():
-                    defer_why = reason.strip(); break
+                    defer_why = reason.strip(); defer_used[pat] = defer_used.get(pat, 0) + 1; break
         if why and defer_why:
             print(f"DEFER {h['id']:7} inv:{f:22} {defer_why} — was: " + "; ".join(why))
         elif why: print(f"FAIL  {h['id']:7} inv:{f:22} " + "; ".join(why)); rc = 1
@@ -294,6 +310,14 @@ if rungs_main_p and os.path.exists(rungs_main_p) and os.path.getsize(rungs_main_
         rungs_main = json.load(open(rungs_main_p))
     except Exception as e:
         print(f"FAIL  context rungs at origin/main unreadable: {e}"); rc = 1
+# #3880: refuse a deferral that deferred nothing while covering something. Runs after EVERY
+# host, because a key may be idle on one host and load-bearing on another -- judging it
+# per-host would refuse a live key the moment one host held no matching file.
+for pat in inv_deferred:
+    if defer_matched.get(pat, 0) > 0 and defer_used.get(pat, 0) == 0:
+        print(f"FAIL  deferral {pat!r} is STALE: it covers {defer_matched[pat]} held model(s) and deferred NOTHING — "
+              f"every file it excuses is green, so the capability arrived and the key outlived it. Delete it (#3880).")
+        rc = 1
 if model_ladder_cells.judge(L, good, rungs_doc, print, rungs_main):
     rc = 1
 sys.exit(rc)
