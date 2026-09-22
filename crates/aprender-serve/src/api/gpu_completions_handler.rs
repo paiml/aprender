@@ -529,17 +529,12 @@ async fn completions_inner(
         return Ok(r);
     }
 
-    // #3874: the Qwen3.5 arm. Ahead of every path that currently 503s on this
-    // architecture, and `Ok(None)` when no session is present so a non-hybrid state
-    // falls through unchanged.
+    // #3874 + the quantized arm, behind ONE branch. Both are ungated and both answer
+    // from a model already resident in `AppState`, so they belong together; folding
+    // them gives back the cognitive level the Qwen3.5 arm added to this function
+    // rather than leaving the chain one deeper than the ratchet's ceiling.
     if let Some(r) =
-        try_qwen35_completions(&state, &request, max_tokens, temperature, start, &cancel).await?
-    {
-        return Ok(r);
-    }
-
-    if let Some(r) =
-        try_quantized_completions(&state, &request, max_tokens, temperature, start, &cancel)?
+        try_resident_completions(&state, &request, max_tokens, temperature, start, &cancel).await?
     {
         return Ok(r);
     }
@@ -822,3 +817,27 @@ mod pmat795_finish_reason_tests {
 }
 
 include!("qwen35_completions_backend.rs");
+
+/// The two arms that answer from a model already resident in `AppState`, in order:
+/// the Qwen3.5 session (#3874), then the quantized dense model.
+///
+/// They are one function because they are one question — "is the model already
+/// loaded here?" — and because `completions_inner` is at the cognitive ceiling, so a
+/// seventh sibling `if let` there costs a level this does not.
+///
+/// `Ok(None)` when neither owns the request, so the caller's chain is unchanged.
+async fn try_resident_completions(
+    state: &AppState,
+    request: &CompletionRequest,
+    max_tokens: usize,
+    temperature: f32,
+    start: std::time::Instant,
+    cancel: &CancelToken,
+) -> Result<Option<CompletionResponse>, RErr> {
+    if let Some(r) =
+        try_qwen35_completions(state, request, max_tokens, temperature, start, cancel).await?
+    {
+        return Ok(Some(r));
+    }
+    try_quantized_completions(state, request, max_tokens, temperature, start, cancel)
+}
