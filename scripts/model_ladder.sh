@@ -199,8 +199,15 @@ ladder_serve_teardown() { # <wrapper-pid> <port> -> prints clean|escalated|faile
         fi
         sleep 1
     done
-    # Still answering: the wrapper died and the server did not. Name it by port.
+    # Still answering: the wrapper died and the server did not. Name it by port,
+    # then PROVE it is ours before signalling. The random port makes a collision
+    # unlikely; `/proc/PID/cwd` makes it checkable, and on a box several agents
+    # share, "unlikely" is an argument while the cwd is evidence (cop, #3828).
+    # A pid we cannot attribute to this tree is never signalled — it is reported.
     spid=$(ss -tlnpH "sport = :$port" 2>/dev/null | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
+    if [ -n "$spid" ] && [ "$(readlink -f "/proc/$spid/cwd" 2>/dev/null)" != "$PWD" ]; then
+        printf 'failed'; return 1
+    fi
     if [ -n "$spid" ]; then
         kill "$spid" 2>/dev/null
         for i in $(seq 1 10); do
