@@ -129,14 +129,14 @@ impl OwnedQuantizedModel {
 
     /// Fused dequantize + matmul for quantized weights
     ///
-    /// Supports F32, BF16, F16, Q4_0, Q8_0, Q4_1, Q5_0, Q4_K, Q5_K, Q6_K formats.
+    /// Supports F32, BF16, F16, Q4_0, Q8_0, Q4_1, Q5_0, Q5_1, Q4_K, Q5_K, Q6_K formats.
     /// Uses SIMD-accelerated implementations for optimal performance.
     pub(crate) fn fused_matmul(
         &self,
         input: &[f32],
         weight: &OwnedQuantizedTensor,
     ) -> Result<Vec<f32>> {
-        use crate::quantize::{dequantize_q4_1, dequantize_q5_0};
+        use crate::quantize::{dequantize_q4_1, dequantize_q5_0, dequantize_q5_1};
 
         let in_dim = weight.in_dim;
         let out_dim = weight.out_dim;
@@ -200,6 +200,25 @@ impl OwnedQuantizedModel {
                 input,
                 dequantize_q5_0(data)?,
                 "Q5_0",
+                in_dim,
+                out_dim,
+                seq_len,
+            ),
+            // #3869: Q5_1 sat in the gap between its two siblings. The
+            // dequantizer has always been here (`quantize::dequantize_q5_1`,
+            // `pub`), and the GPU-side `acceleration.rs::dequantize_weight`
+            // already dispatched to it — only this CPU arm was missing, so a
+            // Q5_1 tensor fell through to `dequant_fallback_or_refuse`, whose
+            // admission is `iq_block_bytes.is_some() || Q2_K || Q3_K`, and was
+            // refused as "got type 7".
+            //
+            // Real cost: Qwen2.5-0.5B-Instruct-IQ4_XS.gguf carries 24 Q5_1
+            // tensors, so the whole file was unrunnable on CPU for one missing
+            // three-line arm while its other 266 tensors were all supported.
+            GGUF_TYPE_Q5_1 => dequant_f32_matmul(
+                input,
+                dequantize_q5_1(data)?,
+                "Q5_1",
                 in_dim,
                 out_dim,
                 seq_len,
