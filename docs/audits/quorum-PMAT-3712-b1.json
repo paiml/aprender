@@ -1,0 +1,206 @@
+{
+  "ticket": "PMAT-3712",
+  "base": "origin/PMAT-3712-ladder-universe-inventory",
+  "base_resolved": "origin/PMAT-3712-ladder-universe-inventory",
+  "base_note": "no origin/origin/PMAT-3712-ladder-universe-inventory exists; judged against the local ref",
+  "head": "fd636b3d734cdc305c93a8aed1e773eb4c1bc5b9",
+  "diff_sha256": "214f8dd7b3fc379a656d0398aae9a7a8377cf99751fc34cdf7093aaa76031207",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 575421,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements the requirements laid out in the ticket PMAT-3712. It reads the Q4_K inventory, asserts rc=0 and no fallback, and checks the verb x thinking x context rung cells correctly via model_ladder_cells.py. No violations were found.",
+      "findings": [
+        {
+          "claim": "The diff implements the model gate universe and cells correctly as per PMAT-3712.",
+          "file": "/mnt/nvme-raid0/agent-wt/pmat-3712b/docs/audits/quorum-PMAT-3712.prompt.md",
+          "fix": "",
+          "grounding": "cited",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 2336,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully addresses the requirements laid out in the ticket PMAT-3712, correctly checking the Q4_K inventory, handling fallbacks, and managing the verbs and contexts logic. No violations were found.",
+      "findings": [
+        {
+          "claim": "The diff implements the model gate universe and cells correctly as per PMAT-3712.",
+          "file": "/mnt/nvme-raid0/agent-wt/pmat-3712b/docs/audits/quorum-PMAT-3712.prompt.md",
+          "fix": "",
+          "grounding": "cited",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 2231,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-low",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-low",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PASS: PMAT-3712 diff correctly implements the cells judge (verb x thinking x context rung) derived from measured host inventory, integrating `scripts/lib/model_ladder_cells.py` into `check_model_ladder.sh`. Verified with `check_model_ladder.sh --self-test` (47 cases passed, 0 bad; 11 module mutants killed) and `pv lint contracts/model-capability-ladder-v1.yaml` (PASS).",
+      "findings": [],
+      "raw_bytes": 2026,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.6-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.6-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "/mnt/nvme-raid0/agent-wt/pmat-3712b/docs/audits/quorum-PMAT-3712.prompt.md",
+      "line": 1,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "The diff implements the model gate universe and cells correctly as per PMAT-3712."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.6-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

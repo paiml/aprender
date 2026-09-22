@@ -1,0 +1,179 @@
+{
+  "ticket": "PMAT-3712",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "6eee66bb07e86fe21971df3a4ed513e8064c22c0",
+  "diff_sha256": "e6334a998837fae5d3f78369fe1c364903f9daaea79919870f18da452af31cb8",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 166098,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully implements the requirements specified in PMAT-3712. It correctly sets the model gate universe to the host's measured Q4_K inventory, enforcing that any missing inventory models are flagged as a FAIL. It ensures that no Q4_K rung is optional by enforcing that `required` must be true and `cuda` must be claimed, explicitly refusing keys that violate this. Any inventory model that skips capability_match/golden_output, falls back, or has rc != 0 correctly triggers a RED condition. Furthermore, the fleet GPU lock (flock + choom -n 1000) is enforced across apr calls via `apr_locked`, complete with lock auditing and probing tests in `check_model_ladder.sh`. Note that, as permitted by the `docs/roadmaps/entries/PMAT-3712.yaml` cop ruling, the qwen3-8b-q4km rung remains `required: false` in the contract itself, allowing the gate to predictably refuse it.\n\nNote: `paiml-lane-witness` was not found in `$(git rev-parse --git-dir)`. Using fallback value.",
+      "findings": [],
+      "raw_bytes": 4893,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The PMAT-3712 diff accurately implements the required validation rules for checking the Q4_K model inventory. It ensures that the model ladder receipt writes a v2 schema, refuses optional Q4_K rungs, requires CUDA for Q4_K rungs, validates the full measured inventory against the host, fails if skipped or fell back, and guarantees that every non-version `$APR` call runs under the `apr_locked` wrapper with fleet lock and bounded `choom -n 1000`. `pmutant` mutation checks correctly ensure the audit tools do not weaken. The witness file was not present at the location specified by `$(git rev-parse --git-dir)/paiml-lane-witness` (file missing).",
+      "findings": [],
+      "raw_bytes": 2660,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-low",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-low",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff for ticket PMAT-3712 was audited against all ticket requirements, cop rulings, refutation criteria, and contract proof obligations.\n\nKey verification results:\n1. `contracts/model-capability-ladder-v1.yaml`: Successfully introduces `ladder.inventory` specifying directory patterns and `cuda` backend. Defines proof obligations MCL-INV-006/007 and falsification tests FALSIFY-MCL-011..015. Formula updated for receipt schema v2.\n2. `scripts/check_model_ladder.sh`: Uses script path for tree root resolution (#3581). Enforces that no Q4_K rung is optional (`required: false` refused) and every Q4_K rung claims `cuda`. Enforces receipt schema v2 and verifies every host-held model is present in the run and green on CUDA. Includes static and behavioral GPU lock auditing (`lock_audit` and `lock_probe`).\n3. `scripts/model_ladder.sh`: Enforces `apr_locked` (`flock` bounded wait + `choom -n 1000`) for all GPU `apr` invocations. Dynamically measures host inventory under declared directories and patterns, unified under `measure()`, and writes schema v2 receipts with 40-hex `apr_sha`.\n4. Test suites & self-test verification:\n   - `bash scripts/check_model_ladder.sh --self-test` passed: 26 cases, 0 bad; all 3 rule mutants (q4k-required-false, q4k-without-cuda, inventory-missing) and 4 producer lock mutants (raw-apr-call, no-lock, no-choom, unbounded) were killed.\n   - `cargo test -p aprender-contracts` passed cleanly (0 failures).\n\nVerdict: PASS. No refutations found.",
+      "findings": [],
+      "raw_bytes": 5987,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.6-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.6-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane 3: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (5987 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.1-pro-low",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.6-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
