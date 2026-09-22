@@ -228,6 +228,74 @@ mod gemv_entry_name_tests_3477 {
         );
     }
 
+    /// ASSEMBLE every emitted kernel with `ptxas`. This is the check the
+    /// em-dash defect actually needed: `ptxas` is a compiler, it needs **no
+    /// GPU**, and it is present on any box that can build `--features cuda`
+    /// (nvcc is required for that). So the authoritative answer to "does this
+    /// module load" is available on a CPU-only machine, in milliseconds, and
+    /// neither the entry-name guard nor the ASCII guard is a substitute for it.
+    ///
+    /// The ASCII check above is kept because it names the exact codepoint and
+    /// runs without a toolchain; this one is the ground truth.
+    #[test]
+    fn every_emitted_kernel_assembles() {
+        use std::io::Write as _;
+        let kernels = CudaKernels::new();
+        let mut broken = Vec::new();
+
+        for kt in every_gemv_kernel() {
+            let ptx = kernels.generate_ptx(&kt);
+            // Assemble at the target the module itself declares.
+            let target = ptx
+                .lines()
+                .find_map(|l| l.trim().strip_prefix(".target "))
+                .unwrap_or("sm_70")
+                .trim()
+                .to_string();
+
+            let dir = std::env::temp_dir().join(format!("apr_ptx_{}", std::process::id()));
+            let _ = std::fs::create_dir_all(&dir);
+            let path = dir.join(format!("{}.ptx", kernels.kernel_name(&kt)));
+            let Ok(mut f) = std::fs::File::create(&path) else { continue };
+            if f.write_all(ptx.as_bytes()).is_err() {
+                continue;
+            }
+            drop(f);
+
+            let out = std::process::Command::new("ptxas")
+                .args(["--gpu-name", &target, "-o"])
+                .arg(dir.join("out.cubin"))
+                .arg(&path)
+                .output();
+
+            match out {
+                Ok(o) if !o.status.success() => {
+                    let err = String::from_utf8_lossy(&o.stderr);
+                    broken.push(format!(
+                        "\n  - {kt:?} at {target}: {}",
+                        err.trim().lines().take(3).collect::<Vec<_>>().join(" | ")
+                    ));
+                },
+                Ok(_) => {},
+                Err(e) => {
+                    // A cuda-feature build implies a CUDA toolchain, so a
+                    // missing ptxas is a real finding, not a reason to skip.
+                    broken.push(format!("\n  - {kt:?}: could not run ptxas ({e})"));
+                },
+            }
+            let _ = std::fs::remove_file(&path);
+        }
+
+        assert!(
+            broken.is_empty(),
+            "{} emitted PTX module(s) do not assemble. ptxas is the ground truth and \
+             needs no GPU — a module that fails here never loads on any device, whatever \
+             its entry name says:{}",
+            broken.len(),
+            broken.join("")
+        );
+    }
+
     /// #3477 specifically: F16 is the new one, and its PTX must carry the
     /// row-major 2-byte stride LAYOUT-001 requires. A 4-byte stride here reads
     /// every other weight and is the silent-garbage shape this ticket exists to
