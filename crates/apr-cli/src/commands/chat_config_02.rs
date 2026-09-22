@@ -12,6 +12,7 @@
             system: None,
             inspect: false,
             force_cpu: false,
+            json: false,
             trace: false,
             trace_output: None,
         };
@@ -29,6 +30,7 @@
             system: Some("Creative mode".to_string()),
             inspect: true,
             force_cpu: true,
+            json: false,
             trace: true,
             trace_output: Some(PathBuf::from("/tmp/creative_trace.json")),
         };

@@ -247,6 +247,8 @@ impl ChatSession {
                     let output_tokens = cuda_model
                         .generate_gpu_resident(&prompt_tokens, &gen_config)
                         .map_err(|e| format!("CUDA generate failed: {e}"))?;
+                    // #3794: record the backend that actually answered.
+                    self.generated_on_gpu = true;
 
                     let new_tokens = if output_tokens.len() > prompt_len {
                         &output_tokens[prompt_len..]
@@ -375,6 +377,8 @@ impl ChatSession {
             if !config.force_cpu && !self.cuda_init_failed {
                 if let Some(ref mut cuda_model) = self.cached_apr_cuda {
                     let max_tokens = config.max_tokens;
+                    // #3794: record the backend that actually answered.
+                    self.generated_on_gpu = true;
                     return cuda_model
                         .generate_cuda_with_cache(prompt, max_tokens, eos_token_id)
                         .map_err(|e| format!("APR CUDA generate failed: {e}"));

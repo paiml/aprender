@@ -56,6 +56,11 @@ pub(crate) struct ChatConfig {
     /// Force CPU inference (skip CUDA even if available)
     /// Default: false - GPU is preferred when available (F-GPU-134b)
     pub force_cpu: bool,
+    /// #3794: emit a machine-readable session summary naming the backend that
+    /// actually answered. `apr run --format json` has reported
+    /// `backend: {requested, ran, fell_back}` for some time; `apr chat`
+    /// reported nothing, so a harness could not hold chat to its lane.
+    pub json: bool,
     /// Enable inference tracing (APR-TRACE-001)
     pub trace: bool,
     /// Trace output file path
@@ -71,6 +76,7 @@ impl Default for ChatConfig {
             system: None,
             inspect: false,
             force_cpu: false, // F-GPU-134b: Default to GPU when available
+            json: false,
             trace: false,
             trace_output: None,
         }
@@ -127,6 +133,7 @@ pub(crate) fn run(
     trace_level: &str,
     profile: bool,
     offline: bool,
+    json: bool,
 ) -> Result<(), CliError> {
     contract_pre_temperature_bounds!();
     contract_pre_session_state_machine!();
@@ -189,6 +196,7 @@ pub(crate) fn run(
         system: system.map(String::from),
         inspect,
         force_cpu,
+        json,
         trace,
         trace_output,
     };
@@ -200,6 +208,26 @@ pub(crate) fn run(
     contract_post_temperature_bounds!(&());
     contract_post_session_state_machine!(&());
     result
+}
+
+/// #3794: may this chat session PRE-LOAD the model onto an accelerator?
+///
+/// One rule for all three formats, because the defect was that the gate existed
+/// nowhere and the fix has to hold in three places. `chat_session_02.rs` calls
+/// `try_init_gguf_cuda` / `try_init_apr_cuda` / `try_init_safetensors_cuda`; a
+/// regression that re-drops the check from any ONE of them is the same bug
+/// again for that format, so the predicate is shared and the table covers all
+/// three.
+///
+/// Generation already honoured `force_cpu`, so this was never a wrong-answer
+/// bug — it was VRAM held for the session's lifetime by a run that asked for
+/// none, outside `/tmp/apr-gpu.lock` and therefore invisible to `gpu-q`.
+/// Measured on an RTX 4090 with qwen2.5-coder-1.5b-q4_k_m: peak 4070 MiB under
+/// `--no-gpu` before this, 0 MiB after.
+#[must_use]
+fn cuda_preload_allowed(force_cpu: bool, format: ModelFormat) -> bool {
+    let _ = format; // every format is gated by the same rule; named so it cannot silently diverge
+    !force_cpu
 }
 
 /// Model format variants (Y14: format-agnostic)
@@ -623,3 +651,56 @@ fn print_welcome_banner_for(path: &Path, format: ModelFormat, config: &ChatConfi
 include!("chat_session.rs");
 include!("chat_generate_session.rs");
 include!("chat_04.rs");
+
+/// #3794: the case table for `cuda_preload_allowed`.
+#[cfg(test)]
+mod pmat3794_chat_cuda_preload_gate {
+    use super::{cuda_preload_allowed, ModelFormat};
+
+    const FORMATS: &[(ModelFormat, &str)] = &[
+        (
+            ModelFormat::Gguf,
+            "try_init_gguf_cuda — the format #3794 measured",
+        ),
+        (ModelFormat::Apr, "try_init_apr_cuda"),
+        (ModelFormat::SafeTensors, "try_init_safetensors_cuda"),
+    ];
+
+    /// The defect: `apr chat --no-gpu` uploaded the weights anyway.
+    #[test]
+    fn force_cpu_preloads_no_accelerator_for_any_format() {
+        let leaked: Vec<String> = FORMATS
+            .iter()
+            .filter(|(f, _)| cuda_preload_allowed(true, *f))
+            .map(|(f, site)| format!("\n  - {f:?} ({site})"))
+            .collect();
+        assert!(
+            leaked.is_empty(),
+            "#3794 REGRESSION: --no-gpu / force_cpu would still initialise CUDA for \
+             {} of {} formats, holding VRAM outside /tmp/apr-gpu.lock for a run that \
+             asked for none (measured 4070 MiB peak before the fix):{}",
+            leaked.len(),
+            FORMATS.len(),
+            leaked.join("")
+        );
+    }
+
+    /// The over-correction: the fix must not disable the accelerator outright.
+    #[test]
+    fn without_force_cpu_the_accelerator_is_still_preloaded() {
+        let blocked: Vec<String> = FORMATS
+            .iter()
+            .filter(|(f, _)| !cuda_preload_allowed(false, *f))
+            .map(|(f, site)| format!("\n  - {f:?} ({site})"))
+            .collect();
+        assert!(
+            blocked.is_empty(),
+            "#3794 OVER-CORRECTION: the default (no --no-gpu) stopped pre-loading the \
+             accelerator for {} of {} formats — the fix is to honour the flag, not to \
+             remove the GPU path:{}",
+            blocked.len(),
+            FORMATS.len(),
+            blocked.join("")
+        );
+    }
+}

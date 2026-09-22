@@ -51,6 +51,12 @@ mod realizar_chat {
         /// once, at session end, to decide the command's exit code. Not reset by
         /// `/clear` — a failed generation happened whether or not the history is kept.
         had_generate_error: bool,
+        /// #3794: set when a turn was generated on an accelerator. Read at session
+        /// end so `--json` can report the backend that ACTUALLY answered, rather
+        /// than the one that was asked for — `apr run --format json` already
+        /// reports `{requested, ran, fell_back}` and `apr chat` reported nothing,
+        /// so a harness could not hold chat to its lane the way it holds run.
+        generated_on_gpu: bool,
     }
 
 include!("chat_load_tokenizers.rs");
