@@ -37,13 +37,18 @@ fn test_config() -> GGUFConfig {
 }
 
 /// The whitelist predicate is the single source of truth. GPU-eligible set is
-/// exactly {F32(0), Q4_0(2), Q4_1(3), Q5_0(6), Q8_0(8), Q4_K(12), Q5_K(13),
-/// Q6_K(14)}; everything else gates to CPU. This is what the construction gate
+/// exactly {F32(0), F16(1), Q4_0(2), Q4_1(3), Q5_0(6), Q8_0(8), Q4_K(12),
+/// Q5_K(13), Q6_K(14), IQ4_XS(23)}; everything else gates to CPU. This is what the construction gate
 /// and the primary-path gate both consume — they MUST agree.
 #[test]
 fn gpu_unsupported_quant_qtype_whitelist_is_exact() {
     // Supported → NOT gated.
-    for &q in &[0u32, 2, 3, 6, 8, 12, 13, 14] {
+    // #3477: F16(1) and IQ4_XS(23) MOVED to the supported set once their GEMV
+    // kernels existed AND were measured against the CPU decoder on real model
+    // bytes — 217/217 tensors exact at `88d25d265` for F16, 10/10 exact at
+    // `b782b4257` for IQ4_XS, each with a planted-fault control going RED on a
+    // tensor of its own type. Not moved on the kernel's existence alone.
+    for &q in &[0u32, 1, 2, 3, 6, 8, 12, 13, 14, 23] {
         assert!(
             !gpu_unsupported_quant_qtype(q),
             "qtype {q} has a verified GPU kernel and must be GPU-eligible"
@@ -51,8 +56,7 @@ fn gpu_unsupported_quant_qtype_whitelist_is_exact() {
     }
     // Unsupported → gated to CPU (would hit resolve_qtype's unwrap_or(Q4K)).
     for &q in &[
-        1u32, /*F16*/
-        7,    /*Q5_1*/
+        7u32, /*Q5_1*/
         9,    /*Q8_1*/
         10,   /*Q2_K*/
         11,   /*Q3_K*/
@@ -137,7 +141,8 @@ fn unsupported_quant_in_each_projection_forces_cpu() {
     );
 
     let mut m_down = create_test_model_with_config(&cfg);
-    m_down.layers[0].ffn_down_weight.qtype = 1; // F16
+    // Was F16(1) until #3477 gave it a measured kernel; BF16 still has none.
+    m_down.layers[0].ffn_down_weight.qtype = 30; // BF16
     assert!(
         m_down.has_gpu_unsupported_quant(),
         "F16 in ffn_down must force CPU"
@@ -161,8 +166,12 @@ fn first_gpu_unsupported_quant_names_the_type_and_stays_none_for_supported() {
     assert_eq!(lm.first_gpu_unsupported_quant(), Some(7));
 
     let mut down = create_test_model_with_config(&test_config());
-    down.layers[0].ffn_down_weight.qtype = 1; // F16, the #3685 model
-    assert_eq!(down.first_gpu_unsupported_quant(), Some(1));
+    // Was F16(1), the #3685 model. F16 now HAS a measured kernel (#3477), so
+    // it is no longer an example of an unsupported quant; BF16(30) is, and the
+    // property under test — that the first unsupported projection is named —
+    // is unchanged.
+    down.layers[0].ffn_down_weight.qtype = 30; // BF16
+    assert_eq!(down.first_gpu_unsupported_quant(), Some(30));
 
     for m in [&supported, &lm, &down] {
         assert_eq!(

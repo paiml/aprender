@@ -36,8 +36,13 @@ fn test_is_legacy_gguf_quant_non_legacy_types_gh219() {
     assert!(!is_legacy_gguf_quant(12)); // Q4_K
     assert!(!is_legacy_gguf_quant(13)); // Q5_K
     assert!(!is_legacy_gguf_quant(14)); // Q6_K
-    // PMAT-783: F16(1) has no GGUF GPU GEMV kernel → gated (would be Q4K garbage).
-    assert!(is_legacy_gguf_quant(1));
+    // PMAT-783 gated F16(1) because no GGUF GPU GEMV kernel existed and
+    // resolve_qtype would have read it as Q4K garbage. #3477 wrote that kernel
+    // and measured it (217/217 exact, `88d25d265`), and #3850 replaced the
+    // silent Q4K fallback with a refusal, so both halves of that reasoning are
+    // now addressed rather than assumed.
+    assert!(!is_legacy_gguf_quant(1));
+    assert!(is_legacy_gguf_quant(30)); // BF16 — no kernel, still gated
 }
 
 #[test]
