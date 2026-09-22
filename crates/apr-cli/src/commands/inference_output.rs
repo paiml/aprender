@@ -290,19 +290,18 @@ fn inference_error<E: std::fmt::Display>(e: E) -> CliError {
     CliError::InferenceFailed(e.to_string())
 }
 
-/// Execute inference using realizar engine
+/// The realizar config `apr run` builds from its options (#3743).
 ///
-/// Per spec APR-CLI-DELEGATE-001: All inference delegates to realizar's
-/// high-level API. This eliminates ~1500 lines of duplicated code.
-/// BUG-RUN-001 FIX: Now returns InferenceOutput with actual token count
+/// The prompt is the `--prompt`/positional text or the `-i` file's contents, verbatim;
+/// whether the model's chat template applies travels as `force_chat_template`, never
+/// as a pre-wrapped prompt (#3672). Split out so the three spellings of a chat prompt
+/// can be checked to reach realizar identically.
 #[cfg(feature = "inference")]
-fn execute_with_realizar(
+pub(crate) fn realizar_config(
     model_path: &Path,
     input_path: Option<&PathBuf>,
     options: &RunOptions,
-    _use_mmap: bool,
-) -> Result<InferenceOutput> {
-    use realizar::infer::run_inference_report;
+) -> Result<realizar::InferenceConfig> {
     use realizar::InferenceConfig;
 
     // Get prompt from options or input file
@@ -346,6 +345,24 @@ fn execute_with_realizar(
     if let Some(ref trace_path) = options.trace_output {
         config = config.with_trace_output(trace_path);
     }
+    Ok(config)
+}
+
+/// Execute inference using realizar engine
+///
+/// Per spec APR-CLI-DELEGATE-001: All inference delegates to realizar's
+/// high-level API. This eliminates ~1500 lines of duplicated code.
+/// BUG-RUN-001 FIX: Now returns InferenceOutput with actual token count
+#[cfg(feature = "inference")]
+fn execute_with_realizar(
+    model_path: &Path,
+    input_path: Option<&PathBuf>,
+    options: &RunOptions,
+    _use_mmap: bool,
+) -> Result<InferenceOutput> {
+    use realizar::infer::run_inference_report;
+
+    let config = realizar_config(model_path, input_path, options)?;
 
     // Run inference via realizar
     // #3718: the report carries what only the decode path knows (finish reason,

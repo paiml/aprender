@@ -83,6 +83,7 @@ def why_of(x, backends):  # every reason a measured row is not green on the clai
         v = be.get(b)
         if v is None: why.append(f"{b}: not measured")
         elif v.get("fallback"): why.append(f"{b}: FELL BACK — the claimed backend did not run")
+        elif v.get("escaped_special"): why.append(f"{b}: the formatted prompt carries a zero-width-escaped special token — templated twice (#3743)")
         elif not v.get("ran"): why.append(f"{b}: did not run (rc={v.get('rc')})")
     return why
 # #3712: no Q4_K rung is optional, and every one claims cuda. The key is refused, not tolerated.

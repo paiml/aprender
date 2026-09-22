@@ -219,14 +219,22 @@ PY
   IFS=',' read -r -a bes <<< "$rbackends"
   for b in "${bes[@]}"; do
     case "$b" in cpu) flag="--no-gpu" ;; cuda|gpu) flag="--gpu" ;; *) flag="" ;; esac
-    run_out=$(apr_locked run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 $flag 2>&1); run_rc=$?
+    # --verbose prints realizar's `[DEBUG] formatted_prompt=…`, which the #3743 check reads.
+    # apr_locked / LOCK_BUSY are KEPT from main: the GPU lock is what serialises the
+    # ladder against every other session on the box. #3743's side dropped it.
+    run_out=$(apr_locked run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 --verbose $flag 2>&1); run_rc=$?
     [ "$run_rc" = "$LOCK_BUSY" ] && lock_timeout "apr run $rid ($b)"
-    fb=false; ran=true
+    fb=false; ran=true; esc=false
     if grep -qE 'falling back to CPU|path rejected, attempting fallback|runs on the CPU; the GPU backend' <<< "$run_out"; then fb=true; fi
+    # #3743: realizar zero-width-escapes special tokens it finds INSIDE the user text,
+    # so an escaped special in the formatted prompt means the prompt reached the model
+    # templated twice (0.69.0: `--prompt` on an instruct-named model). The debug line
+    # prints it Debug-escaped (`\u{200b}`); the raw character is checked too.
+    if grep -F 'formatted_prompt=' <<< "$run_out" | grep -qF -e '\u{200b}' -e $'\u200b'; then esc=true; fi
     if [ "$b" != cpu ] && [ -z "$GPU_NAME" ]; then ran=false; fi
     [ $run_rc -eq 0 ] || ran=false
     [ $first = 1 ] || be_json="$be_json,"; first=0
-    be_json="$be_json\"$b\":{\"ran\":$ran,\"fallback\":$fb,\"rc\":$run_rc}"
+    be_json="$be_json\"$b\":{\"ran\":$ran,\"fallback\":$fb,\"escaped_special\":$esc,\"rc\":$run_rc}"
   done
   be_json="$be_json}"
   # The receipt carries the MEASURED file hash (ONT-4c1): a resolver joining the ladder contract to
@@ -241,7 +249,7 @@ cap = qa.get("capability_match", {})
 cap_ok = (cap.get("passed", False) and not cap.get("skipped", False)) \
          or (cap.get("skipped", False) and not ({"cuda", "gpu"} & set(be)))
 green = cap_ok and qa.get("golden_output", {}).get("passed", False) \
-        and all(v["ran"] and not v["fallback"] for v in be.values())
+        and all(v["ran"] and not v["fallback"] and not v.get("escaped_special") for v in be.values())
 print(json.dumps({"id": rid, "file": rfile, "inventory_only": inv_only, "present": True, "sha_ok": True,
                   "sha256": sha, "required": req, "qa_rc": qa_rc, "capability_match": qa.get("capability_match"),
                   "golden_output": qa.get("golden_output"), "backends": be, "green": green}))
@@ -261,6 +269,7 @@ gold=r["golden_output"] or {}
 if not gold.get("passed"): w.append("golden_output: "+("SKIPPED: " if gold.get("skipped") else "")+str(gold.get("message",""))[:70])
 for b,v in r["backends"].items():
     if v["fallback"]: w.append(b+": FELL BACK (claimed backend did not run)")
+    elif v.get("escaped_special"): w.append(b+": escaped special token in the formatted prompt: templated twice (#3743)")
     elif not v["ran"]: w.append(b+": did not run (rc=%s)"%v["rc"])
 print("; ".join(w) or "unknown")')
     printf '  [FAIL  ] %-30s %s\n' "$rid" "$why"
