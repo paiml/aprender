@@ -229,8 +229,11 @@ quant_types:
     gpu_supported: true
   - name: F16
     ggml_type: 1
-    gpu_supported: false
-    reason: no GPU GEMV kernel
+    gpu_supported: true
+    note: >
+      Opened in the GPU whitelist on the 0.69.1 release branch. This row read
+      `false` with reason "no GPU GEMV kernel" until FALSIFY-CAP-002 caught the
+      disagreement with `gpu_unsupported_quant_qtype` after the kernel landed.
     refs: ['#3846', '#3850']
   - name: Q4_0
     ggml_type: 2
@@ -304,8 +307,11 @@ quant_types:
     reason: no GPU GEMV kernel; IQ also fails the CPU dequant path
   - name: IQ4_XS
     ggml_type: 23
-    gpu_supported: false
-    reason: no GPU GEMV kernel; IQ also fails the CPU dequant path
+    gpu_supported: true
+    note: >
+      Opened in the GPU whitelist on the 0.69.1 release branch. The CPU dequant
+      path has existed all along (`iq_dispatch.rs`); only the GPU side was shut.
+    refs: ['#3870']
   - name: BF16
     ggml_type: 30
     gpu_supported: false
