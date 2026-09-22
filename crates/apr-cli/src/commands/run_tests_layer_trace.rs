@@ -16,6 +16,7 @@
             reasoning: None,
             thinking: false,
             reasoning_truncated: false,
+            model_digest: None,
             duration_secs,
             cached: true,
             tokens_generated: Some(tokens),

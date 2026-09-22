@@ -225,6 +225,9 @@ pub(crate) struct RunResult {
     pub thinking: bool,
     /// Whether the think-budget guard closed the reasoning (#3801)
     pub reasoning_truncated: bool,
+    /// #3720: sha256 (lower-case hex) of the model file actually loaded, computed for a
+    /// machine-readable run only. `None` for a text run, or a path that is not one file.
+    pub model_digest: Option<String>,
     /// Processing time in seconds
     pub duration_secs: f64,
     /// Whether model was cached
@@ -308,6 +311,11 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
     // Check if input is required
     let input_path = options.input.as_ref();
 
+    // #3720: a machine-readable run reports the digest of the file it loaded; the file
+    // is hashed beside inference, so the hash costs no wall time the run would not spend.
+    let digest = (options.stream || options.output_format == "json")
+        .then(|| spawn_model_digest(model_path.clone()));
+
     // Load and run model
     // BUG-RUN-001 FIX: Now receives InferenceOutput with actual token count
     let output = execute_inference(&model_path, input_path, options)?;
@@ -325,6 +333,7 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
         reasoning: output.reasoning,
         thinking: output.thinking,
         reasoning_truncated: output.reasoning_truncated,
+        model_digest: digest.and_then(|hashing| hashing.join().ok().flatten()),
         duration_secs: duration.as_secs_f64(),
         cached: matches!(model_source, ModelSource::Local(_)) || model_source.cache_path().exists(),
         tokens_generated,
@@ -332,6 +341,17 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
         used_gpu: output.used_gpu,
         generated_tokens: output.generated_tokens,
         token_texts: output.token_texts,
+    })
+}
+
+/// #3720: hash the model file on its own thread: sha256, lower-case hex, the value
+/// `sha256sum` prints. `None` when the path is not a readable file (a model directory).
+fn spawn_model_digest(path: PathBuf) -> std::thread::JoinHandle<Option<String>> {
+    std::thread::spawn(move || {
+        path.is_file()
+            .then(|| crate::commands::manifest::sha256_of_file(&path).ok())
+            .flatten()
+            .map(|(_, hex)| hex)
     })
 }
 
