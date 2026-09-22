@@ -65,6 +65,30 @@ pub enum RequiredOp {
     PostAttnFfnNorm,
 }
 
+/// Every `RequiredOp` variant, in declaration order.
+///
+/// An enum you cannot enumerate cannot be checked for exhaustiveness, and the
+/// capability facts are exactly the kind that go stale one variant at a time.
+/// `contracts/apr-model-capability-v1.yaml` is compared against this list, so a
+/// variant added here without a contract row fails a test rather than becoming a
+/// silent hole — the op-shaped form of #3850's "an unknown quant is decoded as
+/// Q4_K".
+pub const ALL_REQUIRED_OPS: [RequiredOp; 13] = [
+    RequiredOp::RoPE,
+    RequiredOp::GQA,
+    RequiredOp::MHA,
+    RequiredOp::SwiGLU,
+    RequiredOp::GeluMlp,
+    RequiredOp::RMSNorm,
+    RequiredOp::LayerNorm,
+    RequiredOp::BiasAdd,
+    RequiredOp::QkNorm,
+    RequiredOp::AbsolutePos,
+    RequiredOp::CausalMask,
+    RequiredOp::AttnFinalSoftcap,
+    RequiredOp::PostAttnFfnNorm,
+];
+
 impl std::fmt::Display for RequiredOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -608,35 +632,71 @@ mod gpu_support_doc {
         ("gpt2", "GPT-2"),
     ];
 
-    /// The GPU quantisation whitelist, as `dtype.rs` enforces it.
-    const QUANTS_GPU: &[(&str, bool, &str)] = &[
-        ("F32", true, "ggml type 0"),
-        ("F16", false, "ggml type 1 — #3846/#3850"),
-        ("Q4_0", true, "ggml type 2"),
-        ("Q4_1", true, "ggml type 3"),
-        ("Q5_0", true, "ggml type 6"),
-        ("Q8_0", true, "ggml type 8"),
-        ("Q4_K", true, "ggml type 12 — the release matrix's quant"),
-        ("Q5_K", true, "ggml type 13"),
-        ("Q6_K", true, "ggml type 14"),
-        (
-            "Q5_1 / Q8_1 / Q2_K / Q3_K / Q8_K",
-            false,
-            "no GPU GEMV kernel",
-        ),
-        (
-            "IQ2_XXS / IQ3_* / IQ4_NL / IQ4_XS",
-            false,
-            "no GPU GEMV kernel; IQ also fails the CPU dequant path",
-        ),
-    ];
+    /// The quantisation table is READ FROM THE CONTRACT, not held here (#3856).
+    ///
+    /// `QUANTS_GPU` used to live at this spot: a hand-written table whose
+    /// unsupported entries were PROSE — "Q5_1 / Q8_1 / Q2_K / Q3_K / Q8_K" and
+    /// "IQ2_XXS / IQ3_* / IQ4_NL / IQ4_XS" — carrying no ggml type numbers, beside
+    /// F16's "ggml type 1". That is #3852's shape, and it made this doc a SECOND
+    /// representation of facts the code also held, free to disagree with it
+    /// (#3077's own concern). `IQ3_*` was a wildcard standing for several distinct
+    /// types, one of which (IQ1_M = 29) nothing in the tree named.
+    ///
+    /// The contract is now the single declaration, exhaustive over the ggml enum,
+    /// one row per type with its id.
+    fn quant_rows() -> Vec<(String, bool, String)> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../contracts/apr-model-capability-v1.yaml");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+        let doc: serde_yaml_ng::Value =
+            serde_yaml_ng::from_str(&text).unwrap_or_else(|e| panic!("contract is not YAML: {e}"));
+        doc.get("quant_types")
+            .and_then(|v| v.as_sequence())
+            .expect("contract has no `quant_types`")
+            .iter()
+            .map(|r| {
+                let name = r
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .expect("quant row has no name");
+                let id = r
+                    .get("ggml_type")
+                    .and_then(serde_yaml_ng::Value::as_u64)
+                    .expect("quant row has no ggml_type");
+                let ok = r
+                    .get("gpu_supported")
+                    .and_then(serde_yaml_ng::Value::as_bool)
+                    .unwrap_or(false);
+                let note = r
+                    .get("reason")
+                    .or_else(|| r.get("note"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                (
+                    name.to_string(),
+                    ok,
+                    format!(
+                        "ggml type {id}{}{note}",
+                        if note.is_empty() { "" } else { " — " }
+                    ),
+                )
+            })
+            .collect()
+    }
 
     fn render() -> String {
         let supported = gpu_supported_ops();
         let mut out = String::new();
         out.push_str("# GPU vs CPU: which models get real GPU inference\n\n");
         out.push_str("<!-- GENERATED. Do not edit by hand.\n");
-        out.push_str("     Rendered from crates/aprender-serve/src/capability.rs by the test\n");
+        out.push_str("     Architectures rendered from crates/aprender-serve/src/capability.rs;\n");
+        out.push_str(
+            "     quantizations read from contracts/apr-model-capability-v1.yaml (#3856).\n",
+        );
+        out.push_str("     Asserted byte-for-byte by the test\n");
         out.push_str("     `gpu_support_doc::the_committed_doc_matches_the_capability_gate`.\n");
         out.push_str("     Regenerate: APR_WRITE_GPU_SUPPORT_DOC=1 cargo test -p aprender-serve --lib gpu_support_doc\n");
         out.push_str("     Issue: #3077 (alfredodeza) -->\n\n");
@@ -681,10 +741,10 @@ mod gpu_support_doc {
         out.push_str("CPU path deliberately and works for every row above.\n\n");
         out.push_str("## Quantizations, on the GPU path\n\n");
         out.push_str("| quantization | GPU | note |\n|---|---|---|\n");
-        for (q, ok, note) in QUANTS_GPU {
+        for (q, ok, note) in quant_rows() {
             out.push_str(&format!(
                 "| {q} | {} | {note} |\n",
-                if *ok { "yes" } else { "no" }
+                if ok { "yes" } else { "no" }
             ));
         }
         out.push_str(
@@ -744,5 +804,155 @@ mod gpu_support_doc {
             refused > 0,
             "no architecture is refused — qwen3_moe should be (#3714)"
         );
+    }
+}
+
+/// #3832-adjacent, operator 2026-09-22: "capability.rs need deep pv SHACL support".
+///
+/// These facts are DECLARED in `contracts/apr-model-capability-v1.yaml`. This module
+/// makes that declaration binding: the contract is the origin and this file is its
+/// consumer, so a disagreement is a test failure rather than a silent divergence.
+///
+/// It exists because the negative facts used to live in a COMMENT. `gpu_supported_ops()`
+/// inserts the eight supported ops as code; the five unsupported ones were named only in
+/// a comment trailing the `QkNorm` insert line — so the positive facts were data and the
+/// negative ones were prose attached to the wrong statement (#3075's class).
+#[cfg(test)]
+mod capability_contract {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    /// The contract, resolved from this crate's manifest dir rather than the CWD —
+    /// `cargo test` runs from the crate, `cargo nextest` may not, and a path that
+    /// depends on the caller's directory is a test that passes for the wrong reason.
+    fn contract() -> serde_yaml_ng::Value {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../contracts/apr-model-capability-v1.yaml");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+        serde_yaml_ng::from_str(&text)
+            .unwrap_or_else(|e| panic!("{} is not valid YAML: {e}", path.display()))
+    }
+
+    fn rows(doc: &serde_yaml_ng::Value, key: &str) -> Vec<serde_yaml_ng::Value> {
+        doc.get(key)
+            .and_then(|v| v.as_sequence())
+            .unwrap_or_else(|| panic!("contract has no `{key}` sequence"))
+            .clone()
+    }
+
+    fn op_name(op: RequiredOp) -> String {
+        format!("{op}")
+    }
+
+    /// FALSIFY-CAP-001. The contract's `gpu_supported: true` set and
+    /// `gpu_supported_ops()` are the same set, compared by equality in BOTH
+    /// directions — a subset check would pass while the contract silently dropped
+    /// an op, which is the failure mode a declaration exists to prevent.
+    #[test]
+    fn the_contract_and_gpu_supported_ops_are_the_same_set() {
+        let doc = contract();
+        let declared: BTreeSet<String> = rows(&doc, "ops")
+            .iter()
+            .filter(|r| r.get("gpu_supported").and_then(|v| v.as_bool()) == Some(true))
+            .map(|r| {
+                r.get("op")
+                    .and_then(|v| v.as_str())
+                    .expect("every ops row needs an `op`")
+                    .to_string()
+            })
+            .collect();
+        let actual: BTreeSet<String> = gpu_supported_ops().into_iter().map(op_name).collect();
+
+        assert_eq!(
+            declared,
+            actual,
+            "contract `gpu_supported: true` disagrees with gpu_supported_ops().\n\
+             declared only: {:?}\nin code only: {:?}\n\
+             The contract is the origin: change it first, then this function.",
+            declared.difference(&actual).collect::<Vec<_>>(),
+            actual.difference(&declared).collect::<Vec<_>>(),
+        );
+    }
+
+    /// Every `RequiredOp` variant is declared exactly once. An op the contract does
+    /// not mention is the #3850 hole in op form: neither supported nor refused.
+    #[test]
+    fn every_required_op_variant_is_declared_exactly_once() {
+        let doc = contract();
+        let mut seen: Vec<String> = rows(&doc, "ops")
+            .iter()
+            .filter_map(|r| r.get("op").and_then(|v| v.as_str()).map(str::to_string))
+            .collect();
+        seen.sort();
+        let mut deduped = seen.clone();
+        deduped.dedup();
+        assert_eq!(seen, deduped, "an op is declared twice: {seen:?}");
+
+        for op in ALL_REQUIRED_OPS {
+            assert!(
+                seen.contains(&op_name(op)),
+                "RequiredOp::{} is not declared in the contract",
+                op_name(op)
+            );
+        }
+        assert_eq!(
+            seen.len(),
+            ALL_REQUIRED_OPS.len(),
+            "the contract declares ops that are not RequiredOp variants: {seen:?}"
+        );
+    }
+
+    /// A `gpu_supported: false` row must say WHY. The whole point of moving these
+    /// out of a comment is that the reason travels with the fact.
+    #[test]
+    fn every_unsupported_op_carries_a_reason() {
+        for r in rows(&contract(), "ops") {
+            if r.get("gpu_supported").and_then(|v| v.as_bool()) == Some(false) {
+                let op = r.get("op").and_then(|v| v.as_str()).unwrap_or("<unnamed>");
+                let reason = r.get("reason").and_then(|v| v.as_str()).unwrap_or("");
+                assert!(
+                    !reason.trim().is_empty(),
+                    "op {op} is declared unsupported with no reason — that is the \
+                     comment it replaced, in YAML"
+                );
+            }
+        }
+    }
+
+    /// FALSIFY-CAP-003. `wired` is a claim about a call graph and may not be asserted
+    /// loosely. `unestablished` is explicitly NOT a claim, so it is exempt.
+    #[test]
+    fn an_implementation_row_claiming_wired_names_a_symbol() {
+        for r in rows(&contract(), "op_implementation") {
+            let status = r.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            let op = r.get("op").and_then(|v| v.as_str()).unwrap_or("<unnamed>");
+            assert!(
+                matches!(
+                    status,
+                    "wired" | "unwired" | "unimplemented" | "unestablished"
+                ),
+                "op {op} has status {status:?}, which is not one of \
+                 wired/unwired/unimplemented/unestablished"
+            );
+            if matches!(status, "wired" | "unwired") {
+                assert!(
+                    r.get("symbol")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|s| !s.is_empty()),
+                    "op {op} is {status} but names no symbol — {status} is a statement \
+                     about a specific function"
+                );
+            }
+            if status == "unwired" {
+                assert!(
+                    r.get("evidence")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|s| !s.is_empty()),
+                    "op {op} is unwired with no evidence — `unwired` means every caller \
+                     is a test, which is a thing someone had to go and read"
+                );
+            }
+        }
     }
 }
