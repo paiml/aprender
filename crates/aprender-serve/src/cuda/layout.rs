@@ -339,6 +339,119 @@ $L_exit:
     )
 }
 
+/// #3477 / "no model left behind": F16 (GGML type 1) GEMV, row-major.
+///
+/// `Qwen3.5-4B-UD-Q4_K_XL` stores `ssm_alpha` and `ssm_beta` as F16 while the
+/// rest of the model is Q4_K/Q5_K/IQ4_XS. Before this kernel existed,
+/// `WeightQuantType::from_ggml_type(1)` returned `None`, so the hybrid refused
+/// the whole model to CPU — `hybrid_gpu_unsupported_quant_tensor` names
+/// `blk.0.ssm_alpha` first.
+///
+/// LAYOUT-001: GGUF/APR are ROW-MAJOR here. Row `ctaid` of an `[n, k]` weight
+/// starts at `w_ptr + ctaid * k * 2` bytes and runs contiguously, exactly as
+/// the block-quantized kernels beside this one index their rows. There is no
+/// transpose and no `*_colmajor` path — those are forbidden for GGUF data.
+///
+/// One warp per output row, each thread striding the row by 32, `cvt.f32.f16`
+/// on the load, then the same `shfl.sync.down` reduction every GEMV in this
+/// file uses. F16 is unquantized, so there are no blocks, no scales and no
+/// codebook: this is the F32 kernel with a converting load and a 2-byte stride.
+fn generate_f16_gemv_ptx(k: u32, n: u32) -> String {
+    // k and n size the grid in the caller; the PTX reads them as parameters so
+    // one module serves every shape (the cache key still carries them).
+    let _ = (k, n);
+
+    String::from(
+        r"
+.version 7.5
+.target sm_70
+.address_size 64
+
+// F16 GEMV, row-major: y[row] = sum_i f16_to_f32(w[row*k + i]) * x[i]
+.visible .entry f16_gemv_warp_reduce(
+    .param .u64 y_ptr,
+    .param .u64 w_ptr,
+    .param .u64 x_ptr,
+    .param .u32 k_dim,
+    .param .u32 n_dim
+)
+{
+    .reg .u32 %r<20>;
+    .reg .u64 %rd<16>;
+    .reg .f32 %f<16>;
+    .reg .b16 %h<4>;
+    .reg .pred %p<8>;
+
+    mov.u32 %r0, %tid.x;
+    mov.u32 %r1, %ctaid.x;
+
+    ld.param.u32 %r2, [n_dim];
+    ld.param.u32 %r3, [k_dim];
+    ld.param.u64 %rd0, [y_ptr];
+    ld.param.u64 %rd1, [w_ptr];
+    ld.param.u64 %rd2, [x_ptr];
+
+    // Rows beyond n_dim do no work (grid is padded to whole warps).
+    setp.ge.u32 %p0, %r1, %r2;
+    @%p0 bra $L_exit;
+
+    mov.f32 %f0, 0f00000000;
+
+    // rd3 = row_base = w_ptr + ctaid * k_dim * 2   (2 bytes per f16)
+    shl.b32 %r4, %r3, 1;
+    mul.wide.u32 %rd3, %r1, %r4;
+    add.u64 %rd3, %rd1, %rd3;
+
+    // i = tid, stride 32
+    mov.u32 %r5, %r0;
+
+$L_loop:
+    setp.ge.u32 %p1, %r5, %r3;
+    @%p1 bra $L_loop_end;
+
+    // w = f16_to_f32(row_base[i])
+    mul.wide.u32 %rd4, %r5, 2;
+    add.u64 %rd4, %rd3, %rd4;
+    ld.global.b16 %h0, [%rd4];
+    cvt.f32.f16 %f1, %h0;
+
+    // x = x_ptr[i]
+    mul.wide.u32 %rd5, %r5, 4;
+    add.u64 %rd5, %rd2, %rd5;
+    ld.global.f32 %f2, [%rd5];
+
+    fma.rn.f32 %f0, %f1, %f2, %f0;
+
+    add.u32 %r5, %r5, 32;
+    bra $L_loop;
+
+$L_loop_end:
+    // Warp reduction — identical idiom to the block-quantized GEMVs here.
+    shfl.sync.down.b32 %f4, %f0, 16, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f4;
+    shfl.sync.down.b32 %f5, %f0, 8, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f5;
+    shfl.sync.down.b32 %f6, %f0, 4, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f6;
+    shfl.sync.down.b32 %f7, %f0, 2, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f7;
+    shfl.sync.down.b32 %f8, %f0, 1, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f8;
+
+    setp.ne.u32 %p2, %r0, 0;
+    @%p2 bra $L_exit;
+
+    mul.wide.u32 %rd6, %r1, 4;
+    add.u64 %rd6, %rd0, %rd6;
+    st.global.f32 [%rd6], %f0;
+
+$L_exit:
+    ret;
+}
+",
+    )
+}
+
 /// BUG-GGUF-002 FIX: Generate Q5_0 GEMV PTX with correct candle layout
 ///
 /// The GGUF Q5_0 format uses "candle layout" where:

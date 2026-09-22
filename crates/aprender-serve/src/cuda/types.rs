@@ -116,6 +116,13 @@ pub enum WeightQuantType {
     /// GH-374: APR checkpoints may have F32 LM head when source model was not quantized.
     /// Without this variant, F32 weights silently default to Q4K GEMV → garbage logits.
     F32,
+    /// F16 unquantized (type 1) - 2 bytes per element.
+    ///
+    /// #3477 "no model left behind": `Qwen3.5-4B-UD-Q4_K_XL` stores `ssm_alpha`
+    /// and `ssm_beta` as F16. Before this variant `from_ggml_type(1)` returned
+    /// `None`, so the hybrid refused the whole model to CPU. Like F32 this is
+    /// unquantized — no blocks, no scales, no codebook.
+    F16,
 }
 
 impl WeightQuantType {
@@ -130,6 +137,7 @@ impl WeightQuantType {
             Self::Q4_0 => 18 * 8, // Q4_0 uses 32-element blocks, so 8 blocks for 256 elements
             Self::Q4_1 => 20 * 8, // Q4_1 uses 32-element blocks, so 8 blocks for 256 elements
             Self::F32 => 256 * 4, // F32: 4 bytes per element, 256 elements
+            Self::F16 => 256 * 2, // F16: 2 bytes per element, 256 elements
         }
     }
 
@@ -144,6 +152,7 @@ impl WeightQuantType {
             Self::Q4_0 => 18,
             Self::Q4_1 => 20,
             Self::F32 => 128, // F32: 4 bytes per element, 32 elements
+            Self::F16 => 64,  // F16: 2 bytes per element, 32 elements
         }
     }
 
@@ -151,6 +160,7 @@ impl WeightQuantType {
     pub fn from_ggml_type(type_id: u32) -> Option<Self> {
         match type_id {
             0 => Some(Self::F32), // GH-374: F32 LM head in APR checkpoints
+            1 => Some(Self::F16), // #3477: F16 ssm_alpha/ssm_beta in UD dynamic quants
             2 => Some(Self::Q4_0),
             3 => Some(Self::Q4_1), // PAR-058: Q4_1 support
             6 => Some(Self::Q5_0),
@@ -168,6 +178,8 @@ impl WeightQuantType {
         match self {
             // F32: 4 bytes per element
             Self::F32 => size_bytes == n_rows * n_cols * 4,
+            // F16: 2 bytes per element
+            Self::F16 => size_bytes == n_rows * n_cols * 2,
             // Super-block formats (256 elements per super-block)
             Self::Q4K | Self::Q5K | Self::Q6K => {
                 let n_superblocks = n_rows * ((n_cols + 255) / 256);
@@ -192,6 +204,11 @@ impl WeightQuantType {
         // APR checkpoints may have F32 LM head from SafeTensors import
         if size_bytes == n_rows * n_cols * 4 {
             return Some(Self::F32);
+        }
+        // #3477: F16 is 2 bytes/element — unambiguous against every block format
+        // here (Q8_0 is 34/32 = 1.0625 B/elem, Q4_1 0.625), so no collision.
+        if size_bytes == n_rows * n_cols * 2 {
+            return Some(Self::F16);
         }
 
         // CORRECTNESS-002: Check super-block formats FIRST
@@ -288,6 +305,9 @@ pub enum GemvKernel {
     /// F32 GEMV kernel (4 bytes per element, no dequantization)
     /// GH-374: For F32 LM head weights in APR checkpoints
     F32,
+    /// F16 GEMV kernel (2 bytes per element, converting load, no dequantization)
+    /// #3477: for F16 projections in UD dynamic quants
+    F16,
 }
 
 impl BoundWeight {
@@ -307,6 +327,7 @@ impl BoundWeight {
             WeightQuantType::Q5_0 => GemvKernel::Q5_0,
             WeightQuantType::Q4_1 => GemvKernel::Q4_1,
             WeightQuantType::F32 => GemvKernel::F32,
+            WeightQuantType::F16 => GemvKernel::F16,
         };
         Self {
             ptr,

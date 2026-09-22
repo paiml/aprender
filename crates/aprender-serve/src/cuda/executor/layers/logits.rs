@@ -124,6 +124,11 @@ impl CudaExecutor {
             WeightQuantType::F32 => {
                 self.f32_gemv_into(lm_head_ptr, normed_hidden, logits_gpu, vocab_size, hidden_dim)?;
             },
+            // #3477: reachable — Qwen2.5-0.5B-Instruct-f16 is F16 throughout,
+            // lm_head included.
+            WeightQuantType::F16 => {
+                self.f16_gemv_into(lm_head_ptr, normed_hidden, logits_gpu, vocab_size, hidden_dim)?;
+            },
         }
         Ok(())
     }
