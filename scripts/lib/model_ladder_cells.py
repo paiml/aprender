@@ -25,6 +25,14 @@ judge(ladder, receipts, rungs_doc, out) -> 0 green | 1 red. `receipts` maps host
 `rungs_doc` is the parsed context-rungs file, or None when it is missing or unreadable (a named FAIL).
 """
 RUNGS_SCHEMA = "apr-release-context-rungs/v1"
+def _loud(s, n):
+    """Truncate so the reader can TELL. A bare slice makes a decapitated message
+    indistinguishable from a complete short one -- the reader cannot know to go
+    looking. This is the shape already used for the line cap below (#3904)."""
+    s = str(s)
+    return s if len(s) <= n else f"{s[:n]} ... and {len(s) - n} more chars"
+
+
 MAX_LINES_PER_MODEL = 12
 
 
@@ -225,7 +233,7 @@ def judge(L, receipts, rungs_doc, out, rungs_main=None):
                             else:
                                 refused += 1
                         else:
-                            fails.append(f"{label} {v}: {str(c.get('reason', ''))[:80]}")
+                            fails.append(f"{label} {v}: {_loud(c.get('reason', ''), 80)}")
                         if len(fails) > n_before:
                             failed_somewhere.add(key)
             for i, w in enumerate(fails):

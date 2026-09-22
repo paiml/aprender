@@ -270,6 +270,9 @@ tier3:
 	@echo "Checking no declared-unsupported capability is already implemented (aprender#3686)..."
 	@bash scripts/check_unwired_capabilities.sh --self-test
 	@bash scripts/check_unwired_capabilities.sh
+	@echo "Checking no NEW silent truncation of a value a human reads later (aprender#3904)..."
+	@bash scripts/check_no_silent_truncation.sh --self-test
+	@bash scripts/check_no_silent_truncation.sh
 	@if [ -d tests/golden ]; then \
 		if . scripts/apr_bin.sh 2>/dev/null; then \
 			echo "Running probar golden regression with profiling... ($$APR)"; \
