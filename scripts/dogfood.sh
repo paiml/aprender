@@ -228,12 +228,29 @@ run_split() { local o="$1" e="$2"; shift 2; "$@" > "$o" 2> "$e"; RUN_RC=$?; }
 # ${BASH_SOURCE[0]} points at the wrong tree.
 WORKLOG=$(mktemp -d)
 # The delete is guarded (SEC011): an empty or root WORKLOG is left alone.
+# A NO-GO KEEPS ITS EVIDENCE. This used to delete the worklog unconditionally on exit,
+# while the FAIL messages cite paths inside it -- "[FAIL] pv-lint ... see
+# /tmp/tmp.XXXX/pv-lint.log" and "mark model-parity FAIL ... ($WORKLOG/c14-build.log)".
+# So a NO-GO told the operator to read logs it had just destroyed. Measured by aprender-d8
+# in the 0.69.1 tail rehearsal: a 38m20s run ended NO-GO with four red rows whose causes
+# were unreadable, and gate()'s note-picker surfaced a benign "warning:" line as the
+# coverage row's entire visible output. That is the difference between one 38-minute run
+# and three, which is why it is fixed for 0.69.1 rather than filed.
+#
+# On a GO the worklog is noise and is removed as before. On a NO-GO it is the only record
+# of WHY, so it is kept and its path is printed.
 _rm_worklog() {
   local v="${WORKLOG:-}"
   case "$v" in
-    /tmp/?*|/var/folders/?*|/mnt/?*) if [ -n "$v" ] && [ "$v" != "/" ]; then rm -rf -- "$v" || :; fi ;;
+    /tmp/?*|/var/folders/?*|/mnt/?*) ;;
     *) return 0 ;;
   esac
+  [ -n "$v" ] && [ "$v" != "/" ] || return 0
+  if [ "${FAILED:-0}" -ne 0 ]; then
+    printf '\nWORKLOG KEPT (verdict was not GO): %s\n  every FAIL row above cites a log in here; it is not deleted so the causes stay readable\n' "$v" >&2
+    return 0
+  fi
+  rm -rf -- "$v" || :
 }
 trap _rm_worklog EXIT
 
