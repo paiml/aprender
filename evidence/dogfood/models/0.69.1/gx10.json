@@ -1,0 +1,2893 @@
+{
+  "schema": "apr-model-ladder-receipt/v2",
+  "host": "gx10",
+  "version": "0.69.1",
+  "sha": "ab4ba54ec",
+  "apr_sha": "ab4ba54ecb41e5f20d508f20fcbf2ddf13aa5360",
+  "isa": "aarch64",
+  "gpu": "NVIDIA GB10",
+  "cc": "12.1",
+  "date": "2026-09-22T19:32Z",
+  "apr_version": "apr 0.69.1 (ab4ba54ec)",
+  "executed": 17,
+  "red": 2,
+  "inventory": [
+    {
+      "file": "Qwen3-1.7B-Q4_K_M.gguf",
+      "sha256": "b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897",
+      "bytes": 1107409472
+    },
+    {
+      "file": "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
+      "sha256": "6c997b8af17debdfb01d890214400ccbab00db6acc0ba8da5de1cc906c4774d0",
+      "bytes": 18556686752
+    },
+    {
+      "file": "Qwen3-8B-Q4_K_M.gguf",
+      "sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+      "bytes": 5027783488
+    },
+    {
+      "file": "Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
+      "sha256": "fadc3e5f8d42bf7e894a785b05082e47daee4df26680389817e2093056f088ad",
+      "bytes": 18556689568
+    },
+    {
+      "file": "Qwen3.5-0.8B-Q4_K_M.gguf",
+      "sha256": "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517",
+      "bytes": 532517120
+    },
+    {
+      "file": "Qwen3.5-27B-Q4_K_M.gguf",
+      "sha256": "84b5f7f112156d63836a01a69dc3f11a6ba63b10a23b8ca7a7efaf52d5a2d806",
+      "bytes": 16740812704
+    },
+    {
+      "file": "Qwen3.5-2B-Q4_K_M.gguf",
+      "sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+      "bytes": 1280835840
+    },
+    {
+      "file": "Qwen3.5-4B-Q4_K_M.gguf",
+      "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+      "bytes": 2740937888
+    },
+    {
+      "file": "Qwen3.5-9B-Q4_K_M.gguf",
+      "sha256": "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8",
+      "bytes": 5680522464
+    },
+    {
+      "file": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+      "sha256": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
+      "bytes": 1117320736
+    },
+    {
+      "file": "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+      "sha256": "1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32",
+      "bytes": 491400064
+    },
+    {
+      "file": "qwen2.5-coder-1.5b-instruct-fp16.apr",
+      "sha256": "6412ab2f1856f851bc2ca1173adf9e3699c05a37334f54b0c2ed7318026e6291",
+      "bytes": 3558023492
+    },
+    {
+      "file": "qwen2.5-coder-1.5b-instruct-q4_k_m.apr",
+      "sha256": "db0a42827cdc9ce74870eb19c582ffc7b3d380a114240758b2870f446448d0a8",
+      "bytes": 1115528900
+    },
+    {
+      "file": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+      "sha256": "cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046",
+      "bytes": 1117320768
+    },
+    {
+      "file": "qwen2.5-coder-1.5b-instruct-q4k.apr",
+      "sha256": "187234f417d5c387230f4a0d513d96440633ef4b6a92d7053182a17ac40fd421",
+      "bytes": 1115198720
+    },
+    {
+      "file": "qwen2.5-coder-32b-instruct-q4_k_m.gguf",
+      "sha256": "4d64b316b5e6319d9613e0d97935d9ebd631fc7e334da400d00085eca749d085",
+      "bytes": 19851335872
+    },
+    {
+      "file": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+      "sha256": "509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c",
+      "bytes": 4683073536
+    }
+  ],
+  "inventory_dirs": [
+    "/home/noah/models",
+    "/home/noah/.apr/models",
+    "/home/noah/.cache/apr/models"
+  ],
+  "inventory_patterns": [
+    "*q4_k*.gguf",
+    "*q4k*.gguf",
+    "*q4_k*.apr",
+    "*q4k*.apr",
+    "*qwen2.5*.gguf",
+    "*qwen3.5*.gguf",
+    "*qwen2.5*.apr",
+    "*qwen3.5*.apr"
+  ],
+  "rungs": [
+    {
+      "id": "qwen2-1.5b-q4km",
+      "file": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+      "inventory_only": false,
+      "present": true,
+      "sha_ok": true,
+      "sha256": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
+      "required": true,
+      "qa_rc": 0,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "Architecture 'qwen2': all 5 required ops supported by GPU"
+      },
+      "golden_output": {
+        "passed": true,
+        "skipped": false,
+        "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+      },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen2': all 5 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "339 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=32768)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ollama"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-1.5b-instruct-q4_k_m.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
+      "backends": {
+        "cpu": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        },
+        "cuda": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "green": true
+    },
+    {
+      "id": "qwen3-1.7b-q4km",
+      "file": "Qwen3-1.7B-Q4_K_M.gguf",
+      "inventory_only": false,
+      "present": true,
+      "sha_ok": true,
+      "sha256": "b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897",
+      "required": true,
+      "qa_rc": 0,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "Architecture 'qwen3': all 5 required ops supported by GPU"
+      },
+      "golden_output": {
+        "passed": true,
+        "skipped": false,
+        "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+      },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen3': all 5 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "310 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen3, rope_theta=1000000, max_pos=40960)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ollama"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3-1.7B-Q4_K_M.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
+      "backends": {
+        "cpu": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        },
+        "cuda": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "green": true
+    },
+    {
+      "id": "qwen3-8b-q4km",
+      "file": "Qwen3-8B-Q4_K_M.gguf",
+      "inventory_only": false,
+      "present": true,
+      "sha_ok": true,
+      "sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+      "required": true,
+      "qa_rc": 0,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "Architecture 'qwen3': all 5 required ops supported by GPU"
+      },
+      "golden_output": {
+        "passed": true,
+        "skipped": false,
+        "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+      },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen3': all 5 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "399 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen3, rope_theta=1000000, max_pos=40960)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ollama"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3-8B-Q4_K_M.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
+      "backends": {
+        "cpu": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        },
+        "cuda": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "green": true
+    },
+    {
+      "id": "qwen35-0.8b-q4km",
+      "file": "Qwen3.5-0.8B-Q4_K_M.gguf",
+      "inventory_only": false,
+      "present": true,
+      "sha_ok": true,
+      "sha256": "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517",
+      "required": true,
+      "qa_rc": 0,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "Architecture 'qwen35': all 4 required ops supported by GPU"
+      },
+      "golden_output": {
+        "passed": true,
+        "skipped": false,
+        "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
+      },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen35': all 4 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "320 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen35, rope_theta=none, max_pos=none)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-0.8B-Q4_K_M.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
+      "backends": {
+        "cpu": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        },
+        "cuda": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "green": true
+    },
+    {
+      "id": "qwen35-2b-q4km",
+      "file": "Qwen3.5-2B-Q4_K_M.gguf",
+      "inventory_only": false,
+      "present": true,
+      "sha_ok": true,
+      "sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+      "required": true,
+      "qa_rc": 0,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "Architecture 'qwen35': all 4 required ops supported by GPU"
+      },
+      "golden_output": {
+        "passed": true,
+        "skipped": false,
+        "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
+      },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen35': all 4 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "320 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen35, rope_theta=none, max_pos=none)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-2B-Q4_K_M.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
+      "backends": {
+        "cpu": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        },
+        "cuda": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "green": true
+    },
+    {
+      "id": "qwen35-4b-q4km",
+      "file": "Qwen3.5-4B-Q4_K_M.gguf",
+      "inventory_only": false,
+      "present": true,
+      "sha_ok": true,
+      "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+      "required": true,
+      "qa_rc": 0,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "Architecture 'qwen35': all 4 required ops supported by GPU"
+      },
+      "golden_output": {
+        "passed": true,
+        "skipped": false,
+        "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
+      },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen35': all 4 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "426 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen35, rope_theta=none, max_pos=none)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-4B-Q4_K_M.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
+      "backends": {
+        "cpu": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        },
+        "cuda": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "green": true
+    },
+    {
+      "id": "qwen35-9b-q4km",
+      "file": "Qwen3.5-9B-Q4_K_M.gguf",
+      "inventory_only": false,
+      "present": true,
+      "sha_ok": true,
+      "sha256": "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8",
+      "required": true,
+      "qa_rc": 0,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "Architecture 'qwen35': all 4 required ops supported by GPU"
+      },
+      "golden_output": {
+        "passed": true,
+        "skipped": false,
+        "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
+      },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen35': all 4 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "427 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen35, rope_theta=none, max_pos=none)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-9B-Q4_K_M.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
+      "backends": {
+        "cpu": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        },
+        "cuda": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "green": true
+    },
+    {
+      "id": "qwen35-27b-q4km",
+      "file": "Qwen3.5-27B-Q4_K_M.gguf",
+      "inventory_only": false,
+      "present": true,
+      "sha_ok": true,
+      "sha256": "84b5f7f112156d63836a01a69dc3f11a6ba63b10a23b8ca7a7efaf52d5a2d806",
+      "required": true,
+      "qa_rc": 0,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "Architecture 'qwen35': all 4 required ops supported by GPU"
+      },
+      "golden_output": {
+        "passed": true,
+        "skipped": false,
+        "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
+      },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen35': all 4 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "851 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen35, rope_theta=none, max_pos=none)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-27B-Q4_K_M.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
+      "backends": {
+        "cpu": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        },
+        "cuda": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "green": true
+    },
+    {
+      "id": "inv:Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
+      "file": "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
+      "inventory_only": true,
+      "present": true,
+      "sha_ok": true,
+      "sha256": "6c997b8af17debdfb01d890214400ccbab00db6acc0ba8da5de1cc906c4774d0",
+      "required": true,
+      "qa_rc": 5,
+      "capability_match": {
+        "passed": false,
+        "skipped": false,
+        "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run "
+      },
+      "golden_output": {
+        "passed": false,
+        "skipped": true,
+        "message": "Skipped: Skipped due to capability match failure"
+      },
+      "gates": {
+        "capability_match": {
+          "passed": false,
+          "skipped": false,
+          "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run "
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "579 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen3moe, rope_theta=none, max_pos=none)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: The GPU backend declined this architecture; the CPU forward carries the report"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: The GPU backend declined this architecture; the CPU forward carries the report"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: The GPU backend declined this architecture; the CPU forward carries the report"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.json"
+        }
+      },
+      "gates_failed": [
+        "capability_match"
+      ],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
+      "backends": {
+        "cuda": {
+          "ran": false,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 12,
+          "verbs": {
+            "run": {
+              "ran": false,
+              "rc": 12
+            },
+            "chat": {
+              "ran": false,
+              "rc": 8
+            },
+            "code": {
+              "ran": false,
+              "rc": 1,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 501,
+                  "ok": false
+                },
+                "/api/chat|stream=true": {
+                  "http": 501,
+                  "ok": false
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 501,
+                  "ok": false
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 501,
+                  "ok": false
+                },
+                "/v1/completions|stream=false": {
+                  "http": 500,
+                  "ok": false
+                },
+                "/v1/completions|stream=true": {
+                  "http": 500,
+                  "ok": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "green": false
+    },
+    {
+      "id": "inv:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
+      "file": "Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
+      "inventory_only": true,
+      "present": true,
+      "sha_ok": true,
+      "sha256": "fadc3e5f8d42bf7e894a785b05082e47daee4df26680389817e2093056f088ad",
+      "required": true,
+      "qa_rc": 5,
+      "capability_match": {
+        "passed": false,
+        "skipped": false,
+        "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run "
+      },
+      "golden_output": {
+        "passed": false,
+        "skipped": true,
+        "message": "Skipped: Skipped due to capability match failure"
+      },
+      "gates": {
+        "capability_match": {
+          "passed": false,
+          "skipped": false,
+          "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run "
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "579 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen3moe, rope_theta=none, max_pos=none)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: The GPU backend declined this architecture; the CPU forward carries the report"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: The GPU backend declined this architecture; the CPU forward carries the report"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: The GPU backend declined this architecture; the CPU forward carries the report"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.json"
+        }
+      },
+      "gates_failed": [
+        "capability_match"
+      ],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
+      "backends": {
+        "cuda": {
+          "ran": false,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 12,
+          "verbs": {
+            "run": {
+              "ran": false,
+              "rc": 12
+            },
+            "chat": {
+              "ran": false,
+              "rc": 8
+            },
+            "code": {
+              "ran": false,
+              "rc": 1,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 501,
+                  "ok": false
+                },
+                "/api/chat|stream=true": {
+                  "http": 501,
+                  "ok": false
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 501,
+                  "ok": false
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 501,
+                  "ok": false
+                },
+                "/v1/completions|stream=false": {
+                  "http": 500,
+                  "ok": false
+                },
+                "/v1/completions|stream=true": {
+                  "http": 500,
+                  "ok": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "green": false
+    },
+    {
+      "id": "inv:qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+      "file": "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+      "inventory_only": true,
+      "present": true,
+      "sha_ok": true,
+      "sha256": "1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32",
+      "required": true,
+      "qa_rc": 0,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "Architecture 'qwen2': all 5 required ops supported by GPU"
+      },
+      "golden_output": {
+        "passed": true,
+        "skipped": false,
+        "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+      },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen2': all 5 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "291 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=32768)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ollama"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-0.5b-instruct-q4_k_m.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
+      "backends": {
+        "cuda": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "green": true
+    },
+    {
+      "id": "inv:qwen2.5-coder-1.5b-instruct-fp16.apr",
+      "file": "qwen2.5-coder-1.5b-instruct-fp16.apr",
+      "inventory_only": true,
+      "present": true,
+      "sha_ok": true,
+      "sha256": "6412ab2f1856f851bc2ca1173adf9e3699c05a37334f54b0c2ed7318026e6291",
+      "required": true,
+      "qa_rc": 0,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "Non-GGUF format \u2014 capability check not applicable"
+      },
+      "golden_output": {
+        "passed": true,
+        "skipped": false,
+        "message": "3 golden test cases passed (GPU leg SKIPPED: the dense GPU leg judges GGUF only)"
+      },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Non-GGUF format \u2014 capability check not applicable"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "339 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=32768)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg SKIPPED: the dense GPU leg judges GGUF only)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Non-GGUF format (F32/F16 lacks fused kernels for Ollama parity)"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-1.5b-instruct-fp16.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
+      "backends": {
+        "cuda": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": false,
+              "rc": 1,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 500,
+                  "ok": false
+                },
+                "/api/chat|stream=true": {
+                  "http": 500,
+                  "ok": false
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 500,
+                  "ok": false
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 500,
+                  "ok": false
+                },
+                "/v1/completions|stream=false": {
+                  "http": 500,
+                  "ok": false
+                },
+                "/v1/completions|stream=true": {
+                  "http": 500,
+                  "ok": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "green": true
+    },
+    {
+      "id": "inv:qwen2.5-coder-1.5b-instruct-q4_k_m.apr",
+      "file": "qwen2.5-coder-1.5b-instruct-q4_k_m.apr",
+      "inventory_only": true,
+      "present": true,
+      "sha_ok": true,
+      "sha256": "db0a42827cdc9ce74870eb19c582ffc7b3d380a114240758b2870f446448d0a8",
+      "required": true,
+      "qa_rc": 0,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "Non-GGUF format \u2014 capability check not applicable"
+      },
+      "golden_output": {
+        "passed": true,
+        "skipped": false,
+        "message": "3 golden test cases passed (GPU leg SKIPPED: the dense GPU leg judges GGUF only)"
+      },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Non-GGUF format \u2014 capability check not applicable"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "339 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=32768)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg SKIPPED: the dense GPU leg judges GGUF only)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Non-GGUF format (F32/F16 lacks fused kernels for Ollama parity)"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-1.5b-instruct-q4_k_m.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
+      "backends": {
+        "cuda": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "green": true
+    },
+    {
+      "id": "inv:qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+      "file": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+      "inventory_only": true,
+      "present": true,
+      "sha_ok": true,
+      "sha256": "cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046",
+      "required": true,
+      "qa_rc": 0,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "Architecture 'qwen2': all 5 required ops supported by GPU"
+      },
+      "golden_output": {
+        "passed": true,
+        "skipped": false,
+        "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+      },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen2': all 5 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "339 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=32768)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ollama"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-1.5b-instruct-q4_k_m.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
+      "backends": {
+        "cuda": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "green": true
+    },
+    {
+      "id": "inv:qwen2.5-coder-1.5b-instruct-q4k.apr",
+      "file": "qwen2.5-coder-1.5b-instruct-q4k.apr",
+      "inventory_only": true,
+      "present": true,
+      "sha_ok": true,
+      "sha256": "187234f417d5c387230f4a0d513d96440633ef4b6a92d7053182a17ac40fd421",
+      "required": true,
+      "qa_rc": 0,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "Non-GGUF format \u2014 capability check not applicable"
+      },
+      "golden_output": {
+        "passed": true,
+        "skipped": false,
+        "message": "3 golden test cases passed (GPU leg SKIPPED: the dense GPU leg judges GGUF only)"
+      },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Non-GGUF format \u2014 capability check not applicable"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "339 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=32768)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg SKIPPED: the dense GPU leg judges GGUF only)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Non-GGUF format (F32/F16 lacks fused kernels for Ollama parity)"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-1.5b-instruct-q4k.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
+      "backends": {
+        "cuda": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": false,
+              "rc": 4
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "green": true
+    },
+    {
+      "id": "inv:qwen2.5-coder-32b-instruct-q4_k_m.gguf",
+      "file": "qwen2.5-coder-32b-instruct-q4_k_m.gguf",
+      "inventory_only": true,
+      "present": true,
+      "sha_ok": true,
+      "sha256": "4d64b316b5e6319d9613e0d97935d9ebd631fc7e334da400d00085eca749d085",
+      "required": true,
+      "qa_rc": 0,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "Architecture 'qwen2': all 5 required ops supported by GPU"
+      },
+      "golden_output": {
+        "passed": true,
+        "skipped": false,
+        "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+      },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen2': all 5 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "771 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=131072)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ollama"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-32b-instruct-q4_k_m.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
+      "backends": {
+        "cuda": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "green": true
+    },
+    {
+      "id": "inv:qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+      "file": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+      "inventory_only": true,
+      "present": true,
+      "sha_ok": true,
+      "sha256": "509287f78cb4d4cf6b3843734733b914b2c158e43e22a7f4bf5e963800894d3c",
+      "required": true,
+      "qa_rc": 0,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "Architecture 'qwen2': all 5 required ops supported by GPU"
+      },
+      "golden_output": {
+        "passed": true,
+        "skipped": false,
+        "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+      },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen2': all 5 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "339 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=131072)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ollama"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-7b-instruct-q4_k_m.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
+      "backends": {
+        "cuda": {
+          "ran": true,
+          "fallback": false,
+          "escaped_special": false,
+          "rc": 0,
+          "verbs": {
+            "run": {
+              "ran": true,
+              "rc": 0
+            },
+            "chat": {
+              "ran": true,
+              "rc": 0
+            },
+            "code": {
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve"
+            },
+            "serve": {
+              "probed": true,
+              "teardown": "escalated",
+              "routes": {
+                "/api/chat|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/api/chat|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/chat/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=false": {
+                  "http": 200,
+                  "ok": true
+                },
+                "/v1/completions|stream=true": {
+                  "http": 200,
+                  "ok": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "green": true
+    }
+  ]
+}
