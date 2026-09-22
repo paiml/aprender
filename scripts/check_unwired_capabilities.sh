@@ -98,10 +98,24 @@ DOC_ASSERT='is now false|no longer|is wrong|used to .{0,80}now|(is|isn.t) *not? 
 FNDEF='^[[:space:]]*pub([[:space:]]*\([^)]*\))?[[:space:]]+(const[[:space:]]+|async[[:space:]]+|unsafe[[:space:]]+)*fn[[:space:]]+'
 
 # ------------------------------------------------------------------ helpers
-# A reference that lives in test code, not in what ships.
+# A reference that lives in test code -- or in an example -- not in what ships.
+#
+# EXAMPLES ARE NOT PRODUCTION CALLERS, and this was a measured false negative in
+# this very gate. On 2026-09-22 a diagnostic probe landed at
+# crates/aprender-core/examples/layout_guard_probe.rs which CALLS
+# enforce_embedding_contract to ask whether the unwired layout guards fire. Its
+# own header says "It does NOT wire them". But `examples/` matched none of the
+# test patterns, so the call counted as production, production_callers() went
+# 0 -> 1, and rule 1 STOPPED REPORTING the finding that prompted the probe.
+#
+# That is this gate committing the defect it exists to detect: a silence that
+# looked like evidence. An `examples/` binary proves a function is reachable; it
+# never proves the function is wired into a path a user reaches. Worse, it means
+# anyone can retire a finding by writing an example.
 is_test_path() {
   case "$1" in
     */tests/*|tests/*) return 0 ;;
+    */examples/*|examples/*) return 0 ;;
     *test*|*falsify*|*bench*) return 0 ;;
   esac
   return 1
