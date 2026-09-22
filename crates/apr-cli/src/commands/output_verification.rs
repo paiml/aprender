@@ -439,19 +439,38 @@ pub fn verify_output(
     OutputVerification::Pass
 }
 
-/// GH-279-4: Strip `<think>...</think>` blocks from model output.
+/// What the generated text held once complete `<think>...</think>` blocks were
+/// removed: an answer, or a block that never closed.
 ///
-/// Qwen3 thinking mode generates chain-of-thought reasoning inside `<think>` tags
-/// before the actual answer. The golden output gate validates the ANSWER, not the
-/// reasoning. This function strips thinking blocks so `verify_output()` sees only
-/// the final answer.
+/// #3724: the previous shape returned a `String` and, on an unclosed `<think>`,
+/// truncated at it — so a model that was still reasoning when the budget ran out
+/// produced `""`, which `verify_output` then reported as **"Empty output"**. On
+/// lambda that is exactly what qwen3-8b-q4km did: 527 tokens, 15 of prompt plus
+/// the entire 512-token budget, opening with `<think>` and still reasoning at the
+/// cut. The gate reported an empty answer for a model that had answered nothing
+/// *yet*. Those are different failures and the gate must not collapse them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ThinkingSplit {
+    /// Every `<think>` block closed (or there were none). This is the answer to judge.
+    Answer(String),
+    /// A `<think>` opened and no `</think>` followed: the budget ended inside the
+    /// reasoning. Everything after the tag is chain-of-thought, never an answer,
+    /// and the caller must say so by name rather than judge the empty remainder.
+    Unclosed,
+}
+
+/// GH-279-4 / #3724: split model output into the answer and the reasoning.
+///
+/// Qwen3 thinking mode generates chain-of-thought inside `<think>` tags before the
+/// actual answer. The golden output gate validates the ANSWER, not the reasoning.
 ///
 /// Behavior:
-/// - No `<think>` tags → passthrough (no-op for non-thinking models)
-/// - Complete `<think>...</think>` → stripped, answer preserved
-/// - Unclosed `<think>` (tokens exhausted during reasoning) → truncated at `<think>`
-/// - Multiple blocks → all stripped
-pub fn strip_thinking_blocks(output: &str) -> String {
+/// - No `<think>` tags → `Answer`, passthrough (no-op for non-thinking models)
+/// - Complete `<think>...</think>` → `Answer`, blocks removed
+/// - Multiple blocks → `Answer`, all removed
+/// - Unclosed `<think>` (budget exhausted during reasoning) → `Unclosed`
+#[must_use]
+pub fn split_thinking_blocks(output: &str) -> ThinkingSplit {
     let mut result = output.to_string();
     // Strip all complete <think>...</think> blocks
     while let (Some(start), Some(end)) = (result.find("<think>"), result.find("</think>")) {
@@ -461,11 +480,25 @@ pub fn strip_thinking_blocks(output: &str) -> String {
             break;
         }
     }
-    // Handle unclosed <think> (model ran out of tokens during reasoning)
-    if let Some(start) = result.find("<think>") {
-        result.truncate(start);
+    // An opening tag with no closer: the budget ended mid-reasoning (#3724).
+    if result.contains("<think>") {
+        return ThinkingSplit::Unclosed;
     }
-    result.trim().to_string()
+    ThinkingSplit::Answer(result.trim().to_string())
+}
+
+/// The reason a gate reports when generation ended inside a `<think>` block.
+///
+/// #3724 requires the budget to be named: "think block unclosed within N tokens"
+/// tells the reader the model was still reasoning, which "Empty output" did not.
+#[must_use]
+pub fn unclosed_think_reason(leg: &str, budget: usize, generated_chars: usize) -> String {
+    format!(
+        "{leg}: think block unclosed within {budget} tokens \
+         (the model was still reasoning at the budget; {generated_chars} chars generated, \
+         no answer was reached). This is not an empty answer — raise nothing, and check that \
+         the prompt is the one production sends for this architecture."
+    )
 }
 
 /// #3711: what the GPU half of one golden case came to.
@@ -485,6 +518,17 @@ pub(crate) enum GpuGoldenLeg {
     WrongAnswer(String),
     /// CUDA init or generation ERRORED on a cuda build with a device.
     Errored(String),
+    /// Generated on the device and was STILL REASONING when the budget ran out:
+    /// a `<think>` block that never closed. #3724: this used to be truncated away
+    /// and judged as an empty answer, so "the model answered nothing" and "the
+    /// model had not finished thinking" were the same report. It is neither a
+    /// wrong answer nor an error, and it is certainly not a skip.
+    Unclosed {
+        /// The token budget the generation was given.
+        budget: usize,
+        /// How much text it produced without reaching an answer.
+        generated_chars: usize,
+    },
     /// Never started, and why: no cuda feature, no device, not a GGUF, or judged
     /// by the runtime rung.
     NotRun(&'static str),
@@ -495,17 +539,27 @@ impl GpuGoldenLeg {
     pub(crate) fn judge(
         generated: std::result::Result<String, String>,
         expected_patterns: &[&str],
+        budget: usize,
     ) -> Self {
-        match generated {
-            Err(e) => Self::Errored(e),
-            Ok(text) => match verify_output(
-                &strip_thinking_blocks(&text), // GH-279-4
-                "golden_output_gpu",
-                expected_patterns,
-            ) {
-                OutputVerification::Pass => Self::Passed,
-                OutputVerification::Fail { reason } => Self::WrongAnswer(reason),
-            },
+        let text = match generated {
+            Err(e) => return Self::Errored(e),
+            Ok(text) => text,
+        };
+        // GH-279-4 / #3724: split before judging. A block that never closed is its
+        // own outcome; judging the remainder would report "Empty output" for a
+        // model that had not finished reasoning.
+        let answer = match split_thinking_blocks(&text) {
+            ThinkingSplit::Unclosed => {
+                return Self::Unclosed {
+                    budget,
+                    generated_chars: text.len(),
+                }
+            }
+            ThinkingSplit::Answer(answer) => answer,
+        };
+        match verify_output(&answer, "golden_output_gpu", expected_patterns) {
+            OutputVerification::Pass => Self::Passed,
+            OutputVerification::Fail { reason } => Self::WrongAnswer(reason),
         }
     }
 
@@ -517,6 +571,14 @@ impl GpuGoldenLeg {
             Self::Errored(e) => Some(format!(
                 "GPU golden generation ERRORED on a cuda build with a CUDA device: a broken \
                  GPU, not a skip (#3711): {e}"
+            )),
+            Self::Unclosed {
+                budget,
+                generated_chars,
+            } => Some(unclosed_think_reason(
+                "golden_output_gpu",
+                *budget,
+                *generated_chars,
             )),
         }
     }
@@ -612,7 +674,14 @@ fn validate_gpu_golden_output(
             .map_err(|e| format!("GPU generation: {e}")),
         Err(e) => Err(format!("CUDA init on device 0: {e}")),
     };
-    Ok(GpuGoldenLeg::judge(generated, expected_patterns))
+    // #3711 + #3724: ONE typed leg. The budget is passed so the leg can
+    // distinguish "still reasoning when the budget ran out" from "answered
+    // wrongly" and from "never started" — three outcomes, not two.
+    Ok(GpuGoldenLeg::judge(
+        generated,
+        expected_patterns,
+        gen_config.max_tokens,
+    ))
 }
 
 /// Note, in a verbose human-readable run, that the GPU half of the golden gate
@@ -702,7 +771,18 @@ fn run_golden_output_gate_runtime(
         );
     }
 
-    let test_cases = golden_test_cases();
+    // #3724: this leg serves the hybrid rungs, and it asks them the way production
+    // asks them too — same detector, keyed on `general.architecture`. Reading the
+    // header is cheap; a file that will not map is left to the generation call
+    // below, which reports the mapping error properly.
+    let architecture = {
+        let mapped = realizar::gguf::MappedGGUFModel::from_path(path).ok();
+        mapped
+            .as_ref()
+            .and_then(|m| m.model.architecture())
+            .map(String::from)
+    };
+    let test_cases = golden_test_cases_for(architecture.as_deref());
     // GH-279-4: thinking models need room for <think>...</think> + the answer.
     let golden_max_tokens = config.max_tokens.max(512);
     let gpu_not_run = if cpu_only {
@@ -713,7 +793,7 @@ fn run_golden_output_gate_runtime(
 
     let mut served_by = String::new();
     for (prompt, expected_patterns) in &test_cases {
-        let (output_text, used_gpu) = golden_output_runtime(path, prompt, golden_max_tokens)?;
+        let (output_text, used_gpu) = golden_output_runtime(path, prompt.as_str(), golden_max_tokens)?;
         // #3711: the backend first — a GPU that fell back is a FAIL even when the CPU's answer is right
         match runtime_golden_backend(used_gpu, gpu_not_run) {
             Ok(label) => served_by = label,
@@ -727,9 +807,47 @@ fn run_golden_output_gate_runtime(
                 ))
             }
         }
-        let answer_text = strip_thinking_blocks(&output_text);
+        // GH-279-4 / #3724: and then the answer — an unclosed block is reported by
+        // name on this leg too. The hybrid rungs run here, and a truncating strip
+        // would hide the same defect the dense leg just learned to name.
+        let answer_text = match split_thinking_blocks(&output_text) {
+            ThinkingSplit::Answer(answer) => answer,
+            ThinkingSplit::Unclosed => {
+                return Ok(GateResult::failed(
+                    "golden_output",
+                    &unclosed_think_reason(
+                        "golden_output_runtime",
+                        golden_max_tokens,
+                        output_text.len(),
+                    ),
+                    None,
+                    None,
+                    start.elapsed(),
+                ));
+            }
+        };
         if let OutputVerification::Fail { reason } =
             verify_output(&answer_text, "golden_output_runtime", expected_patterns)
+        {
+            return Ok(GateResult::failed(
+                "golden_output",
+                &reason,
+                None,
+                None,
+                start.elapsed(),
+            ));
+        }
+    }
+
+    // #3724 done_when 3: the hybrid rungs are thinking-capable too, and this leg
+    // is where they are judged.
+    if let Some((on_prompt, on_patterns)) = thinking_on_case(architecture.as_deref()) {
+        // #3711 made this return the backend alongside the text; the ON leg judges
+        // the answer, and the backend was already judged on the OFF cases above.
+        let (on_text, _used_gpu) =
+            golden_output_runtime(path, on_prompt.as_str(), THINKING_ON_BUDGET)?;
+        let generated = on_text.strip_prefix(on_prompt.as_str()).unwrap_or(&on_text);
+        if let Some(reason) = judge_thinking_on_output(generated, &on_patterns, THINKING_ON_BUDGET)
         {
             return Ok(GateResult::failed(
                 "golden_output",
