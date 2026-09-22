@@ -66,7 +66,7 @@ What the numbers say:
   a `read_to_end` of the whole model, then a dequantization of every tensor. That gate reads every
   tensor value (NaN/Inf/all-zero checks), so it is WHOLE-DATA by reading, but it does not need the
   whole file resident at once. #3790 changed that: the gate now reads the header from the
-  bounded prefix and then one tensor at a time. GX10_3790_RESULT
+  bounded prefix and then one tensor at a time. Measured on gx10 (same model, flags and host as the pair above, both binaries `--features cuda`, each run through `gpu-q --prio 5` with `choom -n 1000`, RssAnon/RssFile sampled every 0.2 s): before `apr 0.69.0 (ff89fb6aa)` peak RssAnon **19,357,084 KiB** (max RSS 19,368,208), after `apr 0.69.0 (21e89e311)` peak RssAnon **1,350,976 KiB** (max RSS 1,511,828) — 14.3x less heap, and what is left is one tensor, not the file. Both runs `qa passed`, rc 0, with the same four gates running (capability_match, tensor_contract, metadata_plausibility, performance_regression), so the gate under test did run on both sides.
 - 36,278,440 − 19,367,800 = 16,910,640 KiB (16.1 GiB) less peak per `apr qa` run on this model.
 
 ## Converted by #3761 (#3750 PR B)
