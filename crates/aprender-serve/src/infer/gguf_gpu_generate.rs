@@ -100,7 +100,28 @@ pub(crate) fn wgpu_fallback_allowed(
 
 /// GH-559: Try wgpu (Vulkan) generation as fallback when CUDA JIT fails.
 /// Uses trueno's WgslForwardPass with dequantized F32 weights.
-/// Proven: cosine=0.999863 on Blackwell sm_121.
+///
+/// #3827: this said "Proven: cosine=0.999863 on Blackwell sm_121" and that is
+/// WITHDRAWN, because #3757 measured the same path failing its own cpu-parity
+/// gate on four GPUs including Blackwell — the architecture the claim named:
+///
+///   intel (Vulkan, no working driver)  0.955376
+///   gx10  (GB10 — this IS Blackwell)   0.955046
+///   mini  (Apple M4, Metal)            0.955169
+///   RTX 4090 (sm_89)                   0.955376
+///
+/// The same value to four significant figures on four different GPUs and
+/// drivers, so this is the wgpu path's own numerics rather than any one
+/// driver — which also rules out "the proof holds and gx10 is special".
+///
+/// A proof comment that contradicts a measurement on the architecture it names
+/// is worse than no comment, because it stops the next reader looking. Whether
+/// 0.999863 was a different model, a different build, or a since-regressed
+/// path is NOT known; #3827 owns deciding that, and whether wgpu is repaired or
+/// removed. Until then the honest statement is the one above.
+///
+/// #3757 made this path opt-in (`accel_forced`), so a user no longer pays for
+/// it unasked — that bounds the cost, it does not make the path correct.
 #[cfg(feature = "gpu")]
 fn try_wgpu_generate(
     model: &crate::gguf::OwnedQuantizedModel,
@@ -411,7 +432,9 @@ fn run_gguf_generate(
     };
 
     // GH-559: wgpu fallback — try Vulkan compute before CPU.
-    // Proven: wgpu cosine=0.999863 on Blackwell sm_121 where CUDA JIT fails.
+    // #3827: the "Proven: wgpu cosine=0.999863 on Blackwell sm_121" claim that
+    // stood here is WITHDRAWN — #3757 measured 0.955046 on gx10, which IS
+    // Blackwell. See try_wgpu_generate's doc comment for the four-host table.
     // #3760: the wgpu decode loop is greedy-only (an inline argmax over the LM head);
     // a sampled request runs on the CPU loop, which draws, and says so.
     //
