@@ -412,7 +412,18 @@ PY
     # so an escaped special in the formatted prompt means the prompt reached the model
     # templated twice (0.69.0: `--prompt` on an instruct-named model). The debug line
     # prints it Debug-escaped (`\u{200b}`); the raw character is checked too.
-    if grep -F 'formatted_prompt=' <<< "$run_out" | grep -qF -e '\u{200b}' -e $'\u200b'; then esc=true; fi
+    # NOT a pipeline. `producer | grep -q` under pipefail takes the PRODUCER's status,
+    # and `grep -q` closes the pipe on its first match -- so a MATCH makes the producer
+    # die with SIGPIPE (141) and the pipeline non-zero, and this `if` goes false BECAUSE
+    # the check succeeded. Measured by aprender-d8 as a script (both bash and zsh): correct
+    # at 1 and 1,000 matching lines, WRONG from 10,000 up, with PIPESTATUS reading [141, 0]
+    # -- the consumer matched and the producer was killed. It fails OPEN in proportion to
+    # the evidence it inspects, in `escaped_special`, which is one of the three fields the
+    # ladder verdict actually reads. Latent only because a normal run logs one prompt line.
+    # `|| true` is the honest "nothing to inspect" case: grep returns 1 when a run logged
+    # no prompt line at all (#3864).
+    fp=$(grep -F 'formatted_prompt=' <<< "$run_out" || true)
+    if grep -qF -e '\u{200b}' -e $'\u200b' <<< "$fp"; then esc=true; fi
     if [ "$b" != cpu ] && [ -z "$GPU_NAME" ]; then ran=false; fi
     [ $run_rc -eq 0 ] || ran=false
 
