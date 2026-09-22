@@ -410,7 +410,7 @@ impl Matrix<f32> {
     /// Uses cublasGemmEx with CUBLAS_COMPUTE_32F for numerical safety.
     #[cfg(feature = "cuda")]
     fn matmul_cublas(&self, other: &Matrix<f32>) -> Result<Matrix<f32>, TruenoError> {
-        use trueno_gpu::driver::{CublasHandle, CudaContext, CudaStream, GemmOp, GpuBuffer};
+        use trueno_gpu::driver::{CublasHandle, CudaContext, CudaStream, GpuBuffer};
 
         let m = self.rows;
         let k = self.cols;
