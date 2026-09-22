@@ -375,7 +375,24 @@ def gate(n):
     return {"passed": bool(x.get("passed")) and not x.get("skipped") and not str(x.get("message","")).startswith("Skipped"),
             "skipped": bool(x.get("skipped")) or str(x.get("message","")).startswith("Skipped"),
             "message": str(x.get("message",""))[:200]}
-print(json.dumps({"capability_match": gate("capability_match"), "golden_output": gate("golden_output")}))
+# EVERY gate `apr qa` reported, not two by name (#3863 item 16). The receipt used to
+# record `capability_match` + `golden_output` only, so a row could carry the SYMPTOM
+# ("gibberish (fragment ...)") while the DIAGNOSIS computed in the same process --
+# "Tensor Contract FAIL (27 tensors failed data-quality)" -- was dropped on the floor.
+# `qa_rc: 5` was the only tell that something else had failed.
+#
+# Naming a third gate would reproduce the defect at n+1 the next time a gate matters,
+# so nothing is named: the two the judge reads keep their top-level keys for
+# compatibility, and `gates` carries the whole report.
+all_gates = {n: gate(n) for n in g}
+failed = sorted(n for n, v in all_gates.items() if not v["passed"] and not v["skipped"])
+print(json.dumps({
+    "capability_match": gate("capability_match"),
+    "golden_output": gate("golden_output"),
+    "gates": all_gates,
+    "gates_failed": failed,
+    "gates_reported": len(all_gates),
+}))
 PY
 )
   be_json="{"; first=1
@@ -488,9 +505,19 @@ cap_ok = (cap.get("passed", False) and not cap.get("skipped", False)) \
          or (cap.get("skipped", False) and not ({"cuda", "gpu"} & set(be)))
 green = cap_ok and qa.get("golden_output", {}).get("passed", False) \
         and all(v["ran"] and not v["fallback"] and not v.get("escaped_special") for v in be.values())
+# ANTI-VACUITY (#3863 item 16). `apr qa` exiting non-zero means at least one gate
+# failed. If the row records NO failed gate, the receipt cannot account for its own
+# exit code -- which is exactly the state that let `tensor_contract` vanish while
+# `qa_rc: 5` was the only trace. This is an INVARIANT over every row, not a test of
+# one example: it is false for any row that drops a cause, whichever cause it is.
+gates_failed = qa.get("gates_failed") or []
+accounts_for_rc = qa_rc == 0 or bool(gates_failed)
 print(json.dumps({"id": rid, "file": rfile, "inventory_only": inv_only, "present": True, "sha_ok": True,
                   "sha256": sha, "required": req, "qa_rc": qa_rc, "capability_match": qa.get("capability_match"),
-                  "golden_output": qa.get("golden_output"), "backends": be, "green": green}))
+                  "golden_output": qa.get("golden_output"), "gates": qa.get("gates"),
+                  "gates_failed": gates_failed, "gates_reported": qa.get("gates_reported"),
+                  "gates_account_for_rc": accounts_for_rc,
+                  "backends": be, "green": green}))
 PY
 )
   # ── #3842: NEVER append an empty line ────────────────────────────────────────
