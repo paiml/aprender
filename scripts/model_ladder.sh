@@ -613,7 +613,22 @@ EOF2
 # ---- 2. every inventory model: recorded in the receipt, and measured unless a rung already did
 while IFS='|' read -r -t 5 ifile ipath; do
   [ -n "$ifile" ] || continue
-  isha=$(sha256sum "$ipath" | cut -d' ' -f1); ibytes=$(stat -c %s "$ipath" 2>/dev/null || echo 0)
+  # BOTH fields must describe the SAME object. `sha256sum` follows a symlink and
+  # `stat -c %s` does not, so on a symlinked model this line recorded the model's
+  # hash next to the LENGTH OF THE TARGET PATH (#3876): lambda's 0.69.1 receipt
+  # carried `bytes: 60` for Qwen3-1.7B-Q4_K_M.gguf — the link text is exactly 60
+  # characters — beside the 1.1 GB model's sha256. One row, two objects.
+  #
+  # It cost a false alarm before it cost anything else: the affected rows read
+  # `green=true qa_rc=0 required=true bytes=60`, which is indistinguishable from a
+  # required rung passing on a stub, and the gate takes the blame for what the
+  # evidence misreported. It also manufactures a cross-host difference — the same
+  # model is a regular file on gx10 (1,107,409,472) and a symlink on lambda (60)
+  # with a byte-identical sha256 — landing in the middle of a receipt comparison.
+  #
+  # `-L` follows, matching sha256sum. The hash is NOT the field to change: the
+  # receipt's job is to identify the model, and a symlink's text is not the model.
+  isha=$(sha256sum "$ipath" | cut -d' ' -f1); ibytes=$(stat -Lc %s "$ipath" 2>/dev/null || echo 0)
   printf '{"file":"%s","sha256":"%s","bytes":%s}\n' "$ifile" "$isha" "$ibytes" >> "$INV_ROWS"
   if grep -qxF -- "$ifile" <<< "$LADDER_FILES"; then continue; fi   # a rung measured it above
   if [ "$DRY" = 1 ]; then printf '  [DRY   ] %-30s %s (inventory, not a rung)\n' "inv:$ifile" "$ipath"; continue; fi
