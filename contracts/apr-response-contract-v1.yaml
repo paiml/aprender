@@ -20,6 +20,36 @@ metadata:
   - '#3775: apr code -p --output-format json (same names, AgentError kinds)'
   depends_on:
   - chat-template-v1
+entity:
+  type: json
+  ref: evidence/response-contract/cases.json
+
+vocabulary:
+  prefix: response
+  root_class: response:Ledger
+  nested:
+    cases: response:Case
+
+shape:
+  targetClass: response:Case
+  closed: true
+  properties:
+  # Where it was measured. A case with no host/backend is a claim about nothing in particular.
+  - {path: response:host, minCount: 1, maxCount: 1, datatype: xsd:string}
+  - {path: response:backend, minCount: 1, maxCount: 1, pattern: "^(cuda|cpu|wgpu)$"}
+  - {path: response:apr, minCount: 1, maxCount: 1, datatype: xsd:string, minLength: 12}
+  - {path: response:model, minCount: 1, maxCount: 1, datatype: xsd:string}
+  - {path: response:verb, minCount: 1, maxCount: 1, pattern: "^(run|serve)$"}
+  - {path: response:mode, minCount: 1, maxCount: 1, pattern: "^(greedy|sampled)$"}
+  # done_when 1: the digest the response reported, beside sha256sum of the same file.
+  - {path: response:model_digest, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+  - {path: response:sha256sum, minCount: 1, maxCount: 1, pattern: "^[0-9a-f]{64}$"}
+  - {path: response:digest_matches, minCount: 1, maxCount: 1, datatype: xsd:boolean}
+  # done_when 2: the same seeded request twice.
+  - {path: response:identical, minCount: 1, maxCount: 1, datatype: xsd:boolean}
+  # The vacuity guard: a "sampled" row identical to greedy proves nothing about the seed.
+  - {path: response:sampling_engaged, minCount: 1, maxCount: 1, datatype: xsd:boolean}
+
 equations:
   status_envelope:
     formula: |
