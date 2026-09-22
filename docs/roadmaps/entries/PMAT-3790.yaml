@@ -1,0 +1,21 @@
+- id: PMAT-3790
+  github_issue: 3790
+  item_type: task
+  title: 'apr qa tensor_contract holds the whole GGUF on the heap: 19.36 GB RssAnon on Qwen3-30B-A3B (rosetta validate → GgufReader::from_file) — read tensor data from a map'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-0e
+  created: 2026-09-21T22:15:10Z
+  updated: 2026-09-21T22:15:10Z
+  spec: null
+  acceptance_criteria:
+  - 'Cop dispatch (aprender-04 to aprender-0e, 2026-09-21), verbatim: "#3790 is triaged into 0.69.1 and yours after #3761: qa''s tensor_contract holding 19.36 GB of heap on the 30B is an OOM risk on gx10 inside the release run. Stream it per tensor over the mmap under the same bounded-reader policy, measure RssAnon before/after on gx10, and add a bounded-RSS test with a mutant."'
+  - 'Issue #3790 done_when 1, verbatim: "`apr qa`''s tensor_contract gate on a GGUF reads tensor data from a map (or streams it per tensor), never `read_to_end` of the whole file. Every value is still checked: the same failures on the same tensors, and a planted NaN, Inf or all-zero tensor is still named."'
+  - 'Issue #3790 done_when 2, verbatim: "Measured on gx10: the same `apr qa` on the 30B, peak RssAnon before and after, with the binary version + sha."'
+  - 'Issue #3790 done_when 3, verbatim: "A case row on a sparse multi-GB GGUF asserts the gate''s peak RssAnon stays under a measured bound, and a mutant that puts `from_file` back goes RED."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Closes #3790; Refs #3750. Stacked on #3761 (PMAT-3761) and #3750 PR A (PMAT-3750). WHAT LANDS. RosettaStone::validate on a GGUF (validate_gguf, the path apr qa''s tensor_contract gate and apr validate take) parses the header from the bounded prefix (aprender::format::prefix::parse_growing_prefix: 16 MiB first read, 256 MiB cap) and then reads EACH TENSOR''S OWN EXTENT with read_exact_at (gguf reader::read_tensor_f32), cut at end of file, and dequantizes it with the same dequantizers GgufReader::get_tensor_f32 uses (refactored into one slice-level core, tensor_f32_from). The peak is the largest tensor, not the file. GgufReader::from_file itself is unchanged: importers read every tensor. PER TENSOR, NOT A MAP. done_when 1 allows either ("reads tensor data from a map (or streams it per tensor)"). A map''s touched pages stay in the process RSS until reclaimed, so VmHWM would climb to the file size as the gate walks the tensors. Bounded reads keep both heap and RSS at one tensor, and the case row can measure that with VmHWM. It is the same bounded-reader policy: no read is larger than one tensor''s own extent. EQUIVALENCE (done_when 1, every value still checked). validate_gguf_stream_tests: the per-tensor read equals the whole-file read BIT FOR BIT for all 12 dequantizable ggml types (F32, F16, Q4_0, Q4_1, Q5_0, Q5_1, Q8_0, Q2_K..Q6_K); a tensor cut short by end of file fails with the identical error string; planted NaN, Inf and all-zero tensors are each named (total_nan 1, total_inf 1, all_zero [zero.weight]), and every tensor''s (is_valid, nan, inf, zero, failures) equals what compute_tensor_validation gives on the whole-file read. The existing rosetta/gguf/validate suites pass (1217). CASE ROW (done_when 3): validating a real GGUF extended sparsely to 2 GiB, in a CHILD process: VmHWM 37,748 KiB, bound 256 MiB. Mutants: validate_gguf back on GgufReader::from_file -> 2,110,048 KiB, RED; the per-tensor read reading to EOF instead of its extent -> 2,128,120 KiB, RED (the equivalence tests alone would not catch that one, so the row is what holds it). GX10 (done_when 2): GX10_PENDING. Ledger: docs/audits/3750-whole-file-model-reads.md, the gguf/reader_parsing.rs:6 row and the gx10 section now say the tensor_contract gate no longer reaches GgufReader::from_file.'

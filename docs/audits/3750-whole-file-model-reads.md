@@ -65,8 +65,8 @@ What the numbers say:
   the `tensor_contract` gate: `RosettaStone::validate` → `validate_gguf` → `GgufReader::from_file`,
   a `read_to_end` of the whole model, then a dequantization of every tensor. That gate reads every
   tensor value (NaN/Inf/all-zero checks), so it is WHOLE-DATA by reading, but it does not need the
-  whole file resident at once. The row `gguf/reader_parsing.rs:6` below says so, and #3790
-  tracks streaming it from a map.
+  whole file resident at once. #3790 changed that: the gate now reads the header from the
+  bounded prefix and then one tensor at a time. GX10_3790_RESULT
 - 36,278,440 − 19,367,800 = 16,910,640 KiB (16.1 GiB) less peak per `apr qa` run on this model.
 
 ## Converted by #3761 (#3750 PR B)
@@ -155,7 +155,7 @@ path. realizar's map pre-faults every page (MAP_POPULATE, PMAT-304), so two maps
 | aprender-core/src/format/converter/tensor.rs:439 | detect_apr_quantization | CONVERTED (#3761) | counts tensor dtypes from the APR tensor index. **Now:** `apr_v2_header_prefix`. Row: `converter::export::rss_tests` |
 | aprender-core/src/format/converter/tokenizer_loader.rs:482 | load_tokenizer_from_sentencepiece | NOT-MODEL | a SentencePiece tokenizer.model |
 | aprender-core/src/format/core_io.rs:173 | read_file_content | WHOLE-DATA | generic whole-content reader (callers decide) |
-| aprender-core/src/format/gguf/reader_parsing.rs:6 | from_file | WHOLE-DATA, could stream | GgufReader::from_file owns the whole file by API (importers read tensors). `apr qa`'s tensor_contract gate reaches it through `RosettaStone::validate`: the 19.36 GB heap peak measured above. It reads every tensor, but never needs them all at once (#3790) |
+| aprender-core/src/format/gguf/reader_parsing.rs:6 | from_file | WHOLE-DATA | GgufReader::from_file owns the whole file by API: the importers read every tensor. `apr qa`'s tensor_contract gate NO LONGER reaches it (#3790): `RosettaStone::validate` on a GGUF parses the header from the bounded prefix and reads each tensor's own extent (`gguf::reader::read_tensor_f32`), so its peak is the largest tensor, not the file. Measured below. |
 | aprender-core/src/format/gguf/reader_parsing.rs:20 | from_file_full | WHOLE-DATA | GgufReader::from_file_full, the shard merge reads tensors |
 | aprender-core/src/format/lint/lint.rs:187 | lint_safetensors_file | CONVERTED (#3761) | SafeTensors metadata from the header; tensors come from the existing map. **Now:** the 8-byte length and the JSON header (under the cap). Row: `format::prefix_rss_tests` |
 | aprender-core/src/format/lint/lint.rs:324 | lint_apr_v2_file | CONVERTED (#3761) | lints APR metadata fields. **Now:** `apr_v2_header_prefix`. Row: `format::prefix_rss_tests` |
