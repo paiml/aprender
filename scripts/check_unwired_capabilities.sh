@@ -278,6 +278,40 @@ self_test() {
   if supported_ops | grep -qx 'RMSNorm'; then ok 'D3  RMSNorm derives as SUPPORTED'
   else bad 'D3  RMSNorm did not derive as supported'; fi
 
+  echo "=== rule 2: a set written as a PATTERN cannot be enumerated (the IQ1_M shape) ==="
+  # aprender-c7 measured the same defect in a different subsystem: `IQ1_M = 29`
+  # sat inside an `IQ3_*` WILDCARD in a quant table, named by nothing, and was
+  # surfaced only when the pattern was expanded into members. Anything that
+  # iterates a set-as-pattern silently skips what it cannot see -- which is also
+  # how five unsupported ops came to live in a comment trailing an unrelated
+  # `ops.insert` line. The ops-side defence is that EVERY enum variant must
+  # appear in the map. This row proves that defence fires, by adding a variant
+  # the map does not know about.
+  local tmpcap capsave n_before n_after
+  tmpcap=$(mktemp) || return 2
+  capsave=$CAP
+  sed 's/^    PostAttnFfnNorm,$/    PostAttnFfnNorm,\n    SlidingWindowAttn,/' "$CAP" > "$tmpcap"
+  n_before=$(enum_variants | wc -l)
+  CAP=$tmpcap
+  n_after=$(enum_variants | wc -l)
+  if [ "$n_after" -eq $((n_before + 1)) ] && enum_variants | grep -qx 'SlidingWindowAttn'; then
+    ok "W1  a new RequiredOp variant is SEEN by the derivation ($n_before -> $n_after)"
+  else
+    bad "W1  a new variant was not seen: $n_before -> $n_after; the enum parse is not enumerating members"
+  fi
+  if [ -z "$(map_symbol SlidingWindowAttn)" ]; then
+    ok 'W2  ... and it is absent from the map, so rule 2 reports MAP INCOMPLETE and fails'
+  else
+    bad 'W2  the map claims to know a variant that does not exist'
+  fi
+  CAP=$capsave
+  rm -f "$tmpcap"
+  if [ "$(enum_variants | wc -l)" -eq "$n_before" ]; then
+    ok "W3  the real capability.rs is untouched by this row ($n_before variants)"
+  else
+    bad 'W3  the self-test leaked its mutant into the real scan'
+  fi
+
   echo "=== rule 2 MUST-MATCH: the known instance (aprender#3075) ==="
   local c; c=$(production_callers layer_norm_gpu)
   if [ "$c" -eq 0 ]; then ok "M1  layer_norm_gpu has 0 production callers -- #3075 is flagged"
