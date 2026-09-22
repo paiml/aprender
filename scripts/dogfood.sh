@@ -347,9 +347,18 @@ else
   # Build it here, before the gates that read it. FEATS is set far above (the feature
   # resolution around line 130), and the `cargo build --release` further down is then a
   # cache hit rather than a second compile.
+  # This pre-build is an ENABLER, not a gate, and its failure must not be charged to
+  # gates that never touch a binary. aprender-d8 measured the regression: inside
+  # check_verifier_pinning.sh's temp-dir fixture the build cannot succeed, and marking
+  # `dogfood-gates` FAIL turned that gate RED even though all 18 MUST-FLAG, all 16
+  # MUST-NOT-FLAG and all 7 CALL-SITE rows passed. A build failure invalidates
+  # float16_greedy_parity and tokenizer_parity -- and those two REFUSE LOUDLY on their
+  # own (STALE apr BINARY, exit 1), which is the honest attribution. So: note it and let
+  # the dependent gates speak for themselves.
   # shellcheck disable=SC2086
   if ! cargo build --release $FEATS --bin apr > "$WORKLOG/prebuild-apr.log" 2>&1; then
-    mark dogfood-gates FAIL "could not build target/release/apr before the declared gates ($WORKLOG/prebuild-apr.log) -- the gates that resolve an apr binary would refuse on a stale one instead of measuring"
+    printf 'NOTE  no target/release/apr could be built here (%s); any declared gate that resolves an apr binary will refuse by name rather than measure\n' \
+      "$WORKLOG/prebuild-apr.log"
   fi
   DG_N=0; DG_BAD=0
   while read -r dg_kind dg_path; do
