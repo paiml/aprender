@@ -73,6 +73,18 @@ ladder:
   # the families below plus ONE representative per other arch, named here by file (cop 2026-09-21).
   cells:
     verbs: [run, chat, serve, code]
+    # #3828: a removal from this block must be DECLARED here with a reason, or the
+    # anti-shrink floor in check_model_ladder.sh refuses it as a silent shrink. The
+    # declaration is printed on every run, so a withdrawal cannot decay into an absence
+    # nobody re-reads. This is the mechanism #3817 needed and did not have.
+    withdrawn:
+      representatives:
+        qwen3moe: >-
+          #3817, 0.69.1: not a fit question and not a regression — this build has NO CUDA
+          forward for the qwen3moe architecture at all (#3714, lands 0.70.0). `apr run --gpu`
+          now refuses it by name at pre-load rather than silently falling back to CPU, so a
+          long-rung representative for it would owe cells no code can satisfy and a
+          RefusalCell would be a false arithmetic claim. Restore this key with #3714.
     long_rungs_for:
       families: [qwen35]                      # every consumer's family: the full rung set, through declared
       representatives:                        # one file per other arch the fleet holds

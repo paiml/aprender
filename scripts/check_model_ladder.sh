@@ -145,11 +145,27 @@ if main_p and os.path.exists(main_p):
         if mc and not hc:
             print("FAIL  the cells block DROPPED vs origin/main -- verbs x thinking x context would owe nothing"); rc = 1
         elif mc:
-            for what, a, b in (("verbs", mc.get("verbs"), hc.get("verbs")),
-                               ("long-rung families", (mc.get("long_rungs_for") or {}).get("families"), (hc.get("long_rungs_for") or {}).get("families")),
-                               ("long-rung representatives", list((mc.get("long_rungs_for") or {}).get("representatives") or {}), list((hc.get("long_rungs_for") or {}).get("representatives") or {}))):
+            # #3828: a removal may be DECLARED, never silent. #3817 deliberately withdrew
+            # qwen3moe (this build has no CUDA forward for the architecture at all), and the
+            # floor refused it -- two correct rules in tension. A withdrawal is admitted only
+            # when `cells.withdrawn.<what>` names the key AND carries a non-empty reason, and
+            # it is printed every run so it cannot decay into a silent shrink. An UNDECLARED
+            # removal still fails, which is the floor's whole point.
+            wd = hc.get("withdrawn") or {}
+            def declared(what_key, key):
+                d = (wd.get(what_key) or {})
+                why = d.get(key) if isinstance(d, dict) else None
+                return why if isinstance(why, str) and why.strip() else None
+            for what, wkey, a, b in (("verbs", "verbs", mc.get("verbs"), hc.get("verbs")),
+                               ("long-rung families", "families", (mc.get("long_rungs_for") or {}).get("families"), (hc.get("long_rungs_for") or {}).get("families")),
+                               ("long-rung representatives", "representatives", list((mc.get("long_rungs_for") or {}).get("representatives") or {}), list((hc.get("long_rungs_for") or {}).get("representatives") or {}))):
                 gone = set(a or []) - set(b or [])
-                if gone: print(f"FAIL  cells {what} DROPPED vs origin/main: {sorted(gone)}"); rc = 1
+                for g in sorted(gone):
+                    why = declared(wkey, g)
+                    if why:
+                        print(f"note  cells {what} WITHDRAWN (declared): {g} — {why}")
+                    else:
+                        print(f"FAIL  cells {what} DROPPED vs origin/main: {g} — a removal must be declared in cells.withdrawn.{wkey} with a reason, or it is a silent shrink"); rc = 1
         mh = {h["id"] for h in M.get("hosts", []) if h.get("required")}
         for hid in mh - {h["id"] for h in hosts}:
             print(f"FAIL  required host DROPPED vs origin/main: {hid}"); rc = 1
