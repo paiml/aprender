@@ -177,6 +177,8 @@ struct InferenceOutput {
     inference_ms: Option<f64>,
     tok_per_sec: Option<f64>,
     used_gpu: Option<bool>,
+    /// #3826: whether a GPU backend was ATTEMPTED, whatever the outcome.
+    gpu_attempted: Option<bool>,
     /// GH-250: Generated token IDs for parity checking
     generated_tokens: Option<Vec<u32>>,
     /// Decoded text for each entry of `generated_tokens`, in the same order.
@@ -231,6 +233,7 @@ fn execute_inference(
             inference_ms: None,
             tok_per_sec: None,
             used_gpu: None,
+            gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
             usage: RunUsage::default(),
@@ -409,6 +412,7 @@ fn execute_with_realizar(
         inference_ms: Some(result.inference_ms),
         tok_per_sec: Some(result.tok_per_sec),
         used_gpu: Some(result.used_gpu),
+        gpu_attempted: Some(result.gpu_attempted),
         generated_tokens,
         token_texts,
         usage: RunUsage {

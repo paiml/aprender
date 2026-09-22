@@ -19,6 +19,28 @@ pub struct InferenceResult {
     pub format: String,
     /// Whether GPU was used
     pub used_gpu: bool,
+    /// #3826: whether a GPU backend was ATTEMPTED, whatever the outcome.
+    ///
+    /// `used_gpu` records whether the GPU produced the tokens, so it collapses
+    /// two different runs into one `false`: "no accelerator was asked for or
+    /// tried" and "one was tried and its result was REFUSED". A consumer
+    /// counting fallbacks cannot tell them apart, which is why
+    /// `apr run --format json` reported `"fell_back": false` on a run whose own
+    /// stderr said `attempting fallback`.
+    ///
+    /// Set by whichever path ENTERS a GPU backend, before its result is judged.
+    ///
+    /// The consumer-facing `fell_back` (apr-cli's `build_final_json`) is
+    /// `used_gpu == Some(false) && (accel_forced || gpu_attempted)`. Asking for
+    /// the GPU is SUFFICIENT for a fallback and this field is the second,
+    /// independent way to earn one — it is not a replacement for `accel_forced`,
+    /// which still carries #3602's "a requested GPU that never ran".
+    ///
+    /// INVARIANT: `used_gpu` implies `gpu_attempted`. A backend cannot produce
+    /// tokens without having been entered. Every construction site honours it;
+    /// it is documented here rather than enforced structurally, because the
+    /// struct is built by literal at ~70 sites. See the receipt's open item.
+    pub gpu_attempted: bool,
 }
 
 // ============================================================================
@@ -270,14 +292,20 @@ fn run_gguf_inference(
     // gguf_gpu_generate.rs short-circuit with an actual forward pass.
     let infer_start = Instant::now();
     let canonical_arch = crate::tensor_names::normalize_architecture(&model.config.architecture);
-    let (tokens, used_gpu) = if canonical_arch == "qwen3_moe" {
+    // #3826: `gpu_attempted` is threaded from the DENSE path, which is where the
+    // reported defect lives (a bare `apr run` on a cuda build attempts CUDA, is
+    // refused, and falls back). The qwen3_moe branch is CPU-only so it cannot
+    // attempt. The qwen35 dispatch does not yet report its attempt separately —
+    // it PRINTS its GPU failure rather than returning it, so a rejected hybrid
+    // still under-reports here. Named as an open obligation rather than guessed.
+    let (tokens, used_gpu, gpu_attempted) = if canonical_arch == "qwen3_moe" {
         let tokens = crate::infer::qwen3_moe_generate::run_qwen3_moe_generate(
             &mapped,
             &model,
             &input_tokens,
             &gen_config,
         )?;
-        (tokens, false) // CPU-only path; GPU MoE wiring is M32d follow-up
+        (tokens, false, false) // CPU-only path; GPU MoE wiring is M32d follow-up
     } else if is_qwen35 {
         // #3477: the hybrid now has a GPU forward (#3090), so `apr run --gpu`
         // routes to it and reports CUDA; the CPU forward (#3091) serves
@@ -289,7 +317,8 @@ fn run_gguf_inference(
             &input_tokens,
             &gen_config,
             config.no_gpu,
-        )?
+        )
+        .map(|(t, u)| (t, u, u))? // #3826: see the note above — attempt == used here
     } else {
         run_gguf_generate(model, &input_tokens, &gen_config, config)?
     };
@@ -357,6 +386,7 @@ fn run_gguf_inference(
             load_ms,
             format: "GGUF".to_string(),
             used_gpu,
+            gpu_attempted,
         },
         report,
     ))

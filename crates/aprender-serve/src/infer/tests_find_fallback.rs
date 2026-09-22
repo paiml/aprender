@@ -265,6 +265,7 @@ Line with \n escaped newline<|im_end|>";
             load_ms: 0.000001,
             format: "GGUF".to_string(),
             used_gpu: false,
+            gpu_attempted: false,
         };
         assert!(result.inference_ms > 0.0);
         assert!(result.tok_per_sec > 999999.0);
@@ -282,6 +283,7 @@ Line with \n escaped newline<|im_end|>";
             load_ms: 100.0,
             format: "GGUF".to_string(),
             used_gpu: true,
+            gpu_attempted: true,
         };
         assert_eq!(
             result.input_token_count + result.generated_token_count,

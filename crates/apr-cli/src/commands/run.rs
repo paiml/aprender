@@ -260,6 +260,12 @@ pub(crate) struct RunResult {
     pub tok_per_sec: Option<f64>,
     /// Whether GPU was used (GH-250)
     pub used_gpu: Option<bool>,
+    /// #3826: whether a GPU backend was ATTEMPTED, whatever the outcome.
+    ///
+    /// `used_gpu` records whether the GPU PRODUCED the tokens, so on its own it
+    /// collapses "nothing was tried" and "something was tried and refused" into
+    /// one `false`. `fell_back` needs the difference.
+    pub gpu_attempted: Option<bool>,
     /// GH-250: Generated token IDs for parity checking
     pub generated_tokens: Option<Vec<u32>>,
     /// Per-token decoded text, positionally aligned with `generated_tokens`.
@@ -354,6 +360,7 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
         tokens_generated,
         tok_per_sec: output.tok_per_sec,
         used_gpu: output.used_gpu,
+        gpu_attempted: output.gpu_attempted,
         generated_tokens: output.generated_tokens,
         token_texts: output.token_texts,
         usage: output.usage,

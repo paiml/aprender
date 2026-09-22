@@ -18,6 +18,7 @@
             tokens_generated: Some(tokens),
             tok_per_sec: Some(tokens as f64 / duration_secs),
             used_gpu: Some(false),
+            gpu_attempted: None,
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
