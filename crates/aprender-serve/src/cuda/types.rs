@@ -141,6 +141,18 @@ pub enum WeightQuantType {
     /// 144 bytes. This type is therefore deliberately ABSENT from `from_size`'s
     /// inference ladder and must come from the declared ggml type id.
     IQ4NL,
+    /// IQ3_S (type 21) - 110 bytes per 256 elements, 3.4375 bits/weight.
+    ///
+    /// #3884: 9-bit indices into a 512-entry grid (8 bits in `qs`, the 9th in
+    /// `qh`), explicit sign bytes, and 4-bit scales each shared by TWO
+    /// sub-blocks. `Qwen2.5-0.5B-Instruct-IQ3_M` carries 21 of these alongside
+    /// the 96 IQ4_NL tensors, and they were the remaining GPU blocker after
+    /// #3869 landed.
+    ///
+    /// Unlike [`Self::IQ4NL`] this size is UNAMBIGUOUS: 110 bytes per 256
+    /// elements collides with nothing (144 is Q4_K/Q4_0/IQ4_NL, 176 is
+    /// Q5_K/Q5_0), so it is safe in `from_size`'s inference ladder.
+    IQ3S,
 }
 
 impl WeightQuantType {
@@ -158,6 +170,7 @@ impl WeightQuantType {
             Self::F16 => 256 * 2, // F16: 2 bytes per element, 256 elements
             Self::IQ4XS => 136,   // IQ4_XS: 136 bytes per 256-element super-block
             Self::IQ4NL => 18 * 8, // IQ4_NL uses 32-element blocks, so 8 blocks for 256 elements
+            Self::IQ3S => 110,    // IQ3_S: 110 bytes per 256-element super-block
         }
     }
 
@@ -175,6 +188,7 @@ impl WeightQuantType {
             Self::F16 => 64,   // F16: 2 bytes per element, 32 elements
             Self::IQ4XS => 17, // IQ4_XS super-block: 136/8 = 17 per 32
             Self::IQ4NL => 18, // IQ4_NL is NATIVELY a 32-element block: exact, not a division
+            Self::IQ3S => 13,  // IQ3_S super-block: 110/8 = 13.75, truncated as Q6K's 210/8 is
         }
     }
 
@@ -185,6 +199,7 @@ impl WeightQuantType {
             1 => Some(Self::F16),    // #3477: F16 ssm_alpha/ssm_beta in UD dynamic quants
             23 => Some(Self::IQ4XS), // #3477: IQ4_XS ffn_gate/ffn_up in UD dynamic quants
             20 => Some(Self::IQ4NL), // #3869: declared-type-only, see the variant docs
+            21 => Some(Self::IQ3S),  // #3884: IQ3_S, the remaining IQ3_M blocker
             2 => Some(Self::Q4_0),
             3 => Some(Self::Q4_1), // PAR-058: Q4_1 support
             6 => Some(Self::Q5_0),
@@ -205,7 +220,7 @@ impl WeightQuantType {
             // F16: 2 bytes per element
             Self::F16 => size_bytes == n_rows * n_cols * 2,
             // Super-block formats (256 elements per super-block)
-            Self::Q4K | Self::Q5K | Self::Q6K | Self::IQ4XS => {
+            Self::Q4K | Self::Q5K | Self::Q6K | Self::IQ4XS | Self::IQ3S => {
                 let n_superblocks = n_rows * ((n_cols + 255) / 256);
                 size_bytes == n_superblocks * self.bytes_per_superblock()
             },
@@ -244,6 +259,7 @@ impl WeightQuantType {
             (Self::Q5K, 176),
             (Self::Q4K, 144),
             (Self::IQ4XS, 136),
+            (Self::IQ3S, 110),
         ];
 
         for (fmt, bytes_per_sb) in superblock_formats {
@@ -344,6 +360,9 @@ pub enum GemvKernel {
     /// IQ4_NL GEMV kernel (18 bytes / 32 elements, same codebook, f16 scale)
     /// #3869: for the IQ4_NL tensors that dominate IQ3_M and IQ4_XS files
     IQ4NL,
+    /// IQ3_S GEMV kernel (110 bytes / 256 elements, 9-bit grid + sign bytes)
+    /// #3884: the 21 IQ3_S tensors in Qwen2.5-0.5B-Instruct-IQ3_M
+    IQ3S,
 }
 
 impl BoundWeight {
@@ -366,6 +385,7 @@ impl BoundWeight {
             WeightQuantType::F16 => GemvKernel::F16,
             WeightQuantType::IQ4XS => GemvKernel::IQ4XS,
             WeightQuantType::IQ4NL => GemvKernel::IQ4NL,
+            WeightQuantType::IQ3S => GemvKernel::IQ3S,
         };
         Self {
             ptr,

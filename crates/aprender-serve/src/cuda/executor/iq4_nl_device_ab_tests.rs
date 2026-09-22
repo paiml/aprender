@@ -109,6 +109,80 @@ mod iq4_nl_device_ab_tests {
         eprintln!("#3869 A/B: {n} rows, worst relative disagreement {worst:.3e}");
     }
 
+    /// #3884: the same A/B for IQ3_S, the last IQ type without a kernel.
+    ///
+    /// 110-byte super-blocks, 256 elements. `in_dim = 512` gives two blocks per
+    /// row so the stride is exercised, and the activation is position-dependent
+    /// so a block read at the wrong offset cannot coincidentally sum the same.
+    #[test]
+    fn the_iq3_s_kernel_agrees_with_the_cpu_decoder_on_device() {
+        use crate::quantize::iq3_s::{GGML_TYPE_IQ3_S, IQ3_S_BLOCK_BYTES};
+
+        let Some(mut exec) = create_executor() else {
+            eprintln!("SKIP: no CUDA device");
+            return;
+        };
+
+        let (k, n) = (512usize, 48usize);
+        let blocks_per_row = k / 256;
+        let mut weights = Vec::with_capacity(n * blocks_per_row * IQ3_S_BLOCK_BYTES);
+        let mut state: u32 = 0x5EED_1234;
+        for _ in 0..(n * blocks_per_row) {
+            weights.push(0x00);
+            weights.push(0x3c); // f16 1.0, so a disagreement is about INDEXING
+            for _ in 2..IQ3_S_BLOCK_BYTES {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                weights.push((state >> 24) as u8);
+            }
+        }
+        assert_eq!(weights.len(), n * blocks_per_row * IQ3_S_BLOCK_BYTES);
+
+        let input: Vec<f32> = (0..k).map(|i| ((i % 17) as f32) - 8.0).collect();
+        let expected = crate::quantize::iq_parallel_matvec(GGML_TYPE_IQ3_S, &weights, &input, k, n)
+            .expect("CPU IQ3_S matvec");
+
+        let weight_buf = GpuBuffer::from_host(&exec.context, &weights).unwrap();
+        let input_buf = GpuBuffer::from_host(&exec.context, &input).unwrap();
+        let output_buf = GpuBuffer::from_host(&exec.context, &vec![0.0f32; n]).unwrap();
+        exec.iq3_s_gemv_into(
+            weight_buf.as_ptr(),
+            &input_buf,
+            &output_buf,
+            u32::try_from(n).unwrap(),
+            u32::try_from(k).unwrap(),
+        )
+        .expect("IQ3_S GEMV launch");
+        exec.stream.synchronize().unwrap();
+
+        let mut got = vec![0.0f32; n];
+        output_buf.copy_to_host(&mut got).unwrap();
+
+        let mut worst = 0.0f32;
+        let mut worst_row = 0usize;
+        for (row, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
+            let rel = (g - e).abs() / e.abs().max(1.0);
+            if rel > worst {
+                worst = rel;
+                worst_row = row;
+            }
+        }
+        assert!(
+            worst <= 1e-4,
+            "#3884: GPU and CPU IQ3_S disagree. worst row {worst_row}: GPU {} vs CPU {} \
+             (relative {worst:.3e}). The CPU decoder is the oracle.",
+            got[worst_row],
+            expected[worst_row]
+        );
+
+        let nonzero = expected.iter().filter(|v| v.abs() > 1e-6).count();
+        assert!(
+            nonzero >= n / 2,
+            "only {nonzero} of {n} reference rows are non-zero; this would pass on an \
+             all-zero kernel"
+        );
+        eprintln!("#3884 A/B: {n} rows, worst relative disagreement {worst:.3e}");
+    }
+
     /// The same comparison at a shape whose rows do NOT divide evenly, so the
     /// kernel's `x_idx >= k_dim` guard is exercised rather than assumed.
     #[test]

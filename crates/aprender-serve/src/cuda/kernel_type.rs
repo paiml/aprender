@@ -359,6 +359,11 @@ pub enum KernelType {
         k: u32,
         n: u32,
     },
+    /// IQ3_S GEMV (9-bit grid indices, sign bytes, paired 4-bit scales) - #3884
+    Iq3SGemv {
+        k: u32,
+        n: u32,
+    },
     /// Incremental attention for M=1 autoregressive decoding (PAR-020 + PAR-021)
     IncrementalAttention {
         max_seq_len: u32,
