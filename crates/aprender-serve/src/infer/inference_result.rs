@@ -1211,6 +1211,117 @@ mod pmat3477_f2_fp8_retry_tests {
 /// accepted. Backstops the degraded HwDp4a 7B case (pos6 @ 0.9398 → reject).
 pub(crate) const F2_GATE_COSINE_MIN: f32 = 0.95;
 
+/// PMAT-3804: the retry band, keyed to values MEASURED on real silicon rather
+/// than to the band's own edge.
+///
+/// `pmat3477_f2_fp8_retry_tests::a_deep_fp8_miss_is_retried_on_fp16` already
+/// turns RED if the pre-`da218127b` band gate comes back — but its loop starts
+/// at 0.894, so that is the cosine the panic names, and 0.894 is 0.006 below
+/// `F2_CATASTROPHIC_COSINE`. A reader of that RED line cannot tell which model
+/// broke, and the test cannot distinguish "the band returned" from "someone
+/// nudged the threshold by a hundredth".
+///
+/// These cases are the two models whose FP8 batched prefill was actually
+/// measured below the floor, so the RED line names the model and the
+/// consequence. The 7B case is the load-bearing one: a test keyed only to the
+/// 0.5b's catastrophic 0.4153 would have said nothing about a 7B model sitting
+/// at 0.5874 and being rescued silently — and missing the 7B is how this
+/// shipped.
+#[cfg(all(test, feature = "cuda"))]
+mod pmat3804_measured_fp8_misses {
+    use super::{
+        f2_should_retry_without_fp8, F2PositionReport, F2ProbePath, F2_GATE_COSINE_MIN,
+    };
+
+    /// Measured 2026-09-22 on NVIDIA RTX 4090 (sm_89) via the batched F2 probe
+    /// with FP8 prefill on, `apr 0.69.0 (85d8491f6)`, binary sha256
+    /// `46741d3f3fe5347ac6f05685` pinned outside any cargo target dir.
+    /// `(model, min_cosine_real, what happened to it)`
+    const MEASURED_FP8_MISSES: &[(&str, f32, &str)] = &[
+        (
+            "qwen2.5-coder-0.5b-instruct-q4_k_m",
+            0.415_256,
+            "#3804: fell BELOW the pre-fix band, so no retry fired and the \
+             model was pushed to CPU while apr qa's golden gate shipped gibberish",
+        ),
+        (
+            "qwen2.5-coder-7b-instruct-q4_k_m",
+            0.587_395,
+            "rescued only because the retry fired (FP16 re-measure reached \
+             0.9834); nothing else would have caught a 7B model this far off",
+        ),
+    ];
+
+    fn miss(cos: f32) -> F2PositionReport {
+        F2PositionReport {
+            accepted: false,
+            pos0_argmax_flip: false,
+            min_cosine_real: cos,
+            first_bad_pos: 1,
+            first_bad_cpu_argmax: 73562,
+            first_bad_gpu_argmax: 20840,
+            first_bad_cosine: cos,
+        }
+    }
+
+    /// Both measured models sit below the gate floor. If this stops holding, the
+    /// numbers below are stale and the rest of this module is measuring nothing.
+    #[test]
+    fn the_measured_misses_are_really_below_the_gate_floor() {
+        for (model, cos, _) in MEASURED_FP8_MISSES {
+            assert!(
+                *cos < F2_GATE_COSINE_MIN,
+                "{model}: measured FP8 cosine {cos} is not below the gate floor                  {F2_GATE_COSINE_MIN} — this fixture no longer describes a miss"
+            );
+        }
+    }
+
+    /// The falsifier for `da218127b`. Restoring the pre-fix band gate — the
+    /// `min_cosine_real >= F2_CATASTROPHIC_COSINE` conjunct — turns this RED
+    /// naming the models, not a threshold-adjacent decimal.
+    ///
+    /// Every case is evaluated BEFORE the assert, so a regression names every
+    /// model it broke. Asserting inside the loop stops at the 0.5b and says
+    /// nothing about the 7B — and a 7B model at 0.587 rescued silently is the
+    /// part of this nobody knew about.
+    #[test]
+    fn every_measured_fp8_miss_is_retried_on_fp16() {
+        let not_retried: Vec<String> = MEASURED_FP8_MISSES
+            .iter()
+            .filter(|(_, cos, _)| {
+                !f2_should_retry_without_fp8(&miss(*cos), F2ProbePath::Batched, true)
+            })
+            .map(|(model, cos, consequence)| {
+                format!("\n  - {model} at min cosine {cos}: {consequence}")
+            })
+            .collect();
+        assert!(
+            not_retried.is_empty(),
+            "{} of {} models measured below the FP8 floor were NOT re-measured on FP16:{}",
+            not_retried.len(),
+            MEASURED_FP8_MISSES.len(),
+            not_retried.join("")
+        );
+    }
+
+    /// The retry is a precision fallback, not a resampling one: it must not fire
+    /// when there is no precision left to change (FP8 already off), nor on the
+    /// serial path, whatever the cosine.
+    #[test]
+    fn a_measured_miss_still_needs_fp8_on_and_the_batched_path() {
+        for (model, cos, _) in MEASURED_FP8_MISSES {
+            assert!(
+                !f2_should_retry_without_fp8(&miss(*cos), F2ProbePath::Batched, false),
+                "{model}: retried with FP8 already off — there is no precision to change"
+            );
+            assert!(
+                !f2_should_retry_without_fp8(&miss(*cos), F2ProbePath::Serial, true),
+                "{model}: retried on the serial path, which never used FP8"
+            );
+        }
+    }
+}
+
 /// PMAT-919 F2 argmax-mismatch cosine threshold. A per-position argmax MISMATCH is
 /// only fatal when the cosine is ALSO degraded below this (a genuine divergence,
 /// e.g. degraded HwDp4a 1.5B pos3 @ 0.9705). A high-cosine (≥ this) argmax flip is a
