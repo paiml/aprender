@@ -10,3 +10,4 @@ use super::*;
 
 include!("device.rs");
 include!("q8_gemv_tests.rs");
+include!("pmat3804_gemv_shape_parity.rs");

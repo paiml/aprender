@@ -950,6 +950,23 @@ fn f2_remeasure_without_fp8(
     let out = match f2_gpu_batched_logits(cuda_model, probe, decode_token, kv_dim, num_layers) {
         Ok(v) => {
             let report = f2_multi_position_report(cpu_logits_per_pos, &v);
+            // PMAT-3804: the verdict scores positions >= 1 only (pos0 is a known
+            // BOS near-tie), so a rejection cannot say whether position 0 ALSO
+            // diverged. That distinction is the whole diagnosis: at position 0
+            // attention is a softmax over one key and returns V[0] whatever the
+            // scores are, so a score-path defect is invisible there and a
+            // projection/embedding defect is not. Dev-trace only; costs nothing
+            // when off.
+            if crate::dev_trace::dev_trace_enabled() {
+                for (pos, (cpu, gpu)) in cpu_logits_per_pos.iter().zip(v.iter()).enumerate() {
+                    eprintln!(
+                        "[PMAT-3804] pos {pos}: cosine {:.6} cpu_argmax {} gpu_argmax {}",
+                        logits_cosine_similarity(cpu, gpu),
+                        argmax_u32(cpu),
+                        argmax_u32(gpu),
+                    );
+                }
+            }
             if report.accepted {
                 eprintln!(
                     "note: FP16 prefill passes (min cosine {:.4}); FP8 stays OFF for this model",
@@ -1017,11 +1034,24 @@ fn validate_gpu_first_token(
     // #3413 C: judge the prefill path the ENGINE resolved for this process. On a
     // batched-prefill GPU the prompt is served by `prefill_all_layers_gpu` /
     // `batched_qkv_rope_phase`, which the old token-by-token probe never ran.
-    let via = f2_select_probe_path(
+    let mut via = f2_select_probe_path(
         cuda_model.executor.gpu_profile.prefill_path().path
             == crate::cuda::gpu_profile::PrefillPath::Batched,
         probe.len(),
     );
+
+    // PMAT-3804: judge the OTHER path in the SAME binary, the way
+    // APR_GRAPH_QTYPE_HARDCODE does for #2753. "Batched prefill diverges" and
+    // "decode diverges" are different faults (#3413 C says so in the rejection
+    // line), but nothing could make the probe run the path the engine did not
+    // resolve, so the two could not be compared without rebuilding — and a
+    // rebuild cannot be attributed, since apr-cli embeds the git SHA and a
+    // dirty worktree keeps reporting HEAD.
+    match std::env::var("APR_F2_PROBE_PATH").as_deref() {
+        Ok("serial") => via = F2ProbePath::Serial,
+        Ok("batched") if probe.len() > 1 => via = F2ProbePath::Batched,
+        _ => {},
+    }
 
     cuda_model.executor.reset_kv_cache_gpu();
     let gpu_result =
@@ -1038,6 +1068,27 @@ fn validate_gpu_first_token(
 
     // Per-position decision over REAL positions (≥1). Excludes pos0 (BOS near-tie).
     let mut report = f2_multi_position_report(&cpu_logits_per_pos, &gpu_logits_per_pos);
+
+    // PMAT-3804: the verdict scores positions >= 1 only (pos0 is a known BOS
+    // near-tie), so a rejection cannot say whether position 0 ALSO diverged.
+    // That distinction is the diagnosis: at position 0 attention is a softmax
+    // over one key and returns V[0] whatever the scores are, so a score-path
+    // defect is invisible there while a projection/embedding defect is not.
+    // Dev-trace only; costs nothing when off.
+    if crate::dev_trace::dev_trace_enabled() {
+        for (pos, (cpu, gpu)) in cpu_logits_per_pos
+            .iter()
+            .zip(gpu_logits_per_pos.iter())
+            .enumerate()
+        {
+            eprintln!(
+                "[PMAT-3804] pos {pos}: cosine {:.6} cpu_argmax {} gpu_argmax {}",
+                logits_cosine_similarity(cpu, gpu),
+                argmax_u32(cpu),
+                argmax_u32(gpu),
+            );
+        }
+    }
 
     // #3413 C / PMAT-798 pattern: the FP8 batched prefill's precision shows at the
     // decode step AFTER the prompt (the K/V it attends to were produced by FP8
