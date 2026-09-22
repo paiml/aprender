@@ -449,13 +449,31 @@ pub fn run(
         assert_classifier_head,
     };
 
-    let report = run_qa(path, &config)?;
+    // `run_qa(...)?` used to propagate straight past the `if json` block below, so
+    // ANY error meant `apr qa --json` exited having written ZERO BYTES. Measured
+    // 2026-09-22 on gx10 (#3842): on qwen35-27b-q4km it ran 78s of GPU work and
+    // its own stderr says `F2 guard: passed in 78442 ms on 20 positions` — then
+    // wrote nothing. `model_ladder.sh` appended the empty result as an empty row,
+    // the receipt assembler dropped it, and a RED REQUIRED RUNG disappeared from
+    // its own receipt while the red counter went on counting: the receipt said
+    // `red: 3` with two reds in its rows.
+    //
+    // A gate that produces NO DOCUMENT is strictly worse than one that fails: a
+    // failure is evidence, an absence is not, and no per-row judging can find a
+    // row that was never written. So the document is emitted on BOTH paths and
+    // the error is still returned, preserving the exit code.
+    let report = match run_qa(path, &config) {
+        Ok(report) => report,
+        Err(e) => {
+            if json {
+                emit_qa_json(&qa_report_for_error(path, &e));
+            }
+            return Err(e);
+        }
+    };
 
     if json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&report).unwrap_or_default()
-        );
+        emit_qa_json(&report);
     }
 
     if !report.passed {
@@ -464,6 +482,101 @@ pub fn run(
 
     contract_post_qa_gate_composition!(&());
     Ok(())
+}
+
+/// Minimal JSON string escaper, so the last-resort document cannot itself fail.
+///
+/// Deliberately not `serde_json` — the fallback below exists precisely for the
+/// case where serialization did not work, and reaching for the thing that just
+/// failed is how a fallback becomes decoration.
+fn json_escaped(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// Emit the report as JSON. NEVER emits an empty document.
+///
+/// The old call site was `serde_json::to_string_pretty(&report).unwrap_or_default()`,
+/// which turns a serialization failure into an empty String — a bare newline on
+/// stdout. That is the same zero-byte outcome as printing nothing, with the extra
+/// property that it looks like output, so a reader sees a truncated file rather
+/// than a missing one (#3842). A serializer that cannot describe the report is
+/// itself a finding and is reported as one.
+pub(crate) fn emit_qa_json(report: &QaReport) {
+    println!("{}", qa_json_document(report));
+}
+
+/// Build the `--json` document. Pure, and the return value is NEVER empty.
+///
+/// Separated from the printing so the invariant is a value a test can assert on.
+/// The defect this replaces was covered by a test called `test_run_with_json_output`
+/// which drove `--json` down the error path and asserted only `result.is_err()` —
+/// the test named for the output never looked at the output. A pure function makes
+/// "never empty" checkable without capturing stdout.
+pub(crate) fn qa_json_document(report: &QaReport) -> String {
+    match serde_json::to_string_pretty(report) {
+        Ok(s) if !s.trim().is_empty() => s,
+        other => {
+            let why = match other {
+                Ok(_) => "the serializer produced an empty document".to_string(),
+                Err(e) => e.to_string(),
+            };
+            format!(
+                "{{{}:{},{}:false,{}:[],{}:0,{}:0,{}:0,{}:{},{}:{}}}",
+                json_escaped("model"),
+                json_escaped(&report.model),
+                json_escaped("passed"),
+                json_escaped("gates"),
+                json_escaped("gates_executed"),
+                json_escaped("gates_skipped"),
+                json_escaped("total_duration_ms"),
+                json_escaped("timestamp"),
+                json_escaped(&report.timestamp),
+                json_escaped("summary"),
+                json_escaped(&format!("apr qa could not serialize its report: {why}")),
+            )
+        }
+    }
+}
+
+/// The report `apr qa --json` emits when the run itself could not complete.
+///
+/// It carries a FAILED gate rather than an empty `gates` list, because an empty
+/// list reads as "nothing failed" to anything counting failures — the same
+/// ambiguity that let a missing row look like an absent model instead of a red
+/// one (#3842).
+pub(crate) fn qa_report_for_error(path: &Path, e: &CliError) -> QaReport {
+    let why = format!("apr qa did not complete: {e}");
+    QaReport {
+        model: path.display().to_string(),
+        passed: false,
+        gates: vec![GateResult::failed(
+            "qa_run",
+            &why,
+            None,
+            None,
+            Duration::ZERO,
+        )],
+        gates_executed: 0,
+        gates_skipped: 0,
+        total_duration_ms: 0,
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        summary: why,
+        system_info: None,
+    }
 }
 
 /// Dispatch a single QA gate: skip if flagged, otherwise run, then print and collect.
@@ -578,3 +691,4 @@ include!("speedup.rs");
 include!("forward_error.rs");
 include!("gpu_isolation_result.rs");
 include!("qa_08.rs");
+include!("qa_json_never_empty.rs");
