@@ -146,6 +146,24 @@ for h in hosts:
         print(f"FAIL  {h['id']:7} receipt carries no measured inventory (schema {R.get('schema')!r}) — the universe is what the host HOLDS, not a list (#3712)"); rc = 1; continue
     if not inv:
         print(f"FAIL  {h['id']:7} measured inventory is EMPTY — a host holding no Q4_K model proved nothing (#3712)"); rc = 1; continue
+    # #3842: RECONCILE THE SCALAR AGAINST THE ROWS. A RED THAT HIDES.
+    # gx10's 0.69.1 receipt said `red: 3` and carried only 2 non-green rows: the failed
+    # REQUIRED rung qwen35-27b-q4km was absent from its own receipt entirely. `apr qa
+    # --json` wrote 0 bytes for that cell (after 78 s of successful GPU work and a
+    # PASSED F2 guard), the ladder appended an empty line to rows.jsonl, the assembler
+    # dropped it -- and `red` was counted on a separate path. A consumer reading `rows`
+    # would see 13/15 green plus two known refusals and could not learn that a required
+    # rung failed at all. Every other guard here looks for a false GREEN; this one looks
+    # for a MISSING RED, which no amount of per-row judging can find.
+    declared_red = R.get("red")
+    if isinstance(declared_red, int):
+        rows_red = sum(1 for x in R.get("rungs", []) if not x.get("green"))
+        if declared_red != rows_red:
+            # Report and KEEP JUDGING. An inconsistent counter is an ADDITIONAL finding,
+            # not a reason to stop reading the rows -- a `continue` here would suppress
+            # every real per-row refusal behind it, which is the same suppression the
+            # check exists to expose.
+            print(f"FAIL  {h['id']:7} receipt says red={declared_red} but carries {rows_red} non-green row(s) — a red that is counted and not recorded is a red nobody can read (#3842)"); rc = 1
     good[h["id"]] = R
     by = {r.get("id"): r for r in R.get("rungs", [])}
     by_file = {x.get("file"): x for x in R.get("rungs", []) if x.get("file")}
