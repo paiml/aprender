@@ -111,6 +111,18 @@ pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult>
         // invisible to the dense construction-time quant gate (the qwen35 base
         // model carries an empty layer list), so the GPU rung judges them here,
         // from the header, before anything is uploaded.
+        // #3817: an architecture with no CUDA forward is REFUSED by name here,
+        // before any op-level check. "all N required ops supported by GPU" would
+        // be true and misleading: no kernel is missing, the path was not built.
+        if let Some(reason) = realizar::capability::no_cuda_forward_reason(&arch) {
+            return Ok(GateResult::failed(
+                "capability_match",
+                &reason,
+                Some(1.0),
+                Some(0.0),
+                start.elapsed(),
+            ));
+        }
         if let Some(result) = hybrid_quant_gate_result(&arch, &tensors, backend, start.elapsed()) {
             return Ok(result);
         }
@@ -357,6 +369,15 @@ pub(crate) fn is_cpu_only_architecture<'n>(
     arch: &str,
     tensor_names: impl IntoIterator<Item = &'n str>,
 ) -> bool {
+    // #3817: an architecture whose CUDA forward was never BUILT is cpu-only in
+    // exactly this sense — the GPU declines it and the CPU runs it. `apr run
+    // --no-gpu` on Qwen3-30B-A3B-Instruct-2507-Q4_K_M answers "2 + 2 = 4." (rc 0,
+    // measured 2026-09-22), while the dense loader aborts the whole `apr qa` run
+    // with an empty-buffer matmul on a MoE parent FFN tensor. Routing it here is
+    // what turns that abort into gates with reasons.
+    if realizar::capability::no_cuda_forward_reason(arch).is_some() {
+        return true;
+    }
     cpu_forward_handles(arch)
         && matches!(
             hybrid_ssm_verdict(arch, tensor_names, Backend::Gpu),

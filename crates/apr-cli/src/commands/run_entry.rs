@@ -53,6 +53,12 @@ pub(crate) fn run(
         eprintln!("Warning: --task is not yet supported for inference. Flag ignored.");
     }
 
+    // #3817: refuse BEFORE the load when the user forced an accelerator this
+    // build has no forward for. Placed above every print, so a refused run emits
+    // no banner, no `Source:` line and no generation — the caller sees a named
+    // refusal and nothing that looks like a result.
+    refuse_forced_accelerator_without_forward(source, accel_forced)?;
+
     // GH-240: Suppress header/source in JSON mode for clean machine-parseable output
     if output_format != "json" {
         if offline {
@@ -192,6 +198,57 @@ fn reconcile_and_emit(
         )?;
     }
     reconciled
+}
+
+/// #3817: the refusal text for a forced accelerator this build has no forward
+/// for, or `None` when there is nothing to refuse.
+///
+/// Pure, so the rule is testable without a model on disk. `architecture` is the
+/// model's declared `general.architecture`; `None` means we could not read one
+/// (not a GGUF, a hub id rather than a path, an unreadable header), and an
+/// unknown architecture is never refused — this predicate lists what we know we
+/// did NOT build, never what we support.
+pub(crate) fn forced_accelerator_refusal(
+    accel_forced: bool,
+    architecture: Option<&str>,
+) -> Option<String> {
+    if !accel_forced {
+        return None;
+    }
+    realizar::capability::no_cuda_forward_reason(architecture?)
+}
+
+/// Read the declared architecture from a model path without loading it.
+///
+/// A GGUF header read is an mmap plus a metadata parse: it does not touch the
+/// 18 GB of weights behind it, which is what makes a PRE-load refusal cheap.
+/// Anything that is not a readable GGUF answers `None`.
+fn declared_architecture(source: &str) -> Option<String> {
+    let path = Path::new(source);
+    if !path.is_file() {
+        return None;
+    }
+    let mapped = realizar::gguf::MappedGGUFModel::from_path(path).ok()?;
+    let arch = mapped.model.architecture()?.to_string();
+    Some(arch)
+}
+
+/// #3817: `apr run --gpu` on an architecture with no CUDA forward refuses by
+/// name, before loading, with exit 12 (`NotImplemented` — "this build cannot do
+/// that", distinct from 14, which means "it tried and fell back").
+///
+/// # Errors
+/// [`crate::error::CliError::NotImplemented`] naming the architecture, the
+/// ticket and the release the path lands in.
+fn refuse_forced_accelerator_without_forward(source: &str, accel_forced: bool) -> Result<()> {
+    if !accel_forced {
+        return Ok(());
+    }
+    let arch = declared_architecture(source);
+    match forced_accelerator_refusal(true, arch.as_deref()) {
+        Some(reason) => Err(CliError::NotImplemented(reason)),
+        None => Ok(()),
+    }
 }
 
 /// Does [`print_run_output`] emit a MACHINE-readable document for these flags?
