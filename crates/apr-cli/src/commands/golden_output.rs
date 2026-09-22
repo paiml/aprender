@@ -235,6 +235,95 @@ fn golden_prompt_for(architecture: Option<&str>, question: &str) -> String {
 #[cfg(feature = "inference")]
 const THINKING_ON_BUDGET: usize = 2048;
 
+/// The per-model budgets, embedded from the packaged mirror (#3899).
+///
+/// `crates/apr-cli/contracts/` and not the workspace root, for the reason
+/// `capability.rs` gives: `include_str!` cannot escape the crate directory at package
+/// time. `tests/thinking_budgets_mirror.rs` asserts the two are byte-identical.
+#[cfg(feature = "inference")]
+const THINKING_BUDGETS: &str = include_str!("../../contracts/thinking-budgets-v1.yaml");
+
+/// `*`-glob match, the same semantics the ladder's `fnmatch` uses on `inventory.deferred`.
+#[cfg(feature = "inference")]
+fn glob_match(pat: &str, name: &str) -> bool {
+    match pat.split_once('*') {
+        None => pat == name,
+        Some((head, tail)) => {
+            name.len() >= head.len() + tail.len()
+                && name.starts_with(head)
+                && name.ends_with(tail)
+        },
+    }
+}
+
+/// The ON-leg budget for this model, with the provenance of the number.
+///
+/// FAIL-CLOSED by construction, copying `evidence/parity/thresholds.yaml`:
+///   * a model LISTED in `models:` takes its entry and never falls back to `default`,
+///     so an entry with no `budget` is a refusal rather than an inherited 8B figure;
+///   * a `default` with no `basis` is refused too — a budget without a measurement
+///     behind it is not a budget, and that is the defect this replaced;
+///   * a parse failure is an error, never a default. An unreadable table rendered as
+///     2048 would be the old constant wearing a contract's clothes.
+///
+/// `APR_THINKING_ON_BUDGET` overrides for a probe, because the `const` had no seam and
+/// a threshold you cannot vary without a `--features cuda,inference` rebuild is one
+/// nobody re-measures. The override is named in the returned provenance so a probed
+/// number cannot be mistaken for a measured one.
+#[cfg(feature = "inference")]
+fn thinking_on_budget_for(model_file: &str) -> std::result::Result<(usize, String), String> {
+    if let Ok(raw) = std::env::var("APR_THINKING_ON_BUDGET") {
+        let n: usize = raw.trim().parse().map_err(|_| {
+            format!("APR_THINKING_ON_BUDGET={raw:?} is not a token count (#3899)")
+        })?;
+        return Ok((n, format!("PROBE OVERRIDE APR_THINKING_ON_BUDGET={n}, not a measurement")));
+    }
+    let doc: serde_yaml::Value = serde_yaml::from_str(THINKING_BUDGETS)
+        .map_err(|e| format!("the embedded thinking-budget table did not parse: {e} (#3899)"))?;
+    if let Some(models) = doc.get("models").and_then(|m| m.as_mapping()) {
+        for (k, v) in models {
+            let Some(pat) = k.as_str() else { continue };
+            if !glob_match(pat, model_file) {
+                continue;
+            }
+            let Some(b) = v.get("budget").and_then(serde_yaml::Value::as_u64) else {
+                let why = v
+                    .get("why_unmeasured")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("no reason recorded");
+                return Err(format!(
+                    "no measured thinking budget for `{model_file}` (matches `{pat}` in \
+                     contracts/thinking-budgets-v1.yaml, which declares no `budget`). \
+                     Refusing rather than inheriting the default, which was measured on a \
+                     different model: {} (#3899)",
+                    why.trim()
+                ));
+            };
+            let basis = v.get("basis").and_then(|x| x.as_str()).unwrap_or("").trim();
+            if basis.is_empty() {
+                return Err(format!(
+                    "`{pat}` declares budget {b} with no `basis` — a budget without the \
+                     measurement behind it is not a budget (#3899)"
+                ));
+            }
+            return Ok((usize::try_from(b).unwrap_or(0), format!("{pat}: {basis}")));
+        }
+    }
+    let d = doc.get("default").ok_or_else(|| {
+        "contracts/thinking-budgets-v1.yaml has no `default` and this model is unlisted (#3899)"
+            .to_string()
+    })?;
+    let b = d
+        .get("budget")
+        .and_then(serde_yaml::Value::as_u64)
+        .ok_or_else(|| "`default` declares no `budget` (#3899)".to_string())?;
+    let basis = d.get("basis").and_then(|x| x.as_str()).unwrap_or("").trim();
+    if basis.is_empty() {
+        return Err("`default` declares a budget with no `basis` (#3899)".to_string());
+    }
+    Ok((usize::try_from(b).unwrap_or(0), format!("default: {basis}")))
+}
+
 /// The same conversation with production's THINKING SUPPRESSION removed, or
 /// `None` when production does not suppress thinking for this architecture.
 ///
@@ -572,17 +661,37 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 
         // #3724 done_when 3: a thinking-capable model is judged in BOTH modes.
         if let Some((on_prompt, on_patterns)) = thinking_on_case(architecture.as_deref()) {
+            // #3899: the budget is per-model with a basis, and a model with no measured
+            // budget REFUSES here rather than inheriting an 8B's number. The refusal is
+            // reported as a budget gap, not as "the model was still reasoning" — the two
+            // are different findings and only one of them is about the model.
+            let model_file = path
+                .file_name()
+                .map(|f| f.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let (on_budget, budget_basis) = match thinking_on_budget_for(&model_file) {
+                Ok(v) => v,
+                Err(reason) => {
+                    return Ok(GateResult::failed(
+                        "golden_output",
+                        &format!("golden_output_thinking_on: {reason}"),
+                        None,
+                        None,
+                        start.elapsed(),
+                    ))
+                },
+            };
             if let Some((_, on_text)) = generate_golden_for_format(
                 path,
                 &on_prompt,
-                THINKING_ON_BUDGET,
+                on_budget,
                 format,
                 mapped.as_ref(),
                 gguf_model.as_ref(),
             )? {
                 let generated = on_text.strip_prefix(on_prompt.as_str()).unwrap_or(&on_text);
-                if let Some(reason) =
-                    judge_thinking_on_output(generated, &on_patterns, THINKING_ON_BUDGET)
+                if let Some(reason) = judge_thinking_on_output(generated, &on_patterns, on_budget)
+                    .map(|r| format!("{r} [budget basis — {budget_basis}]"))
                 {
                     return Ok(GateResult::failed(
                         "golden_output",
@@ -819,6 +928,56 @@ fn throughput_apr(
 // =============================================================================
 // PMAT-125 B4: golden_test_cases fixture coverage
 // =============================================================================
+
+#[cfg(all(test, feature = "inference"))]
+mod thinking_budget_resolution {
+    use super::{glob_match, thinking_on_budget_for};
+
+    /// The listed model with NO budget must REFUSE, not inherit `default`. This is the
+    /// whole mechanism: inheriting 2048 would republish an 8B's measurement as a 0.8B's.
+    #[test]
+    fn a_listed_model_without_a_budget_is_refused_not_defaulted() {
+        let err = thinking_on_budget_for("Qwen3.5-0.8B-IQ4_XS.gguf")
+            .expect_err("a model listed with no budget must refuse");
+        assert!(err.contains("no measured thinking budget"), "{err}");
+        assert!(err.contains("Refusing rather than inheriting"), "{err}");
+        assert!(err.contains("8,901"), "the refusal must carry what was measured: {err}");
+    }
+
+    /// An unlisted model takes `default` — and the returned provenance SAYS it is the
+    /// default, so a reader of a failure can tell an inherited number from a measured one.
+    #[test]
+    fn an_unlisted_model_takes_the_default_and_says_so() {
+        let (budget, basis) =
+            thinking_on_budget_for("some-other-model-q4km.gguf").expect("default applies");
+        assert_eq!(budget, 2048);
+        assert!(basis.starts_with("default:"), "{basis}");
+        assert!(basis.contains("qwen3-8b-q4km"), "the basis must name its one model: {basis}");
+    }
+
+    /// The env seam exists because the old `const` had none, and a threshold that needs a
+    /// `--features cuda,inference` rebuild to vary is one nobody re-measures. A probed
+    /// number must never be mistakable for a measured one.
+    #[test]
+    fn the_probe_override_is_labelled_as_a_probe() {
+        std::env::set_var("APR_THINKING_ON_BUDGET", "8192");
+        let (budget, basis) = thinking_on_budget_for("Qwen3.5-0.8B-IQ4_XS.gguf")
+            .expect("the override applies even to a refused model, so it can be probed");
+        std::env::remove_var("APR_THINKING_ON_BUDGET");
+        assert_eq!(budget, 8192);
+        assert!(basis.contains("PROBE OVERRIDE"), "{basis}");
+        assert!(basis.contains("not a measurement"), "{basis}");
+    }
+
+    #[test]
+    fn glob_match_is_the_fnmatch_the_ladder_uses() {
+        assert!(glob_match("Qwen3.5-0.8B-*", "Qwen3.5-0.8B-IQ4_XS.gguf"));
+        assert!(glob_match("exact.gguf", "exact.gguf"));
+        assert!(!glob_match("Qwen3.5-0.8B-*", "Qwen3.5-4B-UD-Q4_K_XL.gguf"));
+        // a pattern must not match a name shorter than its own literal halves
+        assert!(!glob_match("aaaa*bbbb", "aaaabbb"));
+    }
+}
 
 #[cfg(test)]
 mod golden_output_tests {

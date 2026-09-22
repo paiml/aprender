@@ -9,14 +9,14 @@
 # (DOGFOOD_ALLOW_UNPINNED + $APR, MODEL_LADDER_ROOT, MODEL_LADDER_INVENTORY_DIRS,
 # MODEL_LADDER_GPU_LOCK, --out).
 #
-# ONE assertion, on a phrase that sits at char 208 of a message the code really
+# ONE assertion, on a phrase that sits at char 285 of a message the code really
 # emits (`unclosed_think_reason`, golden_output.rs) — beyond ALL FOUR old
 # slices. Not "the message is longer than N": the phrase is the classification
 # and the instruction, which is what the slices were destroying.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-PHRASE='check that the prompt'
-MSG="golden_output_thinking_on: think block unclosed within 2048 tokens (the model was still reasoning at the budget; 8000 chars generated, no answer was reached). This is not an empty answer — raise nothing, and ${PHRASE} is the one production sends for this architecture."
+PHRASE='thinking-budgets-v1.yaml'
+MSG="golden_output_thinking_on: think block unclosed within 2048 tokens (the model was still reasoning at the budget; 8000 chars generated, no answer was reached). This is not an empty answer. Before treating it as a model defect, check whether 2048 is MEASURED for this model in contracts/${PHRASE} or inherited from \`default\` — the default's basis is one 8B model (#3899)."
 
 T=$(mktemp -d) || exit 2
 # SEC011: validate before `rm -rf`. An empty or root $T must never reach it —
