@@ -155,3 +155,88 @@ ignored · `clippy -p apr-cli --lib -D warnings` rc=0, 4 parity rows pass.
 * No GPU path yet, and the whitelist is deliberately untouched — the rule is
   that a qtype does not enter `gpu_unsupported_quant_qtype`'s allow-list before
   the kernel behind it exists.
+
+---
+
+# Addendum — Q5_1, and a bug of mine that only clippy saw
+
+Cop's ruling: acceptance is **the golden gate passes**, not `apr qa` rc=0.
+
+## 1. Q5_1 was not the cross-crate job either of us scoped
+
+`aprender-core`'s `dequantize_q5_1` is `pub(crate)`, which is what made it look
+like a visibility problem. **aprender-serve has had its own `pub` copy all
+along** (`quantize/dequant.rs:309`), and the gpu-gated
+`acceleration.rs::dequantize_weight` already dispatched to it. Only
+`matmul_fused.rs`'s **CPU** arm was missing, sitting in the gap between its two
+siblings Q4_1 and Q5_0. A Q5_1 tensor fell through to
+`dequant_fallback_or_refuse` (admission: `iq_block_bytes.is_some() || Q2_K ||
+Q3_K`) and was refused by id.
+
+So `Qwen2.5-0.5B-Instruct-IQ4_XS.gguf` was unrunnable for **one missing
+three-line match arm** while 266 of its 290 tensors were already supported. The
+CPU and GPU dispatch tables disagreed about a type and nothing compared them —
+the third instance of that shape this release, after the loader-vs-dispatch
+block size and the capability contract.
+
+I verified `dequantize_q5_1` against llama.cpp's `dequantize_row_q5_1` line by
+line **before** relying on it, since the change makes a previously unreachable
+function load-bearing: `xh_0` takes bit `j`, `xh_1` bit `j+16`, both placed at
+bit 4; outputs at `j` and `j+16`; layout d/m/qh[4]/qs[16] = 24 B. It matches.
+
+The pre-existing tests could not have caught a wrong one:
+
+| row | why it is blind |
+|---|---|
+| `test_cov95_dequantize_q5_1_basic` | all-zero data; asserts length only |
+| `test_dequantize_q5_1_basic` | `qh = 0`, so the **5th bit is never read** — the entire point of a 5-bit format — and `0x88`, equal nibbles, so the `j`/`j+16` split is invisible |
+
+`q5_1_matches_the_ggml_reference_including_the_fifth_bit` uses d=1.5, m=−0.25,
+qh=0x0005_0003 so the 5th bit is set for low elements {0,1} and high {0,2}.
+MUTANT (high half reads bit `i` not `i+16`): RED, *element 17: got 25.25,
+reference 1.25*.
+
+## 2. I shipped a commit whose clippy claim was false
+
+`37627aa4a` says "clippy rc=0". It was **rc=101**, and I committed without
+reading it. `bc2b87da1` states that rather than amending it away.
+
+The bug: `matmul_fused.rs` is `include!()`d into `matmul.rs`, so its
+`GGUF_TYPE_*` constants come from the **including** file's use list. I added the
+import inside `matmul_fused.rs` instead — via a scripted replace whose anchor
+matched nothing, **written without an assert**, which is the exact failure I had
+already hit once this session. That `GGUF_TYPE_Q5_0` looks "unused" in
+`matmul.rs` is the same `include!` indirection, and was the clue I walked past.
+
+With the constant out of scope, `GGUF_TYPE_Q5_1 =>` is **not a constant pattern.
+It is a new binding that matches every value** — every quantization type would
+have been dequantized as Q5_1. `cargo check` passed, because an irrefutable
+binding is legal Rust. Only `clippy::unreachable_patterns` saw it.
+
+I then checked whether the suite would have caught it rather than assuming
+clippy was the only guard: re-applied the bug, ran the full lib suite — **169
+failed**, including *"Failed to create weight matrix for Q5_1"* and a 500 from
+`a_completed_generate_request_is_unchanged_by_the_cancellation_layer`. **The
+coverage was there. The gap was my process**, and the lesson is the narrow one:
+a lint result that scrolls past unread is not a lint result.
+
+## 3. Acceptance
+
+```
+apr=<scratchpad>/apr-q51 sha=46649df31c4419f538aee106 version=apr 0.69.1 (bc2b87da1)
+worktree clean · Qwen2.5-0.5B-Instruct-IQ4_XS.gguf sha=df178ccd68e24ce0c74f9577
+```
+
+| | `apr run` | Golden Output |
+|---|---|---|
+| clean `46649df31c4419f5` | **rc=0**, *"The capital of France is Paris."* | **3 golden test cases passed** |
+| mutant `5a5c7ac0216f8cd2` (Q5_1 arm deleted) | **rc=8**, `owned_fused_matmul not supported` | **FAIL — "could not run"** |
+
+Two binaries, distinct shas, one variable. IQ3_M re-checked and still passes, so
+Q5_1 did not regress the model that only needed IQ4_NL.
+
+`apr qa` still exits 5 on Tensor Contract (144 violations) — the `aprender-core`
+gap, ruled 0.70.0, unrelated to Q5_1.
+
+`cargo test -p aprender-serve --lib`: **15994 passed, 0 failed**, 59 ignored.
+fmt rc=0 · clippy rc=0, read this time.
