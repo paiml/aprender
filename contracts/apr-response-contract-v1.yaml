@@ -1,0 +1,157 @@
+metadata:
+  kind: schema
+  version: 1.0.0
+  created: '2026-09-22'
+  author: PAIML Engineering
+  description: |
+    The apr response contract for machine consumers (#3720, derived from #3716's consumer
+    requirements: rmedia locks a generated asset to what produced it, RAH needs the same
+    audit trail). One schema for every machine-readable apr output, not a copy per
+    command. Accepted on #3720 (issuecomment-5767765474, aprender-f8's proposal).
+
+    Every JSON output carries `status` (ok | refused | failed) and, iff not ok, an
+    error naming its kind. A generation that produced no answer is a failure, never
+    success with "". Every completion names what produced it: the sha256 of the model
+    file actually loaded and the apr build.
+  references:
+  - '#3720: apr response contract for consumers'
+  - '#3716: consumer requirements (rmedia, RAH, arbiter)'
+  - '#3723: thinking mode refusals and the reasoning split'
+  - '#3775: apr code -p --output-format json (same names, AgentError kinds)'
+  depends_on:
+  - chat-template-v1
+equations:
+  status_envelope:
+    formula: |
+      forall run r with a machine-readable output mode:
+        stdout(r) is exactly one JSON document D
+        D.status in {"ok", "refused", "failed"}
+        D.error is present  <=>  D.status != "ok"
+        D.error = { kind: snake_case(variant(e)), message: display(e), exit_code: exit(r) }
+        status(e) = refused  <=>  a capability, limit or policy said no before the work ran
+    domain: apr run --json / --stream; apr serve completions (additive shape, see notes)
+    codomain: the document a consumer parses
+    invariants:
+    - A run that ends before it has a result still writes one document (the envelope and the model)
+    - error.exit_code is exactly the process's exit status, never re-mapped
+    - Existing fields stay; status and error are added beside them
+    preconditions:
+    - the output mode is --json or --stream (not --benchmark)
+    postconditions:
+    - a consumer can tell refused from failed from ok without reading stderr
+    lean_theorem: Theorems.Status_Envelope
+    notes: |
+      apr serve is ADDITIVE: every existing client reads `error` as the message string,
+      so serve keeps it and adds `status` and `error_kind` beside it (HTTP carries the
+      code). Refused kinds on serve: thinking_mode_unsupported, invalid_request. Failed:
+      think_block_unclosed, empty_completion.
+  empty_completion:
+    formula: |
+      completion_tokens(r) == 0  OR  (reasoning(r) != None AND trim(answer(r)) == "")
+        ==>  status = "failed", error.kind = "empty_completion"
+             apr run: exit 8 (the inference-failure code); apr serve: HTTP 422
+    domain: a generation that ran
+    codomain: never exit 0 / HTTP 200 with an empty answer
+    invariants:
+    - The reasoning of a reasoning-only completion is still reported
+    - A whitespace answer the model did generate is an answer, not an empty completion
+    preconditions:
+    - generation ran to completion
+    postconditions:
+    - '"no answer" is never read as success'
+    lean_theorem: Theorems.Empty_Completion
+    notes: The qwen3-8b golden gate defect (#3724) had this shape, an empty answer read as a model defect;
+      in production it would have read as success.
+  model_identity:
+    formula: |
+      D.model_digest == sha256sum(the model file actually loaded)
+      D.apr_version == CARGO_PKG_VERSION(apr), D.apr_git_sha == APR_GIT_SHA
+      apr serve: header x-apr-model-digest == D.model_digest on every response
+    domain: apr run --json / --stream; apr serve (hashed once at startup, the GGUF's mapped bytes)
+    codomain: the identity a consumer gates a generated asset on
+    invariants:
+    - The digest is of what was loaded (the resolved path, or the mapped bytes), not of what was asked for
+    - A path that is not one file (a model directory) reports no digest rather than a wrong one
+    preconditions:
+    - the model loaded
+    postconditions:
+    - sha256sum of the file equals the reported digest
+    lean_theorem: Theorems.Model_Identity
+proof_obligations:
+- id: RESP-INV-001
+  type: invariant
+  property: every CLI error has one kind, one status, and its own exit code in the envelope
+  formal: forall e in CliError. envelope(e).error.kind == kind(e) AND envelope(e).error.exit_code == exit(e)
+  applies_to: status_envelope
+- id: RESP-INV-002
+  type: invariant
+  property: a run with no result still writes exactly one document
+  formal: run fails before a result ==> stdout == [error_document(e)]
+  applies_to: status_envelope
+- id: RESP-INV-003
+  type: invariant
+  property: an empty completion is a named failure, and generated whitespace is not empty
+  formal: tokens == 0 OR (reasoning AND answer == "") <=> kind == empty_completion
+  applies_to: empty_completion
+- id: RESP-INV-004
+  type: invariant
+  property: the reported digest is sha256sum of the loaded file
+  formal: model_digest(path) == sha256sum(path) for a file; None for a directory
+  applies_to: model_identity
+enforcement:
+  cli_error_envelope:
+    description: Every CliError variant maps to a kind, a status and its exit code
+    check: run_tests_response_contract::FALSIFY-RESP-001
+    severity: ERROR
+  one_document:
+    description: A --json/--stream run writes one document on every exit
+    check: run_tests_response_contract::FALSIFY-RESP-002
+    severity: ERROR
+  empty_completion_refused:
+    description: Zero tokens or only a think block fails by name, on run and serve
+    check: response_contract_3720_tests::FALSIFY-RESP-003
+    severity: ERROR
+  model_digest:
+    description: model_digest equals sha256sum; serve sends x-apr-model-digest
+    check: response_contract_3720_tests::FALSIFY-RESP-004
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-RESP-001
+  rule: Every CliError has the contract kind, status and exit code
+  prediction: the case table over every variant matches kind(), status(), exit_code_value() and envelope()
+  test: every_cli_error_has_the_contract_kind_status_and_exit_code
+  file: crates/apr-cli/src/commands/run_tests_response_contract.rs
+  if_fails: a consumer cannot tell refused from failed, or the envelope re-maps an exit code
+- id: FALSIFY-RESP-002
+  rule: One document on every exit
+  prediction: ok carries status and no error; a run with no result writes the envelope with the model;
+    the stream's final event carries it
+  test: |
+    a_run_that_ended_ok_says_so_and_carries_no_error
+    a_run_that_never_produced_a_result_still_writes_one_document
+    the_stream_final_event_carries_the_envelope
+  file: crates/apr-cli/src/commands/run_tests_response_contract.rs
+  if_fails: a machine consumer reads nothing (or two documents) on a failure
+- id: FALSIFY-RESP-003
+  rule: Empty is not ok
+  prediction: zero tokens and reasoning-only fail as empty_completion (exit 8 / HTTP 422) with the reasoning
+    kept; generated whitespace is 200
+  test: |
+    an_empty_completion_is_a_failure_that_names_why_and_keeps_the_reasoning
+    an_empty_answer_is_a_named_failure_never_200_with_nothing
+    an_unclosed_think_block_is_a_named_failure
+    a_thinking_mode_the_model_cannot_honour_is_refused_by_kind
+  file: crates/aprender-serve/src/api/openai_handlers.rs
+  if_fails: an empty answer reads as success (the #3724 shape)
+- id: FALSIFY-RESP-004
+  rule: The output names what produced it
+  prediction: model_digest of a file containing "abc" is its known sha256 and None for a directory; the
+    run document and serve bodies carry model_digest/apr_version/apr_git_sha; x-apr-model-digest is on
+    every serve response and absent without an identity
+  test: |
+    the_model_digest_is_sha256sum_of_the_file_and_none_for_a_directory
+    the_document_carries_the_model_digest_and_the_apr_build
+    a_completion_is_status_ok_and_names_what_produced_it
+    every_response_carries_the_model_digest_header
+  file: crates/apr-cli/src/commands/run_tests_response_contract.rs
+  if_fails: rmedia cannot gate an asset on the model that produced it
