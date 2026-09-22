@@ -22,9 +22,24 @@ fn test_is_legacy_gguf_quant_q5_0_gh219() {
     assert!(!is_legacy_gguf_quant(6)); // Q5_0 — fixed candle layout, GPU-eligible
 }
 
+/// #3885: this row asserted Q5_1 was gated to CPU, which was true until Q5_1
+/// got a GEMV kernel measured EXACT against the CPU decoder on device (64 rows,
+/// 0.000e0, with the 5th bit and the affine min each planted and proven RED).
+/// It is now the CONVERSE: Q5_1 is GPU-eligible, on the same terms that moved
+/// Q4_1 and Q5_0 above it. The row is re-aimed, not deleted — the property it
+/// guards (a type without a verified kernel must gate to CPU) still needs an
+/// example, and IQ3_XXS below carries it.
 #[test]
 fn test_is_legacy_gguf_quant_q5_1_gh219() {
-    assert!(is_legacy_gguf_quant(7)); // Q5_1 — no GPU kernel → gated
+    assert!(!is_legacy_gguf_quant(7)); // Q5_1 — #3885 GEMV kernel, GPU-eligible
+}
+
+/// The property `test_is_legacy_gguf_quant_q5_1_gh219` used to carry, on a type
+/// that genuinely has no kernel. IQ3_XXS(18) is real and present in the fleet
+/// (`Qwen3.5-0.8B-UD-IQ2_XXS`, 24 tensors), so this is not a hypothetical id.
+#[test]
+fn test_is_legacy_gguf_quant_gates_a_type_with_no_kernel() {
+    assert!(is_legacy_gguf_quant(18)); // IQ3_XXS — no GPU GEMV kernel
 }
 
 #[test]

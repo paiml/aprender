@@ -125,4 +125,72 @@ mod gpu_leg_comparability_tests {
              argmax."
         );
     }
+
+    /// #3899: is the Q4_K GPU path architecture-conditional (llama vs qwen)?
+    ///
+    /// The hypothesis: tinyllama is the fleet's only llama-arch Q4_K model and
+    /// the only one producing GPU gibberish, so the Q4_K GPU path may be right
+    /// for qwen geometry and wrong for llama. If so, a llama Q4_K model must
+    /// diverge from its own CPU leg on ANY prompt, not only degenerate ones -
+    /// a wrong kernel does not become right when the output is coherent.
+    #[test]
+    fn zz_probe_arch_conditional() {
+        use crate::gguf::{
+            MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
+            QuantizedGenerateConfig,
+        };
+        let models = [
+            ("tinyllama/LLAMA", "/home/noah/.apr/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"),
+            ("qwen3-1.7B/QWEN", "/mnt/nvme-raid0/cache/apr-home/models/Qwen3-1.7B-Q4_K_M.gguf"),
+        ];
+        for (label, path) in models {
+            let p = std::path::PathBuf::from(path);
+            if !p.exists() {
+                eprintln!("ARCH {label:18} SKIP: not present");
+                continue;
+            }
+            let Ok(mapped) = MappedGGUFModel::from_path(&p) else {
+                eprintln!("ARCH {label:18} SKIP: map failed");
+                continue;
+            };
+            let arch = mapped.model.architecture().unwrap_or_default();
+            let eos = mapped.model.eos_token_id().unwrap_or(2);
+            // A coherent, un-templated continuation: the regime where the argmax
+            // margin is wide and a real kernel defect cannot hide.
+            let Some(prompt) = mapped.model.encode("The capital of France is") else {
+                continue;
+            };
+            let config = QuantizedGenerateConfig {
+                max_tokens: 192,
+                temperature: 0.0,
+                top_k: 1,
+                stop_tokens: vec![eos],
+                ..Default::default()
+            };
+            let Ok(cm) = OwnedQuantizedModel::from_mapped(&mapped) else { continue };
+            let Ok(cpu) = cm.generate_with_cache(&prompt, &config) else {
+                eprintln!("ARCH {label:18} SKIP: cpu generate failed");
+                continue;
+            };
+            let Ok(gm) = OwnedQuantizedModel::from_mapped(&mapped) else { continue };
+            let Ok(mut cuda) = OwnedQuantizedModelCuda::new(gm, 0) else {
+                eprintln!("ARCH {label:18} SKIP: cuda init failed");
+                continue;
+            };
+            let Ok(gpu) = cuda.generate_gpu_resident(&prompt, &config) else {
+                eprintln!("ARCH {label:18} SKIP: gpu generate failed");
+                continue;
+            };
+            let c = &cpu[prompt.len()..];
+            let g = &gpu[prompt.len()..];
+            let d = c.iter().zip(g.iter()).position(|(a, b)| a != b);
+            eprintln!(
+                "ARCH {label:18} arch={arch:8} cpu={:3} gpu={:3} first_divergence={:?} identical={}",
+                c.len(),
+                g.len(),
+                d,
+                c == g
+            );
+        }
+    }
 }

@@ -84,6 +84,8 @@ impl CudaKernels {
             KernelType::F16Gemv { k, n } => generate_f16_gemv_ptx(*k, *n),
             KernelType::Iq4XsGemv { k, n } => generate_iq4_xs_gemv_ptx(*k, *n),
             KernelType::Iq4NlGemv { k, n } => generate_iq4_nl_gemv_ptx(*k, *n),
+            KernelType::Iq3SGemv { k, n } => generate_iq3_s_gemv_ptx(*k, *n),
+            KernelType::Q5_1Gemv { k, n } => generate_q5_1_gemv_ptx(*k, *n),
             _ => return None,
         };
         Some(ptx)

@@ -31,6 +31,8 @@ mod gemv_entry_name_tests_3477 {
             KernelType::F16Gemv { k, n },
             KernelType::Iq4XsGemv { k, n },
             KernelType::Iq4NlGemv { k, n },
+            KernelType::Iq3SGemv { k, n },
+            KernelType::Q5_1Gemv { k, n },
         ]
     }
 
@@ -185,11 +187,11 @@ mod gemv_entry_name_tests_3477 {
     /// it fell through to Q4_K and the bytes were read as a different scheme.
     ///
     /// These are not hypothetical: all were measured in lambda's inventory.
-    /// Q5_1 sits in `Qwen2.5-0.5B-Instruct-IQ4_XS`, BF16 in `Qwen3-0.6B-BF16`,
+    /// BF16 sits in `Qwen3-0.6B-BF16`,
     /// IQ2_XXS/IQ3_XXS/Q2_K in `Qwen3.5-0.8B-UD-IQ2_XXS`, IQ3_S in two more.
     ///
-    /// #3869: IQ4_NL was on this list and has been REMOVED because it now has a
-    /// kernel. It is not deleted from the guard - it moved to
+    /// #3869/#3884/#3885: IQ4_NL, IQ3_S and Q5_1 were on this list and have
+    /// been REMOVED because they now have kernels. It is not deleted from the guard - it moved to
     /// `iq4_nl_has_a_kernel_but_is_not_admitted_until_it_is_measured` below,
     /// which asserts the other half. A row that outlives its premise is
     /// converted, never dropped.
@@ -197,12 +199,10 @@ mod gemv_entry_name_tests_3477 {
     fn the_types_found_in_the_wild_without_kernels_resolve_to_none() {
         use crate::cuda::types::WeightQuantType;
         let census: &[(u32, &str)] = &[
-            (7, "Q5_1"),
             (10, "Q2_K"),
             (11, "Q3_K"),
             (16, "IQ2_XXS"),
             (18, "IQ3_XXS"),
-            (21, "IQ3_S"),
             (22, "IQ2_S"),
             (30, "BF16"),
         ];
@@ -265,6 +265,217 @@ mod gemv_entry_name_tests_3477 {
             "#3869: the kernel was measured EXACT against the CPU decoder on device \
              (iq4_nl_device_ab_tests), so IQ4_NL is GPU-eligible"
         );
+    }
+
+    /// #3884: IQ3_S is admitted BECAUSE its kernel was measured.
+    ///
+    /// This row said, in its own body, to flip the admission assertion and open
+    /// the whitelist in the same commit once the device A/B passed. It has:
+    ///
+    /// ```text
+    /// #3884 A/B: 48 rows, worst relative disagreement 0.000e0
+    /// ```
+    ///
+    /// EXACT against `iq_parallel_matvec` on the same bytes, RTX 4090 sm_89, at
+    /// `in_dim = 512` so the row stride spans two super-blocks. Proved able to
+    /// fail first, on the three mechanisms this format actually has:
+    ///   scale nibble inverted    -> row 13  GPU 9311   vs CPU 1209
+    ///   9th grid bit from 2l+1   -> row 13  GPU 11085  vs CPU 1209
+    ///   sign bits ignored        -> row 1   GPU -17453 vs CPU 1523
+    #[test]
+    fn iq3_s_is_admitted_because_its_kernel_was_measured() {
+        use crate::cuda::types::{GemvKernel, WeightQuantType};
+
+        assert_eq!(
+            WeightQuantType::from_ggml_type(21),
+            Some(WeightQuantType::IQ3S)
+        );
+        assert_eq!(WeightQuantType::IQ3S.bytes_per_superblock(), 110);
+        let nsb = 2560 * (9216 / 256);
+        assert_eq!(
+            crate::cuda::types::BoundWeight::bind(
+                0x1000,
+                nsb * 110,
+                WeightQuantType::IQ3S,
+                2560,
+                9216
+            )
+            .kernel(),
+            GemvKernel::IQ3S
+        );
+        // 110 per 256 elements is unique, so unlike IQ4_NL this type IS safe in
+        // the size ladder. Asserted rather than assumed.
+        assert_eq!(
+            WeightQuantType::from_size(nsb * 110, 2560, 9216),
+            Some(WeightQuantType::IQ3S),
+            "110 bytes per 256 elements collides with nothing (144 is Q4_K/Q4_0/IQ4_NL, \
+             176 is Q5_K/Q5_0), so size inference may name IQ3_S"
+        );
+        assert!(
+            !crate::gguf::gpu_unsupported_quant_qtype(21),
+            "#3884: the kernel was measured EXACT against the CPU decoder on device \
+             (iq4_nl_device_ab_tests), so IQ3_S is GPU-eligible"
+        );
+    }
+
+    /// #3885: Q5_1 is admitted BECAUSE its kernel was measured.
+    ///
+    /// ```text
+    /// #3885 A/B: 64 rows, worst relative disagreement 0.000e0
+    /// ```
+    ///
+    /// EXACT against `dequantize_q5_1` + an explicit row-major dot, RTX 4090
+    /// sm_89, `in_dim = 256` so each row spans 8 blocks. Proved able to fail
+    /// first, on the two mechanisms that define this format plus one index:
+    ///   5th bit dropped (i.e. Q4_1)  -> row 41  GPU 288   vs CPU -24
+    ///   affine min m dropped         -> row 34  GPU -13.5 vs CPU -9
+    ///   qh bit index missing +16     -> row 34  GPU -585  vs CPU -9
+    #[test]
+    fn q5_1_is_admitted_because_its_kernel_was_measured() {
+        use crate::cuda::types::{GemvKernel, WeightQuantType};
+
+        assert_eq!(
+            WeightQuantType::from_ggml_type(7),
+            Some(WeightQuantType::Q5_1)
+        );
+        assert_eq!(WeightQuantType::Q5_1.bytes_per_block(), 24);
+        let nb = 2560 * (9216 / 32);
+        assert_eq!(
+            crate::cuda::types::BoundWeight::bind(
+                0x1000,
+                nb * 24,
+                WeightQuantType::Q5_1,
+                2560,
+                9216
+            )
+            .kernel(),
+            GemvKernel::Q5_1
+        );
+        // 192 bytes per 256 elements is unique (144 is Q4_K/Q4_0/IQ4_NL, 176 is
+        // Q5_K/Q5_0), so size inference MAY name Q5_1 - the opposite of IQ4_NL.
+        assert_eq!(
+            WeightQuantType::from_size(nb * 24, 2560, 9216),
+            Some(WeightQuantType::Q5_1)
+        );
+        assert!(
+            !crate::gguf::gpu_unsupported_quant_qtype(7),
+            "#3885: the kernel was measured EXACT against the CPU decoder on device \
+             (iq4_nl_device_ab_tests), so Q5_1 is GPU-eligible"
+        );
+    }
+
+    /// The Q5_1 kernel's INDEX MATH in Rust, against the verified CPU decoder.
+    ///
+    /// Two things this pins that a port gets wrong. The 5TH BIT: byte `j`'s low
+    /// nibble takes bit `j` of `qh` and its high nibble bit `j + 16`, each worth
+    /// 16 quantization levels - that bit is the entire difference between Q5_1
+    /// and Q4_1. And the OFFSET: `w = q * d + m`, the only affine
+    /// dequantization here, so dropping `m` yields the right spread around the
+    /// wrong centre and every row is off by a constant.
+    #[test]
+    fn the_q5_1_thread_mapping_reproduces_the_cpu_decoder() {
+        let mut block = [0u8; 24];
+        let mut x: u32 = 0x0BAD_C0DE;
+        for b in block.iter_mut() {
+            x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            *b = (x >> 24) as u8;
+        }
+        block[0] = 0x00;
+        block[1] = 0x3e; // d = 1.5
+        block[2] = 0x00;
+        block[3] = 0xb4; // m = -0.25
+
+        let expected = crate::quantize::dequantize_q5_1(&block).expect("one whole block");
+
+        let d = f32::from(half_from_le(block[0], block[1]));
+        let m = f32::from(half_from_le(block[2], block[3]));
+        let qh = u32::from_le_bytes([block[4], block[5], block[6], block[7]]);
+        let mut got = [0f32; 32];
+        for tid in 0..32usize {
+            let jlow = tid & 15;
+            let jhalf = tid >> 4;
+            let byte = u32::from(block[8 + jlow]);
+            let nib = (byte >> (4 * jhalf)) & 0xf;
+            let hb = (qh >> (jlow + 16 * jhalf)) & 1;
+            #[allow(clippy::cast_precision_loss)]
+            let q = (nib | (hb << 4)) as f32;
+            got[tid] = q * d + m;
+        }
+
+        for (i, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
+            assert!(
+                (g - e).abs() <= 1e-5,
+                "element {i}: kernel mapping {g}, CPU decoder {e}"
+            );
+        }
+        assert!(
+            (0..32).any(|i| (qh >> i) & 1 != 0),
+            "this fixture never sets a 5th bit, so it cannot see a 5th-bit bug"
+        );
+    }
+
+    /// The IQ3_S kernel's INDEX MATH in Rust, against the verified CPU decoder.
+    ///
+    /// The mapping a port gets wrong here is the SCALE PAIRING: ggml walks
+    /// `ib32` in steps of 2 with an inner `half`, indexing `scales[ib32/2]` and
+    /// taking the low nibble when `half == 0`. Flattened to one `ib` per warp
+    /// lane that is `scales[ib >> 1]`, low nibble when `ib & 1 == 0` — one byte
+    /// serving two consecutive sub-blocks. Getting it wrong swaps the two scales
+    /// within every pair and still produces plausible magnitudes.
+    #[test]
+    fn the_iq3_s_thread_mapping_reproduces_the_cpu_decoder() {
+        use crate::quantize::iq3_s::{
+            dequantize_iq3_s_block, IQ3_S_BLOCK_BYTES, IQ3_S_BLOCK_ELEMS,
+        };
+        use crate::quantize::iq_grids::IQ3S_GRID;
+
+        let mut block = [0u8; IQ3_S_BLOCK_BYTES];
+        let mut x: u32 = 0x1234_5678;
+        for b in block.iter_mut() {
+            x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            *b = (x >> 24) as u8;
+        }
+        block[0] = 0x00;
+        block[1] = 0x3c; // f16 1.0
+
+        let mut expected = [0f32; IQ3_S_BLOCK_ELEMS];
+        dequantize_iq3_s_block(&block, &mut expected);
+
+        // ---- exactly what the PTX does, one lane at a time ----
+        let d = f32::from(half_from_le(block[0], block[1]));
+        let mut got = [0f32; IQ3_S_BLOCK_ELEMS];
+        for tid in 0..32usize {
+            let ib = tid >> 2;
+            let l = tid & 3;
+            let sc = u32::from(block[106 + (ib >> 1)]);
+            let v = (sc >> (4 * (ib & 1))) & 0xf;
+            #[allow(clippy::cast_precision_loss)]
+            let db = d * (1.0 + 2.0 * (v as f32));
+            let qh = u32::from(block[66 + ib]);
+            let i1 = usize::from(block[2 + 8 * ib + 2 * l]) | (((qh >> (2 * l)) & 1) << 8) as usize;
+            let i2 =
+                usize::from(block[2 + 8 * ib + 2 * l + 1]) | (((qh >> (2 * l + 1)) & 1) << 8) as usize;
+            let (g1, g2) = (IQ3S_GRID[i1], IQ3S_GRID[i2]);
+            let sb = u32::from(block[74 + 4 * ib + l]);
+            let col0 = 32 * ib + 8 * l;
+            for j in 0..4usize {
+                #[allow(clippy::cast_precision_loss)]
+                let m1 = ((g1 >> (8 * j)) & 0xff) as f32;
+                #[allow(clippy::cast_precision_loss)]
+                let m2 = ((g2 >> (8 * j)) & 0xff) as f32;
+                let s1 = if (sb >> j) & 1 != 0 { -1.0 } else { 1.0 };
+                let s2 = if (sb >> (j + 4)) & 1 != 0 { -1.0 } else { 1.0 };
+                got[col0 + j] = db * m1 * s1;
+                got[col0 + j + 4] = db * m2 * s2;
+            }
+        }
+
+        for (i, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
+            assert!(
+                (g - e).abs() <= 1e-6,
+                "element {i}: kernel mapping {g}, CPU decoder {e}"
+            );
+        }
     }
 
     /// The IQ4_NL kernel's INDEX MATH, executed in Rust exactly as the PTX

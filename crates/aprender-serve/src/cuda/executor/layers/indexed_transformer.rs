@@ -98,7 +98,9 @@ impl CudaExecutor {
             | WeightQuantType::F32
             | WeightQuantType::F16
             | WeightQuantType::IQ4XS
-            | WeightQuantType::IQ4NL => {
+            | WeightQuantType::IQ4NL
+            | WeightQuantType::IQ3S
+            | WeightQuantType::Q5_1 => {
                 return Err(GpuError::InvalidParameter(format!(
                     "PMAT-232: V qtype {:?} not supported in indexed async path (use workspace path)",
                     layer_weights.attn_v_qtype
