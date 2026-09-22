@@ -167,7 +167,7 @@ pub fn run_apr_inference(
     let gen_config = QuantizedGenerateConfig {
         max_tokens,
         temperature,
-        top_k: if temperature == 0.0 { 1 } else { 40 },
+        top_k: crate::infer::sampling_top_k(temperature, None),
         trace: trace_config.is_some(),
         ..Default::default()
     };

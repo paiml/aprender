@@ -46,6 +46,16 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+/// `apr run --top-k`'s default: realizar's `DEFAULT_TOP_K`, the top-k `apr chat` and
+/// `apr serve` also sample with (#3754). It used to be 1, which every decode loop reads as
+/// greedy, so `--temperature 0.8` alone decoded greedily and said nothing. Greedy is
+/// unchanged: it comes from `--temperature 0` (the default), or an explicit `--top-k 1`.
+#[cfg(feature = "inference")]
+pub(crate) const DEFAULT_TOP_K: usize = realizar::infer::DEFAULT_TOP_K;
+/// Without `inference` there is no sampler: `--top-k` parses and nothing reads it.
+#[cfg(not(feature = "inference"))]
+pub(crate) const DEFAULT_TOP_K: usize = 1;
+
 /// Model source types
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ModelSource {
@@ -199,7 +209,7 @@ impl Default for RunOptions {
             trace_level: "basic".to_string(),
             profile: false,
             temperature: 0.0,
-            top_k: 1,
+            top_k: DEFAULT_TOP_K,
             top_p: None,
             seed: 299_792_458,
             repeat_penalty: 1.0,

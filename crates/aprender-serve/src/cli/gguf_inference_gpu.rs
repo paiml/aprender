@@ -107,7 +107,7 @@ pub fn run_gguf_inference_gpu(
     let gen_config = QuantizedGenerateConfig {
         max_tokens,
         temperature,
-        top_k: if temperature <= 0.01 { 1 } else { 40 },
+        top_k: if temperature <= 0.01 { 1 } else { crate::infer::DEFAULT_TOP_K },
         stop_tokens,
         trace: false,
             ..Default::default()
@@ -217,7 +217,7 @@ fn run_gguf_cpu_fallback_for_unsupported_quant(
     let gen_config = QuantizedGenerateConfig {
         max_tokens,
         temperature,
-        top_k: if temperature <= 0.01 { 1 } else { 40 },
+        top_k: if temperature <= 0.01 { 1 } else { crate::infer::DEFAULT_TOP_K },
         stop_tokens,
         trace: false,
         ..Default::default()

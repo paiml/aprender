@@ -89,6 +89,26 @@ pub struct InferenceConfig {
     pub force_chat_template: bool,
 }
 
+/// The top-k a SAMPLED generation uses when the caller names none (#3754).
+///
+/// `apr run` defaulted `--top-k` to 1, and every decode loop treats `top_k == 1` as greedy,
+/// so `apr run --temperature 0.8` decoded greedily and said nothing: a sampling flag that did
+/// nothing. `apr chat` and `apr serve` already sampled with 40, which is also the llama.cpp
+/// and Ollama default. This is that number, declared once. Greedy is still
+/// `temperature == 0.0` or an explicit `top_k == 1`; `0` disables the filter.
+pub const DEFAULT_TOP_K: usize = 40;
+
+/// The top-k a generation runs with: `1` (greedy) at temperature 0, else the caller's value,
+/// else [`DEFAULT_TOP_K`].
+#[must_use]
+pub fn sampling_top_k(temperature: f32, requested: Option<usize>) -> usize {
+    if temperature == 0.0 {
+        1
+    } else {
+        requested.unwrap_or(DEFAULT_TOP_K)
+    }
+}
+
 impl InferenceConfig {
     /// Create a new inference config for a model file
     #[must_use]
@@ -99,6 +119,9 @@ impl InferenceConfig {
             input_tokens: None,
             max_tokens: 32,
             temperature: 0.0, // Greedy by default
+            // PMAT-823: a default config forwards the byte-identical greedy generation
+            // config, top_k 1 included. A caller that samples names its top-k:
+            // `apr run` sends `--top-k` (default DEFAULT_TOP_K), others use `sampling_top_k`.
             top_k: 1,
             // PMAT-823: defaults chosen so a config with no sampling flags
             // forwards to the SAME greedy QuantizedGenerateConfig as before
@@ -594,3 +617,7 @@ pub mod run_report;
 #[cfg(test)]
 #[path = "tests_sampling_3760.rs"]
 mod tests_sampling_3760;
+// #3754: a sampling flag given alone samples (DEFAULT_TOP_K).
+#[cfg(test)]
+#[path = "tests_sampling_default_3754.rs"]
+mod tests_sampling_default_3754;

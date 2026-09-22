@@ -165,11 +165,8 @@ fn reject_unsupported_ignore_eos(
 /// previously hardcoded `if temperature == 0.0 { 1 } else { 40 }`, silently DROPPING
 /// request.top_k — drift from batch.rs, which honors it.
 fn resolve_chat_top_k(temperature: f32, requested: Option<usize>) -> usize {
-    if temperature == 0.0 {
-        1
-    } else {
-        requested.unwrap_or(40)
-    }
+    // #3754: one declaration of the sampling default, shared with `apr run`/`apr chat`.
+    crate::infer::sampling_top_k(temperature, requested)
 }
 
 #[cfg(test)]

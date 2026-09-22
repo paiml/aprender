@@ -234,7 +234,7 @@ impl ChatSession {
             let gen_config = QuantizedGenerateConfig {
                 max_tokens: config.max_tokens,
                 temperature: config.temperature,
-                top_k: 40,
+                top_k: realizar::infer::sampling_top_k(config.temperature, None),
                 stop_tokens,
                 trace: config.trace,
                 ..Default::default()
@@ -395,7 +395,7 @@ impl ChatSession {
                 max_tokens: config.max_tokens,
                 temperature: config.temperature,
                 top_p: config.top_p,
-                top_k: if config.temperature == 0.0 { 1 } else { 40 },
+                top_k: realizar::infer::sampling_top_k(config.temperature, None),
                 trace: config.trace,
                 ..Default::default()
             };
@@ -480,7 +480,7 @@ impl ChatSession {
             let gen_config = QuantizedGenerateConfig {
                 max_tokens: practical_max,
                 temperature: config.temperature,
-                top_k: 40,
+                top_k: realizar::infer::sampling_top_k(config.temperature, None),
                 stop_tokens,
                 trace: config.trace,
                 ..Default::default()

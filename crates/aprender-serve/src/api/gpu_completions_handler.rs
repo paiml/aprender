@@ -572,7 +572,7 @@ async fn completions_inner(
         let config = QuantizedGenerateConfig {
             max_tokens: max_tokens.min(4096),
             temperature,
-            top_k: if temperature == 0.0 { 1 } else { 40 },
+            top_k: crate::infer::sampling_top_k(temperature, None),
             stop_tokens: vec![eos],
             ..Default::default()
         };

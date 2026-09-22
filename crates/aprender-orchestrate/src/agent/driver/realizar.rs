@@ -70,7 +70,9 @@ impl LlmDriver for RealizarDriver {
             input_tokens: None,
             max_tokens: request.max_tokens as usize,
             temperature: request.temperature,
-            top_k: 0,
+            // #3754: the default `apr run`, `apr chat` and `apr serve` sample with. This
+            // driver used 0 (no filter) while `apr code`'s apr-serve driver got serve's 40.
+            top_k: realizar::infer::sampling_top_k(request.temperature, None),
             // PMAT-823: new sampling fields default to greedy/disabled so this
             // agent driver's behavior is unchanged (it only exposes temperature).
             top_p: None,
