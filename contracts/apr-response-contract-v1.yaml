@@ -77,6 +77,28 @@ equations:
     postconditions:
     - sha256sum of the file equals the reported digest
     lean_theorem: Theorems.Model_Identity
+  seed_determinism:
+    formula: |
+      same(model, prompt, seed, sampling) on one server/backend  ==>  same output bytes
+      D.deterministic == true  unless the backend cannot promise it, in which case
+      D.deterministic == false AND D.nondeterminism_reason names why
+    domain: apr run --json; apr serve completions
+    codomain: whether a consumer may treat a repeat as a re-derivation
+    invariants:
+    - Every sampler a request reaches draws from an RNG seeded by that request (no process entropy)
+    - A backend that cannot seed (wgpu GpuModel) or that batches concurrent requests says so
+    preconditions:
+    - the same model file (model_digest), the same apr build, the same backend
+    postconditions:
+    - two runs of the same seeded request are byte-identical, or the response says it may not be
+    lean_theorem: Theorems.Seed_Determinism
+    notes: |
+      Measured on lambda RTX 4090 (apr 0.69.0 3f0cdf588), sampling ENGAGED (sampled != greedy on
+      every row): apr run and apr serve, greedy and temperature 0.7 / top_k 40 / top_p 0.9 / seed 42,
+      Qwen3-8B and qwen2.5-coder-1.5b, twice each: byte-identical. Before the fix three samplers used
+      process entropy: the CUDA resident decode loop, the logprobs loop and the continuous-batching
+      sampler. apr run's --top-k defaults to 1 (greedy), so a determinism check that passes only
+      --temperature is vacuous; the case row checks sampled != greedy.
 proof_obligations:
 - id: RESP-INV-001
   type: invariant
@@ -98,6 +120,11 @@ proof_obligations:
   property: the reported digest is sha256sum of the loaded file
   formal: model_digest(path) == sha256sum(path) for a file; None for a directory
   applies_to: model_identity
+- id: RESP-INV-005
+  type: invariant
+  property: a seeded request is reproducible or says it is not
+  formal: deterministic(D) ==> repeat(r) == D; NOT deterministic(D) ==> nondeterminism_reason(D) != None
+  applies_to: seed_determinism
 enforcement:
   cli_error_envelope:
     description: Every CliError variant maps to a kind, a status and its exit code
@@ -114,6 +141,10 @@ enforcement:
   model_digest:
     description: model_digest equals sha256sum; serve sends x-apr-model-digest
     check: response_contract_3720_tests::FALSIFY-RESP-004
+    severity: ERROR
+  seed_determinism:
+    description: The same seed draws the same tokens; a server that cannot promise it says why
+    check: pmat764_select_batched_token_tests::FALSIFY-RESP-005
     severity: ERROR
 falsification_tests:
 - id: FALSIFY-RESP-001
@@ -155,3 +186,13 @@ falsification_tests:
     every_response_carries_the_model_digest_header
   file: crates/apr-cli/src/commands/run_tests_response_contract.rs
   if_fails: rmedia cannot gate an asset on the model that produced it
+- id: FALSIFY-RESP-005
+  rule: A seeded request is reproducible, or says it is not
+  prediction: the batched sampler's draws from one seed repeat and differ from another seed; a default
+    server reports deterministic true, one admitting several requests at once reports false with a reason;
+    on hardware the same seeded request twice is byte-identical with sampling engaged
+  test: |
+    the_same_seed_draws_the_same_tokens_and_another_seed_does_not
+    a_completion_says_whether_a_repeat_gives_the_same_bytes
+  file: crates/aprender-serve/src/gguf/cuda/generate_batched_streaming.rs
+  if_fails: a consumer re-derives an asset and gets different bytes with nothing saying it might
