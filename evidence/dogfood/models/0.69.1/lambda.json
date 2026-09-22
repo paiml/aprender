@@ -2,13 +2,13 @@
   "schema": "apr-model-ladder-receipt/v2",
   "host": "lambda",
   "version": "0.69.1",
-  "sha": "87d9d5484",
-  "apr_sha": "87d9d54847a4971ffe7d3515782452bd609162ba",
+  "sha": "ab4ba54ec",
+  "apr_sha": "ab4ba54ecb41e5f20d508f20fcbf2ddf13aa5360",
   "isa": "x86_64",
   "gpu": "NVIDIA GeForce RTX 4090",
   "cc": "8.9",
-  "date": "2026-09-22T16:52Z",
-  "apr_version": "apr 0.69.1 (87d9d5484)",
+  "date": "2026-09-22T19:22Z",
+  "apr_version": "apr 0.69.1 (ab4ba54ec)",
   "executed": 26,
   "red": 10,
   "inventory": [
@@ -178,6 +178,71 @@
         "skipped": false,
         "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen2': all 5 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "339 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=32768)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ollama"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-1.5b-instruct-q4_k_m.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cpu": {
           "ran": true,
@@ -303,6 +368,71 @@
         "skipped": false,
         "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen3': all 5 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "310 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen3, rope_theta=1000000, max_pos=40960)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ollama"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3-1.7B-Q4_K_M.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cpu": {
           "ran": true,
@@ -428,6 +558,71 @@
         "skipped": false,
         "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen3': all 5 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "399 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen3, rope_theta=1000000, max_pos=40960)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ollama"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3-8B-Q4_K_M.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cpu": {
           "ran": true,
@@ -553,6 +748,71 @@
         "skipped": false,
         "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen35': all 4 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "320 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen35, rope_theta=none, max_pos=none)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-0.8B-Q4_K_M.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cpu": {
           "ran": true,
@@ -594,12 +854,12 @@
                   "ok": true
                 },
                 "/v1/completions|stream=false": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 },
                 "/v1/completions|stream=true": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 }
               }
             }
@@ -645,12 +905,12 @@
                   "ok": true
                 },
                 "/v1/completions|stream=false": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 },
                 "/v1/completions|stream=true": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 }
               }
             }
@@ -678,6 +938,71 @@
         "skipped": false,
         "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen35': all 4 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "320 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen35, rope_theta=none, max_pos=none)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-2B-Q4_K_M.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cpu": {
           "ran": true,
@@ -719,12 +1044,12 @@
                   "ok": true
                 },
                 "/v1/completions|stream=false": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 },
                 "/v1/completions|stream=true": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 }
               }
             }
@@ -770,12 +1095,12 @@
                   "ok": true
                 },
                 "/v1/completions|stream=false": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 },
                 "/v1/completions|stream=true": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 }
               }
             }
@@ -803,6 +1128,71 @@
         "skipped": false,
         "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen35': all 4 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "426 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen35, rope_theta=none, max_pos=none)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-4B-Q4_K_M.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cpu": {
           "ran": true,
@@ -844,12 +1234,12 @@
                   "ok": true
                 },
                 "/v1/completions|stream=false": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 },
                 "/v1/completions|stream=true": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 }
               }
             }
@@ -895,12 +1285,12 @@
                   "ok": true
                 },
                 "/v1/completions|stream=false": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 },
                 "/v1/completions|stream=true": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 }
               }
             }
@@ -928,6 +1318,71 @@
         "skipped": false,
         "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen35': all 4 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "427 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen35, rope_theta=none, max_pos=none)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-9B-Q4_K_M.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cpu": {
           "ran": true,
@@ -969,12 +1424,12 @@
                   "ok": true
                 },
                 "/v1/completions|stream=false": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 },
                 "/v1/completions|stream=true": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 }
               }
             }
@@ -1020,12 +1475,12 @@
                   "ok": true
                 },
                 "/v1/completions|stream=false": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 },
                 "/v1/completions|stream=true": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 }
               }
             }
@@ -1053,6 +1508,71 @@
         "skipped": false,
         "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen35': all 4 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "851 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen35, rope_theta=none, max_pos=none)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-27B-Q4_K_M.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cpu": {
           "ran": true,
@@ -1094,12 +1614,12 @@
                   "ok": true
                 },
                 "/v1/completions|stream=false": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 },
                 "/v1/completions|stream=true": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 }
               }
             }
@@ -1145,12 +1665,12 @@
                   "ok": true
                 },
                 "/v1/completions|stream=false": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 },
                 "/v1/completions|stream=true": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 }
               }
             }
@@ -1178,6 +1698,74 @@
         "skipped": false,
         "message": "golden_output could not run: Validation failed: CPU generation failed: Operation 'owned_fused_matmul' not supported: Fused matmul only supports F32/BF16/F16/Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K and the "
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen2': all 5 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": false,
+          "skipped": false,
+          "message": "117 contract violations in 117 tensors: blk.0.ffn_gate.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.ffn_gate.weight' is IQ4_NL (ggml type 20): aprender-core has no d"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=32768)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": false,
+          "skipped": false,
+          "message": "golden_output could not run: Validation failed: CPU generation failed: Operation 'owned_fused_matmul' not supported: Fused matmul only supports F32/BF16/F16/Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K and the "
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ollama"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen2.5-0.5B-Instruct-IQ3_M.json"
+        }
+      },
+      "gates_failed": [
+        "golden_output",
+        "tensor_contract"
+      ],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cuda": {
           "ran": false,
@@ -1252,6 +1840,74 @@
         "skipped": false,
         "message": "golden_output could not run: Validation failed: CPU generation failed: Operation 'owned_fused_matmul' not supported: Fused matmul only supports F32/BF16/F16/Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K and the "
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen2': all 5 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": false,
+          "skipped": false,
+          "message": "144 contract violations in 144 tensors: blk.0.ffn_down.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.ffn_down.weight' is IQ4_XS (ggml type 23): aprender-core has no d"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=32768)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": false,
+          "skipped": false,
+          "message": "golden_output could not run: Validation failed: CPU generation failed: Operation 'owned_fused_matmul' not supported: Fused matmul only supports F32/BF16/F16/Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K and the "
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ollama"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen2.5-0.5B-Instruct-IQ4_XS.json"
+        }
+      },
+      "gates_failed": [
+        "golden_output",
+        "tensor_contract"
+      ],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cuda": {
           "ran": false,
@@ -1326,6 +1982,71 @@
         "skipped": false,
         "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen2': all 5 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "290 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=32768)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ollama"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen2.5-0.5B-Instruct-f16.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cuda": {
           "ran": true,
@@ -1400,6 +2121,73 @@
         "skipped": true,
         "message": "Skipped: Skipped due to capability match failure"
       },
+      "gates": {
+        "capability_match": {
+          "passed": false,
+          "skipped": false,
+          "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run "
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "579 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen3moe, rope_theta=none, max_pos=none)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: The GPU backend declined this architecture; the CPU forward carries the report"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: The GPU backend declined this architecture; the CPU forward carries the report"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: The GPU backend declined this architecture; the CPU forward carries the report"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.json"
+        }
+      },
+      "gates_failed": [
+        "capability_match"
+      ],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cuda": {
           "ran": false,
@@ -1474,6 +2262,73 @@
         "skipped": true,
         "message": "Skipped: Skipped due to capability match failure"
       },
+      "gates": {
+        "capability_match": {
+          "passed": false,
+          "skipped": false,
+          "message": "this build has no CUDA forward for architecture 'qwen3moe' (canonical 'qwen3_moe'): the mixture-of-experts GPU path is #3714 and lands in 0.70.0. 0.69.1 runs this architecture on the CPU only. Re-run "
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "579 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen3moe, rope_theta=none, max_pos=none)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: The GPU backend declined this architecture; the CPU forward carries the report"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: The GPU backend declined this architecture; the CPU forward carries the report"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: The GPU backend declined this architecture; the CPU forward carries the report"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.json"
+        }
+      },
+      "gates_failed": [
+        "capability_match"
+      ],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cuda": {
           "ran": false,
@@ -1548,6 +2403,74 @@
         "skipped": false,
         "message": "golden_output_thinking_on: think block unclosed within 2048 tokens (the model was still reasoning at the budget; 8901 chars generated, no answer was reached). This is not an empty answer \u2014 raise nothi"
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen35': all 4 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": false,
+          "skipped": false,
+          "message": "126 contract violations in 126 tensors: blk.0.attn_gate.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.attn_gate.weight' is IQ4_XS (ggml type 23): aprender-core has no"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen35, rope_theta=none, max_pos=none)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": false,
+          "skipped": false,
+          "message": "golden_output_thinking_on: think block unclosed within 2048 tokens (the model was still reasoning at the budget; 8901 chars generated, no answer was reached). This is not an empty answer \u2014 raise nothi"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-0.8B-IQ4_XS.json"
+        }
+      },
+      "gates_failed": [
+        "golden_output",
+        "tensor_contract"
+      ],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cuda": {
           "ran": true,
@@ -1589,12 +2512,12 @@
                   "ok": true
                 },
                 "/v1/completions|stream=false": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 },
                 "/v1/completions|stream=true": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 }
               }
             }
@@ -1622,6 +2545,74 @@
         "skipped": true,
         "message": "Skipped: Skipped due to capability match failure"
       },
+      "gates": {
+        "capability_match": {
+          "passed": false,
+          "skipped": false,
+          "message": "Architecture 'qwen35': tensor 'blk.0.attn_gate.weight' has GGML type 18, which has no verified GPU GEMV kernel. The GPU weight upload would decode it as Q4_K and produce garbage logits (PMAT-781/783/7"
+        },
+        "tensor_contract": {
+          "passed": false,
+          "skipped": false,
+          "message": "129 contract violations in 129 tensors: blk.0.attn_gate.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.attn_gate.weight' is IQ3_XXS (ggml type 18): aprender-core has n"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen35, rope_theta=none, max_pos=none)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-0.8B-UD-IQ2_XXS.json"
+        }
+      },
+      "gates_failed": [
+        "capability_match",
+        "tensor_contract"
+      ],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cuda": {
           "ran": false,
@@ -1663,12 +2654,12 @@
                   "ok": true
                 },
                 "/v1/completions|stream=false": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 },
                 "/v1/completions|stream=true": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 }
               }
             }
@@ -1696,6 +2687,74 @@
         "skipped": true,
         "message": "Skipped: Skipped due to capability match failure"
       },
+      "gates": {
+        "capability_match": {
+          "passed": false,
+          "skipped": false,
+          "message": "Architecture 'qwen35moe' uses SSM/Gated Delta Net layers (detected tensor 'blk.0.ssm_a'). There is no CPU or GPU forward for architecture 'qwen35moe' with SSM tensors. Tracking issues: #3090 (GPU) and"
+        },
+        "tensor_contract": {
+          "passed": false,
+          "skipped": false,
+          "message": "120 contract violations in 120 tensors: blk.0.ffn_down_exps.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.0.ffn_down_exps.weight' is IQ4_XS (ggml type 23): aprender-cor"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen35moe, rope_theta=none, max_pos=none)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped due to capability match failure"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-35B-A3B-UD-IQ4_XS.json"
+        }
+      },
+      "gates_failed": [
+        "capability_match",
+        "tensor_contract"
+      ],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cuda": {
           "ran": false,
@@ -1718,7 +2777,7 @@
             },
             "serve": {
               "probed": false,
-              "why": "apr serve did not answer /health within 2s (log: /tmp/tmp.jXCiajY9os/serve-inv:Qwen3.5-35B-A3B-UD-IQ4_XS.gguf-cuda.log)",
+              "why": "apr serve did not answer /health within 2s (log: /tmp/tmp.gg19yYAFYi/serve-inv:Qwen3.5-35B-A3B-UD-IQ4_XS.gguf-cuda.log)",
               "teardown": "clean",
               "routes": {}
             }
@@ -1746,6 +2805,73 @@
         "skipped": false,
         "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen35': all 4 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": false,
+          "skipped": false,
+          "message": "10 contract violations in 10 tensors: blk.12.ffn_gate.weight: tensor data could not be read: Invalid model format: GGUF tensor 'blk.12.ffn_gate.weight' is IQ4_XS (ggml type 23): aprender-core has no d"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen35, rope_theta=none, max_pos=none)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed through the runtime entry point (served by GPU: the dispatch reported used_gpu=true)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.5-4B-UD-Q4_K_XL.json"
+        }
+      },
+      "gates_failed": [
+        "tensor_contract"
+      ],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cuda": {
           "ran": true,
@@ -1787,12 +2913,12 @@
                   "ok": true
                 },
                 "/v1/completions|stream=false": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 },
                 "/v1/completions|stream=true": {
-                  "http": 503,
-                  "ok": false
+                  "http": 200,
+                  "ok": true
                 }
               }
             }
@@ -1820,6 +2946,71 @@
         "skipped": false,
         "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen2': all 5 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "291 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=32768)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ollama"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-0.5b-instruct-q4_k_m.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cuda": {
           "ran": true,
@@ -1894,6 +3085,71 @@
         "skipped": false,
         "message": "3 golden test cases passed (GPU leg SKIPPED: the dense GPU leg judges GGUF only)"
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Non-GGUF format \u2014 capability check not applicable"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "291 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=32768)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg SKIPPED: the dense GPU leg judges GGUF only)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Non-GGUF format (F32/F16 lacks fused kernels for Ollama parity)"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-0.5b-instruct.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cuda": {
           "ran": false,
@@ -1968,6 +3224,71 @@
         "skipped": false,
         "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen2': all 5 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "339 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=32768)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ollama"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-1.5b-instruct-q4_k_m.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cuda": {
           "ran": true,
@@ -2042,6 +3363,71 @@
         "skipped": false,
         "message": "3 golden test cases passed (GPU leg SKIPPED: the dense GPU leg judges GGUF only)"
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Non-GGUF format \u2014 capability check not applicable"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "339 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=32768)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg SKIPPED: the dense GPU leg judges GGUF only)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Non-GGUF format (F32/F16 lacks fused kernels for Ollama parity)"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-1.5b-instruct-q4k-v2.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cuda": {
           "ran": true,
@@ -2116,6 +3502,71 @@
         "skipped": false,
         "message": "3 golden test cases passed (GPU leg SKIPPED: the dense GPU leg judges GGUF only)"
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Non-GGUF format \u2014 capability check not applicable"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "339 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=32768)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg SKIPPED: the dense GPU leg judges GGUF only)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Non-GGUF format (F32/F16 lacks fused kernels for Ollama parity)"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-1.5b-instruct-q4k.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cuda": {
           "ran": true,
@@ -2190,6 +3641,74 @@
         "skipped": false,
         "message": "golden_output: gibberish (fragment \"NavController\" repeats 3+ times)"
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Non-GGUF format \u2014 capability check not applicable"
+        },
+        "tensor_contract": {
+          "passed": false,
+          "skipped": false,
+          "message": "49 contract violations in 27 tensors: model.layers.0.mlp.down_proj.weight: [F-DATA-QUALITY-001] DENSITY: 100.0% zeros (max 80%); model.layers.0.self_attn.v_proj.weight: [F-DATA-QUALITY-001] All values"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=32768)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": false,
+          "skipped": false,
+          "message": "golden_output: gibberish (fragment \"NavController\" repeats 3+ times)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Non-GGUF format (F32/F16 lacks fused kernels for Ollama parity)"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-1.5b-instruct-st.json"
+        }
+      },
+      "gates_failed": [
+        "golden_output",
+        "tensor_contract"
+      ],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cuda": {
           "ran": true,
@@ -2264,6 +3783,71 @@
         "skipped": false,
         "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'qwen2': all 5 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "339 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=131072)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ollama"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-7b-instruct-q4_k_m.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cuda": {
           "ran": true,
@@ -2338,6 +3922,71 @@
         "skipped": false,
         "message": "3 golden test cases passed (GPU leg SKIPPED: the dense GPU leg judges GGUF only)"
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Non-GGUF format \u2014 capability check not applicable"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "339 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=qwen2, rope_theta=1000000, max_pos=32768)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": true,
+          "skipped": false,
+          "message": "3 golden test cases passed (GPU leg SKIPPED: the dense GPU leg judges GGUF only)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Non-GGUF format (F32/F16 lacks fused kernels for Ollama parity)"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-1.5b-q4k.json"
+        }
+      },
+      "gates_failed": [],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cuda": {
           "ran": true,
@@ -2412,6 +4061,73 @@
         "skipped": false,
         "message": "GPU output failed (CPU passed): golden_output_gpu: gibberish (fragment \"\\n[S]\" repeats 3+ times)"
       },
+      "gates": {
+        "capability_match": {
+          "passed": true,
+          "skipped": false,
+          "message": "Architecture 'llama': all 4 required ops supported by GPU"
+        },
+        "tensor_contract": {
+          "passed": true,
+          "skipped": false,
+          "message": "201 tensors passed all PMAT-235 contract gates"
+        },
+        "metadata_plausibility": {
+          "passed": true,
+          "skipped": false,
+          "message": "4 metadata checks passed (arch=llama, rope_theta=10000, max_pos=2048)"
+        },
+        "classifier_head": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Not requested (use --assert-classifier-head)"
+        },
+        "golden_output": {
+          "passed": false,
+          "skipped": false,
+          "message": "GPU output failed (CPU passed): golden_output_gpu: gibberish (fragment \"\\n[S]\" repeats 3+ times)"
+        },
+        "throughput": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-throughput"
+        },
+        "ollama_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ollama"
+        },
+        "gpu_speedup": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-speedup"
+        },
+        "format_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-format-parity"
+        },
+        "ptx_parity": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-ptx-parity"
+        },
+        "gpu_state_isolation": {
+          "passed": false,
+          "skipped": true,
+          "message": "Skipped: Skipped by --skip-gpu-state"
+        },
+        "performance_regression": {
+          "passed": true,
+          "skipped": false,
+          "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/tinyllama-1.1b-chat-v1.0.Q4_K_M.json"
+        }
+      },
+      "gates_failed": [
+        "golden_output"
+      ],
+      "gates_reported": 12,
+      "gates_account_for_rc": true,
       "backends": {
         "cuda": {
           "ran": true,
