@@ -351,7 +351,7 @@ llama_bin_resolve() {
         return 1
     fi
     # llama-bench CANNOT SELF-REPORT ITS BUILD. Verified on lambda against the
-    # real 39173bcac artifact: `--version` is rejected ("invalid parameter"),
+    # real 39173bcac artifact (the pin until 2026-09-15; measured 2026-08-24 on lambda): `--version` is rejected ("invalid parameter"),
     # `--help` lists no version flag, and `strings -a llama-bench | grep -Fx
     # 39173bcac` matches 0 times — the build-info object is not linked into it.
     # The same probe on llama-cli and llama-server matches once each, and both
