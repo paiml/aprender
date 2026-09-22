@@ -374,7 +374,17 @@ fn search_hf_cache_tokenizer(hf_cache: &Path) -> Option<Qwen2BpeTokenizer> {
             continue;
         }
         let snapshots_dir = entry.path().join("snapshots");
-        let snapshots = std::fs::read_dir(&snapshots_dir).ok()?;
+        // #3881: this was `.ok()?`, which returns None from the WHOLE function —
+        // so the FIRST `models--Qwen*` entry with an unreadable `snapshots/`
+        // ended the search and every later entry went unvisited. Measured on
+        // lambda: 20 `models--Qwen*` entries, 3 unreadable, 12 carrying a
+        // tokenizer — and `read_dir` returned an unreadable one FIRST, so the
+        // search aborted on iteration 0 and `apr chat` reported the MODEL as
+        // invalid while the right tokenizer sat three entries later. `read_dir`
+        // order is arbitrary, so this is a coin flip per host, not a fixed bug.
+        let Ok(snapshots) = std::fs::read_dir(&snapshots_dir) else {
+            continue;
+        };
         for snapshot in snapshots.flatten() {
             let tokenizer_path = snapshot.path().join("tokenizer.json");
             if tokenizer_path.exists() {
@@ -429,7 +439,12 @@ fn find_qwen_tokenizer(model_path: &Path) -> Result<Option<Qwen2BpeTokenizer>, C
         }
     }
 
-    Err(CliError::InvalidFormat(no_qwen_tokenizer_message(
+    // #3881: this was `InvalidFormat`, whose Display hardcodes "Invalid APR
+    // format: " and whose exit code is 4 — a judgement about the MODEL. Nothing
+    // is wrong with the model: a companion file is absent. `MissingCompanionFile`
+    // carries the message unprefixed and exits 3, the FileNotFound class. This
+    // is the same correction `InvalidInput` already made one class over.
+    Err(CliError::MissingCompanionFile(no_qwen_tokenizer_message(
         model_path,
     )))
 }
@@ -704,6 +719,113 @@ mod pmat3794_chat_cuda_preload_gate {
             blocked.len(),
             FORMATS.len(),
             blocked.join("")
+        );
+    }
+}
+
+// #3881 — one unreadable HuggingFace cache entry ended the WHOLE tokenizer search.
+//
+// `search_hf_cache_tokenizer` opened each `models--Qwen*/snapshots` with
+// `std::fs::read_dir(&snapshots_dir).ok()?`, and `?` on an `Option` returns from
+// the FUNCTION, not the loop. So the first entry whose `snapshots/` could not be
+// read ended the search and every later entry went unvisited.
+//
+// Measured on lambda: 20 `models--Qwen*` entries, 3 with an unreadable
+// `snapshots/`, 12 carrying a `tokenizer.json` — and `read_dir` returned an
+// unreadable one FIRST, so the search died on iteration 0 while the tokenizer
+// for the model being loaded sat a few entries later. `apr chat` then exited 4
+// reporting the MODEL as invalid.
+//
+// THE ANTI-VACUITY PROBLEM: `read_dir` order is arbitrary, so a fixture that
+// merely CONTAINS a broken entry proves nothing — the good one may be visited
+// first and the test passes on both the broken and the fixed code. This module
+// therefore CONSTRUCTS the ordering and REFUSES to run if it cannot: a fixture
+// that could not be built is reported as a failure, never as a pass.
+#[cfg(test)]
+mod hf_cache_search_survives_an_unreadable_entry_3881 {
+    use super::search_hf_cache_tokenizer;
+    use std::fs;
+    use std::path::Path;
+
+    /// The smallest JSON `Qwen2BpeTokenizer::from_file` accepts.
+    const MINIMAL_TOKENIZER: &str = r#"{"model":{"vocab":{"a":0,"b":1},"merges":[]}}"#;
+
+    fn broken_entry(hub: &Path, name: &str) {
+        // Present, matches `models--Qwen*`, and has NO readable `snapshots/`.
+        fs::create_dir_all(hub.join(format!("models--Qwen--{name}"))).expect("mkdir broken");
+    }
+
+    fn good_entry(hub: &Path, name: &str) {
+        let snap = hub
+            .join(format!("models--Qwen--{name}"))
+            .join("snapshots")
+            .join("deadbeef");
+        fs::create_dir_all(&snap).expect("mkdir good");
+        fs::write(snap.join("tokenizer.json"), MINIMAL_TOKENIZER).expect("write tokenizer");
+    }
+
+    /// Index of the first broken entry and of the good entry in `read_dir` order.
+    fn order(hub: &Path, good: &str) -> (Option<usize>, Option<usize>) {
+        let mut first_broken = None;
+        let mut good_at = None;
+        for (i, e) in fs::read_dir(hub).expect("read hub").flatten().enumerate() {
+            let name = e.file_name().to_string_lossy().to_string();
+            if !name.starts_with("models--Qwen") {
+                continue;
+            }
+            if name.ends_with(good) {
+                good_at.get_or_insert(i);
+            } else if first_broken.is_none() {
+                first_broken = Some(i);
+            }
+        }
+        (first_broken, good_at)
+    }
+
+    #[test]
+    fn a_broken_entry_before_a_good_one_does_not_end_the_search() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let hub = tmp.path();
+
+        good_entry(hub, "Good-With-Tokenizer");
+        // Add broken entries until one of them is visited BEFORE the good one.
+        // Bounded, and the bound failing is an ENV failure, not a pass.
+        let mut constructed = false;
+        for n in 0..64 {
+            broken_entry(hub, &format!("Broken-{n:03}"));
+            if let (Some(b), Some(g)) = order(hub, "Good-With-Tokenizer") {
+                if b < g {
+                    constructed = true;
+                    break;
+                }
+            }
+        }
+        assert!(
+            constructed,
+            "FIXTURE NOT CONSTRUCTED: could not get a broken entry ahead of the good one \
+             in read_dir order after 64 attempts. This test cannot judge the defect it \
+             exists for, so it fails rather than passing vacuously."
+        );
+
+        assert!(
+            search_hf_cache_tokenizer(hub).is_some(),
+            "FALSIFIED #3881: the search returned None although a readable tokenizer \
+             exists — an unreadable entry visited first ended the whole search"
+        );
+    }
+
+    /// The negative control: with NO good entry the search must still return
+    /// None. Without this, a fix that returned `Some` unconditionally would
+    /// pass the test above.
+    #[test]
+    fn a_cache_with_no_tokenizer_still_returns_none() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        for n in 0..4 {
+            broken_entry(tmp.path(), &format!("Broken-{n}"));
+        }
+        assert!(
+            search_hf_cache_tokenizer(tmp.path()).is_none(),
+            "a cache with no tokenizer must not report one"
         );
     }
 }
