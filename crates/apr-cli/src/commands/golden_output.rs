@@ -1,4 +1,65 @@
 
+/// The golden gate's stop token for THIS model, read from the model's own
+/// metadata.
+///
+/// #3870. This used to be `SpecialTokens::qwen2().eos_id` — the literal 151645 —
+/// passed as the stop token for EVERY model the gate was ever pointed at. That
+/// made `apr qa`'s golden gate structurally Qwen-only:
+///
+/// | model | arch | vocab | its real eos | 151645 reachable? |
+/// |---|---|---|---|---|
+/// | `Qwen3-1.7B-Q4_K_M` | qwen3 | 151936 | 151645 | yes |
+/// | `Qwen3-Coder-30B-A3B` | qwen3moe | 151936 | 151645 | yes |
+/// | `tinyllama-1.1b-chat-v1.0` | llama | **32000** | **2** | **NO** |
+///
+/// 151645 is not a token id that EXISTS in a 32000-entry vocabulary, so for
+/// tinyllama the stop condition could not fire — not late, not on the wrong
+/// token, unreachable. The model ran its full 512-token budget and drifted into
+/// chat scaffolding, which is precisely what #1864's comment at the call sites
+/// says the stop token exists to prevent. Both the CPU and GPU legs hardcoded
+/// the same wrong constant, which is why their output was byte-identical, and
+/// that identity was read as "the backends agree" rather than as the signature
+/// of a shared upstream cause.
+///
+/// **There is deliberately no fallback guess.** A model whose GGUF carries no
+/// eos gets NO stop token rather than an architecture default, because a guess
+/// is what this defect was. `TransformerConfig::from_apr` faces the same
+/// question and answers it the same way under OBLIG-SPECIAL-TOKEN-WITHIN-VOCAB
+/// (PMAT-908): it takes an architecture default "only … when it is a reachable
+/// logit (< vocab_size); a small-vocab model must not inherit a large
+/// arch-default eos" (`aprender-serve/src/gguf/config.rs:544`). That ladder is
+/// the better long-term answer here too, but `default_eos_for_architecture` is
+/// `pub(crate)` to aprender-serve and unreachable from this crate — a
+/// cross-crate visibility job, filed rather than forced. Note it would not have
+/// saved tinyllama anyway: its llama default is 128001 (Llama-3's), and the
+/// vocab filter is what rejects it.
+#[cfg(feature = "inference")]
+fn golden_stop_tokens(gguf: &realizar::gguf::GGUFModel) -> Vec<u32> {
+    gguf.eos_token_id().into_iter().collect()
+}
+
+/// The golden prompt's tokens, with a BOS taken from the model rather than
+/// assumed.
+///
+/// #3870, same cause as [`golden_stop_tokens`]: the fallback was
+/// `vec![SpecialTokens::qwen2().bos_id, 9707]`, and 151643 is no more reachable
+/// in a 32000-entry vocabulary than 151645 was.
+///
+/// This path is only taken when the model's own tokenizer cannot encode the
+/// prompt at all. `9707` is left as-is and is still a Qwen token id: there is no
+/// architecture-neutral "second token", and inventing one would be the same kind
+/// of guess this function exists to remove. A gate that reaches this line is
+/// already not measuring what it thinks it is.
+#[cfg(feature = "inference")]
+fn golden_prompt_tokens(gguf: &realizar::gguf::GGUFModel, prompt: &str) -> Vec<u32> {
+    gguf.encode(prompt).unwrap_or_else(|| {
+        let bos = gguf
+            .bos_token_id()
+            .unwrap_or_else(|| aprender::demo::SpecialTokens::qwen2().bos_id);
+        vec![bos, 9707]
+    })
+}
+
 /// Run golden output test for SafeTensors format models. Returns None if tokenizer missing.
 #[cfg(feature = "inference")]
 fn golden_output_safetensors(
@@ -47,8 +108,7 @@ fn golden_output_gguf_cpu(
 ) -> Result<(Vec<u32>, String)> {
     use realizar::gguf::{OwnedQuantizedModel, QuantizedGenerateConfig};
 
-    let specials = aprender::demo::SpecialTokens::qwen2();
-    let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![specials.bos_id, 9707]);
+    let prompt_tokens = golden_prompt_tokens(gguf, prompt);
     // #1864: without stop_tokens, the model runs for the full max_tokens
     // budget and starts emitting in-distribution chat-template tokens like
     // `<|im_start|>` from accumulated drift — which `verify_output` then
@@ -60,7 +120,7 @@ fn golden_output_gguf_cpu(
         max_tokens,
         temperature: 0.0,
         top_k: 1,
-        stop_tokens: vec![specials.eos_id],
+        stop_tokens: golden_stop_tokens(gguf),
         ..Default::default()
     };
     let model = OwnedQuantizedModel::from_mapped(mapped)
@@ -329,10 +389,7 @@ fn gpu_golden_leg(
     // Safe: format==Gguf guarantees these are Some
     let gguf_ref = gguf_model.expect("GGUF model required for GPU golden output");
     let mapped_ref = mapped.expect("GGUF mapped model required for GPU golden output");
-    let specials = aprender::demo::SpecialTokens::qwen2();
-    let prompt_tokens = gguf_ref
-        .encode(prompt)
-        .unwrap_or_else(|| vec![specials.bos_id, 9707]);
+    let prompt_tokens = golden_prompt_tokens(gguf_ref, prompt);
     // #1864: GPU path mirrors the CPU gate's fix above — set stop_tokens
     // to EOS so generation terminates at end-of-turn rather than running
     // the full 512-token budget and drifting into `<|im_start|>` repeats.
@@ -340,7 +397,7 @@ fn gpu_golden_leg(
         max_tokens: golden_max_tokens, // GH-279-4: match CPU budget
         temperature: 0.0,
         top_k: 1,
-        stop_tokens: vec![specials.eos_id],
+        stop_tokens: golden_stop_tokens(gguf_ref),
         ..Default::default()
     };
     validate_gpu_golden_output(
@@ -401,6 +458,14 @@ fn validate_golden_test_case(
         )));
     };
 
+    // #3870: judge the CPU leg BEFORE the GPU message is composed.
+    //
+    // This block used to sit AFTER the GPU early return, so on a GPU failure the
+    // CPU answer was never judged — while the GPU message hardcoded "(CPU
+    // passed)". tinyllama was reported as a CUDA correctness defect blocking the
+    // tag on that basis, and it fails identically on CPU.
+    let cpu = CpuGoldenVerdict::judge(&output_text, prompt, expected_patterns, golden_max_tokens);
+
     // #3711: a GPU leg that errored is a FAIL naming the error, never a skip.
     let gpu_leg = gpu_golden_leg(
         prompt,
@@ -412,7 +477,7 @@ fn validate_golden_test_case(
         cuda_available,
         golden_max_tokens,
     )?;
-    if let Some(failure) = gpu_leg.failure() {
+    if let Some(failure) = gpu_leg.failure_given_cpu(&cpu) {
         return Ok(GoldenCaseOutcome::Verdict(GateResult::failed(
             "golden_output",
             &failure,
@@ -422,36 +487,28 @@ fn validate_golden_test_case(
         )));
     }
 
-    // GH-279-4: generate_with_cache returns prompt + generated tokens.
-    // Strip the prompt echo so we verify only the model's generated output.
-    let generated_text = output_text
-        .strip_prefix(prompt)
-        .unwrap_or(&output_text);
-    // GH-279-4 / #3724: a block that never closed is REPORTED with its budget. It
-    // used to be truncated away, which made "still reasoning at the cut" and "the
-    // model answered nothing" the same report ("Empty output").
-    let answer_text = match split_thinking_blocks(generated_text) {
-        ThinkingSplit::Answer(answer) => answer,
-        ThinkingSplit::Unclosed => {
+    // The CPU verdict, already computed above, now decides. Same messages as
+    // before; only the ORDER changed.
+    match cpu {
+        CpuGoldenVerdict::Unclosed { budget, generated_chars } => {
             return Ok(GoldenCaseOutcome::Verdict(GateResult::failed(
                 "golden_output",
-                &unclosed_think_reason("golden_output", golden_max_tokens, generated_text.len()),
+                &unclosed_think_reason("golden_output", budget, generated_chars),
                 None,
                 None,
                 start.elapsed(),
             )));
-        }
-    };
-    if let OutputVerification::Fail { reason } =
-        verify_output(&answer_text, "golden_output", expected_patterns)
-    {
-        return Ok(GoldenCaseOutcome::Verdict(GateResult::failed(
-            "golden_output",
-            &reason,
-            None,
-            None,
-            start.elapsed(),
-        )));
+        },
+        CpuGoldenVerdict::WrongAnswer(reason) => {
+            return Ok(GoldenCaseOutcome::Verdict(GateResult::failed(
+                "golden_output",
+                &reason,
+                None,
+                None,
+                start.elapsed(),
+            )));
+        },
+        CpuGoldenVerdict::Passed => {},
     }
 
     Ok(GoldenCaseOutcome::Passed(gpu_leg))
@@ -645,8 +702,7 @@ fn throughput_gguf(
 
     let gguf = GGUFModel::from_bytes(model_bytes)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
-    let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
-    let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![bos, 9707]);
+    let prompt_tokens = golden_prompt_tokens(&gguf, prompt);
     let gen_config = QuantizedGenerateConfig {
         max_tokens: config.max_tokens,
         temperature: 0.0,
@@ -850,7 +906,7 @@ mod golden_output_tests {
             leg,
             GpuGoldenLeg::Errored("GPU generation: CUDA_ERROR_ILLEGAL_ADDRESS".to_string())
         );
-        let failure = leg.failure().expect("a GPU generation error must FAIL the gate");
+        let failure = leg.failure_given_cpu(&CpuGoldenVerdict::Passed).expect("a GPU generation error must FAIL the gate");
         assert!(failure.contains("CUDA_ERROR_ILLEGAL_ADDRESS"), "{failure}");
         assert!(failure.contains("not a skip"), "{failure}");
     }
@@ -862,7 +918,7 @@ mod golden_output_tests {
             TWO_PLUS_TWO,
             512,
         );
-        let failure = leg.failure().expect("a CUDA init error must FAIL the gate");
+        let failure = leg.failure_given_cpu(&CpuGoldenVerdict::Passed).expect("a CUDA init error must FAIL the gate");
         assert!(failure.contains("CUDA_ERROR_OUT_OF_MEMORY"), "{failure}");
     }
 
@@ -870,8 +926,243 @@ mod golden_output_tests {
     fn gpu_wrong_answer_fails_the_gate() {
         let leg = GpuGoldenLeg::judge(Ok("2 + 2 = 5".to_string()), TWO_PLUS_TWO, 512);
         assert!(matches!(leg, GpuGoldenLeg::WrongAnswer(_)), "{leg:?}");
-        let failure = leg.failure().expect("a wrong GPU answer must FAIL the gate");
+        let failure = leg.failure_given_cpu(&CpuGoldenVerdict::Passed).expect("a wrong GPU answer must FAIL the gate");
         assert!(failure.starts_with("GPU output failed (CPU passed)"), "{failure}");
+    }
+
+    // =========================================================================
+    // #3870: the stop token comes from the MODEL, not from a Qwen constant
+    //
+    // The gate passed SpecialTokens::qwen2().eos_id — 151645 — as the stop token
+    // for every model. For tinyllama (vocab 32000, eos 2) that id does not exist
+    // in the vocabulary, so the stop condition could not fire and the model ran
+    // its full budget into chat-scaffolding drift. Both legs hardcoded it, which
+    // is why GPU and CPU output were byte-identical.
+    // =========================================================================
+
+    /// Every GGUF the box has, so this reads as a matrix and not as one anecdote.
+    #[cfg(feature = "inference")]
+    fn local_ggufs() -> Vec<std::path::PathBuf> {
+        let root = std::env::var("APR_MODELS").ok().filter(|v| !v.trim().is_empty()).map_or_else(
+            || {
+                std::env::var("HOME").map_or_else(
+                    |_| std::path::PathBuf::from("/nonexistent"),
+                    |h| std::path::PathBuf::from(h).join(".apr/models"),
+                )
+            },
+            std::path::PathBuf::from,
+        );
+        let Ok(rd) = std::fs::read_dir(&root) else {
+            return Vec::new();
+        };
+        let mut v: Vec<_> = rd
+            .filter_map(std::result::Result::ok)
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "gguf"))
+            .collect();
+        v.sort();
+        v
+    }
+
+    /// OBLIG-SPECIAL-TOKEN-WITHIN-VOCAB (PMAT-908), applied to the golden gate.
+    ///
+    /// The general invariant, stated so it holds for models this box has never
+    /// seen: whatever the gate passes as a stop token must be a token that
+    /// EXISTS in the model being gated. A stop token the model cannot emit is
+    /// not a stop token.
+    #[cfg(feature = "inference")]
+    #[test]
+    fn the_golden_stop_token_is_reachable_in_every_model_we_have() {
+        let models = local_ggufs();
+        if models.is_empty() {
+            println!("SKIP: no GGUFs under $APR_MODELS or $HOME/.apr/models");
+            return;
+        }
+        let mut checked = 0usize;
+        for path in &models {
+            let Ok(bytes) = std::fs::read(path) else { continue };
+            let Ok(gguf) = realizar::gguf::GGUFModel::from_bytes(&bytes) else { continue };
+            let Some(vocab) = gguf.vocabulary().map(|v| v.len()) else { continue };
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+
+            for tok in golden_stop_tokens(&gguf) {
+                assert!(
+                    (tok as usize) < vocab,
+                    "#3870: {name} has vocab {vocab}, so stop token {tok} is not a token this \
+                     model can EVER emit — the stop condition cannot fire and the gate will \
+                     score the model's full-budget drift instead of its answer"
+                );
+                checked += 1;
+            }
+            // And it must be the model's OWN eos, not a constant that happens to
+            // be in range.
+            assert_eq!(
+                golden_stop_tokens(&gguf),
+                gguf.eos_token_id().into_iter().collect::<Vec<_>>(),
+                "{name}: the gate must stop on the model's own eos"
+            );
+        }
+        assert!(checked > 0, "no model yielded a stop token; this test proved nothing");
+        println!("#3870: {checked} stop token(s) checked across {} GGUFs", models.len());
+    }
+
+    /// The control that makes the row above non-vacuous, and the one the cop
+    /// asked for: the fix must not be "stop honouring stop tokens".
+    ///
+    /// A Qwen model's stop token must still be exactly 151645 — the value the
+    /// old hardcoded constant supplied — so Qwen behaviour is provably
+    /// unchanged by this fix. If this row and the one above are both green, the
+    /// gate reads the model without having lost the thing #1864 added.
+    #[cfg(feature = "inference")]
+    #[test]
+    fn a_qwen_model_still_stops_on_151645_and_a_llama_model_does_not() {
+        let mut saw_qwen = false;
+        let mut saw_non_qwen = false;
+        for path in local_ggufs() {
+            let Ok(bytes) = std::fs::read(&path) else { continue };
+            let Ok(gguf) = realizar::gguf::GGUFModel::from_bytes(&bytes) else { continue };
+            let name = path.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
+            let stops = golden_stop_tokens(&gguf);
+            if name.contains("qwen3") || name.contains("qwen2") {
+                assert_eq!(
+                    stops,
+                    vec![151_645],
+                    "{name}: Qwen must still stop where SpecialTokens::qwen2() said it did — \
+                     losing that would make this fix a regression dressed as a repair"
+                );
+                saw_qwen = true;
+            } else if name.contains("tinyllama") {
+                assert_eq!(
+                    stops,
+                    vec![2],
+                    "{name}: a Llama-2 model must stop on ITS eos, not on Qwen's 151645"
+                );
+                saw_non_qwen = true;
+            }
+        }
+        if !saw_qwen && !saw_non_qwen {
+            println!("SKIP: neither a Qwen nor a tinyllama GGUF is present");
+        }
+    }
+
+    // =========================================================================
+    // #3870: a GPU failure message may not ASSERT the CPU leg's verdict
+    //
+    // `failure()` hardcoded "(CPU passed)" and `validate_golden_test_case`
+    // returned on a GPU failure BEFORE the CPU pattern check ran, so the claim
+    // was made about a leg that had never been judged. That inverted a release
+    // verdict once already (tinyllama, below), so both directions are asserted:
+    // the false claim must be impossible, and the TRUE one must survive.
+    // =========================================================================
+
+    /// The golden capital case's patterns — the case tinyllama failed.
+    const CAPITAL_OF_FRANCE: &[&str] = &["Paris"];
+
+    /// What `tinyllama-1.1b-chat-v1.0.Q4_K_M` actually produced for the capital
+    /// case: a `[S][INST]` loop with no "Paris" anywhere. Measured 2026-09-22 on
+    /// `apr 0.69.1 (87d9d5484)` and produced IDENTICALLY by the GPU leg and by
+    /// the CPU leg under `CUDA_VISIBLE_DEVICES=""`. The old message reported this
+    /// as "GPU output failed (CPU passed)" and it was escalated as a CUDA
+    /// correctness defect blocking the 0.69.1 tag.
+    const TINYLLAMA_LOOP: &str = "[S][INST][S][INST][S][INST][S][INST][S][INST]";
+
+    #[test]
+    fn a_gpu_failure_may_not_claim_a_cpu_pass_when_the_cpu_failed_too() {
+        let gpu = GpuGoldenLeg::judge(Ok(TINYLLAMA_LOOP.to_string()), CAPITAL_OF_FRANCE, 512);
+        assert!(matches!(gpu, GpuGoldenLeg::WrongAnswer(_)), "{gpu:?}");
+
+        // The SAME text on the CPU leg, because that is what the model does on
+        // both backends.
+        let cpu = CpuGoldenVerdict::judge(TINYLLAMA_LOOP, "", CAPITAL_OF_FRANCE, 512);
+        assert!(matches!(cpu, CpuGoldenVerdict::WrongAnswer(_)), "{cpu:?}");
+
+        let failure = gpu
+            .failure_given_cpu(&cpu)
+            .expect("a wrong GPU answer must still FAIL the gate");
+        assert!(
+            !failure.contains("CPU passed"),
+            "#3870: the CPU leg produced the same wrong answer, so this message \
+             claims a measurement that did not happen and reads as a GPU-specific \
+             defect: {failure}"
+        );
+        assert!(
+            failure.contains("CPU failed too") && failure.contains("not a GPU-specific"),
+            "the message must say what was actually measured: {failure}"
+        );
+    }
+
+    #[test]
+    fn a_gpu_failure_still_names_a_genuine_cpu_pass() {
+        // The converse, and the reason the gate exists (#3477): the GPU is wrong
+        // and the CPU is RIGHT on the same prompt. Losing this wording to fix the
+        // case above would be the over-correction.
+        let gpu = GpuGoldenLeg::judge(Ok(TINYLLAMA_LOOP.to_string()), CAPITAL_OF_FRANCE, 512);
+        let cpu = CpuGoldenVerdict::judge(
+            "The capital of France is Paris.",
+            "",
+            CAPITAL_OF_FRANCE,
+            512,
+        );
+        assert_eq!(cpu, CpuGoldenVerdict::Passed, "{cpu:?}");
+
+        let failure = gpu.failure_given_cpu(&cpu).expect("a GPU-only defect FAILS the gate");
+        assert!(
+            failure.starts_with("GPU output failed (CPU passed)"),
+            "#3477's signature — a real GPU-specific defect — must survive #3870's fix: {failure}"
+        );
+    }
+
+    #[test]
+    fn a_gpu_failure_says_so_when_the_cpu_reached_no_verdict() {
+        // The third CPU state: still inside an unclosed <think> at the budget.
+        // There is no CPU pass AND no CPU wrong answer to compare against, and
+        // claiming either would be the same defect in a different direction.
+        let gpu = GpuGoldenLeg::judge(Ok(TINYLLAMA_LOOP.to_string()), CAPITAL_OF_FRANCE, 512);
+        let cpu = CpuGoldenVerdict::judge(
+            "<think>the capital of France is",
+            "",
+            CAPITAL_OF_FRANCE,
+            512,
+        );
+        assert!(matches!(cpu, CpuGoldenVerdict::Unclosed { .. }), "{cpu:?}");
+
+        let failure = gpu.failure_given_cpu(&cpu).expect("the GPU leg still FAILS");
+        assert!(!failure.contains("CPU passed"), "{failure}");
+        assert!(!failure.contains("CPU failed too"), "{failure}");
+        assert!(
+            failure.contains("no CPU verdict to compare against"),
+            "the message must name the absence rather than pick a side: {failure}"
+        );
+    }
+
+    #[test]
+    fn the_cpu_verdict_cannot_be_omitted_from_the_claim() {
+        // A structural row, not a behavioural one. The ordering defect was that
+        // `validate_golden_test_case` composed the GPU message before the CPU
+        // leg had been judged. `failure_given_cpu` takes the verdict BY ARGUMENT,
+        // so that ordering is now a type error rather than a review item: there is
+        // no way to obtain the message without a CpuGoldenVerdict in hand.
+        //
+        // This test exists to state that intent where a future edit will read it.
+        // Reintroducing a `failure(&self)` that guesses would compile — and would
+        // make the three rows above dead. If you are here because you added one,
+        // that is what this row is objecting to.
+        let gpu = GpuGoldenLeg::judge(Ok(TINYLLAMA_LOOP.to_string()), CAPITAL_OF_FRANCE, 512);
+        let messages: Vec<String> = [
+            CpuGoldenVerdict::Passed,
+            CpuGoldenVerdict::WrongAnswer("no Paris".to_string()),
+            CpuGoldenVerdict::Unclosed { budget: 512, generated_chars: 30 },
+        ]
+        .iter()
+        .map(|cpu| gpu.failure_given_cpu(cpu).expect("all three still FAIL"))
+        .collect();
+
+        // Three CPU verdicts, three DISTINCT messages. If any two coincide, the
+        // message is not carrying the CPU leg's verdict and the reader cannot
+        // tell which was measured.
+        assert_ne!(messages[0], messages[1]);
+        assert_ne!(messages[1], messages[2]);
+        assert_ne!(messages[0], messages[2]);
     }
 
     #[test]
@@ -879,7 +1170,7 @@ mod golden_output_tests {
         for text in ["2 + 2 = 4", "<think>two and two</think>The answer is 4."] {
             let leg = GpuGoldenLeg::judge(Ok(text.to_string()), TWO_PLUS_TWO, 512);
             assert_eq!(leg, GpuGoldenLeg::Passed, "{text:?}");
-            assert_eq!(leg.failure(), None);
+            assert_eq!(leg.failure_given_cpu(&CpuGoldenVerdict::Passed), None);
             assert_eq!(leg.describe(), "GPU leg judged on CUDA device 0");
         }
     }
@@ -889,7 +1180,7 @@ mod golden_output_tests {
         let why = gpu_golden_not_run(true, false, true).expect("no device: the leg never starts");
         assert_eq!(why, "no CUDA device on this host");
         let leg = GpuGoldenLeg::NotRun(why);
-        assert_eq!(leg.failure(), None, "a leg that never started is not a failure");
+        assert_eq!(leg.failure_given_cpu(&CpuGoldenVerdict::Passed), None, "a leg that never started is not a failure");
         assert_eq!(leg.describe(), "GPU leg SKIPPED: no CUDA device on this host");
     }
 
@@ -973,19 +1264,19 @@ mod golden_output_tests {
         assert_eq!(passed, GpuGoldenLeg::Passed);
 
         // #3711: an error FAILS and names the error, and is not a skip.
-        let e = errored.failure().expect("an error fails the gate");
+        let e = errored.failure_given_cpu(&CpuGoldenVerdict::Passed).expect("an error fails the gate");
         assert!(e.contains("OOM") && e.contains("not a skip"), "{e}");
 
         // #3724: an unclosed block FAILS by name WITH the budget, and never reads
         // as an empty answer.
-        let u = unclosed.failure().expect("an unclosed block fails the gate");
+        let u = unclosed.failure_given_cpu(&CpuGoldenVerdict::Passed).expect("an unclosed block fails the gate");
         assert!(u.contains("think block unclosed within 512 tokens"), "{u}");
         assert!(!u.contains("Empty output"), "{u}");
         assert_ne!(u, e, "an unclosed block must not report as an error");
 
         // A leg that never started is the ONLY thing that does not fail.
-        assert!(not_run.failure().is_none());
-        assert!(passed.failure().is_none());
+        assert!(not_run.failure_given_cpu(&CpuGoldenVerdict::Passed).is_none());
+        assert!(passed.failure_given_cpu(&CpuGoldenVerdict::Passed).is_none());
         assert!(not_run.describe().contains("SKIPPED"), "{}", not_run.describe());
         assert!(!unclosed.describe().contains("SKIPPED"), "an unclosed block is not a skip");
     }
