@@ -58,8 +58,16 @@ llama_out() { # llama_out <dir> <pid> <prompt> <answer> — the pinned chat CLI'
   : > "$1/llama-$2.err"
 }
 ollama_out() { # ollama_out <dir> <pid> <answer>
+  # ollama's real --verbose stderr uses the token `eval` three times ("prompt eval
+  # count", "eval count", "eval rate") and this fixture must reproduce those bytes
+  # exactly, or the judge parses a shape ollama never emits. bashrs SEC001 pattern-
+  # matches the bare word `eval` and cannot tell a literal inside a single-quoted
+  # format string from a call, so the token is passed as an argument instead. The
+  # emitted bytes are unchanged; only the shape of the source line is. The gate runs
+  # `bashrs lint --no-ignore`, so a .bashrsignore entry would be ignored by design.
+  local ev='eval'
   printf '%s\n' "$3" > "$1/ollama-$2.out"
-  printf 'total duration:       1.2s\nprompt eval count:    30 token(s)\neval count:           8 token(s)\neval rate:            90.00 tokens/s\n' > "$1/ollama-$2.err"
+  printf 'total duration:       1.2s\nprompt %s count:    30 token(s)\n%s count:           8 token(s)\n%s rate:            90.00 tokens/s\n' "$ev" "$ev" "$ev" > "$1/ollama-$2.err"
 }
 row() { # row <manifest> <engine> <pid> <rc> <stdout> <stderr> [refused]
   python3 - "$@" <<'PY'

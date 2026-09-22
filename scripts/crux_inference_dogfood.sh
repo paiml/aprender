@@ -223,11 +223,28 @@ WORK=$(mktemp -d) || decline "mktemp failed"
 SRV_PID=""
 # The delete is guarded (SEC011): only a path under a temp root is removed.
 OL_NAME=""
+# ollama_rm_own — remove ONLY a model this harness created.
+#
+# `ollama rm` deletes from the operator's real ollama store, where a model may be an
+# 18 GB download someone waited on. The name is derived here as `crux-<sha12>-<backend>-<pid>`
+# (see OL_NAME= below), never taken from input, so the harness can prove ownership before
+# deleting: refuse an empty name, and refuse any name that is not one of ours. An unguarded
+# call was reachable at the end-of-model cleanup while the EXIT trap guarded its own, so the
+# two paths disagreed about whether emptiness was possible; they now share this one.
+ollama_rm_own() {
+  local n="${1:-}"
+  case "$n" in
+    crux-?*) ;;
+    *) [ -n "$n" ] && printf 'refusing to remove ollama model %s: not created by this harness\n' "$n" >&2
+       return 0 ;;
+  esac
+  "$OLLAMA" rm "$n" > /dev/null 2>&1 || :
+}
 _cleanup() {
   [ -n "$SRV_PID" ] && kill "$SRV_PID" 2>/dev/null
   # A run killed mid-model leaves its ollama import behind unless removed here.
-  if [ -n "$OL_NAME" ] && [ "$OLLAMA_OK" = 1 ] && [ "$KEEP_OLLAMA" = 0 ]; then
-    "$OLLAMA" rm "$OL_NAME" > /dev/null 2>&1
+  if [ "$OLLAMA_OK" = 1 ] && [ "$KEEP_OLLAMA" = 0 ]; then
+    ollama_rm_own "$OL_NAME"
   fi
   [ "$KEEP_WORK" = 1 ] && { printf 'work kept: %s\n' "$WORK" >&2; return 0; }
   local v="${WORK:-}"
@@ -596,8 +613,20 @@ PY
   fi
   for pid in $(pids_for "$VERB"); do
     content=$(cat "$WORK/prompt-$pid.txt")
-    d="$WORK/$SHA12/$VERB"
-    mkdir -p "$d"
+    # $VERB reaches here from `--verbs`, so the cell dir is input-derived and a `..`
+    # segment would escape $WORK, which `mkdir -p` would then happily create. The verb
+    # set is already whitelisted at parse time (see the run|chat|serve case above), so
+    # the leaf is written as a LITERAL per verb rather than interpolated: the directory
+    # is then provably inside the mktemp root no matter what arrived on the command
+    # line. Adding a verb means adding it in both places -- the `*)` arm fails loudly
+    # rather than silently producing an unexpected directory.
+    case "$VERB" in
+      run)   d="$WORK/$SHA12/run" ;;
+      chat)  d="$WORK/$SHA12/chat" ;;
+      serve) d="$WORK/$SHA12/serve" ;;
+      *) decline "unknown verb '$VERB' for the cell dir (add it here and at the --verbs whitelist)" ;;
+    esac
+    mkdir -p "$d" || decline "cannot create cell dir $d"
     cell="$d/cell-$pid.sh"
     printf '#!/usr/bin/env bash\n# one CRUX cell: %s prompt %s through every engine, one hold of the GPU lock\n' "$VERB" "$pid" > "$cell"
 
@@ -671,7 +700,7 @@ PY
   done
 
   if [ "$OLLAMA_OK" = 1 ] && [ "$KEEP_OLLAMA" = 0 ]; then
-    "$OLLAMA" rm "$OL_NAME" > /dev/null 2>&1
+    ollama_rm_own "$OL_NAME"
   fi
 done
 
@@ -713,6 +742,16 @@ meta = {
 }
 json.dump(meta, open(out, "w"), indent=2)
 PY
+# $OUT_DIR reaches here from `--out` (default evidence/crux/$VERSION). A receipt dir may
+# legitimately be absolute -- operators point it at /mnt -- so absoluteness is allowed and
+# only a `..` segment, which walks out of wherever the caller meant, is refused.
+case "$OUT_DIR" in
+  ""|*..*) decline "refusing --out path '$OUT_DIR' (empty, or contains a '..' segment)" ;;
+esac
+# Canonicalised (-m: the dir need not exist yet) so the receipt path is one unambiguous
+# location rather than whatever the caller's cwd made it mean. The `..` arm above already
+# refused the traversal shape; this removes any remaining relative indirection.
+OUT_DIR=$(realpath -m -- "$OUT_DIR") || decline "cannot resolve --out path"
 mkdir -p "$OUT_DIR" || decline "cannot create $OUT_DIR"
 python3 scripts/lib/crux_inference_judge.py collect --manifest "$MANIFEST" --prompts "$PROMPTS" \
   --meta "$WORK/meta.json" --out-json "$OUT_DIR/$HOST-$BACKEND.json" --out-md "$OUT_DIR/$HOST-$BACKEND.md"
