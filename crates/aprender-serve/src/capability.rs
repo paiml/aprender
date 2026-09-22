@@ -621,6 +621,114 @@ mod capability_contract {
         }
     }
 
+    /// FALSIFY-CAP-002. Every quant row agrees with the ONE predicate the GPU
+    /// dispatch actually uses, `gpu_unsupported_quant_qtype` — keyed on the ggml
+    /// id, not on the name, because #3852 is what happens when two enumerations
+    /// of the same set are compared through prose instead of through numbers.
+    ///
+    /// This condition had NO test when it was written. It was a claim in a
+    /// contract backed by my having checked once by hand, which is the thing the
+    /// contract exists to replace.
+    #[test]
+    fn every_quant_row_agrees_with_the_gpu_dispatch_predicate() {
+        use crate::gguf::gpu_unsupported_quant_qtype;
+        for r in rows(&contract(), "quant_types") {
+            let name = r
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("<unnamed>");
+            let id = u32::try_from(
+                r.get("ggml_type")
+                    .and_then(serde_yaml_ng::Value::as_u64)
+                    .unwrap_or_else(|| panic!("quant {name} has no ggml_type")),
+            )
+            .unwrap_or_else(|_| panic!("quant {name} has an out-of-range ggml_type"));
+            let declared = r
+                .get("gpu_supported")
+                .and_then(serde_yaml_ng::Value::as_bool)
+                .unwrap_or_else(|| panic!("quant {name} has no gpu_supported"));
+            assert_eq!(
+                declared,
+                !gpu_unsupported_quant_qtype(id),
+                "contract says {name} (ggml {id}) gpu_supported={declared}, but the \
+                 dispatch predicate says supported={}",
+                !gpu_unsupported_quant_qtype(id)
+            );
+        }
+    }
+
+    /// FALSIFY-CAP-004. EXHAUSTIVE over the ggml type enum: every variant of
+    /// `aprender-quant`'s upstream-extracted table has a row here, with the same
+    /// id. A type present upstream and absent here is #3850's hole — "an unknown
+    /// quant is silently decoded as Q4_K" — and it is the hole that hid IQ1_M=29
+    /// inside the source's `IQ3_*` wildcard.
+    ///
+    /// The enum is read from its source file because `aprender-quant` is not a
+    /// dependency of this crate. That is a regex over source and therefore
+    /// brittle by nature, so it FAILS LOUDLY if it cannot find a plausible number
+    /// of variants rather than passing on an empty parse — an exhaustiveness
+    /// check that silently matched nothing would be the vacuous green this whole
+    /// contract exists to prevent.
+    #[test]
+    fn the_quant_table_is_exhaustive_over_the_ggml_enum() {
+        let src_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../aprender-quant/src/ggml_type.rs");
+        let src = std::fs::read_to_string(&src_path)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", src_path.display()));
+
+        let mut upstream: Vec<(String, u64)> = Vec::new();
+        for line in src.lines() {
+            let t = line.trim();
+            let Some((name, rest)) = t.split_once(" = ") else {
+                continue;
+            };
+            let Some(num) = rest.strip_suffix(',') else {
+                continue;
+            };
+            if !name.starts_with(|c: char| c.is_ascii_uppercase())
+                || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            {
+                continue;
+            }
+            if let Ok(id) = num.trim().parse::<u64>() {
+                upstream.push((name.to_string(), id));
+            }
+        }
+        assert!(
+            upstream.len() >= 30,
+            "parsed only {} variants from {} — the parse broke, and an \
+             exhaustiveness check that matched nothing would pass vacuously",
+            upstream.len(),
+            src_path.display()
+        );
+
+        let declared: std::collections::BTreeMap<u64, String> = rows(&contract(), "quant_types")
+            .iter()
+            .map(|r| {
+                (
+                    r.get("ggml_type")
+                        .and_then(serde_yaml_ng::Value::as_u64)
+                        .expect("quant row has no ggml_type"),
+                    r.get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                )
+            })
+            .collect();
+
+        let missing: Vec<String> = upstream
+            .iter()
+            .filter(|(_, id)| !declared.contains_key(id))
+            .map(|(n, id)| format!("{n}={id}"))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "ggml types present upstream and ABSENT from the contract: {missing:?} \
+             — that gap is #3850's 'unknown quant decoded as Q4_K'"
+        );
+    }
+
     /// FALSIFY-CAP-003. `wired` is a claim about a call graph and may not be asserted
     /// loosely. `unestablished` is explicitly NOT a claim, so it is exempt.
     #[test]

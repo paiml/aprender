@@ -360,6 +360,7 @@ falsification_conditions:
       `gpu_supported: true`. A test reads this contract and compares the two
       sets by equality. Falsifiable: adding an op to the Rust set without adding
       it here, or vice versa, fails.
+    test: 'cargo test -p aprender-serve --lib capability::capability_contract::the_contract_and_gpu_supported_ops_are_the_same_set -- --exact'
   - id: FALSIFY-CAP-002
     description: >
       Every quant type the GPU dispatch accepts appears here with
@@ -368,6 +369,7 @@ falsification_conditions:
       message naming a type the `match` does not, or the reverse — fails,
       because both sides are compared against one list keyed by ggml id rather
       than against each other's prose.
+    test: 'cargo test -p aprender-serve --lib capability::capability_contract::every_quant_row_agrees_with_the_gpu_dispatch_predicate -- --exact'
   - id: FALSIFY-CAP-004
     description: >
       EXHAUSTIVE over the ggml type enum. Every variant of
@@ -376,12 +378,14 @@ falsification_conditions:
       declared here, fails — which is #3850's hole ("an unknown quant is
       silently decoded as Q4_K") turned into a build failure. All 35 ids were
       checked against that enum when this file was written; 0 mismatched.
+    test: 'cargo test -p aprender-serve --lib capability::capability_contract::the_quant_table_is_exhaustive_over_the_ggml_enum -- --exact'
   - id: FALSIFY-CAP-003
     description: >
       No `op_implementation` row may claim `wired` while every reference to its
       symbol is a test. Falsifiable by construction against #3075's LayerNorm:
       marking it `wired` fails. `unestablished` is not a claim and is exempt.
 
+    test: 'cargo test -p aprender-serve --lib capability::capability_contract::an_implementation_row_claiming_wired_names_a_symbol -- --exact'
 qa_gate:
   id: F-CAP-GATE
   name: model capability registry contract
