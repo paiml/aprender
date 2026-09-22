@@ -315,6 +315,12 @@ fn release_driver(tools: ToolRegistry, driver: Arc<dyn LlmDriver>) {
 /// This is the public library API — callable from both the batuta binary
 /// and apr-cli (PMAT-162). Handles model discovery, driver selection,
 /// tool registration, and REPL launch.
+///
+/// #3775: a non-interactive run with `--output-format json` writes exactly
+/// one JSON document to stdout on EVERY exit. The exits inside this function
+/// write their own; an error it RETURNS is written by the caller through
+/// [`emit_error_document`], because only the caller knows the exit code the
+/// error becomes.
 #[allow(clippy::too_many_arguments)]
 pub fn cmd_code(
     model: Option<PathBuf>,
@@ -325,13 +331,11 @@ pub fn cmd_code(
     max_turns: u32,
     manifest_path: Option<PathBuf>,
     emit_trace: Option<PathBuf>,
-    // PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001:
-    // accepted as &str ("text" | "json") to keep this crate's public API
-    // independent of apr-cli's ValueEnum types. Unknown values fall back
-    // to "text" — the legacy behavior — under Poka-Yoke.
     output_format: &str,
     input_format: &str,
 ) -> anyhow::Result<()> {
+    let json_document = json_document_mode(print, &prompt, output_format);
+    let started = std::time::Instant::now();
     // #2607: settled BEFORE the working directory changes, before any
     // settings file is read, and — the point of the issue — before any model
     // is discovered or any `apr serve` child is spawned.
@@ -349,7 +353,11 @@ pub fn cmd_code(
     // operator believed it was scoped to another tree. Fail closed instead.
     if project.as_os_str() != "." {
         if !project.is_dir() {
-            anyhow::bail!("--project: not a directory: {}", project.display());
+            anyhow::bail!(CodeOutcome::refused(
+                "invalid_input",
+                format!("--project: not a directory: {}", project.display()),
+                exit_code::AGENT_ERROR,
+            ));
         }
         std::env::set_current_dir(&project)?;
     }
@@ -359,7 +367,8 @@ pub fn cmd_code(
     // load. A non-interactive (`-p`) run is exactly one turn, so it needs one
     // permit; the REPL spends the same budget per turn inside its loop.
     let mut turn_budget = TurnBudget::new(max_turns);
-    let single_prompt_permit = permit_single_prompt(&mut turn_budget, print || !prompt.is_empty())?;
+    let single_prompt_permit = permit_single_prompt(&mut turn_budget, print || !prompt.is_empty())
+        .map_err(max_turns_refusal)?;
 
     // --resume <id>: resolve the session BEFORE any model is launched.
     // An unknown id used to be discarded without a word: `-p` mode returned
@@ -423,8 +432,7 @@ pub fn cmd_code(
 
     // Contract: no_model_error — never silently use MockDriver
     if manifest.model.resolve_model_path().is_none() && manifest_path.is_none() {
-        print_no_model_error();
-        std::process::exit(exit_code::NO_MODEL);
+        exit_no_model(json_document, started);
     }
 
     // PMAT-160: Try AprServeDriver first (apr serve has full CUDA/GPU).
@@ -496,7 +504,11 @@ pub fn cmd_code(
             }
         }
         crate::agent::hooks::HookDecision::Block(reason) => {
-            anyhow::bail!("SessionStart hook blocked session: {reason}");
+            anyhow::bail!(CodeOutcome::refused(
+                "hook_blocked",
+                format!("SessionStart hook blocked session: {reason}"),
+                exit_code::AGENT_ERROR,
+            ));
         }
     }
 
@@ -682,6 +694,56 @@ fn discover_and_set_model(manifest: &mut AgentManifest) {
 }
 
 /// Print actionable error when no local model is available.
+/// `true` when this invocation owes exactly one JSON document on stdout:
+/// a non-interactive (`-p` / prompt) run with `--output-format json` (#3775).
+fn json_document_mode(print: bool, prompt: &[String], output_format: &str) -> bool {
+    (print || !prompt.is_empty()) && output_format.eq_ignore_ascii_case("json")
+}
+
+/// A `--max-turns` refusal, carried as its #3720 kind (#3775).
+fn max_turns_refusal(e: anyhow::Error) -> CodeOutcome {
+    CodeOutcome::refused("max_turns_exhausted", e.to_string(), exit_code::AGENT_ERROR)
+}
+
+/// The no-model exit: the stderr guidance, then (#3775) the JSON document a
+/// json run owes, then exit `NO_MODEL`.
+fn exit_no_model(json_document: bool, started: std::time::Instant) -> ! {
+    print_no_model_error();
+    if json_document {
+        let outcome = CodeOutcome::refused(
+            "no_model",
+            "no model found: pass --model or place a model where apr code discovers one",
+            exit_code::NO_MODEL,
+        );
+        println!("{}", envelope(None, Some(&outcome), started.elapsed()));
+    }
+    std::process::exit(exit_code::NO_MODEL);
+}
+
+/// #3775: write the JSON document for an error [`cmd_code`] RETURNED, when the
+/// invocation owes one; a no-op otherwise. `exit_code` is the code the caller
+/// exits with for that error (apr-cli: `CliError::Aprender`, 1), so the
+/// document cannot disagree with the process status. A refusal `cmd_code`
+/// typed (`CodeOutcome`) keeps its kind; anything else is `agent_error`.
+pub fn emit_error_document(
+    print: bool,
+    prompt: &[String],
+    output_format: &str,
+    err: &anyhow::Error,
+    exit_code: i32,
+    elapsed: std::time::Duration,
+) {
+    if !json_document_mode(print, prompt, output_format) {
+        return;
+    }
+    let mut outcome = err
+        .downcast_ref::<CodeOutcome>()
+        .cloned()
+        .unwrap_or_else(|| CodeOutcome::failed("agent_error", err.to_string(), exit_code));
+    outcome.exit_code = exit_code;
+    println!("{}", envelope(None, Some(&outcome), elapsed));
+}
+
 fn print_no_model_error() {
     eprintln!("✗ No local model found. apr code requires a local model.\n");
     if check_invalid_apr_in_search_dirs() {
@@ -1108,26 +1170,32 @@ fn run_single_prompt(
         let _ = store.record_turn();
     }
 
+    let json = output_format.eq_ignore_ascii_case("json");
     match result {
         Ok(r) => {
             let elapsed = started.elapsed();
-            if r.text.is_empty() {
-                // PMAT-190: Empty response — model may be emitting only thinking tokens
-                // that get stripped by strip_thinking_blocks(). Common with Qwen3 when
-                // the serve backend doesn't use Qwen3NoThinkTemplate.
+            // PMAT-190: Empty response — model may be emitting only thinking tokens
+            // that get stripped by strip_thinking_blocks(). Common with Qwen3 when
+            // the serve backend doesn't use Qwen3NoThinkTemplate. #3775 / #3720: an
+            // empty completion is a failure with the inference-failure exit code
+            // (1); it used to print an error document and exit 0.
+            let empty = r
+                .text
+                .is_empty()
+                .then(|| CodeOutcome::empty_completion(r.iterations, r.tool_calls));
+            if empty.is_some() {
                 eprintln!(
                     "⚠ Empty response ({} iterations, {} tool calls). \
                      Model may be in thinking mode — rebuild apr from source for Qwen3NoThinkTemplate fix.",
                     r.iterations, r.tool_calls
                 );
-                if output_format.eq_ignore_ascii_case("json") {
-                    println!("{}", build_json_result_envelope(&r, elapsed, /*is_error*/ true));
-                }
-            } else if output_format.eq_ignore_ascii_case("json") {
+            }
+            if json {
                 // PMAT-CODE-OUTPUT-FORMAT-001: structured envelope mirroring
-                // Claude Code's `claude -p --output-format json` shape.
-                println!("{}", build_json_result_envelope(&r, elapsed, /*is_error*/ false));
-            } else {
+                // Claude Code's `claude -p --output-format json` shape, plus
+                // the #3720 status/error fields.
+                println!("{}", envelope(Some(&r), empty.as_ref(), elapsed));
+            } else if empty.is_none() {
                 println!("{}", r.text);
             }
 
@@ -1145,11 +1213,18 @@ fn run_single_prompt(
                 }
             }
 
-            exit_code::SUCCESS
+            empty.map_or(exit_code::SUCCESS, |o| o.exit_code)
         }
         Err(e) => {
             eprintln!("Error: {e}");
-            map_error_to_exit_code(&e)
+            let code = map_error_to_exit_code(&e);
+            // #3775: a driver error (the serve child failing to load, an HTTP
+            // 500) used to leave stdout EMPTY in json mode.
+            if json {
+                let outcome = CodeOutcome::from_agent_error(&e, code);
+                println!("{}", envelope(None, Some(&outcome), started.elapsed()));
+            }
+            code
         }
     }
 }
@@ -1257,52 +1332,7 @@ fn parse_json_input_envelope(buf: &str) -> anyhow::Result<String> {
     Ok(content.to_owned())
 }
 
-/// PMAT-CODE-OUTPUT-FORMAT-001 (M-NON-INT-001): build a structured JSON
-/// envelope mirroring Claude Code's `claude -p --output-format json` shape:
-///
-/// ```json
-/// {
-///   "type": "result",
-///   "subtype": "success",
-///   "is_error": false,
-///   "duration_ms": 1234,
-///   "result": "the assistant text",
-///   "session_id": "<uuidv7-shaped>",
-///   "num_turns": 1,
-///   "total_cost_usd": 0
-/// }
-/// ```
-fn build_json_result_envelope(
-    result: &super::result::AgentLoopResult,
-    elapsed: std::time::Duration,
-    is_error: bool,
-) -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let ts_micros =
-        SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_micros()).unwrap_or(0);
-    // Same UUIDv7-shaped stable-per-run session id used by emit_ccpa_trace.
-    let session_id = format!(
-        "{:08x}-{:04x}-7000-{:04x}-{:012x}",
-        (ts_micros >> 64) as u32 & 0xFFFF_FFFF,
-        ((ts_micros >> 48) & 0xFFFF) as u16,
-        ((ts_micros >> 32) & 0xFFFF) as u16,
-        (ts_micros & 0xFFFF_FFFF_FFFF) as u64
-    );
-    let envelope = serde_json::json!({
-        "type": "result",
-        "subtype": if is_error { "error" } else { "success" },
-        "is_error": is_error,
-        "duration_ms": elapsed.as_millis() as u64,
-        "result": result.text,
-        "session_id": session_id,
-        "num_turns": result.iterations,
-        "tokens_in": result.usage.input_tokens,
-        "tokens_out": result.usage.output_tokens,
-        // Local sovereign inference: cost is always zero by construction.
-        "total_cost_usd": 0,
-    });
-    envelope.to_string()
-}
+use super::code_envelope::{envelope, CodeOutcome};
 
 // Prompts and exit codes extracted to code_prompts.rs
 use super::code_prompts::{
