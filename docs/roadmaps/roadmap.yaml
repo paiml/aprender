@@ -20975,3 +20975,19 @@ roadmap:
     on lambda, apr 0.69.0 (9f8836c71) BEFORE: apr run --gpu rc 14 after an 18 GB load and a CPU generation;
     apr qa rc 5 with an EMPTY json and ''Validation failed: CPU generation failed: matmul weight has EMPTY
     data buffer ... a MoE parent FFN tensor''; apr run --no-gpu rc 0, ''2 + 2 = 4.'' in 8.00s.'
+- id: PMAT-3828
+  github_issue: 3828
+  item_type: task
+  title: 'P0: the release gate''s verb dimension computes over ONE verb — the ladder never runs serve, chat or code, and a live /api/chat defect walked through all three coverage surfaces'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-22T08:35:31Z
+  updated: 2026-09-22T08:35:31Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
