@@ -33,9 +33,26 @@ fn apr_qtype_to_dtype(qtype: u32) -> Result<&'static str> {
 /// this whitelist is SILENTLY decoded as Q4_K → garbage logits.
 ///
 /// The whitelist of GPU-eligible types is exactly:
-///   0=F32, 2=Q4_0, 3=Q4_1, 6=Q5_0, 8=Q8_0, 12=Q4_K, 13=Q5_K, 14=Q6_K.
-/// Everything else — F16(1), Q5_1(7), Q8_1(9), Q2_K(10), Q3_K(11), Q8_K(15),
-/// the IQ* families, BF16(30), unknown — is gated to CPU.
+///   0=F32, 1=F16, 2=Q4_0, 3=Q4_1, 6=Q5_0, 8=Q8_0, 12=Q4_K, 13=Q5_K, 14=Q6_K,
+///   23=IQ4_XS.
+/// Everything else — Q5_1(7), Q8_1(9), Q2_K(10), Q3_K(11), Q8_K(15), the rest
+/// of the IQ* families, BF16(30), unknown — is gated to CPU.
+///
+/// #3477: each of these was admitted only once its GEMV kernel existed AND had
+/// been measured against the CPU decoder on real model bytes. Never on the
+/// kernel's existence alone — a whitelist entry without a working kernel is
+/// what `resolve_qtype` used to turn into a silent Q4_K decode (#3850).
+///
+///   F16(1)     217/217 tensors exact, worst cosine 1.00000000, measured at
+///              `88d25d265` — 169 in Qwen2.5-0.5B-Instruct-f16, 48 in
+///              Qwen3.5-4B-UD-Q4_K_XL, enumerated from the files.
+///   IQ4_XS(23) 10/10 tensors exact, cosine 1.00000000, measured at
+///              `b782b4257` — every IQ4_XS tensor in Qwen3.5-4B-UD-Q4_K_XL,
+///              `[2560, 9216]` each.
+///
+/// Both families carry their own planted-fault control that goes RED on a
+/// tensor OF THAT TYPE, so the greens are licensed rather than merely
+/// reported: a harness returning MATCH for everything would look identical.
 ///
 /// `inference_result::is_legacy_gguf_quant` (the primary `apr run`/`apr serve`
 /// path gate) and `OwnedQuantizedModel::has_gpu_unsupported_quant` (the
@@ -44,7 +61,7 @@ fn apr_qtype_to_dtype(qtype: u32) -> Result<&'static str> {
 #[inline]
 #[must_use]
 pub(crate) fn gpu_unsupported_quant_qtype(qtype: u32) -> bool {
-    !matches!(qtype, 0 | 2 | 3 | 6 | 8 | 12 | 13 | 14)
+    !matches!(qtype, 0 | 1 | 2 | 3 | 6 | 8 | 12 | 13 | 14 | 23)
 }
 
 /// #3477 / PMAT-781/783/785: the quantized projections the Qwen3.5 hybrid

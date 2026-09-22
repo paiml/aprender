@@ -108,16 +108,105 @@ mod gemv_entry_name_tests_3477 {
         );
     }
 
-    /// The whitelist is NOT widened here. #3477 lands the kernel; the
-    /// `gpu_unsupported_quant_qtype` entry is a separate change behind a
-    /// verified A/B, because a whitelist entry without a working kernel turns
-    /// an honest refusal into silent Q4_K-decode garbage — the 0.68.1 defect.
+    /// THE ORDERING INVARIANT, as a mechanism rather than a habit.
+    ///
+    /// A type may be admitted by `gpu_unsupported_quant_qtype` ONLY if
+    /// `from_ggml_type` maps it to a real kernel. The converse is allowed and
+    /// is the deliberate state of IQ4_XS right now: a kernel can exist while
+    /// the gate stays shut, pending its own evidence.
+    ///
+    /// Whitelisting without a kernel is the 0.68.1 defect exactly —
+    /// `resolve_qtype` would fall through to Q4_K and decode the weights as a
+    /// different scheme, silently. That ordering has had to be re-established
+    /// by someone noticing three times on this row; this makes it fail a test
+    /// instead.
     #[test]
-    fn the_kernel_lands_before_the_whitelist_does() {
+    fn nothing_is_whitelisted_without_a_kernel_behind_it() {
+        use crate::cuda::types::WeightQuantType;
+        let wrong: Vec<String> = (0u32..=40)
+            .filter(|&t| {
+                // admitted by the whitelist ...
+                !crate::gguf::gpu_unsupported_quant_qtype(t)
+                    // ... but no kernel to decode it with
+                    && WeightQuantType::from_ggml_type(t).is_none()
+            })
+            .map(|t| format!("\n  - GGML type {t} is admitted but has no GEMV kernel"))
+            .collect();
         assert!(
-            crate::gguf::gpu_unsupported_quant_qtype(1),
-            "F16 must still be refused until the A/B proves this kernel on real bytes"
+            wrong.is_empty(),
+            "{} type(s) would be silently decoded as Q4_K by resolve_qtype's fallback, \
+             which is the 0.68.1 garbage-logits defect:{}",
+            wrong.len(),
+            wrong.join("")
         );
+    }
+
+    /// F16 IS admitted, and this records WHY — with the sha, because a bare
+    /// "217/217" in a comment outlives its provenance and the numbers are not
+    /// portable across trees.
+    ///
+    /// Opened on the evidence, not on the kernel's existence: **217 of 217 F16
+    /// tensors exact** against the CPU decoder, worst cosine 1.00000000 —
+    /// 169 in Qwen2.5-0.5B-Instruct-f16 and 48 in Qwen3.5-4B-UD-Q4_K_XL,
+    /// enumerated from the files — with a planted-fault control going RED on an
+    /// F16 tensor specifically, so the greens are licensed rather than merely
+    /// reported. Measured by aprender-45 against **`88d25d265`**.
+    #[test]
+    fn f16_is_admitted_because_its_kernel_was_measured() {
+        assert!(
+            !crate::gguf::gpu_unsupported_quant_qtype(1),
+            "F16 has a measured kernel (217/217 exact) and must be GPU-eligible"
+        );
+    }
+
+    /// IQ4_XS IS admitted, on its own evidence rather than on F16's.
+    ///
+    /// **10/10 IQ4_XS tensors exact, cosine 1.00000000, measured at
+    /// `b782b4257`** — every IQ4_XS tensor in Qwen3.5-4B-UD-Q4_K_XL,
+    /// `[2560, 9216]` each, with a planted fault going RED on an IQ4_XS tensor
+    /// specifically (`blk.12.ffn_gate --perturb` -> cosine 0.99120069). An
+    /// IQ4_XS green needs an IQ4_XS red; F16's control licenses nothing here.
+    ///
+    /// The exactness is the part worth keeping: the split 6-bit scale
+    /// reassembly and the `ib == m` / `jj == tid` collapse would both have
+    /// produced plausible near-matches if wrong, not garbage. 1.00000000 on a
+    /// 23.6M-element tensor is not a shape a bad index collapse hides in.
+    #[test]
+    fn iq4_xs_is_admitted_because_its_kernel_was_measured() {
+        assert!(
+            !crate::gguf::gpu_unsupported_quant_qtype(23),
+            "IQ4_XS has a measured kernel (10/10 exact) and must be GPU-eligible"
+        );
+    }
+
+    /// #3850: every type the census found in the wild that has no kernel must
+    /// map to `None`, which is what `resolve_qtype` now refuses on. Before this
+    /// it fell through to Q4_K and the bytes were read as a different scheme.
+    ///
+    /// These are not hypothetical: all five were measured in lambda's
+    /// inventory. Q5_1 and IQ4_NL sit in `Qwen2.5-0.5B-Instruct-IQ4_XS`,
+    /// BF16 in `Qwen3-0.6B-BF16`, IQ2_XXS/IQ3_XXS/Q2_K in
+    /// `Qwen3.5-0.8B-UD-IQ2_XXS`, IQ3_S in two more.
+    #[test]
+    fn the_types_found_in_the_wild_without_kernels_resolve_to_none() {
+        use crate::cuda::types::WeightQuantType;
+        let census: &[(u32, &str)] = &[
+            (7, "Q5_1"),
+            (10, "Q2_K"),
+            (11, "Q3_K"),
+            (16, "IQ2_XXS"),
+            (18, "IQ3_XXS"),
+            (20, "IQ4_NL"),
+            (21, "IQ3_S"),
+            (22, "IQ2_S"),
+            (30, "BF16"),
+        ];
+        let admitted: Vec<String> = census
+            .iter()
+            .filter(|(t, _)| WeightQuantType::from_ggml_type(*t).is_some())
+            .map(|(t, n)| format!("\n  - {n} (type {t}) claims a kernel it does not have"))
+            .collect();
+        assert!(admitted.is_empty(), "census drift:{}", admitted.join(""));
     }
 
     /// The IQ4_XS kernel's INDEX MATH, executed in Rust exactly as the PTX
@@ -221,10 +310,6 @@ mod gemv_entry_name_tests_3477 {
             crate::cuda::types::BoundWeight::bind(0x1000, nsb * 136, WeightQuantType::IQ4XS, 2560, 9216)
                 .kernel(),
             GemvKernel::IQ4XS
-        );
-        assert!(
-            crate::gguf::gpu_unsupported_quant_qtype(23),
-            "IQ4_XS must still be refused until the A/B proves this kernel on real bytes"
         );
     }
 
