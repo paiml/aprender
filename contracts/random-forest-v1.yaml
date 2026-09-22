@@ -75,6 +75,16 @@ proof_obligations:
   property: Prediction length matches input
   formal: '|predict(X)| = |X| (number of rows)'
   applies_to: all
+- id: RF-INV-005
+  type: invariant
+  property: Parallel fit preserves the seed-to-tree binding
+  formal: '∀ i ∈ [0, B): tree_i ≡ fit(bootstrap(n, seed + i)) ∧ oob_i ≡ {j : j ∉ bootstrap(n, seed + i)}'
+  applies_to: all
+- id: RF-INV-006
+  type: invariant
+  property: Batched voting equals per-sample voting
+  formal: '∀ i ∀ c: B · proba(X)_{i,c} ≡ Σ_b [h_b(X_i) ≡ c]'
+  applies_to: all
 falsification_tests:
 - id: FALSIFY-RF-001
   rule: Predictions in label range
@@ -96,6 +106,25 @@ falsification_tests:
   prediction: Number of predictions equals number of input samples
   test: 'proptest: random X with m rows, predict, check output length = m'
   if_fails: Prediction loop skipping or duplicating samples
+- id: FALSIFY-RF-005
+  rule: Parallel fit preserves the seed-to-tree binding
+  test_harness: cargo test -p aprender-core --lib -- tree::random_forest::tests_rf_contract::falsify_rf_005_parallel_fit_preserves_seed_to_tree_binding --exact
+  prediction: tree i and oob_indices[i] are what bootstrap_sample(n, random_state + i)
+    produces, whatever order rayon builds the ensemble in
+  test: tree::random_forest::tests_rf_contract::falsify_rf_005_parallel_fit_preserves_seed_to_tree_binding
+    — 8-tree forest at a fixed seed; every tree and OOB set compared against
+    bootstrap_sample called directly, outside the forest
+  if_fails: Trees were collected out of index order or paired with another tree's seed
+    — a fixed random_state no longer reproduces the ensemble
+- id: FALSIFY-RF-006
+  rule: Batched voting equals per-sample voting
+  test_harness: cargo test -p aprender-core --lib -- tree::random_forest::tests_rf_contract::falsify_rf_006_batched_votes_match_per_sample_votes --exact
+  prediction: predict and predict_proba agree with asking every tree about one row at
+    a time
+  test: tree::random_forest::tests_rf_contract::falsify_rf_006_batched_votes_match_per_sample_votes
+    — 9-tree 3-class forest; every row cross-checked against single-row predictions
+  if_fails: The per-tree prediction vectors are indexed on the wrong axis, or one tree
+    is counted twice and another dropped
 enforcement:
   label_range:
     description: Predictions must be in the training label set
@@ -149,5 +178,7 @@ qa_gate:
   - deterministic_with_seed
   - ensemble_size
   - prediction_length
-  pass_criteria: All 4 falsification tests pass + Kani harnesses verify
+  - parallel_fit_seed_binding
+  - batched_votes_match_per_sample
+  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
   falsification: Majority vote produces label not in training set due to uninitialized leaf node
