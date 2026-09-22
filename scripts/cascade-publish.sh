@@ -711,7 +711,7 @@ for tier in $(echo "${!TIERS[@]}" | tr ' ' '\n' | sort -n); do
   done
 done
 
-# DRAIN UNTIL NO FORWARD PROGRESS, not once (#3893).
+# DRAIN UNTIL NO FORWARD PROGRESS, not once (#3892).
 #
 # This was ONE retry round, so the cascade had exactly TWO passes: the tier walk
 # plus one retry. MEASURED by aprender-45 against the real dependency graph at
@@ -734,7 +734,7 @@ done
 # order: aprender-core is T2 and has non-optional workspace deps on aprender-common
 # (T8) and aprender-compute (T6), so T2 cannot publish until T8 has, and everything
 # downstream inherits it. 44 strictly-later-tier deps and 30 same-tier deps, 74
-# total. Fixing the tiers is the better fix and is 0.70.0 work (#3893); draining
+# total. Fixing the tiers is the better fix and is 0.70.0 work (#3892); draining
 # correctly makes the cascade complete regardless of the tier order.
 #
 # THE PER-CRATE SAFETY IS UNCHANGED and was verified sound on four independent
@@ -768,7 +768,7 @@ if [ -n "$DEFERRED" ]; then
       echo "   The remaining crates can never publish -- each is waiting on another"
       echo "   member of this same set, or on a dependency that is not in TIERS[]."
       echo "   Still deferred:$STILL_DEFERRED"
-      echo "   This is a dependency-order defect, not a transient registry delay (#3893)."
+      echo "   This is a dependency-order defect, not a transient registry delay (#3892)."
       exit 1
     fi
     DEFERRED="$STILL_DEFERRED"
