@@ -9,6 +9,14 @@ struct NextToken<'a> {
     last_token: u32,
     position: usize,
     penalty_active: bool,
+    /// #3720: the request's own RNG, seeded by it once per generation.
+    rng: &'a mut rand::rngs::StdRng,
+}
+
+/// #3720: a generation's sampling RNG, seeded by its request.
+fn request_rng(config: &QuantizedGenerateConfig) -> rand::rngs::StdRng {
+    use rand::SeedableRng;
+    rand::rngs::StdRng::seed_from_u64(config.seed)
 }
 
 struct DecodeLoop<'a, F: FnMut(u32) -> bool> {
@@ -217,7 +225,7 @@ impl OwnedQuantizedModelCuda {
     }
 
     fn next_token(&mut self, n: NextToken<'_>) -> Result<u32> {
-        let NextToken { config, tokens, cache, last_token, position, penalty_active } = n;
+        let NextToken { config, tokens, cache, last_token, position, penalty_active, rng } = n;
         let greedy = config.temperature == 0.0 || config.top_k == 1;
         if greedy && !penalty_active {
             return self.forward_gpu_resident_to_token_id(last_token, cache, position);
@@ -232,7 +240,15 @@ impl OwnedQuantizedModelCuda {
         Ok(if greedy {
             OwnedQuantizedModel::argmax(&logits)
         } else {
-            OwnedQuantizedModel::sample_topk(&logits, config.temperature, config.top_k)
+            // #3720: seeded by the request, and its top_p honoured (the unseeded
+            // sample_topk used process entropy and ignored top_p).
+            OwnedQuantizedModel::sample_topk_seeded(
+                &logits,
+                config.temperature,
+                config.top_k,
+                config.top_p,
+                rng,
+            )
         })
     }
 
@@ -250,6 +266,7 @@ impl OwnedQuantizedModelCuda {
             penalty_active,
             t_start,
         } = d;
+        let mut rng = request_rng(config);
         let mark = |label: &str| {
             if let Some(t0) = t_start {
                 eprintln!("[TTFT] {:>20}: {:>7.2}ms", label, t0.elapsed().as_secs_f64() * 1000.0);
@@ -263,6 +280,7 @@ impl OwnedQuantizedModelCuda {
                     last_token,
                     position,
                     penalty_active,
+                    rng: &mut rng,
                 })?;
                 if token_num == first_token_offset && prefill_first_token.is_none() {
                     mark("first_decode");

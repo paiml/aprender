@@ -447,6 +447,7 @@ impl OwnedQuantizedModelCuda {
         max_decode: usize,
     ) -> Result<()> {
         let penalty_active = config.repeat_penalty != 1.0 && config.repeat_last_n > 0;
+        let mut rng = request_rng(config);
         for _token_num in 0..max_decode {
             let next_token = self.next_token(NextToken {
                 config,
@@ -455,6 +456,7 @@ impl OwnedQuantizedModelCuda {
                 last_token,
                 position,
                 penalty_active,
+                rng: &mut rng,
             })?;
             if config.stop_tokens.contains(&next_token) {
                 break;
@@ -796,6 +798,11 @@ impl OwnedQuantizedModelCuda {
             return Ok(GenerateResult { tokens: Vec::new(), logprobs: Vec::new() });
         }
         self.check_gpu_resident_preconditions(prompt, "generate_gpu_resident_logprobs")?;
+        // #3720: one RNG per request, seeded by it.
+        let mut rng = {
+            use rand::SeedableRng;
+            rand::rngs::StdRng::seed_from_u64(config.seed)
+        };
 
         let num_kv_heads = self.model.config.num_kv_heads;
         let head_dim = self.model.config.head_dim();
@@ -846,7 +853,15 @@ impl OwnedQuantizedModelCuda {
             let next_token = if greedy {
                 OwnedQuantizedModel::argmax(&logits)
             } else {
-                OwnedQuantizedModel::sample_topk(&logits, config.temperature, config.top_k)
+                // #3720: the request's seed, not process entropy (a seeded logprobs
+                // request must be reproducible like any other).
+                OwnedQuantizedModel::sample_topk_seeded(
+                    &logits,
+                    config.temperature,
+                    config.top_k,
+                    config.top_p,
+                    &mut rng,
+                )
             };
             token_logprobs.push(TokenLogprob {
                 token_id: next_token,
