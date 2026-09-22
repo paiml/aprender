@@ -44,10 +44,17 @@ twice, greedy and `temperature 0.7 / top_k 40 / top_p 0.9 / seed 42`:
 |---|---|---|---|
 | lambda RTX 4090, CUDA (`3f0cdf588`) | Qwen3-8B, qwen2.5-coder-1.5b | byte-identical ×2 | byte-identical ×2 |
 | lambda Threadripper 7960X, CPU (`e638060e8`) | Qwen3-1.7B, qwen2.5-coder-1.5b | byte-identical ×2 | byte-identical ×2 |
-| gx10 GB10, CUDA (`e638060e8`) | Qwen3-8B, qwen2.5-coder-1.5b | see fragment | see fragment |
+| gx10 GB10, CUDA (`e638060e8`) | Qwen3-8B, qwen2.5-coder-1.5b | **NOT MEASURED** | **NOT MEASURED** |
 
 Before the fix (`075203530`, same flags), the sampled rows DIFFERED between the two runs on both
 models, for run and for serve.
+
+**gx10 is unmeasured.** The binary is built there (`e638060e8`,
+`/mnt/nvme-raid0/agent-wt/pmat-3720-gx10`) and the run was queued at `gpu-q --prio 1`, but it was
+still behind two tickets at the wind-down and never started. It writes to
+`/mnt/nvme-raid0/agent-wt/pmat-3723-hw/det-gx10` if it runs; judge it with
+`python3 scripts/seed_determinism_cases_json.py "gx10=cuda=<dir>" out.json`. done_when 2 names
+gx10, so this row is NOT complete for that host.
 
 ## done_when 3 — empty completion = error
 
