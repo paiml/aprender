@@ -557,7 +557,7 @@ def serve_ok(v):
         return False
     return all(r.get("http") == 200 for r in (sv.get("routes") or {}).values())
 
-# THE OTHER TWO VERBS (#3902). The operator's bar names FOUR verbs — run, chat,
+# THE OTHER TWO VERBS (#3897). The operator's bar names FOUR verbs — run, chat,
 # code, serve. `v["ran"]` is the RUN verb and #3886 added serve; `chat` and `code`
 # are written into the receipt and never read by the verdict. Measured: gx10's
 # `qwen2.5-coder-1.5b-instruct-q4k.apr` is `green: true` with `chat rc=3`, and the
@@ -668,7 +668,7 @@ for b,v in r["backends"].items():
     # row red SOLELY on serve printed `unknown`: the verdict moved and the
     # explanation did not. That is the defect the comment above this block warns
     # about in a different form — "a red line prints its whole reason".
-    # #3902: the same omission #3901 found for serve, caught in the SAME pass this
+    # #3897: the same omission #3901 found for serve, caught in the SAME pass this
     # time rather than after. A verdict that starts consulting a field while the
     # explanation builder does not is precisely how a row becomes red and silent.
     for _vn in ("chat", "code"):

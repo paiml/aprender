@@ -61,7 +61,7 @@ extract_builder() {
 
 # A backend whose serve probe is healthy, and the knobs each case turns.
 be_json() { # be_json <probed> <teardown> <http-of-first-route> [chat-rc]
-  # #3902: the chat rc is a knob because `chat` and `code` joined the verdict. A row
+  # #3897: the chat rc is a knob because `chat` and `code` joined the verdict. A row
   # green on every other axis with `chat rc=3` is the live gx10 case.
   local _chat_rc="${4:-0}" _chat_ran=true
   [ "$_chat_rc" = "0" ] || _chat_ran=false
@@ -116,7 +116,7 @@ RED_ONLY_ON_SERVE='{"capability_match":{"passed":true,"skipped":false,"message":
    "verbs":{'"$_verbs_ok"'"serve":{"probed":true,"teardown":"clean","routes":{
      "/v1/completions|stream=false":{"http":500},"/api/chat|stream=false":{"http":200}}}}}}}'
 
-# #3902: green everywhere except `chat`, with serve healthy.
+# #3897: green everywhere except `chat`, with serve healthy.
 RED_ONLY_ON_CHAT='{"capability_match":{"passed":true,"skipped":false,"message":"ok"},
  "golden_output":{"passed":true,"skipped":false,"message":"ok"},
  "backends":{"cuda":{"ran":true,"fallback":false,"escaped_special":false,"rc":0,
@@ -137,7 +137,7 @@ why_of() { # why_of <src> -> the reason line that row would print
 # guards: the verdict says red and the operator is told nothing.
 check_reason() { # check_reason <src> -> 0 explained, 1 not
   local src="$1" got chat
-  # #3902: a chat-only red must name the VERB, not fall through to `unknown`.
+  # #3897: a chat-only red must name the VERB, not fall through to `unknown`.
   chat=$(why_of "$src" "$RED_ONLY_ON_CHAT") || return 2
   case "$chat" in
     *'verb `chat` did not run'*) printf '  ok    %-16s %s\n' "reason:chat" "$chat" ;;
@@ -212,7 +212,7 @@ if [ "$SELF_TEST" = 1 ]; then
     echo "  RED (expected)"
   fi
 
-  # Mutant D (#3902): the verdict stops consulting the other two verbs — the state
+  # Mutant D (#3897): the verdict stops consulting the other two verbs — the state
   # that shipped in #3886, where serve was folded in and its two siblings were not.
   mutant_d=$(mktemp); trap 'rm -f "$mutant" "$mutant_c" "$mutant_d" "$mutant_e"' EXIT
   sed 's/ and verb_ok(v, "chat") and verb_ok(v, "code")//' "$SCRIPT" > "$mutant_d"
@@ -226,7 +226,7 @@ if [ "$SELF_TEST" = 1 ]; then
     echo "  RED (expected)"
   fi
 
-  # Mutant E (#3902): the verdict keeps the verbs, the EXPLANATION drops them —
+  # Mutant E (#3897): the verdict keeps the verbs, the EXPLANATION drops them —
   # #3901's shape applied to the new axis, planted deliberately this time.
   mutant_e=$(mktemp)
   sed '/verb `%s` did not run/d' "$SCRIPT" > "$mutant_e"
