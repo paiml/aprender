@@ -374,7 +374,14 @@ def gate(n):
     # `apr qa --json` marks a skipped gate passed:true. Skipped is not passed.
     return {"passed": bool(x.get("passed")) and not x.get("skipped") and not str(x.get("message","")).startswith("Skipped"),
             "skipped": bool(x.get("skipped")) or str(x.get("message","")).startswith("Skipped"),
-            "message": str(x.get("message",""))[:200]}
+            # #3872: NO CAP. The receipt is the durable artifact and the only place the full
+            # reason survives; every downstream reader can cut for display, none can
+            # recover what was never stored. Measured: 9 of 86 messages hit the old 200,
+            # and what sat past it was not padding -- a CLASSIFICATION ("this is a refusal,
+            # not a fallback: nothing was loaded and nothing was generated", x4 rows), a
+            # scope correction, and a diagnostic instruction naming the prompt check that
+            # two sessions then spent hours re-deriving.
+            "message": str(x.get("message",""))}
 # EVERY gate `apr qa` reported, not two by name (#3863 item 16). The receipt used to
 # record `capability_match` + `golden_output` only, so a row could carry the SYMPTOM
 # ("gibberish (fragment ...)") while the DIAGNOSIS computed in the same process --
@@ -599,9 +606,17 @@ PY
     why=$(printf '%s' "$row" | python3 -c '
 import json,sys; r=json.load(sys.stdin); w=[]
 cap=r["capability_match"] or {}; claims_gpu=bool({"cuda","gpu"} & set(r["backends"]))
-if not (cap.get("passed") and not cap.get("skipped")) and not (cap.get("skipped") and not claims_gpu): w.append("capability_match: "+("SKIPPED on a GPU-claiming model: " if cap.get("skipped") else "")+str(cap.get("message",""))[:70])
+# #3872: DO NOT CAP. A length cap is structurally wrong for this field: the classification
+# ("this is a refusal, not a fallback"), the scope caveat and the diagnostic instruction are
+# whatever the author added LAST, so any cap removes exactly the part a cap looks harmless
+# for keeping. Measured: the first draft of this fix capped at 200 and case
+# red-reason-survives-truncation caught it, because the classification starts at char 256.
+# A red line prints its whole reason; a message too long to read is a defect in the message.
+def _disp(msg):
+    return str(msg or "")
+if not (cap.get("passed") and not cap.get("skipped")) and not (cap.get("skipped") and not claims_gpu): w.append("capability_match: "+("SKIPPED on a GPU-claiming model: " if cap.get("skipped") else "")+_disp(cap.get("message","")))
 gold=r["golden_output"] or {}
-if not gold.get("passed"): w.append("golden_output: "+("SKIPPED: " if gold.get("skipped") else "")+str(gold.get("message",""))[:70])
+if not gold.get("passed"): w.append("golden_output: "+("SKIPPED: " if gold.get("skipped") else "")+_disp(gold.get("message","")))
 for b,v in r["backends"].items():
     if v["fallback"]: w.append(b+": FELL BACK (claimed backend did not run)")
     elif v.get("escaped_special"): w.append(b+": escaped special token in the formatted prompt: templated twice (#3743)")

@@ -73,13 +73,22 @@ rc = 0
 import re
 def is_q4k(r):  # a Q4_K model, by its file or its id (#3712)
     return bool(re.search(r"q4_?k", f"{r.get('gguf', '')} {r.get('id', '')}", re.I))
+# #3872: DO NOT CAP. A length cap is structurally wrong for this field: the classification
+# ("this is a refusal, not a fallback"), the scope caveat and the diagnostic instruction are
+# whatever the author added LAST, so any cap removes exactly the part a cap looks harmless
+# for keeping. Measured: the first draft of this fix capped at 200 and case
+# red-reason-survives-truncation caught it, because the classification starts at char 256.
+# A red line prints its whole reason; a message too long to read is a defect in the message.
+def _disp(msg):
+    return str(msg or "")
+
 def why_of(x, backends):  # every reason a measured row is not green on the claimed backends
     why = []
     cm, go = x.get("capability_match") or {}, x.get("golden_output") or {}
     claims_gpu = bool({"cuda", "gpu"} & set(backends))
     cap_ok = (cm.get("passed") and not cm.get("skipped")) or (cm.get("skipped") and not claims_gpu)
-    if not cap_ok: why.append("capability_match " + ("SKIPPED" if cm.get("skipped") else "FAIL") + ": " + str(cm.get("message", ""))[:60])
-    if not (go.get("passed") and not go.get("skipped")): why.append("golden_output " + ("SKIPPED" if go.get("skipped") else "FAIL") + ": " + str(go.get("message", ""))[:60])
+    if not cap_ok: why.append("capability_match " + ("SKIPPED" if cm.get("skipped") else "FAIL") + ": " + _disp(cm.get("message", "")))
+    if not (go.get("passed") and not go.get("skipped")): why.append("golden_output " + ("SKIPPED" if go.get("skipped") else "FAIL") + ": " + _disp(go.get("message", "")))
     be = x.get("backends") or {}
     for b in backends:
         v = be.get(b)
