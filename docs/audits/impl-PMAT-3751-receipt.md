@@ -46,7 +46,7 @@ The rejection line now names the reference: `… validated via serial prefill ag
 | drift falsifier on a known-divergent file | RED (above); GREEN control on a clean file |
 
 ## End to end: `apr run --gpu`, released 0.69.0 (`5615e7afe`, Q8_K dense reference) vs this branch
-lambda (`ef8963016`), aprender-37's Zorblat turn, `--max-tokens 16 --format json`, under `gpu-q` (`e2e-apr-run-gpu-lambda.txt`):
+lambda (`ef8963016`), `--prompt` = aprender-37's Zorblat question, `--max-tokens 16 --format json`, under `gpu-q` (`e2e-apr-run-gpu-lambda.txt`). Neither binary contains #3672 (`a9502d992`), so both auto-template the prompt with the inner ChatML escaped (aprender-37, measured). The F2 probe here is that token list, NOT the harness's `chat-zorblat` sequence. This is an A/B of the two binaries on one input, and does not re-run the harness rows:
 
 | file | probe path | 0.69.0 | this branch |
 |---|---|---|---|
