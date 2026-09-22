@@ -1,5 +1,15 @@
 impl ChatSession {
-        pub(super) fn new(path: &Path) -> Result<Self, CliError> {
+        /// #3794: `force_cpu` gates CUDA INITIALISATION, not just generation.
+        ///
+        /// Generation already honoured it (`chat_generate_session_02.rs`), so the
+        /// answer came from the CPU — but the session had already built an
+        /// `OwnedQuantizedModelCuda`, uploaded the weights and printed
+        /// `[GGUF CUDA: … — pre-cached]`, holding VRAM for its whole lifetime. On
+        /// the shared GPU hosts that is memory taken OUTSIDE `/tmp/apr-gpu.lock`
+        /// by a run that asked for none, so it is invisible to `gpu-q` and can
+        /// starve the very serialization rationing the card. A `--no-gpu` flag
+        /// that takes the GPU also fails its own claim on its face.
+        pub(super) fn new(path: &Path, force_cpu: bool) -> Result<Self, CliError> {
             contract_pre_session_persistence!();
             println!("{}", "Loading model...".cyan());
             let start = Instant::now();
@@ -88,7 +98,7 @@ impl ChatSession {
                 match realizar::gguf::MappedGGUFModel::from_path(&model_path_buf) {
                     Ok(mapped) => {
                         #[cfg(feature = "cuda")]
-                        {
+                        if super::cuda_preload_allowed(force_cpu, format) {
                             let (cuda, failed) = try_init_gguf_cuda(&mapped)?;
                             cached_gguf_cuda = cuda;
                             if failed { cuda_init_failed = true; }
@@ -104,7 +114,7 @@ impl ChatSession {
             #[cfg(feature = "cuda")]
             let mut cached_apr_cuda = None;
             #[cfg(feature = "cuda")]
-            if format == ModelFormat::Apr {
+            if super::cuda_preload_allowed(force_cpu, format) && format == ModelFormat::Apr {
                 let (cuda, failed) = try_init_apr_cuda(&model_bytes, path);
                 cached_apr_cuda = cuda;
                 if failed { cuda_init_failed = true; }
@@ -113,7 +123,7 @@ impl ChatSession {
             #[cfg(feature = "cuda")]
             let mut cached_safetensors_cuda = None;
             #[cfg(feature = "cuda")]
-            if format == ModelFormat::SafeTensors {
+            if super::cuda_preload_allowed(force_cpu, format) && format == ModelFormat::SafeTensors {
                 let (cuda, failed) = try_init_safetensors_cuda(&model_path_buf);
                 cached_safetensors_cuda = cuda;
                 if failed { cuda_init_failed = true; }
@@ -138,6 +148,7 @@ impl ChatSession {
                 #[cfg(feature = "cuda")]
                 cuda_init_failed,
                 had_generate_error: false,
+                generated_on_gpu: false,
             };
             contract_post_session_persistence!(&());
             Ok(session)

@@ -1697,6 +1697,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
                 trace_level.as_str(),
                 *profile,
                 cli.offline,
+                cli.json,
             )
         }
 

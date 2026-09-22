@@ -45,6 +45,7 @@
     fn test_chat_config_force_cpu() {
         let config = ChatConfig {
             force_cpu: true,
+            json: false,
             ..Default::default()
         };
         assert!(config.force_cpu);
@@ -309,6 +310,7 @@
         let result = run(
             path, 0.7, 0.9, 512, None, false, false, false, None, false, None, "info", false,
             false, // offline
+            false, // #3794: --json
         );
         assert!(result.is_err());
         match result {
@@ -338,6 +340,7 @@
             "debug",
             true,
             false, // offline
+            false, // #3794: --json
         );
         assert!(result.is_err());
     }
