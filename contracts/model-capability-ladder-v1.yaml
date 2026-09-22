@@ -121,7 +121,7 @@ ladder:
                         # and MEASURED green 8/8 on BOTH lambda (where it failed) and gx10 at 3ebb1c61e.
                         # `required: false` on a Q4_K rung is what let 0.69.0 ship it as a note instead of a
                         # failure -- FALSIFY-MCL-011's own if_fails says so -- and no Q4_K model is optional.
-      note: "second dense-Qwen3 size. No Q4_K model is optional (#3712), so the release gate refuses this key and the release cannot ship on it. It is not flipped here because the ARMED ladder-green shape reads the committed 0.68.2 lambda receipt (golden_output: Empty output — the 0.69.0 hold) and would turn pv lint red on every PR; the flip to true lands with the Qwen3-8B CUDA fix and a committed green lambda receipt"
+      note: "second dense-Qwen3 size. No Q4_K model is optional (#3712), so the release gate refuses this key and the release cannot ship on it. FLIPPED to true for 0.69.1: the condition this note used to name as the reason for deferring — 'the flip lands with the Qwen3-8B CUDA fix and a committed green lambda receipt' — is the release's own work, not a reason to wait. Arming it surfaced what the key had masked since 0.69.0: the committed 0.68.2 lambda receipt carries qa_rc 5 / golden_output 'Empty output' / green false, so ladder-green fires missingGreenHost: lambda and takes contracts, pv lint, check_model_ladder and clean-room red together — ONE cause, four gates. resolve() unions green witnesses ACROSS versions, so a green 0.69.1 lambda receipt closes all four and no committed receipt is edited"
     - id: qwen35-0.8b-q4km
       family: qwen3.5
       arch: qwen35
