@@ -20327,6 +20327,23 @@ roadmap:
   labels:
   - kind:code
   notes: "Refs #3577 (ONT-4c3; its ledger binding is infra's row, bound after this merges) and #3624 (the by_entity_type sibling, not closed here). R-3 of ONT-001: pc_extract is one planted defect per registered extractor, every run."
+- id: PMAT-3847
+  github_issue: 3847
+  item_type: task
+  title: 'ONT-4c: the first non-code contracts — README.md, CLAUDE.md, one .apr model file, one CSV — with their extractors'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-22T13:24:57Z
+  updated: 2026-09-22T13:24:57Z
+  spec: docs/specifications/paiml-ontology.md (paiml/infra, v4.11 §5 ONT-4c)
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-3708
   github_issue: 3708
   item_type: task
