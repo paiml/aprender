@@ -1923,3 +1923,75 @@ fn print_human_output_no_panic() {
     print_human_output(&family, &config, false, false);
     print_human_output(&family, &config, true, true);
 }
+
+// ── #3890: `Proven` must mean a verification RAN, not that a harness was declared ──
+
+/// BOTH DIRECTIONS, or it is an anecdote.
+///
+/// A contract declaring harnesses with NO verification record must not report Proven —
+/// that is the regression reconciling the shipped contracts would have introduced.
+/// A contract WITH a record must still report Proven, or the fix destroyed the level
+/// rather than grounding it.
+#[test]
+fn proven_requires_a_verification_record_not_a_declaration() {
+    use super::proof::{proof_level_of_text, ProofLevel};
+
+    let declared_only = "kani_harnesses:\n  - id: KANI-X-001\n    harness: verify_x\n";
+    assert_ne!(
+        proof_level_of_text(declared_only).0,
+        ProofLevel::Proven,
+        "a declared harness with no verification record must NOT report Proven — \
+         nothing in this repo runs kani (#3890)"
+    );
+
+    let with_record =
+        "kani_harnesses:\n  - id: KANI-X-001\nkani_verified_at: 2026-09-22T00:00:00Z\n";
+    assert_eq!(
+        proof_level_of_text(with_record).0,
+        ProofLevel::Proven,
+        "a recorded verification run MUST still reach Proven, or the level is destroyed \
+         rather than grounded (#3890)"
+    );
+}
+
+/// The counts in `verification_summary` are claims, not a run record. Accepting them
+/// would reproduce the defect one field over.
+#[test]
+fn verification_summary_counts_are_not_a_verification_record() {
+    use super::proof::{proof_level_of_text, ProofLevel};
+    let counts = "kani_harnesses:\n  - id: KANI-X-001\nverification_summary:\n  l3_kani_proved: 8\n  l4_lean_proved: 4\n";
+    assert_ne!(
+        proof_level_of_text(counts).0,
+        ProofLevel::Proven,
+        "`l3_kani_proved: 8` is a COUNT OF CLAIMS, not evidence that anything ran (#3890)"
+    );
+}
+
+/// FORWARD GUARD, AND CURRENTLY VACUOUS — say so rather than let it look load-bearing.
+///
+/// Measured: under a mutant restoring the old `has_kani -> Proven` rule, the two tests
+/// above go RED and **this one stays GREEN**. It survives because the nine embedded
+/// contracts are TRUNCATED copies that contain no `kani_harness` string at all, so
+/// neither the old rule nor the new one reaches Proven for them. It passes because its
+/// subject is absent, which is the exact defect class #3863 is about.
+///
+/// It is kept because it becomes load-bearing the moment the shipped contracts are
+/// reconciled with their root siblings (#3888) — that reconciliation is precisely what
+/// would have flipped six of them to Proven, and this is the assertion that catches it.
+/// Until then it is NOT ARMED, and a green here is not evidence.
+///
+/// If it starts failing after real verification exists, that is the good outcome:
+/// delete the assertion, do not weaken it.
+#[test]
+fn no_embedded_contract_claims_proven_while_nothing_runs_kani() {
+    use super::proof::{proof_status_for_contract, ProofLevel};
+    for (name, _) in KERNEL_CONTRACTS {
+        let p = proof_status_for_contract(name);
+        assert_ne!(
+            p.level,
+            ProofLevel::Proven,
+            "{name} reports Proven, but no workflow, script or Makefile target runs \
+             `cargo kani` — `pv kani` GENERATES harnesses (#3890)"
+        );
+    }
+}
