@@ -84,6 +84,53 @@ run_row() { # run_row <src> <be-json> -> prints true|false (the row's green)
   python3 -c 'import json,sys; print(str(json.loads(sys.stdin.read())["green"]).lower())' <<< "$out"
 }
 
+# The WHY builder, lifted separately (#3899). A row can be RED with its only cause
+# unexplained: #3886 folded serve into `green` and left this builder unchanged, so a
+# row red solely on serve printed `unknown`. The verdict moved; the explanation did
+# not. Measured live on gx10's fp16 `.apr` row.
+extract_why() {
+  local src="$1" body
+  body=$(awk '/why=.*python3 -c/{f=1; next} f && /^print\(/{print; exit} f' "$src")
+  if ! grep -q 'w.append' <<< "$body"; then
+    echo "  the extracted why builder does not append reasons — this check no longer knows what it runs" >&2
+    return 2
+  fi
+  # The final line carries the shell's closing `')` after the python. Strip it, or
+  # the extracted program ends in an unterminated string literal.
+  printf '%s' "$body" | sed "s/')\$//"
+}
+
+# A row that is green on EVERY other axis and red only because a serve route 500s.
+RED_ONLY_ON_SERVE='{"capability_match":{"passed":true,"skipped":false,"message":"ok"},
+ "golden_output":{"passed":true,"skipped":false,"message":"ok"},
+ "backends":{"cuda":{"ran":true,"fallback":false,"escaped_special":false,"rc":0,
+   "verbs":{"serve":{"probed":true,"teardown":"clean","routes":{
+     "/v1/completions|stream=false":{"http":500},"/api/chat|stream=false":{"http":200}}}}}}}'
+
+why_of() { # why_of <src> -> the reason line that row would print
+  # The builder already reads its row from STDIN, so it just gets piped. (The first
+  # version of this helper rebuilt it through `exec` and string-splitting, which is
+  # more machinery than the thing under test.)
+  local src="$1" why
+  why=$(extract_why "$src") || return 2
+  printf '%s' "$RED_ONLY_ON_SERVE" | python3 -c "$why" 2>/dev/null
+}
+
+# A row red ONLY on serve must EXPLAIN itself. `unknown` is the failure this
+# guards: the verdict says red and the operator is told nothing.
+check_reason() { # check_reason <src> -> 0 explained, 1 not
+  local src="$1" got
+  got=$(why_of "$src") || return 2
+  case "$got" in
+    *"serve routes non-200"*)
+      printf '  ok    %-16s %s\n' "reason" "$got"; return 0 ;;
+    ""|unknown)
+      printf '  FAIL  %-16s reason is %s — the row is red and says nothing\n' "reason" "${got:-empty}"; return 1 ;;
+    *)
+      printf '  FAIL  %-16s reason does not name serve: %s\n' "reason" "$got"; return 1 ;;
+  esac
+}
+
 # case: <name> <probed> <teardown> <http> <expected green>
 CASES='healthy|true|clean|200|true
 route-503|true|clean|503|false
@@ -124,13 +171,30 @@ if [ "$SELF_TEST" = 1 ]; then
   else
     echo "  RED (expected)"
   fi
-  echo "self-test: PASS — the table turns red when green stops reading serve"
+  # Mutant C (#3899): the verdict keeps serve, the EXPLANATION loses it — which is
+  # exactly the state #3886 shipped and gx10 measured as `[FAIL] … unknown`.
+  mutant_c=$(mktemp); trap 'rm -f "$mutant" "$mutant_c"' EXIT
+  sed '/serve routes non-200/d' "$SCRIPT" > "$mutant_c"
+  if cmp -s "$SCRIPT" "$mutant_c"; then
+    echo "SELF-TEST INCONCLUSIVE: mutant C changed nothing" >&2; exit 1
+  fi
+  echo "self-test: the shipped script explains a serve-only red"
+  check_reason "$SCRIPT" > /dev/null || { echo "SELF-TEST FAILED: shipped script does not explain it" >&2; exit 1; }
+  echo "  GREEN (expected)"
+  echo "self-test: mutant C (verdict keeps serve, explanation drops it)"
+  if check_reason "$mutant_c" > /dev/null 2>&1; then
+    echo "SELF-TEST FAILED: mutant C still explained the red — a row could go red saying nothing" >&2; exit 1
+  else
+    echo "  RED (expected)"
+  fi
+
+  echo "self-test: PASS — red when green stops reading serve, AND when the reason stops naming it"
   exit 0
 fi
 
 echo "ladder serve verdict: a row's green must account for the serve probe ($SCRIPT)"
-if run_table "$SCRIPT"; then
-  echo "OK: a healthy serve keeps a row green; a non-200, an unprobed serve and a failed teardown each redden it"
+if run_table "$SCRIPT" && check_reason "$SCRIPT"; then
+  echo "OK: a healthy serve keeps a row green; a non-200, an unprobed serve and a failed teardown each redden it AND say why"
   exit 0
 else
   rc=$?

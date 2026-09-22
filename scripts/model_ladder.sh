@@ -639,6 +639,24 @@ for b,v in r["backends"].items():
     if v["fallback"]: w.append(b+": FELL BACK (claimed backend did not run)")
     elif v.get("escaped_special"): w.append(b+": escaped special token in the formatted prompt: templated twice (#3743)")
     elif not v["ran"]: w.append(b+": did not run (rc=%s)"%v["rc"])
+    # SERVE IS A SEPARATE CHECK, NOT PART OF THE elif CHAIN (#3899). A backend can
+    # `ran: true` with every HTTP route failing — that is exactly the fp16 `.apr`
+    # case — so chaining it would hide the only cause the row has.
+    #
+    # #3886 folded serve into `green` and did NOT teach this builder about it, so a
+    # row red SOLELY on serve printed `unknown`: the verdict moved and the
+    # explanation did not. That is the defect the comment above this block warns
+    # about in a different form — "a red line prints its whole reason".
+    sv=(v.get("verbs") or {}).get("serve") or {}
+    if not sv.get("probed"):
+        w.append(b+": serve NOT PROBED: "+_disp(sv.get("why","")))
+    elif sv.get("teardown")=="failed":
+        w.append(b+": serve teardown FAILED (the server would not die — a real property of the verb)")
+    else:
+        routes=sv.get("routes") or {}
+        bad=sorted(k for k,x in routes.items() if (x or {}).get("http")!=200)
+        if bad:
+            w.append(b+": serve routes non-200: "+", ".join("%s=%s"%(k,(routes[k] or {}).get("http")) for k in bad))
 print("; ".join(w) or "unknown")')
     printf '  [FAIL  ] %-30s %s\n' "$rid" "$why"
   fi
