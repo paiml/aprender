@@ -52,6 +52,7 @@ impl CudaExecutor {
             WeightQuantType::IQ4XS => self.iq4_xs_gemv_into(weight_ptr, input, output, n, k),
             WeightQuantType::IQ4NL => self.iq4_nl_gemv_into(weight_ptr, input, output, n, k),
             WeightQuantType::IQ3S => self.iq3_s_gemv_into(weight_ptr, input, output, n, k),
+            WeightQuantType::Q5_1 => self.q5_1_gemv_into(weight_ptr, input, output, n, k),
         }
     }
 

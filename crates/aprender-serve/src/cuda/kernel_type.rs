@@ -364,6 +364,11 @@ pub enum KernelType {
         k: u32,
         n: u32,
     },
+    /// Q5_1 GEMV (affine 32-element block: w = q*d + m, 5th bit in qh) - #3885
+    Q5_1Gemv {
+        k: u32,
+        n: u32,
+    },
     /// Incremental attention for M=1 autoregressive decoding (PAR-020 + PAR-021)
     IncrementalAttention {
         max_seq_len: u32,

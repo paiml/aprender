@@ -61,7 +61,7 @@ fn apr_qtype_to_dtype(qtype: u32) -> Result<&'static str> {
 #[inline]
 #[must_use]
 pub(crate) fn gpu_unsupported_quant_qtype(qtype: u32) -> bool {
-    !matches!(qtype, 0 | 1 | 2 | 3 | 6 | 8 | 12 | 13 | 14 | 20 | 21 | 23)
+    !matches!(qtype, 0 | 1 | 2 | 3 | 6 | 7 | 8 | 12 | 13 | 14 | 20 | 21 | 23)
 }
 
 /// #3477 / PMAT-781/783/785: the quantized projections the Qwen3.5 hybrid

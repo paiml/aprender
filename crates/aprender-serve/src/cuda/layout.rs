@@ -546,6 +546,161 @@ $L_iq_exit:
     )
 }
 
+/// #3885: Q5_1 (GGML type 7) GEMV, row-major.
+///
+/// The simplest kernel in this file and the last blocker on
+/// `Qwen2.5-0.5B-Instruct-IQ4_XS`, which carries 24 Q5_1 tensors among 290.
+/// A legacy 32-element block in 24 bytes: `d` f16 at +0, `m` f16 at +2, `qh`
+/// u32 at +4, `qs[16]` at +8. No codebook, no sign bytes, no sub-block scales.
+///
+/// The one subtlety is the 5th bit, which is what distinguishes Q5_1 from Q4_1:
+/// the low nibble of byte `j` takes bit `j` of `qh` and the high nibble takes
+/// bit `j + 16`, each contributing 16 to the quantized value. Both nibbles of a
+/// byte are 16 elements apart in the output, NOT adjacent - the reference's
+/// `y[j]` / `y[j + QK5_1/2]` split, the same shape as IQ4_NL's.
+///
+/// Q5_1 is AFFINE, unlike every other kernel here: `w = q * d + m`. The min is
+/// per-block and added after scaling, so a kernel that drops it produces values
+/// with the right spread and the wrong centre.
+///
+/// LAYOUT-001: row-major. Row `ctaid` starts at `w_ptr + ctaid * ceil(k/32) * 24`.
+fn generate_q5_1_gemv_ptx(k: u32, n: u32) -> String {
+    let _ = (k, n);
+
+    String::from(
+        r"
+.version 7.5
+.target sm_70
+.address_size 64
+
+.visible .entry q5_1_gemv_warp_reduce(
+    .param .u64 y_ptr,
+    .param .u64 w_ptr,
+    .param .u64 x_ptr,
+    .param .u32 k_dim,
+    .param .u32 n_dim
+)
+{
+    .reg .u32 %r<40>;
+    .reg .u64 %rd<24>;
+    .reg .f32 %f<20>;
+    .reg .b16 %h<4>;
+    .reg .pred %p<10>;
+
+    mov.u32 %r0, %tid.x;
+    mov.u32 %r1, %ctaid.x;
+
+    ld.param.u32 %r2, [n_dim];
+    ld.param.u32 %r3, [k_dim];
+    ld.param.u64 %rd0, [y_ptr];
+    ld.param.u64 %rd1, [w_ptr];
+    ld.param.u64 %rd2, [x_ptr];
+
+    setp.ge.u32 %p0, %r1, %r2;
+    @%p0 bra $L_q51_exit;
+
+    mov.f32 %f0, 0f00000000;
+
+    // nb = ceil(k_dim / 32)
+    add.u32 %r4, %r3, 31;
+    shr.u32 %r4, %r4, 5;
+
+    // row_base = w_ptr + ctaid * nb * 24
+    mul.lo.u32 %r5, %r4, 24;
+    mul.wide.u32 %rd3, %r1, %r5;
+    add.u64 %rd3, %rd1, %rd3;
+
+    // jlow = tid & 15 (byte index), jhalf = tid >> 4 (nibble select)
+    and.b32 %r7, %r0, 15;
+    shr.u32 %r6, %r0, 4;
+
+    // nibble shift = jhalf * 4
+    shl.b32 %r19, %r6, 2;
+    // qh bit index = jlow + 16*jhalf
+    shl.b32 %r23, %r6, 4;
+    add.u32 %r23, %r23, %r7;
+
+    mov.u32 %r8, 0;
+
+$L_q51_blk:
+    setp.ge.u32 %p1, %r8, %r4;
+    @%p1 bra $L_q51_blk_end;
+
+    // blk_addr = row_base + blk * 24
+    mul.wide.u32 %rd4, %r8, 24;
+    add.u64 %rd4, %rd3, %rd4;
+
+    // d (f16 at +0), m (f16 at +2)
+    ld.global.b16 %h0, [%rd4];
+    cvt.f32.f16 %f1, %h0;
+    ld.global.b16 %h1, [%rd4+2];
+    cvt.f32.f16 %f2, %h1;
+
+    // qh (u32 at +4)
+    ld.global.u32 %r24, [%rd4+4];
+
+    // byte = qs[jlow], qs starts at +8
+    cvt.u64.u32 %rd7, %r7;
+    add.u64 %rd7, %rd4, %rd7;
+    add.u64 %rd7, %rd7, 8;
+    ld.global.u8 %r18, [%rd7];
+
+    // nib = (byte >> (4*jhalf)) & 0xf
+    shr.u32 %r20, %r18, %r19;
+    and.b32 %r20, %r20, 15;
+
+    // hb = (qh >> (jlow + 16*jhalf)) & 1, placed at bit 4
+    shr.u32 %r25, %r24, %r23;
+    and.b32 %r25, %r25, 1;
+    shl.b32 %r25, %r25, 4;
+    or.b32 %r20, %r20, %r25;
+
+    // w = q * d + m
+    cvt.rn.f32.u32 %f4, %r20;
+    fma.rn.f32 %f5, %f4, %f1, %f2;
+
+    // x_idx = blk*32 + tid
+    shl.b32 %r22, %r8, 5;
+    add.u32 %r22, %r22, %r0;
+
+    setp.ge.u32 %p3, %r22, %r3;
+    @%p3 bra $L_q51_skip;
+
+    mul.wide.u32 %rd9, %r22, 4;
+    add.u64 %rd9, %rd2, %rd9;
+    ld.global.f32 %f6, [%rd9];
+    fma.rn.f32 %f0, %f5, %f6, %f0;
+
+$L_q51_skip:
+    add.u32 %r8, %r8, 1;
+    bra $L_q51_blk;
+
+$L_q51_blk_end:
+    shfl.sync.down.b32 %f10, %f0, 16, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f10;
+    shfl.sync.down.b32 %f11, %f0, 8, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f11;
+    shfl.sync.down.b32 %f12, %f0, 4, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f12;
+    shfl.sync.down.b32 %f13, %f0, 2, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f13;
+    shfl.sync.down.b32 %f14, %f0, 1, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f14;
+
+    setp.ne.u32 %p4, %r0, 0;
+    @%p4 bra $L_q51_exit;
+
+    mul.wide.u32 %rd11, %r1, 4;
+    add.u64 %rd11, %rd0, %rd11;
+    st.global.f32 [%rd11], %f0;
+
+$L_q51_exit:
+    ret;
+}
+",
+    )
+}
+
 /// #3884: IQ3_S (GGML type 21) GEMV, row-major.
 ///
 /// The most intricate codebook type here: 3.4375 bits/weight as 9-bit indices
