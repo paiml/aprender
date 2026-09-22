@@ -384,7 +384,7 @@ fn generate_iq4_xs_gemv_ptx(k: u32, n: u32) -> String {
 .target sm_70
 .address_size 64
 
-// The 16 non-linear IQ4_NL levels — quantize::iq_grids::KVALUES_IQ4NL.
+// The 16 non-linear IQ4_NL levels: quantize::iq_grids::KVALUES_IQ4NL.
 .global .align 4 .s32 kvalues_iq4nl[16] = {-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113};
 
 .visible .entry iq4_xs_gemv_warp_reduce(
@@ -633,7 +633,7 @@ $L_loop:
     bra $L_loop;
 
 $L_loop_end:
-    // Warp reduction — identical idiom to the block-quantized GEMVs here.
+    // Warp reduction: identical idiom to the block-quantized GEMVs here.
     shfl.sync.down.b32 %f4, %f0, 16, 31, 0xffffffff;
     add.f32 %f0, %f0, %f4;
     shfl.sync.down.b32 %f5, %f0, 8, 31, 0xffffffff;

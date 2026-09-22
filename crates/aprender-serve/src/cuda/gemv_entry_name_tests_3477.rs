@@ -40,6 +40,25 @@ mod gemv_entry_name_tests_3477 {
         for kt in every_gemv_kernel() {
             let name = kernels.kernel_name(&kt);
             let ptx = kernels.generate_ptx(&kt);
+            // ptxas rejects a non-ASCII byte ANYWHERE, comments included, and
+            // fails the whole module with `ptxas fatal : Unexpected non-ASCII
+            // character`. The entry name can be perfectly correct and the module
+            // still never assemble — which is exactly what an em dash in one of
+            // MY comments did to the F16 and IQ4_XS kernels (#3477, caught by
+            // aprender-45's A/B on its first real run, not by this guard).
+            if let Some(bad) = ptx.chars().find(|c| !c.is_ascii()) {
+                let line = ptx
+                    .lines()
+                    .find(|l| l.chars().any(|c| !c.is_ascii()))
+                    .unwrap_or("")
+                    .trim();
+                broken.push(format!(
+                    "\n  - {kt:?}: emitted PTX contains U+{:04X}, which ptxas refuses \
+                     even inside a comment, so the module never assembles: {line:?}",
+                    bad as u32
+                ));
+                continue;
+            }
             let entry = format!(".visible .entry {name}(");
             if !ptx.contains(&entry) {
                 let found: Vec<&str> = ptx
