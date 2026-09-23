@@ -267,6 +267,171 @@ mod iq4_nl_device_ab_tests {
         eprintln!("#3884 A/B: {n} rows, worst relative disagreement {worst:.3e}");
     }
 
+    /// #3953: run the IQ2_S kernel on `weights` and compare it with the CPU oracle.
+    ///
+    /// ADMISSION RULE (cop, from aprender-70's IQ4_XS finding): IQ4_XS was whitelisted
+    /// after an A/B at ONE shape, and a real model calls it at eight, including k=3584 --
+    /// 14 super-blocks, not a power of two. So this is run at EVERY (k, n) the real model
+    /// uses for type 22, on synthetic AND real bytes, with:
+    ///   * per-row tolerance |gpu - cpu| / sum_j |w_ij| * |x_j| <= 1e-5 -- scaled by the
+    ///     row's own magnitude, so a large row cannot hide a small absolute error and a
+    ///     near-zero row cannot turn rounding into a huge ratio;
+    ///   * the output PRE-FILLED WITH NaN, so a row the kernel never writes fails outright
+    ///     instead of reading as 0.0 and agreeing with a CPU value near 0.
+    /// Returns (worst ratio, its row, gpu, cpu).
+    fn iq2_s_device_ab(
+        exec: &mut CudaExecutor,
+        weights: &[u8],
+        k: usize,
+        n: usize,
+    ) -> Result<(f64, usize, f32, f32), String> {
+        use crate::quantize::iq2_s::{dequantize_iq2_s, GGML_TYPE_IQ2_S, IQ2_S_BLOCK_BYTES};
+        let row_bytes = k.div_ceil(256) * IQ2_S_BLOCK_BYTES;
+        assert_eq!(weights.len(), n * row_bytes, "buffer must be n * ceil(k/256) * 82 bytes");
+
+        // Position-dependent, so a block read at the wrong offset cannot sum the same.
+        let input: Vec<f32> = (0..k).map(|i| ((i % 17) as f32) - 8.0).collect();
+        let expected = crate::quantize::iq_parallel_matvec(GGML_TYPE_IQ2_S, weights, &input, k, n)
+            .map_err(|e| format!("CPU oracle failed: {e}"))?;
+
+        let weight_buf = GpuBuffer::from_host(&exec.context, weights).unwrap();
+        let input_buf = GpuBuffer::from_host(&exec.context, &input).unwrap();
+        let output_buf = GpuBuffer::from_host(&exec.context, &vec![f32::NAN; n]).unwrap();
+        exec.iq2_s_gemv_into(
+            weight_buf.as_ptr(),
+            &input_buf,
+            &output_buf,
+            u32::try_from(n).unwrap(),
+            u32::try_from(k).unwrap(),
+        )
+        .map_err(|e| format!("IQ2_S GEMV launch: {e:?}"))?;
+        exec.stream.synchronize().unwrap();
+        let mut got = vec![0.0f32; n];
+        output_buf.copy_to_host(&mut got).unwrap();
+
+        let (mut worst, mut wrow) = (0.0f64, 0usize);
+        for row in 0..n {
+            if !got[row].is_finite() {
+                return Err(format!(
+                    "row {row} is {} -- the kernel never wrote it (output was pre-filled with NaN)",
+                    got[row]
+                ));
+            }
+            let w = dequantize_iq2_s(&weights[row * row_bytes..(row + 1) * row_bytes])
+                .map_err(|e| format!("row {row} dequant: {e}"))?;
+            let scale: f64 = w.iter().zip(&input).map(|(a, b)| f64::from(a.abs() * b.abs())).sum();
+            let ratio = f64::from((got[row] - expected[row]).abs()) / scale.max(f64::MIN_POSITIVE);
+            if ratio > worst {
+                worst = ratio;
+                wrow = row;
+            }
+        }
+        let nonzero = expected.iter().filter(|v| v.abs() > 1e-6).count();
+        if nonzero < n / 2 {
+            return Err(format!("only {nonzero}/{n} oracle rows non-zero: would pass on an all-zero kernel"));
+        }
+        Ok((worst, wrow, got[wrow], expected[wrow]))
+    }
+
+    fn assert_within(label: &str, k: usize, n: usize, r: Result<(f64, usize, f32, f32), String>) {
+        let (worst, row, g, e) = r.unwrap_or_else(|m| panic!("#3953 {label} k={k} n={n}: {m}"));
+        assert!(
+            worst <= 1e-5,
+            "#3953 {label} k={k} n={n}: GPU and CPU IQ2_S disagree. worst row {row}: GPU {g} vs \
+             CPU {e} (err/sum|w||x| {worst:.3e} > 1e-5). The CPU decoder is the oracle."
+        );
+        eprintln!("#3953 A/B {label} k={k} n={n}: worst err/sum|w||x| {worst:.3e} at row {row}");
+    }
+
+    /// The small shape the planted faults were first proven against: 2 super-blocks per
+    /// row, so the stride is exercised.
+    #[test]
+    fn the_iq2_s_kernel_agrees_with_the_cpu_decoder_on_device() {
+        use crate::quantize::iq2_s_geometry_tests::iq2_s_weights;
+        let Some(mut exec) = create_executor() else {
+            eprintln!("SKIP: no CUDA device");
+            return;
+        };
+        let (k, n) = (512usize, 48usize);
+        assert_within("synthetic", k, n, iq2_s_device_ab(&mut exec, &iq2_s_weights(n, k), k, n));
+    }
+
+    /// EVERY (k, n) Qwen3.5-0.8B-UD-IQ2_XXS uses for type 22. Measured from the file:
+    /// five tensors, all `blk.{8,9,10,17,21}.ffn_down.weight`, all ne=[3584, 1024] --
+    /// ONE shape, 14 super-blocks per row, which the 2-block test above never reaches.
+    const IQ2_S_REAL_SHAPES: &[(usize, usize)] = &[(3584, 1024)];
+
+    #[test]
+    fn the_iq2_s_kernel_agrees_at_every_real_model_shape_on_device() {
+        use crate::quantize::iq2_s_geometry_tests::iq2_s_weights;
+        let Some(mut exec) = create_executor() else {
+            eprintln!("SKIP: no CUDA device");
+            return;
+        };
+        for &(k, n) in IQ2_S_REAL_SHAPES {
+            assert_within("synthetic", k, n, iq2_s_device_ab(&mut exec, &iq2_s_weights(n, k), k, n));
+        }
+    }
+
+    /// The same, on the REAL bytes of every type-22 tensor in the model.
+    ///
+    /// If the offset convention were wrong, GPU and CPU would read the SAME wrong bytes
+    /// and agree perfectly -- an A/B that proves nothing. So before comparing, the bytes
+    /// are shown to BE a weight tensor: every block's f16 scale `d` must be finite and
+    /// small. Header or string bytes decoded as f16 fail that.
+    #[test]
+    fn the_iq2_s_kernel_agrees_on_every_real_type22_tensor_on_device() {
+        use crate::gguf::MappedGGUFModel;
+        use crate::quantize::iq2_s::IQ2_S_BLOCK_BYTES;
+        const MODEL: &str = "/home/noah/models/Qwen3.5-0.8B-UD-IQ2_XXS.gguf";
+        let Some(mut exec) = create_executor() else {
+            eprintln!("SKIP: no CUDA device");
+            return;
+        };
+        if !std::path::Path::new(MODEL).exists() {
+            eprintln!("SKIP: {MODEL} is not on this host -- the real-bytes A/B did NOT run");
+            return;
+        }
+        let mapped = MappedGGUFModel::from_path(MODEL).expect("map the model");
+        let data = mapped.data();
+        let base = mapped.model.tensor_data_start;
+        let mut seen = 0usize;
+        for t in mapped.model.tensors.iter().filter(|t| t.qtype == 22) {
+            // The order `dims` is stored in is not what its doc says, and neither the
+            // "multiple of 256" test nor the byte size can recover it here: 3584 and 1024
+            // are BOTH multiples of 256, and n*(k/256)*82 is symmetric when both are. So
+            // the order is taken from IQ2_S_REAL_SHAPES, which was read from the raw file's
+            // ggml `ne` by an independent parser -- ground truth, not the API's convention.
+            let (a, b) = (t.dims[0] as usize, t.dims[1] as usize);
+            let (k, n) = if IQ2_S_REAL_SHAPES.contains(&(a, b)) {
+                (a, b)
+            } else if IQ2_S_REAL_SHAPES.contains(&(b, a)) {
+                (b, a)
+            } else {
+                panic!("{}: dims {:?} match no shape in IQ2_S_REAL_SHAPES -- the census is stale", t.name, t.dims)
+            };
+            let len = n * k.div_ceil(256) * IQ2_S_BLOCK_BYTES;
+            let start = base + usize::try_from(t.offset).unwrap();
+            let bytes = &data[start..start + len];
+            let mut bad_d = 0usize;
+            for blk in bytes.chunks_exact(IQ2_S_BLOCK_BYTES) {
+                let d = half::f16::from_le_bytes([blk[0], blk[1]]).to_f32();
+                if !d.is_finite() || d.abs() > 1.0 {
+                    bad_d += 1;
+                }
+            }
+            assert_eq!(
+                bad_d, 0,
+                "{}: {bad_d} blocks have a non-finite or implausible scale -- these bytes are \
+                 not this tensor (offset {start}), and an A/B on them would agree about garbage",
+                t.name
+            );
+            assert_within(&t.name, k, n, iq2_s_device_ab(&mut exec, bytes, k, n));
+            seen += 1;
+        }
+        assert_eq!(seen, 5, "expected the 5 type-22 tensors the census found, saw {seen}");
+    }
+
     /// The same comparison at a shape whose rows do NOT divide evenly, so the
     /// kernel's `x_idx >= k_dim` guard is exercised rather than assumed.
     #[test]

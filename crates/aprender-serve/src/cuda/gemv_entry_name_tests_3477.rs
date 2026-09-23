@@ -32,8 +32,71 @@ mod gemv_entry_name_tests_3477 {
             KernelType::Iq4XsGemv { k, n },
             KernelType::Iq4NlGemv { k, n },
             KernelType::Iq3SGemv { k, n },
+            KernelType::Iq2SGemv { k, n },
             KernelType::Q5_1Gemv { k, n },
         ]
+    }
+
+    /// #3953: a generator's OUTPUT must not contain generator SOURCE, and each module
+    /// must declare exactly one kernel -- its own.
+    ///
+    /// WHAT THE COMPILER ALREADY CATCHES, stated so this guard does not claim it. Every PTX
+    /// literal in these generators is a plain `r"..."`, where any `"` ENDS the string. So
+    /// Rust source that leaks into a literal -- a function body almost always carries
+    /// quotes -- is a `mismatched closing delimiter` compile error, not a silent pass.
+    /// (The IQ2_S generator was once inserted inside IQ3_S's literal by a bad anchor; that
+    /// would NOT have compiled. The first draft of this comment said it would; it did not
+    /// check, and a planted copy failed to compile.)
+    ///
+    /// WHAT IT DOES NOT CATCH, and this guard does:
+    ///   (a) a QUOTE-FREE fragment -- `fn generate_x_ptx(k: u32) -> String {` or
+    ///       `let mut acc = 0;` -- which a raw string accepts silently;
+    ///   (b) duplicated PTX inside ONE literal. PTX has no quotes, so a kernel body pasted
+    ///       twice compiles cleanly, and only ptxas objects, with an opaque duplicate-symbol
+    ///       message. Here it is named: "declares 2 `.visible .entry`";
+    ///   (c) any literal later switched to `r#"..."#`, where a bare `"` no longer ends it
+    ///       and every leak becomes compile-invisible.
+    #[test]
+    fn no_generator_leaks_into_another_kernels_ptx_3953() {
+        // None of these is valid PTX. `///` is deliberately absent: a PTX comment can
+        // legitimately contain it, and a guard with false positives gets disabled.
+        const RUST_ONLY: &[&str] = &["fn generate_", "String::from(", ".push_str(", "let mut "];
+        let kernels = CudaKernels::new();
+        let all: Vec<(KernelType, String)> = every_gemv_kernel()
+            .into_iter()
+            .map(|kt| {
+                let name = kernels.kernel_name(&kt).to_string();
+                (kt, name)
+            })
+            .collect();
+        let mut broken = Vec::new();
+        for (kt, own) in &all {
+            let ptx = kernels.generate_ptx(kt);
+            for tok in RUST_ONLY {
+                if let Some(line) = ptx.lines().find(|l| l.contains(tok)) {
+                    broken.push(format!(
+                        "\n  - {kt:?}: emitted PTX contains the Rust token {tok:?} -- generator \
+                         SOURCE leaked into this kernel's literal: {:?}",
+                        line.trim()
+                    ));
+                }
+            }
+            let entries = ptx.matches(".visible .entry ").count();
+            if entries != 1 {
+                broken.push(format!(
+                    "\n  - {kt:?}: declares {entries} `.visible .entry`, expected exactly 1 (`{own}`)"
+                ));
+            }
+            for (okt, other) in &all {
+                if other != own && ptx.contains(&format!(".visible .entry {other}(")) {
+                    broken.push(format!(
+                        "\n  - {kt:?}: contains ANOTHER kernel's entry `{other}` ({okt:?}) -- one \
+                         generator's body is inside another's literal"
+                    ));
+                }
+            }
+        }
+        assert!(broken.is_empty(), "PTX generators leaked into each other:{}", broken.concat());
     }
 
     #[test]
