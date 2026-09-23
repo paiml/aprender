@@ -182,10 +182,10 @@ pub enum Commands {
         /// Path to binding registry YAML (adds binding coverage)
         #[arg(long)]
         binding: Option<PathBuf>,
-        /// L5 gate: before counting a binding as implemented, verify its
-        /// `function` actually exists in source (scanned from the given root,
-        /// default `.`). Phantom "implemented" bindings are downgraded, so L5
-        /// means "verified as implemented", not self-declared.
+        /// No-op alias (PVL-001 EV-2): `--binding` now ALWAYS resolves every
+        /// `implemented` binding against source with the `pv verify-bindings`
+        /// resolver, lists ghosts under `GHOST BINDINGS (n)` and exits 1. Kept so
+        /// existing invocations still parse; its root argument is ignored.
         #[arg(long, num_args = 0..=1, default_missing_value = ".")]
         verify_bindings: Option<PathBuf>,
         /// Output format: text (default) or json
