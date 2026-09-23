@@ -21,8 +21,10 @@ ladder:
       Qwen3.5-0.8B-UD-IQ2_XXS.gguf:
         control: Qwen3.5-0.8B-Q4_K_M.gguf
         defect: wrong_answer
+        prompts:
+        - golden-2plus2
         thinking: 'off'
-        ticket: '#3995'
+        ticket: '#4004'
   rungs:
   - arch: qwen2
     backends:

@@ -290,43 +290,7 @@
       198,
       32313,
       11,
-      1077,
-      594,
-      1490
-     ],
-     "generated_text": "<think>\n\n</think>\n\nThe answer is five.",
-     "greedy": true,
-     "special": true,
-     "max_tokens": 256,
-     "prompt_ids": [
-      248045,
-      846,
-      198,
-      3838,
-      374,
-      220,
-      17,
-      10,
-      17,
-      30,
-      248046,
-      198,
-      248045,
-      74455,
-      198,
-      248068,
-      198
-     ]
-    }
-   },
-   "llama.cpp": {
-    "raw": {
-     "generated_ids": [
-      151667,
-      198,
-      32313,
-      99,
-      1077,
+      103,
       594,
       1490
      ],
@@ -361,7 +325,7 @@
       151667,
       198,
       32313,
-      99,
+      11,
       1077,
       594,
       1490
@@ -425,39 +389,7 @@
       198,
       32313
      ],
-     "generated_text": "The answer is 4.",
-     "greedy": true,
-     "special": true,
-     "max_tokens": 256,
-     "prompt_ids": [
-      248045,
-      846,
-      198,
-      3838,
-      374,
-      220,
-      17,
-      10,
-      17,
-      30,
-      248046,
-      198,
-      248045,
-      74455,
-      198,
-      248068,
-      198
-     ]
-    }
-   },
-   "llama.cpp": {
-    "raw": {
-     "generated_ids": [
-      151667,
-      198,
-      32313
-     ],
-     "generated_text": "The answer is 4.",
+     "generated_text": "<think>\n\n</think>\n\nThe answer is 4.",
      "greedy": true,
      "special": true,
      "max_tokens": 256,
@@ -489,7 +421,7 @@
       198,
       32313
      ],
-     "generated_text": "The answer is 4.",
+     "generated_text": "<think>\n\n</think>\n\nThe answer is 4.",
      "greedy": true,
      "special": true,
      "max_tokens": 256,

@@ -1,7 +1,7 @@
 {
  "schema": "crux-inference-receipt/v1",
  "host": "lambda",
- "backend": "cpu",
+ "backend": "gpu",
  "apr": {
   "sha": "ca5eca5eca5eca5eca5eca5eca5eca5eca5eca5e"
  },
@@ -290,7 +290,7 @@
       198,
       32313,
       11,
-      1077,
+      103,
       594,
       1490
      ],
