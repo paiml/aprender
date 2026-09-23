@@ -509,8 +509,14 @@ to_run=0
 #    skip_reason reads three oracles and costs nothing worth parallelising.
 PLAN="$RUN_DIR/plan"
 : > "$PLAN"
+# #4108: the plan is COUNTED IN MEMORY as it is written, because the file is not
+# the witness of itself. On lambda the scratch dir vanished mid-run, the tally
+# loop below read nothing from a missing $PLAN, and the run printed
+# "0 checks, 0 failed" and exited 0 -- `make gate` green on nothing.
+planned=0
 while IFS= read -r g; do
     [ -n "$g" ] || continue
+    planned=$((planned + 1))
     reason="$(skip_reason "$g")"
     if [ -n "$reason" ]; then
         printf 'SKIP\t%s\t%s\n' "$g" "$reason" >> "$PLAN"
@@ -559,8 +565,10 @@ fi
 # ---------------------------------------------------------------------------
 # 3. THE OUTPUT -- plan order, one guard's rows at a time, never interleaved.
 idx=0
+accounted=0
 while IFS="$TAB" read -r kind g reason; do
     idx=$((idx + 1))
+    accounted=$((accounted + 1))
     if [ "$kind" = SKIP ]; then
         skipped=$((skipped + 1))
         printf 'skipped: %s -- %s\n' "$g" "$reason"
@@ -612,6 +620,28 @@ while IFS="$TAB" read -r kind g reason; do
         done < "$RUN_DIR/$idx.labels"
     fi
 done < "$PLAN"
+
+# #4108 -- VACUITY IS A FAILURE. Two independent witnesses, both fail-closed:
+#   (a) every guard the plan held was accounted for by the tally above -- a
+#       lost or truncated $PLAN reads as FEWER, never as a clean run;
+#   (b) at least one check executed -- "0 checks, 0 failed" answers nothing,
+#       whatever the cause (lost plan, empty universe, everything skipped).
+if [ "$accounted" -ne "$planned" ]; then
+    failed=$((failed + 1))
+    printf 'FAIL  guard_tree [plan]\n'
+    printf '      | guard_tree: the plan held %d guard(s) and %d were accounted for -- its scratch dir (%s) was lost or truncated mid-run, so this run has no verdict.\n' \
+        "$planned" "$accounted" "$RUN_DIR"
+    fail_rows="${fail_rows}guard_tree [plan]
+"
+fi
+if [ "$total" -eq 0 ]; then
+    failed=$((failed + 1))
+    printf 'FAIL  guard_tree [vacuous]\n'
+    printf '      | guard_tree: 0 checks executed (%d planned, %d skipped) -- a run that executed nothing is not a pass.\n' \
+        "$planned" "$skipped"
+    fail_rows="${fail_rows}guard_tree [vacuous]
+"
+fi
 
 printf 'dispatch: up to %d guard(s) at a time (GUARD_TREE_JOBS)\n' "$GUARD_TREE_JOBS"
 printf '%d guard(s) skipped\n' "$skipped"

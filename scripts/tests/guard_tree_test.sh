@@ -641,6 +641,78 @@ else
 fi
 cp "$GUARD_TREE" "$sfix/scripts/guard_tree.sh"
 
+# ---------------------------------------------------------------------------
+# 28-31 (#4108). A run that executed nothing is not a pass. MEASURED on lambda:
+#     two concurrent `make gate` runs, guard_tree's scratch dir vanished, the
+#     tally loop read nothing from the missing plan, and the run printed
+#     "0 checks, 0 failed" and exited 0. The fixture reproduces the incident
+#     exactly -- a guard that deletes $GUARD_TREE_RUN_DIR (workers inherit it)
+#     -- and the mutant deletes the new check, so each assertion can fail.
+# ---------------------------------------------------------------------------
+vmutant_of() { # vmutant_of SRC DST -- guard_tree.sh with the #4108 vacuity block deleted
+    sed '/^# #4108 -- VACUITY IS A FAILURE\./,/^printf .dispatch: up to/{/^printf .dispatch: up to/!d;}' "$1" >"$2"
+}
+vfix="$(mktemp -d)" || exit 1
+cleanup_dirs="$cleanup_dirs $vfix"
+mkdir -p "$vfix/.empty-git-template" "$vfix/scripts"
+git -C "$vfix" init -q --template="$vfix/.empty-git-template"
+git -C "$vfix" config user.email test@example.invalid
+git -C "$vfix" config user.name guard_tree_test
+cp "$GUARD_TREE" "$vfix/scripts/guard_tree.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$vfix/scripts/check_v_good.sh"
+printf '#!/usr/bin/env bash\nrm -rf "${GUARD_TREE_RUN_DIR:?}"\nexit 0\n' >"$vfix/scripts/check_v_vanish.sh"
+git -C "$vfix" add -A
+git -C "$vfix" -c commit.gpgsign=false commit -q -m vfixture
+
+v_out="$(cd "$vfix" && bash scripts/guard_tree.sh 2>&1)"
+v_rc=$?
+if [ "$v_rc" -ne 0 ] && grep -q 'was lost or truncated mid-run' <<<"$v_out"; then
+    pass_row "28: a scratch dir lost mid-run fails with a named reason (rc=$v_rc), never '0 checks, 0 failed' exit 0"
+else
+    fail_row "28: a scratch dir lost mid-run" "rc=$v_rc; tail: $(tail -3 <<<"$v_out" | tr '\n' '|')"
+fi
+
+vmutant_of "$GUARD_TREE" "$vfix/scripts/guard_tree.sh"
+if cmp -s "$GUARD_TREE" "$vfix/scripts/guard_tree.sh"; then
+    fail_row "29: mutant without the #4108 check" "the sed did not apply -- the mutant is the original"
+else
+    vm_out="$(cd "$vfix" && bash scripts/guard_tree.sh 2>&1)"
+    vm_rc=$?
+    if [ "$vm_rc" -eq 0 ] && grep -q '^0 checks, 0 failed$' <<<"$vm_out"; then
+        pass_row "29: mutant without the #4108 check reproduces the incident (0 checks, 0 failed, exit 0) -- row 28 can fail"
+    else
+        fail_row "29: mutant without the #4108 check" "expected the vacuous exit 0; rc=$vm_rc"
+    fi
+fi
+
+# 30/31: an EMPTY guard universe -- nothing to run is a vacuous answer, not a green one
+efix="$(mktemp -d)" || exit 1
+cleanup_dirs="$cleanup_dirs $efix"
+mkdir -p "$efix/.empty-git-template" "$efix/scripts"
+git -C "$efix" init -q --template="$efix/.empty-git-template"
+git -C "$efix" config user.email test@example.invalid
+git -C "$efix" config user.name guard_tree_test
+cp "$GUARD_TREE" "$efix/scripts/guard_tree.sh"
+git -C "$efix" add -A
+git -C "$efix" -c commit.gpgsign=false commit -q -m efixture
+
+e_out="$(cd "$efix" && bash scripts/guard_tree.sh 2>&1)"
+e_rc=$?
+if [ "$e_rc" -ne 0 ] && grep -q '0 checks executed' <<<"$e_out"; then
+    pass_row "30: an empty guard universe fails as vacuous (rc=$e_rc)"
+else
+    fail_row "30: an empty guard universe" "rc=$e_rc; tail: $(tail -3 <<<"$e_out" | tr '\n' '|')"
+fi
+vmutant_of "$GUARD_TREE" "$efix/scripts/guard_tree.sh"
+em_out="$(cd "$efix" && bash scripts/guard_tree.sh 2>&1)"
+em_rc=$?
+: "${em_out:=}"
+if [ "$em_rc" -eq 0 ]; then
+    pass_row "31: mutant without the #4108 check passes the empty universe -- row 30 can fail"
+else
+    fail_row "31: mutant without the #4108 check" "expected exit 0 on the empty universe; rc=$em_rc"
+fi
+
 printf '%d checks, %d failed\n' "$total" "$failed"
 if [ "$failed" -gt 0 ]; then
     exit 1
