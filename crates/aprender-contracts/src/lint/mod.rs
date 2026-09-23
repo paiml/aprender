@@ -25,6 +25,7 @@ pub mod sigma_gate;
 pub mod sigma_symbols;
 mod strict_test_binding;
 pub mod trend;
+pub mod valid_under_gate;
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -195,6 +196,26 @@ pub enum GateExtra {
         legacy_depends_on: usize,
         /// Of those, how many name no contract — ratcheted shrink-only in the baseline.
         legacy_unresolved_depends_on: usize,
+        /// Findings.
+        violations: usize,
+    },
+    /// ONT-7: kernel-kind contracts carry a world index (`metadata.valid_under.world`, a key of Σ's `worlds`).
+    #[serde(rename = "valid_under")]
+    ValidUnder {
+        /// The worlds Σ declares — the index a `valid_under.world` must resolve into.
+        worlds: Vec<String>,
+        /// Contract files read.
+        contracts_checked: usize,
+        /// Of those, kernel-kind and not a registry — the class the row obliges.
+        kernel_contracts: usize,
+        /// Contracts (any kind) carrying `metadata.valid_under`.
+        contracts_with_valid_under: usize,
+        /// Kernel-kind contracts carrying none — the debt, shrink-only against the baseline.
+        contracts_without_valid_under: usize,
+        /// The top-level `contracts_without_valid_under` in `lint-baseline.json`; `None` = not recorded.
+        baseline: Option<usize>,
+        /// `world=count` over the contracts whose `valid_under` passed every rule.
+        by_world: Vec<String>,
         /// Findings.
         violations: usize,
     },
@@ -635,6 +656,8 @@ pub enum NamedGateOutcome {
     Relations(relations_gate::RelationsOutcome),
     /// The `shapes` gate (ONT-4b), with four non-verdict answers (unsupported shape, no shapes, no focus, control failed).
     Shapes(shapes_gate::ShapesOutcome),
+    /// The `valid-under` gate (ONT-7), with three non-verdict answers (no Σ, malformed Σ, no kernel contract).
+    ValidUnder(valid_under_gate::ValidUnderOutcome),
     /// A gate that ran and judged the corpus.
     Ran {
         result: Box<GateResult>,
@@ -666,6 +689,9 @@ pub fn run_named_gate_with(
             NamedGateOutcome::Shapes(shapes_gate::run_shapes_gate_with(contract_dir, shapes_opts))
         }
         "sigma" => NamedGateOutcome::Sigma(sigma_gate::run_sigma_gate(contract_dir)),
+        "valid-under" => {
+            NamedGateOutcome::ValidUnder(valid_under_gate::run_valid_under_gate(contract_dir))
+        }
         "validate" => {
             let (contracts, parse_errors) = load_contracts(contract_dir);
             let (result, findings) = run_validate_gate(&contracts, &parse_errors);
@@ -679,7 +705,7 @@ pub fn run_named_gate_with(
 }
 
 /// The gate names `--gate` computes alone, for the refusal message.
-pub const NAMED_GATES: [&str; 4] = ["relations", "shapes", "sigma", "validate"];
+pub const NAMED_GATES: [&str; 5] = ["relations", "shapes", "sigma", "valid-under", "validate"];
 
 /// The `sigma` gate as `run_lint` reports it. Σ's two non-verdict answers become SKIPPED gates here — under
 /// `--gate sigma` they are an exit of their own (decline / error), but inside a full run "skipped" is how the
