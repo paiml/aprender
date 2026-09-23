@@ -45,7 +45,6 @@ ROOT_IMPACT = ("Cargo.lock", "Cargo.toml")
 CARGO_BUILD_INPUTS = ("rust-toolchain", "rust-toolchain.toml", ".cargo/")
 #: the schemas a model-ladder / CRUX receipt is written in; a file naming one PRODUCES measurements
 RECEIPT_SCHEMAS = ("apr-model-ladder-receipt/v2", "crux-inference-receipt/v1")
-_INCLUDE = re.compile(r'include_(?:str|bytes)!\s*\((.*?)\)\s*[;,)\]]', re.S)
 _STRLIT = re.compile(r'"((?:[^"\\]|\\.)*)"')
 
 
@@ -76,46 +75,102 @@ def closure(metadata):
     return {n: dirs[n] for n in seen}, dirs
 
 
-def _norm_repo(root, base_dir, lit):
-    """A path literal relative to base_dir -> repo-relative path, or None if it leaves the repo."""
-    full = posixpath.normpath(posixpath.join(base_dir, lit))
-    return None if full.startswith("..") else full
+_INCLUDE_AT = re.compile(r'include_(?:str|bytes)!\s*\(')
+_ENV = re.compile(r'env!\s*\(\s*"([^"]+)"\s*\)')
+
+
+def _balanced_arg(text, i):
+    """text[i] is just past an opening '(' -> the argument text up to its MATCHING ')', or None.
+    String literals are skipped whole, so a ')' inside one does not close the call."""
+    depth, j, n = 1, i, len(text)
+    while j < n:
+        c = text[j]
+        if c == '"':
+            j += 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return text[i:j]
+        j += 1
+    return None
+
+
+def _include_target(arg, file_dir, crate_dir):
+    """One include_str!/include_bytes! argument -> (repo-relative path, is_prefix) or None.
+
+    `concat!` pieces are joined; a piece that is not a string literal (a macro variable such as `$path`)
+    makes the joined literal a directory PREFIX. `env!("CARGO_MANIFEST_DIR")` bases the path on the crate
+    dir, any other `env!` (OUT_DIR: a generated file, not the repo) yields nothing; otherwise the path is
+    relative to the including file's directory, as rustc resolves it."""
+    envs = _ENV.findall(arg)
+    if any(e != "CARGO_MANIFEST_DIR" for e in envs):
+        return None
+    body = _ENV.sub("", arg)
+    lits = _STRLIT.findall(body)
+    if not lits or any("\n" in x for x in lits):
+        return None
+    rest = _STRLIT.sub("", body).replace("concat!", "")
+    prefix = bool(re.search(r"[A-Za-z_$]", rest))
+    joined = "".join(lits)
+    base = crate_dir if envs else file_dir
+    p = posixpath.normpath(posixpath.join(base, joined.lstrip("/") if envs else joined))
+    if p.startswith(".."):
+        return None
+    if prefix and not joined.endswith("/"):
+        p = posixpath.dirname(p)
+    return p, prefix or joined.endswith("/")
+
+
+def _crate_sources(root, cdir, dirs):
+    """A crate's own .rs files. The ROOT package owns only src/ and build.rs -- never the other crates
+    below it (globbing the whole tree would attribute every crate's build.rs to the root)."""
+    if cdir in ("", "."):
+        return glob.glob(os.path.join(root, "src", "**", "*.rs"), recursive=True) + \
+            [f for f in [os.path.join(root, "build.rs")] if os.path.isfile(f)]
+    return glob.glob(os.path.join(root, cdir, "**", "*.rs"), recursive=True)
 
 
 def embedded_inputs(root, clos, dirs):
     """Repo paths (files or directory PREFIXES ending in /) the apr closure reads at BUILD time, derived
-    from the sources: include_str!/include_bytes! literals (and concat! bases) in closure crates, and
-    every string literal in a closure crate's build.rs that resolves outside the crate or names a
-    top-level repo directory. -> set of repo-relative paths."""
+    from the sources: every include_str!/include_bytes! target in a closure crate (balanced-paren parse,
+    concat!/env! aware), and every string literal in a closure crate's build.rs that names a path which
+    EXISTS in the repo outside the crate (or a top-level repo directory). -> set of repo-relative paths."""
     top = {d for d in os.listdir(root) if os.path.isdir(os.path.join(root, d)) and not d.startswith(".")}
     out = set()
     for n, d in clos.items():
-        cdir = d or "."
-        for f in glob.glob(os.path.join(root, cdir, "**", "*.rs"), recursive=True):
+        cdir = "" if d in ("", ".") else d
+        for f in _crate_sources(root, cdir, dirs):
             rel_dir = posixpath.dirname(posixpath.relpath(f, root))
             try:
                 text = open(f, encoding="utf-8", errors="replace").read()
             except OSError:
                 continue
-            is_build = posixpath.basename(f) == "build.rs"
-            for m in _INCLUDE.finditer(text):
-                arg = m.group(1)
-                lits = [x for x in _STRLIT.findall(arg) if "\n" not in x and len(x) < 300]
-                if not lits or "\n" in arg.strip().split(",")[0] and len(arg) > 400:
-                    continue
-                base = cdir if "CARGO_MANIFEST_DIR" in arg else rel_dir
-                p = _norm_repo(root, base, lits[0].lstrip("/") if "CARGO_MANIFEST_DIR" in arg else lits[0])
-                if p:
-                    out.add(p + "/" if (lits[0].endswith("/") or len(lits) > 1 and "$" in arg) else p)
-            if is_build:
+            for m in _INCLUDE_AT.finditer(text):
+                arg = _balanced_arg(text, m.end())
+                t = _include_target(arg, rel_dir, cdir) if arg is not None else None
+                if t:
+                    out.add(t[0].rstrip("/") + "/" if t[1] else t[0])
+            if posixpath.basename(f) == "build.rs":
                 for lit in _STRLIT.findall(text):
+                    lit = lit.split("=", 1)[1] if lit.startswith("cargo:") and "=" in lit else lit
+                    lit = lit.split("{")[0]
+                    if not lit or "\n" in lit or len(lit) > 300:
+                        continue
                     if lit in top:
                         out.add(lit + "/")
                         continue
-                    if "/" in lit and ".." in lit:
-                        p = _norm_repo(root, cdir, lit.split("{")[0])
-                        if p and not p.startswith(cdir + "/"):
-                            out.add(p.rstrip("/") + "/" if os.path.isdir(os.path.join(root, p)) else p)
+                    p = posixpath.normpath(posixpath.join(cdir, lit))
+                    if p.startswith("..") or p == "." or (cdir and (p == cdir or p.startswith(cdir + "/"))):
+                        continue
+                    full = os.path.join(root, p)
+                    if os.path.isdir(full):
+                        out.add(p.rstrip("/") + "/")
+                    elif os.path.isfile(full):
+                        out.add(p)
     return {p for p in out if re.fullmatch(r"[A-Za-z0-9_.][A-Za-z0-9_./-]*", p)}
 
 

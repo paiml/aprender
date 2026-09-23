@@ -73,6 +73,17 @@ FILES = {
     "scripts/lib/h.py": "print(1)\n",
     "scripts/drive.sh": "bash scripts/prod.sh\n",
     "scripts/other.sh": "echo hi\n",
+    # include forms (quorum lane 1 on #4037, 2026-09-23): concat! with CARGO_MANIFEST_DIR, a macro-variable
+    # suffix (a directory PREFIX), and OUT_DIR (generated, never the repo)
+    "crates/serve/src/w.rs": 'static W: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../weights/w.bin"));\n',
+    "weights/w.bin": "w", "weights/unused.bin": "u",
+    "crates/apr-cli/src/fam.rs": 'macro_rules! f { ($n:literal) => { include_str!(concat!("../../../contracts/fam/", $n, ".yaml")) } }\n',
+    "contracts/fam/q.yaml": "q: 1\n",
+    "crates/serve/src/gen.rs": 'include!(concat!(env!("OUT_DIR"), "/gen.rs"));\nconst G: &str = include_str!(concat!(env!("OUT_DIR"), "/gen.txt"));\n',
+    # build.rs literals that name an existing repo path: the root package's, and a NON-closure crate's
+    "build.rs": 'fn main() { println!("cargo:rerun-if-changed=assets/model.bin"); }\n',
+    "src/lib.rs": "\n", "assets/model.bin": "m", "assets/other.bin": "o",
+    "crates/other/build.rs": 'fn main() { let _ = ("../../secret/x.bin", "secret"); }\n', "secret/x.bin": "s",
     "scripts/check_prod.sh": 'grep -q \'"schema": "crux-inference-receipt/v1"\' r.json\n',
 }
 
@@ -111,6 +122,12 @@ ROWS = [
     ("build-rs-dir", ["configs/a.yaml"], False, 0, 0, 1),
     ("build-rs-relative", ["data/model.bin"], False, 0, 0, 1),
     ("receipt-producer", ["scripts/prod.sh"], False, 0, 0, 1),
+    ("concat-manifest-dir", ["weights/w.bin"], False, 0, 0, 1),
+    ("concat-manifest-dir-sibling", ["weights/unused.bin"], True, 0, 0, 1),
+    ("concat-macro-prefix", ["contracts/fam/q.yaml"], False, 0, 0, 1),
+    ("root-build-rs-file", ["assets/model.bin"], False, 0, 0, 1),
+    ("root-build-rs-unreferenced", ["assets/other.bin"], True, 0, 0, 1),
+    ("non-closure-build-rs", ["secret/x.bin"], True, 0, 0, 1),
     ("producer-helper", ["scripts/lib/h.py"], False, 0, 0, 1),
     ("producer-driver", ["scripts/drive.sh"], False, 0, 0, 1),
     ("unrelated-script", ["scripts/other.sh"], True, 0, 0, 1),
@@ -125,6 +142,8 @@ def run(mod):
     for row, paths, want, ja, jb, use in ROWS:
         got, proof = mod.carry(paths, meta(ja), meta(jb), roots=[root] if use else None)
         res[row] = (got == want, "want carry=%s got %s -- %s" % (want, got, proof[:160]))
+    emb = mod.embedded_inputs(root, *mod.closure(meta()))
+    res["out-dir-skipped"] = (not any("gen." in e or "OUT_DIR" in e for e in emb), sorted(emb))
     nob = {"workspace_root": "/ws", "packages": [pkg("other", "crates/other")]}
     got, proof = mod.carry(["docs/x.md"], nob, nob)
     res["no-apr-binary"] = (got is False and "no package" in proof, proof[:120])
@@ -161,7 +180,12 @@ MUTANTS = [
     ("toolchain-ignored", 'CARGO_BUILD_INPUTS = ("rust-toolchain", "rust-toolchain.toml", ".cargo/")', 'CARGO_BUILD_INPUTS = (".cargo/",)', "toolchain"),
     ("embedded-ignored", 'return True, "embedded or read at build time', 'return False, "embedded or read at build time', "embedded-contract"),
     ("build-rs-ignored", "if lit in top:", "if False:", "build-rs-dir"),
-    ("build-rs-relative-ignored", 'if "/" in lit and ".." in lit:', "if False:", "build-rs-relative"),
+    ("build-literal-file-ignored", "                    elif os.path.isfile(full):\n                        out.add(p)", "                    elif False:\n                        out.add(p)", "root-build-rs-file"),
+    ("manifest-base-ignored", "    base = crate_dir if envs else file_dir", "    base = file_dir", "concat-manifest-dir"),
+    ("prefix-not-dir", "    if prefix and not joined.endswith(\"/\"):\n        p = posixpath.dirname(p)", "    if False:\n        p = posixpath.dirname(p)", "concat-macro-prefix"),
+    ("env-other-kept", '    if any(e != "CARGO_MANIFEST_DIR" for e in envs):\n        return None', '    if False:\n        return None', "out-dir-skipped"),
+    ("root-globs-all", '    if cdir in ("", "."):\n        return glob.glob(os.path.join(root, "src", "**", "*.rs"), recursive=True) + \\',
+     '    if cdir in ("", "."):\n        return glob.glob(os.path.join(root, "**", "*.rs"), recursive=True) + \\', "non-closure-build-rs"),
     ("producers-ignored", 'return True, "produces the ladder/CRUX receipts', 'return False, "produces the ladder/CRUX receipts', "receipt-producer"),
     ("no-drivers", "seen = writers | {f for f in files if any(n in text(f) for n in wnames)}", "seen = set(writers)", "producer-driver"),
     ("no-forward-refs", "seen.add(m.group(0)); todo.append(m.group(0))", "pass", "producer-helper"),
