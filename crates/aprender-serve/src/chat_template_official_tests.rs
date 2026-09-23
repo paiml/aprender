@@ -12,19 +12,24 @@ mod official_chat_template_3990 {
     const QWEN25: &str = include_str!("fixtures/chat_template_3990/qwen25.jinja");
     const QWEN3: &str = include_str!("fixtures/chat_template_3990/qwen3.jinja");
     const QWEN35: &str = include_str!("fixtures/chat_template_3990/qwen35.jinja");
+    /// TinyLlama uses BARE `{% %}` tags and appends `eos_token`. The Qwen templates use `-`
+    /// whitespace control everywhere and never name bos/eos, so against them alone
+    /// trim_blocks, lstrip_blocks and bos/eos passing were equivalent mutants (all survived).
+    const TINYLLAMA: &str = include_str!("fixtures/chat_template_3990/tinyllama.jinja");
 
     fn template_for(model: &str) -> &'static str {
         match model {
             "qwen25" => QWEN25,
             "qwen3" => QWEN3,
             "qwen35" => QWEN35,
+            "tinyllama" => TINYLLAMA,
             m => panic!("no fixture template for {m}"),
         }
     }
 
     fn cells() -> Vec<serde_json::Value> {
         let v: Vec<serde_json::Value> = serde_json::from_str(ORACLE).expect("oracle fixture parses");
-        assert_eq!(v.len(), 12, "the matrix is 3 models x 2 system x 2 thinking");
+        assert_eq!(v.len(), 16, "the matrix is 4 models x 2 system x 2 thinking");
         v
     }
 
@@ -37,7 +42,7 @@ mod official_chat_template_3990 {
             .collect()
     }
 
-    /// HERMETIC: needs no model file, so it runs in CI. Every one of the 12 cells must render
+    /// HERMETIC: needs no model file, so it runs in CI. Every one of the 16 cells must render
     /// BYTE-FOR-BYTE what llama.cpp renders. A mismatch names the cell and the first byte
     /// that differs, with both sides around it.
     #[test]
@@ -46,7 +51,9 @@ mod official_chat_template_3990 {
         for c in cells() {
             let (model, sys, think) = (c["model"].as_str().unwrap(), c["system"].as_bool().unwrap(), c["thinking"].as_bool().unwrap());
             let want = c["prompt"].as_str().unwrap();
-            let got = render_official(template_for(model), None, None, &messages_of(&c), true, Some(think))
+            // bos/eos are the GGUF's own token strings, recorded per cell by the oracle.
+            let (bos, eos) = (c["bos"].as_str(), c["eos"].as_str());
+            let got = render_official(template_for(model), bos, eos, &messages_of(&c), true, Some(think))
                 .unwrap_or_else(|e| panic!("{model} system={sys} thinking={think}: {e}"));
             if got != want {
                 let at = got.bytes().zip(want.bytes()).position(|(a, b)| a != b).unwrap_or(got.len().min(want.len()));
@@ -79,9 +86,18 @@ mod official_chat_template_3990 {
     /// REAL MODELS: the acceptance criterion as written -- token IDS. Render through the
     /// GGUF, tokenize with apr's own tokenizer, compare to llama.cpp's ids. Says SKIP, by
     /// name, for a model not on this host rather than passing.
+    ///
+    /// TinyLlama is PINNED RED to #3993, not skipped: its rendered string is byte-equal (the
+    /// hermetic test proves it), but apr's SentencePiece encode does not split the control
+    /// token `</s>`, so `word.</s>` becomes `.</` `s` `>` where llama.cpp has `.` `</s>`. The
+    /// pin accepts ONLY that divergence; any other difference is a failure, and the cells
+    /// starting to match is a failure too (remove the pin) -- so it cannot go stale.
     #[test]
     fn rendered_prompt_ids_equal_llama_cpp_on_every_cell_3990() {
+        const PINNED_RED_3993: &str = "tinyllama";
+        let (dot_lt_slash, dot, eos) = (21106u32, 29889u32, 2u32);
         let mut ran = 0usize;
+        let mut pinned = 0usize;
         let mut bad = Vec::new();
         for c in cells() {
             let path = c["path"].as_str().unwrap();
@@ -95,6 +111,18 @@ mod official_chat_template_3990 {
                 .unwrap_or_else(|e| panic!("{model}: {e}"));
             let got = mapped.model.encode(&prompt).expect("apr encodes the rendered prompt");
             let want: Vec<u32> = c["ids"].as_array().unwrap().iter().map(|v| u32::try_from(v.as_u64().unwrap()).unwrap()).collect();
+            if model == PINNED_RED_3993 {
+                match got.iter().zip(&want).position(|(a, b)| a != b) {
+                    None if got == want => bad.push(format!("\n  {model} system={sys}: ids now MATCH llama.cpp -- #3993 is fixed, remove PINNED_RED_3993")),
+                    Some(at) if got[at] == dot_lt_slash && want.get(at..at + 2) == Some(&[dot, eos][..]) => {
+                        eprintln!("RED (pinned #3993): {model} system={sys} thinking={think}: `</s>` split at id {at}");
+                        pinned += 1;
+                    }
+                    at => bad.push(format!("\n  {model} system={sys} thinking={think}: ids differ in a way #3993 does not explain (first differ at {at:?})")),
+                }
+                ran += 1;
+                continue;
+            }
             if got != want {
                 let at = got.iter().zip(&want).position(|(a, b)| a != b).unwrap_or(got.len().min(want.len()));
                 bad.push(format!("\n  {model} system={sys} thinking={think}: {} vs {} ids, first differ at {at}: apr {:?} llama.cpp {:?}",
@@ -102,7 +130,8 @@ mod official_chat_template_3990 {
             }
             ran += 1;
         }
-        eprintln!("#3990 ids: {ran}/12 cells compared");
+        eprintln!("#3990 ids: {ran}/16 cells compared, {pinned} of them pinned RED to #3993");
+        assert_eq!(pinned % 4, 0, "a present TinyLlama file must yield all 4 pinned cells");
         assert!(bad.is_empty(), "rendered prompt ids differ from llama.cpp:{}", bad.concat());
     }
 }
