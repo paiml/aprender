@@ -24,7 +24,7 @@ Base: `origin/chore/0.69.1-merge-back` 6db770d2f (#4046). Kind: code. K̂=64 (ba
 - P2 cells + domain + not_run (receipts.rs), RED first: `cargo test -p aprender-contracts --lib ontology::receipts::tests::capability_cells`.
 - P3 shape + plant + JSON + |D|=0 decline (shapes_gate.rs), fixtures: `cargo test -p aprender-contracts --lib lint::shapes_gate::tests::capability_cells`.
 - P4 contract + arming + ttl: `pv validate contracts/ont-capability-cells-v1.yaml && cargo test -p aprender-contracts-cli --test ont4b_shapes_gate`.
-- P5 the row's own probe on this tree (first-green) + the 4 row mutations as a case table (each RED): `bash scripts/check_ont_4c5_probe.sh` (runs the probe jq against a pinned pv, then applies each mutant in a temp copy and expects RED).
+- P5 the row's own probe on this tree (first-green) + the 4 row mutations as a case table (each RED): `cargo test -p aprender-contracts-cli --test ont4c5_capability_cells` (the probe predicate on this repository, then each data mutant in a symlinked scratch tree, expected RED). It was a `scripts/check_*.sh` first; `check_guards_are_wired.sh` refused it as unwired (cargo-classified, so the no-cargo guard_tree dispatcher never runs it), so it moved into a test target CI already runs.
 - P6 gate: `make gate` (discover gate_cmd), fmt, clippy -D warnings on the crate.
 
 ## Case table (row's mutations + extras)
