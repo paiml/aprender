@@ -687,6 +687,29 @@ ladder_tree_jiffies() { # <pid> -> utime+stime summed over pid and every descend
     printf '%s' "$total"
 }
 
+# #4090: is a process of this tree QUEUED on the fleet GPU lock? A serve launched under
+# apr_locked is, until the lock is free, a bare `flock` that writes no log and burns no CPU, which
+# is exactly what the stall detector below calls a hung server. A lock wait is an ENV condition
+# (bounded by LOCK_WAIT, and a timeout is lock_timeout's decline), never a model verdict. It is
+# read from /proc/locks: a waiter line is `N: -> FLOCK ADVISORY WRITE <pid> <maj:min:inode> ...`.
+ladder_tree_waits_on_lock() { # <pid> -> 0 when a pid of its tree waits on $GPU_LOCK
+    local ino p w
+    local -a frontier next c tree=()
+    [ -n "${GPU_LOCK:-}" ] && ino=$(stat -c %i "$GPU_LOCK" 2>/dev/null) || return 1
+    frontier=("$1")
+    while [ "${#frontier[@]}" -gt 0 ]; do
+        next=()
+        for p in "${frontier[@]}"; do
+            tree+=("$p"); mapfile -t c < <(pgrep -P "$p" 2>/dev/null); next+=("${c[@]}")
+        done
+        frontier=("${next[@]}")
+    done
+    for w in $(awk -v i=":$ino" '$2 == "->" && substr($7, length($7) - length(i) + 1) == i { print $6 }' /proc/locks 2>/dev/null); do
+        for p in "${tree[@]}"; do [ "$w" = "$p" ] && return 0; done
+    done
+    return 1
+}
+
 ladder_serve_wait_health() { # <wrapper-pid> <port> <log> <stall-s> <ceiling-s>
     local pid="$1" port="$2" log="$3" stall="$4" ceiling="$5"
     local waited=0 quiet=0 size last_size=-1 jif last_jif=-1
@@ -697,6 +720,9 @@ ladder_serve_wait_health() { # <wrapper-pid> <port> <log> <stall-s> <ceiling-s>
         # A server that dies mid-load is RED now, not after a stall window: the
         # wrapper (flock) exits only once its child has.
         if ! kill -0 "$pid" 2>/dev/null; then printf 'died %s' "$waited"; return 1; fi
+        # #4090: queued on the GPU lock is neither progress nor a stall, and it is not the
+        # server's time either: neither clock runs. flock's own -w bounds it.
+        if ladder_tree_waits_on_lock "$pid"; then quiet=0; last_size=-1; last_jif=-1; sleep 1; continue; fi
         size=$(stat -c %s "$log" 2>/dev/null || printf 0)
         jif=$(ladder_tree_jiffies "$pid")
         if [ "$size" != "$last_size" ] || [ "$jif" != "$last_jif" ]; then
@@ -740,6 +766,12 @@ ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <ba
     wait_out=$(ladder_serve_wait_health "$pid" "$port" "$WORK/serve-$rid-$bname.log" \
         "$SERVE_STALL_S" "$SERVE_CEILING_S") || true
     wait_why=${wait_out%% *}; waited=${wait_out##* }
+    # #4090: a wrapper that "died" with flock's LOCK_BUSY never started a server. The lock stayed
+    # held past LOCK_WAIT, which is the ladder's ENV decline naming the holder, never a serve RED.
+    if [ "$wait_why" = died ]; then
+        wait "$pid" 2>/dev/null; local prc=$?
+        [ "$prc" = "$LOCK_BUSY" ] && lock_timeout "apr serve run $rid ($bname)"
+    fi
     if [ "$wait_why" != "ready" ]; then
         td=$(ladder_serve_teardown "$pid" "$port")
         # #3943 + #3949: the WHY names what ended the wait (died / stalled / ceiling, with
@@ -1038,6 +1070,8 @@ except Exception: print("unknown")' "$arch_json")
     serve_json=$(ladder_serve_probe "$path" "$(flag_for "serve run" "$flag")" "$rid" "$b" 2> "$serve_err")
     serve_rc=$?
     [ -s "$serve_err" ] && cat "$serve_err" >&2
+    # #4090: the probe runs in $( ), so its lock_timeout ended only that subshell. Carry the decline out.
+    if [ "$serve_rc" = 2 ] && grep -q '^decline: ' "$serve_err" 2>/dev/null; then exit 2; fi
 
     [ $first = 1 ] || be_json="$be_json,"; first=0
     be_json="$be_json\"$b\":{\"ran\":$ran,\"fallback\":$fb,\"escaped_special\":$esc,\"rc\":$run_rc"

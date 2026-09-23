@@ -1,0 +1,21 @@
+- id: PMAT-4090
+  github_issue: 4090
+  item_type: bug
+  title: 'ladder: serve health wait reads a GPU-lock wait as a stalled server; a foreign lock holder turns a serve cell RED instead of an ENV decline (#4090)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-36
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: scripts/model_ladder.sh
+  acceptance_criteria:
+  - 'while a process of the serve wrapper''s tree is queued on the fleet GPU lock (a /proc/locks waiter line), ladder_serve_wait_health counts neither stall nor elapsed time'
+  - 'a serve wrapper that exits with flock''s LOCK_BUSY never started a server; ladder_serve_probe raises lock_timeout (rc 2, holder named), never a probed:false serve RED'
+  - 'the cell carries that decline out of the probe''s command substitution: the ladder exits 2 with the reason on stderr'
+  - 'check_ladder_serve_teardown.sh: lock-wait (a 6 s foreign hold with a 3 s stall window ends ready) and serve-lock-busy-declines (the shipped probe, lock held past LOCK_WAIT, exits 2 naming the holder pid); a self-test plant for each turns it RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

@@ -207,8 +207,9 @@ run_cases() { # <teardown-function-body> -> 0 if every case lands, 1 otherwise
 
 extract_wait() {
   local src="$1" body
-  body=$(awk '/^ladder_tree_jiffies\(\) \{/{f=1} /^ladder_serve_wait_health\(\) \{/{f=1} f{print} f && /^\}$/{f=0}' "$src")
-  if ! grep -q 'printf .ready' <<< "$body" || ! grep -q 'ladder_tree_jiffies()' <<< "$body"; then
+  body=$(awk '/^ladder_tree_jiffies\(\) \{/{f=1} /^ladder_tree_waits_on_lock\(\) \{/{f=1} /^ladder_serve_wait_health\(\) \{/{f=1} f{print} f && /^\}$/{f=0}' "$src")
+  if ! grep -q 'printf .ready' <<< "$body" || ! grep -q 'ladder_tree_jiffies()' <<< "$body" \
+     || ! grep -q '^ladder_tree_waits_on_lock() {' <<< "$body"; then
     echo "  the extracted health wait is missing its verdicts or its progress probe — this check no longer knows what it is running" >&2
     return 2
   fi
@@ -228,9 +229,54 @@ wait_case() { # <name> <mode> <secs> <stall> <ceiling> <want-verdict> <max-secon
   echo "  ok   $name: '$out'"
 }
 
+# #4090: a serve queued on the GPU lock behind a FOREIGN holder for longer than the stall window
+# must end `ready` once it gets the lock, never `stalled`: neither clock runs while it waits.
+lock_wait_case() {
+  local port pid hp out verdict took
+  port=$(( 20000 + (RANDOM % 20000) ))
+  flock "$LOCK" sleep 6 & hp=$!
+  sleep 0.3
+  flock -w 20 "$LOCK" python3 "$TMP/fake_loader.py" "$port" slow-log 1 > "$TMP/lock-wait.log" 2>&1 & pid=$!
+  out=$(ladder_serve_wait_health "$pid" "$port" "$TMP/lock-wait.log" 3 30) || true
+  verdict=${out%% *}; took=${out##* }
+  pkill -9 -f "$TMP/fake_loader.py $port " 2>/dev/null || true; kill -9 "$pid" "$hp" 2>/dev/null || true; wait "$hp" 2>/dev/null || true
+  if [ "$verdict" != ready ] || [ "$took" -gt 6 ]; then
+    echo "  FAIL lock-wait: '$out' — want 'ready' (a 6 s foreign lock hold is not a 3 s stall), its clock not running while queued"; return 1
+  fi
+  echo "  ok   lock-wait: '$out' after a 6 s foreign lock hold"
+}
+
+# #4090: the SHIPPED ladder_serve_probe, with the lock held past LOCK_WAIT, must DECLINE (exit 2,
+# naming the holder), never return a probed:false serve RED.
+lift_fns() { # <src> <fn...> -> each function's text; a one-line `f() { ...; }` too
+  local src="$1" fn; shift
+  for fn in "$@"; do
+    awk -v F="^$fn\\\\(\\\\) \\\\{" '$0 ~ F { if ($0 ~ /; }$/) { print; exit } f=1 } f{print} f && /^\}$/{exit}' "$src"
+  done
+}
+serve_decline_case() { # <src>
+  local src="$1" pbody hp out rc
+  pbody=$(lift_fns "$src" apr_locked lock_timeout serve_log_tail ladder_tree_jiffies ladder_tree_waits_on_lock \
+          ladder_serve_wait_health ladder_td_verdict ladder_serve_teardown ladder_serve_probe)
+  grep -q '^ladder_serve_probe() {' <<< "$pbody" && grep -q '^apr_locked() {' <<< "$pbody" \
+    || { echo "  serve-lock-busy-declines: could not lift ladder_serve_probe/apr_locked" >&2; return 2; }
+  : > "$TMP/declock"; mkdir -p "$TMP/decwork"
+  flock "$TMP/declock" sleep 20 & hp=$!
+  sleep 0.3
+  out=$(GPU_LOCK="$TMP/declock" LOCK_WAIT=2 LOCK_BUSY=75 APR=/bin/false WORK="$TMP/decwork" \
+        SERVE_STALL_S=1 SERVE_CEILING_S=30 timeout 60 bash -c "$pbody"$'\n''ladder_serve_probe /nonexistent.gguf "" r1 cuda' 2>&1); rc=$?
+  kill "$hp" 2>/dev/null; wait "$hp" 2>/dev/null || true
+  if [ "$rc" = 2 ] && grep -q "^decline: ENV the GPU lock $TMP/declock was not free after 2s for apr serve run r1 (cuda) -- holder: pid $hp" <<< "$out"; then
+    echo "  ok   serve-lock-busy-declines: rc 2, the decline names holder pid $hp"
+  else
+    echo "  FAIL serve-lock-busy-declines: rc=$rc — want 2 with a decline naming holder pid $hp; got: $(head -c 300 <<< "$out")"; return 1
+  fi
+}
+
 run_wait_cases() { # <wait-function-bodies> -> 0 if every case lands
   local body="$1" fails=0
   eval "$body"
+  lock_wait_case || fails=1
   wait_case slow-log slow-log 6 3 30 ready 10    || fails=1
   wait_case slow-cpu slow-cpu 6 3 30 ready 10    || fails=1
   wait_case hung     hung     60 3 30 stalled 6  || fails=1
@@ -271,10 +317,22 @@ if [ "$SELF_TEST" -eq 1 ]; then
   grep -q 'if false && ino=' <<< "$p4" || { echo "  self-test: could not plant the lock-blind verdict — the anchor moved" >&2; exit 2; }
   o4=$(run_cases "$p4" 2>&1) || true
   grep -q '^  FAIL lock-escapee' <<< "$o4" || { printf '%s\n' "$o4"; echo "SELF-TEST FAIL: a lock-blind verdict left lock-escapee green"; exit 1; }
-  echo "SELF-TEST OK: all four planted regressions turned this RED"; exit 0
+  # The #4090 plants. The lock-blind wait turns lock-wait RED; a probe that ignores LOCK_BUSY
+  # turns serve-lock-busy-declines RED.
+  p5=$(sed 's/^        if ladder_tree_waits_on_lock "\$pid"; then .*continue; fi$/        :  # PLANTED: lock-blind wait/' <<< "$wbody")
+  grep -q 'PLANTED' <<< "$p5" || { echo "  self-test: could not plant the lock-blind wait — the anchor moved" >&2; exit 2; }
+  o5=$(run_wait_cases "$p5" 2>&1) || true
+  grep -q '^  FAIL lock-wait' <<< "$o5" || { printf '%s\n' "$o5"; echo "SELF-TEST FAIL: a lock-blind wait left lock-wait green"; exit 1; }
+  m6="$TMP/p6-model_ladder.sh"
+  sed 's/^        \[ "\$prc" = "\$LOCK_BUSY" \] && lock_timeout .*$/        :  # PLANTED: LOCK_BUSY ignored/' "$SCRIPT" > "$m6"
+  grep -q 'PLANTED' "$m6" || { echo "  self-test: could not plant the LOCK_BUSY regression — the anchor moved" >&2; exit 2; }
+  o6=$(serve_decline_case "$m6" 2>&1) || true
+  grep -q '^  FAIL serve-lock-busy-declines' <<< "$o6" || { printf '%s\n' "$o6"; echo "SELF-TEST FAIL: a probe ignoring LOCK_BUSY left serve-lock-busy-declines green"; exit 1; }
+  echo "SELF-TEST OK: all six planted regressions turned this RED"; exit 0
 fi
 
 rc=0
+serve_decline_case "$SCRIPT" || rc=1
 run_cases "$body" || rc=1
 run_wait_cases "$wbody" || rc=1
 if [ "$rc" -eq 0 ]; then echo "PASS: teardown never reports clean while a launched process lives; the health wait ends on the server's state, not a clock"; exit 0; fi
