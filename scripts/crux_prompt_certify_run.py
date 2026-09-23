@@ -14,7 +14,9 @@ leg, never for a whole certification and never per prompt:
 
 Every cell is greedy: temperature 0, seed 0, max_tokens from the prompt's own `max_tokens[thinking]`,
 enable_thinking explicit. Rows are CRUX row contract v1, appended to --manifest. A cell whose row is
-already in the manifest with rc 0 is skipped, so an interrupted leg resumes where it stopped.
+already in the manifest with rc 0 AND the same max_tokens is skipped, so an interrupted leg resumes where
+it stopped, and a changed budget is re-measured. Use a fresh --manifest and --work per prompt-set sha:
+output files are named by (engine, prompt, thinking), so a reused work dir would repoint old rows.
 
 Exit: 0 every cell produced a row (a refused row is still a row) · 2 usage/ENV.
 """
@@ -50,7 +52,7 @@ def done_cells(manifest: Path, engine: str, key: str) -> set:
             r = json.loads(line)
             ident = r.get("model_sha256") if engine == "llama.cpp" else (r.get("source") or {}).get("revision")
             if r.get("kind") == "gen" and r.get("engine") == engine and ident == key and r.get("rc") == 0:
-                got.add((r["prompt_id"], r["thinking"]))
+                got.add((r["prompt_id"], r["thinking"], r.get("max_tokens")))
     return got
 
 
@@ -82,7 +84,7 @@ def start_server(a, log: Path):
 
 def ggml_leg(a, prompts, thinking_modes, manifest: Path, work: Path) -> None:
     skip = done_cells(manifest, "llama.cpp", a.gguf_sha256)
-    todo = [(p, t) for t in thinking_modes for p in prompts if (p["id"], t) not in skip]
+    todo = [(p, t) for t in thinking_modes for p in prompts if (p["id"], t, p["max_tokens"][t]) not in skip]
     if not todo:
         print("ggml: nothing to do")
         return
@@ -97,7 +99,7 @@ def ggml_leg(a, prompts, thinking_modes, manifest: Path, work: Path) -> None:
             row = {"kind": "gen", "engine": "llama.cpp", "model_sha256": a.gguf_sha256, "host": a.host,
                    "verb": "serve run", "thinking": thinking, "backend": "gpu", "prompt_id": p["id"],
                    "rc": 0, "stdout": str(out), "stderr": str(err), "refused": None,
-                   "server": {"argv": argv, "version": version}}
+                   "max_tokens": p["max_tokens"][thinking], "server": {"argv": argv, "version": version}}
             convo, turns, why = [], [], None
             extra = json.dumps({"chat_template_kwargs": {"enable_thinking": thinking == "on"}})
             for m in p["messages"]:
@@ -144,7 +146,7 @@ def driver_leg(a, prompts, thinking_modes, manifest: Path, work: Path) -> None:
     d.mkdir(parents=True, exist_ok=True)
     for thinking in thinking_modes:
         for p in prompts:
-            if (p["id"], thinking) in skip:
+            if (p["id"], thinking, None) in skip or (p["id"], thinking, p["max_tokens"][thinking]) in skip:
                 continue
             mfile = d / f"{p['id']}.json"
             mfile.write_text(json.dumps({"messages": p["messages"]}), encoding="utf-8")
