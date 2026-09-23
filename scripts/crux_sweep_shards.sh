@@ -130,8 +130,30 @@ if [ -z "$META" ] && [ "$GREEDY_ONLY" = 1 ]; then
   META=$(sed -n 's/^greedy-[^\t]*\t[^\t]*\t//p' "$OUT/shards.tsv" | head -1)/meta.json
 fi
 [ -f "$META" ] || die "no shard produced a manifest; nothing to judge"
+# A --greedy-only receipt is F9 evidence, never a host verdict (aprender-36's contract, fix/3957-f9-f10@09ea08424):
+# it is named <host>-<backend>-greedy.json so it cannot pass for the certified <host>-<backend>.json, and it says
+# `"greedy_only": true` with `"cells": []` — the ladder's cell join skips it (no cells claimed), the F9 judge reads its
+# greedy[]. Without the marker the ladder globs it, sees DECLINE, and FAILS the cut (measured by 36 in the code).
+RECEIPT="$OUT/$HOST-$BACKEND.json"
+[ "$GREEDY_ONLY" = 1 ] && RECEIPT="$OUT/$HOST-$BACKEND-greedy.json"
 python3 scripts/lib/crux_inference_judge.py collect --manifest "$MERGED" --prompts "$PROMPTS" --meta "$META" \
-  --certification "$CERT" --out-json "$OUT/$HOST-$BACKEND.json" --out-md "$OUT/$HOST-$BACKEND.md"
+  --certification "$CERT" --out-json "$RECEIPT" --out-md "${RECEIPT%.json}.md"
 rc=$?
-printf '%s: %s receipt %s/%s-%s.json (judge rc %s); shards: %s\n' "$PROG" "$HOST" "$OUT" "$HOST" "$BACKEND" "$rc" "$OUT/shards.tsv"
+if [ "$GREEDY_ONLY" = 1 ]; then
+  python3 - "$RECEIPT" <<'PY' || die "the greedy-only receipt could not be marked"
+import json, sys
+p = sys.argv[1]
+r = json.load(open(p))
+if r.get("cells"):
+    sys.exit("a greedy-only merge produced %d judged cells; it must produce none" % len(r["cells"]))
+if not r.get("greedy"):
+    sys.exit("a greedy-only receipt with an EMPTY greedy[] proves nothing")
+r["greedy_only"] = True
+r["cells"] = []
+json.dump(r, open(p, "w"), indent=1)
+print("greedy_only receipt: %d greedy entries, verdict %s" % (len(r["greedy"]), r["summary"].get("verdict")))
+PY
+  rc=0  # the judge's DECLINE ("no cell was measured") is the expected verdict of a receipt that claims no cell
+fi
+printf '%s: %s receipt %s (judge rc %s); shards: %s\n' "$PROG" "$HOST" "$RECEIPT" "$rc" "$OUT/shards.tsv"
 exit "$rc"
