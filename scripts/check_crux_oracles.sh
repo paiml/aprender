@@ -191,6 +191,7 @@ def think_cert(d, hf_doc):
     r = json.load(open(f"{d}/r.json"))
     return r["admitted"]["M/Q4"], r["think_closure"]["M/Q4|ctl"]["hf@bf16:hf"]
 
+
 OPENS = {"reported": {"prompt_opens_think": True}}
 THINKROWS = [
   ("RED hf looped (opener prefilled, no </think>) is recorded unclosed",
@@ -205,6 +206,34 @@ for name, doc, want_adm, want_think in THINKROWS:
         adm, think = think_cert(d, doc)
     good = adm == want_adm and think == want_think
     print(f"  {'ok   ' if good else 'BROKE'} certify: {name}  ->  admitted {adm}, think {think}")
+    fail += not good
+
+# Per-mode admission: thinking OFF all right, thinking ON looped -> strict admits nothing, the OFF mode admits.
+with tempfile.TemporaryDirectory() as d:
+    m = dict(MODEL, thinking=["on", "off"])
+    rows = []
+    for t in ("on", "off"):
+        for leg, (eng, sha, src) in LEGROW.items():
+            out = os.path.join(d, f"{leg}-{t}.json")
+            if eng in ("hf", "vllm"):
+                doc = dict(OPENS, text="", reasoning="x", raw_text="loop <answer>4</answer>") if t == "on" else \
+                      dict(OPENS, text="<answer>4</answer>", raw_text="<answer>4</answer>", reported={"prompt_opens_think": False})
+            else:
+                doc = {"text": "<think>loop <answer>4</answer>"} if t == "on" else {"text": "<answer>4</answer>"}
+            json.dump(doc, open(out, "w")); open(out + ".err", "w").close()
+            rows.append({"kind": "gen", "engine": eng, "model_sha256": sha, "host": "h", "verb": "chat", "thinking": t,
+                         "backend": "gpu", "prompt_id": "ctl", "rc": 0, "stdout": out, "stderr": out + ".err",
+                         "refused": None, **({"source": SRC} if src else {})})
+    for f, doc in (("m.jsonl", None), ("p.json", {"schema": o.SCHEMA, "prompts": [PSET["prompts"][0]]}), ("i.json", [m])):
+        with open(os.path.join(d, f), "w") as fh:
+            fh.write("".join(json.dumps(r) + "\n" for r in rows) if doc is None else json.dumps(doc))
+    subprocess.run([sys.executable, CERT, "certify", "--prompts", f"{d}/p.json", "--inventory", f"{d}/i.json",
+                    "--apr-commit", "c" * 40, "-o", f"{d}/r.json", f"{d}/m.jsonl"], capture_output=True, check=True)
+    r = json.load(open(f"{d}/r.json"))
+    got = (r["admitted_by_sha"]["q" * 64], r["admitted_by_sha_thinking"]["q" * 64])
+    want = ([], {"on": [], "off": ["ctl"]})
+    good = got == want
+    print(f"  {'ok   ' if good else 'BROKE'} certify: ON looped, OFF right -> strict admits nothing, the OFF mode admits  ->  {got}")
     fail += not good
 
 with tempfile.TemporaryDirectory() as d:

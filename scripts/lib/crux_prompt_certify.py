@@ -137,8 +137,10 @@ def reply_of(row: dict, prompt: dict) -> tuple:
 
 
 def certify_one(prompt: dict, model: dict, quant: str, quant_sha: str, rows: list) -> tuple:
-    cells, first_bad = [], None
+    """(admitted in EVERY mode, first failure, cells, {thinking: admitted in that mode})."""
+    cells, first_bad, by_mode = [], None, {}
     for thinking in model.get("thinking") or ["off"]:
+        mode_bad = first_bad
         for leg in LEGS:
             # Any verb counts: certification asks whether the PROMPT is answerable, not whether an
             # interface works (that is the gate's job). The runner drives ggml through llama-server.
@@ -157,7 +159,9 @@ def certify_one(prompt: dict, model: dict, quant: str, quant_sha: str, rows: lis
                               "max_tokens": r.get("max_tokens"), "row": r["_at"]})
                 if not v["correct"]:
                     first_bad = first_bad or f"{leg} {r['engine']} {r['verb']} thinking={thinking} on {r.get('host')}: {v['why']}"
-    return first_bad is None, first_bad, cells
+        by_mode[thinking] = first_bad == mode_bad and not any(
+            c["thinking"] == thinking and not c["correct"] for c in cells)
+    return first_bad is None, first_bad, cells, by_mode
 
 
 def closure(cells: list) -> dict:
@@ -179,13 +183,17 @@ def certify(a) -> int:
         return 2
     inventory = json.loads(Path(a.inventory).read_text(encoding="utf-8"))
     rows = read_rows(a.manifests)
-    admitted, rejected, cells = {}, {}, []
+    admitted, rejected, cells, by_thinking = {}, {}, [], {}
     for model in inventory:
         for quant, qsha in sorted(model["quants"].items()):
             key = f"{model['model']}/{quant}"
             admitted[key], rejected[key] = [], {}
+            by_thinking[qsha] = {t: [] for t in model.get("thinking") or ["off"]}
             for p in doc["prompts"]:
-                ok, why, cs = certify_one(p, model, quant, qsha, rows)
+                ok, why, cs, modes = certify_one(p, model, quant, qsha, rows)
+                for t, m_ok in modes.items():
+                    if m_ok:
+                        by_thinking[qsha][t].append(p["id"])
                 cells += [dict(c, prompt_id=p["id"], model=key) for c in cs]
                 if ok:
                     admitted[key].append(p["id"])
@@ -206,6 +214,10 @@ def certify(a) -> int:
         # (model_sha256, prompt_id) against the receipt directly (aprender-6c [8b6b78], #3957).
         "admitted_by_sha": {m["quants"][k.split("/", 1)[1]]: v for m in inventory for k, v in admitted.items()
                             if k.split("/", 1)[0] == m["model"]},
+        # Admission per thinking mode, keyed like admitted_by_sha. `admitted_by_sha` stays strict (every mode the
+        # model has); this lets a model whose thinking-ON cells loop at greedy (Qwen3.5-2B) still have its
+        # thinking-OFF prompts certified, which the strict form cannot say.
+        "admitted_by_sha_thinking": by_thinking,
         "rejected": rejected,
         "uncontrolled": uncontrolled,
         # Per (model, prompt): did each engine's thinking-ON reply close its think block? The judge joins
