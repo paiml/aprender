@@ -82,6 +82,8 @@ pub mod iq2_xxs;
 #[cfg(test)]
 #[path = "iq2_xxs_geometry_tests.rs"]
 pub(crate) mod iq2_xxs_geometry_tests;
+#[cfg(test)]
+mod q2k_gguf_py_parity_tests;
 
 pub mod iq3_s;
 pub mod iq3_xxs;
