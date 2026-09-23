@@ -411,6 +411,9 @@ if model_ladder_cells.judge(L, good, rungs_doc, print, rungs_main):
 # (crates/aprender-contracts/src/ontology/verdict.rs FLEET_LABELS), the same element as
 # `decline` -- exit 2. It used to fall through to exit 0, so a run whose only non-green rows
 # were deferred printed "every required rung green". FAIL still dominates: rc 1 stays 1.
+# The line below must NEVER start `DEFERRED: ` (with the colon): scripts/dogfood.sh reads
+# that exact prefix as "this gate cannot be measured pre-publish" and marks it DEFER instead
+# of FAIL. Pinned by must_not_match in the defer-* cases.
 deferred_rows = sum(defer_used.values())
 if deferred_rows and rc == 0:
     print(f"DEFERRED {deferred_rows} row(s) — declared, not proven: exit 2, never green (#3957 F1)")
@@ -551,6 +554,7 @@ if [ "$SELF_TEST" = 1 ]; then
     # #3957 F1: a deferred row exits 2 (Unknown/NotRun), never 0.
     mutant defer-exits-0      defer-inventory-declared    's/if deferred_rows and rc == 0:/if False:/'
     mutant defer-exits-0-qa   defer-qa-rc-declared        's/if deferred_rows and rc == 0:/if False:/'
+    mutant defer-colon        defer-inventory-declared    's/DEFERRED {deferred_rows} row(s)/DEFERRED: {deferred_rows} row(s)/'
     # #3957 F2: receipts bind to the cut commit's sha; the prose drift key is refused.
     mutant sha-stale          red-receipt-sha-stale       's/    if asha != cut and asha not in equiv:/    if False:/'
     mutant sha-missing        red-receipt-sha-missing     's/    if not (isinstance(asha, str) and re.fullmatch(r"\[0-9a-f\]{40}", asha)):/    if False:/'
