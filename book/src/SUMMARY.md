@@ -283,6 +283,7 @@
 - [apr beat-run](./cli/beat-run.md)
 - [apr bench](./cli/bench.md)
 - [apr canary](./cli/canary.md)
+- [apr capability](./cli/capability.md)
 - [apr cbtop](./cli/cbtop.md)
 - [apr cgp](./cli/cgp.md)
 - [apr chat](./cli/chat.md)
