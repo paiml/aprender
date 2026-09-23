@@ -21,7 +21,12 @@ ruling. The FILE NAME says ADJUDICATED, so the R5 line that prints it says so to
 argv: --source <receipt.json> --known-red <list.json> --commit <40-hex> --version <v> --out <dir>
       --self-test
 list.json: {"release": "0.69.1", "ruling": "...", "date": "...",
-            "rows": [{"gate": "...", "ticket": "#NNNN", "reason": "<regex over the row's note>"}]}
+            "rows": [{"gate": "...", "ticket": "#NNNN", "reason": "<regex over the row's note>"},
+                     {"gate": "dogfood-gates", "ticket": "#NNNN", "reason": "\\b2 RED\\b",
+                      "derived_from": ["<gate>", "<gate>"]}]}
+A `derived_from` entry is a SUMMARY row (dogfood-gates: "<N> declared gate(s) discovered, <M> RED"). It is
+accepted only as derived from exactly those rows: its note's M equals len(derived_from), the set of the
+receipt's OTHER FAIL rows is exactly derived_from, and each of those is itself a listed, non-derived entry.
 Exit: 0 written · 1 refused · 2 unreadable input.
 """
 import argparse
@@ -70,6 +75,22 @@ def refusals(src_path, src, known, commit, version):
         except re.error as e:
             why.append(f"known-red entry {g}: reason is not a valid regex ({e})")
     fails = [g for g in (src.get("gates") or []) if isinstance(g, dict) and g.get("result") == "FAIL"]
+    derived = {r["gate"]: r for r in rows if r.get("derived_from") is not None}
+    plain = {g for g in byname if g not in derived}
+    other_fails = {g.get("gate") for g in fails if g.get("gate") not in derived}
+    for name, r in derived.items():
+        df = r.get("derived_from")
+        if not isinstance(df, list) or not df:
+            why.append(f"known-red summary {name!r}: derived_from must be a non-empty list"); continue
+        if not set(df) <= plain:
+            why.append(f"known-red summary {name!r}: derived_from {sorted(set(df) - plain)} are not listed (non-summary) known-red rows")
+        if other_fails != set(df):
+            why.append(f"summary row {name!r} is accepted only as derived from exactly {sorted(df)}, but the receipt's other FAIL rows are {sorted(other_fails)}")
+        row = next((g for g in fails if g.get("gate") == name), None)
+        if row is not None:
+            m = re.search(r"(\d+) RED", str(row.get("note") or ""))
+            if not m or int(m.group(1)) != len(df):
+                why.append(f"summary row {name!r} says {m.group(0) if m else 'no <M> RED count'!r}, not {len(df)} RED -- its count must equal derived_from")
     for g in fails:
         k = byname.get(g.get("gate"))
         if k is None:
@@ -123,13 +144,18 @@ def self_test():
     C, V = "d" * 40, "0.69.1"
     known = {"release": V, "ruling": "ship now as known failures", "date": "2026-09-23",
              "rows": [{"gate": "check_model_ladder", "ticket": "#4001", "reason": "no scope seam"},
-                      {"gate": "check_no_claim_literals", "ticket": "#4002", "reason": "claim literal"}]}
+                      {"gate": "check_no_claim_literals", "ticket": "#4002", "reason": "claim literal"},
+                      {"gate": "dogfood-gates", "ticket": "#4001", "reason": r"\b2 RED\b",
+                       "derived_from": ["check_model_ladder", "check_no_claim_literals"]}]}
     def rc(**kw):
         return {"crate": "aprender", "version": V, "timestamp": "20260923T200000Z", "commit": C, "phase": "pre-publish",
                 "deferred": [], "open_obligations": [], "verdict": "NO-GO",
                 "gates": [{"gate": "fmt", "result": "PASS", "note": ""},
                           {"gate": "check_model_ladder", "result": "FAIL", "note": "judge: no scope seam at X2"},
-                          {"gate": "check_no_claim_literals", "result": "FAIL", "note": "7 claim literal(s) drifted"}], **kw}
+                          {"gate": "check_no_claim_literals", "result": "FAIL", "note": "7 claim literal(s) drifted"},
+                          {"gate": "dogfood-gates", "result": "FAIL", "note": "16 declared gate(s) discovered, 2 RED (each named in its own row above)"}], **kw}
+    def summary(note):
+        r = rc(); r["gates"] = [dict(x, note=note) if x["gate"] == "dogfood-gates" else x for x in r["gates"]]; return r
     def gates_with(extra=None, drop=None, note=None):
         r = rc()
         g = [x for x in r["gates"] if x["gate"] != drop]
@@ -151,6 +177,11 @@ def self_test():
         ("a list for another release -> refused", rc(), dict(known, release="0.70.0"), 1, "not 0.69.1"),
         ("a list entry without a ticket -> refused", rc(), dict(known, rows=[dict(known["rows"][0], ticket="soon"), known["rows"][1]]), 1, "#NNNN ticket"),
         ("a list without its ruling -> refused", rc(), dict(known, ruling=""), 1, "no 'ruling'"),
+        ("the summary row saying 3 RED -> refused", summary("16 declared gate(s) discovered, 3 RED (each named in its own row above)"), known, 1, "not 2 RED"),
+        ("the summary derived from other rows than the receipt fails -> refused",
+         rc(), dict(known, rows=known["rows"][:2] + [dict(known["rows"][2], derived_from=["check_model_ladder"])]), 1, "accepted only as derived from exactly"),
+        ("a derived_from member that is not a listed row -> refused",
+         rc(), dict(known, rows=known["rows"][:2] + [dict(known["rows"][2], derived_from=["check_model_ladder", "cargo_test"])]), 1, "are not listed"),
     ]
     bad = 0
     for name, src, kn, want, needle in cases:
@@ -167,7 +198,7 @@ def self_test():
             ok = got == want and any(needle in ln for ln in lines) and (bool(wrote) == (want == 0))
             if ok and want == 0:
                 a = json.load(open(wrote[0]))
-                ok = (a["verdict"] == "GO" and a["source_verdict"] == "NO-GO" and len(a["known_red"]) == 2
+                ok = (a["verdict"] == "GO" and a["source_verdict"] == "NO-GO" and len(a["known_red"]) == 3
                       and a["source_sha256"] == hashlib.sha256(open(sp, "rb").read()).hexdigest())
             print(("ok    " if ok else "FAIL  ") + name + ("" if ok else f" -> rc={got} wrote={wrote} {lines[-2:]}"))
             bad |= not ok
