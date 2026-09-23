@@ -2139,19 +2139,16 @@ mod golden_output_tests {
             ))
             .expect("own source readable");
             let code = src.split("#[cfg(test)]").next().unwrap_or(&src);
-            let calls = code
-                .matches("thinking_on_case_for_model(key.as_deref()")
-                .count()
-                + code
-                    .matches("thinking_on_case_for_model(\n        architecture.as_deref()")
-                    .count();
+            // Calls, not a spelling: the ON legs moved into helpers (complexity ratchet,
+            // #4046), so the argument text changed while the call did not.
+            let calls = code.matches("thinking_on_case_for_model(").count()
+                - code.matches("fn thinking_on_case_for_model(").count();
             assert_eq!(
                 calls, want,
                 "{file}: the ON leg must render the official template (#3990)"
             );
             assert!(
-                !code.contains("= thinking_on_case(key.as_deref())")
-                    && !code.contains("= thinking_on_case(architecture.as_deref())"),
+                !code.contains("= thinking_on_case("),
                 "{file}: an ON leg still takes the derived prompt"
             );
             assert!(
