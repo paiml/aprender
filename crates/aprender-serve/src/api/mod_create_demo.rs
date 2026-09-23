@@ -382,6 +382,11 @@ pub struct ChatCompletionResponse {
     /// served this request measured them. Absent — never zero — otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timings: Option<Timings>,
+    /// #3987: which backend served this reply, when the serving path knows it.
+    /// Absent (not `false`) on paths that do not record it, so every existing response
+    /// is byte-identical; the qwen3moe path sets it from the dispatch's own report.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub used_gpu: Option<bool>,
 }
 
 /// Provenance of trace timing data (GH-92: truth-in-reporting)

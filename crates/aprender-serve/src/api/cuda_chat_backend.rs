@@ -266,6 +266,7 @@ async fn try_cuda_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         timings,
+        None,
     ))
 }
 
@@ -395,6 +396,7 @@ fn try_quantized_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         None,
+        None,
     ))
 }
 
@@ -502,6 +504,7 @@ fn try_apr_transformer_backend(
         latency,
         request.tools.as_deref(),
         request_tool_choice(request),
+        None,
         None,
     ))
 }
@@ -621,6 +624,7 @@ fn registry_fallback(
         duration,
         request.tools.as_deref(),
         request_tool_choice(request),
+        None,
         None,
     )
 }
@@ -795,6 +799,7 @@ async fn try_apr_q4k_chat_backend(
         start.elapsed(),
         request.tools.as_deref(),
         request_tool_choice(request),
+        None,
         None,
     ))
 }
@@ -1097,11 +1102,15 @@ fn try_qwen3_moe_backend(
         ));
     }
 
-    let tokens = match crate::infer::qwen3_moe_generate::run_qwen3_moe_generate(
+    // #3987: the ONE dispatch `apr run` uses (#3714), not the CPU-only generator this
+    // used to call directly. On a CUDA server (`with_moe_gpu`) it serves on the GPU; a GPU
+    // that cannot serve prints its reason and the CPU chain runs, and `used_gpu` says so.
+    let (tokens, used_gpu) = match crate::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(
         &mapped,
         &quantized,
         &input_ids,
         &gen_config,
+        state.moe_no_gpu(),
     ) {
         Ok(t) => t,
         Err(e) => {
@@ -1145,6 +1154,7 @@ fn try_qwen3_moe_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         None,
+        Some(used_gpu),
     ))
 }
 

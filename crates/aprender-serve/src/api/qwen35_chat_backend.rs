@@ -213,6 +213,7 @@ async fn try_qwen35_backend(
         request.tools.as_deref(),
         request_tool_choice(request),
         None,
+        None,
     ))
 }
 
