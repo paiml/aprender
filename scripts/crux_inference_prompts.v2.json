@@ -1,0 +1,611 @@
+{
+  "schema": "crux-inference-prompts/v2",
+  "ticket": "#3962 (quorum revision Q1-Q5 on #3962)",
+  "oracles": "scripts/lib/crux_oracles.py decides every verdict; scripts/check_crux_oracles.sh is its case table.",
+  "certification": "A prompt is USED for a model only once evidence/crux/0.69.1/prompt-certification.json admits it for that model: ggml, hf and vllm all correct at bf16 AND the ggml family correct on the quantized GGUF, in both thinking modes where the model has one. At gate time a split is RED, never a prompt swap.",
+  "parity": "temperature 0, seed 0, max_tokens[thinking] from each entry, enable_thinking explicit. An unclosed think block is RED think_unclosed.",
+  "prompts": [
+    {
+      "id": "ctl-2plus2",
+      "verb": [
+        "run",
+        "chat",
+        "serve run",
+        "serve stream"
+      ],
+      "tier": "easy",
+      "control": true,
+      "max_tokens": {
+        "off": 128,
+        "on": 2048
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "4",
+        "normalize": "int"
+      },
+      "negative": "<answer>5</answer>"
+    },
+    {
+      "id": "ctl-recall-7",
+      "verb": [
+        "chat",
+        "serve run",
+        "serve stream"
+      ],
+      "tier": "easy",
+      "control": true,
+      "max_tokens": {
+        "off": 128,
+        "on": 2048
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "Remember the number 7. Confirm it. Reply with the final answer inside <answer></answer>."
+        },
+        {
+          "role": "user",
+          "content": "What number did I ask you to remember? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "state_recall",
+        "expect": "7",
+        "normalize": "int"
+      },
+      "negative": "<answer>8</answer>"
+    },
+    {
+      "id": "ctl-code-add",
+      "verb": [
+        "code",
+        "run",
+        "chat"
+      ],
+      "tier": "easy",
+      "control": true,
+      "max_tokens": {
+        "off": 512,
+        "on": 3072
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "Write a Python function add(a, b) that returns the sum of a and b. Put only the function in a single ```python code block."
+        }
+      ],
+      "oracle": {
+        "type": "code_tests",
+        "lang": "python",
+        "entry": "add",
+        "tests": "assert add(2, 3) == 5\nassert add(-4, 4) == 0\nassert add(10, 0) == 10",
+        "timeout_s": 10
+      },
+      "negative": "```python\ndef add(a, b):\n    return a - b\n```"
+    },
+    {
+      "id": "fact-capital-japan",
+      "verb": [
+        "run",
+        "chat",
+        "serve run",
+        "serve stream"
+      ],
+      "tier": "easy",
+      "control": false,
+      "max_tokens": {
+        "off": 128,
+        "on": 2048
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is the capital city of Japan? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "Tokyo",
+        "normalize": "casefold_strip"
+      }
+    },
+    {
+      "id": "fact-capital-france",
+      "verb": [
+        "run",
+        "chat",
+        "serve run",
+        "serve stream"
+      ],
+      "tier": "easy",
+      "control": false,
+      "max_tokens": {
+        "off": 128,
+        "on": 2048
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is the capital city of France? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "Paris",
+        "normalize": "casefold_strip"
+      }
+    },
+    {
+      "id": "fact-water-formula",
+      "verb": [
+        "run",
+        "chat",
+        "serve run",
+        "serve stream"
+      ],
+      "tier": "easy",
+      "control": false,
+      "max_tokens": {
+        "off": 128,
+        "on": 2048
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is the chemical formula of water? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "H2O",
+        "normalize": "casefold_strip"
+      }
+    },
+    {
+      "id": "arith-17x23",
+      "verb": [
+        "run",
+        "chat",
+        "serve run",
+        "serve stream"
+      ],
+      "tier": "easy",
+      "control": false,
+      "max_tokens": {
+        "off": 128,
+        "on": 2048
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 17 multiplied by 23? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "391",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "arith-precedence",
+      "verb": [
+        "run",
+        "chat",
+        "serve run",
+        "serve stream"
+      ],
+      "tier": "easy",
+      "control": false,
+      "max_tokens": {
+        "off": 128,
+        "on": 2048
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 3 + 4 * 5? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "23",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "arith-word-apples",
+      "verb": [
+        "run",
+        "chat",
+        "serve run",
+        "serve stream"
+      ],
+      "tier": "easy",
+      "control": false,
+      "max_tokens": {
+        "off": 128,
+        "on": 2048
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "A shop has 48 apples. It sells 17 and then receives a delivery of 25. How many apples does it have now? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "56",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "hard-add-4digit",
+      "verb": [
+        "run",
+        "chat",
+        "serve run",
+        "serve stream"
+      ],
+      "tier": "hard",
+      "control": false,
+      "max_tokens": {
+        "off": 128,
+        "on": 2048
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 4817 + 3796? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "8613",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "hard-not-prime",
+      "verb": [
+        "run",
+        "chat",
+        "serve run",
+        "serve stream"
+      ],
+      "tier": "hard",
+      "control": false,
+      "max_tokens": {
+        "off": 128,
+        "on": 2048
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "Exactly one of these numbers is NOT prime: 7, 11, 15, 13. Which one? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "15",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "hard-reverse-word",
+      "verb": [
+        "run",
+        "chat",
+        "serve run",
+        "serve stream"
+      ],
+      "tier": "hard",
+      "control": false,
+      "max_tokens": {
+        "off": 128,
+        "on": 2048
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "Write the word 'planet' spelled backwards. Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "tenalp",
+        "normalize": "casefold_strip"
+      }
+    },
+    {
+      "id": "hard-count-letters",
+      "verb": [
+        "run",
+        "chat",
+        "serve run",
+        "serve stream"
+      ],
+      "tier": "hard",
+      "control": false,
+      "max_tokens": {
+        "off": 128,
+        "on": 2048
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "How many times does the letter 'r' appear in the word 'strawberry'? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "3",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "recall-cats",
+      "verb": [
+        "chat",
+        "serve run",
+        "serve stream"
+      ],
+      "tier": "easy",
+      "control": false,
+      "max_tokens": {
+        "off": 128,
+        "on": 2048
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "I have 3 cats. Reply with the final answer inside <answer></answer>."
+        },
+        {
+          "role": "user",
+          "content": "I adopt 2 more cats. Reply with the final answer inside <answer></answer>."
+        },
+        {
+          "role": "user",
+          "content": "How many cats do I have now? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "state_recall",
+        "expect": "5",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "recall-name",
+      "verb": [
+        "chat",
+        "serve run",
+        "serve stream"
+      ],
+      "tier": "easy",
+      "control": false,
+      "max_tokens": {
+        "off": 128,
+        "on": 2048
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "My name is Ada. Reply with the final answer inside <answer></answer>."
+        },
+        {
+          "role": "user",
+          "content": "What is 10 + 5? Reply with the final answer inside <answer></answer>."
+        },
+        {
+          "role": "user",
+          "content": "What is my name? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "state_recall",
+        "expect": "Ada",
+        "normalize": "casefold_strip"
+      }
+    },
+    {
+      "id": "recall-arith-chain",
+      "verb": [
+        "chat",
+        "serve run",
+        "serve stream"
+      ],
+      "tier": "hard",
+      "control": false,
+      "max_tokens": {
+        "off": 128,
+        "on": 2048
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2? Reply with the final answer inside <answer></answer>."
+        },
+        {
+          "role": "user",
+          "content": "Now multiply that by 3. Reply with the final answer inside <answer></answer>."
+        },
+        {
+          "role": "user",
+          "content": "Now subtract 5 from that. Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "state_recall",
+        "expect": "7",
+        "normalize": "int"
+      }
+    },
+    {
+      "id": "code-is-palindrome",
+      "verb": [
+        "code",
+        "run",
+        "chat"
+      ],
+      "tier": "easy",
+      "control": false,
+      "max_tokens": {
+        "off": 512,
+        "on": 3072
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "Write a Python function is_palindrome(s) that returns True if the string s reads the same forwards and backwards, ignoring case, and False otherwise. Put only the function in a single ```python code block."
+        }
+      ],
+      "oracle": {
+        "type": "code_tests",
+        "lang": "python",
+        "entry": "is_palindrome",
+        "tests": "assert is_palindrome('Level') is True\nassert is_palindrome('abca') is False\nassert is_palindrome('') is True",
+        "timeout_s": 10
+      }
+    },
+    {
+      "id": "code-fib",
+      "verb": [
+        "code",
+        "run",
+        "chat"
+      ],
+      "tier": "easy",
+      "control": false,
+      "max_tokens": {
+        "off": 512,
+        "on": 3072
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "Write a Python function fib(n) that returns the n-th Fibonacci number, where fib(0) == 0 and fib(1) == 1. Put only the function in a single ```python code block."
+        }
+      ],
+      "oracle": {
+        "type": "code_tests",
+        "lang": "python",
+        "entry": "fib",
+        "tests": "assert fib(0) == 0\nassert fib(1) == 1\nassert fib(10) == 55\nassert fib(20) == 6765",
+        "timeout_s": 10
+      }
+    },
+    {
+      "id": "code-count-vowels",
+      "verb": [
+        "code",
+        "run",
+        "chat"
+      ],
+      "tier": "hard",
+      "control": false,
+      "max_tokens": {
+        "off": 512,
+        "on": 3072
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "Write a Python function count_vowels(s) that returns how many of the characters in s are vowels (a, e, i, o, u), case-insensitive. Put only the function in a single ```python code block."
+        }
+      ],
+      "oracle": {
+        "type": "code_tests",
+        "lang": "python",
+        "entry": "count_vowels",
+        "tests": "assert count_vowels('Hello World') == 3\nassert count_vowels('xyz') == 0\nassert count_vowels('AEIOU') == 5",
+        "timeout_s": 10
+      }
+    },
+    {
+      "id": "long-primes-10",
+      "verb": [
+        "run",
+        "chat",
+        "serve run",
+        "serve stream"
+      ],
+      "tier": "easy",
+      "control": false,
+      "max_tokens": {
+        "off": 256,
+        "on": 3072
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "List the first 10 prime numbers. Put the list inside <answer></answer>, one item per line, nothing else."
+        }
+      ],
+      "oracle": {
+        "type": "structure",
+        "lines": [
+          2,
+          3,
+          5,
+          7,
+          11,
+          13,
+          17,
+          19,
+          23,
+          29
+        ]
+      }
+    },
+    {
+      "id": "long-countdown-15",
+      "verb": [
+        "run",
+        "chat",
+        "serve run",
+        "serve stream"
+      ],
+      "tier": "hard",
+      "control": false,
+      "max_tokens": {
+        "off": 256,
+        "on": 3072
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "Count down from 15 to 1. Put the list inside <answer></answer>, one item per line, nothing else."
+        }
+      ],
+      "oracle": {
+        "type": "structure",
+        "lines": [
+          15,
+          14,
+          13,
+          12,
+          11,
+          10,
+          9,
+          8,
+          7,
+          6,
+          5,
+          4,
+          3,
+          2,
+          1
+        ]
+      }
+    }
+  ]
+}
