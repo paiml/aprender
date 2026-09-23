@@ -164,27 +164,45 @@ def _fake_popen(cmd, **_kw):
     raise _Stop("fake Popen: stop after recording --max-model-len")
 
 
-sys.modules["vllm"] = types.SimpleNamespace(LLM=_fake_llm, SamplingParams=None)
-sys.modules["transformers"] = types.SimpleNamespace(
-    AutoTokenizer=types.SimpleNamespace(from_pretrained=lambda _p: None))
-engine.verified_source = lambda _repo, _rev: Path("/nonexistent-source")
-engine.subprocess = types.SimpleNamespace(Popen=_fake_popen, STDOUT=None)
-engine.preflight = lambda a: None
-engine.load_inproc, engine.serve_session = REAL_LOAD_INPROC, REAL_SERVE_SESSION
-for _path, _verb in (("inproc", "run"), ("serve", "serve run")):
-    _w = bc.batch_env()
-    engine.run_batch(bc.model_args(context=4096), [
-        {"prompt_id": p, "verb": v, "messages": bc.msgs(_w, p, ["q"]), "thinking": "on", "max_tokens": n}
-        for p, v, n in (("small", _verb, 5), ("on-budget", _verb, 4096), ("mid", _verb, 300),
-                        ("refused", "no-such-verb", 100_000))])
-    _r = bc.rows(_w)
-    _ok = (_given.get(_path) == 8192 and len(_r) == 4 and all(r.get("max_model_len") == 8192 for r in _r)
-           and all("_Stop" in (r.get("refused") or "") or "fake" in (r.get("refused") or "") for r in _r[:3]))
-    print(f"{'ok  ' if _ok else 'FAIL'} [#4029 {_path}] vLLM is handed context + the largest runnable budget, "
-          "and every row records it" + ("" if _ok else f"\n     vLLM got {_given.get(_path)}, rows "
-                                         f"{[(r.get('max_model_len'), (r.get('refused') or '')[:60]) for r in _r]}"))
-    failed += not _ok
-    CASES_TOTAL += 1
+# Everything the case replaces is restored in a finally, so no later case runs against these fakes.
+_saved_mods = {m: sys.modules.get(m) for m in ("vllm", "transformers")}
+_saved_attrs = {k: getattr(engine, k) for k in ("verified_source", "subprocess", "preflight", "load_inproc",
+                                                "serve_session")}
+try:
+    sys.modules["vllm"] = types.SimpleNamespace(LLM=_fake_llm, SamplingParams=None)
+    sys.modules["transformers"] = types.SimpleNamespace(
+        AutoTokenizer=types.SimpleNamespace(from_pretrained=lambda _p: None))
+    engine.verified_source = lambda _repo, _rev: Path("/nonexistent-source")
+    engine.subprocess = types.SimpleNamespace(Popen=_fake_popen, STDOUT=None)
+    engine.preflight = lambda a: None
+    engine.load_inproc, engine.serve_session = REAL_LOAD_INPROC, REAL_SERVE_SESSION
+    for _path, _verb in (("inproc", "run"), ("serve", "serve run")):
+        _w = bc.batch_env()
+        engine.run_batch(bc.model_args(context=4096), [
+            {"prompt_id": p, "verb": v, "messages": bc.msgs(_w, p, ["q"]), "thinking": "on", "max_tokens": n}
+            for p, v, n in (("small", _verb, 5), ("on-budget", _verb, 4096), ("mid", _verb, 300),
+                            ("refused", "no-such-verb", 100_000))])
+        _r = bc.rows(_w)
+        _ok = (_given.get(_path) == 8192 and len(_r) == 4 and all(r.get("max_model_len") == 8192 for r in _r)
+               and all("_Stop" in (r.get("refused") or "") or "fake" in (r.get("refused") or "") for r in _r[:3]))
+        print(f"{'ok  ' if _ok else 'FAIL'} [#4029 {_path}] vLLM is handed context + the largest runnable budget, "
+              "and every row records it" + ("" if _ok else f"\n     vLLM got {_given.get(_path)}, rows "
+                                             f"{[(r.get('max_model_len'), (r.get('refused') or '')[:60]) for r in _r]}"))
+        failed += not _ok
+        CASES_TOTAL += 1
+finally:
+    for _m, _v in _saved_mods.items():
+        if _v is None:
+            sys.modules.pop(_m, None)
+        else:
+            sys.modules[_m] = _v
+    for _k, _v in _saved_attrs.items():
+        setattr(engine, _k, _v)
+_ok = (engine.subprocess is __import__("subprocess") and not isinstance(sys.modules.get("vllm"), types.SimpleNamespace)
+       and all(getattr(engine, k) is v for k, v in _saved_attrs.items()))
+print(f"{'ok  ' if _ok else 'FAIL'} [#4029] the fakes are gone once the case ends")
+failed += not _ok
+CASES_TOTAL += 1
 
 for name, logs, must, must_not in CASES:
     got = engine.refusal(GENERIC, *logs)
