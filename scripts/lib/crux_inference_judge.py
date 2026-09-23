@@ -493,9 +493,11 @@ def engine_entry(row, prompt, prompt_opened=None):
     stdout, stderr = read_text(row.get("stdout")), read_text(row.get("stderr"))
     content = prompt["messages"][-1]["content"]
     engine = row["engine"]
-    if row.get("verb") == "serve run":
+    if row.get("verb") in ("serve run", "serve stream"):
         # serve (#3739 slice 4): every server, apr's included, is read through the ONE
-        # OpenAI client's contract JSON (scripts/lib/crux_openai_client.py).
+        # OpenAI client's contract JSON (scripts/lib/crux_openai_client.py). #3962 B4: the
+        # sweep writes stream cells as verb `serve stream`; read as run output, a comparator's
+        # JSON fell to the llama-cli echo parser ("the echoed prompt was not found").
         p = parse_engine_json(stdout)
         if engine == "apr":
             # apr serve's responses report no backend: recorded, not scored as verified.
@@ -940,7 +942,10 @@ def collect(args):
     # representation (crux_serve_routes.oracle_route, same mode), else (2) the route-less plugin row.
     # A native row always wins; cells never merge (route stays a key part, R1); the borrowed entry
     # names its source route. A route with no mapped oracle borrows NOTHING and is RED below.
-    oracle_of = {}
+    # A plugin `serve stream` row carries no mode (its verb already says stream), so the route-less
+    # source is looked up at the cell's mode and then mode-less. A comparator-only cell whose rows
+    # were all borrowed has no subject of its own: it is dropped, not left RED "apr missing".
+    oracle_of, lent = {}, set()
     for k in keys:
         if not k[7] or "apr" not in by_key[k]:
             continue
@@ -948,14 +953,17 @@ def collect(args):
         oracle_of[k] = orc
         if orc is None:
             continue
-        sources = [(orc, by_key.get(k[:7] + (orc,), {})), ("", by_key.get(k[:7] + ("",), {}))]
+        sources = [k[:7] + (orc,), k[:7] + ("",), k[:6] + ("", "")]
         for eng in COMPARATORS:
             if eng in by_key[k]:
                 continue
-            for src_route, src in sources:
-                if eng in src:
-                    by_key[k][eng] = dict(src[eng], borrowed_from_route=src_route or "(route-less plugin row)")
+            for src in sources:
+                if src != k and eng in by_key.get(src, {}):
+                    by_key[k][eng] = dict(by_key[src][eng], borrowed_from_route=src[7] or "(route-less plugin row)")
+                    lent.add((src, eng))
                     break
+    keys = [k for k in keys if "apr" in by_key[k] or not by_key[k]
+            or not all((k, e) in lent for e in by_key[k])]
 
     # #3962 J2 (per cell): the certification admits prompts PER MODEL (quant sha). A prompt it did not
     # admit for this model is RED on that cell, however right the answer -- it was never shown answerable.
