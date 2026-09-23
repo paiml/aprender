@@ -1,0 +1,27 @@
+{
+  "schema": "apr-release-wall-time/v1",
+  "version": "0.69.1",
+  "freeze_commit": "4f81bdea7",
+  "anchors_utc": {
+    "freeze": "2026-09-23T14:54:22Z",
+    "cut": "2026-09-23T16:00:49Z",
+    "tag": "2026-09-23T17:48:43Z",
+    "cascade_first": "2026-09-23T21:09:06Z",
+    "cascade_last": "2026-09-23T21:50:28Z",
+    "release": "2026-09-23T21:51:46Z"
+  },
+  "spans": {
+    "freeze_to_release_min": 417.4,
+    "cut_to_release_min": 350.9,
+    "cut_to_tag_min": 107.9,
+    "tag_to_cascade_start_min": 200.4,
+    "cascade_min": 41.4,
+    "cascade_end_to_release_min": 1.3
+  },
+  "crates": {
+    "in_order": 71,
+    "published": 71
+  },
+  "unmeasured": {},
+  "measured_at": "2026-09-23T21:59:38Z"
+}
