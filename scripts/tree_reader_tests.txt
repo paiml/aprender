@@ -46,7 +46,7 @@ aprender-contracts	--lib	ontology::extract::apr_model
 aprender-contracts	--lib	ontology::extract::code
 aprender-contracts	--lib	ontology::extract::lean
 aprender-contracts	--lib	ontology::extract::pv_contract
-aprender-contracts	--lib	ontology::owl::tests
+aprender-contracts	--lib	ontology::owl
 aprender-contracts	--lib	ontology::sigma
 aprender-contracts	--lib	ontology::w3c
 aprender-contracts	--lib	pipeline
