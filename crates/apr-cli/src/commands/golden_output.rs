@@ -813,8 +813,12 @@ mod golden_output_tests {
     // =========================================================================
 
     const CASES: usize = 3;
+    /// A DECLARED duration, not a measured one: these tests pin that
+    /// `GateResult::unjudged` PRESERVES what it was handed, where
+    /// `GateResult::skipped` would zero it. Nothing here is timed.
+    const DECLARED_MS: u64 = 7;
     fn verdict_for(leg: &GpuGoldenLeg) -> GateResult {
-        golden_gate_verdict(CASES, leg, std::time::Duration::from_millis(7))
+        golden_gate_verdict(CASES, leg, std::time::Duration::from_millis(DECLARED_MS))
     }
 
     /// A leg that never started cannot fail the gate. This is TRUE BEFORE AND AFTER
@@ -862,7 +866,10 @@ mod golden_output_tests {
         // What WAS measured survives — this is not `GateResult::skipped`, which
         // discards the count and the duration.
         assert_eq!(v.value, Some(CASES as f64), "the CPU cases it DID judge are kept");
-        assert!(v.duration_ms > 0, "the measured duration is kept");
+        assert_eq!(
+            v.duration_ms, DECLARED_MS,
+            "the duration is PRESERVED, not zeroed the way GateResult::skipped would"
+        );
     }
 
     /// The assertion that actually matters: `model_ladder.sh` serialises
