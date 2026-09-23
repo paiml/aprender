@@ -521,6 +521,19 @@ impl GpuGoldenLeg {
         }
     }
 
+    /// The GPU half went unjudged because THIS GATE cannot judge this file's format
+    /// — not because of the host (#3931).
+    ///
+    /// Deliberately narrower than "did not run". `no cuda feature` and `no CUDA device`
+    /// are properties of the machine: on a CPU-only host every rung's GPU leg is absent
+    /// and the ladder's own `capability_match` rule already handles that shape
+    /// (`skipped && not claims_gpu` is OK). Widening this to all three reasons would
+    /// turn every GGUF rung red on a non-cuda host, which is a different decision than
+    /// the one #3931 asks for.
+    pub(crate) fn unjudged_on_format(&self) -> bool {
+        matches!(self, Self::NotRun(why) if *why == GPU_LEG_JUDGES_GGUF_ONLY)
+    }
+
     /// What the gate's pass message says about the GPU leg.
     pub(crate) fn describe(&self) -> String {
         match self {
@@ -529,6 +542,11 @@ impl GpuGoldenLeg {
         }
     }
 }
+
+/// The one `NotRun` reason that is a limit of THIS GATE rather than of the host.
+/// Named so the verdict can tell it apart from "no device"/"no cuda feature" without
+/// matching on a string literal in two places (#3931).
+pub(crate) const GPU_LEG_JUDGES_GGUF_ONLY: &str = "the dense GPU leg judges GGUF only";
 
 /// Why the dense GPU leg will not start, or `None` when it will (#3711). These are
 /// the only skips, and each names which.
@@ -542,7 +560,7 @@ pub(crate) fn gpu_golden_not_run(
     } else if !cuda_device {
         Some("no CUDA device on this host")
     } else if !gguf {
-        Some("the dense GPU leg judges GGUF only")
+        Some(GPU_LEG_JUDGES_GGUF_ONLY)
     } else {
         None
     }
@@ -705,10 +723,26 @@ fn run_golden_output_gate_runtime(
     let test_cases = golden_test_cases();
     // GH-279-4: thinking models need room for <think>...</think> + the answer.
     let golden_max_tokens = config.max_tokens.max(512);
+    // #3931: the format is DETECTED, never assumed. This argument was the literal
+    // `true`, which is the one place in either golden gate where the format is
+    // asserted rather than read — and it asserts the opposite of what the dense
+    // sibling concludes for the same file (`golden_output.rs`: `format ==
+    // ModelFormat::Gguf`). On a hybrid architecture that made the runtime gate
+    // DEMAND a GPU leg for a format the dense gate declines to judge on GPU, so the
+    // two gates disagreed about the same (file, host) question.
+    //
+    // Latent rather than live at the time of the fix: `hybrid_forward_handles` is
+    // `arch == "qwen35"` and every .apr on the measured fleet is `qwen2`, so no model
+    // reached this cell. It activates on the first Qwen3.5 imported to .apr.
     let gpu_not_run = if cpu_only {
+        // Short-circuits BEFORE the format is consulted, and correctly so: if the GPU
+        // backend declines the architecture, the format cannot make it run.
         Some("the GPU backend declines this architecture")
     } else {
-        gpu_golden_not_run(cfg!(feature = "cuda"), cuda_device_present(), true)
+        let is_gguf = realizar::format::detect_format_from_path(path)
+            .map(|f| f == realizar::format::ModelFormat::Gguf)
+            .unwrap_or(false);
+        gpu_golden_not_run(cfg!(feature = "cuda"), cuda_device_present(), is_gguf)
     };
 
     let mut served_by = String::new();

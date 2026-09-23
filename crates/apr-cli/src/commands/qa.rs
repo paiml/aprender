@@ -281,6 +281,31 @@ impl GateResult {
         }
     }
 
+    /// A gate that RAN, measured part of what it exists to measure, and could not
+    /// measure the rest (#3931).
+    ///
+    /// `skipped: true` is the only machine-readable way to say "this verdict is
+    /// partial": `scripts/model_ladder.sh` normalises `passed && !skipped`, so a
+    /// partial verdict stops being the same shape as a complete one. The message
+    /// keeps what WAS measured rather than discarding it the way `skipped()` does.
+    pub(crate) fn unjudged(
+        name: &str,
+        message: &str,
+        value: Option<f64>,
+        threshold: Option<f64>,
+        duration: Duration,
+    ) -> Self {
+        Self {
+            name: name.to_string(),
+            passed: true,
+            message: message.to_string(),
+            value,
+            threshold,
+            duration_ms: duration.as_millis() as u64,
+            skipped: true,
+        }
+    }
+
     pub(crate) fn skipped(name: &str, reason: &str) -> Self {
         Self {
             name: name.to_string(),

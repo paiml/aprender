@@ -166,6 +166,37 @@ fn cuda_device_present() -> bool {
     CudaExecutor::is_available() && CudaExecutor::num_devices() > 0
 }
 
+/// The gate's verdict once every golden case has passed on the CPU.
+///
+/// #3931: the gate distinguishes "the GPU said something wrong" from "the GPU said
+/// nothing", and only the first can fail it. `GpuGoldenLeg::failure()` is `None` for
+/// every `NotRun`, so a leg that never started reaches this function and the verdict
+/// was an unconditional `passed` — the GPU half was reported as judged because the CPU
+/// half was.
+fn golden_gate_verdict(
+    cases: usize,
+    gpu_leg: &GpuGoldenLeg,
+    elapsed: std::time::Duration,
+) -> GateResult {
+    let message = format!("{cases} golden test cases passed ({})", gpu_leg.describe());
+    if gpu_leg.unjudged_on_format() {
+        return GateResult::unjudged(
+            "golden_output",
+            &format!("{message} — CPU-only verdict, the GPU was not judged (#3931)"),
+            Some(cases as f64),
+            Some(cases as f64),
+            elapsed,
+        );
+    }
+    GateResult::passed(
+        "golden_output",
+        &message,
+        Some(cases as f64),
+        Some(cases as f64),
+        elapsed,
+    )
+}
+
 /// Without the cuda feature there is no device this build can use.
 #[cfg(not(feature = "cuda"))]
 fn cuda_device_present() -> bool {
@@ -367,17 +398,7 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             }
         }
 
-        Ok(GateResult::passed(
-            "golden_output",
-            &format!(
-                "{} golden test cases passed ({})",
-                test_cases.len(),
-                gpu_leg.describe()
-            ),
-            Some(test_cases.len() as f64),
-            Some(test_cases.len() as f64),
-            start.elapsed(),
-        ))
+        Ok(golden_gate_verdict(test_cases.len(), &gpu_leg, start.elapsed()))
     }
 
     #[cfg(not(feature = "inference"))]
@@ -772,6 +793,106 @@ mod golden_output_tests {
         let label = runtime_golden_backend(false, Some("the GPU backend declines this architecture"))
             .expect("CPU was expected: a pass");
         assert!(label.contains("the GPU backend declines this architecture"), "{label}");
+    }
+
+    // =========================================================================
+    // #3931: a GPU leg that never STARTED is not a GPU leg that passed.
+    //
+    // `GpuGoldenLeg::failure()` returns None for every `NotRun`, so a leg that
+    // never started has no path to a verdict at all — it reaches
+    // `golden_gate_verdict` and the gate reported a full pass because the CPU
+    // half passed. Measured on a real pair, same binary, same host:
+    //
+    //   Qwen2.5-0.5B-Instruct-f16.gguf   PASS "... (GPU leg judged on CUDA device 0)"
+    //   qwen2.5-coder-0.5b-instruct.apr  PASS "... (GPU leg SKIPPED: the dense GPU
+    //                                              leg judges GGUF only)"
+    //
+    // Both `passed: true, skipped: false`, so `scripts/model_ladder.sh` records
+    // both as passed and `check_model_ladder.sh` cannot tell them apart. The
+    // .apr rung's CPU-only verdict is indistinguishable from a fully-judged one.
+    // =========================================================================
+
+    const CASES: usize = 3;
+    fn verdict_for(leg: &GpuGoldenLeg) -> GateResult {
+        golden_gate_verdict(CASES, leg, std::time::Duration::from_millis(7))
+    }
+
+    /// A leg that never started cannot fail the gate. This is TRUE BEFORE AND AFTER
+    /// #3931 — `failure()` is deliberately None for `NotRun`, because "the GPU was
+    /// not asked" is not "the GPU was wrong". The fix changes the VERDICT, not this.
+    #[test]
+    fn a_not_run_gpu_leg_still_cannot_fail_the_gate_3931() {
+        assert_eq!(GpuGoldenLeg::NotRun(GPU_LEG_JUDGES_GGUF_ONLY).failure(), None);
+        assert_eq!(GpuGoldenLeg::NotRun("no CUDA device on this host").failure(), None);
+    }
+
+    /// A fully-judged GPU leg is a full pass, before and after. The control that
+    /// stops the fix from being "make golden_output skip".
+    #[test]
+    fn a_judged_gpu_leg_is_a_full_pass_3931() {
+        let v = verdict_for(&GpuGoldenLeg::Passed);
+        assert!(v.passed, "a judged GPU leg must pass: {}", v.message);
+        assert!(!v.skipped, "a judged GPU leg is not a skip: {}", v.message);
+        assert!(v.message.contains("GPU leg judged on CUDA device 0"), "{}", v.message);
+    }
+
+    /// THE FIX. This test was first written to assert the DEFECT — `skipped == false`
+    /// on a CPU-only verdict — and it passed, which is how the defect was confirmed
+    /// rather than assumed. (Had it failed, the gate already caught this and #3931
+    /// would have been void. That is the cheapest available refutation and it is why
+    /// it was written that way round.) It is now inverted.
+    #[test]
+    fn a_format_skipped_gpu_leg_is_not_a_full_pass_3931() {
+        let v = verdict_for(&GpuGoldenLeg::NotRun(GPU_LEG_JUDGES_GGUF_ONLY));
+        assert!(
+            v.skipped,
+            "a CPU-only verdict must be machine-readable as partial: {}",
+            v.message
+        );
+        assert!(
+            !v.passed || v.skipped,
+            "it must not be indistinguishable from a fully-judged rung: {}",
+            v.message
+        );
+        assert!(
+            v.message.contains("the GPU was not judged"),
+            "and it must say so in words: {}",
+            v.message
+        );
+        // What WAS measured survives — this is not `GateResult::skipped`, which
+        // discards the count and the duration.
+        assert_eq!(v.value, Some(CASES as f64), "the CPU cases it DID judge are kept");
+        assert!(v.duration_ms > 0, "the measured duration is kept");
+    }
+
+    /// The assertion that actually matters: `model_ladder.sh` serialises
+    /// `passed && !skipped`, and `check_model_ladder.sh` reads that. Before #3931
+    /// these two tuples were equal, so the judge could not tell a CPU-only rung from
+    /// a fully-judged one. This pins that they now differ — not a claim about the
+    /// human-readable message, which always said "SKIPPED" and was never read.
+    #[test]
+    fn the_judge_can_now_distinguish_a_judged_from_an_unjudged_rung_3931() {
+        let judged = verdict_for(&GpuGoldenLeg::Passed);
+        let unjudged = verdict_for(&GpuGoldenLeg::NotRun(GPU_LEG_JUDGES_GGUF_ONLY));
+        // `ladder_view` is the exact normalisation scripts/model_ladder.sh applies.
+        let ladder_view = |g: &GateResult| g.passed && !g.skipped;
+        assert!(ladder_view(&judged), "a fully-judged rung is still green to the judge");
+        assert!(
+            !ladder_view(&unjudged),
+            "a CPU-only rung must NOT be green to the judge: passed={} skipped={} msg={}",
+            unjudged.passed, unjudged.skipped, unjudged.message
+        );
+    }
+
+    /// The scope limit, stated as a test: a host WITHOUT a device is not the same
+    /// defect. Widening #3931 to every `NotRun` reason would turn every GGUF rung red
+    /// on a non-cuda host — a different decision, deliberately not taken here.
+    #[test]
+    fn an_absent_device_is_not_a_format_skip_and_still_passes_3931() {
+        for why in ["no CUDA device on this host", "this build has no cuda feature"] {
+            let v = verdict_for(&GpuGoldenLeg::NotRun(why));
+            assert!(v.passed && !v.skipped, "{why}: unchanged by #3931, got {}", v.message);
+        }
     }
 }
 
