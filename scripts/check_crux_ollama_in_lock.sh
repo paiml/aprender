@@ -28,6 +28,11 @@ PROG=check_crux_ollama_in_lock
 for t in python3 flock choom; do
   command -v "$t" >/dev/null 2>&1 || { printf '%s: ENV - %s is missing\n' "$PROG" "$t" >&2; exit 2; }
 done
+# The dogfood's run_cell runs every cell under `choom -n 1000`. Where that is DENIED (an unprivileged sandbox
+# without write access to oom_score_adj — a quorum lane measured exactly that), every row would read as a code
+# BREAK. It is the environment, so it is refused as one, by name (exit 2), before any row runs.
+command -v choom >/dev/null 2>&1 || { printf '%s: ENV - choom is missing\n' "$PROG" >&2; exit 2; }
+choom -n 1000 -- true 2>/dev/null || { printf '%s: ENV - `choom -n 1000 -- true` is denied here, and every cell runs under it\n' "$PROG" >&2; exit 2; }
 DOGFOOD="$ROOT/scripts/crux_inference_dogfood.sh"
 [ -f "$DOGFOOD" ] || { printf '%s: ENV - %s not found\n' "$PROG" "$DOGFOOD" >&2; exit 2; }
 

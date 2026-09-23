@@ -250,52 +250,91 @@ SSE_CASE_COUNT = 8
 def run_proc() -> int:
     """crux_proc: SIGTERM to a driver takes EVERY engine child with it (aprender-dd measured VLLM::EngineCore left on
     gx10's card holding 58928 MiB). A child process installs the handler and spawns a plain child, a child in its
-    OWN session (as `vllm serve` is started), and a grandchild behind a shell; SIGTERM to it must kill all three."""
+    OWN session (as `vllm serve` is started), and a grandchild behind a shell; SIGTERM to it must kill all three.
+    Survivors are found by a per-case marker on the planted sleeps (pgrep -f from this view), which works across a
+    pid namespace, where the pids the child prints would be the namespace's."""
+    import random
     import signal
     import subprocess
     import sys
-    import time
 
     lib = str(Path(__file__).resolve().parent)
-    prog = (
-        "import sys, subprocess, time; sys.path.insert(0, %r); import crux_proc\n"
-        "import os\n"
-        "if os.environ.get('CRUX_PROC_INSTALL', '1') == '1': crux_proc.install()\n"
-        "a = subprocess.Popen(['sleep', '300'])\n"
-        "b = subprocess.Popen(['sleep', '300'], start_new_session=True)\n"
-        "c = subprocess.Popen(['bash', '-c', 'sleep 300 & echo $!; wait'], stdout=subprocess.PIPE, text=True)\n"
-        "print(a.pid, b.pid, c.stdout.readline().strip(), flush=True)\n"
-        "time.sleep(120)\n" % lib)
 
-    def case(install):
+    def prog(marker):
+        return (
+            "import os, sys, subprocess, time; sys.path.insert(0, %r); import crux_proc\n"
+            "if os.environ.get('CRUX_PROC_INSTALL', '1') == '1': crux_proc.install()\n"
+            "subprocess.Popen(['sleep', %r])\n"
+            "subprocess.Popen(['sleep', %r], start_new_session=True)\n"
+            "subprocess.Popen(['bash', '-c', 'sleep %s & wait'])\n"
+            "print(os.readlink('/proc/self'), flush=True)\n"
+            "time.sleep(120)\n" % (lib, marker, marker, marker))
+
+    def survivors(marker):
+        r = subprocess.run(["pgrep", "-f", "^sleep %s$" % marker], capture_output=True, text=True)
+        return [int(x) for x in r.stdout.split()]
+
+    def case(install, wrap=()):
+        marker = "300.%06d" % random.randrange(10 ** 6)
         env = dict(os.environ, CRUX_PROC_INSTALL="1" if install else "0")
-        parent = subprocess.Popen([sys.executable, "-c", prog], stdout=subprocess.PIPE, text=True, env=env)
-        kids = [int(x) for x in parent.stdout.readline().split()]
-        os.kill(parent.pid, signal.SIGTERM)
+        parent = subprocess.Popen(list(wrap) + [sys.executable, "-c", prog(marker)], stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, text=True, env=env)
+        line = parent.stdout.readline().strip()
+        if not line.isdigit():
+            parent.kill()
+            return "could not start (%s)" % parent.stderr.read().strip()[:160], survivors(marker)
+        deadline = time.time() + 5
+        while time.time() < deadline and len(survivors(marker)) < 3:
+            time.sleep(0.05)
+        target = int(line)  # the pid as THIS view's /proc numbers it
+        os.kill(target, signal.SIGTERM)
+        if wrap:
+            # the namespace's init (bash) outlives the target by design: wait for the TARGET to go, then look —
+            # before init exits and the kernel tears the namespace (and every survivor) down
+            deadline = time.time() + 20
+            while time.time() < deadline and os.path.exists("/proc/%d" % target):
+                time.sleep(0.05)
+            time.sleep(0.3)
+            left = survivors(marker)
+            rc = int(parent.stderr.readline().strip().split("=")[1]) if not os.path.exists("/proc/%d" % target) else None
+            parent.kill()
+            parent.wait()
+            for k in left:
+                os.kill(k, signal.SIGKILL)
+            return rc, left
         try:
             rc = parent.wait(timeout=20)
         except subprocess.TimeoutExpired:
             parent.kill()
             rc = None
         time.sleep(0.3)
-        survivors = [k for k in kids if os.path.exists("/proc/%d" % k) and
-                     open("/proc/%d/stat" % k).read().rsplit(")", 1)[1].split()[0] != "Z"]
-        for k in survivors:  # never leave the planted sleeps behind
+        left = survivors(marker)
+        for k in left:  # never leave the planted sleeps behind
             os.kill(k, signal.SIGKILL)
-        return rc, survivors
+        return rc, left
+
+    import time
 
     failed = 0
-    rc, survivors = case(install=True)
-    ok = rc == 143 and not survivors
+    rc, left = case(install=True)
+    ok = rc == 143 and not left
     print(f"{'ok  ' if ok else 'FAIL'} [proc] SIGTERM takes a plain child, a new-session child and a grandchild; exit 143"
-          + ("" if ok else f"\n     got: rc={rc} survivors={survivors}"))
+          + ("" if ok else f"\n     got: rc={rc} survivors={left}"))
     failed += not ok
-    rc, survivors = case(install=False)
-    ok = len(survivors) == 3
+    rc, left = case(install=False)
+    ok = len(left) == 3
     print(f"{'ok  ' if ok else 'FAIL'} [proc] control: WITHOUT the handler all three survive (the leak is real)"
-          + ("" if ok else f"\n     got: rc={rc} survivors={survivors}"))
+          + ("" if ok else f"\n     got: rc={rc} survivors={left}"))
+    failed += not ok
+    # the lane's sandbox: a pid namespace whose /proc is the host's (getpid() != /proc's pid). The target must NOT
+    # be the namespace's init: init exiting makes the kernel kill the whole namespace, which would pass this case
+    # whatever the handler did (it did: a pre-fix mutant survived until init became a separate bash)
+    rc, left = case(install=True, wrap=("unshare", "-Urpf", "bash", "-c", '"$@"; echo "rc=$?" >&2; sleep 8', "_"))
+    ok = rc == 143 and not left
+    print(f"{'ok  ' if ok else 'FAIL'} [proc] ...and inside a pid namespace with the host's /proc (unshare -Urpf)"
+          + ("" if ok else f"\n     got: rc={rc} survivors={left}"))
     failed += not ok
     return failed
 
 
-PROC_CASE_COUNT = 2
+PROC_CASE_COUNT = 3

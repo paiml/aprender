@@ -23,6 +23,11 @@ set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd) || exit 2
 PROG=check_crux_greedy_rows
 command -v python3 >/dev/null 2>&1 || { printf '%s: ENV - python3 is missing\n' "$PROG" >&2; exit 2; }
+# The dogfood's run_cell runs every cell under `choom -n 1000`. Where that is DENIED (an unprivileged sandbox
+# without write access to oom_score_adj — a quorum lane measured exactly that), every row would read as a code
+# BREAK. It is the environment, so it is refused as one, by name (exit 2), before any row runs.
+command -v choom >/dev/null 2>&1 || { printf '%s: ENV - choom is missing\n' "$PROG" >&2; exit 2; }
+choom -n 1000 -- true 2>/dev/null || { printf '%s: ENV - `choom -n 1000 -- true` is denied here, and every cell runs under it\n' "$PROG" >&2; exit 2; }
 DOGFOOD="$ROOT/scripts/crux_inference_dogfood.sh"
 LIB="$ROOT/scripts/lib/crux_cells_greedy.sh"
 for f in "$DOGFOOD" "$LIB" "$ROOT/scripts/lib/crux_greedy_llama.py"; do

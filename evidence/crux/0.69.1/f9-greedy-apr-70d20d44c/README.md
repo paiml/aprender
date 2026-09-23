@@ -7,12 +7,10 @@ Producer: `scripts/crux_inference_dogfood.sh 0.69.1 --engines apr,llama.cpp --ve
 
 - `greedy-manifest.jsonl`: the 24 kind=greedy rows (6 per model: apr ON/OFF, llama.cpp@apr ON/OFF,
   llama.cpp@official ON/OFF). Each `tokens` path is the raw object in `greedy/`.
-- `lambda-gpu.json`: the receipt the RELEASE judge wrote. Two things about it:
-  1. every gen cell is RED because the run used the v1 prompt set, which F6 refuses (a substring oracle); that
-     is not an F9 result;
-  2. its `greedy[]` comes from the release judge's pre-F9 `report_greedy`, which keys on (model, host, prompt)
-     only, so the six rows per model overwrite each other. **Re-judge `greedy-manifest.jsonl` with aprender-36's
-     judge (fix/3957-f9-f10) — do not read the greedy section of this receipt.**
+- The dogfood's own receipt (lambda-gpu.json) is deliberately NOT committed (quorum lane 2, 2026-09-23: it is
+  self-invalidating). Its gen cells are RED only because the run used the v1 prompt set, which F6 refuses, and its
+  `greedy[]` came from the release judge's pre-F9 `report_greedy`, which keys on (model, host, prompt) and
+  collapses the six rows per model. **Judge `greedy-manifest.jsonl` with aprender-36's judge (fix/3957-f9-f10).**
 
 ## What the rows say (read off greedy-manifest.jsonl; the judge's reading is aprender-36's)
 
