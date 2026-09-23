@@ -4,6 +4,9 @@
 # IN FRONT of the same flock, served by (priority, arrival): 0 = highest.
 #   gpu-q [--prio 0-9] -- <cmd> [args…]      (default prio 5; the cop assigns P0 rows prio 1)
 #   gpu-q --caps                             prints the capabilities this gpu-q has, one per line (prio, wait)
+#   gpu-q --prune                            removes provably-dead tickets and names them (#3966)
+# GPUQ_REPORT_S=<seconds> (default 3600): a waiter reports itself on stderr each time it has waited that long (#3966).
+# A waiter whose own ticket disappears exits 76, loudly, instead of spinning (#3966).
 # GPUQ_WAIT=<seconds> BOUNDS the whole wait (queue + flock): on timeout gpu-q exits 75 (EX_TEMPFAIL) naming the
 # head ticket's holder, and never runs the command. It bounds the WAIT, not the command (wrap the command itself
 # in `timeout` for that). GPUQ_DIR / GPUQ_LOCK override the queue dir and the lock (for case tables).
@@ -16,30 +19,71 @@
 # end of the new file and exit 0 WITHOUT running its command). Deploys are also atomic (tmp + mv).
 main() {
 set -u
+# #3966: a signal IGNORED at shell entry cannot be trapped by bash, so a waiter started that way ignored
+# SIGTERM and only SIGKILL removed it (two waiters spun 34 h on gx10). Re-exec once with TERM restored to
+# its default, so the trap below can fire. Only TERM: every background job starts with INT ignored, and
+# that is not a defect.
+case "${GPUQ_REEXEC:-}" in
+  '') sigign=$(awk '/^SigIgn:/{print $2}' "/proc/$$/status" 2>/dev/null)
+      if [ -n "$sigign" ] && [ $(( 0x$sigign & 0x4000 )) -ne 0 ]; then
+        GPUQ_REEXEC=1 exec env --default-signal=TERM "$0" "$@"
+      fi ;;
+esac
 prio=5
-if [ "${1:-}" = "--caps" ]; then printf 'prio\nwait\n'; exit 0; fi
+if [ "${1:-}" = "--caps" ]; then printf 'prio\nwait\nprune\n'; exit 0; fi
 if [ "${1:-}" = "--prio" ]; then prio=$2; shift 2; fi
 [ "${1:-}" = "--" ] && shift
 case "$prio" in [0-9]) ;; *) echo "gpu-q: --prio must be 0-9" >&2; exit 2 ;; esac
 [ $# -gt 0 ] || { echo "gpu-q: no command" >&2; exit 2; }
 Q=${GPUQ_DIR:-/tmp/apr-gpu-queue}; mkdir -p "$Q"; chmod 1777 "$Q" 2>/dev/null || true
 st() { awk '{print $22}' "/proc/$1/stat" 2>/dev/null; }
+# --prune (#3966): remove PROVABLY dead tickets (pid gone, or pid reused with a different start time) by the
+# same rule the wait loop uses, and name each one. For callers that inspect the queue without waiting in it,
+# e.g. a sweep pre-flight that once refused to start over a dead holder's ticket (2026-09-23, 15:41).
+if [ "${1:-}" = "--prune" ]; then
+  n=0
+  for t in "$Q"/*; do
+    [ -e "$t" ] || continue
+    read -r p s < "$t" 2>/dev/null || { p=""; s=""; }
+    if [ -z "$p" ] || [ "$(st "$p")" != "$s" ]; then
+      rm -f "$t" && { echo "gpu-q: pruned dead ticket $(basename "$t") (pid ${p:-?} is gone or reused)"; n=$((n + 1)); }
+    fi
+  done
+  echo "gpu-q: pruned $n dead ticket(s); $(ls -1 "$Q" | wc -l) live"
+  exit 0
+fi
 me="$Q/$prio-$(date +%s%N)-$$"
-printf '%s %s\n' "$$" "$(st $$)" > "$me"
+# Written aside and renamed in: a waiter's prune loop must never read this ticket EMPTY, which it would
+# judge dead and delete. (A window, not the measured cause of #3966: 300 simultaneous waiters in 10
+# trials lost none.) The dot-name is invisible to `ls -1` and to "$Q"/*.
+printf '%s %s\n' "$$" "$(st $$)" > "$Q/.$(basename "$me").tmp" && mv -f "$Q/.$(basename "$me").tmp" "$me"
 trap 'rm -f "$me"; exit 143' TERM; trap 'rm -f "$me"; exit 130' INT
 alive() { local p s; read -r p s < "$1" 2>/dev/null || return 1; [ -n "$p" ] && [ "$(st "$p")" = "$s" ]; }
 waited=0
+report_every=${GPUQ_REPORT_S:-3600}; next_report=$report_every
 wait_max=${GPUQ_WAIT:-}
 case "$wait_max" in ''|[0-9]*) ;; *) echo "gpu-q: GPUQ_WAIT must be whole seconds" >&2; exit 2 ;; esac
 start=$(date +%s)
 while :; do
   for t in "$Q"/*; do [ -e "$t" ] || continue; alive "$t" || rm -f "$t"; done
+  # #3966: the loop below only asks "is the head MINE?". A waiter whose ticket is gone never matches, never
+  # re-enqueues and never fails: it spins forever. Fail loudly instead. Whatever removed it (a pruner, a
+  # /tmp clean, a person) is named nowhere else, so say what is known.
+  if [ ! -e "$me" ]; then
+    echo "gpu-q: my queue ticket $(basename "$me") VANISHED after ${waited}s of waiting (pid $$, prio $prio, cmd: $*); not run — something outside this waiter removed it" >&2
+    exit 76
+  fi
   head=$(ls -1 "$Q" | sort | head -1)
   [ "$head" = "$(basename "$me")" ] && break
   if [ -n "$wait_max" ] && [ $(( $(date +%s) - start )) -ge "$wait_max" ]; then
     holder=$(cat "$Q/$head" 2>/dev/null | cut -d' ' -f1)
     echo "gpu-q: ENV waited ${wait_max}s in the queue (head ticket $head, pid ${holder:-?}: $(ps -o args= -p "${holder:-0}" 2>/dev/null | cut -c1-120)); not run" >&2
     rm -f "$me"; exit 75
+  fi
+  if [ "$waited" -ge "$next_report" ]; then
+    holder=$(cut -d' ' -f1 "$Q/$head" 2>/dev/null)
+    echo "gpu-q: still waiting after ${waited}s (pid $$, prio $prio, cmd: $*); head ticket $head is pid ${holder:-?}: $(ps -o args= -p "${holder:-0}" 2>/dev/null | cut -c1-100)" >&2
+    next_report=$(( next_report + report_every ))
   fi
   [ $((waited % 60)) -eq 0 ] && echo "gpu-q: waiting (prio $prio, $(ls -1 "$Q" | sort | grep -n -x "$(basename "$me")" | cut -d: -f1)/$(ls -1 "$Q" | wc -l) in queue)" >&2
   nap=5
