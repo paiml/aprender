@@ -543,6 +543,7 @@ fn build_gen_config(request: &ChatCompletionRequest) -> GenerationConfig {
 /// The registry chat prompt, rendered with the request's thinking mode and tokenized; an ON the
 /// template cannot express, or an empty prompt, is the client's error (#3723).
 /// Extracted from `registry_fallback` (complexity ratchet, #4046); behaviour unchanged.
+#[allow(clippy::result_large_err)]
 fn registry_prompt_ids(
     state: &AppState,
     request: &ChatCompletionRequest,
@@ -566,6 +567,7 @@ fn registry_prompt_ids(
 
 /// A registry model's generated ids as u32, or the failure response.
 /// Extracted from `registry_fallback` (complexity ratchet, #4046); behaviour unchanged.
+#[allow(clippy::result_large_err)]
 fn registry_token_ids<E: std::fmt::Display>(
     state: &AppState,
     generated: Result<Vec<usize>, E>,
@@ -1013,6 +1015,7 @@ fn stop_tokens_unless_ignore_eos(
 /// `contracts/qwen3-moe-serve-dispatch-v1.yaml`.
 /// The retained mapped GGUF and the quantized model a qwen3_moe chat needs, or the refusal (#1789).
 /// Extracted from `try_qwen3_moe_backend` (complexity ratchet, #4046); behaviour unchanged.
+#[allow(clippy::result_large_err)]
 fn moe_models(
     state: &AppState,
     raw_arch: &str,
