@@ -52,7 +52,10 @@ mod shape_conformance_tests {
                 let amax = b.iter().fold(0.0f32, |m, v| m.max(v.abs()));
                 let scale = amax * (1.0 / 127.0);
                 let inv = 1.0 / (scale + 1e-10);
-                b.iter().map(move |v| (v * inv).round_ties_even().clamp(-127.0, 127.0) * scale).collect::<Vec<f32>>()
+                // The kernel QUANTIZES with the f32 scale but STORES d as f16 (q8.rs `cvt_f16_f32`), and the dot
+                // product dequantizes with that f16 d. A constant block max hid this; a varying one does not.
+                let d = half::f16::from_f32(scale).to_f32();
+                b.iter().map(move |v| (v * inv).round_ties_even().clamp(-127.0, 127.0) * d).collect::<Vec<f32>>()
             })
             .collect()
     }
