@@ -350,9 +350,9 @@
        "generated_bytes": 0
       },
       "chat": {
-       "ran": false,
-       "rc": null,
-       "not_run": "refused-by-name"
+       "ran": true,
+       "rc": 0,
+       "output_bad": null
       },
       "code": {
        "ran": false,

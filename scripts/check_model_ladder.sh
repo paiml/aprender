@@ -181,6 +181,25 @@ def why_of(x, backends):  # every reason a measured row is not green on the clai
         if vb is None:
             why.append(f"{b}: receipt records no `verbs` object — the release matrix claims {{run, chat, serve, code}} and this rung measured only `run` (#3828)")
         else:
+            # #4052: a verb SHORT-CIRCUITED as `not_run: refused-by-name` is legitimate only where F10's
+            # refusal proof holds on this row (the same _prove_unsupported the RED-UNSUPPORTED verdict
+            # uses, keyed on the row's own header architecture). And where it holds, no verb may be
+            # recorded as run: a refused cell has no passing verb. A not-run verb is never a pass --
+            # the `did not run` / `NOT PROBED` rows below still count it red.
+            refused_named = [vn for vn in ("chat", "code", "serve")
+                             if isinstance(vb.get(vn), dict) and vb[vn].get("not_run") == "refused-by-name"]
+            if b in ("cuda", "gpu"):
+                proof_probs, _ = model_ladder_redmodel.RedVerdicts._prove_unsupported(x, {"architecture": x.get("architecture")})
+            else:
+                proof_probs = [f"{b} is not a GPU backend, and only a GPU backend refuses an architecture by name"]
+            if refused_named and proof_probs:
+                why.append(f"{b}: verb(s) {', '.join(refused_named)} SHORT-CIRCUITED as refused-by-name WITHOUT the refusal proof: " + "; ".join(proof_probs) + " (#4052)")
+            if not proof_probs:
+                ran_anyway = [vn for vn in ("chat", "code") if isinstance(vb.get(vn), dict) and vb[vn].get("ran")]
+                if isinstance(vb.get("serve"), dict) and vb["serve"].get("probed"):
+                    ran_anyway.append("serve")
+                if ran_anyway:
+                    why.append(f"{b}: verb(s) {', '.join(ran_anyway)} recorded as RUN on a backend apr REFUSED BY NAME -- a refused cell has no passing verb (#4052)")
             for verb in ("run", "chat", "code"):
                 r = vb.get(verb)
                 if r is None: why.append(f"{b}: verb `{verb}` is MISSING from the receipt — not measured is not passed (#3828)")
@@ -217,7 +236,7 @@ def why_of(x, backends):  # every reason a measured row is not green on the clai
             # above were read off a process that was still running when they were taken.
             # A receipt with NO teardown key predates #3838 and is refused by name rather than
             # tolerated: absence scored as conformance is the shape this whole gate exists for.
-            if sv is not None:
+            if sv is not None and sv.get("not_run") != "refused-by-name":   # #4052: no server was started
                 td = sv.get("teardown")
                 if td is None:
                     why.append(f"{b}: verb `serve` records no `teardown` — a probe that does not say whether its server died is not a completed measurement (#3838)")
@@ -252,6 +271,13 @@ def named_red(host, f, x, why, backends):
     v = RV.classify(host, f, x, why, residual, sha_of)
     if v is None: return None
     blocking, line = v
+    # #4052: a short-circuit without the refusal proof, or a verb recorded as run on a backend refused by
+    # name, is an INSTRUMENT defect, not a model verdict -- no named RED excuses it.
+    viol = [w for w in why if w.endswith("(#4052)")]
+    if viol:
+        RV.proven.pop((host, f), None)
+        line = f"FAIL  {host:7} {f:22} " + "; ".join(viol) + ("" if not blocking else " | and: " + line)
+        blocking = True
     # RED-UNSUPPORTED excuses the CUDA backend only: every other claimed backend is judged as usual.
     if not blocking and RV.proven.get((host, f)) == "RED-UNSUPPORTED" and others:
         rest = [w for w in why_of(x, others) if any(w.startswith(f"{o}:") for o in others)]
@@ -678,6 +704,11 @@ if [ "$SELF_TEST" = 1 ]; then
     mutant sha-equiv-ignored  green-receipt-sha-equivalent 's/    if asha != cut and asha not in equiv:/    if asha != cut:/'
     mutant sha-drift-key      red-ladder-apr-sha-drift-key 's/^if "apr_sha_drift" in (L.get("inventory") or {}) or "apr_sha_drift" in L:/if False:/'
     mutant verb-output-bad    red-chat-output-bad-rc0     's/if r is not None and r.get("output_bad"):/if False:/'
+    # #4052: the short-circuit rules -- a not-run verb needs the by-name refusal proof; a refused backend
+    # has no verb recorded as run; and no named RED excuses either.
+    mutant sc-no-proof-needed red-short-circuit-without-proof 's/^            if refused_named and proof_probs:/            if False:/'
+    mutant sc-ran-anyway-ok   red-refused-verb-recorded-pass  's/^                if ran_anyway:/                if False:/'
+    mutant sc-excused-by-red  red-refused-verb-recorded-pass  's/^    if viol:/    if False:/'
     mutant verb-output-bad-code red-code-output-bad-rc0   's/if r is not None and r.get("output_bad"):/if False:/'
     mutant route-output-bad   red-serve-route-output-bad  's/if rv.get("output_bad"): why.append/if False: why.append/'
     # AND THE CROSS-CHECK THAT MAKES THE MUTANT MEAN SOMETHING (#3898).

@@ -858,6 +858,14 @@ printf '    inventory: %s model(s) matching %s under %s\n' "$(grep -c . <<< "$IN
 # The per-model checks, one function so a ladder rung and an inventory model cannot drift:
 #   1. apr qa --json: capability_match + golden_output (the two gates that name a wrong model)
 #   2. per claimed backend: `apr run` rc 0 and no fallback line (did it stay on that backend?)
+# #4052: F10's refusal proof, observed on ONE backend's `apr run` -- the precondition of every
+# short-circuit. <backend> <rc> <ran> <fallback> <generated_bytes> <refusal line> <header arch>
+refused_by_name() {
+  case "$1" in cuda|gpu) ;; *) return 1 ;; esac
+  [ "$2" != 0 ] && [ "$3" = false ] && [ "$4" = false ] && [ "$5" = 0 ] || return 1
+  case "$7" in ""|unknown) return 1 ;; esac
+  grep -qF "no CUDA forward for architecture '$7'" <<< "$6" && grep -qF "This is a refusal, not a fallback" <<< "$6"
+}
 measure() {
   local rid=$1 rfile=$2 path=$3 got=$4 rbackends=$5 rreq=$6 rinv=$7
   local probe_why
@@ -921,27 +929,16 @@ try: print(json.load(open(sys.argv[1])).get("architecture") or "unknown")
 except Exception: print("unknown")' "$arch_json")
   be_json="{"; first=1
   IFS=',' read -r -a bes <<< "$rbackends"
-  # ── #3843: `code` is measured ONCE per rung, and NOT per backend ─────────────
-  # `apr code` spawns its OWN `apr serve` ("Launched apr serve on port N (pid N)"),
-  # so the backend is chosen by the server it starts, not by its caller. There is
-  # no backend selector on `apr code` at all. Passing this loop's `--no-gpu`/`--gpu`
-  # to it produced `error: unexpected argument '--no-gpu' found`, clap exit 2, on
-  # 48 of 48 cells across both hosts — a HARNESS defect recorded as `ran: false`,
-  # i.e. as a model result. Running it per backend would also record one
-  # measurement twice under two labels.
-  #
-  # The cell still appears under each backend, because the judge requires all four
-  # verbs there, but it carries `backend: "inherited-from-spawned-serve"` so the
-  # receipt states what was actually measured instead of implying a backend.
-  code_out=$(apr_locked code -p "Reply with the single word: ok" --model "$path" \
-      --output-format json 2>&1); code_rc=$?
-  [ "$code_rc" = "$LOCK_BUSY" ] && lock_timeout "apr code $rid"
-  code_ran=true; [ $code_rc -eq 0 ] || code_ran=false
-  # #3921: same for `code` — measured once per rung, so judged once.
-  # #3921/#3925: judge the REPLY the run captured, not the transcript around it.
-  code_bad=""
-  if [ $code_rc -eq 0 ]; then code_bad=$(judge_reply "$code_out" code); fi
-
+  # ── #4052: a cell apr REFUSES BY NAME is not measured verb by verb ─────────────
+  # The refused MoE rung (Qwen3.5-35B-A3B-UD-IQ4_XS, qwen35moe, #3977) took 10.1 min on lambda at
+  # fc942f6be, though `apr run --gpu` refuses it by name at once: every other verb then failed one
+  # by one. So `apr run` goes FIRST on every backend; where F10's proof holds (rc != 0, ran false,
+  # no fallback, generated_bytes == 0, and the refusal line names THIS file's header architecture
+  # plus "This is a refusal, not a fallback"), that backend's remaining verbs -- and `code`, which
+  # spawns a GPU serve -- are recorded `not_run: "refused-by-name"`, ran:false. NEVER a pass: the
+  # judge refuses a not-run verb without the proof, and any verb recorded as run on such a backend.
+  declare -A R_RC R_FB R_RAN R_ESC R_SB R_GB R_RJ R_REF
+  local any_refused=0 code_notrun="" chat_notrun=""
   for b in "${bes[@]}"; do
     case "$b" in cpu) flag="--no-gpu" ;; cuda|gpu) flag="--gpu" ;; *) flag="" ;; esac
     # --verbose prints realizar's `[DEBUG] formatted_prompt=…`, which the #3743 check reads.
@@ -983,40 +980,85 @@ except Exception: print("unknown")' "$arch_json")
     if [ "$b" != cpu ] && [ -z "$GPU_NAME" ]; then ran=false; fi
     [ $run_rc -eq 0 ] || ran=false
 
-    # ── #3828: the OTHER THREE VERBS ────────────────────────────────────────────
-    # This loop ran `apr run` and nothing else, so `serve`, `chat` and `code` cells in
-    # release-readiness-v1 (#3715) were computed over a verb set of ONE. A live defect
-    # walked straight through: /api/chat could not reach the Qwen3.5 hybrid session at
-    # all (alfredodeza, #3715 comment 2026-09-22) while every gate we own stayed green,
-    # because no rung had ever asked `apr serve` to load a model (#3571's own words).
-    # A verb that is not probed must never read as a verb that passed, so each of these
-    # records its own rc and the judge refuses a receipt missing any of them.
+    R_RC[$b]=$run_rc; R_FB[$b]=$fb; R_RAN[$b]=$ran; R_ESC[$b]=$esc
+    R_SB[$b]=$run_stdout_bytes; R_GB[$b]=$run_generated_bytes; R_RJ[$b]=$run_refusal_json; R_REF[$b]=0
+    if refused_by_name "$b" "$run_rc" "$ran" "$fb" "$run_generated_bytes" \
+         "$(grep -h -m1 -F 'no CUDA forward for architecture' "$run_e" "$run_o" | head -1)" "$row_arch"; then
+      R_REF[$b]=1; any_refused=1
+      printf '    short-circuit %s (%s): apr refused %s BY NAME -- its remaining verbs are recorded not-run, never pass (#4052)\n' "$rid" "$b" "$row_arch"
+    fi
+  done
+  if [ "$any_refused" = 1 ]; then
+    # `apr code` spawns its own GPU serve, which refuses the same architecture (#4052).
+    code_ran=false; code_rc=null; code_bad=""; code_notrun=',"not_run":"refused-by-name"'
+  else
+    # ── #3843: `code` is measured ONCE per rung, and NOT per backend ─────────────
+    # `apr code` spawns its OWN `apr serve` ("Launched apr serve on port N (pid N)"),
+    # so the backend is chosen by the server it starts, not by its caller. There is
+    # no backend selector on `apr code` at all. Passing this loop's `--no-gpu`/`--gpu`
+    # to it produced `error: unexpected argument '--no-gpu' found`, clap exit 2, on
+    # 48 of 48 cells across both hosts — a HARNESS defect recorded as `ran: false`,
+    # i.e. as a model result. Running it per backend would also record one
+    # measurement twice under two labels.
+    #
+    # The cell still appears under each backend, because the judge requires all four
+    # verbs there, but it carries `backend: "inherited-from-spawned-serve"` so the
+    # receipt states what was actually measured instead of implying a backend.
+    code_out=$(apr_locked code -p "Reply with the single word: ok" --model "$path" \
+        --output-format json 2>&1); code_rc=$?
+    [ "$code_rc" = "$LOCK_BUSY" ] && lock_timeout "apr code $rid"
+    code_ran=true; [ $code_rc -eq 0 ] || code_ran=false
+    # #3921: same for `code` — measured once per rung, so judged once.
+    # #3921/#3925: judge the REPLY the run captured, not the transcript around it.
+    code_bad=""
+    if [ $code_rc -eq 0 ]; then code_bad=$(judge_reply "$code_out" code); fi
 
-    # chat: stdin-driven, one turn, machine envelope. `/exit` closes the session.
-    chat_flag=$(flag_for chat "$flag")
-    # shellcheck disable=SC2086
-    chat_out=$(printf 'What is the capital of France? Answer briefly.\n/exit\n' \
-        | apr_locked chat "$path" --json --max-tokens 16 $chat_flag 2>&1); chat_rc=$?
-    [ "$chat_rc" = "$LOCK_BUSY" ] && lock_timeout "apr chat $rid ($b)"
-    chat_ran=true; [ $chat_rc -eq 0 ] || chat_ran=false
-    # #3921: rc=0 says the process did not fail, never that it produced the right
-    # thing. Judge the text the run already captured.
-    chat_bad=""
-    if [ $chat_rc -eq 0 ]; then chat_bad=$(judge_reply "$chat_out" chat); fi
+  fi
+  for b in "${bes[@]}"; do
+    case "$b" in cpu) flag="--no-gpu" ;; cuda|gpu) flag="--gpu" ;; *) flag="" ;; esac
+    run_rc=${R_RC[$b]}; fb=${R_FB[$b]}; ran=${R_RAN[$b]}; esc=${R_ESC[$b]}
+    run_stdout_bytes=${R_SB[$b]}; run_generated_bytes=${R_GB[$b]}; run_refusal_json=${R_RJ[$b]}
+    if [ "${R_REF[$b]}" = 1 ]; then
+      chat_ran=false; chat_rc=null; chat_bad=""; chat_notrun=',"not_run":"refused-by-name"'
+      serve_json='{"probed":false,"why":"not run: apr refused the architecture BY NAME on this backend (#4052)","not_run":"refused-by-name","routes":{},"teardown":"not-run"}'
+      serve_rc=0
+    else
+      chat_notrun=""
+      # ── #3828: the OTHER THREE VERBS ────────────────────────────────────────────
+      # This loop ran `apr run` and nothing else, so `serve`, `chat` and `code` cells in
+      # release-readiness-v1 (#3715) were computed over a verb set of ONE. A live defect
+      # walked straight through: /api/chat could not reach the Qwen3.5 hybrid session at
+      # all (alfredodeza, #3715 comment 2026-09-22) while every gate we own stayed green,
+      # because no rung had ever asked `apr serve` to load a model (#3571's own words).
+      # A verb that is not probed must never read as a verb that passed, so each of these
+      # records its own rc and the judge refuses a receipt missing any of them.
 
-    # code: measured once per rung, above this loop — see #3843.
+      # chat: stdin-driven, one turn, machine envelope. `/exit` closes the session.
+      chat_flag=$(flag_for chat "$flag")
+      # shellcheck disable=SC2086
+      chat_out=$(printf 'What is the capital of France? Answer briefly.\n/exit\n' \
+          | apr_locked chat "$path" --json --max-tokens 16 $chat_flag 2>&1); chat_rc=$?
+      [ "$chat_rc" = "$LOCK_BUSY" ] && lock_timeout "apr chat $rid ($b)"
+      chat_ran=true; [ $chat_rc -eq 0 ] || chat_ran=false
+      # #3921: rc=0 says the process did not fail, never that it produced the right
+      # thing. Judge the text the run already captured.
+      chat_bad=""
+      if [ $chat_rc -eq 0 ]; then chat_bad=$(judge_reply "$chat_out" chat); fi
 
-    # serve: the route set is DERIVED from the router's registered paths, never a
-    # hand-listed constant (alfredodeza's amendment, adopted on #3715) — a route that
-    # exists but is not probed is exactly how /api/chat stayed broken. Each route is
-    # probed non-streaming and streaming, because the ollama-compat wire has its own
-    # translation layer that has already diverged from the OpenAI-compat one twice
-    # independently (#3825's tool_calls gap, and this defect).
-    serve_err="$WORK/serve-probe-$rid-$b.err"
-    serve_json=$(ladder_serve_probe "$path" "$(flag_for "serve run" "$flag")" "$rid" "$b" 2> "$serve_err")
-    serve_rc=$?
-    [ -s "$serve_err" ] && cat "$serve_err" >&2
+      # code: measured once per rung, above this loop — see #3843.
 
+      # serve: the route set is DERIVED from the router's registered paths, never a
+      # hand-listed constant (alfredodeza's amendment, adopted on #3715) — a route that
+      # exists but is not probed is exactly how /api/chat stayed broken. Each route is
+      # probed non-streaming and streaming, because the ollama-compat wire has its own
+      # translation layer that has already diverged from the OpenAI-compat one twice
+      # independently (#3825's tool_calls gap, and this defect).
+      serve_err="$WORK/serve-probe-$rid-$b.err"
+      serve_json=$(ladder_serve_probe "$path" "$(flag_for "serve run" "$flag")" "$rid" "$b" 2> "$serve_err")
+      serve_rc=$?
+      [ -s "$serve_err" ] && cat "$serve_err" >&2
+
+    fi
     [ $first = 1 ] || be_json="$be_json,"; first=0
     be_json="$be_json\"$b\":{\"ran\":$ran,\"fallback\":$fb,\"escaped_special\":$esc,\"rc\":$run_rc"
     be_json="$be_json,\"verbs\":{\"run\":{\"ran\":$ran,\"rc\":$run_rc,\"stdout_bytes\":$run_stdout_bytes,\"generated_bytes\":$run_generated_bytes,\"refusal\":$run_refusal_json}"
@@ -1024,8 +1066,8 @@ except Exception: print("unknown")' "$arch_json")
     # about what the verb produced; the rc beside it is only about whether it ran.
     chat_bad_json=$(printf '%s' "${chat_bad:-}" | json_str_or_null)
     code_bad_json=$(printf '%s' "${code_bad:-}" | json_str_or_null)
-    be_json="$be_json,\"chat\":{\"ran\":$chat_ran,\"rc\":$chat_rc,\"output_bad\":$chat_bad_json}"
-    be_json="$be_json,\"code\":{\"ran\":$code_ran,\"rc\":$code_rc,\"backend\":\"inherited-from-spawned-serve\",\"output_bad\":$code_bad_json}"
+    be_json="$be_json,\"chat\":{\"ran\":$chat_ran,\"rc\":$chat_rc,\"output_bad\":$chat_bad_json$chat_notrun}"
+    be_json="$be_json,\"code\":{\"ran\":$code_ran,\"rc\":$code_rc,\"backend\":\"inherited-from-spawned-serve\",\"output_bad\":$code_bad_json$code_notrun}"
     # #3847: an EMPTY `serve_json` yields `"serve":}}` — invalid JSON that only
     # surfaces three steps later as "the row could not be built", with the backend
     # long out of scope. `ladder_serve_probe` prints an object on every one of its
