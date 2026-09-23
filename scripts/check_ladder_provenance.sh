@@ -88,8 +88,21 @@ run_case() {
 
   ipath="$tmp/model.gguf"
   isha=""; ibytes=""
-  # The shipped line, run verbatim.
-  eval "$line"
+  # The shipped line, run verbatim -- SOURCED rather than `eval`ed, and that is
+  # a fidelity fix before it is a lint fix. `eval "$line"` parses the text a
+  # SECOND time, so a shipped line containing anything shell-significant after
+  # one expansion would run differently HERE than it does in the script this
+  # check exists to certify -- i.e. `eval` is the one form that is not verbatim.
+  # Sourcing a file holding the line reproduces the shipped parse exactly.
+  # Assignments still land in run_case's locals, which is what the asserts read.
+  #
+  # It also clears the SEC001 that check_bashrs_gate.sh (the release's
+  # SEC/DET/IDEM gate) fails on. That finding was invisible on the PR because
+  # guard-cargo failed an EARLIER step and GitHub skipped this one -- one defect
+  # standing in front of another.
+  printf '%s\n' "$line" > "$tmp/shipped-line.sh"
+  # shellcheck source=/dev/null
+  . "$tmp/shipped-line.sh"
 
   if [ "$ibytes" != "$want_bytes" ]; then
     echo "  BYTES describes the wrong object: recorded $ibytes, model is $want_bytes bytes"
