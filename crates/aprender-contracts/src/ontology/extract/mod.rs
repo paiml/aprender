@@ -143,7 +143,8 @@ pub fn all_with(
     // ONT-4d (R-19): the rdf:type closure over Σ's `subsumes`, materialized AFTER every extractor has run, so a
     // focus node an extractor typed with a sub-concept is also an instance of every super-concept. This is
     // how a shape on a super-concept reaches it (shapes.rs selects focus nodes by rdf:type).
-    out.type_closure_added = sigma_of(contract_dir).map_or(0, |s| materialize_type_closure(&mut out.graph, &s));
+    out.type_closure_added =
+        sigma_of(contract_dir).map_or(0, |s| materialize_type_closure(&mut out.graph, &s));
     if let Some(subject) = release {
         out.release = Some(
             release_evidence::extract(&mut out.graph, contract_dir, subject)

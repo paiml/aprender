@@ -28,7 +28,11 @@ use crate::ontology::sigma::Sigma;
 
 /// The Σ concept a `targetClass` IRI names, if it names one.
 fn concept_of<'a>(sigma: &'a Sigma, target: &str) -> Option<&'a str> {
-    sigma.concepts.keys().map(String::as_str).find(|c| ont(c) == target)
+    sigma
+        .concepts
+        .keys()
+        .map(String::as_str)
+        .find(|c| ont(c) == target)
 }
 
 /// `(total, ["<shape> <- <sub>=<n>", …])`: focus nodes reached through a strict sub-concept, per shape.
@@ -86,15 +90,24 @@ fn weakened(sup: &PropertyShape, sub: &PropertyShape) -> Vec<&'static str> {
         out.push("pattern");
     }
     if let Some(allowed) = &sup.r#in {
-        let narrower = sub.r#in.as_ref().is_some_and(|s| s.iter().all(|x| allowed.contains(x)));
+        let narrower = sub
+            .r#in
+            .as_ref()
+            .is_some_and(|s| s.iter().all(|x| allowed.contains(x)));
         if !narrower {
             out.push("in");
         }
     }
-    if sup.min_length.is_some_and(|a| sub.min_length.is_none_or(|b| b < a)) {
+    if sup
+        .min_length
+        .is_some_and(|a| sub.min_length.is_none_or(|b| b < a))
+    {
         out.push("minLength");
     }
-    if sup.max_length.is_some_and(|a| sub.max_length.is_none_or(|b| b > a)) {
+    if sup
+        .max_length
+        .is_some_and(|a| sub.max_length.is_none_or(|b| b > a))
+    {
         out.push("maxLength");
     }
     out
@@ -135,4 +148,71 @@ pub fn weakenings(shapes: &[NodeShape], sigma: &Sigma) -> Vec<String> {
     }
     out.sort();
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn p(path: &str) -> PropertyShape {
+        PropertyShape {
+            path: path.into(),
+            min_count: None,
+            max_count: None,
+            datatype: None,
+            class: None,
+            node_kind: None,
+            r#in: None,
+            pattern: None,
+            min_length: None,
+            max_length: None,
+            node: None,
+            resolves: None,
+            severity: crate::ontology::shapes::Severity::Violation,
+        }
+    }
+
+    /// The component table: each row loosens or drops ONE component and must name exactly that one; the
+    /// strictly-tighter and the equal rows must name none (a sub-concept MAY add constraints).
+    #[test]
+    fn ont4d_weakened_names_exactly_the_loosened_component() {
+        let mut sup = p("x");
+        sup.min_count = Some(1);
+        sup.max_count = Some(2);
+        sup.datatype = Some("xsd:string".into());
+        sup.min_length = Some(3);
+        sup.max_length = Some(9);
+        let same = sup.clone();
+        assert!(weakened(&sup, &same).is_empty(), "equal is not weaker");
+        let mut tighter = sup.clone();
+        tighter.min_count = Some(2);
+        tighter.max_count = Some(2);
+        tighter.min_length = Some(4);
+        tighter.max_length = Some(8);
+        assert!(weakened(&sup, &tighter).is_empty(), "stricter is allowed");
+        let cases: [(&str, fn(&mut PropertyShape)); 9] = [
+            ("minCount", |b| b.min_count = Some(0)),
+            ("minCount", |b| b.min_count = None),
+            ("maxCount", |b| b.max_count = Some(5)),
+            ("maxCount", |b| b.max_count = None),
+            ("datatype", |b| b.datatype = Some("xsd:integer".into())),
+            ("datatype", |b| b.datatype = None),
+            ("minLength", |b| b.min_length = Some(1)),
+            ("maxLength", |b| b.max_length = Some(99)),
+            ("maxLength", |b| b.max_length = None),
+        ];
+        for (want, mutate) in cases {
+            let mut sub = sup.clone();
+            mutate(&mut sub);
+            assert_eq!(weakened(&sup, &sub), vec![want], "loosening {want}");
+        }
+    }
+
+    #[test]
+    fn ont4d_a_super_with_no_constraint_cannot_be_weakened() {
+        let sup = p("x");
+        let mut sub = p("x");
+        sub.min_count = Some(1);
+        assert!(weakened(&sup, &sub).is_empty());
+    }
 }

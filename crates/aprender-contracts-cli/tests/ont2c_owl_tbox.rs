@@ -35,11 +35,16 @@ fn pv(args: &[&str]) -> Run {
 }
 
 fn show(r: &Run) -> String {
-    format!("exit {}\n--- stdout\n{}\n--- stderr\n{}", r.code, r.stdout, r.stderr)
+    format!(
+        "exit {}\n--- stdout\n{}\n--- stderr\n{}",
+        r.code, r.stdout, r.stderr
+    )
 }
 
 fn repo(rel: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(rel)
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(rel)
 }
 
 fn s(p: &Path) -> String {
@@ -49,7 +54,11 @@ fn s(p: &Path) -> String {
 /// A corpus directory holding the fixture Σ plus the two artifacts `pv ontology … --write` produces.
 fn fresh_fixture_corpus() -> tempfile::TempDir {
     let d = tempfile::tempdir().expect("tempdir");
-    std::fs::copy(repo("tests/fixtures/ont/owl/ontology.yaml"), d.path().join("ontology.yaml")).expect("copy Σ");
+    std::fs::copy(
+        repo("tests/fixtures/ont/owl/ontology.yaml"),
+        d.path().join("ontology.yaml"),
+    )
+    .expect("copy Σ");
     // `pv lint` declines a corpus with 0 contracts before any gate runs; one minimal contract makes it a corpus.
     std::fs::copy(
         repo("tests/fixtures/ont/sigma-ok/fixture-kernel-v1.yaml"),
@@ -66,35 +75,56 @@ fn fresh_fixture_corpus() -> tempfile::TempDir {
 
 #[test]
 fn export_prints_exactly_the_committed_fixture_axiom_set() {
-    let r = pv(&["ontology", "export", "--owl", &s(&repo("tests/fixtures/ont/owl/ontology.yaml"))]);
+    let r = pv(&[
+        "ontology",
+        "export",
+        "--owl",
+        &s(&repo("tests/fixtures/ont/owl/ontology.yaml")),
+    ]);
     assert_eq!(r.code, 0, "{}", show(&r));
-    let want = std::fs::read_to_string(repo("tests/fixtures/ont/owl/expected.ofn")).expect("expected.ofn");
+    let want =
+        std::fs::read_to_string(repo("tests/fixtures/ont/owl/expected.ofn")).expect("expected.ofn");
     assert_eq!(r.stdout, want);
 }
 
 #[test]
 fn export_without_a_format_is_refused() {
-    let r = pv(&["ontology", "export", &s(&repo("tests/fixtures/ont/owl/ontology.yaml"))]);
+    let r = pv(&[
+        "ontology",
+        "export",
+        &s(&repo("tests/fixtures/ont/owl/ontology.yaml")),
+    ]);
     assert_eq!(r.code, 2, "{}", show(&r));
 }
 
 #[test]
 fn the_repo_export_equals_the_tracked_ofn() {
     // The row's probe: `"$PV" ontology export --owl contracts/ontology.yaml | cmp - contracts/ontology.ofn`.
-    let r = pv(&["ontology", "export", "--owl", &s(&repo("contracts/ontology.yaml"))]);
+    let r = pv(&[
+        "ontology",
+        "export",
+        "--owl",
+        &s(&repo("contracts/ontology.yaml")),
+    ]);
     assert_eq!(r.code, 0, "{}", show(&r));
-    let tracked = std::fs::read_to_string(repo("contracts/ontology.ofn")).expect("contracts/ontology.ofn");
-    assert_eq!(r.stdout, tracked, "contracts/ontology.ofn is not what the writer produces");
+    let tracked =
+        std::fs::read_to_string(repo("contracts/ontology.ofn")).expect("contracts/ontology.ofn");
+    assert_eq!(
+        r.stdout, tracked,
+        "contracts/ontology.ofn is not what the writer produces"
+    );
 }
 
 #[test]
 fn write_writes_both_artifacts_next_to_sigma() {
     let d = fresh_fixture_corpus();
-    let ofn = std::fs::read_to_string(d.path().join("ontology.ofn")).expect("--write wrote ontology.ofn");
+    let ofn =
+        std::fs::read_to_string(d.path().join("ontology.ofn")).expect("--write wrote ontology.ofn");
     assert!(ofn.contains("SymmetricObjectProperty("), "{ofn}");
-    let rep: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(d.path().join("tbox-report.json")).expect("report"))
-            .expect("report is JSON");
+    let rep: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(d.path().join("tbox-report.json")).expect("report"),
+    )
+    .expect("report is JSON");
     assert_eq!(rep["advisory"], true);
     assert_eq!(rep["method"], "told-closure");
     assert_eq!(rep["consistent"], true);
@@ -103,8 +133,17 @@ fn write_writes_both_artifacts_next_to_sigma() {
 #[test]
 fn the_repo_corpus_is_advisory_never_zero() {
     let r = pv(&["lint", &s(&repo("contracts")), "--gate", "tbox"]);
-    assert_eq!(r.code, 2, "the tbox gate must DECLINE (Unknown{{Advisory}}), never pass: {}", show(&r));
-    assert!(r.stderr.contains("decline: Advisory") || r.stdout.contains("decline: Advisory"), "{}", show(&r));
+    assert_eq!(
+        r.code,
+        2,
+        "the tbox gate must DECLINE (Unknown{{Advisory}}), never pass: {}",
+        show(&r)
+    );
+    assert!(
+        r.stderr.contains("decline: Advisory") || r.stdout.contains("decline: Advisory"),
+        "{}",
+        show(&r)
+    );
 }
 
 #[test]
@@ -112,7 +151,11 @@ fn a_fresh_fixture_corpus_is_advisory() {
     let d = fresh_fixture_corpus();
     let r = pv(&["lint", &s(d.path()), "--gate", "tbox"]);
     assert_eq!(r.code, 2, "{}", show(&r));
-    assert!(format!("{}{}", r.stdout, r.stderr).contains("Advisory"), "{}", show(&r));
+    assert!(
+        format!("{}{}", r.stdout, r.stderr).contains("Advisory"),
+        "{}",
+        show(&r)
+    );
 }
 
 #[test]
@@ -142,7 +185,12 @@ fn an_undeclared_unexpressed_key_is_exit_3() {
     let broken = sigma.replace("  - {key: symbols, reader: ontology/owl.rs}\n", "");
     assert_ne!(broken, sigma, "the mutation must change Σ");
     std::fs::write(d.path().join("ontology.yaml"), broken).expect("write");
-    let r = pv(&["ontology", "export", "--owl", &s(&d.path().join("ontology.yaml"))]);
+    let r = pv(&[
+        "ontology",
+        "export",
+        "--owl",
+        &s(&d.path().join("ontology.yaml")),
+    ]);
     assert_eq!(r.code, 3, "{}", show(&r));
     assert!(r.stderr.contains("symbols"), "{}", show(&r));
 }

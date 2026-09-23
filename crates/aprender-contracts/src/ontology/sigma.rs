@@ -198,7 +198,10 @@ impl fmt::Display for SigmaError {
                 write!(f, "extractor `{extractor}` has no reader")
             }
             Self::SubsumesUndeclared { concept } => {
-                write!(f, "subsumes names concept `{concept}`, which concepts does not declare")
+                write!(
+                    f,
+                    "subsumes names concept `{concept}`, which concepts does not declare"
+                )
             }
             Self::SubsumesCycle { path } => write!(f, "subsumes cycle {}", path.join(" -> ")),
         }
@@ -266,7 +269,8 @@ impl Sigma {
                 match it.next() {
                     Some(&next) if path.contains(&next) => {
                         let at = path.iter().position(|p| *p == next).unwrap_or(0);
-                        let mut cycle: Vec<String> = path[at..].iter().map(|s| (*s).to_string()).collect();
+                        let mut cycle: Vec<String> =
+                            path[at..].iter().map(|s| (*s).to_string()).collect();
                         cycle.push(next.to_string());
                         return Err(SigmaError::SubsumesCycle { path: cycle });
                     }
@@ -291,7 +295,10 @@ impl Sigma {
     fn subsumption_edges(&self) -> BTreeMap<&str, BTreeSet<&str>> {
         let mut edges: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
         for e in &self.subsumes {
-            edges.entry(e.sub.as_str()).or_default().insert(e.sup.as_str());
+            edges
+                .entry(e.sub.as_str())
+                .or_default()
+                .insert(e.sup.as_str());
         }
         edges
     }
@@ -302,7 +309,10 @@ impl Sigma {
     pub fn supers(&self, concept: &str) -> BTreeSet<String> {
         let edges = self.subsumption_edges();
         let mut out = BTreeSet::new();
-        let mut stack: Vec<&str> = edges.get(concept).map(|s| s.iter().copied().collect()).unwrap_or_default();
+        let mut stack: Vec<&str> = edges
+            .get(concept)
+            .map(|s| s.iter().copied().collect())
+            .unwrap_or_default();
         while let Some(c) = stack.pop() {
             if c != concept && out.insert(c.to_string()) {
                 stack.extend(edges.get(c).into_iter().flatten().copied());
@@ -623,6 +633,118 @@ readers:
             s.symbols.len() >= 20,
             "Σ declares the corpus's operator vocabulary, got {}",
             s.symbols.len()
+        );
+    }
+
+    // ---- ONT-4d (R-19): subsumes ------------------------------------------------------------------------
+
+    fn with_subsumes(edges: &[(&str, &str)]) -> Sigma {
+        let mut s = Sigma::from_yaml(good()).expect("Σ parses");
+        s.concepts.insert(
+            "Kernel".into(),
+            Concept {
+                doc: "a kernel contract".into(),
+            },
+        );
+        s.subsumes = edges
+            .iter()
+            .map(|(a, b)| Subsumes {
+                sub: (*a).into(),
+                sup: (*b).into(),
+            })
+            .collect();
+        s.readers
+            .insert("subsumes".into(), "ontology/sigma.rs".into());
+        s
+    }
+
+    #[test]
+    fn ont4d_supers_and_subs_are_the_strict_transitive_closure() {
+        let s = with_subsumes(&[("Kernel", "Code"), ("Code", "Contract")]);
+        assert!(s.check_integrity().is_ok(), "{:?}", s.check_integrity());
+        assert_eq!(
+            s.supers("Kernel").into_iter().collect::<Vec<_>>(),
+            vec!["Code", "Contract"]
+        );
+        assert!(
+            s.supers("Contract").is_empty(),
+            "the top has no strict super"
+        );
+        assert_eq!(
+            s.subs("Contract").into_iter().collect::<Vec<_>>(),
+            vec!["Code", "Kernel"]
+        );
+        assert!(
+            !s.supers("Code").contains("Code"),
+            "strict: a concept is never its own super"
+        );
+    }
+
+    #[test]
+    fn ont4d_a_cycle_is_refused_naming_the_closing_path() {
+        let s = with_subsumes(&[
+            ("Kernel", "Code"),
+            ("Code", "Contract"),
+            ("Contract", "Kernel"),
+        ]);
+        match s.check_integrity() {
+            Err(SigmaError::SubsumesCycle { path }) => {
+                assert_eq!(path.first(), path.last(), "the path closes: {path:?}");
+                assert_eq!(
+                    path.len(),
+                    4,
+                    "three edges, first concept repeated: {path:?}"
+                );
+                assert!(SigmaError::SubsumesCycle { path: path.clone() }
+                    .to_string()
+                    .starts_with("subsumes cycle "));
+            }
+            other => panic!("a cycle is exit 3: {other:?}"),
+        }
+        // A self-edge is the shortest cycle.
+        assert!(matches!(
+            with_subsumes(&[("Code", "Code")]).check_integrity(),
+            Err(SigmaError::SubsumesCycle { .. })
+        ));
+        // supers() terminates on a cyclic Σ (check_integrity refuses it first, but a caller must not hang).
+        let cyc = with_subsumes(&[("Kernel", "Code"), ("Code", "Kernel")]);
+        assert_eq!(
+            cyc.supers("Kernel").into_iter().collect::<Vec<_>>(),
+            vec!["Code"]
+        );
+    }
+
+    #[test]
+    fn ont4d_a_diamond_is_not_a_cycle() {
+        let mut s = with_subsumes(&[
+            ("Kernel", "Code"),
+            ("Kernel", "Contract"),
+            ("Code", "Contract"),
+        ]);
+        s.concepts
+            .insert("Other".into(), Concept { doc: "x".into() });
+        assert!(
+            s.check_integrity().is_ok(),
+            "two paths to one super is a DAG: {:?}",
+            s.check_integrity()
+        );
+    }
+
+    #[test]
+    fn ont4d_an_edge_over_an_undeclared_concept_is_refused() {
+        let s = with_subsumes(&[("Kernel", "Ghost")]);
+        assert!(matches!(
+            s.check_integrity(),
+            Err(SigmaError::SubsumesUndeclared { concept }) if concept == "Ghost"
+        ));
+    }
+
+    #[test]
+    fn ont4d_subsumes_needs_a_reader_like_every_key() {
+        let mut s = with_subsumes(&[("Kernel", "Code")]);
+        s.readers.remove("subsumes");
+        assert!(
+            matches!(s.check_integrity(), Err(SigmaError::KeyWithoutReader { key }) if key == "subsumes")
         );
     }
 }

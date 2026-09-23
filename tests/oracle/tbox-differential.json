@@ -3,7 +3,16 @@
   "blind_to": [],
   "elk": {
     "consistent": true,
-    "entailed_subsumptions": [],
+    "entailed_subsumptions": [
+      [
+        "Kernel",
+        "Contract"
+      ],
+      [
+        "Symbol",
+        "Code"
+      ]
+    ],
     "ignored_axiom_kinds": [
       "ObjectPropertyRange",
       "SymmetricObjectProperty"
@@ -19,7 +28,16 @@
   },
   "report": {
     "consistent": true,
-    "entailed_subsumptions": []
+    "entailed_subsumptions": [
+      [
+        "Kernel",
+        "Contract"
+      ],
+      [
+        "Symbol",
+        "Code"
+      ]
+    ]
   },
   "schema": "ont-tbox-differential/v1"
 }

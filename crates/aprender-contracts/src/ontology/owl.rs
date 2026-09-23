@@ -147,8 +147,8 @@ pub fn export(sigma: &Sigma) -> Result<OwlExport, OwlError> {
         entity_types,
         extractors,
         not_expressible,
-        subsumes,    // ONT-4d → SubClassOf, and the intended subsumptions the TBox measures against
-        readers: _,  // Σ bookkeeping: which reader claims which key
+        subsumes, // ONT-4d → SubClassOf, and the intended subsumptions the TBox measures against
+        readers: _, // Σ bookkeeping: which reader claims which key
         metadata: _, // Σ bookkeeping: the contract schema's block, opaque to Σ
     } = sigma;
     let declared: BTreeSet<&str> = not_expressible.iter().map(|n| n.key.as_str()).collect();
