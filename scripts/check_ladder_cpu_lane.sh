@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check_ladder_cpu_lane.sh — the ladder's CPU lane runs OUTSIDE the GPU lock, and CONCURRENTLY with
+# check_ladder_cpu_lane.sh — the ladder's CPU lane runs OUTSIDE the GPU lock (and, opted in, CONCURRENTLY with
 # the GPU lane, without being able to touch a GPU or drop out of the receipt (#4034).
 #
 # WHY. Every apr call in a cell took the fleet GPU lock, the `--no-gpu` lane included. On lambda's
@@ -17,9 +17,12 @@
 #     green-needs-ran    the row builder's green still requires v["ran"], which the RED fragment
 #                        below relies on
 #   ORCHESTRATION (ladder_run_lanes LIFTED from the script, run against stub lanes)
-#     concurrent         cpu and cuda lanes overlap in time; be_json keeps the rung's backend order
+#     serial-default     with no opt-in the lanes run one at a time: concurrency is OPT-IN until a
+#                        lambda 9B A/B shows a gain (cop ruling on #4034); the CPU lane is still unlocked
+#     concurrent         MODEL_LADDER_CONCURRENT_LANES=1: cpu and cuda lanes overlap in time, and
+#                        be_json keeps the rung's backend order
 #     order-cpu-first    the order is the rung's, not "foreground first"
-#     serial-env         MODEL_LADDER_SERIAL_LANES=1 runs them one at a time
+#   (the cases below opt in, because the background lane is where they can go wrong)
 #     cpu-silent         a background lane that prints nothing is a RED fragment naming its exit
 #                        status, never absent (green is an all() over the backends it is GIVEN)
 #     cpu-garbage        a lane with an unparseable fragment is RED the same way
@@ -160,28 +163,29 @@ for l in open(sys.argv[1]):
 (a1, e1), (a2, e2) = s["cpu"], s["cuda"]
 print("yes" if a1 < e2 and a2 < e1 else "no")' "$T/$1/spans" 2> /dev/null; }
 
-  lanes concurrent cuda,cpu ok; r=$?
+  lanes serial-default cuda,cpu ok; r=$?
+  { [ "$r" = 0 ] && [ "$(overlap serial-default)" = no ] && [ "$(keys serial-default)" = "['cuda', 'cpu']" ]; } && ok serial-default \
+    || bad serial-default "rc=$r overlap=$(overlap serial-default) keys=$(keys serial-default)"
+  lanes concurrent cuda,cpu ok MODEL_LADDER_CONCURRENT_LANES=1; r=$?
   { [ "$r" = 0 ] && [ "$(overlap concurrent)" = yes ] && [ "$(keys concurrent)" = "['cuda', 'cpu']" ]; } && ok concurrent \
     || bad concurrent "rc=$r overlap=$(overlap concurrent) keys=$(keys concurrent) $(head -c 200 "$T/concurrent/out")"
-  lanes order-cpu-first cpu,cuda ok; r=$?
+  lanes order-cpu-first cpu,cuda ok MODEL_LADDER_CONCURRENT_LANES=1; r=$?
   { [ "$r" = 0 ] && [ "$(overlap order-cpu-first)" = yes ] && [ "$(keys order-cpu-first)" = "['cpu', 'cuda']" ]; } && ok order-cpu-first \
     || bad order-cpu-first "rc=$r overlap=$(overlap order-cpu-first) keys=$(keys order-cpu-first)"
-  lanes serial-env cuda,cpu ok MODEL_LADDER_SERIAL_LANES=1; r=$?
-  { [ "$r" = 0 ] && [ "$(overlap serial-env)" = no ]; } && ok serial-env || bad serial-env "rc=$r overlap=$(overlap serial-env)"
-  lanes cpu-silent cuda,cpu cpu-silent; r=$?
+  lanes cpu-silent cuda,cpu cpu-silent MODEL_LADDER_CONCURRENT_LANES=1; r=$?
   { [ "$r" = 0 ] && [ "$(field cpu-silent cpu ran)" = False ] && [ "$(field cpu-silent cuda ran)" = True ] \
     && field cpu-silent cpu lane_error | grep -q 'lane exit 7'; } && ok cpu-silent \
     || bad cpu-silent "rc=$r be=$(head -c 300 "$T/cpu-silent/be.json" 2> /dev/null)"
-  lanes cpu-garbage cuda,cpu cpu-garbage; r=$?
+  lanes cpu-garbage cuda,cpu cpu-garbage MODEL_LADDER_CONCURRENT_LANES=1; r=$?
   { [ "$r" = 0 ] && [ "$(field cpu-garbage cpu ran)" = False ] && field cpu-garbage cpu lane_error | grep -q 'no parseable'; } \
     && ok cpu-garbage || bad cpu-garbage "rc=$r be=$(head -c 300 "$T/cpu-garbage/be.json" 2> /dev/null)"
-  lanes cuda-silent cuda,cpu cuda-silent; r=$?
+  lanes cuda-silent cuda,cpu cuda-silent MODEL_LADDER_CONCURRENT_LANES=1; r=$?
   { [ "$r" = 0 ] && [ "$(field cuda-silent cuda ran)" = False ] && field cuda-silent cuda lane_error | grep -q 'lane exit 3'; } \
     && ok cuda-silent || bad cuda-silent "rc=$r be=$(head -c 300 "$T/cuda-silent/be.json" 2> /dev/null)"
-  lanes cpu-decline cuda,cpu cpu-decline; r=$?
+  lanes cpu-decline cuda,cpu cpu-decline MODEL_LADDER_CONCURRENT_LANES=1; r=$?
   { [ "$r" = 2 ] && [ ! -e "$T/cpu-decline/be.json" ] && grep -q '^decline: ENV planted decline in the cpu lane' "$T/cpu-decline/out"; } \
     && ok cpu-decline || bad cpu-decline "rc=$r be_written=$([ -e "$T/cpu-decline/be.json" ] && echo yes || echo no) $(head -c 200 "$T/cpu-decline/out")"
-  lanes cuda-decline cuda,cpu cuda-decline; r=$?
+  lanes cuda-decline cuda,cpu cuda-decline MODEL_LADDER_CONCURRENT_LANES=1; r=$?
   sleep 1
   local bgp; bgp=$(cat "$T/cuda-decline/bg.pid" 2> /dev/null)
   { [ "$r" = 2 ] && [ -n "$bgp" ] && ! kill -0 "$bgp" 2> /dev/null; } && ok cuda-decline-kills-cpu-lane \
@@ -204,6 +208,7 @@ if [ "$SELF_TEST" = 1 ]; then
   mutant all-unlocked      probe-cuda  's/if \[ "\$lane" = cpu \]; then apr_cpu_unlocked/if true; then apr_cpu_unlocked/'
   mutant cell-bypass       sites       's/apr_lane "\$b" run/apr_cpu_unlocked run/'
   mutant serve-locked      sites       's/apr_lane "\$bname" serve run/apr_locked serve run/'
+  mutant default-concurrent serial-default 's/"\${MODEL_LADDER_CONCURRENT_LANES:-0}" = 1/"${MODEL_LADDER_CONCURRENT_LANES:-1}" = 1/'
   mutant never-background  concurrent  's/      \[ "\$b" = cpu \] || continue/      [ "$b" = never ] || continue/'
   mutant no-red-fragment   cpu-silent  's/    if ! python3 -c \(.\)import json,sys; d = json.loads/    if false \&\& ! python3 -c \1import json,sys; d = json.loads/'
   mutant swallow-decline   cpu-decline '/grep -q .\^decline: . "\$lane_err" 2> \/dev\/null; then exit 2; fi/d'
@@ -213,6 +218,6 @@ if [ "$SELF_TEST" = 1 ]; then
   echo "SELF-TEST FAIL: a planted regression was not caught"; exit 1
 fi
 
-echo "ladder CPU lane: unlocked, deviceless, concurrent, and never absent from the receipt ($SCRIPT)"
+echo "ladder CPU lane: unlocked, deviceless, concurrent only when opted in, and never absent from the receipt ($SCRIPT)"
 if run_cases "$SCRIPT"; then echo "PASS"; exit 0; fi
 echo "FAIL"; exit 1

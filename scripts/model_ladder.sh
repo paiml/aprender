@@ -1011,12 +1011,15 @@ print(json.dumps({"probed": False,
 # ladder. It appends to measure()'s be_json/first through bash's dynamic scope. It is a function
 # so check_ladder_cpu_lane.sh can lift and run it against stub lanes.
 ladder_run_lanes() {
-  # #4034: the lanes. Every lane except the CPU one runs in the FOREGROUND, in order, under
-  # the GPU lock as before. The CPU lane runs in the BACKGROUND at the same time: it holds no
-  # lock and sees no device, so it cannot contend with the GPU lane. It used to hold the fleet
-  # lock for its whole duration with the GPU idle: 50 of 83 nvidia-smi samples (60%) on lambda's
-  # qwen35-9b-q4km rung (#4033 baseline). MODEL_LADDER_SERIAL_LANES=1 restores the one-at-a-time
-  # order.
+  # #4034: the lanes. The CPU lane holds no lock and sees no device (apr_lane), so it never
+  # keeps the fleet lock while the GPU is idle. It used to: 50 of 83 nvidia-smi samples (60%)
+  # on lambda's qwen35-9b-q4km rung (#4033 baseline). That part is always on.
+  #
+  # Running the CPU lane CONCURRENTLY with the GPU lane is OPT-IN (MODEL_LADDER_CONCURRENT_LANES=1),
+  # per the cop's ruling on #4034. On yoga at qwen35-2b it measured no saving (B 179/230 s vs A
+  # 187/210 s), and concurrency adds CPU+GPU memory pressure (a 27B on gx10's unified memory). It
+  # becomes the default only after a lambda 9B A/B shows a gain. Opted in, every lane except the
+  # CPU one runs in the foreground, in order, under the GPU lock, and the CPU lane runs beside it.
   #
   # A lane that produced no parseable fragment is NOT dropped. `green` is an all() over the
   # backends it is given, so a missing backend would be judged over the ones that remain. It
@@ -1026,7 +1029,7 @@ ladder_run_lanes() {
   # The background lane is STARTED FIRST, whatever the rung's backend order is. Started in loop
   # order, a `cuda,cpu` rung would launch it only after the foreground lane had finished, and
   # nothing would overlap (check_ladder_cpu_lane.sh case `concurrent`).
-  if [ "${#bes[@]}" -gt 1 ] && [ "${MODEL_LADDER_SERIAL_LANES:-0}" != 1 ]; then
+  if [ "${#bes[@]}" -gt 1 ] && [ "${MODEL_LADDER_CONCURRENT_LANES:-0}" = 1 ]; then
     for b in "${bes[@]}"; do
       [ "$b" = cpu ] || continue
       ladder_backend_cell "$b" > "$WORK/$rid_s.$b.lane.json" 2> "$WORK/$rid_s.$b.lane.err" &
