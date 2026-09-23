@@ -255,7 +255,7 @@ def load_inproc(a):
     src = verified_source(a.source_repo, a.source_revision)
     llm = LLM(
         model=str(src), tokenizer=str(src), served_model_name=a.source_repo,
-        dtype=a.dtype, max_model_len=a.context, seed=a.seed,
+        dtype=a.dtype, max_model_len=model_len(a), seed=a.seed,
         gpu_memory_utilization=gpu_memory_utilization(), enforce_eager=True,
     )
 
@@ -270,6 +270,13 @@ def load_inproc(a):
                 prompt_opens_think(rendered))
 
     return respond, "LLM.chat", device_label()
+
+
+def model_len(a) -> int:
+    """vLLM REJECTS a request whose prompt + max_tokens exceeds max_model_len (HTTP 400 on serve). Sizing it to the
+    --context alone refused every thinking-ON serve row of the 0.69.1 freeze sweep (context 4096, ON budget 4096 +
+    the prompt; lambda 4B-Q4_K_M, 15 rows). So the engine holds the context PLUS the batch's largest budget."""
+    return int(a.context) + int(getattr(a, "batch_max_tokens", 0) or 0)
 
 
 def free_port() -> int:
@@ -291,7 +298,7 @@ def serve_session(a, log_path: Path):
     cmd = [
         str(Path(sys.executable).parent / "vllm"), "serve", str(src), "--served-model-name", a.source_repo,
         "--host", "127.0.0.1", "--port", str(port),
-        "--dtype", a.dtype, "--max-model-len", str(a.context), "--seed", str(a.seed),
+        "--dtype", a.dtype, "--max-model-len", str(model_len(a)), "--seed", str(a.seed),
         "--gpu-memory-utilization", str(gpu_memory_utilization()), "--enforce-eager",
     ]
     log = open(log_path, "w", encoding="utf-8")
@@ -420,6 +427,7 @@ def run_batch(a, items: list) -> None:
     """Every item gets exactly one row, in order; the engine is loaded at most ONCE for the batch."""
     manifest, work = env_paths()
     check_sha(a.model_sha256)
+    a.batch_max_tokens = max((it["max_tokens"] for it in items if isinstance(it.get("max_tokens"), int)), default=0)
     batch_id = f"{os.getpid()}-{time.time_ns()}"
     slots = []
     for it in items:
@@ -434,6 +442,7 @@ def run_batch(a, items: list) -> None:
             # The comparison this row is: apr's file (model_sha256) against these SOURCE weights, never the file.
             "source": {"repo": a.source_repo, "revision": a.source_revision, "dtype": a.dtype, "compares": COMPARES},
             "gpu_memory_utilization": gpu_memory_utilization(),
+            "max_model_len": model_len(a),
             "batch": {"id": batch_id, "size": len(items)},
         }
         slots.append({"it": it, "row": row, "d": d, "stem": stem, "out": out, "err": err, "reason": item_error(it)})
