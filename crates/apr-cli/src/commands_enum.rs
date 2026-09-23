@@ -898,8 +898,9 @@ pub enum Commands {
         #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
         max_tokens: Option<u32>,
 
-        /// Thinking mode: `off` (what apr serve does) or `on`, which is refused
-        /// because apr serve has no thinking-ON path yet (#3723) (#3978).
+        /// Thinking mode: `off` (apr serve's default) or `on`, passed to apr serve per request and
+        /// rendered by the model's own chat template; refused by name for a model whose
+        /// template has no thinking mode (#3723, #3978).
         /// Same flag name and values as `apr run/chat --thinking` (#3723).
         #[arg(long, value_parser = ["off", "on"])]
         thinking: Option<String>,
