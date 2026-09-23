@@ -9,9 +9,11 @@ the release gate is NOT the model ladder. It is CRUX smoke receipts from the REL
   - every host the entry names has CRUX receipts;
   - every receipt is bound to the cut EXACTLY (apr sha == cut, no equivalence: it is the binary
     being released) and did not DECLINE;
-  - for every host x certified model (read from the prompt certification, never listed) x thinking
-    mode the entry names: at least one cell exists, every such cell is GREEN, and a POSITIVE-CONTROL
-    cell is GREEN (a lane that cannot answer its own control proves nothing).
+  - for every host x certified model x thinking mode the certification ADMITS for that model
+    (`admitted_by_sha_thinking`; cop correction 2026-09-23: the operator never said "OFF/ON"): at least
+    one cell exists, every such cell is GREEN, and a POSITIVE-CONTROL cell is GREEN (a lane that cannot
+    answer its own control proves nothing). A certified model with NO admitted mode is RED, and a cell
+    in a mode the certification does not admit never counts toward the pass.
 Used for any other release, the scope is refused. The output always says it ran under the emergency
 scope, and never that every rung was green.
 """
@@ -49,7 +51,24 @@ def judge(L, version, crux_dir, cert_p, cut, scope_name, out):
     certified, cfail = model_ladder_crux.load_certified(cert_p, out)
     if cfail or not certified:
         return True
-    hosts, modes = list(entry["hosts"]), list(entry["thinking"])
+    try:
+        with open(cert_p, encoding="utf-8") as fh:
+            by_mode = json.load(fh).get("admitted_by_sha_thinking")
+    except (OSError, ValueError):
+        by_mode = None
+    if not isinstance(by_mode, dict):
+        out("FAIL  the certification carries no admitted_by_sha_thinking -- the smoke matrix (model x admitted mode) is unknown")
+        return True
+    hosts = list(entry["hosts"])
+    matrix = {}
+    for sha in sorted(certified):
+        m = by_mode.get(sha) if isinstance(by_mode.get(sha), dict) else {}
+        matrix[sha] = [t for t in entry["thinking"] if m.get(t)]
+    out("smoke matrix (certified model -> admitted thinking modes): "
+        + "; ".join(f"{s[:12]} -> {','.join(m) or 'NONE'}" for s, m in matrix.items()))
+    for sha, m in matrix.items():
+        if not m:
+            out(f"FAIL  certified model {sha[:12]} has NO admitted thinking mode -- nothing about it can be smoke-proven"); failed = True
     cells = {}          # (host, sha, thinking) -> [(verdict, positive_control)]
     seen_hosts = set()
     files = sorted(f for f in glob.glob(os.path.join(crux_dir or "", "*.json"))
@@ -83,7 +102,7 @@ def judge(L, version, crux_dir, cert_p, cut, scope_name, out):
             out(f"FAIL  host {h} has no CRUX receipt from the release binary -- the smoke gate needs every named host"); failed = True
             continue
         for sha in sorted(certified):
-            for mode in modes:
+            for mode in matrix[sha]:
                 got = cells.get((h, sha, mode)) or []
                 if not got:
                     out(f"FAIL  {h} certified model {sha[:12]} thinking={mode}: no CRUX cell -- not smoke-tested"); failed = True

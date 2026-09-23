@@ -888,15 +888,20 @@ CUT = "d" * 40
 SH = ["1" * 64, "2" * 64, "3" * 64]
 L = {"emergency_scopes": [{"name": "crux-smoke", "release": "0.69.1", "date": "2026-09-23", "quote": "q",
                             "hosts": ["lambda", "gx10"], "thinking": ["off", "on"]}]}
-def build(d, hosts=("lambda", "gx10"), drop=None, ctl="GREEN", noctl=False, sha=CUT, cell="GREEN"):
-    json.dump({"schema": "crux-prompt-certification/v1", "admitted_by_sha": {s: ["ctl"] for s in SH}},
-              open(os.path.join(d, "prompt-certification.json"), "w"))
+# 2 = SH[1] is admitted with thinking OFF only (its ON leg loops at greedy, the real 2B's shape)
+ADMIT = {s: {"off": ["ctl"], "on": ["ctl"]} for s in SH}
+ADMIT[SH[1]] = {"off": ["ctl"], "on": []}
+def build(d, hosts=("lambda", "gx10"), drop=None, ctl="GREEN", noctl=False, sha=CUT, cell="GREEN", admit=None, dropmode=None, onlymode=None):
+    json.dump({"schema": "crux-prompt-certification/v1", "admitted_by_sha": {s: ["ctl"] for s in SH},
+               "admitted_by_sha_thinking": admit or ADMIT}, open(os.path.join(d, "prompt-certification.json"), "w"))
     for h in hosts:
         cells = []
         for s in SH:
             if drop == (h, s):
                 continue
-            for t in ("off", "on"):
+            for t in (onlymode.get((h, s), ("off", "on")) if onlymode else ("off", "on")):
+                if dropmode == (h, s, t):
+                    continue
                 cells.append({"key": {"model_sha256": s, "host": h, "thinking": t, "verb": "run"},
                               "verdict": cell if (h, s, t) == ("lambda", "3" * 64, "on") else "GREEN", "positive_control": False})
                 if not noctl:
@@ -912,6 +917,15 @@ rows = [
   ("no positive control is RED", True, "positive control is missing", {"noctl": True}, "0.69.1"),
   ("a receipt at a sha other than the cut is RED", True, "not the release binary", {"sha": "e" * 40}, "0.69.1"),
   ("the scope used for another release is RED", True, "for release 0.69.1 ONLY", {}, "0.70.0"),
+  ("an ADMITTED mode missing on a host is RED", True, "thinking=off: no CRUX cell", {"dropmode": ("gx10", "2" * 64, "off")}, "0.69.1"),
+  ("a certified model with ZERO admitted modes is RED", True, "has NO admitted thinking mode",
+   {"admit": dict(ADMIT, **{"3" * 64: {"off": [], "on": []}})}, "0.69.1"),
+  ("an UNADMITTED mode's green cells never count toward the pass", True, "thinking=off: no CRUX cell",
+   {"onlymode": {("lambda", "2" * 64): ("on",)}}, "0.69.1"),
+  ("the admitted matrix is printed", False, "2222222222 -> off;", {}, "0.69.1"),
+  ("a mode the certification does NOT admit needs no cells (the real 2B shape: OFF only)", False,
+   "ok    gx10 certified model 222222222222 thinking=off",
+   {"onlymode": {("lambda", "2" * 64): ("off",), ("gx10", "2" * 64): ("off",)}}, "0.69.1"),
 ]
 bad = 0
 for name, want_fail, needle, kw, version in rows:
@@ -941,6 +955,8 @@ SM
     smutant control-optional  's/^                elif not ctl or any(v != "GREEN" for v in ctl):$/                elif False:/'
     smutant any-sha           's/^        if asha != cut:$/        if False:/'
     smutant any-release       's/^    if str(version) != str(entry\["release"\]):$/    if False:/'
+    smutant zero-modes-ok     's/^        if not m:$/        if False:/'
+    smutant all-modes-counted 's/^            for mode in matrix\[sha\]:$/            for mode in ("off", "on"):/'
     # #3710 ruling 1: CRUX coverage scoped to the certified models (model_ladder_crux.py).
     xmutant uncertified-owes-crux green-uncertified-no-crux 's/^                    elif certified is not None and sha not in certified:$/                    elif False:/'
     xmutant no-cert-relaxes   red-certification-missing 's/^        return None, True$/        return set(), False/'
