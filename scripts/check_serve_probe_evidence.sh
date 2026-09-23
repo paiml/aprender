@@ -35,8 +35,16 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-TMPD=$(mktemp -d)
-trap 'rm -rf "$TMPD"' EXIT
+TMPD=$(mktemp -d) || { echo "cannot create a temp dir" >&2; exit 2; }
+# Only ever remove what mktemp made: never an empty value, never "/", never outside a
+# temp root. Same rule as model_ladder.sh's _rm_work (SEC011).
+_rm_tmpd() {
+  case "${TMPD:-}" in
+    /tmp/?*|/var/folders/?*) [ -d "$TMPD" ] && rm -rf -- "$TMPD" ;;
+    *) : ;;
+  esac
+}
+trap _rm_tmpd EXIT
 
 # A serve log with the lines that break naive JSON quoting, then a blank line, then the
 # line that must come out as "last".
