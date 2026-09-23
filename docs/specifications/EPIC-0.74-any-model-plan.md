@@ -29,11 +29,11 @@ quicker ability to support ANY model and we leverage llama.cpp and rachets in ea
 
 | Row | Item | done_when | Baseline | First-green proof |
 |---|---|---|---|---|
-| **R-1** | #3418 / PP-QUANT (#3421, #3420): one quant-type registry (`ggml_type_traits`-style) and one dispatch | `scripts/check_quant_dispatch.sh` finds 0 quant-type `match` outside the registry module, with a shrink-only baseline until then | 42 files (proxy) | the guard is RED on today's tree at baseline − 1, and GREEN at the baseline. A planted new `match qtype` outside the registry is RED |
-| **R-2** | #3422 / PP-ARCH (#3424): shared attention/FFN blocks adopted by every production forward path | a census of production forward files: each one calls the shared blocks, or it is deleted | 0 of 8 | the census RED today, GREEN when done; a forward file reintroducing a private attention loop is RED |
+| **R-1** | #3418 / PP-QUANT (#3421, #3420): one quant-type registry (`ggml_type_traits`-style) and one dispatch | `scripts/check_quant_dispatch.sh` finds 0 quant-type `match` outside the registry module, with a shrink-only baseline until then | 42 files (proxy) | the guard is RED on today's tree at baseline − 1, and GREEN at the baseline. A planted new `match qtype` outside the registry is RED. **Quorum fixes:** the guard has a `--self-test`; it fails closed when it scans 0 files; and deleting a `match` without routing through the registry is RED (the registry's own census must list the quant type) |
+| **R-2** | #3422 / PP-ARCH (#3424): shared attention/FFN blocks adopted by every production forward path | a census of production forward files: each one calls the shared blocks, or it is deleted | 0 of 8 | the census RED today, GREEN when done; a forward file reintroducing a private attention loop is RED. **Quorum fix:** the census is by symbol, i.e. it counts calls to the shared blocks. "Or it is deleted" counts only when the deleted file's architecture still passes its ladder rung through the shared path, so a deletion without a replacement is RED |
 | **R-3** | PP-TENSOR (#3428): a tensor with no bytes is a different type from one with bytes (MoE / lazy tensors) | #3428's own acceptance | OPEN | #3428's must-RED case |
 | **R-4** | #3423: the consolidation epic's own rows | #3423's rows | OPEN (milestone "Inference dispatch & architecture consolidation") | per row |
-| **R-5** | **The real addition** (E-1): add one previously unsupported llama.cpp architecture during 0.74 | the PR merges within N lines, and its E-4 oracle cell is green | none | the addition itself. The candidate is chosen by the quorum (Q2) |
+| **R-5** | **The real addition** (E-1): add one previously unsupported llama.cpp architecture during 0.74 | the PR merges within N lines, and its E-4 oracle cell is green, **with a planted-corrupt-weights negative control that must go RED** (quorum fix) | none | the addition itself. The candidate is chosen by the quorum (Q2) |
 | **R-6** | The llama.cpp oracle harness (E-4) | per-architecture cell: token-level agreement over a fixed prompt set on the official template, with a positive control and a negative control | not built; llama.cpp is pinned in infra (#911) | the positive control (a known-good architecture) is green, and the negative (planted wrong weights) is RED |
 | **R-7** | **Ratchet slice 5 of 5: close-out, ≥ 80% cleared** | the DEBT-RATCHET-001 slice-5 gates (all pillars at their 0.74 floors) | see #4003 | see #4003 |
 
@@ -70,3 +70,28 @@ for i in 3423 3422 3418 3421 3420 3424 3428; do gh issue view $i -R paiml/aprend
 ## 7. Quorum record
 
 _Filled after the quorum returns._
+
+## Quorum record: decision quorum, 2026-09-23 (aprender-cb)
+
+**Lanes (ADVISORY: single family, all gemini):** gemini-3.1-pro-high, gemini-3.8-flash-high, gemini-3.7-flash-high,
+all returning PASS-with-changes. gpt-oss returned 429. 3/3 exited 3 on foreign ref motion, with every clone
+byte-identical. Conversations: `9be51392`, `19bd8d9e`, `436c3c42`.
+
+| Q | Decision (tally) | Applied as |
+|---|---|---|
+| Q1 | **N = 300** non-comment, non-test lines, 3/3 | E-1 |
+| Q2 | **No consensus.** Lane 1 could not read llama.cpp's list and said so. Lane 2: **StarCoder2** (backups StableLM, Granite). Lane 3: **Command-R** (backups MiniCPM3, StarCoder2). **aprender-cb checked the tree:** `starcoder2`, `stablelm`, `granite` and `minicpm3` already appear as architecture strings in apr's config/format code, with **0** forward files. `cohere`/Command-R has **0** hits in `crates/aprender-serve/src`. All five exist in `~/src/llama.cpp/src/models/` (local checkout `60b06ab9a`, not compared with `scripts/llama_pin.toml`) | **Proposed: Command-R (cohere)**, because apr has no footprint for it, so the N-line count measures a whole addition. **StarCoder2 is the fallback** if Command-R does not fit the fleet at a certified quant. **This goes to the operator; the quorum did not decide it** |
+| Q3 | **R-1 (quant registry) → R-2 (shared blocks) → R-5 last**, 3/3 | §5 |
+
+**Must-fix items applied:**
+- R-2's deletion escape is closed;
+- R-1's guard gets a self-test, fails closed on 0 files, and a deletion without the registry is RED;
+- R-5's negative control.
+
+**Must-fix items carried to step 2 as child-issue acceptance:**
+- exact `done_when` commands;
+- R-3's measured behaviour baseline (not "OPEN");
+- #3423 decomposed into rows with baselines and controls;
+- the slice-5 baselines and commands (#4003 §7);
+- aligning the llama.cpp reference commit (`3173a5647`, cited from #3418) with `scripts/llama_pin.toml`.
+
