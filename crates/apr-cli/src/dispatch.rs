@@ -313,7 +313,7 @@ or drop `--backend`."
             no_gpu,
             gpu: _,
             max_tokens,
-            think,
+            thinking,
         } => dispatch_code_command(CodeArgs {
             model,
             project,
@@ -327,7 +327,7 @@ or drop `--backend`."
             input_format: *input_format,
             no_gpu: *no_gpu,
             max_tokens: *max_tokens,
-            think: think.as_deref(),
+            think: thinking.as_deref(),
         }),
 
         _ => return None,

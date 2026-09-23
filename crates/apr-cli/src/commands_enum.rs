@@ -871,8 +871,9 @@ pub enum Commands {
 
         /// Thinking mode: `off` (what apr serve does) or `on`, which is refused
         /// because apr serve has no thinking-ON path yet (#3723) (#3978).
+        /// Same flag name and values as `apr run/chat --thinking` (#3723).
         #[arg(long, value_parser = ["off", "on"])]
-        think: Option<String>,
+        thinking: Option<String>,
     },
     /// Extended analysis, profiling, QA, and visualization commands
     #[command(flatten)]

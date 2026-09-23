@@ -359,20 +359,20 @@ pub fn cmd_code(
 pub struct CodeServeOptions {
     /// Backend and `--max-tokens` for the `apr serve` child.
     pub serve: crate::agent::driver::apr_serve::ServeLaunchOptions,
-    /// `--think on|off`. `Some(true)` is REFUSED: `apr serve` has no thinking-ON
+    /// `--thinking on|off`. `Some(true)` is REFUSED: `apr serve` has no thinking-ON
     /// path on any router (#3723), and a flag that is silently ignored would be
     /// a false pin. `Some(false)` and `None` both run thinking OFF, which is
     /// what `apr serve` does.
     pub think: Option<bool>,
 }
 
-/// The refusal for `--think on` (#3978, #3723), settled before anything is launched.
+/// The refusal for `--thinking on` (#3978, #3723), settled before anything is launched.
 pub fn refuse_think_on(think: Option<bool>) -> anyhow::Result<()> {
     if think == Some(true) {
         anyhow::bail!(CodeOutcome::refused(
             "invalid_input",
-            "--think on: apr serve has no thinking-ON path (#3723), so apr code cannot honour it; \
-             use --think off"
+            "--thinking on: apr serve has no thinking-ON path (#3723), so apr code cannot honour it; \
+             use --thinking off"
                 .to_string(),
             exit_code::AGENT_ERROR,
         ));

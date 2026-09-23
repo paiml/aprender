@@ -1418,12 +1418,12 @@ fn falsify_3775_empty_completion_is_a_failure_document() {
     assert_eq!(assert_one_error_document("empty", "failed", "empty_completion"), 1);
 }
 
-// ═══ #3978: `--think on` is refused by name, before anything is launched ═══
+// ═══ #3978: `--thinking on` is refused by name, before anything is launched ═══
 #[test]
 fn f3978_think_on_is_refused_naming_3723() {
-    let err = refuse_think_on(Some(true)).expect_err("--think on must refuse");
+    let err = refuse_think_on(Some(true)).expect_err("--thinking on must refuse");
     let msg = err.to_string();
-    assert!(msg.contains("#3723") && msg.contains("--think on"), "{msg}");
+    assert!(msg.contains("#3723") && msg.contains("--thinking on"), "{msg}");
     assert!(refuse_think_on(Some(false)).is_ok());
     assert!(refuse_think_on(None).is_ok());
 }
@@ -1445,6 +1445,6 @@ fn f3978_think_on_refuses_before_any_model_is_discovered() {
         "text",
         CodeServeOptions { think: Some(true), ..Default::default() },
     )
-    .expect_err("--think on must refuse");
+    .expect_err("--thinking on must refuse");
     assert!(err.to_string().contains("#3723"), "{err}");
 }
