@@ -175,6 +175,22 @@ impl GgufReader {
         &self,
         progress: impl Fn(usize, usize, &str),
     ) -> Result<TensorDataMap> {
+        // #3947 quorum (PR #3958): IQ4_NL / IQ3_S / IQ4_XS decode per tensor so
+        // inspection (`apr qa` tensor_contract, validate) can read them, but the ticket
+        // asked for inspection only. Every whole-model F32 load (`apr import`'s GH-375
+        // fallback, `apr convert`) goes through here, so it keeps refusing them, as it
+        // did under #3656. Checked before any decoding so nothing partial is produced.
+        if let Some(meta) = self.tensors.iter().find(|t| matches!(t.dtype, 20 | 21 | 23)) {
+            let type_name = trueno_quant::GgmlType::from_id(meta.dtype)
+                .map_or("an IQ type", trueno_quant::GgmlType::as_str);
+            return Err(AprenderError::FormatError {
+                message: format!(
+                    "GGUF tensor '{}' is {type_name} (ggml type {}): aprender-core decodes it \
+                     for inspection only and does not convert IQ models to F32 (#3947)",
+                    meta.name, meta.dtype
+                ),
+            });
+        }
         let total = self.tensors.len();
         let mut result = BTreeMap::new();
         for (i, meta) in self.tensors.iter().enumerate() {

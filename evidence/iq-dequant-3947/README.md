@@ -21,6 +21,6 @@ Positive controls: every comparison first flips bit 0 of the first quant byte of
 
 Scope: this covers the CPU dequant (core's `get_tensor_f32`; serve's `iq_dispatch` uses the same block decoders). The CUDA IQ4 GEMV kernels (`iq4_xs_gemv_warp_reduce`, `iq4_nl_gemv_warp_reduce`) are separate code and are **not** measured here.
 
-Reproduce: build each harness (`cargo build --release` in a copy of `harness-*/`, with the `path =` in its Cargo.toml pointed at your checkout), copy the binary next to the script as `iqdec.bin` / `coredec.bin`, then run `python3 compare*.py`. Each script exits non-zero if any control fails to go RED or any cell is RED.
+Reproduce: build each harness (`cargo build --release` in a copy of `harness-*/` (sources in `src/main.rs`), with the `path =` in its Cargo.toml pointed at your checkout), copy the binary next to the script as `iqdec.bin` / `coredec.bin`, then run `python3 compare*.py`. Each script exits non-zero if any control fails to go RED or any cell is RED.
 
 Note: `qa/after-Qwen2.5-0.5B-*.rc` were transcribed from that run's terminal line (`rc=0`), not written by the run itself. Their JSON shows zero failing gates, which agrees. Every other `.rc` file was written by the run.

@@ -236,3 +236,28 @@ fn test_3947_get_tensor_f32_decodes_iq4_nl_iq3_s_iq4_xs() {
         assert!(got.iter().all(|v| v.is_finite()), "{name}: non-finite value");
     }
 }
+
+/// #3947 quorum (PR #3958): decoding is for inspection. The whole-model F32 loader, which
+/// `apr import`'s GH-375 fallback and `apr convert` use, still refuses IQ4_NL / IQ3_S /
+/// IQ4_XS, and not with a message that would re-trigger the GH-375 fallback.
+#[test]
+fn test_3947_whole_model_f32_load_still_refuses_decoded_iq_types() {
+    for (id, name, blck, type_size) in IQ_AND_TQ
+        .into_iter()
+        .filter(|(id, ..)| DECODED_3947.contains(id))
+    {
+        let reader = one_tensor(&[blck as u64], id, &payload(type_size), 0);
+        assert!(reader.get_tensor_f32("t.weight").is_ok(), "{name}: inspection must decode");
+        let err = reader
+            .get_all_tensors_f32()
+            .expect_err("whole-model F32 load must refuse an IQ type")
+            .to_string();
+        for needle in ["t.weight", name, &format!("ggml type {id}"), "inspection only"] {
+            assert!(err.contains(needle), "{name}: missing {needle:?} in: {err}");
+        }
+        assert!(
+            !err.contains("cannot represent exactly") && !err.contains("not yet supported"),
+            "{name}: must not read as a GH-375 fallback trigger: {err}"
+        );
+    }
+}
