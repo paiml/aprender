@@ -630,6 +630,10 @@ fn build_final_json(
         "completion_tokens": result.usage.completion_tokens,
         "finish_reason": result.usage.finish_reason,
         "context_length": result.usage.context_length,
+        // #3981: `tok_per_sec` is over generation when these are present. `inference_time_ms`
+        // is the whole window (load, upload, F2, generation), kept for compatibility.
+        "generation_ms": result.usage.generation_ms,
+        "setup_ms": result.usage.setup_ms,
         // #3602: `used_gpu: false` alone collapses two different outcomes — "no
         // accelerator was asked for" and "one was asked for, attempted, and
         // REFUSED at runtime". A consumer cannot tell a CPU run from a rejected

@@ -383,6 +383,7 @@ fn try_gguf_gpu_generate(
 
     // Reuse existing CUDA model — generate_gpu_resident() creates fresh KV cache
     // and resets GPU KV positions internally, so validation doesn't "consume" it.
+    mark_generation_start(); // #3981: setup (upload + F2) ends here
     let result = cuda_model
         .generate_gpu_resident(input_tokens, gen_config)
         .map(|tokens| (tokens, true))
@@ -488,6 +489,7 @@ fn run_gguf_generate(
     }
 
     log_cpu_backend(config.verbose, has_legacy_quant);
+    mark_generation_start(); // #3981
     let tokens = model
         .generate_with_cache(input_tokens, gen_config)
         .map_err(|e| RealizarError::InferenceError(format!("CPU generation failed: {}", e)))?;
@@ -811,6 +813,7 @@ fn try_apr_wgpu_inference(
         inference_ms,
         load_ms: model_load_ms,
         tok_per_sec: if inference_ms > 0.0 { tokens_generated as f64 / (inference_ms / 1000.0) } else { 0.0 },
+        generation_ms: Some(inference_ms), // #3981: this path starts its clock AFTER setup, right before generation
         format: "APR".to_string(),
         used_gpu: true,
         gpu_attempted: true,
@@ -1011,6 +1014,7 @@ fn try_apr_cuda_inference(
         generated_token_count,
         inference_ms,
         tok_per_sec: tok_per_sec(generated_token_count, inference_ms),
+        generation_ms: Some(inference_ms), // #3981: this path starts its clock AFTER setup, right before generation
         load_ms,
         format: "APR".to_string(),
         used_gpu: true,
@@ -1095,6 +1099,7 @@ fn run_apr_quantized_cpu_inference(
         generated_token_count,
         inference_ms,
         tok_per_sec: tok_per_sec(generated_token_count, inference_ms),
+        generation_ms: Some(inference_ms), // #3981: this path starts its clock AFTER setup, right before generation
         load_ms,
         format: "APR".to_string(),
         used_gpu: false,
@@ -1287,6 +1292,7 @@ fn try_safetensors_cuda_inference(
         generated_token_count,
         inference_ms,
         tok_per_sec: tok_per_sec(generated_token_count, inference_ms),
+        generation_ms: Some(inference_ms), // #3981: this path starts its clock AFTER setup, right before generation
         load_ms,
         format: "SafeTensors".to_string(),
         used_gpu: true,

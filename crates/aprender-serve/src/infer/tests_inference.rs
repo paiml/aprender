@@ -6,6 +6,7 @@
 #[test]
 fn test_inference_result_debug() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "hello".to_string(),
         tokens: vec![1, 100],
         input_token_count: 1,
@@ -25,6 +26,7 @@ fn test_inference_result_debug() {
 #[test]
 fn test_inference_result_clone() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "world".to_string(),
         tokens: vec![1, 2, 3],
         input_token_count: 1,

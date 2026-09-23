@@ -51,6 +51,7 @@
     #[test]
     fn test_inference_result_debug_ext_cov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1],
             input_token_count: 1,
@@ -72,6 +73,7 @@
     #[test]
     fn test_inference_result_zero_values_ext_cov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: String::new(),
             tokens: vec![],
             input_token_count: 0,
@@ -91,6 +93,7 @@
     #[test]
     fn test_inference_result_large_values_ext_cov() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "A".repeat(10000),
             tokens: vec![1; 1000],
             input_token_count: 100,
@@ -111,6 +114,7 @@
     fn test_inference_result_formats_ext_cov() {
         for fmt in ["GGUF", "APR", "SafeTensors"] {
             let result = InferenceResult {
+                generation_ms: None,
                 text: "test".to_string(),
                 tokens: vec![1],
                 input_token_count: 1,

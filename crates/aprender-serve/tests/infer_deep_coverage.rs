@@ -222,6 +222,7 @@ fn test_inference_config_without_gpu_multiple_calls() {
 #[test]
 fn test_inference_result_creation() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "Generated text".to_string(),
         tokens: vec![1, 2, 3, 4],
         input_token_count: 2,
@@ -242,6 +243,7 @@ fn test_inference_result_creation() {
 #[test]
 fn test_inference_result_clone() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "test".to_string(),
         tokens: vec![1],
         input_token_count: 1,
@@ -263,6 +265,7 @@ fn test_inference_result_clone() {
 #[test]
 fn test_inference_result_debug() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "hello".to_string(),
         tokens: vec![1, 2],
         input_token_count: 1,
@@ -283,6 +286,7 @@ fn test_inference_result_debug() {
 #[test]
 fn test_inference_result_zero_inference_ms() {
     let result = InferenceResult {
+        generation_ms: None,
         text: String::new(),
         tokens: vec![],
         input_token_count: 0,
@@ -301,6 +305,7 @@ fn test_inference_result_zero_inference_ms() {
 #[test]
 fn test_inference_result_large_values() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "x".repeat(1_000_000),
         tokens: (0..100_000).collect(),
         input_token_count: 1000,
@@ -319,6 +324,7 @@ fn test_inference_result_large_values() {
 #[test]
 fn test_inference_result_empty_text() {
     let result = InferenceResult {
+        generation_ms: None,
         text: String::new(),
         tokens: vec![1],
         input_token_count: 1,
@@ -336,6 +342,7 @@ fn test_inference_result_empty_text() {
 #[test]
 fn test_inference_result_unicode_text() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "こんにちは 🌍 مرحبا".to_string(),
         tokens: vec![1, 2, 3],
         input_token_count: 1,
@@ -356,6 +363,7 @@ fn test_inference_result_unicode_text() {
 fn test_inference_result_all_formats() {
     for format in &["GGUF", "APR", "SafeTensors"] {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1],
             input_token_count: 1,
@@ -611,6 +619,7 @@ mod proptest_tests {
             inference_ms in 0.0f64..1_000_000.0f64,
         ) {
             let result = InferenceResult {
+                generation_ms: None,
                 text,
                 tokens,
                 input_token_count: input_count,
@@ -668,6 +677,7 @@ fn test_inference_config_chained_overwrite() {
 #[test]
 fn test_inference_result_tok_per_sec_calculation() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "test".to_string(),
         tokens: vec![1, 2, 3, 4, 5],
         input_token_count: 1,
@@ -685,6 +695,7 @@ fn test_inference_result_tok_per_sec_calculation() {
 #[test]
 fn test_inference_result_high_throughput() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "x".repeat(1000),
         tokens: (0..1001).collect(),
         input_token_count: 1,
@@ -702,6 +713,7 @@ fn test_inference_result_high_throughput() {
 #[test]
 fn test_inference_result_gpu_vs_cpu() {
     let gpu_result = InferenceResult {
+        generation_ms: None,
         text: "gpu".to_string(),
         tokens: vec![1],
         input_token_count: 1,
@@ -715,6 +727,7 @@ fn test_inference_result_gpu_vs_cpu() {
     };
 
     let cpu_result = InferenceResult {
+        generation_ms: None,
         text: "cpu".to_string(),
         tokens: vec![1],
         input_token_count: 1,

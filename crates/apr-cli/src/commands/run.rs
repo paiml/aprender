@@ -247,6 +247,13 @@ pub(crate) struct RunUsage {
     pub finish_reason: Option<&'static str>,
     /// The model's context window, from its metadata.
     pub context_length: Option<usize>,
+    /// #3981: generation wall time (prefill + decode), in ms, when the backend marked
+    /// where generation began. `None` means the path did not measure it, and then
+    /// `tok_per_sec` still includes setup.
+    pub generation_ms: Option<u64>,
+    /// #3981: the part of the inference window that was NOT generation: weight upload,
+    /// F2 validation. `None` when `generation_ms` is.
+    pub setup_ms: Option<u64>,
 }
 
 /// Run result

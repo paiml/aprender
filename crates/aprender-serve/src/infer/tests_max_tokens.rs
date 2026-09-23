@@ -185,6 +185,7 @@ mod tests {
 
         for format in formats {
             let result = InferenceResult {
+                generation_ms: None,
                 text: "test".to_string(),
                 tokens: vec![1],
                 input_token_count: 1,
@@ -205,6 +206,7 @@ mod tests {
         for used_gpu in [true, false] {
             for format in ["GGUF", "APR", "SafeTensors"] {
                 let result = InferenceResult {
+                    generation_ms: None,
                     text: "test".to_string(),
                     tokens: vec![1],
                     input_token_count: 1,

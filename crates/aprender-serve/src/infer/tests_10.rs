@@ -182,6 +182,7 @@ fn test_config_with_input_tokens_and_prompt() {
 #[test]
 fn test_inference_result_debug() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "test".to_string(),
         tokens: vec![1],
         input_token_count: 1,
@@ -201,6 +202,7 @@ fn test_inference_result_debug() {
 #[test]
 fn test_inference_result_clone() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "hello".to_string(),
         tokens: vec![1, 2, 3],
         input_token_count: 1,

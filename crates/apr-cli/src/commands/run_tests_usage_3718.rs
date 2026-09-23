@@ -24,6 +24,8 @@ fn json_carries_the_engine_counts_and_the_finish() {
         completion_tokens: Some(32),
         finish_reason: Some("length"),
         context_length: Some(262_144),
+        generation_ms: None,
+        setup_ms: None,
     };
     let v = build_final_json(&result_with(usage), "m.gguf", 32, false);
     assert_eq!(v["prompt_tokens"], 79);
@@ -53,6 +55,8 @@ fn stream_final_event_carries_them_too() {
         completion_tokens: Some(3),
         finish_reason: Some("stop"),
         context_length: Some(4096),
+        generation_ms: None,
+        setup_ms: None,
     };
     let mut buf: Vec<u8> = Vec::new();
     write_stream_output(&mut buf, &result_with(usage), "m.gguf", 8, false).expect("write");
@@ -63,3 +67,17 @@ fn stream_final_event_carries_them_too() {
     assert_eq!(v["prompt_tokens"], 12);
     assert_eq!(v["finish_reason"], "stop");
 }
+
+/// #3981: the JSON says how much of the window was generation and how much setup,
+/// so a consumer can tell a generation rate from a whole-window rate.
+#[test]
+fn json_carries_generation_and_setup_ms() {
+    let usage = RunUsage { generation_ms: Some(1_000), setup_ms: Some(5_000), ..RunUsage::default() };
+    let v = build_final_json(&result_with(usage), "m.gguf", 32, false);
+    assert_eq!(v["generation_ms"], 1_000);
+    assert_eq!(v["setup_ms"], 5_000);
+    let v = build_final_json(&result_with(RunUsage::default()), "m.gguf", 32, false);
+    assert!(v.get("generation_ms").is_some() && v["generation_ms"].is_null(), "present, null when unmeasured");
+    assert!(v.get("setup_ms").is_some() && v["setup_ms"].is_null(), "present, null when unmeasured");
+}
+
