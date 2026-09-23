@@ -427,7 +427,8 @@ def run_batch(a, items: list) -> None:
     """Every item gets exactly one row, in order; the engine is loaded at most ONCE for the batch."""
     manifest, work = env_paths()
     check_sha(a.model_sha256)
-    a.batch_max_tokens = max((it["max_tokens"] for it in items if isinstance(it.get("max_tokens"), int)), default=0)
+    # Sized by the items that can RUN: one refused before any engine must not push the load past what the model holds.
+    a.batch_max_tokens = max((it["max_tokens"] for it in items if item_error(it) is None), default=0)
     batch_id = f"{os.getpid()}-{time.time_ns()}"
     slots = []
     for it in items:

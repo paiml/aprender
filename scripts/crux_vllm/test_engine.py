@@ -12,6 +12,9 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import engine  # noqa: E402
 
+# The REAL engine loaders, kept before the batch cases below swap in fakes (#4029 drives these, not a stub).
+REAL_LOAD_INPROC, REAL_SERVE_SESSION = engine.load_inproc, engine.serve_session
+
 GENERIC = RuntimeError("Engine core initialization failed. See root cause above. Failed core proc(s): {}")
 
 
@@ -138,21 +141,50 @@ print(f"{'ok  ' if _ok else 'FAIL'} [batch] a preflight refusal fans out and loa
 failed += not _ok
 CASES_TOTAL += bc.CASE_COUNT + bc.SSE_CASE_COUNT + bc.PROC_CASE_COUNT + 1
 
-# ── #4029: the engine must hold context + the batch's LARGEST budget, and every row must say so ──────────────
-_seen = []
-_fake = bc.fake_inproc()
+# ── #4029: vLLM must be HANDED context + the largest budget of the batch's runnable items ─────────────────
+# The REAL load_inproc and serve_session run; only what they call out to is faked, and the fake records what vLLM
+# was given, then stops the load. An item refused before any engine (bad verb) must not size the engine.
+import types  # noqa: E402
+
+
+class _Stop(Exception):
+    pass
+
+
+_given = {}
+
+
+def _fake_llm(**kw):
+    _given["inproc"] = kw["max_model_len"]
+    raise _Stop("fake LLM: stop after recording max_model_len")
+
+
+def _fake_popen(cmd, **_kw):
+    _given["serve"] = int(cmd[cmd.index("--max-model-len") + 1])
+    raise _Stop("fake Popen: stop after recording --max-model-len")
+
+
+sys.modules["vllm"] = types.SimpleNamespace(LLM=_fake_llm, SamplingParams=None)
+sys.modules["transformers"] = types.SimpleNamespace(
+    AutoTokenizer=types.SimpleNamespace(from_pretrained=lambda _p: None))
+engine.verified_source = lambda _repo, _rev: Path("/nonexistent-source")
+engine.subprocess = types.SimpleNamespace(Popen=_fake_popen, STDOUT=None)
 engine.preflight = lambda a: None
-engine.load_inproc = lambda a: (_seen.append(engine.model_len(a)), _fake(a))[1]
-_w = bc.batch_env()
-engine.run_batch(bc.model_args(context=4096), [
-    {"prompt_id": p, "verb": "run", "messages": bc.msgs(_w, p, ["q"]), "thinking": "on", "max_tokens": n}
-    for p, n in (("small", 5), ("on-budget", 4096), ("mid", 300))])
-_r = bc.rows(_w)
-_ok = _seen == [8192] and len(_r) == 3 and all(r.get("max_model_len") == 8192 for r in _r)
-print(f"{'ok  ' if _ok else 'FAIL'} [#4029] max_model_len = context + the batch's largest max_tokens, on every row"
-      + ("" if _ok else f"\n     engine saw {_seen}, rows {[r.get('max_model_len') for r in _r]}"))
-failed += not _ok
-CASES_TOTAL += 1
+engine.load_inproc, engine.serve_session = REAL_LOAD_INPROC, REAL_SERVE_SESSION
+for _path, _verb in (("inproc", "run"), ("serve", "serve run")):
+    _w = bc.batch_env()
+    engine.run_batch(bc.model_args(context=4096), [
+        {"prompt_id": p, "verb": v, "messages": bc.msgs(_w, p, ["q"]), "thinking": "on", "max_tokens": n}
+        for p, v, n in (("small", _verb, 5), ("on-budget", _verb, 4096), ("mid", _verb, 300),
+                        ("refused", "no-such-verb", 100_000))])
+    _r = bc.rows(_w)
+    _ok = (_given.get(_path) == 8192 and len(_r) == 4 and all(r.get("max_model_len") == 8192 for r in _r)
+           and all("_Stop" in (r.get("refused") or "") or "fake" in (r.get("refused") or "") for r in _r[:3]))
+    print(f"{'ok  ' if _ok else 'FAIL'} [#4029 {_path}] vLLM is handed context + the largest runnable budget, "
+          "and every row records it" + ("" if _ok else f"\n     vLLM got {_given.get(_path)}, rows "
+                                         f"{[(r.get('max_model_len'), (r.get('refused') or '')[:60]) for r in _r]}"))
+    failed += not _ok
+    CASES_TOTAL += 1
 
 for name, logs, must, must_not in CASES:
     got = engine.refusal(GENERIC, *logs)
