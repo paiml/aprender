@@ -795,7 +795,7 @@ find_model() { # find_model <basename> — the inventory's copy first, then the 
   return 1
 }
 
-WORK=$(mktemp -d)
+WORK=$(mktemp -d 2>/dev/null) && [ -d "$WORK" ] || { echo "decline: cannot create a scratch dir (mktemp -d failed: is TMPDIR writable, or the disk full?)" >&2; exit 2; }
 # The delete is guarded (SEC011): only a path under a temp root is removed.
 _rm_work() {
   local v="${WORK:-}"
@@ -805,8 +805,50 @@ _rm_work() {
   esac
 }
 trap _rm_work EXIT
-ROWS="$WORK/rows.jsonl"; : > "$ROWS"
-INV_ROWS="$WORK/inventory.jsonl"; : > "$INV_ROWS"
+ROWS="$WORK/rows.jsonl"; : > "$ROWS" 2>/dev/null || { echo "decline: cannot write $ROWS" >&2; exit 2; }
+INV_ROWS="$WORK/inventory.jsonl"; : > "$INV_ROWS" 2>/dev/null || { echo "decline: cannot write $INV_ROWS" >&2; exit 2; }
+
+# ── A write the ladder cannot make is a DECLINE (rc 2), never a hole ────────────
+# gx10, 0.69.1 final sweep: the root fs filled mid-run. Every artifact of
+# qwen35-27b-q4km failed to write, the row append to $ROWS failed ("printf: write
+# error"), an inventory record's append to $INV_ROWS failed, and the run CONTINUED.
+# The only trace was stderr. A receipt written from that looks complete and has holes:
+# a missing rung, a held model missing from the inventory. Neither says so.
+#
+# So: every append is checked; the disk is probed (a write that reads back, plus a
+# free-space floor) before measuring and around every cell; the receipt is written to
+# a temp file, parsed back and counted, then renamed. Any failure exits 2, which is
+# the ladder's existing "declined, nothing trustworthy" code, and writes NO receipt.
+LADDER_MIN_FREE_MB="${LADDER_MIN_FREE_MB:-1024}"
+LADDER_APPENDS_ROWS=0; LADDER_APPENDS_INV=0
+ladder_write_decline() {
+    echo "decline: $* (a receipt with a lost write would look complete, so none is written)" >&2
+    exit 2
+}
+ladder_disk_probe() { # <dir> -> 0 when <dir> takes a write that reads back and has the floor free
+    local d="$1" pf="$1/.ladder-write-probe.$$" avail
+    if ! { head -c 65536 /dev/zero > "$pf" && [ "$(stat -c %s "$pf" 2>/dev/null)" = 65536 ]; } 2>/dev/null; then
+        rm -f "$pf" 2>/dev/null
+        printf 'a probe write to %s failed' "$d"; return 1
+    fi
+    rm -f "$pf"
+    avail=$(df -Pm "$d" 2>/dev/null | awk 'NR==2{print $4}')
+    if [ -z "$avail" ] || [ "$avail" -lt "$LADDER_MIN_FREE_MB" ]; then
+        printf '%s has %s MB free, under the %s MB floor' "$d" "${avail:-?}" "$LADDER_MIN_FREE_MB"; return 1
+    fi
+}
+ladder_append() { # <file> <line>: append one record or decline
+    printf '%s\n' "$2" >> "$1" 2>/dev/null || ladder_write_decline "could not append a record to $1"
+    case "$1" in
+        "$ROWS") LADDER_APPENDS_ROWS=$((LADDER_APPENDS_ROWS + 1)) ;;
+        "$INV_ROWS") LADDER_APPENDS_INV=$((LADDER_APPENDS_INV + 1)) ;;
+    esac
+}
+
+# Before measuring anything: both the scratch dir and the receipt dir must take writes.
+mkdir -p "$OUT_DIR" 2>/dev/null || ladder_write_decline "cannot create the receipt dir $OUT_DIR"
+why=$(ladder_disk_probe "$WORK") || ladder_write_decline "$why"
+why=$(ladder_disk_probe "$OUT_DIR") || ladder_write_decline "$why"
 EXECUTED=0; RED=0
 printf -- '--- model capability ladder on %s (%s, cc %s) apr=%s sha=%s version=%s ---\n' \
   "$HOST" "${GPU_NAME:-no-gpu}" "${GPU_CC:-?}" "$APR" "$SHA" "$VERSION"
@@ -818,6 +860,8 @@ printf '    inventory: %s model(s) matching %s under %s\n' "$(grep -c . <<< "$IN
 #   2. per claimed backend: `apr run` rc 0 and no fallback line (did it stay on that backend?)
 measure() {
   local rid=$1 rfile=$2 path=$3 got=$4 rbackends=$5 rreq=$6 rinv=$7
+  local probe_why
+  probe_why=$(ladder_disk_probe "$WORK") || ladder_write_decline "before $rid: $probe_why"
   local qa_json="$WORK/${rid//[^A-Za-z0-9._-]/_}.qa.json" cap_flag="" qa_rc qa_row be_json first b flag run_out run_rc fb ran row why
   # A rung that claims only the CPU is not asked whether the GPU can run it: capability_match is a
   # GPU-capability gate. The judge accepts a SKIPPED capability_match only when cuda is not claimed,
@@ -1142,7 +1186,11 @@ print(json.dumps({
 PY
 )
   fi
-  printf '%s\n' "$row" >> "$ROWS"
+  # The cell's own artifacts (run.err, serve logs, qa json) were written while it ran. If
+  # the disk failed DURING the cell they may be truncated, and this row would be built
+  # from them, so the probe runs again before the row is kept.
+  probe_why=$(ladder_disk_probe "$WORK") || ladder_write_decline "during $rid: $probe_why; its artifacts may be truncated"
+  ladder_append "$ROWS" "$row"
   EXECUTED=$((EXECUTED + 1))
   if grep -q '"green": true' <<< "$row"; then
     printf '  [ OK   ] %-30s qa cap+golden pass, backends %s honoured\n' "$rid" "$rbackends"
@@ -1216,19 +1264,19 @@ while IFS='|' read -r -t 5 rid rfile rsha rbackends rreq rhosts; do
   # An inventory model is never "not listed": if this host holds it, section 2 measures it.
   if [ -n "$rhosts" ] && ! grep -qE "(^|,)${HOST}(,|$)" <<< "$rhosts"; then
     printf '  [N/A   ] %-30s not listed for %s (hosts: %s)\n' "$rid" "$HOST" "$rhosts"
-    printf '{"id":"%s","file":"%s","present":false,"required":false,"not_listed_host":true}\n' "$rid" "$rfile" >> "$ROWS"
+    ladder_append "$ROWS" "$(printf '{"id":"%s","file":"%s","present":false,"required":false,"not_listed_host":true}' "$rid" "$rfile")"
     continue
   fi
   path=$(find_model "$rfile") || {
     printf '  [ABSENT] %-30s %s not in any model dir\n' "$rid" "$rfile"
-    printf '{"id":"%s","file":"%s","present":false,"required":%s}\n' "$rid" "$rfile" "$([ "$rreq" = 1 ] && echo true || echo false)" >> "$ROWS"
+    ladder_append "$ROWS" "$(printf '{"id":"%s","file":"%s","present":false,"required":%s}' "$rid" "$rfile" "$([ "$rreq" = 1 ] && echo true || echo false)")"
     [ "$rreq" = 1 ] && RED=$((RED + 1))
     continue
   }
   got=$(sha256sum "$path" | cut -d' ' -f1)
   if [ "$got" != "$rsha" ]; then
     printf '  [FAIL  ] %-30s sha256 mismatch (%s… vs ladder %s…) — a different file is a different measurement\n' "$rid" "${got:0:12}" "${rsha:0:12}"
-    printf '{"id":"%s","file":"%s","present":true,"sha_ok":false,"sha256":"%s","required":%s}\n' "$rid" "$rfile" "$got" "$([ "$rreq" = 1 ] && echo true || echo false)" >> "$ROWS"
+    ladder_append "$ROWS" "$(printf '{"id":"%s","file":"%s","present":true,"sha_ok":false,"sha256":"%s","required":%s}' "$rid" "$rfile" "$got" "$([ "$rreq" = 1 ] && echo true || echo false)")"
     RED=$((RED + 1)); continue
   fi
   if [ "$DRY" = 1 ]; then printf '  [DRY   ] %-30s %s\n' "$rid" "$path"; continue; fi
@@ -1256,7 +1304,7 @@ while IFS='|' read -r -t 5 ifile ipath; do
   # `-L` follows, matching sha256sum. The hash is NOT the field to change: the
   # receipt's job is to identify the model, and a symlink's text is not the model.
   isha=$(sha256sum "$ipath" | cut -d' ' -f1); ibytes=$(stat -Lc %s "$ipath" 2>/dev/null || echo 0)
-  printf '{"file":"%s","sha256":"%s","bytes":%s}\n' "$ifile" "$isha" "$ibytes" >> "$INV_ROWS"
+  ladder_append "$INV_ROWS" "$(printf '{"file":"%s","sha256":"%s","bytes":%s}' "$ifile" "$isha" "$ibytes")"
   if grep -qxF -- "$ifile" <<< "$LADDER_FILES"; then continue; fi   # a rung measured it above
   # #3936: the inventory ROW above is recorded either way -- a targeted receipt still
   # states the host's holdings -- but only the selected model is measured.
@@ -1279,7 +1327,9 @@ mkdir -p "$OUT_DIR"
 # carries the built-from sha), never by its path: a path is machine-specific
 # (check_no_shipped_machine_paths) and says nothing about what was run.
 APR_VERSION=$("$APR" --version 2>/dev/null | head -1)
-python3 - "$ROWS" "$OUT_DIR/$RECEIPT_BASE.json" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_ROWS" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" "$ONLY" <<'PY'
+RECEIPT_TMP="$OUT_DIR/.$RECEIPT_BASE.json.tmp.$$"
+why=$(ladder_disk_probe "$OUT_DIR") || ladder_write_decline "before the receipt: $why"
+python3 - "$ROWS" "$RECEIPT_TMP" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_ROWS" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" "$ONLY" <<'PY'
 import json, sys, datetime, platform
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 inv = [json.loads(l) for l in open(sys.argv[11]) if l.strip()]
@@ -1292,6 +1342,20 @@ out = {"schema": "apr-model-ladder-receipt/v2", "host": sys.argv[3], "version": 
        "rungs": rows}
 json.dump(out, open(sys.argv[2], "w"), indent=2); open(sys.argv[2], "a").write("\n")
 PY
+receipt_rc=$?
+# The receipt must say exactly what was recorded: parse it back and count it against the
+# appends this run actually made, then rename it into place (atomic on one filesystem).
+if [ "$receipt_rc" != 0 ] || ! python3 - "$RECEIPT_TMP" "$LADDER_APPENDS_ROWS" "$LADDER_APPENDS_INV" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+assert len(d["rungs"]) == int(sys.argv[2]), f'rungs {len(d["rungs"])} != appended {sys.argv[2]}'
+assert len(d["inventory"]) == int(sys.argv[3]), f'inventory {len(d["inventory"])} != appended {sys.argv[3]}'
+PY
+then
+    rm -f "$RECEIPT_TMP" 2>/dev/null
+    ladder_write_decline "the receipt could not be written and verified (python rc=$receipt_rc)"
+fi
+mv -f "$RECEIPT_TMP" "$OUT_DIR/$RECEIPT_BASE.json" 2>/dev/null || { rm -f "$RECEIPT_TMP"; ladder_write_decline "could not move the receipt into $OUT_DIR"; }
 printf 'receipt: %s/%s.json (executed=%s red=%s inventory=%s)\n' "$OUT_DIR" "$RECEIPT_BASE" "$EXECUTED" "$RED" "$(grep -c . "$INV_ROWS")"
 [ "$RED" -eq 0 ] && exit 0
 exit 1
