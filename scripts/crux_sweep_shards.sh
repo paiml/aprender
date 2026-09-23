@@ -26,7 +26,7 @@ cd "$(dirname "$0")/.." || exit 2
 PROG=crux_sweep_shards
 die() { printf '%s: %s\n' "$PROG" "$1" >&2; exit 2; }
 
-VERSION=""; HOST=""; APR_BIN=""; OUT=""; BACKEND=gpu; SCOPE=controls; DRY=0; GREEDY_ONLY=0
+VERSION=""; HOST=""; APR_BIN=""; OUT=""; BACKEND=gpu; SCOPE=controls; DRY=0; GREEDY_ONLY=0; MERGE_ONLY=0
 CERT="evidence/crux/0.69.1/prompt-certification.json"; PROMPTS="scripts/crux_inference_prompts.v2.json"
 MODEL_DIRS=(); GREEDY_MODELS=()
 while [ $# -gt 0 ]; do
@@ -40,6 +40,7 @@ while [ $# -gt 0 ]; do
     --certification) CERT="$2"; shift 2 ;;
     --greedy-model) GREEDY_MODELS+=("$2"); shift 2 ;;
     --greedy-only) GREEDY_ONLY=1; shift ;;
+    --merge-only) MERGE_ONLY=1; shift ;;
     --dry-run) DRY=1; shift ;;
     -*) die "unknown argument '$1'" ;;
     *) [ -z "$VERSION" ] || die "one version"; VERSION="$1"; shift ;;
@@ -94,6 +95,11 @@ sed 's/^/  /' "$PLAN"
   printf '  GREEDY-ONLY\tthe certified RUN lines above are NOT run on this lane; this receipt is F9 greedy evidence, not a CRUX verdict\n' | tee -a "$PLAN"; }
 for g in "${GREEDY_MODELS[@]}"; do printf '  GREEDY\t%s\t(off; greedy rows only — its gen cells are NOT merged: uncertified)\n' "$g" | tee -a "$PLAN"; done
 [ "$DRY" = 1 ] && exit 0
+# --merge-only: re-merge an EXISTING run's shards (<out>/shards.tsv) without running anything — for re-judging after
+# a merge fix. The shard runs themselves are untouched.
+if [ "$MERGE_ONLY" = 1 ]; then
+  [ -s "$OUT/shards.tsv" ] || die "--merge-only: no $OUT/shards.tsv to re-merge"
+fi
 
 run_shard() { # run_shard <name> <dogfood args...> — one dogfood run; echoes its kept work dir
   local name="$1"; shift
@@ -102,14 +108,15 @@ run_shard() { # run_shard <name> <dogfood args...> — one dogfood run; echoes i
     --host "$HOST" --backend "$BACKEND" --certification "$CERT" --out "$OUT/shards/$name" --keep-work > "$log" 2>&1
   printf '%s\t%s\t%s\n' "$name" "$?" "$(sed -n 's/^work kept: //p' "$log" | tail -1)" >> "$OUT/shards.tsv"
 }
-: > "$OUT/shards.tsv"
-while IFS=$'\t' read -r kind sha mode path ids; do
+[ "$MERGE_ONLY" = 1 ] || : > "$OUT/shards.tsv"
+while [ "$MERGE_ONLY" = 0 ] && IFS=$'\t' read -r kind sha mode path ids; do
   [ "$kind" = RUN ] && [ "$GREEDY_ONLY" = 0 ] || continue
   run_shard "${sha:0:12}-$mode" --model "$path" --engines apr,llama.cpp,vllm,hf --verbs run,chat,serve,code \
     --thinking-modes "$mode" --only-prompts "$ids"
 done < "$PLAN"
 CTL=$(python3 -c 'import json,sys; print(next(p["id"] for p in json.load(open(sys.argv[1]))["prompts"] if p.get("control")))' "$PROMPTS")
 for g in "${GREEDY_MODELS[@]}"; do
+  [ "$MERGE_ONLY" = 1 ] && break
   run_shard "greedy-$(basename "$g" .gguf)" --model "$g" --engines apr,llama.cpp --verbs run --thinking-modes off \
     --only-prompts "$CTL" --greedy --greedy-prompts "$CTL" --greedy-max-tokens 256
 done
@@ -130,6 +137,29 @@ if [ -z "$META" ] && [ "$GREEDY_ONLY" = 1 ]; then
   META=$(sed -n 's/^greedy-[^\t]*\t[^\t]*\t//p' "$OUT/shards.tsv" | head -1)/meta.json
 fi
 [ -f "$META" ] || die "no shard produced a manifest; nothing to judge"
+# ONE meta for the merged receipt, whose `models` is the UNION over every certified shard. Taking the first shard's
+# meta as-is left the judge knowing ONE model's format: every other model's cells went RED "a format-unknown file"
+# (measured on the freeze sweep, lambda: 2B and 4B-UD all RED in the merge, 30/34 GREEN in their own shards).
+MERGED_META="$OUT/$HOST-$BACKEND.meta.json"
+python3 - "$META" "$MERGED_META" "$OUT/shards.tsv" <<'PY' || die "could not merge the shard metas"
+import json, os, sys
+first, out, tsv = sys.argv[1:4]
+meta = json.load(open(first))
+models, seen = [], set()
+for line in open(tsv):
+    name, rc, work = (line.rstrip("\n").split("\t") + ["", "", ""])[:3]
+    if name.startswith("greedy-") or not work or not os.path.exists(os.path.join(work, "meta.json")):
+        continue
+    for m in json.load(open(os.path.join(work, "meta.json"))).get("models", []):
+        if m.get("sha256") not in seen:
+            seen.add(m.get("sha256")); models.append(m)
+if models:
+    meta["models"] = models
+meta["merged_shards"] = sum(1 for _ in open(tsv))
+json.dump(meta, open(out, "w"), indent=2)
+print("merged meta: %d model(s)" % len(meta.get("models", [])))
+PY
+META="$MERGED_META"
 # A --greedy-only receipt is F9 evidence, never a host verdict (aprender-36's contract, fix/3957-f9-f10@09ea08424):
 # it is named <host>-<backend>-greedy.json so it cannot pass for the certified <host>-<backend>.json, and it says
 # `"greedy_only": true` with `"cells": []` — the ladder's cell join skips it (no cells claimed), the F9 judge reads its
