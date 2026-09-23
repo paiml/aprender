@@ -31,19 +31,20 @@ but unexposed* class as #3597, one layer down, inside the gate itself.
 
 | case | verdict | exit | `declines` |
 |---|---|---|---|
-| **armed** shape at zero, in a directory | decline `NoFocus` | **2** | named in stderr |
+| **armed** shape at zero, in a directory | decline `NoFocus` | **2** | `["empty-shape"]`, in the stdout report |
+| **armed** shape at zero **beside a violating armed shape** (`shapes-one-empty-and-violating`) | **`Fail`** | **1** | `["empty-shape"]` |
 | **unarmed** shape at zero | `Pass` | 0 | `["empty-shape"]` — reported, not swallowed |
 | every shape graded something (`json-ok`) | `Pass` | 0 | `[]` |
-| lone contract that cannot extract (`json-missing-ref`) | decline | ≠0 | unchanged |
+| EVERY shape at zero (`shapes-all-empty`: the global path) | decline `NoFocus` | **2** | **no report** — #4100 |
 
-The decline names the shape:
+**A measured violation outranks a vacuity** (#3622 re-review). `passed` and the armed vacuity range
+over DISJOINT shapes. The first cut checked vacuity first, so a real `Fail` from one shape came out as
+exit 2 because a *different* shape graded nothing. `Fail` is the bottom of the verdict lattice, so it
+absorbs. The vacuity is still named in `declines`.
 
-```
-shapes: 1 ARMED shape(s) graded ZERO focus nodes and cannot be counted as clean
-        (2 shape(s), 1 focus node(s) in total): empty-shape
-shapes: `armed_shapes` is the tool's claim about what it MEASURED; a shape that graded
-        nothing has no place in it (#3610)
-```
+The shape is named in the stdout report's `declines`. stderr carries only `decline: NoFocus`. An
+earlier draft of this file quoted a stderr block naming the shape; that message was removed in the
+"refusal carries its evidence" rework (69d7b7992), and the draft was not updated.
 
 ## The refusal carries its evidence: full JSON, then exit 2
 
@@ -83,10 +84,16 @@ one layer up from this one.
 
 ## Both venues, and the mutation
 
-The lone-contract venue already declined correctly, so a fix proved only there proves nothing. The
-committed table covers both, and RED-turns on the defect: disabling the new per-shape check fails
-`an_armed_shape_that_graded_nothing_refuses_in_a_directory` and `the_three_answers_remain_distinct`,
-and restoring it gives 5/5.
+The global venue (every shape at zero) already declined, so a fix proved only there proves nothing.
+The committed table covers both, and RED-turns on the defect: disabling the new per-shape check fails
+`an_armed_shape_that_graded_nothing_refuses_in_a_directory` and `the_three_answers_remain_distinct`.
+Checking vacuity before `!passed` again fails `a_real_violation_is_a_fail_even_beside_a_vacuous_armed_shape`,
+measured at f663d39e4 (exit 2, `Unknown(NoFocus)`).
+
+**Correction (#3622 re-review).** The "lone-contract" tests first ran `json-missing-ref`. That fixture
+exits **3** on an unreadable `entity.ref` (`ont_extract_json.rs:128`) before `decline()` is ever
+consulted, so those tests held for the wrong reason. They now run `shapes-all-empty`, which exits 2
+through the real global `NoFocus` path. Its missing report is recorded, not hidden (#4100).
 
 ## The real corpus is unaffected
 

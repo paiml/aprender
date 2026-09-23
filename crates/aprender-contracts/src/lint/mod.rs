@@ -249,8 +249,10 @@ pub enum GateExtra {
         /// what it MEASURED) nor `not_armed_shapes` (a policy choice it never made).
         ///
         /// The two differ in what they do to the verdict, not in whether they are listed here. An
-        /// ARMED vacuity drives the verdict to `Unknown(NoFocus)` and the run declines; an UNARMED
-        /// one leaves the verdict alone, because it never fed it. Both are named, because a reader
+        /// ARMED vacuity drives the verdict to `Unknown(NoFocus)` and the run declines — unless an
+        /// armed shape that DID grade something found a violation, in which case the verdict is
+        /// `Fail` (a measured violation outranks a vacuity, #3622). An UNARMED one leaves the
+        /// verdict alone, because it never fed it. Both are named, because a reader
         /// needs to know the gate looked at nothing for them either way.
         ///
         /// An earlier draft of this comment said an armed vacuity "does not reach here at all",

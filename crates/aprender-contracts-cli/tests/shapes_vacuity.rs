@@ -19,6 +19,7 @@
 //! | `shapes-one-empty-unarmed` | same | no | **Pass**, `declines: ["empty-shape"]` |
 //! | `shapes-one-empty-and-violating` | `empty-shape=0`, `tool-status=1` (violating) | yes | **exit 1**, Fail, `declines: ["empty-shape"]` |
 //! | `json-ok` | `tool-status=1` | yes | Pass, `declines: []` |
+//! | `shapes-all-empty` | `empty-shape=0` (the only shape) | yes | **exit 2** via the global path, no report yet (#4100) |
 //!
 //! The second row is what keeps the fix from being "refuse whenever anything is empty": an UNARMED
 //! shape at zero did not affect the verdict, so it is **reported** rather than refused — and it is
@@ -233,45 +234,43 @@ fn a_corpus_whose_shapes_all_graded_something_still_passes_with_an_empty_decline
     );
 }
 
+/// THE GLOBAL VENUE — every shape at zero, so `report.focus_nodes_n == 0` and `decline()` returns
+/// `ShapesOutcome::NoFocus` before the result path runs. It declined before #3610 and must still.
+///
+/// **Corrected by the #3622 re-review (all three lanes).** These two tests first ran
+/// `json-missing-ref`, which exits **3** on an unreadable `entity.ref` (`ont_extract_json.rs:128`)
+/// before `decline()` is consulted, so `code != 0` and "no report" both held for the wrong reason
+/// and neither test ever reached the path it named. `shapes-all-empty` reaches it: exit 2.
 #[test]
-fn the_lone_contract_venue_still_declines_as_it_always_did() {
-    // The fix must not regress the venue that was already right — and proving it only there is
-    // what would have proved nothing, since that venue never lied.
-    let r = shapes_on("json-missing-ref");
-    assert_ne!(
+fn a_corpus_whose_every_shape_graded_nothing_declines_through_the_global_path() {
+    let r = shapes_on("shapes-all-empty");
+    assert_eq!(
         r.code,
-        0,
-        "a lone contract that cannot be extracted must not pass\n{}",
+        2,
+        "every shape at zero must DECLINE (exit 2), not pass, fail, or error out\n{}",
+        r.all()
+    );
+    assert!(
+        r.stderr.contains("NoFocus"),
+        "the decline must be the NoFocus one, not some other refusal\n{}",
         r.all()
     );
 }
 
-/// THE ASYMMETRY, ASSERTED RATHER THAN LEFT UNSAID — found by a quorum lane (#3610 re-review).
-///
-/// `decline()` still asks `report.focus_nodes_n == 0` GLOBALLY and returns
-/// `ShapesOutcome::NoFocus` before the result path runs. That renders through `skipped_gate(...)`
-/// with no `extra`, so this venue declines with **no `by_shape` and no `declines`** — while the
-/// DIRECTORY venue, which this PR fixed, declines *with* the full report.
-///
-/// This test says so out loud. The previous version asserted only `code != 0` here, and
-/// `the_three_answers_remain_distinct` omitted this fixture from its report loop — so the two tests
-/// together asserted the report requirement for one venue and quietly not the other. That is the
-/// half-checked shape this PR exists to fix, reproduced in its own tests.
-///
-/// **Not fixed here, and the reason is scope, not convenience.** #3610's arm 1 asks that a
-/// zero-focus contract render `Unknown{NoFocus}` and never Pass; this venue already does, at
-/// exit 2. What it lacks is the *evidence document*, which needs the report built before
-/// `decline()` is consulted — a restructure of the outcome path, not a line. The consumer that
-/// motivated the report requirement (infra's SLK gate) runs pv over a DIRECTORY, which is the venue
-/// that now carries it. Filed rather than folded in.
+/// THE ASYMMETRY, ASSERTED RATHER THAN LEFT UNSAID. The global path renders through
+/// `skipped_gate(...)` with no `extra`, so it declines with **no `by_shape` and no `declines`**,
+/// while the per-shape path (the one #3610 fixed) declines *with* the full report. The consumer that
+/// motivated the report requirement (infra's SLK gate) parses stdout whatever the exit code, so on
+/// this path it gets nothing. **Filed as #4100**, not fixed here: it needs the NoFocus outcome to
+/// carry the report, a change to the outcome path rather than to the verdict.
 #[test]
-fn the_lone_contract_venue_declines_without_a_report_and_that_is_recorded() {
-    let r = shapes_on("json-missing-ref");
-    assert_ne!(r.code, 0, "{}", r.all());
+fn the_global_nofocus_decline_prints_no_report_and_that_is_recorded() {
+    let r = shapes_on("shapes-all-empty");
+    assert_eq!(r.code, 2, "{}", r.all());
     assert!(
         r.extra().is_null(),
-        "if this venue has GAINED a report, the asymmetry is fixed — delete this test and add \
-         `json-missing-ref` to the_three_answers_remain_distinct's loop instead of loosening it\n{}",
+        "if this venue has GAINED a report, #4100 is fixed — replace this test with an assertion of \
+         the report and add `shapes-all-empty` to the_three_answers_remain_distinct's loop\n{}",
         r.all()
     );
 }
