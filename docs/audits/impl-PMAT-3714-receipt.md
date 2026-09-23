@@ -47,17 +47,17 @@ A control and three faults, the same GPU model and the same reference, on both h
 ### `apr run --gpu` (prompt "What is the capital of France? Answer briefly.", 32 tokens)
 | host | file | rc | backend line | F2 | output | decode |
 |---|---|---|---|---|---|---|
-| lambda | Instruct-2507 | **0** | CUDA RTX 4090, weights resident in 929 ms | 50 positions, min cosine 1.0000 | "The capital of France is Paris." | 87 tok/s incl. token-by-token prefill |
-| lambda | Coder-30B-A3B | **0** | CUDA RTX 4090, 942 ms | 50 positions, 1.0000 | "Paris" | 88 tok/s |
-| gx10 | Coder-30B-A3B | **0** | CUDA GB10, 3974 ms | 50 positions, 1.0000 | "Paris" | 36.5 tok/s |
-| gx10 | Instruct-2507 | **0** | CUDA GB10, 3634 ms | 50 positions, 1.0000 | "The capital of France is Paris." | 35.7 tok/s |
+| lambda | Instruct-2507 | **0** | CUDA RTX 4090, weights resident in 929 ms | 50 positions, min cosine 1.0000 | "The capital of France is Paris." | withheld: no receipt carries it yet (#4085) |
+| lambda | Coder-30B-A3B | **0** | CUDA RTX 4090, 942 ms | 50 positions, 1.0000 | "Paris" | withheld: no receipt carries it yet (#4085) |
+| gx10 | Coder-30B-A3B | **0** | CUDA GB10, 3974 ms | 50 positions, 1.0000 | "Paris" | withheld: no receipt carries it yet (#4085) |
+| gx10 | Instruct-2507 | **0** | CUDA GB10, 3634 ms | 50 positions, 1.0000 | "The capital of France is Paris." | withheld: no receipt carries it yet (#4085) |
 
 ### `apr qa --json` (the ladder's flags: `--offline --skip-throughput --skip-ollama --skip-gpu-speedup --skip-ptx-parity --skip-gpu-state --skip-format-parity`)
 | host | file | rc | report | capability_match | golden_output | served by |
 |---|---|---|---|---|---|---|
 | lambda | Instruct-2507 | 0 | 12 gates, 5 executed | PASS | PASS | 3 of 3 golden runs print `Backend: GPU` + F2 1.0000 |
 | lambda | Coder-30B-A3B | 0 | 12 gates, 5 executed | PASS | PASS | 3 of 3 on the GPU |
-| gx10 | Coder-30B-A3B | 0 | 12 gates, 5 executed | PASS | PASS | 3 of 3 on the GPU, 36 tok/s |
+| gx10 | Coder-30B-A3B | 0 | 12 gates, 5 executed | PASS | PASS | 3 of 3 on the GPU |
 | gx10 | Instruct-2507 | 0 | 12 gates, 5 executed | PASS | PASS | 3 of 3 on the GPU |
 
 The golden gate's PASS text on this base still reads "(GPU hybrid forward, #3090)". That is main's stale string, and #3711 (aprender-0e, in the 0.69.1 fold) replaces it with the backend taken from `used_gpu`. The `Backend: GPU` lines are what show the GPU served.
@@ -76,4 +76,4 @@ The golden gate's PASS text on this base still reads "(GPU hybrid forward, #3090
 - done_when 2 (`apr parity` for qwen3moe) is R2. done_when 4 (ladder rungs) is R4, with aprender-62.
 - `apr chat --gpu` / `apr serve` for qwen3moe still use the CPU chain. They need a persistent resident model.
 - RMSNorm ε (aprender-37's defect: modules cached without ε): not triggered here, because the model builds on a fresh executor and every norm launch uses the model's ε = 1e-6. Measured: position 0 = `<|im_start|>`, cosine 1.000000. It would matter if this model ever shared an executor with the dense path.
-- Throughput is v1 (host routing, 48 syncs per token, float GEMVs): 87 tok/s on the 4090, 36 on GB10. R3's device kernels (oxide-first) target it.
+- Throughput is v1 (host routing, 48 syncs per token, float GEMVs). The decode figures are withheld until a receipt carries them (#4085). R3's device kernels (oxide-first) target it.
