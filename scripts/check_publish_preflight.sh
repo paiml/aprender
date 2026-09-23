@@ -17,7 +17,10 @@
 #       from an argument.
 #   R3  the tag `v<version>` points at HEAD: the crate that is uploaded is the
 #       commit that is tagged, not a neighbour of it.
-#   R4  HEAD is an ancestor of the main ref: nothing publishes from a branch.
+#   R4  HEAD is on the main ref: nothing publishes from a branch. Either HEAD is an ancestor of
+#       main, or -- main's merge queue SQUASHES (a ruleset), so a release cut never becomes an
+#       ancestor -- main CONTAINS HEAD's crate content: `git diff HEAD <main>` is empty over
+#       crates/, src/, Cargo.toml and Cargo.lock, i.e. every published source file is equal.
 #   R6  no versioned sibling dev-dependency lies on a CYCLE. cargo keeps a versioned
 #       dev-dependency in the published manifest and resolves it on the registry,
 #       so two siblings that name each other can never be uploaded first
@@ -49,6 +52,15 @@
 #   bash scripts/check_publish_preflight.sh             # the gate
 #   bash scripts/check_publish_preflight.sh --selftest  # case table, both polarities
 #   bash scripts/check_publish_preflight.sh --receipt-only  # R2+R5 only: T-1, before the tag (#3708)
+#   bash scripts/check_publish_preflight.sh --scope crux-smoke [--cut-commit SHA]
+#       R7 under a RECORDED operator emergency scope (contracts/model-capability-ladder-v1.yaml
+#       `ladder.emergency_scopes`; 0.69.1 only): the judge's own `--scope` path
+#       (scripts/lib/crux_smoke_scope.py) decides R7 from CRUX smoke receipts bound to the CUT --
+#       the commit the release binary was built from -- instead of the model matrix. The cut
+#       defaults to HEAD; when HEAD is not the cut (receipts committed on top, or main's squash
+#       of it), every PUBLISHED path -- crates/ src/ Cargo.toml Cargo.lock, R4's set -- must be
+#       equal to the cut's, or the published source is not the smoked binary's. The
+#       model-matrix rows are still printed, as EVIDENCE, never as the verdict.
 set -uo pipefail
 
 PROG=${0##*/}
@@ -166,11 +178,54 @@ rule_r7() {
         echo "FAIL  R7 no model-matrix judge at $judge: the committed receipts cannot be judged"
         return 1
     fi
+    if [ -n "${SCOPE:-}" ]; then
+        rule_r7_scope "$root" "$version" "$judge"
+        return $?
+    fi
     out="$(cd "$root" && bash "$judge" --version "$version" 2>&1)"; rc=$?
     case "$rc" in
         0) echo "ok    R7 model matrix green for $version (committed receipts, $(basename "$judge"))"; return 0 ;;
         2) echo "FAIL  R7 the model-matrix judge DECLINED (rc 2), and a decline is not a pass: $(tail -n 1 <<< "$out")" ;;
         *) printf 'FAIL  R7 model matrix NOT green for %s (rc %s):\n%s\n' "$version" "$rc" \
+               "$(grep -E '^FAIL' <<< "$out" | head -n 10 | sed 's/^/        /')" ;;
+    esac
+    return 1
+}
+
+# R7 under a recorded operator emergency scope (0.69.1: CRUX smoke only). The scope is READ by the
+# judge (`--scope`, scripts/lib/crux_smoke_scope.py), never re-implemented here: it refuses another
+# release, receipts from another binary, and a missing host. This rule adds the one binding the judge
+# cannot see: the source being PUBLISHED (crates/ src/ Cargo.toml Cargo.lock, the paths R4 judges) is
+# the source the smoked binary was built from. Scripts, contracts and evidence may differ: the scope's
+# own contract entry and reader arrive after the cut.
+# rule_r7_scope root version judge -> prints its rows; 0 accepted, 1 refused
+rule_r7_scope() {
+    local root="$1" version="$2" judge="$3" cut head out rc ev evrc
+    head="$(git -C "$root" rev-parse HEAD 2>/dev/null)"
+    cut="$(git -C "$root" rev-parse --verify --quiet "${CUT_COMMIT:-HEAD}^{commit}" 2>/dev/null)"
+    if [ -z "$cut" ]; then
+        echo "FAIL  R7 OPERATOR EMERGENCY SCOPE $SCOPE: the cut ${CUT_COMMIT:-HEAD} does not resolve in this tree"
+        return 1
+    fi
+    if [ "$cut" != "$head" ] && ! git -C "$root" diff --quiet "$cut" "$head" -- crates src Cargo.toml Cargo.lock 2>/dev/null; then
+        printf 'FAIL  R7 OPERATOR EMERGENCY SCOPE %s: HEAD %s differs from the cut %s in PUBLISHED paths -- the published source is not the smoked binary'"'"'s:\n%s\n' \
+            "$SCOPE" "${head:0:12}" "${cut:0:12}" \
+            "$(git -C "$root" diff --name-only "$cut" "$head" -- crates src Cargo.toml Cargo.lock | head -n 10 | sed 's/^/        /')"
+        return 1
+    fi
+    out="$(cd "$root" && bash "$judge" --version "$version" --scope "$SCOPE" --cut-commit "$cut" 2>&1)"; rc=$?
+    grep -E '^OPERATOR EMERGENCY SCOPE' <<< "$out" | head -n 1 | sed 's/^/        /'
+    # The model matrix, reported as EVIDENCE only: under the scope it is not the verdict, and a
+    # stale or red row must still be visible.
+    ev="$(cd "$root" && bash "$judge" --version "$version" 2>&1)"; evrc=$?
+    if [ "$evrc" != 0 ]; then
+        printf '        evidence only (NOT the verdict under the emergency scope): model matrix rc %s\n%s\n' "$evrc" \
+            "$(grep -E '^FAIL' <<< "$ev" | head -n 10 | sed 's/^/          evidence /')"
+    fi
+    case "$rc" in
+        0) echo "ok    R7 OPERATOR EMERGENCY SCOPE $SCOPE: CRUX smoke satisfied at the cut ${cut:0:12} ($(basename "$judge") --scope); the model matrix was NOT the gate for $version"; return 0 ;;
+        2) echo "FAIL  R7 OPERATOR EMERGENCY SCOPE $SCOPE: the judge DECLINED (rc 2), and a decline is not a pass: $(tail -n 1 <<< "$out")" ;;
+        *) printf 'FAIL  R7 OPERATOR EMERGENCY SCOPE %s NOT satisfied for %s (rc %s):\n%s\n' "$SCOPE" "$version" "$rc" \
                "$(grep -E '^FAIL' <<< "$out" | head -n 10 | sed 's/^/        /')" ;;
     esac
     return 1
@@ -219,13 +274,22 @@ gate() {
         fails=1
     fi
 
-    # R4 HEAD is on main
-    if git -C "$root" rev-parse --verify --quiet "${main_ref}^{commit}" >/dev/null \
-       && git -C "$root" merge-base --is-ancestor "$head" "$main_ref" 2>/dev/null; then
+    # R4 HEAD is on main: by ancestry, or by CONTENT when main squash-merged it
+    local r4diff
+    if ! git -C "$root" rev-parse --verify --quiet "${main_ref}^{commit}" >/dev/null; then
+        echo "FAIL  R4 the main ref $main_ref does not exist here"
+        fails=1
+    elif git -C "$root" merge-base --is-ancestor "$head" "$main_ref" 2>/dev/null; then
         echo "ok    R4 HEAD is an ancestor of $main_ref"
     else
-        echo "FAIL  R4 HEAD ${head:0:9} is not an ancestor of $main_ref (or that ref does not exist)"
-        fails=1
+        r4diff="$(git -C "$root" diff --name-only "$head" "$main_ref" -- crates src Cargo.toml Cargo.lock 2>&1)"
+        if [ -z "$r4diff" ]; then
+            echo "ok    R4 cut content in main via squash $(git -C "$root" rev-parse --short=9 "$main_ref"): HEAD ${head:0:9} is not an ancestor, but every file under crates/ src/ Cargo.toml Cargo.lock is equal"
+        else
+            printf 'FAIL  R4 HEAD %s is not an ancestor of %s, and main does not contain its crate content -- %s published path(s) differ:\n%s\n' \
+                "${head:0:9}" "$main_ref" "$(printf '%s\n' "$r4diff" | grep -c .)" "$(printf '%s\n' "$r4diff" | head -n 10 | sed 's/^/        /')"
+            fails=1
+        fi
     fi
 
     # R5 dogfood receipt: GO, this commit, this version
@@ -289,7 +353,11 @@ for n, t, req in sorted(vdev):
         echo "REFUSE $PROG: publishing is not allowed from this tree (see the FAIL rows)."
         return 1
     fi
-    echo "PASS  $PROG: clean, versioned, tagged, on $main_ref, dogfood GO, model matrix green"
+    if [ -n "${SCOPE:-}" ]; then
+        echo "PASS  $PROG: clean, versioned, tagged, on $main_ref, dogfood GO, OPERATOR EMERGENCY SCOPE $SCOPE satisfied (the model matrix was NOT the gate)"
+    else
+        echo "PASS  $PROG: clean, versioned, tagged, on $main_ref, dogfood GO, model matrix green"
+    fi
     return 0
 }
 
@@ -359,10 +427,24 @@ selftest() {
     }
     # R7's judge, committed in every fixture: it must be asked about THIS version (1.2.3), and it
     # answers FX_LADDER_RC (default 0). A judge asked about anything else is red.
+    # Under `--scope` (0.69.1 emergency scope) it must be called `--version 1.2.3 --scope crux-smoke
+    # --cut-commit <the cut, full sha>` and answers FX_SCOPE_RC; the cut it expects is FX_EXPECT_CUT
+    # (default HEAD), so a preflight that passes HEAD when the cut is below it goes red.
     write_judge() { # dir
         mkdir -p "$1/scripts"
-        printf '#!/usr/bin/env bash\n[ "${1:-} ${2:-}" = "--version 1.2.3" ] || { echo "FAIL  judge asked about: $*"; exit 1; }\n[ "${FX_LADDER_RC:-0}" = 0 ] || echo "FAIL  fx-rung red on lambda"\nexit "${FX_LADDER_RC:-0}"\n' \
-            > "$1/scripts/check_model_ladder.sh"
+        cat > "$1/scripts/check_model_ladder.sh" <<'FXJUDGE'
+#!/usr/bin/env bash
+if [ "${3:-}" = "--scope" ]; then
+    [ "${1:-} ${2:-} ${4:-} ${5:-}" = "--version 1.2.3 crux-smoke --cut-commit" ] || { echo "FAIL  judge scope call: $*"; exit 1; }
+    [ "${6:-}" = "$(git rev-parse "${FX_EXPECT_CUT:-HEAD}")" ] || { echo "FAIL  judge asked about cut ${6:-}"; exit 1; }
+    echo "OPERATOR EMERGENCY SCOPE: CRUX smoke only -- release 1.2.3 (fixture)"
+    [ "${FX_SCOPE_RC:-0}" = 0 ] || echo "FAIL  host gx10 has no CRUX receipt"
+    exit "${FX_SCOPE_RC:-0}"
+fi
+[ "${1:-} ${2:-}" = "--version 1.2.3" ] || { echo "FAIL  judge asked about: $*"; exit 1; }
+[ "${FX_LADDER_RC:-0}" = 0 ] || echo "FAIL  fx-rung red on lambda"
+exit "${FX_LADDER_RC:-0}"
+FXJUDGE
     }
     write_receipt() { # dir, verdict, commit, version [, phase, deferred-json-array, open-obligations-json-array]
         printf '{"crate":"preflight-fixture","version":"%s","timestamp":"20260903T000000Z","commit":"%s","gates":[],"phase":"%s","deferred":%s,"open_obligations":%s,"verdict":"%s"}\n' \
@@ -427,6 +509,25 @@ selftest() {
     printf 'pub fn k() {}\n' >> "$d/src/lib.rs"; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'topic' >/dev/null
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     row head_off_main_refuses          1 "FAIL  R4" "$d"
+
+    # R4 by CONTENT: main's merge queue squashes, so the cut is never an ancestor of main.
+    sq() { # dir: topic commit squash-merged onto fixture-main, HEAD left on the topic (the cut)
+        local d="$1"; build_repo "$d"; git -C "$d" checkout -q -b topic
+        printf 'pub fn k() {}\n' >> "$d/src/lib.rs"
+        git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'topic' >/dev/null
+        git -C "$d" checkout -q fixture-main; git -C "$d" merge -q --squash topic >/dev/null
+        git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'squash' >/dev/null
+    }
+    sq_finish() { git -C "$1" checkout -q topic; git -C "$1" tag -f v1.2.3 >/dev/null; write_receipt "$1" GO "$(git -C "$1" rev-parse HEAD)" 1.2.3; }
+    d="$tmp/squash"; sq "$d"; sq_finish "$d"
+    row squash_merged_content_passes   0 "ok    R4 cut content in main via squash" "$d"
+    d="$tmp/squash-docs"; sq "$d"; printf 'notes\n' > "$d/NOTES.md"; git -C "$d" add NOTES.md
+    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'docs on main' >/dev/null; sq_finish "$d"
+    row squash_then_docs_on_main_passes 0 "ok    R4 cut content in main via squash" "$d"
+    d="$tmp/squash-drift"; sq "$d"; printf 'pub fn z() {}\n' >> "$d/src/lib.rs"
+    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'crate change on main' >/dev/null; sq_finish "$d"
+    row squash_then_crate_file_differs_refuses 1 "FAIL  R4" "$d"
+    row squash_then_crate_file_names_it 1 "        src/lib.rs" "$d"
 
     d="$tmp/nogo"; build_repo "$d"; write_receipt "$d" NO-GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     row dogfood_no_go_refuses          1 "FAIL  R5" "$d"
@@ -513,6 +614,39 @@ selftest() {
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     row r7_judge_absent_refuses        1 "FAIL  R7 no model-matrix judge" "$d"
 
+    # R7 under the recorded operator EMERGENCY SCOPE (--scope crux-smoke). The scope's own must-REDs
+    # (another release, receipts from another binary, a host missing) live in the judge's reader,
+    # scripts/lib/crux_smoke_scope.py, and its table; these rows prove the preflight ASKS it, with the
+    # cut, takes its verdict, keeps the model matrix as evidence only, and binds published == smoked.
+    d="$tmp/sc-green"; build_repo "$d"
+    FX_LADDER_RC=1 SCOPE=crux-smoke row scope_green_over_a_red_matrix_passes 0 "OPERATOR EMERGENCY SCOPE crux-smoke satisfied" "$d"
+    FX_LADDER_RC=1 SCOPE=crux-smoke row scope_keeps_the_matrix_as_evidence 0 "evidence FAIL  fx-rung red on lambda" "$d"
+    FX_SCOPE_RC=1 SCOPE=crux-smoke row scope_red_refuses 1 "FAIL  R7 OPERATOR EMERGENCY SCOPE crux-smoke NOT satisfied" "$d"
+    FX_SCOPE_RC=1 SCOPE=crux-smoke row scope_red_names_the_reason 1 "host gx10 has no CRUX receipt" "$d"
+    FX_SCOPE_RC=2 SCOPE=crux-smoke row scope_decline_refuses 1 "the judge DECLINED" "$d"
+    FX_LADDER_RC=1 row no_scope_matrix_still_gates 1 "FAIL  R7 model matrix NOT green" "$d"
+    # the receipts committed on top of the cut: HEAD differs from the cut ONLY under evidence/
+    d="$tmp/sc-evidence"; build_repo "$d"; cut="$(git -C "$d" rev-parse HEAD)"
+    mkdir -p "$d/evidence/crux/1.2.3"; printf '{}\n' > "$d/evidence/crux/1.2.3/lambda-gpu.json"
+    git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'receipts' >/dev/null
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" row scope_cut_below_evidence_commit_passes 0 "satisfied at the cut ${cut:0:12}" "$d"
+    FX_EXPECT_CUT="$cut" SCOPE=crux-smoke row scope_head_is_not_the_cut_refuses 1 "judge asked about cut" "$d"
+    # a SOURCE change on top of the cut: what would be published is not what was smoked
+    d="$tmp/sc-source"; build_repo "$d"; cut="$(git -C "$d" rev-parse HEAD)"
+    printf 'pub fn g() {}\n' >> "$d/src/lib.rs"
+    git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'src' >/dev/null
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" row scope_source_change_over_the_cut_refuses 1 "differs from the cut ${cut:0:12} in PUBLISHED paths" "$d"
+    # scripts/contracts arriving after the cut (the scope's own reader and entry do) are not published
+    d="$tmp/sc-tooling"; build_repo "$d"; cut="$(git -C "$d" rev-parse HEAD)"
+    printf '# tooling\n' > "$d/scripts/new_tool.sh"; mkdir -p "$d/contracts"; printf 'x: 1\n' > "$d/contracts/c.yaml"
+    git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'tooling' >/dev/null
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" row scope_tooling_after_the_cut_passes 0 "satisfied at the cut ${cut:0:12}" "$d"
+    d="$tmp/sc-badcut"; build_repo "$d"
+    SCOPE=crux-smoke CUT_COMMIT=0123456789abcdef0123456789abcdef01234567 row scope_unresolvable_cut_refuses 1 "does not resolve" "$d"
+
     # --receipt-only (#3708): the T-1 end of R5. An UNTAGGED tree with a GO
     # receipt passes it (the full gate refuses the same tree on R3 -- the row
     # above -- which is why T-1 cannot run the full gate), and every receipt
@@ -536,10 +670,19 @@ selftest() {
     [ "$fail" -eq 0 ]
 }
 
-case "${1:-}" in
+SCOPE=""; CUT_COMMIT=""; MODE=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --scope) [ $# -ge 2 ] || { printf '%s: --scope needs a name\n' "$PROG" >&2; exit 2; }; SCOPE="$2"; shift 2 ;;
+        --cut-commit) [ $# -ge 2 ] || { printf '%s: --cut-commit needs a sha\n' "$PROG" >&2; exit 2; }; CUT_COMMIT="$2"; shift 2 ;;
+        *) [ -z "$MODE" ] || { printf '%s: unexpected argument %s\n' "$PROG" "$1" >&2; exit 2; }; MODE="$1"; shift ;;
+    esac
+done
+[ -z "$CUT_COMMIT" ] || [ -n "$SCOPE" ] || { printf '%s: --cut-commit is only meaningful with --scope\n' "$PROG" >&2; exit 2; }
+case "$MODE" in
     --selftest) selftest ;;
     --receipt-only) receipt_gate ;;
     '')         gate ;;
-    -h|--help)  sed -n '2,40p' "$0" ;;
-    *)          printf '%s: unknown argument %s\n' "$PROG" "$1" >&2; exit 2 ;;
+    -h|--help)  sed -n '2,48p' "$0" ;;
+    *)          printf '%s: unknown argument %s\n' "$PROG" "$MODE" >&2; exit 2 ;;
 esac
