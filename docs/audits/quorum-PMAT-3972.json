@@ -1,0 +1,36 @@
+{
+  "ticket": "PMAT-3972",
+  "kind": "diff-review",
+  "author": {
+    "model": "opus-5-5",
+    "family": "claude"
+  },
+  "degraded": "same-family",
+  "reason": "agy RESOURCE_EXHAUSTED 429 on every family (ph6 lanes BLIND); operator fallback rule: Claude Code lanes, never the author's model id",
+  "base": "6db770d2f",
+  "head_reviewed": "5337de4d4 (+77a1baeb6 implements lane C round-2 optional note)",
+  "lanes": [
+    {
+      "lane": "A",
+      "model": "sonnet-5",
+      "focus": "any path from NotRun / empty domain to Pass",
+      "round1": "FAIL",
+      "round2": "PASS"
+    },
+    {
+      "lane": "B",
+      "model": "sonnet-5",
+      "focus": "refactor behaviour-preserving; plant honesty; wiring",
+      "round1": "PASS",
+      "round2": null
+    },
+    {
+      "lane": "C",
+      "model": "sonnet-5",
+      "focus": "test vacuity, exit paths, top-level JSON, CI wiring",
+      "round1": "do-not-implement-as-written",
+      "round2": "PASS"
+    }
+  ],
+  "verdict": "PASS 3/3 (degraded: same-family)"
+}
