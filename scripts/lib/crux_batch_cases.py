@@ -53,7 +53,10 @@ def fake_serve_for(interface):
     @contextlib.contextmanager
     def fake_serve(_a, _log):
         LOADS["serve"] += 1
-        yield (lambda convo, thinking, max_tokens, resp_path=None: ("s", 1, 1)), interface, "cuda:0 fake (serve)"
+        def respond(convo, thinking, max_tokens, resp_path=None, stream=False):
+            CALLS.append(("serve", stream))
+            return "s", 1, 1
+        yield respond, interface, "cuda:0 fake (serve)"
     return fake_serve
 
 
@@ -137,7 +140,18 @@ def run(engine, serve_interface: str) -> int:
         return True if (len(r) == 1 and r[0]["batch"]["size"] == 1 and LOADS["inproc"] == 1
                         and CALLS[0][2] == 9) else r
 
-    for name, fn in [("5 items, ONE engine load, rows in order, per-item max_tokens", one_load),
+    def serve_stream():
+        w = batch_env()
+        engine.run_batch(model_args(), [item("n", verb="serve run", w=w), item("s", verb="serve stream", w=w)])
+        r = {x["prompt_id"]: x for x in rows(w)}
+        docs = {k: json.load(open(v["stdout"])) for k, v in r.items() if v["stdout"]}
+        good = (LOADS["serve"] == 1 and CALLS == [("serve", False), ("serve", True)]
+                and docs["ps"]["reported"]["interface"].endswith("(stream)")
+                and not docs["pn"]["reported"]["interface"].endswith("(stream)"))
+        return True if good else (dict(LOADS), CALLS, {k: v["reported"]["interface"] for k, v in docs.items()})
+
+    for name, fn in [("serve run and serve stream share ONE server; only the stream item streams", serve_stream),
+                     ("5 items, ONE engine load, rows in order, per-item max_tokens", one_load),
                      ("a failed load refuses EVERY item with the load's reason", load_fails),
                      ("one item failing does not take the others down", isolation),
                      ("mixed interfaces: serve refused by name, only one engine loaded", mixed),
@@ -157,4 +171,50 @@ def run(engine, serve_interface: str) -> int:
     return failed
 
 
-CASE_COUNT = 8
+CASE_COUNT = 9
+
+
+def run_sse() -> int:
+    """The SSE reader both drivers use for `serve stream`: a truncated stream is an error, never an answer."""
+    import crux_sse
+
+    def ev(*chunks, done=True):
+        lines = ["data: " + json.dumps(c) for c in chunks]
+        return "\n\n".join(lines + (["data: [DONE]"] if done else [])) + "\n\n"
+
+    d = lambda **kw: {"choices": [{"delta": kw}]}  # noqa: E731
+    cases = [
+        ("content deltas concatenate", lambda: crux_sse.parse_sse(ev(d(content="2 + "), d(content="2 = 4"))),
+         ("2 + 2 = 4", {}, 2)),
+        ("usage on the last chunk is read", lambda: crux_sse.parse_sse(ev(d(content="4"),
+                                                                           {"choices": [], "usage": {"prompt_tokens": 9, "completion_tokens": 1}})),
+         ("4", {"prompt_tokens": 9, "completion_tokens": 1}, 1)),
+        ("reasoning deltas become a leading <think> block",
+         lambda: crux_sse.parse_sse(ev(d(reasoning_content="add"), d(content="4"))), ("<think>add</think>4", {}, 1)),
+        ("a stream with no [DONE] is TRUNCATED, refused", lambda: crux_sse.parse_sse(ev(d(content="4"), done=False)),
+         crux_sse.TruncatedStream),
+        ("an empty body is truncated too, not an empty answer", lambda: crux_sse.parse_sse(""),
+         crux_sse.TruncatedStream),
+        ("finish_reason terminal (transformers serve): the stop chunk ends the stream",
+         lambda: crux_sse.parse_sse(ev(d(content="4"), {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+                                       done=False), terminal="finish_reason"), ("4", {}, 1)),
+        ("finish_reason terminal: no stop chunk is truncated",
+         lambda: crux_sse.parse_sse(ev(d(content="4"), done=False), terminal="finish_reason"),
+         crux_sse.TruncatedStream),
+        ("done terminal (vLLM): a finish_reason does NOT excuse a missing [DONE]",
+         lambda: crux_sse.parse_sse(ev(d(content="4"), {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+                                       done=False), terminal="done"), crux_sse.TruncatedStream),
+    ]
+    failed = 0
+    for name, fn, want in cases:
+        try:
+            got = fn()
+            ok = got == want
+        except Exception as e:  # noqa: BLE001
+            got, ok = f"{type(e).__name__}: {e}", isinstance(want, type) and isinstance(e, want)
+        print(f"{'ok  ' if ok else 'FAIL'} [sse] {name}" + ("" if ok else f"\n     got: {str(got)[:200]}"))
+        failed += not ok
+    return failed
+
+
+SSE_CASE_COUNT = 8

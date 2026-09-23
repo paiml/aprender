@@ -31,6 +31,7 @@ LOCK = HERE / "uv.lock"
 # #3971: every source file is hashed against its blob name before it is loaded (shared with vllm).
 sys.path.insert(0, str(HERE.parent / "lib"))
 from crux_hf_verify import verified_source  # noqa: E402
+from crux_sse import parse_sse  # noqa: E402
 
 
 def die(msg: str, code: int = 2) -> None:
@@ -179,7 +180,7 @@ def conversation_turns(messages: list, respond) -> tuple[str, list, list]:
 # unchanged: exactly one row per item. A batch holds ONE interface — in-process `generate` (run, chat) or
 # `transformers serve` (serve run, code); items of the other are refused by name (a second model on the card).
 INPROC = ("run", "chat")
-SERVE = ("serve run", "code")
+SERVE = ("serve run", "serve stream", "code")
 VERBS = INPROC + SERVE
 THINKING = ("on", "off", "unset")
 
@@ -241,18 +242,30 @@ def serve_session(a, log_path: Path):
                 time.sleep(0.5)
         model_id = f"{src}@{rev}" if rev else src
 
-        def respond(convo, thinking, max_tokens, resp_path=None):
+        def respond(convo, thinking, max_tokens, resp_path=None, stream=False):
             body = {"model": model_id, "messages": convo, "max_tokens": max_tokens, "temperature": 0.0,
                     "seed": a.seed}
             kw = thinking_kwargs(thinking)
             if kw:
                 body["chat_template_kwargs"] = kw
+            if stream:
+                # `serve stream` (#3962): the same server, stream=true; usage rides the last chunk
+                body["stream"] = True
+                body["stream_options"] = {"include_usage": True}
             req = urllib.request.Request(
                 f"http://127.0.0.1:{port}/v1/chat/completions",
                 data=json.dumps(body).encode(),
                 headers={"Content-Type": "application/json"},
             )
-            resp = json.loads(urllib.request.urlopen(req, timeout=1800).read())
+            body_bytes = urllib.request.urlopen(req, timeout=1800).read()
+            if stream:
+                sse = body_bytes.decode("utf-8", "replace")
+                if resp_path is not None:
+                    resp_path.with_suffix(".sse.txt").write_text(sse, encoding="utf-8")
+                # transformers serve 5.17.0 never sends `data: [DONE]`; its terminal event is the finish_reason chunk
+                raw, usage, _ = parse_sse(sse, terminal="finish_reason")
+                return raw, usage.get("prompt_tokens"), usage.get("completion_tokens")
+            resp = json.loads(body_bytes)
             if resp_path is not None:
                 resp_path.write_text(json.dumps(resp, indent=1), encoding="utf-8")
             msg = resp["choices"][0]["message"]
@@ -286,8 +299,11 @@ def item_doc(it: dict, respond, interface: str, device: str, resp_path: Path | N
     counts = {"prompt_tokens": 0, "completion_tokens": 0}
 
     def one(convo):
-        args = (convo, it["thinking"], it["max_tokens"]) + ((resp_path,) if interface == "transformers serve" else ())
-        text, n_prompt, n_completion = respond(*args)
+        if interface == "transformers serve":
+            text, n_prompt, n_completion = respond(convo, it["thinking"], it["max_tokens"], resp_path,
+                                                   stream=it["verb"] == "serve stream")
+        else:
+            text, n_prompt, n_completion = respond(convo, it["thinking"], it["max_tokens"])
         counts["prompt_tokens"] = n_prompt  # the FINAL turn's prompt, which holds the whole conversation
         if n_completion is not None and counts["completion_tokens"] is not None:
             counts["completion_tokens"] += n_completion
@@ -306,6 +322,8 @@ def item_doc(it: dict, respond, interface: str, device: str, resp_path: Path | N
         doc["turns"] = turns  # every assistant answer, in order; `text` is the last of them
     if reasoning:
         doc["reasoning"] = reasoning
+    if it["verb"] == "serve stream":
+        interface = interface + " (stream)"
     doc["reported"] = {"interface": interface, "thinking_requested": it["thinking"],
                        "thinking_emitted": bool(reasoning), **counts, "device": device}
     return doc
@@ -517,7 +535,7 @@ def main(argv: list[str]) -> None:
     g = sub.add_parser("gen")
     g.add_argument("--model", required=True)
     g.add_argument("--model-sha256", required=True)
-    g.add_argument("--verb", required=True, choices=["run", "chat", "serve run", "code"])
+    g.add_argument("--verb", required=True, choices=list(VERBS))
     g.add_argument("--prompt-id", required=True)
     g.add_argument("--messages", required=True)
     g.add_argument("--prompt-file")
