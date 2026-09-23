@@ -1,0 +1,21 @@
+- id: PMAT-3968
+  github_issue: 3968
+  item_type: task
+  title: 'GPU whitelist admits a quant TYPE on one model''s shapes — admission must key on per-shape device conformance (census-derived, #3945)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-dd
+  created: 2026-09-23T00:00:00Z
+  updated: 2026-09-23T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'every held (quant type, k, n) of a GPU-whitelisted type is derived from a committed census, never hand-listed, and measured through the production bound_gemv dispatch on every GPU host within |err|/sum|w||x| <= 1e-5'
+  - 'each type has a negative control that goes RED; a blind type licenses nothing'
+  - 'check_gpu_shape_conformance.sh is RED on an unproven held shape, a missing/stale/failed/blind receipt, and a stale per-capability exclusion, with a self-test proving each'
+  - 'cop ruling (b): IQ3_S/IQ2_S refused on compute capability >= 12 until #4096; the capability contract states it; the exclusion cannot outlive the fix'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
