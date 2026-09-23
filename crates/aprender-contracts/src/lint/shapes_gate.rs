@@ -44,6 +44,7 @@ use crate::ontology::shapes::{self, NodeShape, Report, Severity, ShapeError};
 use crate::ontology::verdict::Reason;
 use crate::ontology::w3c;
 
+use super::capability_cells_gate as cells_gate;
 use super::finding::LintFinding;
 use super::rules::RuleSeverity;
 use super::{GateDetail, GateExtra, GateResult, Verdict};
@@ -76,6 +77,9 @@ pub enum ShapesOutcome {
         found: usize,
         refused: Vec<String>,
     },
+    /// ONT-4c5: a contract declares `capability-cells` and its required-cell domain D is empty — R-2's decline
+    /// (exit 2 with a `decline:` line), never Pass and never RED.
+    EmptyDomain { shapes_n: usize },
     /// A positive control did not fire.
     PositiveControlFailed {
         shapes_n: usize,
@@ -259,7 +263,28 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
     if let Some(refusal) = parity_refusal(&extraction.parity, shapes.len()) {
         return refusal;
     }
-    let graph = &extraction.graph;
+    // ONT-4c5: the validator's half runs on the gate's own copy — `pv extract` keeps writing what was found
+    let mut owned = extraction.graph.clone();
+    let cells = match cells_gate::corpus(
+        &mut owned,
+        &shapes,
+        &extraction.gguf.rungs,
+        &extraction.receipts,
+    ) {
+        Ok(c) => c,
+        Err(e) => {
+            return ShapesOutcome::ExtractFailed(ExtractFailure::Receipt(receipts::ReceiptError {
+                file: e.file.clone(),
+                what: e.to_string(),
+            }))
+        }
+    };
+    if cells.as_ref().is_some_and(|c| c.domain.is_empty()) {
+        return ShapesOutcome::EmptyDomain {
+            shapes_n: shapes.len(),
+        };
+    }
+    let graph = &owned;
 
     let (mut report, plant_violations) = validate_with_plant(graph, &shapes, &arming);
     if opts.only.is_some() {
@@ -267,6 +292,28 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
     }
     carry_extract_warnings(&mut report, &extraction.warnings);
     let pc_extract = extract_controls();
+    let pc_shapes = cells_gate::pc_shapes(&shapes, &arming);
+    if let Some((which, _)) = pc_shapes.iter().find(|(_, v)| v.as_str() != "fired") {
+        return ShapesOutcome::PositiveControlFailed {
+            shapes_n: shapes.len(),
+            focus_nodes_n: report.focus_nodes_n,
+            which: format!("pc_shapes.{which}"),
+        };
+    }
+    if let Some(cc) = &cells {
+        if !cells_gate::wiring_holds(&report, graph, cc) {
+            return ShapesOutcome::Differential {
+                shapes_n: shapes.len(),
+                focus_nodes_n: report.focus_nodes_n,
+                passed: 0,
+                n: 1,
+                failed: vec![format!(
+                    "capability-cells wiring: the rungs the shape flagged differ from the rungs owning the {} NotRun cell(s)",
+                    cc.not_run.len()
+                )],
+            };
+        }
+    }
     let unmeasured = needs_receipts(&shapes) && extraction.receipts.is_empty();
     if let Some(d) = decline(
         shapes.len(),
@@ -291,6 +338,9 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
         &extraction.github,
         &extraction.example.errors,
     );
+    if let Some(cc) = &cells {
+        counted.findings.extend(cells_gate::findings(cc, &arming));
+    }
     let (inherited_shapes_applied, inherited_by_shape) =
         subsumption_of(contract_dir, graph, &shapes, &mut counted);
     let passed = counted.violations == 0;
@@ -348,6 +398,8 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
                 inherited_by_shape,
             }),
             release: extraction.release.clone().map(Box::new),
+            capability_cells: cells.as_ref().map(cells_gate::CapabilityCellsReport::from),
+            pc_shapes,
         }),
     };
     ShapesOutcome::Ran {
