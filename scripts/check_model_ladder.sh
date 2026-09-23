@@ -35,7 +35,7 @@ LADDER="contracts/model-capability-ladder-v1.yaml"
 # Overridable so the floor below can be PROVEN against a planted case in a temp dir
 # rather than by planting a permanently-failing case in the real table (#3887).
 CASES_DIR="${MODEL_LADDER_CASES_DIR:-scripts/lib/model_ladder_cases}"
-EQUIV_ONLY=0; SELF_TEST=0; ONLY_CASE=""; RECEIPT_DIR=""; LADDER_MAIN_OVERRIDE=""; CUT_COMMIT=""; CRUX_DIR=""; SCOPE=""
+NIGHTLY_ROOT_DIR=""; EQUIV_ONLY=0; SELF_TEST=0; ONLY_CASE=""; RECEIPT_DIR=""; LADDER_MAIN_OVERRIDE=""; CUT_COMMIT=""; CRUX_DIR=""; SCOPE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --self-test) SELF_TEST=1; shift ;;
@@ -47,6 +47,7 @@ while [ $# -gt 0 ]; do
     --cut-commit) [ $# -ge 2 ] || { echo "--cut-commit needs a value" >&2; exit 2; }; CUT_COMMIT="$2"; shift 2 ;;
     --crux) [ $# -ge 2 ] || { echo "--crux needs a value" >&2; exit 2; }; CRUX_DIR="$2"; shift 2 ;;
     --equiv-only) EQUIV_ONLY=1; shift ;;   # self-test hook: print equiv_lines for --receipts/--crux/--cut-commit
+    --nightly) [ $# -ge 2 ] || { echo "--nightly needs a value" >&2; exit 2; }; NIGHTLY_ROOT_DIR="$2"; shift 2 ;;
     --scope) [ $# -ge 2 ] || { echo "--scope needs a value" >&2; exit 2; }; SCOPE="$2"; shift 2 ;;
     -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) echo "check_model_ladder: unknown argument '$1'" >&2; exit 2 ;;
@@ -410,9 +411,15 @@ for h in hosts:
         R = json.load(open(f))
     except Exception as e:
         print(f"FAIL  {h['id']:7} receipt unreadable: {e}"); rc = 1; continue
-    if R.get("version") != version:
-        print(f"FAIL  {h['id']:7} receipt is for {R.get('version')!r}, this cut is {version!r} — STALE"); rc = 1; continue
     asha = R.get("apr_sha")
+    if R.get("version") != version:
+        # #4040: a nightly measured BEFORE the release's version bump carries the old version. It stands only
+        # when the #4037 carry proved the whole diff to the cut harmless and named the bump as version-only.
+        vproof = equiv_proof.get(asha, "") if isinstance(asha, str) and asha != cut else ""
+        if "CARRIED FORWARD (#4037)" in vproof and "a workspace version bump only" in vproof:
+            print(f"ok    {h['id']:7} receipt is for {R.get('version')!r}, the cut is {version!r}: carried across a version-only bump (#4040)")
+        else:
+            print(f"FAIL  {h['id']:7} receipt is for {R.get('version')!r}, this cut is {version!r} — STALE"); rc = 1; continue
     if not (isinstance(asha, str) and re.fullmatch(r"[0-9a-f]{40}", asha)):
         print(f"FAIL  {h['id']:7} receipt carries no 40-hex apr_sha ({asha!r}) — it names a version, and a version is not a build (#3957 F2)"); rc = 1; continue
     if asha != cut and asha not in equiv:
@@ -761,6 +768,7 @@ if [ "$SELF_TEST" = 1 ]; then
     # #3957 F2: receipts bind to the cut commit's sha; the prose drift key is refused.
     mutant sha-stale          red-receipt-sha-stale       's/    if asha != cut and asha not in equiv:/    if False:/'
     mutant sha-missing        red-receipt-sha-missing     's/    if not (isinstance(asha, str) and re.fullmatch(r"\[0-9a-f\]{40}", asha)):/    if False:/'
+    mutant version-drift-any-carry red-version-differs-not-a-bump 's/        if "CARRIED FORWARD (#4037)" in vproof and "a workspace version bump only" in vproof:/        if "CARRIED FORWARD (#4037)" in vproof:/'
     mutant sha-equiv-ignored  green-receipt-sha-equivalent 's/    if asha != cut and asha not in equiv:/    if asha != cut:/'
     # #4051: the timing rule, each clause deleted; the case that names the clause must go RED.
     mutant timing-rule-off     red-timing-missing          's/^    if timing_required(version):$/    if False:/'
@@ -1177,6 +1185,15 @@ w("docs/a.md", "b\n"); git("commit", "-qam", "docs"); DOCS = git("rev-parse", "H
 git("checkout", "-q", A); w("core/src/lib.rs", "pub fn f() { let _ = 1; }\n"); git("commit", "-qam", "core"); CORE = git("rev-parse", "HEAD")
 git("checkout", "-q", A); w("docs/a.md", "c\n"); git("commit", "-qam", "A2"); A2 = git("rev-parse", "HEAD")
 w("docs/a.md", "d\n"); git("commit", "-qam", "docs2"); DOCS2 = git("rev-parse", "HEAD")
+# a release's version bump: every workspace version moves, nothing else (#4040)
+git("checkout", "-q", A)
+for f in ("Cargo.toml", "core/Cargo.toml"):
+    p = os.path.join(r, f); t = open(p).read(); open(p, "w").write(t.replace('version = "0.1.0"', 'version = "0.2.0"'))
+git("commit", "-qam", "bump"); BUMP = git("rev-parse", "HEAD")
+# a bump that ALSO adds a dependency to the apr facade is not a version-only diff
+p = os.path.join(r, "Cargo.toml"); t = open(p).read(); open(p, "w").write(t.replace('[dependencies]\n', '[dependencies]\nlibc = "0.2"\n'))
+assert "libc" in open(p).read() and 'version = "0.2.0"' in open(p).read(), "the scratch bump fixtures did not apply"
+git("commit", "-qam", "bump+dep"); BUMPDEP = git("rev-parse", "HEAD")
 # the gate's libs, untracked in the scratch repo (never part of any diff); the rule under test from `lib`
 os.makedirs(os.path.join(r, "scripts/lib"))
 for f in ("ladder_equiv.py", "model_ladder_crux.py"):
@@ -1200,6 +1217,8 @@ rows = [
   ("carry-closure-diff MUST NOT bind (must-RED)", lambda: A not in lines(rec(A), CORE)),
   ("carry-crux-receipt sha enumerated and carried", lambda: "CARRIED FORWARD" in lines(rec(None, A2), DOCS2).get(A2, "")),
   ("carry-unknown-sha never binds", lambda: not lines(rec("f" * 40), DOCS)),
+  ("carry-version-bump binds across a version-only bump", lambda: "a workspace version bump only" in lines(rec(A), BUMP).get(A, "")),
+  ("carry-bump-with-dep MUST NOT bind", lambda: A not in lines(rec(A), BUMPDEP)),
 ]
 bad = 0
 for name, fn in rows:
@@ -1226,7 +1245,26 @@ CW
     cwmutant carry-unwired   carry-docs-only-diff 's/^    if proof=$(python3 scripts\/lib\/ladder_carry.py /    if false \&\& proof=$(python3 scripts\/lib\/ladder_carry.py /' -
     cwmutant crux-unlisted   carry-crux-receipt   's/^for f in glob.glob(sys.argv\[2\] + "\/\*.json"):$/for f in []:/' -
     cwmutant src-test-only   carry-closure-diff   - 's/^TEST_ONLY_DIRS = ("tests", "benches", "examples")$/TEST_ONLY_DIRS = ("tests", "benches", "examples", "src")/'
+    cwmutant bump-not-derived carry-version-bump - 's/^        bumped = {p for p in paths if posixpath.basename(p) in ("Cargo.toml", "Cargo.lock")$/        bumped = set() and {p for p in paths if posixpath.basename(p) in ("Cargo.toml", "Cargo.lock")/'
     cwmutant carry-ignores-rc carry-closure-diff   's/^    if proof=$(python3 scripts\/lib\/ladder_carry.py "$PWD" "$s" "$4" 2> \/dev\/null); then$/    if proof=$(python3 scripts\/lib\/ladder_carry.py "$PWD" "$s" "$4" 2> \/dev\/null; true); then/' -
+    # #4040: the nightly admission rule (its own table + mutants), and the --nightly wiring: an empty nightly
+    # root must refuse BY NAME before any receipt is judged. The wiring mutant is a sed copy of this script.
+    if python3 scripts/lib/nightly_admission_cases.py --mutants > "$mdir/nadm.out" 2>&1; then printf 'ok    nightly: nightly_admission_cases.py rows + mutants (#4040)\n'
+    else grep -E 'FAIL|SURVIVED|ANCHOR' "$mdir/nadm.out"; bad=$((bad+1)); fi
+    nightly_wiring() { # nightly_wiring <script> -> 0 when an empty nightly root is refused by name
+      local e out; e=$(mktemp -d)
+      out=$(MODEL_LADDER_ROOT="$PWD" bash "$1" --nightly "$e" --cut-commit "$(git rev-parse HEAD)" 2>&1); local rc=$?
+      rmdir "$e" 2> /dev/null
+      [ "$rc" = 1 ] && grep -q '^FAIL  NIGHTLY lambda: no nightly at all (#4040)' <<< "$out" && grep -q '^RED   no admissible nightly' <<< "$out"
+    }
+    if bash scripts/check_certify_nightly.sh > "$mdir/cn.out" 2>&1; then printf 'ok    nightly: check_certify_nightly.sh -- the driver table + %s mutants (#4040)\n' "$(grep -c '^ok    mutant' "$mdir/cn.out")"
+    else grep -E '^FAIL' "$mdir/cn.out"; bad=$((bad+1)); fi
+    if nightly_wiring "$SELF"; then echo "ok    nightly: --nightly with no nightly refuses by name, before any receipt is judged"
+    else echo "FAIL  nightly: --nightly with an empty root did not refuse by name"; bad=$((bad+1)); fi
+    sed 's/^  if ! python3 scripts\/lib\/nightly_admission.py /  if false \&\& python3 scripts\/lib\/nightly_admission.py /' "$SELF" > "$mdir/nw-mut.sh"
+    if cmp -s "$SELF" "$mdir/nw-mut.sh"; then echo "FAIL  nightly mutant admission-unwired did not apply"; bad=$((bad+1))
+    elif nightly_wiring "$mdir/nw-mut.sh"; then echo "FAIL  nightly mutant admission-unwired SURVIVED"; bad=$((bad+1))
+    else echo "ok    nightly mutant admission-unwired killed by the empty-root refusal"; fi
     # #3710 ruling 1: CRUX coverage scoped to the certified models (model_ladder_crux.py).
     xmutant uncertified-owes-crux green-uncertified-no-crux 's/^                    elif certified is not None and sha not in certified:$/                    elif False:/'
     xmutant no-cert-relaxes   red-certification-missing 's/^        return None, True$/        return set(), False/'
@@ -1282,6 +1320,21 @@ sys.exit(1 if crux_smoke_scope.judge(L, sys.argv[2], sys.argv[3], sys.argv[4], s
     echo "RED   OPERATOR EMERGENCY SCOPE: CRUX smoke only -- NOT satisfied (see FAIL rows)"; rc=1
   fi
   exit "$rc"
+fi
+# #4040: --nightly <root> judges the release on last night's long certification (scripts/certify_nightly.sh)
+# instead of receipts measured for this cut. Admission (scripts/lib/nightly_admission.py): per REQUIRED host,
+# the newest GREEN nightly, at most NIGHTLY_MAX_AGE_H (24) hours old, at the cut or an ancestor of it. Its
+# receipts then bind to the cut like any other -- through equivalence / the #4037 carry-forward, or STALE.
+if [ -n "$NIGHTLY_ROOT_DIR" ]; then
+  NIGHTLY_OUT=$(mktemp -d)
+  nightly_hosts=$(python3 -c 'import sys, yaml; print(" ".join(h["id"] for h in yaml.safe_load(open(sys.argv[1]))["ladder"]["hosts"] if h.get("required")))' "$LADDER") \
+    || { echo "decline: the required hosts cannot be read from $LADDER"; exit 2; }
+  # shellcheck disable=SC2086
+  if ! python3 scripts/lib/nightly_admission.py "$NIGHTLY_ROOT_DIR" "$CUT_COMMIT" "$NIGHTLY_OUT" $nightly_hosts; then
+    echo "RED   no admissible nightly for this cut -- a release is judged on a GREEN nightly <=24 h old at an ancestor, or re-measured in full (#4040)"
+    exit 1
+  fi
+  RECEIPT_DIR="$NIGHTLY_OUT/receipts"; CRUX_DIR="$NIGHTLY_OUT/crux"
 fi
 TMP_EQUIV=$(mktemp)
 [ -n "$CRUX_DIR" ] || CRUX_DIR="evidence/crux/$VERSION"

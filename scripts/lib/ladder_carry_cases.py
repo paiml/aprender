@@ -15,6 +15,34 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)   # ladder_carry imports ladder_equiv (the Cargo.lock rule) from beside it
+
+TOML_A = """[workspace.package]
+version = "0.69.1"
+[workspace.dependencies]
+aprender-core = { path = "crates/aprender-core", version = "0.69.1" }
+serde = { version = "1.0", features = ["derive"] }
+[package]
+name = "aprender"
+version = "0.69.1"
+"""
+TOML_BUMP = TOML_A.replace('"0.69.1"', '"0.70.0"')
+TOML_DEP_ADDED = TOML_BUMP + '[dependencies]\nrand = "0.9"\n'
+TOML_SERDE_MOVED = TOML_BUMP.replace('version = "1.0"', 'version = "1.1"')
+TOML_FEATURE = TOML_BUMP.replace('features = ["derive"]', 'features = ["derive", "rc"]')
+LOCK_A = """version = 4
+[[package]]
+name = "aprender-core"
+version = "0.69.1"
+dependencies = ["serde"]
+[[package]]
+name = "serde"
+version = "1.0.200"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa"
+"""
+LOCK_BUMP = LOCK_A.replace('"0.69.1"', '"0.70.0"')
+LOCK_SERDE = LOCK_BUMP.replace('"1.0.200"', '"1.0.201"').replace('"aa"', '"bb"')
 
 
 def pkg(name, d, deps=(), apr=False):
@@ -100,6 +128,21 @@ def run(mod):
     nob = {"workspace_root": "/ws", "packages": [pkg("other", "crates/other")]}
     got, proof = mod.carry(["docs/x.md"], nob, nob)
     res["no-apr-binary"] = (got is False and "no package" in proof, proof[:120])
+    vo = mod.version_only
+    res["bump-toml-version-only"] = (vo("Cargo.toml", TOML_A, TOML_BUMP) is True, "workspace + path-dep versions")
+    res["toml-dep-added-not-bump"] = (vo("Cargo.toml", TOML_A, TOML_DEP_ADDED) is False, "a new dependency")
+    res["toml-external-version-moved"] = (vo("Cargo.toml", TOML_A, TOML_SERDE_MOVED) is False, "serde 1.0 -> 1.1")
+    res["toml-feature-changed"] = (vo("Cargo.toml", TOML_A, TOML_FEATURE) is False, "a feature added")
+    res["lock-bump-version-only"] = (vo("Cargo.lock", LOCK_A, LOCK_BUMP) is True, "workspace package versions")
+    res["lock-external-dep-moved"] = (vo("Cargo.lock", LOCK_A, LOCK_SERDE) is False, "serde 1.0.200 -> 1.0.201")
+    try:
+        absent = vo("Cargo.toml", None, TOML_BUMP)
+    except Exception as exc:   # a crash is not an answer: this row is RED
+        absent = "raised %r" % exc
+    res["one-side-absent-not-bump"] = (absent is False, absent)
+    got, _ = mod.carry(["Cargo.lock", "Cargo.toml"], meta(), meta(), roots=[root], bumped={"Cargo.lock", "Cargo.toml"})
+    got2, _ = mod.carry(["Cargo.lock", "Cargo.toml"], meta(), meta(), roots=[root])
+    res["carry-bumped"] = (got is True and got2 is False, (got, got2))
     got, proof = mod.carry(["crates/serve/src/infer.rs"], meta(), meta(), roots=[root])
     res["refusal-names-path"] = ("crates/serve/src/infer.rs" in proof and "serve" in proof, proof[:120])
     got, proof = mod.carry(["docs/x.md", "crates/other/a.rs"], meta(), meta(), roots=[root])
@@ -127,6 +170,10 @@ MUTANTS = [
     ("no-crate-all-impact", 'return False, "belongs to no crate, is not embedded', 'return True, "belongs to no crate, is not embedded', "unrelated-script"),
     ("no-root-package", 'if best is None and path.split("/", 1)[0] in ROOT_PACKAGE_PATHS:', "if False:", "root-facade-src"),
     ("fixture-not-embedded", "if hit and rest.split", "if False and rest.split", "embedded-test-fixture"),
+    ("path-agnostic-strip", '            if "path" in x:\n                x.pop("version", None)', '            x.pop("version", None)', "toml-external-version-moved"),
+    ("lock-always-bump", "        return ladder_equiv.lock_dep_change(before, after) is None", "        return True", "lock-external-dep-moved"),
+    ("bumped-ignored", "    if path in bumped:", "    if False:", "carry-bumped"),
+    ("absent-is-bump", "    if before is None or after is None:\n        return False", "    if False:\n        return False", "one-side-absent-not-bump"),
     ("no-bin-carries", 'return False, "no package declares an `apr` binary', 'return True, "no package declares an `apr` binary', "no-apr-binary"),
 ]
 

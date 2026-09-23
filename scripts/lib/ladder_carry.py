@@ -31,6 +31,7 @@ cleared, and the refusal names the first impacting paths.
 Pure: the caller hands over the metadata JSON of each endpoint and the changed paths.
 """
 
+import copy
 import glob
 import os
 import posixpath
@@ -177,8 +178,43 @@ def _owner(path, dirs):
     return best
 
 
-def impact(path, clos, dirs, embedded=None, measured=None):
-    """-> (impacts: bool, why). `embedded`/`measured` None = unknown -> any no-crate path impacts."""
+def _strip_versions(doc):
+    """A manifest with every WORKSPACE version removed: [package].version, [workspace.package].version, and
+    the `version` of any dependency that is a `path` (a sibling crate's publish version)."""
+    doc = copy.deepcopy(doc)
+    for t in (doc.get("package"), (doc.get("workspace") or {}).get("package")):
+        if isinstance(t, dict):
+            t.pop("version", None)
+    def walk(x):
+        if isinstance(x, dict):
+            if "path" in x:
+                x.pop("version", None)
+            for v in x.values():
+                walk(v)
+    walk(doc)
+    return doc
+
+
+def version_only(path, before, after):
+    """True when `path` (a Cargo.toml or Cargo.lock) changes NOTHING but workspace version numbers between the
+    two texts -- a release's version bump. Anything else, or an unparseable/absent side, is False."""
+    import tomllib
+    if before is None or after is None:
+        return False
+    if posixpath.basename(path) == "Cargo.lock":
+        import ladder_equiv
+        return ladder_equiv.lock_dep_change(before, after) is None
+    try:
+        return _strip_versions(tomllib.loads(before)) == _strip_versions(tomllib.loads(after))
+    except (tomllib.TOMLDecodeError, TypeError):
+        return False
+
+
+def impact(path, clos, dirs, embedded=None, measured=None, bumped=()):
+    """-> (impacts: bool, why). `embedded`/`measured` None = unknown -> any no-crate path impacts.
+    `bumped`: manifests/lockfiles proven to change only workspace version numbers (version_only)."""
+    if path in bumped:
+        return False, "%s: a workspace version bump only -- no dependency, feature or source changed" % path
     if path.startswith(NO_IMPACT_PREFIXES):
         return False, "docs/evidence: never compiled, never measured"
     if path in ROOT_IMPACT:
@@ -206,7 +242,7 @@ def impact(path, clos, dirs, embedded=None, measured=None):
     return True, "crate %s is in the apr binary's inference closure" % owner
 
 
-def carry(paths, meta_a, meta_b, roots=None):
+def carry(paths, meta_a, meta_b, roots=None, bumped=()):
     """-> (carries: bool, proof). Both endpoints' closures (and, given checkout `roots`, their build and
     measurement inputs) are unioned; a path any endpoint says impacts, impacts."""
     ca, da = closure(meta_a)
@@ -229,7 +265,7 @@ def carry(paths, meta_a, meta_b, roots=None):
             measured |= mi
     hits, cleared = [], []
     for p in sorted(set(paths)):
-        imp, why = impact(p, clos, dirs, embedded, measured)
+        imp, why = impact(p, clos, dirs, embedded, measured, bumped)
         (hits if imp else cleared).append("%s (%s)" % (p, why))
     if hits:
         return False, "the diff touches the inference path: %s" % "; ".join(hits[:5]) + (
@@ -270,8 +306,14 @@ def carry_between(repo, sha_a, sha_b):
         metas = [_checkout_meta(t) for t in trees]
         if None in metas:
             return False, "cargo metadata failed at an endpoint -- the closure is unknown"
+        paths = [p for p in d.stdout.splitlines() if p]
+        def text(i, p):
+            f = os.path.join(trees[i], p)
+            return open(f, encoding="utf-8").read() if os.path.isfile(f) else None
+        bumped = {p for p in paths if posixpath.basename(p) in ("Cargo.toml", "Cargo.lock")
+                  and version_only(p, text(0, p), text(1, p))}
         # workspace_root differs per worktree; each closure is relative to its own root, so both compare
-        return carry([p for p in d.stdout.splitlines() if p], metas[0], metas[1], roots=trees)
+        return carry(paths, metas[0], metas[1], roots=trees, bumped=bumped)
     finally:
         for t in trees:
             _git(repo, "worktree", "remove", "--force", t)
