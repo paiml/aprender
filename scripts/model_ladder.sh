@@ -57,6 +57,8 @@ while [ $# -gt 0 ]; do
     --lock-probe) shift; LOCK_PROBE=1; break ;;
     # --timing-join <row json> <stamps.jsonl> <rid>: print the row with its #4051 stamps joined, then exit.
     --timing-join) shift; TIMING_JOIN=1; break ;;
+    # --qa-row <qa.json>: print the qa half of a row built from that report, then exit (self-test hook).
+    --qa-row) shift; QA_ROW=1; break ;;
     -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) echo "model_ladder: unknown argument '$1'" >&2; exit 2 ;;
   esac
@@ -462,6 +464,55 @@ row["timing"] = st
 print(json.dumps(row))
 PY
 }
+# The qa half of a row, from `apr qa --json`: every gate it reported (#3863 item 16), skipped never read as
+# passed (#3965), and apr's own per-gate duration_ms (#4051/#4035). A function so the self-test can feed it a
+# fixture (--qa-row).
+ladder_qa_row() { # <qa json path>
+  python3 - "$1" <<'PY'
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception as e:
+    print(json.dumps({"parse_error": str(e)})); sys.exit(0)
+g = {x["name"]: x for x in d.get("gates", [])}
+def gate(n):
+    x = g.get(n)
+    if x is None: return {"passed": False, "skipped": True, "message": "gate absent from report"}
+    # `apr qa --json` marks a skipped gate passed:true. Skipped is not passed.
+    return {"passed": bool(x.get("passed")) and not x.get("skipped") and not str(x.get("message","")).startswith("Skipped"),
+            "skipped": bool(x.get("skipped")) or str(x.get("message","")).startswith("Skipped"),
+            # #3872: NO CAP. The receipt is the durable artifact and the only place the full
+            # reason survives; every downstream reader can cut for display, none can
+            # recover what was never stored. Measured: 9 of 86 messages hit the old 200,
+            # and what sat past it was not padding -- a CLASSIFICATION ("this is a refusal,
+            # not a fallback: nothing was loaded and nothing was generated", x4 rows), a
+            # scope correction, and a diagnostic instruction naming the prompt check that
+            # two sessions then spent hours re-deriving.
+            "message": str(x.get("message","")),
+            # #4051 / #4035: apr qa's own per-gate wall time, passed through (it is measured there, and the
+            # qa JSON dies with $WORK). None when this apr's report carries none.
+            "duration_ms": x.get("duration_ms")}
+# EVERY gate `apr qa` reported, not two by name (#3863 item 16). The receipt used to
+# record `capability_match` + `golden_output` only, so a row could carry the SYMPTOM
+# ("gibberish (fragment ...)") while the DIAGNOSIS computed in the same process --
+# "Tensor Contract FAIL (27 tensors failed data-quality)" -- was dropped on the floor.
+# `qa_rc: 5` was the only tell that something else had failed.
+#
+# Naming a third gate would reproduce the defect at n+1 the next time a gate matters,
+# so nothing is named: the two the judge reads keep their top-level keys for
+# compatibility, and `gates` carries the whole report.
+all_gates = {n: gate(n) for n in g}
+failed = sorted(n for n, v in all_gates.items() if not v["passed"] and not v["skipped"])
+print(json.dumps({
+    "capability_match": gate("capability_match"),
+    "golden_output": gate("golden_output"),
+    "gates": all_gates,
+    "gates_failed": failed,
+    "gates_reported": len(all_gates),
+}))
+PY
+}
+if [ "${QA_ROW:-0}" = 1 ]; then ladder_qa_row "$1"; exit 0; fi
 if [ "${TIMING_JOIN:-0}" = 1 ]; then ladder_row_timing "$@"; exit 0; fi
 if [ "${LOCK_PROBE:-0}" = 1 ]; then
   apr_locked "$@"; rc=$?
@@ -925,50 +976,7 @@ measure() {
   apr_locked qa "$path" --json --offline --skip-throughput --skip-ollama --skip-gpu-speedup \
       --skip-ptx-parity --skip-gpu-state --skip-format-parity $cap_flag > "$qa_json" 2> "$qa_json.err"; qa_rc=$?
   [ "$qa_rc" = "$LOCK_BUSY" ] && lock_timeout "apr qa $rid"
-  qa_row=$(python3 - "$qa_json" <<'PY'
-import json, sys
-try:
-    d = json.load(open(sys.argv[1]))
-except Exception as e:
-    print(json.dumps({"parse_error": str(e)})); sys.exit(0)
-g = {x["name"]: x for x in d.get("gates", [])}
-def gate(n):
-    x = g.get(n)
-    if x is None: return {"passed": False, "skipped": True, "message": "gate absent from report"}
-    # `apr qa --json` marks a skipped gate passed:true. Skipped is not passed.
-    return {"passed": bool(x.get("passed")) and not x.get("skipped") and not str(x.get("message","")).startswith("Skipped"),
-            "skipped": bool(x.get("skipped")) or str(x.get("message","")).startswith("Skipped"),
-            # #3872: NO CAP. The receipt is the durable artifact and the only place the full
-            # reason survives; every downstream reader can cut for display, none can
-            # recover what was never stored. Measured: 9 of 86 messages hit the old 200,
-            # and what sat past it was not padding -- a CLASSIFICATION ("this is a refusal,
-            # not a fallback: nothing was loaded and nothing was generated", x4 rows), a
-            # scope correction, and a diagnostic instruction naming the prompt check that
-            # two sessions then spent hours re-deriving.
-            "message": str(x.get("message","")),
-            # #4051 / #4035: apr qa's own per-gate wall time, passed through (it is measured there, and the
-            # qa JSON dies with $WORK). None when this apr's report carries none.
-            "duration_ms": x.get("duration_ms")}
-# EVERY gate `apr qa` reported, not two by name (#3863 item 16). The receipt used to
-# record `capability_match` + `golden_output` only, so a row could carry the SYMPTOM
-# ("gibberish (fragment ...)") while the DIAGNOSIS computed in the same process --
-# "Tensor Contract FAIL (27 tensors failed data-quality)" -- was dropped on the floor.
-# `qa_rc: 5` was the only tell that something else had failed.
-#
-# Naming a third gate would reproduce the defect at n+1 the next time a gate matters,
-# so nothing is named: the two the judge reads keep their top-level keys for
-# compatibility, and `gates` carries the whole report.
-all_gates = {n: gate(n) for n in g}
-failed = sorted(n for n, v in all_gates.items() if not v["passed"] and not v["skipped"])
-print(json.dumps({
-    "capability_match": gate("capability_match"),
-    "golden_output": gate("golden_output"),
-    "gates": all_gates,
-    "gates_failed": failed,
-    "gates_reported": len(all_gates),
-}))
-PY
-)
+  qa_row=$(ladder_qa_row "$qa_json")
   # #3957 F10: the architecture from the FILE HEADER (apr inspect), so a RED-UNSUPPORTED key is
   # checked against what the file is rather than what its name suggests. "unknown" when unreadable.
   arch_json="$WORK/${rid//[^A-Za-z0-9._-]/_}.inspect.json"

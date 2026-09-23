@@ -132,7 +132,7 @@ def timing_gaps(x):  # -> every reason the row's #4051 stamps do not account for
     if not isinstance(st, list):
         return ["the row records no `timing` -- no apr call it reports was stamped"]
     out = []
-    need = [("qa", None), ("code", None)] + [(v, b) for b in sorted(x.get("backends") or {}) for v in ("run", "chat", "serve")]
+    need = [("qa", None), ("inspect", None), ("code", None)] + [(v, b) for b in sorted(x.get("backends") or {}) for v in ("run", "chat", "serve")]
     for verb, be in need:
         got = [s for s in st if isinstance(s, dict) and s.get("verb") == verb and (s.get("backend") or None) == be]
         if not got:
@@ -773,6 +773,7 @@ if [ "$SELF_TEST" = 1 ]; then
     # #4051: the timing rule, each clause deleted; the case that names the clause must go RED.
     mutant timing-rule-off     red-timing-missing          's/^    if timing_required(version):$/    if False:/'
     mutant timing-verb-unread  red-timing-verb-unstamped   's/^            out.append("no stamp for /            pass  # out.append("no stamp for /'
+    mutant timing-inspect-unrequired red-timing-inspect-unstamped 's/^    need = \[("qa", None), ("inspect", None), ("code", None)\]/    need = [("qa", None), ("code", None)]/'
     mutant timing-order-unread red-timing-end-before-start 's/^        elif t1 < t0:$/        elif False:/'
     if python3 -c 'import sys, yaml; t = (yaml.safe_load(open(sys.argv[1]))["ladder"].get("timing") or {}); sys.exit(0 if str(t.get("required_from") or "") == "0.70.0" else 1)' "$LADDER"; then
       echo "ok    timing: the shipped contract requires per-call stamps from 0.70.0 (#4051)"
@@ -871,6 +872,21 @@ JP
       if printf '%s\n' "$out" | grep -q "^FAIL  stamp $2 "; then printf 'ok    join mutant %-16s killed by %s\n' "$1" "$2"
       else echo "FAIL  join mutant $1 SURVIVED row $2"; bad=$((bad+1)); fi
     }
+    # #4051/#4035: apr qa's per-gate duration_ms reaches the row (the qa JSON dies with $WORK, so the row is the
+    # only place it survives). A fixture report through the SHIPPED row builder (--qa-row).
+    qa_duration_probe() { # qa_duration_probe <producer> <work dir>
+      local prod=$1 w=$2 out; mkdir -p "$w"
+      printf '%s' '{"gates": [{"name": "golden_output", "passed": true, "duration_ms": 1234}, {"name": "tensor_contract", "passed": true, "duration_ms": 56}]}' > "$w/qa.json"
+      out=$(MODEL_LADDER_ROOT="$PWD" DOGFOOD_ALLOW_UNPINNED=1 APR=/bin/true bash "$prod" --qa-row "$w/qa.json" 2> /dev/null)
+      if python3 -c 'import json,sys; r=json.loads(sys.argv[1]); g=r["gates"]; sys.exit(0 if r["golden_output"]["duration_ms"] == 1234 and g["tensor_contract"]["duration_ms"] == 56 else 1)' "$out" 2> /dev/null; then
+        echo "ok    stamp qa-duration -- apr qa's per-gate duration_ms reaches the row (1234 ms, 56 ms)"
+      else echo "FAIL  stamp qa-duration -- got: $out"; return 1; fi
+    }
+    if qa_duration_probe "$prod" "$mdir/qad"; then :; else bad=$((bad+1)); fi
+    m="$mdir/qad-mut.sh"; sed 's/^            "duration_ms": x.get("duration_ms")}$/            }/' "$prod" > "$m"
+    if cmp -s "$prod" "$m"; then echo "FAIL  qa-duration mutant did not apply"; bad=$((bad+1))
+    elif qa_duration_probe "$m" "$mdir/qad-m" > /dev/null; then echo "FAIL  qa-duration mutant duration-dropped SURVIVED"; bad=$((bad+1))
+    else echo "ok    stamp mutant duration-dropped killed by qa-duration"; fi
     jmutant any-rid       stamp-joined           's/^    if x.get("rid") == rid:$/    if True:/'
     jmutant absent-empty  stamp-join-fails-absent 's/^  python3 - "\$1" "\$2" "\$3" <<.PY. 2> \/dev\/null || printf .%s. "\$1"$/  python3 - "$1" "$2" "$3" <<'"'"'PY'"'"' 2> \/dev\/null || python3 -c "import json,sys; r=json.loads(sys.argv[1]); r[\"timing\"]=[]; print(json.dumps(r))" "$1"/'
 
