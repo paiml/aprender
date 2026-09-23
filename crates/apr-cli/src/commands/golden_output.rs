@@ -1807,6 +1807,15 @@ mod golden_output_tests {
             "{unclosed}"
         );
         assert!(!unclosed.contains("Empty output"), "{unclosed}");
+        // #3957 quorum round 2 (lane 3) asked whether an UNCLOSED block can reach the word
+        // count and be misreported as "closed EMPTY". It cannot: split_thinking_blocks returns
+        // Unclosed for ANY unmatched <think> before the count runs. Pinned both ways, including
+        // a closed-then-unclosed trace, so the refutation is a measurement, not an argument.
+        for open in ["<think>let me work through this", "<think>two plus two</think><think>and then"] {
+            let got = judge_thinking_on_output(open, &patterns, 2048).expect("unclosed fails");
+            assert!(got.contains("think block unclosed within 2048 tokens"), "{got}");
+            assert!(!got.contains("closed EMPTY"), "an unclosed block is not an empty one: {got}");
+        }
         // never entered thinking at all → the leg proved nothing, and says so
         let absent = judge_thinking_on_output("2 + 2 = 4.", &patterns, 2048)
             .expect("no think block means the leg judged nothing");
