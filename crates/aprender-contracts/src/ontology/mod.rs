@@ -1,6 +1,7 @@
 //! ONT-001 ontology gates (ONT-6 onward).
 //!
 //! - [`arming`] — which gates enter a repo's meet (`armed_gates` in `contracts/lint-baseline.json`, monotone; §3.9).
+//! - [`capability_cells`] — ONT-4c5: every required ladder cell is Pass or Fail at the current release; NotRun is RED.
 //! - [`extract`] — extractors: each entity type becomes RDF (§3.7; ONT-4b implements `pv_contract`).
 //! - [`owl`] — Σ as OWL 2 EL functional syntax, in-house, and its told-closure TBox, advisory (§3.8; ONT-2c).
 //! - [`rdf`] — the deterministic graph and its N-Triples writer (R-15; no blank nodes).
@@ -10,6 +11,7 @@
 //! - [`witness`] — ONT-5: the Horn graph pv-sat reasons over, the witness it writes, and the checker (F-7: no reasoner).
 
 pub mod arming;
+pub mod capability_cells;
 pub mod extract;
 pub mod liskov;
 pub mod owl;
