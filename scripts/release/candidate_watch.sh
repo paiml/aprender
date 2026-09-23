@@ -22,18 +22,21 @@
 #      block the publish. exit 2: usage / ENV (a gate that could not run is RED, not skipped).
 #
 # Seams for the case table (never set in production): WATCH_DOGFOOD_CMD (writes a dogfood receipt JSON path to
-# stdout), WATCH_PREFLIGHT_CMD, WATCH_BUMP_CMD, WATCH_GH, WATCH_HOME (the home the shadow guard reads).
+# stdout), WATCH_PREFLIGHT_CMD, WATCH_BUMP_CMD, WATCH_GH, WATCH_HOME (the home the shadow guard reads),
+# WATCH_AUTOFIX_CMD (the fixer; its own table is scripts/check_bookkeeping_autofix.sh -- it switches branches, so a
+# test never runs it on a developer's tree).
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 2
 PROG=candidate_watch
 die() { printf '%s: %s\n' "$PROG" "$1" >&2; exit 2; }
 VERSION="${1:-}"; shift || true
 [ -n "$VERSION" ] || die "usage: candidate_watch.sh <version> [--state <dir>] [--post <issue>]"
-STATE="${HOME}/.local/state/aprender-candidate-watch"; POST=""
+STATE="${HOME}/.local/state/aprender-candidate-watch"; POST=""; AUTOFIX=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --state) STATE="$2"; shift 2 ;;
     --post) POST="$2"; shift 2 ;;
+    --autofix) AUTOFIX=1; shift ;;   # a bookkeeping red with a fixer gets a PROPOSED commit (bookkeeping_autofix.sh)
     *) die "unknown argument '$1'" ;;
   esac
 done
@@ -125,6 +128,24 @@ print("\n".join(md))
 sys.exit(1 if real_red else 0)
 PY
 rc=$?
+# Bookkeeping reds are never waived: with --autofix each one that has a fixer gets a proposed commit, and the proposal
+# is appended to the table the release issue reads.
+if [ "$AUTOFIX" = 1 ]; then
+  fixers=$(python3 - "$D/watch-$TS.json" <<'PY'
+import json, sys
+FIX = {"dogfood:contracts": ["census", "readme"], "dogfood:declared:check_no_claim_literals": ["claims"],
+       "dogfood:pmat-verify": ["complexity"]}
+w = json.load(open(sys.argv[1]))
+print(" ".join(sorted({f for g in w.get("bookkeeping_red") or [] for f in FIX.get(g, [])})))
+PY
+)
+  if [ -n "$fixers" ]; then
+    # shellcheck disable=SC2086
+    ${WATCH_AUTOFIX_CMD:-bash scripts/release/bookkeeping_autofix.sh} $fixers > "$D/autofix-$TS.log" 2>&1
+    { echo; echo "Bookkeeping auto-fixes (proposed commits, never a silent pass):"; sed 's/^/- /' "$D/autofix-$TS.log"; } >> "$D/watch-$TS.md"
+    cat "$D/autofix-$TS.log"
+  fi
+fi
 if [ -n "$POST" ]; then
   "${WATCH_GH:-gh}" issue comment "$POST" --repo paiml/aprender --body-file "$D/watch-$TS.md" > /dev/null 2>&1 \
     || echo "$PROG: could not post to #$POST" >&2

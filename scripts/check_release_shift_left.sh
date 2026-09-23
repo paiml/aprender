@@ -49,10 +49,10 @@ gates = [{"gate": a.split("=")[0], "result": a.split("=")[1], "note": "fixture"}
 json.dump({"crate": "aprender", "commit": c, "gates": gates, "verdict": "GO"}, open(f, "w"))
 PY
 }
-watch() { # watch <script> <state> <receipt file> [ENV=VAL...] -> sets WRC, WJ (the watch json)
+watch() { # watch <script> <state> <receipt file> [extra watch args...] -> sets WRC, WJ (the watch json)
   local s=$1 st=$2 rf=$3; shift 3
-  env WATCH_DOGFOOD_CMD="echo $rf" WATCH_PREFLIGHT_CMD="${PF:-true}" WATCH_BUMP_CMD=true WATCH_HOME="${WH:-$T/home}" "$@" \
-    bash "$s" 0.70.0 --state "$st" > "$T/w.out" 2>&1; WRC=$?
+  env WATCH_DOGFOOD_CMD="echo $rf" WATCH_PREFLIGHT_CMD="${PF:-true}" WATCH_BUMP_CMD=true WATCH_HOME="${WH:-$T/home}" \
+    bash "$s" 0.70.0 --state "$st" "$@" > "$T/w.out" 2>&1; WRC=$?
   WJ=$(ls -t "$st"/0.70.0/watch-*.json 2> /dev/null | head -1)
 }
 # the predicate is THIS script's own literal (never data from the receipt): python evaluates it against the watch JSON
@@ -85,6 +85,10 @@ wtable() { # wtable <script> -> ok/FAIL lines
   WH="$T/home2" watch "$s" "$st" "$T/r1.json"
   if [ "$WRC" = 1 ] && jq_has '"shadow:skills" in d["real_red"]'; then echo "ok    watch-shadow-refuses"
   else echo "FAIL  watch-shadow-refuses rc $WRC"; fi
+  st=$(mktemp -d -p "$T"); receipt "$T/r7.json" "$HEADSHA" contracts=FAIL pmat-verify=FAIL model-parity=PASS
+  WATCH_AUTOFIX_CMD="echo AUTOFIX-REQUESTED" watch "$s" "$st" "$T/r7.json" --autofix
+  if [ "$WRC" = 0 ] && grep -q '^AUTOFIX-REQUESTED census complexity readme$' "$T/w.out" && grep -q 'Bookkeeping auto-fixes' "$(ls -t "$st"/0.70.0/watch-*.md | head -1)"; then
+    echo "ok    watch-autofix-runs-the-fixer-of-a-bookkeeping-red"; else echo "FAIL  watch-autofix-runs-the-fixer-of-a-bookkeeping-red rc $WRC"; fi
   st=$(mktemp -d -p "$T"); PF=false watch "$s" "$st" "$T/r1.json"
   if [ "$WRC" = 1 ] && jq_has '"preflight:R5" in d["real_red"]'; then echo "ok    watch-preflight-red-andons"
   else echo "FAIL  watch-preflight-red-andons rc $WRC"; fi
@@ -102,6 +106,7 @@ wmut real-ignored       watch-real-red-andons 'sys.exit(1 if real_red else 0)' '
 wmut unclassified-waived watch-unclassified-is-real 'else "real"   # UNCLASSIFIED' 'else "bookkeeping"   # UNCLASSIFIED'
 wmut first-red-reset    watch-first-red-persists-then-clears 'first.setdefault(gid, {"at": now, "sha": sha})' 'first[gid] = {"at": now, "sha": sha}'
 wmut stale-receipt-ok   watch-stale-receipt-is-red 'if r.get("commit") and not sha.startswith(r["commit"][:7]):' 'if False:'
+wmut autofix-skipped    watch-autofix-runs-the-fixer-of-a-bookkeeping-red 'if [ "$AUTOFIX" = 1 ]; then' 'if false; then'
 wmut shadow-skipped     watch-shadow-refuses 'if ! bash scripts/check_no_shadowed_repo_skill.sh' 'if false && bash scripts/check_no_shadowed_repo_skill.sh'
 
 echo "check_release_shift_left: $([ "$bad" = 0 ] && echo PASS || echo FAIL)"
