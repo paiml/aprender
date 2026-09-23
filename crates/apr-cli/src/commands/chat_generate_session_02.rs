@@ -401,8 +401,18 @@ impl ChatSession {
                     let max_tokens = config.max_tokens;
                     // #3794: record the backend that actually answered.
                     self.generated_on_gpu = true;
+                    // #3922: the fused path's API. `generate_cuda_with_cache` belonged
+                    // to `AprV2ModelCuda`; this is what `run` and `bench` call, and it
+                    // resets its own KV cache per generation (cache.rs:340, GH-260) —
+                    // which is why routing costs nothing per turn: there was never any
+                    // cross-turn KV reuse to lose.
+                    let gen_config = realizar::gguf::QuantizedGenerateConfig {
+                        max_tokens,
+                        stop_tokens: if eos_token_id == 0 { vec![] } else { vec![eos_token_id] },
+                        ..Default::default()
+                    };
                     return cuda_model
-                        .generate_cuda_with_cache(prompt, max_tokens, eos_token_id)
+                        .generate_gpu_resident(prompt, &gen_config)
                         .map_err(|e| format!("APR CUDA generate failed: {e}"));
                 }
             }
