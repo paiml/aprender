@@ -310,7 +310,7 @@ apr merge --config merge-config.yaml -o merged.apr
 All merge operations validate:
 - Input model compatibility (architecture, tensor shapes, vocab size)
 - Weight count/sum constraints
-- Output model integrity (100-point quality score)
+- Output model integrity (structural quality score over the checks that ran)
 - Plan mode for dry-run estimation
 
 ---
