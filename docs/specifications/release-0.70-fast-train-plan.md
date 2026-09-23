@@ -18,9 +18,19 @@ child issues only after operator review.
 **Baselines, measured, with their source:**
 - **X2 baseline: ≈ 97 % idle GPU while the lock was held.** One 25-min window on lambda, 2026-09-23 09:20Z (#3986, aprender-cf); 6 jobs queued behind it. **It is one sample.** FT-2's first action re-measures it over a whole sweep, and that number replaces this one.
 - **Queueing share of cell time ≈ 80 %.** In the 09:23–09:29Z window, yoga's idle sm_89 card finished 3 cells at 0.7–3.3 min each, while lambda finished 0 in 45 min behind the suite (#3986 comment).
-- **X1 baseline: [U].** 0.69.1 froze at 13:00Z 2026-09-23 and has not published. Its freeze→publish time is the baseline, recorded from the 0.69.1 ledger the moment it publishes.
-  - The only complete prior datum is 0.69.0: the release PR #3698 was opened 12:58Z and merged 13:47Z, and the GitHub release was published 13:56:55Z (2026-09-21).
-  - Its freeze time is not recorded anywhere this plan could find. That gap is itself FT-10's reason to exist.
+- **X1 baseline: the history, reconstructed (aprender-cb, 2026-09-23), with the 0.69.1 figure to be read from its ledger once it publishes.** No ledger records a freeze time, so this uses a proxy: T-0 = the release PR was **opened** (`gh pr list --search '"0.N.M" in:title'`), and publish = `aprender` `created_at` on crates.io (`https://crates.io/api/v1/crates/aprender/versions`).
+
+  | Release | T-0 (release PR opened) | crates.io | Span |
+  |---|---|---|---|
+  | 0.67.0 | #3145, 09-12 10:51Z | 09-13 08:36Z | **21.7 h** |
+  | 0.68.0 | #3406, 09-16 23:05Z | **never published** | ∞ |
+  | 0.68.1 | #3450, 09-17 12:24Z | 09-17 22:40Z | **10.3 h** |
+  | 0.68.2 | #3498, 09-18 18:55Z | 09-20 07:56Z | **37.0 h** |
+  | 0.69.0 | #3698, 09-21 12:58Z | **never published** (tagged 09-21 13:56Z; still absent at 09-23 ~11:30Z) | ∞ |
+
+  Of the last five trains, 3 reached crates.io, taking between 10.3 h and 37.0 h. X1's ≤ 4 h is a **3–9× cut** on the best of them.
+  - 0.69.0's GitHub release was published 13:56:55Z (2026-09-21), but its crates are **not** on crates.io. So X1 must define "publish" as the **later** of the two, as it does. A GitHub release alone is not a publish.
+  - No train's freeze time is recorded anywhere. That gap is itself FT-10's reason to exist.
 
 ## Rows
 
@@ -34,6 +44,7 @@ Every row has a `done_when` that names no person, a baseline, and a **first-gree
 - **first-green proof:**
   - a gpu-q case-table row that runs `gpu-q -- cargo test -p x` must exit with the refusal code, and must never have touched the lock file (flock `-n` probe from a sibling process);
   - its mutant (the refusal deleted) must be killed.
+  - **in-tree bare-flock callers are in scope** (quorum fix): every caller that takes `/tmp/apr-gpu.lock` without gpu-q is enumerated from the tree (`model_ladder.sh`'s `apr_locked`, `gpu_exclusive_run.sh`, …). Each one either routes through the same refusal or is listed in a shrink-only census. A new bare `flock /tmp/apr-gpu.lock` caller turns the census RED.
 - **ownership boundary:** gpu-q is fleet state (infra/forjar). The aprender side is the recipe and a `scripts/gpu_test.sh` that implements it.
 
 ### FT-2 · Lock idle sampling (the X2 instrument)
@@ -107,6 +118,7 @@ Every row has a `done_when` that names no person, a baseline, and a **first-gree
   - (c) the health wait counts queue time: the q4k.apr cell went RED while it was still waiting for the lock.
 - **first-green proof:**
   - (a) a ladder self-test counts `sha256sum` invocations per file, and requires exactly 1;
+  - (b) (quorum fix) the #3949 regression case stays in the ladder self-test: a failed serve probe whose evidence file is deleted before the receipt is written must still carry its evidence inline. Reverting #3949's change turns that case RED;
   - (c) a fixture holds the lock for longer than the health-wait ceiling, then releases it, and the cell must be GREEN.
 
   The mutant (the clock started before the lock) turns (c) RED.
@@ -136,7 +148,7 @@ Every row has a `done_when` that names no person, a baseline, and a **first-gree
     - `apr validate --quality` F exits non-zero or is documented as not a gate;
     - model_ladder.sh, check_multiplatform_dogfood.sh, crux_inference_dogfood.sh and `make publish`'s post-publish check each gain a must-RED self-test.
 - **baseline:**
-  - (a) the drain was fixed in `cab272e5d`; there is no simulation guard; 44 strictly-later-tier edges;
+  - (a) **the drain fix `cab272e5d` is on NO remote branch** (`git for-each-ref --contains cab272e5d refs/remotes/origin` is empty). `scripts/cascade-publish.sh` on `main` @ 49fe19c28 still runs exactly one `=== RETRY ROUND ===` (`grep -c` = 1). #3892 is OPEN in 0.69.1. So FT-9(a)'s first job is to get the fix onto `main` (and onto `release/0.69.1*` if 0.69.1 publishes with this script). There is no simulation guard; 44 strictly-later-tier edges;
   - (b) `grep -cE '\b(WARN|SKIP|REPORT|INFO|MANUAL)\b' scripts/dogfood.sh` = **58** lines at 49fe19c28. #3974 lists 22 of them as verdicts; the rest are to be classified. There are 141 `scripts/check_*.sh`.
 - **first-green proof:**
   - (a) the drain guard over a planted strictly-later cycle must be RED;
@@ -154,17 +166,28 @@ Every row has a `done_when` that names no person, a baseline, and a **first-gree
 - **#3987 qwen3moe chat/serve/code on CUDA:** done_when: chat, serve and code on the qwen3moe file are GREEN with `used_gpu=true` and `fell_back=false`. Its must-RED: each verb is RED on fallback.
 - **Low-bit admission, #3963 IQ3_XXS / #3953 IQ2_S / #3960 Q2_K:** done_when: each type's device A/B at every (k,n) shape the model uses, plus real bytes, ≤ 1e-5 per row, NaN-prefilled, planted faults RED first; the whitelist flips in the order #3950 → #3953 → #3963/#3960.
 - **baseline:** all open at 0.69.1's freeze (13:00Z 2026-09-23). Which of them land in 0.69.1 is settled by 0.69.1's own receipt. This row carries only what 0.69.1 did not close.
+- **first-green proof (quorum fix):** per carried issue, the ladder cell for that exact model file is GREEN on lambda **and** gx10 in a receipt from the release SHA. The same cell on the 0.69.1 receipt is the RED control. A cell with no RED control on record is not evidence the fix did anything.
 
-### FT-12 · Debt-ratchet slice 1 (#3997: 0.70 of 0.70–0.74, plus 0.75's 6th)
-- The slice is sized by aprender-cb, and this plan cites it rather than inventing it: "5 releases to clear 80%" with a 6th slice for 0.75 (operator, #3997 comment).
-  - `done_when`: the 0.70.0 thresholds for pillars A–D exactly as aprender-cb's sizing states them. Pillars: A coverage, B pv depth, C ONT-001 rows bound, D backlog.
-  - Each pillar's gate refuses a level below 0.69.x's.
-- **baselines (from #3997, to be re-derived by aprender-cb's commands):**
-  - A: 88.78 % line (`COV_FLOOR := 88`);
-  - C: 13/27 ONT rows bound;
-  - D: 715 open issues (121 with no milestone), 57 open PRs, 2,594 remote branches (2026-09-23 09:50Z).
-- **first-green proof:** each pillar's gate fails a fixture one unit below its 0.70 threshold.
-- **[U] until aprender-cb's sizing lands.** The thresholds are copied into this row verbatim in a follow-up commit on this PR.
+### FT-12 · Debt-ratchet slice 1 of 5 (#3997; sized by aprender-cb in PR #4003, PROPOSED until the operator rules on #4003 §6)
+The 0.75 sixth slice exists by operator ruling (#3997 comment, 10:46Z: *"ALL releases in .7 have some rachet"*). Every
+release refuses a level below the previous tag's. Baselines were measured 2026-09-23 on `main` @ 49fe19c28 (commands:
+#4003 §7). **They supersede #3997's table**: coverage is 88.20%, not 88.78%, and there are 353 live remote branches, not 2,594.
+
+| Pillar | Unit | Baseline | **0.70 threshold** | Gate |
+|---|---|---|---|---|
+| A | P₀ line coverage in bp (regex **and** excluded-file list pinned) | 8,819 (run 33245815502, 08-29; 0 green in 25 days since) | **≥ 8,928**, plus one green coverage-nightly on the release SHA | `make coverage` with `COV_FLOOR_BP` (**does not exist yet**, the first child issue) |
+| B-1 | E2 call sites, `pv coverage --binding contracts/aprender/binding.yaml --enforcement <crate>` summed; total call sites never < 510 | 115 (of 510: E0 267 / E1 128 / E2 115) | **≥ 179** | pv enforcement sum at T-5 |
+| B-2 | contracts with obligations > 0 and falsifiers = 0 (`pv coverage`) | 19 | **≤ 15** | same |
+| B-4 | `pv lint contracts/` as a required PR check | reachable from no workflow | **wired and green** | ci.yml (**a workflow change: operator check-in**) |
+| C | ONT-001 rows bound (infra `precondition-lint.sh --ledger`) | 13/27 | **≥ 16** | the lint's `bound=` at the tag |
+| D-1 | open issues > 24 h old and not in an open release milestone ≥ the current one | 428 | **≤ 342** | `check_reconcile.sh` R6 (new) |
+| D-2 | PRs > 7 d old with no author activity in 72 h | 19 | **≤ 15** | `check_reconcile.sh` R7 (new) |
+| D-3 | live remote branches with no open PR (excluding `main` and `release/*`) | 297 | **≤ 237** | count at T-5 |
+
+- **first-green proof:** each gate passes on the live repo at its threshold and fails at threshold − 1 unit (a count
+  pillar) or + 1 unit (a ceiling pillar). R6/R7 do not exist yet, so their proofs are step-2 acceptance tests
+  (#4003 §5). **No proof has run.**
+- **B-3 (bound equations) and the §6 decisions of #4003 are the operator's.** This row carries no B-3 number.
 
 ## Out (epic's own list)
 New backends and silicon (0.71, #3994), and serve/agentic features (0.72, #4000). FT-6 does not change the lock policy.
