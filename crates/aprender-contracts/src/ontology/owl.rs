@@ -189,18 +189,22 @@ pub fn export(sigma: &Sigma) -> Result<OwlExport, OwlError> {
         }
     };
     for (name, role) in roles {
-        concept(format!("role `{name}` domain"), &role.domain)?;
-        concept(format!("role `{name}` range"), &role.range)?;
+        // EXHAUSTIVE too (quorum lane 2): a new role flag must not compile until this loop says what it becomes.
+        let crate::ontology::sigma::Role {
+            domain,
+            range,
+            symmetric,
+            acyclic: _, // no axiom, by design (accounted in `not_expressed` above)
+            doc: _,     // prose, not an axiom
+        } = role;
+        concept(format!("role `{name}` domain"), domain)?;
+        concept(format!("role `{name}` range"), range)?;
         axioms.insert(Axiom::DeclareObjectProperty(name.clone()));
-        axioms.insert(Axiom::ObjectPropertyDomain(
-            name.clone(),
-            role.domain.clone(),
-        ));
-        axioms.insert(Axiom::ObjectPropertyRange(name.clone(), role.range.clone()));
-        if role.symmetric {
+        axioms.insert(Axiom::ObjectPropertyDomain(name.clone(), domain.clone()));
+        axioms.insert(Axiom::ObjectPropertyRange(name.clone(), range.clone()));
+        if *symmetric {
             axioms.insert(Axiom::SymmetricObjectProperty(name.clone()));
         }
-        // role.acyclic: no axiom, by design (accounted in `not_expressed` above).
     }
     // Σ's subsumption edges arrive with ONT-4d (`subsumes[]`); until then Σ intends none.
     let intended_subsumptions: BTreeSet<(String, String)> = BTreeSet::new();
