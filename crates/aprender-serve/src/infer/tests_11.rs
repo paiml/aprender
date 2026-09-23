@@ -351,10 +351,15 @@ fn test_apr_arch_no_match_defaults_to_llama() {
 fn test_is_legacy_quant_boundary_below() {
     // PMAT-783 gated F16 here because it had no GGUF GPU GEMV kernel and would
     // have been read as Q4K garbage. #3477 wrote that kernel and measured it
-    // (217/217 exact at `88d25d265`), so F16 is no longer the boundary case —
-    // BF16(30) is, and the boundary property is what this test is about.
+    // (217/217 exact at `88d25d265`), so F16 stopped being the boundary case and
+    // BF16(30) became it. #3908 has now measured BF16's kernel too (0 ULP,
+    // bit-exact), so the boundary MOVES AGAIN rather than the row being deleted:
+    // BF16(30) is eligible and its immediate neighbour IQ1_M(29) is not.
+    // Adjacent ids on opposite sides of the predicate is the strongest form of
+    // the boundary property this test owns.
     assert!(!is_legacy_gguf_quant(1)); // F16 — now has a measured GPU kernel
-    assert!(is_legacy_gguf_quant(30)); // BF16 — still none, still gated
+    assert!(!is_legacy_gguf_quant(30)); // BF16 — measured GPU kernel (#3908)
+    assert!(is_legacy_gguf_quant(29)); // IQ1_M — no kernel, the new boundary
 }
 
 #[test]

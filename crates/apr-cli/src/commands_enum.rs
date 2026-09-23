@@ -282,7 +282,7 @@ pub enum Commands {
         /// Path to .apr model file
         #[arg(value_name = "FILE")]
         file: PathBuf,
-        /// Show 100-point quality assessment
+        /// Score the structural checks that ran
         #[arg(long)]
         quality: bool,
         /// Strict validation (fail on warnings)

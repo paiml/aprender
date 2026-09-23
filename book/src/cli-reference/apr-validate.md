@@ -13,7 +13,7 @@ Arguments:
   <FILE>  Path to .apr model file
 
 Options:
-      --quality                Show 100-point quality assessment
+      --quality                Score the structural checks that ran
       --strict                 Strict validation (fail on warnings)
       --min-score <MIN_SCORE>  Minimum score to pass (0-100)
       --json                   Output as JSON

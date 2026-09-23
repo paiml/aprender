@@ -349,6 +349,11 @@ pub enum KernelType {
         k: u32,
         n: u32,
     },
+    /// BF16 GEMV (exact widening load, no dequantization) - #3908
+    Bf16Gemv {
+        k: u32,
+        n: u32,
+    },
     /// IQ4_XS GEMV (codebook + split 6-bit scales) - #3477
     Iq4XsGemv {
         k: u32,
