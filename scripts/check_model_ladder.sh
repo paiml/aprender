@@ -327,6 +327,45 @@ if main_p and os.path.exists(main_p):
         print(f"FAIL  ladder at origin/main unreadable: {e}"); rc = 1
 else:
     print("!     BOOTSTRAP: no ladder at origin/main yet; the anti-shrink floor arms when this lands")
+# #3907 (operator ruling via the release cop aprender-cf, 2026-09-23): a KNOWN RED that ships with its
+# ticket. `ladder.known_red` pins ONE model (rung id or file, AND its sha256) to ONE failure clause (a
+# regex over the row's reason) and ONE ticket. A row is covered only when EVERY reason it fails is
+# matched by an entry pinned to that same model: the same model failing another clause, or another
+# model failing this clause, is still RED. An entry that covers nothing on this sweep is refused as
+# STALE, the #3880 no-amnesty rule, so a known red cannot outlive its defect.
+KR = []
+for i, e in enumerate(L.get("known_red") or []):
+    e = e if isinstance(e, dict) else {}
+    missing = [k for k in ("sha256", "clause", "ticket", "ruling") if not str(e.get(k) or "").strip()]
+    if not (e.get("rung") or e.get("file")):
+        missing.append("rung|file")
+    if missing:
+        print(f"FAIL  known_red entry {i} has no {', '.join(missing)} -- a known red names its model, its sha256, its clause, its ticket and its ruling"); rc = 1
+        continue
+    # `clause` is one regex or a LIST: a single defect can surface as more than one reason on a row
+    # (#3907's golden failure also makes `apr qa` exit non-zero naming that gate, #3898). Each regex is
+    # pinned to this model; a reason none of them matches still makes the row RED.
+    try:
+        e["_re"] = [re.compile(c) for c in (e["clause"] if isinstance(e["clause"], list) else [e["clause"]])]
+    except re.error as exc:
+        print(f"FAIL  known_red entry {i} ({e['ticket']}) clause is not a valid regex: {exc}"); rc = 1
+        continue
+    e["_used"] = 0
+    KR.append(e)
+
+def known_red(row_key, f, sha, why):
+    """-> the covering entries when EVERY reason is matched by an entry pinned to this model, else None."""
+    if not why or not KR:
+        return None
+    hits = []
+    for w in why:
+        e = next((e for e in KR if (e.get("rung") == row_key or e.get("file") == f) and e["sha256"] == sha
+                  and any(r_.search(w) for r_ in e["_re"])), None)
+        if e is None:
+            return None
+        hits.append(e)
+    return hits
+
 good = {}  # host id -> a receipt that passed the host-level checks; the cells judge reads only these
 for h in hosts:
     f = os.path.join(rdir, f"{h['id']}.json")
@@ -385,6 +424,10 @@ for h in hosts:
             continue  # a ladder rung: judged, required, in the rung loop below
         why = why_of(x, inv_backends)
         if named_red(h["id"], f, x, why, inv_backends): continue
+        kr = known_red(None, f, x.get("sha256") or item.get("sha256"), why)
+        if kr:
+            for e in kr: e["_used"] += 1
+            print(f"KNOWN-RED {h['id']:7} inv:{f} ships with {', '.join(sorted({e['ticket'] for e in kr}))} -- " + "; ".join(why)); continue
         # #3846 / operator ruling 2026-09-22 ("we kick the MoE work to later"): a DECLARED
         # deferral. `inventory.deferred` maps a filename glob to a REASON, and a failing row
         # whose file matches one is printed DEFERRED with that reason instead of refusing.
@@ -427,6 +470,10 @@ for h in hosts:
             print(f"FAIL  {h['id']:7} {rid:22} sha256 mismatch — a different file is a different measurement"); rc = 1; continue
         why = why_of(x, r.get("backends", []))
         if named_red(h["id"], r.get("gguf") or x.get("file") or rid, x, why, r.get("backends", [])): continue
+        kr = known_red(rid, r.get("gguf") or x.get("file"), x.get("sha256") or r.get("sha256"), why)
+        if kr:
+            for e in kr: e["_used"] += 1
+            print(f"KNOWN-RED {h['id']:7} {rid} ships with {', '.join(sorted({e['ticket'] for e in kr}))} -- " + "; ".join(why)); continue
         if why:
             if req: print(f"FAIL  {h['id']:7} {rid:22} " + "; ".join(why)); rc = 1
             else:   print(f"warn  {h['id']:7} {rid:22} ({tag}) " + "; ".join(why))
@@ -455,6 +502,15 @@ for pat in inv_deferred:
         rc = 1
 if RV.finish(good, {k: list(v) for k, v in held_sha.items()}, [h["id"] for h in hosts], lambda y: not why_of(y, ["cuda"])):
     rc = 1
+# #3907: after EVERY host, a known-red entry that covered nothing is stale; one that covered rows is
+# summarised so the run cannot then claim "every required rung green".
+for e in KR:
+    if e["_used"] == 0:
+        print(f"FAIL  known-red entry {e.get('rung') or e.get('file')} {e['ticket']} covered NOTHING on this sweep -- "
+              f"the clause no longer fails (or the model changed): delete the entry, a known red must not outlive its defect"); rc = 1
+if any(e["_used"] for e in KR):
+    print(f"KNOWN-RED {sum(e['_used'] for e in KR)} row(s) ship RED with their tickets: "
+          + ", ".join(sorted({e['ticket'] for e in KR if e['_used']})) + " -- counted RED, never green")
 if model_ladder_cells.judge(L, good, rungs_doc, print, rungs_main):
     rc = 1
 # #3957 F4/F8: every (model, format, quant, host, backend, verb) cell must be PROVEN by an outside
@@ -605,6 +661,12 @@ if [ "$SELF_TEST" = 1 ]; then
     # #3957 F3: an ABSENT qa_rc / sha_ok is a FAIL, never the passing value.
     mutant qa-rc-absent       red-qa-rc-missing           's/if "qa_rc" not in x or not isinstance(qa_rc, int) or isinstance(qa_rc, bool):/if False:/'
     mutant sha-ok-absent      red-sha-ok-missing          's/        if "sha_ok" not in x:/        if False:/'
+    # #3907: a KNOWN-RED is pinned to ONE model, ONE clause and ONE ticket, and goes stale when it covers nothing.
+    mutant kr-any-model      red-known-red-other-model  's/(e.get("rung") == row_key or e.get("file") == f) and e\["sha256"\] == sha/True/'
+    mutant kr-any-reason     red-known-red-extra-clause 's/^            return None$/            continue/'
+    mutant kr-any-clause     red-known-red-other-clause 's/ and any(r_.search(w) for r_ in e\["_re"\])//'
+    mutant kr-never-stale    red-known-red-stale        's/^    if e\["_used"\] == 0:$/    if False:/'
+    mutant kr-no-ticket-ok   red-known-red-no-ticket    's/("sha256", "clause", "ticket", "ruling")/("sha256", "clause", "ruling")/'
     # #3957 F1: a deferred row exits 2 (Unknown/NotRun), never 0.
     mutant defer-exits-0      defer-inventory-declared    's/if deferred_rows and rc == 0:/if False:/'
     mutant defer-exits-0-qa   defer-qa-rc-declared        's/if deferred_rows and rc == 0:/if False:/'
@@ -846,6 +908,8 @@ cat "$TMP_OUT"
 # #3957 F9/F10: a run whose only non-green cells are re-proven RED-MODEL / RED-UNSUPPORTED exits 0,
 # and must not then claim "every required rung green". Read from the file, never through a pipe.
 named_red=0; grep -q '^RED   [0-9]* RED-MODEL' "$TMP_OUT" && named_red=1
+# #3907: a shipped KNOWN-RED is likewise RED, never green -- the summary must not say otherwise.
+grep -q '^KNOWN-RED [0-9]* row(s) ship RED' "$TMP_OUT" && named_red=1
 rm -f "$TMP_OUT"
 rm -f "$TMP_EQUIV" "$TMP_EQUIV.paths" "$TMP_EQUIV.lock_a" "$TMP_EQUIV.lock_b"
 [ -n "$TMP_RUNGS" ] && [ -f "$TMP_RUNGS" ] && rm -f "$TMP_RUNGS"
@@ -854,7 +918,7 @@ rm -f "$TMP_EQUIV" "$TMP_EQUIV.paths" "$TMP_EQUIV.lock_a" "$TMP_EQUIV.lock_b"
 if ! lock_audit scripts/model_ladder.sh; then rc=1; fi
 case $rc in
   0) if [ "$named_red" = 1 ]; then
-       echo "ok    no blocking cell: every required rung is green, or RED-MODEL / RED-UNSUPPORTED re-proven on this sweep (counted RED above, never green)"
+       echo "ok    no blocking cell: every required rung is green, or RED-MODEL / RED-UNSUPPORTED re-proven on this sweep, or a KNOWN-RED shipping with its ticket (counted RED above, never green)"
      else
        echo "ok    every required rung green on every required host"
      fi ;;
