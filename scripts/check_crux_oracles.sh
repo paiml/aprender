@@ -64,6 +64,8 @@ ROWS = [
   ("GREEN a closed think, then the tag",   ans("4", "int"), {"text": "<think>2+2=4</think><answer>4</answer>"}, True, None),
   ("RED the only tag was drafted inside think", ans("4", "int"), {"text": "<think>maybe <answer>4</answer></think>I am not sure."}, False, "no_answer_tag"),
   ("RED a right draft in think, a wrong final", ans("4", "int"), {"text": "<think><answer>4</answer></think><answer>5</answer>"}, False, "mismatch"),
+  ("GREEN a prefilled <think>: reasoning ends at </think>", ans("4", "int"), {"text": "2+2 <answer>5</answer>?\n</think>\n<answer>4</answer>"}, True, None),
+  ("RED a prefilled <think>: only a drafted tag", ans("4", "int"), {"text": "2+2 is <answer>4</answer> I think\n</think>\nIt is four."}, False, "no_answer_tag"),
   ("RED int oracle given prose",          ans("4", "int"), {"text": "<answer>four</answer>"}, False, "answer_not_int"),
   ("RED no text at all",                  ans("4", "int"), {"text": None}, False, "no_text"),
   ("GREEN recall on the final turn",      RECALL, {"text": "<answer>12</answer>", "turns": ["<answer>7</answer>", "<answer>12</answer>"]}, True, None),
@@ -166,6 +168,38 @@ for name, kw, want_adm, want_unc in CERTROWS:
     got_adm, got_unc = sorted(r["admitted"]["M/Q4"]), r["uncontrolled"]
     good = got_adm == want_adm and got_unc == want_unc
     print(f"  {'ok   ' if good else 'BROKE'} certify: {name}  ->  admitted {got_adm}, uncontrolled {got_unc}")
+    fail += not good
+
+# Thinking ON: hf/vLLM split the think off (split_think); an UNCLOSED one is reasoning + an EMPTY text.
+# The receipt must record it as unclosed (the cop's close/loop join), and a tag drafted inside the loop
+# must never count.
+def think_cert(d, hf_doc):
+    m = dict(MODEL, thinking=["on"])
+    rows = []
+    for leg, (eng, sha, src) in LEGROW.items():
+        out = os.path.join(d, f"{leg}.json")
+        json.dump(hf_doc if eng == "hf" else {"text": "<think>ok</think><answer>4</answer>"}, open(out, "w"))
+        open(out + ".err", "w").close()
+        rows.append({"kind": "gen", "engine": eng, "model_sha256": sha, "host": "h", "verb": "chat", "thinking": "on",
+                     "backend": "gpu", "prompt_id": "ctl", "rc": 0, "stdout": out, "stderr": out + ".err",
+                     "refused": None, **({"source": SRC} if src else {})})
+    for f, doc in (("m.jsonl", None), ("p.json", {"schema": o.SCHEMA, "prompts": [PSET["prompts"][0]]}), ("i.json", [m])):
+        with open(os.path.join(d, f), "w") as fh:
+            fh.write("".join(json.dumps(r) + "\n" for r in rows) if doc is None else json.dumps(doc))
+    subprocess.run([sys.executable, CERT, "certify", "--prompts", f"{d}/p.json", "--inventory", f"{d}/i.json",
+                    "--apr-commit", "c" * 40, "-o", f"{d}/r.json", f"{d}/m.jsonl"], capture_output=True, check=True)
+    r = json.load(open(f"{d}/r.json"))
+    return r["admitted"]["M/Q4"], r["think_closure"]["M/Q4|ctl"]["hf@bf16:hf"]
+
+THINKROWS = [
+  ("RED hf looped (empty text, tags only in reasoning) is recorded unclosed", {"text": "", "reasoning": "<answer>4</answer> wait <answer>4</answer>"}, [], "unclosed"),
+  ("GREEN hf closed its think and answered", {"text": "<answer>4</answer>", "reasoning": "2+2"}, ["ctl"], "closed"),
+]
+for name, doc, want_adm, want_think in THINKROWS:
+    with tempfile.TemporaryDirectory() as d:
+        adm, think = think_cert(d, doc)
+    good = adm == want_adm and think == want_think
+    print(f"  {'ok   ' if good else 'BROKE'} certify: {name}  ->  admitted {adm}, think {think}")
     fail += not good
 
 with tempfile.TemporaryDirectory() as d:
