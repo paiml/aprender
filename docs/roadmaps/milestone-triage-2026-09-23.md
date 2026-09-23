@@ -4,15 +4,15 @@
 
 **Corrected after the #4024 quorum (Opus 5.5 lane 1, FAIL):**
 
-- 3 of those moves broke this table's own rule 1: #3421 and #3428 (must-carry in #3999 and #4001) and #3997 (named by five epics). They were **reverted** to their pre-move state, each with a comment, and are now decisions. **Net moves: 199**, plus 9 corrections re-moved (see Corrections).
+- 3 of those moves broke this table's own rule 1: #3421 and #3428 (must-carry in #3999 and #4001) and #3997 (named by five epics). They were **reverted** to their pre-move state, each with a comment, and are now decisions. A 4th, #3845 (the same defect as the DECIDE #3978), was found and reverted in quorum round 6. **Net moves: 198**, plus 9 corrections re-moved (see Corrections).
 - 2 of the comments (#3917, #3532) had failed on a GraphQL error and were posted afterwards.
 - 3 edits (#3576, #3431, #3646) hit a transient GraphQL error and succeeded on retry.
 
-**NOT applied (left untouched, pending): 38 rows.** These are the 12 `DECIDE` rows (operator: the original 8, #3951, and the 3 reverted rows), 7 `close?`, 6 `verify-close`, 12 `0.69.1 (in flight)` and 1 `none (pinned)`. No issue was closed by the triage itself; 4 duplicates were closed on the operator's separate ruling (see Corrections).
+**NOT applied (left untouched, pending): 39 rows.** These are the 13 `DECIDE` rows (operator: the original 8, #3951, and the 4 reverted rows), 7 `close?`, 6 `verify-close`, 12 `0.69.1 (in flight)` and 1 `none (pinned)`. No issue was closed by the triage itself; 4 duplicates were closed on the operator's separate ruling (see Corrections).
 
-**Open issues per milestone after the moves, reverts, corrections and duplicate closes** (`gh issue list --milestone`, 2026-09-23 ~17:40 CEST): 0.70.0 129 · 0.71.0 106 · 0.72.0 53 · 0.73.0 34 · 0.74.0 19 · 0.75.0 5.
+**Open issues per milestone after the moves, reverts, corrections and duplicate closes** (`gh issue list --milestone`, 2026-09-23 ~18:10 CEST): 0.70.0 130 · 0.71.0 106 · 0.72.0 52 · 0.73.0 34 · 0.74.0 19 · 0.75.0 5.
 
-0.70.0 also holds the 4 untouched `close?` rows and issues other sessions added after this table's snapshot (#3988's moves, new filings). The milestone API's `open_issues` also counts pull requests.
+0.70.0 also holds the 4 untouched `close?` rows, the 3 reverted DECIDE rows (#3421, #3428, #3845), and issues other sessions added after this table's snapshot (#3988's moves, new filings). The milestone API's `open_issues` also counts pull requests.
 
 Each move was checked against the issue's LIVE state first: an issue closed, or moved off its snapshot milestone since the table was made, would have been skipped (none were).
 Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 and 136 open issues with no milestone.
@@ -33,17 +33,19 @@ Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 a
 
 1. **Named must-carry.** An issue an epic names in its body as a must-carry row goes to that epic's release. A dependency mention, such as #3994 citing #3986 as work that 'matters here', does not count. Named by more than one epic → `DECIDE a/b`, which is the operator's call.
 2. **Theme.** Otherwise the issue goes to the release whose exit bar it blocks. Correctness of a certified cell → 0.71; the serve/agent surface and telemetry → 0.72; the performance path (including correctness bugs *in* batched/FP8 paths, which must be fixed before parity is claimed) → 0.73; dispatch/tensor/arch consolidation → 0.74; training → 0.75; release/CI/gates/lock/sweep infrastructure → 0.70.
-3. **Debt ratchet (#3997).** Debt goes to a slice by pillar: A coverage → 0.70 (the floor gates the 0.70 train); B/C pv + ontology → 0.71; D backlog/docs/packaging → 0.73. The slices are a proposal for equal portions; the operator rebalances.
+3. **Debt (#3997).** Debt items are PARKED in a release by pillar: A coverage → 0.70 (the floor gates the 0.70 train); B/C pv + ontology → 0.71; D backlog/docs/packaging → 0.73. These are NOT #3997's pillar slices. #3997 and its step-1 plan (#4003) slice every pillar across every release, and pillar D means triaging and purging the backlog. The operator rebalances.
 4. **Not a milestone.** `0.69.1 (in flight)`: worked in the current train, closes at the tag or carries to 0.70. `verify-close`: the release tree already implements it -- cited in code on origin/release/0.69.1-batch-2 @ c619dddd4 (not yet on main). `close?`: a superseded or stale epic/row. `none (pinned)`: a standing coordination thread.
 5. **Review.** A keyword pass placed the rows, and a title-level hand review overrode about 120 of them. That was NOT enough: the #4024 quorum (lane 2) found keyword misplacements, and a body-level re-review of 184 rows (the 182 with a template reason at the time of writing, plus the rows the quorum named) found 10 clearly wrong placements (see **Corrections**). Treat a template reason as the weakest evidence in this table.
 
-**Totals, as first proposed** (before the 3 reverts, the 9 corrections and the 4 duplicate closes; the post-state counts are at the top).
+**Totals, current table** (the proposal after the 4 reverts, which are now DECIDE rows, and before the 9 corrections and the 4 duplicate closes; the post-state counts are at the top).
 
-- 0.70.0 today (178): close?: 4 · DECIDE 0.73.0/0.74.0: 2 · 0.70.0: 77 · 0.71.0: 44 · 0.72.0: 15 · 0.73.0: 16 · 0.74.0: 15 · 0.75.0: 5
+- 0.70.0 today (178): close?: 4 · DECIDE 0.71.0/0.72.0: 1 · DECIDE 0.73.0/0.74.0: 2 · 0.70.0: 77 · 0.71.0: 44 · 0.72.0: 14 · 0.73.0: 16 · 0.74.0: 15 · 0.75.0: 5
 - no milestone today (136): 0.69.1 (in flight): 12 · verify-close: 6 · close?: 3 · DECIDE (proposed 0.71.0): 1 · DECIDE (recommend 0.70.0): 1 · DECIDE 0.70.0/0.71.0: 4 · DECIDE 0.70.0/0.71.0 (in flight): 1 · DECIDE 0.70.0/0.71.0/0.72.0: 1 · DECIDE 0.71.0/0.72.0: 2 · 0.70.0: 31 · 0.71.0: 46 · 0.72.0: 10 · 0.73.0: 11 · 0.74.0: 5 · 0.75.0: 1 · none (pinned): 1
 
 ## Decisions for the operator
 
+- #3845 → **0.71.0/0.72.0, with #3978**: the same apr code backend-selector defect (REVERTED to 0.70.0 after a move made in error)
+- #3971, #3848, #3583 → **consistency re-check**, like #3483. The quorum flagged each as contradicting the reasoning the table applied elsewhere: #3971 is comparator hygiene (0.70?); #3848 is a run-verb defect (0.71?); #3583 is BF16 admission integrity (0.71?). Not re-moved without a ruling
 - #3483 → **re-check 0.71 vs 0.73**: applied as 0.71, but rule 2 sends FP8/batched-path correctness to 0.73 (as #2765). Flagged by the quorum; not re-moved without a ruling
 - #3421, #3428 → **0.73.0/0.74.0**: must-carry in both #3999 and #4001 (REVERTED to 0.70.0 after a move made in error). Note: an operator comment on #3999 (2026-09-23 10:43Z) already assigns PP-QUANT/PP-TENSOR to 0.74 as its core; #3999's body was not updated. Confirm, then move
 - #3997 → **recommend 0.70.0 as the first slice**: the ratchet epic is named by five epics (REVERTED to no milestone after a move made in error)
@@ -82,6 +84,7 @@ These rows were first applied as the table proposed, and a body-level re-review 
 - #3882 / #3883: the golden ON prompt in neither declared mode (both 0.71)
 - #3871 / #3940: the ladder receipt does not bind the binary (both 0.71)
 - #3636 / #3837: clippy --features cuda red and ungated (both 0.70; #3996 related)
+- #3984 / #3989: found by the quorum after the ruling, NOT closed: the same driver_cuda_gguf.rs 10 E0063 errors; #3984 is must-carry in #3998. Needs its own ruling
 
 ## Currently in 0.70.0
 
@@ -225,7 +228,7 @@ These rows were first applied as the table proposed, and a body-level re-review 
 | #3776 | 0.72.0 | serve/agent/telemetry surface: Agent Ready (#4000) | apr code --emit-trace never records a tool call (4 records, one text block; code.rs calls it 'M29+') — the tra |
 | #3826 | 0.72.0 | serve/agent/telemetry surface: Agent Ready (#4000) | apr run --format json reports "fell_back": false on a run whose own stderr says "attempting fallback" |
 | #3838 | 0.72.0 | serve/agent/telemetry surface: Agent Ready (#4000) | 0.70.0: `apr serve` outlives its launcher and keeps the port — a leaked listener on a shared box (found via #3 |
-| #3845 | 0.72.0 | serve/agent/telemetry surface: Agent Ready (#4000) | 0.70.0: `apr code` has no backend selector — it spawns its own `apr serve`, so "code on cpu" vs "code on cuda" |
+| #3845 | DECIDE 0.71.0/0.72.0 | the same defect as #3978 (apr code has no backend selector / no CPU lane), which #3994 and #4000 both name -- operator picks with #3978. Moved to 0.72 in error and REVERTED to 0.70.0 after the #4024 quorum | 0.70.0: `apr code` has no backend selector — it spawns its own `apr serve`, so "code on cpu" vs "code on cuda" |
 | #3848 | 0.72.0 | serve/agent/telemetry surface: Agent Ready (#4000) | apr run --chat is INERT: the chat template is applied whether or not the flag is passed, and there is no way t |
 | #2584 | 0.73.0 | undocumented --task arms: debt ratchet pillar D (#3997), slice 4 | apr eval --task: 8 of 10 dispatch arms are reachable but undocumented in --help |
 | #2730 | 0.73.0 | cbtop PASS over its own grade F: the perf instrument must be honest before parity (#3999) | cbtop reports status PASS and ci_result green over its own grade F when the profiler returns zero bricks |
@@ -351,7 +354,7 @@ These rows were first applied as the table proposed, and a body-level re-review 
 | #3876 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | ladder receipt: bytes describes the symlink, sha256 describes the model — one row, two objects |
 | #3878 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | ladder receipt: a dangling symlink records "sha256": "" — an identity claim of nothing |
 | #3882 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | golden gate: the thinking-ON leg sends a prompt in NEITHER mode the model declares — it deletes the think bloc |
-| #3893 | 0.71.0 | quant label wrong for .apr: honest cell labels, with #4006 (#3994) | two surfaces report quant=Q4_K for .apr models that contain no Q4_K tensors (f16 and BF16 measured) |
+| #3893 | 0.71.0 | quant label wrong for .apr: it conceals the #3885 dispatch defect, which keeps it in 0.71 (correctness). #4006, the telemetry-only label bug, went to 0.72 in the Corrections | two surfaces report quant=Q4_K for .apr models that contain no Q4_K tensors (f16 and BF16 measured) |
 | #3895 | 0.71.0 | GPU L2 diverges 91.92% from CPU: backend correctness (#3994) | gpu_cpu_trace_compare compiles again and fails: GPU L2 diverged 91.92% from CPU on a synthetic fixture (cause  |
 | #3901 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | a ladder row red only on serve prints reason 'unknown' — #3886 moved the verdict and left the explanation behi |
 | #3908 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | Every BF16 SafeTensors import produces a .apr that cannot run on the GPU: wgpu has no type-30 dequant and the  |
@@ -369,7 +372,7 @@ These rows were first applied as the table proposed, and a body-level re-review 
 | #3942 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | Decide: should golden_output judge .apr on the GPU, or formally delegate that to chat/serve? (the gap #3931 ma |
 | #3947 | 0.71.0 | debt ratchet pillars B/C (#3997: pv at the deepest level, ontology merge), slice 2 | aprender-core has no IQ dequantizer, so tensor_contract cannot inspect three release-blocking models — port fr |
 | #3968 | 0.71.0 | debt ratchet pillars B/C (#3997: pv at the deepest level, ontology merge), slice 2 | GPU whitelist admits a quant TYPE on one model's shapes — admission must key on per-shape device conformance ( |
-| #3971 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | HF cache blob for Qwen2.5-Coder-1.5B-Instruct is a rewritten float32 file under upstream's sha256 name — hf+vL |
+| #3971 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) **[REASON WRONG, flagged for operator re-check: the defect is a corrupted comparator HF cache blob plus a judge that scored it GREEN, i.e. the sweep's oracle set (0.70, like #3952/#3778), not apr correctness; not re-moved without a ruling]** | HF cache blob for Qwen2.5-Coder-1.5B-Instruct is a rewritten float32 file under upstream's sha256 name — hf+vL |
 | #3972 | 0.71.0 | debt ratchet pillars B/C (#3997: pv at the deepest level, ontology merge), slice 2 | ONT-4c5 (infra#921): aprender capability-cell extractor + arming rule (required Unknown{NotRun} meets to RED) |
 | #3973 | 0.71.0 | named must-carry in epic #3994 | F2 GPU validation fails OPEN: returns true ('assume GPU is fine') when the CPU reference or probe is unavailab |
 | #3975 | 0.71.0 | named must-carry in epic #3994 | GPU/CPU f32 APR forward diverges at layer-0 QKV (std 4.44 vs 0.30); gpu_cpu_trace_compare fails 91.9% L2 once  |
