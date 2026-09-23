@@ -8,6 +8,20 @@
 is the ill-posed-comparison problem (#3873): a text-equality gate run on a prompt
 that puts the model in a degenerate regime.
 
+## 0. If you came here to write a CPU/GPU numerical guard: one already exists
+
+`OwnedQuantizedModelCuda::new` runs a parity gate at **model-construction time,
+on the real inference path**. Corrupt the CPU leg and it refuses to construct:
+
+```
+PARITY-GATE FAILED: GPU computes a DIFFERENT function than CPU.
+```
+
+I found this by accident, after writing and deleting two hand-rolled guards
+reaching for the same property (§4). **It is better positioned than either could
+be** — it sits where both legs are already built, not in a test that has to
+reconstruct them. Extend or lean on that gate rather than writing a third one.
+
 ## 1. The architecture hypothesis, refuted
 
 The hypothesis was that the Q4_K GPU path might be right for qwen geometry and
