@@ -38,11 +38,28 @@
     // clean_chat_response: whitespace normalization
     // =========================================================================
 
+    /// Runs of spaces are CONTENT and survive. This test used to assert the collapse to
+    /// "Hello world test" -- the defect the 0.69.1 CRUX sweep measured as Python indentation
+    /// arriving as one space (ctl-code-add RED).
     #[test]
     fn test_clean_chat_response_many_spaces() {
         let raw = "Hello     world     test";
         let cleaned = clean_chat_response(raw);
-        assert_eq!(cleaned, "Hello world test");
+        assert_eq!(cleaned, "Hello     world     test");
+    }
+
+    /// Must-RED (0.69.1 sweep): an indented line round-trips byte-identical, first line included.
+    #[test]
+    fn test_clean_chat_response_keeps_indentation_byte_identical() {
+        assert_eq!(clean_chat_response("    return a + b"), "    return a + b");
+        let code = "def add(a, b):\n    return a + b\n\nclass C:\n    def f(self):\n        return 1";
+        assert_eq!(clean_chat_response(code), code);
+        assert_eq!(clean_chat_response(&format!("{code}<|im_end|>")), code);
+        assert_eq!(clean_chat_response(&format!("\n\n{code}\n\n")), code);
+        assert_eq!(clean_chat_response("```python\n\tx = 1\n```"), "```python\n\tx = 1\n```");
+        // ...and punctuation is VERBATIM (cop ruling): chat must print what run prints.
+        assert_eq!(clean_chat_response("Wait...."), "Wait....");
+        assert_eq!(clean_chat_response("!!!!"), "!!!!");
     }
 
     #[test]

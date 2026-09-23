@@ -578,26 +578,6 @@ fn no_qwen_tokenizer_message(model_path: &Path) -> String {
     )
 }
 
-/// Normalize repeated punctuation (max 3 repeats of `!`, `?`, `.`).
-fn normalize_repeated_punctuation(s: &str) -> String {
-    let mut prev_char = '\0';
-    let mut repeat_count = 0;
-    let mut result = String::with_capacity(s.len());
-    for c in s.chars() {
-        if c == prev_char && matches!(c, '!' | '?' | '.') {
-            repeat_count += 1;
-            if repeat_count < 3 {
-                result.push(c);
-            }
-        } else {
-            repeat_count = 0;
-            result.push(c);
-        }
-        prev_char = c;
-    }
-    result
-}
-
 /// Check if text looks like the start of a new conversational turn.
 fn looks_like_new_turn(text: &str) -> bool {
     text.starts_with("Suggest")
@@ -630,17 +610,19 @@ fn clean_chat_response(raw: &str) -> String {
     cleaned = cleaned.replace("Ġ", " ");
     cleaned = cleaned.replace("Ċ", "\n");
 
-    cleaned = normalize_repeated_punctuation(&cleaned);
+    // VERBATIM (0.69.1 sweep, cop ruling): runs of `!`, `?`, `.` used to be capped at three here, which
+    // rewrote the model's own output ("Wait...." -> "Wait..."), so chat and run disagreed and CRUX compared
+    // chat against a reference that rewrites nothing. Only special tokens are removed.
 
-    while cleaned.contains("  ") {
-        cleaned = cleaned.replace("  ", " ");
-    }
-
-    let trimmed = cleaned.trim();
+    // WHITESPACE IS CONTENT (0.69.1 CRUX sweep, ctl-code-add RED in both thinking modes): a loop here
+    // collapsed every run of spaces to one, so Python indentation came out as a single space while
+    // llama.cpp kept four, and the whole reply was trim()med, which ate the FIRST line's indentation
+    // too. Only the blank lines around the reply and its trailing whitespace are dropped.
+    let trimmed = cleaned.trim_start_matches(['\n', '\r']).trim_end();
 
     // Stop at first line if the model started a new turn
     if let Some(first_newline) = trimmed.find('\n') {
-        let first_line = trimmed[..first_newline].trim();
+        let first_line = trimmed[..first_newline].trim_end();
         let rest = trimmed[first_newline..].trim();
         if looks_like_new_turn(rest) {
             return first_line.to_string();
