@@ -49,7 +49,7 @@ CPU path deliberately and works for every row above.
 | Q5_K | yes | ggml type 13 |
 | Q6_K | yes | ggml type 14 |
 | Q8_K | no | ggml type 15 — no GPU GEMV kernel |
-| IQ2_XXS | no | ggml type 16 — no GPU GEMV kernel; IQ also fails the CPU dequant path |
+| IQ2_XXS | yes | ggml type 16 |
 | IQ2_XS | no | ggml type 17 — no GPU GEMV kernel; IQ also fails the CPU dequant path |
 | IQ3_XXS | no | ggml type 18 — no GPU GEMV kernel; IQ also fails the CPU dequant path |
 | IQ1_S | no | ggml type 19 — no GPU GEMV kernel; IQ also fails the CPU dequant path |

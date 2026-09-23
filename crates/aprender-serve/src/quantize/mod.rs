@@ -77,12 +77,20 @@ pub mod generic_dot;
 pub mod generic_matvec;
 pub mod iq2_s;
 pub mod iq2_xxs;
+#[cfg(test)]
+#[path = "iq2_xxs_geometry_tests.rs"]
+pub(crate) mod iq2_xxs_geometry_tests;
+
 pub mod iq3_s;
 pub mod iq3_xxs;
 pub mod iq4_nl;
 pub mod iq4_xs;
 pub mod iq_dispatch;
 pub mod iq_grids;
+#[cfg(test)]
+#[path = "ptx_codebook_tests_3931.rs"]
+mod ptx_codebook_tests_3931;
+
 pub mod parallel_dequant;
 pub mod parallel_k;
 pub mod simd;
