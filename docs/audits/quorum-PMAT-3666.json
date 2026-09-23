@@ -1,0 +1,180 @@
+{
+  "ticket": "PMAT-3666",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main and origin/main agree",
+  "head": "2569c7ee0700bed54d5a007e50293ac4432ca42f",
+  "diff_sha256": "fac3a9bc09969ba3344780111d46ab919fd748870d29d9e5f444859f31853eed",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 71700,
+  "author": {
+    "model": "Opus 5 (1M context)",
+    "family": "claude",
+    "source": "measured"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I have evaluated the diff for PMAT-3666 (APEX-2d: raster) against all acceptance criteria, ticket requirements, and constraints, attempting to refute the implementation across all fronts.\n\nVerification and findings:\n1. `crates/aprender-viz/Cargo.toml` & `Cargo.lock`: `resvg` is configured with `default-features = false`, dropping font stack dependencies (`fontdb`, `rustybuzz`, `ttf-parser`, unicode packages) and `zune-jpeg 0.4`.\n2. `crates/aprender-viz/src/raster.rs`:\n   - Enforces scale validity (`!scale.is_finite() || scale <= 0.0`).\n   - `prescan_refuse` walks `roxmltree` nodes refusing all forbidden elements (`text`, `tspan`, `textPath`, `tref`, `altGlyph`, `textArea`, `font`, `font-face`, `foreignObject`, `image`, `feImage`) in either the SVG namespace or no namespace.\n   - `render_unscanned` disarms the `image_href_resolver` (returns `None` for both data and string).\n   - Render output is demultiplied row-wise into `Framebuffer` and encoded using pinned `PngEncoder`.\n   - Private `render_unscanned` is exercised by unit test `a_text_element_paints_nothing_because_no_font_database_is_compiled_in`.\n3. `crates/aprender-viz/tests/raster_determinism.rs`:\n   - All 11 tests execute and pass (`cargo test -p aprender-viz --features raster --test raster_determinism`).\n   - Writes `raster-<arch>.json` receipt with all required keys.\n4. `scripts/ci/raster-fontdb-ban.sh`:\n   - Dependency graph scan verified clean (`cargo tree -p aprender-viz --features raster -e normal`).\n   - 6-arm self-test runs and passes 6/6 cases.\n5. `scripts/ci/raster-compare.sh`:\n   - Enforces 2 receipts, distinct architectures, identical SVG input, dimensions, scale, resvg version, and operating system.\n   - Self-test runs and passes 12 cases and 2 mutants (`raster-compare self-test: 12 cases, 2 mutants, failed: 0`).\n6. `.github/workflows/ci.yml` & `scripts/tree_reader_tests.txt`:\n   - Determinism jobs and receipt artifact upload/compare paths properly wired.\n   - Registry updated cleanly.\n\nNo refutations, regressions, or gate weakenings were found. All claims are backed by the diff and measured behavior.",
+      "findings": [],
+      "raw_bytes": 5617,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Review completed for ticket PMAT-3666 (Lane 2 of 3). The diff was thoroughly inspected and verified against all ticket requirements, acceptance criteria, and quality standards.\n\nKey Verifications:\n1. `crates/aprender-viz/src/raster.rs`: Implements `svg_to_png` behind the `raster` feature. `resvg` is configured with `default-features = false` in `Cargo.toml`.\n2. Pre-scan Policy: `prescan_refuse` uses `roxmltree` to parse SVG and refuse forbidden elements (`text`, `tspan`, `textPath`, `tref`, `altGlyph`, `textArea`, `font`, `font-face`, `foreignObject`, `image`, `feImage`) declaring either the SVG namespace or no namespace.\n3. Security & Safety: `image_href_resolver` unconditionally returns `None` for data and string resolution to prevent file system reads. Pixels are demultiplied row-wise into `Framebuffer` and encoded using pinned `PngEncoder`.\n4. Testing & Determinism: 11 tests in `tests/raster_determinism.rs` verify determinism, non-blank output, header correctness, chunk hygiene, refusal paths, and host receipt emission (`raster-<arch>.json`).\n5. Unit Test & Private Function: `svg_to_png` is split into scale check, `prescan_refuse`, and private `render_unscanned`. Contains unit test `a_text_element_paints_nothing_because_no_font_database_is_compiled_in`.\n6. CI Validation Scripts: `scripts/ci/raster-compare.sh` (12 self-test cases, 2 mutants) and `scripts/ci/raster-fontdb-ban.sh` (6 self-test arms) pass cleanly.\n7. Dependency Graph & CI Integration: `Cargo.lock` drops `zune-jpeg 0.4` and fontdb/rustybuzz edges. `ci.yml` and `tree_reader_tests.txt` are updated as specified.\n\nNo refutations found. Verdict is PASS.",
+      "findings": [],
+      "raw_bytes": 4665,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.6-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.6-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff for PMAT-3666 (APEX-2d: raster) was audited against all ticket requirements and acceptance criteria, with the following verifications:\n1. `crates/aprender-viz/src/raster.rs` implements `svg_to_png` behind the `raster` feature with scale check, `roxmltree` pre-scan refusing forbidden elements (text, tspan, textPath, tref, altGlyph, textArea, font, font-face, foreignObject, image, feImage) in default and SVG namespaces, disarmed href resolver returning `None`, `resvg` rendering, row-wise pixel demultiplication into `Framebuffer`, and encoding via pinned `PngEncoder::to_bytes`.\n2. Private `render_unscanned` helper tested via unit test `a_text_element_paints_nothing_because_no_font_database_is_compiled_in`.\n3. `crates/aprender-viz/Cargo.toml` configures `resvg` with `default-features = false`, dropping fontdb and rustybuzz dependencies.\n4. `scripts/ci/raster-fontdb-ban.sh` and its 6-arm self-test pass (measured: 6 ok, 0 FAIL; clean on live tree).\n5. `scripts/ci/raster-compare.sh` and its 12-case, 2-mutant self-test pass (measured: 12 cases, 2 mutants, 0 failed).\n6. Integration test suite `tests/raster_determinism.rs` executes 11 tests cleanly (measured: 11 passed, 0 failed).\n7. Mutation M1 (bypassing pre-scan) verified to fail exactly 4 refusal tests and pass 7.\n8. Mutation M2 (enabling default features and system fonts) verified to fail the unit test and `raster-fontdb-ban.sh` while keeping all 11 integration tests green.\n9. CI workflow `.github/workflows/ci.yml`, `tree_reader_tests.txt`, `Cargo.lock`, and roadmap entries are accurately updated without scope creep or weakened gates.",
+      "findings": [],
+      "raw_bytes": 4573,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": [
+          {
+            "model": "gpt-oss-120b-medium",
+            "why": "family openai quota-exhausted (429, first seen on the pre-check probe of gpt-oss-120b-medium)"
+          }
+        ]
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane models: only 2 distinct model ids across 3 lanes (gemini-3.6-flash-high, gemini-3.7-flash-high) — lanes sharing an id are resamples, not independent reviewers (PMAT-125)",
+    "lane 3: judged by gemini-3.7-flash-high after falling through gpt-oss-120b-medium (skipped: family openai quota-exhausted (429, first seen on the pre-check probe of gpt-oss-120b-medium)) (PMAT-321)"
+  ],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.6-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "fallback"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "fallback"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.7-flash-high",
+        "probe": 1,
+        "outcome": "live"
+      },
+      {
+        "family": "openai",
+        "model": "gpt-oss-120b-medium",
+        "probe": 1,
+        "outcome": "quota",
+        "reason": "API error (attempt 4): RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 100h47m13s."
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=Opus 5 (1M context)/claude"
+  }
+}
