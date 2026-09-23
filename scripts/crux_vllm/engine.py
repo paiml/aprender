@@ -31,6 +31,10 @@ import subprocess
 import sys
 import time
 import urllib.request
+
+# Loopback only: every URL this file opens is a local server it just started. An http_proxy/HTTP_PROXY in the
+# environment (sandboxed runners set one) would otherwise route 127.0.0.1 through the proxy (quorum lane 2).
+NO_PROXY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -166,6 +170,14 @@ def split_think(text: str) -> tuple[str, str]:
     return text[e + 8 :].strip(), text[s + 7 : e].strip()
 
 
+def prompt_opens_think(rendered: str) -> bool:
+    """Does the rendered prompt END inside an opened think block? Qwen3.5's official thinking-ON template prefills
+    `<think>\\n` (measured, #3990), so the generation starts INSIDE the block with no opening tag, and split_think
+    — which looks for `<think>` — would hand the whole reasoning back as the answer, and an unclosed block as a
+    complete one. item_doc restores the opener before splitting when this is true."""
+    return rendered.rstrip().endswith("<think>")
+
+
 def load_messages(path: str) -> list:
     with open(path, encoding="utf-8") as f:
         return json.load(f)["messages"]
@@ -247,11 +259,15 @@ def load_inproc(a):
         gpu_memory_utilization=gpu_memory_utilization(), enforce_eager=True,
     )
 
+    tok = llm.get_tokenizer()
+
     def respond(convo, thinking, max_tokens):
         # Greedy whatever --temperature says, as the protocol asks (the hf engine does the same).
         params = SamplingParams(temperature=0.0, max_tokens=max_tokens, seed=a.seed)
         out = llm.chat(convo, params, use_tqdm=False, chat_template_kwargs=thinking_kwargs(thinking) or None)[0]
-        return out.outputs[0].text, len(out.prompt_token_ids), len(out.outputs[0].token_ids)
+        rendered = tok.apply_chat_template(convo, tokenize=False, add_generation_prompt=True, **thinking_kwargs(thinking))
+        return (out.outputs[0].text, len(out.prompt_token_ids), len(out.outputs[0].token_ids),
+                prompt_opens_think(rendered))
 
     return respond, "LLM.chat", device_label()
 
@@ -268,6 +284,9 @@ def serve_session(a, log_path: Path):
     end. Yields (respond, interface, device) like load_inproc; respond also saves the raw response when given
     a path."""
     src = verified_source(a.source_repo, a.source_revision)
+    from transformers import AutoTokenizer
+
+    tok = AutoTokenizer.from_pretrained(str(src))  # the server renders with this same template: ask it what it rendered
     port = free_port()
     cmd = [
         str(Path(sys.executable).parent / "vllm"), "serve", str(src), "--served-model-name", a.source_repo,
@@ -283,7 +302,7 @@ def serve_session(a, log_path: Path):
             if proc.poll() is not None:
                 raise RuntimeError(f"vllm serve exited {proc.returncode} before answering (log: {log_path.name})")
             try:
-                urllib.request.urlopen(f"http://127.0.0.1:{port}/v1/models", timeout=2).read()
+                NO_PROXY_OPENER.open(f"http://127.0.0.1:{port}/v1/models", timeout=2).read()
                 break
             except Exception:
                 if time.time() > deadline:
@@ -305,13 +324,15 @@ def serve_session(a, log_path: Path):
                 data=json.dumps(body).encode(),
                 headers={"Content-Type": "application/json"},
             )
-            body_bytes = urllib.request.urlopen(req, timeout=1800).read()
+            body_bytes = NO_PROXY_OPENER.open(req, timeout=1800).read()
             if stream:
                 sse = body_bytes.decode("utf-8", "replace")
                 if resp_path is not None:
                     resp_path.with_suffix(".sse.txt").write_text(sse, encoding="utf-8")
                 raw, usage, _ = parse_sse(sse, terminal="done")  # vLLM always ends a stream with [DONE]
-                return raw, usage.get("prompt_tokens"), usage.get("completion_tokens")
+                return (raw, usage.get("prompt_tokens"), usage.get("completion_tokens"),
+                        prompt_opens_think(tok.apply_chat_template(convo, tokenize=False, add_generation_prompt=True,
+                                                                   **thinking_kwargs(thinking))))
             resp = json.loads(body_bytes)
             if resp_path is not None:
                 resp_path.write_text(json.dumps(resp, indent=1), encoding="utf-8")
@@ -321,7 +342,9 @@ def serve_session(a, log_path: Path):
             if reasoning:
                 raw = f"<think>{reasoning}</think>{raw}"
             usage = resp.get("usage") or {}
-            return raw, usage.get("prompt_tokens"), usage.get("completion_tokens")
+            return (raw, usage.get("prompt_tokens"), usage.get("completion_tokens"),
+                    prompt_opens_think(tok.apply_chat_template(convo, tokenize=False, add_generation_prompt=True,
+                                                               **thinking_kwargs(thinking))))
 
         yield respond, "vllm serve", f"{device_label()} (vllm serve)"
     finally:
@@ -341,12 +364,18 @@ def item_doc(it: dict, respond, interface: str, device: str, resp_path: Path | N
     messages = load_messages(it["messages"])
     counts = {"prompt_tokens": 0, "completion_tokens": 0}
 
+    opened = []
+
     def one(convo):
         if interface == "vllm serve":
-            text, n_prompt, n_completion = respond(convo, it["thinking"], it["max_tokens"], resp_path,
-                                                   stream=it["verb"] == "serve stream")
+            res = respond(convo, it["thinking"], it["max_tokens"], resp_path, stream=it["verb"] == "serve stream")
         else:
-            text, n_prompt, n_completion = respond(convo, it["thinking"], it["max_tokens"])
+            res = respond(convo, it["thinking"], it["max_tokens"])
+        text, n_prompt, n_completion = res[:3]
+        if len(res) > 3 and res[3]:
+            # the prompt opened the think block (#3990): restore the opener so the split sees the block
+            opened.append(True)
+            text = "<think>" + text
         counts["prompt_tokens"] = n_prompt  # the FINAL turn's prompt holds the whole conversation
         if n_completion is not None and counts["completion_tokens"] is not None:
             counts["completion_tokens"] += n_completion
@@ -360,7 +389,7 @@ def item_doc(it: dict, respond, interface: str, device: str, resp_path: Path | N
     else:
         raw = one(messages)
     answer, reasoning = split_think(raw)
-    doc = {"text": answer}
+    doc = {"text": answer, "raw_text": raw}
     if turns is not None:
         doc["turns"] = turns  # every assistant answer, in order; `text` is the last of them
     if reasoning:
@@ -368,7 +397,8 @@ def item_doc(it: dict, respond, interface: str, device: str, resp_path: Path | N
     if it["verb"] == "serve stream":
         interface = interface + " (stream)"
     doc["reported"] = {"interface": interface, "thinking_requested": it["thinking"],
-                       "thinking_emitted": bool(reasoning), **counts, "device": device}
+                       "thinking_emitted": bool(reasoning), "prompt_opens_think": bool(opened), **counts,
+                       "device": device}
     return doc
 
 
@@ -484,6 +514,9 @@ def gen_batch(a) -> None:
 
 # ── CLI ────────────────────────────────────────────────────────────────────
 def main(argv: list[str]) -> None:
+    import crux_proc  # scripts/lib is on sys.path (see the verify import above)
+
+    crux_proc.install()  # a stopped driver takes its engine children with it (#3952, measured on gx10)
     if argv and argv[0] in ("tok", "tmpl", "greedy"):
         die(f"`{argv[0]}` is `none` for vLLM: it tokenizes and renders through the transformers tokenizer the "
             "hf engine already reports")

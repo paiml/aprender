@@ -126,6 +126,7 @@ def _no_cpu(a):
 engine.preflight = _no_cpu
 failed += bc.run(engine, "vllm serve")
 failed += bc.run_sse()
+failed += bc.run_proc()
 bc.LOADS.update(inproc=0, serve=0)
 _w = bc.batch_env()
 engine.load_inproc = bc.fake_inproc()
@@ -135,7 +136,7 @@ _r = bc.rows(_w)
 _ok = bc.LOADS["inproc"] == 0 and "no CPU backend" in (_r[0]["refused"] or "")
 print(f"{'ok  ' if _ok else 'FAIL'} [batch] a preflight refusal fans out and loads nothing")
 failed += not _ok
-CASES_TOTAL += bc.CASE_COUNT + bc.SSE_CASE_COUNT + 1
+CASES_TOTAL += bc.CASE_COUNT + bc.SSE_CASE_COUNT + bc.PROC_CASE_COUNT + 1
 
 for name, logs, must, must_not in CASES:
     got = engine.refusal(GENERIC, *logs)
@@ -143,5 +144,5 @@ for name, logs, must, must_not in CASES:
         must_not is None or must_not not in got)
     print(f"{'ok  ' if ok else 'FAIL'} {name}" + ("" if ok else f"\n     got: {got[:300]}"))
     failed += not ok
-print(f"{CASES_TOTAL - failed}/{CASES_TOTAL} cases")
-sys.exit(1 if failed else 0)
+print(f"{CASES_TOTAL - failed - bc.ENV_CASES}/{CASES_TOTAL} cases" + (f", {bc.ENV_CASES} not measurable here (ENV)" if bc.ENV_CASES else ""))
+sys.exit(1 if failed else (2 if bc.ENV_CASES else 0))
