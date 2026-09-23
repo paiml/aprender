@@ -1,0 +1,54 @@
+{
+  "ticket": "GH-4037,GH-4040,GH-4051",
+  "base": "6db770d2f",
+  "head": "2cd554d39c05b7144f421fb3ace3abc695947951",
+  "executor": "claude-code-subagents",
+  "degraded": "same-family",
+  "degraded_because": "agy quota exhausted on every family (gemini reset ~1h40m, gpt-oss/claude-agy 87h); operator, verbatim via the release cop aprender-cf 2026-09-23: \"no wait, fall back fast\"",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude"
+  },
+  "rounds": [
+    {
+      "head": "3fa8ce2aac8569530552daaf12d8a7f301915286",
+      "lanes": [
+        {
+          "model": "claude-sonnet-5",
+          "verdict": "PASS",
+          "findings": 1
+        },
+        {
+          "model": "claude-fable-5-1",
+          "verdict": "FAIL",
+          "findings": 8,
+          "fixed_in": "616282a5e (both CRUX lanes, e2e positive control, RED re-measured, future t_end, coherent re-derivation, receipt corrections)"
+        }
+      ]
+    },
+    {
+      "head": "616282a5ea5b84349770c615f78377ab00cee2cf",
+      "lanes": [
+        {
+          "model": "claude-sonnet-5",
+          "verdict": "PASS",
+          "findings": 1,
+          "fixed_in": "2cd554d39 (CRUX lane sha bound in coherence)"
+        }
+      ]
+    },
+    {
+      "head": "2cd554d39c05b7144f421fb3ace3abc695947951",
+      "lanes": [
+        {
+          "model": "claude-fable-5-1",
+          "verdict": "PASS",
+          "findings": 3,
+          "note": "robustness: apr --version sha abbreviation length, per-night worktree cleanup, an e2e with the timing rule on"
+        }
+      ]
+    }
+  ],
+  "agreed": "degraded: 2 of 2 non-author Claude models PASS on the final heads; the scheduled gemini round is the armable one",
+  "no_self_review": true
+}

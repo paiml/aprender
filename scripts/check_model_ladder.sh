@@ -1277,8 +1277,8 @@ CW
     else grep -E '^FAIL' "$mdir/cn.out"; bad=$((bad+1)); fi
     # #4040 POSITIVE CONTROL + must-REDs, end to end through the real gate (quorum lane, Fable: "the green path was
     # never exercised"). A nightly root built from the `green` case's receipts, re-bound to a real commit.
-    nightly_e2e() { # nightly_e2e <script> <sha> <drop-cpu 0|1> -> prints the gate's output, returns its rc
-      local n c="scripts/lib/model_ladder_cases/green" rc; n=$(mktemp -d)
+    nightly_e2e() { # nightly_e2e <script> <sha> <drop-cpu 0|1> [case] -> prints the gate's output, returns its rc
+      local n c="scripts/lib/model_ladder_cases/${4:-green}" rc; n=$(mktemp -d)
       python3 - "$c" "$n" "$2" "$3" <<'NE'
 import json, os, sys, time
 c, n, sha, dropcpu = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4] == "1"
@@ -1311,6 +1311,16 @@ NE
     if [ "$r" = 1 ] && grep -q "says green but its CRUX cpu receipt is missing or not PASS" <<< "$out"; then
       echo "ok    nightly e2e-cpu-lane-missing -- a nightly without the cpu CRUX lane is refused by name"
     else echo "FAIL  nightly e2e-cpu-lane-missing -- rc $r"; bad=$((bad+1)); fi
+    # the same path with the #4051 timing rule ON (the case ladders carry timing.required_from): a stamped nightly is
+    # admitted and judged green; an unstamped one is RED by name through --nightly (degraded quorum, Fable)
+    out=$(nightly_e2e "$SELF" "$head" 0 green-timing); r=$?
+    if [ "$r" = 0 ] && grep -q '^ok    every required rung green on every required host' <<< "$out"; then
+      echo "ok    nightly e2e-timing-green -- a stamped nightly is admitted and judged green with the timing rule on"
+    else echo "FAIL  nightly e2e-timing-green -- rc $r: $(grep -E '^(FAIL|RED)' <<< "$out" | head -3 | tr '\n' ' ')"; bad=$((bad+1)); fi
+    out=$(nightly_e2e "$SELF" "$head" 0 red-timing-missing); r=$?
+    if [ "$r" = 1 ] && grep -q "TIMING the row records no \`timing\`" <<< "$out"; then
+      echo "ok    nightly e2e-timing-unstamped -- an unstamped nightly is RED by name through --nightly"
+    else echo "FAIL  nightly e2e-timing-unstamped -- rc $r"; bad=$((bad+1)); fi
     anc=$(git log -n 1 --format=%H -- scripts/model_ladder.sh); anc=$(git rev-parse "$anc^" 2> /dev/null)
     if [ -n "$anc" ]; then
       out=$(nightly_e2e "$SELF" "$anc" 0); r=$?

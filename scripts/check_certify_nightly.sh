@@ -109,8 +109,15 @@ table() {
     echo "ok    row red-retried -- a RED night is re-measured on the next run (now GREEN), the RED verdict kept beside it"
   else echo "FAIL  row red-retried -- rc $RC then $rc3"; fi
 
+  # apr names its commit with `git rev-parse --short`, whose length is host config: a 12-char sha is the same commit
+  run_case abbrev12 "$d" "FAKE_APR_SHA=${SHA:0:12}"
+  if [ "$RC" = 0 ] && green_is True; then echo "ok    row abbrev-any-length -- a 12-char short sha of the right commit proves the binary"
+  else echo "FAIL  row abbrev-any-length -- rc $RC"; fi
+  if [ ! -e "$NR/$SHA/src" ] && ! g worktree list | grep -q "$NR/"; then echo "ok    row worktree-removed -- the night's checkout is removed once its verdict is written"
+  else echo "FAIL  row worktree-removed -- $NR/$SHA/src still checked out"; fi
+
   run_case stamps "$d"
-  if python3 -c 'import json,sys; v=json.load(open(sys.argv[1])); sys.exit(0 if v["t_end"] >= v["t_start"] > 0 and v["certification"]["sha256"] and v["apr_version_line"].startswith("apr 0.70.0 (") else 1)' "$V" 2> /dev/null; then
+  if python3 -c 'import json,sys; v=json.load(open(sys.argv[1])); sys.exit(0 if v["t_end"] >= v["t_start"] > 0 and v["certification"]["sha256"] and __import__("os").path.isfile(v["certification"]["path"]) and v["apr_version_line"].startswith("apr 0.70.0 (") else 1)' "$V" 2> /dev/null; then
     echo "ok    row verdict-provenance -- t_start<=t_end, the certification's sha256, the proved version line"
   else echo "FAIL  row verdict-provenance -- $(cat "$V" 2> /dev/null | tr '\n' ' ' | cut -c1-200)"; fi
 }
@@ -141,6 +148,9 @@ mutant apr-sha-unchecked ladder-stale   'elif lad.get("apr_sha") != sha:' 'elif 
 mutant crux-verdict-read crux-decline   'elif (r.get("summary") or {}).get("verdict") != "PASS":' 'elif False:'
 mutant verdict-gpu-only  crux-cpu-missing '"${NIGHTLY_CRUX_LANES:-gpu cpu}" > "$DIR/verdict.json.tmp"' '"gpu" > "$DIR/verdict.json.tmp"'
 mutant red-cached        red-retried    'if [ "$g" = True ]; then' 'if true; then'
+mutant abbrev-exact-9     abbrev-any-length '[ "${SHA#"${BASH_REMATCH[1]}"}" != "$SHA" ]' '[ "${BASH_REMATCH[1]}" = "$SHA9" ]'
+mutant worktree-kept     worktree-removed 'git worktree remove --force "$SRC" >> "$LOG" 2>&1 ||' ': ||'
+mutant cert-left-in-src  verdict-provenance '  cp -f "$CERT" "$DIR/prompt-certification.json" && CERT="$DIR/prompt-certification.json"' '  :'
 mutant not-idempotent    idempotent     'if [ -f "$DIR/verdict.json" ]; then' 'if false; then'
 
 echo "check_certify_nightly: $([ "$bad" = 0 ] && echo PASS || echo FAIL)"

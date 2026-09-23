@@ -112,9 +112,15 @@ if [ -n "${NIGHTLY_BUILD_CMD:-}" ]; then
 else
   CARGO_TARGET_DIR="$ROOT/target" step build cargo build --release -p apr-cli --bin apr --features cuda --locked || build_rc=$?
 fi
-want="apr $VERSION ($SHA9)"
+want="apr $VERSION ($SHA9...)"
 got=$("$APR" --version 2> /dev/null | head -1)
-proved=0; [ "$build_rc" = 0 ] && [ "$got" = "$want" ] && proved=1
+# The binary names its commit with `git rev-parse --short` (core.abbrev: 9 here today, longer as the repo grows or
+# per host config): accept any 7-40 hex sha the nightly's sha STARTS with -- the same rule the CRUX judge binds by
+# (model_ladder_crux.APR_VERSION_SHA). A different commit, a -dirty build or another version is unproved.
+proved=0
+if [ "$build_rc" = 0 ] && [[ "$got" =~ ^apr\ ${VERSION//./\.}\ \(([0-9a-f]{7,40})\)$ ]] && [ "${SHA#"${BASH_REMATCH[1]}"}" != "$SHA" ]; then
+  proved=1
+fi
 
 # 3 + 4. measure (only a proved binary measures anything)
 ladder_rc=""; crux_rc=""
@@ -142,6 +148,11 @@ if [ "$proved" = 1 ]; then
   done
 fi
 T1=$(date +%s.%N)
+# The certification the CRUX lanes ran under is kept BESIDE the verdict: the checkout it came from is removed below,
+# and the release judge reads it through the verdict (nightly_admission.assemble).
+if [ -n "$CERT" ] && [ -f "$CERT" ]; then
+  cp -f "$CERT" "$DIR/prompt-certification.json" && CERT="$DIR/prompt-certification.json"
+fi
 
 # 5. verdict
 python3 - "$DIR" "$SHA" "$HOST" "$VERSION" "$want" "$got" "$build_rc" "$proved" "${ladder_rc:-}" "${crux_rc:-}" \
@@ -188,6 +199,9 @@ print(json.dumps({
     "green": not why, "why": why}, indent=2))
 PY
 mv -f "$DIR/verdict.json.tmp" "$DIR/verdict.json" || die "cannot place $DIR/verdict.json"
+# The checkout is reproducible from the sha the verdict names; keeping one per night would grow the shared .git's
+# worktree list and the disk without bound. The receipts under $DIR stay.
+git worktree remove --force "$SRC" >> "$LOG" 2>&1 || echo "$PROG: could not remove the worktree $SRC" >&2
 green=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["green"])' "$DIR/verdict.json")
 if [ "$green" = True ]; then
   echo "$PROG: GREEN $HOST at $SHA9 -- $DIR/verdict.json"

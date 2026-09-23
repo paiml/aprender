@@ -15,11 +15,11 @@ Integrated receipt for the #4033 stack on branch feat/4040-nightly, base = #4046
 ## Tables (every mutant killed by its NAMED row)
 - ladder_carry_cases.py: 45 rows / 27 mutants
 - nightly_admission_cases.py: 16 rows / 11 mutants
-- check_certify_nightly.sh: 12 rows / 9 mutants
+- check_certify_nightly.sh: 14 rows / 12 mutants
 - crux_stamps_cases.py: 10 rows / 8 mutants
 - check_crux_inference_judge.sh: 165 ok with mutants
 - check_model_ladder.sh --self-test: 155/0. It includes:
-  - the END-TO-END nightly rows through the real gate: e2e-green (positive control), e2e-cpu-lane-missing, e2e-ancestor-stale, and mutant dirs-unlinked;
+  - the END-TO-END nightly rows through the real gate: e2e-green (positive control), e2e-timing-green, e2e-timing-unstamped (the #4051 rule ON through --nightly), e2e-cpu-lane-missing, e2e-ancestor-stale, and mutant dirs-unlinked;
   - the version-bump case pair;
   - the --scope/--nightly wiring rows.
 - check_crux_ollama_in_lock.sh runs the REAL crux_inference_dogfood.sh with STUB engines and stub apr. There is no GPU and no real model. It asserts 160/160 engine rows stamped, and the no-stamp mutant names all 160.
