@@ -210,6 +210,35 @@ impl fmt::Display for SigmaError {
 
 impl std::error::Error for SigmaError {}
 
+/// ONT-4d: depth-first search from `n` for a cycle through `path`, the concepts currently on the stack. A cycle
+/// is returned as the path that closes it, its first concept repeated at the end. `done` holds concepts
+/// fully explored, which cannot be on a cycle not yet found, so each concept is searched once. Recursion
+/// depth is bounded by the number of concepts.
+fn find_cycle<'a>(
+    n: &'a str,
+    edges: &BTreeMap<&'a str, BTreeSet<&'a str>>,
+    path: &mut Vec<&'a str>,
+    done: &mut BTreeSet<&'a str>,
+) -> Option<Vec<String>> {
+    if let Some(at) = path.iter().position(|p| *p == n) {
+        let mut cycle: Vec<String> = path[at..].iter().map(|s| (*s).to_string()).collect();
+        cycle.push(n.to_string());
+        return Some(cycle);
+    }
+    if done.contains(n) {
+        return None;
+    }
+    path.push(n);
+    for &m in edges.get(n).into_iter().flatten() {
+        if let Some(c) = find_cycle(m, edges, path, done) {
+            return Some(c);
+        }
+    }
+    path.pop();
+    done.insert(n);
+    None
+}
+
 /// The Σ keys that must be claimed by a reader when they are present and non-empty.
 pub const READABLE_KEYS: [&str; 10] = [
     "concepts",
@@ -256,36 +285,10 @@ impl Sigma {
             return Err(SigmaError::SubsumesUndeclared { concept: c.clone() });
         }
         let edges = self.subsumption_edges();
-        // Iterative DFS with an explicit path, so a cycle is reported by name. White/grey/black colouring.
         let mut done: BTreeSet<&str> = BTreeSet::new();
         for &root in edges.keys() {
-            if done.contains(root) {
-                continue;
-            }
-            let mut path: Vec<&str> = vec![root];
-            let mut iters: Vec<std::collections::btree_set::Iter<'_, &str>> =
-                vec![edges.get(root).map(|s| s.iter()).unwrap_or_default()];
-            while let Some(it) = iters.last_mut() {
-                match it.next() {
-                    Some(&next) if path.contains(&next) => {
-                        let at = path.iter().position(|p| *p == next).unwrap_or(0);
-                        let mut cycle: Vec<String> =
-                            path[at..].iter().map(|s| (*s).to_string()).collect();
-                        cycle.push(next.to_string());
-                        return Err(SigmaError::SubsumesCycle { path: cycle });
-                    }
-                    Some(&next) if !done.contains(next) => {
-                        path.push(next);
-                        iters.push(edges.get(next).map(|s| s.iter()).unwrap_or_default());
-                    }
-                    Some(_) => {}
-                    None => {
-                        iters.pop();
-                        if let Some(p) = path.pop() {
-                            done.insert(p);
-                        }
-                    }
-                }
+            if let Some(path) = find_cycle(root, &edges, &mut Vec::new(), &mut done) {
+                return Err(SigmaError::SubsumesCycle { path });
             }
         }
         Ok(())
