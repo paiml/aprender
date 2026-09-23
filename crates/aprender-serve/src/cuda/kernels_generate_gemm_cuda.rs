@@ -7,6 +7,11 @@ impl CudaKernels {
             | KernelType::GemmOptimized {
                 m, n, k, tile_size, ..
             } => GemmKernel::tiled(*m, *n, *k, *tile_size).emit_ptx_for_target(target),
+            // #3975: grad_a[M, K] = grad_c[M, N] @ B[K, N]^T is A[m, k] @ W[n, k]^T
+            // with (M, N, K) = (m, k, n).
+            KernelType::GemmBtTiled { m, n, k, tile_size } => {
+                GemmBackwardAKernel::tiled(*m, *k, *n, *tile_size).emit_ptx_for_target(target)
+            },
             KernelType::GemmTensorCore { m, n, k } => {
                 GemmKernel::tensor_core(*m, *n, *k).emit_ptx_for_target(target)
             },

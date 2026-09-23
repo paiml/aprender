@@ -69,31 +69,31 @@ A non-`pass` cell names the gates the receipt records, which is not always the c
 | `qwen35-2b-q4km` | pass | pass |
 | `qwen35-4b-q4km` | pass | pass |
 | `qwen35-9b-q4km` | pass | pass |
-| `qwen35-27b-q4km` | pass | pass |
+| `qwen35-27b-q4km` | **FAIL** | pass |
 | `inv:Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf` | **FAIL** | **FAIL** |
 | `inv:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf` | **FAIL** | **FAIL** |
 | `inv:qwen2.5-coder-0.5b-instruct-q4_k_m.gguf` | pass | pass |
-| `inv:qwen2.5-coder-1.5b-instruct-fp16.apr` | **FAIL** | — |
+| `inv:qwen2.5-coder-1.5b-instruct-fp16.apr` | pass | — |
 | `inv:qwen2.5-coder-1.5b-instruct-q4_k_m.apr` | pass | — |
 | `inv:qwen2.5-coder-1.5b-instruct-q4_k_m.gguf` | pass | pass |
 | `inv:qwen2.5-coder-1.5b-instruct-q4k.apr` | pass | pass |
 | `inv:qwen2.5-coder-32b-instruct-q4_k_m.gguf` | pass | — |
 | `inv:qwen2.5-coder-7b-instruct-q4_k_m.gguf` | pass | pass |
-| `inv:Qwen2.5-0.5B-Instruct-IQ3_M.gguf` | — | **FAIL** |
-| `inv:Qwen2.5-0.5B-Instruct-IQ4_XS.gguf` | — | **FAIL** |
-| `inv:Qwen2.5-0.5B-Instruct-f16.gguf` | — | pass |
+| `inv:Qwen2.5-0.5B-Instruct-IQ3_M.gguf` | — | pass |
+| `inv:Qwen2.5-0.5B-Instruct-IQ4_XS.gguf` | — | pass |
+| `inv:Qwen2.5-0.5B-Instruct-f16.gguf` | — | **FAIL** |
 | `inv:Qwen3.5-0.8B-IQ4_XS.gguf` | — | **FAIL** |
 | `inv:Qwen3.5-0.8B-UD-IQ2_XXS.gguf` | — | **FAIL** |
 | `inv:Qwen3.5-35B-A3B-UD-IQ4_XS.gguf` | — | **FAIL** |
 | `inv:Qwen3.5-4B-UD-Q4_K_XL.gguf` | — | pass |
 | `inv:qwen2.5-coder-0.5b-instruct.apr` | — | **FAIL** |
 | `inv:qwen2.5-coder-1.5b-instruct-q4k-v2.apr` | — | pass |
-| `inv:qwen2.5-coder-1.5b-instruct-st.apr` | — | **FAIL** |
+| `inv:qwen2.5-coder-1.5b-instruct-st.apr` | — | pass |
 | `inv:qwen2.5-coder-1.5b-q4k.apr` | — | pass |
-| `inv:tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf` | — | **FAIL** |
+| `inv:tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf` | — | pass |
 
-- **gx10**: 17 rung(s), 17 required, 3 not green — `apr 0.69.1 (712f6d433)`
-- **lambda**: 26 rung(s), 26 required, 10 not green — `apr 0.69.1 (712f6d433)`
+- **gx10**: 17 rung(s), 17 required, 3 not green — `apr 0.69.1 (9b7739951)`
+- **lambda**: 26 rung(s), 26 required, 7 not green — `apr 0.69.1 (9b7739951)`
 
 <!-- RELEASE_MATRIX_END -->
 
