@@ -1,3 +1,4 @@
+#![cfg(feature = "apr-tools")] // apr's own tools (PMAT-3954: they exist only under this feature)
 //! FALSIFY-MCP-001 + FALSIFY-MCP-002 (M1 subset) — protocol-level gates.
 //!
 //! These mirror the spec in `docs/specifications/apr-mcp-server-spec.md` and

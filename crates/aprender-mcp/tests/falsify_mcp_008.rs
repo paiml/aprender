@@ -1,3 +1,4 @@
+#![cfg(feature = "apr-tools")] // apr's own tools (PMAT-3954: they exist only under this feature)
 //! FALSIFY-MCP-008: tools/list output for each migrated tool must be
 //! byte-identical to the corresponding entry in
 //! `contracts/apr-mcp-tool-schemas-v1.yaml` — covering both the

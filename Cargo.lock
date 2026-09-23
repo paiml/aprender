@@ -826,7 +826,6 @@ dependencies = [
 name = "aprender-mcp"
 version = "0.69.1"
 dependencies = [
- "anyhow",
  "inventory",
  "jsonschema",
  "nix 0.29.0",
