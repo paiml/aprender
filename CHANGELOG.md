@@ -7,19 +7,111 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.69.1] - 2026-09-22
+## [0.69.1] - TODO-CELL:release-date
 
-0.69.1 is the stoppers train for 0.69.0 (#3080), assembled as one integration batch:
-87 commits, one CI run, one queue slot. Its theme is not a feature. It is **gates that
-could not fail** — and the reason that is the theme is that 0.69.0 shipped a model
-emitting empty output on CUDA as a *note* rather than a failure, because one contract
-key said the rung was optional.
+0.69.1 is the stoppers train for 0.69.0 (#3080), and it grew into the release that makes
+every Qwen model the fleet holds run on CUDA, or refuse by name. It was assembled as
+integration batches: 629 commits since v0.69.0, frozen at `c619dddd4`, and released as
+`d8a6df53a` (`rc/0.69.1-x`). That is the freeze plus two post-freeze folds: the Qwen3.5-0.8B
+load warning (#4032) and #4022. It was certified under a **reduced, operator-declared
+scope** (see **Certification** below).
+
+It has two themes. The first is **gates that could not fail**. 0.69.0 shipped a model
+that emitted empty output on CUDA as a *note* rather than a failure, because one contract
+key said the rung was optional. The second is **one path per capability**. Several verbs
+had quietly grown their own copy of a template, a tokenizer or a dispatch. Each copy
+drifted, and each drift was a user-visible defect: the prompt was templated twice, a MoE
+model was routed to a dense forward, a Qwen3.5 model got a 503 on five serve routes, and
+characters were split into U+FFFD on a stream.
 
 Four release gates in this tree turned out to be one defect wearing four faces
 (`contracts`, `pv lint`, `check_model_ladder`, and the clean-room contract test), all
 resolving to a single missing green witness. That is the good case: one cause, one fix.
 The bad cases are below, and they are the ones worth reading, because each was **green
 while being wrong**.
+
+### Mixture-of-experts on CUDA (operator ruling: MoE folded into 0.69.1)
+- **`qwen3moe` runs on the GPU.** `Qwen3-30B-A3B-Instruct-2507` and
+  `Qwen3-Coder-30B-A3B-Instruct` (Q4_K_M) have a CUDA forward that proves itself against
+  the CPU forward on the real prompt first. `apr parity` measures both files at 92/92
+  positions, cosine 1.000000, on lambda and gx10. (#3714: `6f6fa9a83`, `341c958af`)
+- **Every verb reaches that forward through ONE dispatch.** `run` and `qa` reached it first.
+  `chat`, `serve` and `code` had their own routes to the dense model, which answered rc 8,
+  501/500 and rc 1. They now go through `run_qwen3_moe_generate_dispatch`, and `serve`
+  reports `used_gpu` per response. `serve`'s `stream=true` arm was still on the CPU-only
+  generator, and it now dispatches too. (#3987: `e29c55a7e`, `a00d29f9b`, `a29989039`)
+- **The dense CUDA constructors refuse an MoE model by name, before CUDA init.** A guard
+  derives every dense construction site from the tree, so a new one cannot bypass the
+  refusal. (#3992: `4ca778172`, `b8c73cbe0`)
+- Qwen3.5-MoE (the hybrid SSM + experts architecture) still refuses on CUDA, by name. That
+  refusal is not a fallback.
+
+### Quant types: every held Qwen file runs on CUDA, or refuses by name
+Each type below got a GEMV kernel measured on the device against a CPU decoder that had
+first been proven against gguf-py on real tensors. Each was admitted to the GPU whitelist
+only after that device A/B came back exact.
+- IQ4_NL (#3869: `9ba76969a`, `10532e06e`), IQ3_S (#3884: `ac968613a`), BF16 (#3908:
+  `6883ff1bf`, `d0e92124c`), Q5_1 (#3885: `a8d63e09d`).
+- IQ2_S, IQ3_XXS and Q2_K were admitted in ONE edit, each on its own measured kernel
+  (#3953, #3963, #3960: `6bde9a279`).
+- IQ4_XS is A/B-tested at every shape Qwen3.5-0.8B uses, including the non-power-of-two
+  `ffn_down` row (14 super-blocks), with a negative control. (#3951: `22658163d`)
+- The whitelist was recorded in six places, and they disagreed with each other in both
+  directions. It now has one source. (#3884, #3931: `b9435c6b6`, `58c88e20e`)
+- `apr run` prints the quant type of the model body, not the tied `lm_head`'s. (#4006:
+  `36efbb152`)
+
+### One template, one tokenizer
+- **The model's OWN chat template is rendered on every path** (run, chat, serve, code and
+  the golden gate), replacing the hand-coded no-think scaffold. Qwen2.5 had been losing
+  its default system prompt: 26 tokens against llama.cpp's 47. (#3990, #3755: `5991a588f`,
+  `c08437cdd`)
+- **`apr serve` no longer takes the template from the client's `model` string.** An unknown
+  name used to get a plain prompt, and the reply ran on into "Human:". (#4007:
+  `baef5e961`)
+- **`--thinking on|off` on run, chat and code.** Previously every Qwen3/3.5 model was
+  hard-routed to the no-think template. (#3723: `70d20d44c`, `889d49a0f`)
+- **Non-ASCII token ids equal `llama-tokenize` on every tokenizer path apr ships.** Every
+  non-ASCII byte had been mapped to id 0. (#3726, #4005: `9684a7a41`)
+- SPM encode splits control tokens by `token_type`: TinyLlama's `</s>` no longer tokenizes
+  as three pieces. (#3993: `b29ed7202`)
+- `apr chat` reads the tokenizer the `.apr` carries. (#3903, #3911: `769a4298d`)
+
+### `apr serve`: every advertised route works, and every stream is well-formed
+- Qwen3.5 answered 503 on `/v1/completions` (#3874/#3875: `24f9bb212`) and on the five
+  realizar raw routes: `/generate`, `/batch/generate`, `/stream/generate`,
+  `/realize/generate` and `/realize/batch`. Each now has a Qwen3.5 arm, tested against
+  `apr run`'s answer on the same rendered prompt (`b7de8be40`, `062de0d97`).
+- The live SSE path and the raw `/stream/generate` path decoded one token at a time, so a
+  character split across two byte tokens streamed as two U+FFFD. Both now hold a partial
+  character back until it completes. (`a29989039`, `c619dddd4`)
+- Every router advertises exactly what it mounts, and every stream ends with its wire's
+  terminal event. (#3979: `b8101dc28`, `7a21e13a5`)
+- `apr run -v` no longer panics on a non-ASCII prompt. (#4018: `8df47be4f`)
+
+### Proving the measurement
+- **A GPU receipt proves the card was exclusive, or it is refused.** An Ollama daemon could
+  load onto the GPU mid-measurement without taking the fleet lock. (#3964: `204abee3c`,
+  `75626eab9`)
+- **The F2 GPU check is tri-state.** It returned "assume the GPU is fine" when the CPU
+  reference was unavailable. It now reports `NotMeasured{reason}`, never PASSED. (#3973:
+  `06f32ce73`)
+- **`apr qa --json` no longer reports a skipped gate as `passed: true`.** (#3965:
+  `2b75f932c`)
+- **The golden thinking-ON leg** renders the model's own template, and no longer passes an
+  empty `<think></think>` as reasoning. (#3948: `0c4c5c133`)
+- **The ladder judges the model, not the terminal** (#3925), counts the serve probe in a
+  row's verdict (#3886), and decides serve teardown from the process rather than the port
+  (#3943). Diagnostics are no longer cut mid-number (#3872, #3904).
+- **The CRUX v2 differential**: per-verb prompt sets, the `code` verb, hf/vLLM
+  ground-truth rows, prompt certification, and sha-bound receipts. Each apr serve route is
+  judged against the comparator route that asks the same question in the same
+  representation. (#3962, #3957)
+- **The publish cascade can finish.** It used to give up after one retry round, which
+  would have left 49 crates on crates.io and not aprender itself. (#3892: `e6a799609`,
+  `bc2e61e71`)
+- **Coverage is measured, not assumed**: failing tests are listed, and "did not measure" is
+  never a verdict. Floor 88%. (#3839: `2fe5858be`; the value is TODO-CELL:coverage)
 
 ### Gates that could not fail
 - **A Q4_K rung can no longer be optional.** `qwen3-8b-q4km` was `required: false`, which
@@ -185,15 +277,75 @@ while being wrong**.
   reported "in progress" when it had been built and working the whole time. Both
   readings came from a PATH lookup mistaken for an install. (#3831)
 
-### Known limitation, stated by name
-- **`qwen3moe` is not supported on CUDA.** `apr run --gpu` on a mixture-of-experts
-  Q4_K_M model (`Qwen3-30B-A3B-Instruct-2507`, `Qwen3-Coder-30B-A3B-Instruct`)
-  now **refuses before loading**, names the architecture, cites #3714 and exits 12.
-  It previously loaded 18 GB, generated on the CPU and exited 14 after the fact,
-  which told a user who asked for the GPU the wrong thing about their hardware.
-  `apr run` without `--gpu` is unchanged and still runs these models on the CPU.
-  `apr qa` on such a file now emits its gates with reasons instead of exiting 5
-  with an empty JSON document. The MoE GPU forward is #3714, in 0.70.0. (#3817)
+### Known issues
+- **Qwen3.5-0.8B (Q4_K_M), thinking ON, greedy: the think block never closes on apr.** A
+  greedy near-tie path, with no localized defect found. It ships as a known RED, and
+  `apr` now warns at load that this model is not CRUX-certified (#4032: `d8a6df53a`).
+  Tracked in #4030 (0.71).
+- **Qwen3.5-0.8B-UD-IQ2_XXS answers "2+2" wrong on BOTH apr and llama.cpp**, using the
+  official template. It is a RED-MODEL candidate (quantization damage), pending the
+  logit-margin measurement. (#4004)
+- **#4022 landed after the freeze, by operator override.** aprender-mcp serves a
+  caller-supplied `ToolIndex`, and the apr tools sit behind the default `apr-tools` feature
+  (PMAT-3954: `3805a3371`, `1eb1fe808`). Its `Cargo.lock` delta is one dependency edge:
+  aprender-mcp no longer depends on `anyhow`. It was not part of the frozen tree the sweep
+  measured.
+- `apr code --thinking on` refuses: `apr serve` has no thinking-ON path yet. (#3723)
+- `apr serve`'s Ollama `/api/generate` accepts no `context`, so a multi-turn conversation
+  cannot continue on that wire. `/api/chat` and `/v1/chat/completions` carry history.
+  (#4025, 0.70)
+
+### Certification — operator emergency scope
+**This release was NOT gated by the full model ladder.** By operator emergency scope, the
+release gate is a **CRUX smoke on both GPU hosts** (lambda: RTX 4090, sm_89; gx10: GB10,
+sm_121). The full model ladder moves to the **nightly** run and is not a precondition of
+this tag. A model that is not in the list below has no release-time certification in
+0.69.1.
+
+Every number here comes from the release's own receipts for `d8a6df53a`.
+- **CRUX smoke** (apr vs llama.cpp, ollama, vLLM, hf; run / chat / serve / code;
+  thinking off and on), lambda: TODO-CELL:crux-smoke-lambda. gx10: TODO-CELL:crux-smoke-gx10.
+  - Qwen3.5-2B-Q4_K_M: TODO-CELL:crux-2b
+  - Qwen3.5-4B-Q4_K_M: TODO-CELL:crux-4b
+  - Qwen3.5-4B-UD-Q4_K_XL: TODO-CELL:crux-4b-xl
+- **MoE**: TODO-CELL:moe-lambda, TODO-CELL:moe-gx10.
+- **Full model ladder**: nightly, after the tag. TODO-CELL:nightly-ladder-link.
+
+### Closed by this release (32, from the #3988 triage, each on `release/0.69.1-batch-2`)
+| Issue | Commit(s) | What |
+|---|---|---|
+| #3571 | `2de6eabb1`, `4e4fe772a`, `6f2817ffe` | apr serve cannot load Qwen3.5 at all — 'Architecture qwen35 … runs through Qwen35Model'; goal A's floor and… |
+| #3723 | `70d20d44c`, `889d49a0f`, `5991a588f` | apr has NO thinking toggle: realizar hard-routes every Qwen3/Qwen3.5 to the no-think template (chat_templat… |
+| #3724 | `b4701dcd9` | qwen3-8b-q4km golden_output 'Empty output' on lambda: the gate ran Qwen3 in thinking mode no production pat… |
+| #3726 | `9684a7a41`, `43f25da06` | apr's byte-level BPE tokenizer is non-canonical: every non-ASCII byte → id 0, ASCII segmented unlike llama.… |
+| #3742 | `9684a7a41` | tokenizer parity: the APR/HF encode paths are sibling copies #3726 did not touch — aprender-core BpeTokeniz… |
+| #3743 | `3fe9a6cff` | apr run --prompt P --chat templates the prompt TWICE: the CLI wraps it in ChatML, then realizar applies the… |
+| #3750 | `efe74818d`, `01989323d` | apr qa's capability predicates std::fs::read the WHOLE model (twice, plus a to_vec copy) — RSS swings past… |
+| #3754 | `9f8836c71` | apr run --temperature T is silently GREEDY: --top-k defaults to 1, so a sampling flag given alone has no ef… |
+| #3755 | `5991a588f` | Qwen3/3.5 no-think prompts are built from a HAND-CODED scaffold that differs from the model's own template… |
+| #3757 | `d50655504` | Published apr 0.68.2: default `apr run` picks wgpu, dequantizes 1.7 GB to F32, then REJECTS its own result… |
+| #3760 | `8b06a012f` | SafeTensors run and every AprTransformer caller never sample: run .safetensors is hard-greedy (CPU) / takes… |
+| #3769 | `a3a9b9965`, `ee080029c`, `ff4bf8e0f` | post-release ALWAYS updates README.md and apr-cookbook with SHACL-validated recipes — rendered from the rel… |
+| #3775 | `defe10bbf`, `4ca7fdcc9` | apr code -p --output-format json prints NO JSON envelope on a driver error (rc 1, stderr only) — a machine… |
+| #3782 | `f7a8e65ac` | apr qa golden_output: the greeting case's "!" pattern scores degenerate output ("!!!!", token id 0) as correct |
+| #3785 | `0c85942dd`, `2b64c7f0e` | FP8 batched prefill diverges on sm_121 (GB10): qwen2.5-coder-7b BATCHED_PREFILL=1 fails F2 at pos 1 (cos 0.… |
+| #3786 | `d9ba90cff` | serve APR Q4K GPU chat samples with a wall-clock-hash RNG: `seed` does nothing, sampled output is unreprodu… |
+| #3791 | `a6b69411f`, `6f2817ffe` | APR Q4K GPU serve path (ALB-095) emits garbage: 'HHHH…' for every seed at T=0.8, Invalid token ID 151935 (v… |
+| #3794 | `9ee0888b7` | apr chat --no-gpu still uploads the GGUF to CUDA (VRAM held outside the GPU lock), and apr chat reports no… |
+| #3801 | `24ffd4552` | Thinking ON under greedy decoding never closes on Qwen3.5 0.8B/2B (and 4B in apr code): think-budget guard… |
+| #3804 | `2b64c7f0e` | qwen2.5-coder-0.5b-instruct Q4_K_M: CUDA golden output is gibberish (CPU passes) — on main, found by the #3… |
+| #3807 | `2b64c7f0e`, `0c85942dd` | FP8 prefill recipe zeroes activations (per-batch E4M3 scale × subnormal flush-to-zero): qwen2.5-coder-7b `a… |
+| #3815 | `3a5bc6d3e` | DecisionTreeClassifier split-finding is O(n² × features) per node — blocks training past ~100k rows |
+| #3816 | `3a5bc6d3e` | RandomForestClassifier::fit/predict fixes (sequential training, O(n² × trees) predict) are written but unco… |
+| #3817 | `a5024aa72` | apr run --gpu on qwen3moe Q4_K_M silently falls back to CPU (rc 14) instead of refusing by name — 0.69.1 mu… |
+| #3828 | `16ca36fc6`, `5823012a7` | P0: the release gate's verb dimension computes over ONE verb — the ladder never runs serve, chat or code, a… |
+| #3842 | `610942945`, `b026cdc03` | A ladder receipt that cannot name its own red: gx10 says red=3 with 2 reds in rows, and the failed REQUIRED… |
+| #3843 | `b026cdc03` | The `code` verb has never been measured by the ladder — 48/48 cells rc=2, a clap usage error recorded as a… |
+| #3849 | `5593c2037` | FALSE RED: `qwen35-27b-q4km` passes every gate and the ladder reports it red — the row builder crashes on a… |
+| #3875 | `24f9bb212` | /v1/completions returned 503 for the ENTIRE Qwen3.5 architecture — the completions chain had no arm for it |
+| #3880 | `530e69e19` | WITHDRAWN: cop ruling on five non-Q4_K ladder rows — refuted; the deferral mechanism has no cause key (what… |
+| #3881 | `b73b49d73` | apr chat requires an external <stem>.tokenizer.json that apr run does not — and reports its absence as Inva… |
+| #3885 | `a8d63e09d`, `0a7067391` | apr serve admits a non-Q4K .apr into the Q4K pool path and fails at prefill — the load-time rejection its f… |
 
 ## [0.69.0] - 2026-09-21
 
