@@ -33,6 +33,16 @@ def detok(url, ids):
     return post(url, "/detokenize", {"tokens": ids})["content"]
 
 
+def apr_json(path):
+    """apr's `run --format json -v` stdout: -v puts `verbose: ...` lines BEFORE the JSON object (measured on
+    lambda, 2026-09-23), so the object is decoded from its first `{`, as the judge's parse_apr does."""
+    text = open(path, encoding="utf-8", errors="replace").read()
+    start = text.find("{")
+    if start < 0:
+        raise ValueError("no JSON object in apr's stdout")
+    return json.JSONDecoder().raw_decode(text[start:])[0]
+
+
 def apr_prompt(stderr_path):
     """(prompt ids, formatted_prompt as apr printed it — Rust-escaped) from `apr run -v` stderr, or (None, None)."""
     if not stderr_path:
@@ -90,7 +100,7 @@ def main(argv):
                    "thinking": a.thinking, "stop_type": resp.get("stop_type"),
                    "decoded_by": "llama.cpp /detokenize (special tokens kept)"}
         else:
-            apr = json.load(open(a.apr_json))
+            apr = apr_json(a.apr_json)
             apr_ids, apr_rendered = apr_prompt(a.apr_stderr)
             ids = apr.get("tokens")
             if not isinstance(ids, list):

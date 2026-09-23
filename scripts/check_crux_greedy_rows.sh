@@ -100,6 +100,8 @@ last=1; [ "$th" = on ] && last=8
 first=9; [ -n "${STUB_APR_PROMPT_DRIFT:-}" ] && first=7
 printf '[DEBUG] formatted_prompt="<|im_start|>user\\nq<|im_end|>\\n"\n[DEBUG] add_bos=false, encoded 4 tokens: [%s, 9, 9, %s]\n' "$first" "$last" >&2
 ids="[4, 5]"; [ "$th" = on ] && ids="[1, 2, 3, 4, 5]"
+# -v puts `verbose:` lines on stdout BEFORE the JSON, exactly as the real apr does (measured on lambda)
+printf 'verbose: apr 0.0.0\nverbose: model = /stub/model.gguf\n'
 if [ -n "${STUB_APR_NO_TOKENS:-}" ]; then printf '{"text": "4"}\n'; else printf '{"text": "4", "tokens": %s, "finish_reason": "stop", "backend": {"ran": "gpu"}}\n' "$ids"; fi
 SH
 chmod +x "$BIN/llama-server" "$BIN/apr"

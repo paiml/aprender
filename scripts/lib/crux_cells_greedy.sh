@@ -68,12 +68,21 @@ def row(engine, pid, th, path, refused):
     open(m, "a").write(json.dumps(r) + "\n")
 
 
+def load_first_object(path):
+    """The first JSON object in a file: apr's `-v` stdout has `verbose: ...` lines before it (measured)."""
+    text = open(path, encoding="utf-8", errors="replace").read()
+    start = text.find("{")
+    if start < 0:
+        raise ValueError("no JSON object")
+    return json.JSONDecoder().raw_decode(text[start:])[0]
+
+
 def judged(path, rc_path):
     """None if the artifact is a good raw object; else the reason, by name."""
     if cell_why:
         return cell_why
     try:
-        doc = json.load(open(path))
+        doc = load_first_object(path)
     except (OSError, ValueError) as e:
         rc = open(rc_path).read().strip() if os.path.exists(rc_path) else "?"
         return "no greedy artifact (exit %s): %s" % (rc, e)
