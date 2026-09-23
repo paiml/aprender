@@ -28,15 +28,20 @@ impl ProofLevel {
         ProofLevel::L1,
     ];
 
-    /// What reaching this level means: the one definition every surface prints.
+    /// What reaching this level means: the one definition every surface prints. Each
+    /// string states what `compute_proof_level_with_grounding` actually checks (a quorum
+    /// lane on PR #4092 found the first wording claimed less for L3 and the wrong thing
+    /// for L4).
     #[must_use]
     pub fn method(self) -> &'static str {
         match self {
             ProofLevel::L1 => "Contract YAML with equations",
-            ProofLevel::L2 => "Falsification tests cover the obligations",
-            ProofLevel::L3 => "Kani bounded model check",
-            ProofLevel::L4 => "Lean 4 theorem proved",
-            ProofLevel::L5 => "Lean 4 theorem proved + every binding verified implemented",
+            ProofLevel::L2 => "Falsification tests cover every obligation",
+            ProofLevel::L3 => "L2 + at least one Kani bounded-model-check harness",
+            ProofLevel::L4 => {
+                "Every obligation has a sorry-free in-tree Lean 4 theorem (or is not applicable)"
+            }
+            ProofLevel::L5 => "L4 + every binding implemented",
         }
     }
 }
@@ -52,8 +57,10 @@ pub fn ladder_block() -> String {
         out.push_str(&format!("| {level} | {} |\n", level.method()));
     }
     out.push_str(
-        "\nL4 and L5 are self-declared until PVL-001 EV-8b lands: the level is computed \
-         from the contract's own YAML, not from a checked Lean discharge summary.\n",
+        "\nL4 and L5 are grounded only textually until PVL-001 EV-8b lands: a claimed Lean \
+         proof counts when a sorry-free Lean theorem in this tree matches it (a claim with \
+         none is reported self-declared and excluded from L4), but no checked lake \
+         discharge summary is read yet.\n",
     );
     out.push_str(END_MARKER);
     out
@@ -191,7 +198,7 @@ fn stale_level_pairings_case_table() {
         "3. **L3:** Kani exhaustively verified it for ALL inputs within the kernel's",
         "4. **L4:** a Lean 4 theorem proves it unbounded; **L5** additionally requires",
         "## How Kani (L3) and Lean (L4) Compose",
-        "| L5 | Lean 4 theorem proved + every binding verified implemented |",
+        "| L5 | L4 + every binding implemented |",
         "E4 and E5 are defined in YAML but not yet run in CI.",
         "| **E4** | Logic bugs, overflows | Kani `#[kani::proof]` BMC |",
     ];

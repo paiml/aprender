@@ -8,13 +8,13 @@ the math) and **enforcement layers** (how we enforce it in the build).
 <!-- generated from ProofLevel; do not edit -->
 | Level | Method |
 |-------|--------|
-| L5 | Lean 4 theorem proved + every binding verified implemented |
-| L4 | Lean 4 theorem proved |
-| L3 | Kani bounded model check |
-| L2 | Falsification tests cover the obligations |
+| L5 | L4 + every binding implemented |
+| L4 | Every obligation has a sorry-free in-tree Lean 4 theorem (or is not applicable) |
+| L3 | L2 + at least one Kani bounded-model-check harness |
+| L2 | Falsification tests cover every obligation |
 | L1 | Contract YAML with equations |
 
-L4 and L5 are self-declared until PVL-001 EV-8b lands: the level is computed from the contract's own YAML, not from a checked Lean discharge summary.
+L4 and L5 are grounded only textually until PVL-001 EV-8b lands: a claimed Lean proof counts when a sorry-free Lean theorem in this tree matches it (a claim with none is reported self-declared and excluded from L4), but no checked lake discharge summary is read yet.
 <!-- end generated from ProofLevel -->
 
 ## Enforcement Layers (practical deployment, strictest first)

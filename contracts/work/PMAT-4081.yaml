@@ -18,7 +18,8 @@ metadata:
     Now `ProofLevel::method` is the one definition. `readme_gen` prints it, and
     each ladder copy carries `levels::ladder_block()` verbatim between
     `<!-- generated from ProofLevel; do not edit -->` and its end marker, with the
-    statement that L4/L5 are self-declared until PVL-001 EV-8b lands.
+    statement that L4/L5 are grounded only textually until PVL-001 EV-8b lands
+    (a claim with no sorry-free in-tree Lean theorem is self-declared and excluded).
   references:
     - "docs/specifications/PVL-001-pv-lean-gate.md (paiml/infra), row EV-3"
     - "crates/aprender-contracts/src/levels.rs"
