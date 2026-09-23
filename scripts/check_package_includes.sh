@@ -299,6 +299,52 @@ if [ "${1:-}" = "--self-test" ]; then
   else
     printf 'FAIL  row 13 cfg(all/any(test)) handling, got: %s\n' "$got"; fails=1
   fi
+  # Rows 14-18 (#4048): a module FILE declared out of line under a test-only cfg is test
+  # code, though its own text has no cfg -- aprender-serve's fusion_call_site_guard_3985.rs.
+  esc() { python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$1" --escapes 2>/dev/null; }
+  escerr() { python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$1" --escapes 2>&1 >/dev/null; }
+  guard='pub const C: &str = include_str!("../../../../contracts/x.yaml");\n'
+  # 14: `#[cfg(test)] mod guard;` -> SKIPPED, named on stderr, not reported.
+  mkdir -p "$TD/o/src"; printf '#[cfg(test)]\nmod guard;\n' > "$TD/o/src/lib.rs"; printf "$guard" > "$TD/o/src/guard.rs"
+  # stderr captured, never piped into `grep -q`: under pipefail an early-exiting grep
+  # SIGPIPEs the writer and a TRUE match reads as a failure (it did, on row 17).
+  e="$(escerr "$TD/o")"
+  if [ -z "$(esc "$TD/o")" ] && printf '%s' "$e" | grep -q 'SKIPPED (cfg(test)-only module.*src/guard.rs'; then
+    printf 'ok    row 14 a #[cfg(test)] mod file'"'"'s escaping include is skipped, by name\n'
+  else
+    printf 'FAIL  row 14 cfg(test)-only module file: out=[%s] err=[%s]\n' "$(esc "$TD/o")" "$(escerr "$TD/o")"; fails=1
+  fi
+  # 15: the same file declared as a plain `mod guard;` IS host-compiled -> RED.
+  mkdir -p "$TD/p/src"; printf 'mod guard;\n' > "$TD/p/src/lib.rs"; printf "$guard" > "$TD/p/src/guard.rs"
+  if [ "$(esc "$TD/p" | grep -c .)" = "1" ]; then
+    printf 'ok    row 15 the same include in a non-test module is reported\n'
+  else
+    printf 'FAIL  row 15 a non-test module'"'"'s escape was not reported\n'; fails=1
+  fi
+  # 16: a module whose test cfg covers only SOME items -> the escaping item is judged.
+  mkdir -p "$TD/q/src"; printf 'mod part;\n' > "$TD/q/src/lib.rs"
+  printf '#[cfg(test)]\nfn t() {}\npub const X: &str = include_str!("../../../../gone.yaml");\n' > "$TD/q/src/part.rs"
+  if [ "$(esc "$TD/q" | grep -c .)" = "1" ]; then
+    printf 'ok    row 16 cfg(test) on some items does not make the file test-only\n'
+  else
+    printf 'FAIL  row 16 a partly-test module hid its production escape\n'; fails=1
+  fi
+  # 17: a module declared BY a test-only module file is test-only too (transitive).
+  mkdir -p "$TD/r/src/guard"; printf '#[cfg(all(test, feature = "z"))]\nmod guard;\n' > "$TD/r/src/lib.rs"
+  printf 'mod deep;\n' > "$TD/r/src/guard/mod.rs"; printf "$guard" > "$TD/r/src/guard/deep.rs"
+  e="$(escerr "$TD/r")"
+  if [ -z "$(esc "$TD/r")" ] && printf '%s' "$e" | grep -q 'src/guard/deep.rs'; then
+    printf 'ok    row 17 a submodule of a test-only module is skipped too\n'
+  else
+    printf 'FAIL  row 17 transitive test-only module: out=[%s]\n' "$(esc "$TD/r")"; fails=1
+  fi
+  # 18: `#[cfg(any(test, ...))] mod x;` is compiled outside tests -> RED.
+  mkdir -p "$TD/s/src"; printf '#[cfg(any(test, feature = "y"))]\nmod guard;\n' > "$TD/s/src/lib.rs"; printf "$guard" > "$TD/s/src/guard.rs"
+  if [ "$(esc "$TD/s" | grep -c .)" = "1" ]; then
+    printf 'ok    row 18 a cfg(any(test, ...)) module file is still judged\n'
+  else
+    printf 'FAIL  row 18 cfg(any(test)) module escape was hidden\n'; fails=1
+  fi
   [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
   printf '\nSELF-TEST PASSED\n'
   exit 0
