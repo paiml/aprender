@@ -34,9 +34,9 @@ fn apr_qtype_to_dtype(qtype: u32) -> Result<&'static str> {
 ///
 /// The whitelist of GPU-eligible types is exactly:
 ///   0=F32, 1=F16, 2=Q4_0, 3=Q4_1, 6=Q5_0, 7=Q5_1, 8=Q8_0, 12=Q4_K, 13=Q5_K,
-///   14=Q6_K, 20=IQ4_NL, 21=IQ3_S, 23=IQ4_XS.
+///   14=Q6_K, 20=IQ4_NL, 21=IQ3_S, 23=IQ4_XS, 30=BF16.
 /// Everything else — Q8_1(9), Q2_K(10), Q3_K(11), Q8_K(15), the rest of the
-/// IQ* families, BF16(30), unknown — is gated to CPU.
+/// IQ* families, unknown — is gated to CPU.
 ///
 /// #3931: this list is PARSED by `the_prose_whitelist_equals_the_expression`
 /// and compared against the `matches!` below, so the two cannot drift again.
