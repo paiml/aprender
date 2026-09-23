@@ -20,7 +20,8 @@ Author: aprender-83 (claude-opus-5-5).
     - stale: refuse every reference row, which is RED and never reused. An entry is stale when any of three independent defenses fails:
       - its **content digest** fails: the key, rows and files map are sealed at store time, so any field added, removed or changed is caught (quorum round 4, lane 1);
       - an **artifact's sha256** moved;
-      - a row's **pointer** is not a plain name that the entry's own `files{}` holds, even if the digest was re-sealed (quorum round 3, lane 2).
+      - a row's **pointer** is not a plain name that the entry's own `files{}` holds, even if the digest was re-sealed (quorum round 3, lane 2);
+      - `files{}` holds a file **no row points at** (quorum round 5, lane 2).
   - **Exit contract.** `lookup` exits 0 hit, 10 miss, 11 stale. A keying refusal (1) or a crash (2) is none of the three, and the dogfood declines the run on it. A crash once shared the miss code, so a corrupted cache was silently recomputed (quorum round 3, lane 2).
 - `scripts/crux_inference_dogfood.sh` changes:
   - `--reference-cache <dir>` adds a lookup per mode and an inject or store after the mode.
@@ -56,7 +57,7 @@ Author: aprender-83 (claude-opus-5-5).
 
 ## Hermetic tables (real dogfood + real judge, stub engines)
 
-**`scripts/check_crux_ref_cache.sh` — 13/13**
+**`scripts/check_crux_ref_cache.sh` — 14/14**
 
 1. Cold stores.
 2. Warm makes 0 reference calls, the receipt is identical cell for cell, and every injected row is provenanced.
@@ -69,8 +70,9 @@ Author: aprender-83 (claude-opus-5-5).
 9. MUST-RED: a row's artifact pointer is rewritten to a `../` traversal while the key and `files{}` stay intact, and the content digest is re-sealed, so only the pointer rule can refuse it. It is STALE, with 0 engine calls, and every cell is RED.
 10. The exit contract: miss 10, keying refusal 1, crash 2.
 11. MUST-DECLINE: a lookup that crashes inside the real dogfood declines the run (rc 2, no receipt). It is never recomputed silently.
-12. An edited pointer that resolves to the SAME hashed file, with the digest re-sealed, is STALE on the real lib, and REUSED by a mutant with the pointer rule disabled. The rule is what refuses it.
-13. A field REMOVED from a stored row, either `stdout` or `stderr` (which no verdict reads), is STALE by the content digest. A mutant without the digest REUSES the `stderr` edit.
+12. An edited pointer that resolves to the SAME hashed file, with the digest re-sealed, is STALE on the real lib, and REUSED by a mutant with the row↔file rules disabled (the pointer rule and its converse). Those rules are what refuse it.
+13. A field REMOVED from a stored row, either `stdout` or `backend` (which no per-field rule reads and whose removal orphans no file), is STALE by the content digest. A mutant without the digest REUSES the `backend` edit.
+14. An unreferenced file added to `files{}`, hashed and with the digest re-sealed, is STALE (quorum round 5, lane 2). A mutant without the converse rule REUSES it.
 
 **`scripts/check_crux_plugin_batch.sh` — 5/5**
 
@@ -83,6 +85,12 @@ Author: aprender-83 (claude-opus-5-5).
 **Unchanged on this diff:** greedy 12/12, ollama-in-lock 6/6, serve_code 66/66, judge 153/153, oracles PASS.
 
 ## Not covered
+
+- **A coherent forgery is not covered.** Someone who can write the cache dir can rewrite an artifact, update its `files{}` hash and re-seal the content digest, and lookup will HIT (quorum round 5, lane 2, measured).
+  - Nothing stored beside the entry can refuse a writer who recomputes every seal.
+  - That same writer can edit the dogfood, the judge or the receipts.
+  - The checks cover corruption, partial edits and leftovers from another harness, not forgery. Forgery resistance would need a key held outside the cache.
+  - The PMAT-4036 acceptance criterion originally said "any edit". It has been narrowed to this threat model, stated here rather than overclaimed.
 
 - Entries stored before the content digest existed carry none, so they read as stale (RED) and must be deleted. The only such caches are the gx10 measurement directories of this ticket.
 

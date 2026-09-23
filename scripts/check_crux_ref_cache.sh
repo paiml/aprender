@@ -20,10 +20,13 @@
 #   9. MUST-RED: a row's artifact pointer rewritten to a `../` traversal (key and files{} intact) → STALE, RED
 #  10. the lookup's exit contract: hit 0 · miss 10 · stale 11; a keying refusal (1) and a crash (2) are neither
 #  11. MUST-DECLINE: a lookup that crashes inside the real dogfood declines the run, never a silent recompute
-#  12. an edited pointer that resolves to the SAME hashed file: STALE on the real lib, REUSED by a mutant without the
-#      pointer rule — so the rule, not a sha256 or a crash, is what refuses it
-#  13. a field REMOVED from a stored row (stdout; stderr, which no verdict reads): STALE by the entry's content
-#      digest; a mutant without the digest REUSES the stderr edit
+#  12. an edited pointer that resolves to the SAME hashed file (digest re-sealed): STALE on the real lib, REUSED by a
+#      mutant without the row<->file rules (pointer + converse) — they, not a sha256, digest or crash, refuse it
+#  13. a field REMOVED from a stored row (stdout; backend, which no per-field rule reads): STALE by the entry's
+#      content digest; a mutant without the digest REUSES the backend edit
+#  14. an unreferenced file added to files{} (hashed, digest re-sealed) is STALE; a mutant without the converse
+#      rule REUSES it
+#  NOT covered, by design: a coherent re-seal by a cache writer (see the lib's THREAT MODEL)
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
 set -uo pipefail
@@ -365,9 +368,10 @@ else
   broke "crashing lookup: rc $(cat "$TMP/crash.rc"), $cr"
 fi
 
-# Row 12: the pointer check is what refuses an edited pointer. `refcache:./<same name>` resolves to the SAME hashed
-# file, so no sha256 and no crash can catch it; only the pointer rule can. Real lib: STALE. MUTANT with the pointer
-# rule disabled (its own cache, since the lib is in the digest): the edited entry is REUSED, 0 calls, GREEN.
+# Row 12: the row<->file correspondence is what refuses an edited pointer. `refcache:./<same name>` resolves to the
+# SAME hashed file, with the digest re-sealed, so no sha256, digest or crash can catch it; the pointer rule (a row's
+# pointer is a plain name files{} holds) and its converse (files{} holds only what a row points at) each do. Real lib:
+# STALE. MUTANT with both disabled (its own cache, since the lib is in the digest): REUSED, 0 calls, GREEN.
 dot_ptr() { # dot_ptr <cache>: every entry's first row points at ./<its own file>
   python3 - "$1" <<'PY' || exit 2
 import glob, hashlib, json, sys
@@ -390,20 +394,23 @@ p = sys.argv[1]
 s = open(p).read()
 a = "            if not rel or rel != os.path.basename(rel) or rel in (\".\", \"..\") or rel not in (ent.get(\"files\") or {}):"
 assert s.count(a) == 1, "pointer-rule anchor moved: update this check with the lib"
-open(p, "w").write(s.replace(a, "            if False:"))
+s = s.replace(a, "            if False:")
+b = "    if extra:"
+assert s.count(b) == 1, "converse-rule anchor moved: update this check with the lib"
+open(p, "w").write(s.replace(b, "    if False:"))
 PY
 run_row mptr-cold "$MP" "$TMP/cache-mptr"; dot_ptr "$TMP/cache-mptr"
 run_row mptr "$MP" "$TMP/cache-mptr"
 mp=$(summary mptr)
 case "$dt|$mp" in
-  "0 | "*"=RED"*"|0 | "*"=GREEN"*) ok "an equivalent-but-edited pointer: STALE on the real lib ($dt); REUSED with the pointer rule disabled ($mp)" ;;
+  "0 | "*"=RED"*"|0 | "*"=GREEN"*) ok "an equivalent-but-edited pointer: STALE on the real lib ($dt); REUSED with the row<->file rules disabled ($mp)" ;;
   *) broke "pointer rule: real lib $dt, mutant $mp" ;;
 esac
 
 # Row 13: a FIELD REMOVED from a stored row. Deleting `stdout` passed every per-field rule (quorum round 4, lane 1,
 # measured); the entry's content digest now refuses any field added, removed or changed. MUST-RED on `stdout`;
-# and `stderr` — a field no verdict reads — is STALE on the real lib but REUSED by a mutant without the content
-# digest, so the digest (not the judge noticing a missing answer) is what refuses it.
+# and `backend` — a field no per-field rule reads, whose removal orphans no file — is STALE on the real lib but
+# REUSED by a mutant without the content digest, so the digest (not another rule, not the judge) refuses it.
 del_field() { # del_field <cache> <field>: every entry's first row loses <field>; nothing else is touched
   python3 - "$1" "$2" <<'PY' || exit 2
 import glob, json, sys
@@ -416,7 +423,7 @@ PY
 cp -r "$CACHE" "$TMP/cache-del"; del_field "$TMP/cache-del" stdout
 run_row del "$T" "$TMP/cache-del"
 dl=$(summary del)
-cp -r "$CACHE" "$TMP/cache-dels"; del_field "$TMP/cache-dels" stderr
+cp -r "$CACHE" "$TMP/cache-dels"; del_field "$TMP/cache-dels" backend
 run_row dels "$T" "$TMP/cache-dels"
 ds=$(summary dels)
 MC="$TMP/mutant-content"; mk_tree "$MC"
@@ -428,15 +435,62 @@ a = "    if not ent.get(\"content_sha256\") or content_sha256(ent) != ent[\"cont
 assert s.count(a) == 1, "content-digest anchor moved: update this check with the lib"
 open(p, "w").write(s.replace(a, "    if False:"))
 PY
-run_row mcon-cold "$MC" "$TMP/cache-mcon"; del_field "$TMP/cache-mcon" stderr
+run_row mcon-cold "$MC" "$TMP/cache-mcon"; del_field "$TMP/cache-mcon" backend
 run_row mcon "$MC" "$TMP/cache-mcon"
 mc=$(summary mcon)
 case "$dl|$ds|$mc" in
   "0 | "*"=RED"*"|0 | "*"=RED"*"|0 | "*"=GREEN"*)
     if grep -q 'its content changed since it was stored' "$TMP/del.out/stub-gpu.json" "$TMP/dels.out/stub-gpu.json"; then
-      ok "a REMOVED field is STALE (stdout: $dl; stderr: $ds); a mutant without the content digest REUSES the stderr edit ($mc)"
+      ok "a REMOVED field is STALE (stdout: $dl; backend: $ds); a mutant without the content digest REUSES the backend edit ($mc)"
     else broke "field removal: RED but not for the content digest"; fi ;;
   *) broke "field removal: stdout $dl, stderr $ds, mutant $mc" ;;
+esac
+
+# Row 14: an EXTRA file smuggled into files{} (hashed correctly, digest re-sealed) that no row points at is STALE:
+# an entry carries only the files its rows need (quorum round 5, lane 2, measured the addition passing).
+cp -r "$CACHE" "$TMP/cache-extra"
+python3 - "$TMP/cache-extra" <<'PY' || exit 2
+import glob, hashlib, json, os, sys
+for p in glob.glob(sys.argv[1] + "/*/*/entry.json"):
+    e = json.load(open(p))
+    extra = os.path.join(os.path.dirname(p), "files", "smuggled.txt")
+    open(extra, "w").write("not a row's artifact\n")
+    e["files"]["smuggled.txt"] = hashlib.sha256(open(extra, "rb").read()).hexdigest()
+    e["content_sha256"] = hashlib.sha256(json.dumps({"key": e.get("key"), "rows": e.get("rows"), "files": e.get("files")},
+                                                    sort_keys=True).encode()).hexdigest()
+    json.dump(e, open(p, "w"), indent=1, sort_keys=True)
+PY
+run_row extra "$T" "$TMP/cache-extra"
+ex=$(summary extra)
+# ...and a MUTANT without the converse rule alone REUSES it: no other rule sees an extra, correctly hashed file.
+MX="$TMP/mutant-extra"; mk_tree "$MX"
+python3 - "$MX/scripts/lib/crux_ref_cache.py" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+b = "    if extra:"
+assert s.count(b) == 1, "converse-rule anchor moved: update this check with the lib"
+open(p, "w").write(s.replace(b, "    if False:"))
+PY
+run_row mext-cold "$MX" "$TMP/cache-mext"
+python3 - "$TMP/cache-mext" <<'PY' || exit 2
+import glob, hashlib, json, os, sys
+for p in glob.glob(sys.argv[1] + "/*/*/entry.json"):
+    e = json.load(open(p))
+    extra = os.path.join(os.path.dirname(p), "files", "smuggled.txt")
+    open(extra, "w").write("not a row's artifact\n")
+    e["files"]["smuggled.txt"] = hashlib.sha256(open(extra, "rb").read()).hexdigest()
+    e["content_sha256"] = hashlib.sha256(json.dumps({"key": e.get("key"), "rows": e.get("rows"), "files": e.get("files")},
+                                                    sort_keys=True).encode()).hexdigest()
+    json.dump(e, open(p, "w"), indent=1, sort_keys=True)
+PY
+run_row mext "$MX" "$TMP/cache-mext"
+mx=$(summary mext)
+case "$ex|$mx" in
+  "0 | "*"=RED"*"|0 | "*"=GREEN"*) grep -q 'which no row points at' "$TMP/extra.out/stub-gpu.json" \
+                  && ok "an unreferenced file in files{} (hashed, re-sealed) is STALE ($ex); a mutant without the converse rule REUSES it ($mx)" \
+                  || broke "extra file: RED but not for the unreferenced file ($ex)" ;;
+  *) broke "extra file: real lib $ex, mutant $mx" ;;
 esac
 
 printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"

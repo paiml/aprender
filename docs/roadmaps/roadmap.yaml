@@ -21458,7 +21458,8 @@ roadmap:
   acceptance_criteria:
   - 'A reference row is cached under a key bound to model sha256, thinking mode, backend, engine, verb, prompt sha256,
     sampling, oracle version and the producing harness files; the host is not in the key'
-  - 'On a miss the mode recomputes and stores only clean rows; a stale entry (any edit, even answer-preserving) is RED,
+  - 'On a miss the mode recomputes and stores only clean rows; a stale entry (corrupted, edited in part or in any field,
+    even answer-preserving; NOT a coherent re-seal by a cache writer, which is out of scope and stated) is RED,
     never reused — a must-RED falsifier in scripts/check_crux_ref_cache.sh'
   - 'Only pure comparators are cached (hf, vLLM, llamafile); llama.cpp is refused because it renders apr''s serve routes'
   - 'Source-weight engines load once per mode per interface (gen-batch); rows identical row for row to the per-cell path'

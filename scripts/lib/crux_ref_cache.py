@@ -19,6 +19,12 @@ change the answer. The key holds:
   - a digest of every harness file that PRODUCES a reference row: the dogfood, its cell libs and the engine's driver.
 The host is NOT in the key; that is the point. The backend IS: a CPU-lane reference does not vouch for a GPU lane.
 
+THREAT MODEL. The integrity checks catch a cache that is CORRUPTED, EDITED IN PART or LEFT FROM ANOTHER HARNESS:
+a byte of an artifact, any field of an entry (added, removed or changed), a pointer, an unreferenced file. They do
+NOT stop a deliberate forger who can write the cache dir and re-seal every hash — nothing stored beside the entry
+can, and that writer can equally edit the dogfood, the judge or the receipt. Forgery resistance would need a key
+held outside the cache; it is out of scope for #4036 (quorum round 5, lane 2), and stated here rather than claimed.
+
 THREE OUTCOMES, never a fourth:
   hit    every expected reference entry is present and intact: the rows are injected, and the engines do not run.
   miss   any entry is absent: the mode runs every engine as before, and its clean rows are stored afterwards.
@@ -234,6 +240,10 @@ def why_stale(key, d, edir):
                 return "a row's artifact pointer %r is not one of the entry's own hashed files" % box[f]
         for box, f in row_paths(r):
             return "a row still names an absolute path %r: its artifact was never stored" % box[f]
+    used = {box[f][len("refcache:"):] for r in rows for box, f in row_paths_rel(r)}
+    extra = sorted(set(ent.get("files") or {}) - used)
+    if extra:
+        return "files{} holds %s, which no row points at: an entry carries only the files its rows need" % extra[0]
     for rel, want in (ent.get("files") or {}).items():
         if not rel or rel != os.path.basename(rel) or rel in (".", ".."):
             return "files{} names %r, which is not a plain file name" % rel
