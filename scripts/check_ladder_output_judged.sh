@@ -12,7 +12,7 @@
 #
 # and the row was GREEN.
 #
-# WHAT THIS CHECKS, IN TWO LAYERS.
+# WHAT THIS CHECKS, IN THREE LAYERS.
 #
 #   1. THE DETECTOR MIRRORS ITS SOURCE. The four signals are
 #      `output_verification.rs`'s, in its order, with its thresholds: non-ASCII
@@ -20,6 +20,12 @@
 #      dominant character >=90%. Two judges that disagree about what "degenerate"
 #      means on the same completion are worse than one judge, so the table below
 #      pins the boundaries rather than trusting that they were copied.
+#
+#   3. THE RIGHT TEXT REACHES IT (#3925). Layer 1 proves the detector is right
+#      about a completion and says nothing about what string is handed to it. That
+#      is where this gate failed: `apr chat` frames its session in `════` rules,
+#      the ladder captures with 2>&1, and the SEPARATOR tripped the repeated-
+#      fragment signal on a reply that read "The capital of France is Paris."
 #
 #   2. THE VERDICT USES IT. A row whose verb ran with rc=0 and bad output must be
 #      RED, and must SAY so — separately from the rc, because "ran and produced
@@ -135,12 +141,126 @@ check_verdict() { # -> 0 ok
   return 1
 }
 
+# ── layer 3: WHAT TEXT IS JUDGED (#3925) ─────────────────────────────────────
+# Layer 1 proves the detector is right about a completion. It says nothing about
+# what string reaches it, and that is where this gate actually failed: `apr chat`
+# frames its session in `════` rules, the ladder captures with 2>&1, and the
+# separator tripped the repeated-fragment signal on a run whose reply was "The
+# capital of France is Paris." Five required rungs on gx10, seven on lambda, both
+# backends, all previously green. A sound predicate pointed at the wrong input.
+#
+# The fix's own hazard is the opposite one, so it is pinned here too: an extractor
+# that silently yields "" gives the detector nothing to flag and turns every row
+# green. Absent, truncated and UNBOUNDED replies are each their own red.
+load_judge() {
+  local src="$1" fn body out=""
+  [ -f "$src" ] || { echo "  cannot read $src" >&2; return 2; }
+  for fn in gibberish_reason assistant_reply judge_reply; do
+    body=$(awk -v F="^$fn\\\\(\\\\) \\\\{" '$0 ~ F {f=1} f{print} f && /^\}$/{exit}' "$src")
+    [ -n "$body" ] || { echo "  $src defines no $fn() -- the judging layer is gone" >&2; return 2; }
+    out="$out$body
+"
+  done
+  printf '%s' "$out"
+}
+
+judge_capture() { # judge_capture <src> <capture-text> -> the reason, or nothing
+  local src="$1" tmp rc
+  tmp=$(mktemp) || return 2
+  load_judge "$src" > "$tmp" || { rm -f "$tmp"; return 2; }
+  printf 'text=$(cat); judge_reply "$text" chat\n' >> "$tmp"
+  printf '%s' "$2" | bash "$tmp"; rc=$?
+  rm -f "$tmp"
+  return $rc
+}
+
+# The captures are VERBATIM from gx10 at 057f9a3a2, not invented shapes.
+cap_correct_answer() { cat <<'T'
+=== Model Chat (GGUF Format) ===
+
+════════════════════════════════════════════════════════════
+Loading model...
+You: [BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF
+[6.2s, ~1 tok/s]
+Assistant: The capital of France is Paris.
+
+You: Goodbye!
+{"backend":{"requested":"cpu","ran":"cpu","fell_back":false}}
+T
+}
+cap_code_json() { cat <<'T'
+Launched apr serve on port 19745 (pid 2085384)
+apr serve ready (2.0s)
+{"type":"result","subtype":"success","status":"ok","result":"ok","session_id":"00000000-0006-7000-5c1e-5c1e26a9ee1b","num_turns":1}
+T
+}
+cap_chrome_gibberish() { cat <<'T'
+════════════════════════════════════════════════════════════
+Assistant: ürnópez zombie.ERRópez zombieópez zombie zombie zombie zombie
+You: Goodbye!
+{"backend":{"requested":"cuda","ran":"cuda","fell_back":false}}
+T
+}
+# aprender-3e's case: the reply itself contains `You:`. Terminating on the next
+# `You:` cuts it and judges a FRAGMENT -- which can pass or fail for reasons that
+# are not about the reply. The garbage lives AFTER the marker, so an early cut
+# reads clean and this case goes red.
+cap_reply_with_you() { cat <<'T'
+════════════════════════════════════════════════════════════
+Assistant: In a transcript the user turn is written
+You: like this, and zombie zombie zombie zombie follows.
+{"backend":{"requested":"cpu","ran":"cpu","fell_back":false}}
+T
+}
+cap_no_envelope() { cat <<'T'
+════════════════════════════════════════════════════════════
+Assistant: The capital of France is Paris.
+T
+}
+cap_no_reply() { cat <<'T'
+Loading model...
+{"backend":{"requested":"cpu","ran":"cpu","fell_back":false}}
+T
+}
+
+# name|capture-fn|expect   (clean = no reason · bad = a verdict about the reply ·
+# red = a refusal to judge, which must never be silent)
+extraction_cases() {
+cat <<'CASES'
+chrome-wrapped-correct-answer|cap_correct_answer|clean
+code-json-envelope-not-uuid|cap_code_json|clean
+chrome-does-not-mask-gibberish|cap_chrome_gibberish|bad
+reply-containing-You-judged-whole|cap_reply_with_you|bad
+truncated-capture-no-envelope|cap_no_envelope|red
+envelope-but-no-reply|cap_no_reply|red
+CASES
+}
+
+run_extraction_table() { # -> 0 all as expected
+  local src="$1" rc=0 name fn want got cls
+  while IFS='|' read -r name fn want; do
+    [ -n "$name" ] || continue
+    got=$(judge_capture "$src" "$($fn)") || return 2
+    if [ -z "$got" ]; then cls=clean
+    elif case "$got" in "could not"*) true ;; *) false ;; esac; then cls=red
+    else cls=bad; fi
+    if [ "$cls" = "$want" ]; then
+      printf '  ok    %-34s %s\n' "$name" "$cls"
+    else
+      printf '  FAIL  %-34s %s, expected %s  [%s]\n' "$name" "$cls" "$want" "${got:0:70}"; rc=1
+    fi
+  done < <(extraction_cases)
+  return $rc
+}
+
 if [ "$SELF_TEST" = 1 ]; then
   [ -f "$SCRIPT" ] || { echo "cannot read $SCRIPT" >&2; exit 2; }
-  m1=$(mktemp); m2=$(mktemp); trap 'rm -f "$m1" "$m2"' EXIT
+  m1=$(mktemp); m2=$(mktemp); m3=$(mktemp); m4=$(mktemp)
+  trap 'rm -f "$m1" "$m2" "$m3" "$m4"' EXIT
 
   echo "self-test: the shipped script"
   run_detector_table "$SCRIPT" > /dev/null && check_verdict "$SCRIPT" > /dev/null \
+    && run_extraction_table "$SCRIPT" > /dev/null \
     || { echo "SELF-TEST FAILED: the shipped script is already red" >&2; exit 1; }
   echo "  GREEN (expected)"
 
@@ -165,7 +285,32 @@ if [ "$SELF_TEST" = 1 ]; then
   fi
   echo "  RED (expected)"
 
-  echo "self-test: PASS — red when the detector stops flagging AND when the verdict stops reading it"
+  # Mutant 3: the extractor cannot find a reply and says nothing about it. This is
+  # the hazard the FIX introduces, not the one it removes: a silent "" leaves the
+  # detector nothing to flag, and every row goes green.
+  sed -e 's|.*could not find the backend envelope.*|    3) printf "" ;;|' \
+      -e 's|.*could not locate the %s reply.*|    *) printf "" ;;|' "$SCRIPT" > "$m3"
+  cmp -s "$SCRIPT" "$m3" && { echo "SELF-TEST INCONCLUSIVE: mutant 3 changed nothing" >&2; exit 1; }
+  echo "self-test: mutant 3 (an unlocatable reply passes silently)"
+  if run_extraction_table "$m3" > /dev/null 2>&1; then
+    echo "SELF-TEST FAILED: mutant 3 passed -- a reply that was never found reads as clean" >&2
+    exit 1
+  fi
+  echo "  RED (expected)"
+
+  # Mutant 4: terminate the reply at the next `You:` instead of at the backend
+  # envelope -- the PARTIAL extraction aprender-3e caught in review. A reply that
+  # contains `You:` is then cut, and a fragment is judged in its place.
+  sed 's|return line.strip() == "You: Goodbye!"|return line.lstrip().startswith("You:")|' "$SCRIPT" > "$m4"
+  cmp -s "$SCRIPT" "$m4" && { echo "SELF-TEST INCONCLUSIVE: mutant 4 changed nothing" >&2; exit 1; }
+  echo "self-test: mutant 4 (reply cut at the next You:)"
+  if run_extraction_table "$m4" > /dev/null 2>&1; then
+    echo "SELF-TEST FAILED: mutant 4 passed -- a truncated reply is judged as if whole" >&2
+    exit 1
+  fi
+  echo "  RED (expected)"
+
+  echo "self-test: PASS — red when the detector stops flagging, when the verdict stops reading it, when an unlocatable reply passes silently, and when the reply is cut short"
   exit 0
 fi
 
@@ -174,6 +319,8 @@ rc=0
 run_detector_table "$SCRIPT" || rc=$?
 [ "$rc" = 2 ] && exit 2
 check_verdict "$SCRIPT" || rc=1
+run_extraction_table "$SCRIPT" || rc=$?
+[ "$rc" = 2 ] && exit 2
 if [ "$rc" = 0 ]; then
   echo "OK: the detector mirrors output_verification.rs, and the verdict reads it"
   exit 0
