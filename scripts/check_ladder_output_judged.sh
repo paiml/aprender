@@ -125,7 +125,7 @@ QA_OK='{"capability_match":{"passed":true,"skipped":false,"message":"ok"},
 green_of() { # green_of <src> <be-json> -> true|false
   local src="$1" builder out
   builder=$(extract_builder "$src") || return 2
-  out=$(printf '%s' "$builder" | python3 - "rid" "$QA_OK" "$2" 0 1 "deadbeef" "m.gguf" 1 2>/dev/null) || return 2
+  out=$(printf '%s' "$builder" | python3 - "rid" "$QA_OK" "$2" 0 1 "deadbeef" "m.gguf" 1 "qwen2" 2>/dev/null) || return 2
   python3 -c 'import json,sys; print(str(json.loads(sys.stdin.read())["green"]).lower())' <<< "$out"
 }
 
