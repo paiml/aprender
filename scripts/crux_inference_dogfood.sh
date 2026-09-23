@@ -218,7 +218,7 @@ PLUGIN_ENGINES=(hf llamafile vllm)
 # evidence/crux/hf-sources.yaml sidecar: hf by design, vllm because 0.30.0 cannot read a
 # local GGUF (#3952). A model with no declared source is a refused row for each of them.
 source_engine() { case "$1" in hf|vllm) return 0 ;; *) return 1 ;; esac; }
-declare -A EXT_OK EXT_WHY EXT_SCRIPT EXT_PROBE
+declare -A EXT_OK EXT_WHY EXT_SCRIPT EXT_PROBE EXT_BATCH
 for eng in "${PLUGIN_ENGINES[@]}"; do
   want "$eng" || continue
   EXT_OK[$eng]=0
@@ -238,6 +238,13 @@ for eng in "${PLUGIN_ENGINES[@]}"; do
   if [ "$prc" -eq 0 ] && [ -n "$probe_out" ]; then
     EXT_OK[$eng]=1
     EXT_PROBE[$eng]=$(printf '%s\n' "$probe_out" | head -1)
+    # #4036 lever 2: a source-weight driver with `gen-batch` serves every item of a mode from ONE engine load.
+    # Measured on the 0.69.1 lambda sweep (aprender-36, #4033): vLLM was 64% of CRUX time, ~55 s of cold start per
+    # prompt x verb. CRUX_NO_BATCH=1 keeps the one-load-per-cell path (the A/B baseline).
+    if [ -z "${CRUX_NO_BATCH:-}" ] && source_engine "$eng" \
+       && "${ext_run[@]}" "${EXT_SCRIPT[$eng]}" gen-batch --help > /dev/null 2>&1; then
+      EXT_BATCH[$eng]=1
+    fi
   else
     EXT_WHY[$eng]="probe exit $prc: $(head -c 300 /tmp/crux-probe-$$-$eng.err 2>/dev/null | tr '\n' ' ')"
   fi
@@ -461,6 +468,67 @@ for line in open(m):
               and r.get("model_sha256") == sha and r.get("verb") == verb)
 print(n)
 PY
+}
+
+crux_batched() { # crux_batched <engine>: its rows this mode come from plugin_batch_cells, not the per-prompt cells
+  [ "${EXT_BATCH[$1]:-0}" = 1 ] && want "$1" && [ "${EXT_OK[$1]:-0}" = 1 ] \
+    && ! { source_engine "$1" && [ -n "$HF_MODEL_WHY" ]; }
+}
+
+# plugin_batch_cells <engine>: this mode's items for one batched engine, as TWO cells, each one engine load under
+# the GPU lock: run+chat in-process, then serve run+serve stream+code through the engine's own server (the driver
+# refuses a batch that mixes them). The items are exactly the per-prompt cells' (same messages, same max_tokens:
+# the global cap for run/chat, the prompt's own for serve/code), so a row is the row a per-prompt cell writes, plus
+# its `batch` id. An item the driver returned no row for is refused by name, never absent.
+plugin_batch_cells() {
+  local eng="$1" d="$WORK/$SHA12/batch-$eng" group items cell ext_run v pid mt
+  mkdir -p "$d" || return 1
+  case "${EXT_SCRIPT[$eng]}" in *.py) ext_run=(python3) ;; *) ext_run=(bash) ;; esac
+  for group in inproc serve; do
+    items="$d/$group.items.jsonl"; : > "$items"
+    python3 - "$WORK" "$VERBS" "$group" "$THINK" "$MAXTOK" "$items" <<'PY' || return 1
+import json, os, sys
+work, verbs, group, think, maxtok, out = sys.argv[1:7]
+verbs = verbs.split(",")
+items = []
+if group == "inproc":
+    for line in open(os.path.join(work, "pids-all.txt")):
+        parts = line.split()
+        if len(parts) == 2 and parts[0] in verbs:
+            items.append((parts[0], parts[1], maxtok))
+else:
+    own = lambda pid: open(os.path.join(work, "maxtok-%s.txt" % pid)).read().strip()
+    sp = os.path.join(work, "serve-prompts.jsonl")
+    if "serve" in verbs and os.path.exists(sp):
+        pairs = [json.loads(l) for l in open(sp) if l.strip()]
+        for want in ("serve run", "serve stream"):
+            items += [(want, pid, own(pid)) for pid, vs in pairs if want in vs]
+    cp = os.path.join(work, "code-prompts.txt")
+    if "code" in verbs and os.path.exists(cp):
+        items += [("code", pid.strip(), own(pid.strip())) for pid in open(cp) if pid.strip()]
+with open(out, "w") as f:
+    for verb, pid, mt in items:
+        f.write(json.dumps({"prompt_id": pid, "verb": verb, "messages": os.path.join(work, "messages-%s.json" % pid),
+                            "thinking": think, "max_tokens": int(mt)}) + "\n")
+PY
+    [ -s "$items" ] || continue
+    cell="$d/cell-$group.sh"
+    printf '#!/usr/bin/env bash\n# one CRUX batch cell (#4036): every %s item of this mode through ONE %s load\n' "$group" "$eng" > "$cell"
+    local -A before=()
+    while IFS=$'\t' read -r v pid; do before["$v|$pid"]=$(VERB_KEY="$v" rows_for "$eng" "$pid"); done \
+      < <(python3 -c 'import json,sys; [print("%s\t%s" % (i["verb"], i["prompt_id"])) for i in map(json.loads, open(sys.argv[1]))]' "$items")
+    cell_add "$cell" "$d/$group.driver" "${ext_run[@]}" "${EXT_SCRIPT[$eng]}" gen-batch --batch "$items" \
+      --model "$M" --model-sha256 "$SHA" --backend "$BACKEND" --host "$HOST" \
+      --seed "$SEED" --temperature "$TEMP" --context "$CTX" "${HF_SRC[@]}"
+    printf 'exit 0\n' >> "$cell"
+    run_cell "$cell"
+    while IFS=$'\t' read -r v pid; do
+      if [ -n "$CELL_WHY" ]; then VERB_KEY="$v" emit_gen "$eng" "$pid" "" "" "" "$CELL_WHY"
+      elif [ "$(VERB_KEY="$v" rows_for "$eng" "$pid")" -le "${before["$v|$pid"]}" ]; then
+        VERB_KEY="$v" emit_gen "$eng" "$pid" "" "" "" "engine driver ${EXT_SCRIPT[$eng]} gen-batch exited $(cat "$d/$group.driver.rc" 2>/dev/null || echo '?') without a row for this item: $(tail -c 200 "$d/$group.driver.err" 2>/dev/null | tr '\n' ' ')"
+      fi
+    done < <(python3 -c 'import json,sys; [print("%s\t%s" % (i["verb"], i["prompt_id"])) for i in map(json.loads, open(sys.argv[1]))]' "$items")
+  done
 }
 
 ref_cache_args() { # ref_cache_args: REF_ENGINES + REF_ARGS for the current model and mode (#4036)
@@ -763,6 +831,7 @@ PY
     for eng in "${PLUGIN_ENGINES[@]}"; do
       want "$eng" && [ "${EXT_OK[$eng]}" = 1 ] || continue
       source_engine "$eng" && [ -n "$HF_MODEL_WHY" ] && continue
+      crux_batched "$eng" && continue
       case "${EXT_SCRIPT[$eng]}" in *.py) ext_run=(python3) ;; *) ext_run=(bash) ;; esac
       # llamafile's `--cli` ignores the thinking switch and does not bound output
       # with -n (infra-3c, measured on 0.10.6); its server honours both.
@@ -789,6 +858,7 @@ PY
     elif want ollama; then emit_gen ollama "$pid" "" "" "" "${OL_REFUSED:-$OLLAMA_WHY}"; fi
     for eng in "${PLUGIN_ENGINES[@]}"; do
       want "$eng" || continue
+      crux_batched "$eng" && continue
       if [ "${EXT_OK[$eng]}" != 1 ]; then emit_gen "$eng" "$pid" "" "" "" "${EXT_WHY[$eng]}"; continue; fi
       if source_engine "$eng" && [ -n "$HF_MODEL_WHY" ]; then emit_gen "$eng" "$pid" "" "" "" "$HF_MODEL_WHY"; continue; fi
       before=${before_run[$eng]}
@@ -798,6 +868,10 @@ PY
       fi
     done
   done
+  done
+  for eng in "${PLUGIN_ENGINES[@]}"; do
+    crux_batched "$eng" || continue
+    plugin_batch_cells "$eng" || decline "the $eng batch cell could not be built for $NAME"
   done
   if [ "$REF_SKIP" = 1 ]; then
     cat "$WORK/$SHA12/refcache-rows.jsonl" >> "$MANIFEST"

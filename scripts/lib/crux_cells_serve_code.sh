@@ -41,6 +41,9 @@
 crux_plugin_engines() { # the plugin engine list: the driver's, else the pre-#3952 pair
   if declare -p PLUGIN_ENGINES > /dev/null 2>&1; then printf '%s\n' "${PLUGIN_ENGINES[@]}"; else printf 'hf\nllamafile\n'; fi
 }
+crux_lib_batched() { # the driver runs this engine's items as a batch cell (#4036); a standalone caller never does
+  declare -F crux_batched > /dev/null 2>&1 && crux_batched "$1"
+}
 crux_is_source_engine() { # engines that run the SOURCE weights and need an HF source declared
   if declare -F source_engine > /dev/null 2>&1; then source_engine "$1"; else [ "$1" = hf ]; fi
 }
@@ -52,6 +55,7 @@ crux_plugin_lines() {
   for eng in $(crux_plugin_engines); do
     want "$eng" && [ "${EXT_OK[$eng]:-0}" = 1 ] || continue
     crux_is_source_engine "$eng" && [ -n "$HF_MODEL_WHY" ] && continue
+    crux_lib_batched "$eng" && continue
     case "${EXT_SCRIPT[$eng]}" in *.py) ext_run=(python3) ;; *) ext_run=(bash) ;; esac
     ext_extra=()
     [ "$eng" = llamafile ] && ext_extra=(--interface server)
@@ -76,6 +80,7 @@ crux_plugin_rows() {
   for pid in "$@"; do
     for eng in $(crux_plugin_engines); do
       want "$eng" || continue
+      crux_lib_batched "$eng" && continue
       if [ "${EXT_OK[$eng]:-0}" != 1 ]; then emit_gen "$eng" "$pid" "" "" "" "${EXT_WHY[$eng]:-engine unavailable}"; continue; fi
       if crux_is_source_engine "$eng" && [ -n "$HF_MODEL_WHY" ]; then emit_gen "$eng" "$pid" "" "" "" "$HF_MODEL_WHY"; continue; fi
       b="${before_ref[$eng-$pid]:-0}"
