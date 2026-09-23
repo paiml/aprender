@@ -46,6 +46,7 @@ aprender-contracts	--lib	ontology::extract::apr_model
 aprender-contracts	--lib	ontology::extract::code
 aprender-contracts	--lib	ontology::extract::lean
 aprender-contracts	--lib	ontology::extract::pv_contract
+aprender-contracts	--lib	ontology::owl::tests
 aprender-contracts	--lib	ontology::sigma
 aprender-contracts	--lib	ontology::w3c
 aprender-contracts	--lib	pipeline
@@ -65,6 +66,7 @@ aprender-contracts-cli	--lib	contract_walk
 aprender-contracts-cli	--test	cli_integration
 aprender-contracts-cli	--test	ground_truth
 aprender-contracts-cli	--test	ont2b_sigma_gate
+aprender-contracts-cli	--test	ont2c_owl_tbox
 aprender-contracts-cli	--test	ont4_relations_gate
 aprender-contracts-cli	--test	ont4b2_code_lean_w3c
 aprender-contracts-cli	--test	ont4b_shapes_gate
