@@ -72,6 +72,10 @@ ln -s "$TMP/real/leaky-big.gguf" "$TMP/models/leaky-big.gguf"
 head -c 2048 /dev/zero > "$TMP/inv/victim-small.gguf"
 head -c 3000 /dev/zero > "$TMP/inv/middle-inv.gguf"   # an INVENTORY-only model, sized between the two rungs
 INV_SHA=$(sha256sum "$TMP/inv/middle-inv.gguf" | cut -d' ' -f1)
+# Three rungs the loop must NOT measure: a file whose sha is not the pinned one (sha-mismatch RED), a required
+# file that is absent (ABSENT RED), and a rung listed only for another host (N/A, never counted).
+head -c 1000 /dev/zero > "$TMP/models/mismatch-mid.gguf"
+MISMATCH_SHA=$(sha256sum "$TMP/models/mismatch-mid.gguf" | cut -d' ' -f1)
 LEAKY_SHA=$(sha256sum "$TMP/models/leaky-big.gguf" | cut -d' ' -f1)
 VICTIM_SHA=$(sha256sum "$TMP/inv/victim-small.gguf" | cut -d' ' -f1)
 cat > "$ROOT/contracts/model-capability-ladder-v1.yaml" <<EOF
@@ -81,6 +85,9 @@ ladder:
   rungs:
     - {id: leaky, gguf: leaky-big.gguf, sha256: $LEAKY_SHA, backends: [cpu], required: true}
     - {id: victim, gguf: victim-small.gguf, sha256: $VICTIM_SHA, backends: [cpu], required: true}
+    - {id: mismatch, gguf: mismatch-mid.gguf, sha256: "$(printf '0%.0s' $(seq 64))", backends: [cpu], required: true}
+    - {id: absent-req, gguf: absent-req.gguf, sha256: "$(printf '1%.0s' $(seq 64))", backends: [cpu], required: true}
+    - {id: gx10-only, gguf: gx10-only.gguf, sha256: "$(printf '2%.0s' $(seq 64))", backends: [cpu], required: true, hosts: [gx10]}
 EOF
 printf '{"admitted_by_sha":{"%s":["p"]}}' "$LEAKY_SHA" > "$TMP/cert-leaky-first.json"
 printf '{"admitted_by_sha":{"%s":["p"]}}' "$VICTIM_SHA" > "$TMP/cert-victim-first.json"
@@ -160,7 +167,8 @@ def norm(v):
 by = {r.get("id"): norm(r) for r in rows}
 inv = sorted(norm(x).get("file") for x in (R.get("inventory") or []))
 # Absolute content, unnormalized: a field slip is wrong the SAME way in both orders, so A == B cannot see it.
-absolute = {"rows": {r.get("id"): r.get("sha256") for r in rows},
+absolute = {"red": R.get("red"), "executed": R.get("executed"),
+            "rows": {r.get("id"): r.get("sha256") for r in rows},
             "inventory": [[x.get("file"), x.get("sha256"), x.get("bytes")] for x in (R.get("inventory") or [])]}
 print(json.dumps({"order": [r.get("id") for r in rows], "rows": by, "inventory": inv, "absolute": absolute},
                  sort_keys=True))
@@ -193,7 +201,9 @@ for leak in 0 1; do
   ob=$(python3 -c 'import json,sys; print(",".join(json.loads(sys.argv[1])["order"]))' "$B")
   # leaky-first: leaky (certified), then largest first -- the inventory model (3000 B) before victim (2048 B).
   # victim-first: victim (certified), then leaky (4096 B), then the inventory model.
-  if [ "$oa" = "leaky,inv:middle-inv.gguf,victim" ] && [ "$ob" = "victim,leaky,inv:middle-inv.gguf" ]; then
+  # the unmeasured rungs still take their planned place: mismatch (1000 B), then the two with no file, by id.
+  if [ "$oa" = "leaky,inv:middle-inv.gguf,victim,mismatch,absent-req,gx10-only" ] \
+     && [ "$ob" = "victim,leaky,inv:middle-inv.gguf,mismatch,absent-req,gx10-only" ]; then
     case_line ok "$name: the two runs measured in opposite orders" "$oa | $ob"
   else
     case_line FAIL "$name: the runs were not in the orders asked for" "$oa | $ob"
@@ -207,9 +217,12 @@ for leak in 0 1; do
   fi
   for J in "$A" "$B"; do
     got=$(python3 -c 'import json,sys; a=json.loads(sys.argv[1])["absolute"]; print(json.dumps(a, sort_keys=True))' "$J")
-    want=$(printf '{"inventory": [["middle-inv.gguf", "%s", 3000], ["victim-small.gguf", "%s", 2048]], "rows": {"inv:middle-inv.gguf": "%s", "leaky": "%s", "victim": "%s"}}' \
-           "$INV_SHA" "$VICTIM_SHA" "$INV_SHA" "$LEAKY_SHA" "$VICTIM_SHA")
-    if [ "$got" = "$want" ]; then case_line ok "$name: every row's sha256 and the inventory record are the files' own" "exact"
+    # red: the 3 measured cells are RED (the fake serve refuses) + mismatch + absent-req; gx10-only is N/A.
+    want=$(python3 -c 'import json,sys; i,v,l,m=sys.argv[1:5]; print(json.dumps({"executed": 3, "red": 5,
+      "inventory": [["middle-inv.gguf", i, 3000], ["victim-small.gguf", v, 2048]],
+      "rows": {"inv:middle-inv.gguf": i, "leaky": l, "victim": v, "mismatch": m, "absent-req": None, "gx10-only": None}},
+      sort_keys=True))' "$INV_SHA" "$VICTIM_SHA" "$LEAKY_SHA" "$MISMATCH_SHA")
+    if [ "$got" = "$want" ]; then case_line ok "$name: shas, inventory, red=5 executed=3 (N/A, ABSENT, mismatch)" "exact"
     else case_line FAIL "$name: a row or inventory record does not describe its file" "$got"; fi
   done
   [ "$leak" = 0 ] && CLEAN_A=$A
@@ -245,6 +258,12 @@ print("rows=" + ",".join(r.get("id") for r in rows) + " green=" + green
   && case_line ok "--only leaky: one row, the sweep's verdict, every held model recorded" "$only_got" \
   || case_line FAIL "--only leaky: wrong rows, or a held model's record was dropped" "${only_got:-no receipt}"
 
+# ---- --certification with no value declines by name (rc 2), like every sibling flag
+nv=$(DOGFOOD_ALLOW_UNPINNED=1 APR="$TMP/apr" MODEL_LADDER_ROOT="$ROOT" timeout 30 bash "$ROOT/scripts/model_ladder.sh" --host lambda --certification 2>&1); nvrc=$?
+[ "$nvrc" = 2 ] && grep -q "certification needs a value" <<< "$nv" \
+  && case_line ok "--certification with no value declines by name" "rc $nvrc" \
+  || case_line FAIL "--certification with no value did not decline by name" "rc $nvrc: $(printf '%s' "$nv" | tail -1)"
+
 # ---- a planner that FAILS must decline the sweep (rc 2, no receipt), for a real run and a dry run alike
 cp "$ROOT/scripts/lib/ladder_order.py" "$TMP/ladder_order.good"
 printf 'import sys\nsys.exit(1)\n' > "$ROOT/scripts/lib/ladder_order.py"
@@ -279,17 +298,19 @@ dry_order() { # <tag> -> the DRY ids in printed order; fails the case if any mea
   awk '/\[DRY   \]/ { print $3 }' "$log" | paste -sd, -
 }
 mkdir -p "$ROOT/evidence/crux/0.0.1" "$ROOT/evidence/crux/0.0.9" "$ROOT/evidence/crux/0.0.10"
-cp "$TMP/cert-victim-first.json" "$ROOT/evidence/crux/0.0.1/prompt-certification.json"
-cp "$TMP/cert-victim-first.json" "$ROOT/evidence/crux/0.0.9/prompt-certification.json"
-cp "$TMP/cert-leaky-first.json" "$ROOT/evidence/crux/0.0.10/prompt-certification.json"
+# Size alone gives leaky,inv,victim. Each certification below gives a DIFFERENT order, so right file, wrong
+# file and nothing-found are three distinct outcomes, never one (an assertion that passes either way is none).
+printf '{"admitted_by_sha":{"%s":["p"]}}' "$INV_SHA" > "$ROOT/evidence/crux/0.0.1/prompt-certification.json"
+cp "$TMP/cert-leaky-first.json" "$ROOT/evidence/crux/0.0.9/prompt-certification.json"
+cp "$TMP/cert-victim-first.json" "$ROOT/evidence/crux/0.0.10/prompt-certification.json"
 d1=$(dry_order own)
-[ "$d1" = "victim,leaky,inv:middle-inv.gguf" ] \
-  && case_line ok "dry run, no flag: this version's certification orders it" "$d1" \
+[ "$d1" = "inv:middle-inv.gguf,leaky,victim" ] && grep -q "^order: certification evidence/crux/0.0.1/prompt-certification.json" "$TMP/dry-own" \
+  && case_line ok "dry run, no flag: this version's certification orders it (and says so)" "$d1" \
   || case_line FAIL "dry run, no flag: this version's certification was not used (or a verb ran)" "$d1"
 rm -f "$ROOT/evidence/crux/0.0.1/prompt-certification.json"   # this version now has none
 d2=$(dry_order newest)
-[ "$d2" = "leaky,inv:middle-inv.gguf,victim" ] \
-  && case_line ok "dry run, no flag, none for this version: the newest (0.0.10 > 0.0.9)" "$d2" \
+[ "$d2" = "victim,leaky,inv:middle-inv.gguf" ] && grep -q "^order: certification evidence/crux/0.0.10/prompt-certification.json" "$TMP/dry-newest" \
+  && case_line ok "dry run, no flag, none for this version: the newest (0.0.10 > 0.0.9), named" "$d2" \
   || case_line FAIL "dry run: the fallback did not pick the newest certification (or a verb ran)" "$d2"
 
 if [ "$SELF_TEST" = 1 ]; then
