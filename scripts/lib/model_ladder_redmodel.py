@@ -72,7 +72,37 @@ import re
 import model_ladder_crux as crux
 
 TICKET = re.compile(r"#\d+")
-DEFECTS = {"think_never_closed": "never_closed", "think_empty": "empty"}
+DEFECTS = {"think_never_closed": "never_closed", "think_empty": "empty", "wrong_answer": None}
+#: #3957 F9 `wrong_answer` (cop ruling 2026-09-23): the largest top-2 logit margin, in BOTH engines at
+#: the first divergent step, that still counts as a near-tie rather than an engine difference.
+NEAR_TIE = 0.5
+AXES = {"on": {"on"}, "off": {"off"}, "any": {"on", "off"}}
+
+
+def answer_of(text):
+    """The final answer of a completion: the text after the last </think>, or all of it when there is
+    no think block. An unclosed block has no answer (None)."""
+    if not isinstance(text, str):
+        return None
+    if "</think>" in text:
+        return text.rsplit("</think>", 1)[1]
+    return None if "<think>" in text else text
+
+
+def answers(text, expect):
+    """True when `expect` appears as a whole token in the final answer (a number, a word)."""
+    a = answer_of(text)
+    return a is not None and re.search(r"(?<![\w.])" + re.escape(expect) + r"(?![\w])", a) is not None
+
+
+def top2_margin(raw, step):
+    """top-1 minus top-2 logit at generated `step`, from raw["top2_logits"][step] = [top1, top2]."""
+    t = raw.get("top2_logits") if isinstance(raw, dict) else None
+    try:
+        a, b = t[step]
+        return float(a) - float(b)
+    except (TypeError, ValueError, IndexError, KeyError):
+        return None
 REFUSAL_CLASS = "This is a refusal, not a fallback"
 
 
@@ -126,7 +156,7 @@ class RedVerdicts:
         self.failed = False
         self.tables = {"red_model": {}, "red_unsupported": {}}
         self.keys = []        # (kind, pattern) of every admitted key
-        self.proven = {}      # (host, file) -> "RED-MODEL" | "RED-UNSUPPORTED"
+        self.proven = {}      # (host, file) -> "RED-MODEL:<thinking axis>" | "RED-UNSUPPORTED"
         self.greedy = {}      # (sha, host, lane) -> [thinking-ON greedy entry]
         self.ctl_cells = {}   # (sha, host) -> [verdict of each thinking-ON positive-control cell]
         for kind in self.tables:
@@ -159,7 +189,12 @@ class RedVerdicts:
                 return f"declares defect {e.get('defect')!r}, not one of {sorted(DEFECTS)}"
             if not isinstance(e.get("control"), str) or not e["control"].strip():
                 return "names no sibling `control` file for the oracle's positive control"
-            if e.get("thinking") != "on":
+            if e["defect"] == "wrong_answer":
+                if e.get("thinking") not in AXES:
+                    return f"covers thinking {e.get('thinking')!r}; a wrong_answer key names its axis: on, off or any"
+                if not isinstance(e.get("expect"), str) or not e["expect"].strip():
+                    return "is a wrong_answer key with no `expect` -- a wrong answer needs the right one to be judged against"
+            elif e.get("thinking") != "on":
                 return f"covers thinking {e.get('thinking')!r}; a think-block defect is a thinking-ON verdict (`thinking: on`)"
             if e.get("bf16_reproduces", False) not in (True, False):
                 return "has a `bf16_reproduces` that is not a boolean"
@@ -192,7 +227,7 @@ class RedVerdicts:
             lane = R.get("backend")
             for g in R.get("greedy") or []:
                 k = g.get("key") or {}
-                if k.get("thinking") == "on":
+                if k.get("thinking") in ("on", "off"):
                     self.greedy.setdefault((k.get("model_sha256"), k.get("host") or R.get("host"), lane), []).append(g)
             for c in R.get("cells") or []:
                 k = c.get("key") or {}
@@ -219,11 +254,12 @@ class RedVerdicts:
             probs, evidence = self._prove_model(host, f, x, e, sha_of)
             resid = residual_of(neutralise_golden(x))
             if resid:
-                probs.append("RED-MODEL excuses only the think-block defect, and the row ALSO fails: " + "; ".join(resid))
+                probs.append(f"RED-MODEL excuses only the declared {e['defect']} defect, and the row ALSO fails: " + "; ".join(resid))
             if probs:
                 return True, (f"FAIL  {tag} declared RED-MODEL ({e['defect']}, {e['ticket']}) but NOT RE-PROVEN on this sweep, "
                               f"so it is plain RED: " + "; ".join(probs) + " -- was: " + "; ".join(why))
-            self.proven[(host, f)] = "RED-MODEL"
+            # The axis travels with the verdict: model_ladder_crux sets aside that axis's cells only.
+            self.proven[(host, f)] = "RED-MODEL:" + ",".join(sorted(AXES.get(e["thinking"], {"on"})))
             return False, f"RED-MODEL {tag} {e['defect']} ({e['ticket']}) -- the FILE is defective, never green: {evidence}"
         probs, refusal = self._prove_unsupported(x, e)
         if probs:
@@ -236,10 +272,12 @@ class RedVerdicts:
     def _hits(self, f):
         return [(kind, p) for kind, p in self.keys if fnmatch.fnmatch(str(f).lower(), str(p).lower())]
 
-    def _greedy_on(self, sha, host, lane):
-        return self.greedy.get((sha, host, lane)) or []
+    def _greedy_on(self, sha, host, lane, axis=frozenset({"on"})):
+        return [g for g in self.greedy.get((sha, host, lane)) or [] if (g.get("key") or {}).get("thinking") in axis]
 
     def _prove_model(self, host, f, x, e, sha_of):
+        if e["defect"] == "wrong_answer":
+            return self._prove_wrong_answer(host, f, x, e, sha_of)
         sha = x.get("sha256") or sha_of(host, f)
         if not (isinstance(sha, str) and crux.HEX64.fullmatch(sha)):
             return ["the row has no 64-hex sha256, so no oracle can be joined to it"], ""
@@ -326,6 +364,93 @@ class RedVerdicts:
         return probs, (f"apr == llama.cpp on apr's ids ({', '.join(shown)}); llama.cpp shows it on the official template; "
                        f"control {cfile} closes and answers; apr CPU == GPU")
 
+    def _prove_wrong_answer(self, host, f, x, e, sha_of):
+        """#3957 F9 `wrong_answer` (cop ruling 2026-09-23, within operator ruling (a)): the FILE answers
+        wrong, proven by llama.cpp. Admitted only when, per greedy entry on the key's thinking axis:
+          - apr and llama.cpp ran on the same prompt ids, and apr's ids ARE the official template's;
+          - their greedy ids are identical, OR the first divergence is a NEAR-TIE: at that step BOTH
+            engines' top-2 logit margin is <= NEAR_TIE (the logits are recorded, never asserted);
+          - apr, llama.cpp on apr's ids, and llama.cpp@official all answer WRONG (`expect` absent);
+          - apr CPU ids == GPU ids;
+        and the `control` (the same architecture at a higher quant) answers CORRECTLY on the same
+        prompt in BOTH engines. llama.cpp answering correctly anywhere is apr's fault: plain RED."""
+        sha = x.get("sha256") or sha_of(host, f)
+        if not (isinstance(sha, str) and crux.HEX64.fullmatch(sha)):
+            return ["the row has no 64-hex sha256, so no oracle can be joined to it"], ""
+        axis = AXES[e["thinking"]]
+        expect = e["expect"].strip()
+        gpu = self._greedy_on(sha, host, "gpu", axis)
+        named = e.get("prompts")
+        if named:
+            gpu = [g for g in gpu if (g.get("key") or {}).get("prompt_id") in named]
+            gone = [p for p in named if p not in {(g.get("key") or {}).get("prompt_id") for g in gpu}]
+            if gone:
+                return [f"the key claims the wrong answer on prompt(s) {gone}, and this sweep has no greedy entry for them"], ""
+        if not gpu:
+            return [f"no thinking-{e['thinking']} greedy entry for sha {sha[:12]} on {host} in a gpu-lane CRUX receipt "
+                    f"bound to the cut -- no oracle ran on this sweep (#3957 F9)"], ""
+        cpu = {((g.get("key") or {}).get("prompt_id"), (g.get("key") or {}).get("thinking")): g
+               for g in self._greedy_on(sha, host, "cpu", axis)}
+        cfile = e["control"]
+        csha = sha_of(host, cfile)
+        ctl = {((g.get("key") or {}).get("prompt_id"), (g.get("key") or {}).get("thinking")): g
+               for g in self._greedy_on(csha, host, "gpu", axis)} if isinstance(csha, str) else {}
+        probs, shown = [], []
+        if not (isinstance(csha, str) and crux.HEX64.fullmatch(csha)):
+            probs.append(f"the higher-quant control {cfile} is not held on {host}")
+        elif csha == sha or cfile == f:
+            probs.append(f"the control {cfile} is the defective file itself, so it controls nothing")
+        for g in gpu:
+            k = g.get("key") or {}
+            pid, th = k.get("prompt_id"), k.get("thinking")
+            a, o, off = _raw(g, "apr"), _raw(g, "llama.cpp"), _raw(g, "llama.cpp@official")
+            miss = [n for n, v in (("apr", a), ("llama.cpp", o), ("llama.cpp@official", off)) if v is None]
+            if miss:
+                probs.append(f"{pid}/{th}: no raw greedy record for {', '.join(miss)}")
+                continue
+            p = []
+            if not (_ids(a.get("prompt_ids")) and a.get("prompt_ids") == o.get("prompt_ids")):
+                p.append(f"{pid}/{th}: the parity row's engines did not run on the same prompt ids")
+            if not (_ids(off.get("template_prompt_ids")) and off.get("prompt_ids") == off.get("template_prompt_ids")):
+                p.append(f"{pid}/{th}: the llama.cpp@official row did not run on the official template's ids (#3990)")
+            elif a.get("prompt_ids") != off.get("template_prompt_ids"):
+                p.append(f"{pid}/{th}: apr did not run on the model's OFFICIAL template, so its wrong answer may be apr's "
+                         f"prompt, not the model (#3990)")
+            if a["generated_ids"] != o["generated_ids"]:
+                d = _first_diff(a["generated_ids"], o["generated_ids"])
+                ma, mo = top2_margin(a, d), top2_margin(o, d)
+                if ma is None or mo is None:
+                    p.append(f"{pid}/{th}: apr and llama.cpp diverge at step {d} and the top-2 logits there are not "
+                             f"recorded for both -- a divergence nobody measured is not a near-tie")
+                elif ma > NEAR_TIE or mo > NEAR_TIE:
+                    p.append(f"{pid}/{th}: apr and llama.cpp diverge at step {d} and it is NOT a near-tie (top-2 margin "
+                             f"apr {ma:.3f}, llama.cpp {mo:.3f}, limit {NEAR_TIE}) -- the engines differ, so the answer is "
+                             f"not attributed to the file")
+                else:
+                    shown.append(f"{pid}/{th}: diverge at step {d} on a near-tie (margins {ma:.3f}/{mo:.3f})")
+            else:
+                shown.append(f"{pid}/{th}: {len(a['generated_ids'])} ids identical")
+            for n, r in (("apr", a), ("llama.cpp", o), ("llama.cpp@official", off)):
+                if answers(r.get("generated_text"), expect):
+                    p.append(f"{pid}/{th}: {n} answers CORRECTLY ({expect!r}) -- the file can answer, so the wrong answer "
+                             f"is not the model's")
+            ca = _raw(cpu.get((pid, th)), "apr")
+            if ca is None:
+                p.append(f"{pid}/{th}: no apr CPU leg with raw ids in a cpu-lane receipt -- CPU == GPU is unmeasured")
+            elif ca["generated_ids"] != a["generated_ids"]:
+                p.append(f"{pid}/{th}: apr CPU and GPU DIFFER at step {_first_diff(ca['generated_ids'], a['generated_ids'])}")
+            c = ctl.get((pid, th))
+            ca2, co2 = _raw(c, "apr"), _raw(c, "llama.cpp@official")
+            if ca2 is None or co2 is None:
+                p.append(f"{pid}/{th}: the higher-quant control {cfile} has no apr + llama.cpp@official greedy record for "
+                         f"this prompt -- nothing shows the architecture CAN answer it")
+            elif not (answers(ca2.get("generated_text"), expect) and answers(co2.get("generated_text"), expect)):
+                p.append(f"{pid}/{th}: the higher-quant control {cfile} does not answer {expect!r} in both engines -- the "
+                         f"prompt, not the quant, may be at fault")
+            probs.extend(p)
+        return probs, (f"wrong answer in apr and llama.cpp (official template too): {'; '.join(shown)}; control {cfile} "
+                       f"answers {e['expect']!r} in both engines; apr CPU == GPU")
+
     @staticmethod
     def _prove_unsupported(x, e):
         arch = e["architecture"]
@@ -380,7 +505,7 @@ class RedVerdicts:
                                    f"{x.get('file')} of that architecture is GREEN on cuda -- the architecture HAS a CUDA "
                                    f"path, so the key is refused (#3957 F10)")
         if self.proven:
-            n_m = sum(1 for v in self.proven.values() if v == "RED-MODEL")
+            n_m = sum(1 for v in self.proven.values() if v.startswith("RED-MODEL"))
             self.out(f"RED   {n_m} RED-MODEL + {len(self.proven) - n_m} RED-UNSUPPORTED cell(s): counted RED, never green. "
                      f"They do not block only because this sweep re-proved each cause (#3957 F9/F10)")
         return self.failed
