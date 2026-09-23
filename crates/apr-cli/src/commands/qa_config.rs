@@ -124,8 +124,9 @@
     #[test]
     fn test_gate_result_skipped() {
         let result = GateResult::skipped("test_gate", "No GPU available");
-        assert!(result.passed); // Skipped doesn't fail
+        assert!(!result.passed); // #3965: a skip is not a pass; it does not FAIL the run either
         assert!(result.skipped);
+        assert!(gates_pass(std::slice::from_ref(&result)));
     }
 
     #[test]

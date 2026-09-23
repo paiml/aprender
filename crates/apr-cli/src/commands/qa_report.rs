@@ -69,8 +69,8 @@
             GateResult::skipped("golden_output", "no model"),
             GateResult::skipped("throughput", "no engine"),
         ];
-        let passed = gates.iter().all(|g| g.passed);
-        assert!(passed, "All-skipped should be passed");
+        let passed = gates_pass(&gates); // #3965: the production verdict, not a copy
+        assert!(passed, "All-skipped should be passed (production bounds it with check_min_executed)");
     }
 
     // ========================================================================

@@ -197,7 +197,8 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     let capability_match_failed = gates
         .iter()
         .find(|g| g.name == "capability_match")
-        .map_or(false, |g| !g.passed);
+        // #3965: a skipped gate is not a FAILED one, now that skips are passed:false.
+        .map_or(false, |g| !g.passed && !g.skipped);
 
     // #3477: an architecture the GPU declines (#3090) but the CPU forward runs
     // (qwen35, #3091) certifies on the CPU rung — the CPU gates run for real and
@@ -381,7 +382,7 @@ fn finalize_qa_report(
 
     warn_excessive_skips(config.json, gates_executed, gates_skipped);
 
-    let mut passed = gates.iter().all(|g| g.passed);
+    let mut passed = gates_pass(&gates);
     if !check_min_executed(config, gates_executed, &mut passed) && !config.json {
         println!(
             "  {} Only {} gates executed, minimum required: {}",

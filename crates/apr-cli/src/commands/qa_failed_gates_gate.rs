@@ -6,7 +6,7 @@
             GateResult::passed("golden_output", "ok", None, None, Duration::from_secs(1)),
             GateResult::skipped("ollama_parity", "not available"),
         ];
-        let passed = gates.iter().all(|g| g.passed);
+        let passed = gates_pass(&gates); // #3965: the production verdict, not a copy
         assert!(passed);
         let summary = if passed {
             "All QA gates passed".to_string()

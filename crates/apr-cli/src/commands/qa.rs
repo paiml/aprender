@@ -281,10 +281,15 @@ impl GateResult {
         }
     }
 
+    /// A gate that did not run. #3965: it is NOT `passed`. `passed: true` on an unrun
+    /// check told every JSON consumer that read `passed` alone that the check had
+    /// passed: `gpu_speedup` "Skipped: CUDA not available" read as a GPU pass. A skip
+    /// is Unknown(NotRun), never a pass. Whether a skip fails the RUN is a separate
+    /// rule, and it lives in one place: [`gates_pass`].
     pub(crate) fn skipped(name: &str, reason: &str) -> Self {
         Self {
             name: name.to_string(),
-            passed: true, // Skipped gates don't fail
+            passed: false,
             message: format!("Skipped: {reason}"),
             value: None,
             threshold: None,
@@ -292,6 +297,19 @@ impl GateResult {
             skipped: true,
         }
     }
+}
+
+/// #3965: the RUN verdict over a set of gates, in ONE place.
+///
+/// Every executed gate must pass. A skipped gate does not fail the run: that rule is
+/// unchanged, and `check_min_executed` still bounds how many may skip. What changed
+/// is that a skip no longer claims `passed` at the gate level, so this rule has to
+/// say `skipped` explicitly. Before, it was hidden inside `all(|g| g.passed)`.
+/// Several tests re-implemented that expression inline instead of calling
+/// production; they now call this, so they test the code that ships.
+#[must_use]
+pub(crate) fn gates_pass(gates: &[GateResult]) -> bool {
+    gates.iter().all(|g| g.passed || g.skipped)
 }
 
 /// System information captured during QA run

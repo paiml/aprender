@@ -226,7 +226,9 @@
         // Skipped gates have skipped=true
         let skipped = GateResult::skipped("test", "reason");
         assert!(skipped.skipped, "Skipped gate must have skipped=true");
-        assert!(skipped.passed, "Skipped gates count as passed (don't fail)");
+        // #3965: a skip is not a pass; it does not FAIL the run either.
+        assert!(!skipped.passed, "a skipped gate must not claim passed");
+        assert!(gates_pass(std::slice::from_ref(&skipped)), "a skip must not fail the run");
 
         // Passed gates have skipped=false
         let passed = GateResult::passed("test", "ok", None, None, Duration::from_secs(1));
@@ -379,7 +381,9 @@
         let json = serde_json::to_string(&original).expect("serialize");
         let restored: GateResult = serde_json::from_str(&json).expect("deserialize");
         assert!(restored.skipped, "skipped flag must survive round-trip");
-        assert!(restored.passed, "skipped gates must still show passed=true");
+        // #3965: the serialized form is what every JSON consumer reads. It must NOT say
+        // passed=true for a check that never ran.
+        assert!(!restored.passed, "a skipped gate must serialize passed=false");
         assert!(
             restored.value.is_none(),
             "value should be None after round-trip"
@@ -430,8 +434,8 @@
             report.gates.iter().all(|g| g.skipped),
             "All gates should be skipped"
         );
-        assert!(
-            report.gates.iter().all(|g| g.passed),
-            "All skipped gates should count as passed"
-        );
+        // #3965: all-skipped passes gates_pass; production bounds that vacuity with
+        // check_min_executed. No gate may CLAIM passed.
+        assert!(gates_pass(&report.gates), "skips must not fail the run");
+        assert!(report.gates.iter().all(|g| !g.passed), "no skipped gate may claim passed");
     }

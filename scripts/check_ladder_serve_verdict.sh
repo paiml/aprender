@@ -79,11 +79,11 @@ QA_OK='{"capability_match":{"passed":true,"skipped":false,"message":"ok"},
         "golden_output":{"passed":true,"skipped":false,"message":"3 golden test cases passed"},
         "gates":{},"gates_failed":[],"gates_reported":2}'
 
-run_row() { # run_row <src> <be-json> -> prints true|false (the row's green)
-  local src="$1" be="$2" builder out
+run_row() { # run_row <src> <be-json> [qa-json] -> prints true|false (the row's green)
+  local src="$1" be="$2" qa="${3:-$QA_OK}" builder out
   builder=$(extract_builder "$src") || return 2
   out=$(printf '%s' "$builder" \
-        | python3 - "rid" "$QA_OK" "$be" 0 1 "deadbeef" "m.gguf" 1 2>/dev/null) || {
+        | python3 - "rid" "$qa" "$be" 0 1 "deadbeef" "m.gguf" 1 2>/dev/null) || {
     echo "  the row builder errored on this input" >&2; return 2; }
   python3 -c 'import json,sys; print(str(json.loads(sys.stdin.read())["green"]).lower())' <<< "$out"
 }
@@ -160,7 +160,25 @@ route-503|true|clean|503|0|false
 route-500|true|clean|500|0|false
 not-probed|false|clean|200|0|false
 teardown-failed|true|failed|200|0|false
+teardown-undetermined|true|undetermined|200|0|false
 chat-rc3|true|clean|200|3|false'
+
+# #3965: a SKIPPED golden gate in the OLD encoding (passed:true, skipped:true, which is
+# what apr wrote before #3965 and what existing receipts still carry) must not make a
+# healthy row green. Every other axis of this row is healthy, so skipped is the only
+# thing that can turn it red.
+QA_GOLDEN_SKIPPED='{"capability_match":{"passed":true,"skipped":false,"message":"ok"},
+        "golden_output":{"passed":true,"skipped":true,"message":"Skipped: no engine"},
+        "gates":{},"gates_failed":[],"gates_reported":2}'
+
+golden_skip_case() { # <src> -> 0 when a skipped golden gate keeps the row red
+  local got
+  got=$(run_row "$1" "$(be_json true clean 200 0)" "$QA_GOLDEN_SKIPPED") || return 2
+  if [ "$got" = "false" ]; then
+    printf '  ok    %-16s green=%s\n' "golden-skipped" "$got"; return 0
+  fi
+  printf '  FAIL  %-16s green=%s, expected false — a skipped golden gate counted as a pass (#3965)\n' "golden-skipped" "$got"; return 1
+}
 
 run_table() { # run_table <src> -> 0 all as expected, 1 otherwise
   local src="$1" rc=0 name probed td http want got
@@ -245,7 +263,7 @@ if [ "$SELF_TEST" = 1 ]; then
 fi
 
 echo "ladder serve verdict: a row's green must account for the serve probe ($SCRIPT)"
-if run_table "$SCRIPT" && check_reason "$SCRIPT"; then
+if run_table "$SCRIPT" && check_reason "$SCRIPT" && golden_skip_case "$SCRIPT"; then
   echo "OK: a healthy serve keeps a row green; a non-200, an unprobed serve and a failed teardown each redden it AND say why"
   exit 0
 else

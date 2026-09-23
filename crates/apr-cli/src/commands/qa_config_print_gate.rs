@@ -345,7 +345,7 @@
             GateResult::skipped("gpu_speedup", "no GPU"),
             GateResult::skipped("format_parity", "no path"),
         ];
-        let passed = gates.iter().all(|g| g.passed);
+        let passed = gates_pass(&gates); // #3965: the production verdict, not a copy
         assert!(passed);
     }
 
