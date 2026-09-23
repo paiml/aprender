@@ -114,6 +114,27 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         pipe_grep_q_baseline.txt)                printf 'count\n' ;;   # `producer | grep -q` sites under pipefail (scripts/check_no_pipe_into_grep_q.sh)
         pathonly_devdeps_baseline.txt)           printf 'set\n' ;;   # (manifest,alias) pairs whose src/ uses a publish-stripped dev-dep (scripts/check_pathonly_devdeps_unused_in_src.sh, #3305/#3306)
         roadmap_uncited_completion_baseline.txt) printf 'set\n' ;;
+        # #3904's surface. Rows are <class>TAB<file>|<hash>|<idx>TAB<text>, and the
+        # KEY already carries a content hash, so a text edit produces a new entry
+        # rather than a moved one -- which is what `set` wants.
+        #
+        # CLASSIFIED `set` DELIBERATELY, AND CONSERVATIVELY. Its own header states
+        # the laundering vector it exists to close: "a baseline regenerated to clear
+        # churn takes any genuine new truncation in the same commit with it", which
+        # is why it has no `--update` and "deliberately will not get one". `set`
+        # refuses every addition, so it cannot open that vector. The header also
+        # says "Add a row by hand, with its class and a reason" -- under `set` such
+        # an addition is REFUSED against origin/main, and that friction is the
+        # intended cost: a new silent truncation should be argued, not appended.
+        #
+        # If hand-additions must be admitted, the upgrade is `set-aperture` with
+        # scripts/check_no_silent_truncation.sh as the owning guard, NOT a loosening
+        # of this arm -- and it needs the (a1)/(a2) aperture argument in
+        # lib_baseline_ratchet.sh's header, since from the working tree an aperture
+        # reveal and a fresh violation look identical. Erring toward the kind that
+        # refuses more is the safe direction for a release gate: a wrong `set` costs
+        # an author one conversation, a wrong `set-aperture` costs a hole.
+        silent_truncation_baseline.txt)          printf 'set\n' ;;
         shell_lint_baseline.txt)                 printf 'count\n' ;;
         cb200_baseline.txt)                      printf 'count\n' ;;   # mirrors .pmat-gates.toml [tdg] baseline (PMAT-937)
         test_fixture_path_baseline.txt)          printf 'count\n' ;;
