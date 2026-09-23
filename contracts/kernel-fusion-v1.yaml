@@ -130,7 +130,7 @@ fusion_decisions:
       - Q projection GEMV
       - K projection GEMV
       - V projection GEMV
-    call_site: crates/aprender-serve/src/cuda/generate.rs:267
+    call_site: crates/aprender-serve/src/cuda/kernels_generate_gemm_cuda.rs:362
     saves_per_layer: 2
     falsification: Splitting fused Q/K/V into three separate GEMV launches must increase per-token wall.
   fused_gate_up:
@@ -143,7 +143,7 @@ fusion_decisions:
       - Gate projection GEMV
       - Up projection GEMV
       - SwiGLU activation
-    call_site: crates/aprender-serve/src/cuda/generate.rs:270
+    call_site: crates/aprender-serve/src/cuda/kernels_generate_gemm_cuda.rs:365
     saves_per_layer: 2
     falsification: Splitting fused Gate+Up+SwiGLU into separate launches must increase per-token wall.
   fused_gemm_bias_gelu:
@@ -171,7 +171,7 @@ fusion_decisions:
       replaces:
       - RmsNormKernel
       - Q4K GEMV (separate normalization read)
-    call_site: crates/aprender-serve/src/cuda/generate.rs:202
+    call_site: crates/aprender-serve/src/cuda/kernels_generate_gemm_cuda.rs:250
     saves_per_layer: 1
     falsification: Splitting RMSNorm and Q4K GEMV into two kernels must increase per-token wall.
   fused_gate_up_q4k_gemv:
@@ -183,7 +183,7 @@ fusion_decisions:
       replaces:
       - Gate Q4K GEMV (separate input load)
       - Up Q4K GEMV (separate input load)
-    call_site: crates/aprender-serve/src/cuda/generate.rs:273
+    call_site: crates/aprender-serve/src/cuda/kernels_generate_gemm_cuda.rs:368
     saves_per_layer: 1
     notes: |
       Distinct from FUSION-007 (FusedGateUpKernel = FP32 input) — this
