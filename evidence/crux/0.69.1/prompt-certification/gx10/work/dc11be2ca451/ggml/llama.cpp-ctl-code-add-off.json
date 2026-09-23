@@ -1,0 +1,1 @@
+{"text": "<think>\n\n</think>\n\n```python\ndef add(a, b):\n    return a + b\n```", "turns": ["<think>\n\n</think>\n\n```python\ndef add(a, b):\n    return a + b\n```"]}
