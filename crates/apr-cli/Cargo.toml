@@ -131,7 +131,7 @@ aprender = { path = "../aprender-core", version = "0.69.0", package = "aprender-
 aprender-contracts = { workspace = true }
 
 # MCP (Model Context Protocol) server — `apr mcp` subcommand
-aprender-mcp = { path = "../aprender-mcp", version = "0.69.0" }
+aprender-mcp = { path = "../aprender-mcp", version = "0.69.0", features = ["apr-tools"] }   # apr mcp serves apr's own tools (PMAT-3954)
 async-stream = "0.3"
 provable-contracts-macros = { workspace = true }
 

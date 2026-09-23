@@ -75,8 +75,14 @@ const MISS: &str = r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"n
 fn initialize_names_the_callers_server() {
     let r = drive(&format!("{INIT}\n"));
     let info = &by_id(&r, 1)["result"]["serverInfo"];
-    assert_eq!(info["name"], "fixture-server", "serverInfo must be the caller's: {info}");
-    assert_eq!(info["version"], "9.9.9", "serverInfo version must be the caller's: {info}");
+    assert_eq!(
+        info["name"], "fixture-server",
+        "serverInfo must be the caller's: {info}"
+    );
+    assert_eq!(
+        info["version"], "9.9.9",
+        "serverInfo version must be the caller's: {info}"
+    );
 }
 
 #[test]
@@ -88,15 +94,25 @@ fn tools_list_is_exactly_the_callers_tools() {
         .iter()
         .map(|t| t["name"].as_str().expect("tool name"))
         .collect();
-    assert_eq!(names, vec!["fx.echo"], "no apr tool may leak into a caller's list");
+    assert_eq!(
+        names,
+        vec!["fx.echo"],
+        "no apr tool may leak into a caller's list"
+    );
 }
 
 #[test]
 fn tools_call_reaches_the_callers_dispatch_through_the_worker() {
     let r = drive(&format!("{INIT}\n{CALL}\n"));
     let call = by_id(&r, 3);
-    assert!(call.get("error").is_none(), "tools/call must succeed: {call}");
-    assert_eq!(call["result"]["content"][0]["text"], "echo:hi", "the caller's function answered: {call}");
+    assert!(
+        call.get("error").is_none(),
+        "tools/call must succeed: {call}"
+    );
+    assert_eq!(
+        call["result"]["content"][0]["text"], "echo:hi",
+        "the caller's function answered: {call}"
+    );
 }
 
 #[test]
@@ -104,7 +120,10 @@ fn a_tool_the_caller_did_not_register_is_an_error() {
     let r = drive(&format!("{INIT}\n{MISS}\n"));
     let call = by_id(&r, 4);
     let is_error = call.get("error").is_some() || call["result"]["isError"] == true;
-    assert!(is_error, "apr.version is not in the caller's set and must not answer: {call}");
+    assert!(
+        is_error,
+        "apr.version is not in the caller's set and must not answer: {call}"
+    );
 }
 
 #[test]
@@ -113,5 +132,8 @@ fn two_tools_with_one_name_are_refused() {
         (def("fx.echo"), echo as DispatchFn),
         (def("fx.echo"), echo as DispatchFn),
     ]);
-    assert!(dup.is_err(), "a duplicate tool name must be refused when the index is built");
+    assert!(
+        dup.is_err(),
+        "a duplicate tool name must be refused when the index is built"
+    );
 }
