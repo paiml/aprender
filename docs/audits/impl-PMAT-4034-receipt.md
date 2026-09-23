@@ -17,7 +17,7 @@ c60ac43be (concurrency opt-in per the cop's ruling), 67f396654 (header).
   ladder with rc 2, and the EXIT trap kills a still-running background lane.
 
 ## Evidence
-- scripts/check_ladder_cpu_lane.sh (guard_tree-dispatched): 12 cases, and 11 --self-test mutants
+- scripts/check_ladder_cpu_lane.sh (guard_tree-dispatched): 13 cases, and 13 --self-test mutants
   each killed by the named case. Its first run caught two real bugs in this change before commit:
   an empty fragment parsing as `{}` (the backend was dropped), and a `cuda,cpu` rung that started
   its cpu lane only after the GPU lane had finished.
@@ -49,4 +49,10 @@ c60ac43be (concurrency opt-in per the cop's ruling), 67f396654 (header).
 - Guard flake, disclosed: 1 of 26 runs lost its whole case directory mid-run (`concurrent`) and
   never reproduced (0/25 after, 12 of them 4-way parallel). The case failed RED, which is the
   safe direction. The guard now uses a distinctive mktemp template.
+
+## Round-3 quorum findings (lane 1 PASS, non-blocking), fixed at the next head
+- In opt-in concurrent mode, a FOREGROUND decline exited before the background lane's captured
+  stderr was replayed, and the EXIT trap deleted it. _rm_work now replays it before deleting $WORK.
+  `cuda-decline-kills-cpu-lane` asserts both lanes' text; mutant `bg-err-dropped`.
+- The Evidence counts above were stale (12/11); they now read 13 cases / 13 mutants.
 

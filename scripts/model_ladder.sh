@@ -819,7 +819,7 @@ find_model() { # find_model <basename> — the inventory's copy first, then the 
 
 WORK=$(mktemp -d 2>/dev/null) && [ -d "$WORK" ] || { echo "decline: cannot create a scratch dir (mktemp -d failed: is TMPDIR writable, or the disk full?)" >&2; exit 2; }
 # The delete is guarded (SEC011): only a path under a temp root is removed.
-LADDER_LANE_BG_PID=""
+LADDER_LANE_BG_PID=""; LADDER_LANE_BG_ERR=""
 _rm_work() {
   local v="${WORK:-}" p
   # #4034: a background CPU lane still running when the script exits (a decline on the GPU lane)
@@ -829,6 +829,11 @@ _rm_work() {
       pkill -TERM -P "$p" 2> /dev/null; kill -TERM "$p" 2> /dev/null
     done
     wait "$LADDER_LANE_BG_PID" 2> /dev/null
+    # Its stderr was captured into $WORK, which is deleted next: replay it first, so a reason the
+    # background lane printed is not lost with it (round-3 quorum lane 1).
+    if [ -n "${LADDER_LANE_BG_ERR:-}" ] && [ -s "$LADDER_LANE_BG_ERR" ]; then
+      echo "--- the background lane's stderr, cut short by the exit ---" >&2; cat "$LADDER_LANE_BG_ERR" >&2
+    fi
   fi
   case "$v" in
     /tmp/?*|/var/folders/?*|/mnt/?*) if [ -n "$v" ] && [ "$v" != "/" ]; then rm -rf -- "$v" || :; fi ;;
@@ -1033,7 +1038,7 @@ ladder_run_lanes() {
     for b in "${bes[@]}"; do
       [ "$b" = cpu ] || continue
       ladder_backend_cell "$b" > "$WORK/$rid_s.$b.lane.json" 2> "$WORK/$rid_s.$b.lane.err" &
-      lane_bg=$!; lane_bg_b=$b; LADDER_LANE_BG_PID=$lane_bg
+      lane_bg=$!; lane_bg_b=$b; LADDER_LANE_BG_PID=$lane_bg; LADDER_LANE_BG_ERR="$WORK/$rid_s.$b.lane.err"
       break
     done
   fi
@@ -1047,7 +1052,7 @@ ladder_run_lanes() {
     ladder_backend_cell "$b" > "$WORK/$rid_s.$b.lane.json"; lane_rcs[$b]=$?
   done
   if [ -n "$lane_bg" ]; then
-    wait "$lane_bg"; lane_rcs[$lane_bg_b]=$?; LADDER_LANE_BG_PID=""
+    wait "$lane_bg"; lane_rcs[$lane_bg_b]=$?; LADDER_LANE_BG_PID=""; LADDER_LANE_BG_ERR=""
     lane_err="$WORK/$rid_s.$lane_bg_b.lane.err"
     [ -s "$lane_err" ] && cat "$lane_err" >&2
     # A decline raised inside the background lane ended only that subshell. Carry it out.

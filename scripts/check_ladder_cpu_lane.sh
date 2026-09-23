@@ -29,7 +29,9 @@
 #     cuda-silent        so is a foreground lane
 #     cpu-decline        a decline (exit 2) inside the background lane ends the ladder with rc 2
 #     cuda-decline-kills-cpu-lane  a decline on the GPU lane ends the ladder AND the background lane:
-#                        an orphaned CPU apr would keep a model loaded and write into a deleted $WORK
+#                        an orphaned CPU apr would keep a model loaded and write into a deleted $WORK.
+#                        Both lanes' reasons must reach stderr: the background lane's is replayed
+#                        before $WORK is deleted
 #     fg-decline-keeps-reason  on the DEFAULT (serial) path, a decline inside a foreground lane ends
 #                        the ladder with rc 2 AND its reason reaches stderr. A captured stderr lost
 #                        it: the exit skips the replay, and the EXIT trap deletes $WORK
@@ -140,7 +142,7 @@ ladder_backend_cell() {
     cuda-silent:cuda) return 3 ;;
     cpu-garbage:cpu) printf "\"cpu\":{broken"; return 0 ;;
     cpu-decline:cpu) echo "decline: ENV planted decline in the cpu lane" >&2; exit 2 ;;
-    cuda-decline:cpu) sleep 300 & echo $! > "$W/bg.pid"; wait; return 0 ;;
+    cuda-decline:cpu) echo "cpu lane: planted diagnostic before the cut" >&2; sleep 300 & echo $! > "$W/bg.pid"; wait; return 0 ;;
     cuda-decline:cuda) sleep 0.5; echo "decline: ENV planted decline in the cuda lane" >&2; exit 2 ;;
     fg-decline:cuda) echo "decline: ENV the GPU lock was not free -- holder: pid 4242" >&2; exit 2 ;;
   esac
@@ -199,7 +201,8 @@ print("yes" if a1 < e2 and a2 < e1 else "no")' "$T/$1/spans" 2> /dev/null; }
   lanes cuda-decline cuda,cpu cuda-decline MODEL_LADDER_CONCURRENT_LANES=1; r=$?
   sleep 1
   local bgp; bgp=$(cat "$T/cuda-decline/bg.pid" 2> /dev/null)
-  { [ "$r" = 2 ] && [ -n "$bgp" ] && ! kill -0 "$bgp" 2> /dev/null && grep -q '^decline: ENV planted decline in the cuda lane' "$T/cuda-decline/out"; } && ok cuda-decline-kills-cpu-lane \
+  { [ "$r" = 2 ] && [ -n "$bgp" ] && ! kill -0 "$bgp" 2> /dev/null && grep -q '^decline: ENV planted decline in the cuda lane' "$T/cuda-decline/out" \
+    && grep -q '^cpu lane: planted diagnostic before the cut' "$T/cuda-decline/out"; } && ok cuda-decline-kills-cpu-lane \
     || { bad cuda-decline-kills-cpu-lane "rc=$r; the background lane's child (pid ${bgp:-?}) outlived the ladder, or the exit waited on it (rc 124 = timed out)"; [ -n "$bgp" ] && kill "$bgp" 2> /dev/null; }
   return "$rc"
 }
@@ -225,6 +228,7 @@ if [ "$SELF_TEST" = 1 ]; then
   mutant swallow-decline   cpu-decline '/grep -q .\^decline: . "\$lane_err" 2> \/dev\/null; then exit 2; fi/d'
   mutant orphan-cpu-lane   cuda-decline-kills-cpu-lane 's/      pkill -TERM -P "\$p" 2> \/dev\/null; kill -TERM "\$p" 2> \/dev\/null/      :/'
   mutant fg-stderr-captured fg-decline-keeps-reason 's/    ladder_backend_cell "\$b" > "\$WORK\/\$rid_s.\$b.lane.json"; lane_rcs\[\$b\]=\$?/    ladder_backend_cell "$b" > "$WORK\/$rid_s.$b.lane.json" 2> "$WORK\/$rid_s.$b.lane.err"; lane_rcs[$b]=$?/'
+  mutant bg-err-dropped    cuda-decline-kills-cpu-lane 's/      echo "--- the background lane.s stderr, cut short by the exit ---" >\&2; cat "\$LADDER_LANE_BG_ERR" >\&2/      :/'
   mutant green-ignores-ran green-needs-ran 's/and all(v\["ran"\] and not v\["fallback"\]/and all(not v["fallback"]/'
   [ "$bad" = 0 ] && { echo "SELF-TEST OK: every planted regression turns a case RED"; exit 0; }
   echo "SELF-TEST FAIL: a planted regression was not caught"; exit 1
