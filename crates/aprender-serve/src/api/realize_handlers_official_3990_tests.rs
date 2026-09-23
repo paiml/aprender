@@ -52,14 +52,14 @@ mod serve_official_chat_template_3990 {
     }
 
     /// REAL MODELS: the serve helper on a real GGUF equals llama.cpp's /apply-template byte
-    /// for byte. Only cells whose template does not branch on enable_thinking are used: the
-    /// serve path passes none, so a qwen3 thinking=false cell would not be the same request.
+    /// for byte, on every thinking=false cell -- serve renders thinking OFF, production's
+    /// default since #3801, so those are the cells that are the same request.
     #[test]
     fn the_served_prompt_equals_llama_cpp_on_real_ggufs_3990() {
         let cells: Vec<serde_json::Value> =
             serde_json::from_str(include_str!("../fixtures/chat_template_3990/llama_cpp_df03399.json")).expect("oracle parses");
         let mut ran = 0usize;
-        for c in cells.iter().filter(|c| matches!(c["model"].as_str(), Some("qwen25" | "tinyllama")) && c["thinking"] == false) {
+        for c in cells.iter().filter(|c| c["thinking"] == false) {
             let path = c["path"].as_str().expect("path");
             if !std::path::Path::new(path).exists() {
                 eprintln!("SKIP: {path} not on this host -- this cell did NOT run");
@@ -76,6 +76,6 @@ mod serve_official_chat_template_3990 {
             assert_eq!(got, c["prompt"].as_str().expect("prompt"), "{path} system={}", c["system"]);
             ran += 1;
         }
-        eprintln!("#3990 serve: {ran}/4 real cells compared");
+        eprintln!("#3990 serve: {ran}/8 real cells compared");
     }
 }

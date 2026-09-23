@@ -71,8 +71,10 @@ fn is_llama3_name(name: &str) -> bool {
 /// `general.architecture`. `None` for anything that is not a readable GGUF —
 /// the caller then falls back to the file name, which is what this path used to
 /// do for everything.
+/// The GGUF header (metadata incl. `tokenizer.chat_template` and the vocabulary), parsed
+/// from the smallest bounded prefix that holds it -- the same no-mmap rule as above.
 #[cfg(feature = "inference")]
-fn declared_architecture(path: &std::path::Path) -> Option<String> {
+fn declared_header(path: &std::path::Path) -> Option<realizar::gguf::GGUFModel> {
     use std::io::Read;
     if !path.is_file() {
         return None;
@@ -85,9 +87,7 @@ fn declared_architecture(path: &std::path::Path) -> Option<String> {
         }
         let read = buf.len();
         if let Ok(model) = realizar::gguf::GGUFModel::from_bytes(&buf) {
-            if let Some(arch) = model.architecture() {
-                return Some(arch.to_string());
-            }
+            return Some(model);
         }
         if read < prefix {
             return None;
@@ -117,11 +117,34 @@ pub fn format_prompt_for_model(
     model_path: &std::path::Path,
 ) -> String {
     let name = model_path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+    let header = declared_header(model_path);
+    let msgs = realizar_messages(request);
+    // #3990: the GGUF's OWN chat_template is the prompt format the model was trained on; it
+    // outranks every detector below, the Llama-3 exception included.
+    if let Some(h) = header.as_ref().filter(|h| h.metadata.contains_key("tokenizer.chat_template")) {
+        // Thinking OFF, as every production verb renders it (#3801).
+        match realizar::chat_template::render_official_for_model(h, &msgs, Some(false)) {
+            Ok(prompt) => return prompt,
+            Err(e) => eprintln!(
+                "[#3990] WARNING: {}'s own chat_template failed to render ({e}); falling back to a \
+                 hand-coded template, which is NOT the prompt format this model was trained on",
+                model_path.display()
+            ),
+        }
+    }
     if is_llama3_name(&name) {
         return format_prompt_with_template(request, ChatTemplate::Llama3);
     }
-    let key = declared_architecture(model_path).unwrap_or(name);
+    let key = header.as_ref().and_then(|h| h.architecture().map(str::to_string)).unwrap_or(name);
+    realizar::chat_template::format_messages(&msgs, Some(&key))
+        .unwrap_or_else(|_| format_prompt_with_template(request, ChatTemplate::ChatMl))
+}
 
+/// The request as realizar chat messages: tool definitions injected into the system turn
+/// (this crate's job, not the template's), tool-use / tool-result turns flattened to the
+/// assistant and user turns they render as.
+#[cfg(feature = "inference")]
+fn realizar_messages(request: &CompletionRequest) -> Vec<realizar::chat_template::ChatMessage> {
     let enriched_system = build_enriched_system(&request.system, &request.tools);
     let mut msgs: Vec<realizar::chat_template::ChatMessage> = Vec::new();
     if !enriched_system.is_empty() {
@@ -145,8 +168,7 @@ pub fn format_prompt_for_model(
         };
         msgs.push(realizar::chat_template::ChatMessage::new(role, content));
     }
-    realizar::chat_template::format_messages(&msgs, Some(&key))
-        .unwrap_or_else(|_| format_prompt_with_template(request, ChatTemplate::ChatMl))
+    msgs
 }
 
 /// Format messages using a specific chat template.
@@ -632,5 +654,37 @@ mod one_detector_tests {
         assert!(prompt.contains("## Available Tools"), "{prompt}");
         assert!(prompt.contains("read_file"), "{prompt}");
         assert!(prompt.starts_with("<|im_start|>system\n"), "{prompt}");
+    }
+
+    /// #3990 REAL MODELS: with the GGUF on disk, `apr code` renders the model's OWN
+    /// chat_template (thinking off), byte-equal to llama.cpp's /apply-template on every
+    /// thinking=false cell of the oracle. SKIP by name for a file not on this host.
+    #[test]
+    fn a_real_gguf_renders_its_own_template_equal_to_llama_cpp_3990() {
+        let cells: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../../../aprender-serve/src/fixtures/chat_template_3990/llama_cpp_df03399.json"
+        ))
+        .expect("oracle parses");
+        let mut ran = 0usize;
+        for c in cells.iter().filter(|c| c["thinking"] == false) {
+            let path = Path::new(c["path"].as_str().expect("path"));
+            if !path.exists() {
+                eprintln!("SKIP: {} not on this host -- this cell did NOT run", path.display());
+                continue;
+            }
+            let mut r = req("");
+            r.messages.clear();
+            for m in c["messages"].as_array().expect("messages") {
+                let content = m["content"].as_str().expect("content").to_string();
+                match m["role"].as_str().expect("role") {
+                    "system" => r.system = Some(content),
+                    _ => r.messages.push(Message::User(content)),
+                }
+            }
+            let got = format_prompt_for_model(&r, path);
+            assert_eq!(got, c["prompt"].as_str().expect("prompt"), "{} system={}", path.display(), c["system"]);
+            ran += 1;
+        }
+        eprintln!("#3990 apr code: {ran}/8 real cells compared");
     }
 }

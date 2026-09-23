@@ -238,7 +238,9 @@ pub fn format_chat_messages_official(
         .iter()
         .map(|m| TemplateMessage::new(&m.role, &m.content))
         .collect();
-    match chat_template::render_official_for_model(gguf, &template_messages, None) {
+    // Thinking OFF: production's default for every verb since #3801 -- now rendered the
+    // template's own way (`enable_thinking=false`), not by a hand-coded prefill.
+    match chat_template::render_official_for_model(gguf, &template_messages, Some(false)) {
         Ok(prompt) => prompt,
         Err(e) => {
             eprintln!(
