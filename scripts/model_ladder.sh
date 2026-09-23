@@ -115,7 +115,7 @@ fit_verdict() { # fit_verdict <gguf> -> one JSON fit record on stdout (scripts/l
   fi
   free="${MODEL_LADDER_FREE_MIB:-$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2> /dev/null | head -1 | tr -d ' ')}"
   # MODEL_LADDER_FIT_LIB: a mutant copy of the verdict module, in check_model_ladder.sh --self-test.
-  python3 "${MODEL_LADDER_FIT_LIB:-scripts/lib}/llama_fit_verdict.py" "$found" "$FIT_PIN" "$rc" "${free:-unknown}" "$vf" "$sf"
+  python3 "${MODEL_LADDER_FIT_LIB:-scripts/lib}/llama_fit_verdict.py" "$found" "$FIT_PIN" "$rc" "${free:-unknown}" "$vf" "$sf" "$1"
   rm -f "$vf" "$sf"
 }
 if [ -n "${FIT_PROBE:-}" ]; then

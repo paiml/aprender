@@ -248,7 +248,12 @@ PY
 fit_probe() {
   local prod=$1 w=$2 bad=0 t pin=d1d3c3396 out rc want v
   mkdir -p "$w" || return 1
-  : > "$w/model.gguf"
+  : > "$w/model.gguf"   # no readable header: trained length unknown, the 4096 floor holds
+  # gguf <file> <context_length>: a minimal GGUF v3 header whose only KV is llama.context_length
+  gguf() { python3 -c 'import struct,sys; k=b"llama.context_length"; open(sys.argv[1],"wb").write(b"GGUF"+struct.pack("<IQQ",3,0,1)+struct.pack("<Q",len(k))+k+struct.pack("<II",4,int(sys.argv[2])))' "$1" "$2"; }
+  gguf "$w/trained-2k.gguf" 2048
+  gguf "$w/trained-4k.gguf" 4096
+  gguf "$w/trained-32k.gguf" 32768
   mk() { printf '#!/usr/bin/env bash\ncase "$1" in --version) echo "version: 0.4.1-dev (build 1, commit %s)";; *) %s;; esac\n' "$2" "$3" > "$w/$1"; chmod +x "$w/$1"; }
   mk fits      "$pin"    'echo "-c 262144 -ngl -1"'
   mk nofit     "$pin"    'echo "failed to fit" >&2; exit 1'
@@ -256,23 +261,29 @@ fit_probe() {
   mk partial   "$pin"    'echo "-c 8192 -ngl -1 -ot \"blk.1.ffn=CPU\""'
   mk partialngl "$pin"   'echo "-c 32768 -ngl 20"'
   mk smallctx  "$pin"    'echo "-c 2048 -ngl -1"'
+  mk ctx8k     "$pin"    'echo "-c 8192 -ngl -1"'
   mk otherpin  41fc758   'echo "-c 32768 -ngl -1"'
-  # case | tool | expected verdict | expected exit
-  while IFS='|' read -r t tool want_v want; do
+  # case | tool | model | expected verdict | expected exit
+  # The ctx floor is min(4096, trained ctx) (cop ruling on #4016): tinyllama, trained at 2K, must be
+  # ADMITTED at 2048; a 4K-trained model fitted at 2048 must be REFUSED; a 32K-trained model at 8192 fits.
+  while IFS='|' read -r t tool model want_v want; do
     out=$(MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_GPU_LOCK="$w/lock" MODEL_LADDER_FREE_MIB=23332 MODEL_LADDER_FIT="$w/$tool" \
-          MODEL_LADDER_FIT_PIN="$pin" DOGFOOD_ALLOW_UNPINNED=1 APR=/bin/true timeout 60 bash "$prod" --fit-probe "$w/model.gguf" 2> /dev/null); rc=$?
+          MODEL_LADDER_FIT_PIN="$pin" DOGFOOD_ALLOW_UNPINNED=1 APR=/bin/true timeout 60 bash "$prod" --fit-probe "$w/$model" 2> /dev/null); rc=$?
     v=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("verdict",""))' "$out" 2> /dev/null)
     if [ "$v" = "$want_v" ] && [ "$rc" = "$want" ]; then printf 'ok    fit case %-12s verdict=%s exit=%s\n' "$t" "$v" "$rc"
     else printf 'FAIL  fit case %-12s verdict=%s exit=%s, want %s exit %s\n' "$t" "${v:-<none>}" "$rc" "$want_v" "$want"; bad=1; fi
   done <<'CASES'
-fits|fits|fits|0
-does-not-fit|nofit|does-not-fit|1
-verdict-missing|noverdict|missing|1
-partial-ot|partial|partial-offload|1
-partial-ngl|partialngl|partial-offload|1
-ctx-below-4k|smallctx|does-not-fit|1
-unpinned|otherpin|unpinned|1
-tool-absent|absent|tool-absent|1
+fits|fits|model.gguf|fits|0
+does-not-fit|nofit|model.gguf|does-not-fit|1
+verdict-missing|noverdict|model.gguf|missing|1
+partial-ot|partial|model.gguf|partial-offload|1
+partial-ngl|partialngl|model.gguf|partial-offload|1
+ctx-2k-trained-unknown|smallctx|model.gguf|does-not-fit|1
+tinyllama-2k-at-2048|smallctx|trained-2k.gguf|fits|0
+4k-trained-at-2048|smallctx|trained-4k.gguf|does-not-fit|1
+32k-trained-at-8192|ctx8k|trained-32k.gguf|fits|0
+unpinned|otherpin|model.gguf|unpinned|1
+tool-absent|absent|model.gguf|tool-absent|1
 CASES
   return "$bad"
 }
@@ -387,7 +398,10 @@ if [ "$SELF_TEST" = 1 ]; then
     vmutant no-verdict   's/    if not (c and n):/    if False:/'
     vmutant partial-ngl  's/    if rec\["ngl"\] != -1 or/    if False or/'
     vmutant partial-ot   's/ or " -ot " in f" {line} "//'
-    vmutant min-ctx      's/    if rec\["ctx"\] < min_ctx:/    if False:/'
+    vmutant min-ctx      's/    if rec\["ctx"\] < floor:/    if False:/'
+    vmutant floor-4096   's/    floor = min(min_ctx, trained) if trained else min_ctx/    floor = min_ctx/'
+    vmutant floor-trained 's/    floor = min(min_ctx, trained) if trained else min_ctx/    floor = trained or min_ctx/'
+    vmutant no-reader    's/                    return struct.unpack(fmt, /                    return None and struct.unpack(fmt, /'
     mutant fit-missing    red-fit-missing      's/        if not isinstance(fit, dict) or not fit.get("verdict"):/        if False:/'
     mutant fit-not-fits   red-fit-does-not-fit 's/        elif fit.get("verdict") != "fits":/        elif False:/'
     # The cells module (scripts/lib/model_ladder_cells.py): each rule deleted in a copy, imported through
