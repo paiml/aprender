@@ -393,41 +393,81 @@ PY
 # Resolve the listener by PORT. The port is drawn at random per probe, so it can
 # never name another session's process — which is what makes escalating to a kill
 # safe on a box several agents share.
-ladder_serve_teardown() { # <wrapper-pid> <port> -> prints clean|escalated|failed
-    local pid="$1" port="$2" i spid
+ladder_serve_teardown() { # <wrapper-pid> <port> -> prints clean|escalated|failed|undetermined
+    local pid="$1" port="$2" i p c spid
+    local -a frontier next tree=() alive=()
+    # #3943: LIVENESS IS A PROPERTY OF THE PROCESS, NOT THE PORT. This used to kill the
+    # wrapper and then read "/health does not answer" as "the server is gone". That is
+    # only true of a server that was LISTENING. The health-wait timeout calls this for a
+    # server that never answered /health; a server still LOADING a model has not bound
+    # its port, so it did not answer on the first poll, and the function printed `clean`
+    # while that server kept loading. gx10's qwen35-27b-q4km serve log shows it: "Model
+    # ready ... listening on :25627", no request traffic, AFTER the probe gave up. The
+    # escalation was blind too, because it resolved the listener by the port.
+    #
+    # So resolve the server BY PARENTAGE, and do it BEFORE the wrapper dies. Once flock
+    # dies, the server is re-parented to init and parentage can no longer find it.
+    if ! command -v pgrep >/dev/null 2>&1; then
+        kill "$pid" 2>/dev/null
+        printf 'undetermined'; return 1     # cannot resolve the tree: say so, never `clean`
+    fi
+    frontier=("$pid")
+    while [ "${#frontier[@]}" -gt 0 ]; do
+        next=()
+        for p in "${frontier[@]}"; do
+            mapfile -t c < <(pgrep -P "$p" 2>/dev/null)
+            tree+=("${c[@]}"); next+=("${c[@]}")
+        done
+        frontier=("${next[@]}")
+    done
     kill "$pid" 2>/dev/null
     for i in $(seq 1 10); do
-        if ! curl -fsS --max-time 1 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
-            wait "$pid" 2>/dev/null
-            printf 'clean'; return 0
-        fi
+        alive=()
+        for p in "$pid" "${tree[@]}"; do kill -0 "$p" 2>/dev/null && alive+=("$p"); done
+        [ "${#alive[@]}" -eq 0 ] && break
         sleep 1
     done
-    # Still answering: the wrapper died and the server did not. Name it by port,
-    # then PROVE it is ours before signalling. The random port makes a collision
-    # unlikely; `/proc/PID/cwd` makes it checkable, and on a box several agents
-    # share, "unlikely" is an argument while the cwd is evidence (cop, #3828).
-    # A pid we cannot attribute to this tree is never signalled — it is reported.
-    spid=$(ss -tlnpH "sport = :$port" 2>/dev/null | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
-    if [ -n "$spid" ] && [ "$(readlink -f "/proc/$spid/cwd" 2>/dev/null)" != "$PWD" ]; then
-        printf 'failed'; return 1
-    fi
-    if [ -n "$spid" ]; then
-        kill "$spid" 2>/dev/null
-        for i in $(seq 1 10); do
-            if ! kill -0 "$spid" 2>/dev/null; then
-                wait "$pid" 2>/dev/null
-                printf 'escalated'; return 0
+    if [ "${#alive[@]}" -gt 0 ]; then
+        # Survivors: the wrapper died and they did not. They were found by parentage,
+        # so they are ours by construction. The cwd check still guards pid REUSE between
+        # the pgrep and the kill, on a box several agents share (cop, #3828).
+        for p in "${alive[@]}"; do
+            if kill -0 "$p" 2>/dev/null && [ "$(readlink -f "/proc/$p/cwd" 2>/dev/null)" != "$PWD" ]; then
+                printf 'failed'; return 1
             fi
+        done
+        kill "${alive[@]}" 2>/dev/null
+        for i in $(seq 1 10); do
+            next=()
+            for p in "${alive[@]}"; do kill -0 "$p" 2>/dev/null && next+=("$p"); done
+            [ "${#next[@]}" -eq 0 ] && break
             sleep 1
         done
-        kill -9 "$spid" 2>/dev/null
+        if [ "${#next[@]}" -gt 0 ]; then kill -9 "${next[@]}" 2>/dev/null; sleep 1; fi
+        for p in "${alive[@]}"; do
+            if kill -0 "$p" 2>/dev/null; then printf 'failed'; return 1; fi
+        done
         wait "$pid" 2>/dev/null
         printf 'escalated'; return 0
     fi
-    # Could not resolve a listener and /health still answers: do NOT `wait`, or we
-    # reproduce the hang this function exists to end. Report it as cell state.
-    printf 'failed'; return 1
+    wait "$pid" 2>/dev/null
+    # Every process in the tree is gone. The port is now evidence, not proof: if
+    # something still answers there, it was not ours by parentage. Resolve it by port
+    # and apply the cwd test before touching it, exactly as before.
+    if curl -fsS --max-time 1 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
+        spid=$(ss -tlnpH "sport = :$port" 2>/dev/null | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
+        if [ -z "$spid" ] || [ "$(readlink -f "/proc/$spid/cwd" 2>/dev/null)" != "$PWD" ]; then
+            printf 'failed'; return 1
+        fi
+        kill "$spid" 2>/dev/null
+        for i in $(seq 1 10); do
+            kill -0 "$spid" 2>/dev/null || { printf 'escalated'; return 0; }
+            sleep 1
+        done
+        kill -9 "$spid" 2>/dev/null
+        printf 'escalated'; return 0
+    fi
+    printf 'clean'; return 0
 }
 
 ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <backend>
@@ -755,7 +795,8 @@ def serve_ok(v):
     sv = (v.get("verbs") or {}).get("serve") or {}
     if not sv.get("probed"):
         return False
-    if sv.get("teardown") == "failed":
+    # #3943: `undetermined` is RED too - the doctrine has no third state.
+    if sv.get("teardown") in ("failed", "undetermined"):
         return False
     # #3921: a 200 carrying gibberish is not a working route.
     return all(
@@ -895,6 +936,8 @@ for b,v in r["backends"].items():
         w.append(b+": serve NOT PROBED: "+_disp(sv.get("why","")))
     elif sv.get("teardown")=="failed":
         w.append(b+": serve teardown FAILED (the server would not die — a real property of the verb)")
+    elif sv.get("teardown")=="undetermined":
+        w.append(b+": serve teardown UNDETERMINED (the process tree could not be resolved, so nothing proves the server died) (#3943)")
     else:
         routes=sv.get("routes") or {}
         bad=sorted(k for k,x in routes.items() if (x or {}).get("http")!=200)
