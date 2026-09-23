@@ -341,6 +341,19 @@ a stale receipt version, a non-zero `install_rc`, and a shortened host list each
 RED.
 
 
+### Gate 13: Model capability — the 0.70+ release gate (#4045, APR-RELEASE-001 §14)
+From 0.70.0, the model gate is CRUX smoke on the release binary AND the admitted nightly long certification. Phase 2's
+release-night full sweep is retired.
+```bash
+bash scripts/check_model_ladder.sh --scope release --nightly <nightly root> \
+    --crux <the release binary's smoke receipts> --cut-commit "$(git rev-parse HEAD)"
+```
+- **PASS** only on `ok    RELEASE GATE (normal, #4045): CRUX smoke on the release binary GREEN, and the nightly long
+  certification bound to the cut`.
+- `FAIL  NIGHTLY <host>: ...` means no admissible nightly: run `scripts/certify_nightly.sh --host <id>` on that host, or
+  re-measure in full.
+- `STALE BY SHA` means the delta since the nightly reaches apr inference: re-measure. Never widen anything to pass.
+
 ## Verdict
 
 After running all gates, provide:

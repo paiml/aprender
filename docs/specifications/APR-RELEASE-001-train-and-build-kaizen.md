@@ -1100,3 +1100,62 @@ Deleting it early turns "which PR broke main" into a rebuild.
 | FX-B1 | `batch_fold.sh` resolves only the generated set: a code conflict and a README prose conflict are SKIP, a count-block conflict folds (`check_batch_fold.sh`, run by guard-tree on every PR) | treat README as wholly generated, or take every conflict → `check_batch_fold.sh --self-test` RED |
 | FX-B2 | a stale generated set is never silent: a clean fold touching the census exits 3 | never mark a clean fold stale → RED |
 | FX-B3 | a failed fixed point stops the batch (exit 2, the check named) | ignore `pv extract --check` → RED |
+
+## §14 The 0.70+ release gate — smoke on the release binary, the long run nightly (#4045, operator 2026-09-23)
+
+Operator, relayed verbatim by the release cop: *"lets update our process for .70 and one of your workers on that epic
+ensure new optimization is part of workflow and we change nightly for the long releaes"*; *"anything huge, must be
+nightly only"*. 0.69.1 shipped this shape under a per-release EMERGENCY scope (`ladder.emergency_scopes`, 0.69.1 only).
+From 0.70.0 it is the recorded NORMAL mode (`ladder.release_gate`, `contracts/model-capability-ladder-v1.yaml`) and
+needs no override. This section is the runbook; no other in-tree runbook exists for the final sweep.
+
+### §14.1 What judges a release
+```
+bash scripts/check_model_ladder.sh --scope release --nightly <nightly root> --crux <release-binary smoke dir> --cut-commit <sha>
+```
+Two halves, BOTH required. Neither alone is a release, and the gate refuses `--scope release` without `--nightly`.
+1. **CRUX smoke on the release binary.** Every host in `release_gate.crux_smoke.hosts` × every certified model × every
+   thinking mode its certification ADMITS. Every cell is GREEN, a positive-control cell is GREEN, and every receipt is
+   bound to the cut EXACTLY. The binding reads the binary's own `apr --version` line (#3957 F2). A RED smoke fails the
+   release, whatever the nightly said.
+2. **The nightly long certification** (`scripts/certify_nightly.sh`, #4040) means the full ladder and full CRUX on
+   BOTH lanes (gpu, cpu), measured at `origin/main`. It is admitted (`scripts/lib/nightly_admission.py`) when it is,
+   per required host:
+   - GREEN, with green RE-DERIVED from its own receipts;
+   - at most 24 h old, and never in the future;
+   - at the cut or an ancestor of it.
+
+   It then binds to the cut like any receipt: evidence-only, the scoped hotfix, or the #4037 CARRY-FORWARD (no path in
+   nightly..cut can reach apr inference; a workspace version bump alone is proven harmless). Otherwise it is STALE BY SHA
+   and the release re-measures in full.
+
+### §14.2 Every #4033 lever is wired as it lands
+Each lever carries a must-RED proving it cannot turn a real RED green.
+
+| lever | owner | wired into |
+|---|---|---|
+| #4037 carry-forward | aprender-6c | `check_model_ladder.sh` equivalence (`equiv_lines` → `ladder_carry.carry_between`) |
+| #4040 nightly | aprender-6c | `certify_nightly.sh` + `--nightly`; the timer is paiml/infra#959, applied only after a manual green run per host |
+| #4051 timing stamps | aprender-6c | ladder rows `timing[]`, CRUX `--require-timing`; required from `ladder.timing.required_from` (0.70.0) |
+| #4034 CPU∥CUDA lanes, #4039 cell order | aprender-3a | `model_ladder.sh` (the lane stamps as `lock: none`) |
+| #4035 one load per cell, #4036 CRUX reference cache | aprender-83 | `model_ladder.sh` / `crux_inference_dogfood.sh` |
+| #4038 prefix parity | aprender-36 | the ladder's think-block gate |
+
+### §14.3 Shift-left (M8): no publish-blocking gate is first evaluated at publish
+From the freeze, every gate that can block a publish runs on the release branch's candidate sha, on every push to it
+and at least hourly. REAL gates protect users and andon on red: ladder/CRUX, the tag-is-what-was-judged rule, clean-room,
+dogfood. BOOKKEEPING gates auto-fix or report, and never block the publish: complexity, census/README counts, bashrs on
+release scripts, CB-200, claim literals. The measure per release is **0 gates first-seen-red at publish** (ledger, M7).
+
+### §14.4 Retired
+Phase 2 (a full ladder + full CRUX sweep on release night) is retired as a release step. It is the nightly now.
+
+### §14.5 Falsifiers (each in `check_model_ladder.sh --self-test`, each mutant killed by its named row)
+| # | Assertion | Mutation |
+|---|---|---|
+| RG-1 | `--scope release` without `--nightly` declines by name | drop the check → `smoke-alone` survives → RED |
+| RG-2 | smoke GREEN + nightly GREEN releases, end to end | unlink the admitted receipts → `e2e-green` RED |
+| RG-3 | a RED smoke with a GREEN nightly does not release | drop the smoke fold → `e2e-smoke-red-nightly-green` RED |
+| RG-4 | a nightly without the cpu CRUX lane is refused | require gpu only → `e2e-cpu-lane-missing` RED |
+| RG-5 | a nightly whose delta touches the measurement is STALE | carry everything → `e2e-ancestor-stale` RED |
+| RG-6 | the release gate is refused before `from` or without its ruling | `release-before-from`, `release-unrecorded` |
