@@ -126,6 +126,14 @@ fn write_verification_summary(
     }
 
     let _ = writeln!(out, "## Verification Ladder\n");
+    out.push_str(&verification_ladder_table(&[l5, l4, l3, l2, l1]));
+    let _ = writeln!(out);
+}
+
+/// The README's verification-ladder table, counts given highest level first.
+pub(crate) fn verification_ladder_table(counts_desc: &[usize; 5]) -> String {
+    let [l5, l4, l3, l2, l1] = *counts_desc;
+    let mut out = String::new();
     let _ = writeln!(out, "| Level | Count | Method |");
     let _ = writeln!(out, "|-------|-------|--------|");
     let _ = writeln!(out, "| L5 | {l5} | Lean 4 theorem |");
@@ -133,7 +141,7 @@ fn write_verification_summary(
     let _ = writeln!(out, "| L3 | {l3} | Kani + probar |");
     let _ = writeln!(out, "| L2 | {l2} | Falsification |");
     let _ = writeln!(out, "| L1 | {l1} | Type system |");
-    let _ = writeln!(out);
+    out
 }
 
 fn write_gaps(out: &mut String, contracts: &[(String, &Contract)], binding: &BindingRegistry) {
