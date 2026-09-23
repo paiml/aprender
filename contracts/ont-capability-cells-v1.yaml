@@ -139,7 +139,7 @@ falsification_tests:
   - id: FALSIFY-CAP-004
     rule: the spec row's mutations
     prediction: "fold a missing cell into Fail → the plant passes → decline; drop capability-cells from armed_shapes → decline; flip one required rung to required: false → B ⊄ D → the probe is RED; label a required cell DEFER → exit 1 naming it"
-    test: bash scripts/check_ont_4c5_probe.sh
+    test: cargo test -p aprender-contracts-cli --test ont4c5_capability_cells
     if_fails: the row's own probe cannot go RED on the mutations it names
 
 qa_gate:
