@@ -288,7 +288,13 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
     }
     carry_extract_warnings(&mut report, &extraction.warnings);
     let pc_extract = extract_controls();
-    let pc_shapes = match cells_controls(&shapes, &arming, &report, graph, cells.as_ref()) {
+    let pc_shapes = match cells_controls(
+        &shapes,
+        &arming,
+        &report,
+        &extraction.gguf.rungs,
+        cells.as_ref(),
+    ) {
         Ok(pc) => pc,
         Err(answer) => return answer,
     };
@@ -428,7 +434,7 @@ fn cells_controls(
     shapes: &[NodeShape],
     arming: &ArmedShapes,
     report: &Report,
-    graph: &Graph,
+    rungs: &[extract::gguf::Rung],
     cells: Option<&capability_cells::CapabilityCells>,
 ) -> Result<BTreeMap<String, String>, ShapesOutcome> {
     let pc_shapes = cells_gate::pc_shapes(shapes, arming);
@@ -440,7 +446,7 @@ fn cells_controls(
         });
     }
     if let Some(cc) = cells {
-        if !cells_gate::wiring_holds(report, graph, cc) {
+        if !cells_gate::wiring_holds(report, rungs, cc) {
             return Err(ShapesOutcome::Differential {
                 shapes_n: shapes.len(),
                 focus_nodes_n: report.focus_nodes_n,
