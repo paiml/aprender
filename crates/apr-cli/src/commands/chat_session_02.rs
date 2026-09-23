@@ -84,6 +84,20 @@ fn preload_gguf(
             cuda_failed: false,
         });
     }
+    // #3987: qwen3moe has no DENSE FFN (only per-expert tensors), so the dense
+    // `OwnedQuantizedModelCuda` preloaded below dereferences a null `ffn_gate` on its first
+    // forward -- measured on gx10: "ffn_gate_ptr is null (0)", then rc 8. It is served per
+    // turn by the ONE dispatch `apr run` uses (see `generate_gguf_with_prompt`), so no dense
+    // model is preloaded for it.
+    if is_qwen3_moe_gguf(mapped) {
+        return Ok(GgufPreload {
+            qwen35: None,
+            #[cfg(feature = "cuda")]
+            cuda: None,
+            #[cfg(feature = "cuda")]
+            cuda_failed: false,
+        });
+    }
     #[cfg(feature = "cuda")]
     if super::cuda_preload_allowed(force_cpu, format) {
         let (cuda, cuda_failed) = try_init_gguf_cuda(mapped)?;
@@ -101,6 +115,17 @@ fn preload_gguf(
         #[cfg(feature = "cuda")]
         cuda_failed: false,
     })
+}
+
+/// #3987: a plain Qwen3 MoE GGUF, served through `run_qwen3_moe_generate_dispatch`.
+///
+/// ONE predicate for both the preload and the turn generator, so they cannot disagree.
+/// Qwen3.5-MoE spellings are excluded: the normaliser folds them into `qwen3_moe`, but they
+/// carry SSM layers the qwen3moe forward does not run, and the capability refusal names them.
+fn is_qwen3_moe_gguf(mapped: &realizar::gguf::MappedGGUFModel) -> bool {
+    let arch = mapped.model.architecture().unwrap_or_default();
+    realizar::gguf::moe_forward_handles(arch)
+        && realizar::capability::no_cuda_forward_reason(arch).is_none()
 }
 
 impl ChatSession {

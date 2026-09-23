@@ -75,6 +75,7 @@ impl AppState {
             apr_transformer: None,
             cached_architecture: architecture,
             mapped_gguf_model: Some(mapped),
+            moe_no_gpu: true,
             qwen35_session: Some(Arc::new(Qwen35Served {
                 context_length: session.context_length(),
                 on_gpu: std::sync::atomic::AtomicBool::new(session.on_gpu()),
