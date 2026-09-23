@@ -1,6 +1,9 @@
 //! #4006: `quant=` names the transformer body, not the tied lm_head.
 
-use super::{body_qtypes, body_quant_label, qtype_to_dtype_str};
+use super::{
+    body_qtypes, body_quant_label, model_body_qtypes, qtype_to_dtype_str,
+    safetensors_dtype_ggml_id, safetensors_quant_label,
+};
 
 const Q5_K: u32 = 13;
 const Q4_K: u32 = 12;
@@ -77,4 +80,64 @@ fn the_real_qwen35_ud_iq2_xxs_header_is_labelled_iq2_xxs() {
     );
     assert!(new.starts_with("mixed(IQ2_XXS×"), "{new}");
     assert!(new.contains("lm_head=Q5_K"), "{new}");
+}
+
+/// SafeTensors dtypes name the same way GGUF qtypes do; integers are not weights.
+#[test]
+fn safetensors_dtypes_map_onto_ggml_names() {
+    use crate::safetensors::SafetensorsDtype as D;
+    let label = |d: D| body_quant_label(&[safetensors_dtype_ggml_id(&d).expect("float")], 0);
+    assert_eq!(label(D::BF16), "BF16 lm_head=F32");
+    assert_eq!(label(D::F16), "F16 lm_head=F32");
+    assert_eq!(label(D::F32), "F32");
+    assert_eq!(safetensors_dtype_ggml_id(&D::I32), None);
+}
+
+/// The #4006 follow-up must-RED: `apr run x.apr --no-gpu -v` printed the
+/// hardcoded `quant=Q4_K (OwnedQuantizedModel CPU)` for a BF16 `.apr`. The label is
+/// now the loaded layers' census. Host-local (SKIPs loudly when absent); the Q4_K
+/// file is the positive control, so "never Q4_K" cannot pass by printing nothing.
+#[test]
+fn a_bf16_apr_is_not_labelled_q4k_and_a_q4k_apr_is() {
+    for (path, want, must_not) in [
+        (
+            "/home/noah/models/qwen2.5-coder-0.5b-instruct.apr",
+            "BF16",
+            Some("Q4_K"),
+        ),
+        (
+            "/mnt/nvme-raid0/models/qwen2.5-coder-0.5b-instruct-q4k.apr",
+            "Q4_K",
+            None,
+        ),
+    ] {
+        let Ok(mapped) = crate::apr::MappedAprModel::from_path(path) else {
+            eprintln!("SKIP (not a pass): {path} is absent");
+            continue;
+        };
+        let model = crate::gguf::OwnedQuantizedModel::from_apr(&mapped).expect("load apr");
+        let label = body_quant_label(&model_body_qtypes(&model), model.lm_head_weight.qtype);
+        eprintln!("RECEIPT #4006 apr: {path} -> quant={label}");
+        assert!(label.starts_with(want), "{path}: {label}");
+        if let Some(bad) = must_not {
+            assert!(!label.contains(bad), "{path}: {label}");
+        }
+    }
+}
+
+/// The SafeTensors CUDA path printed `quant=F16/BF16` — an either/or guess. Host-local.
+#[test]
+fn a_safetensors_label_is_read_from_its_header() {
+    let path = std::path::Path::new("/home/noah/models/qwen2.5-coder-1.5b-instruct.safetensors");
+    if !path.exists() {
+        eprintln!("SKIP (not a pass): {} is absent", path.display());
+        return;
+    }
+    let label = safetensors_quant_label(path);
+    eprintln!("RECEIPT #4006 safetensors: quant={label}");
+    assert!(
+        !label.contains('/'),
+        "an either/or is not a measurement: {label}"
+    );
+    assert!(!label.starts_with("unknown"), "{label}");
 }

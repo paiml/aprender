@@ -92,6 +92,84 @@ pub(crate) fn body_qtypes(gguf: &crate::gguf::GGUFModel) -> Vec<u32> {
         .collect()
 }
 
+/// #4006 (APR paths): the qtype of every 2-D projection weight in a LOADED model's
+/// layers, for [`body_quant_label`]. For `.apr` files, whose loader builds every
+/// layer; GGUF uses [`body_qtypes`] on the header, because the qwen35 hybrid
+/// builds no layers.
+pub(crate) fn model_body_qtypes(model: &crate::gguf::OwnedQuantizedModel) -> Vec<u32> {
+    use crate::gguf::OwnedQKVWeights;
+    let mut out = Vec::new();
+    for layer in model.layers() {
+        match &layer.qkv_weight {
+            OwnedQKVWeights::Fused(t) => out.push(t.qtype),
+            OwnedQKVWeights::Separate { q, k, v } => out.extend([q.qtype, k.qtype, v.qtype]),
+        }
+        out.push(layer.attn_output_weight.qtype);
+        out.push(layer.ffn_up_weight.qtype);
+        out.push(layer.ffn_down_weight.qtype);
+        if let Some(gate) = layer.ffn_gate_weight.as_ref() {
+            out.push(gate.qtype);
+        }
+    }
+    out
+}
+
+/// #4006 (SafeTensors): the GGML id for a float SafeTensors dtype (F32 0, F16 1,
+/// BF16 30), so [`body_quant_label`] names SafeTensors weights the same way.
+/// Integer dtypes are not weights and are skipped.
+pub(crate) fn safetensors_dtype_ggml_id(
+    dtype: &crate::safetensors::SafetensorsDtype,
+) -> Option<u32> {
+    use crate::safetensors::SafetensorsDtype as D;
+    match dtype {
+        D::F32 => Some(0),
+        D::F16 => Some(1),
+        D::BF16 => Some(30),
+        _ => None,
+    }
+}
+
+/// #4006: the `quant=` label for a SafeTensors file, read from its header: every
+/// 2-D float tensor under `.layers.` is the body, `lm_head.weight` (else the tied
+/// `embed_tokens`) is the head. `unknown (…)` when the header cannot be read, never
+/// a guessed type.
+pub(crate) fn safetensors_quant_label(path: &std::path::Path) -> String {
+    let model = match crate::safetensors::MappedSafeTensorsModel::load(path) {
+        Ok(m) => m,
+        Err(e) => return format!("unknown (header unreadable: {e})"),
+    };
+    let mut body = Vec::new();
+    let mut head = None;
+    for name in model.tensor_names() {
+        let Some(info) = model.get_tensor_info(name) else {
+            continue;
+        };
+        let Some(id) = safetensors_dtype_ggml_id(&info.dtype) else {
+            continue;
+        };
+        if name.contains(".layers.") && info.shape.len() >= 2 {
+            body.push(id);
+        } else if name == "lm_head.weight"
+            || (head.is_none() && name.ends_with("embed_tokens.weight"))
+        {
+            head = Some(id);
+        }
+    }
+    match head {
+        Some(h) => body_quant_label(&body, h),
+        None if body.is_empty() => "unknown (no float weights in the header)".to_string(),
+        // No head tensor: label the body alone (the head clause only appears on a mismatch).
+        None => {
+            let dominant = body_quant_label(&body, u32::MAX);
+            dominant
+                .split(" lm_head=")
+                .next()
+                .unwrap_or(&dominant)
+                .to_string()
+        },
+    }
+}
+
 /// Configuration for inference
 #[derive(Debug, Clone)]
 pub struct InferenceConfig {
