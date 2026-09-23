@@ -59,6 +59,47 @@ pub fn ladder_block() -> String {
     out
 }
 
+/// Lines of `doc` OUTSIDE the generated block that pair a level with the wrong tool:
+/// L4/L5 followed on the same line by Kani (Kani is L3), or L5 followed by Lean with no
+/// mention of bindings (Lean alone is L4). The rest of the line is searched, not a
+/// fixed window: column-aligned tables put the tool far from the level.
+/// The generated block alone is not enough: a quorum lane (PR #4092, lane 2) found
+/// prose a few lines below it still teaching "Level 4 (Kani)".
+#[cfg(test)]
+fn stale_level_pairings(doc: &str) -> Vec<String> {
+    let outside: String = match (doc.find(MARKER), doc.find(END_MARKER)) {
+        (Some(a), Some(b)) if a < b => format!("{}{}", &doc[..a], &doc[b + END_MARKER.len()..]),
+        _ => doc.to_string(),
+    };
+    let pairs: [(&str, &str); 6] = [
+        ("l4", "kani"),
+        ("level 4", "kani"),
+        ("l5", "kani"),
+        ("level 5", "kani"),
+        ("l5", "lean"),
+        ("level 5", "lean"),
+    ];
+    let mut stale = Vec::new();
+    for line in outside.lines() {
+        let low = line.to_lowercase();
+        let hit = pairs.iter().any(|(tok, tool)| {
+            low.match_indices(tok).any(|(i, _)| {
+                let starts_word = i == 0 || !low.as_bytes()[i - 1].is_ascii_alphanumeric();
+                let after = &low[i + tok.len()..];
+                let ends_word = !after.starts_with(|c: char| c.is_ascii_alphanumeric());
+                starts_word
+                    && ends_word
+                    && after.contains(tool)
+                    && !(*tool == "lean" && low.contains("binding"))
+            })
+        });
+        if hit {
+            stale.push(line.trim().to_string());
+        }
+    }
+    stale
+}
+
 // The tests live DIRECTLY in `levels` (not in a `tests` submodule): PVL-001 EV-3's accept is
 // `cargo test -p aprender-contracts --lib -- levels::readme_and_ladder_docs_match_enum`, and
 // libtest's filter is a substring of the full path, so under `levels::tests::` that accept
@@ -100,6 +141,13 @@ fn readme_and_ladder_docs_match_enum() {
     // 2. Every ladder doc copy carries the generated block, byte for byte.
     let block = ladder_block();
     for (path, text) in LADDER_COPIES {
+        let stale = stale_level_pairings(text);
+        assert!(
+            stale.is_empty(),
+            "{path} still pairs a level with the wrong tool outside the generated block \
+             (Kani is L3, Lean alone is L4):\n{}",
+            stale.join("\n")
+        );
         assert!(
             text.contains(&block),
             "{path} does not carry the block generated from ProofLevel. Replace its \
@@ -121,4 +169,38 @@ fn the_ladder_block_names_each_level_once_highest_first() {
         assert!(row.starts_with(&format!("| {level} |")), "{row}");
     }
     assert!(block.starts_with(MARKER) && block.ends_with(END_MARKER));
+}
+
+/// The stale-pairing detector's case table: the old doc lines must be flagged, the
+/// corrected ones must not, so neither "flag nothing" nor "flag every level" passes.
+#[cfg(test)]
+#[test]
+fn stale_level_pairings_case_table() {
+    let must_flag = [
+        "| Obligation Type | Level 1 (Types) | Level 3 (probar) | Level 4 (Kani) | Level 5 (Lean) |",
+        "| Obligation Type | L1 (Types) | L3 (probar) | L4 (Kani) | L5 (Lean) |",
+        "3. **L4:** Kani exhaustively verified for ALL inputs within the kernel's",
+        "3. **Level 4:** Kani has exhaustively verified the property for ALL inputs up",
+        "  L5    Theorem proving         Lean 4          True for ALL inputs. Period.",
+    ];
+    for line in must_flag {
+        assert_eq!(stale_level_pairings(line).len(), 1, "must flag: {line}");
+    }
+    let must_not_flag = [
+        "| Obligation Type | Types (rustc) | L2 (probar/proptest) | L3 (Kani) | L4 (Lean) |",
+        "3. **L3:** Kani exhaustively verified it for ALL inputs within the kernel's",
+        "4. **L4:** a Lean 4 theorem proves it unbounded; **L5** additionally requires",
+        "## How Kani (L3) and Lean (L4) Compose",
+        "| L5 | Lean 4 theorem proved + every binding verified implemented |",
+        "E4 and E5 are defined in YAML but not yet run in CI.",
+        "| **E4** | Logic bugs, overflows | Kani `#[kani::proof]` BMC |",
+    ];
+    for line in must_not_flag {
+        assert!(
+            stale_level_pairings(line).is_empty(),
+            "must not flag: {line}"
+        );
+    }
+    // The generated block itself is excluded even though it names L5 and Lean.
+    assert!(stale_level_pairings(&ladder_block()).is_empty());
 }
