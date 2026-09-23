@@ -31,3 +31,18 @@ Question for the lanes: is "import now succeeds and writes large F32 IQ weights,
 
 ## Out of scope (stated on the PR)
 The CUDA IQ4 GEMV kernels (`iq4_xs_gemv_warp_reduce`, `iq4_nl_gemv_warp_reduce`) are unmeasured. Moving serve onto `trueno_quant::iq` is #3959.
+
+## Round 1 → round 2 (quorum round 1: 2 FAIL, 1 PASS, `docs/audits/quorum-PMAT-3947.json` at a7a640dd5)
+The two FAILs agreed: the ticket asks for **inspection**, so letting `apr import` succeed is scope it never asked for. **Accepted.** Fix @ `73f350011`:
+- `GgufReader::get_all_tensors_f32_with_progress` (`shape.rs`) is the whole-model F32 loader behind `apr import`'s GH-375 fallback, `apr convert` and the `load_gguf_*` API. It now refuses a file holding any IQ4_NL/IQ3_S/IQ4_XS tensor, before decoding anything, with "decodes it for inspection only and does not convert IQ models to F32 (#3947)". That text contains neither GH-375 trigger phrase. Per-tensor `get_tensor_f32`, which rosetta/`tensor_contract` uses (`rosetta/arch_inference.rs:539`), still decodes. No CLI or serve code calls the bulk loader directly (checked).
+- New `test_3947_whole_model_f32_load_still_refuses_decoded_iq_types` checks that per-tensor decodes while the bulk load refuses, with the needles and no GH-375 trigger. Deleting the guard turns it red (run by the author).
+- Lane 3's finding: the harnesses did not build as committed. They now live at `harness-*/src/main.rs`, and harness-core was built.
+
+Re-measured @ `73f350011` (apr sha256 `0ad1a860d913e279`), CPU-only, in `evidence/iq-dequant-3947/qa-73f350011/`:
+| run | base 8963f91a3 | round 1 (18f10a78e) | round 2 (73f350011) |
+|---|---|---|---|
+| `apr import` IQ3_M | rc 5, refused | rc 0, 2.5 GB F32 APR | **rc 5, refused (inspection only), no APR written** |
+| `apr import` non-IQ control (coder q4_k_m) | n/a | rc 0 | rc 0 (unchanged) |
+| `apr qa` IQ3_M / IQ4_XS / 4B | rc 5 ×3 | rc 0 ×3 | **rc 0 ×3**, tensor_contract 290/290/426 |
+
+So the import surface behaves as it did at base, and only inspection changed.
