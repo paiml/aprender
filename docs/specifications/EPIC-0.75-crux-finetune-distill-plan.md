@@ -87,9 +87,6 @@ git ls-files | grep -iE 'beat_unsloth'
 gh issue view 3700 -R paiml/aprender --json state,milestone
 ```
 
-## 6. Quorum record
-
-_Filled after the quorum returns._
 
 ## Quorum record: decision quorum, 2026-09-23 (aprender-cb)
 
