@@ -58,6 +58,16 @@ ladder:
   hosts:
     - { id: lambda, isa: x86_64, gpu: "RTX 4090", cc: sm_89,  required: true }
     - { id: gx10,   isa: aarch64, gpu: "GB10",     cc: sm_121, required: true }
+  # #3943 (b), cop ruling 2026-09-23: the `serve` probe waits on the SERVER, not a clock.
+  # It waits while the process is alive AND making progress (serve log growing, or the
+  # process tree's CPU time growing). A load quiet on both for stall_s is HUNG -> RED.
+  # ceiling_s is the one hard bound on the whole wait, for every rung. A process that
+  # dies mid-load is RED at once. The old fixed 90 s was shorter than a 27B load on
+  # gx10 (the server reached "listening" after the probe had given up), so stall_s keeps
+  # the old number as a window of NO PROGRESS instead of a total.
+  serve_health:
+    stall_s: 90
+    ceiling_s: 900
   inventory:
     # #3957 F2: `apr_sha_drift` (#3940) is DELETED. It declared, in prose no code read, that
     # receipts measured at 9b7739951 stood for the cut 28c24207a. check_model_ladder.sh now

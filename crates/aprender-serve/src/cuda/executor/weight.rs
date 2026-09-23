@@ -1082,4 +1082,74 @@ impl CudaExecutor {
 
         Ok(())
     }
+
+    /// #3908: Execute BF16 GEMV into an existing buffer (zero-allocation, async).
+    ///
+    /// CONTRACT: `weight_ptr` points at N*K bf16 values, 2 bytes each, ROW-MAJOR
+    /// -- row `i` starts at `weight_ptr + i * K * 2`. LAYOUT-001: identical to
+    /// [`Self::f16_gemv_into`] above, which is the point: BF16 and F16 are the
+    /// same 2-bytes-per-element row-major layout, so the indexing is inherited
+    /// rather than re-derived, and the `*_colmajor` kernels stay forbidden.
+    ///
+    /// `qwen2.5-coder-0.5b-instruct.apr` is 290 BF16 tensors + 1 F32. Before this,
+    /// `from_ggml_type(30)` returned `None`, so the .apr CUDA loader declined the
+    /// model, wgpu failed on type 30, CPU ran, and the forced-GPU refusal
+    /// (R-0b, #3002) correctly reported rc=14 rather than calling it success.
+    pub fn bf16_gemv_into(
+        &mut self,
+        weight_ptr: u64,
+        input: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        n: u32,
+        k: u32,
+    ) -> Result<(), GpuError> {
+        validate_device_ptr(weight_ptr, "bf16_gemv_into")?;
+        let kernel_type = KernelType::Bf16Gemv { k, n };
+        let kernel_name = self.kernels.kernel_name(&kernel_type);
+        let cache_key = format!("bf16_gemv_{}_{}", k, n);
+        // One warp per output row, exactly as every block-quantized GEMV here.
+        let config = LaunchConfig::grid_2d(n, 1, 32, 1);
+
+        self.ensure_kernel_module(&cache_key, &kernel_type)?;
+
+        let module = self
+            .modules
+            .get_mut(&cache_key)
+            .expect("module just inserted");
+
+        let mut ptr_output = output.as_ptr();
+        let mut ptr_weights = weight_ptr;
+        let mut ptr_input = input.as_ptr();
+        let mut k_val = k;
+        let mut n_val = n;
+
+        // SAFETY: pointers validated above; params match the PTX entry signature
+        // (y, w, x, k_dim, n_dim).
+        unsafe {
+            self.stream.launch_kernel(
+                module,
+                kernel_name,
+                &config,
+                &mut [
+                    std::ptr::from_mut(&mut ptr_output) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_weights) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_input) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut k_val) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut n_val) as *mut std::ffi::c_void,
+                ],
+            )?;
+        }
+
+        if self.graph_recording {
+            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let func = module.get_function(kernel_name)?;
+            self.graph_recorded_kernels.push(RecordedKernel {
+                func: SendCUfunction(func),
+                config,
+                arg_data: vec![ptr_output, ptr_weights, ptr_input, k_val as u64, n_val as u64],
+            });
+        }
+
+        Ok(())
+    }
 }

@@ -57,7 +57,7 @@ default:
 # A listed model takes its entry and NEVER falls back to `default`.
 # An entry with no `budget` is FAIL-CLOSED: the gate refuses rather than guessing.
 models:
-  "Qwen3.5-0.8B-*":
+  "Qwen3.5-0.8B-IQ4_XS.gguf":
     # NO `budget` KEY ON PURPOSE. This is the model that exposed the defect, and the
     # honest state is that we do not know its budget yet. Refusing names that, where
     # inheriting 2048 would republish an 8B's number as this model's measurement.

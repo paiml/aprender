@@ -57,7 +57,7 @@ CPU path deliberately and works for every row above.
 | IQ3_S | yes | ggml type 21 |
 | IQ2_S | no | ggml type 22 — no GPU GEMV kernel; IQ also fails the CPU dequant path |
 | IQ4_XS | yes | ggml type 23 — Opened in the GPU whitelist on the 0.69.1 release branch. The CPU dequant path has existed all along (`iq_dispatch.rs`); only the GPU side was shut. |
-| BF16 | no | ggml type 30 — no GPU GEMV kernel |
+| BF16 | yes | ggml type 30 — #3908: GEMV kernel measured BIT-EXACT against the CPU decoder on device (RTX 4090 sm_89) - 0 ULP over 64 rows on integer-exact data, where every partial sum is exact in f32 so summation order cannot matter, and 1.468e-5 worst relative on ordinary bf16 values. The only type in this table measured exactly rather than within a tolerance, because bf16 decoding is `bits << 16` reinterpreted and rounds nothing. Planted faults RED first: shift 8 not 16, byte-swapped halfword, row stride k not k*2. |
 | IQ1_M | no | ggml type 29 — no GPU GEMV kernel; IQ also fails the CPU dequant path |
 | I8 | no | ggml type 24 — integer storage type, not a weight quantisation for inference |
 | I16 | no | ggml type 25 — integer storage type, not a weight quantisation for inference |

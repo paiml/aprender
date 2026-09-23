@@ -364,13 +364,14 @@ ACT III: THE VERDICT
 
 ## Validate Command
 
-Validate model integrity with optional 100-point quality assessment.
+Validate model integrity, with an optional structural quality assessment
+scored on the checks that actually ran.
 
 ```bash
 # Basic validation
 apr validate model.apr
 
-# With 100-point quality scoring
+# With structural quality scoring
 apr validate model.apr --quality
 
 # Strict mode (fail on warnings)

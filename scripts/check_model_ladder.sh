@@ -214,8 +214,10 @@ def why_of(x, backends):  # every reason a measured row is not green on the clai
                     why.append(f"{b}: verb `serve` records no `teardown` — a probe that does not say whether its server died is not a completed measurement (#3838)")
                 elif td == "failed":
                     why.append(f"{b}: verb `serve` teardown FAILED — the server outlived its launcher and could not be proven to belong to this tree, so the route results were taken from a process still running (#3838)")
+                elif td == "undetermined":
+                    why.append(f"{b}: verb `serve` teardown UNDETERMINED — the process tree could not be resolved, so nothing proves the server died; a cell cannot claim a clean teardown from an observation that does not discriminate (#3943)")
                 elif td not in ("clean", "escalated"):
-                    why.append(f"{b}: verb `serve` teardown is {td!r}, which is not one of clean/escalated/failed (#3838)")
+                    why.append(f"{b}: verb `serve` teardown is {td!r}, which is not one of clean/escalated/failed/undetermined (#3838, #3943)")
     return why
 # #3712: no Q4_K rung is optional, and every one claims cuda. The key is refused, not tolerated.
 for r in rungs:
