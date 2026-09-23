@@ -37,6 +37,26 @@ mod shape_conformance_tests {
 
     const TOL: f32 = 1e-5;
 
+    /// Types whose production dispatch QUANTIZES THE ACTIVATION before the dot product (the DP4A path:
+    /// `hw_dp4a_q6k_gemv_into` → `q8_quantize_into`). Measured on GB10 (6e38f069a): Q6_K sat at ~7.4e-4 of the
+    /// bound on all 30 shapes, the Q8 activation floor (≈1/127), while every other type matched an f32
+    /// activation to ~1e-8. For these the oracle applies the SAME Q8_1 quantization, so the bound stays 1e-5
+    /// and a corrupted block is still distinguishable from the design floor (#3945: "per-format tolerance").
+    const Q8_ACTIVATION_TYPES: &[u32] = &[14];
+
+    /// `aprender_gpu::kernels::quantize::Q8QuantizeKernel`, in f32 on the host: per 32-value block,
+    /// scale = max|x| * (1/127); q = round-half-even(x / (scale + 1e-10)) clamped to ±127; x' = q * scale.
+    fn q8_1_mirror(x: &[f32]) -> Vec<f32> {
+        x.chunks(32)
+            .flat_map(|b| {
+                let amax = b.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+                let scale = amax * (1.0 / 127.0);
+                let inv = 1.0 / (scale + 1e-10);
+                b.iter().map(move |v| (v * inv).round_ties_even().clamp(-127.0, 127.0) * scale).collect::<Vec<f32>>()
+            })
+            .collect()
+    }
+
     /// (elements per block, bytes per block, byte offsets of the f16 scale fields in a block).
     /// Float types are one element per "block" and have no scale field.
     fn layout(q: u32) -> Option<(usize, usize, &'static [usize])> {
@@ -180,12 +200,19 @@ mod shape_conformance_tests {
         let wqt = WeightQuantType::from_ggml_type(q).unwrap_or_else(|| panic!("ggml {q} admitted but has no WeightQuantType"));
         let dense = dequant(q, bytes);
         assert_eq!(dense.len(), n * k, "ggml {q} k={k} n={n}: dequant length");
-        let input: Vec<f32> = (0..k).map(|i| (((i * 7 + 3) % 17) as f32 - 8.0) / 4.0).collect();
+        // Divided by 4.1, not 4: with /4.0 every |x| = 1 sits exactly on a Q8 rounding tie (x/scale = 63.5), and the
+        // device's approximate reciprocal may round it either way — an oracle disagreement that is not a defect.
+        let input: Vec<f32> = (0..k).map(|i| (((i * 7 + 3) % 17) as f32 - 8.0) / 4.1).collect();
+        // What the kernel actually multiplies: the Q8_1-quantized activation for the DP4A types.
+        let x_ref: Vec<f32> = if Q8_ACTIVATION_TYPES.contains(&q) { q8_1_mirror(&input) } else { input.clone() };
 
         let w_buf = GpuBuffer::from_host(&exec.context, device).unwrap();
         let x_buf = GpuBuffer::from_host(&exec.context, &input).unwrap();
         let y_buf = GpuBuffer::from_host(&exec.context, &vec![f32::NAN; n]).unwrap();
         let bound = BoundWeight::bind(w_buf.as_ptr(), device.len(), wqt, u32::try_from(n).unwrap(), u32::try_from(k).unwrap());
+        // The executor caches the Q8-quantized activation until the forward pass invalidates it; every launch here
+        // has a NEW input, so invalidate as production does per layer, or the kernel reads a stale activation.
+        exec.q8_activation_valid = false;
         exec.bound_gemv(&bound, &x_buf, &y_buf).expect("bound_gemv launch");
         exec.stream.synchronize().unwrap();
         let mut got = vec![0.0f32; n];
@@ -194,8 +221,8 @@ mod shape_conformance_tests {
         let mut worst = 0.0f32;
         for row in 0..n {
             let w = &dense[row * k..(row + 1) * k];
-            let want: f64 = w.iter().zip(&input).map(|(a, b)| f64::from(*a) * f64::from(*b)).sum();
-            let cond: f64 = w.iter().zip(&input).map(|(a, b)| (f64::from(*a) * f64::from(*b)).abs()).sum();
+            let want: f64 = w.iter().zip(&x_ref).map(|(a, b)| f64::from(*a) * f64::from(*b)).sum();
+            let cond: f64 = w.iter().zip(&x_ref).map(|(a, b)| (f64::from(*a) * f64::from(*b)).abs()).sum();
             let err = if got[row].is_finite() {
                 ((f64::from(got[row]) - want).abs() / cond.max(1e-6)) as f32
             } else {
