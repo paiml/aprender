@@ -64,6 +64,10 @@ pub(crate) struct ChatConfig {
     /// Force CPU inference (skip CUDA even if available)
     /// Default: false - GPU is preferred when available (F-GPU-134b)
     pub force_cpu: bool,
+    /// #3955: an accelerator was REQUESTED (`--gpu`, `--backend cuda|wgpu`),
+    /// derived by the same `run_accelerator_forced` `apr run` uses, so the
+    /// envelope's `requested` means the same thing on both surfaces.
+    pub accel_forced: bool,
     /// #3794: emit a machine-readable session summary naming the backend that
     /// actually answered. `apr run --format json` has reported
     /// `backend: {requested, ran, fell_back}` for some time; `apr chat`
@@ -84,6 +88,7 @@ impl Default for ChatConfig {
             system: None,
             inspect: false,
             force_cpu: false, // F-GPU-134b: Default to GPU when available
+            accel_forced: false,
             json: false,
             trace: false,
             trace_output: None,
@@ -134,6 +139,7 @@ pub(crate) fn run(
     system: Option<&str>,
     inspect: bool,
     force_cpu: bool,
+    accel_forced: bool,
     trace: bool,
     trace_steps: Option<&[String]>,
     trace_verbose: bool,
@@ -204,6 +210,7 @@ pub(crate) fn run(
         system: system.map(String::from),
         inspect,
         force_cpu,
+        accel_forced,
         json,
         trace,
         trace_output,
