@@ -379,33 +379,44 @@ mod iq4_nl_device_ab_tests {
     ///
     /// Run:  APR_IQ_AB_MODEL=/path/model.gguf cargo test -p aprender-serve --lib \
     ///         --features cuda every_iq2_xxs_tensor_in_a_real_model -- --ignored --nocapture
-    #[test]
-    #[ignore = "needs a GGUF via APR_IQ_AB_MODEL and a CUDA device"]
-    fn every_iq2_xxs_tensor_in_a_real_model_agrees_on_device() {
-        use crate::quantize::iq2_xxs::{dequantize_iq2_xxs, GGML_TYPE_IQ2_XXS, IQ2_XXS_BLOCK_BYTES};
-        // Admission rule (cop, from aprender-70's IQ4_XS finding, 2026-09-23):
-        // cover EVERY (k, n) shape the model uses for this type, with real bytes
-        // per shape; per-row error normalised by the row's own magnitude,
-        //   |gpu - cpu| / sum_c |w[r][c]| * |x[c]|  <= 1e-5,
-        // and the output PRE-FILLED WITH NaN so a row the kernel never writes
-        // cannot pass as a coincidental zero.
+    /// A GEMV launcher for one IQ type: `(exec, weight_ptr, input, output, n, k)`.
+    type IqLaunch =
+        fn(&mut CudaExecutor, u64, &GpuBuffer<f32>, &GpuBuffer<f32>, u32, u32) -> Result<(), GpuError>;
+
+    /// #3950/#3963: the real-bytes A/B for ANY IQ type this crate decodes on the
+    /// CPU — one audited implementation instead of a copy per kernel.
+    ///
+    /// Admission rule (cop, after IQ4_XS was admitted on one shape): cover EVERY
+    /// (k, n) shape the model uses for the type, with real bytes; per-row error
+    /// normalised by the row's own magnitude,
+    ///   |gpu - cpu| / sum_c |w[r][c]| * |x[c]|  <= 1e-5,
+    /// and the output PRE-FILLED WITH NaN so an unwritten row cannot pass.
+    ///
+    /// Positive control on the real bytes of the first tensor: every block's f16
+    /// scale corrupted on the GPU copy must disagree.
+    ///
+    /// Gated on `APR_IQ_AB_MODEL`. Unset: SKIP naming it. Set to a file with no
+    /// tensor of the type: FAIL — a run that measured nothing is not evidence.
+    fn real_model_iq_ab(qtype: u32, type_name: &str, launch: IqLaunch) {
         const TOL: f64 = 1e-5;
         let Ok(path) = std::env::var("APR_IQ_AB_MODEL") else {
-            eprintln!("SKIP: set APR_IQ_AB_MODEL to a GGUF holding IQ2_XXS tensors");
+            eprintln!("SKIP: set APR_IQ_AB_MODEL to a GGUF holding {type_name} tensors");
             return;
         };
         let Some(mut exec) = create_executor() else {
             panic!("APR_IQ_AB_MODEL is set but there is no CUDA device: nothing was measured");
         };
+        let block_bytes = crate::quantize::iq_dispatch::iq_block_bytes(qtype).expect("an IQ type");
+        let block_elems = crate::quantize::iq_dispatch::iq_block_elems(qtype).expect("an IQ type");
         let mapped = crate::gguf::MappedGGUFModel::from_path(&path).expect("map the GGUF");
         let base = mapped.model.tensor_data_start;
         let tensors: Vec<_> = mapped
             .model
             .tensors
             .iter()
-            .filter(|t| t.qtype == GGML_TYPE_IQ2_XXS && t.dims.len() == 2)
+            .filter(|t| t.qtype == qtype && t.dims.len() == 2)
             .collect();
-        assert!(!tensors.is_empty(), "{path} holds no 2-D IQ2_XXS tensor: nothing would be measured");
+        assert!(!tensors.is_empty(), "{path} holds no 2-D {type_name} tensor: nothing would be measured");
 
         // (k, n) -> (tensor count, worst normalised error, the tensor that set it)
         let mut shapes: std::collections::BTreeMap<(usize, usize), (usize, f64, String)> =
@@ -414,22 +425,27 @@ mod iq4_nl_device_ab_tests {
             // GGUF dims: ne0 is the contiguous (in) dimension, ne1 the rows.
             let k = usize::try_from(t.dims[0]).unwrap();
             let n = usize::try_from(t.dims[1]).unwrap();
-            let nb = k.div_ceil(256);
-            let bytes = n * nb * IQ2_XXS_BLOCK_BYTES;
+            let nb = k.div_ceil(block_elems);
             let start = base + usize::try_from(t.offset).unwrap();
-            let weights = &mapped.mmap[start..start + bytes];
+            let weights = &mapped.mmap[start..start + n * nb * block_bytes];
 
             let input: Vec<f32> =
                 (0..k).map(|i| (((i * 7 + ti) % 23) as f32 - 11.0) * 0.125).collect();
-            let expected =
-                crate::quantize::iq_parallel_matvec(GGML_TYPE_IQ2_XXS, weights, &input, k, n)
-                    .expect("CPU IQ2_XXS matvec");
-            let dense = dequantize_iq2_xxs(weights).expect("dequantize the real tensor");
+            let expected = crate::quantize::iq_parallel_matvec(qtype, weights, &input, k, n)
+                .expect("CPU matvec — the oracle");
+            let mut row = vec![0.0f32; nb * block_elems];
             let denom: Vec<f64> = (0..n)
                 .map(|r| {
-                    (0..k)
-                        .map(|c| f64::from(dense[r * nb * 256 + c].abs()) * f64::from(input[c].abs()))
-                        .sum()
+                    for b in 0..nb {
+                        let off = (r * nb + b) * block_bytes;
+                        crate::quantize::iq_dispatch::dequantize_iq_block(
+                            qtype,
+                            &weights[off..off + block_bytes],
+                            &mut row[b * block_elems..(b + 1) * block_elems],
+                        )
+                        .expect("decode");
+                    }
+                    (0..k).map(|c| f64::from(row[c].abs()) * f64::from(input[c].abs())).sum()
                 })
                 .collect();
 
@@ -437,11 +453,8 @@ mod iq4_nl_device_ab_tests {
                 let wb = GpuBuffer::from_host(&exec.context, w).unwrap();
                 let ib = GpuBuffer::from_host(&exec.context, &input).unwrap();
                 let ob = GpuBuffer::from_host(&exec.context, &vec![f32::NAN; n]).unwrap();
-                exec.iq2_xxs_gemv_into(
-                    wb.as_ptr(), &ib, &ob,
-                    u32::try_from(n).unwrap(), u32::try_from(k).unwrap(),
-                )
-                .expect("IQ2_XXS GEMV launch");
+                launch(exec, wb.as_ptr(), &ib, &ob, u32::try_from(n).unwrap(), u32::try_from(k).unwrap())
+                    .expect("GEMV launch");
                 exec.stream.synchronize().unwrap();
                 let mut got = vec![0.0f32; n];
                 ob.copy_to_host(&mut got).unwrap();
@@ -453,7 +466,9 @@ mod iq4_nl_device_ab_tests {
                 for (r, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
                     let err = if g.is_finite() { f64::from((g - e).abs()) } else { f64::INFINITY };
                     let m = if denom[r] > 0.0 { err / denom[r] } else if err == 0.0 { 0.0 } else { f64::INFINITY };
-                    if m > worst.0 { worst = (m, r); }
+                    if m > worst.0 {
+                        worst = (m, r);
+                    }
                 }
                 worst
             };
@@ -461,21 +476,23 @@ mod iq4_nl_device_ab_tests {
             let got = run(&mut exec, weights);
             let unwritten = got.iter().filter(|v| v.is_nan()).count();
             assert_eq!(unwritten, 0, "{}: {unwritten} of {n} rows never written (still NaN)", t.name);
-            let (worst, row) = norm_worst(&got);
+            let (worst, r) = norm_worst(&got);
             assert!(
                 worst <= TOL,
-                "{}: [{n} x {k}] row {row}: GPU {} vs CPU {}, |err|/sum|w||x| = {worst:.3e} > {TOL:e}",
-                t.name, got[row], expected[row]
+                "{}: [{n} x {k}] row {r}: GPU {} vs CPU {}, |err|/sum|w||x| = {worst:.3e} > {TOL:e}",
+                t.name, got[r], expected[r]
             );
             let e = shapes.entry((k, n)).or_insert((0, 0.0, t.name.clone()));
             e.0 += 1;
-            if worst > e.1 { e.1 = worst; e.2 = t.name.clone(); }
+            if worst > e.1 {
+                e.1 = worst;
+                e.2 = t.name.clone();
+            }
 
             if ti == 0 {
-                // Positive control on the real bytes: corrupt every block's f16 scale.
                 let mut bad = weights.to_vec();
-                for blk in bad.chunks_exact_mut(IQ2_XXS_BLOCK_BYTES) {
-                    blk[1] ^= 0x40;
+                for blk in bad.chunks_exact_mut(block_bytes) {
+                    blk[1] ^= 0x40; // the f16 scale's exponent
                 }
                 let (control, _) = norm_worst(&run(&mut exec, &bad));
                 assert!(
@@ -488,12 +505,86 @@ mod iq4_nl_device_ab_tests {
         }
         for ((k, n), (count, worst, name)) in &shapes {
             eprintln!(
-                "CELL ({path}, q=16 IQ2_XXS, cuda, gemv k={k} n={n}) -> {count} tensor(s), \
+                "CELL ({path}, q={qtype} {type_name}, cuda, gemv k={k} n={n}) -> {count} tensor(s), \
                  worst |err|/sum|w||x| {worst:.3e} ({name}); NaN-prefilled, 0 unwritten; \
-                 oracle = quantize::iq_parallel_matvec (llama.cpp df03399 + gguf-py validated)"
+                 oracle = quantize::iq_parallel_matvec (bit-exact vs gguf-py, iq_gguf_py_parity_tests)"
             );
         }
         eprintln!("SHAPES: {} distinct (k, n) over {} tensors", shapes.len(), tensors.len());
+    }
+
+    /// #3950: every IQ2_XXS tensor of a real model, every shape. See `real_model_iq_ab`.
+    ///
+    /// Run:  APR_IQ_AB_MODEL=/path/model.gguf cargo test -p aprender-serve --lib \
+    ///         --features cuda every_iq2_xxs_tensor_in_a_real_model -- --ignored --nocapture
+    #[test]
+    #[ignore = "needs a GGUF via APR_IQ_AB_MODEL and a CUDA device"]
+    fn every_iq2_xxs_tensor_in_a_real_model_agrees_on_device() {
+        real_model_iq_ab(crate::quantize::iq2_xxs::GGML_TYPE_IQ2_XXS, "IQ2_XXS", CudaExecutor::iq2_xxs_gemv_into);
+    }
+
+    /// #3963: every IQ3_XXS tensor of a real model, every shape. See `real_model_iq_ab`.
+    #[test]
+    #[ignore = "needs a GGUF via APR_IQ_AB_MODEL and a CUDA device"]
+    fn every_iq3_xxs_tensor_in_a_real_model_agrees_on_device() {
+        real_model_iq_ab(crate::quantize::iq3_xxs::GGML_TYPE_IQ3_XXS, "IQ3_XXS", CudaExecutor::iq3_xxs_gemv_into);
+    }
+
+    /// #3963: IQ3_XXS on synthetic blocks — f16 scale 1.0 so a disagreement is
+    /// INDEXING — at k=512 (two super-blocks: the 98-byte stride) and k=300 (a
+    /// padded tail: the k_dim guard). NaN-prefilled; >= n/2 rows non-zero and
+    /// distinct, so neither a zero kernel nor a row-blind one can pass.
+    #[test]
+    fn the_iq3_xxs_kernel_agrees_with_the_cpu_decoder_on_device() {
+        use crate::quantize::iq3_xxs::{GGML_TYPE_IQ3_XXS, IQ3_XXS_BLOCK_BYTES};
+        let Some(mut exec) = create_executor() else {
+            eprintln!("SKIP: no CUDA device");
+            return;
+        };
+        for (k, n) in [(512usize, 64usize), (300, 16)] {
+            let nb = k.div_ceil(256);
+            let mut weights = Vec::with_capacity(n * nb * IQ3_XXS_BLOCK_BYTES);
+            let mut state: u32 = 0x3C3C_5EED;
+            for _ in 0..(n * nb) {
+                weights.extend_from_slice(&[0x00, 0x3c]); // f16 1.0
+                for _ in 2..IQ3_XXS_BLOCK_BYTES {
+                    state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    weights.push((state >> 24) as u8);
+                }
+            }
+            assert_eq!(weights.len(), n * nb * IQ3_XXS_BLOCK_BYTES, "geometry: n * ceil(k/256) * 98");
+            let input: Vec<f32> = (0..k).map(|i| ((i % 17) as f32) - 8.0).collect();
+            let expected = crate::quantize::iq_parallel_matvec(GGML_TYPE_IQ3_XXS, &weights, &input, k, n)
+                .expect("CPU IQ3_XXS matvec");
+            let wb = GpuBuffer::from_host(&exec.context, &weights).unwrap();
+            let ib = GpuBuffer::from_host(&exec.context, &input).unwrap();
+            let ob = GpuBuffer::from_host(&exec.context, &vec![f32::NAN; n]).unwrap();
+            exec.iq3_xxs_gemv_into(wb.as_ptr(), &ib, &ob, u32::try_from(n).unwrap(), u32::try_from(k).unwrap())
+                .expect("IQ3_XXS GEMV launch");
+            exec.stream.synchronize().unwrap();
+            let mut got = vec![0.0f32; n];
+            ob.copy_to_host(&mut got).unwrap();
+            let mut worst = (0.0f32, 0usize);
+            for (row, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
+                let rel = (g - e).abs() / e.abs().max(1.0);
+                if !(rel <= worst.0) {
+                    worst = (rel, row);
+                }
+            }
+            assert!(
+                worst.0 <= 1e-4,
+                "#3963: GPU and CPU IQ3_XXS disagree at k={k}. worst row {}: GPU {} vs CPU {} (relative {:.3e})",
+                worst.1, got[worst.1], expected[worst.1], worst.0
+            );
+            let nonzero = expected.iter().filter(|v| v.abs() > 1e-6).count();
+            let distinct: std::collections::BTreeSet<u32> = expected.iter().map(|v| v.to_bits()).collect();
+            assert!(nonzero >= n / 2 && distinct.len() >= n / 2, "k={k}: degenerate oracle");
+            eprintln!(
+                "CELL (synthetic IQ3_XXS, q=18, cuda sm_89, gemv k={k} n={n}) -> worst rel {:.3e} at row {}; \
+                 {nonzero}/{n} non-zero, {} distinct",
+                worst.0, worst.1, distinct.len()
+            );
+        }
     }
 
     /// #3953: run the IQ2_S kernel on `weights` and compare it with the CPU oracle.

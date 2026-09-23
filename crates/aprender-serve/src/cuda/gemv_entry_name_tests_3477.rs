@@ -33,6 +33,7 @@ mod gemv_entry_name_tests_3477 {
             KernelType::Iq4NlGemv { k, n },
             KernelType::Iq3SGemv { k, n },
             KernelType::Iq2XxsGemv { k, n },
+            KernelType::Iq3XxsGemv { k, n },
             KernelType::Bf16Gemv { k, n },
             KernelType::Iq2SGemv { k, n },
             KernelType::Q5_1Gemv { k, n },
@@ -753,6 +754,61 @@ mod gemv_entry_name_tests_3477 {
         assert!(scales_seen.len() >= 3, "fixture exercises only scales {scales_seen:?}");
         assert!(expected.iter().any(|v| *v < 0.0), "fixture never sets a sign bit");
         assert!(expected.iter().any(|v| *v > 0.0), "fixture is all negative");
+    }
+
+    /// #3963: the IQ3_XXS kernel's INDEX MATH in Rust — the PTX's own fetches,
+    /// lane by lane — against the CPU decoder (bit-exact vs gguf-py) on one block.
+    ///
+    /// Pins: the scale/sign word at 66 + 4*ib assembled from two u16 halves in
+    /// the right order; grid indices at 2 + 8*ib + 2*l and +1 (a PAIR per lane,
+    /// not IQ2_XXS's single index); the 0.5 scale factor (IQ2_XXS uses 0.25);
+    /// and the 7-bit sign-code field.
+    #[test]
+    fn the_iq3_xxs_thread_mapping_reproduces_the_cpu_decoder() {
+        use crate::quantize::iq3_xxs::{dequantize_iq3_xxs_block, IQ3_XXS_BLOCK_BYTES, IQ3_XXS_BLOCK_ELEMS};
+        use crate::quantize::iq_grids::{IQ3XXS_GRID, KSIGNS_IQ2XS};
+
+        let mut block = [0u8; IQ3_XXS_BLOCK_BYTES];
+        let mut x: u32 = 0x1357_9bdf;
+        for b in block.iter_mut() {
+            x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            *b = (x >> 24) as u8;
+        }
+        block[0] = 0x00;
+        block[1] = 0x3c; // f16 1.0
+        let mut expected = [0f32; IQ3_XXS_BLOCK_ELEMS];
+        dequantize_iq3_xxs_block(&block, &mut expected);
+
+        let d = f32::from(half_from_le(block[0], block[1]));
+        let u16_at = |o: usize| u32::from(u16::from_le_bytes([block[o], block[o + 1]]));
+        let mut scales = std::collections::BTreeSet::new();
+        let mut got = [0f32; IQ3_XXS_BLOCK_ELEMS];
+        for tid in 0..32usize {
+            let (ib, l) = (tid >> 2, tid & 3);
+            let aux = u16_at(66 + 4 * ib) | (u16_at(68 + 4 * ib) << 16);
+            scales.insert(aux >> 28);
+            #[allow(clippy::cast_precision_loss)]
+            let db = d * ((0.5 + (aux >> 28) as f32) * 0.5);
+            let signs = u32::from(KSIGNS_IQ2XS[((aux >> (7 * l)) & 127) as usize]);
+            let q = 2 + 8 * ib + 2 * l;
+            let (g1, g2) = (IQ3XXS_GRID[usize::from(block[q])], IQ3XXS_GRID[usize::from(block[q + 1])]);
+            let col0 = 32 * ib + 8 * l;
+            for j in 0..4usize {
+                #[allow(clippy::cast_precision_loss)]
+                let m1 = ((g1 >> (8 * j)) & 0xff) as f32;
+                #[allow(clippy::cast_precision_loss)]
+                let m2 = ((g2 >> (8 * j)) & 0xff) as f32;
+                let s1 = if (signs >> j) & 1 != 0 { -1.0 } else { 1.0 };
+                let s2 = if (signs >> (j + 4)) & 1 != 0 { -1.0 } else { 1.0 };
+                got[col0 + j] = m1 * db * s1;
+                got[col0 + j + 4] = m2 * db * s2;
+            }
+        }
+        for (i, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
+            assert!((g - e).abs() <= 1e-6, "element {i}: kernel mapping {g}, CPU decoder {e}");
+        }
+        assert!(scales.len() >= 3, "fixture exercises only scales {scales:?}");
+        assert!(expected.iter().any(|v| *v < 0.0) && expected.iter().any(|v| *v > 0.0));
     }
 
     /// The IQ3_S kernel's INDEX MATH in Rust, against the verified CPU decoder.

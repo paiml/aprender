@@ -88,7 +88,11 @@ pub mod iq3_xxs;
 pub mod iq4_nl;
 pub mod iq4_xs;
 pub mod iq_dispatch;
+#[cfg(test)]
+#[path = "iq_gguf_py_parity_tests.rs"]
+mod iq_gguf_py_parity_tests;
 pub mod iq_grids;
+
 #[cfg(test)]
 #[path = "ptx_codebook_tests_3931.rs"]
 mod ptx_codebook_tests_3931;

@@ -83,6 +83,7 @@ impl CudaKernels {
             KernelType::Iq3SGemv { .. } => "iq3_s_gemv_warp_reduce",
             KernelType::Iq2XxsGemv { .. } => "iq2_xxs_gemv_warp_reduce",
             KernelType::Iq2SGemv { .. } => "iq2_s_gemv_warp_reduce",
+            KernelType::Iq3XxsGemv { .. } => "iq3_xxs_gemv_warp_reduce",
             KernelType::Q5_1Gemv { .. } => "q5_1_gemv_warp_reduce",
             _ => return None,
         };
