@@ -1,4 +1,3 @@
-
 /// The golden gate's stop token for THIS model, read from the model's own
 /// metadata.
 ///
@@ -201,7 +200,13 @@ fn golden_questions() -> Vec<(&'static str, Vec<&'static str>)> {
 /// Format-distinctive markers. A template that renders one of these is making a claim
 /// about the model's chat format that the model's own declared template can refute.
 #[cfg(feature = "inference")]
-const FORMAT_MARKERS: &[&str] = &["[INST]", "<|im_start|>", "<|user|>", "<<SYS>>", "### Instruction"];
+const FORMAT_MARKERS: &[&str] = &[
+    "[INST]",
+    "<|im_start|>",
+    "<|user|>",
+    "<<SYS>>",
+    "### Instruction",
+];
 
 /// Does `rendered` use a format marker that `declared` never mentions?
 #[cfg(feature = "inference")]
@@ -247,9 +252,7 @@ fn template_key(
     let (Some(declared), Some(name)) = (declared, name) else {
         return Some(arch.to_string());
     };
-    let render = |k: &str| {
-        format_messages(&[ChatMessage::user("x")], Some(k)).unwrap_or_default()
-    };
+    let render = |k: &str| format_messages(&[ChatMessage::user("x")], Some(k)).unwrap_or_default();
     if !contradicts_declared(&render(arch), declared) {
         return Some(arch.to_string());
     }
@@ -309,10 +312,8 @@ fn glob_match(pat: &str, name: &str) -> bool {
     match pat.split_once('*') {
         None => pat == name,
         Some((head, tail)) => {
-            name.len() >= head.len() + tail.len()
-                && name.starts_with(head)
-                && name.ends_with(tail)
-        },
+            name.len() >= head.len() + tail.len() && name.starts_with(head) && name.ends_with(tail)
+        }
     }
 }
 
@@ -501,7 +502,9 @@ where
         .next()
         .ok_or_else(|| "no golden case to ask".to_string())?;
     let prompt = render(&[realizar::chat_template::ChatMessage::user(question)]).map_err(|e| {
-        format!("the thinking-ON leg renders the model's own chat template (#3990) and could not: {e}")
+        format!(
+            "the thinking-ON leg renders the model's own chat template (#3990) and could not: {e}"
+        )
     })?;
     Ok(Some((prompt, patterns)))
 }
@@ -642,7 +645,10 @@ fn golden_prompt_for_model(
     };
 
     let msgs = [ChatMessage::user(question)];
-    let rendered = match (gguf.filter(|g| g.metadata.contains_key("tokenizer.chat_template")), tokenizer_config) {
+    let rendered = match (
+        gguf.filter(|g| g.metadata.contains_key("tokenizer.chat_template")),
+        tokenizer_config,
+    ) {
         (Some(g), _) => render_official_for_model(g, &msgs, Some(false)),
         (None, Some(json)) if json.contains("\"chat_template\"") => {
             render_official_from_tokenizer_config(json, &msgs, Some(false))
@@ -668,7 +674,10 @@ fn golden_test_cases_for_model(
     golden_questions()
         .into_iter()
         .map(|(question, patterns)| {
-            (golden_prompt_for_model(gguf, tokenizer_config, key, question), patterns)
+            (
+                golden_prompt_for_model(gguf, tokenizer_config, key, question),
+                patterns,
+            )
         })
         .collect()
 }
@@ -788,7 +797,14 @@ fn gpu_golden_leg(
     cuda_available: bool,
     golden_max_tokens: usize,
 ) -> Result<GpuGoldenLeg> {
-    let _ = (prompt, expected_patterns, config, mapped, gguf_model, golden_max_tokens);
+    let _ = (
+        prompt,
+        expected_patterns,
+        config,
+        mapped,
+        gguf_model,
+        golden_max_tokens,
+    );
     let gguf = format == realizar::format::ModelFormat::Gguf;
     Ok(GpuGoldenLeg::NotRun(
         gpu_golden_not_run(false, cuda_available, gguf).unwrap_or("this build has no cuda feature"),
@@ -856,7 +872,10 @@ fn validate_golden_test_case(
     // The CPU verdict, already computed above, now decides. Same messages as
     // before; only the ORDER changed.
     match cpu {
-        CpuGoldenVerdict::Unclosed { budget, generated_chars } => {
+        CpuGoldenVerdict::Unclosed {
+            budget,
+            generated_chars,
+        } => {
             return Ok(GoldenCaseOutcome::Verdict(GateResult::failed(
                 "golden_output",
                 &unclosed_think_reason("golden_output", budget, generated_chars),
@@ -864,7 +883,7 @@ fn validate_golden_test_case(
                 None,
                 start.elapsed(),
             )));
-        },
+        }
         CpuGoldenVerdict::WrongAnswer(reason) => {
             return Ok(GoldenCaseOutcome::Verdict(GateResult::failed(
                 "golden_output",
@@ -873,8 +892,8 @@ fn validate_golden_test_case(
                 None,
                 start.elapsed(),
             )));
-        },
-        CpuGoldenVerdict::Passed => {},
+        }
+        CpuGoldenVerdict::Passed => {}
     }
 
     Ok(GoldenCaseOutcome::Passed(gpu_leg))
@@ -959,62 +978,15 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         }
 
         // #3724 done_when 3: a thinking-capable model is judged in BOTH modes.
-        let on_case = match thinking_on_case_for_model(key.as_deref(), gguf_model) {
-            Ok(c) => c,
-            Err(reason) => {
-                return Ok(GateResult::failed(
-                    "golden_output",
-                    &format!("golden_output_thinking_on: {reason}"),
-                    None,
-                    None,
-                    start.elapsed(),
-                ))
-            },
-        };
-        if let Some((on_prompt, on_patterns)) = on_case {
-            // #3907: the budget is per-model with a basis, and a model with no measured
-            // budget REFUSES here rather than inheriting an 8B's number. The refusal is
-            // reported as a budget gap, not as "the model was still reasoning" — the two
-            // are different findings and only one of them is about the model.
-            let model_file = path
-                .file_name()
-                .map(|f| f.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            let (on_budget, budget_basis) = match thinking_on_budget_for(&model_file) {
-                Ok(v) => v,
-                Err(reason) => {
-                    return Ok(GateResult::failed(
-                        "golden_output",
-                        &format!("golden_output_thinking_on: {reason}"),
-                        None,
-                        None,
-                        start.elapsed(),
-                    ))
-                },
-            };
-            if let Some((_, on_text)) = generate_golden_for_format(
-                path,
-                &on_prompt,
-                on_budget,
-                format,
-                mapped.as_ref(),
-                gguf_model, // #3750 made this a borrow of the map; `Option<&T>` is Copy
-            )? {
-                let generated = on_text.strip_prefix(on_prompt.as_str()).unwrap_or(&on_text);
-                let judged = on_leg_judged_text(&on_prompt, generated);
-                let generated = judged.as_str();
-                if let Some(reason) = judge_thinking_on_output(generated, &on_patterns, on_budget)
-                    .map(|r| format!("{r} [budget basis — {budget_basis}]"))
-                {
-                    return Ok(GateResult::failed(
-                        "golden_output",
-                        &reason,
-                        None,
-                        None,
-                        start.elapsed(),
-                    ));
-                }
-            }
+        if let Some(failed) = judge_thinking_on_leg(
+            path,
+            key.as_deref(),
+            format,
+            mapped.as_ref(),
+            gguf_model,
+            start,
+        )? {
+            return Ok(failed);
         }
 
         Ok(GateResult::passed(
@@ -1038,6 +1010,75 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             "Requires 'inference' feature",
         ))
     }
+}
+
+/// #3724 done_when 3: the thinking-ON leg of the golden gate. `Some(failed)` ends the gate;
+/// `None` means the leg passed or the model has no thinking-on case. Extracted from
+/// `run_golden_output_gate` unchanged, to keep that function under the complexity ratchet.
+#[cfg(feature = "inference")]
+fn judge_thinking_on_leg(
+    path: &Path,
+    key: Option<&str>,
+    format: realizar::format::ModelFormat,
+    mapped: Option<&realizar::gguf::MappedGGUFModel>,
+    gguf_model: Option<&realizar::gguf::GGUFModel>,
+    start: Instant,
+) -> Result<Option<GateResult>> {
+    // #3724 done_when 3: a thinking-capable model is judged in BOTH modes.
+    let on_case = match thinking_on_case_for_model(key, gguf_model) {
+        Ok(c) => c,
+        Err(reason) => {
+            return Ok(Some(GateResult::failed(
+                "golden_output",
+                &format!("golden_output_thinking_on: {reason}"),
+                None,
+                None,
+                start.elapsed(),
+            )))
+        }
+    };
+    if let Some((on_prompt, on_patterns)) = on_case {
+        // #3907: the budget is per-model with a basis, and a model with no measured
+        // budget REFUSES here rather than inheriting an 8B's number. The refusal is
+        // reported as a budget gap, not as "the model was still reasoning" — the two
+        // are different findings and only one of them is about the model.
+        let model_file = path
+            .file_name()
+            .map(|f| f.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let (on_budget, budget_basis) = match thinking_on_budget_for(&model_file) {
+            Ok(v) => v,
+            Err(reason) => {
+                return Ok(Some(GateResult::failed(
+                    "golden_output",
+                    &format!("golden_output_thinking_on: {reason}"),
+                    None,
+                    None,
+                    start.elapsed(),
+                )))
+            }
+        };
+        if let Some((_, on_text)) = generate_golden_for_format(
+            path, &on_prompt, on_budget, format, mapped,
+            gguf_model, // #3750 made this a borrow of the map; `Option<&T>` is Copy
+        )? {
+            let generated = on_text.strip_prefix(on_prompt.as_str()).unwrap_or(&on_text);
+            let judged = on_leg_judged_text(&on_prompt, generated);
+            let generated = judged.as_str();
+            if let Some(reason) = judge_thinking_on_output(generated, &on_patterns, on_budget)
+                .map(|r| format!("{r} [budget basis — {budget_basis}]"))
+            {
+                return Ok(Some(GateResult::failed(
+                    "golden_output",
+                    &reason,
+                    None,
+                    None,
+                    start.elapsed(),
+                )));
+            }
+        }
+    }
+    Ok(None)
 }
 
 /// Run warmup+measure loop for throughput benchmarking.
@@ -1251,7 +1292,9 @@ mod thinking_budget_resolution {
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        ENV_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// The listed model with NO budget must REFUSE, not inherit `default`. This is the
@@ -1263,7 +1306,10 @@ mod thinking_budget_resolution {
             .expect_err("a model listed with no budget must refuse");
         assert!(err.contains("no measured thinking budget"), "{err}");
         assert!(err.contains("Refusing rather than inheriting"), "{err}");
-        assert!(err.contains("8,901"), "the refusal must carry what was measured: {err}");
+        assert!(
+            err.contains("8,901"),
+            "the refusal must carry what was measured: {err}"
+        );
     }
 
     /// An unlisted model takes `default` — and the returned provenance SAYS it is the
@@ -1275,7 +1321,10 @@ mod thinking_budget_resolution {
             thinking_on_budget_for("some-other-model-q4km.gguf").expect("default applies");
         assert_eq!(budget, 2048);
         assert!(basis.starts_with("default:"), "{basis}");
-        assert!(basis.contains("qwen3-8b-q4km"), "the basis must name its one model: {basis}");
+        assert!(
+            basis.contains("qwen3-8b-q4km"),
+            "the basis must name its one model: {basis}"
+        );
     }
 
     /// The env seam exists because the old `const` had none, and a threshold that needs a
@@ -1389,7 +1438,9 @@ mod golden_output_tests {
             leg,
             GpuGoldenLeg::Errored("GPU generation: CUDA_ERROR_ILLEGAL_ADDRESS".to_string())
         );
-        let failure = leg.failure_given_cpu(&CpuGoldenVerdict::Passed).expect("a GPU generation error must FAIL the gate");
+        let failure = leg
+            .failure_given_cpu(&CpuGoldenVerdict::Passed)
+            .expect("a GPU generation error must FAIL the gate");
         assert!(failure.contains("CUDA_ERROR_ILLEGAL_ADDRESS"), "{failure}");
         assert!(failure.contains("not a skip"), "{failure}");
     }
@@ -1401,7 +1452,9 @@ mod golden_output_tests {
             TWO_PLUS_TWO,
             512,
         );
-        let failure = leg.failure_given_cpu(&CpuGoldenVerdict::Passed).expect("a CUDA init error must FAIL the gate");
+        let failure = leg
+            .failure_given_cpu(&CpuGoldenVerdict::Passed)
+            .expect("a CUDA init error must FAIL the gate");
         assert!(failure.contains("CUDA_ERROR_OUT_OF_MEMORY"), "{failure}");
     }
 
@@ -1409,8 +1462,13 @@ mod golden_output_tests {
     fn gpu_wrong_answer_fails_the_gate() {
         let leg = GpuGoldenLeg::judge(Ok("2 + 2 = 5".to_string()), TWO_PLUS_TWO, 512);
         assert!(matches!(leg, GpuGoldenLeg::WrongAnswer(_)), "{leg:?}");
-        let failure = leg.failure_given_cpu(&CpuGoldenVerdict::Passed).expect("a wrong GPU answer must FAIL the gate");
-        assert!(failure.starts_with("GPU output failed (CPU passed)"), "{failure}");
+        let failure = leg
+            .failure_given_cpu(&CpuGoldenVerdict::Passed)
+            .expect("a wrong GPU answer must FAIL the gate");
+        assert!(
+            failure.starts_with("GPU output failed (CPU passed)"),
+            "{failure}"
+        );
     }
 
     // =========================================================================
@@ -1426,15 +1484,18 @@ mod golden_output_tests {
     /// Every GGUF the box has, so this reads as a matrix and not as one anecdote.
     #[cfg(feature = "inference")]
     fn local_ggufs() -> Vec<std::path::PathBuf> {
-        let root = std::env::var("APR_MODELS").ok().filter(|v| !v.trim().is_empty()).map_or_else(
-            || {
-                std::env::var("HOME").map_or_else(
-                    |_| std::path::PathBuf::from("/nonexistent"),
-                    |h| std::path::PathBuf::from(h).join(".apr/models"),
-                )
-            },
-            std::path::PathBuf::from,
-        );
+        let root = std::env::var("APR_MODELS")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .map_or_else(
+                || {
+                    std::env::var("HOME").map_or_else(
+                        |_| std::path::PathBuf::from("/nonexistent"),
+                        |h| std::path::PathBuf::from(h).join(".apr/models"),
+                    )
+                },
+                std::path::PathBuf::from,
+            );
         let Ok(rd) = std::fs::read_dir(&root) else {
             return Vec::new();
         };
@@ -1463,9 +1524,15 @@ mod golden_output_tests {
         }
         let mut checked = 0usize;
         for path in &models {
-            let Ok(bytes) = std::fs::read(path) else { continue };
-            let Ok(gguf) = realizar::gguf::GGUFModel::from_bytes(&bytes) else { continue };
-            let Some(vocab) = gguf.vocabulary().map(|v| v.len()) else { continue };
+            let Ok(bytes) = std::fs::read(path) else {
+                continue;
+            };
+            let Ok(gguf) = realizar::gguf::GGUFModel::from_bytes(&bytes) else {
+                continue;
+            };
+            let Some(vocab) = gguf.vocabulary().map(|v| v.len()) else {
+                continue;
+            };
             let name = path.file_name().unwrap_or_default().to_string_lossy();
 
             for tok in golden_stop_tokens(&gguf) {
@@ -1485,8 +1552,14 @@ mod golden_output_tests {
                 "{name}: the gate must stop on the model's own eos"
             );
         }
-        assert!(checked > 0, "no model yielded a stop token; this test proved nothing");
-        println!("#3870: {checked} stop token(s) checked across {} GGUFs", models.len());
+        assert!(
+            checked > 0,
+            "no model yielded a stop token; this test proved nothing"
+        );
+        println!(
+            "#3870: {checked} stop token(s) checked across {} GGUFs",
+            models.len()
+        );
     }
 
     /// The control that makes the row above non-vacuous, and the one the cop
@@ -1502,9 +1575,17 @@ mod golden_output_tests {
         let mut saw_qwen = false;
         let mut saw_non_qwen = false;
         for path in local_ggufs() {
-            let Ok(bytes) = std::fs::read(&path) else { continue };
-            let Ok(gguf) = realizar::gguf::GGUFModel::from_bytes(&bytes) else { continue };
-            let name = path.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
+            let Ok(bytes) = std::fs::read(&path) else {
+                continue;
+            };
+            let Ok(gguf) = realizar::gguf::GGUFModel::from_bytes(&bytes) else {
+                continue;
+            };
+            let name = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_lowercase();
             let stops = golden_stop_tokens(&gguf);
             if name.contains("qwen3") || name.contains("qwen2") {
                 assert_eq!(
@@ -1588,7 +1669,9 @@ mod golden_output_tests {
         );
         assert_eq!(cpu, CpuGoldenVerdict::Passed, "{cpu:?}");
 
-        let failure = gpu.failure_given_cpu(&cpu).expect("a GPU-only defect FAILS the gate");
+        let failure = gpu
+            .failure_given_cpu(&cpu)
+            .expect("a GPU-only defect FAILS the gate");
         assert!(
             failure.starts_with("GPU output failed (CPU passed)"),
             "#3477's signature — a real GPU-specific defect — must survive #3870's fix: {failure}"
@@ -1609,7 +1692,9 @@ mod golden_output_tests {
         );
         assert!(matches!(cpu, CpuGoldenVerdict::Unclosed { .. }), "{cpu:?}");
 
-        let failure = gpu.failure_given_cpu(&cpu).expect("the GPU leg still FAILS");
+        let failure = gpu
+            .failure_given_cpu(&cpu)
+            .expect("the GPU leg still FAILS");
         assert!(!failure.contains("CPU passed"), "{failure}");
         assert!(!failure.contains("CPU failed too"), "{failure}");
         assert!(
@@ -1634,7 +1719,10 @@ mod golden_output_tests {
         let messages: Vec<String> = [
             CpuGoldenVerdict::Passed,
             CpuGoldenVerdict::WrongAnswer("no Paris".to_string()),
-            CpuGoldenVerdict::Unclosed { budget: 512, generated_chars: 30 },
+            CpuGoldenVerdict::Unclosed {
+                budget: 512,
+                generated_chars: 30,
+            },
         ]
         .iter()
         .map(|cpu| gpu.failure_given_cpu(cpu).expect("all three still FAIL"))
@@ -1663,8 +1751,15 @@ mod golden_output_tests {
         let why = gpu_golden_not_run(true, false, true).expect("no device: the leg never starts");
         assert_eq!(why, "no CUDA device on this host");
         let leg = GpuGoldenLeg::NotRun(why);
-        assert_eq!(leg.failure_given_cpu(&CpuGoldenVerdict::Passed), None, "a leg that never started is not a failure");
-        assert_eq!(leg.describe(), "GPU leg SKIPPED: no CUDA device on this host");
+        assert_eq!(
+            leg.failure_given_cpu(&CpuGoldenVerdict::Passed),
+            None,
+            "a leg that never started is not a failure"
+        );
+        assert_eq!(
+            leg.describe(),
+            "GPU leg SKIPPED: no CUDA device on this host"
+        );
     }
 
     #[test]
@@ -1693,7 +1788,10 @@ mod golden_output_tests {
         // the old message said "GPU hybrid forward" on every cuda build
         let not_run = gpu_golden_not_run(true, false, true);
         let label = runtime_golden_backend(false, not_run).expect("CPU was expected: a pass");
-        assert!(label.starts_with("CPU: the dispatch reported used_gpu=false"), "{label}");
+        assert!(
+            label.starts_with("CPU: the dispatch reported used_gpu=false"),
+            "{label}"
+        );
         assert!(label.contains("no CUDA device on this host"), "{label}");
         assert!(!label.contains("GPU:"), "{label}");
     }
@@ -1716,9 +1814,13 @@ mod golden_output_tests {
 
     #[test]
     fn runtime_architecture_the_gpu_declines_is_a_cpu_pass_that_says_why() {
-        let label = runtime_golden_backend(false, Some("the GPU backend declines this architecture"))
-            .expect("CPU was expected: a pass");
-        assert!(label.contains("the GPU backend declines this architecture"), "{label}");
+        let label =
+            runtime_golden_backend(false, Some("the GPU backend declines this architecture"))
+                .expect("CPU was expected: a pass");
+        assert!(
+            label.contains("the GPU backend declines this architecture"),
+            "{label}"
+        );
     }
 
     /// THE MERGE TEST (#3711 + #3724). Both behaviours have to survive the fold,
@@ -1729,15 +1831,27 @@ mod golden_output_tests {
     /// three collapses into another.
     #[test]
     fn errored_unclosed_and_not_run_are_three_different_verdicts() {
-        let errored = GpuGoldenLeg::judge(Err("CUDA init on device 0: OOM".to_string()), TWO_PLUS_TWO, 512);
+        let errored = GpuGoldenLeg::judge(
+            Err("CUDA init on device 0: OOM".to_string()),
+            TWO_PLUS_TWO,
+            512,
+        );
         let unclosed = GpuGoldenLeg::judge(
             Ok("<think>let me work through this carefully".to_string()),
             TWO_PLUS_TWO,
             512,
         );
         let not_run = GpuGoldenLeg::NotRun("no CUDA device on this host");
-        let wrong = GpuGoldenLeg::judge(Ok("<think>2+2</think>It is five.".to_string()), TWO_PLUS_TWO, 512);
-        let passed = GpuGoldenLeg::judge(Ok("<think>2+2</think>2 + 2 = 4.".to_string()), TWO_PLUS_TWO, 512);
+        let wrong = GpuGoldenLeg::judge(
+            Ok("<think>2+2</think>It is five.".to_string()),
+            TWO_PLUS_TWO,
+            512,
+        );
+        let passed = GpuGoldenLeg::judge(
+            Ok("<think>2+2</think>2 + 2 = 4.".to_string()),
+            TWO_PLUS_TWO,
+            512,
+        );
 
         // All five are distinct values, so none can be silently produced for another.
         assert!(matches!(errored, GpuGoldenLeg::Errored(_)));
@@ -1747,21 +1861,36 @@ mod golden_output_tests {
         assert_eq!(passed, GpuGoldenLeg::Passed);
 
         // #3711: an error FAILS and names the error, and is not a skip.
-        let e = errored.failure_given_cpu(&CpuGoldenVerdict::Passed).expect("an error fails the gate");
+        let e = errored
+            .failure_given_cpu(&CpuGoldenVerdict::Passed)
+            .expect("an error fails the gate");
         assert!(e.contains("OOM") && e.contains("not a skip"), "{e}");
 
         // #3724: an unclosed block FAILS by name WITH the budget, and never reads
         // as an empty answer.
-        let u = unclosed.failure_given_cpu(&CpuGoldenVerdict::Passed).expect("an unclosed block fails the gate");
+        let u = unclosed
+            .failure_given_cpu(&CpuGoldenVerdict::Passed)
+            .expect("an unclosed block fails the gate");
         assert!(u.contains("think block unclosed within 512 tokens"), "{u}");
         assert!(!u.contains("Empty output"), "{u}");
         assert_ne!(u, e, "an unclosed block must not report as an error");
 
         // A leg that never started is the ONLY thing that does not fail.
-        assert!(not_run.failure_given_cpu(&CpuGoldenVerdict::Passed).is_none());
-        assert!(passed.failure_given_cpu(&CpuGoldenVerdict::Passed).is_none());
-        assert!(not_run.describe().contains("SKIPPED"), "{}", not_run.describe());
-        assert!(!unclosed.describe().contains("SKIPPED"), "an unclosed block is not a skip");
+        assert!(not_run
+            .failure_given_cpu(&CpuGoldenVerdict::Passed)
+            .is_none());
+        assert!(passed
+            .failure_given_cpu(&CpuGoldenVerdict::Passed)
+            .is_none());
+        assert!(
+            not_run.describe().contains("SKIPPED"),
+            "{}",
+            not_run.describe()
+        );
+        assert!(
+            !unclosed.describe().contains("SKIPPED"),
+            "an unclosed block is not a skip"
+        );
     }
 
     // =========================================================================
@@ -1788,9 +1917,26 @@ mod golden_output_tests {
     fn chatml_architectures_render_the_legacy_prompt_byte_for_byte() {
         use realizar::chat_template::{detect_format_from_name, TemplateFormat};
         let sample = [
-            "gpt2", "llama", "qwen2", "qwen3", "qwen3_moe", "qwen35", "mistral", "phi2", "phi",
-            "gemma", "deepseek", "mamba", "stablelm", "yi", "internlm2", "smollm", "olmo",
-            "granite", "starcoder", "falcon_7b",
+            "gpt2",
+            "llama",
+            "qwen2",
+            "qwen3",
+            "qwen3_moe",
+            "qwen35",
+            "mistral",
+            "phi2",
+            "phi",
+            "gemma",
+            "deepseek",
+            "mamba",
+            "stablelm",
+            "yi",
+            "internlm2",
+            "smollm",
+            "olmo",
+            "granite",
+            "starcoder",
+            "falcon_7b",
         ];
         let (mut chatml, mut other) = (0usize, 0usize);
         for arch in sample {
@@ -1821,7 +1967,10 @@ mod golden_output_tests {
             }
         }
         assert!(chatml > 0, "no ChatML architecture in the sample — the byte-identity half of done_when 2 went untested");
-        assert!(other > 0, "no non-ChatML architecture in the sample — the detector half went untested");
+        assert!(
+            other > 0,
+            "no non-ChatML architecture in the sample — the detector half went untested"
+        );
         assert_eq!(
             detect_format_from_name("qwen2"),
             TemplateFormat::ChatML,
@@ -1888,10 +2037,14 @@ mod golden_output_tests {
     fn the_thinking_on_prompt_is_production_minus_the_suppression() {
         let production = golden_prompt_for(Some("qwen3"), "What is 2+2?");
         assert!(production.ends_with("<think>\n</think>\n"), "{production}");
-        let (on_prompt, patterns) = thinking_on_case(Some("qwen3")).expect("qwen3 is judged in both modes");
+        let (on_prompt, patterns) =
+            thinking_on_case(Some("qwen3")).expect("qwen3 is judged in both modes");
         assert_eq!(on_prompt, legacy_chatml("What is 2+2?"));
         assert_eq!(patterns, golden_questions()[0].1);
-        assert!(!on_prompt.contains("<think>"), "the suppression is gone: {on_prompt}");
+        assert!(
+            !on_prompt.contains("<think>"),
+            "the suppression is gone: {on_prompt}"
+        );
     }
 
     /// An architecture production does NOT suppress has no second mode to judge,
@@ -1934,7 +2087,10 @@ mod golden_output_tests {
             "/../aprender-serve/src/fixtures/chat_template_3990/qwen35.jinja"
         ))
         .expect("f5's qwen35 fixture");
-        let (question, _) = golden_questions().into_iter().next().expect("a golden case");
+        let (question, _) = golden_questions()
+            .into_iter()
+            .next()
+            .expect("a golden case");
         let official = realizar::chat_template::render_official(
             &tpl,
             None,
@@ -1950,14 +2106,24 @@ mod golden_output_tests {
         })
         .expect("renders")
         .expect("qwen35 has an ON leg");
-        assert_eq!(on_prompt, official, "the ON leg does not ask the way the model's template does");
+        assert_eq!(
+            on_prompt, official,
+            "the ON leg does not ask the way the model's template does"
+        );
         assert!(on_prompt.ends_with("assistant\n<think>\n"), "{on_prompt:?}");
         // a model the leg never covered still has none, and a template that will not render is a
         // named failure, never a fallback to the derivation
-        assert_eq!(official_on_case(Some("qwen2"), |_| Ok(String::new())), Ok(None));
-        let refused = official_on_case(Some("qwen35"), |_| Err("no tokenizer.chat_template".into()))
-            .expect_err("an unrenderable template fails");
-        assert!(refused.contains("#3990") && refused.contains("no tokenizer.chat_template"), "{refused}");
+        assert_eq!(
+            official_on_case(Some("qwen2"), |_| Ok(String::new())),
+            Ok(None)
+        );
+        let refused =
+            official_on_case(Some("qwen35"), |_| Err("no tokenizer.chat_template".into()))
+                .expect_err("an unrenderable template fails");
+        assert!(
+            refused.contains("#3990") && refused.contains("no tokenizer.chat_template"),
+            "{refused}"
+        );
     }
 
     /// #3990: BOTH gate ON legs (dense here, hybrid in output_verification.rs) take the official
@@ -1967,17 +2133,31 @@ mod golden_output_tests {
     #[test]
     fn both_on_leg_sites_render_the_official_template() {
         for (file, want) in [("golden_output.rs", 1), ("output_verification.rs", 1)] {
-            let src = std::fs::read_to_string(format!("{}/src/commands/{file}", env!("CARGO_MANIFEST_DIR")))
-                .expect("own source readable");
+            let src = std::fs::read_to_string(format!(
+                "{}/src/commands/{file}",
+                env!("CARGO_MANIFEST_DIR")
+            ))
+            .expect("own source readable");
             let code = src.split("#[cfg(test)]").next().unwrap_or(&src);
-            let calls = code.matches("thinking_on_case_for_model(key.as_deref()").count()
-                + code.matches("thinking_on_case_for_model(\n        architecture.as_deref()").count();
-            assert_eq!(calls, want, "{file}: the ON leg must render the official template (#3990)");
+            let calls = code
+                .matches("thinking_on_case_for_model(key.as_deref()")
+                .count()
+                + code
+                    .matches("thinking_on_case_for_model(\n        architecture.as_deref()")
+                    .count();
+            assert_eq!(
+                calls, want,
+                "{file}: the ON leg must render the official template (#3990)"
+            );
             assert!(
-                !code.contains("= thinking_on_case(key.as_deref())") && !code.contains("= thinking_on_case(architecture.as_deref())"),
+                !code.contains("= thinking_on_case(key.as_deref())")
+                    && !code.contains("= thinking_on_case(architecture.as_deref())"),
                 "{file}: an ON leg still takes the derived prompt"
             );
-            assert!(code.contains("on_leg_judged_text(&on_prompt, generated)"), "{file}: the prefilled block is not judged whole");
+            assert!(
+                code.contains("on_leg_judged_text(&on_prompt, generated)"),
+                "{file}: the prefilled block is not judged whole"
+            );
         }
     }
 
@@ -1990,9 +2170,16 @@ mod golden_output_tests {
         let cont = "two plus two is four</think>\n\n2 + 2 = 4.";
         let raw = judge_thinking_on_output(cont, &["4"], 2048).expect("raw reads as never entered");
         assert!(raw.contains("never entered"), "{raw}");
-        assert_eq!(judge_thinking_on_output(&on_leg_judged_text(prompt, cont), &["4"], 2048), None);
-        let empty = judge_thinking_on_output(&on_leg_judged_text(prompt, "\n</think>\n\n2 + 2 = 4."), &["4"], 2048)
-            .expect("an empty prefilled block is still empty");
+        assert_eq!(
+            judge_thinking_on_output(&on_leg_judged_text(prompt, cont), &["4"], 2048),
+            None
+        );
+        let empty = judge_thinking_on_output(
+            &on_leg_judged_text(prompt, "\n</think>\n\n2 + 2 = 4."),
+            &["4"],
+            2048,
+        )
+        .expect("an empty prefilled block is still empty");
         assert!(empty.contains("closed EMPTY"), "{empty}");
         // a prompt that does not open the block is judged as generated
         assert_eq!(on_leg_judged_text("assistant\n", "x"), "x");
@@ -2024,10 +2211,19 @@ mod golden_output_tests {
         // count and be misreported as "closed EMPTY". It cannot: split_thinking_blocks returns
         // Unclosed for ANY unmatched <think> before the count runs. Pinned both ways, including
         // a closed-then-unclosed trace, so the refutation is a measurement, not an argument.
-        for open in ["<think>let me work through this", "<think>two plus two</think><think>and then"] {
+        for open in [
+            "<think>let me work through this",
+            "<think>two plus two</think><think>and then",
+        ] {
             let got = judge_thinking_on_output(open, &patterns, 2048).expect("unclosed fails");
-            assert!(got.contains("think block unclosed within 2048 tokens"), "{got}");
-            assert!(!got.contains("closed EMPTY"), "an unclosed block is not an empty one: {got}");
+            assert!(
+                got.contains("think block unclosed within 2048 tokens"),
+                "{got}"
+            );
+            assert!(
+                !got.contains("closed EMPTY"),
+                "an unclosed block is not an empty one: {got}"
+            );
         }
         // never entered thinking at all → the leg proved nothing, and says so
         let absent = judge_thinking_on_output("2 + 2 = 4.", &patterns, 2048)
@@ -2042,7 +2238,10 @@ mod golden_output_tests {
         ] {
             let skipped = judge_thinking_on_output(empty, &patterns, 2048)
                 .expect("an empty think block proves no reasoning happened");
-            assert!(skipped.contains("closed EMPTY within 2048 tokens"), "{skipped}");
+            assert!(
+                skipped.contains("closed EMPTY within 2048 tokens"),
+                "{skipped}"
+            );
             assert!(!skipped.contains("never entered"), "{skipped}");
         }
     }
@@ -2104,14 +2303,19 @@ mod golden_output_tests {
         {
             assert_eq!(c_pat, &patterns, "patterns are architecture-independent");
             assert_eq!(n_pat, &patterns, "patterns are architecture-independent");
-            assert!(c_prompt.contains(question), "the question survives the wrapper");
-            assert!(n_prompt.contains(question), "the question survives the wrapper");
+            assert!(
+                c_prompt.contains(question),
+                "the question survives the wrapper"
+            );
+            assert!(
+                n_prompt.contains(question),
+                "the question survives the wrapper"
+            );
         }
     }
 }
 
 include!("throughput.rs");
-
 
 /// #3914: which string the template detector is keyed on.
 ///
@@ -2175,7 +2379,12 @@ mod template_key_3914 {
     #[test]
     fn a_dense_qwen3_whose_template_agrees_is_left_alone() {
         assert_eq!(
-            template_key(Some("qwen3"), Some("Qwen3-1.7B"), Some(QWEN3_THINK_DECLARED)).as_deref(),
+            template_key(
+                Some("qwen3"),
+                Some("Qwen3-1.7B"),
+                Some(QWEN3_THINK_DECLARED)
+            )
+            .as_deref(),
             Some("qwen3"),
         );
     }
@@ -2209,8 +2418,14 @@ mod template_key_3914 {
     /// template does mention is agreement, whatever the names are.
     #[test]
     fn agreement_is_not_a_contradiction() {
-        assert!(!contradicts_declared("<|im_start|>user\nx", QWEN_CHATML_DECLARED));
-        assert!(contradicts_declared("<s>[INST] x [/INST]", TINYLLAMA_DECLARED));
+        assert!(!contradicts_declared(
+            "<|im_start|>user\nx",
+            QWEN_CHATML_DECLARED
+        ));
+        assert!(contradicts_declared(
+            "<s>[INST] x [/INST]",
+            TINYLLAMA_DECLARED
+        ));
     }
 }
 
@@ -2229,7 +2444,10 @@ mod golden_official_template_3990 {
         ))
         .expect("oracle parses");
         let mut ran = 0usize;
-        for c in cells.iter().filter(|c| c["thinking"] == false && c["system"] == false) {
+        for c in cells
+            .iter()
+            .filter(|c| c["thinking"] == false && c["system"] == false)
+        {
             let path = c["path"].as_str().expect("path");
             if !std::path::Path::new(path).exists() {
                 eprintln!("SKIP: {path} not on this host -- this cell did NOT run");
@@ -2248,10 +2466,19 @@ mod golden_official_template_3990 {
     /// Without a GGUF the gate keeps the detector's render, unchanged.
     #[test]
     fn no_gguf_keeps_the_detector_render_3990() {
-        assert_eq!(golden_prompt_for_model(None, None, Some("qwen2"), "Q?"), golden_prompt_for(Some("qwen2"), "Q?"));
-        assert_eq!(golden_prompt_for_model(None, None, None, "Q?"), golden_prompt_for(None, "Q?"));
+        assert_eq!(
+            golden_prompt_for_model(None, None, Some("qwen2"), "Q?"),
+            golden_prompt_for(Some("qwen2"), "Q?")
+        );
+        assert_eq!(
+            golden_prompt_for_model(None, None, None, "Q?"),
+            golden_prompt_for(None, "Q?")
+        );
         // A tokenizer_config.json with no chat_template is the same as none.
-        assert_eq!(golden_prompt_for_model(None, Some(r#"{"eos_token": "</s>"}"#), None, "Q?"), golden_prompt_for(None, "Q?"));
+        assert_eq!(
+            golden_prompt_for_model(None, Some(r#"{"eos_token": "</s>"}"#), None, "Q?"),
+            golden_prompt_for(None, "Q?")
+        );
     }
 
     /// SafeTensors: the sibling tokenizer_config.json's template is what the gate asks with.
@@ -2269,6 +2496,9 @@ mod golden_official_template_3990 {
             .find(|c| c["model"] == "tinyllama" && c["system"] == false && c["thinking"] == false)
             .expect("the tinyllama system-less cell");
         let question = c["messages"][0]["content"].as_str().expect("question");
-        assert_eq!(golden_prompt_for_model(None, Some(cfg), Some("llama"), question), c["prompt"].as_str().expect("prompt"));
+        assert_eq!(
+            golden_prompt_for_model(None, Some(cfg), Some("llama"), question),
+            c["prompt"].as_str().expect("prompt")
+        );
     }
 }
