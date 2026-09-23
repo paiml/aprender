@@ -39,6 +39,59 @@ pub(crate) fn qtype_to_dtype_str(qtype: u32) -> &'static str {
     crate::gguf::admitted_from_id(qtype).map_or("Unknown", crate::gguf::GgmlQuantType::as_str)
 }
 
+/// #4006: the `quant=` label for a GGUF model: the transformer BODY, not the head.
+///
+/// It printed `lm_head_weight.qtype`. Unsloth "UD" files tie the head to a
+/// high-precision `token_embd` while the blocks are mixed, so
+/// Qwen3.5-0.8B-UD-IQ2_XXS (95 IQ2_XXS block tensors) was labelled `Q5_K` and a
+/// receipt quoting it said none of the IQ kernels ran.
+///
+/// `body` is the qtype of every 2-D projection weight in the blocks. One type
+/// prints as that type; several print as `mixed(A×n,B×m,…)`, most frequent first
+/// (ties by name). `lm_head=<qtype>` is appended when the head differs from the
+/// dominant body type.
+pub(crate) fn body_quant_label(body: &[u32], lm_head: u32) -> String {
+    // The full GGML name table, not the admitted-kernel one: a label names what
+    // the file holds, whether or not a GPU kernel exists for it.
+    let name = |q: u32| {
+        trueno_quant::GgmlType::from_id(q)
+            .map_or_else(|| format!("ggml type {q}"), |t| t.as_str().to_string())
+    };
+    let mut counts: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();
+    for &q in body {
+        *counts.entry(q).or_insert(0) += 1;
+    }
+    let mut ranked: Vec<(String, usize, u32)> =
+        counts.into_iter().map(|(q, n)| (name(q), n, q)).collect();
+    ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let Some((_, _, dominant)) = ranked.first().cloned() else {
+        return name(lm_head);
+    };
+    let body_label = if ranked.len() == 1 {
+        ranked[0].0.clone()
+    } else {
+        let parts: Vec<String> = ranked.iter().map(|(n, c, _)| format!("{n}×{c}")).collect();
+        format!("mixed({})", parts.join(","))
+    };
+    if lm_head == dominant {
+        body_label
+    } else {
+        format!("{body_label} lm_head={}", name(lm_head))
+    }
+}
+
+/// The qtype of every 2-D block tensor (`blk.*`, `n_dims >= 2`) in the GGUF header,
+/// for [`body_quant_label`]. Read from the FILE, not the loaded model struct: the
+/// Qwen3.5 hybrid path builds only a base model (embeddings, final norm, head) with
+/// no layers, and its block tensors are the ones that decide the label.
+pub(crate) fn body_qtypes(gguf: &crate::gguf::GGUFModel) -> Vec<u32> {
+    gguf.tensors
+        .iter()
+        .filter(|t| t.name.starts_with("blk.") && t.n_dims >= 2)
+        .map(|t| t.qtype)
+        .collect()
+}
+
 /// Configuration for inference
 #[derive(Debug, Clone)]
 pub struct InferenceConfig {
@@ -660,6 +713,9 @@ pub mod qwen3_moe_generate;
 pub mod run_report;
 
 // #3760: `apr run` on a SafeTensors model samples.
+#[cfg(test)]
+#[path = "tests_quant_label_4006.rs"]
+mod tests_quant_label_4006;
 #[cfg(test)]
 #[path = "tests_sampling_3760.rs"]
 mod tests_sampling_3760;
