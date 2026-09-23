@@ -57,8 +57,9 @@
 #       `ladder.emergency_scopes`; 0.69.1 only): the judge's own `--scope` path
 #       (scripts/lib/crux_smoke_scope.py) decides R7 from CRUX smoke receipts bound to the CUT --
 #       the commit the release binary was built from -- instead of the model matrix. The cut
-#       defaults to HEAD; when HEAD is the cut plus committed receipts, HEAD may differ from the
-#       cut ONLY under evidence/, or the published source is not the measured binary's. The
+#       defaults to HEAD; when HEAD is not the cut (receipts committed on top, or main's squash
+#       of it), every PUBLISHED path -- crates/ src/ Cargo.toml Cargo.lock, R4's set -- must be
+#       equal to the cut's, or the published source is not the smoked binary's. The
 #       model-matrix rows are still printed, as EVIDENCE, never as the verdict.
 set -uo pipefail
 
@@ -194,7 +195,9 @@ rule_r7() {
 # R7 under a recorded operator emergency scope (0.69.1: CRUX smoke only). The scope is READ by the
 # judge (`--scope`, scripts/lib/crux_smoke_scope.py), never re-implemented here: it refuses another
 # release, receipts from another binary, and a missing host. This rule adds the one binding the judge
-# cannot see: the source being PUBLISHED is the source the smoked binary was built from.
+# cannot see: the source being PUBLISHED (crates/ src/ Cargo.toml Cargo.lock, the paths R4 judges) is
+# the source the smoked binary was built from. Scripts, contracts and evidence may differ: the scope's
+# own contract entry and reader arrive after the cut.
 # rule_r7_scope root version judge -> prints its rows; 0 accepted, 1 refused
 rule_r7_scope() {
     local root="$1" version="$2" judge="$3" cut head out rc ev evrc
@@ -204,10 +207,10 @@ rule_r7_scope() {
         echo "FAIL  R7 OPERATOR EMERGENCY SCOPE $SCOPE: the cut ${CUT_COMMIT:-HEAD} does not resolve in this tree"
         return 1
     fi
-    if [ "$cut" != "$head" ] && ! git -C "$root" diff --quiet "$cut" "$head" -- . ':(exclude)evidence' 2>/dev/null; then
-        printf 'FAIL  R7 OPERATOR EMERGENCY SCOPE %s: HEAD %s differs from the cut %s OUTSIDE evidence/ -- the published source is not the smoked binary'"'"'s:\n%s\n' \
+    if [ "$cut" != "$head" ] && ! git -C "$root" diff --quiet "$cut" "$head" -- crates src Cargo.toml Cargo.lock 2>/dev/null; then
+        printf 'FAIL  R7 OPERATOR EMERGENCY SCOPE %s: HEAD %s differs from the cut %s in PUBLISHED paths -- the published source is not the smoked binary'"'"'s:\n%s\n' \
             "$SCOPE" "${head:0:12}" "${cut:0:12}" \
-            "$(git -C "$root" diff --name-only "$cut" "$head" -- . ':(exclude)evidence' | head -n 10 | sed 's/^/        /')"
+            "$(git -C "$root" diff --name-only "$cut" "$head" -- crates src Cargo.toml Cargo.lock | head -n 10 | sed 's/^/        /')"
         return 1
     fi
     out="$(cd "$root" && bash "$judge" --version "$version" --scope "$SCOPE" --cut-commit "$cut" 2>&1)"; rc=$?
@@ -634,7 +637,13 @@ FXJUDGE
     printf 'pub fn g() {}\n' >> "$d/src/lib.rs"
     git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'src' >/dev/null
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
-    FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" row scope_source_change_over_the_cut_refuses 1 "OUTSIDE evidence/" "$d"
+    FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" row scope_source_change_over_the_cut_refuses 1 "differs from the cut ${cut:0:12} in PUBLISHED paths" "$d"
+    # scripts/contracts arriving after the cut (the scope's own reader and entry do) are not published
+    d="$tmp/sc-tooling"; build_repo "$d"; cut="$(git -C "$d" rev-parse HEAD)"
+    printf '# tooling\n' > "$d/scripts/new_tool.sh"; mkdir -p "$d/contracts"; printf 'x: 1\n' > "$d/contracts/c.yaml"
+    git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'tooling' >/dev/null
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" row scope_tooling_after_the_cut_passes 0 "satisfied at the cut ${cut:0:12}" "$d"
     d="$tmp/sc-badcut"; build_repo "$d"
     SCOPE=crux-smoke CUT_COMMIT=0123456789abcdef0123456789abcdef01234567 row scope_unresolvable_cut_refuses 1 "does not resolve" "$d"
 
