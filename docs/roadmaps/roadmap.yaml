@@ -21444,3 +21444,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4039
+  github_issue: 4039
+  item_type: task
+  title: 'ladder sweep: order cells CRUX-certified first, then largest first, as one plan over rungs + inventory (#4033 lever f)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-75
+  created: 2026-09-23T00:00:00Z
+  updated: 2026-09-23T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/model_ladder.sh measures its cells in one ordered plan (certified sha first, then bytes descending, then kind and id); --dry-run prints that order'
+  - 'must-RED: the ordered plan must be a permutation of the plan; a dropped, added or duplicated cell exits 2 before any cell runs (scripts/lib/ladder_order.py --selftest)'
+  - 'the saving in minutes against the 0.69.1 baseline is measured once receipts carry t_start/t_end (#4051); until then it is NOT MEASURED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

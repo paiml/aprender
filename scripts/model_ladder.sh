@@ -19,7 +19,7 @@
 # model this host holds that the run did not prove.
 #
 # Usage:  bash scripts/model_ladder.sh [--host <id>] [--out <dir>] [--dry-run]
-#                                      [--only <rung-id>]
+#                                      [--only <rung-id>] [--certification <receipt>]
 #   --only  measure exactly ONE rung and write a SEPARATE receipt,
 #           <dir>/<host>.only-<id>.json. For separating a flake from a defect: a
 #           single rung costs minutes where the sweep costs hours, and #3936 spent
@@ -30,6 +30,10 @@
 #           writes a receipt is the empty-universe vacuity, and it would look
 #           exactly like a pass.
 #   --host  ladder host id (default: derived from `hostname`, see host_id)
+#   --certification  the CRUX prompt certification that ORDERS the sweep (#4039): its certified models
+#           are measured first, so the CRUX sweep can start on them early; then largest first.
+#           Default: evidence/crux/<version>/prompt-certification.json, else the newest one under
+#           evidence/crux/. Order is a schedule, never a verdict: with none, the order is largest first.
 #   --out   receipt dir (default: evidence/dogfood/models/<version>); writes <dir>/<host>.json
 #
 # Exit: 0 every present required rung AND every inventory model green · 1 any red,
@@ -46,12 +50,14 @@ HOST_ID=""
 OUT_DIR=""
 DRY=0
 ONLY=""
+CERT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --host) [ $# -ge 2 ] || { echo "model_ladder: --host needs a value" >&2; exit 2; }; HOST_ID="$2"; shift 2 ;;
     --out)  [ $# -ge 2 ] || { echo "model_ladder: --out needs a value" >&2; exit 2; };  OUT_DIR="$2"; shift 2 ;;
     --dry-run) DRY=1; shift ;;
     --only) [ $# -ge 2 ] || { echo "model_ladder: --only needs a value" >&2; exit 2; }; ONLY="$2"; shift 2 ;;
+    --certification) [ $# -ge 2 ] || { echo "model_ladder: --certification needs a value" >&2; exit 2; }; CERT="$2"; shift 2 ;;
     # --lock-probe <apr args…>: one apr call through apr_locked, then exit with its rc. For the case
     # table in check_model_ladder.sh, which proves every apr call runs under the lock.
     --lock-probe) shift; LOCK_PROBE=1; break ;;
@@ -1255,8 +1261,59 @@ print("; ".join(w) or "unknown")')
   fi
 }
 
-# ---- 1. the ladder's rungs
+# ---- 0. the plan (#4039, a #4033 lever): ONE ordered list of every cell, rungs and inventory together.
+# CRUX-certified models first, so the CRUX sweep can start on them while the rest of the ladder runs; then
+# largest first, to cut the tail. One of 0.69.1's three certified models is inventory-only, so ordering each
+# section on its own would still have run every rung before it. scripts/lib/ladder_order.py refuses (exit 2)
+# any order that is not a permutation of the plan: a schedule may never drop, add or duplicate a cell.
+if [ -z "$CERT" ]; then
+  CERT="evidence/crux/$VERSION/prompt-certification.json"
+  [ -f "$CERT" ] || CERT=$(find evidence/crux -mindepth 2 -maxdepth 2 -name prompt-certification.json 2>/dev/null | sort -V | tail -1)
+fi
+PLAN=""
 while IFS='|' read -r -t 5 rid rfile rsha rbackends rreq rhosts; do
+  [ -n "$rid" ] || continue
+  rbytes=0
+  if rpath=$(find_model "$rfile"); then rbytes=$(stat -Lc %s "$rpath" 2>/dev/null || echo 0); fi
+  PLAN+="rung|$rid|$rfile|$rsha|$rbackends|$rreq|$rhosts|$rbytes"$'\n'
+done <<EOF_PLAN_RUNGS
+$RUNGS
+EOF_PLAN_RUNGS
+# Every inventory model: hashed ONCE here, and its row recorded -- a targeted receipt still states the host's
+# holdings -- then planned; the loop below measures it unless a rung already did.
+while IFS='|' read -r -t 5 ifile ipath; do
+  [ -n "$ifile" ] || continue
+  # BOTH fields must describe the SAME object. `sha256sum` follows a symlink and
+  # `stat -c %s` does not, so on a symlinked model this line recorded the model's
+  # hash next to the LENGTH OF THE TARGET PATH (#3876): lambda's 0.69.1 receipt
+  # carried `bytes: 60` for Qwen3-1.7B-Q4_K_M.gguf — the link text is exactly 60
+  # characters — beside the 1.1 GB model's sha256. One row, two objects.
+  #
+  # It cost a false alarm before it cost anything else: the affected rows read
+  # `green=true qa_rc=0 required=true bytes=60`, which is indistinguishable from a
+  # required rung passing on a stub, and the gate takes the blame for what the
+  # evidence misreported. It also manufactures a cross-host difference — the same
+  # model is a regular file on gx10 (1,107,409,472) and a symlink on lambda (60)
+  # with a byte-identical sha256 — landing in the middle of a receipt comparison.
+  #
+  # `-L` follows, matching sha256sum. The hash is NOT the field to change: the
+  # receipt's job is to identify the model, and a symlink's text is not the model.
+  isha=$(sha256sum "$ipath" | cut -d' ' -f1); ibytes=$(stat -Lc %s "$ipath" 2>/dev/null || echo 0)
+  ladder_append "$INV_ROWS" "$(printf '{"file":"%s","sha256":"%s","bytes":%s}' "$ifile" "$isha" "$ibytes")"
+  PLAN+="inv|$ifile|$ipath|$isha|$ibytes"$'\n'
+done <<EOF_PLAN_INV
+$INVENTORY
+EOF_PLAN_INV
+ORDERED=$(python3 scripts/lib/ladder_order.py "${CERT:--}" <<< "$PLAN"); order_rc=$?
+if [ "$order_rc" -ne 0 ] || [ -z "$ORDERED" ]; then
+  echo "decline: the cell order could not be built (ladder_order.py exit $order_rc) -- nothing measured" >&2
+  exit 2
+fi
+
+# ---- 1. the ladder's rungs AND every inventory model: one loop, in the plan's order (#4039)
+while IFS='|' read -r -t 5 kind c1 c2 c3 c4 c5 c6 _cbytes; do
+  if [ "$kind" = rung ]; then
+  rid=$c1; rfile=$c2; rsha=$c3; rbackends=$c4; rreq=$c5; rhosts=$c6
   [ -n "$rid" ] || continue
   [ -z "$ONLY" ] || [ "$rid" = "$ONLY" ] || continue
   # A rung that lists hosts: is a claim only on those hosts (a 122B file fits gx10's unified memory and no
@@ -1281,39 +1338,19 @@ while IFS='|' read -r -t 5 rid rfile rsha rbackends rreq rhosts; do
   fi
   if [ "$DRY" = 1 ]; then printf '  [DRY   ] %-30s %s\n' "$rid" "$path"; continue; fi
   measure "$rid" "$rfile" "$path" "$got" "$rbackends" "$rreq" 0
-done <<EOF2
-$RUNGS
-EOF2
-
-# ---- 2. every inventory model: recorded in the receipt, and measured unless a rung already did
-while IFS='|' read -r -t 5 ifile ipath; do
+  else
+  ifile=$c1; ipath=$c2; isha=$c3; ibytes=$c4
   [ -n "$ifile" ] || continue
-  # BOTH fields must describe the SAME object. `sha256sum` follows a symlink and
-  # `stat -c %s` does not, so on a symlinked model this line recorded the model's
-  # hash next to the LENGTH OF THE TARGET PATH (#3876): lambda's 0.69.1 receipt
-  # carried `bytes: 60` for Qwen3-1.7B-Q4_K_M.gguf — the link text is exactly 60
-  # characters — beside the 1.1 GB model's sha256. One row, two objects.
-  #
-  # It cost a false alarm before it cost anything else: the affected rows read
-  # `green=true qa_rc=0 required=true bytes=60`, which is indistinguishable from a
-  # required rung passing on a stub, and the gate takes the blame for what the
-  # evidence misreported. It also manufactures a cross-host difference — the same
-  # model is a regular file on gx10 (1,107,409,472) and a symlink on lambda (60)
-  # with a byte-identical sha256 — landing in the middle of a receipt comparison.
-  #
-  # `-L` follows, matching sha256sum. The hash is NOT the field to change: the
-  # receipt's job is to identify the model, and a symlink's text is not the model.
-  isha=$(sha256sum "$ipath" | cut -d' ' -f1); ibytes=$(stat -Lc %s "$ipath" 2>/dev/null || echo 0)
-  ladder_append "$INV_ROWS" "$(printf '{"file":"%s","sha256":"%s","bytes":%s}' "$ifile" "$isha" "$ibytes")"
   if grep -qxF -- "$ifile" <<< "$LADDER_FILES"; then continue; fi   # a rung measured it above
   # #3936: the inventory ROW above is recorded either way -- a targeted receipt still
   # states the host's holdings -- but only the selected model is measured.
   [ -z "$ONLY" ] || [ "inv:$ifile" = "$ONLY" ] || continue
   if [ "$DRY" = 1 ]; then printf '  [DRY   ] %-30s %s (inventory, not a rung)\n' "inv:$ifile" "$ipath"; continue; fi
   measure "inv:$ifile" "$ifile" "$ipath" "$isha" "$INV_BACKENDS" 1 1
-done <<EOF3
-$INVENTORY
-EOF3
+  fi
+done <<EOF2
+$ORDERED
+EOF2
 
 [ "$DRY" = 1 ] && exit 0
 if [ "$EXECUTED" -eq 0 ]; then
