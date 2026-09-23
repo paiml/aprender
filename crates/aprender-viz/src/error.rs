@@ -78,6 +78,23 @@ pub enum Error {
     /// [`crate::grammar::apply`] exists to remove.
     #[error("Unsupported coordinate system: {0}")]
     UnsupportedCoord(&'static str),
+
+    /// A raster's pre-scan found an SVG element it will never pass to `usvg` (APEX-001 EV-2d).
+    ///
+    /// See [`crate::raster::svg_to_png`]: text/font elements are refused because a font-free
+    /// `usvg` would silently drop them rather than fail, and `image`/`foreignObject`-family
+    /// elements are refused because they can read the filesystem or hide nested content the
+    /// pre-scan cannot see.
+    #[error(
+        "SVG element <{element}> refused ({count} occurrence(s)): a raster must not resolve \
+         fonts or external resources"
+    )]
+    SvgElementRefused {
+        /// The local name of the first refused element found, in document order.
+        element: String,
+        /// The total number of refused elements found.
+        count: usize,
+    },
 }
 
 #[cfg(test)]
