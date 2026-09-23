@@ -255,8 +255,8 @@ run_extraction_table() { # -> 0 all as expected
 
 if [ "$SELF_TEST" = 1 ]; then
   [ -f "$SCRIPT" ] || { echo "cannot read $SCRIPT" >&2; exit 2; }
-  m1=$(mktemp); m2=$(mktemp); m3=$(mktemp); m4=$(mktemp)
-  trap 'rm -f "$m1" "$m2" "$m3" "$m4"' EXIT
+  m1=$(mktemp); m2=$(mktemp); m3=$(mktemp); m4=$(mktemp); m5=$(mktemp)
+  trap 'rm -f "$m1" "$m2" "$m3" "$m4" "$m5"' EXIT
 
   echo "self-test: the shipped script"
   run_detector_table "$SCRIPT" > /dev/null && check_verdict "$SCRIPT" > /dev/null \
@@ -310,7 +310,21 @@ if [ "$SELF_TEST" = 1 ]; then
   fi
   echo "  RED (expected)"
 
-  echo "self-test: PASS — red when the detector stops flagging, when the verdict stops reading it, when an unlocatable reply passes silently, and when the reply is cut short"
+  # Mutant 5: the extractor is bypassed and the raw capture is judged again -- the
+  # exact state #3925 fixed, and so the one regression this file exists to catch.
+  # aprender-3e ran it by hand while folding #3926 and it was caught; naming it here
+  # means the next person does not have to re-derive that, and a refactor that
+  # reintroduces raw judging fails rather than being noticed in review.
+  sed 's#| assistant_reply); rc=$?#| cat); rc=$?#' "$SCRIPT" > "$m5"
+  cmp -s "$SCRIPT" "$m5" && { echo "SELF-TEST INCONCLUSIVE: mutant 5 changed nothing" >&2; exit 1; }
+  echo "self-test: mutant 5 (extractor bypassed, the transcript judged raw again)"
+  if run_extraction_table "$m5" > /dev/null 2>&1; then
+    echo "SELF-TEST FAILED: mutant 5 passed -- the chrome is being judged and nothing noticed" >&2
+    exit 1
+  fi
+  echo "  RED (expected)"
+
+  echo "self-test: PASS — red when the detector stops flagging, when the verdict stops reading it, when an unlocatable reply passes silently, when the reply is cut short, and when the extractor is bypassed entirely"
   exit 0
 fi
 
