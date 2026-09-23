@@ -39,9 +39,9 @@ impl ProofLevel {
             ProofLevel::L2 => "Falsification tests cover every obligation",
             ProofLevel::L3 => "L2 + at least one Kani bounded-model-check harness",
             ProofLevel::L4 => {
-                "Every obligation has a sorry-free in-tree Lean 4 theorem (or is not applicable)"
+                "Every obligation has a sorry-free in-tree Lean 4 theorem or is not applicable, with at least one proved"
             }
-            ProofLevel::L5 => "L4 + every binding implemented",
+            ProofLevel::L5 => "L4 + at least one binding, every binding implemented",
         }
     }
 }
@@ -175,6 +175,13 @@ fn readme_and_ladder_docs_match_enum() {
             "README ladder row for {level} is not the enum's definition.\nwant: {row}\nREADME table:\n{readme}"
         );
     }
+    // The two guards a vacuous reading would drop (quorum round 4, measured): L4 needs at
+    // least one GROUNDED obligation (ONT-2a: all-not-applicable is not L4), and L5 needs at
+    // least one binding (is_fully_bound: zero bindings is not "all bound"). The code side
+    // is pinned by proof_status_tests::level_all_not_applicable_is_not_l4 and
+    // ::level_l5_needs_at_least_one_binding.
+    assert!(ProofLevel::L4.method().contains("at least one proved"));
+    assert!(ProofLevel::L5.method().contains("at least one binding"));
     // 2. Every ladder doc copy carries the generated block, byte for byte.
     let block = ladder_block();
     for (path, text) in LADDER_COPIES {
@@ -234,7 +241,7 @@ fn stale_level_pairings_case_table() {
         "3. **L3:** Kani exhaustively verified it for ALL inputs within the kernel's",
         "4. **L4:** a Lean 4 theorem proves it unbounded; **L5** additionally requires",
         "## How Kani (L3) and Lean (L4) Compose",
-        "| L5 | L4 + every binding implemented |",
+        "| L5 | L4 + at least one binding, every binding implemented |",
         "E4 and E5 are defined in YAML but not yet run in CI.",
         "| **E4** | Logic bugs, overflows | Kani `#[kani::proof]` BMC |",
     ];

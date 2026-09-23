@@ -7,8 +7,8 @@ practically possible.
 <!-- generated from ProofLevel; do not edit -->
 | Level | Method |
 |-------|--------|
-| L5 | L4 + every binding implemented |
-| L4 | Every obligation has a sorry-free in-tree Lean 4 theorem (or is not applicable) |
+| L5 | L4 + at least one binding, every binding implemented |
+| L4 | Every obligation has a sorry-free in-tree Lean 4 theorem or is not applicable, with at least one proved |
 | L3 | L2 + at least one Kani bounded-model-check harness |
 | L2 | Falsification tests cover every obligation |
 | L1 | Contract YAML with equations |
