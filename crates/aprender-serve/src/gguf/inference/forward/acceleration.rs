@@ -16,11 +16,12 @@ impl OwnedQuantizedModel {
         // Dequantize weight to f32
         let weight_f32 = self.dequantize_weight(weight)?;
 
-        // Use HybridScheduler for GPU/CPU dispatch
-        // A: [m, k], B: [k, n] -> C: [m, n]
-        scheduler.matmul(input, &weight_f32, m, k, n).map_err(|e| {
+        // Use HybridScheduler for GPU/CPU dispatch.
+        // #3975: `weight_f32` is dequantized [out, in] = [n, k]; `matmul` is [k, n], so this
+        // is A[m, k] @ B^T. It used `matmul` and read the weight transposed at every m.
+        scheduler.matmul_transpose_b(input, &weight_f32, m, k, n).map_err(|e| {
             RealizarError::UnsupportedOperation {
-                operation: "HybridScheduler::matmul".to_string(),
+                operation: "HybridScheduler::matmul_transpose_b".to_string(),
                 reason: format!("GPU matmul failed: {e}"),
             }
         })
@@ -478,5 +479,71 @@ impl OwnedQuantizedModel {
                 operation: "batched_attn_v".to_string(),
                 reason: format!("GPU matmul failed: {e}"),
             })
+    }
+}
+
+/// #3975 follow-up: `batch_matmul_gpu` against the canonical CPU `fused_matmul`, row by
+/// row, on a real layer weight. test_imp_112b only compares the cached and uncached
+/// batch paths to EACH OTHER: while both read the dequantized [out, in] weight as
+/// [k, n] they agreed on the wrong answer, and after #3975 fixed only the cached side
+/// they disagreed. Agreement is not correctness; this is the oracle.
+#[cfg(all(test, feature = "gpu"))]
+mod batch_matmul_gpu_oracle_3975 {
+    use crate::gguf::test_helpers::create_test_model_with_config;
+    use crate::gguf::{ArchConstraints, GGUFConfig};
+
+    #[test]
+    #[serial_test::serial]
+    fn batch_matmul_gpu_equals_cpu_fused_matmul_per_row() {
+        let config = GGUFConfig {
+            architecture: "test".to_string(),
+            constraints: ArchConstraints::from_architecture("test"),
+            hidden_dim: 64,
+            intermediate_dim: 128,
+            num_layers: 1,
+            num_heads: 4,
+            num_kv_heads: 4,
+            vocab_size: 100,
+            context_length: 256,
+            rope_theta: 10000.0,
+            eps: 1e-5,
+            rope_type: 0,
+            explicit_head_dim: None,
+            query_pre_attn_scalar: None,
+            bos_token_id: None,
+            eos_token_id: None,
+        };
+        let model = create_test_model_with_config(&config);
+        let weight = &model.layers[0].ffn_up_weight; // [out = 128, in = 64], non-square
+        let (m, k, n) = (4, weight.in_dim, weight.out_dim);
+        let input: Vec<f32> = (0..m * k).map(|i| ((i % 13) as f32 - 6.0) * 0.1).collect();
+        let mut scheduler = crate::gpu::HybridScheduler::with_threshold(1000).expect("scheduler");
+        let got = model
+            .batch_matmul_gpu(&input, weight, m, k, n, &mut scheduler)
+            .expect("batch_matmul_gpu");
+        // Exact layout oracle: y[r, o] = sum_i x[r, i] * W[o, i] over the SAME dequantized
+        // [out, in] weight, in f64. Tight: this is the layout question and nothing else.
+        let w = model.dequantize_weight(weight).expect("dequantize");
+        assert_eq!(w.len(), n * k);
+        for row in 0..m {
+            let x = &input[row * k..(row + 1) * k];
+            for o in 0..n {
+                let exact: f64 = (0..k).map(|i| f64::from(x[i]) * f64::from(w[o * k + i])).sum();
+                let g = f64::from(got[row * n + o]);
+                assert!(
+                    (g - exact).abs() <= 1e-4 * (1.0 + exact.abs()),
+                    "#3975 batch_matmul_gpu row {row} out {o}: {g} vs exact x*W^T {exact}"
+                );
+            }
+            // Tie to the canonical CPU kernel, per row by relative L2: it quantizes
+            // activations, so single near-zero elements are noise-dominated. The
+            // pre-fix misread is far outside this bound.
+            let cpu = model.fused_matmul(x, weight).expect("cpu fused_matmul");
+            let g = &got[row * n..(row + 1) * n];
+            let num: f64 = g.iter().zip(&cpu).map(|(a, b)| f64::from(a - b).powi(2)).sum();
+            let den: f64 = cpu.iter().map(|b| f64::from(*b).powi(2)).sum();
+            let rel = (num / den.max(1e-12)).sqrt();
+            assert!(rel < 0.02, "#3975 batch_matmul_gpu row {row}: relative L2 {rel:.4} vs CPU fused_matmul");
+        }
     }
 }
