@@ -2,15 +2,15 @@
   "schema": "apr-model-ladder-receipt/v2",
   "host": "lambda",
   "version": "0.69.1",
-  "sha": "712f6d433",
-  "apr_sha": "712f6d4337b8a32456b59d39002f90ab5dbd8e34",
+  "sha": "9b7739951",
+  "apr_sha": "9b77399511c20609a2795e54ef47148d0a5ae450",
   "isa": "x86_64",
   "gpu": "NVIDIA GeForce RTX 4090",
   "cc": "8.9",
-  "date": "2026-09-22T22:40Z",
-  "apr_version": "apr 0.69.1 (712f6d433)",
+  "date": "2026-09-23T04:46Z",
+  "apr_version": "apr 0.69.1 (9b7739951)",
   "executed": 26,
-  "red": 10,
+  "red": 7,
   "inventory": [
     {
       "file": "Qwen2.5-0.5B-Instruct-IQ3_M.gguf",
@@ -124,8 +124,8 @@
     },
     {
       "file": "qwen2.5-coder-1.5b-instruct-st.apr",
-      "sha256": "4f5abd4fa2b33e17865a504ce1ee784d6e74cde6c30607be4e2e6838cc243c80",
-      "bytes": 7112199364
+      "sha256": "7e23b5bf2f790d7cb26d80d37de266c9af29092fe408123f6845d4580659745e",
+      "bytes": 3558023300
     },
     {
       "file": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
@@ -256,12 +256,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -270,32 +272,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -313,12 +321,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -327,32 +337,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -458,12 +474,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -472,32 +490,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -515,12 +539,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -529,32 +555,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -660,12 +692,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -674,32 +708,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -717,12 +757,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -731,32 +773,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -862,12 +910,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -876,32 +926,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": false
+                  "used_gpu": false,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -919,12 +975,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -933,32 +991,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": true
+                  "used_gpu": true,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -1064,12 +1128,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -1078,32 +1144,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": false
+                  "used_gpu": false,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -1121,12 +1193,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -1135,32 +1209,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": true
+                  "used_gpu": true,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -1266,12 +1346,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -1280,32 +1362,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": false
+                  "used_gpu": false,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -1323,12 +1411,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -1337,32 +1427,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": true
+                  "used_gpu": true,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -1468,12 +1564,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -1482,32 +1580,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": false
+                  "used_gpu": false,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -1525,12 +1629,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -1539,32 +1645,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": true
+                  "used_gpu": true,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -1670,12 +1782,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -1684,32 +1798,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": false
+                  "used_gpu": false,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -1727,12 +1847,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -1741,32 +1863,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": true
+                  "used_gpu": true,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -1790,9 +1918,9 @@
         "message": "Architecture 'qwen2': all 5 required ops supported by GPU"
       },
       "golden_output": {
-        "passed": false,
+        "passed": true,
         "skipped": false,
-        "message": "GPU golden generation ERRORED on a cuda build with a CUDA device: a broken GPU, not a skip (#3711): CUDA init on device 0: Capability mismatch for 'qwen2': missing GPU support for [GPU GEMV kernel for the model's quantization type]. Model carries a quant type without a verified GPU kernel (e.g. Q5_1/Q8_1/Q2_K/Q3_K/Q8_K/F16/IQ*). It will use CPU inference to avoid silent Q4_K-decode garbage (PMAT-785). Requantize to a GPU-supported type (Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K) for GPU acceleration."
+        "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
       },
       "gates": {
         "capability_match": {
@@ -1816,9 +1944,9 @@
           "message": "Skipped: Not requested (use --assert-classifier-head)"
         },
         "golden_output": {
-          "passed": false,
+          "passed": true,
           "skipped": false,
-          "message": "GPU golden generation ERRORED on a cuda build with a CUDA device: a broken GPU, not a skip (#3711): CUDA init on device 0: Capability mismatch for 'qwen2': missing GPU support for [GPU GEMV kernel for the model's quantization type]. Model carries a quant type without a verified GPU kernel (e.g. Q5_1/Q8_1/Q2_K/Q3_K/Q8_K/F16/IQ*). It will use CPU inference to avoid silent Q4_K-decode garbage (PMAT-785). Requantize to a GPU-supported type (Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K) for GPU acceleration."
+          "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
         },
         "throughput": {
           "passed": false,
@@ -1857,30 +1985,31 @@
         }
       },
       "gates_failed": [
-        "golden_output",
         "tensor_contract"
       ],
       "gates_reported": 12,
       "gates_account_for_rc": true,
       "backends": {
         "cuda": {
-          "ran": false,
+          "ran": true,
           "fallback": false,
           "escaped_special": false,
-          "rc": 14,
+          "rc": 0,
           "verbs": {
             "run": {
-              "ran": false,
-              "rc": 14
+              "ran": true,
+              "rc": 0
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -1889,39 +2018,45 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
           }
         }
       },
-      "green": false
+      "green": true
     },
     {
       "id": "inv:Qwen2.5-0.5B-Instruct-IQ4_XS.gguf",
@@ -1938,9 +2073,9 @@
         "message": "Architecture 'qwen2': all 5 required ops supported by GPU"
       },
       "golden_output": {
-        "passed": false,
+        "passed": true,
         "skipped": false,
-        "message": "GPU golden generation ERRORED on a cuda build with a CUDA device: a broken GPU, not a skip (#3711): CUDA init on device 0: Capability mismatch for 'qwen2': missing GPU support for [GPU GEMV kernel for the model's quantization type]. Model carries a quant type without a verified GPU kernel (e.g. Q5_1/Q8_1/Q2_K/Q3_K/Q8_K/F16/IQ*). It will use CPU inference to avoid silent Q4_K-decode garbage (PMAT-785). Requantize to a GPU-supported type (Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K) for GPU acceleration."
+        "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
       },
       "gates": {
         "capability_match": {
@@ -1964,9 +2099,9 @@
           "message": "Skipped: Not requested (use --assert-classifier-head)"
         },
         "golden_output": {
-          "passed": false,
+          "passed": true,
           "skipped": false,
-          "message": "GPU golden generation ERRORED on a cuda build with a CUDA device: a broken GPU, not a skip (#3711): CUDA init on device 0: Capability mismatch for 'qwen2': missing GPU support for [GPU GEMV kernel for the model's quantization type]. Model carries a quant type without a verified GPU kernel (e.g. Q5_1/Q8_1/Q2_K/Q3_K/Q8_K/F16/IQ*). It will use CPU inference to avoid silent Q4_K-decode garbage (PMAT-785). Requantize to a GPU-supported type (Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K) for GPU acceleration."
+          "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
         },
         "throughput": {
           "passed": false,
@@ -2005,30 +2140,31 @@
         }
       },
       "gates_failed": [
-        "golden_output",
         "tensor_contract"
       ],
       "gates_reported": 12,
       "gates_account_for_rc": true,
       "backends": {
         "cuda": {
-          "ran": false,
+          "ran": true,
           "fallback": false,
           "escaped_special": false,
-          "rc": 14,
+          "rc": 0,
           "verbs": {
             "run": {
-              "ran": false,
-              "rc": 14
+              "ran": true,
+              "rc": 0
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -2037,39 +2173,45 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
           }
         }
       },
-      "green": false
+      "green": true
     },
     {
       "id": "inv:Qwen2.5-0.5B-Instruct-f16.gguf",
@@ -2168,12 +2310,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -2182,39 +2326,45 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": "gibberish (fragment ' | |' repeats 3+ times)"
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
           }
         }
       },
-      "green": true
+      "green": false
     },
     {
       "id": "inv:Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
@@ -2315,12 +2465,14 @@
             },
             "chat": {
               "ran": false,
-              "rc": 8
+              "rc": 8,
+              "output_bad": null
             },
             "code": {
               "ran": false,
               "rc": 1,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -2329,32 +2481,38 @@
                 "/api/chat|stream=false": {
                   "http": 501,
                   "ok": false,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 501,
                   "ok": false,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 501,
                   "ok": false,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 501,
                   "ok": false,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 500,
                   "ok": false,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 500,
                   "ok": false,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -2462,12 +2620,14 @@
             },
             "chat": {
               "ran": false,
-              "rc": 8
+              "rc": 8,
+              "output_bad": null
             },
             "code": {
               "ran": false,
               "rc": 1,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -2476,32 +2636,38 @@
                 "/api/chat|stream=false": {
                   "http": 501,
                   "ok": false,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 501,
                   "ok": false,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 501,
                   "ok": false,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 501,
                   "ok": false,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 500,
                   "ok": false,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 500,
                   "ok": false,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -2527,7 +2693,7 @@
       "golden_output": {
         "passed": false,
         "skipped": false,
-        "message": "golden_output_thinking_on: think block unclosed within 2048 tokens (the model was still reasoning at the budget; 8901 chars generated, no answer was reached). This is not an empty answer \u2014 raise nothing, and check that the prompt is the one production sends for this architecture."
+        "message": "golden_output_thinking_on: think block unclosed within 2048 tokens (the model was still reasoning at the budget; 8901 chars generated, no answer was reached). This is not an empty answer. Before treating it as a model defect, check whether 2048 is MEASURED for this model in contracts/thinking-budgets-v1.yaml or inherited from `default` \u2014 the default's basis is one 8B model (#3907)."
       },
       "gates": {
         "capability_match": {
@@ -2553,7 +2719,7 @@
         "golden_output": {
           "passed": false,
           "skipped": false,
-          "message": "golden_output_thinking_on: think block unclosed within 2048 tokens (the model was still reasoning at the budget; 8901 chars generated, no answer was reached). This is not an empty answer \u2014 raise nothing, and check that the prompt is the one production sends for this architecture."
+          "message": "golden_output_thinking_on: think block unclosed within 2048 tokens (the model was still reasoning at the budget; 8901 chars generated, no answer was reached). This is not an empty answer. Before treating it as a model defect, check whether 2048 is MEASURED for this model in contracts/thinking-budgets-v1.yaml or inherited from `default` \u2014 the default's basis is one 8B model (#3907)."
         },
         "throughput": {
           "passed": false,
@@ -2610,12 +2776,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -2624,32 +2792,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": true
+                  "used_gpu": true,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -2758,12 +2932,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -2772,32 +2948,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": false
+                  "used_gpu": false,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -2906,16 +3088,18 @@
             },
             "chat": {
               "ran": false,
-              "rc": 8
+              "rc": 8,
+              "output_bad": null
             },
             "code": {
               "ran": false,
               "rc": 1,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": false,
-              "why": "apr serve did not answer /health within 2s (log: /tmp/tmp.B3cSN6CTn2/serve-inv:Qwen3.5-35B-A3B-UD-IQ4_XS.gguf-cuda.log)",
+              "why": "apr serve did not answer /health within 2s (log: /tmp/tmp.gKQKAybOfi/serve-inv:Qwen3.5-35B-A3B-UD-IQ4_XS.gguf-cuda.log)",
               "teardown": "clean",
               "routes": {}
             }
@@ -3023,12 +3207,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -3037,32 +3223,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": true
+                  "used_gpu": true,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -3168,12 +3360,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -3182,32 +3376,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -3313,12 +3513,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -3327,32 +3529,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -3458,12 +3666,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -3472,32 +3682,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -3603,12 +3819,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -3617,32 +3835,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -3748,12 +3972,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -3762,32 +3988,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -3802,18 +4034,18 @@
       "inventory_only": true,
       "present": true,
       "sha_ok": true,
-      "sha256": "4f5abd4fa2b33e17865a504ce1ee784d6e74cde6c30607be4e2e6838cc243c80",
+      "sha256": "7e23b5bf2f790d7cb26d80d37de266c9af29092fe408123f6845d4580659745e",
       "required": true,
-      "qa_rc": 5,
+      "qa_rc": 0,
       "capability_match": {
         "passed": true,
         "skipped": false,
         "message": "Non-GGUF format \u2014 capability check not applicable"
       },
       "golden_output": {
-        "passed": false,
+        "passed": true,
         "skipped": false,
-        "message": "golden_output: gibberish (fragment \"NavController\" repeats 3+ times)"
+        "message": "3 golden test cases passed (GPU leg SKIPPED: the dense GPU leg judges GGUF only)"
       },
       "gates": {
         "capability_match": {
@@ -3822,9 +4054,9 @@
           "message": "Non-GGUF format \u2014 capability check not applicable"
         },
         "tensor_contract": {
-          "passed": false,
+          "passed": true,
           "skipped": false,
-          "message": "49 contract violations in 27 tensors: model.layers.0.mlp.down_proj.weight: [F-DATA-QUALITY-001] DENSITY: 100.0% zeros (max 80%); model.layers.0.self_attn.v_proj.weight: [F-DATA-QUALITY-001] All values are zero (uninitialized?); model.layers.0.self_attn.v_proj.weight: [F-DATA-QUALITY-003] L2 norm ~0: tensor is effectively empty; ... and 46 more"
+          "message": "339 tensors passed all PMAT-235 contract gates"
         },
         "metadata_plausibility": {
           "passed": true,
@@ -3837,9 +4069,9 @@
           "message": "Skipped: Not requested (use --assert-classifier-head)"
         },
         "golden_output": {
-          "passed": false,
+          "passed": true,
           "skipped": false,
-          "message": "golden_output: gibberish (fragment \"NavController\" repeats 3+ times)"
+          "message": "3 golden test cases passed (GPU leg SKIPPED: the dense GPU leg judges GGUF only)"
         },
         "throughput": {
           "passed": false,
@@ -3877,10 +4109,7 @@
           "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/qwen2.5-coder-1.5b-instruct-st.json"
         }
       },
-      "gates_failed": [
-        "golden_output",
-        "tensor_contract"
-      ],
+      "gates_failed": [],
       "gates_reported": 12,
       "gates_account_for_rc": true,
       "backends": {
@@ -3896,53 +4125,61 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
-              "ran": false,
-              "rc": 1,
-              "backend": "inherited-from-spawned-serve"
+              "ran": true,
+              "rc": 0,
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
               "teardown": "escalated",
               "routes": {
                 "/api/chat|stream=false": {
-                  "http": 500,
-                  "ok": false,
-                  "used_gpu": null
+                  "http": 200,
+                  "ok": true,
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
-                  "http": 500,
-                  "ok": false,
-                  "used_gpu": null
+                  "http": 200,
+                  "ok": true,
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
-                  "http": 500,
-                  "ok": false,
-                  "used_gpu": null
+                  "http": 200,
+                  "ok": true,
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
-                  "http": 500,
-                  "ok": false,
-                  "used_gpu": null
+                  "http": 200,
+                  "ok": true,
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
-                  "http": 500,
-                  "ok": false,
-                  "used_gpu": null
+                  "http": 200,
+                  "ok": true,
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
-                  "http": 500,
-                  "ok": false,
-                  "used_gpu": null
+                  "http": 200,
+                  "ok": true,
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
           }
         }
       },
-      "green": false
+      "green": true
     },
     {
       "id": "inv:qwen2.5-coder-7b-instruct-q4_k_m.gguf",
@@ -4041,12 +4278,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -4055,32 +4294,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -4186,12 +4431,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -4200,32 +4447,38 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
@@ -4242,16 +4495,16 @@
       "sha_ok": true,
       "sha256": "9fecc3b3cd76bba89d504f29b616eedf7da85b96540e490ca5824d3f7d2776a0",
       "required": true,
-      "qa_rc": 5,
+      "qa_rc": 0,
       "capability_match": {
         "passed": true,
         "skipped": false,
         "message": "Architecture 'llama': all 4 required ops supported by GPU"
       },
       "golden_output": {
-        "passed": false,
+        "passed": true,
         "skipped": false,
-        "message": "GPU output failed (CPU passed): golden_output_gpu: gibberish (fragment \"\\n[S]\" repeats 3+ times)"
+        "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
       },
       "gates": {
         "capability_match": {
@@ -4275,9 +4528,9 @@
           "message": "Skipped: Not requested (use --assert-classifier-head)"
         },
         "golden_output": {
-          "passed": false,
+          "passed": true,
           "skipped": false,
-          "message": "GPU output failed (CPU passed): golden_output_gpu: gibberish (fragment \"\\n[S]\" repeats 3+ times)"
+          "message": "3 golden test cases passed (GPU leg judged on CUDA device 0)"
         },
         "throughput": {
           "passed": false,
@@ -4315,9 +4568,7 @@
           "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/tinyllama-1.1b-chat-v1.0.Q4_K_M.json"
         }
       },
-      "gates_failed": [
-        "golden_output"
-      ],
+      "gates_failed": [],
       "gates_reported": 12,
       "gates_account_for_rc": true,
       "backends": {
@@ -4333,12 +4584,14 @@
             },
             "chat": {
               "ran": true,
-              "rc": 0
+              "rc": 0,
+              "output_bad": null
             },
             "code": {
               "ran": true,
               "rc": 0,
-              "backend": "inherited-from-spawned-serve"
+              "backend": "inherited-from-spawned-serve",
+              "output_bad": null
             },
             "serve": {
               "probed": true,
@@ -4347,39 +4600,45 @@
                 "/api/chat|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/api/chat|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/chat/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=false": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 },
                 "/v1/completions|stream=true": {
                   "http": 200,
                   "ok": true,
-                  "used_gpu": null
+                  "used_gpu": null,
+                  "output_bad": null
                 }
               }
             }
           }
         }
       },
-      "green": false
+      "green": true
     }
   ]
 }
