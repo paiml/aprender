@@ -25,6 +25,7 @@ Exit: 0 every cell produced a row (a refused row is still a row) · 2 usage/ENV.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import signal
@@ -162,11 +163,25 @@ def driver_leg(a, prompts, thinking_modes, manifest: Path, work: Path) -> None:
     batch = work / f"{engine}-{a.source_revision[:12]}-batch.jsonl"
     batch.write_text("".join(json.dumps(it) + "\n" for it in items), encoding="utf-8")
     env = dict(os.environ, CRUX_MANIFEST=str(manifest), CRUX_WORK=str(work))
-    r = subprocess.run(["bash", str(script), "gen-batch", "--batch", str(batch), "--model", a.gguf,
-                        "--model-sha256", a.gguf_sha256, "--backend", "gpu", "--host", a.host, "--seed", "0",
-                        "--temperature", "0", "--context", str(a.context), "--source-repo", a.source_repo,
-                        "--source-revision", a.source_revision], env=env, capture_output=True, text=True)
-    print(f"{engine}: {len(items)} items, driver exit {r.returncode}" + (f" {r.stderr.strip()[-300:]}" if r.returncode else ""),
+    # Its own process group, killed whole on the way out: `uv run` does not forward SIGTERM, and a stopped
+    # leg once left VLLM::EngineCore (58 GB) orphaned on gx10 (2026-09-23).
+    proc = subprocess.Popen(["bash", str(script), "gen-batch", "--batch", str(batch), "--model", a.gguf,
+                             "--model-sha256", a.gguf_sha256, "--backend", "gpu", "--host", a.host, "--seed", "0",
+                             "--temperature", "0", "--context", str(a.context), "--source-repo", a.source_repo,
+                             "--source-revision", a.source_revision], env=env, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True, start_new_session=True)
+    try:
+        _, err = proc.communicate()
+    finally:
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGTERM)
+            try:
+                proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                os.killpg(proc.pid, signal.SIGKILL)
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGKILL)  # anything the driver left in its group
+    print(f"{engine}: {len(items)} items, driver exit {proc.returncode}" + (f" {err.strip()[-300:]}" if proc.returncode else ""),
           flush=True)
 
 

@@ -178,7 +178,7 @@ def think_cert(d, hf_doc):
     rows = []
     for leg, (eng, sha, src) in LEGROW.items():
         out = os.path.join(d, f"{leg}.json")
-        json.dump(hf_doc if eng == "hf" else {"text": "<think>ok</think><answer>4</answer>"}, open(out, "w"))
+        json.dump(hf_doc if eng in ("hf", "vllm") else {"text": "<think>ok</think><answer>4</answer>"}, open(out, "w"))
         open(out + ".err", "w").close()
         rows.append({"kind": "gen", "engine": eng, "model_sha256": sha, "host": "h", "verb": "chat", "thinking": "on",
                      "backend": "gpu", "prompt_id": "ctl", "rc": 0, "stdout": out, "stderr": out + ".err",
@@ -191,9 +191,14 @@ def think_cert(d, hf_doc):
     r = json.load(open(f"{d}/r.json"))
     return r["admitted"]["M/Q4"], r["think_closure"]["M/Q4|ctl"]["hf@bf16:hf"]
 
+OPENS = {"reported": {"prompt_opens_think": True}}
 THINKROWS = [
-  ("RED hf looped (empty text, tags only in reasoning) is recorded unclosed", {"text": "", "reasoning": "<answer>4</answer> wait <answer>4</answer>"}, [], "unclosed"),
-  ("GREEN hf closed its think and answered", {"text": "<answer>4</answer>", "reasoning": "2+2"}, ["ctl"], "closed"),
+  ("RED hf looped (opener prefilled, no </think>) is recorded unclosed",
+   dict(OPENS, text="", reasoning="x", raw_text="2+2 <answer>4</answer> wait <answer>4</answer>"), [], "unclosed"),
+  ("GREEN hf closed its think and answered",
+   dict(OPENS, text="<answer>4</answer>", reasoning="2+2", raw_text="2+2\n</think>\n<answer>4</answer>"), ["ctl"], "closed"),
+  ("RED a pre-#3990 ON row (no prompt_opens_think) is refused, even when its text looks right (#3990)",
+   {"text": "2+2 <answer>4</answer> wait <answer>4</answer>"}, [], "none"),
 ]
 for name, doc, want_adm, want_think in THINKROWS:
     with tempfile.TemporaryDirectory() as d:

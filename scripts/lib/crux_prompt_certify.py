@@ -85,20 +85,34 @@ def leg_of(row: dict, model: dict, quant_sha: str):
     return None
 
 
-def driver_raw(row: dict):  # -> (raw final reply, turns | None) or None
-    """hf and vLLM split the think block off before writing `text` (split_think): a closed one becomes
-    `reasoning` + `text`, an UNCLOSED one becomes `reasoning` + an EMPTY `text`. Rebuild the raw reply so
-    the oracle sees the same shape ggml sends it, and an unclosed think reads as unclosed, not as a
-    missing tag (#3962, the per-engine close/loop evidence the cop's ruling joins on)."""
+PRE_3990 = "pre-#3990 driver row: the template's think opener is unknown, so the reply cannot be split"
+
+
+def driver_raw(row: dict):  # -> ((raw final reply, turns | None), None) | (None, why) | None
+    """hf and vLLM split the think block off before writing `text`. Rebuild the RAW reply, so the oracle
+    sees the same shape ggml sends it:
+
+    - fixed drivers (aprender-83, PMAT-3952-crux-greedy2@d9110ca66, #3990) record `raw_text` and
+      `reported.prompt_opens_think`. Qwen3.5's ON template ends "assistant\n<think>\n", so the reply
+      starts INSIDE the think block; the opener is restored before judging.
+    - a thinking-ON row from an older driver carries neither. Its `text` may be a whole unclosed reasoning
+      block, `<answer>` drafts included, read as an answer. Such a row is refused, never judged.
+    - older thinking-OFF rows: `reasoning` + `text` (empty text = unclosed), rebuilt as before."""
     try:
         doc = json.loads(Path(row["stdout"]).read_text(encoding="utf-8"))
     except (OSError, ValueError, KeyError, TypeError):
         return None
+    reported = doc.get("reported") or {}
+    turns = doc.get("turns") or None
+    if isinstance(doc.get("raw_text"), str) and "prompt_opens_think" in reported:
+        return (("<think>" if reported["prompt_opens_think"] else "") + doc["raw_text"], turns), None
+    if row.get("thinking") == "on":
+        return None, PRE_3990
     reasoning = doc.get("reasoning")
     if not reasoning:
         return None
     text = doc.get("text") or ""
-    return "<think>" + reasoning + ("</think>" + text if text else ""), doc.get("turns") or None
+    return ("<think>" + reasoning + ("</think>" + text if text else ""), turns), None
 
 
 def think_state(raw) -> str:
@@ -113,9 +127,9 @@ def reply_of(row: dict, prompt: dict) -> tuple:
     e = judge.engine_entry(r, prompt)
     if row.get("rc") != 0:
         return None, f"exit {row.get('rc')}"
-    raw = driver_raw(row) if row.get("engine") in ("hf", "vllm") else None
-    if raw is not None:
-        return raw, None
+    got = driver_raw(row) if row.get("engine") in ("hf", "vllm") else None
+    if got is not None:
+        return got
     if e.get("answer") is None:
         return None, e.get("why") or "no answer"
     # An engine that reports no turns gives [] through the judge's parser: that is "not reported", not zero.
