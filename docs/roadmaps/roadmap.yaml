@@ -21444,3 +21444,27 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4034
+  github_issue: 4034
+  item_type: task
+  title: 'ladder: run a cell''s CPU and CUDA lanes concurrently; the CPU lane does not hold the GPU lock (#4033 lever a)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-36
+  created: 2026-09-23T00:00:00Z
+  updated: 2026-09-23T00:00:00Z
+  spec: scripts/model_ladder.sh
+  acceptance_criteria:
+  - the CPU lane's apr calls (run, chat, serve) take no fleet GPU lock and run with CUDA_VISIBLE_DEVICES set and empty, so they cannot open a CUDA context; they keep choom 1000
+  - every other lane keeps apr_locked, and the unlocked runner has exactly one caller (apr_lane's cpu branch)
+  - the CPU lane runs concurrently with the GPU lane whatever the rung's backend order; MODEL_LADDER_SERIAL_LANES=1 restores serial order
+  - a lane that yields no parseable single-key fragment is an explicit RED fragment (ran false, lane_error), never absent from the row
+  - a decline inside the background lane still ends the ladder with rc 2, and a decline on the GPU lane kills the background lane
+  - check_ladder_cpu_lane.sh proves each of these against the shipped script, and its --self-test mutants each turn a case RED
+  - the saving is measured on a real rung against the serial baseline
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
