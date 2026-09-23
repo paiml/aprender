@@ -281,10 +281,15 @@ impl GateResult {
         }
     }
 
+    /// A gate that did not run. #3965: it is NOT `passed`. `passed: true` on an unrun
+    /// check told every JSON consumer that read `passed` alone that the check had
+    /// passed: `gpu_speedup` "Skipped: CUDA not available" read as a GPU pass. A skip
+    /// is Unknown(NotRun), never a pass. Whether a skip fails the RUN is a separate
+    /// rule, and it lives in one place: [`gates_pass`].
     pub(crate) fn skipped(name: &str, reason: &str) -> Self {
         Self {
             name: name.to_string(),
-            passed: true, // Skipped gates don't fail
+            passed: false,
             message: format!("Skipped: {reason}"),
             value: None,
             threshold: None,
@@ -292,6 +297,67 @@ impl GateResult {
             skipped: true,
         }
     }
+}
+
+/// #3965: the gate registry: every gate `run_qa` dispatches, by the name it reports.
+///
+/// `run_qa` checks the gates it actually emitted against this on every run, and a
+/// mismatch is a FAILED `gate_registry` gate, not a warning, so the list cannot
+/// drift from the pipeline silently. It is published in the report as
+/// `gates_registered`, so a JSON consumer derives what to expect from the binary
+/// it ran instead of from a number it once counted.
+pub(crate) const QA_GATES: [&str; 12] = [
+    "capability_match",
+    "tensor_contract",
+    "metadata_plausibility",
+    "classifier_head",
+    "golden_output",
+    "throughput",
+    "ollama_parity",
+    "gpu_speedup",
+    "format_parity",
+    "ptx_parity",
+    "gpu_state_isolation",
+    "performance_regression",
+];
+
+/// `None` when the emitted gates are exactly [`QA_GATES`] (order-free, each once),
+/// otherwise the reason.
+#[must_use]
+pub(crate) fn gate_registry_mismatch(gates: &[GateResult]) -> Option<String> {
+    let mut emitted: Vec<&str> = gates.iter().map(|g| g.name.as_str()).collect();
+    emitted.sort_unstable();
+    let mut want: Vec<&str> = QA_GATES.to_vec();
+    want.sort_unstable();
+    if emitted == want {
+        return None;
+    }
+    let missing: Vec<&str> = want
+        .iter()
+        .copied()
+        .filter(|w| !emitted.contains(w))
+        .collect();
+    let extra: Vec<&str> = emitted
+        .iter()
+        .copied()
+        .filter(|e| !want.contains(e))
+        .collect();
+    Some(format!(
+        "emitted gates do not match the registry: missing {missing:?}, unregistered or repeated {extra:?}"
+    ))
+}
+
+/// #3965: the RUN verdict over a set of gates, in ONE place.
+///
+/// Every executed gate must pass. A skipped gate does not fail the run: that rule is
+/// unchanged, and `check_min_executed` still bounds how many may skip. What changed
+/// is that a skip no longer claims `passed` at the gate level, so this rule has to
+/// say `skipped` explicitly. Before, it was hidden inside `all(|g| g.passed)`.
+/// Several tests re-implemented that expression inline instead of calling
+/// production; they now call this, so they test the code that ships.
+#[must_use]
+pub(crate) fn gates_pass(gates: &[GateResult]) -> bool {
+    gates.iter().all(|g| g.passed || g.skipped)
 }
 
 /// System information captured during QA run
@@ -362,6 +428,13 @@ pub struct QaReport {
     /// Number of gates that were skipped
     #[serde(default)]
     pub gates_skipped: usize,
+    /// #3965 / SHIP-006: every gate this binary runs, from [`QA_GATES`]. A consumer
+    /// compares `gates` against THIS instead of a count it hardcoded. SHIP-006
+    /// required exactly 8 while apr qa emitted 12, so it could never go green again.
+    /// A report from a binary predating the registry deserializes to an empty list,
+    /// which consumers must treat as "cannot check", never as "nothing required".
+    #[serde(default)]
+    pub gates_registered: Vec<String>,
     /// Total duration
     pub total_duration_ms: u64,
     /// Timestamp (ISO 8601)
@@ -572,6 +645,7 @@ pub(crate) fn qa_report_for_error(path: &Path, e: &CliError) -> QaReport {
         )],
         gates_executed: 0,
         gates_skipped: 0,
+        gates_registered: Vec::new(),
         total_duration_ms: 0,
         timestamp: chrono::Utc::now().to_rfc3339(),
         summary: why,

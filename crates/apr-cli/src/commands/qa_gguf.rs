@@ -215,7 +215,8 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     let capability_match_failed = gates
         .iter()
         .find(|g| g.name == "capability_match")
-        .map_or(false, |g| !g.passed);
+        // #3965: a skipped gate is not a FAILED one, now that skips are passed:false.
+        .map_or(false, |g| !g.passed && !g.skipped);
 
     // #3477: an architecture the GPU declines (#3090) but the CPU forward runs
     // (qwen35, #3091) certifies on the CPU rung — the CPU gates run for real and
@@ -410,7 +411,18 @@ fn finalize_qa_report(
 
     warn_excessive_skips(config.json, gates_executed, gates_skipped);
 
-    let mut passed = gates.iter().all(|g| g.passed);
+    // #3965: the pipeline must emit exactly the registry, or the report says so.
+    let mut gates = gates;
+    if let Some(why) = gate_registry_mismatch(&gates) {
+        gates.push(GateResult::failed(
+            "gate_registry",
+            &why,
+            None,
+            None,
+            std::time::Duration::ZERO,
+        ));
+    }
+    let mut passed = gates_pass(&gates);
     if !check_min_executed(config, gates_executed, &mut passed) && !config.json {
         println!(
             "  {} Only {} gates executed, minimum required: {}",
@@ -431,6 +443,7 @@ fn finalize_qa_report(
         gates,
         gates_executed,
         gates_skipped,
+        gates_registered: QA_GATES.iter().map(|g| (*g).to_string()).collect(),
         total_duration_ms: total_duration.as_millis() as u64,
         timestamp: chrono::Utc::now().to_rfc3339(),
         summary,

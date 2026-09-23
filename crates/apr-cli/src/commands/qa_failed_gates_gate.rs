@@ -6,7 +6,7 @@
             GateResult::passed("golden_output", "ok", None, None, Duration::from_secs(1)),
             GateResult::skipped("ollama_parity", "not available"),
         ];
-        let passed = gates.iter().all(|g| g.passed);
+        let passed = gates_pass(&gates); // #3965: the production verdict, not a copy
         assert!(passed);
         let summary = if passed {
             "All QA gates passed".to_string()
@@ -379,6 +379,7 @@
             summary: "All passed".to_string(),
             gates_executed: 0,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             system_info: None,
         };
         let json = serde_json::to_string_pretty(&report).expect("pretty serialize");
@@ -407,6 +408,7 @@
             summary: String::new(),
             gates_executed: 0,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             system_info: None,
         };
         // This is what run() does: serde_json::to_string_pretty(&report).unwrap_or_default()
