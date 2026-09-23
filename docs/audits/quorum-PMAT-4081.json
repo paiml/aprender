@@ -1,0 +1,91 @@
+{
+  "ticket": "PMAT-4081",
+  "pr": 4092,
+  "round": 6,
+  "head": "334f6bd3f66501184e0c66d9ac5f3e0c87e8455e",
+  "base": "origin/main",
+  "executor": "claude-sequential",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude"
+  },
+  "degraded": "same-family",
+  "degraded_reason": "agy quota-exhausted on gemini, openai and claude families (pre-check 429s, rounds 0 and 6); operator standing rule: fall back to Claude Code lanes, never the author model",
+  "lanes": [
+    {
+      "verdict": "PASS",
+      "summary": "Independently re-verified the receipt at head 334f6bd3f: ProofLevel::method strings match compute_proof_level_with_grounding's gating including the round-4 vacuity edge cases; the README table and all three ladder-doc copies derive from / are checked against the enum; the accept test runs non-vacuously. Full suites (1706/0, 97/0, 15/0), fmt, clippy -D warnings, pv validate/lint, and census regeneration match. Two receipt mutations reproduced in a scratch worktree (RED with the stated messages, GREEN on restore). No stray old labels in Rust source; the #4106 deferral matches an independent grep.",
+      "findings": [
+        {
+          "file": "crates/aprender-contracts/src/levels.rs",
+          "line": 740,
+          "claim": "The three doc copies are kept in sync by a failing test, not a writer command like readme_sync; a method change requires hand-copying the printed block (non-blocking).",
+          "grounding": "cited",
+          "fix": "Optional: a generator target."
+        },
+        {
+          "file": "crates/aprender-contracts/src/levels.rs",
+          "line": 654,
+          "claim": "stale_level_pairings is a targeted anti-regression heuristic, not a general correctness checker (non-blocking).",
+          "grounding": "cited"
+        }
+      ],
+      "lane": 1,
+      "model": "claude-sonnet-5",
+      "family": "claude",
+      "angle": "general"
+    },
+    {
+      "verdict": "PASS",
+      "summary": "Independently reproduced every claimed mutation (readme_gen string, book-copy doc row, the ONT-2a grounded>0 guard, the is_fully_bound total>0 guard) in a disposable worktree; all turned the relevant tests RED, and none of the new/changed tests are vacuous. No existing test or gate was weakened: explain_tests changes are relabels or strict additions, lint/rules.rs and scoring/codebase.rs edits are non-functional. explain_render and the E0-E5 relabel are instances of the same second-definition defect, not scope creep. One latent, non-blocking precision gap in the detector.",
+      "findings": [
+        {
+          "file": "crates/aprender-contracts/src/levels.rs",
+          "line": 89,
+          "claim": "The Lean/L5 check is suppressed if 'binding' appears anywhere on the line (line-scoped, not proximity-scoped); measured with a constructed line the shipped docs do not contain (latent, non-blocking).",
+          "grounding": "measured",
+          "fix": "Proximity-scope the binding exemption."
+        },
+        {
+          "file": "crates/aprender-contracts/src/levels.rs",
+          "line": 736,
+          "claim": "The L4/L5 wording asserts are self-referential; the behaviour is independently pinned by proof_status_tests, verified by mutation (not a gap in aggregate).",
+          "grounding": "measured"
+        }
+      ],
+      "lane": 2,
+      "model": "claude-sonnet-5",
+      "family": "claude",
+      "angle": "tests and gates"
+    },
+    {
+      "verdict": "PASS",
+      "summary": "Every literal ticket requirement met and reproduced: accept test at exactly levels::readme_and_ladder_docs_match_enum (non-vacuous), readme_gen table from ProofLevel::method/Display, all three copies carry the byte-identical block under the exact marker, and the EV-8b wording matches is_lean_proved_with_grounding/is_l4_self_declared. Three RED mutations reproduced with the stated messages. All receipt counts matched live measurement at 334f6bd3f; probe and accept command ran as specified; #4106 lists exactly the 9 files a full-tree grep finds. No gate weakened, no scope creep, no workflow touched.",
+      "findings": [
+        {
+          "file": "docs/roadmaps/entries/PMAT-4081.yaml",
+          "line": 5,
+          "claim": "status planned / 0% though the PR closes #4081; matches repo convention (non-refuting).",
+          "grounding": "cited"
+        },
+        {
+          "file": "PR #4092 description",
+          "claim": "Round 2 section says 'fixed in the next commit' without the hash 9959fcb2e (style only).",
+          "grounding": "measured"
+        }
+      ],
+      "lane": 3,
+      "model": "claude-sonnet-5",
+      "family": "claude",
+      "angle": "receipt truth and ticket fidelity"
+    }
+  ],
+  "agreed": true,
+  "prior_rounds": [
+    "r1 lane2 FAIL (stale prose)",
+    "r2 lane2 FAIL (EV-8b note, L3 text)",
+    "r3 lane1 FAIL (detector direction, counts)",
+    "r4 lane1 FAIL (vacuous L4/L5)",
+    "r5 lane1 FAIL (pv explain)"
+  ]
+}
