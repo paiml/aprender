@@ -24,7 +24,7 @@ def log(text: str) -> Path:
 
 CASES = [
     # (name, logs, must contain, must NOT contain)
-    ("real gx10 root cause is quoted", [HERE / "fixtures" / "gx10-memory-profiling.log"],
+    ("real gx10 root cause is quoted", [HERE / "fixtures" / "gx10-memory-profiling.txt"],
      "engine core: AssertionError: Error in memory profiling", None),
     ("a clean log adds nothing", [log("INFO all good\n")], None, "engine core:"),
     ("the generic parent line is never its own root", [log(f"RuntimeError: {GENERIC}\n")], None, "engine core:"),

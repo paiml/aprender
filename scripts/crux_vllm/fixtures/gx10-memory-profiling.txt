@@ -1,0 +1,6 @@
+(EngineCore pid=2297517) ERROR 09-23 07:19:24 [core.py:1366]     return func(*args, **kwargs)
+(EngineCore pid=2297517) ERROR 09-23 07:19:24 [core.py:1366]            ^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2297517) ERROR 09-23 07:19:24 [core.py:1366]   File "~/.local/share/crux/vllm-venv/lib/python3.12/site-packages/vllm/v1/worker/gpu_worker.py", line 600, in determine_available_memory
+(EngineCore pid=2297517) ERROR 09-23 07:19:24 [core.py:1366]     assert init_free_memory >= free_gpu_memory, (
+(EngineCore pid=2297517) ERROR 09-23 07:19:24 [core.py:1366]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=2297517) ERROR 09-23 07:19:24 [core.py:1366] AssertionError: Error in memory profiling. Initial free memory 105.58 GiB, current free memory 110.14 GiB. This happens when other processes sharing the same container release GPU memory while vLLM is profiling during initialization. To fix this, ensure consistent GPU memory allocation or isolate vLLM in its own container.
