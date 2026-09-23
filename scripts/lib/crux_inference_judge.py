@@ -226,6 +226,10 @@ LLAMA_CLI_THINK = (("[Start thinking]", "<think>"), ("[End thinking]", "</think>
 
 #: realizar logs `formatted_prompt` as `{:?}` of its first 200 BYTES (infer/mod.rs prepare_tokens_gguf).
 FORMATTED_PROMPT_LOG_BYTES = 200
+#: A cut at 200 bytes that is floored to a char boundary (the fix #4018 proposes for the slice that panics
+#: mid-char) can log as few as 197 bytes: a UTF-8 char is at most 4 bytes. So any logged length within 3
+#: of the limit may be a CUT prompt, and is unknown -- correct before and after #4018.
+FORMATTED_PROMPT_WHOLE_BELOW = FORMATTED_PROMPT_LOG_BYTES - 3
 _DEBUG_ESCAPE = re.compile(r"\\(u\{([0-9a-fA-F]{1,6})\}|.)", re.S)
 
 
@@ -254,7 +258,7 @@ def rendered_opens_think(rendered):
     raw = undebug(rendered)
     if raw.endswith("<think>\n"):
         return True
-    return False if len(raw.encode("utf-8")) < FORMATTED_PROMPT_LOG_BYTES else None
+    return False if len(raw.encode("utf-8")) < FORMATTED_PROMPT_WHOLE_BELOW else None
 
 
 def prompt_opens_think(rows):
