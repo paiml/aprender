@@ -546,8 +546,11 @@ COV_CARGO_ENV := $(if $(COV_TARGET_DIR),CARGO_TARGET_DIR=$(COV_TARGET_DIR))
 #   two-phase, unscoped report  -> LH=0   LF=0    (empty)
 #   report --summary-only -p A -p B -> LH=686 LF=737  (93.08%)
 #   single-phase --lcov --output-path -> LH=686 LF=737  (93.08%)
-# Single-phase is chosen over an explicit -p list because the invocation that selects the
-# scope is the one that writes the report, so the two cannot drift apart again. profraw
+# #4023 brings two-phase BACK, deliberately: aprender-serve's lib tests cannot run in one
+# process on a 28 GB runner (#4028), so they run as several --no-report processes and one
+# report merges them. It is safe because every report is now scoped by an explicit `-p` list
+# DERIVED from `cargo metadata` (scripts/coverage_report_scope.py), the verified alternative
+# above, and scripts/check_coverage_report_scoped.sh refuses any unscoped `llvm-cov report`. profraw
 # survive it (31 present afterwards), so coverage-html still has data to work from.
 .PHONY: coverage-check contracts
 
@@ -616,6 +619,8 @@ contracts:
 # which pass without a GPU), so the number measured a subset over the whole denominator.
 coverage: ## Coverage summary + threshold check (warm: ~3min)
 	@echo "📊 Running coverage ($(COV_THRESHOLD)%+ threshold)..."
+	@# #4023: refuse before any test runs if a `llvm-cov report` anywhere would cover only the facade.
+	@scripts/check_coverage_report_scoped.sh
 	@which cargo-llvm-cov > /dev/null 2>&1 || { cargo install cargo-llvm-cov --locked || exit 1; }
 	$(COV_REFUSE_GLOBAL_MOLD)
 	@# Pre-clean: remove stale profraw files to avoid LLVM version mismatch
@@ -687,14 +692,17 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	@# 35892421393 printed "Finished report saved" and then found no (non-empty) lcov. Measured with
 	@# cargo-llvm-cov 0.9.0 (CI's version) on a root-package workspace: without --workspace the
 	@# lcov held only src/lib.rs; with it, every member.
-	@$(COV_CARGO_ENV) cargo llvm-cov report --workspace --exclude aprender-gpu \
+	@# SCOPE IS EXPLICIT: an unscoped `report` covers only the root facade (empty lcov, run
+	@# 35892421393 and the single-phase note above); `report --exclude` is rejected by 0.9.0 (run
+	@# 35901458111) and `report --workspace` by older versions. A derived `-p` list works on both.
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py --exclude aprender-gpu) \
 		--lcov --output-path $(CURDIR)/target/coverage/lcov.info \
 		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" 2>&1 | tee -a target/coverage/test.log; \
 	rc=$${PIPESTATUS[0]}; \
 	echo "   lcov: $$(ls -la $(CURDIR)/target/coverage/lcov.info 2>&1)"; \
 	echo "   lcov files under the workspace: $$(find $(CURDIR) -name lcov.info -newer target/coverage/.exclude-re 2>/dev/null | tr '\n' ' ')"; \
 	echo "   profraw files: $$(find $${CARGO_TARGET_DIR:-$(CURDIR)/target} -name '*.profraw' 2>/dev/null | wc -l)"; \
-	if [ "$$rc" -ne 0 ]; then echo "❌ coverage DID NOT MEASURE: cargo llvm-cov report exited $$rc. No coverage verdict."; exit 1; fi
+	if [ "$$rc" -ne 0 ]; then echo "❌ coverage DID NOT MEASURE: the merged report step exited $$rc. No coverage verdict."; exit 1; fi
 	@# #3839: --ignore-run-fail keeps one failing test from blanking the number (the 2026-09-23
 	@# nightly wrote no lcov because of one timing test). Failures are LISTED, not hidden, and
 	@# every test run here is also run by CI's workspace-test, which fails on them.
@@ -749,8 +757,8 @@ coverage-html: ## Generate HTML + LCOV reports from last coverage run
 	$(COV_REFUSE_GLOBAL_MOLD)
 	@mkdir -p target/coverage
 	@printf '%s' '$(COVERAGE_EXCLUDE_REGEX)' > target/coverage/.exclude-re
-	@$(COV_CARGO_ENV) cargo llvm-cov report --html --output-dir target/coverage/html --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
-	@$(COV_CARGO_ENV) cargo llvm-cov report --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py --exclude aprender-gpu) --html --output-dir target/coverage/html --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py --exclude aprender-gpu) --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
 	@echo "📍 HTML: target/coverage/html/index.html"
 
 # Full coverage: All features (for CI, slower)
@@ -765,10 +773,10 @@ coverage-full: ## Full coverage report (all features, CI only)
 		$(COV_CARGO_ENV) cargo llvm-cov test --no-report --workspace --lib --all-features \
 		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" \
 		-- --skip prop_gbm_expected_value --skip slow --skip heavy --skip benchmark --skip h12_ --skip j2_
-	@$(COV_CARGO_ENV) cargo llvm-cov report --html --output-dir target/coverage/html --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
-	@$(COV_CARGO_ENV) cargo llvm-cov report --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py) --html --output-dir target/coverage/html --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py) --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
 	@echo ""
-	@$(COV_CARGO_ENV) cargo llvm-cov report --summary-only --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
+	@$(COV_CARGO_ENV) cargo llvm-cov report $$(python3 scripts/coverage_report_scope.py) --summary-only --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
 
 # Open coverage report in browser
 coverage-open: ## Open HTML coverage report in browser
