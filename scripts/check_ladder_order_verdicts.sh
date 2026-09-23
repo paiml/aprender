@@ -22,7 +22,9 @@
 # inventory record are also checked against the fixture's own files. The largest rung is a symlink, so its
 # planned size must follow the link.
 # Two --dry-runs go through the DEFAULT --certification resolution: this version's file, else the newest by
-# version. A dry run must invoke no measuring verb.
+# version. A dry run must invoke no measuring verb. One rung's file also sits in the inventory dir: it is recorded
+# as held and measured once. `--only <rung>` measures one row and still records every held model (#3936). A
+# planner that fails declines the sweep, real or dry, with no receipt.
 #
 # Usage: bash scripts/check_ladder_order_verdicts.sh [--self-test]
 # Exit: 0 clean is order-independent AND leaky is caught · 1 a case landed wrong · 2 could not check.
@@ -65,16 +67,17 @@ printf '"/v1/chat/completions"\n' > "$ROOT/crates/aprender-serve/src/api/router.
 mkdir -p "$TMP/real"
 head -c 4096 /dev/zero > "$TMP/real/leaky-big.gguf"
 ln -s "$TMP/real/leaky-big.gguf" "$TMP/models/leaky-big.gguf"
-head -c 2048 /dev/zero > "$TMP/models/victim-small.gguf"
+# The victim rung's file lives in the INVENTORY dir, as fleet model dirs hold it: it must be recorded as held
+# and measured ONCE, as the rung, never a second time as inv:victim-small.gguf.
+head -c 2048 /dev/zero > "$TMP/inv/victim-small.gguf"
 head -c 3000 /dev/zero > "$TMP/inv/middle-inv.gguf"   # an INVENTORY-only model, sized between the two rungs
 INV_SHA=$(sha256sum "$TMP/inv/middle-inv.gguf" | cut -d' ' -f1)
 LEAKY_SHA=$(sha256sum "$TMP/models/leaky-big.gguf" | cut -d' ' -f1)
-VICTIM_SHA=$(sha256sum "$TMP/models/victim-small.gguf" | cut -d' ' -f1)
-[ "$LEAKY_SHA" != "$VICTIM_SHA" ] || { head -c 2047 /dev/zero > "$TMP/models/victim-small.gguf"; printf 'v' >> "$TMP/models/victim-small.gguf"; VICTIM_SHA=$(sha256sum "$TMP/models/victim-small.gguf" | cut -d' ' -f1); }
+VICTIM_SHA=$(sha256sum "$TMP/inv/victim-small.gguf" | cut -d' ' -f1)
 cat > "$ROOT/contracts/model-capability-ladder-v1.yaml" <<EOF
 ladder:
   serve_health: {stall_s: 2, ceiling_s: 5}
-  inventory: {dirs: ["$TMP/inv"], patterns: ["*-inv.gguf"], backends: [cpu]}
+  inventory: {dirs: ["$TMP/inv"], patterns: ["*-inv.gguf", "victim-*.gguf"], backends: [cpu]}
   rungs:
     - {id: leaky, gguf: leaky-big.gguf, sha256: $LEAKY_SHA, backends: [cpu], required: true}
     - {id: victim, gguf: victim-small.gguf, sha256: $VICTIM_SHA, backends: [cpu], required: true}
@@ -127,9 +130,12 @@ PY
 chmod +x "$TMP/apr"
 
 # ---- one ladder run -> {"order": [ids, as measured], "rows": {id: normalized row}}
+clear_hogs() { # every run starts with no orphan from a previous one
+  for f in "$HOGS"/*.pid; do [ -f "$f" ] && { kill -9 "$(cat "$f")" 2> /dev/null; rm -f "$f"; }; done
+}
 ladder_run() { # <leak 0|1> <certification> <tag>
   local out="$TMP/out-$3" log="$TMP/log-$3" rc
-  for f in "$HOGS"/*.pid; do [ -f "$f" ] && { kill -9 "$(cat "$f")" 2> /dev/null; rm -f "$f"; }; done
+  clear_hogs
   FAKE_LEAK="$1" FAKE_HOGS="$HOGS" DOGFOOD_ALLOW_UNPINNED=1 APR="$TMP/apr" APR_MODELS_DIR="$TMP/models" \
     MODEL_LADDER_ROOT="$ROOT" MODEL_LADDER_GPU_LOCK="$TMP/gpu.lock" MODEL_LADDER_LOCK_WAIT=5 \
     MODEL_LADDER_INVENTORY_DIRS="$TMP/inv" \
@@ -141,7 +147,7 @@ ladder_run() { # <leak 0|1> <certification> <tag>
   python3 - "$out/lambda.json" "$log" <<'PY'
 import json, re, sys
 R = json.load(open(sys.argv[1]))
-rows = R.get("rows") or R.get("rungs") or []
+rows = R.get("rungs") or []
 def norm(v):
     if isinstance(v, dict):
         return {k: norm(x) for k, x in sorted(v.items()) if not re.search(r"(^t_|_s$|_ms$|waited|log_tail|stderr_tail|engine_log|path)", k)}
@@ -194,18 +200,19 @@ for leak in 0 1; do
   fi
   ia=$(python3 -c 'import json,sys; print(",".join(json.loads(sys.argv[1])["inventory"]))' "$A")
   ib=$(python3 -c 'import json,sys; print(",".join(json.loads(sys.argv[1])["inventory"]))' "$B")
-  if [ "$ia" = "middle-inv.gguf" ] && [ "$ib" = "middle-inv.gguf" ]; then
-    case_line ok "$name: the held inventory model is recorded in both receipts" "$ia | $ib"
+  if [ "$ia" = "middle-inv.gguf,victim-small.gguf" ] && [ "$ib" = "middle-inv.gguf,victim-small.gguf" ]; then
+    case_line ok "$name: both held models are recorded, and the rung's file is measured once" "$ia | $ib"
   else
     case_line FAIL "$name: the inventory record is missing or wrong" "${ia:-none} | ${ib:-none}"
   fi
   for J in "$A" "$B"; do
     got=$(python3 -c 'import json,sys; a=json.loads(sys.argv[1])["absolute"]; print(json.dumps(a, sort_keys=True))' "$J")
-    want=$(printf '{"inventory": [["middle-inv.gguf", "%s", 3000]], "rows": {"inv:middle-inv.gguf": "%s", "leaky": "%s", "victim": "%s"}}' \
-           "$INV_SHA" "$INV_SHA" "$LEAKY_SHA" "$VICTIM_SHA")
+    want=$(printf '{"inventory": [["middle-inv.gguf", "%s", 3000], ["victim-small.gguf", "%s", 2048]], "rows": {"inv:middle-inv.gguf": "%s", "leaky": "%s", "victim": "%s"}}' \
+           "$INV_SHA" "$VICTIM_SHA" "$INV_SHA" "$LEAKY_SHA" "$VICTIM_SHA")
     if [ "$got" = "$want" ]; then case_line ok "$name: every row's sha256 and the inventory record are the files' own" "exact"
     else case_line FAIL "$name: a row or inventory record does not describe its file" "$got"; fi
   done
+  [ "$leak" = 0 ] && CLEAN_A=$A
   verdict=$(compare "$A" "$B")
   if [ "$leak" = 0 ]; then
     [ "$verdict" = same ] && case_line ok "clean: every cell's row is the same in both orders" "$verdict" \
@@ -215,6 +222,47 @@ for leak in 0 1; do
                            || case_line FAIL "leaky (positive control): an order-dependent leak went unseen" "$verdict"
   fi
 done
+
+# ---- --only <rung>: ONE row measured, and the receipt still records every held model (#3936)
+only_out="$TMP/out-only"
+clear_hogs
+# the verdict --only must reproduce: the same cell's verdict in the clean full sweep
+ONLY_GREEN=$(python3 -c 'import json,sys; print(str(bool(json.loads(sys.argv[1])["rows"]["leaky"].get("green"))).lower())' "$CLEAN_A")
+FAKE_LEAK=0 FAKE_HOGS="$HOGS" DOGFOOD_ALLOW_UNPINNED=1 APR="$TMP/apr" APR_MODELS_DIR="$TMP/models" \
+  MODEL_LADDER_ROOT="$ROOT" MODEL_LADDER_GPU_LOCK="$TMP/gpu.lock" MODEL_LADDER_LOCK_WAIT=5 \
+  MODEL_LADDER_INVENTORY_DIRS="$TMP/inv" \
+  timeout 300 bash "$ROOT/scripts/model_ladder.sh" --host lambda --out "$only_out" --only leaky \
+    --certification "$TMP/cert-victim-first.json" > "$TMP/log-only" 2>&1
+only_got=$(python3 -c '
+import json, sys
+R = json.load(open(sys.argv[1]))
+rows = R.get("rungs") or []
+green = ",".join(str(bool(r.get("green"))).lower() for r in rows)
+print("rows=" + ",".join(r.get("id") for r in rows) + " green=" + green
+      + " inventory=" + ",".join(sorted(x.get("file") for x in R.get("inventory") or [])))
+' "$only_out/lambda.only-leaky.json" 2> /dev/null)
+[ "$only_got" = "rows=leaky green=$ONLY_GREEN inventory=middle-inv.gguf,victim-small.gguf" ] \
+  && case_line ok "--only leaky: one row, the sweep's verdict, every held model recorded" "$only_got" \
+  || case_line FAIL "--only leaky: wrong rows, or a held model's record was dropped" "${only_got:-no receipt}"
+
+# ---- a planner that FAILS must decline the sweep (rc 2, no receipt), for a real run and a dry run alike
+cp "$ROOT/scripts/lib/ladder_order.py" "$TMP/ladder_order.good"
+printf 'import sys\nsys.exit(1)\n' > "$ROOT/scripts/lib/ladder_order.py"
+for mode in real dry; do
+  fout="$TMP/out-planfail-$mode"; flag=""; [ "$mode" = dry ] && flag="--dry-run"
+  FAKE_LEAK=0 FAKE_HOGS="$HOGS" DOGFOOD_ALLOW_UNPINNED=1 APR="$TMP/apr" APR_MODELS_DIR="$TMP/models" \
+    MODEL_LADDER_ROOT="$ROOT" MODEL_LADDER_GPU_LOCK="$TMP/gpu.lock" MODEL_LADDER_LOCK_WAIT=5 \
+    MODEL_LADDER_INVENTORY_DIRS="$TMP/inv" \
+    timeout 120 bash "$ROOT/scripts/model_ladder.sh" --host lambda --out "$fout" $flag \
+      --certification "$TMP/cert-victim-first.json" > "$TMP/log-planfail-$mode" 2>&1
+  frc=$?
+  if [ "$frc" = 2 ] && [ ! -e "$fout/lambda.json" ] && grep -q "cell order could not be built" "$TMP/log-planfail-$mode"; then
+    case_line ok "a failing planner declines the $mode run (rc 2, no receipt)" "rc $frc"
+  else
+    case_line FAIL "a failing planner did not decline the $mode run" "rc $frc"
+  fi
+done
+cp "$TMP/ladder_order.good" "$ROOT/scripts/lib/ladder_order.py"
 
 # ---- --dry-run through the DEFAULT --certification resolution (no flag): this version's file wins; with none,
 # the newest by VERSION order (0.0.10 is newer than 0.0.9, which a plain sort gets wrong). A dry run must invoke
