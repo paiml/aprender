@@ -1,0 +1,400 @@
+{
+ "schema": "apr-model-ladder-receipt/v2",
+ "host": "lambda",
+ "version": "1.2.3",
+ "sha": "abc1234",
+ "gpu": "x",
+ "cc": "9.0",
+ "executed": 3,
+ "red": 1,
+ "rungs": [
+  {
+   "id": "ctrl-q4km",
+   "present": true,
+   "sha_ok": true,
+   "required": true,
+   "capability_match": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "golden_output": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "backends": {
+    "cpu": {
+     "ran": true,
+     "fallback": false,
+     "rc": 0,
+     "verbs": {
+      "run": {
+       "ran": true,
+       "rc": 0
+      },
+      "chat": {
+       "ran": true,
+       "rc": 0
+      },
+      "code": {
+       "ran": true,
+       "rc": 0
+      },
+      "serve": {
+       "probed": true,
+       "routes": {
+        "/api/chat|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/api/chat|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        }
+       },
+       "teardown": "clean"
+      }
+     }
+    },
+    "cuda": {
+     "ran": true,
+     "fallback": false,
+     "rc": 0,
+     "verbs": {
+      "run": {
+       "ran": true,
+       "rc": 0
+      },
+      "chat": {
+       "ran": true,
+       "rc": 0
+      },
+      "code": {
+       "ran": true,
+       "rc": 0
+      },
+      "serve": {
+       "probed": true,
+       "routes": {
+        "/api/chat|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/api/chat|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        }
+       },
+       "teardown": "clean"
+      }
+     }
+    }
+   },
+   "green": true,
+   "file": "c.gguf",
+   "qa_rc": 0
+  },
+  {
+   "id": "q3-q4km",
+   "present": true,
+   "sha_ok": true,
+   "required": true,
+   "capability_match": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "golden_output": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "backends": {
+    "cpu": {
+     "ran": true,
+     "fallback": false,
+     "rc": 0,
+     "verbs": {
+      "run": {
+       "ran": true,
+       "rc": 0
+      },
+      "chat": {
+       "ran": true,
+       "rc": 0
+      },
+      "code": {
+       "ran": true,
+       "rc": 0
+      },
+      "serve": {
+       "probed": true,
+       "routes": {
+        "/api/chat|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/api/chat|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        }
+       },
+       "teardown": "clean"
+      }
+     }
+    },
+    "cuda": {
+     "ran": true,
+     "fallback": false,
+     "rc": 0,
+     "verbs": {
+      "run": {
+       "ran": true,
+       "rc": 0
+      },
+      "chat": {
+       "ran": true,
+       "rc": 0
+      },
+      "code": {
+       "ran": true,
+       "rc": 0
+      },
+      "serve": {
+       "probed": true,
+       "routes": {
+        "/api/chat|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/api/chat|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        }
+       },
+       "teardown": "clean"
+      }
+     }
+    }
+   },
+   "green": true,
+   "file": "q.gguf",
+   "qa_rc": 0
+  },
+  {
+   "id": "inv:Extra-Q4_K_M.gguf",
+   "file": "Extra-Q4_K_M.gguf",
+   "inventory_only": true,
+   "present": true,
+   "sha_ok": true,
+   "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+   "required": true,
+   "capability_match": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "golden_output": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "backends": {
+    "cuda": {
+     "ran": true,
+     "fallback": false,
+     "rc": 0,
+     "verbs": {
+      "run": {
+       "ran": true,
+       "rc": 0
+      },
+      "chat": {
+       "ran": true,
+       "rc": 0
+      },
+      "code": {
+       "ran": true,
+       "rc": 0
+      },
+      "serve": {
+       "probed": true,
+       "routes": {
+        "/api/chat|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/api/chat|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/chat/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=false": {
+         "http": 200,
+         "ok": true
+        },
+        "/v1/completions|stream=true": {
+         "http": 200,
+         "ok": true
+        }
+       },
+       "teardown": "clean"
+      }
+     }
+    }
+   },
+   "green": true,
+   "qa_rc": 0
+  },
+  {
+   "id": "inv:Qwen3.5-35B-A3B-UD-IQ4_XS.gguf",
+   "file": "Qwen3.5-35B-A3B-UD-IQ4_XS.gguf",
+   "inventory_only": true,
+   "present": true,
+   "sha_ok": true,
+   "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+   "required": true,
+   "capability_match": {
+    "passed": false,
+    "skipped": false,
+    "message": "apr run: this build has no CUDA forward for architecture 'qwen35moe': Qwen3.5 MoE is a hybrid (Gated DeltaNet / SSM layers + mixture-of-experts), and the qwen3moe CUDA forward (#3714) does not run SSM layers. Re-run without --gpu to use the CPU path deliberately. This is a refusal, not a fallback: nothing was loaded and nothing was generated."
+   },
+   "golden_output": {
+    "passed": true,
+    "skipped": false,
+    "message": "ok"
+   },
+   "backends": {
+    "cuda": {
+     "ran": false,
+     "fallback": false,
+     "rc": 1,
+     "verbs": {
+      "run": {
+       "ran": false,
+       "rc": 1,
+       "refusal": "error: CUDA out of memory",
+       "stdout_bytes": 0
+      },
+      "chat": {
+       "ran": false,
+       "rc": 1
+      },
+      "code": {
+       "ran": true,
+       "rc": 0
+      },
+      "serve": {
+       "probed": false,
+       "why": "apr serve --gpu refused the architecture",
+       "routes": {},
+       "teardown": "clean"
+      }
+     }
+    }
+   },
+   "green": false,
+   "qa_rc": 1,
+   "architecture": "qwen35moe",
+   "gates_failed": [
+    "capability_match"
+   ],
+   "gates_account_for_rc": true
+  }
+ ],
+ "inventory": [
+  {
+   "file": "c.gguf",
+   "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+   "bytes": 1
+  },
+  {
+   "file": "q.gguf",
+   "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+   "bytes": 1
+  },
+  {
+   "file": "Extra-Q4_K_M.gguf",
+   "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+   "bytes": 1
+  },
+  {
+   "file": "Qwen3.5-35B-A3B-UD-IQ4_XS.gguf",
+   "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+   "bytes": 1
+  }
+ ],
+ "apr_sha": "ca5eca5eca5eca5eca5eca5eca5eca5eca5eca5e"
+}

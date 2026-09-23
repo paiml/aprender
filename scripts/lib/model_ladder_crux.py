@@ -105,19 +105,28 @@ def load_crux(crux_dir, cut, equiv, out):
         for c in R.get("cells") or []:
             k = c.get("key") or {}
             key = (k.get("model_sha256"), k.get("host") or R.get("host"), lane, k.get("verb"))
-            index.setdefault(key, []).append(c.get("verdict"))
+            index.setdefault(key, []).append((c.get("verdict"), k.get("thinking")))
     return index, failed
 
 
-def crux_cell(index, sha, host, backend, verb):
-    """-> (proven, reason) for one (model sha, host, backend, verb)."""
-    got = index.get((sha, host, LANE.get(backend, backend), VERB_TO_CRUX.get(verb, verb)))
+def crux_cell(index, sha, host, backend, verb, red_model=False):
+    """-> (proven, reason) for one (model sha, host, backend, verb).
+
+    `red_model` (#3957 F9): the file carries a RED-MODEL verdict re-proven on this sweep, which
+    covers the thinking-ON axis only. Its thinking-ON verdicts are set aside, and the cell is
+    proven by the thinking-OFF verdicts alone, which must exist and be GREEN."""
+    both = index.get((sha, host, LANE.get(backend, backend), VERB_TO_CRUX.get(verb, verb))) or []
+    got = [v for v, t in both if not (red_model and t == "on")]
+    if red_model and not got:
+        return False, "RED-MODEL covers thinking ON only, and no thinking-OFF CRUX verdict proves the rest of this cell (#3957 F9)"
     if not got:
         return False, "no CRUX verdict: no outside engine has judged this cell, so it is not proven"
     bad = [v for v in got if v != "GREEN"]
     if bad:
         counts = {v: got.count(v) for v in sorted(set(got))}
         return False, "CRUX: " + ", ".join(f"{n} {v}" for v, n in counts.items())
+    if red_model:
+        return True, f"CRUX GREEN on thinking OFF ({len(got)} cell(s)); thinking ON is RED-MODEL ({len(both) - len(got)} cell(s) set aside)"
     return True, f"CRUX GREEN ({len(got)} cell(s))"
 
 
@@ -148,8 +157,13 @@ def apr_chain(x, backends):
     return src["sha256"], why
 
 
-def judge(L, good, crux_dir, cut, equiv, out):
-    """Print one line per cell and a per-format summary. -> True when any cell is not proven."""
+def judge(L, good, crux_dir, cut, equiv, out, red=None):
+    """Print one line per cell and a per-format summary. -> True when any cell is not proven.
+
+    `red` (#3957 F9/F10): {(host, file): "RED-MODEL" | "RED-UNSUPPORTED"}, holding ONLY the verdicts
+    model_ladder_redmodel re-proved on this sweep. A RED-UNSUPPORTED file's cuda cells print
+    RED-UNSUPPORTED and do not block; a RED-MODEL file's cells are proven on thinking OFF alone."""
+    red = red or {}
     verbs = list((L.get("cells") or {}).get("verbs") or ["run", "chat", "serve", "code"])
     inv_backends = list((L.get("inventory") or {}).get("backends") or [])
     rung_by_file = {r.get("gguf"): r for r in L.get("rungs") or []}
@@ -172,8 +186,13 @@ def judge(L, good, crux_dir, cut, equiv, out):
             for b in backends:
                 for v in verbs:
                     label = f"{f} fmt={fmt} quant={q} host={host} backend={b} verb={v}"
-                    t = tally.setdefault(fmt, [0, 0])
+                    t = tally.setdefault(fmt, [0, 0, 0])
                     t[0] += 1
+                    named = red.get((host, f))
+                    if named == "RED-UNSUPPORTED" and b in ("cuda", "gpu"):
+                        t[2] += 1
+                        out(f"RED-UNSUPPORTED cell {label} -- apr refused this architecture by name on this sweep; counted RED, never green (#3957 F10)")
+                        continue
                     if not (isinstance(sha, str) and HEX64.fullmatch(sha)):
                         ok, why = False, "the row has no 64-hex sha256, so no oracle can be joined to it"
                     elif fmt == "apr":
@@ -185,13 +204,18 @@ def judge(L, good, crux_dir, cut, equiv, out):
                             reasons = per_b + ([] if s_ok else [f"source {src_sha[:12]} is not proven: {s_why} (#3957 F8)"])
                             ok, why = (not reasons), ("; ".join(reasons) if reasons else f"chain to source {src_sha[:12]}: {s_why}")
                     else:
-                        ok, why = crux_cell(index, sha, host, b, v)
-                    if ok:
+                        ok, why = crux_cell(index, sha, host, b, v, red_model=(named == "RED-MODEL"))
+                    if ok and named == "RED-MODEL":
+                        # proven on thinking OFF, RED on thinking ON: a RED cell, never counted proven (#3957 F9)
+                        t[2] += 1
+                        out(f"RED-MODEL cell {label} -- {why}")
+                    elif ok:
                         t[1] += 1
                         out(f"ok    cell {label} -- {why}")
                     else:
                         failed = True
                         out(f"FAIL  cell {label} -- {why}")
-    out("cells by format: " + ", ".join(f"{k} {v[1]}/{v[0]} proven" for k, v in sorted(tally.items()))
+    out("cells by format: " + ", ".join(f"{k} {v[1]}/{v[0]} proven" + (f", {v[2]} named RED (F9/F10)" if v[2] else "")
+                                        for k, v in sorted(tally.items()))
         if tally else "FAIL  no cell was owed -- a release that measured no cell proved nothing")
     return failed or not tally
