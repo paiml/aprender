@@ -273,6 +273,9 @@ tier3:
 	@echo "Checking no NEW silent truncation of a value a human reads later (aprender#3904)..."
 	@bash scripts/check_no_silent_truncation.sh --self-test
 	@bash scripts/check_no_silent_truncation.sh
+	@echo "Checking no NEW Rust truncation of a value a human reads later (aprender#3916)..."
+	@bash scripts/check_no_rust_truncation.sh --self-test
+	@bash scripts/check_no_rust_truncation.sh
 	@if [ -d tests/golden ]; then \
 		if . scripts/apr_bin.sh 2>/dev/null; then \
 			echo "Running probar golden regression with profiling... ($$APR)"; \

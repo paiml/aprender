@@ -1,0 +1,86 @@
+# rust_truncation_cases.txt — the must-match / must-not-match table for #3916.
+#
+# WRITTEN BEFORE THE PATTERN, and that order is the point. CLAUDE.md records the
+# `apr`-invocation patterns being wrong five times, every one caught by a case table and
+# none by review. A net over 584 raw `.take(N)` hits will be wrong on the first cut; the
+# only question is whether anything catches it.
+#
+# Every line below is REAL, copied from this tree. An invented line proves the pattern
+# matches what I imagined, which is the thing being tested.
+#
+# Format:  MATCH <line>   — the scan MUST select this
+#          SKIP  <line>   — the scan MUST NOT select this
+#
+# ---------------------------------------------------------------------------------
+# MATCH: a string truncated on its way to a human, in the Rust idiom #3904 cannot see.
+# ---------------------------------------------------------------------------------
+MATCH	let snippet = stderr.chars().take(160).collect::<String>();
+MATCH	let preview: String = prompt.chars().take(200).collect();
+MATCH	let preview: String = chunk.content.chars().take(60).collect();
+MATCH	gpu.device_name.chars().take(20).collect::<String>(),
+MATCH	let device_name: String = gpu.device_name.chars().take(12).collect();
+MATCH	result.content = snippet.chars().take(200).collect();
+MATCH	.map(|c| c.text.chars().take(120).collect::<String>())
+MATCH	format!("{algo:?}").chars().take(10).collect::<String>(),
+MATCH	println!("     Function: {}...", &sample.function.chars().take(50).collect::<String>())
+MATCH	format!("{}...", text.get(..50).expect("text length checked > 50"))
+MATCH	commit.get(..12).unwrap_or(commit)
+MATCH	signature.signer_key.get(..16).unwrap_or(&signature.signer_key).dimmed()
+#
+# ---------------------------------------------------------------------------------
+# SKIP: an ITERATOR LIMIT, not a truncated message. This is the bulk of the 584 and the
+# whole reason the net needs a table: `indexed.iter().take(10)` walks a top-N list, it
+# does not decapitate a string anybody reads.
+# ---------------------------------------------------------------------------------
+SKIP	for (tok, logit) in indexed.iter().take(10) {
+SKIP	for (rank, (idx, score)) in indexed.iter().take(10).enumerate() {
+SKIP	let sample: Vec<&str> = available.iter().take(5).copied().collect();
+SKIP	let limited_exprs: Vec<_> = exprs.iter().take(20).collect();
+SKIP	let limited_body: Vec<_> = body_stmts.iter().take(5).collect();
+SKIP	for (i, dc) in dead_code.iter().take(10).enumerate() {
+#
+# SKIP: CONSTRUCTION, not truncation. `repeat(c).take(64)` BUILDS a 64-char string; there
+# is no original for a reader to be missing.
+SKIP	std::iter::repeat(c).take(64).collect()
+#
+# SKIP: Vec::truncate, not String::truncate. MEASURED, not assumed: of the 26 `.truncate(N)`
+# sites in this tree the receivers are change_points, concepts, gaps, examples, indexed,
+# interfaces, guards, bytes, data, results, top5 — all collections. The two idioms are
+# syntactically identical and only the type tells them apart, so including `.truncate(N)`
+# would be almost entirely false positives. It is OUT OF SCOPE for this scan, by
+# measurement rather than by preference, and this is recorded so the next person does not
+# "fix the gap" without re-measuring it.
+SKIP	results.truncate(5);
+SKIP	gaps.truncate(10);
+SKIP	bytes.truncate(100);
+SKIP	model.layers[0].ffn_up_weight.data.truncate(3);
+#
+# SKIP: byte and tensor slices. `.get(..N)` is only interesting on something stringy.
+SKIP	all_logits.get(..20).unwrap_or(&[])
+SKIP	q.get(..5).unwrap_or(&[])
+SKIP	let format = detect_format(data.get(..8).expect("len >= 8 checked above"))?;
+SKIP	result.tokens.get(..4),
+#
+# SKIP: PROSE. A doc comment that discusses the idiom is not an instance of it. This exact
+# line is in output_verification.rs, written for #3904's own test, and a scan that cannot
+# tell a comment from code teaches people to reword the comment.
+SKIP	/// THE ROW. A bare `.chars().take(100)` passes every assertion above and fails this
+SKIP	// Rust truncates with `.chars().take(N)`, which the #3904 scan cannot see.
+#
+# ---------------------------------------------------------------------------------
+# ADDED AFTER AUDITING THE FIRST CUT against the real tree. Both rows below were SELECTED
+# by the first pattern and are wrong, and neither was anticipated when the table was
+# written. That is the table earning its place: 29 hand-written rows all passed, and the
+# tree still had two shapes I had not imagined.
+# ---------------------------------------------------------------------------------
+#
+# A PREDICATE, not a truncation. `.take(40).all(...)` asks whether the first 40 chars are
+# hex; nothing is displayed and no reader is missing anything.
+SKIP	    line.len() >= 40 && line.chars().take(40).all(|c| c.is_ascii_hexdigit())
+SKIP	    if s.chars().take(8).any(|c| c.is_whitespace()) { return None; }
+SKIP	    let n = text.chars().take(200).filter(|c| *c == '\n').count();
+#
+# CONSTRUCTION, in the `.chars().take()` form the earlier `repeat(c).take(64)` row did not
+# cover. The bar is BUILT from a repeat and capped; the repeat is already the content, so
+# there is no original being decapitated.
+SKIP	        let bar: String = "█".repeat((score * 50.0).round() as usize).chars().take(20).collect();

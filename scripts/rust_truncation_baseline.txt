@@ -1,0 +1,118 @@
+# tool_version=none (candidate set derived by `bash scripts/check_no_rust_truncation.sh --list`)
+#
+# rust_truncation_baseline.txt -- #3916, the Rust half of the surface #3904 ratchets down.
+#
+# #3904 refuses a NEW silent truncation of a value a human reads later, and its scan matches
+# `[:N]` -- Python. Rust truncates with `.chars().take(N)`, and #3904 is blind to every one.
+# That blindness was found the hard way: a `.chars().take(100)` in the golden gate's own
+# failure reason cost a diagnosis during #3914, and the guard built for exactly that class
+# could not see it.
+#
+# THE RULE IS #3904's, UNCHANGED: never truncate SILENTLY. The dividing line is whether a
+# human reads the string later, DETACHED from what produced it.
+#
+# THREE LEVELS, because the Rust corpus has a middle one the Python corpus did not:
+#   display    cut, and the reader cannot tell. THE CLASS THAT MATTERS.
+#   marked     appends "..." -- the reader knows it was cut, but not by how much. That
+#              solves the AMBIGUITY (a decapitated message no longer reads as a complete
+#              short one) without solving the MAGNITUDE. A real improvement over `display`
+#              and a real shortfall against `loud`, so it is its own class rather than being
+#              rounded to either. Calling these `loud` would contradict #3904's own check
+#              next door, which requires a COUNT -- two guards disagreeing about what the
+#              word means is worse than a missing class.
+#   loud       says HOW MUCH it dropped. The sanctioned pattern.
+#   id-prefix  a deliberate short sha/commit/key; the convention carries the length.
+#   fatal      dies immediately -- reader present, context still on screen.
+#
+# `marked` and `loud` are both CHECKED, never taken on trust: a row claiming either must
+# demonstrably contain its marker or its count. An unverified class is an exemption keyword.
+#
+# SCOPE IS MEASURED. `.truncate(N)` is OUT: all 26 receivers in this tree are collections,
+# and String::truncate / Vec::truncate are syntactically identical with only the TYPE
+# separating them. Read the scan's docstring before "closing the gap".
+#
+# KEY = <file>|<sha1-8 of the normalized line>|<n-th identical line>, #3904's scheme
+# deliberately -- a third bespoke baseline format is its own debt. Keying by file:line
+# produces churn on any insert, and churn trains a reviewer to regenerate the baseline,
+# laundering whatever real violation shares that commit. The key hashes the text, so the
+# text below is tamper-evident.
+#
+# SHRINK-ONLY, and NO --update, for #3904's reason: only KEY and TEXT are derived, the CLASS
+# is a human reading no command reproduces, and a regenerate button is the laundering vector
+# the key scheme exists to close.
+#
+# 72 rows: display=58, id-prefix=10, marked=4
+#
+# class	key	text
+display	crates/apr-cli/src/commands/gbnf_classifier.rs|533a15fe|0	let snippet = stderr.chars().take(160).collect::<String>();
+display	crates/apr-cli/src/commands/gpu_isolation_result.rs|8622a9ae|0	text_a2.chars().take(50).collect(),
+display	crates/apr-cli/src/commands/gpu_isolation_result.rs|905d398d|0	text_a.chars().take(50).collect(),
+display	crates/aprender-cbtop/src/app/render/mod.rs|4b5e19f7|0	hardware.cpu_model.chars().take(30).collect::<String>(),
+display	crates/aprender-cbtop/src/app/render/mod.rs|e5690910|0	&format!("│ GPU: {} ", gpu.chars().take(25).collect::<String>()),
+display	crates/aprender-cbtop/src/app/render/panels.rs|27dd491f|0	let mount_short: String = disk.mount.chars().take(15).collect();
+display	crates/aprender-core/examples/data_quality_pipeline.rs|56739f39|0	let truncated: String = text.chars().take(50).collect();
+display	crates/aprender-core/examples/data_quality_pipeline.rs|ef828090|0	let truncated: String = e.instruction.chars().take(80).collect();
+display	crates/aprender-core/examples/includes/verify_result.rs|ab8e192d|0	trimmed.chars().take(50).collect::<String>()
+display	crates/aprender-core/examples/includes/verify_result.rs|d6c97c2c|0	detail.chars().take(25).collect::<String>(),
+display	crates/aprender-core/examples/qa_chat.rs|3174c7ca|0	output.chars().take(100).collect::<String>()
+display	crates/aprender-core/tests/readme_contract.rs|323f7f2f|0	won_rows.push(line.trim().chars().take(120).collect());
+display	crates/aprender-mcp/tests/falsify_mcp_e2e_001.rs|fb502c53|0	.map(|c| c.text.chars().take(120).collect::<String>())
+display	crates/aprender-orchestrate/examples/rag_oracle_demo.rs|dfee4069|0	let preview: String = chunk.content.chars().take(60).collect();
+display	crates/aprender-orchestrate/examples/rag_oracle_demo.rs|f9f57a9f|0	let preview: String = chunk.content.chars().take(50).collect();
+display	crates/aprender-orchestrate/examples/serve_demo.rs|82736d3f|0	let preview: String = prompt.chars().take(200).collect();
+display	crates/aprender-orchestrate/src/bug_hunter/blame.rs|22b3b03f|0	let first_40: String = line.chars().take(40).collect();
+display	crates/aprender-orchestrate/src/bug_hunter/spec.rs|c68e6376|0	let context = line.trim().chars().take(60).collect::<String>();
+display	crates/aprender-orchestrate/src/cli/oracle/pmat_query.rs|592cf126|0	content: r.content.chars().take(200).collect(),
+display	crates/aprender-orchestrate/src/cli/oracle/pmat_query_display.rs|707df8de|0	let preview: String = content.chars().take(200).collect();
+display	crates/aprender-orchestrate/src/cli/oracle/pmat_query_display.rs|c7573510|0	let preview: String = doc.chars().take(120).collect();
+display	crates/aprender-orchestrate/src/cli/oracle/rag_commands.rs|592cf126|0	content: r.content.chars().take(200).collect(),
+display	crates/aprender-orchestrate/src/cli/oracle/rag_commands.rs|ee735162|0	result.content = snippet.chars().take(200).collect();
+display	crates/aprender-orchestrate/src/cli/oracle/rag_commands.rs|ee735162|1	result.content = snippet.chars().take(200).collect();
+display	crates/aprender-orchestrate/src/cli/oracle/rag_display.rs|bae19a76|0	let preview: String = result.content.chars().take(200).collect();
+display	crates/aprender-orchestrate/src/content/validation.rs|5617f181|0	line.trim().chars().take(60).collect::<String>(),
+display	crates/aprender-orchestrate/src/pacha/run.rs|efec0723|0	input.chars().take(30).collect::<String>()
+display	crates/aprender-orchestrate/src/tui/graph/rendering.rs|0a493d81|0	for (i, c) in label.chars().take(10).enumerate() {
+display	crates/aprender-present-terminal/examples/gpu_compute.rs|227a550d|0	let short_name: String = gpu.name.chars().take(16).collect();
+display	crates/aprender-present-terminal/src/ptop/ui/core/panel_cpu.rs|a9938835|0	let truncated: String = full_name.chars().take(12).collect();
+display	crates/aprender-present-terminal/src/ptop/ui/core/render/panels_core.rs|0e913a1a|0	let name: String = proc.name().to_string_lossy().chars().take(12).collect();
+display	crates/aprender-present-terminal/src/ptop/ui/core/render/panels_core.rs|d2670541|0	let user_short: String = user.chars().take(8).collect();
+display	crates/aprender-present-terminal/src/ptop/ui/core/render/panels_extra.rs|24724018|0	let label_short: String = component.label().chars().take(12).collect();
+display	crates/aprender-present-terminal/src/ptop/ui/core/render/panels_extra.rs|3adec8d1|0	let label_short: String = label.chars().take(8).collect();
+display	crates/aprender-present-terminal/src/ptop/ui/core/render/panels_extra.rs|72329904|0	let name: String = container.name.chars().take(20).collect();
+display	crates/aprender-present-terminal/src/widgets/feature_importance.rs|8187327e|0	let name: String = self.features[idx].chars().take(14).collect();
+display	crates/aprender-present-terminal/src/widgets/parallel_coords.rs|d8bf2ab5|0	let label: String = col_name.chars().take(8).collect();
+display	crates/aprender-present-terminal/src/widgets/pca_plot.rs|9c57d012|0	let label: String = name.chars().take(4).collect();
+display	crates/aprender-present-terminal/src/widgets/radar_plot.rs|ea6cd713|0	let label: String = self.axes[i].chars().take(6).collect();
+display	crates/aprender-present-terminal/tests/falsification_tests.rs|242d613a|0	let search_term = proc_name.chars().take(4).collect::<String>().to_lowercase();
+display	crates/aprender-qa-report/src/markdown.rs|416f49bd|0	let output_preview: String = evidence.output.chars().take(200).collect();
+display	crates/aprender-qa-runner/src/executor_serve_battery.rs|4ffd8e02|0	output.stdout.chars().take(100).collect::<String>()
+display	crates/aprender-serve/src/api/batch.rs|a7b60ece|0	request.prompt.chars().take(50).collect::<String>(),
+display	crates/aprender-serve/src/api/cuda_chat_backend.rs|ffe662bb|0	.map(|m| m.content.chars().take(50).collect::<String>())
+display	crates/aprender-serve/src/inference_trace/mod_disabled_inference_tracer.rs|75e71815|0	sample: decoded_text.chars().take(20).collect(),
+display	crates/aprender-serve/tests/property_lambda.rs|6d6813e3|0	model_id: model_id.map(|s| s.chars().take(50).collect()), // Limit string length
+display	crates/aprender-test-lib/examples/audio_emulation.rs|4802dbc4|0	let preview: String = mock_js.chars().take(500).collect();
+display	crates/aprender-test-lib/examples/web_builders_demo.rs|514db7d6|0	let preview: String = single.chars().take(500).collect();
+display	crates/aprender-test-lib/examples/web_builders_demo.rs|991c157f|0	let preview: String = html.content.chars().take(300).collect();
+display	crates/aprender-test-lib/src/llm/prompts.rs|995f9ccd|0	first.chars().take(16).collect::<String>()
+display	crates/aprender-test-lib/src/mock/strategies.rs|c83c0518|0	text: text.chars().take(1000).collect(),
+display	crates/aprender-test-lib/src/mock/strategies.rs|e2e3dd5a|0	message: s.chars().take(100).collect(),
+display	crates/aprender-test-lib/src/zero_js.rs|1ddea211|0	preview: content.chars().take(100).collect(),
+display	crates/aprender-test-lib/src/zero_js.rs|f31f5de7|0	let context = line.trim().chars().take(80).collect::<String>();
+display	crates/aprender-train/examples/ssc_eval.rs|67343383|0	let snippet: String = response.chars().take(200).collect();
+display	crates/aprender-train/src/monitor/tui/headless.rs|8e1307d6|0	let device_name: String = gpu.device_name.chars().take(12).collect();
+display	crates/aprender-train/src/monitor/tui/render/mod.rs|c91b38d9|0	gpu.device_name.chars().take(20).collect::<String>(),
+display	crates/aprender-zram-core/examples/compress_benchmark.rs|9ee90d20|0	format!("{algo:?}").chars().take(10).collect::<String>(),
+id-prefix	crates/aprender-contracts-cli/src/commands/lint_arming.rs|3a6baadc|0	commit.get(..12).unwrap_or(commit)
+id-prefix	crates/aprender-core/src/hf_hub/upload.rs|ada43611|0	sha256.get(..16).unwrap_or(sha256)
+id-prefix	crates/aprender-orchestrate/src/pacha/crypto.rs|4cc9345f|0	signature.signer_key.get(..16).unwrap_or(&signature.signer_key).dimmed()
+id-prefix	crates/aprender-orchestrate/src/pacha/crypto.rs|4cc9345f|1	signature.signer_key.get(..16).unwrap_or(&signature.signer_key).dimmed()
+id-prefix	crates/aprender-orchestrate/src/pacha/crypto.rs|e97a5ed6|0	signature.content_hash.get(..16).unwrap_or(&signature.content_hash).dimmed()
+id-prefix	crates/aprender-orchestrate/src/pacha/crypto.rs|e97a5ed6|1	signature.content_hash.get(..16).unwrap_or(&signature.content_hash).dimmed()
+id-prefix	crates/aprender-train/src/research/anonymization.rs|f02dcf73|0	format!("anon-{}", hex::encode(hash.get(..8).unwrap_or(&hash))) // Use first 8 bytes for brevity
+id-prefix	crates/aprender-train/src/storage/cloud/local.rs|ce8d4736|0	let prefix = hash.get(..2).unwrap_or(hash);
+id-prefix	crates/aprender-train/src/storage/memory.rs|6e916d82|0	format!("sha256-{}", hex::encode(result.get(..16).unwrap_or(&result))) // Use first 16 bytes
+id-prefix	crates/aprender-train/src/storage/trueno.rs|350bc588|0	format!("sha256-{}", hex::encode(result.get(..16).unwrap_or(&result)))
+marked	crates/aprender-orchestrate/src/content/validation.rs|b15bdf39|0	line.trim().chars().take(60).collect::<String>() + "...",
+marked	crates/aprender-orchestrate/src/serve/banco/auth.rs|5803d08c|0	prefix: k.key.chars().take(10).collect::<String>() + "...",
+marked	crates/aprender-serve/src/inference_trace/execution_failure.rs|6404758d|0	format!("{}...", text.get(..50).expect("text length checked > 50"))
+marked	crates/aprender-train/examples/finetune_real.rs|b5a729c8|0	println!(" Function: {}...", &sample.function.chars().take(50).collect::<String>());

@@ -139,3 +139,6 @@ numeric	scripts/reference_layer0.py|c8104aca|0	print(f"Q first 3: {q[:3].numpy()
 numeric	scripts/reference_layer0.py|cdb76739|0	print(f"Out proj first 3: {out_proj[:3].numpy().tolist()}")
 numeric	scripts/reference_layer0.py|e442df29|0	print(f"Norm weight first 5: {norm_weight[:5].tolist()}")
 numeric	scripts/reference_layer0.py|e8a6edf1|0	print(f"Layer RMSNorm first 3: {normed_np[:3].tolist()}")
+id-prefix	scripts/check_no_rust_truncation.sh|08e7d542|0	k = "crates/gone_3916.rs|%s|0" % hashlib.sha1(t.encode()).hexdigest()[:8]
+loud	scripts/check_no_rust_truncation.sh|3d206730|0	return x if len(x) <= n else "%s ... and %d more chars" % (x[:n], len(x) - n)
+id-prefix	scripts/check_no_rust_truncation.sh|dda62789|0	k = "%s|%s|%s" % (k.split("|")[0], hashlib.sha1(t.encode()).hexdigest()[:8], k.split("|")[2])
