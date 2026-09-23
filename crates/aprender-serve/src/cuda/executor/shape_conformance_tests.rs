@@ -200,9 +200,11 @@ mod shape_conformance_tests {
         let wqt = WeightQuantType::from_ggml_type(q).unwrap_or_else(|| panic!("ggml {q} admitted but has no WeightQuantType"));
         let dense = dequant(q, bytes);
         assert_eq!(dense.len(), n * k, "ggml {q} k={k} n={n}: dequant length");
-        // Divided by 4.1, not 4: with /4.0 every |x| = 1 sits exactly on a Q8 rounding tie (x/scale = 63.5), and the
-        // device's approximate reciprocal may round it either way — an oracle disagreement that is not a defect.
-        let input: Vec<f32> = (0..k).map(|i| (((i * 7 + 3) % 17) as f32 - 8.0) / 4.1).collect();
+        // A golden-ratio sequence, NOT a scaled integer pattern. The Q8 scale is set by the block's own max, so any
+        // x = m / c makes x/scale = m * 127 / m_max, independent of c: with m in -8..=8 every |m| = 4 is an exact
+        // 63.5 tie (measured twice on gx10: /4 and /4.1 both left Q6_K at ~1-2e-5), which the device's approximate
+        // reciprocal may round either way. Fractional parts of i*phi hit a tie with probability ~0.
+        let input: Vec<f32> = (0..k).map(|i| ((i as f64 * 0.618_033_988_749_895).fract() as f32 - 0.5) * 4.0).collect();
         // What the kernel actually multiplies: the Q8_1-quantized activation for the DP4A types.
         let x_ref: Vec<f32> = if Q8_ACTIVATION_TYPES.contains(&q) { q8_1_mirror(&input) } else { input.clone() };
 
