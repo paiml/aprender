@@ -1,7 +1,7 @@
 """The Hugging Face transformers CRUX engine (#3739, PMAT-3778).
 
 Run through ``scripts/crux_engine_hf.sh`` — ``uv run --frozen`` over the committed ``uv.lock`` beside this
-file, never an ambient python — as ``probe | gen | tok | tmpl | greedy``. Row contract v1 (aprender-76,
+file, never an ambient python — as ``probe | gen | gen-batch | tok | tmpl | greedy``. Row contract v1 (aprender-76,
 #3739 comment 5765991210): every subcommand but ``probe`` appends exactly ONE JSONL row to
 ``$CRUX_MANIFEST`` and writes its artifacts under ``$CRUX_WORK/<model_sha256[:12]>/<verb|kind>/``. A cell
 HF cannot run is still a row — ``rc: null`` and ``refused`` carrying the exception's own words — never an
@@ -14,6 +14,7 @@ is computed from a clock (``reported`` carries token counts only, and whatever t
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -173,34 +174,39 @@ def conversation_turns(messages: list, respond) -> tuple[str, list, list]:
     return raws[-1], answers, raws
 
 
-def gen_generate(a, messages, device):
-    """`run`: one reply to the messages as given. `chat`: the conversation driven turn by turn. The model is
-    loaded ONCE either way."""
+# BATCH MODE (cop, 2026-09-23): the model was loaded per PROMPT, which dominated every sweep. Now one load per
+# call serves every item (`gen-batch`), and `gen` is a batch of one through the same code. Row contract v1 is
+# unchanged: exactly one row per item. A batch holds ONE interface — in-process `generate` (run, chat) or
+# `transformers serve` (serve run, code); items of the other are refused by name (a second model on the card).
+INPROC = ("run", "chat")
+SERVE = ("serve run", "code")
+VERBS = INPROC + SERVE
+THINKING = ("on", "off", "unset")
+
+
+def load_inproc(a):
+    """ONE loaded model for the whole batch. Returns (respond, interface, device) where
+    respond(convo, thinking, max_tokens) -> (text, prompt_tokens, completion_tokens)."""
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
+    device = device_of(a.backend)
     src, rev = source_of(a)
     tok = AutoTokenizer.from_pretrained(src, revision=rev)
     # device_map, not .to(): loaded straight onto the lane's device (see main() for why CUDA is hidden on cpu).
     model = AutoModelForCausalLM.from_pretrained(src, revision=rev, dtype=getattr(torch, a.dtype), device_map=device)
-    counts = {"prompt_tokens": 0, "completion_tokens": 0}
 
-    def respond(convo):
+    def respond(convo, thinking, max_tokens):
         torch.manual_seed(a.seed)
         inputs = tok.apply_chat_template(
-            convo, add_generation_prompt=True, return_tensors="pt", return_dict=True, **thinking_kwargs(a.thinking)
+            convo, add_generation_prompt=True, return_tensors="pt", return_dict=True, **thinking_kwargs(thinking)
         ).to(device)
         n_prompt = int(inputs["input_ids"].shape[1])
-        out = model.generate(**inputs, max_new_tokens=a.max_tokens, do_sample=False)
+        out = model.generate(**inputs, max_new_tokens=max_tokens, do_sample=False)
         new = out[0][n_prompt:]
-        counts["prompt_tokens"] = n_prompt  # the FINAL turn's prompt, which holds the whole conversation
-        counts["completion_tokens"] += int(new.shape[0])
-        return tok.decode(new, skip_special_tokens=True)
+        return tok.decode(new, skip_special_tokens=True), n_prompt, int(new.shape[0])
 
-    if a.verb == "chat":
-        raw, answers, _ = conversation_turns(messages, respond)
-        return raw, {**counts, "device": device_label(model)}, answers
-    return respond(messages), {**counts, "device": device_label(model)}, None
+    return respond, "generate", device_label(model)
 
 
 def free_port() -> int:
@@ -209,21 +215,23 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
-def gen_serve(a, messages, device, d: Path, stem: str):
-    """`transformers serve`, the pinned version's own server, one request, then stopped."""
+@contextlib.contextmanager
+def serve_session(a, log_path: Path):
+    """ONE `transformers serve` (the pinned version's own server) for the whole batch, stopped at the end."""
+    device = device_of(a.backend)
     src, rev = source_of(a)
     port = free_port()
     cmd = [
         str(Path(sys.executable).parent / "transformers"), "serve", "--host", "127.0.0.1", "--port", str(port),
         "--device", device, "--dtype", a.dtype, "--default-seed", str(a.seed), "--no-enable-cors",
     ]
-    log = open(d / f"{stem}.server.log", "w", encoding="utf-8")
+    log = open(log_path, "w", encoding="utf-8")
     proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     try:
         deadline = time.time() + 180
         while True:
             if proc.poll() is not None:
-                raise RuntimeError(f"transformers serve exited {proc.returncode} before answering (log: {stem}.server.log)")
+                raise RuntimeError(f"transformers serve exited {proc.returncode} before answering (log: {log_path.name})")
             try:
                 urllib.request.urlopen(f"http://127.0.0.1:{port}/v1/models", timeout=2).read()
                 break
@@ -232,29 +240,34 @@ def gen_serve(a, messages, device, d: Path, stem: str):
                     raise RuntimeError("transformers serve did not answer /v1/models within 180 s")
                 time.sleep(0.5)
         model_id = f"{src}@{rev}" if rev else src
-        body = {"model": model_id, "messages": messages, "max_tokens": a.max_tokens, "temperature": 0.0, "seed": a.seed}
-        kw = thinking_kwargs(a.thinking)
-        if kw:
-            body["chat_template_kwargs"] = kw
-        req = urllib.request.Request(
-            f"http://127.0.0.1:{port}/v1/chat/completions",
-            data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"},
-        )
-        resp = json.loads(urllib.request.urlopen(req, timeout=1800).read())
-        (d / f"{stem}.resp.json").write_text(json.dumps(resp, indent=1), encoding="utf-8")
-        msg = resp["choices"][0]["message"]
-        raw = msg.get("content") or ""
-        if msg.get("reasoning_content"):
-            raw = f"<think>{msg['reasoning_content']}</think>{raw}"
-        usage = resp.get("usage") or {}
+
+        def respond(convo, thinking, max_tokens, resp_path=None):
+            body = {"model": model_id, "messages": convo, "max_tokens": max_tokens, "temperature": 0.0,
+                    "seed": a.seed}
+            kw = thinking_kwargs(thinking)
+            if kw:
+                body["chat_template_kwargs"] = kw
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/v1/chat/completions",
+                data=json.dumps(body).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            resp = json.loads(urllib.request.urlopen(req, timeout=1800).read())
+            if resp_path is not None:
+                resp_path.write_text(json.dumps(resp, indent=1), encoding="utf-8")
+            msg = resp["choices"][0]["message"]
+            raw = msg.get("content") or ""
+            if msg.get("reasoning_content"):
+                raw = f"<think>{msg['reasoning_content']}</think>{raw}"
+            usage = resp.get("usage") or {}
+            return raw, usage.get("prompt_tokens"), usage.get("completion_tokens")
+
         # The server is a separate process: its device is the one it was TOLD, and on the cpu lane CUDA is
         # hidden from it too (inherited environment), so "cpu" there is the only device it can have used.
         import torch
 
         label = f"cuda:0 {torch.cuda.get_device_name(0)}" if device == "cuda" else "cpu"
-        return raw, {"prompt_tokens": usage.get("prompt_tokens"), "completion_tokens": usage.get("completion_tokens"),
-                     "device": f"{label} (transformers serve --device {device})"}
+        yield respond, "transformers serve", f"{label} (transformers serve --device {device})"
     finally:
         try:
             os.killpg(proc.pid, signal.SIGTERM)
@@ -267,42 +280,132 @@ def gen_serve(a, messages, device, d: Path, stem: str):
         log.close()
 
 
-def gen(a) -> None:
+def item_doc(it: dict, respond, interface: str, device: str, resp_path: Path | None) -> dict:
+    """One item through the already-loaded model: `run` is one reply, `chat` the conversation turn by turn."""
+    messages = load_messages(it["messages"])
+    counts = {"prompt_tokens": 0, "completion_tokens": 0}
+
+    def one(convo):
+        args = (convo, it["thinking"], it["max_tokens"]) + ((resp_path,) if interface == "transformers serve" else ())
+        text, n_prompt, n_completion = respond(*args)
+        counts["prompt_tokens"] = n_prompt  # the FINAL turn's prompt, which holds the whole conversation
+        if n_completion is not None and counts["completion_tokens"] is not None:
+            counts["completion_tokens"] += n_completion
+        else:
+            counts["completion_tokens"] = None
+        return text
+
+    turns = None
+    if it["verb"] == "chat":
+        raw, turns, _ = conversation_turns(messages, one)
+    else:
+        raw = one(messages)
+    answer, reasoning = split_think(raw)
+    doc = {"text": answer}
+    if turns is not None:
+        doc["turns"] = turns  # every assistant answer, in order; `text` is the last of them
+    if reasoning:
+        doc["reasoning"] = reasoning
+    doc["reported"] = {"interface": interface, "thinking_requested": it["thinking"],
+                       "thinking_emitted": bool(reasoning), **counts, "device": device}
+    return doc
+
+
+def item_error(it: dict) -> str | None:
+    """Why an item cannot be run at all, by name, before any model is involved."""
+    for k in ("prompt_id", "verb", "messages", "thinking", "max_tokens"):
+        if k not in it:
+            return f"batch item has no {k!r}"
+    if it["verb"] not in VERBS:
+        return f"batch item verb {it['verb']!r} is not one of {', '.join(VERBS)}"
+    if it["thinking"] not in THINKING:
+        return f"batch item thinking {it['thinking']!r} is not one of {', '.join(THINKING)}"
+    if not isinstance(it["max_tokens"], int) or it["max_tokens"] < 1:
+        return f"batch item max_tokens {it['max_tokens']!r} is not a positive integer"
+    return None
+
+
+def run_batch(a, items: list) -> None:
+    """Every item gets exactly one row, in order; the model is loaded at most ONCE for the batch."""
     manifest, work = env_paths()
     check_sha(a.model_sha256)
-    d = workdir(work, a.model_sha256, a.verb)
-    stem = f"hf-{a.prompt_id}-{a.thinking}"
-    out, err = d / f"{stem}.json", d / f"{stem}.err"
-    row = {
-        "kind": "gen", "engine": "hf", "model_sha256": a.model_sha256, "host": a.host, "verb": a.verb,
-        "thinking": a.thinking, "backend": a.backend, "prompt_id": a.prompt_id,
-        "rc": 0, "stdout": str(out), "stderr": str(err), "refused": None,
-        "source": {"repo": a.source_repo, "revision": a.source_revision, "dtype": a.dtype},
-    }
-    try:
-        messages = load_messages(a.messages)
-        device = device_of(a.backend)
-        turns = None
-        if a.verb in ("run", "chat"):
-            raw, counts, turns = gen_generate(a, messages, device)
-        else:
-            raw, counts = gen_serve(a, messages, device, d, stem)
-        answer, reasoning = split_think(raw)
-        doc = {"text": answer}
-        if turns is not None:
-            doc["turns"] = turns  # every assistant answer, in order; `text` is the last of them
-        if reasoning:
-            doc["reasoning"] = reasoning
-        doc["reported"] = {
-            "interface": "generate" if a.verb in ("run", "chat") else "transformers serve",
-            "thinking_requested": a.thinking, "thinking_emitted": bool(reasoning), **counts,
+    batch_id = f"{os.getpid()}-{time.time_ns()}"
+    slots = []
+    for it in items:
+        verb = it.get("verb") if it.get("verb") in VERBS else "invalid"
+        d = workdir(work, a.model_sha256, verb)
+        stem = f"hf-{it.get('prompt_id', 'noid')}-{it.get('thinking', 'unset')}"
+        out, err = d / f"{stem}.json", d / f"{stem}.err"
+        row = {
+            "kind": "gen", "engine": "hf", "model_sha256": a.model_sha256, "host": a.host, "verb": it.get("verb"),
+            "thinking": it.get("thinking"), "backend": a.backend, "prompt_id": it.get("prompt_id"),
+            "rc": 0, "stdout": str(out), "stderr": str(err), "refused": None,
+            "source": {"repo": a.source_repo, "revision": a.source_revision, "dtype": a.dtype},
+            "batch": {"id": batch_id, "size": len(items)},
         }
-        out.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
-        err.write_text("", encoding="utf-8")
-    except Exception as e:
-        err.write_text(refusal(e), encoding="utf-8")
-        row.update(rc=None, stdout=None, refused=refusal(e))
-    append_row(manifest, row)
+        slots.append({"it": it, "row": row, "d": d, "stem": stem, "out": out, "err": err, "reason": item_error(it)})
+
+    def refuse(slot, reason):
+        slot["err"].write_text(reason, encoding="utf-8")
+        slot["row"].update(rc=None, stdout=None, refused=reason)
+
+    for s in slots:
+        if s["reason"] is not None:
+            refuse(s, s["reason"])
+    live = [s for s in slots if s["reason"] is None]
+    inproc = [s for s in live if s["it"]["verb"] in INPROC]
+    serve = [s for s in live if s["it"]["verb"] in SERVE]
+    if inproc and serve:
+        for s in serve:
+            refuse(s, "this batch also holds in-process items (run, chat), and a second interface would be a second "
+                      "model on the same card; send serve/code items in their own gen-batch call")
+        serve = []
+    group = inproc or serve
+    server_log = work / a.model_sha256[:12] / f"hf-batch-{batch_id}.server.log"
+    if group:
+        with contextlib.ExitStack() as stack:
+            try:
+                if group is inproc:
+                    respond, interface, device = load_inproc(a)
+                else:
+                    respond, interface, device = stack.enter_context(serve_session(a, server_log))
+            except Exception as e:
+                # The load itself failed: every item of the batch is refused with that reason.
+                for s in group:
+                    refuse(s, refusal(e))
+            else:
+                for s in group:
+                    try:
+                        resp_path = s["d"] / f"{s['stem']}.resp.json" if interface == "transformers serve" else None
+                        doc = item_doc(s["it"], respond, interface, device, resp_path)
+                        s["out"].write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+                        s["err"].write_text("", encoding="utf-8")
+                    except Exception as e:
+                        refuse(s, refusal(e))
+    for s in slots:
+        append_row(manifest, s["row"])
+
+
+def gen(a) -> None:
+    """One cell: a batch of one, through exactly the code a batch uses."""
+    run_batch(a, [{"prompt_id": a.prompt_id, "verb": a.verb, "messages": a.messages, "thinking": a.thinking,
+                   "max_tokens": a.max_tokens}])
+
+
+def gen_batch(a) -> None:
+    """`--batch <jsonl>`: one item per line — {"prompt_id", "verb", "messages": <path>, "thinking",
+    "max_tokens"} — all against ONE model load."""
+    items = []
+    with open(a.batch, encoding="utf-8") as f:
+        for n, line in enumerate(f, 1):
+            if line.strip():
+                try:
+                    items.append(json.loads(line))
+                except ValueError as e:
+                    die(f"--batch line {n} is not JSON: {e}")
+    if not items:
+        die("--batch holds no items")
+    run_batch(a, items)
 
 
 # ── tok / tmpl ─────────────────────────────────────────────────────────────
@@ -459,6 +562,19 @@ def main(argv: list[str]) -> None:
     r.add_argument("--dtype", default="bfloat16")
     r.add_argument("--host", required=True)
 
+    b = sub.add_parser("gen-batch")
+    b.add_argument("--batch", required=True, help="JSONL: one {prompt_id, verb, messages, thinking, max_tokens} per line")
+    b.add_argument("--model", required=True)
+    b.add_argument("--model-sha256", required=True)
+    b.add_argument("--backend", required=True, choices=["gpu", "cpu"])
+    b.add_argument("--host", required=True)
+    b.add_argument("--seed", type=int, required=True)
+    b.add_argument("--temperature", type=float, required=True)
+    b.add_argument("--context", type=int, required=True)
+    b.add_argument("--source-repo")
+    b.add_argument("--source-revision")
+    b.add_argument("--dtype", default="bfloat16")
+
     a = p.parse_args(argv)
     # THE CPU LANE MUST NOT TOUCH THE GPU. It takes no GPU lock (gpu-q rule clause 2), and with CUDA merely
     # VISIBLE, transformers 5.17 loaded a `--backend cpu` model through a path that reached the 4090 and
@@ -466,11 +582,12 @@ def main(argv: list[str]) -> None:
     # BEFORE torch is imported — for cpu cells and for tok/tmpl, which never need a device.
     if getattr(a, "backend", "cpu") == "cpu" and a.cmd != "probe":
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
-    if a.cmd == "gen" and a.source_repo and not a.source_revision:
+    if a.cmd in ("gen", "gen-batch") and a.source_repo and not a.source_revision:
         die("gen: --source-repo needs --source-revision (a moving branch is not a pin)")
     if a.cmd == "greedy" and not (a.messages or a.prompt_file):
         die("greedy: --messages or --prompt-file is required")
-    {"probe": lambda _: probe(), "gen": gen, "tok": tok, "tmpl": tmpl, "greedy": greedy}[a.cmd](a)
+    {"probe": lambda _: probe(), "gen": gen, "gen-batch": gen_batch, "tok": tok, "tmpl": tmpl,
+     "greedy": greedy}[a.cmd](a)
 
 
 if __name__ == "__main__":

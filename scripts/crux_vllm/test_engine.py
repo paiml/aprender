@@ -112,6 +112,30 @@ print(f"{'ok  ' if ok else 'FAIL'} a stamp skips re-hashing, and a later rewrite
 failed += not ok
 CASES_TOTAL = len(CASES) + len(VERIFY) + 1
 
+# ── batch mode (shared table) + the vLLM-only preflight fan-out ──────────────────────────────────────────
+sys.path.insert(0, str(HERE.parent / "lib"))
+import crux_batch_cases as bc  # noqa: E402
+
+
+def _no_cpu(a):
+    if a.backend != "gpu":
+        raise RuntimeError("the pinned vLLM wheel is the CUDA build and has no CPU backend; a cpu-lane cell cannot "
+                           "run on it")
+
+
+engine.preflight = _no_cpu
+failed += bc.run(engine, "vllm serve")
+bc.LOADS.update(inproc=0, serve=0)
+_w = bc.batch_env()
+engine.load_inproc = bc.fake_inproc()
+engine.run_batch(bc.model_args(backend="cpu"), [{"prompt_id": "p", "verb": "run", "messages": bc.msgs(_w, "m", ["q"]),
+                                                  "thinking": "off", "max_tokens": 5}])
+_r = bc.rows(_w)
+_ok = bc.LOADS["inproc"] == 0 and "no CPU backend" in (_r[0]["refused"] or "")
+print(f"{'ok  ' if _ok else 'FAIL'} [batch] a preflight refusal fans out and loads nothing")
+failed += not _ok
+CASES_TOTAL += bc.CASE_COUNT + 1
+
 for name, logs, must, must_not in CASES:
     got = engine.refusal(GENERIC, *logs)
     ok = got.startswith(f"RuntimeError: {GENERIC}") and (must is None or must in got) and (
