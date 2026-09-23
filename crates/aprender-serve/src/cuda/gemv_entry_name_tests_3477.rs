@@ -851,4 +851,40 @@ mod gemv_entry_name_tests_3477 {
             "LAYOUT-001: GGUF/APR data is row-major on this path"
         );
     }
+
+    /// #3908: a size can AGREE with a declaration or CONTRADICT it; it cannot
+    /// out-rank one it agrees with. BF16 and F16 are both 2 bytes/element, so
+    /// size-first resolution relabelled a tied BF16 LM head as F16 and the GPU
+    /// decoded bf16 bytes as IEEE half (F2 gate: CPU argmax 319, GPU 14880).
+    #[test]
+    fn a_consistent_declaration_wins_over_the_size_guess() {
+        use crate::cuda::types::WeightQuantType as W;
+        let (rows, cols) = (151_936usize, 896usize); // qwen2.5-0.5b lm_head
+        let two_bytes = rows * cols * 2;
+
+        // The #3908 case: declared BF16, size agrees -> BF16, NOT F16.
+        assert_eq!(
+            W::resolve_declared_or_sized(Some(W::BF16), two_bytes, rows, cols),
+            Some(W::BF16)
+        );
+        assert_eq!(
+            W::resolve_declared_or_sized(Some(W::F16), two_bytes, rows, cols),
+            Some(W::F16)
+        );
+        // PAR-058 is preserved: a declaration the size CONTRADICTS is overridden.
+        // Q4_1 bytes (20/32) declared as Q4_0 (18/32) resolve to Q4_1.
+        let (r, c) = (896usize, 4864usize);
+        let q4_1_bytes = r * (c / 32) * 20;
+        assert_eq!(
+            W::resolve_declared_or_sized(Some(W::Q4_0), q4_1_bytes, r, c),
+            Some(W::Q4_1)
+        );
+        // No declaration: the size guess is all there is, unchanged.
+        assert_eq!(W::resolve_declared_or_sized(None, two_bytes, rows, cols), Some(W::F16));
+        // Neither matches: fall back to the declaration rather than inventing one.
+        assert_eq!(
+            W::resolve_declared_or_sized(Some(W::Q4K), 12_345, rows, cols),
+            Some(W::Q4K)
+        );
+    }
 }
