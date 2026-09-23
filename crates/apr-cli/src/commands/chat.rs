@@ -77,6 +77,9 @@ pub(crate) struct ChatConfig {
     pub trace: bool,
     /// Trace output file path
     pub trace_output: Option<std::path::PathBuf>,
+    /// #3723: `--thinking on|off`, applied to every rendered turn
+    /// (`realizar::chat_template::apply_thinking_mode`). `None`: the production default.
+    pub thinking: Option<bool>,
 }
 
 impl Default for ChatConfig {
@@ -92,6 +95,7 @@ impl Default for ChatConfig {
             json: false,
             trace: false,
             trace_output: None,
+            thinking: None,
         }
     }
 }
@@ -148,6 +152,8 @@ pub(crate) fn run(
     profile: bool,
     offline: bool,
     json: bool,
+    // #3723: `--thinking on|off` (None: the production default).
+    thinking: Option<bool>,
 ) -> Result<(), CliError> {
     contract_pre_temperature_bounds!();
     contract_pre_session_state_machine!();
@@ -214,6 +220,7 @@ pub(crate) fn run(
         json,
         trace,
         trace_output,
+        thinking,
     };
 
     print_welcome_banner_for(path, format, &config);

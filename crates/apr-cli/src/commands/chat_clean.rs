@@ -253,6 +253,7 @@
             json: false,
             trace: true,
             trace_output: Some(PathBuf::from("/tmp/all_fields.json")),
+            thinking: None,
         };
         assert!((config.temperature - 1.5).abs() < f32::EPSILON);
         assert!((config.top_p - 0.95).abs() < f32::EPSILON);
@@ -335,6 +336,7 @@
             path, 0.7, 0.9, 512, None, false, false, false /* #3955 accel_forced */, false, None, false, None, "info", false,
             false, // offline
             false, // #3794: --json
+            None,  // #3723: --thinking
         );
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -352,6 +354,7 @@
             path, 0.5, 0.8, 256, None, false, false, false /* #3955 accel_forced */, false, None, false, None, "info", false,
             false, // offline
             false, // #3794: --json
+            None,  // #3723: --thinking
         );
         assert!(result.is_err());
     }
@@ -363,6 +366,7 @@
             path, 1.0, 1.0, 1024, None, true, true, false /* #3955 accel_forced */, false, None, false, None, "warn", false,
             false, // offline
             false, // #3794: --json
+            None,  // #3723: --thinking
         );
         assert!(result.is_err());
     }
@@ -394,6 +398,7 @@
             true,
             false, // offline
             false, // #3794: --json
+            None,  // #3723: --thinking
         );
         assert!(result.is_err());
     }
@@ -405,6 +410,7 @@
             path, 0.7, 0.9, 512, None, false, false, false /* #3955 accel_forced */, false, None, false, None, "info", false,
             false, // offline
             false, // #3794: --json
+            None,  // #3723: --thinking
         );
         assert!(result.is_err());
     }
@@ -429,6 +435,7 @@
             false,
             false, // offline
             false, // #3794: --json
+            None,  // #3723: --thinking
         );
         assert!(result.is_err());
     }
@@ -444,6 +451,7 @@
             "info", false, // no profile
             false, // offline
             false, // #3794: --json
+            None,  // #3723: --thinking
         );
         assert!(result.is_err());
     }
@@ -457,6 +465,7 @@
             None, false, None, "info", true, // profile enabled
             false, // offline
             false, // #3794: --json
+            None,  // #3723: --thinking
         );
         assert!(result.is_err());
     }

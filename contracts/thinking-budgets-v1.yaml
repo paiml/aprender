@@ -68,3 +68,16 @@ models:
       diverge at token 143 of 192 while Qwen3-1.7B does not, so a greedy token-level
       number is not host-portable and a yoga figure could not be used for lambda's gate.
     owed_by: "aprender#3907 (the measurement is queued behind aprender#3899, d8's Rule A blocker, for the lambda slot)"
+  "Qwen3.5-0.8B-Q4_K_M.gguf":
+    # #3948 quorum item 3: recorded explicitly, so a failure on this model cites ITS measurement
+    # and never the 8B-measured `default`. The budget is not what fails here.
+    budget: 2048
+    basis: |
+      Measured on lambda (RTX 4090, cuda), #3948 receipt @ 5103e07de: on apr's thinking-ON prompt the
+      `<think>` block closes EMPTY at budgets 16, 64 and 2048 alike, so no budget change makes this
+      leg pass on that prompt. ATTRIBUTION IS OPEN, NOT "the model": apr's ON prompt ends
+      `assistant\n` (without_thinking_prefill), while the official Qwen3.5 template ends
+      `assistant\n<think>\n`; on the official prompt this model no longer emits the instant empty
+      block (aprender-36, cop heads-up 2026-09-23). Until the golden ON leg renders the official
+      template (#3990), an empty-think result here is NOT a RED-MODEL verdict (#3957 F9). Caveat:
+      a foreign GPU process was resident during the #3948 measurement; re-run on an empty card.

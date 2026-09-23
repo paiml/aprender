@@ -35,6 +35,32 @@ pub struct BackendArg {
     pub backend: Option<String>,
 }
 
+/// Thinking modes `--thinking` accepts (#3723).
+pub const THINKING_VALUES: [&str; 2] = ["on", "off"];
+
+/// The ONE `--thinking` declaration, flattened into `apr run` and `apr chat` (#3723), and
+/// shared by name and values with `apr code` (#3978). One declaration for the same reason
+/// as [`BackendArg`]: a hand-copied flag drifts.
+///
+/// ABSENT renders what production always has (a Qwen3/Qwen3.5 model answers with thinking
+/// OFF). `on` removes the empty `<think>` prefill so the model reasons, and is REFUSED by name
+/// on a model whose template has no thinking mode, never silently run as OFF.
+#[derive(clap::Args, Debug, Clone, Default, PartialEq, Eq)]
+pub struct ThinkingArg {
+    /// Thinking mode for a thinking-capable model: on or off. Absent: the default (off for
+    /// Qwen3/Qwen3.5). `on` on a model with no thinking template is refused (#3723)
+    #[arg(long, value_name = "MODE", value_parser = THINKING_VALUES)]
+    pub thinking: Option<String>,
+}
+
+impl ThinkingArg {
+    /// `Some(true)` for on, `Some(false)` for off, `None` when the flag is absent.
+    #[must_use]
+    pub fn mode(&self) -> Option<bool> {
+        self.thinking.as_deref().map(|m| m == "on")
+    }
+}
+
 /// Backends `apr finetune --gpu-backend` accepts.
 ///
 /// #2583 follow-up: this site is the SAME silent-wrong-backend defect as
@@ -215,6 +241,9 @@ pub enum Commands {
         // PMAT-488 / #2583: shared `--backend` declaration (see `BackendArg`).
         #[command(flatten)]
         backend: BackendArg,
+        // #3723: shared `--thinking` declaration (see `ThinkingArg`).
+        #[command(flatten)]
+        thinking: ThinkingArg,
     },
     /// Inference server (plan/run)
     Serve {

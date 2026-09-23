@@ -64,6 +64,8 @@ ROWS = [
   ("GREEN a closed think, then the tag",   ans("4", "int"), {"text": "<think>2+2=4</think><answer>4</answer>"}, True, None),
   ("RED the only tag was drafted inside think", ans("4", "int"), {"text": "<think>maybe <answer>4</answer></think>I am not sure."}, False, "no_answer_tag"),
   ("RED a right draft in think, a wrong final", ans("4", "int"), {"text": "<think><answer>4</answer></think><answer>5</answer>"}, False, "mismatch"),
+  ("GREEN a prefilled <think>: reasoning ends at </think>", ans("4", "int"), {"text": "2+2 <answer>5</answer>?\n</think>\n<answer>4</answer>"}, True, None),
+  ("RED a prefilled <think>: only a drafted tag", ans("4", "int"), {"text": "2+2 is <answer>4</answer> I think\n</think>\nIt is four."}, False, "no_answer_tag"),
   ("RED int oracle given prose",          ans("4", "int"), {"text": "<answer>four</answer>"}, False, "answer_not_int"),
   ("RED no text at all",                  ans("4", "int"), {"text": None}, False, "no_text"),
   ("GREEN recall on the final turn",      RECALL, {"text": "<answer>12</answer>", "turns": ["<answer>7</answer>", "<answer>12</answer>"]}, True, None),
@@ -168,6 +170,38 @@ for name, kw, want_adm, want_unc in CERTROWS:
     print(f"  {'ok   ' if good else 'BROKE'} certify: {name}  ->  admitted {got_adm}, uncontrolled {got_unc}")
     fail += not good
 
+# Thinking ON: hf/vLLM split the think off (split_think); an UNCLOSED one is reasoning + an EMPTY text.
+# The receipt must record it as unclosed (the cop's close/loop join), and a tag drafted inside the loop
+# must never count.
+def think_cert(d, hf_doc):
+    m = dict(MODEL, thinking=["on"])
+    rows = []
+    for leg, (eng, sha, src) in LEGROW.items():
+        out = os.path.join(d, f"{leg}.json")
+        json.dump(hf_doc if eng == "hf" else {"text": "<think>ok</think><answer>4</answer>"}, open(out, "w"))
+        open(out + ".err", "w").close()
+        rows.append({"kind": "gen", "engine": eng, "model_sha256": sha, "host": "h", "verb": "chat", "thinking": "on",
+                     "backend": "gpu", "prompt_id": "ctl", "rc": 0, "stdout": out, "stderr": out + ".err",
+                     "refused": None, **({"source": SRC} if src else {})})
+    for f, doc in (("m.jsonl", None), ("p.json", {"schema": o.SCHEMA, "prompts": [PSET["prompts"][0]]}), ("i.json", [m])):
+        with open(os.path.join(d, f), "w") as fh:
+            fh.write("".join(json.dumps(r) + "\n" for r in rows) if doc is None else json.dumps(doc))
+    subprocess.run([sys.executable, CERT, "certify", "--prompts", f"{d}/p.json", "--inventory", f"{d}/i.json",
+                    "--apr-commit", "c" * 40, "-o", f"{d}/r.json", f"{d}/m.jsonl"], capture_output=True, check=True)
+    r = json.load(open(f"{d}/r.json"))
+    return r["admitted"]["M/Q4"], r["think_closure"]["M/Q4|ctl"]["hf@bf16:hf"]
+
+THINKROWS = [
+  ("RED hf looped (empty text, tags only in reasoning) is recorded unclosed", {"text": "", "reasoning": "<answer>4</answer> wait <answer>4</answer>"}, [], "unclosed"),
+  ("GREEN hf closed its think and answered", {"text": "<answer>4</answer>", "reasoning": "2+2"}, ["ctl"], "closed"),
+]
+for name, doc, want_adm, want_think in THINKROWS:
+    with tempfile.TemporaryDirectory() as d:
+        adm, think = think_cert(d, doc)
+    good = adm == want_adm and think == want_think
+    print(f"  {'ok   ' if good else 'BROKE'} certify: {name}  ->  admitted {adm}, think {think}")
+    fail += not good
+
 with tempfile.TemporaryDirectory() as d:
     certify(d)
     def chk():
@@ -184,6 +218,38 @@ sys.exit(1 if fail else 0)
 PY
 table=$?
 
+# Drift against golden_output.rs (#3962 done-when 5: extended, not bypassed): every golden question opens
+# an `answer` prompt whose expect is one of its patterns, or is excluded by name with a reason.
+GOLDEN="$ROOT/crates/apr-cli/src/commands/golden_output.rs"
+[ -f "$GOLDEN" ] || { printf '%s: ENV - %s not found\n' "$PROG" "$GOLDEN" >&2; exit 2; }
+DRIFT_OUT=$(python3 - "$GOLDEN" "$PROMPTS" <<'DRIFT'
+import json, re, sys
+src = open(sys.argv[1], encoding="utf-8").read()
+m = re.search(r"fn golden_questions\(\)[^{]*\{(.*?)\n\}", src, re.S)
+body = re.sub(r"//[^\n]*", "", m.group(1)) if m else ""
+cases = [(q, re.findall(r'"((?:[^"\\]|\\.)*)"', pats))
+         for q, pats in re.findall(r'\(\s*"((?:[^"\\]|\\.)*)"\s*,\s*vec!\[(.*?)\]', body, re.S)]
+doc = json.load(open(sys.argv[2], encoding="utf-8"))
+if not cases:
+    print("golden_questions() yielded 0 cases - a parse that finds nothing is a refusal, never agreement"); sys.exit(1)
+excluded = doc.get("golden_excluded") or {}
+bad = []
+for q, pats in cases:
+    hit = [p["id"] for p in doc["prompts"] if p["oracle"].get("type") == "answer" and len(p["messages"]) == 1
+           and p["messages"][0]["content"].startswith(q) and str(p["oracle"].get("expect")) in pats]
+    if not hit and not (excluded.get(q) or "").strip():
+        bad.append(f"golden question {q!r} (patterns {pats}) has no answer prompt and no golden_excluded reason")
+for q in excluded:
+    if q not in [c[0] for c in cases]:
+        bad.append(f"golden_excluded names {q!r}, which golden_questions() no longer has")
+print("\n".join(bad) if bad else f"{len(cases)} golden questions accounted for")
+sys.exit(1 if bad else 0)
+DRIFT
+)
+drift=$?
+if [ "$drift" -eq 0 ]; then printf '  ok    drift vs golden_output.rs: %s\n' "$DRIFT_OUT"
+else printf '  BROKE drift vs golden_output.rs:\n'; printf '%s\n' "$DRIFT_OUT" | sed 's/^/          /'; fi
+
 LINT_OUT=$(python3 "$ORACLES" lint "$PROMPTS" 2>&1)
 lint=$?
 if [ "$lint" -eq 0 ]; then
@@ -192,7 +258,7 @@ else
   printf '  BROKE %s:\n' "${PROMPTS#"$ROOT"/}"; printf '%s\n' "$LINT_OUT" | sed 's/^/          /'
 fi
 
-if [ "$table" -eq 0 ] && [ "$lint" -eq 0 ]; then
+if [ "$table" -eq 0 ] && [ "$lint" -eq 0 ] && [ "$drift" -eq 0 ]; then
   printf '%s: PASS\n' "$PROG"; exit 0
 fi
-printf '%s: FAIL (table rc=%s, prompt-set lint rc=%s)\n' "$PROG" "$table" "$lint"; exit 1
+printf '%s: FAIL (table rc=%s, prompt-set lint rc=%s, golden drift rc=%s)\n' "$PROG" "$table" "$lint" "$drift"; exit 1

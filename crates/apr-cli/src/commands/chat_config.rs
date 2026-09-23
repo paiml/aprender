@@ -311,6 +311,7 @@
             path, 0.7, 0.9, 512, None, false, false, false /* #3955 accel_forced */, false, None, false, None, "info", false,
             false, // offline
             false, // #3794: --json
+            None,  // #3723: --thinking
         );
         assert!(result.is_err());
         match result {
@@ -341,6 +342,7 @@
             true,
             false, // offline
             false, // #3794: --json
+            None,  // #3723: --thinking
         );
         assert!(result.is_err());
     }

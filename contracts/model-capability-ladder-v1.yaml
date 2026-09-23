@@ -112,6 +112,33 @@ ladder:
       # *A3B* was the one deferral kept past that doctrine, as an explicit operator ruling of
       # 2026-09-22 ("we kick the MoE work to later"). It is retired by the ruling of 2026-09-23
       # above, which makes #3714 a 0.69.1 requirement.
+    # #3957 F9/F10: NAMED RED verdicts. Unlike `deferred`, they are not declarations. Each one is
+    # a claim about CAUSE that check_model_ladder.sh admits only when THIS sweep re-proves it
+    # (scripts/lib/model_ladder_redmodel.py); otherwise the row is plain FAIL and blocks. A proven
+    # cell prints RED-MODEL / RED-UNSUPPORTED, is never counted green, and does not block. A key
+    # matching no held file, or matching a green row, is refused.
+    #
+    # F9, operator ruling 2026-09-23 on #3957 (verbatim): "proceed with (a)". The FILE is
+    # defective, as proven each sweep by llama.cpp on the identical GGUF (the CRUX greedy rows),
+    # a positive control on the sibling, and apr CPU == GPU. Covers thinking ON only.
+    red_model:
+      Qwen3.5-0.8B-IQ4_XS.gguf:
+        ticket: "#3951"            # never closes its think block
+        defect: think_never_closed
+        thinking: "on"
+        control: Qwen3.5-4B-Q4_K_M.gguf
+      Qwen3.5-0.8B-Q4_K_M.gguf:
+        ticket: "#3948"            # closes it EMPTY (fold quorum on #3948, item 2)
+        defect: think_empty
+        thinking: "on"
+        control: Qwen3.5-4B-Q4_K_M.gguf
+    # F10, operator ruling 2026-09-23 on #3957 (verbatim): "c". apr has no CUDA forward for
+    # qwen35moe (hybrid SSM + MoE) and must REFUSE it by name on `apr run --gpu`: no fallback, no
+    # output (aprender-serve capability::no_cuda_forward_reason). The CUDA forward is 0.70.0 work.
+    red_unsupported:
+      "Qwen3.5-35B-A3B*.gguf":
+        architecture: qwen35moe
+        ticket: "#3977"
     backends: [cuda]
   # #3712 row B (operator 2026-09-21: "MORE than enough tokens for our needs (overdo it), and our verbs are
   # dogfooded, i.e chat with and without thinking, ditto run, ditto code"). A cell is (model, host, verb,

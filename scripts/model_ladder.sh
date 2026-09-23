@@ -868,6 +868,13 @@ print(json.dumps({
 }))
 PY
 )
+  # #3957 F10: the architecture from the FILE HEADER (apr inspect), so a RED-UNSUPPORTED key is
+  # checked against what the file is rather than what its name suggests. "unknown" when unreadable.
+  arch_json="$WORK/${rid//[^A-Za-z0-9._-]/_}.inspect.json"
+  apr_locked inspect "$path" --json > "$arch_json" 2> /dev/null || :
+  row_arch=$(python3 -c 'import json, sys
+try: print(json.load(open(sys.argv[1])).get("architecture") or "unknown")
+except Exception: print("unknown")' "$arch_json")
   be_json="{"; first=1
   IFS=',' read -r -a bes <<< "$rbackends"
   # ── #3843: `code` is measured ONCE per rung, and NOT per backend ─────────────
@@ -897,9 +904,20 @@ PY
     # apr_locked / LOCK_BUSY are KEPT from main: the GPU lock is what serialises the
     # ladder against every other session on the box. #3743's side dropped it.
     run_flag=$(flag_for run "$flag")
+    # #3957 F10: stdout and stderr go to SEPARATE files. A refusal generates nothing, and the only way
+    # to observe "nothing" is a stdout byte count that the merged stream cannot give. `generated_bytes`
+    # leaves out apr's own `verbose: ` preamble, which --verbose prints BEFORE the pre-load refusal
+    # (measured on lambda, apr 0.69.1 (7b8aa7e32) on Qwen3.5-35B-A3B-UD-IQ4_XS: rc 12, 178 stdout
+    # bytes, all four of them `verbose:` lines). The refusal is recorded verbatim, so the judge can
+    # check that apr refused BY NAME (capability::no_cuda_forward_reason) and did not just fail.
+    run_o="$WORK/${rid//[^A-Za-z0-9._-]/_}.$b.run.out"; run_e="$WORK/${rid//[^A-Za-z0-9._-]/_}.$b.run.err"
     # shellcheck disable=SC2086
-    run_out=$(apr_locked run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 --verbose $run_flag 2>&1); run_rc=$?
+    apr_locked run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 --verbose $run_flag > "$run_o" 2> "$run_e"; run_rc=$?
     [ "$run_rc" = "$LOCK_BUSY" ] && lock_timeout "apr run $rid ($b)"
+    run_out=$(cat "$run_o" "$run_e")
+    run_stdout_bytes=$(stat -c %s "$run_o" 2> /dev/null || echo null)
+    run_generated_bytes=$(grep -v '^verbose: ' "$run_o" | wc -c)
+    run_refusal_json=$(grep -h -m1 -F 'no CUDA forward for architecture' "$run_e" "$run_o" | head -1 | tr -d '\r\n' | json_str_or_null)
     fb=false; ran=true; esc=false
     if grep -qE 'falling back to CPU|path rejected, attempting fallback|runs on the CPU; the GPU backend' <<< "$run_out"; then fb=true; fi
     # #3743: realizar zero-width-escapes special tokens it finds INSIDE the user text,
@@ -957,7 +975,7 @@ PY
 
     [ $first = 1 ] || be_json="$be_json,"; first=0
     be_json="$be_json\"$b\":{\"ran\":$ran,\"fallback\":$fb,\"escaped_special\":$esc,\"rc\":$run_rc"
-    be_json="$be_json,\"verbs\":{\"run\":{\"ran\":$ran,\"rc\":$run_rc}"
+    be_json="$be_json,\"verbs\":{\"run\":{\"ran\":$ran,\"rc\":$run_rc,\"stdout_bytes\":$run_stdout_bytes,\"generated_bytes\":$run_generated_bytes,\"refusal\":$run_refusal_json}"
     # #3921: `output_bad` carries the REASON, or null. A string here is a verdict
     # about what the verb produced; the rc beside it is only about whether it ran.
     chat_bad_json=$(printf '%s' "${chat_bad:-}" | json_str_or_null)
@@ -991,10 +1009,11 @@ print(json.dumps({"probed": False,
   # The receipt carries the MEASURED file hash (ONT-4c1): a resolver joining the ladder contract to
   # this receipt compares two measurements instead of trusting the receipt's own claim that it checked.
   row_err="$WORK/${rid//[^A-Za-z0-9._-]/_}.rowbuild.err"
-  row=$(python3 - "$rid" "$qa_row" "$be_json" "$qa_rc" "$rreq" "$got" "$rfile" "$rinv" 2>"$row_err" <<'PY'
+  row=$(python3 - "$rid" "$qa_row" "$be_json" "$qa_rc" "$rreq" "$got" "$rfile" "$rinv" "$row_arch" 2>"$row_err" <<'PY'
 import json, sys
 rid, qa, be, qa_rc = sys.argv[1], json.loads(sys.argv[2]), json.loads(sys.argv[3]), int(sys.argv[4])
 req, sha, rfile, inv_only = sys.argv[5] == "1", sys.argv[6], sys.argv[7], sys.argv[8] == "1"
+arch = sys.argv[9]
 cap = qa.get("capability_match", {})
 # `passed` is already normalised (skipped => passed=False) by the gate() reader above, but the
 # judge must not depend on that: a skipped gate counts only when no GPU backend is claimed.
@@ -1076,7 +1095,7 @@ green = cap_ok and golden_ok \
 gates_failed = qa.get("gates_failed") or []
 accounts_for_rc = qa_rc == 0 or bool(gates_failed)
 print(json.dumps({"id": rid, "file": rfile, "inventory_only": inv_only, "present": True, "sha_ok": True,
-                  "sha256": sha, "required": req, "qa_rc": qa_rc, "capability_match": qa.get("capability_match"),
+                  "sha256": sha, "architecture": arch, "required": req, "qa_rc": qa_rc, "capability_match": qa.get("capability_match"),
                   "golden_output": qa.get("golden_output"), "gates": qa.get("gates"),
                   "gates_failed": gates_failed, "gates_reported": qa.get("gates_reported"),
                   "gates_account_for_rc": accounts_for_rc,

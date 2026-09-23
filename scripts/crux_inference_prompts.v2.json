@@ -3,7 +3,7 @@
   "ticket": "#3962 (quorum revision Q1-Q5 on #3962)",
   "oracles": "scripts/lib/crux_oracles.py decides every verdict; scripts/check_crux_oracles.sh is its case table.",
   "certification": "A prompt is USED for a model only once evidence/crux/0.69.1/prompt-certification.json admits it for that model: ggml, hf and vllm all correct at bf16 AND the ggml family correct on the quantized GGUF, in both thinking modes where the model has one. At gate time a split is RED, never a prompt swap.",
-  "parity": "temperature 0, seed 0, max_tokens[thinking] from each entry, enable_thinking explicit. An unclosed think block is RED think_unclosed.",
+  "parity": "temperature 0, seed 0, max_tokens[thinking] from each entry, enable_thinking explicit. An unclosed think block is RED unclosed think. Budgets are 1024 off / 4096 on: at 128 off, Qwen3.5-2B-BF16 wrote correct worked solutions (391, 56) and was cut off before the tag, 7 of 21 cells, gx10 2026-09-23 (#3962).",
   "prompts": [
     {
       "id": "ctl-2plus2",
@@ -16,8 +16,8 @@
       "tier": "easy",
       "control": true,
       "max_tokens": {
-        "off": 128,
-        "on": 2048
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
@@ -42,8 +42,8 @@
       "tier": "easy",
       "control": true,
       "max_tokens": {
-        "off": 128,
-        "on": 2048
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
@@ -72,8 +72,8 @@
       "tier": "easy",
       "control": true,
       "max_tokens": {
-        "off": 512,
-        "on": 3072
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
@@ -101,8 +101,8 @@
       "tier": "easy",
       "control": false,
       "max_tokens": {
-        "off": 128,
-        "on": 2048
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
@@ -127,13 +127,39 @@
       "tier": "easy",
       "control": false,
       "max_tokens": {
-        "off": 128,
-        "on": 2048
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
           "role": "user",
           "content": "What is the capital city of France? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "Paris",
+        "normalize": "casefold_strip"
+      }
+    },
+    {
+      "id": "golden-paris",
+      "verb": [
+        "run",
+        "chat",
+        "serve run",
+        "serve stream"
+      ],
+      "tier": "easy",
+      "control": false,
+      "max_tokens": {
+        "off": 1024,
+        "on": 4096
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is the capital of France? Reply with the final answer inside <answer></answer>."
         }
       ],
       "oracle": {
@@ -153,8 +179,8 @@
       "tier": "easy",
       "control": false,
       "max_tokens": {
-        "off": 128,
-        "on": 2048
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
@@ -179,8 +205,8 @@
       "tier": "easy",
       "control": false,
       "max_tokens": {
-        "off": 128,
-        "on": 2048
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
@@ -205,8 +231,8 @@
       "tier": "easy",
       "control": false,
       "max_tokens": {
-        "off": 128,
-        "on": 2048
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
@@ -231,8 +257,8 @@
       "tier": "easy",
       "control": false,
       "max_tokens": {
-        "off": 128,
-        "on": 2048
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
@@ -257,8 +283,8 @@
       "tier": "hard",
       "control": false,
       "max_tokens": {
-        "off": 128,
-        "on": 2048
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
@@ -283,8 +309,8 @@
       "tier": "hard",
       "control": false,
       "max_tokens": {
-        "off": 128,
-        "on": 2048
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
@@ -309,8 +335,8 @@
       "tier": "hard",
       "control": false,
       "max_tokens": {
-        "off": 128,
-        "on": 2048
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
@@ -335,8 +361,8 @@
       "tier": "hard",
       "control": false,
       "max_tokens": {
-        "off": 128,
-        "on": 2048
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
@@ -360,8 +386,8 @@
       "tier": "easy",
       "control": false,
       "max_tokens": {
-        "off": 128,
-        "on": 2048
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
@@ -393,8 +419,8 @@
       "tier": "easy",
       "control": false,
       "max_tokens": {
-        "off": 128,
-        "on": 2048
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
@@ -426,8 +452,8 @@
       "tier": "hard",
       "control": false,
       "max_tokens": {
-        "off": 128,
-        "on": 2048
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
@@ -459,8 +485,8 @@
       "tier": "easy",
       "control": false,
       "max_tokens": {
-        "off": 512,
-        "on": 3072
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
@@ -486,8 +512,8 @@
       "tier": "easy",
       "control": false,
       "max_tokens": {
-        "off": 512,
-        "on": 3072
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
@@ -513,8 +539,8 @@
       "tier": "hard",
       "control": false,
       "max_tokens": {
-        "off": 512,
-        "on": 3072
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
@@ -541,8 +567,8 @@
       "tier": "easy",
       "control": false,
       "max_tokens": {
-        "off": 256,
-        "on": 3072
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
@@ -577,8 +603,8 @@
       "tier": "hard",
       "control": false,
       "max_tokens": {
-        "off": 256,
-        "on": 3072
+        "off": 1024,
+        "on": 4096
       },
       "messages": [
         {
@@ -607,5 +633,9 @@
         ]
       }
     }
-  ]
+  ],
+  "golden": "Each golden_output.rs::golden_questions() question must open an `answer` prompt whose expect is one of its patterns, or be listed in golden_excluded with the reason. scripts/check_crux_oracles.sh refuses drift either way.",
+  "golden_excluded": {
+    "Hello there, how are you doing today my friend?": "a greeting has no verifiable answer, so no <answer> oracle can judge it; golden_output.rs keeps it as the conversational-turn smoke test"
+  }
 }

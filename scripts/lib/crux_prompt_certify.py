@@ -34,6 +34,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -84,23 +85,51 @@ def leg_of(row: dict, model: dict, quant_sha: str):
     return None
 
 
+def driver_raw(row: dict):  # -> (raw final reply, turns | None) or None
+    """hf and vLLM split the think block off before writing `text` (split_think): a closed one becomes
+    `reasoning` + `text`, an UNCLOSED one becomes `reasoning` + an EMPTY `text`. Rebuild the raw reply so
+    the oracle sees the same shape ggml sends it, and an unclosed think reads as unclosed, not as a
+    missing tag (#3962, the per-engine close/loop evidence the cop's ruling joins on)."""
+    try:
+        doc = json.loads(Path(row["stdout"]).read_text(encoding="utf-8"))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    reasoning = doc.get("reasoning")
+    if not reasoning:
+        return None
+    text = doc.get("text") or ""
+    return "<think>" + reasoning + ("</think>" + text if text else ""), doc.get("turns") or None
+
+
+def think_state(raw) -> str:
+    if not isinstance(raw, str) or not re.search(r"</?think>", raw, re.I):
+        return "none"
+    return "unclosed" if oracles.strip_think(raw) is None else "closed"
+
+
 def reply_of(row: dict, prompt: dict) -> tuple:
     """((text, turns) for the oracles, why-not). vLLM writes the same JSON as hf (row contract v1)."""
     r = dict(row, engine="hf") if row.get("engine") == "vllm" else row
     e = judge.engine_entry(r, prompt)
-    if e.get("answer") is None:
-        return None, e.get("why") or "no answer"
     if row.get("rc") != 0:
         return None, f"exit {row.get('rc')}"
-    return (e["answer"], e.get("turns")), None
+    raw = driver_raw(row) if row.get("engine") in ("hf", "vllm") else None
+    if raw is not None:
+        return raw, None
+    if e.get("answer") is None:
+        return None, e.get("why") or "no answer"
+    # An engine that reports no turns gives [] through the judge's parser: that is "not reported", not zero.
+    return (e["answer"], e.get("turns") or None), None
 
 
 def certify_one(prompt: dict, model: dict, quant: str, quant_sha: str, rows: list) -> tuple:
     cells, first_bad = [], None
     for thinking in model.get("thinking") or ["off"]:
         for leg in LEGS:
+            # Any verb counts: certification asks whether the PROMPT is answerable, not whether an
+            # interface works (that is the gate's job). The runner drives ggml through llama-server.
             mine = [r for r in rows if r.get("prompt_id") == prompt["id"] and r.get("thinking") == thinking
-                    and r.get("verb") in prompt["verb"] and leg_of(r, model, quant_sha) == leg]
+                    and leg_of(r, model, quant_sha) == leg]
             if not mine:
                 first_bad = first_bad or f"{leg} thinking={thinking}: no row"
                 cells.append({"leg": leg, "thinking": thinking, "correct": False, "why": "no row", "row": None})
@@ -110,10 +139,21 @@ def certify_one(prompt: dict, model: dict, quant: str, quant_sha: str, rows: lis
                 v = oracles.evaluate(prompt, *reply) if reply else {"correct": False, "why": why, "extracted": None}
                 cells.append({"leg": leg, "thinking": thinking, "engine": r["engine"], "verb": r["verb"],
                               "host": r.get("host"), "correct": v["correct"], "why": v["why"],
-                              "extracted": v["extracted"], "row": r["_at"]})
+                              "extracted": v["extracted"], "think": think_state(reply[0] if reply else None),
+                              "row": r["_at"]})
                 if not v["correct"]:
                     first_bad = first_bad or f"{leg} {r['engine']} {r['verb']} thinking={thinking} on {r.get('host')}: {v['why']}"
     return first_bad is None, first_bad, cells
+
+
+def closure(cells: list) -> dict:
+    out = {}
+    for c in cells:
+        if c["thinking"] != "on" or not c.get("engine"):
+            continue
+        key = f"{c['model']}|{c['prompt_id']}"
+        out.setdefault(key, {})[f"{c['leg']}:{c['engine']}"] = c.get("think")
+    return out
 
 
 def certify(a) -> int:
@@ -148,8 +188,16 @@ def certify(a) -> int:
         "inventory_sha256": sha256_path(Path(a.inventory)),
         "manifests": {m: sha256_path(Path(m)) for m in a.manifests},
         "admitted": admitted,
+        # The same admissions keyed by the quantized GGUF's sha256, so the judge can check each cell's
+        # (model_sha256, prompt_id) against the receipt directly (aprender-6c [8b6b78], #3957).
+        "admitted_by_sha": {m["quants"][k.split("/", 1)[1]]: v for m in inventory for k, v in admitted.items()
+                            if k.split("/", 1)[0] == m["model"]},
         "rejected": rejected,
         "uncontrolled": uncontrolled,
+        # Per (model, prompt): did each engine's thinking-ON reply close its think block? The judge joins
+        # this against apr's cell: every oracle leg unclosed too = the model's behaviour at greedy
+        # (RED-MODEL via F9); the oracle closed and apr looped = an apr defect (cop ruling, 2026-09-23).
+        "think_closure": closure(cells),
         "cells": cells,
     }
     Path(a.out).write_text(json.dumps(receipt, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")

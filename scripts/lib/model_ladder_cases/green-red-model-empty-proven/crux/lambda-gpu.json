@@ -1,0 +1,556 @@
+{
+ "schema": "crux-inference-receipt/v1",
+ "host": "lambda",
+ "backend": "gpu",
+ "apr": {
+  "sha": "ca5eca5eca5eca5eca5eca5eca5eca5eca5eca5e"
+ },
+ "cells": [
+  {
+   "key": {
+    "model_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "host": "lambda",
+    "verb": "run",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "host": "lambda",
+    "verb": "chat",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "host": "lambda",
+    "verb": "serve run",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "host": "lambda",
+    "verb": "code",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "host": "lambda",
+    "verb": "run",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "host": "lambda",
+    "verb": "chat",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "host": "lambda",
+    "verb": "serve run",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "host": "lambda",
+    "verb": "code",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "host": "lambda",
+    "verb": "run",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "host": "lambda",
+    "verb": "chat",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "host": "lambda",
+    "verb": "serve run",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "host": "lambda",
+    "verb": "code",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "host": "lambda",
+    "verb": "run",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "host": "lambda",
+    "verb": "run",
+    "thinking": "on",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "RED"
+  },
+  {
+   "key": {
+    "model_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "host": "lambda",
+    "verb": "run",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "host": "lambda",
+    "verb": "chat",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "host": "lambda",
+    "verb": "chat",
+    "thinking": "on",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "RED"
+  },
+  {
+   "key": {
+    "model_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "host": "lambda",
+    "verb": "chat",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "host": "lambda",
+    "verb": "serve run",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "host": "lambda",
+    "verb": "serve run",
+    "thinking": "on",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "RED"
+  },
+  {
+   "key": {
+    "model_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "host": "lambda",
+    "verb": "serve run",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "host": "lambda",
+    "verb": "code",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "host": "lambda",
+    "verb": "code",
+    "thinking": "on",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "RED"
+  },
+  {
+   "key": {
+    "model_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "host": "lambda",
+    "verb": "code",
+    "thinking": "off",
+    "rung": "golden",
+    "prompt_id": "fixture-control"
+   },
+   "verdict": "GREEN"
+  },
+  {
+   "key": {
+    "model_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "host": "lambda",
+    "verb": "run",
+    "thinking": "on",
+    "rung": "golden",
+    "prompt_id": "think-control"
+   },
+   "verdict": "GREEN",
+   "positive_control": true
+  }
+ ],
+ "summary": {
+  "verdict": "PASS",
+  "cells": 12
+ },
+ "greedy": [
+  {
+   "key": {
+    "model_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "host": "lambda",
+    "prompt_id": "think-2plus2",
+    "thinking": "on"
+   },
+   "engines": [
+    "apr",
+    "llama.cpp",
+    "llama.cpp@official"
+   ],
+   "apr": {
+    "raw": {
+     "generated_ids": [
+      151667,
+      198,
+      32313,
+      11,
+      1077,
+      594,
+      1490
+     ],
+     "generated_text": "<think>\n.\n</think>\n\n<answer>4</answer>",
+     "greedy": true,
+     "special": true,
+     "max_tokens": 256,
+     "prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198
+     ]
+    }
+   },
+   "llama.cpp": {
+    "raw": {
+     "generated_ids": [
+      151667,
+      198,
+      32313,
+      11,
+      1077,
+      594,
+      1490
+     ],
+     "generated_text": "<think>\n.\n</think>\n\n<answer>4</answer>",
+     "greedy": true,
+     "special": true,
+     "max_tokens": 256,
+     "prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198
+     ]
+    },
+    "version": "b10987"
+   },
+   "llama.cpp@official": {
+    "raw": {
+     "generated_ids": [
+      151667,
+      198,
+      32313,
+      11,
+      1077,
+      594,
+      1490
+     ],
+     "generated_text": "<think>\n.\n</think>\n\n<answer>4</answer>",
+     "greedy": true,
+     "special": true,
+     "max_tokens": 256,
+     "prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198,
+      248068,
+      198
+     ],
+     "template_prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198,
+      248068,
+      198
+     ]
+    },
+    "version": "b10987"
+   }
+  },
+  {
+   "key": {
+    "model_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "host": "lambda",
+    "prompt_id": "think-2plus2",
+    "thinking": "on"
+   },
+   "engines": [
+    "apr",
+    "llama.cpp",
+    "llama.cpp@official"
+   ],
+   "apr": {
+    "raw": {
+     "generated_ids": [
+      151667,
+      198,
+      32313
+     ],
+     "generated_text": "<think>\nThe sum of two and two is four.\n</think>\n\n<answer>4</answer>",
+     "greedy": true,
+     "special": true,
+     "max_tokens": 256,
+     "prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198
+     ]
+    }
+   },
+   "llama.cpp": {
+    "raw": {
+     "generated_ids": [
+      151667,
+      198,
+      32313
+     ],
+     "generated_text": "<think>\nThe sum of two and two is four.\n</think>\n\n<answer>4</answer>",
+     "greedy": true,
+     "special": true,
+     "max_tokens": 256,
+     "prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198
+     ]
+    },
+    "version": "b10987"
+   },
+   "llama.cpp@official": {
+    "raw": {
+     "generated_ids": [
+      151667,
+      198,
+      32313
+     ],
+     "generated_text": "<think>\nThe sum of two and two is four.\n</think>\n\n<answer>4</answer>",
+     "greedy": true,
+     "special": true,
+     "max_tokens": 256,
+     "prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198,
+      248068,
+      198
+     ],
+     "template_prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198,
+      248068,
+      198
+     ]
+    },
+    "version": "b10987"
+   }
+  }
+ ]
+}
