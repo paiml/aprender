@@ -1,0 +1,265 @@
+#!/usr/bin/env bash
+# check_crux_ref_cache.sh: the case table for the CRUX reference cache (#4036, scripts/lib/crux_ref_cache.py and
+# its hook in scripts/crux_inference_dogfood.sh). Hermetic: stub apr, hf and llamafile drivers stand in for the
+# engines inside a COPY of scripts/, and a private lock file stands in for /tmp/apr-gpu.lock. No GPU, no model.
+#
+# The rows run the REAL dogfood and the REAL judge, and read the receipt, never the cache's own log:
+#   1. cold run (empty cache)   → every reference engine ran, their clean rows were stored, the receipt is GREEN
+#   2. warm run (same cache)    → NO reference engine ran, the receipt is the same cell for cell (key, verdict),
+#                                 and every reference row says it came from the cache and names its origin
+#   3. MUST-RED: one stored artifact edited, its answer still RIGHT → NO reference engine ran, every cell is RED,
+#                                 and the receipt's refusal says STALE. Any edit is RED, not only a wrong answer
+#                                 (a wrong one the judge would catch anyway, which is why this edit keeps it right).
+#   4. oracle key: another host's device on the probe is a HIT (the host is not in the key); a new package
+#                                 version is a MISS, recomputed GREEN, never matched against the old truth
+#   5. a refused reference row is never stored → the next run is a MISS for that engine, not a hit
+#   6. MUTANT: the stale check disabled (why_stale always None) → row 3's receipt is no longer RED: the table
+#                                 catches it
+#
+# Exit: 0 every row behaved · 1 a row broke · 2 ENV.
+set -uo pipefail
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd) || exit 2
+PROG=check_crux_ref_cache
+for t in python3 flock; do
+  command -v "$t" >/dev/null 2>&1 || { printf '%s: ENV - %s is missing\n' "$PROG" "$t" >&2; exit 2; }
+done
+for f in scripts/crux_inference_dogfood.sh scripts/lib/crux_ref_cache.py scripts/lib/crux_inference_judge.py \
+         scripts/crux_inference_prompts.v2.json scripts/lib/crux_prompt_certify.py; do
+  [ -f "$ROOT/$f" ] || { printf '%s: ENV - %s not found\n' "$PROG" "$f" >&2; exit 2; }
+done
+
+TMP=$(mktemp -d) || exit 2
+_rm_tmp() {
+  local w
+  [ -n "${KEEP_TMP:-}" ] && { echo "kept $TMP"; return; }
+  # the dogfood's own work dirs, kept by --keep-work so row 2 can read the manifest
+  for w in $(sed -n 's/^work kept: //p' "$TMP"/*.log 2>/dev/null); do
+    [ -n "$w" ] && [ "$w" != / ] || continue
+    case "${w:-}" in
+      /tmp/?*) rm -rf -- "${w:?}" || : ;;
+      *) : ;;
+    esac
+  done
+  case "${TMP:-}" in
+    /tmp/?*|/var/folders/?*) rm -rf -- "$TMP" || : ;;
+    *) : ;;
+  esac
+}
+trap _rm_tmp EXIT
+unset http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY
+# run_cell's OOM-victim marking is shimmed: this table measures the cache, and an unprivileged sandbox denies choom
+mkdir -p "$TMP/shim"
+printf '#!/bin/sh\nwhile [ $# -gt 0 ] && [ "$1" != -- ]; do shift; done\n[ $# -gt 0 ] && shift\nexec "$@"\n' > "$TMP/shim/choom"
+chmod +x "$TMP/shim/choom"
+export PATH="$TMP/shim:$PATH"
+
+PASS=0
+FAIL=0
+ok()   { printf '  ok    %s\n' "$1"; PASS=$((PASS + 1)); }
+broke(){ printf '  BROKE %s\n' "$1"; FAIL=$((FAIL + 1)); }
+
+# ---- the tree: a copy of scripts/ with the two reference drivers stubbed ------------------------------------
+# mk_tree <dir>: the real scripts, stub drivers. Every stub call appends "CALL <engine> <verb> <prompt>" to $STUB_CALLS.
+mk_tree() {
+  local t="$1" eng
+  mkdir -p "$t"
+  cp -r "$ROOT/scripts" "$t/scripts"
+  for eng in hf llamafile; do
+    cat > "$t/scripts/crux_engine_$eng.sh" <<SH
+#!/usr/bin/env bash
+# stub $eng driver for check_crux_ref_cache.sh: STUB_PROBE_$eng overrides the probe line; STUB_REFUSE_$eng=1
+# makes every gen row a refusal.
+eng=$eng
+SH
+    cat >> "$t/scripts/crux_engine_$eng.sh" <<'SH'
+case "${1:-}" in
+  probe) pv="STUB_PROBE_$eng"; printf '%s\n' "${!pv:-$eng=1.0.0 transformers=5.0.0 torch=2.0.0 device=stub-$HOSTNAME}"; exit 0 ;;
+  gen) shift ;;
+  *) exit 2 ;;
+esac
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --model-sha256) sha="$2"; shift 2 ;;
+    --verb) verb="$2"; shift 2 ;;
+    --prompt-id) pid="$2"; shift 2 ;;
+    --thinking) think="$2"; shift 2 ;;
+    --backend) backend="$2"; shift 2 ;;
+    --host) host="$2"; shift 2 ;;
+    --interface) shift 2 ;;
+    *) if [ "${2:-}" != "" ] && [ "${2#--}" = "$2" ]; then shift 2; else shift; fi ;;
+  esac
+done
+echo "CALL $eng $verb $pid" >> "$STUB_CALLS"
+d="$CRUX_WORK/${sha:0:12}/$verb"; mkdir -p "$d"
+out="$d/$eng-$pid-$think.json"
+printf '{"text": "<answer>4</answer>", "raw_text": "<answer>4</answer>\\n", "reported": {"thinking_requested": "%s", "device": "stub"}}\n' "$think" > "$out"
+: > "$d/$eng-$pid-$think.err"
+rv="STUB_REFUSE_$eng"
+python3 - "$CRUX_MANIFEST" "$eng" "$sha" "$host" "$verb" "$think" "$backend" "$pid" "$out" "$d/$eng-$pid-$think.err" "${!rv:-}" <<'PY'
+import json, sys
+m, eng, sha, host, verb, think, backend, pid, out, err, refuse = sys.argv[1:12]
+row = {"kind": "gen", "engine": eng, "model_sha256": sha, "host": host, "verb": verb, "thinking": think,
+       "backend": backend, "prompt_id": pid, "rc": 0, "stdout": out, "stderr": err,
+       "refused": "stub refusal" if refuse else None}
+if eng == "hf":
+    row["source"] = {"repo": "stub/src", "revision": "0" * 40, "dtype": "bfloat16"}
+open(m, "a").write(json.dumps(row) + "\n")
+PY
+SH
+    chmod +x "$t/scripts/crux_engine_$eng.sh"
+  done
+}
+
+BIN="$TMP/bin"; mkdir -p "$BIN"
+cat > "$BIN/apr" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  --version) echo "apr 0.0.0 (stub)" ;;
+  run)
+    case " $* " in *" --help "*) echo "  --thinking <MODE>"; exit 0 ;; esac
+    printf '{"text": "<answer>4</answer>", "tokens_generated": 1, "tok_per_sec": 1.0, "finish_reason": "stop", "backend": {"requested": "gpu", "ran": "gpu", "fell_back": false}}\n'
+    printf '[DEBUG] formatted_prompt="q"\n' >&2 ;;
+  *) echo "stub apr: unhandled '$*'" >&2; exit 1 ;;
+esac
+SH
+chmod +x "$BIN/apr"
+MODEL="$TMP/model.gguf"; printf 'GGUF-stub-model' > "$MODEL"
+MSHA=$(sha256sum "$MODEL" | cut -d' ' -f1)
+printf 'sources:\n  %s:\n    hf: {repo: stub/src, revision: "%s", dtype: bfloat16}\n' "$MSHA" "$(printf '0%.0s' $(seq 40))" > "$TMP/hf-sources.yaml"
+# A fixture certification over the REAL v2 prompt bytes that admits the positive control for the stub model, OFF.
+# The judge checks it through the certifier's own `check`, so a drift in the prompt set is an ENV refusal here.
+python3 - "$ROOT/scripts/crux_inference_prompts.v2.json" "$MSHA" "$TMP/cert.json" <<'PY' || exit 2
+import hashlib, json, sys
+prompts, sha, out = sys.argv[1:4]
+json.dump({"schema": "crux-prompt-certification/v1", "prompts": "scripts/crux_inference_prompts.v2.json",
+           "prompts_sha256": hashlib.sha256(open(prompts, "rb").read()).hexdigest(), "admitted": {},
+           "admitted_by_sha": {sha: ["ctl-2plus2"]}, "admitted_by_sha_thinking": {sha: {"off": ["ctl-2plus2"]}}},
+          open(out, "w"))
+PY
+
+# run_row <name> <tree> <cache> [env...]: one real dogfood run; receipt at $TMP/<name>.out/stub-gpu.json
+run_row() {
+  local name="$1" tree="$2" cache="$3"; shift 3
+  : > "$TMP/$name.calls"; : > "$TMP/$name.lock"
+  ( cd "$tree" && env STUB_CALLS="$TMP/$name.calls" CRUX_GPU_LOCK="$TMP/$name.lock" GPUQ_BIN=/nonexistent/gpu-q \
+      CRUX_HF_SOURCES="$TMP/hf-sources.yaml" DOGFOOD_ALLOW_UNPINNED=1 APR="$BIN/apr" "$@" \
+      timeout 300 bash scripts/crux_inference_dogfood.sh 0.0.0 --model "$MODEL" --engines apr,hf,llamafile \
+        --verbs run --prompts scripts/crux_inference_prompts.v2.json --certification "$TMP/cert.json" \
+        --only-prompts ctl-2plus2 --thinking-modes off \
+        --host stub --out "$TMP/$name.out" --timeout 60 --reference-cache "$cache" --keep-work ) > "$TMP/$name.log" 2>&1
+  echo "$?" > "$TMP/$name.rc"
+}
+
+# summary <name>: "<engine calls> | <cell verdicts> | <reference rows from cache>/<reference rows>"
+summary() {
+  python3 - "$TMP/$1.out/stub-gpu.json" "$TMP/$1.calls" "$TMP/$1.out" <<'PY'
+import glob, json, os, sys
+rec, calls = sys.argv[1], sys.argv[2]
+n = sum(1 for _ in open(calls))
+try:
+    d = json.load(open(rec))
+except (OSError, ValueError):
+    print("%d | NO-RECEIPT | -" % n); sys.exit()
+cells = sorted("%s/%s/%s=%s" % (c["key"]["verb"], c["key"]["thinking"], c["key"]["prompt_id"], c["verdict"])
+               for c in d.get("cells", []))
+print("%d | %s | %s" % (n, " ".join(cells) or "no-cells", d.get("declined") or d.get("declined_because") or ""))
+PY
+}
+
+printf '%s: the CRUX reference cache (#4036)\n' "$PROG"
+T="$TMP/tree"; mk_tree "$T"
+CACHE="$TMP/cache"
+
+run_row cold "$T" "$CACHE"
+cold=$(summary cold)
+stored=$(find "$CACHE" -name entry.json 2>/dev/null | wc -l)
+case "$cold" in
+  "2 | "*"=GREEN"*) [ "$stored" -eq 2 ] && ok "cold: both reference engines ran, 2 entries stored, receipt GREEN ($cold)" \
+                    || broke "cold: $stored entries stored, want 2 ($cold)" ;;
+  *) broke "cold: $cold (rc $(cat "$TMP/cold.rc")); log $TMP/cold.log"; tail -5 "$TMP/cold.log" | sed 's/^/        /' ;;
+esac
+
+run_row warm "$T" "$CACHE"
+warm=$(summary warm)
+# every reference row of the warm manifest: from the cache, host rewritten to this run, origin named, artifact local
+prov=$(python3 - "$(sed -n 's/^work kept: //p' "$TMP/warm.log" | tail -1)" <<'PY'
+import json, os, sys
+bad, n = [], 0
+for l in open(os.path.join(sys.argv[1], "manifest.jsonl")):
+    r = json.loads(l)
+    if r.get("kind") != "gen" or r.get("engine") == "apr":
+        continue
+    n += 1
+    rc = r.get("reference_cache") or {}
+    if not (rc.get("digest") and (rc.get("origin") or {}).get("host") == "stub" and r.get("host") == "stub"
+            and r["stdout"].startswith(sys.argv[1] + "/refcache/") and os.path.isfile(r["stdout"])):
+        bad.append(r["engine"])
+print("%d rows, not provenanced: %s" % (n, ",".join(bad) or "none"))
+PY
+)
+if [ "${warm%% |*}" = 0 ] && [ "${warm#* | }" = "${cold#* | }" ] && [ "$prov" = "2 rows, not provenanced: none" ] \
+   && grep -q '"result": "hit"' "$TMP/warm.out/stub-gpu.json"; then
+  ok "warm: 0 reference engine calls, receipt identical cell for cell, $prov, meta records the hit ($warm)"
+else
+  broke "warm: $warm vs cold $cold; $prov (rc $(cat "$TMP/warm.rc")); log $TMP/warm.log"; grep -i 'reference cache' "$TMP/warm.log" | sed 's/^/        /'
+fi
+
+# Row 3: MUST-RED. Edit one stored artifact (the truth itself).
+art=$(find "$CACHE" -path '*/files/*' -name '*stdout*' | head -1)
+cp -r "$CACHE" "$TMP/cache-tampered"
+art_t="$TMP/cache-tampered/${art#"$CACHE"/}"
+# The edit keeps the answer RIGHT: only the stale check can make this RED, not the judge seeing a wrong truth.
+printf '{"text": "<answer>4</answer>", "raw_text": "<answer>4</answer>\\n", "reported": {"device": "edited"}}\n' > "$art_t"
+run_row stale "$T" "$TMP/cache-tampered"
+stale=$(summary stale)
+case "$stale" in
+  "0 | "*"=RED"*) if grep -q 'is STALE' "$TMP/stale.out/stub-gpu.json" && ! printf '%s' "$stale" | grep -q '=GREEN'; then
+                    ok "MUST-RED: an edited entry (answer still right) is refused STALE in the receipt, 0 engine calls, every cell RED ($stale)"
+                  else broke "stale: RED but not every cell, or the refusal does not say STALE ($stale)"; fi ;;
+  *) broke "stale: $stale — a tampered reference was not RED"; grep -i 'reference cache' "$TMP/stale.log" | sed 's/^/        /' ;;
+esac
+
+# Row 4: a new oracle version is a MISS, recomputed.
+# The device on the probe line is NOT in the key (a host moved), the package version IS (the oracle moved).
+run_row newhost "$T" "$CACHE" "STUB_PROBE_hf=hf=1.0.0 transformers=5.0.0 torch=2.0.0 device=another-host"
+nh=$(summary newhost)
+run_row newprobe "$T" "$CACHE" "STUB_PROBE_hf=hf=1.0.0 transformers=5.1.0 torch=2.0.0 device=stub"
+np=$(summary newprobe)
+case "$nh|$np" in
+  "0 | "*"=GREEN"*"|2 | "*"=GREEN"*) ok "oracle key: another device is a HIT ($nh); a new transformers is a MISS, recomputed GREEN ($np)" ;;
+  *) broke "oracle key: device change $nh; version change $np" ;;
+esac
+
+# Row 5: a refused reference row is never stored.
+run_row refuse "$T" "$TMP/cache-refuse" STUB_REFUSE_llamafile=1
+lf=$(find "$TMP/cache-refuse" -name entry.json -exec grep -l '"engine": "llamafile"' {} + 2>/dev/null | wc -l)
+run_row refuse2 "$T" "$TMP/cache-refuse"
+r2=$(summary refuse2)
+if [ "$lf" -eq 0 ] && [ "${r2%% |*}" = 2 ]; then
+  ok "a refused llamafile row was not stored; the next run was a MISS and ran both engines ($r2)"
+else
+  broke "refused row: $lf llamafile entries stored, next run $r2"
+fi
+
+# Row 6: MUTANT — the stale check disabled. Row 3's receipt must stop being RED, or the table is blind.
+MT="$TMP/mutant"; mk_tree "$MT"
+python3 - "$MT/scripts/lib/crux_ref_cache.py" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+a = '    """None when the entry at edir is intact for key; otherwise why it may not be reused."""\n'
+assert s.count(a) == 1, "mutation anchor moved: update this check with the lib"
+open(p, "w").write(s.replace(a, a + "    return None\n"))
+PY
+cp -r "$TMP/cache-tampered" "$TMP/cache-mutant"
+run_row mutant "$MT" "$TMP/cache-mutant"
+mu=$(summary mutant)
+case "$mu" in
+  *"=RED"*) broke "MUTANT (stale check disabled) still RED: the table cannot see the stale check ($mu)" ;;
+  *) ok "MUTANT (stale check disabled) turns the tampered run non-RED, so row 3 is what catches it ($mu)" ;;
+esac
+
+printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"
+[ "$FAIL" -eq 0 ] || exit 1
+exit 0

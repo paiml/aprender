@@ -96,6 +96,12 @@ THINK_MODES="off,on"
 ONLY_PROMPTS=""
 GREEDY_PIDS=""
 GREEDY_MAXTOK=256
+# --reference-cache <dir> (#4036): the reference engines' rows (llama.cpp, hf, vllm, llamafile) are host-independent
+# truth, cached per (model, mode, engine, verb, prompt) under a key bound to the oracle version, the sampling and
+# the harness files (scripts/lib/crux_ref_cache.py). A mode whose every reference entry is cached runs ONLY apr and
+# injects the cached rows; any absent entry runs the whole mode and stores its clean rows; a STALE entry refuses
+# every reference row of the mode (RED), never reused. Off unless given.
+REF_CACHE=""
 MODELS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -115,6 +121,7 @@ while [ $# -gt 0 ]; do
     --greedy) GREEDY=1; shift ;;
     --greedy-prompts) [ $# -ge 2 ] || decline "--greedy-prompts needs a value"; GREEDY_PIDS="${2//,/ }"; shift 2 ;;
     --greedy-max-tokens) [ $# -ge 2 ] || decline "--greedy-max-tokens needs a value"; GREEDY_MAXTOK="$2"; shift 2 ;;
+    --reference-cache) [ $# -ge 2 ] || decline "--reference-cache needs a value"; REF_CACHE="$2"; shift 2 ;;
     -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
     -*) decline "unknown argument '$1'" ;;
     *) [ -z "$VERSION" ] || decline "one version, got '$VERSION' and '$1'"; VERSION="$1"; shift ;;
@@ -343,6 +350,7 @@ PY
 ) || decline "prompt set $PROMPTS: $(tr '\n' ' ' < "$WORK/prompts.err" 2>/dev/null | cut -c1-300)"
 pids_for() { printf '%s\n' "$PIDS_ALL" | sed -n "s/^$1 //p" | tr '\n' ' '; }
 PIDS=$(pids_for run)
+printf '%s\n' "$PIDS_ALL" > "$WORK/pids-all.txt"
 # The global cap for the run/chat cells: v1's `max_tokens`, else the largest per-prompt `off` budget.
 MAXTOK=$(python3 -c 'import json,sys
 d = json.load(open(sys.argv[1]))
@@ -453,6 +461,28 @@ for line in open(m):
               and r.get("model_sha256") == sha and r.get("verb") == verb)
 print(n)
 PY
+}
+
+ref_cache_args() { # ref_cache_args: REF_ENGINES + REF_ARGS for the current model and mode (#4036)
+  # An engine is cached only when it would really run here AND says which build it is: an unversioned oracle
+  # cannot be keyed, so it simply runs. ollama is not cached (not in the sweep, and its import is per run).
+  REF_ENGINES=(); REF_ARGS=()
+  local e v src=""
+  if [ "$LLAMA_OK" = 1 ] && [ -n "${LLAMA_BUILD:-}" ]; then
+    REF_ENGINES+=(llama.cpp); REF_ARGS+=(--oracle "llama.cpp=$LLAMA_BUILD pin $(llama_pin_get build_commit 2>/dev/null)")
+  fi
+  for e in "${PLUGIN_ENGINES[@]}"; do
+    want "$e" && [ "${EXT_OK[$e]:-0}" = 1 ] || continue
+    source_engine "$e" && [ -n "$HF_MODEL_WHY" ] && continue
+    v=${EXT_PROBE[$e]:-}
+    [ -n "$v" ] || continue
+    REF_ENGINES+=("$e"); REF_ARGS+=(--oracle "$e=$v")
+  done
+  [ "${#HF_SRC[@]}" -gt 0 ] && src=$(python3 -c 'import json,sys; print(json.dumps({"repo": sys.argv[1], "revision": sys.argv[2], "dtype": sys.argv[3]}))' "$hf_repo" "$hf_rev" "$hf_dtype")
+  REF_ARGS+=(--cache "$REF_CACHE" --work "$WORK" --manifest "$MANIFEST" --model-sha "$SHA" --thinking "$THINK"
+    --backend "$BACKEND" --host "$HOST" --engines "$(IFS=,; printf '%s' "${REF_ENGINES[*]}")" --verbs "$VERBS"
+    --source "$src" --temperature "$TEMP" --seed "$SEED" --context "$CTX" --root "$ROOT"
+    --harness-git-sha "$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null)")
 }
 
 free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
@@ -644,6 +674,32 @@ PY
     cp -- "$f" "$base.txt"
   done
 
+  REF_SKIP=0
+  REF_ENGINES=()
+  if [ -n "$REF_CACHE" ]; then
+    ref_cache_args
+    if [ "${#REF_ENGINES[@]}" -gt 0 ]; then
+      python3 scripts/lib/crux_ref_cache.py lookup "${REF_ARGS[@]}" --out-rows "$WORK/$SHA12/refcache-rows.jsonl" \
+        > "$WORK/$SHA12/refcache-lookup.log" 2>&1
+      rrc=$?
+      sed 's/^/  /' "$WORK/$SHA12/refcache-lookup.log"
+      case "$rrc" in
+        0) REF_SKIP=1; rres=hit ;;
+        3) REF_SKIP=1; rres=stale ;;
+        1) rres=miss ;;
+        *) decline "reference cache lookup failed (rc $rrc): $(tail -1 "$WORK/$SHA12/refcache-lookup.log")" ;;
+      esac
+      printf '%s\t%s\t%s\t%s\n' "$SHA" "$THINK" "$rres" "$(IFS=,; printf '%s' "${REF_ENGINES[*]}")" >> "$WORK/refcache.tsv"
+    fi
+  fi
+  # A hit (or a stale entry) runs this mode with the cached engines REMOVED: they neither run nor emit, and the
+  # cached (or refused) rows are appended after the verb loop. Restored before the next mode and the greedy rows.
+  if [ "$REF_SKIP" = 1 ]; then
+    REF_SAVED_ENGINES=$ENGINES; REF_SAVED_LLAMA_OK=$LLAMA_OK
+    ENGINES=$(for e in ${ENGINES//,/ }; do case " ${REF_ENGINES[*]} " in *" $e "*) ;; *) printf '%s\n' "$e" ;; esac; done | paste -sd,)
+    case " ${REF_ENGINES[*]} " in *" llama.cpp "*) LLAMA_OK=0 ;; esac
+  fi
+
   for VERB in ${VERBS//,/ }; do
   VERB_KEY=$VERB
   if [ "$VERB" = serve ]; then
@@ -743,6 +799,12 @@ PY
     done
   done
   done
+  if [ "$REF_SKIP" = 1 ]; then
+    cat "$WORK/$SHA12/refcache-rows.jsonl" >> "$MANIFEST"
+    ENGINES=$REF_SAVED_ENGINES; LLAMA_OK=$REF_SAVED_LLAMA_OK
+  elif [ "${#REF_ENGINES[@]}" -gt 0 ]; then
+    python3 scripts/lib/crux_ref_cache.py store "${REF_ARGS[@]}" 2>&1 | sed 's/^/  /'
+  fi
   done  # thinking modes
   SHA12=$SHA12_MODEL
 
@@ -798,6 +860,18 @@ meta = {
 }
 json.dump(meta, open(out, "w"), indent=2)
 PY
+if [ -s "$WORK/refcache.tsv" ]; then
+  python3 - "$WORK/meta.json" "$WORK/refcache.tsv" "$REF_CACHE" <<'PY' || decline "could not record the reference cache in meta.json"
+import json, sys
+meta = json.load(open(sys.argv[1]))
+modes = [dict(zip(("model_sha256", "thinking", "result", "engines"), l.rstrip("\n").split("\t")))
+         for l in open(sys.argv[2]) if l.strip()]
+meta["reference_cache"] = {"dir": sys.argv[3], "modes": modes,
+                           "note": "hit = the reference rows were measured by an earlier run (origin in each row's "
+                                   "reference_cache), not on this host; stale = every reference row refused (#4036)"}
+json.dump(meta, open(sys.argv[1], "w"), indent=2)
+PY
+fi
 # $OUT_DIR reaches here from `--out` (default evidence/crux/$VERSION). A receipt dir may
 # legitimately be absolute -- operators point it at /mnt -- so absoluteness is allowed and
 # only a `..` segment, which walks out of wherever the caller meant, is refused.

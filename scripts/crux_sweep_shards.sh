@@ -4,7 +4,7 @@
 #
 #   bash scripts/crux_sweep_shards.sh <version> --host <id> --apr <binary> --out <dir>
 #        [--backend gpu|cpu] [--scope controls|admitted] [--models-dir <dir>]... [--certification <receipt>]
-#        [--greedy-model <gguf>]... [--greedy-only] [--dry-run]
+#        [--greedy-model <gguf>]... [--greedy-only] [--reference-cache <dir>] [--dry-run]
 #
 # WHY PER (MODEL, MODE). The certification admits prompts per quant sha AND thinking mode
 # (admitted_by_sha_thinking); a prompt run outside its admission is RED at the judge by design. So each shard is
@@ -21,6 +21,11 @@
 # budgets are impractical on a CPU lane, and F9's CPU reference needs greedy rows alone. The receipt then has no
 # judged cell, so the judge DECLINES it (exit 2, "no cell was measured") while its greedy[] carries the rows: a
 # greedy-only receipt is F9 evidence, never a CRUX verdict, and the plan file says so.
+# --reference-cache <dir> (#4036): the certified shards reuse the reference engines' rows (llama.cpp, hf, vLLM) that
+# an earlier run stored there, keyed by model sha + mode + prompt + oracle version + harness; a host then runs only
+# the apr legs. A miss runs the mode in full and stores; a stale entry is RED. Greedy shards never read it: their
+# rows decode apr's ids through a llama-server on THIS host. Share the dir between hosts by copying it
+# (rsync -a lambda:<dir>/ gx10:<dir>/); each entry is written by one atomic rename, so two writers cannot tear one.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 PROG=crux_sweep_shards
@@ -28,7 +33,7 @@ die() { printf '%s: %s\n' "$PROG" "$1" >&2; exit 2; }
 
 VERSION=""; HOST=""; APR_BIN=""; OUT=""; BACKEND=gpu; SCOPE=controls; DRY=0; GREEDY_ONLY=0; MERGE_ONLY=0
 CERT="evidence/crux/0.69.1/prompt-certification.json"; PROMPTS="scripts/crux_inference_prompts.v2.json"
-MODEL_DIRS=(); GREEDY_MODELS=()
+MODEL_DIRS=(); GREEDY_MODELS=(); REF_CACHE_ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --host) HOST="$2"; shift 2 ;;
@@ -39,6 +44,7 @@ while [ $# -gt 0 ]; do
     --models-dir) MODEL_DIRS+=("$2"); shift 2 ;;
     --certification) CERT="$2"; shift 2 ;;
     --greedy-model) GREEDY_MODELS+=("$2"); shift 2 ;;
+    --reference-cache) REF_CACHE_ARGS=(--reference-cache "$2"); shift 2 ;;
     --greedy-only) GREEDY_ONLY=1; shift ;;
     --merge-only) MERGE_ONLY=1; shift ;;
     --dry-run) DRY=1; shift ;;
@@ -111,7 +117,7 @@ run_shard() { # run_shard <name> <dogfood args...> — one dogfood run; echoes i
 [ "$MERGE_ONLY" = 1 ] || : > "$OUT/shards.tsv"
 while [ "$MERGE_ONLY" = 0 ] && IFS=$'\t' read -r kind sha mode path ids; do
   [ "$kind" = RUN ] && [ "$GREEDY_ONLY" = 0 ] || continue
-  run_shard "${sha:0:12}-$mode" --model "$path" --engines apr,llama.cpp,vllm,hf --verbs run,chat,serve,code \
+  run_shard "${sha:0:12}-$mode" --model "$path" --engines apr,llama.cpp,vllm,hf --verbs run,chat,serve,code "${REF_CACHE_ARGS[@]}" \
     --thinking-modes "$mode" --only-prompts "$ids"
 done < "$PLAN"
 CTL=$(python3 -c 'import json,sys; print(next(p["id"] for p in json.load(open(sys.argv[1]))["prompts"] if p.get("control")))' "$PROMPTS")
