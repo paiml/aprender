@@ -152,6 +152,33 @@ fn start_apr_q4k_server_gpu(
         }) {
             return Err(refusal);
         }
+
+        // #3885: THE LOAD-TIME REJECTION THE FALLBACK DEPENDS ON.
+        //
+        // `start_apr_server`'s comment states the invariant this path is chosen
+        // under: "passing a non-Q4K APR errors cleanly and falls through to the
+        // generic GPU path". It was false. `parse_apr_q4k_config` validates
+        // METADATA ONLY — hidden_size, num_heads, num_layers, vocab_size — and
+        // never looks at a tensor, so an all-f16 `.apr` passed it, the thread
+        // spawned, `/health` answered, and the weight-format check in
+        // `upload_apr_q4k_weights` fired PER REQUEST at prefill:
+        //
+        //   HTTP 500  Q4K generation failed: Prefill failed at pos 0: GPU error:
+        //             Q launch: Invalid launch config: Quantized weight
+        //             'model.layers.0.self_attn.q_proj.weight' not cached
+        //
+        // By then the caller has already returned Ok and the `match … Err(e) =>`
+        // fallback can never run. Measured on gx10 0.69.1: all six serve routes
+        // 500 on a model whose `run`, `chat` and three golden cases all pass, and
+        // which serves correctly with `--no-gpu`.
+        //
+        // NAMING-INDEPENDENT ON PURPOSE. Checking one well-known tensor would make
+        // the gate depend on HF-vs-GGUF naming, which `parse_apr_q4k_config` already
+        // has to special-case. A model with NO quantized tensor at all is not a Q4K
+        // model under any naming.
+        if let Some(reason) = non_q4k_refusal(apr.tensor_index()) {
+            return Err(CliError::InferenceFailed(reason));
+        }
     }
 
     // Spawn Q4K inference thread (loads model, uploads weights to GPU via pool allocator)
@@ -463,4 +490,88 @@ fn build_gpu_router(
         );
     let router = super::ollama::add_ollama_stubs(router);
     super::auth::layer(auth_gate, router)
+}
+
+/// Why this `.apr` does not belong on the Q4K pool path, or `None` if it does (#3885).
+///
+/// PURE, and separated from the loader so it can be exercised both ways. The bug it
+/// exists to prevent is not "the check is wrong" but "the check happens too late":
+/// `parse_apr_q4k_config` validates METADATA only, so an all-f16 `.apr` passed it,
+/// the thread spawned, `/health` answered, and the weight-format check inside
+/// `upload_apr_q4k_weights` fired per request at prefill — after the caller had
+/// already returned `Ok` and its documented fallback could no longer run.
+///
+/// NAMING-INDEPENDENT ON PURPOSE. Checking one well-known tensor would tie the gate
+/// to HF-vs-GGUF naming, which `parse_apr_q4k_config` already special-cases. A model
+/// with no GPU-quantized tensor at all is not a Q4K model under any naming.
+fn non_q4k_refusal(tensors: &[realizar::apr::TensorEntry]) -> Option<String> {
+    if tensors
+        .iter()
+        .any(|t| realizar::apr::is_quantized_dtype(&t.dtype))
+    {
+        return None;
+    }
+    let dtypes: std::collections::BTreeSet<&str> =
+        tensors.iter().map(|t| t.dtype.as_str()).collect();
+    Some(format!(
+        "not a Q4K APR: none of its {} tensors carries a GPU-quantized dtype (found: {}). \
+         The Q4K pool path cannot serve it, so this declines at LOAD and the generic GPU \
+         path takes it (#3885).",
+        tensors.len(),
+        dtypes.into_iter().collect::<Vec<_>>().join(", ")
+    ))
+}
+
+#[cfg(test)]
+mod non_q4k_refusal_tests {
+    use super::non_q4k_refusal;
+    use realizar::apr::TensorEntry;
+
+    fn t(name: &str, dtype: &str) -> TensorEntry {
+        TensorEntry {
+            name: name.to_string(),
+            dtype: dtype.to_string(),
+            shape: vec![2, 2],
+            offset: 0,
+            size: 16,
+        }
+    }
+
+    /// The measured case: gx10's `qwen2.5-coder-1.5b-instruct-fp16.apr`, 339 tensors,
+    /// every one `f16`. It must decline HERE, at load, so the caller falls through.
+    #[test]
+    fn an_all_f16_apr_is_refused_and_the_reason_names_the_dtype() {
+        let tensors = vec![t("a.weight", "f16"), t("b.weight", "f16")];
+        let reason = non_q4k_refusal(&tensors).expect("an all-f16 apr is not a Q4K apr");
+        assert!(reason.contains("f16"), "the reason must name what it found: {reason}");
+        assert!(reason.contains('2'), "the reason must name how many it looked at: {reason}");
+    }
+
+    /// The other direction, and the one that makes the test able to fail: a model
+    /// WITH a quantized tensor must NOT be refused. Without this, a predicate
+    /// hardwired to `Some(...)` would pass the case above and break every Q4K model.
+    #[test]
+    fn an_apr_with_a_quantized_tensor_is_accepted() {
+        let tensors = vec![t("a.weight", "f32"), t("b.weight", "Q4_K")];
+        assert!(
+            non_q4k_refusal(&tensors).is_none(),
+            "one GPU-quantized tensor is enough to belong on this path"
+        );
+    }
+
+    /// BF16 is not a GPU-quantized dtype either — the lambda `.apr` that CUDA and
+    /// wgpu both decline (#3889). Distinct from f16 so a predicate that special-cased
+    /// one string would fail here.
+    #[test]
+    fn an_all_bf16_apr_is_also_refused() {
+        assert!(non_q4k_refusal(&[t("a.weight", "bf16")]).is_some());
+    }
+
+    /// An empty index is refused rather than accepted by vacuous `any()`: `any` over
+    /// nothing is false, which happens to give the right answer, and this pins it so
+    /// a future rewrite cannot flip it silently.
+    #[test]
+    fn an_empty_tensor_index_is_refused() {
+        assert!(non_q4k_refusal(&[]).is_some());
+    }
 }
