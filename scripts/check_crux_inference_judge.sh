@@ -977,6 +977,18 @@ run_judge "$d"; GOT_RC=$?
 got=$(b4_cells "$d" "POST /v2/unmapped")
 reasons=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(" | ".join(x for c in r["cells"] if c["key"].get("route")=="POST /v2/unmapped" for x in c["reasons"]))' "$d/receipt.json" 2>/dev/null)
 case $got/$reasons in "[('POST /v2/unmapped', 'RED')]/"*"no oracle route mapped"*) ok "J/B4: a route with no oracle route mapped is RED, named" ;; *) broke "J/B4 unmapped route: '$got' '$reasons'" ;; esac
+# aprender-83 (freeze sweep, lambda): the CODE cell's comparators are driven through crux_serve_routes.py
+# `drive`, so llama's row is serve JSON. Read as llama-cli output it was "not answered", and every code
+# cell went RED "no ggml-family engine answered" beside a right llama answer.
+d=$(newcase j_code_comparator_json); control_green "$d"
+apr_out "$d" code-$P "$T4" gpu false
+ROW_VERB=code row "$d/manifest.jsonl" apr $P 0 "$d/apr-code-$P.out" "$d/apr-code-$P.err"
+for e in llama hf; do serve_json "$d" $e $P code "$T4"; done
+ROW_VERB=code row "$d/manifest.jsonl" llama.cpp $P 0 "$d/llama-$P-code.json" ""
+ROW_VERB=code row "$d/manifest.jsonl" hf $P 0 "$d/hf-$P-code.json" ""
+run_judge "$d"; GOT_RC=$?
+got=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print([(c["verdict"], c["engines"]["llama.cpp"].get("answered")) for c in r["cells"] if c["key"]["verb"]=="code"])' "$d/receipt.json" 2>/dev/null)
+[ "$got" = "[('GREEN', True)]" ] && ok "J/code: llama's serve-JSON code row answers the code cell" || broke "J/code comparator json: '$got'"
 # aprender-19 R2: a broken wire is named, never read as a missing text field.
 d=$(newcase j_protocol_fault); control_green "$d"
 python3 -c 'import json,sys; json.dump({"text": None, "protocol_fault": "stream_truncated", "reported": {"device": "fixture"}}, open(sys.argv[1], "w"))' "$d/apr-$P-stream.json"
@@ -1092,6 +1104,7 @@ b4-native-overwritten|J\/B4 native wins|s/^            if eng in by_key\[k\]:$/ 
 b4-modeless-off|J\/B4 plugin stream|s/^        sources = \[k\[:7\] + (orc,), k\[:7\] + ("",), k\[:6\] + ("", "")\]$/        sources = [k[:7] + (orc,), k[:7] + ("",)]/
 b4-lent-kept|J\/B4 plugin stream|s/^            or not all((k, e) in lent for e in by_key\[k\])\]$/            or True]/
 b4-stream-not-serve|J\/B4 plugin stream|s/^    if row.get("verb") in ("serve run", "serve stream"):$/    if row.get("verb") == "serve run":/
+code-comparator-cli|J\/code comparator json|s/^    elif row.get("verb") == "code" and engine in COMPARATORS:$/    elif False:/
 b4-unmapped-borrows|J\/B4 unmapped route|s/^        orc = crux_serve_routes.oracle_route(k\[7\])$/        orc = crux_serve_routes.oracle_route(k[7]) or "POST \/v1\/chat\/completions"/
 admission-mode-off|admitted only for thinking ON|s/^        if admitted_mode is not None:$/        if False:/
 admission-off|NOT admitted for this model is RED|s/^        elif admitted is not None and k\[5\] not in admitted.get(k\[0\], ()):$/        elif False:/

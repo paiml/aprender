@@ -98,6 +98,8 @@ row "S5 /stream/generate (event: done) answers" "$ROUTES_PY" "POST /stream/gener
 row "S6 /api/chat NDJSON stream answers" "$ROUTES_PY" "POST /api/chat" stream p1 0 -
 row "S7 two-turn prompt answers turn by turn" "$ROUTES_PY" "POST /api/chat" nonstream p2 0 -
 if [ "$(field "$TMP/out.json" 'len(d.get("turns") or [])')" = 2 ]; then ok "S7b both turns recorded"; else bad "S7b both turns recorded"; fi
+row "S7c MUST-RED a multi-turn prompt on /api/generate is REFUSED, never asked as its last turn" "$ROUTES_PY" "POST /api/generate" nonstream p2 4 -
+row "S7d a one-turn prompt on /api/generate is still asked" "$ROUTES_PY" "POST /api/generate" nonstream p1 0 -
 row "S8 a mode the wire lacks is REFUSED" "$ROUTES_PY" "POST /generate" stream p1 4 - --render-url "$URL"
 start normal no_done
 row "S9  MUST-RED OpenAI SSE with no [DONE]" "$ROUTES_PY" "POST /v1/chat/completions" stream p1 3 stream_truncated
@@ -165,6 +167,17 @@ sweep_rows normal ok
 manifest_assert "R1 every generation route x mode is a row, all answered" ok \
   'len(gen) == 11 and all(r["rc"] == 0 and out(r)["text"] for r in gen) and {r["verb"] for r in gen} == {"serve run", "serve stream"}'
 manifest_assert "R1b the route universe is recorded" ok 'ext and ext[0]["kind"] == "serve_routes" and not ext[0]["unclassified"]'
+# aprender-83 (freeze sweep): a multi-turn prompt is never driven on a single-prompt wire, and the
+# plan says so -- a skipped pair is recorded, never silently absent.
+cp "$TMP/list.jsonl" "$TMP/list.bak"; printf '%s\n' '["p2", ["serve run", "serve stream"]]' > "$TMP/list.jsonl"
+sweep_rows normal multiturn
+if python3 -c 'import json,sys; p=json.load(open(sys.argv[1]))
+na = {(x["route"], x["prompt_id"]) for x in p["not_applicable"]}
+assert ("POST /api/generate", "p2") in na and not any(c["route"] == "POST /api/generate" for c in p["cells"])
+assert any(c["route"] == "POST /api/chat" and c["prompt_id"] == "p2" for c in p["cells"])' "$TMP/multiturn/plan.json" 2> /dev/null
+then ok "W5 a multi-turn prompt skips /api/generate in the plan (recorded) and is still driven on /api/chat"
+else bad "W5 multi-turn plan: $(head -c 300 "$TMP/multiturn/plan.json" 2> /dev/null)"; fi
+mv "$TMP/list.bak" "$TMP/list.jsonl"
 sweep_rows extra extra
 manifest_assert "R2 MUST-RED an unclassified route is a RED row per verb, text null" extra \
   'sorted(r["verb"] for r in gen if r["route"] == "POST /v1/brand-new") == ["serve run", "serve stream"] and all(r["rc"] == 3 and out(r)["protocol_fault"].startswith("unclassified_route") and out(r)["text"] is None for r in gen if r["route"] == "POST /v1/brand-new")'
@@ -331,6 +344,8 @@ mutant "M12 T4 vs a teardown fault that does not reach the rows" "$ROUTES_PY" ' 
 
 m_o3() { oracle_assert "$1" "$O3"; }
 mutant "M15 O3 vs an unmapped kind silently judged as chat" "$ROUTES_PY" 'return ORACLE_ROUTE_BY_KIND.get(spec["kind"]) if spec else None' 'return ORACLE_ROUTE_BY_KIND.get(spec["kind"], "POST /v1/chat/completions") if spec else None' m_o3
+m_s7c() { start normal ok; drive_case x "$1" "POST /api/generate" nonstream p2 4 -; }
+mutant "M16 S7c vs a multi-turn prompt sent last-turn-only" "$ROUTES_PY" '    if spec and spec["kind"] in SINGLE_PROMPT_KINDS and turns > 1:' '    if False:' m_s7c
 m_x1() { pty_case "$1" "$PX1"; }
 mutant "M13 X1 vs no backspace processing" "$PTY_PY" '        prev, t = t, BACKSPACE.sub("", t)' '        prev = t' m_x1
 m_x2() { pty_case "$1" "$PX2"; }

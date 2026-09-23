@@ -518,6 +518,12 @@ def engine_entry(row, prompt, prompt_opened=None):
             e["why"] = "unknown engine %r" % engine
             return e
         e["turns"] = p.get("turns") or []
+    elif row.get("verb") == "code" and engine in COMPARATORS:
+        # #3962 (aprender-83, freeze sweep): the code cell drives llama-server / ollama through
+        # crux_serve_routes.py `drive`, whose output is the serve contract JSON. Read as llama-cli
+        # output it fell to the echo parser ("the echoed prompt was not found in stdout"), so a
+        # right llama answer left every code cell RED "no ggml-family engine answered".
+        p = parse_engine_json(stdout)
     elif engine == "apr":
         p = parse_apr(stdout, stderr)
         e["backend"] = p["backend"]
