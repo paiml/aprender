@@ -149,6 +149,46 @@ pub struct ChatCompletionRequest {
     /// `{"type":"function","function":{"name":"..."}}`). `"none"` skips parsing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<OpenAiToolChoice>,
+    /// #3723: the per-request thinking toggle, in the form vLLM and SGLang accept
+    /// (`"chat_template_kwargs": {"enable_thinking": true}`). It is passed to the model's
+    /// OWN chat template as `enable_thinking`. Only that key is read, and any other key is
+    /// refused at deserialization rather than silently dropped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_template_kwargs: Option<ChatTemplateKwargs>,
+    /// #3723: apr's own spelling of the same toggle, and Ollama's `/api/chat` field (`"think"`).
+    /// Absent on both = thinking OFF, production's default since #3801.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub think: Option<bool>,
+}
+
+/// The `chat_template_kwargs` apr honours (#3723).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ChatTemplateKwargs {
+    /// Rendered as the template's `enable_thinking` variable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_thinking: Option<bool>,
+}
+
+impl ChatCompletionRequest {
+    /// The requested thinking mode (#3723): `chat_template_kwargs.enable_thinking`, else
+    /// `think`, else `None` (OFF). Two different answers are refused by
+    /// [`Self::thinking_conflict`] at the handler entry, so this never has to choose.
+    #[must_use]
+    pub fn thinking(&self) -> Option<bool> {
+        self.chat_template_kwargs.and_then(|k| k.enable_thinking).or(self.think)
+    }
+
+    /// `Some(reason)` when the two spellings of the toggle disagree (#3723).
+    #[must_use]
+    pub fn thinking_conflict(&self) -> Option<String> {
+        match (self.chat_template_kwargs.and_then(|k| k.enable_thinking), self.think) {
+            (Some(a), Some(b)) if a != b => Some(format!(
+                "chat_template_kwargs.enable_thinking={a} contradicts think={b}; send one (#3723)"
+            )),
+            _ => None,
+        }
+    }
 }
 
 /// OpenAI `stream_options` object.

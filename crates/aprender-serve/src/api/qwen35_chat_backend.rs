@@ -106,7 +106,16 @@ async fn try_qwen35_backend(
     };
 
     let architecture = state.model_architecture();
-    let prompt_text = crate::api::format_chat_messages_official(Some(&mapped.model), &request.messages, architecture.as_deref());
+    // #3723: the request's thinking mode, rendered by the model's own template.
+    let prompt_text = match crate::api::realize_handlers::format_chat_messages_official_thinking(
+        Some(&mapped.model),
+        &request.messages,
+        architecture.as_deref(),
+        request.thinking(),
+    ) {
+        Ok(p) => p,
+        Err(e) => return Some(fail_response(state, StatusCode::BAD_REQUEST, e.to_string())),
+    };
     let input_ids = mapped.model.encode(&prompt_text).unwrap_or_default();
     if input_ids.is_empty() {
         return Some(fail_response(
