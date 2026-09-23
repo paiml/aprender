@@ -219,3 +219,42 @@ fn kmask_is_bit_j_so_the_kernel_may_read_the_sign_as_bit_j_3953() {
         assert_eq!(u32::from(*m), 1u32 << j, "KMASK_IQ2XS[{j}] must be bit {j}");
     }
 }
+
+/// ONE-SHOT PROOF of the IQ2_S decoder against gguf-py on every real type-22 tensor, NOT a
+/// regular test (hence `#[ignore]`). Same method as #3960's Q2_K proof: `<name>.bin` holds
+/// raw bytes written by gguf-py's own reader, so no offset convention can enter; this writes
+/// `<name>.apr.f32` for an element-wise comparison against gguf-py's `<name>.ref.f32`.
+/// The IQ2_S decoder's own comment cites 50 random blocks (PMAT-3477); this covers the
+/// actual tensors the kernel's oracle is used on.
+#[test]
+#[ignore = "one-shot probe: needs IQ2S_PROBE_DIR from the gguf-py dump"]
+fn probe_dump_iq2_s_decodes_for_gguf_py_comparison_3953() {
+    let Ok(dir) = std::env::var("IQ2S_PROBE_DIR") else {
+        panic!("PROBE: IQ2S_PROBE_DIR is unset -- this probe did NOT run");
+    };
+    let mut done = 0usize;
+    for entry in std::fs::read_dir(&dir).expect("probe dir") {
+        let path = entry.expect("dir entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("bin") {
+            continue;
+        }
+        let bytes = std::fs::read(&path).expect("read bin");
+        let out = super::iq2_s::dequantize_iq2_s(&bytes).expect("dequantize_iq2_s");
+        let mut buf = Vec::with_capacity(out.len() * 4);
+        for v in &out {
+            buf.extend_from_slice(&v.to_le_bytes());
+        }
+        std::fs::write(path.with_extension("apr.f32"), &buf).expect("write apr.f32");
+        eprintln!(
+            "PROBE {}: {} bytes -> {} values",
+            path.display(),
+            bytes.len(),
+            out.len()
+        );
+        done += 1;
+    }
+    assert!(
+        done > 0,
+        "PROBE: no .bin files in {dir} -- nothing was compared"
+    );
+}

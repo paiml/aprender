@@ -50,6 +50,25 @@ Each u64 entry is laid out (lo, hi), which is exactly IQ3_S's `(g1, g2)` pair, s
 proven 4-iteration inner loop is reused unchanged. `KMASK_IQ2XS[j] == 1 << j` is pinned by
 a test, so reading a sign as "bit j" cannot silently desynchronise from the oracle.
 
+## 3b. The oracle itself, proven against gguf-py (added after the #3963 bar)
+
+The A/B trusts `dequantize_iq2_s`. Its own comment cited 50 random blocks (PMAT-3477),
+not the model the kernel's oracle is used on — a gap the IQ3_XXS bar exposed. Closed:
+every value of all five real type-22 tensors, decoded by gguf-py (llama.cpp @ `df03399`)
+and by `dequantize_iq2_s`, compared ELEMENT-WISE, bytes read by gguf-py's own reader:
+
+| tensor | values | bitwise equal | max ulp | raw sha256 |
+|---|---|---|---|---|
+| `blk.8.ffn_down.weight` | 3,670,016 | 100% | 0 | `d688fae36905…` |
+| `blk.9.ffn_down.weight` | 3,670,016 | 100% | 0 | `39cace39289d…` |
+| `blk.10.ffn_down.weight` | 3,670,016 | 100% | 0 | `82fdf867e44d…` |
+| `blk.17.ffn_down.weight` | 3,670,016 | 100% | 0 | `207c570c3244…` |
+| `blk.21.ffn_down.weight` | 3,670,016 | 100% | 0 | `181e84ae3e4c…` |
+
+**18,350,080 values, every one bitwise identical.** The comparison is the same script that
+caught a planted decoder bug on Q2_K (#3960), so it is shown able to fail. Reproducible via
+`probe_dump_iq2_s_decodes_for_gguf_py_comparison_3953` (`#[ignore]`, one-shot).
+
 ## 4. Oracle strength, before the A/B relies on it
 
 A planted fault proves nothing if the data never exercises the mechanism it breaks. The
