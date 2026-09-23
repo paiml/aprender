@@ -74,8 +74,23 @@ ladder:
   # (scripts/lib/ladder_equiv.py). The gate prints the diff it accepted; anything outside is STALE BY SHA.
   hotfix_scope:
     receipts_at: 4f81bdea7bdc17da7a4b22823ef000671b78a435
-    paths: ["crates/aprender-mcp/**", "crates/apr-cli/Cargo.toml", "Cargo.lock", "docs/**"]
-    ruling: "#3710 ruling 3 / #4022"
+    paths: ["crates/aprender-mcp/**", "crates/apr-cli/Cargo.toml", "Cargo.lock", "docs/**",
+            # #4032 (X2 = 1eb1fe808 + one commit, aprender-6c [3ada9a]): its two files EXACTLY -- a
+            # Qwen3.5-0.8B load-time known-issue warning. No lock or manifest change. Cop ruling 2026-09-23.
+            "crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs",
+            "crates/aprender-serve/src/gguf/inference/forward/qwen35_known_issue.rs"]
+    ruling: "#3710 ruling 3 / #4022 + #4032"
+    # OPERATOR OVERRIDE, 2026-09-23, relayed verbatim by the release cop aprender-cf: "nope, override.  I am
+    # the boss". #4022 (X = 1eb1fe808) removes aprender-mcp's `anyhow` edge -- a dependency change that
+    # ruling 3 excludes. The override is pinned to EXACTLY that Cargo.lock delta: its canonical JSON
+    # (ladder_equiv.lock_delta) hashes to delta_sha256 below. Any other lock change hashes differently
+    # and stays RED; the gate prints "OPERATOR OVERRIDE (#4022 lock delta)", never plain green.
+    lock_overrides:
+      - delta_sha256: d387a7e50c91b0f13ec1c924c06b9dcc46716cebf935357a8b9c6c0f9ee8f079
+        delta: '{"changed":{"aprender-mcp":{"attrs":null,"edges_added":[],"edges_removed":["anyhow"]}},"packages_added":[],"packages_removed":[]}'
+        ticket: "#4022"
+        date: "2026-09-23"
+        ruling: '"nope, override.  I am the boss" (operator, verbatim, via aprender-cf)'
   # KNOWN REDs that ship with their ticket (operator selection via the release cop aprender-cf,
   # 2026-09-23: "Ship as known RED + ticket"; recorded on #3907). check_model_ladder.sh covers a row
   # only when EVERY reason it fails matches a clause pinned to this rung + sha256; anything else on it,

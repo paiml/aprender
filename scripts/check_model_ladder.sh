@@ -822,6 +822,38 @@ rows = [
   ("an external dependency change in Cargo.lock is NOT equivalent", (None, "changes dependencies"), (A, B, ["Cargo.lock"], S, lk, lk.replace("1.0.1", "1.0.2"))),
   ("evidence-only binds without the scope", ("evidence",), ("c" * 40, B, ["evidence/x.json"], S)),
 ]
+# #4022 OPERATOR OVERRIDE, pinned to EXACTLY one lock delta: aprender-mcp drops its `anyhow` edge.
+def lock(mcp_deps, cli_deps=("aprender-mcp",), extra=""):
+    q = lambda ds: ", ".join('"%s"' % d for d in ds)
+    return ('[[package]]\nname = "anyhow"\nversion = "1.0.0"\nsource = "registry+x"\nchecksum = "a"\n\n'
+            '[[package]]\nname = "serde"\nversion = "1.0.1"\nsource = "registry+x"\nchecksum = "c"\n\n'
+            '[[package]]\nname = "aprender-mcp"\nversion = "0.69.1"\ndependencies = [%s]\n\n'
+            '[[package]]\nname = "apr-cli"\nversion = "0.69.1"\ndependencies = [%s]\n%s' % (q(mcp_deps), q(cli_deps), extra))
+BASE = lock(["anyhow", "serde"], ("aprender-mcp", "anyhow"))
+PINNED = lock(["serde"], ("aprender-mcp", "anyhow"))
+_, dsha = L.lock_delta(BASE, PINNED)
+SO = dict(S, lock_overrides=[{"delta_sha256": dsha, "ticket": "#4022", "date": "2026-09-23", "ruling": "q"}])
+rows += [
+  ("the pinned lock delta binds as OPERATOR OVERRIDE", ("override", "OPERATOR OVERRIDE (#4022 lock delta)"), (A, B, ["Cargo.lock"], SO, BASE, PINNED)),
+  ("an ADDED edge is not the pinned delta: RED", (None, "no operator override pinned"), (A, B, ["Cargo.lock"], SO, BASE, lock(["serde", "anyhow", "extra"], ("aprender-mcp", "anyhow")))),
+  ("a NEW package is not the pinned delta: RED", (None, "no operator override pinned"), (A, B, ["Cargo.lock"], SO, BASE, lock(["serde"], ("aprender-mcp", "anyhow"), '\n[[package]]\nname = "nix"\nversion = "0.29.0"\nsource = "registry+x"\nchecksum = "n"\n'))),
+  ("ANOTHER crate's edges change too: RED", (None, "no operator override pinned"), (A, B, ["Cargo.lock"], SO, BASE, lock(["serde"], ("aprender-mcp",)))),
+  ("a DIFFERENT removal (changed delta hash): RED", (None, "no operator override pinned"), (A, B, ["Cargo.lock"], SO, BASE, lock(["anyhow"], ("aprender-mcp", "anyhow")))),
+  ("the same delta with no override pinned stays RED", (None, "no operator override pinned"), (A, B, ["Cargo.lock"], S, BASE, PINNED)),
+  ("an override without its recorded ruling is not an override: RED", (None, "no operator override pinned"),
+   (A, B, ["Cargo.lock"], dict(S, lock_overrides=[{"delta_sha256": dsha, "ticket": "#4022", "date": "2026-09-23"}]), BASE, PINNED)),
+]
+# #4032 (X2 = X + one commit): its two files EXACTLY, never a directory glob.
+S2 = dict(S, paths=S["paths"] + ["crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs",
+                                  "crates/aprender-serve/src/gguf/inference/forward/qwen35_known_issue.rs"])
+rows += [
+  ("X2's two #4032 files bind with the #4022 ones", ("hotfix",), (A, B, ["crates/aprender-mcp/src/lib.rs",
+      "crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs",
+      "crates/aprender-serve/src/gguf/inference/forward/qwen35_known_issue.rs"], S2)),
+  ("a THIRD aprender-serve file beside #4032's is RED", (None, "outside its scope"), (A, B, [
+      "crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs",
+      "crates/aprender-serve/src/gguf/inference/forward/forward_qwen3.rs"], S2)),
+]
 bad = 0
 for name, want, args in rows:
     kind, proof = L.classify(*args)
@@ -843,6 +875,8 @@ EQ
     emutant stray-allowed  's/^    if stray:$/    if False:/'
     emutant deps-allowed   's/^        if why:$/        if False:/'
     emutant any-receipt    's/^    if receipt_sha != scope.get("receipts_at"):$/    if False:/'
+    emutant override-any-delta 's/o.get("delta_sha256") == delta_sha/True/'
+    emutant override-no-ruling 's/and all(str(o.get(k) or "").strip() for k in ("ticket", "ruling", "date"))/and True/'
     # #3710 ruling 1: CRUX coverage scoped to the certified models (model_ladder_crux.py).
     xmutant uncertified-owes-crux green-uncertified-no-crux 's/^                    elif certified is not None and sha not in certified:$/                    elif False:/'
     xmutant no-cert-relaxes   red-certification-missing 's/^        return None, True$/        return set(), False/'
@@ -910,6 +944,8 @@ cat "$TMP_OUT"
 named_red=0; grep -q '^RED   [0-9]* RED-MODEL' "$TMP_OUT" && named_red=1
 # #3907: a shipped KNOWN-RED is likewise RED, never green -- the summary must not say otherwise.
 grep -q '^KNOWN-RED [0-9]* row(s) ship RED' "$TMP_OUT" && named_red=1
+# #4022: a receipt bound to the cut by an OPERATOR OVERRIDE is not "every rung green" either.
+override=0; grep -q 'OPERATOR OVERRIDE (' "$TMP_OUT" && override=1
 rm -f "$TMP_OUT"
 rm -f "$TMP_EQUIV" "$TMP_EQUIV.paths" "$TMP_EQUIV.lock_a" "$TMP_EQUIV.lock_b"
 [ -n "$TMP_RUNGS" ] && [ -f "$TMP_RUNGS" ] && rm -f "$TMP_RUNGS"
@@ -919,9 +955,12 @@ if ! lock_audit scripts/model_ladder.sh; then rc=1; fi
 case $rc in
   0) if [ "$named_red" = 1 ]; then
        echo "ok    no blocking cell: every required rung is green, or RED-MODEL / RED-UNSUPPORTED re-proven on this sweep, or a KNOWN-RED shipping with its ticket (counted RED above, never green)"
+     elif [ "$override" = 1 ]; then
+       echo "ok    every required rung green -- against receipts bound by an OPERATOR OVERRIDE (#4022 lock delta, see above), not by the default rule"
      else
        echo "ok    every required rung green on every required host"
-     fi ;;
+     fi
+     [ "$override" = 1 ] && [ "$named_red" = 1 ] && echo "note  receipts bound by OPERATOR OVERRIDE (#4022 lock delta) -- see the binding lines above" ;;
   1) echo "RED   the release claims a capability no receipt proves — see FAIL rows (EPIC #3477)" ;;
   2) echo "NO-GO the verdict is not green: see DEFER / decline lines above (#3957 F1)" ;;
 esac
