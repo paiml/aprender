@@ -150,6 +150,10 @@ def certify(a) -> int:
         "inventory_sha256": sha256_path(Path(a.inventory)),
         "manifests": {m: sha256_path(Path(m)) for m in a.manifests},
         "admitted": admitted,
+        # The same admissions keyed by the quantized GGUF's sha256, so the judge can check each cell's
+        # (model_sha256, prompt_id) against the receipt directly (aprender-6c [8b6b78], #3957).
+        "admitted_by_sha": {m["quants"][k.split("/", 1)[1]]: v for m in inventory for k, v in admitted.items()
+                            if k.split("/", 1)[0] == m["model"]},
         "rejected": rejected,
         "uncontrolled": uncontrolled,
         "cells": cells,

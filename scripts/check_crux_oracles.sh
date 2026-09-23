@@ -184,6 +184,38 @@ sys.exit(1 if fail else 0)
 PY
 table=$?
 
+# Drift against golden_output.rs (#3962 done-when 5: extended, not bypassed): every golden question opens
+# an `answer` prompt whose expect is one of its patterns, or is excluded by name with a reason.
+GOLDEN="$ROOT/crates/apr-cli/src/commands/golden_output.rs"
+[ -f "$GOLDEN" ] || { printf '%s: ENV - %s not found\n' "$PROG" "$GOLDEN" >&2; exit 2; }
+DRIFT_OUT=$(python3 - "$GOLDEN" "$PROMPTS" <<'DRIFT'
+import json, re, sys
+src = open(sys.argv[1], encoding="utf-8").read()
+m = re.search(r"fn golden_questions\(\)[^{]*\{(.*?)\n\}", src, re.S)
+body = re.sub(r"//[^\n]*", "", m.group(1)) if m else ""
+cases = [(q, re.findall(r'"((?:[^"\\]|\\.)*)"', pats))
+         for q, pats in re.findall(r'\(\s*"((?:[^"\\]|\\.)*)"\s*,\s*vec!\[(.*?)\]', body, re.S)]
+doc = json.load(open(sys.argv[2], encoding="utf-8"))
+if not cases:
+    print("golden_questions() yielded 0 cases - a parse that finds nothing is a refusal, never agreement"); sys.exit(1)
+excluded = doc.get("golden_excluded") or {}
+bad = []
+for q, pats in cases:
+    hit = [p["id"] for p in doc["prompts"] if p["oracle"].get("type") == "answer" and len(p["messages"]) == 1
+           and p["messages"][0]["content"].startswith(q) and str(p["oracle"].get("expect")) in pats]
+    if not hit and not (excluded.get(q) or "").strip():
+        bad.append(f"golden question {q!r} (patterns {pats}) has no answer prompt and no golden_excluded reason")
+for q in excluded:
+    if q not in [c[0] for c in cases]:
+        bad.append(f"golden_excluded names {q!r}, which golden_questions() no longer has")
+print("\n".join(bad) if bad else f"{len(cases)} golden questions accounted for")
+sys.exit(1 if bad else 0)
+DRIFT
+)
+drift=$?
+if [ "$drift" -eq 0 ]; then printf '  ok    drift vs golden_output.rs: %s\n' "$DRIFT_OUT"
+else printf '  BROKE drift vs golden_output.rs:\n'; printf '%s\n' "$DRIFT_OUT" | sed 's/^/          /'; fi
+
 LINT_OUT=$(python3 "$ORACLES" lint "$PROMPTS" 2>&1)
 lint=$?
 if [ "$lint" -eq 0 ]; then
@@ -192,7 +224,7 @@ else
   printf '  BROKE %s:\n' "${PROMPTS#"$ROOT"/}"; printf '%s\n' "$LINT_OUT" | sed 's/^/          /'
 fi
 
-if [ "$table" -eq 0 ] && [ "$lint" -eq 0 ]; then
+if [ "$table" -eq 0 ] && [ "$lint" -eq 0 ] && [ "$drift" -eq 0 ]; then
   printf '%s: PASS\n' "$PROG"; exit 0
 fi
-printf '%s: FAIL (table rc=%s, prompt-set lint rc=%s)\n' "$PROG" "$table" "$lint"; exit 1
+printf '%s: FAIL (table rc=%s, prompt-set lint rc=%s, golden drift rc=%s)\n' "$PROG" "$table" "$lint" "$drift"; exit 1

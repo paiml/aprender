@@ -143,6 +143,32 @@
       }
     },
     {
+      "id": "golden-paris",
+      "verb": [
+        "run",
+        "chat",
+        "serve run",
+        "serve stream"
+      ],
+      "tier": "easy",
+      "control": false,
+      "max_tokens": {
+        "off": 1024,
+        "on": 4096
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is the capital of France? Reply with the final answer inside <answer></answer>."
+        }
+      ],
+      "oracle": {
+        "type": "answer",
+        "expect": "Paris",
+        "normalize": "casefold_strip"
+      }
+    },
+    {
       "id": "fact-water-formula",
       "verb": [
         "run",
@@ -607,5 +633,9 @@
         ]
       }
     }
-  ]
+  ],
+  "golden": "Each golden_output.rs::golden_questions() question must open an `answer` prompt whose expect is one of its patterns, or be listed in golden_excluded with the reason. scripts/check_crux_oracles.sh refuses drift either way.",
+  "golden_excluded": {
+    "Hello there, how are you doing today my friend?": "a greeting has no verifiable answer, so no <answer> oracle can judge it; golden_output.rs keeps it as the conversational-turn smoke test"
+  }
 }
