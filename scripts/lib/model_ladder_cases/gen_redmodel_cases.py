@@ -124,6 +124,57 @@ def build_f10(arch="qwen35moe", key_arch="qwen35moe"):
     return L, rec, crux
 
 
+W, W_SHA = "Qwen3.5-0.8B-UD-IQ2_XXS.gguf", "a" * 64      # the wrong-answer file (F9 wrong_answer)
+K, K_SHA = "Qwen3.5-0.8B-Q4_K_M.gguf", "b" * 64            # its higher-quant control
+
+
+def wa_raw(ids, text, prompt_ids=OPIDS, top2=None, template_ids=None):
+    r = raw(ids, text, prompt_ids, template_ids)
+    if top2 is not None:
+        r["top2_logits"] = top2
+    return r
+
+
+def wa_greedy(sha, apr_ids, ll_ids, apr_text, ll_text, off_text, apr_top2=None, ll_top2=None, pid="golden-2plus2"):
+    """A thinking-OFF greedy entry on the OFFICIAL template: apr ran the official ids (#3990), the parity
+    row compares apr and llama.cpp on them, and llama.cpp@official is the model's own rendering."""
+    return {"key": {"model_sha256": sha, "host": "lambda", "prompt_id": pid, "thinking": "off"},
+            "apr": {"raw": wa_raw(apr_ids, apr_text, OPIDS, apr_top2)},
+            "llama.cpp": {"raw": wa_raw(ll_ids, ll_text, OPIDS, ll_top2)},
+            "llama.cpp@official": {"raw": wa_raw(ll_ids, off_text, OPIDS, None, OPIDS)}}
+
+
+def build_wa(diverge=False, margins=(0.2, 0.3)):
+    """lambda holds W (golden_output RED: 2+2 answered wrong) and K, its higher-quant control."""
+    L = load(os.path.join(BASE, "ladder.yaml"))
+    rec = {h: load(os.path.join(BASE, "receipts", f"{h}.json")) for h in ("lambda", "gx10")}
+    crux = {n[:-5]: load(os.path.join(BASE, "crux", n)) for n in sorted(os.listdir(os.path.join(BASE, "crux")))}
+    R = rec["lambda"]
+    tmpl = next(x for x in R["rungs"] if x.get("file") == "Extra-Q4_K_M.gguf")
+    w = row_like(tmpl, W, W_SHA)
+    w.update({"green": False, "golden_output": {"passed": False, "skipped": False, "message": "expected '4' in 'What is 2+2?'"},
+              "qa_rc": 1, "gates_failed": ["golden_output"], "gates_account_for_rc": True})
+    R["rungs"].extend([w, row_like(tmpl, K, K_SHA)])
+    R["inventory"].extend([{"file": W, "sha256": W_SHA, "bytes": 1}, {"file": K, "sha256": K_SHA, "bytes": 1}])
+    R["red"] = sum(1 for x in R["rungs"] if not x.get("green"))
+    L["ladder"]["inventory"]["red_model"] = {W: {"ticket": "#3995", "defect": "wrong_answer", "thinking": "off",
+                                                 "expect": "4", "control": K}}
+    wrong = "<think>\n\n</think>\n\nThe answer is five."
+    ll_ids = IDS[:3] + [99] + IDS[4:] if diverge else IDS
+    top2 = [[1.0, 0.0]] * len(IDS)
+    ta = [list(t) for t in top2]; tl = [list(t) for t in top2]
+    if diverge:
+        ta[3] = [10.0, 10.0 - margins[0]]; tl[3] = [9.0, 9.0 - margins[1]]
+    for lane in ("cpu", "gpu"):
+        X = crux[f"lambda-{lane}"]
+        for v in VERBS:
+            X["cells"] += [crux_cell(W_SHA, "lambda", v, "off", "RED"), crux_cell(W_SHA, "lambda", v, "on", "GREEN"),
+                           crux_cell(K_SHA, "lambda", v, "off", "GREEN")]
+        X["greedy"] = [wa_greedy(W_SHA, IDS, ll_ids, wrong, wrong, wrong, ta if diverge else None, tl if diverge else None),
+                       wa_greedy(K_SHA, IDS[:3], IDS[:3], "The answer is 4.", "The answer is 4.", "The answer is 4.")]
+    return L, rec, crux
+
+
 def write(name, L, rec, crux, rc, must, must_not=None):
     d = os.path.join(HERE, name)
     if os.path.isdir(d):
@@ -230,7 +281,7 @@ def main():
 
     L, rec, crux = build_f9()   # RED-MODEL cannot hide a second failure on the same row
     row(rec, D)["backends"]["cuda"]["verbs"]["serve"]["routes"]["/api/chat|stream=false"]["output_bad"] = "gibberish (fragment 'zombie')"
-    write("red-model-residual", L, rec, crux, 1, r"excuses only the think-block defect, and the row ALSO fails")
+    write("red-model-residual", L, rec, crux, 1, r"excuses only the declared think_never_closed defect, and the row ALSO fails")
 
     L, rec, crux = build_f9()   # the row went GREEN: the key is stale
     d = row(rec, D)
@@ -249,7 +300,7 @@ def main():
     L, rec, crux = build_f9()   # ... and an unmeasured thinking-OFF axis blocks too
     for X in crux.values():
         X["cells"] = [c for c in X["cells"] if not (c["key"]["model_sha256"] == D_SHA and c["key"]["thinking"] == "off")]
-    write("red-model-thinking-off-missing", L, rec, crux, 1, r"no thinking-OFF CRUX verdict proves the rest")
+    write("red-model-thinking-off-missing", L, rec, crux, 1, r"no verdict on the other axis proves the rest")
 
     L, rec, crux = build_f9()   # the key must say thinking: on
     L["ladder"]["inventory"]["red_model"][D]["thinking"] = "off"
@@ -281,6 +332,42 @@ def main():
     L, rec, crux = build_f9()   # a named prompt this sweep did not measure
     L["ladder"]["inventory"]["red_model"][D]["prompts"] = ["think-2plus2", "arith-17x23"]
     write("red-model-named-prompt-unmeasured", L, rec, crux, 1, r"claims the defect on prompt\(s\) \['arith-17x23'\]")
+
+    # ---------------------------------------------------------------- F9 wrong_answer (cop ruling 2026-09-23)
+    L, rec, crux = build_wa()
+    write("green-red-model-wrong-answer-identical", L, rec, crux, 0,
+          r"RED-MODEL lambda +Qwen3.5-0.8B-UD-IQ2_XXS.gguf +wrong_answer .*ids identical", r"FAIL")
+    L, rec, crux = build_wa(diverge=True)
+    write("green-red-model-wrong-answer-near-tie", L, rec, crux, 0,
+          r"RED-MODEL lambda +Qwen3.5-0.8B-UD-IQ2_XXS.gguf +wrong_answer .*near-tie \(margins 0.200/0.300\)", r"FAIL")
+    L, rec, crux = build_wa(diverge=True, margins=(0.2, 0.9))   # must-RED: a divergence with margin > 0.5
+    write("red-model-wrong-answer-not-near-tie", L, rec, crux, 1, r"it is NOT a near-tie \(top-2 margin apr 0.200, llama.cpp 0.900")
+    L, rec, crux = build_wa(diverge=True)   # a divergence whose logits nobody recorded
+    for X in crux.values():
+        for gg in X.get("greedy", []):
+            for e in ("apr", "llama.cpp"):
+                gg[e]["raw"].pop("top2_logits", None)
+    write("red-model-wrong-answer-no-logits", L, rec, crux, 1, r"top-2 logits there are not recorded")
+    L, rec, crux = build_wa()   # must-RED: llama.cpp (official template) answers correctly
+    crux["lambda-gpu"]["greedy"][0]["llama.cpp@official"]["raw"]["generated_text"] = "<think>\n\n</think>\n\n2+2 = 4"
+    write("red-model-wrong-answer-llama-correct", L, rec, crux, 1, r"llama.cpp@official answers CORRECTLY")
+    L, rec, crux = build_wa()   # must-RED: the higher-quant control is missing
+    for X in crux.values():
+        X["greedy"] = [g for g in X.get("greedy", []) if g["key"]["model_sha256"] != K_SHA]
+    write("red-model-wrong-answer-control-missing", L, rec, crux, 1, r"has no apr \+ llama.cpp@official greedy record")
+    L, rec, crux = build_wa()   # the control answers wrong too: the prompt, not the quant
+    crux["lambda-gpu"]["greedy"][1]["apr"]["raw"]["generated_text"] = "The answer is five."
+    write("red-model-wrong-answer-control-wrong", L, rec, crux, 1, r"does not answer '4' in both engines")
+    L, rec, crux = build_wa()   # apr on a non-official prompt: the wrong answer may be the template
+    for X in crux.values():
+        g = X.get("greedy", [])
+        if g:
+            g[0]["apr"]["raw"]["prompt_ids"] = PIDS
+            g[0]["llama.cpp"]["raw"]["prompt_ids"] = PIDS
+    write("red-model-wrong-answer-not-official", L, rec, crux, 1, r"apr did not run on the model's OFFICIAL template")
+    L, rec, crux = build_wa()   # a wrong_answer key must say what the right answer is
+    del L["ladder"]["inventory"]["red_model"][W]["expect"]
+    write("red-model-wrong-answer-no-expect", L, rec, crux, 1, r"is a wrong_answer key with no `expect`")
 
     # ---------------------------------------------------------------- F10 RED-UNSUPPORTED
     L, rec, crux = build_f10()

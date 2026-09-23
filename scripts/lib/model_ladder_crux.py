@@ -109,16 +109,20 @@ def load_crux(crux_dir, cut, equiv, out):
     return index, failed
 
 
-def crux_cell(index, sha, host, backend, verb, red_model=False):
+def crux_cell(index, sha, host, backend, verb, red_model=None):
     """-> (proven, reason) for one (model sha, host, backend, verb).
 
     `red_model` (#3957 F9): the file carries a RED-MODEL verdict re-proven on this sweep, which
     covers the thinking-ON axis only. Its thinking-ON verdicts are set aside, and the cell is
     proven by the thinking-OFF verdicts alone, which must exist and be GREEN."""
     both = index.get((sha, host, LANE.get(backend, backend), VERB_TO_CRUX.get(verb, verb))) or []
-    got = [v for v, t in both if not (red_model and t == "on")]
+    axis = set(red_model or ())
+    got = [v for v, t in both if not (red_model and t in axis)]
+    if red_model and not got and axis >= {"on", "off"}:
+        return True, f"RED-MODEL on every thinking axis ({len(both)} cell(s) set aside)"
     if red_model and not got:
-        return False, "RED-MODEL covers thinking ON only, and no thinking-OFF CRUX verdict proves the rest of this cell (#3957 F9)"
+        return False, (f"RED-MODEL covers thinking {sorted(axis)} only, and no verdict on the other axis proves the rest "
+                       f"of this cell (#3957 F9)")
     if not got:
         return False, "no CRUX verdict: no outside engine has judged this cell, so it is not proven"
     bad = [v for v in got if v != "GREEN"]
@@ -126,7 +130,8 @@ def crux_cell(index, sha, host, backend, verb, red_model=False):
         counts = {v: got.count(v) for v in sorted(set(got))}
         return False, "CRUX: " + ", ".join(f"{n} {v}" for v, n in counts.items())
     if red_model:
-        return True, f"CRUX GREEN on thinking OFF ({len(got)} cell(s)); thinking ON is RED-MODEL ({len(both) - len(got)} cell(s) set aside)"
+        return True, (f"CRUX GREEN off the RED-MODEL axis ({len(got)} cell(s)); thinking {sorted(axis)} is RED-MODEL "
+                      f"({len(both) - len(got)} cell(s) set aside)")
     return True, f"CRUX GREEN ({len(got)} cell(s))"
 
 
@@ -160,7 +165,7 @@ def apr_chain(x, backends):
 def judge(L, good, crux_dir, cut, equiv, out, red=None):
     """Print one line per cell and a per-format summary. -> True when any cell is not proven.
 
-    `red` (#3957 F9/F10): {(host, file): "RED-MODEL" | "RED-UNSUPPORTED"}, holding ONLY the verdicts
+    `red` (#3957 F9/F10): {(host, file): "RED-MODEL:<axis>" | "RED-UNSUPPORTED"}, holding ONLY the verdicts
     model_ladder_redmodel re-proved on this sweep. A RED-UNSUPPORTED file's cuda cells print
     RED-UNSUPPORTED and do not block; a RED-MODEL file's cells are proven on thinking OFF alone."""
     red = red or {}
@@ -204,8 +209,9 @@ def judge(L, good, crux_dir, cut, equiv, out, red=None):
                             reasons = per_b + ([] if s_ok else [f"source {src_sha[:12]} is not proven: {s_why} (#3957 F8)"])
                             ok, why = (not reasons), ("; ".join(reasons) if reasons else f"chain to source {src_sha[:12]}: {s_why}")
                     else:
-                        ok, why = crux_cell(index, sha, host, b, v, red_model=(named == "RED-MODEL"))
-                    if ok and named == "RED-MODEL":
+                        axis = named.split(":", 1)[1].split(",") if named and named.startswith("RED-MODEL") else None
+                        ok, why = crux_cell(index, sha, host, b, v, red_model=axis)
+                    if ok and named and named.startswith("RED-MODEL"):
                         # proven on thinking OFF, RED on thinking ON: a RED cell, never counted proven (#3957 F9)
                         t[2] += 1
                         out(f"RED-MODEL cell {label} -- {why}")
