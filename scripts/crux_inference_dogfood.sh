@@ -547,7 +547,7 @@ ref_cache_args() { # ref_cache_args: REF_ENGINES + REF_ARGS for the current mode
   [ "${#HF_SRC[@]}" -gt 0 ] && src=$(python3 -c 'import json,sys; print(json.dumps({"repo": sys.argv[1], "revision": sys.argv[2], "dtype": sys.argv[3]}))' "$hf_repo" "$hf_rev" "$hf_dtype")
   REF_ARGS+=(--cache "$REF_CACHE" --work "$WORK" --manifest "$MANIFEST" --model-sha "$SHA" --thinking "$THINK"
     --backend "$BACKEND" --host "$HOST" --engines "$(IFS=,; printf '%s' "${REF_ENGINES[*]}")" --verbs "$VERBS"
-    --source "$src" --temperature "$TEMP" --seed "$SEED" --context "$CTX" --root "$ROOT"
+    --source "$src" --temperature "$TEMP" --seed "$SEED" --context "$CTX" --max-tokens "$MAXTOK" --root "$ROOT"
     --harness-git-sha "$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null)")
 }
 

@@ -33,7 +33,7 @@ Only rows that answered (rc 0, not refused) are stored. A refusal is not truth, 
   crux_ref_cache.py lookup  --cache D --work W --manifest M <key args> --out-rows F   exit 0 hit · 1 miss · 3 stale
   crux_ref_cache.py store   --cache D --work W --manifest M <key args>                exit 0 · prints "stored N"
 Key args: --model-sha --thinking --backend --host --engines e1,e2 --verbs v1,v2 --oracle eng=version (repeat) --source JSON
-          --temperature --seed --context --root <repo root>
+          --temperature --seed --context --max-tokens <the mode's global cap> --root <repo root>
 """
 import argparse
 import datetime
@@ -53,6 +53,7 @@ SOURCE_ENGINES = ("hf", "vllm")
 # The harness files that PRODUCE a reference row. The judge's files (crux_inference_judge.py, crux_oracles.py, the
 # certifier, the smoke scope) are not here: they read rows and never change one.
 COMMON_FILES = (
+    "scripts/lib/crux_ref_cache.py",  # its injection and provenance shape the rows the judge reads
     "scripts/crux_inference_dogfood.sh",
     "scripts/lib/crux_cells_serve_code.sh",
     "scripts/lib/crux_cell_teardown.sh",
@@ -126,7 +127,17 @@ def _all_pairs(work):
 
 
 def entry_key(a, engine, verb, pid, oracles, harness):
-    maxtok_f = os.path.join(a.work, "maxtok-%s-%s.txt" % (pid, a.thinking))
+    # The cap the engine is GIVEN (quorum round 1, PMAT-4036): run and chat cells get the mode's global cap (the
+    # largest budget in the whole prompt set, so another prompt's edit moves it), serve and code the prompt's own.
+    # A cap that cannot be read is a refusal, never a key with max_tokens None.
+    if verb in ("run", "chat"):
+        maxtok = str(a.max_tokens)
+    else:
+        maxtok_f = os.path.join(a.work, "maxtok-%s-%s.txt" % (pid, a.thinking))
+        if not os.path.isfile(maxtok_f):
+            sys.exit("crux_ref_cache: %s has no per-mode cap file %s: an entry without its max_tokens cannot be keyed"
+                     % (pid, maxtok_f))
+        maxtok = open(maxtok_f).read().strip()
     return {
         "schema": SCHEMA,
         "model_sha256": a.model_sha,
@@ -137,7 +148,7 @@ def entry_key(a, engine, verb, pid, oracles, harness):
         "prompt_id": pid,
         "prompt_sha256": sha256_file(os.path.join(a.work, "prompt-%s.json" % pid)),
         "sampling": {"temperature": a.temperature, "seed": a.seed, "context": a.context,
-                     "max_tokens": open(maxtok_f).read().strip() if os.path.exists(maxtok_f) else None},
+                     "max_tokens": maxtok},
         "oracle": oracle_id(engine, oracles[engine]),
         "source": json.loads(a.source or "null") if engine in SOURCE_ENGINES else None,
         "harness_sha256": harness[engine],
@@ -337,6 +348,7 @@ def main():
     p.add_argument("--temperature", required=True)
     p.add_argument("--seed", required=True)
     p.add_argument("--context", required=True)
+    p.add_argument("--max-tokens", type=int, required=True, help="the mode's global cap, which run/chat cells are given")
     p.add_argument("--root", required=True)
     p.add_argument("--harness-git-sha", default="")
     p.add_argument("--out-rows")

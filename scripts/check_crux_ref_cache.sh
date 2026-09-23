@@ -16,6 +16,7 @@
 #   6. MUTANT: the stale check disabled (why_stale always None) → row 3's receipt is no longer RED: the table
 #                                 catches it
 #   7. llama.cpp is refused by name: it is apr's reference renderer on the serve routes, so it always runs
+#   8. the global cap moved (a bigger budget elsewhere in the prompt set) → a MISS for run/chat, recomputed
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
 set -uo pipefail
@@ -146,7 +147,7 @@ run_row() {
   ( cd "$tree" && env STUB_CALLS="$TMP/$name.calls" CRUX_GPU_LOCK="$TMP/$name.lock" GPUQ_BIN=/nonexistent/gpu-q \
       CRUX_HF_SOURCES="$TMP/hf-sources.yaml" DOGFOOD_ALLOW_UNPINNED=1 APR="$BIN/apr" "$@" \
       timeout 300 bash scripts/crux_inference_dogfood.sh 0.0.0 --model "$MODEL" --engines apr,hf,llamafile \
-        --verbs run --prompts scripts/crux_inference_prompts.v2.json --certification "$TMP/cert.json" \
+        --verbs run --prompts scripts/crux_inference_prompts.v2.json --certification "${RUN_CERT:-$TMP/cert.json}" \
         --only-prompts ctl-2plus2 --thinking-modes off \
         --host stub --out "$TMP/$name.out" --timeout 60 --reference-cache "$cache" --keep-work ) > "$TMP/$name.log" 2>&1
   echo "$?" > "$TMP/$name.rc"
@@ -253,23 +254,55 @@ a = '    """None when the entry at edir is intact for key; otherwise why it may 
 assert s.count(a) == 1, "mutation anchor moved: update this check with the lib"
 open(p, "w").write(s.replace(a, a + "    return None\n"))
 PY
-cp -r "$TMP/cache-tampered" "$TMP/cache-mutant"
+# The lib is in its own harness digest, so the mutant keys differently from the real lib: it must fill ITS OWN cache
+# and have ITS entry tampered. Otherwise it misses, recomputes and is GREEN for the wrong reason (measured: the row
+# passed vacuously that way once the lib joined the digest). Required: 0 engine calls AND non-RED — the edited truth
+# really reused.
+run_row mutant-cold "$MT" "$TMP/cache-mutant"
+mart=$(find "$TMP/cache-mutant" -path '*/files/*' -name '*stdout*' | head -1)
+if [ -n "$mart" ]; then
+  printf '{"text": "<answer>4</answer>", "raw_text": "<answer>4</answer>\\n", "reported": {"device": "edited"}}\n' > "$mart"
+fi
 run_row mutant "$MT" "$TMP/cache-mutant"
 mu=$(summary mutant)
 case "$mu" in
-  *"=RED"*) broke "MUTANT (stale check disabled) still RED: the table cannot see the stale check ($mu)" ;;
-  *) ok "MUTANT (stale check disabled) turns the tampered run non-RED, so row 3 is what catches it ($mu)" ;;
+  "0 | "*=RED*) broke "MUTANT (stale check disabled) still RED: the table cannot see the stale check ($mu)" ;;
+  "0 | "*=GREEN*) ok "MUTANT (stale check disabled) REUSES the edited entry, 0 engine calls, GREEN: row 3 is what catches it ($mu)" ;;
+  *) broke "MUTANT row is vacuous: the mutant never hit its own cache ($mu; artifact ${mart:-none})" ;;
 esac
 
 # Row 7: llama.cpp is never cached. Its llama-server renders apr's raw-prompt serve routes; a hit that switched it
 # off refused 14 of apr's own serve cells on gx10 (2026-09-23). The lib refuses it by name.
 why=$(cd "$T" && python3 scripts/lib/crux_ref_cache.py lookup --cache "$TMP/c7" --work "$TMP" --manifest /dev/null \
   --model-sha "$MSHA" --thinking off --backend gpu --host stub --engines llama.cpp --verbs run \
-  --oracle "llama.cpp=b1" --temperature 0 --seed 42 --context 4096 --root "$T" --out-rows "$TMP/c7.rows" 2>&1)
+  --oracle "llama.cpp=b1" --temperature 0 --seed 42 --context 4096 --max-tokens 1024 --root "$T" \
+  --out-rows "$TMP/c7.rows" 2>&1)
 rc=$?
 case "$rc:$why" in
   1:*"reference renderer"*) ok "llama.cpp cannot be cached: refused by name (it renders apr's serve routes)" ;;
   *) broke "llama.cpp cacheable? rc $rc: $why" ;;
+esac
+
+# Row 8: the run/chat key carries the cap the engine is GIVEN — the mode's global cap. A prompt set whose largest
+# budget moved (another prompt edited) changes it; the old truth was generated under a different cap (quorum round 1).
+T2="$TMP/tree-cap"; mk_tree "$T2"
+python3 - "$T2/scripts/crux_inference_prompts.v2.json" "$MSHA" "$TMP/cert-cap.json" <<'PY' || exit 2
+import hashlib, json, sys
+p, sha, out = sys.argv[1:4]
+d = json.load(open(p))
+other = next(x for x in d["prompts"] if x["id"] != "ctl-2plus2" and isinstance(x.get("max_tokens"), dict))
+other["max_tokens"]["off"] = max(int(x["max_tokens"]["off"]) for x in d["prompts"] if isinstance(x.get("max_tokens"), dict)) * 2
+json.dump(d, open(p, "w"), indent=2)
+json.dump({"schema": "crux-prompt-certification/v1", "prompts": "scripts/crux_inference_prompts.v2.json",
+           "prompts_sha256": hashlib.sha256(open(p, "rb").read()).hexdigest(), "admitted": {},
+           "admitted_by_sha": {sha: ["ctl-2plus2"]}, "admitted_by_sha_thinking": {sha: {"off": ["ctl-2plus2"]}}},
+          open(out, "w"))
+PY
+RUN_CERT="$TMP/cert-cap.json" run_row newcap "$T2" "$CACHE"
+nc=$(summary newcap)
+case "$nc" in
+  "2 | "*"=GREEN"*) ok "a new global cap is a MISS for run/chat, recomputed GREEN ($nc)" ;;
+  *) broke "new global cap: $nc (a hit would reuse a truth generated under another cap)" ;;
 esac
 
 printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"
