@@ -131,9 +131,11 @@ ladder:
     # wrong_answer (cop ruling 2026-09-23, within ruling (a)): Qwen3.5-0.8B-UD-IQ2_XXS answers
     # "What is 2+2?" without "4" on the OFFICIAL template, in apr AND llama.cpp (aprender-6c
     # [3ada9a], #4004), while its Q4_K_M sibling answers "4". The key is INERT until a sweep
-    # re-proves it: apr and llama.cpp greedy ids identical, or diverging only on a near-tie (both
-    # top-2 margins <= 0.5, from recorded top2_logits); every engine wrong; the control right in
-    # both engines; apr CPU == GPU. Until then the row is plain RED, as it would be without the key.
+    # re-proves it, all on the official ids: apr's first divergence from the llama.cpp CPU reference
+    # comes NO EARLIER than the reference's own CUDA leg diverges from it (parity calibrated per
+    # sweep against the oracle's noise; 6c measured oracle step 2, apr step 4); apr and both llama.cpp
+    # backends wrong; the control right in both engines; apr CPU == GPU. Until then the row is plain
+    # RED, as it would be without the key.
     red_model:
       Qwen3.5-0.8B-UD-IQ2_XXS.gguf:
         ticket: "#4004"

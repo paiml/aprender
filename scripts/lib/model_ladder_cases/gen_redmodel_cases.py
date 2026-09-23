@@ -135,17 +135,22 @@ def wa_raw(ids, text, prompt_ids=OPIDS, top2=None, template_ids=None):
     return r
 
 
-def wa_greedy(sha, apr_ids, ll_ids, apr_text, ll_text, off_text, apr_top2=None, ll_top2=None, pid="golden-2plus2"):
-    """A thinking-OFF greedy entry on the OFFICIAL template: apr ran the official ids (#3990), the parity
-    row compares apr and llama.cpp on them, and llama.cpp@official is the model's own rendering."""
+def wa_greedy(sha, apr_ids, apr_text, ref_ids, ref_text, pid="golden-2plus2"):
+    """A thinking-OFF greedy entry on the OFFICIAL template ids (#3990): apr, and llama.cpp@official on
+    this lane (the CPU lane's is the reference, the GPU lane's is the oracle's CUDA leg)."""
     return {"key": {"model_sha256": sha, "host": "lambda", "prompt_id": pid, "thinking": "off"},
-            "apr": {"raw": wa_raw(apr_ids, apr_text, OPIDS, apr_top2)},
-            "llama.cpp": {"raw": wa_raw(ll_ids, ll_text, OPIDS, ll_top2)},
-            "llama.cpp@official": {"raw": wa_raw(ll_ids, off_text, OPIDS, None, OPIDS)}}
+            "apr": {"raw": wa_raw(apr_ids, apr_text, OPIDS)},
+            "llama.cpp@official": {"raw": wa_raw(ref_ids, ref_text, OPIDS, None, OPIDS)}}
 
 
-def build_wa(diverge=False, margins=(0.2, 0.3)):
-    """lambda holds W (golden_output RED: 2+2 answered wrong) and K, its higher-quant control."""
+def div(step):
+    """IDS with the token at `step` changed (None: IDS unchanged)."""
+    return list(IDS) if step is None else IDS[:step] + [99 + step] + IDS[step + 1:]
+
+
+def build_wa(apr_div=None, ref_div=None):
+    """lambda holds W (golden_output RED: 2+2 answered wrong) and K, its higher-quant control. apr
+    first diverges from the llama.cpp CPU reference at `apr_div`, the oracle's CUDA leg at `ref_div`."""
     L = load(os.path.join(BASE, "ladder.yaml"))
     rec = {h: load(os.path.join(BASE, "receipts", f"{h}.json")) for h in ("lambda", "gx10")}
     crux = {n[:-5]: load(os.path.join(BASE, "crux", n)) for n in sorted(os.listdir(os.path.join(BASE, "crux")))}
@@ -157,21 +162,18 @@ def build_wa(diverge=False, margins=(0.2, 0.3)):
     R["rungs"].extend([w, row_like(tmpl, K, K_SHA)])
     R["inventory"].extend([{"file": W, "sha256": W_SHA, "bytes": 1}, {"file": K, "sha256": K_SHA, "bytes": 1}])
     R["red"] = sum(1 for x in R["rungs"] if not x.get("green"))
-    L["ladder"]["inventory"]["red_model"] = {W: {"ticket": "#3995", "defect": "wrong_answer", "thinking": "off",
-                                                 "expect": "4", "control": K}}
+    L["ladder"]["inventory"]["red_model"] = {W: {"ticket": "#4004", "defect": "wrong_answer", "thinking": "off",
+                                                 "expect": "4", "prompts": ["golden-2plus2"], "control": K}}
     wrong = "<think>\n\n</think>\n\nThe answer is five."
-    ll_ids = IDS[:3] + [99] + IDS[4:] if diverge else IDS
-    top2 = [[1.0, 0.0]] * len(IDS)
-    ta = [list(t) for t in top2]; tl = [list(t) for t in top2]
-    if diverge:
-        ta[3] = [10.0, 10.0 - margins[0]]; tl[3] = [9.0, 9.0 - margins[1]]
+    right = "<think>\n\n</think>\n\nThe answer is 4."
     for lane in ("cpu", "gpu"):
         X = crux[f"lambda-{lane}"]
         for v in VERBS:
             X["cells"] += [crux_cell(W_SHA, "lambda", v, "off", "RED"), crux_cell(W_SHA, "lambda", v, "on", "GREEN"),
                            crux_cell(K_SHA, "lambda", v, "off", "GREEN")]
-        X["greedy"] = [wa_greedy(W_SHA, IDS, ll_ids, wrong, wrong, wrong, ta if diverge else None, tl if diverge else None),
-                       wa_greedy(K_SHA, IDS[:3], IDS[:3], "The answer is 4.", "The answer is 4.", "The answer is 4.")]
+        ref = IDS if lane == "cpu" else div(ref_div)
+        X["greedy"] = [wa_greedy(W_SHA, div(apr_div), wrong, ref, wrong),
+                       wa_greedy(K_SHA, IDS[:3], right, IDS[:3], right)]
     return L, rec, crux
 
 
@@ -333,24 +335,23 @@ def main():
     L["ladder"]["inventory"]["red_model"][D]["prompts"] = ["think-2plus2", "arith-17x23"]
     write("red-model-named-prompt-unmeasured", L, rec, crux, 1, r"claims the defect on prompt\(s\) \['arith-17x23'\]")
 
-    # ---------------------------------------------------------------- F9 wrong_answer (cop ruling 2026-09-23)
+    # ---------------------------------------------------------------- F9 wrong_answer (cop rulings 2026-09-23)
     L, rec, crux = build_wa()
     write("green-red-model-wrong-answer-identical", L, rec, crux, 0,
-          r"RED-MODEL lambda +Qwen3.5-0.8B-UD-IQ2_XXS.gguf +wrong_answer .*ids identical", r"FAIL")
-    L, rec, crux = build_wa(diverge=True)
-    write("green-red-model-wrong-answer-near-tie", L, rec, crux, 0,
-          r"RED-MODEL lambda +Qwen3.5-0.8B-UD-IQ2_XXS.gguf +wrong_answer .*near-tie \(margins 0.200/0.300\)", r"FAIL")
-    L, rec, crux = build_wa(diverge=True, margins=(0.2, 0.9))   # must-RED: a divergence with margin > 0.5
-    write("red-model-wrong-answer-not-near-tie", L, rec, crux, 1, r"it is NOT a near-tie \(top-2 margin apr 0.200, llama.cpp 0.900")
-    L, rec, crux = build_wa(diverge=True)   # a divergence whose logits nobody recorded
-    for X in crux.values():
-        for gg in X.get("greedy", []):
-            for e in ("apr", "llama.cpp"):
-                gg[e]["raw"].pop("top2_logits", None)
-    write("red-model-wrong-answer-no-logits", L, rec, crux, 1, r"top-2 logits there are not recorded")
-    L, rec, crux = build_wa()   # must-RED: llama.cpp (official template) answers correctly
-    crux["lambda-gpu"]["greedy"][0]["llama.cpp@official"]["raw"]["generated_text"] = "<think>\n\n</think>\n\n2+2 = 4"
-    write("red-model-wrong-answer-llama-correct", L, rec, crux, 1, r"llama.cpp@official answers CORRECTLY")
+          r"RED-MODEL lambda +Qwen3.5-0.8B-UD-IQ2_XXS.gguf +wrong_answer .*apr identical to the llama.cpp CPU reference", r"FAIL")
+    L, rec, crux = build_wa(apr_div=4, ref_div=2)   # #4004's measurement: apr step 4 >= the oracle's own step 2
+    write("green-red-model-wrong-answer-calibrated", L, rec, crux, 0,
+          r"RED-MODEL lambda +Qwen3.5-0.8B-UD-IQ2_XXS.gguf +wrong_answer .*first diverges at step 4, not earlier than the oracle's own CPU/CUDA divergence at step 2", r"FAIL")
+    L, rec, crux = build_wa(apr_div=2, ref_div=4)   # must-RED: apr diverges EARLIER than the oracle's self-divergence
+    write("red-model-wrong-answer-apr-earlier", L, rec, crux, 1, r"apr diverges from the llama.cpp CPU reference at step 2.*EARLIER than the reference's own CUDA leg does \(step 4\)")
+    L, rec, crux = build_wa(apr_div=4, ref_div=None)   # must-RED: the oracle agrees with itself fully while apr diverges
+    write("red-model-wrong-answer-oracle-agrees", L, rec, crux, 1, r"the oracle's CPU and CUDA legs agree on every token, and apr diverges from them at step 4")
+    L, rec, crux = build_wa(apr_div=4, ref_div=2)   # must-RED: the oracle's CUDA leg is missing
+    crux["lambda-gpu"]["greedy"][0].pop("llama.cpp@official")
+    write("red-model-wrong-answer-cuda-leg-missing", L, rec, crux, 1, r"the oracle's CUDA leg \(llama.cpp@official, GPU lane\) is MISSING")
+    L, rec, crux = build_wa()   # must-RED: llama.cpp (CPU reference) answers correctly
+    crux["lambda-cpu"]["greedy"][0]["llama.cpp@official"]["raw"]["generated_text"] = "<think>\n\n</think>\n\n2+2 = 4"
+    write("red-model-wrong-answer-llama-correct", L, rec, crux, 1, r"llama.cpp CPU answers CORRECTLY")
     L, rec, crux = build_wa()   # must-RED: the higher-quant control is missing
     for X in crux.values():
         X["greedy"] = [g for g in X.get("greedy", []) if g["key"]["model_sha256"] != K_SHA]
@@ -359,12 +360,11 @@ def main():
     crux["lambda-gpu"]["greedy"][1]["apr"]["raw"]["generated_text"] = "The answer is five."
     write("red-model-wrong-answer-control-wrong", L, rec, crux, 1, r"does not answer '4' in both engines")
     L, rec, crux = build_wa()   # apr on a non-official prompt: the wrong answer may be the template
-    for X in crux.values():
-        g = X.get("greedy", [])
-        if g:
-            g[0]["apr"]["raw"]["prompt_ids"] = PIDS
-            g[0]["llama.cpp"]["raw"]["prompt_ids"] = PIDS
+    crux["lambda-gpu"]["greedy"][0]["apr"]["raw"]["prompt_ids"] = PIDS
     write("red-model-wrong-answer-not-official", L, rec, crux, 1, r"apr did not run on the model's OFFICIAL template")
+    L, rec, crux = build_wa()   # apr CPU != GPU
+    crux["lambda-cpu"]["greedy"][0]["apr"]["raw"]["generated_ids"] = div(5)
+    write("red-model-wrong-answer-cpu-ne-gpu", L, rec, crux, 1, r"apr CPU and GPU DIFFER at step 5")
     L, rec, crux = build_wa()   # a wrong_answer key must say what the right answer is
     del L["ladder"]["inventory"]["red_model"][W]["expect"]
     write("red-model-wrong-answer-no-expect", L, rec, crux, 1, r"is a wrong_answer key with no `expect`")

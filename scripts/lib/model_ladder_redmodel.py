@@ -73,9 +73,6 @@ import model_ladder_crux as crux
 
 TICKET = re.compile(r"#\d+")
 DEFECTS = {"think_never_closed": "never_closed", "think_empty": "empty", "wrong_answer": None}
-#: #3957 F9 `wrong_answer` (cop ruling 2026-09-23): the largest top-2 logit margin, in BOTH engines at
-#: the first divergent step, that still counts as a near-tie rather than an engine difference.
-NEAR_TIE = 0.5
 AXES = {"on": {"on"}, "off": {"off"}, "any": {"on", "off"}}
 
 
@@ -127,6 +124,17 @@ def _raw(g, engine):
     if not (isinstance(ids, list) and ids and all(isinstance(i, int) and not isinstance(i, bool) for i in ids)):
         return None
     return r
+
+
+def _margins(a, b, step):
+    """Evidence only (cop ruling: logits are recorded, not the bar): the top-2 margins at `step`."""
+    if step is None:
+        return ""
+    ma, mb = top2_margin(a, step), top2_margin(b, step)
+    if ma is None and mb is None:
+        return ""
+    fmt = lambda m: "n/a" if m is None else f"{m:.3f}"
+    return f" (top-2 margins there: apr {fmt(ma)}, reference {fmt(mb)})"
 
 
 def _ids(v):
@@ -365,15 +373,21 @@ class RedVerdicts:
                        f"control {cfile} closes and answers; apr CPU == GPU")
 
     def _prove_wrong_answer(self, host, f, x, e, sha_of):
-        """#3957 F9 `wrong_answer` (cop ruling 2026-09-23, within operator ruling (a)): the FILE answers
-        wrong, proven by llama.cpp. Admitted only when, per greedy entry on the key's thinking axis:
-          - apr and llama.cpp ran on the same prompt ids, and apr's ids ARE the official template's;
-          - their greedy ids are identical, OR the first divergence is a NEAR-TIE: at that step BOTH
-            engines' top-2 logit margin is <= NEAR_TIE (the logits are recorded, never asserted);
-          - apr, llama.cpp on apr's ids, and llama.cpp@official all answer WRONG (`expect` absent);
-          - apr CPU ids == GPU ids;
+        """#3957 F9 `wrong_answer` (cop rulings 2026-09-23, within operator ruling (a)): the FILE answers
+        wrong, proven by llama.cpp. PARITY IS CALIBRATED PER SWEEP against the oracle's own noise
+        (aprender-6c [3ada9a], #4004: llama.cpp CPU vs llama.cpp CUDA, same build, identical official
+        ids, first-diverge at step 2 -- so no fixed margin separates an apr fault from the reference's
+        backend noise). Per greedy entry on the key's thinking axis, all on the OFFICIAL template ids:
+          - reference = llama.cpp@official on the CPU lane; oracle CUDA leg = llama.cpp@official on
+            the GPU lane; apr = apr on the GPU lane (with apr CPU == GPU required separately);
+          - apr ran the official ids (its prompt_ids == the template's);
+          - apr's first divergence step from the reference is >= the oracle CUDA leg's own first
+            divergence step from the reference (apr is at least as close to the CPU reference as the
+            reference's own GPU backend). apr identical to the reference passes; the oracle's two
+            backends agreeing FULLY while apr diverges is plain RED; a missing CUDA leg is plain RED;
+          - apr and both llama.cpp backends all answer WRONG (`expect` absent from the final answer);
         and the `control` (the same architecture at a higher quant) answers CORRECTLY on the same
-        prompt in BOTH engines. llama.cpp answering correctly anywhere is apr's fault: plain RED."""
+        prompt in BOTH engines. raw.top2_logits, when present, are reported as evidence, never the bar."""
         sha = x.get("sha256") or sha_of(host, f)
         if not (isinstance(sha, str) and crux.HEX64.fullmatch(sha)):
             return ["the row has no 64-hex sha256, so no oracle can be joined to it"], ""
@@ -389,12 +403,13 @@ class RedVerdicts:
         if not gpu:
             return [f"no thinking-{e['thinking']} greedy entry for sha {sha[:12]} on {host} in a gpu-lane CRUX receipt "
                     f"bound to the cut -- no oracle ran on this sweep (#3957 F9)"], ""
-        cpu = {((g.get("key") or {}).get("prompt_id"), (g.get("key") or {}).get("thinking")): g
-               for g in self._greedy_on(sha, host, "cpu", axis)}
+
+        def by_pid(entries):
+            return {((g.get("key") or {}).get("prompt_id"), (g.get("key") or {}).get("thinking")): g for g in entries}
+        cpu = by_pid(self._greedy_on(sha, host, "cpu", axis))
         cfile = e["control"]
         csha = sha_of(host, cfile)
-        ctl = {((g.get("key") or {}).get("prompt_id"), (g.get("key") or {}).get("thinking")): g
-               for g in self._greedy_on(csha, host, "gpu", axis)} if isinstance(csha, str) else {}
+        ctl = by_pid(self._greedy_on(csha, host, "gpu", axis)) if isinstance(csha, str) else {}
         probs, shown = [], []
         if not (isinstance(csha, str) and crux.HEX64.fullmatch(csha)):
             probs.append(f"the higher-quant control {cfile} is not held on {host}")
@@ -403,44 +418,51 @@ class RedVerdicts:
         for g in gpu:
             k = g.get("key") or {}
             pid, th = k.get("prompt_id"), k.get("thinking")
-            a, o, off = _raw(g, "apr"), _raw(g, "llama.cpp"), _raw(g, "llama.cpp@official")
-            miss = [n for n, v in (("apr", a), ("llama.cpp", o), ("llama.cpp@official", off)) if v is None]
-            if miss:
-                probs.append(f"{pid}/{th}: no raw greedy record for {', '.join(miss)}")
+            c = cpu.get((pid, th))
+            a, cuda, ref, ca = _raw(g, "apr"), _raw(g, "llama.cpp@official"), _raw(c, "llama.cpp@official"), _raw(c, "apr")
+            if ref is None:
+                probs.append(f"{pid}/{th}: no llama.cpp@official CPU-lane record -- there is no reference to measure against")
+                continue
+            if cuda is None:
+                probs.append(f"{pid}/{th}: the oracle's CUDA leg (llama.cpp@official, GPU lane) is MISSING -- the "
+                             f"reference's own backend noise is unmeasured, so apr cannot be calibrated against it")
+                continue
+            if a is None:
+                probs.append(f"{pid}/{th}: no raw apr greedy record on the GPU lane")
                 continue
             p = []
-            if not (_ids(a.get("prompt_ids")) and a.get("prompt_ids") == o.get("prompt_ids")):
-                p.append(f"{pid}/{th}: the parity row's engines did not run on the same prompt ids")
-            if not (_ids(off.get("template_prompt_ids")) and off.get("prompt_ids") == off.get("template_prompt_ids")):
-                p.append(f"{pid}/{th}: the llama.cpp@official row did not run on the official template's ids (#3990)")
-            elif a.get("prompt_ids") != off.get("template_prompt_ids"):
+            for n, r in (("CPU", ref), ("CUDA", cuda)):
+                if not (_ids(r.get("template_prompt_ids")) and r.get("prompt_ids") == r.get("template_prompt_ids")):
+                    p.append(f"{pid}/{th}: the llama.cpp@official {n} leg did not run on the official template's ids (#3990)")
+            if cuda.get("prompt_ids") != ref.get("prompt_ids"):
+                p.append(f"{pid}/{th}: the oracle's CPU and CUDA legs did not run on identical ids")
+            if a.get("prompt_ids") != ref.get("template_prompt_ids"):
                 p.append(f"{pid}/{th}: apr did not run on the model's OFFICIAL template, so its wrong answer may be apr's "
                          f"prompt, not the model (#3990)")
-            if a["generated_ids"] != o["generated_ids"]:
-                d = _first_diff(a["generated_ids"], o["generated_ids"])
-                ma, mo = top2_margin(a, d), top2_margin(o, d)
-                if ma is None or mo is None:
-                    p.append(f"{pid}/{th}: apr and llama.cpp diverge at step {d} and the top-2 logits there are not "
-                             f"recorded for both -- a divergence nobody measured is not a near-tie")
-                elif ma > NEAR_TIE or mo > NEAR_TIE:
-                    p.append(f"{pid}/{th}: apr and llama.cpp diverge at step {d} and it is NOT a near-tie (top-2 margin "
-                             f"apr {ma:.3f}, llama.cpp {mo:.3f}, limit {NEAR_TIE}) -- the engines differ, so the answer is "
-                             f"not attributed to the file")
-                else:
-                    shown.append(f"{pid}/{th}: diverge at step {d} on a near-tie (margins {ma:.3f}/{mo:.3f})")
+            d_apr = _first_diff(a["generated_ids"], ref["generated_ids"])
+            d_ref = _first_diff(cuda["generated_ids"], ref["generated_ids"])
+            ev = _margins(a, ref, d_apr)
+            if d_apr is None:
+                shown.append(f"{pid}/{th}: apr identical to the llama.cpp CPU reference ({len(a['generated_ids'])} ids)")
+            elif d_ref is None:
+                p.append(f"{pid}/{th}: the oracle's CPU and CUDA legs agree on every token, and apr diverges from them at "
+                         f"step {d_apr}{ev} -- the divergence is apr's, not noise the reference shares")
+            elif d_apr < d_ref:
+                p.append(f"{pid}/{th}: apr diverges from the llama.cpp CPU reference at step {d_apr}{ev}, EARLIER than the "
+                         f"reference's own CUDA leg does (step {d_ref}) -- apr is further from the reference than its noise")
             else:
-                shown.append(f"{pid}/{th}: {len(a['generated_ids'])} ids identical")
-            for n, r in (("apr", a), ("llama.cpp", o), ("llama.cpp@official", off)):
+                shown.append(f"{pid}/{th}: apr first diverges at step {d_apr}{ev}, not earlier than the oracle's own "
+                             f"CPU/CUDA divergence at step {d_ref}")
+            for n, r in (("apr", a), ("llama.cpp CPU", ref), ("llama.cpp CUDA", cuda)):
                 if answers(r.get("generated_text"), expect):
                     p.append(f"{pid}/{th}: {n} answers CORRECTLY ({expect!r}) -- the file can answer, so the wrong answer "
                              f"is not the model's")
-            ca = _raw(cpu.get((pid, th)), "apr")
             if ca is None:
                 p.append(f"{pid}/{th}: no apr CPU leg with raw ids in a cpu-lane receipt -- CPU == GPU is unmeasured")
             elif ca["generated_ids"] != a["generated_ids"]:
                 p.append(f"{pid}/{th}: apr CPU and GPU DIFFER at step {_first_diff(ca['generated_ids'], a['generated_ids'])}")
-            c = ctl.get((pid, th))
-            ca2, co2 = _raw(c, "apr"), _raw(c, "llama.cpp@official")
+            cc = ctl.get((pid, th))
+            ca2, co2 = _raw(cc, "apr"), _raw(cc, "llama.cpp@official")
             if ca2 is None or co2 is None:
                 p.append(f"{pid}/{th}: the higher-quant control {cfile} has no apr + llama.cpp@official greedy record for "
                          f"this prompt -- nothing shows the architecture CAN answer it")
@@ -448,8 +470,8 @@ class RedVerdicts:
                 p.append(f"{pid}/{th}: the higher-quant control {cfile} does not answer {expect!r} in both engines -- the "
                          f"prompt, not the quant, may be at fault")
             probs.extend(p)
-        return probs, (f"wrong answer in apr and llama.cpp (official template too): {'; '.join(shown)}; control {cfile} "
-                       f"answers {e['expect']!r} in both engines; apr CPU == GPU")
+        return probs, (f"wrong answer in apr and both llama.cpp backends on the official template: {'; '.join(shown)}; "
+                       f"control {cfile} answers {e['expect']!r} in both engines; apr CPU == GPU")
 
     @staticmethod
     def _prove_unsupported(x, e):
