@@ -1,0 +1,139 @@
+{
+ "ticket": "PMAT-4036",
+ "executor": "claude-code-agent",
+ "width": 3,
+ "base": "origin/chore/0.69.1-merge-back",
+ "base_note": "main lacks the CRUX tooling until #4046 (0.69.1 merge-back) lands; retarget to main after it",
+ "head": "33ebdff1ae22b71d6117959c9421c2a69422c5b0",
+ "diff_sha256": "23587b83ea839ac71f9d775bd64511b5505492e5e72f614ddeecb17d6e7ecd01",
+ "diff_note": "judged_diff_sha256 (quorum-review/judged-diff.sh) over base...HEAD; the lanes' brief excluded evidence/crux/4036-measure/ from the listing (1.3 MB of JSON) and pointed them at it in the worktree",
+ "author": {
+  "model": "claude-opus-5-5",
+  "family": "claude",
+  "source": "session"
+ },
+ "degraded": "same-family",
+ "fallback": {
+  "reason": "agy quota exhausted on every family at round 2 (gemini 429 reset 1h35m; gpt-oss-120b-medium and claude 429 reset 87h); operator rule (CLAUDE.md, 2026-09-23): quorum lanes fall back to Claude Code, never the author's model id (author opus-5-5 -> sonnet-5 lanes), same-family quorums valid and marked degraded: same-family",
+  "agy_rounds": [
+   {
+    "round": 1,
+    "head": "1b483fff6..7ee4c2bf6",
+    "counted": 3,
+    "votes": {
+     "FAIL": 2,
+     "PASS": 1
+    },
+    "acted_on": "max_tokens keyed on the prompt's own cap, not the global cap run/chat are given; measurement not in the diff; lib not in its own digest"
+   },
+   {
+    "round": 2,
+    "head": "08fabce4d",
+    "counted": 0,
+    "votes": {
+     "NO-VERDICT": 3
+    },
+    "acted_on": "quota: every family 429"
+   }
+  ]
+ },
+ "claude_rounds": [
+  {
+   "round": 3,
+   "head": "c3eb2da73",
+   "votes": {
+    "PASS": 1,
+    "FAIL": 1
+   },
+   "acted_on": "lane 2: row pointers not validated against files{} (traversal); a lookup crash shared the MISS exit code"
+  },
+  {
+   "round": 4,
+   "head": "fbe241f93",
+   "votes": {
+    "FAIL": 1
+   },
+   "acted_on": "lane 1: a REMOVED row field (stdout) passed every per-field rule -> content digest"
+  },
+  {
+   "round": 5,
+   "head": "448d914f2",
+   "votes": {
+    "PASS": 1,
+    "FAIL": 1
+   },
+   "acted_on": "lane 2: an unreferenced file in files{} was accepted -> converse rule; coherent re-seal declared out of scope (threat model, AC2 narrowed explicitly)"
+  },
+  {
+   "round": 6,
+   "head": "a89dce145",
+   "votes": {
+    "PASS": 1,
+    "FAIL": 1
+   },
+   "acted_on": "lane 2: origin outside the content seal -> whole-entry seal"
+  },
+  {
+   "round": 7,
+   "head": "a50d360f0",
+   "votes": {
+    "PASS": 1,
+    "FAIL": 1
+   },
+   "acted_on": "lane 2: an item answered twice passed the count guard and was cached -> exactly one row, refused otherwise"
+  },
+  {
+   "round": 8,
+   "head": "a610a7e10",
+   "votes": {
+    "FAIL": 1
+   },
+   "acted_on": "lane 2: a bare-string artifact field (re-sealed) was served -> field-shape rule"
+  },
+  {
+   "round": 9,
+   "head": "33ebdff1a",
+   "votes": {
+    "PASS": 3
+   },
+   "acted_on": "agreed"
+  }
+ ],
+ "lanes": [
+  {
+   "lane": 1,
+   "model": "claude-sonnet-5",
+   "family": "claude",
+   "model_source": "agent-report",
+   "verdict": "PASS",
+   "agent_id": "abd7052b7a6f30eb3",
+   "focus": "ticket + acceptance criteria; key binding; evidence; vacuity",
+   "summary": "All 5 acceptance criteria met; key binds what the engine is given, host excluded; llama.cpp doubly excluded; batching row-identical; evidence matches the receipt verbatim; ref_cache 17/17, plugin_batch 6/6, serve_code 66/66 run live; AC2 narrowing disclosed and honest.",
+   "findings": []
+  },
+  {
+   "lane": 2,
+   "model": "claude-sonnet-5",
+   "family": "claude",
+   "model_source": "agent-report",
+   "verdict": "PASS",
+   "agent_id": "a7c0f64a9d3723aaf",
+   "focus": "shell, concurrency, tamper within the threat model",
+   "summary": "Globals restored on hit and stale; batch cells use the same run_cell lock; store atomic; pointer/converse/content-digest/field-shape rules blocked every unsealed modification tried by hand; tables 17/17 and 6/6 live; evidence cross-checked.",
+   "findings": []
+  },
+  {
+   "lane": 3,
+   "model": "claude-sonnet-5",
+   "family": "claude",
+   "model_source": "agent-report",
+   "verdict": "PASS",
+   "agent_id": "a4545a258a8e323bc",
+   "focus": "regressions and scope",
+   "summary": "No scope creep (8 files); REF_CACHE fully gated; CRUX_NO_BATCH reverts identically (measured); one-row guard only on plugin engines, which are one-row-per-gen by contract; ref_cache 17/17, plugin_batch 6/6, serve_code 66/66, greedy 12/12, ollama-in-lock 6/6 run live.",
+   "findings": []
+  }
+ ],
+ "agreed": true,
+ "note": "3/3 PASS on the same head; degraded: same-family (claude-sonnet-5 lanes, claude-opus-5-5 author). Batch by cop rule: not armed."
+}
