@@ -1,14 +1,20 @@
 # Milestone triage: 0.70.0 and unmilestoned issues (2026-09-23, applied)
 
-**APPLIED 2026-09-23** on the operator's approval ("yes apply both", relayed by aprender-cf): 202 issues moved (97 out of 0.70.0, 105 from no milestone) to the milestone proposed below, each with a comment naming this file, #4024 and its reason. Row requested by aprender-cf (cop) under #3998.
+**APPLIED 2026-09-23** on the operator's approval ("yes apply both", relayed by aprender-cf): 202 issues were moved to the milestone proposed below (97 out of 0.70.0, 105 from no milestone), each with a comment naming this file, #4024 and its reason. Row requested by aprender-cf (cop) under #3998.
 
-**NOT applied (left untouched, pending): 35 rows.** These are the 8 `DECIDE` rows (operator), 7 `close?`, 6 `verify-close`, 13 `0.69.1 (in flight)` and 1 `none (pinned)`. No issue was closed.
+**Corrected after the #4024 quorum (Opus 5.5 lane 1, FAIL):**
 
-**Open issues per milestone after the move** (`gh issue list --milestone`, 2026-09-23 ~16:10 CEST): 0.70.0 126 · 0.71.0 106 · 0.72.0 55 · 0.73.0 32 · 0.74.0 23 · 0.75.0 7.
+- 3 of those moves broke this table's own rule 1: #3421 and #3428 (must-carry in #3999 and #4001) and #3997 (named by five epics). They were **reverted** to their pre-move state, each with a comment, and are now decisions. **Net moves: 199.**
+- 2 of the comments (#3917, #3532) had failed on a GraphQL error and were posted afterwards.
+- 3 edits (#3576, #3431, #3646) hit a transient GraphQL error and succeeded on retry.
 
-0.70.0 holds 126: the table's 109 (77 kept + 32 moved in), the 4 untouched `close?` rows, and 13 issues other sessions added after this table's snapshot (#3988's moves). The milestone API's `open_issues` (140) also counts pull requests.
+**NOT applied (left untouched, pending): 38 rows.** These are the 12 `DECIDE` rows (operator: the original 8, #3951, and the 3 reverted rows), 7 `close?`, 6 `verify-close`, 12 `0.69.1 (in flight)` and 1 `none (pinned)`. No issue was closed.
 
-The move was checked against each issue's LIVE state first: an issue closed, or moved off its snapshot milestone since the table was made, would have been skipped (none were). 3 edits hit a transient GitHub GraphQL error and succeeded on retry.
+**Open issues per milestone after the move and the reverts** (`gh issue list --milestone`, 2026-09-23 ~16:50 CEST): 0.70.0 129 · 0.71.0 106 · 0.72.0 55 · 0.73.0 32 · 0.74.0 21 · 0.75.0 7.
+
+0.70.0 also holds the 4 untouched `close?` rows and issues other sessions added after this table's snapshot (#3988's moves, new filings). The milestone API's `open_issues` also counts pull requests.
+
+Each move was checked against the issue's LIVE state first: an issue closed, or moved off its snapshot milestone since the table was made, would have been skipped (none were).
 Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 and 136 open issues with no milestone.
 
 ## Themes
@@ -28,7 +34,7 @@ Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 a
 1. **Named must-carry.** An issue an epic names in its body goes to that epic's release. Named by more than one epic → `DECIDE a/b`, which is the operator's call.
 2. **Theme.** Otherwise the issue goes to the release whose exit bar it blocks. Correctness of a certified cell → 0.71; the serve/agent surface and telemetry → 0.72; the performance path (including correctness bugs *in* batched/FP8 paths, which must be fixed before parity is claimed) → 0.73; dispatch/tensor/arch consolidation → 0.74; training → 0.75; release/CI/gates/lock/sweep infrastructure → 0.70.
 3. **Debt ratchet (#3997).** Debt goes to a slice by pillar: A coverage → 0.70 (the floor gates the 0.70 train); B/C pv + ontology → 0.71; D backlog/docs/packaging → 0.73. The slices are a proposal for equal portions; the operator rebalances.
-4. **Not a milestone.** `0.69.1 (in flight)`: worked in the current train, closes at the tag or carries to 0.70. `verify-close`: the release tree already implements it (cited in code). `close?`: a superseded or stale epic/row. `none (pinned)`: a standing coordination thread.
+4. **Not a milestone.** `0.69.1 (in flight)`: worked in the current train, closes at the tag or carries to 0.70. `verify-close`: the release tree already implements it -- cited in code on origin/release/0.69.1-batch-2 @ c619dddd4 (not yet on main). `close?`: a superseded or stale epic/row. `none (pinned)`: a standing coordination thread.
 5. **Hand review.** Every row was hand-checked after the keyword pass; about 120 reasons are hand-written.
 
 **Totals.**
@@ -38,6 +44,9 @@ Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 a
 
 ## Decisions for the operator
 
+- #3421, #3428 → **0.73.0/0.74.0**: must-carry in both #3999 and #4001 (REVERTED to 0.70.0 after a move made in error)
+- #3997 → **recommend 0.70.0 as the first slice**: the ratchet epic is named by five epics (REVERTED to no milestone after a move made in error)
+- #3951 → **0.70.0/0.71.0**: must-carry in #3998 and #3994, and likely resolved by #3990 (re-measure)
 - #3950 → **0.70.0/0.71.0**: IQ2_XXS CUDA GEMV: same family as #3953/#3960/#3963, which #3998 and #3994 both name -- operator picks one. _IQ2_XXS (ggml 16) has no CUDA GEMV — 0.69.1 release blocker_
 - #3953 → **0.70.0/0.71.0**: named must-carry in #3998 (0.70.0) and #3994 (0.71.0) -- operator picks one. _IQ2_S (ggml 22) has no CUDA GEMV — 0.69.1 release blocker_
 - #3960 → **0.70.0/0.71.0**: named must-carry in #3998 (0.70.0) and #3994 (0.71.0) -- operator picks one. _Q2_K (ggml 10) has no CUDA GEMV — 0.69.1 release blocker_
@@ -133,7 +142,7 @@ Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 a
 | #3998 | 0.70.0 | the theme epic itself | EPIC 0.70.0: Fast Train — freeze→publish in ≤4 h; lock scoped to GPU work, sharded sweep, idle same-arch pre-s |
 | #4021 | 0.70.0 | CRUX judge thinking-ON calibration: filed for 0.70 at the cop's request; the sweep judge (#3998) | CRUX judge: thinking-ON cells must not be judged on </think> closure alone — use answer-when-both-close, else  |
 | #3269 | 0.71.0 | debt ratchet pillars B/C (#3997: pv at the deepest level, ontology merge), slice 2 | ONT-001: aprender owns 16 untriaged ontology rows — one per train, ratcheted (APR-RELEASE-001 §11) |
-| #3483 | 0.71.0 | FP8 prefill fails CPU parity: GPU correctness underneath the matrix (#3994) | FP8 batched prefill fails CPU parity at the post-prompt decode step — catastrophic on per-head-QK-norm models  |
+| #3483 | 0.71.0 | FP8 prefill fails CPU parity (applied as 0.71). NOTE: rule 2 sends FP8/batched-path correctness to 0.73, as it did #2765; the #4024 quorum flagged this as inconsistent. The operator should re-check; it is not re-moved without a ruling | FP8 batched prefill fails CPU parity at the post-prompt decode step — catastrophic on per-head-QK-norm models  |
 | #3555 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | Name the Qwen model 0.69 blesses and commit its parity receipt at the SERVING shape — our gates are all single |
 | #3558 | 0.71.0 | first-party Qwen3.5 selection + evidence: part of the certified matrix (#3994) | First-party dogfood: Qwen3.5 at a Pareto-optimal size — publish the selection rule and the evidence a consumer |
 | #3559 | 0.71.0 | debt ratchet pillars B/C (#3997: pv at the deepest level, ontology merge), slice 2 | ONT-001 to 80% in 0.69 (≈7 more rows) with SHACL armed and falsifiable — and the §11 one-row-per-train conflic |
@@ -205,13 +214,13 @@ Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 a
 | #3550 | 0.73.0 | debt ratchet pillar D (#3997: backlog, docs, packaging), slice 4 | No consumer-shaped door into aprender-viz: drawing a chart compiles aprender-compute, aprender-quant and apren |
 | #3551 | 0.73.0 | debt ratchet pillar D (#3997: backlog, docs, packaging), slice 4 | aprender-viz is f32, consumers are f64: the narrowing at the DataFrame boundary is undocumented and unguarded |
 | #3552 | 0.73.0 | debt ratchet pillar D (#3997: backlog, docs, packaging), slice 4 | Facet/Coord have no runnable example — EV-15/EV-16 have nothing to build against |
-| #3859 | 0.73.0 | classical-ML O(n^2) split search: performance, outside LLM parity; could equally be ratchet debt | RandomForestRegressor/DecisionTreeRegressor carry the identical O(n²) split search — #3815's fix does not reac |
+| #3859 | 0.73.0 | classical-ML O(n^2) split search: debt ratchet (#3997) pillar D, slice 4 (0.73). It is not LLM parity work | RandomForestRegressor/DecisionTreeRegressor carry the identical O(n²) split search — #3815's fix does not reac |
 | #3915 | 0.73.0 | a falsified optimization left as dead env-gated code: debt ratchet (#3997), slice 4 | DIRECT_FP32_GEMV: a FALSIFIED optimization left as an env-gated branch that no gate executes |
 | #3075 | 0.74.0 | Phi-2/Phi-3 GPU eligibility: not Qwen, so Any Model (#4001), not 0.71 | Phi-2/Phi-3 GGUF never GPU-eligible: LayerNorm kernel exists but isn't wired into forward_gpu_resident |
 | #3077 | 0.74.0 | architecture support table, generated from TRAITS with #3443: Any Model (#4001) | Docs: publish a GPU-vs-CPU model architecture support table (no user-facing doc exists today) |
 | #3418 | 0.74.0 | named must-carry in epic #4001 | ARCH: quant-type dispatch is duplicated across ~30 files with no single source of truth — propose a dedicated  |
-| #3421 | 0.74.0 | PP-QUANT epic: #4001 moves it from 0.73's enablers to 0.74's core | EPIC: PP-QUANT-001 — quant-type dispatch, Phase 0/1 (0.69 train) |
-| #3428 | 0.74.0 | PP-TENSOR epic: #4001 moves it from 0.73's enablers to 0.74's core | EPIC: PP-TENSOR-001 — a tensor that has no bytes is a different type from one that does (MoE / tied-embedding  |
+| #3421 | DECIDE 0.73.0/0.74.0 | named must-carry in #3999 (0.73) and #4001 (0.74) -- operator picks one. Moved to 0.74 in error and REVERTED to 0.70.0 after the #4024 quorum | EPIC: PP-QUANT-001 — quant-type dispatch, Phase 0/1 (0.69 train) |
+| #3428 | DECIDE 0.73.0/0.74.0 | named must-carry in #3999 (0.73) and #4001 (0.74) -- operator picks one. Moved to 0.74 in error and REVERTED to 0.70.0 after the #4024 quorum | EPIC: PP-TENSOR-001 — a tensor that has no bytes is a different type from one that does (MoE / tied-embedding  |
 | #3429 | 0.74.0 | quant/tensor/arch dispatch consolidation: Any Model core (#4001) | PP-QUANT-001 M3: regression fixtures — #1749 #1789 #2535 #3341 (+ #3091 reopen) on tiny synthetic GGUFs, obser |
 | #3431 | 0.74.0 | quant/tensor/arch dispatch consolidation: Any Model core (#4001) | PP-QUANT-001 M2: reconciliation gate — `GgmlType` vs the vendored `ggml.h` id list at a pinned sha; exhaustive |
 | #3433 | 0.74.0 | quant/tensor/arch dispatch consolidation: Any Model core (#4001) | PP-TENSOR-001 T1: typed `TensorStorage` — a dense consumer cannot receive an MoE placeholder |
@@ -237,7 +246,7 @@ Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 a
 | #3907 | 0.69.1 (in flight) | PMAT-3907 budget wiring was worked in this train; verify, else 0.71 | THINKING_ON_BUDGET is one 8B model's measurement applied to every thinking model, including a 0.8B — and the t |
 | #3930 | 0.69.1 (in flight) | Qwen3NoThink prefill vs the model's template: superseded by #3990 (the model's own template); close with #3990 | Qwen3NoThink prefills <think>\n</think>\n where the model's own template uses <think>\n\n</think>\n\n — the mo |
 | #3948 | 0.69.1 (in flight) | folded with #3961 on fix/3957-gate-hardening (aprender-6c); verify and close | golden_output thinking-ON judge passes an EMPTY <think></think> — the leg cannot tell reasoning from skipping  |
-| #3951 | 0.69.1 (in flight) | the F9 oracle (aprender-83, PMAT-3952-crux-greedy2@a78301558) shows the block CLOSES on the official ON template: likely resolved by #3990 -- re-measure at the tag, then close or place in 0.71 | Qwen3.5-0.8B-IQ4_XS never closes its think block while Q4_K_M does: CUDA IQ4 GEMV or real quant damage? |
+| #3951 | DECIDE 0.70.0/0.71.0 (in flight) | named must-carry in #3998 (0.70) and #3994 (0.71) -- operator picks. Also: the F9 oracle (aprender-83, PMAT-3952-crux-greedy2@a78301558) shows the block CLOSES on the official ON template, so it is likely resolved by #3990; re-measure before placing | Qwen3.5-0.8B-IQ4_XS never closes its think block while Q4_K_M does: CUDA IQ4 GEMV or real quant damage? |
 | #3957 | 0.69.1 (in flight) | the 0.69.1 gate-hardening row (F1-F10); receipted and folded -- close at the tag | 0.69.1 gate hardening (no GPU): sha-bound receipts, missing-field=FAIL, verb output oracles, CRUX judge streng |
 | #3961 | 0.69.1 (in flight) | folded on fix/3957-gate-hardening (aprender-6c); verify and close | golden thinking-ON leg discards its backend (_used_gpu) and passes an empty <think></think> as thinking |
 | #3962 | 0.69.1 (in flight) | the 0.69.1 CRUX producer row; being folded for the freeze sweep -- close at the tag | 0.69.1 BLOCKER: CRUX producer — per-verb prompt sets (incl. hard prompts) + code verb + hf/vllm quorum rows |
@@ -292,7 +301,7 @@ Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 a
 | #3986 | 0.70.0 | GPU lock scoped to GPU work is 0.70's headline (#3998); #3994 lists it only as a dependency | GPU lock efficiency: a 25-min cuda suite held the fleet lock at ~97% idle GPU — scope the lock to GPU work (po |
 | #3989 | 0.70.0 | release/CI/gate speed and reliability: Fast Train (#3998) | driver_cuda_gguf.rs does not compile under --features cuda (10 missing-field errors); cuda-only integration ta |
 | #3996 | 0.70.0 | release/CI/gate speed and reliability: Fast Train (#3998) | aprender-train: ~60 clippy errors under --features cuda hide every downstream crate's lint (use --no-deps) |
-| #3997 | 0.70.0 | the ratchet epic spans 0.70-0.74; keep on 0.70.0 as its first slice | EPIC: debt ratchet 0.70→0.74 — 80% of tech debt in 5 equal slices (coverage→95% w/ yoga CUDA shards, pv deepes |
+| #3997 | DECIDE (recommend 0.70.0) | the ratchet epic is named by #3998, #4000, #3999, #4001 and #4002; recommend 0.70.0 as its first slice -- operator picks. Moved in error and REVERTED to no milestone after the #4024 quorum | EPIC: debt ratchet 0.70→0.74 — 80% of tech debt in 5 equal slices (coverage→95% w/ yoga CUDA shards, pv deepes |
 | #4015 | 0.70.0 | the serve health wait counts lock-queue time: named sweep hygiene in #3998 | ladder serve wait: #3943's stall rule counts time blocked in flock as no progress, a false 'stalled' serve RED |
 | #4018 | 0.70.0 | release/CI/gate speed and reliability: Fast Train (#3998) | apr run -v PANICS on a non-ASCII prompt: formatted_prompt log slices a str at byte 200 (not a char boundary) |
 | #4020 | 0.70.0 | release/CI/gate speed and reliability: Fast Train (#3998) | falsify_2384_run_apr_executes_the_resolved_binary is flaky: ETXTBSY (Text file busy) under parallel lib tests |
