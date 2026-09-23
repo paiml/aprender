@@ -106,3 +106,17 @@ falsification_tests:
       MEASURED 2026-09-23: mutation engaged -> FAILED. 0 passed; 1 failed ("…book/src/
       verification-ladder.md still pairs a level with the wrong tool outside the generated
       block"); restored -> ok. 1 passed; 0 failed.
+  - id: FALSIFY-PVL-3-005
+    rule: "PVL-3-DOCS-ARE-ENUM"
+    prediction: >
+      The stale-pairing detector pairs each tool with its NEAREST level token in either
+      direction. Disabling the level-after-tool arm leaves "Falsification is L2 then
+      Kani at L4." unflagged; disabling the level-before-tool arm leaves "Level 4 (Kani)"
+      unflagged. Either turns levels::stale_level_pairings_case_table RED. (Quorum
+      lane 1, PR #4092 round 3, found the forward-only detector blind to reversed order.)
+    test_harness: "cargo test -p aprender-contracts --lib -- levels::"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-09-23: after-arm disabled -> FAILED 2 passed; 1 failed ("must flag:
+      Falsification is L2 then Kani at L4."); before-arm disabled -> FAILED 1 passed; 2
+      failed; unmutated -> ok 3 passed.

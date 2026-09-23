@@ -66,45 +66,75 @@ pub fn ladder_block() -> String {
     out
 }
 
-/// Lines of `doc` OUTSIDE the generated block that pair a level with the wrong tool:
-/// L4/L5 followed on the same line by Kani (Kani is L3), or L5 followed by Lean with no
-/// mention of bindings (Lean alone is L4). The rest of the line is searched, not a
-/// fixed window: column-aligned tables put the tool far from the level.
-/// The generated block alone is not enough: a quorum lane (PR #4092, lane 2) found
-/// prose a few lines below it still teaching "Level 4 (Kani)".
+/// Lines of `doc` OUTSIDE the generated block that pair a level with the wrong tool.
+///
+/// Each tool mention (`kani`, `lean`) is paired with the NEAREST level token on its line
+/// (`L1`..`L5`, `Level 1`..`Level 5`), in either direction, and flagged when that level
+/// is wrong for the tool: Kani paired with L4/L5 (Kani is L3), or Lean paired with L5
+/// on a line that says nothing about bindings (Lean alone is L4). Nearest-in-either-
+/// direction catches "Level 4 (Kani)" and "Kani is used at Level 4" alike, and leaves
+/// "How Kani (L3) and Lean (L4) Compose" alone. Quorum lanes on PR #4092 found both
+/// gaps: prose below the block still teaching "Level 4 (Kani)" (round 1), and a
+/// detector that only looked forward from the level token (round 3).
 #[cfg(test)]
 fn stale_level_pairings(doc: &str) -> Vec<String> {
     let outside: String = match (doc.find(MARKER), doc.find(END_MARKER)) {
         (Some(a), Some(b)) if a < b => format!("{}{}", &doc[..a], &doc[b + END_MARKER.len()..]),
         _ => doc.to_string(),
     };
-    let pairs: [(&str, &str); 6] = [
-        ("l4", "kani"),
-        ("level 4", "kani"),
-        ("l5", "kani"),
-        ("level 5", "kani"),
-        ("l5", "lean"),
-        ("level 5", "lean"),
-    ];
     let mut stale = Vec::new();
     for line in outside.lines() {
         let low = line.to_lowercase();
-        let hit = pairs.iter().any(|(tok, tool)| {
-            low.match_indices(tok).any(|(i, _)| {
-                let starts_word = i == 0 || !low.as_bytes()[i - 1].is_ascii_alphanumeric();
-                let after = &low[i + tok.len()..];
-                let ends_word = !after.starts_with(|c: char| c.is_ascii_alphanumeric());
-                starts_word
-                    && ends_word
-                    && after.contains(tool)
-                    && !(*tool == "lean" && low.contains("binding"))
+        let levels = level_tokens(&low);
+        let wrong = ["kani", "lean"].iter().any(|tool| {
+            word_starts(&low, tool).any(|t| {
+                let t_end = t + tool.len();
+                let nearest = levels.iter().min_by_key(|(start, end, _)| {
+                    if *end <= t {
+                        t - end
+                    } else if *start >= t_end {
+                        start - t_end
+                    } else {
+                        0
+                    }
+                });
+                match (*tool, nearest) {
+                    ("kani", Some((_, _, n))) => *n >= 4,
+                    ("lean", Some((_, _, n))) => *n == 5 && !low.contains("binding"),
+                    _ => false,
+                }
             })
         });
-        if hit {
+        if wrong {
             stale.push(line.trim().to_string());
         }
     }
     stale
+}
+
+/// Byte offsets where `needle` starts a word in `hay`.
+#[cfg(test)]
+fn word_starts<'a>(hay: &'a str, needle: &'a str) -> impl Iterator<Item = usize> + 'a {
+    hay.match_indices(needle)
+        .map(|(i, _)| i)
+        .filter(move |&i| i == 0 || !hay.as_bytes()[i - 1].is_ascii_alphanumeric())
+}
+
+/// `(start, end, n)` for every whole-word level token `lN` / `level N` (N in 1..=5).
+#[cfg(test)]
+fn level_tokens(low: &str) -> Vec<(usize, usize, u8)> {
+    let mut out = Vec::new();
+    for n in 1u8..=5 {
+        for tok in [format!("l{n}"), format!("level {n}")] {
+            for i in word_starts(low, &tok) {
+                let end = i + tok.len();
+                if !low[end..].starts_with(|c: char| c.is_ascii_alphanumeric()) {
+                    out.push((i, end, n));
+                }
+            }
+        }
+    }
+    out
 }
 
 // The tests live DIRECTLY in `levels` (not in a `tests` submodule): PVL-001 EV-3's accept is
@@ -189,6 +219,12 @@ fn stale_level_pairings_case_table() {
         "3. **L4:** Kani exhaustively verified for ALL inputs within the kernel's",
         "3. **Level 4:** Kani has exhaustively verified the property for ALL inputs up",
         "  L5    Theorem proving         Lean 4          True for ALL inputs. Period.",
+        // reversed order: the tool first, the level after it (round 3's gap)
+        "Kani is the tool used at Level 4 for bounded checks.",
+        "The Lean prover is what L5 means here.",
+        // two levels on the line: Kani's nearest is the later L4, not the earlier L2,
+        // so a detector that only looks backward from the tool misses it
+        "Falsification is L2 then Kani at L4.",
     ];
     for line in must_flag {
         assert_eq!(stale_level_pairings(line).len(), 1, "must flag: {line}");
