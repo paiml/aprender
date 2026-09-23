@@ -36,7 +36,19 @@
     }
    },
    "green": true,
-   "file": "c.gguf"
+   "file": "c.gguf",
+   "fit": {
+    "tool": "llama-fit-params",
+    "pin": "d1d3c3396",
+    "llama_cpp": "d1d3c3396",
+    "free_mib": 23332,
+    "ctx": 32768,
+    "ngl": -1,
+    "rc": 0,
+    "raw": "-c 32768 -ngl -1",
+    "verdict": "fits",
+    "reason": "full GPU at ctx 32768"
+   }
   },
   {
    "id": "q3-q4km",
@@ -66,7 +78,19 @@
     }
    },
    "green": true,
-   "file": "q.gguf"
+   "file": "q.gguf",
+   "fit": {
+    "tool": "llama-fit-params",
+    "pin": "d1d3c3396",
+    "llama_cpp": "d1d3c3396",
+    "free_mib": 23332,
+    "ctx": 32768,
+    "ngl": -1,
+    "rc": 0,
+    "raw": "-c 32768 -ngl -1",
+    "verdict": "fits",
+    "reason": "full GPU at ctx 32768"
+   }
   },
   {
    "id": "inv:Extra-Q4_K_M.gguf",
@@ -93,7 +117,19 @@
      "rc": 0
     }
    },
-   "green": false
+   "green": false,
+   "fit": {
+    "tool": "llama-fit-params",
+    "pin": "d1d3c3396",
+    "llama_cpp": "d1d3c3396",
+    "free_mib": 23332,
+    "ctx": 32768,
+    "ngl": -1,
+    "rc": 0,
+    "raw": "-c 32768 -ngl -1",
+    "verdict": "fits",
+    "reason": "full GPU at ctx 32768"
+   }
   }
  ],
  "inventory": [
