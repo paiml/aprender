@@ -624,6 +624,10 @@ gates = [
     # #3894 — and the probe must be able to record `used_gpu: false`. A recorder
     # that can only say "true" launders an unverified CUDA claim into every cell.
     "scripts/check_serve_backend_record.sh",
+    # #3921 — and a verb that RAN is not a verb that WORKED. chat/code were judged
+    # by rc and serve by http, so a model emitting "zombie zombie zombie" at rc=0
+    # was recorded GREEN on both required hosts.
+    "scripts/check_ladder_output_judged.sh",
     "scripts/check_verifier_pinning.sh",
     "scripts/check_dogfood_shim.sh",
     "scripts/check_bench_receipt.sh",

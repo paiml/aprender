@@ -108,6 +108,66 @@ verb_accepts_flag() { # <verb-path> <flag> -> 0 if that subcommand's --help list
 flag_for() { # <verb> <flag>
   if verb_accepts_flag "$1" "$2"; then printf '%s' "$2"; else printf ''; fi
 }
+# ── #3921: a verb's OUTPUT, not its exit code ────────────────────────────────
+# `chat` and `code` were judged by rc and `serve` by http status, so a verb that
+# returned 0 while emitting `zombie zombie zombie` was recorded as WORKING.
+# Measured on BOTH hosts: qwen2.5-coder-1.5b-instruct-q4k.apr, `apr chat --gpu`,
+# rc=0, ran="gpu", fell_back=false, and the answer
+#   "ürnópez zombie.ERRópez zombieópez zombie zombie zombie…"
+# while the same model on CPU answers "The capital of France is Paris."
+# The row was GREEN.
+#
+# THE FOUR SIGNALS ARE `output_verification.rs`'s, MIRRORED EXACTLY and in its
+# order — non-ASCII saturation, repeated fragment, U+FFFD density, dominant
+# character. Two judges that disagree about what "degenerate" means on the same
+# completion are worse than one, so the thresholds are copied rather than chosen:
+# 60% / a 4+ byte fragment 3x / 1-per-32 / 90%. `check_ladder_output_judged.sh`
+# holds this mirror to that source.
+#
+# Prints a reason and returns 0 when the text is degenerate; prints nothing and
+# returns 1 otherwise. Takes the text on stdin so no quoting can mangle it.
+gibberish_reason() {
+  python3 -c '
+import sys
+t = sys.stdin.read()
+def non_ascii(o):
+    n = len(o)
+    if n < 16: return None
+    r = sum(1 for c in o if ord(c) > 127) / n
+    return f"gibberish (non-ASCII ratio {r*100:.1f}% > 60%)" if r > 0.6 else None
+def repeated(o):
+    b = o.encode("utf-8", "replace")
+    if len(b) < 12: return None
+    for fl in range(4, min(16, len(b)//3) + 1):
+        for i in range(0, len(b) - fl*3 + 1):
+            f = b[i:i+fl]
+            if b[i+fl:i+2*fl] == f and b[i+2*fl:i+3*fl] == f:
+                return "gibberish (fragment %r repeats 3+ times)" % f.decode("utf-8","replace")
+    return None
+def fffd(o):
+    n = len(o); c = o.count("\ufffd")
+    return f"gibberish (U+FFFD density {c}/{n} > 1/32)" if c > 0 and n >= 32 and c*32 > n else None
+def dominant(o):
+    ch = [c for c in o if not c.isspace()]
+    if len(ch) < 8: return None
+    from collections import Counter
+    d, hits = Counter(ch).most_common(1)[0]
+    r = hits / len(ch)
+    return f"degenerate output ({hits}/{len(ch)} non-space characters are {d!r}, {r*100:.0f}% >= 90%)" if r >= 0.9 else None
+for sig in (non_ascii, repeated, fffd, dominant):
+    m = sig(t)
+    if m:
+        print(m); sys.exit(0)
+sys.exit(1)
+'
+}
+
+# JSON-encode stdin as a string, or `null` when empty. Hand-rolled quoting of a
+# model's own output is how a receipt becomes unparseable (#3847); python does it.
+json_str_or_null() {
+  python3 -c 'import json,sys; t=sys.stdin.read(); print(json.dumps(t) if t else "null")'
+}
+
 lock_timeout() { # lock_timeout <what> -> exit 2, naming the holder from /proc/locks (by inode; lslocks
   local ino pid holder   # leaves PATH empty for a file it cannot resolve, so it cannot be matched by path)
   ino=$(stat -c %i "$GPU_LOCK" 2> /dev/null)
@@ -325,8 +385,27 @@ except Exception:
 print("null" if v is None else ("true" if v else "false"))
 ' "$bodyf" 2>/dev/null) || ug=null
             [ -n "$ug" ] || ug=null
+            # #3921: judge the BODY, not only the status. tinyllama's six routes
+            # returned 200 while its golden output was gibberish — noted at the time
+            # as "two gaps stacked"; it was this one gap. The generated text is
+            # extracted from the response shape rather than judged raw, so JSON field
+            # names and ids cannot themselves trip the repeated-fragment signal.
+            rtext=$(python3 -c '
+import json,sys
+try: d=json.load(open(sys.argv[1]))
+except Exception: print(""); raise SystemExit
+out=[]
+for c in (d.get("choices") or []):
+    out.append(c.get("text") or ((c.get("message") or {}).get("content") or ""))
+m=(d.get("message") or {}).get("content")
+if m: out.append(m)
+if d.get("response"): out.append(d["response"])
+print("\\n".join(x for x in out if x))
+' "$bodyf" 2>/dev/null)
+            rbad=$(printf '%s' "$rtext" | gibberish_reason) || rbad=""
+            rbad_json=$(printf '%s' "$rbad" | json_str_or_null)
             [ $first = 1 ] || json="$json,"; first=0
-            json="$json\"$r|stream=$stream\":{\"http\":$code,\"ok\":$([ "$code" = 200 ] && echo true || echo false),\"used_gpu\":$ug}"
+            json="$json\"$r|stream=$stream\":{\"http\":$code,\"ok\":$([ "$code" = 200 ] && echo true || echo false),\"used_gpu\":$ug,\"output_bad\":$rbad_json}"
         done
     done
     # A server that will not die is a real property of the `serve` verb, and until
@@ -438,6 +517,8 @@ PY
       --output-format json 2>&1); code_rc=$?
   [ "$code_rc" = "$LOCK_BUSY" ] && lock_timeout "apr code $rid"
   code_ran=true; [ $code_rc -eq 0 ] || code_ran=false
+  # #3921: same for `code` — measured once per rung, so judged once.
+  code_bad=$(printf '%s' "$code_out" | gibberish_reason) || code_bad=""
 
   for b in "${bes[@]}"; do
     case "$b" in cpu) flag="--no-gpu" ;; cuda|gpu) flag="--gpu" ;; *) flag="" ;; esac
@@ -485,6 +566,9 @@ PY
         | apr_locked chat "$path" --json --max-tokens 16 $chat_flag 2>&1); chat_rc=$?
     [ "$chat_rc" = "$LOCK_BUSY" ] && lock_timeout "apr chat $rid ($b)"
     chat_ran=true; [ $chat_rc -eq 0 ] || chat_ran=false
+    # #3921: rc=0 says the process did not fail, never that it produced the right
+    # thing. Judge the text the run already captured.
+    chat_bad=$(printf '%s' "$chat_out" | gibberish_reason) || chat_bad=""
 
     # code: measured once per rung, above this loop — see #3843.
 
@@ -500,8 +584,12 @@ PY
     [ $first = 1 ] || be_json="$be_json,"; first=0
     be_json="$be_json\"$b\":{\"ran\":$ran,\"fallback\":$fb,\"escaped_special\":$esc,\"rc\":$run_rc"
     be_json="$be_json,\"verbs\":{\"run\":{\"ran\":$ran,\"rc\":$run_rc}"
-    be_json="$be_json,\"chat\":{\"ran\":$chat_ran,\"rc\":$chat_rc}"
-    be_json="$be_json,\"code\":{\"ran\":$code_ran,\"rc\":$code_rc,\"backend\":\"inherited-from-spawned-serve\"}"
+    # #3921: `output_bad` carries the REASON, or null. A string here is a verdict
+    # about what the verb produced; the rc beside it is only about whether it ran.
+    chat_bad_json=$(printf '%s' "${chat_bad:-}" | json_str_or_null)
+    code_bad_json=$(printf '%s' "${code_bad:-}" | json_str_or_null)
+    be_json="$be_json,\"chat\":{\"ran\":$chat_ran,\"rc\":$chat_rc,\"output_bad\":$chat_bad_json}"
+    be_json="$be_json,\"code\":{\"ran\":$code_ran,\"rc\":$code_rc,\"backend\":\"inherited-from-spawned-serve\",\"output_bad\":$code_bad_json}"
     # #3847: an EMPTY `serve_json` yields `"serve":}}` — invalid JSON that only
     # surfaces three steps later as "the row could not be built", with the backend
     # long out of scope. `ladder_serve_probe` prints an object on every one of its
@@ -555,7 +643,11 @@ def serve_ok(v):
         return False
     if sv.get("teardown") == "failed":
         return False
-    return all(r.get("http") == 200 for r in (sv.get("routes") or {}).values())
+    # #3921: a 200 carrying gibberish is not a working route.
+    return all(
+        r.get("http") == 200 and not r.get("output_bad")
+        for r in (sv.get("routes") or {}).values()
+    )
 
 # THE OTHER TWO VERBS (#3902). The operator's bar names FOUR verbs — run, chat,
 # code, serve. `v["ran"]` is the RUN verb and #3886 added serve; `chat` and `code`
@@ -574,6 +666,11 @@ def serve_ok(v):
 def verb_ok(v, name):
     x = (v.get("verbs") or {}).get(name)
     if not isinstance(x, dict):
+        return False
+    # #3921: the rc says the process did not fail; `output_bad` says what it
+    # PRODUCED. A verb returning 0 while emitting "zombie zombie zombie" was
+    # recorded as working on both hosts, on a row the release called green.
+    if x.get("output_bad"):
         return False
     return bool(x.get("ran")) and (x.get("rc") or 0) == 0
 
@@ -675,6 +772,10 @@ for b,v in r["backends"].items():
         _x=(v.get("verbs") or {}).get(_vn)
         if not isinstance(_x, dict): w.append(b+": verb `%s` absent from the receipt"%_vn)
         elif not _x.get("ran") or (_x.get("rc") or 0)!=0: w.append(b+": verb `%s` did not run (rc=%s)"%(_vn,_x.get("rc")))
+        # #3921: reported SEPARATELY from the rc, and worded so the two cannot be
+        # confused — "ran and produced garbage" is a different fact from "did not
+        # run", and a reader who sees only rc=0 will not look further.
+        elif _x.get("output_bad"): w.append(b+": verb `%s` RAN (rc=0) and produced bad output: %s"%(_vn,_x["output_bad"]))
     sv=(v.get("verbs") or {}).get("serve") or {}
     if not sv.get("probed"):
         w.append(b+": serve NOT PROBED: "+_disp(sv.get("why","")))
@@ -685,6 +786,11 @@ for b,v in r["backends"].items():
         bad=sorted(k for k,x in routes.items() if (x or {}).get("http")!=200)
         if bad:
             w.append(b+": serve routes non-200: "+", ".join("%s=%s"%(k,(routes[k] or {}).get("http")) for k in bad))
+        # #3921: separate from the status, for the same reason as the verbs.
+        garbled=sorted(k for k,x in routes.items() if (x or {}).get("http")==200 and (x or {}).get("output_bad"))
+        if garbled:
+            w.append(b+": serve routes answered 200 with bad output: "+", ".join(
+                "%s (%s)"%(k,(routes[k] or {}).get("output_bad")) for k in garbled))
 print("; ".join(w) or "unknown")')
     printf '  [FAIL  ] %-30s %s\n' "$rid" "$why"
   fi
