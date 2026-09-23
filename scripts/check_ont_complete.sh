@@ -65,7 +65,14 @@ judge() { # judge <infra> <pin> <wt> <ledger> -> ok/FAIL lines; rc 0 complete, 1
     esac
   done
   [ "$n" -gt 0 ] || { echo "decline: no scripts/ont/done_when/ONT-*.sh probe at ${head:0:9}"; return 2; }
+  # EVERY spec row is measured: a row the spec names with no probe file would otherwise never be run (quorum, Fable)
+  local r
+  for r in $(grep -oE '^\*\*ONT-[A-Za-z0-9]+\*\* ' "$spec" | tr -d '* '); do
+    [ -f "$infra/scripts/ont/done_when/$r.sh" ] || { echo "FAIL  $r: the spec names this row and it has no done_when probe -- an unmeasured row is not done"; bad=1; }
+  done
   [ "$bad" = 0 ] && echo "ok    ONT-001 complete: $n done_when probe(s) pass at infra ${head:0:9}"
+  # the LAST line names the pinned infra commit: the watch keeps a gate's last line in its verdict
+  echo "G-ONT $([ "$bad" = 0 ] && echo complete || echo NOT-complete) at infra $head (spec $(sha256sum "$spec" | cut -c1-16))"
   return "$bad"
 }
 
@@ -76,10 +83,12 @@ if [ "$SELF_TEST" = 1 ]; then
     local f i=0; f=$(mktemp -d -p "$T" infra-XXXXXX)
     mkdir -p "$f/scripts/ont/done_when" "$f/docs/specifications" "$f/docs/audits/ONT-001"
     echo "# ONT-001" > "$f/docs/specifications/paiml-ontology.md"; : > "$f/docs/audits/ONT-001/ledger.jsonl"
+    [ "${FX_EXTRA_ROW:-0}" = 1 ] && printf '**ONT-99** `aprender` \xc2\xb7 "a row with no probe"\n' >> "$f/docs/specifications/paiml-ontology.md"
     if [ "$1" = - ]; then printf '#!/bin/bash\necho nothing\n' > "$f/scripts/ont/precondition-lint.sh"
     else printf '#!/bin/bash\necho "%s"\n' "$1" > "$f/scripts/ont/precondition-lint.sh"; fi
     shift
-    for rc in "$@"; do i=$((i + 1)); printf '#!/bin/bash\nexit %s\n' "$rc" > "$f/scripts/ont/done_when/ONT-$i.sh"; done
+    for rc in "$@"; do i=$((i + 1)); printf '#!/bin/bash\nexit %s\n' "$rc" > "$f/scripts/ont/done_when/ONT-$i.sh"
+      printf '**ONT-%s** `aprender` \xc2\xb7 "row %s"\n' "$i" "$i" >> "$f/docs/specifications/paiml-ontology.md"; done
     git -C "$f" init -q && git -C "$f" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t add -A && \
       git -C "$f" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm f
     printf '%s' "$f"
@@ -100,6 +109,8 @@ if [ "$SELF_TEST" = 1 ]; then
   row "zero-rows-declines" 2 "parsed 0 rows" "$(fixture "precondition-lint: rows=0 bound=0 unbound=0 probe_paths=0 declared=0 violations=0" 0)"
   f=$(fixture "$GOOD" 0); row "unpinned-is-red" 1 "not read at the pinned infra commit" "$f" 0000000000000000000000000000000000000000
   row "no-probes-declines" 2 "no scripts/ont/done_when" "$(fixture "$GOOD")"
+  row "row-without-probe-is-red" 1 "ONT-99: the spec names this row and it has no done_when probe" "$(FX_EXTRA_ROW=1 fixture "$GOOD" 0 0)"
+  row "verdict-names-the-pinned-infra" 0 "G-ONT complete at infra" "$(fixture "$GOOD" 0 0)"
   if [ -n "$T" ] && [ "$T" != "/" ] && [ -d "$T" ]; then rm -rf -- "$T"; fi
   if [ "${ONT_MUTANTS:-1}" = 1 ] && [ "$tbad" = 0 ]; then   # each rule deleted in a copy; its NAMED row must go RED
     M=$(mktemp -d)
@@ -121,6 +132,7 @@ unmet-accepted~probe-unmet-is-red~      *) echo "FAIL  $(basename "$p" .sh): its
 no-summary-passes~no-summary-declines~    echo "decline: precondition-lint printed no rows=~    return 0; echo "decline: precondition-lint printed no rows=
 zero-rows-pass~zero-rows-declines~  [ "$rows" -gt 0 ] || { echo "decline: precondition-lint parsed 0 rows -- the vacuous pass"; return 2; }~  :
 pin-ignored~unpinned-is-red~  if [ -z "$pin" ] || [ "$head" != "$(git -C "$infra" rev-parse --verify --quiet "$pin^{commit}" 2> /dev/null)" ]; then~  if false; then
+row-probe-unchecked~row-without-probe-is-red~    [ -f "$infra/scripts/ont/done_when/$r.sh" ] || { echo~    true || { echo
 no-probe-pass~no-probes-declines~  [ "$n" -gt 0 ] || { echo "decline: no scripts/ont/done_when/ONT-*.sh probe at ${head:0:9}"; return 2; }~  :
 MUT
     if [ -n "$M" ] && [ "$M" != "/" ] && [ -d "$M" ]; then rm -rf -- "$M"; fi

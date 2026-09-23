@@ -17,15 +17,15 @@ gates:
     why: the release binary answers --help with its registered surface
   dogfood:contracts:
     class: real
-    why: 'make contracts runs pv lint over the provable contracts (falsification + schema): a failing contract is a
-      broken correctness claim, not accounting (degraded quorum, Sonnet). Its census half still gets a proposed
-      auto-fix'
+    why: 'make contracts runs pv lint over the provable contracts (falsification + schema): a failing contract is a broken correctness claim,
+      not accounting (degraded quorum, Sonnet). Its census half still gets a proposed auto-fix'
   dogfood:contracts-exit-integrity:
     class: bookkeeping
     why: 'the contracts recipe''s own exit-code hygiene: tooling integrity, not user output'
   dogfood:coverage:
-    class: bookkeeping
-    why: 'line coverage against the floor: engineering health, reported, never a publish block'
+    class: real
+    why: 'line coverage against the enforced floor: the operator ruled coverage >= 88 BLOCKS the release ("fold in 88% coverage", 2026-09-23);
+      a class may not quietly reverse a ruling (degraded quorum, Fable)'
   dogfood:declared:check_bench_receipt:
     class: bookkeeping
     why: benchmark receipt shape
@@ -117,11 +117,11 @@ gates:
     class: bookkeeping
     why: contract bindings accounting
   dogfood:pv-contracts:
-    class: bookkeeping
-    why: contract validation accounting
+    class: real
+    why: 'pv contract validation: the same falsification substance as dogfood:contracts (real) -- one substance, one class (degraded quorum, Fable)'
   dogfood:pv-lint:
-    class: bookkeeping
-    why: contract lint
+    class: real
+    why: 'pv lint over the provable contracts: the same falsification substance as dogfood:contracts (real) (degraded quorum, Fable)'
   dogfood:reachability:
     class: bookkeeping
     why: unreachable files/tests report (WARN)

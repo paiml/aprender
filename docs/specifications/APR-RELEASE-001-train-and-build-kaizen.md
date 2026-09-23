@@ -1159,10 +1159,19 @@ dogfood, `contracts` (it runs `pv lint` falsification; its census half still get
 BOOKKEEPING gates auto-fix or report, and never block the publish: complexity, census/README counts, bashrs on
 release scripts, CB-200, claim literals. The classes are `scripts/release/gate_classes.yaml`, over a gate set DERIVED
 from the publish path. The publish RE-READS the watch's verdict, which must be for the release commit, fresh by its
-own timestamp, and carry no real red (`autopilot.sh watch_gate`). The measure per release is **0 gates first-seen-red at publish** (ledger, M7).
+own timestamp (the newest by that timestamp, never by file mtime), and carry no real red (`autopilot.sh watch_gate`).
+The verdict binds when it IS the release commit, or when its tree equals the release commit's outside `evidence/` and
+`docs/`: the bump PR is squash-merged, so the release commit is never the sha the watch measured. The measure per release is **0 gates first-seen-red at publish** (ledger, M7).
 
-### §14.4 Retired
-Phase 2 (a full ladder + full CRUX sweep on release night) is retired as a release step. It is the nightly now.
+### §14.4 Phase 2 — retired by design, NOT yet in code
+The design retires Phase 2 (a full ladder + full CRUX sweep on release night) into the nightly. **It is not wired yet**
+(#4117): autopilot's `models` step and R7 still run the full-ladder judge, and nothing calls `--scope release` in the
+publish path. Until #4117 lands, a 0.70 release still needs the full-ladder receipts.
+
+### §14.4b What a BOOKKEEPING class does today
+It governs the candidate watch: a bookkeeping red does not raise ANDON, and it gets a proposed auto-fix. It does **not**
+yet reach the publish (#4118): autopilot's `dogfood` step and R5 still stop on any FAIL row. Until #4118 is decided,
+the watch's value is that bookkeeping reds are found and fixed hours BEFORE the publish, not that they stop blocking it.
 
 ### §14.5 Falsifiers (each in `check_model_ladder.sh --self-test`, each mutant killed by its named row)
 | # | Assertion | Mutation |

@@ -233,27 +233,38 @@ fi
 watch_gate() { # watch_gate <state dir> <version> <release commit> <max age h>
     local out rc=0
     out=$(python3 - "$1" "$2" "$3" "$4" <<'PY'
-import glob, json, os, sys, time
+import calendar, glob, json, os, subprocess, sys, time
 state, v, sha, max_h = sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4])
-fs = sorted(glob.glob(os.path.join(state, v, "watch-*.json")), key=os.path.getmtime)
-if not fs:
+def at_of(w):   # the verdict's OWN UTC timestamp -- never the file's mtime (a copy/restore must not re-freshen or reorder)
+    try:
+        return calendar.timegm(time.strptime(w["at"], "%Y-%m-%dT%H:%M:%SZ"))
+    except (KeyError, TypeError, ValueError):
+        return None
+ws = []
+for f in glob.glob(os.path.join(state, v, "watch-*.json")):
+    try:
+        ws.append(json.load(open(f)))
+    except (OSError, ValueError):
+        pass
+if not ws:
     print("no candidate-watch verdict under %s/%s -- the gates were never run on the candidate" % (state, v)); sys.exit(1)
-w = json.load(open(fs[-1]))
-# age from the verdict's OWN timestamp, never the file's mtime: a copy or restore of the state dir must not
-# re-freshen a stale verdict (degraded quorum, Sonnet). A verdict without a readable `at` is refused.
-try:
-    import calendar
-    at = calendar.timegm(time.strptime(w["at"], "%Y-%m-%dT%H:%M:%SZ"))   # the watch writes UTC
-except (KeyError, TypeError, ValueError):
-    print("the latest watch verdict carries no readable `at` timestamp"); sys.exit(1)
-age = (time.time() - at) / 3600.0
-if w.get("schema") != "apr-candidate-watch/v1" or w.get("sha") != sha:
-    print("the latest watch verdict is for %s, not the release commit %s" % (str(w.get("sha"))[:9], sha[:9])); sys.exit(1)
+if any(at_of(w) is None for w in ws):
+    print("a watch verdict carries no readable `at` timestamp -- the newest cannot be told"); sys.exit(1)
+w = max(ws, key=at_of)   # the NEWEST by its own clock (quorum, Fable: an older green copied later must not outrank it)
+age = (time.time() - at_of(w)) / 3600.0
+# BINDING. The bump PR is SQUASH-merged, so the release commit is a sha the watch never measured (0.69.1's cut has one
+# parent). The verdict binds when it IS the release commit, or when its tree equals the release commit's outside
+# evidence/ and docs/ -- the same code, measured on the release branch from the freeze (quorum, Fable).
+ws_sha = str(w.get("sha") or "")
+same = ws_sha == sha or (bool(ws_sha) and subprocess.run(
+    ["git", "diff", "--quiet", ws_sha, sha, "--", ".", ":(exclude)evidence", ":(exclude)docs"], capture_output=True).returncode == 0)
+if w.get("schema") != "apr-candidate-watch/v1" or not same:
+    print("the latest watch verdict is for %s, not the release commit %s nor a tree equal to it outside evidence/ and docs/" % (ws_sha[:9], sha[:9])); sys.exit(1)
 if age > max_h or age < -0.1:
     print("the latest watch verdict is %.1f h old (> %g h) -- re-run the watch on the candidate" % (age, max_h)); sys.exit(1)
 if w.get("andon") or w.get("real_red"):
     print("the watch is in ANDON: REAL gate(s) red: %s" % ", ".join(w.get("real_red") or [])); sys.exit(1)
-print("GREEN for %s, %.1f h old, %d bookkeeping red reported" % (sha[:9], age, len(w.get("bookkeeping_red") or [])))
+print("GREEN for %s (watched %s), %.1f h old, %d bookkeeping red reported" % (sha[:9], ws_sha[:9], age, len(w.get("bookkeeping_red") or [])))
 PY
 ) || rc=$?
     [ "$rc" = 0 ] || die "candidate watch: $out -- no publish (#4045 M8)"
