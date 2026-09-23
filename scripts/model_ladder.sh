@@ -652,7 +652,9 @@ ladder_serve_teardown() { # <wrapper-pid> <port> -> prints clean|escalated|faile
 # read a contended card as a hung server (gx10 q4k.apr, 2026-09-23). The lock wait has
 # its own bound and its own verdict, `lock_wait`, never `stalled`. A third progress
 # signal, bytes read from storage, covers a load that pages a model in from disk with
-# little CPU.
+# little CPU. It only moves on a COLD load: a page-cached (warm) load reads nothing from
+# storage and is carried by the CPU leg. aprender-3a measured the case it hardens: a cold
+# 27B load on gx10 read 13.7 GB in state D at as little as 1 jiffy/s.
 #
 # Prints:  <verdict> <lock-wait-s> <s-since-acquired>
 #   verdict: ready | died | stalled | ceiling | lock_wait
@@ -706,8 +708,18 @@ ladder_serve_wait_health() { # <wrapper-pid> <port> <log> <stall-s> <ceiling-s> 
     local waited=0 quiet=0 size last_size=-1 jif last_jif=-1 rb last_rb=-1 locked=0
     # Phase 1 (#4015): queued behind the GPU lock. Only the lock bound runs here.
     until ladder_lock_acquired "$pid"; do
-        # flock gave up (-w, exit 75) or failed without ever starting the server.
-        if ! kill -0 "$pid" 2>/dev/null; then printf 'lock_wait %s 0' "$locked"; return 1; fi
+        if ! kill -0 "$pid" 2>/dev/null; then
+            # Dead before an acquisition was OBSERVED. Either flock gave up (-w, exit 75),
+            # or it acquired and the server exited between two polls (aprender-3a, the
+            # common fast-failure shape: an instant refusal, rc 14). A timed-out flock
+            # writes NOTHING to the serve log; `apr serve` writes on startup. So a
+            # non-empty log means it STARTED: a crash about the model, never the card.
+            size=$(stat -c %s "$log" 2>/dev/null) || size=0
+            if [ "$size" -gt 0 ]; then
+                printf 'died %s 0' "$locked"; return 1
+            fi
+            printf 'lock_wait %s 0' "$locked"; return 1
+        fi
         if [ "$locked" -ge "$lockw" ]; then printf 'lock_wait %s 0' "$locked"; return 1; fi
         sleep 1; locked=$((locked + 1))
     done

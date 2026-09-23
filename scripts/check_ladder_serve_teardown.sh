@@ -42,6 +42,8 @@
 #              sleeping writes no log and burns no CPU)
 #   lock-bound the lock is never released, the wait's own lock bound ends it -> lock_wait
 #   lock-gave-up  flock -w gives up (exit 75) before the bound                 -> lock_wait
+#   crash      acquires, logs, exits before the first phase-1 poll            -> died
+#              (never lock_wait: a timed-out flock writes nothing to the log)
 #   slow-read  silent, nearly idle, only READS FROM STORAGE advance            -> ready
 #              (a model paged in from disk; needs a real filesystem, not tmpfs)
 #
@@ -113,6 +115,8 @@ while time.time() - t0 < secs or mode == "forever":
         fd = os.open(sys.argv[4], os.O_RDONLY)
         os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED); os.pread(fd, 262144, 0); os.close(fd)
         time.sleep(1)
+    elif mode == "crash":
+        print("Loading GGUF model (mmap)", flush=True); sys.exit(14)   # starts, logs, exits before a poll
     elif mode == "hung":
         time.sleep(1)                              # alive, silent, idle
     elif mode == "dies":
@@ -236,6 +240,10 @@ run_wait_cases() { # <wait-function-bodies> -> 0 if every case lands
   wait_case lock-bound   hung     0 3 30 lock_wait 0  20 60 4 || fails=1
   wait_case lock-gave-up hung     0 3 30 lock_wait 0  20 2 30 || fails=1
   wait_case slow-read    slow-read 7 3 30 ready 10    || fails=1
+  # aprender-3a's race: the lock is held for 1 s so phase 1 is polling, then the server
+  # acquires and exits between two polls. It STARTED (it logged),
+  # so it is a crash about the model, never `lock_wait` about the card.
+  wait_case crash        crash    1 3 30 died 1       1 30 30 || fails=1
   return "$fails"
 }
 
