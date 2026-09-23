@@ -87,17 +87,12 @@ mod official_chat_template_3990 {
     /// GGUF, tokenize with apr's own tokenizer, compare to llama.cpp's ids. Says SKIP, by
     /// name, for a model not on this host rather than passing.
     ///
-    /// TinyLlama is PINNED RED to #3993, not skipped: its rendered string is byte-equal (the
-    /// hermetic test proves it), but apr's SentencePiece encode does not split the control
-    /// token `</s>`, so `word.</s>` becomes `.</` `s` `>` where llama.cpp has `.` `</s>`. The
-    /// pin accepts ONLY that divergence; any other difference is a failure, and the cells
-    /// starting to match is a failure too (remove the pin) -- so it cannot go stale.
+    /// TinyLlama was pinned RED to #3993 here (apr's SentencePiece encode split `</s>` as
+    /// `.</` `s` `>`). #3993 partitions specials by `tokenizer.ggml.token_type`, the pin's
+    /// own tripwire fired ("ids now MATCH"), and the pin is gone: all 16 cells must EQUAL.
     #[test]
     fn rendered_prompt_ids_equal_llama_cpp_on_every_cell_3990() {
-        const PINNED_RED_3993: &str = "tinyllama";
-        let (dot_lt_slash, dot, eos) = (21106u32, 29889u32, 2u32);
         let mut ran = 0usize;
-        let mut pinned = 0usize;
         let mut bad = Vec::new();
         for c in cells() {
             let path = c["path"].as_str().unwrap();
@@ -111,18 +106,6 @@ mod official_chat_template_3990 {
                 .unwrap_or_else(|e| panic!("{model}: {e}"));
             let got = mapped.model.encode(&prompt).expect("apr encodes the rendered prompt");
             let want: Vec<u32> = c["ids"].as_array().unwrap().iter().map(|v| u32::try_from(v.as_u64().unwrap()).unwrap()).collect();
-            if model == PINNED_RED_3993 {
-                match got.iter().zip(&want).position(|(a, b)| a != b) {
-                    None if got == want => bad.push(format!("\n  {model} system={sys}: ids now MATCH llama.cpp -- #3993 is fixed, remove PINNED_RED_3993")),
-                    Some(at) if got[at] == dot_lt_slash && want.get(at..at + 2) == Some(&[dot, eos][..]) => {
-                        eprintln!("RED (pinned #3993): {model} system={sys} thinking={think}: `</s>` split at id {at}");
-                        pinned += 1;
-                    }
-                    at => bad.push(format!("\n  {model} system={sys} thinking={think}: ids differ in a way #3993 does not explain (first differ at {at:?})")),
-                }
-                ran += 1;
-                continue;
-            }
             if got != want {
                 let at = got.iter().zip(&want).position(|(a, b)| a != b).unwrap_or(got.len().min(want.len()));
                 bad.push(format!("\n  {model} system={sys} thinking={think}: {} vs {} ids, first differ at {at}: apr {:?} llama.cpp {:?}",
@@ -130,8 +113,7 @@ mod official_chat_template_3990 {
             }
             ran += 1;
         }
-        eprintln!("#3990 ids: {ran}/16 cells compared, {pinned} of them pinned RED to #3993");
-        assert_eq!(pinned % 4, 0, "a present TinyLlama file must yield all 4 pinned cells");
+        eprintln!("#3990 ids: {ran}/16 cells compared");
         assert!(bad.is_empty(), "rendered prompt ids differ from llama.cpp:{}", bad.concat());
     }
 
