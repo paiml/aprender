@@ -270,6 +270,35 @@ impl WeightQuantType {
         }
     }
 
+    /// #3908: the quant type of a weight, from its DECLARED type and its byte size.
+    ///
+    /// The declared type wins whenever it is CONSISTENT with the size; the size is
+    /// consulted only when the declaration cannot be right (PAR-058: "GGUF metadata
+    /// can lie" - Qwen 0.5B declared Q4_0 for a tensor whose bytes are Q4_1, a
+    /// different size, which this still catches).
+    ///
+    /// Size-first resolution silently relabelled a tied BF16 LM head as F16 on
+    /// `qwen2.5-coder-0.5b-instruct.apr`: both are 2 bytes/element, `from_size`
+    /// returned F16, and the bf16 bytes were decoded as IEEE half. The F2 parity
+    /// gate caught it (CPU argmax 319, GPU argmax 14880). A size can only ever
+    /// agree with a declaration or contradict it; it cannot out-rank one it agrees
+    /// with. This is the policy `indexed_ffn.rs` already applied to `ffn_down`, now
+    /// in one place so the LM-head sites cannot drift from it again.
+    #[must_use]
+    pub fn resolve_declared_or_sized(
+        declared: Option<Self>,
+        size_bytes: usize,
+        n_rows: usize,
+        n_cols: usize,
+    ) -> Option<Self> {
+        if let Some(d) = declared {
+            if d.matches_size(size_bytes, n_rows, n_cols) {
+                return Some(d);
+            }
+        }
+        Self::from_size(size_bytes, n_rows, n_cols).or(declared)
+    }
+
     /// PAR-058: Detect quantization type from actual weight size
     /// Some GGUF files have incorrect type metadata, so we verify by size
     ///
@@ -282,8 +311,11 @@ impl WeightQuantType {
         if size_bytes == n_rows * n_cols * 4 {
             return Some(Self::F32);
         }
-        // #3477: F16 is 2 bytes/element — unambiguous against every block format
-        // here (Q8_0 is 34/32 = 1.0625 B/elem, Q4_1 0.625), so no collision.
+        // #3477: 2 bytes/element is unambiguous against every BLOCK format here
+        // (Q8_0 is 34/32 = 1.0625 B/elem, Q4_1 0.625). #3908: it is NOT
+        // unambiguous against BF16, which has exactly F16's size - so this arm is
+        // only a guess, and callers that HAVE a declared type must go through
+        // `resolve_declared_or_sized`, which lets a consistent declaration win.
         if size_bytes == n_rows * n_cols * 2 {
             return Some(Self::F16);
         }
