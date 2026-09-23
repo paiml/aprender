@@ -20605,8 +20605,8 @@ roadmap:
   spec: docs/roadmaps/milestone-triage-2026-09-23.md
   acceptance_criteria:
   - every open issue in 0.70.0, and every open issue with no milestone, has a proposed milestone and a one-line reason
-  - an issue named as must-carry by two theme epics is listed as an operator DECIDE, never placed by the author
-  - on operator approval, only the proposed moves are applied, each with a comment citing the table; DECIDE, close?, verify-close, in-flight and pinned rows stay untouched; nothing is closed
+  - an issue named as must-carry by two theme epics, or the same defect as a DECIDE row, is listed as an operator DECIDE, never placed by the author
+  - on operator approval, only the proposed moves are applied, each with a comment citing the table; DECIDE, close?, verify-close, in-flight and pinned rows stay untouched; the triage itself closes nothing (re-moves and duplicate closes the operator approves separately are disclosed in the table)
   - the table records the post-move counts per milestone
   phases: []
   subtasks: []
