@@ -204,8 +204,8 @@ for src in official apr; do
     --messages "$TMP/h-msg.json" --thinking off --max-tokens 8 --seed 1 --apr-stderr "$TMP/drift.err" --out "$TMP/h-$src.json"
 done
 kill "$hsp" 2>/dev/null; wait "$hsp" 2>/dev/null
-got=$(python3 -c 'import json,sys; print(" | ".join("%s %s" % (s, json.load(open(sys.argv[1] + "/h-%s.json" % s))["prompt_ids"]) for s in ("official", "apr")))' "$TMP")
-[ "$got" = "official [9, 9, 9, 1] | apr [7, 9, 9, 1]" ] && ok "helper: official runs on the template's ids even when handed apr's; apr on apr's" \
+got=$(python3 -c 'import json,sys; print(" / ".join("%s=%s" % ({"apr": "parity"}.get(s, s), json.load(open(sys.argv[1] + "/h-%s.json" % s))["prompt_ids"]) for s in ("official", "apr")))' "$TMP")
+[ "$got" = "official=[9, 9, 9, 1] / parity=[7, 9, 9, 1]" ] && ok "helper: official runs on the template's ids even when handed apr's prompt, parity on apr's own" \
   || broke "helper prompt selection: '$got'"
 
 run_case notokens "$LIB" STUB_NO_TOKENS=1
