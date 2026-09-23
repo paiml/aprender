@@ -600,7 +600,7 @@ fn start_gguf_server_cuda(
     // backend into the ONE dispatch `apr run` uses. Qwen3.5-MoE spellings are excluded:
     // they are folded into `qwen3_moe` by the normaliser but carry SSM layers the
     // qwen3moe forward does not run, and the capability refusal names them.
-    let arch = quantized_model.config.architecture.clone();
+    let arch = quantized_model.config().architecture.clone();
     if realizar::gguf::moe_forward_handles(&arch)
         && realizar::capability::no_cuda_forward_reason(&arch).is_none()
     {
