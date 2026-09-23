@@ -67,6 +67,7 @@ NO CLOCK IS READ for a rate. TTFT and decode rate belong to
 
 CLI
   crux_serve_routes.py plan  (--url U | --index-file F)   prints the classified universe as one JSON
+  crux_serve_routes.py oracle-routes                      prints the comparator routes (comma list, #3962 B4)
   crux_serve_routes.py drive --url U --route 'POST /x' --mode nonstream|stream
                              --prompt-file P.json --max-tokens N [--temperature 0] [--seed 0]
                              [--render-url R] [--thinking off|on] [--device D] --out O.json
@@ -132,6 +133,35 @@ NOT_GENERATION = {
     "POST /v1/perplexity": "perplexity of GIVEN text, no generation",
 }
 RAW_KINDS = ("text_prompt", "raw_generate", "raw_sse", "raw_batch")
+
+# #3962 B4: the ORACLE for each apr route. apr serve mounts ~11 generation routes; a comparator
+# (llama-server) mounts two of them. A route is paired with the comparator route that asks the
+# SAME question in the SAME representation, at the same mode:
+#   the server applies the chat template  -> POST /v1/chat/completions (messages in)
+#   a prompt rendered by the reference     -> POST /v1/completions      (the identical rendered text)
+# Keyed by KIND, not by path, so a new route of a known wire is mapped the moment it is classified.
+# A kind missing here is RED at the judge ("no oracle route mapped"), never a silent pass.
+ORACLE_ROUTE_BY_KIND = {
+    "chat_messages": "POST /v1/chat/completions",
+    "ollama_chat": "POST /v1/chat/completions",
+    "ollama_generate": "POST /v1/chat/completions",
+    "text_prompt": "POST /v1/completions",
+    "raw_generate": "POST /v1/completions",
+    "raw_sse": "POST /v1/completions",
+    "raw_batch": "POST /v1/completions",
+}
+
+
+def oracle_route(route):
+    """The comparator route that answers `route`'s question, or None when none is mapped."""
+    spec = GENERATION.get(route)
+    return ORACLE_ROUTE_BY_KIND.get(spec["kind"]) if spec else None
+
+
+def oracle_routes(_a=None):
+    """The comparator route set, comma-joined, for `sweep --routes` (the cell never hand-lists it)."""
+    print(",".join(sorted(set(ORACLE_ROUTE_BY_KIND.values()))))
+    return 0
 
 
 def classify(index):
@@ -577,8 +607,10 @@ def main(argv):
     r.add_argument("--thinking", default="off")
     r.add_argument("--cell-why", default="")
     r.add_argument("--cell-fault", default="", help="the cell ran but broke its contract (a failed teardown): every row RED")
+    sub.add_parser("oracle-routes", help="the comparator routes every apr route is judged against (#3962 B4)")
     a = ap.parse_args(argv)
-    return {"plan": plan, "drive": drive, "sweep": sweep, "rows": rows}[a.cmd](a)
+    return {"plan": plan, "drive": drive, "sweep": sweep, "rows": rows,
+            "oracle-routes": oracle_routes}[a.cmd](a)
 
 
 if __name__ == "__main__":

@@ -126,6 +126,19 @@ plan_case() { # <label> <index> <want rc> <python assertion on the plan>
 plan_case "P1 the fixture's index classifies fully" normal 0 'not d["unclassified"] and len(d["generation"]) == 7'
 plan_case "P2 MUST-RED a route no table knows is unclassified" extra 1 'd["unclassified"] == ["POST /v1/brand-new"]'
 plan_case "P3 MUST-RED a router with no index" none 1 'd["no_route_index"]'
+# #3962 B4: every generation route has an ORACLE route (the comparator route that asks its question in
+# the same representation), and the oracle's wire carries every mode the apr route is driven in.
+oracle_assert() { # <routes.py> <python assertion; R is that file loaded as a module>: rc 0 iff it holds
+  python3 -c 'import importlib.util,subprocess,sys
+spec = importlib.util.spec_from_file_location("R", sys.argv[1]); R = importlib.util.module_from_spec(spec); spec.loader.exec_module(R)
+assert eval(sys.argv[2])' "$1" "$2" 2> /dev/null
+}
+O1='all(R.oracle_route(r) in R.GENERATION and set(g["modes"]) <= set(R.GENERATION[R.oracle_route(r)]["modes"]) for r, g in R.GENERATION.items())'
+O2='subprocess.run([sys.executable, sys.argv[1], "oracle-routes"], capture_output=True, text=True).stdout.strip().split(",") == sorted(set(R.ORACLE_ROUTE_BY_KIND.values()))'
+O3='R.GENERATION.update({"POST /v1/brand-new": {"kind": "brand_new", "modes": ("nonstream",)}}) or R.oracle_route("POST /v1/brand-new") is None'
+if oracle_assert "$ROUTES_PY" "$O1"; then ok "O1 every generation route maps to an oracle route whose wire has its modes"; else bad "O1 oracle map"; fi
+if oracle_assert "$ROUTES_PY" "$O2"; then ok "O2 oracle-routes prints exactly the mapped set"; else bad "O2 oracle-routes"; fi
+if oracle_assert "$ROUTES_PY" "$O3"; then ok "O3 MUST-RED a route of an unmapped kind has no oracle"; else bad "O3 unmapped kind"; fi
 
 sweep_rows() { # <index> <out dir> [cell-why]: sweep + rows into $TMP/<dir>/manifest.jsonl
   start "$1" ok
@@ -316,6 +329,8 @@ mutant "M11 T3 vs no nvidia-smi check" "$TD" 'if [ "${#pids[@]}" -gt 0 ] && comm
 m_t4() { : > "$TMP/tdrows/manifest.jsonl"; python3 "$1" rows --out-dir "$TMP/ok" --prompt-list "$TMP/list.jsonl" --manifest "$TMP/tdrows/manifest.jsonl" --engine apr --sha abc --host h --backend gpu --cell-fault "cell teardown FAILED: x" > /dev/null 2>&1; python3 -c 'import json,sys; g=[json.loads(l) for l in open(sys.argv[1]) if l.strip()]; g=[r for r in g if r["kind"]=="gen"]; assert g and all(r["refused"] for r in g)' "$TMP/tdrows/manifest.jsonl" 2> /dev/null; }
 mutant "M12 T4 vs a teardown fault that does not reach the rows" "$ROUTES_PY" '        if a.cell_fault:' '        if False:' m_t4
 
+m_o3() { oracle_assert "$1" "$O3"; }
+mutant "M15 O3 vs an unmapped kind silently judged as chat" "$ROUTES_PY" 'return ORACLE_ROUTE_BY_KIND.get(spec["kind"]) if spec else None' 'return ORACLE_ROUTE_BY_KIND.get(spec["kind"], "POST /v1/chat/completions") if spec else None' m_o3
 m_x1() { pty_case "$1" "$PX1"; }
 mutant "M13 X1 vs no backspace processing" "$PTY_PY" '        prev, t = t, BACKSPACE.sub("", t)' '        prev = t' m_x1
 m_x2() { pty_case "$1" "$PX2"; }

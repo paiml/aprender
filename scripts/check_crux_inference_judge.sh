@@ -927,6 +927,44 @@ done
 run_judge "$d"; GOT_RC=$?
 got=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(sorted((c["key"].get("route"), c["verdict"]) for c in r["cells"] if c["key"]["verb"]=="serve run"))' "$d/receipt.json" 2>/dev/null)
 [ "$GOT_RC" = 1 ] && [ "$got" = "[('POST /api/chat', 'RED'), ('POST /v1/chat/completions', 'GREEN')]" ] && ok "J/R1: a wrong /api/chat is its own RED cell beside a right /v1 route" || broke "J/R1 route key: rc $GOT_RC '$got'"
+# #3962 B4: each apr route is judged against the comparator route that asks its question in the
+# same representation (crux_serve_routes.ORACLE_ROUTE_BY_KIND), or the route-less plugin row.
+b4_row() { # b4_row <case dir> <engine> <route|""> <text>: one serve-run nonstream row on a route
+  local f="$1/b4-$2-${3//[^a-z0-9]/}.json"
+  python3 -c 'import json,sys; json.dump({"text": sys.argv[2], "reported": {"device": "fixture"}}, open(sys.argv[1], "w"))' "$f" "$4"
+  python3 -c 'import json,sys
+r = {"kind":"gen","engine":sys.argv[2],"prompt_id":"golden-2plus2","rc":0,"stdout":sys.argv[3],"stderr":None,"refused":None,
+     "model_sha256":"%s","host":"fixture","verb":"serve run","thinking":"off","backend":"gpu","mode":"nonstream"}
+if sys.argv[4]: r["route"] = sys.argv[4]
+open(sys.argv[1],"a").write(json.dumps(r)+"\n")' "$1/manifest.jsonl" "$2" "$f" "$3"
+}
+b4_cells() { # b4_cells <case dir> <apr routes, comma list>: [(route, verdict)] for those apr routes
+  python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); want=sys.argv[2].split(",")
+print(sorted((c["key"].get("route"), c["verdict"]) for c in r["cells"] if c["key"].get("route") in want))' "$1/receipt.json" "$2" 2>/dev/null
+}
+d=$(newcase j_route_oracle_borrow); control_green "$d"
+for rt in "POST /generate" "POST /api/chat"; do b4_row "$d" apr "$rt" "$T4"; done
+b4_row "$d" llama.cpp "POST /v1/completions" "$T4"; b4_row "$d" llama.cpp "POST /v1/chat/completions" "$T4"
+b4_row "$d" hf "" "$T4"
+run_judge "$d"; GOT_RC=$?
+got=$(b4_cells "$d" "POST /generate,POST /api/chat")
+[ "$got" = "[('POST /api/chat', 'GREEN'), ('POST /generate', 'GREEN')]" ] && ok "J/B4: a raw route and an ollama route are each judged by their oracle route" || broke "J/B4 oracle pairing: '$got'"
+got=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); c=[c for c in r["cells"] if c["key"].get("route")=="POST /generate"][0]
+print(c.get("oracle_route"), c["engines"]["llama.cpp"].get("borrowed_from_route"), c["engines"]["hf"].get("borrowed_from_route"))' "$d/receipt.json" 2>/dev/null)
+[ "$got" = "POST /v1/completions POST /v1/completions (route-less plugin row)" ] && ok "  ...and every borrowed engine entry names the route its answer came from" || broke "J/B4 provenance: '$got'"
+d=$(newcase j_route_native_wins); control_green "$d"
+b4_row "$d" apr "POST /api/chat" "$T4"; b4_row "$d" llama.cpp "POST /api/chat" "$T5"
+b4_row "$d" llama.cpp "POST /v1/chat/completions" "$T4"; b4_row "$d" hf "" "$T4"
+run_judge "$d"; GOT_RC=$?
+got=$(b4_cells "$d" "POST /api/chat")
+[ "$got" = "[('POST /api/chat', 'RED')]" ] && ok "J/B4: a native WRONG comparator row is never replaced by a borrowed right one" || broke "J/B4 native wins: '$got'"
+d=$(newcase j_route_unmapped); control_green "$d"
+b4_row "$d" apr "POST /v2/unmapped" "$T4"
+b4_row "$d" llama.cpp "POST /v1/chat/completions" "$T4"; b4_row "$d" llama.cpp "POST /v1/completions" "$T4"; b4_row "$d" hf "" "$T4"
+run_judge "$d"; GOT_RC=$?
+got=$(b4_cells "$d" "POST /v2/unmapped")
+reasons=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(" | ".join(x for c in r["cells"] if c["key"].get("route")=="POST /v2/unmapped" for x in c["reasons"]))' "$d/receipt.json" 2>/dev/null)
+case $got/$reasons in "[('POST /v2/unmapped', 'RED')]/"*"no oracle route mapped"*) ok "J/B4: a route with no oracle route mapped is RED, named" ;; *) broke "J/B4 unmapped route: '$got' '$reasons'" ;; esac
 # aprender-19 R2: a broken wire is named, never read as a missing text field.
 d=$(newcase j_protocol_fault); control_green "$d"
 python3 -c 'import json,sys; json.dump({"text": None, "protocol_fault": "stream_truncated", "reported": {"device": "fixture"}}, open(sys.argv[1], "w"))' "$d/apr-$P-stream.json"
@@ -1037,6 +1075,9 @@ negative-control-off|the lane is blind|s/^    blind = sorted(v for v, r in negat
 per-verb-control-off|does not control the serve lane|s/^    uncontrolled = \["%s/    uncontrolled = [] and ["%s/
 reasoning-not-rebuilt|read as UNCLOSED|s/^    if isinstance(doc, dict) and isinstance(doc.get("reasoning"), str) and doc.get("reasoning"):$/    if False:/
 route-not-keyed|J\/R1 route key|s/, mode, r.get("route") or "")$/, mode, "")/
+b4-borrow-off|J\/B4 oracle pairing|s/^                    by_key\[k\]\[eng\] = dict(src\[eng\], borrowed_from_route=src_route or "(route-less plugin row)")$/                    pass/
+b4-native-overwritten|J\/B4 native wins|s/^            if eng in by_key\[k\]:$/            if False:/
+b4-unmapped-borrows|J\/B4 unmapped route|s/^        orc = crux_serve_routes.oracle_route(k\[7\])$/        orc = crux_serve_routes.oracle_route(k[7]) or "POST \/v1\/chat\/completions"/
 admission-mode-off|admitted only for thinking ON|s/^        if admitted_mode is not None:$/        if False:/
 admission-off|NOT admitted for this model is RED|s/^        elif admitted is not None and k\[5\] not in admitted.get(k\[0\], ()):$/        elif False:/
 certification-off|no certification receipt declines|s/^        certified = certification_ok(args.prompts, getattr(args, "certification", None))$/        certified = True/
