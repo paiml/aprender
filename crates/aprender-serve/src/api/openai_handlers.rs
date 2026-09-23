@@ -20,9 +20,9 @@ use axum::{
 use futures::stream::Stream;
 
 use super::{
-    build_trace_data, clean_chat_output, format_chat_messages, AppState, ChatChoice,
-    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ErrorResponse,
-    FinishReason, OpenAIModel, OpenAIModelsResponse, StreamMode, Usage,
+    build_trace_data, clean_chat_output, format_chat_messages, format_chat_messages_for_state,
+    AppState, ChatChoice, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
+    ChatMessage, ErrorResponse, FinishReason, OpenAIModel, OpenAIModelsResponse, StreamMode, Usage,
 };
 use crate::generate::{CancelToken, GenerationConfig, SamplingStrategy};
 use crate::tokenizer::BPETokenizer;
@@ -71,7 +71,7 @@ fn tokenize_chat_prompt(
     model_hint: Option<&str>,
     state: &AppState,
 ) -> Result<Vec<u32>, Response> {
-    let prompt_text = format_chat_messages(messages, model_hint);
+    let prompt_text = format_chat_messages_for_state(state, messages, model_hint);
     let ids = tokenizer.encode(&prompt_text);
     if ids.is_empty() {
         return Err(fail_response(

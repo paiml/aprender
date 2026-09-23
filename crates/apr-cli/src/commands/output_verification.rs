@@ -937,13 +937,12 @@ fn run_golden_output_gate_runtime(
     // asks them too — same detector, keyed on `general.architecture`. Reading the
     // header is cheap; a file that will not map is left to the generation call
     // below, which reports the mapping error properly.
-    let architecture = {
-        let mapped = realizar::gguf::MappedGGUFModel::from_path(path).ok();
-        mapped
-            .as_ref()
-            .and_then(|m| m.model.architecture())
-            .map(String::from)
-    };
+    // #3990: the header map is kept, because the thinking-ON leg renders the model's own template.
+    let mapped_header = realizar::gguf::MappedGGUFModel::from_path(path).ok();
+    let architecture = mapped_header
+        .as_ref()
+        .and_then(|m| m.model.architecture())
+        .map(String::from);
     let test_cases = golden_test_cases_for(architecture.as_deref());
     // GH-279-4: thinking models need room for <think>...</think> + the answer.
     let golden_max_tokens = config.max_tokens.max(512);
@@ -1004,7 +1003,22 @@ fn run_golden_output_gate_runtime(
     // #3724 done_when 3: the hybrid rungs are thinking-capable too, and this leg
     // is where they are judged.
     let mut on_leg = String::new();
-    if let Some((on_prompt, on_patterns)) = thinking_on_case(architecture.as_deref()) {
+    let on_case = match thinking_on_case_for_model(
+        architecture.as_deref(),
+        mapped_header.as_ref().map(|m| &m.model),
+    ) {
+        Ok(c) => c,
+        Err(reason) => {
+            return Ok(GateResult::failed(
+                "golden_output",
+                &format!("golden_output_thinking_on: {reason}"),
+                None,
+                None,
+                start.elapsed(),
+            ))
+        },
+    };
+    if let Some((on_prompt, on_patterns)) = on_case {
         // #3907 WIRING (#3907 landed the resolver and reached only the DENSE leg at
         // golden_output.rs:795; this is the HYBRID leg, and it kept passing the raw
         // `THINKING_ON_BUDGET` const to BOTH the generation and the judging). Measured
@@ -1031,6 +1045,8 @@ fn run_golden_output_gate_runtime(
         };
         let (on_text, on_used_gpu, on_tokens) = golden_output_runtime(path, on_prompt.as_str(), on_budget)?;
         let generated = on_text.strip_prefix(on_prompt.as_str()).unwrap_or(&on_text);
+        let judged = on_leg_judged_text(&on_prompt, generated);
+        let generated = judged.as_str();
         if let Some(reason) = thinking_on_leg_failure(
             generated,
             &on_patterns,

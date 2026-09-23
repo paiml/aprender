@@ -562,7 +562,7 @@ fn registry_fallback(
         Err(e) => return fail_response(state, super::model_resolution_status(&e), e),
     };
 
-    let prompt_text = format_chat_messages(&request.messages, Some(&request.model));
+    let prompt_text = format_chat_messages_for_state(state, &request.messages, Some(&request.model));
     let prompt_ids = tokenizer.encode(&prompt_text);
     if prompt_ids.is_empty() {
         return fail_response(state, StatusCode::BAD_REQUEST, "Messages cannot be empty");

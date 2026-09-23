@@ -30,7 +30,7 @@ fn state_or_skip(no_gpu: bool) -> Option<(AppState, Arc<MappedGGUFModel>)> {
 
 const QUESTION: &str = "Name the capital of Peru in one word.";
 
-/// What `apr run` answers: the same template, the GGUF's tokenizer, the
+/// What `apr run` answers (#3990: the GGUF's OWN template, which serve and run both render), the GGUF's tokenizer, the
 /// one-shot generate on the same route, greedy, stopping at the model's EOS.
 fn one_shot_answer(mapped: &MappedGGUFModel, max_tokens: usize, no_gpu: bool) -> String {
     let messages = [ChatMessage {
@@ -40,7 +40,8 @@ fn one_shot_answer(mapped: &MappedGGUFModel, max_tokens: usize, no_gpu: bool) ->
     }];
     let prompt = mapped
         .model
-        .encode(&format_chat_messages(
+        .encode(&crate::api::format_chat_messages_official(
+            Some(&mapped.model),
             &messages,
             mapped.model.architecture(),
         ))
@@ -277,7 +278,8 @@ async fn a_reply_the_context_cuts_short_decodes_the_budget_and_reports_length() 
     }];
     let prompt_tokens = mapped
         .model
-        .encode(&format_chat_messages(
+        .encode(&crate::api::format_chat_messages_official(
+            Some(&mapped.model),
             &messages,
             mapped.model.architecture(),
         ))

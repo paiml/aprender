@@ -474,6 +474,63 @@ fn thinking_on_case(architecture: Option<&str>) -> Option<(String, Vec<&'static 
     Some((on_prompt, patterns))
 }
 
+/// #3990: the thinking-ON prompt is the model's OWN chat template rendered with thinking ON.
+///
+/// It used to be DERIVED: the no-think production prompt with its empty `<think></think>`
+/// prefill cut off, which ends `assistant\n`. Qwen3.5's official template ends
+/// `assistant\n<think>\n` -- it OPENS the block -- and on the derived prompt
+/// Qwen3.5-0.8B-Q4_K_M emitted an instant empty block it does not emit on the official one
+/// (aprender-36), so #3948's "closed EMPTY" on that model was the prompt, not the model.
+///
+/// The leg still exists for exactly the models it existed for (the production prompt
+/// suppresses thinking, `thinking_on_case`). A model whose template cannot be rendered is a
+/// named FAIL -- never a silent fallback to the derivation this replaces.
+#[cfg(feature = "inference")]
+fn official_on_case<F>(
+    architecture: Option<&str>,
+    render: F,
+) -> std::result::Result<Option<(String, Vec<&'static str>)>, String>
+where
+    F: FnOnce(&[realizar::chat_template::ChatMessage]) -> std::result::Result<String, String>,
+{
+    if thinking_on_case(architecture).is_none() {
+        return Ok(None);
+    }
+    let (question, patterns) = golden_questions()
+        .into_iter()
+        .next()
+        .ok_or_else(|| "no golden case to ask".to_string())?;
+    let prompt = render(&[realizar::chat_template::ChatMessage::user(question)]).map_err(|e| {
+        format!("the thinking-ON leg renders the model's own chat template (#3990) and could not: {e}")
+    })?;
+    Ok(Some((prompt, patterns)))
+}
+
+/// #3990: `official_on_case` for a loaded model, through f5's `render_official_for_model`.
+#[cfg(feature = "inference")]
+pub(crate) fn thinking_on_case_for_model(
+    architecture: Option<&str>,
+    gguf: Option<&realizar::gguf::GGUFModel>,
+) -> std::result::Result<Option<(String, Vec<&'static str>)>, String> {
+    official_on_case(architecture, |msgs| match gguf {
+        Some(g) => realizar::chat_template::render_official_for_model(g, msgs, Some(true))
+            .map_err(|e| e.to_string()),
+        None => Err("this model format carries no GGUF chat template to render".to_string()),
+    })
+}
+
+/// #3990: an official template may OPEN the think block inside the prompt, so the model's
+/// continuation starts mid-block with no `<think>` of its own. The judge must see the block
+/// whole, or a model that reasoned and closed reads as "never entered".
+#[cfg(feature = "inference")]
+pub(crate) fn on_leg_judged_text(on_prompt: &str, generated: &str) -> String {
+    if on_prompt.trim_end().ends_with("<think>") && !generated.trim_start().starts_with("<think>") {
+        format!("<think>{generated}")
+    } else {
+        generated.to_string()
+    }
+}
+
 /// Judge one generated ON-mode output: the block closed, and the answer is right.
 ///
 /// `generated` is the model's continuation with the prompt echo already removed.
@@ -848,7 +905,19 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         }
 
         // #3724 done_when 3: a thinking-capable model is judged in BOTH modes.
-        if let Some((on_prompt, on_patterns)) = thinking_on_case(key.as_deref()) {
+        let on_case = match thinking_on_case_for_model(key.as_deref(), gguf_model) {
+            Ok(c) => c,
+            Err(reason) => {
+                return Ok(GateResult::failed(
+                    "golden_output",
+                    &format!("golden_output_thinking_on: {reason}"),
+                    None,
+                    None,
+                    start.elapsed(),
+                ))
+            },
+        };
+        if let Some((on_prompt, on_patterns)) = on_case {
             // #3907: the budget is per-model with a basis, and a model with no measured
             // budget REFUSES here rather than inheriting an 8B's number. The refusal is
             // reported as a budget gap, not as "the model was still reasoning" — the two
@@ -878,6 +947,8 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
                 gguf_model, // #3750 made this a borrow of the map; `Option<&T>` is Copy
             )? {
                 let generated = on_text.strip_prefix(on_prompt.as_str()).unwrap_or(&on_text);
+                let judged = on_leg_judged_text(&on_prompt, generated);
+                let generated = judged.as_str();
                 if let Some(reason) = judge_thinking_on_output(generated, &on_patterns, on_budget)
                     .map(|r| format!("{r} [budget basis — {budget_basis}]"))
                 {
@@ -1796,6 +1867,81 @@ mod golden_output_tests {
             without_thinking_prefill("<think>\n</think>\nalready answering"),
             None
         );
+    }
+
+    /// #3990 MUST-RED (pre-fix probe): the ON leg must ask the model the way its OWN template asks
+    /// it with thinking on. Qwen3.5's official template ends `assistant\n<think>\n`; the
+    /// derivation from the no-think production prompt ends `assistant\n`, and on that prompt
+    /// 0.8B-Q4_K_M emits an instant empty block that it does not emit on the official one.
+    #[test]
+    fn the_on_prompt_is_the_official_template() {
+        let tpl = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../aprender-serve/src/fixtures/chat_template_3990/qwen35.jinja"
+        ))
+        .expect("f5's qwen35 fixture");
+        let (question, _) = golden_questions().into_iter().next().expect("a golden case");
+        let official = realizar::chat_template::render_official(
+            &tpl,
+            None,
+            None,
+            &[realizar::chat_template::ChatMessage::user(question)],
+            true,
+            Some(true),
+        )
+        .expect("renders");
+        let (on_prompt, _) = official_on_case(Some("qwen35"), |msgs| {
+            realizar::chat_template::render_official(&tpl, None, None, msgs, true, Some(true))
+                .map_err(|e| e.to_string())
+        })
+        .expect("renders")
+        .expect("qwen35 has an ON leg");
+        assert_eq!(on_prompt, official, "the ON leg does not ask the way the model's template does");
+        assert!(on_prompt.ends_with("assistant\n<think>\n"), "{on_prompt:?}");
+        // a model the leg never covered still has none, and a template that will not render is a
+        // named failure, never a fallback to the derivation
+        assert_eq!(official_on_case(Some("qwen2"), |_| Ok(String::new())), Ok(None));
+        let refused = official_on_case(Some("qwen35"), |_| Err("no tokenizer.chat_template".into()))
+            .expect_err("an unrenderable template fails");
+        assert!(refused.contains("#3990") && refused.contains("no tokenizer.chat_template"), "{refused}");
+    }
+
+    /// #3990: BOTH gate ON legs (dense here, hybrid in output_verification.rs) take the official
+    /// renderer, and neither falls back to the derivation. Source read, above each test module,
+    /// because a behavioural discriminator needs a model file; "a fix reaching one of N sites"
+    /// is the #3907 defect shape.
+    #[test]
+    fn both_on_leg_sites_render_the_official_template() {
+        for (file, want) in [("golden_output.rs", 1), ("output_verification.rs", 1)] {
+            let src = std::fs::read_to_string(format!("{}/src/commands/{file}", env!("CARGO_MANIFEST_DIR")))
+                .expect("own source readable");
+            let code = src.split("#[cfg(test)]").next().unwrap_or(&src);
+            let calls = code.matches("thinking_on_case_for_model(key.as_deref()").count()
+                + code.matches("thinking_on_case_for_model(\n        architecture.as_deref()").count();
+            assert_eq!(calls, want, "{file}: the ON leg must render the official template (#3990)");
+            assert!(
+                !code.contains("= thinking_on_case(key.as_deref())") && !code.contains("= thinking_on_case(architecture.as_deref())"),
+                "{file}: an ON leg still takes the derived prompt"
+            );
+            assert!(code.contains("on_leg_judged_text(&on_prompt, generated)"), "{file}: the prefilled block is not judged whole");
+        }
+    }
+
+    /// #3990: the official prompt OPENS the block, so the continuation has no `<think>` of its
+    /// own. Judged raw, a model that reasoned and closed reads "never entered"; judged whole, it
+    /// passes -- and an empty prefilled block is still "closed EMPTY".
+    #[test]
+    fn a_prefilled_think_block_is_judged_whole() {
+        let prompt = "<|im_start|>assistant\n<think>\n";
+        let cont = "two plus two is four</think>\n\n2 + 2 = 4.";
+        let raw = judge_thinking_on_output(cont, &["4"], 2048).expect("raw reads as never entered");
+        assert!(raw.contains("never entered"), "{raw}");
+        assert_eq!(judge_thinking_on_output(&on_leg_judged_text(prompt, cont), &["4"], 2048), None);
+        let empty = judge_thinking_on_output(&on_leg_judged_text(prompt, "\n</think>\n\n2 + 2 = 4."), &["4"], 2048)
+            .expect("an empty prefilled block is still empty");
+        assert!(empty.contains("closed EMPTY"), "{empty}");
+        // a prompt that does not open the block is judged as generated
+        assert_eq!(on_leg_judged_text("assistant\n", "x"), "x");
     }
 
     /// done_when 3: ON passes only when the block CLOSES and the answer is right.
