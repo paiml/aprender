@@ -121,17 +121,13 @@ ladder:
     # F9, operator ruling 2026-09-23 on #3957 (verbatim): "proceed with (a)". The FILE is
     # defective, as proven each sweep by llama.cpp on the identical GGUF (the CRUX greedy rows),
     # a positive control on the sibling, and apr CPU == GPU. Covers thinking ON only.
-    red_model:
-      Qwen3.5-0.8B-IQ4_XS.gguf:
-        ticket: "#3951"            # never closes its think block
-        defect: think_never_closed
-        thinking: "on"
-        control: Qwen3.5-4B-Q4_K_M.gguf
-      Qwen3.5-0.8B-Q4_K_M.gguf:
-        ticket: "#3948"            # closes it EMPTY (fold quorum on #3948, item 2)
-        defect: think_empty
-        thinking: "on"
-        control: Qwen3.5-4B-Q4_K_M.gguf
+    # red_model: EMPTY. Both candidates were REFUTED by the F9 oracle itself (aprender-83,
+    # evidence/crux/0.69.1/f9-greedy-apr-70d20d44c on PMAT-3952-crux-greedy2@a78301558): on the
+    # model's OFFICIAL thinking-ON template, llama.cpp closes the think block and answers
+    # correctly for Qwen3.5-0.8B-IQ4_XS (332 tok) and 0.8B-Q4_K_M (241 tok). The "never closes" /
+    # "closes empty" behaviour came from apr's non-official ON prompt (#3990), in BOTH engines.
+    # That is an apr defect, and a key for it would have laundered one into RED-MODEL.
+    red_model: {}
     # F10, operator ruling 2026-09-23 on #3957 (verbatim): "c". apr has no CUDA forward for
     # qwen35moe (hybrid SSM + MoE) and must REFUSE it by name on `apr run --gpu`: no fallback, no
     # output (aprender-serve capability::no_cuda_forward_reason). The CUDA forward is 0.70.0 work.
