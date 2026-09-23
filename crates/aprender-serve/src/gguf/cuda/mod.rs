@@ -227,6 +227,17 @@ pub struct OwnedQuantizedModelCuda {
     last_phase_timings: crate::api::PhaseTimings,
 }
 
+/// #3992: is this a Mixture-of-Experts model? `is_moe` from the constraints table,
+/// or an architecture name that says MoE (`qwen35moe` is not in the table).
+fn is_moe_model(model: &OwnedQuantizedModel) -> bool {
+    model.config.constraints.is_moe
+        || model
+            .config
+            .architecture
+            .to_ascii_lowercase()
+            .contains("moe")
+}
+
 impl OwnedQuantizedModelCuda {
     /// Create a new CUDA-accelerated model wrapper
     ///
@@ -602,7 +613,66 @@ impl OwnedQuantizedModelCuda {
     }
 
     /// Create a GPU-accelerated inference engine with a custom maximum sequence length.
+    ///
+    /// Refuses a Mixture-of-Experts model by name (#3992): see [`Self::check_not_moe`].
     pub fn with_max_seq_len(
+        model: OwnedQuantizedModel,
+        device_ordinal: i32,
+        max_seq_len: usize,
+    ) -> std::result::Result<Self, CudaInitError> {
+        let model = Self::check_not_moe(model)?;
+        Self::build(model, device_ordinal, max_seq_len)
+    }
+
+    /// Build the CUDA wrapper for a MoE model whose caller runs the MoE forward
+    /// itself (`forward_qwen3_moe_cuda`), never the dense one. Today that is
+    /// `apr bench`'s MoE arm (`bench_moe.rs`) and the qwen3moe GPU parity test.
+    /// Everything else gets the dense constructors, which refuse MoE (#3992).
+    ///
+    /// # Errors
+    ///
+    /// The same CUDA / capability / quant errors as [`Self::new`].
+    pub fn new_for_moe_forward(model: OwnedQuantizedModel, device_ordinal: i32) -> Result<Self> {
+        Self::build(model, device_ordinal, 2048).map_err(|e| e.error)
+    }
+
+    /// #3992: the dense CUDA forward cannot run a Mixture-of-Experts model: its
+    /// layers carry no dense `ffn_gate`, so the first forward failed with
+    /// `ffn_gate_ptr is null (0)`, an error that names neither the model nor the
+    /// route. #3987 routes qwen3moe through `run_qwen3_moe_generate_dispatch` for
+    /// `apr run|chat|serve|code`; the 17 other dense construction sites had no
+    /// route. Checked HERE, the one constructor they all reach, so each of them
+    /// (and any added later) refuses MoE by name before CUDA is even initialised.
+    ///
+    /// The predicate is `is_moe` OR a MoE architecture NAME: Qwen3.5-35B-A3B's GGUF
+    /// says `qwen35moe`, which the constraints table does not map, so its `is_moe`
+    /// is false (measured on the real file) and a check on the flag alone would
+    /// never fire for it.
+    fn check_not_moe(
+        model: OwnedQuantizedModel,
+    ) -> std::result::Result<OwnedQuantizedModel, CudaInitError> {
+        if !is_moe_model(&model) {
+            return Ok(model);
+        }
+        Err(CudaInitError {
+            error: RealizarError::UnsupportedOperation {
+                operation: "dense CUDA forward".to_string(),
+                reason: format!(
+                    "'{}' is a Mixture-of-Experts model and this path runs the DENSE \
+                     forward, which has no expert routing (#3992). Use `apr run`, `apr \
+                     chat`, `apr serve` or `apr code`, which route qwen3moe through the \
+                     MoE dispatch",
+                    model.config.architecture
+                ),
+            },
+            model: Box::new(model),
+        })
+    }
+
+    /// The constructor body shared by the dense and MoE-forward entry points.
+    /// `with_max_seq_len` calls `check_not_moe` BEFORE this, so a refused MoE model
+    /// never reaches `CudaExecutor::new` or a weight upload.
+    fn build(
         model: OwnedQuantizedModel,
         device_ordinal: i32,
         max_seq_len: usize,
@@ -961,3 +1031,7 @@ include!("mod_parity_gate.rs");
 // #3975: under `gguf::cuda::` so ci.yml's `cuda-unit` lane (filter `gguf::cuda::`,
 // a real GPU on yoga) executes it rather than it SKIPping on a GPU-less runner.
 include!("gemm_layout_tests_3975.rs");
+
+#[cfg(all(test, feature = "gpu"))]
+#[path = "moe_refusal_tests_3992.rs"]
+mod moe_refusal_tests_3992;
