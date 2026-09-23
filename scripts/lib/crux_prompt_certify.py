@@ -24,7 +24,8 @@ inventory.json - one entry per model family:
 CLI:
   crux_prompt_certify.py certify --prompts P --inventory I --apr-commit SHA -o OUT MANIFEST...
   crux_prompt_certify.py check --prompts P --receipt R      the judge's gate (J2): exit 0 only when the
-                                                            receipt certifies exactly these prompt bytes
+                                                            receipt certifies exactly these prompt bytes;
+                                                            uncontrolled lanes are printed, not refused
   exit 0 ok · 1 refused (check) · 2 usage/ENV
 """
 
@@ -85,20 +86,34 @@ def leg_of(row: dict, model: dict, quant_sha: str):
     return None
 
 
-def driver_raw(row: dict):  # -> (raw final reply, turns | None) or None
-    """hf and vLLM split the think block off before writing `text` (split_think): a closed one becomes
-    `reasoning` + `text`, an UNCLOSED one becomes `reasoning` + an EMPTY `text`. Rebuild the raw reply so
-    the oracle sees the same shape ggml sends it, and an unclosed think reads as unclosed, not as a
-    missing tag (#3962, the per-engine close/loop evidence the cop's ruling joins on)."""
+PRE_3990 = "pre-#3990 driver row: the template's think opener is unknown, so the reply cannot be split"
+
+
+def driver_raw(row: dict):  # -> ((raw final reply, turns | None), None) | (None, why) | None
+    """hf and vLLM split the think block off before writing `text`. Rebuild the RAW reply, so the oracle
+    sees the same shape ggml sends it:
+
+    - fixed drivers (aprender-83, PMAT-3952-crux-greedy2@d9110ca66, #3990) record `raw_text` and
+      `reported.prompt_opens_think`. Qwen3.5's ON template ends "assistant\n<think>\n", so the reply
+      starts INSIDE the think block; the opener is restored before judging.
+    - a thinking-ON row from an older driver carries neither. Its `text` may be a whole unclosed reasoning
+      block, `<answer>` drafts included, read as an answer. Such a row is refused, never judged.
+    - older thinking-OFF rows: `reasoning` + `text` (empty text = unclosed), rebuilt as before."""
     try:
         doc = json.loads(Path(row["stdout"]).read_text(encoding="utf-8"))
     except (OSError, ValueError, KeyError, TypeError):
         return None
+    reported = doc.get("reported") or {}
+    turns = doc.get("turns") or None
+    if isinstance(doc.get("raw_text"), str) and "prompt_opens_think" in reported:
+        return (("<think>" if reported["prompt_opens_think"] else "") + doc["raw_text"], turns), None
+    if row.get("thinking") == "on":
+        return None, PRE_3990
     reasoning = doc.get("reasoning")
     if not reasoning:
         return None
     text = doc.get("text") or ""
-    return "<think>" + reasoning + ("</think>" + text if text else ""), doc.get("turns") or None
+    return ("<think>" + reasoning + ("</think>" + text if text else ""), turns), None
 
 
 def think_state(raw) -> str:
@@ -113,9 +128,9 @@ def reply_of(row: dict, prompt: dict) -> tuple:
     e = judge.engine_entry(r, prompt)
     if row.get("rc") != 0:
         return None, f"exit {row.get('rc')}"
-    raw = driver_raw(row) if row.get("engine") in ("hf", "vllm") else None
-    if raw is not None:
-        return raw, None
+    got = driver_raw(row) if row.get("engine") in ("hf", "vllm") else None
+    if got is not None:
+        return got
     if e.get("answer") is None:
         return None, e.get("why") or "no answer"
     # An engine that reports no turns gives [] through the judge's parser: that is "not reported", not zero.
@@ -123,8 +138,10 @@ def reply_of(row: dict, prompt: dict) -> tuple:
 
 
 def certify_one(prompt: dict, model: dict, quant: str, quant_sha: str, rows: list) -> tuple:
-    cells, first_bad = [], None
+    """(admitted in EVERY mode, first failure, cells, {thinking: admitted in that mode})."""
+    cells, first_bad, by_mode = [], None, {}
     for thinking in model.get("thinking") or ["off"]:
+        mode_bad = first_bad
         for leg in LEGS:
             # Any verb counts: certification asks whether the PROMPT is answerable, not whether an
             # interface works (that is the gate's job). The runner drives ggml through llama-server.
@@ -140,10 +157,12 @@ def certify_one(prompt: dict, model: dict, quant: str, quant_sha: str, rows: lis
                 cells.append({"leg": leg, "thinking": thinking, "engine": r["engine"], "verb": r["verb"],
                               "host": r.get("host"), "correct": v["correct"], "why": v["why"],
                               "extracted": v["extracted"], "think": think_state(reply[0] if reply else None),
-                              "row": r["_at"]})
+                              "max_tokens": r.get("max_tokens"), "row": r["_at"]})
                 if not v["correct"]:
                     first_bad = first_bad or f"{leg} {r['engine']} {r['verb']} thinking={thinking} on {r.get('host')}: {v['why']}"
-    return first_bad is None, first_bad, cells
+        by_mode[thinking] = first_bad == mode_bad and not any(
+            c["thinking"] == thinking and not c["correct"] for c in cells)
+    return first_bad is None, first_bad, cells, by_mode
 
 
 def closure(cells: list) -> dict:
@@ -165,21 +184,36 @@ def certify(a) -> int:
         return 2
     inventory = json.loads(Path(a.inventory).read_text(encoding="utf-8"))
     rows = read_rows(a.manifests)
-    admitted, rejected, cells = {}, {}, []
+    admitted, rejected, cells, by_thinking = {}, {}, [], {}
     for model in inventory:
         for quant, qsha in sorted(model["quants"].items()):
             key = f"{model['model']}/{quant}"
             admitted[key], rejected[key] = [], {}
+            by_thinking[qsha] = {t: [] for t in model.get("thinking") or ["off"]}
             for p in doc["prompts"]:
-                ok, why, cs = certify_one(p, model, quant, qsha, rows)
+                ok, why, cs, modes = certify_one(p, model, quant, qsha, rows)
+                for t, m_ok in modes.items():
+                    if m_ok:
+                        by_thinking[qsha][t].append(p["id"])
                 cells += [dict(c, prompt_id=p["id"], model=key) for c in cs]
                 if ok:
                     admitted[key].append(p["id"])
                 else:
                     rejected[key][p["id"]] = why
-    # A (model, quant) whose positive controls did not certify cannot be gated at all (#3957: no control, no run).
-    controls = [p["id"] for p in doc["prompts"] if p.get("control")]
-    uncontrolled = sorted(k for k, ids in admitted.items() if not set(controls) <= set(ids))
+    # A lane needs ONE certified positive control serving its verb, per thinking mode (#3957, the cop's
+    # "positive control per (host, verb, thinking)"). A second control that fails (e.g. the multi-turn
+    # recall control looping at greedy on a quant) does not un-control a lane another control covers.
+    verbs = sorted({v for p in doc["prompts"] for v in p["verb"]})
+    uncontrolled_detail = []
+    for model in inventory:
+        for quant, qsha in sorted(model["quants"].items()):
+            for t, ids in by_thinking[qsha].items():
+                bare = [v for v in verbs if not any(p.get("control") and p["id"] in ids and v in p["verb"]
+                                                    for p in doc["prompts"])]
+                if bare:
+                    uncontrolled_detail.append({"model": f"{model['model']}/{quant}", "sha256": qsha,
+                                                "thinking": t, "verbs": bare})
+    uncontrolled = sorted({u["model"] for u in uncontrolled_detail})
     receipt = {
         "schema": SCHEMA,
         "prompts": str(prompts_path),
@@ -192,8 +226,15 @@ def certify(a) -> int:
         # (model_sha256, prompt_id) against the receipt directly (aprender-6c [8b6b78], #3957).
         "admitted_by_sha": {m["quants"][k.split("/", 1)[1]]: v for m in inventory for k, v in admitted.items()
                             if k.split("/", 1)[0] == m["model"]},
+        # Admission per thinking mode, keyed like admitted_by_sha. `admitted_by_sha` stays strict (every mode the
+        # model has); this lets a model whose thinking-ON cells loop at greedy (Qwen3.5-2B) still have its
+        # thinking-OFF prompts certified, which the strict form cannot say.
+        "admitted_by_sha_thinking": by_thinking,
         "rejected": rejected,
         "uncontrolled": uncontrolled,
+        # Which (model, thinking, verb) lanes have no certified control. Those lanes DECLINE at the judge;
+        # the receipt itself stays valid for every other lane.
+        "uncontrolled_detail": uncontrolled_detail,
         # Per (model, prompt): did each engine's thinking-ON reply close its think block? The judge joins
         # this against apr's cell: every oracle leg unclosed too = the model's behaviour at greedy
         # (RED-MODEL via F9); the oracle closed and apr looped = an apr defect (cop ruling, 2026-09-23).
@@ -201,9 +242,13 @@ def certify(a) -> int:
         "cells": cells,
     }
     Path(a.out).write_text(json.dumps(receipt, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-    for k in admitted:
-        print(f"{k}: {len(admitted[k])} admitted, {len(rejected[k])} rejected"
-              + ("  [CONTROL NOT CERTIFIED]" if k in uncontrolled else ""))
+    for model in inventory:
+        for quant, qsha in sorted(model["quants"].items()):
+            k = f"{model['model']}/{quant}"
+            modes = ", ".join(f"{t} {len(v)}" for t, v in by_thinking[qsha].items())
+            gaps = [f"{u['thinking']}:{'/'.join(u['verbs'])}" for u in uncontrolled_detail if u["model"] == k]
+            print(f"{k}: admitted {modes} (all modes {len(admitted[k])})"
+                  + (f"  [no certified control: {'; '.join(gaps)}]" if gaps else ""))
     return 0
 
 
@@ -217,9 +262,10 @@ def check(a) -> int:
         print(f"refused: {a.prompts} is sha256 {have[:12]}, the certification covers {str(receipt.get('prompts_sha256'))[:12]}"
               " - an edited prompt set is uncertified until it is certified again")
         return 1
-    if receipt.get("uncontrolled"):
-        print("refused: positive control not certified for " + ", ".join(receipt["uncontrolled"]))
-        return 1
+    for u in receipt.get("uncontrolled_detail") or []:
+        # Reported, not refused: an uncontrolled LANE declines at the judge; refusing the whole receipt here
+        # would turn every other lane's certified prompts RED too.
+        print(f"note: {u['model']} thinking={u['thinking']} has no certified control for {', '.join(u['verbs'])}")
     print(f"certified: {sum(len(v) for v in receipt['admitted'].values())} (model, prompt) admissions")
     return 0
 

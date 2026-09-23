@@ -1,0 +1,1 @@
+{"text": "<answer>tenalp</answer>", "raw_text": "<answer>tenalp</answer>", "turns": ["<answer>tenalp</answer>"], "reported": {"interface": "LLM.chat", "thinking_requested": "off", "thinking_emitted": false, "prompt_opens_think": false, "prompt_tokens": 32, "completion_tokens": 9, "device": "cuda:0 NVIDIA GB10"}}
