@@ -57,6 +57,9 @@
         assert_eq!(clean_chat_response(&format!("{code}<|im_end|>")), code);
         assert_eq!(clean_chat_response(&format!("\n\n{code}\n\n")), code);
         assert_eq!(clean_chat_response("```python\n\tx = 1\n```"), "```python\n\tx = 1\n```");
+        // ...and punctuation is VERBATIM (cop ruling): chat must print what run prints.
+        assert_eq!(clean_chat_response("Wait...."), "Wait....");
+        assert_eq!(clean_chat_response("!!!!"), "!!!!");
     }
 
     #[test]

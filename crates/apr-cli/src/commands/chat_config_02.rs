@@ -425,7 +425,9 @@
     fn test_clean_chat_response_dots_many() {
         let raw = "Wait..........";
         let cleaned = clean_chat_response(raw);
-        assert_eq!(cleaned, "Wait...");
+        // VERBATIM (0.69.1 sweep, cop ruling): the model's punctuation is its output; this used to
+        // assert a cap at three, a rewrite chat did and run did not.
+        assert_eq!(cleaned, "Wait..........");
     }
 
     #[test]
@@ -439,7 +441,9 @@
     fn test_clean_chat_response_questions_many() {
         let raw = "What????????";
         let cleaned = clean_chat_response(raw);
-        assert_eq!(cleaned, "What???");
+        // VERBATIM (0.69.1 sweep, cop ruling): the model's punctuation is its output; this used to
+        // assert a cap at three, a rewrite chat did and run did not.
+        assert_eq!(cleaned, "What????????");
     }
 
     // =========================================================================

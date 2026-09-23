@@ -185,11 +185,11 @@
     fn test_clean_chat_response_complex_combined() {
         let raw = "<|im_start|>assistant\nĠĠHello!!!!!!ĠĠworld<|im_end|><|endoftext|>";
         let cleaned = clean_chat_response(raw);
-        // Ġ -> space (each one), !!!!!! -> !!!, markers removed, trailing whitespace trimmed.
+        // Ġ -> space (each one), punctuation VERBATIM, markers removed, trailing whitespace trimmed.
         // 0.69.1 CRUX sweep: runs of spaces are content (byte-level BPE `ĠĠ` IS two spaces -- the tokens
         // Python indentation is made of), so they survive; only surrounding blank lines and trailing
         // whitespace go. This test used to assert the collapse, i.e. the ctl-code-add defect.
-        assert_eq!(cleaned, "  Hello!!!  world");
+        assert_eq!(cleaned, "  Hello!!!!!!  world");
     }
 
     #[test]

@@ -578,26 +578,6 @@ fn no_qwen_tokenizer_message(model_path: &Path) -> String {
     )
 }
 
-/// Normalize repeated punctuation (max 3 repeats of `!`, `?`, `.`).
-fn normalize_repeated_punctuation(s: &str) -> String {
-    let mut prev_char = '\0';
-    let mut repeat_count = 0;
-    let mut result = String::with_capacity(s.len());
-    for c in s.chars() {
-        if c == prev_char && matches!(c, '!' | '?' | '.') {
-            repeat_count += 1;
-            if repeat_count < 3 {
-                result.push(c);
-            }
-        } else {
-            repeat_count = 0;
-            result.push(c);
-        }
-        prev_char = c;
-    }
-    result
-}
-
 /// Check if text looks like the start of a new conversational turn.
 fn looks_like_new_turn(text: &str) -> bool {
     text.starts_with("Suggest")
@@ -630,7 +610,9 @@ fn clean_chat_response(raw: &str) -> String {
     cleaned = cleaned.replace("Ġ", " ");
     cleaned = cleaned.replace("Ċ", "\n");
 
-    cleaned = normalize_repeated_punctuation(&cleaned);
+    // VERBATIM (0.69.1 sweep, cop ruling): runs of `!`, `?`, `.` used to be capped at three here, which
+    // rewrote the model's own output ("Wait...." -> "Wait..."), so chat and run disagreed and CRUX compared
+    // chat against a reference that rewrites nothing. Only special tokens are removed.
 
     // WHITESPACE IS CONTENT (0.69.1 CRUX sweep, ctl-code-add RED in both thinking modes): a loop here
     // collapsed every run of spaces to one, so Python indentation came out as a single space while
