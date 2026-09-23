@@ -672,6 +672,29 @@ fn detect_format_from_bytes(data: &[u8]) -> ModelFormat {
     ModelFormat::Demo
 }
 
+/// #3990: does this model carry its OWN chat template, which `apr chat` renders in place of the
+/// family detected from its name? Read from the GGUF header prefix, never a whole-file load.
+fn declares_own_chat_template(path: &Path, format: ModelFormat) -> bool {
+    format == ModelFormat::Gguf
+        && super::model_header::gguf_header(path)
+            .is_ok_and(|h| h.metadata.contains_key("tokenizer.chat_template"))
+}
+
+/// #3990: the banner's `Chat Template` value: the model's own template when it has one, else
+/// the detected family, with the thinking mode that `--thinking` actually selects (absent = off,
+/// production's default since #3801).
+fn chat_template_banner(own: bool, family: &str, thinking: Option<bool>) -> String {
+    let on = thinking == Some(true);
+    if own {
+        let mode = if on { "on" } else { "off" };
+        format!("the model's own (tokenizer.chat_template), thinking {mode}")
+    } else if on {
+        family.replace("(thinking off)", "(thinking on)")
+    } else {
+        family.to_string()
+    }
+}
+
 #[cfg(test)]
 fn print_welcome_banner(path: &Path, config: &ChatConfig) {
     print_welcome_banner_for(path, detect_format(path), config);
@@ -736,7 +759,13 @@ fn print_welcome_banner_for(path: &Path, format: ModelFormat, config: &ChatConfi
     }
     println!();
     output::kv("Model", path.display());
-    output::kv("Chat Template", template_name);
+    // #3990: name what is RENDERED. A GGUF with its own template is rendered with it, so the
+    // family guessed from the file name is only the fallback, and the mode is `--thinking`.
+    let own = declares_own_chat_template(path, format);
+    output::kv(
+        "Chat Template",
+        chat_template_banner(own, template_name, config.thinking),
+    );
     output::kv("Temperature", config.temperature);
     output::kv("Top-P", config.top_p);
     output::kv("Max Tokens", config.max_tokens);
@@ -1040,5 +1069,58 @@ mod embedded_tokenizer_tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let model = write_apr(dir.path(), "m.apr", &[], &[]);
         assert!(try_embedded_apr_tokenizer(&model).is_none());
+    }
+}
+
+/// #3990: the welcome banner named the family guessed from the FILE NAME and "thinking off"
+/// even when the model's own template was rendered with `--thinking on` (83's smoke on
+/// c08437cdd: "Qwen3NoThink (thinking off)" above a reply that reasoned).
+#[cfg(test)]
+mod chat_template_banner_3990 {
+    use super::*;
+
+    #[test]
+    fn the_banner_names_what_is_rendered_and_the_effective_mode_3990() {
+        let family = "Qwen3NoThink (thinking off)";
+        assert_eq!(
+            chat_template_banner(true, family, Some(true)),
+            "the model's own (tokenizer.chat_template), thinking on"
+        );
+        assert_eq!(
+            chat_template_banner(true, family, None),
+            "the model's own (tokenizer.chat_template), thinking off"
+        );
+        assert_eq!(
+            chat_template_banner(true, family, Some(false)),
+            "the model's own (tokenizer.chat_template), thinking off"
+        );
+        assert_eq!(
+            chat_template_banner(false, family, Some(true)),
+            "Qwen3NoThink (thinking on)"
+        );
+        assert_eq!(chat_template_banner(false, family, None), family);
+    }
+
+    /// REAL FILE: the Qwen3.5 GGUF from the smoke declares its own template; a path that is
+    /// not a GGUF does not. SKIP by name when the file is absent.
+    #[test]
+    fn a_gguf_with_a_template_is_detected_from_its_header_3990() {
+        let path = Path::new("/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf");
+        if !path.exists() {
+            eprintln!(
+                "SKIP: {} not on this host -- the header check did NOT run",
+                path.display()
+            );
+            return;
+        }
+        assert!(declares_own_chat_template(path, ModelFormat::Gguf));
+        assert!(
+            !declares_own_chat_template(path, ModelFormat::Apr),
+            "only a GGUF's header is consulted"
+        );
+        assert!(!declares_own_chat_template(
+            Path::new("/nonexistent/x.gguf"),
+            ModelFormat::Gguf
+        ));
     }
 }
