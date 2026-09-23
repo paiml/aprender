@@ -92,6 +92,84 @@ pub(crate) fn body_qtypes(gguf: &crate::gguf::GGUFModel) -> Vec<u32> {
         .collect()
 }
 
+/// #4006 (APR paths): the qtype of every 2-D projection weight in a LOADED model's
+/// layers, for [`body_quant_label`]. For `.apr` files, whose loader builds every
+/// layer; GGUF uses [`body_qtypes`] on the header, because the qwen35 hybrid
+/// builds no layers.
+pub(crate) fn model_body_qtypes(model: &crate::gguf::OwnedQuantizedModel) -> Vec<u32> {
+    use crate::gguf::OwnedQKVWeights;
+    let mut out = Vec::new();
+    for layer in model.layers() {
+        match &layer.qkv_weight {
+            OwnedQKVWeights::Fused(t) => out.push(t.qtype),
+            OwnedQKVWeights::Separate { q, k, v } => out.extend([q.qtype, k.qtype, v.qtype]),
+        }
+        out.push(layer.attn_output_weight.qtype);
+        out.push(layer.ffn_up_weight.qtype);
+        out.push(layer.ffn_down_weight.qtype);
+        if let Some(gate) = layer.ffn_gate_weight.as_ref() {
+            out.push(gate.qtype);
+        }
+    }
+    out
+}
+
+/// #4006 (SafeTensors): the GGML id for a float SafeTensors dtype (F32 0, F16 1,
+/// BF16 30), so [`body_quant_label`] names SafeTensors weights the same way.
+/// Integer dtypes are not weights and are skipped.
+pub(crate) fn safetensors_dtype_ggml_id(
+    dtype: &crate::safetensors::SafetensorsDtype,
+) -> Option<u32> {
+    use crate::safetensors::SafetensorsDtype as D;
+    match dtype {
+        D::F32 => Some(0),
+        D::F16 => Some(1),
+        D::BF16 => Some(30),
+        _ => None,
+    }
+}
+
+/// #4006: the `quant=` label for a SafeTensors file, read from its header: every
+/// 2-D float tensor under `.layers.` is the body, `lm_head.weight` (else the tied
+/// `embed_tokens`) is the head. `unknown (…)` when the header cannot be read, never
+/// a guessed type.
+pub(crate) fn safetensors_quant_label(path: &std::path::Path) -> String {
+    let model = match crate::safetensors::MappedSafeTensorsModel::load(path) {
+        Ok(m) => m,
+        Err(e) => return format!("unknown (header unreadable: {e})"),
+    };
+    let mut body = Vec::new();
+    let mut head = None;
+    for name in model.tensor_names() {
+        let Some(info) = model.get_tensor_info(name) else {
+            continue;
+        };
+        let Some(id) = safetensors_dtype_ggml_id(&info.dtype) else {
+            continue;
+        };
+        if name.contains(".layers.") && info.shape.len() >= 2 {
+            body.push(id);
+        } else if name == "lm_head.weight"
+            || (head.is_none() && name.ends_with("embed_tokens.weight"))
+        {
+            head = Some(id);
+        }
+    }
+    match head {
+        Some(h) => body_quant_label(&body, h),
+        None if body.is_empty() => "unknown (no float weights in the header)".to_string(),
+        // No head tensor: label the body alone (the head clause only appears on a mismatch).
+        None => {
+            let dominant = body_quant_label(&body, u32::MAX);
+            dominant
+                .split(" lm_head=")
+                .next()
+                .unwrap_or(&dominant)
+                .to_string()
+        },
+    }
+}
+
 /// Configuration for inference
 #[derive(Debug, Clone)]
 pub struct InferenceConfig {
@@ -458,6 +536,24 @@ fn thinking_mode(config: &InferenceConfig, formatted: String) -> Result<String> 
     crate::chat_template::apply_thinking_mode(&formatted, config.thinking)
 }
 
+/// #3990: the `tokenizer_config.json` beside a SafeTensors model, when it declares a chat template
+/// (a string, or the list form with a `default` entry, as transformers reads it). Rendering, and
+/// bos/eos, are left to the ONE reader, `chat_template::render_official_from_tokenizer_config`;
+/// this only decides whether the model has a template of its own, so a model WITHOUT one takes
+/// the built-in formatter quietly while a template that fails to render is warned about.
+fn sibling_tokenizer_config(model_path: &std::path::Path) -> Option<String> {
+    let text = std::fs::read_to_string(model_path.with_file_name("tokenizer_config.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let declared = match v.get("chat_template")? {
+        serde_json::Value::String(s) => !s.is_empty(),
+        serde_json::Value::Array(list) => list
+            .iter()
+            .any(|t| t.get("name").and_then(serde_json::Value::as_str) == Some("default")),
+        _ => false,
+    };
+    declared.then_some(text)
+}
+
 fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<PreparedTokens> {
     use crate::chat_template::{format_messages, ChatMessage};
     use crate::gguf::{GGUFValue, MappedGGUFModel};
@@ -485,11 +581,21 @@ fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<Prepare
     let formatted_prompt = if config.force_chat_template || has_chat_template || filename_instruct {
         let template_hint = apr_arch_to_template_hint(gguf_arch, model_name);
         let messages = vec![ChatMessage::user(prompt)];
-        format_messages(&messages, Some(template_hint)).unwrap_or_else(|_| prompt.to_string())
+        // #3990: the GGUF's own tokenizer.chat_template, when it carries one.
+        let own = has_chat_template.then_some(|t: Option<bool>| {
+            crate::chat_template::render_official_for_model(&mapped.model, &messages, t)
+        });
+        crate::chat_template::official_or_legacy(
+            own,
+            || {
+                format_messages(&messages, Some(template_hint))
+                    .unwrap_or_else(|_| prompt.to_string())
+            },
+            config.thinking,
+        )?
     } else {
-        prompt.to_string()
+        thinking_mode(config, prompt.to_string())?
     };
-    let formatted_prompt = thinking_mode(config, formatted_prompt)?;
 
     if config.verbose {
         eprintln!(
@@ -596,11 +702,25 @@ fn prepare_tokens_safetensors(config: &InferenceConfig, prompt: &str) -> Result<
     let formatted_prompt = if is_instruct {
         let template_hint = safetensors_arch_to_template_hint(&architecture, model_name);
         let messages = vec![ChatMessage::user(prompt)];
-        format_messages(&messages, Some(template_hint)).unwrap_or_else(|_| prompt.to_string())
+        // #3990: the sibling tokenizer_config.json's own chat_template, when it declares one.
+        let tc = sibling_tokenizer_config(&config.model_path);
+        let msgs = &messages;
+        let own = tc.as_deref().map(|json| {
+            move |t: Option<bool>| {
+                crate::chat_template::render_official_from_tokenizer_config(json, msgs, t)
+            }
+        });
+        crate::chat_template::official_or_legacy(
+            own,
+            || {
+                format_messages(&messages, Some(template_hint))
+                    .unwrap_or_else(|_| prompt.to_string())
+            },
+            config.thinking,
+        )?
     } else {
-        prompt.to_string()
+        thinking_mode(config, prompt.to_string())?
     };
-    let formatted_prompt = thinking_mode(config, formatted_prompt)?;
 
     let tokens =
         AprV2Model::encode_text(&config.model_path, &formatted_prompt).ok_or_else(|| {
@@ -645,24 +765,25 @@ fn prepare_tokens_apr(config: &InferenceConfig, prompt: &str) -> Result<Prepared
         .and_then(|n| n.to_str())
         .unwrap_or("");
 
-    let (apr_arch, has_chat_template) = if config.model_path.extension().is_some_and(|e| e == "apr")
-    {
+    let (apr_arch, own_template) = if config.model_path.extension().is_some_and(|e| e == "apr") {
         match AprV2Model::load(&config.model_path) {
             Ok(model) => {
                 let meta = model.metadata();
                 let arch = meta.architecture.clone().unwrap_or_default();
-                let has_tmpl = meta
+                let tmpl = meta
                     .extra
                     .get("tokenizer.chat_template")
                     .and_then(|v| v.as_str())
-                    .is_some_and(|s| !s.is_empty());
-                (arch, has_tmpl)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string);
+                (arch, tmpl)
             },
-            Err(_) => (String::new(), false),
+            Err(_) => (String::new(), None),
         }
     } else {
-        (String::new(), false)
+        (String::new(), None)
     };
+    let has_chat_template = own_template.is_some();
 
     let filename_instruct = model_name.to_lowercase().contains("instruct")
         || model_name.to_lowercase().contains("-chat");
@@ -672,11 +793,25 @@ fn prepare_tokens_apr(config: &InferenceConfig, prompt: &str) -> Result<Prepared
     let formatted_prompt = if is_instruct {
         let template_hint = apr_arch_to_template_hint(&apr_arch, model_name);
         let messages = vec![ChatMessage::user(prompt)];
-        format_messages(&messages, Some(template_hint)).unwrap_or_else(|_| prompt.to_string())
+        // #3990: the .apr's own tokenizer.chat_template. The .apr carries no bos/eos STRINGS,
+        // so they stay undefined (a Qwen template references neither).
+        let msgs = &messages;
+        let own = own_template.as_deref().map(|tpl| {
+            move |t: Option<bool>| {
+                crate::chat_template::render_official(tpl, None, None, msgs, true, t)
+            }
+        });
+        crate::chat_template::official_or_legacy(
+            own,
+            || {
+                format_messages(&messages, Some(template_hint))
+                    .unwrap_or_else(|_| prompt.to_string())
+            },
+            config.thinking,
+        )?
     } else {
-        prompt.to_string()
+        thinking_mode(config, prompt.to_string())?
     };
-    let formatted_prompt = thinking_mode(config, formatted_prompt)?;
 
     let tokens =
         AprV2Model::encode_text(&config.model_path, &formatted_prompt).ok_or_else(|| {
@@ -723,3 +858,37 @@ mod tests_sampling_3760;
 #[cfg(test)]
 #[path = "tests_sampling_default_3754.rs"]
 mod tests_sampling_default_3754;
+
+#[cfg(test)]
+mod sibling_tokenizer_config_3990 {
+    use super::sibling_tokenizer_config;
+
+    fn with_config(json: Option<&str>) -> Option<String> {
+        let dir = tempfile::tempdir().expect("tempdir");
+        if let Some(j) = json {
+            std::fs::write(dir.path().join("tokenizer_config.json"), j).expect("write");
+        }
+        sibling_tokenizer_config(&dir.path().join("model.safetensors"))
+    }
+
+    /// A declared template -- a string, or the list form with a `default` entry -- is the model's own;
+    /// no file, no key, an empty string or a list without `default` is not, and takes the built-in
+    /// formatter quietly (#3990: rendering and bos/eos belong to render_official_from_tokenizer_config).
+    #[test]
+    fn a_declared_template_is_found_in_both_forms_and_nothing_else_is() {
+        assert!(with_config(Some(r#"{"chat_template": "{{ messages }}"}"#)).is_some());
+        assert!(with_config(Some(
+            r#"{"chat_template": [{"name": "default", "template": "x"}]}"#
+        ))
+        .is_some());
+        for j in [
+            None,
+            Some("{}"),
+            Some(r#"{"chat_template": ""}"#),
+            Some(r#"{"chat_template": [{"name": "tool_use", "template": "x"}]}"#),
+            Some("not json"),
+        ] {
+            assert!(with_config(j).is_none(), "{j:?}");
+        }
+    }
+}

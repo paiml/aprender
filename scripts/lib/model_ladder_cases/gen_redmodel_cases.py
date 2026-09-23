@@ -124,6 +124,59 @@ def build_f10(arch="qwen35moe", key_arch="qwen35moe"):
     return L, rec, crux
 
 
+W, W_SHA = "Qwen3.5-0.8B-UD-IQ2_XXS.gguf", "a" * 64      # the wrong-answer file (F9 wrong_answer)
+K, K_SHA = "Qwen3.5-0.8B-Q4_K_M.gguf", "b" * 64            # its higher-quant control
+
+
+def wa_raw(ids, text, prompt_ids=OPIDS, top2=None, template_ids=None):
+    r = raw(ids, text, prompt_ids, template_ids)
+    if top2 is not None:
+        r["top2_logits"] = top2
+    return r
+
+
+def wa_greedy(sha, apr_ids, apr_text, ref_ids, ref_text, pid="golden-2plus2"):
+    """A thinking-OFF greedy entry on the OFFICIAL template ids (#3990): apr, and llama.cpp@official on
+    this lane (the CPU lane's is the reference, the GPU lane's is the oracle's CUDA leg)."""
+    return {"key": {"model_sha256": sha, "host": "lambda", "prompt_id": pid, "thinking": "off"},
+            "apr": {"raw": wa_raw(apr_ids, apr_text, OPIDS)},
+            "llama.cpp@official": {"raw": wa_raw(ref_ids, ref_text, OPIDS, None, OPIDS)}}
+
+
+def div(step):
+    """IDS with the token at `step` changed (None: IDS unchanged)."""
+    return list(IDS) if step is None else IDS[:step] + [99 + step] + IDS[step + 1:]
+
+
+def build_wa(apr_div=None, ref_div=None):
+    """lambda holds W (golden_output RED: 2+2 answered wrong) and K, its higher-quant control. apr
+    first diverges from the llama.cpp CPU reference at `apr_div`, the oracle's CUDA leg at `ref_div`."""
+    L = load(os.path.join(BASE, "ladder.yaml"))
+    rec = {h: load(os.path.join(BASE, "receipts", f"{h}.json")) for h in ("lambda", "gx10")}
+    crux = {n[:-5]: load(os.path.join(BASE, "crux", n)) for n in sorted(os.listdir(os.path.join(BASE, "crux")))}
+    R = rec["lambda"]
+    tmpl = next(x for x in R["rungs"] if x.get("file") == "Extra-Q4_K_M.gguf")
+    w = row_like(tmpl, W, W_SHA)
+    w.update({"green": False, "golden_output": {"passed": False, "skipped": False, "message": "expected '4' in 'What is 2+2?'"},
+              "qa_rc": 1, "gates_failed": ["golden_output"], "gates_account_for_rc": True})
+    R["rungs"].extend([w, row_like(tmpl, K, K_SHA)])
+    R["inventory"].extend([{"file": W, "sha256": W_SHA, "bytes": 1}, {"file": K, "sha256": K_SHA, "bytes": 1}])
+    R["red"] = sum(1 for x in R["rungs"] if not x.get("green"))
+    L["ladder"]["inventory"]["red_model"] = {W: {"ticket": "#4004", "defect": "wrong_answer", "thinking": "off",
+                                                 "expect": "4", "prompts": ["golden-2plus2"], "control": K}}
+    wrong = "<think>\n\n</think>\n\nThe answer is five."
+    right = "<think>\n\n</think>\n\nThe answer is 4."
+    for lane in ("cpu", "gpu"):
+        X = crux[f"lambda-{lane}"]
+        for v in VERBS:
+            X["cells"] += [crux_cell(W_SHA, "lambda", v, "off", "RED"), crux_cell(W_SHA, "lambda", v, "on", "GREEN"),
+                           crux_cell(K_SHA, "lambda", v, "off", "GREEN")]
+        ref = IDS if lane == "cpu" else div(ref_div)
+        X["greedy"] = [wa_greedy(W_SHA, div(apr_div), wrong, ref, wrong),
+                       wa_greedy(K_SHA, IDS[:3], right, IDS[:3], right)]
+    return L, rec, crux
+
+
 def write(name, L, rec, crux, rc, must, must_not=None):
     d = os.path.join(HERE, name)
     if os.path.isdir(d):
@@ -136,6 +189,11 @@ def write(name, L, rec, crux, rc, must, must_not=None):
         with open(os.path.join(d, "receipts", f"{h}.json"), "w", encoding="utf-8") as fh:
             json.dump(R, fh, indent=1)
     for n, X in crux.items():
+        # every apr greedy row records the backend it RAN on (#3957 F9); a case overrides it to plant a fallback
+        lane = X.get("backend")
+        for gg in X.get("greedy", []):
+            if isinstance(gg.get("apr"), dict) and isinstance(gg["apr"].get("raw"), dict):
+                gg["apr"]["raw"].setdefault("backend", {"requested": lane, "ran": lane, "fell_back": False})
         with open(os.path.join(d, "crux", f"{n}.json"), "w", encoding="utf-8") as fh:
             json.dump(X, fh, indent=1)
     shutil.copy(os.path.join(BASE, "version"), os.path.join(d, "version"))
@@ -230,7 +288,7 @@ def main():
 
     L, rec, crux = build_f9()   # RED-MODEL cannot hide a second failure on the same row
     row(rec, D)["backends"]["cuda"]["verbs"]["serve"]["routes"]["/api/chat|stream=false"]["output_bad"] = "gibberish (fragment 'zombie')"
-    write("red-model-residual", L, rec, crux, 1, r"excuses only the think-block defect, and the row ALSO fails")
+    write("red-model-residual", L, rec, crux, 1, r"excuses only the declared think_never_closed defect, and the row ALSO fails")
 
     L, rec, crux = build_f9()   # the row went GREEN: the key is stale
     d = row(rec, D)
@@ -249,7 +307,7 @@ def main():
     L, rec, crux = build_f9()   # ... and an unmeasured thinking-OFF axis blocks too
     for X in crux.values():
         X["cells"] = [c for c in X["cells"] if not (c["key"]["model_sha256"] == D_SHA and c["key"]["thinking"] == "off")]
-    write("red-model-thinking-off-missing", L, rec, crux, 1, r"no thinking-OFF CRUX verdict proves the rest")
+    write("red-model-thinking-off-missing", L, rec, crux, 1, r"no verdict on the other axis proves the rest")
 
     L, rec, crux = build_f9()   # the key must say thinking: on
     L["ladder"]["inventory"]["red_model"][D]["thinking"] = "off"
@@ -281,6 +339,52 @@ def main():
     L, rec, crux = build_f9()   # a named prompt this sweep did not measure
     L["ladder"]["inventory"]["red_model"][D]["prompts"] = ["think-2plus2", "arith-17x23"]
     write("red-model-named-prompt-unmeasured", L, rec, crux, 1, r"claims the defect on prompt\(s\) \['arith-17x23'\]")
+
+    # ---------------------------------------------------------------- F9 wrong_answer (cop rulings 2026-09-23)
+    L, rec, crux = build_wa()
+    write("green-red-model-wrong-answer-identical", L, rec, crux, 0,
+          r"RED-MODEL lambda +Qwen3.5-0.8B-UD-IQ2_XXS.gguf +wrong_answer .*apr identical to the llama.cpp CPU reference", r"FAIL")
+    L, rec, crux = build_wa(apr_div=4, ref_div=2)   # #4004's measurement: apr step 4 >= the oracle's own step 2
+    write("green-red-model-wrong-answer-calibrated", L, rec, crux, 0,
+          r"RED-MODEL lambda +Qwen3.5-0.8B-UD-IQ2_XXS.gguf +wrong_answer .*first diverges at step 4, not earlier than the oracle's own CPU/CUDA divergence at step 2", r"FAIL")
+    L, rec, crux = build_wa(apr_div=2, ref_div=4)   # must-RED: apr diverges EARLIER than the oracle's self-divergence
+    write("red-model-wrong-answer-apr-earlier", L, rec, crux, 1, r"apr diverges from the llama.cpp CPU reference at step 2.*EARLIER than the reference's own CUDA leg does \(step 4\)")
+    L, rec, crux = build_wa(apr_div=4, ref_div=None)   # must-RED: the oracle agrees with itself fully while apr diverges
+    write("red-model-wrong-answer-oracle-agrees", L, rec, crux, 1, r"the oracle's CPU and CUDA legs agree on every token, and apr diverges from them at step 4")
+    L, rec, crux = build_wa(apr_div=4, ref_div=2)   # must-RED: the oracle's CUDA leg is missing
+    crux["lambda-gpu"]["greedy"][0].pop("llama.cpp@official")
+    write("red-model-wrong-answer-cuda-leg-missing", L, rec, crux, 1, r"the oracle's CUDA leg \(llama.cpp@official, GPU lane\) is MISSING")
+    L, rec, crux = build_wa()   # must-RED: llama.cpp (CPU reference) answers correctly
+    crux["lambda-cpu"]["greedy"][0]["llama.cpp@official"]["raw"]["generated_text"] = "<think>\n\n</think>\n\n2+2 = 4"
+    write("red-model-wrong-answer-llama-correct", L, rec, crux, 1, r"llama.cpp CPU answers CORRECTLY")
+    L, rec, crux = build_wa()   # must-RED: the higher-quant control is missing
+    for X in crux.values():
+        X["greedy"] = [g for g in X.get("greedy", []) if g["key"]["model_sha256"] != K_SHA]
+    write("red-model-wrong-answer-control-missing", L, rec, crux, 1, r"has no apr \+ llama.cpp@official greedy record")
+    L, rec, crux = build_wa()   # the control answers wrong too: the prompt, not the quant
+    crux["lambda-gpu"]["greedy"][1]["apr"]["raw"]["generated_text"] = "The answer is five."
+    write("red-model-wrong-answer-control-wrong", L, rec, crux, 1, r"does not answer '4' in both engines")
+    L, rec, crux = build_wa()   # apr on a non-official prompt: the wrong answer may be the template
+    crux["lambda-gpu"]["greedy"][0]["apr"]["raw"]["prompt_ids"] = PIDS
+    write("red-model-wrong-answer-not-official", L, rec, crux, 1, r"apr did not run on the model's OFFICIAL template")
+    L, rec, crux = build_wa()   # apr CPU != GPU while the oracle's own backends agree fully
+    crux["lambda-cpu"]["greedy"][0]["apr"]["raw"]["generated_ids"] = div(5)
+    write("red-model-wrong-answer-cpu-ne-gpu", L, rec, crux, 1, r"apr CPU and GPU diverge at step 5 while the oracle's CPU and CUDA legs agree on every token")
+    L, rec, crux = build_wa(apr_div=None, ref_div=4)   # cop ruling (b) must-RED: apr's CPU/GPU split EARLIER than the oracle's
+    crux["lambda-cpu"]["greedy"][0]["apr"]["raw"]["generated_ids"] = div(2)
+    write("red-model-wrong-answer-cpu-gpu-earlier", L, rec, crux, 1, r"apr CPU and GPU diverge at step 2, EARLIER than the oracle's own CPU/CUDA split \(step 4\)")
+    L, rec, crux = build_wa(apr_div=None, ref_div=2)   # #4004's shape: apr splits LATER than the oracle -> admitted
+    crux["lambda-cpu"]["greedy"][0]["apr"]["raw"]["generated_ids"] = div(5)
+    write("green-red-model-wrong-answer-cpu-gpu-calibrated", L, rec, crux, 0, r"apr CPU/GPU split at step 5, not earlier than the oracle's own at step 2", r"FAIL")
+    L, rec, crux = build_wa()   # the apr "GPU" row fell back to the CPU (measured on IQ2_XXS, 165578f17)
+    crux["lambda-gpu"]["greedy"][0]["apr"]["raw"]["backend"] = {"requested": "gpu", "ran": "cpu", "fell_back": True}
+    write("red-model-wrong-answer-gpu-fell-back", L, rec, crux, 1, r"the apr GPU-lane row did NOT run on the GPU \(ran='cpu', fell_back=True\)")
+    L, rec, crux = build_f9()   # ... and the think-block class holds its GPU leg to the same rule
+    crux["lambda-gpu"]["greedy"][0]["apr"]["raw"]["backend"] = {"requested": "gpu", "ran": "cpu", "fell_back": True}
+    write("red-model-gpu-fell-back", L, rec, crux, 1, r"the apr GPU-lane row did NOT run on the GPU")
+    L, rec, crux = build_wa()   # a wrong_answer key must say what the right answer is
+    del L["ladder"]["inventory"]["red_model"][W]["expect"]
+    write("red-model-wrong-answer-no-expect", L, rec, crux, 1, r"is a wrong_answer key with no `expect`")
 
     # ---------------------------------------------------------------- F10 RED-UNSUPPORTED
     L, rec, crux = build_f10()

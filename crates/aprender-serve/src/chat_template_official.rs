@@ -168,3 +168,46 @@ pub fn render_official_for_model(
     let (bos, eos) = (piece(gguf.bos_token_id()), piece(gguf.eos_token_id()));
     render_official(tpl, bos.as_deref(), eos.as_deref(), messages, true, enable_thinking)
 }
+
+/// A `tokenizer_config.json` special token: a bare string, or an AddedToken object
+/// (`{"content": "<s>", "lstrip": false, ...}`) -- both forms ship in the wild.
+fn tokenizer_config_token(v: Option<&serde_json::Value>) -> Option<String> {
+    match v? {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Object(o) => o.get("content")?.as_str().map(str::to_string),
+        _ => None,
+    }
+}
+
+/// Render a SafeTensors model's OWN chat template, from its HuggingFace
+/// `tokenizer_config.json`, with the generation prompt appended (#3990).
+///
+/// `chat_template` may be one string or a list of `{name, template}`; the list form takes
+/// the entry named `default`, as transformers does.
+///
+/// # Errors
+/// If the JSON does not parse, carries no usable `chat_template` (named, never a silent
+/// fallback), or the template fails to render.
+pub fn render_official_from_tokenizer_config(
+    tokenizer_config_json: &str,
+    messages: &[ChatMessage],
+    enable_thinking: Option<bool>,
+) -> Result<String, RealizarError> {
+    let cfg: serde_json::Value = serde_json::from_str(tokenizer_config_json).map_err(|e| {
+        RealizarError::FormatError { reason: format!("tokenizer_config.json does not parse: {e}") }
+    })?;
+    let tpl = match cfg.get("chat_template") {
+        Some(serde_json::Value::String(s)) => Some(s.as_str()),
+        Some(serde_json::Value::Array(list)) => list
+            .iter()
+            .find(|t| t.get("name").and_then(serde_json::Value::as_str) == Some("default"))
+            .and_then(|t| t.get("template")?.as_str()),
+        _ => None,
+    }
+    .ok_or_else(|| RealizarError::FormatError {
+        reason: "tokenizer_config.json carries no usable chat_template; the official renderer has nothing to render (#3990)".to_string(),
+    })?;
+    let bos = tokenizer_config_token(cfg.get("bos_token"));
+    let eos = tokenizer_config_token(cfg.get("eos_token"));
+    render_official(tpl, bos.as_deref(), eos.as_deref(), messages, true, enable_thinking)
+}

@@ -203,14 +203,15 @@ impl GGUFModel {
             .map(|(id, token)| (token.as_str(), id as u32))
             .collect();
 
-        // GH-320: Identify special tokens by pattern, not by hardcoded ID threshold.
-        // Matches <|...|> tokens at any ID position in the vocabulary.
-        let special_tokens: Vec<(&str, u32)> = vocab
-            .iter()
-            .enumerate()
-            .filter(|(_id, tok)| tok.starts_with("<|") && tok.ends_with("|>"))
-            .map(|(id, tok)| (tok.as_str(), id as u32))
-            .collect();
+        // #3993: special tokens come from `tokenizer.ggml.token_type` (UNKNOWN, CONTROL,
+        // USER_DEFINED), longest first, exactly as the byte-level path and llama.cpp's
+        // `tokenizer_st_partition` choose them. The `<|...|>` pattern (GH-320) is only the
+        // fallback when a file has no type table; it missed llama-family `</s>`, so a
+        // TinyLlama chat prompt encoded `.</s>` as `.</` `s` `>`.
+        let special_tokens = crate::gguf::byte_level_bpe::special_tokens(
+            &vocab,
+            &crate::gguf::byte_level_bpe::token_types(&self.metadata),
+        );
 
         // Detect tokenizer type from metadata
         // GPT-2 style uses Ġ (U+0120), SentencePiece uses ▁ (U+2581)
@@ -222,18 +223,18 @@ impl GGUFModel {
         let space_char = if is_gpt2_style { '\u{0120}' } else { '▁' };
 
         // Split text on special tokens first, preserving them
-        let segments = split_on_special_tokens(text, &special_tokens);
+        let segments = crate::gguf::byte_level_bpe::partition_specials(text, &special_tokens);
 
         let mut tokens = Vec::new();
 
-        for (is_special, segment) in segments {
-            if is_special {
-                // Direct lookup for special token
-                if let Some(&id) = token_to_id.get(segment) {
+        for fragment in segments {
+            let segment = match fragment {
+                crate::gguf::byte_level_bpe::Fragment::Special(id) => {
                     tokens.push(id);
-                }
-                continue;
-            }
+                    continue;
+                },
+                crate::gguf::byte_level_bpe::Fragment::Raw(segment) => segment,
+            };
 
             // Process non-special segment with character replacement
             let text_with_prefix = if is_gpt2_style {
@@ -424,27 +425,3 @@ fn warn_greedy_tokenizer_fallback_once(refusal: &crate::gguf::byte_level_bpe::By
         );
     });
 }
-
-/// Split `text` at the earliest occurrence of any special token, repeatedly, keeping the
-/// specials as their own `(true, token)` segments (the greedy path's special handling).
-fn split_on_special_tokens<'t>(text: &'t str, special_tokens: &[(&'t str, u32)]) -> Vec<(bool, &'t str)> {
-    let mut segments = Vec::new();
-    let mut rest = text;
-    while !rest.is_empty() {
-        let earliest = special_tokens
-            .iter()
-            .filter_map(|&(tok, _)| rest.find(tok).map(|pos| (pos, tok)))
-            .min_by_key(|&(pos, _)| pos);
-        let Some((pos, tok)) = earliest else {
-            segments.push((false, rest));
-            break;
-        };
-        if pos > 0 {
-            segments.push((false, &rest[..pos]));
-        }
-        segments.push((true, tok));
-        rest = &rest[pos + tok.len()..];
-    }
-    segments
-}
-

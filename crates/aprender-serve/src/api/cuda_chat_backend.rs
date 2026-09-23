@@ -25,7 +25,8 @@ fn try_safetensors_cuda_backend(
         Err(r) => return Some(r),
     };
 
-    let prompt = crate::api::realize_handlers::format_chat_messages(&request.messages, Some(&request.model));
+    // #4007: the loaded model's architecture, not the client's `model` string.
+    let prompt = crate::api::realize_handlers::format_chat_messages_for_state(state, &request.messages, Some(&request.model));
     let input_ids = tokenizer.encode(&prompt);
     let max_tokens = request.max_tokens.unwrap_or(256).min(4096) as usize;
 

@@ -78,6 +78,8 @@ sys.path.insert(0, sys.argv[1]); import crux_prompt_certify as c
 json.dump({"schema": c.SCHEMA, "prompts": sys.argv[2], "prompts_sha256": hashlib.sha256(open(sys.argv[2], "rb").read()).hexdigest(),
            "admitted": {"fixture/Q4_K_M": ["golden-2plus2", "golden-greeting", "golden-paris", "chat-arith-2turn"]},
            "admitted_by_sha": {"a" * 64: __import__("os").environ.get("ADMIT", "golden-2plus2,golden-greeting,golden-paris,chat-arith-2turn").split(",")},
+           **({"admitted_by_sha_thinking": {"a" * 64: json.loads(__import__("os").environ["ADMIT_THINKING"])}}
+              if __import__("os").environ.get("ADMIT_THINKING") else {}),
            "rejected": {}, "uncontrolled": [], "cells": []}, open(sys.argv[3], "w"))
 PY
 }
@@ -90,7 +92,7 @@ SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 apr_out() { # apr_out <dir> <pid> <text> <ran> <fell_back> [ids]
   printf '{"text": %s, "tokens_generated": 3, "tok_per_sec": 9.5, "backend": {"requested": "gpu", "ran": "%s", "fell_back": %s}}\n' \
     "$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$3")" "$4" "$5" > "$1/apr-$2.out"
-  printf '[DEBUG] formatted_prompt="<|im_start|>user\\nq<|im_end|>\\n"\n[DEBUG] add_bos=false, encoded %s tokens: [%s]\n' \
+  printf '[DEBUG] formatted_prompt="%s"\n[DEBUG] add_bos=false, encoded %s tokens: [%s]\n' "${APR_RENDER:-<|im_start|>user\\nq<|im_end|>\\n}" \
     "$(printf '%s' "${6:-1,2,3}" | tr ',' '\n' | grep -c .)" "${6:-1,2,3}" > "$1/apr-$2.err"
 }
 llama_out() { # llama_out <dir> <pid> <prompt> <answer> — the pinned chat CLI's stdout
@@ -116,7 +118,8 @@ m, eng, pid, rc, o, e = sys.argv[1:7]
 ref = sys.argv[7] if len(sys.argv) > 7 else ""
 open(m, "a").write(json.dumps({"kind": "gen", "engine": eng, "prompt_id": pid, "rc": int(rc) if rc else None,
     "stdout": o or None, "stderr": e or None, "refused": ref or None, "model_sha256": "%s",
-    "host": "fixture", "verb": os.environ.get("ROW_VERB", "run"), "thinking": "off", "backend": "gpu"}) + "\n")
+    "host": "fixture", "verb": os.environ.get("ROW_VERB", "run"), "thinking": os.environ.get("ROW_THINKING", "off"),
+    "backend": "gpu"}) + "\n")
 PY
 }
 tokrow() { # tokrow <manifest> <dir> <pid> <ids csv>
@@ -943,12 +946,60 @@ CERT_SAVED=$CERT; CERT="$d/cert.json"; run_judge "$d"; GOT_RC=$?; CERT=$CERT_SAV
 expect "J2: a right answer to a prompt NOT admitted for this model is RED" "$d" 1 golden-paris RED
 reason_has "  ...named as not certified for this model" "$d" golden-paris "not admitted for this model"
 
+# dd 292645efb: admission PER THINKING MODE. A model whose thinking-ON cells loop certifies no prompt
+# under the strict key, and its right thinking-OFF cells must not go RED "not certified" for it.
+d=$(newcase j_admitted_off_only); control_green "$d"
+ADMIT="" ADMIT_THINKING='{"off": ["golden-2plus2"], "on": []}' cert_for "$PROMPTS" "$d/cert.json"
+CERT_SAVED=$CERT; CERT="$d/cert.json"; run_judge "$d"; GOT_RC=$?; CERT=$CERT_SAVED
+expect "J2/thinking: strict admits nothing, the OFF mode admits -- the right OFF cell is GREEN" "$d" 0 $P GREEN
+d=$(newcase j_not_admitted_in_this_mode); control_green "$d"
+ADMIT_THINKING='{"off": [], "on": ["golden-2plus2"]}' cert_for "$PROMPTS" "$d/cert.json"
+CERT_SAVED=$CERT; CERT="$d/cert.json"; run_judge "$d"; GOT_RC=$?; CERT=$CERT_SAVED
+expect "J2/thinking: admitted only for thinking ON -- the OFF cell is RED" "$d" 1 $P RED
+reason_has "  ...named as not admitted in this thinking mode" "$d" $P "not admitted for this model"
+
 d=$(newcase f6_all_green); three "$d" "$T4" "$T4" "$T4"
 run_judge "$d"; GOT_RC=$?
 expect "F6 positive control of this section: apr, ggml and the bf16 control all right is GREEN and PASSES" "$d" 0 $P GREEN
 neg=$(python3 -c 'import json,sys; n=json.load(open(sys.argv[1]))["summary"]["negative_controls"]["run"]; print(n["planted"], n["verdict"])' "$d/receipt.json" 2>/dev/null)
 [ "$neg" = "<answer>5</answer> RED" ] && ok "  ...and its negative control planted <answer>5</answer> and saw RED" || broke "negative control record: '$neg'"
 unset META_ENGINES
+
+# ── #3962 B2: thinking ON with the OFFICIAL template prefills `<think>\n` in the prompt (#3990), so apr's
+# reply starts INSIDE the block, and llama-cli prints `[Start thinking] ... [End thinking]`. The judge
+# re-attaches the tags; crux_oracles.strip_think decides. Measured: every ON cell of the smoke (apr
+# c08437cdd) was RED "answer_not_int" because the REASONING was judged as the answer.
+OPEN_RENDER='<|im_start|>user\nq<|im_end|>\n<|im_start|>assistant\n<think>\n'
+b2() { # b2 <case> <apr reply> <llama answer> [apr render]: one thinking-ON run cell, apr + llama.cpp + hf
+  local d; d=$(newcase "$1")
+  APR_RENDER="${4:-$OPEN_RENDER}" apr_out "$d" $P "$2" gpu false; llama_out "$d" $P "$Q" "$3"
+  ROW_THINKING=on row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"
+  ROW_THINKING=on row "$d/manifest.jsonl" llama.cpp $P 0 "$d/llama-$P.out" "$d/llama-$P.err"
+  engine_out "$d" hf $P "$T4"; ROW_THINKING=on row "$d/manifest.jsonl" hf $P 0 "$d/hf-$P.json" ""
+  printf '%s' "$d"
+}
+LL_CLOSED="[Start thinking]
+Two and two make four.
+[End thinking]
+
+$T4"
+d=$(b2 b2_prefilled_closed "Two and two make four.
+</think>
+
+$T4" "$LL_CLOSED"); run_judge "$d"; GOT_RC=$?
+expect "B2: a prefilled block that CLOSES, then the right answer, is GREEN in apr and llama-cli (was RED answer_not_int)" "$d" 0 $P GREEN
+d=$(b2 b2_prefilled_unclosed "Thinking: the answer is <answer>4</answer>, let me check again. The answer" "$LL_CLOSED"); run_judge "$d"; GOT_RC=$?
+expect "B2: a prefilled block that NEVER closes is RED, even with a right draft inside the reasoning" "$d" 1 $P RED
+reason_has "  ...named as an unclosed think block, never judged on the reasoning" "$d" $P "unclosed think"
+d=$(b2 b2_llama_unclosed "Two and two make four.
+</think>
+
+$T4" "[Start thinking]
+The answer is $T4 but let me") ; run_judge "$d"; GOT_RC=$?
+expect "B2: llama-cli [Start thinking] with no [End thinking] does not answer (unclosed), so it corroborates nothing" "$d" 1 $P RED
+d=$(b2 b2_prompt_unknown "Two and two make <answer>4</answer>" "$LL_CLOSED" "$(printf 'x%.0s' $(seq 1 200))"); run_judge "$d"; GOT_RC=$?
+expect "B2: nothing shows whether the prompt opened a block and the reply has no tag: RED, never judged on reasoning" "$d" 1 $P RED
+reason_has "  ...named as undecidable" "$d" $P "nothing shows whether the prompt opened a think block"
 
 # ── #3957 F6 MUTANTS. Each rule deleted in a copy of the judge; the WHOLE table must then break.
 if [ -z "${CRUX_NO_MUTANTS:-}" ]; then
@@ -967,11 +1018,15 @@ no-control-ok|is no control: RED|s/^    if not ctl:$/    if False:/
 split-ignored|is a SPLIT|s/^        elif len(set(vals.values())) > 1 or None in vals.values():$/        elif False:/
 apr-differs-ignored|ANSWERED but WRONG does not corroborate|s/^        elif a.get("answered") and ext.get("apr") != next(iter(vals.values())):$/        elif False:/
 token-loop-off|named DEGENERATE|s/^    return top >= 0.9 \* len(chars) or token_loop(text) is not None$/    return top >= 0.9 * len(chars)/
+b2-no-opener|a prefilled block that NEVER closes is RED|s/^            p\["answer"\] = "<think>\\n" + p\["answer"\]$/            pass/
+b2-no-llama-map|llama-cli \[Start thinking\] with no \[End thinking\]|s/^        ans = ans.replace(marker, tag)$/        pass/
+b2-unknown-judged|nothing shows whether the prompt opened a block|s/^        elif opened is None and not re.search(r"<\/?think>", p\["answer"\], re.I):$/        elif False:/
 negative-control-off|the lane is blind|s/^    blind = sorted(v for v, r in negative.items() if r\["verdict"\] != "RED")$/    blind = []/
 per-verb-control-off|does not control the serve lane|s/^    uncontrolled = \["%s/    uncontrolled = [] and ["%s/
 reasoning-not-rebuilt|read as UNCLOSED|s/^    if isinstance(doc, dict) and isinstance(doc.get("reasoning"), str) and doc.get("reasoning"):$/    if False:/
 route-not-keyed|J\/R1 route key|s/, mode, r.get("route") or "")$/, mode, "")/
-admission-off|NOT admitted for this model is RED|s/^        if admitted is not None and k\[5\] not in admitted.get(k\[0\], ()):$/        if False:/
+admission-mode-off|admitted only for thinking ON|s/^        if admitted_mode is not None:$/        if False:/
+admission-off|NOT admitted for this model is RED|s/^        elif admitted is not None and k\[5\] not in admitted.get(k\[0\], ()):$/        elif False:/
 certification-off|no certification receipt declines|s/^        certified = certification_ok(args.prompts, getattr(args, "certification", None))$/        certified = True/
 MUT
 fi

@@ -121,17 +121,29 @@ ladder:
     # F9, operator ruling 2026-09-23 on #3957 (verbatim): "proceed with (a)". The FILE is
     # defective, as proven each sweep by llama.cpp on the identical GGUF (the CRUX greedy rows),
     # a positive control on the sibling, and apr CPU == GPU. Covers thinking ON only.
+    # red_model: EMPTY. Both candidates were REFUTED by the F9 oracle itself (aprender-83,
+    # evidence/crux/0.69.1/f9-greedy-apr-70d20d44c on PMAT-3952-crux-greedy2@a78301558): on the
+    # model's OFFICIAL thinking-ON template, llama.cpp closes the think block and answers
+    # correctly for Qwen3.5-0.8B-IQ4_XS (332 tok) and 0.8B-Q4_K_M (241 tok). The "never closes" /
+    # "closes empty" behaviour came from apr's non-official ON prompt (#3990), in BOTH engines.
+    # That is an apr defect, and a key for it would have laundered one into RED-MODEL.
+    #
+    # wrong_answer (cop ruling 2026-09-23, within ruling (a)): Qwen3.5-0.8B-UD-IQ2_XXS answers
+    # "What is 2+2?" without "4" on the OFFICIAL template, in apr AND llama.cpp (aprender-6c
+    # [3ada9a], #4004), while its Q4_K_M sibling answers "4". The key is INERT until a sweep
+    # re-proves it, all on the official ids: apr's first divergence from the llama.cpp CPU reference
+    # comes NO EARLIER than the reference's own CUDA leg diverges from it (parity calibrated per
+    # sweep against the oracle's noise; 6c measured oracle step 2, apr step 4); apr and both llama.cpp
+    # backends wrong; the control right in both engines; apr CPU == GPU. Until then the row is plain
+    # RED, as it would be without the key.
     red_model:
-      Qwen3.5-0.8B-IQ4_XS.gguf:
-        ticket: "#3951"            # never closes its think block
-        defect: think_never_closed
-        thinking: "on"
-        control: Qwen3.5-4B-Q4_K_M.gguf
-      Qwen3.5-0.8B-Q4_K_M.gguf:
-        ticket: "#3948"            # closes it EMPTY (fold quorum on #3948, item 2)
-        defect: think_empty
-        thinking: "on"
-        control: Qwen3.5-4B-Q4_K_M.gguf
+      Qwen3.5-0.8B-UD-IQ2_XXS.gguf:
+        ticket: "#4004"
+        defect: wrong_answer
+        thinking: "off"
+        expect: "4"
+        prompts: [golden-2plus2]
+        control: Qwen3.5-0.8B-Q4_K_M.gguf
     # F10, operator ruling 2026-09-23 on #3957 (verbatim): "c". apr has no CUDA forward for
     # qwen35moe (hybrid SSM + MoE) and must REFUSE it by name on `apr run --gpu`: no fallback, no
     # output (aprender-serve capability::no_cuda_forward_reason). The CUDA forward is 0.70.0 work.
