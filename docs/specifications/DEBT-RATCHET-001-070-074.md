@@ -64,7 +64,7 @@ or coverage can rise just by widening the exclude regex (a denominator ratchet: 
 |---|---|---|
 | Rows / bound / unbound | **27 / 13 / 14 (48%)** | infra `scripts/ont/precondition-lint.sh … --ledger …` at `29a84779` |
 | Unbound rows by repo | aprender 12 · infra 1 (ONT-E, PR infra#909 unmerged) · paiml-mcp-agent-toolkit 1 (ONT-11) | §5 row headers |
-| Unbound K̂ (the spec's own turn estimates, all `[U]`) | **1,230 turns** in total | row headers, summed |
+| Unbound K̂: **not a measurement.** These are the spec's own turn estimates, every one `[U]` | **1,230 turns `[U]`** in total | row headers, summed |
 | Blocked externally | ONT-4c4 ← aprender#3522 O-1 | the lint's `BLOCKED-EXTERNAL` line |
 
 Unbound rows (K̂; depends_on): ONT-E 30 (P) · ONT-4c4 90 (4c1, 4b2) · ONT-4c 150 (4b, 2b) · ONT-4d 90 (2b, 4b) ·
@@ -83,8 +83,8 @@ ONT-10 60 (0..9, D, 11, PVL EV-12).
 | Issue inflow | **487 issues created in the last 7 days** (~70/day) | — | `gh issue list --search created:>=2026-09-16` |
 | Open PRs | **57** (9 draft, 32 with no milestone) | 57 | `gh pr list` |
 | PRs by `updatedAt` idle | max 139 h; **0 idle > 7 d** | — | same |
-| PRs by **creation age** | **22 older than 7 d** (oldest 10 d) | — | same |
-| Live remote branches | **353** (`git ls-remote --heads origin`), **297 with no open PR** | **2,594** (not reproducible; the ls-remote count is 353) | §7 D-6 |
+| PRs by **creation age** and **head commit** `max(authoredDate, committedDate)` | **20 older than 7 d; 19 of them with no head commit in 72 h** (oldest 23 d). **25 of 56 PR heads are 2-parent merge commits**, most committed by `GitHub` (update-branch) | — | GraphQL, §7 D-5b (re-measured after the quorum) |
+| Live remote branches | **353** (`git ls-remote --heads origin`), **297 with no open PR**; **40** of those also have a tip older than 14 d, which is exactly `check_reconcile.sh` R3's definition | **2,594** (not reproducible; the ls-remote count is 353) | §7 D-6 |
 | Local branches (dev box, main checkout) | 3,334; **1,977 with upstream `[gone]`** | 3,328 | `git for-each-ref refs/heads` |
 | Worktrees (dev box) | **651**, `.claude/worktrees` = **44 GB** | 646 | `git worktree list` |
 | Release cadence | 0.70.0 due 09-26 · 0.71.0 09-29 · 0.72.0 10-02 · 0.73.0 / 0.74.0 **no due date** | — | milestones API |
@@ -108,25 +108,39 @@ Milestones: 0.70.0 = #7, 0.71.0 = #9, 0.72.0 = #10, 0.73.0 = #15, 0.74.0 = #16.
   with `COVERAGE_EXCLUDE_REGEX` frozen at its `49fe19c28` value.
 - **A-2 Debt.** `gap = 9500 − B`. With `B = 8819`, gap = 681 bp, 80% = 545 bp, slice = **109 bp per release**
   (≈ 10,000 newly covered lines at LF ≈ 918,869).
-- **A-3 Denominator ratchet.** A PR that **adds** an alternative to `COVERAGE_EXCLUDE_REGEX` is refused. Removing one is
-  allowed, and the removed population is reported as `P₀ ∪ Δ` alongside the gated figure. The gate stays on `P₀`, so
-  honesty never turns the gate red.
-- **A-4 Precision.** `COV_FLOOR` moves from integer percent to basis points. At integer precision a 0.58 pp regression
-  (88.78 → 88.20) went unseen, which is 5.3 slices' worth of signal.
-- **A-5 Precondition (0.70.0).** Coverage-nightly must be green again: 25 days with no number is a gate that cannot
-  fail. Timing assertions such as `test_f060_no_performance_regression` must not run under instrumentation. They
-  need a `cfg(not(coverage))` guard or a separate lane.
+- **A-3 Denominator ratchet (two holes, both closed).** (i) A PR that **adds** an alternative to
+  `COVERAGE_EXCLUDE_REGEX` is refused. (ii) **Moving code into an already-excluded path** games the regex without
+  touching it. So `P₀` is also pinned as a **file list**: the tracked `.rs` files that the regex excluded at the
+  baseline SHA. An excluded file that is not on that list (new, or moved in) counts **in** the denominator. Removing a
+  regex alternative is allowed.
+- **A-3b The full figure is reported, not hidden.** Every coverage run also prints `P_full`, which is `P₀` with the
+  regex emptied. The regex excludes 415k physical lines, all of `apr-cli` among them, so `P₀` alone overstates
+  coverage. Whether shrinking the regex becomes a gated unit is operator decision 2 (§6). Until it is ruled on,
+  `P_full` is recorded at every tag and never gated.
+- **A-4 Precision (a step-2 change; not in the tree today).** `Makefile:508` gates on `COV_FLOOR := 88`, an integer
+  percent. `COV_FLOOR_BP` **does not exist yet**, and adding it is the first 0.70 child issue. At integer precision a
+  0.58 pp regression (88.78 → 88.20) went unseen, which is 5.3 slices' worth of signal. An empty or zero `LF` already
+  fails closed (`Makefile:628` sets `COV_PCT=0`). The BP version must keep that.
+- **A-5 Precondition (0.70.0).** Coverage-nightly must produce a number again: 25 days without one. The fix is to keep
+  timing assertions such as `test_f060_no_performance_regression` (`aprender-zram-core/src/benchmark.rs:470`) out of
+  instrumented runs, with `cfg(not(coverage))` or a separate lane. The 0.70 requirement is **one green
+  coverage-nightly run on the release SHA**. Three consecutive nights cannot be met by 09-26.
 - **A-6 CUDA population `P_cuda`** (§4) is a **separate ratchet**. Its baseline is its first measurement, and it is
   never mixed into `P₀`. Folding 119k+ dark lines into `P₀` would lower the figure by several pp and turn the
   CPU ratchet red for reasons unrelated to any regression.
 
 | Release | `P₀` floor (bp) | `P_cuda` | Gate |
 |---|---|---|---|
-| 0.70.0 | **8,928** (and coverage-nightly green ≥ 3 consecutive nights) | first sharded measurement recorded as `B_cuda`; report-only | `make coverage` with `COV_FLOOR_BP` |
-| 0.71.0 | **9,037** | floor = `B_cuda` (no regression) | same + `P_cuda` merge report |
-| 0.72.0 | **9,146** | `B_cuda + 0.8·(9500−B_cuda)·2/5`, armed | both |
-| 0.73.0 | **9,255** | `+ 1 slice` | both |
-| 0.74.0 | **9,364** | `+ 1 slice` | both |
+| 0.70.0 | **8,928** (plus one green coverage-nightly on the release SHA) | not measured yet | `make coverage` with `COV_FLOOR_BP` (to be built, A-4) |
+| 0.71.0 | **9,037** | first sharded measurement = `B_cuda`; report-only | same + the `P_cuda` merge report |
+| 0.72.0 | **9,146** | floor `B_cuda + 1·s_cuda` | both |
+| 0.73.0 | **9,255** | `B_cuda + 2·s_cuda` | both |
+| 0.74.0 | **9,364** | `B_cuda + 3·s_cuda` | both |
+
+`s_cuda = 0.8·(9500 − B_cuda)/5`. **`P_cuda` reaches only 3 of its 5 slices by 0.74**, because nothing can be ratcheted
+before a population has been measured, and the first GPU measurement cannot run before the 0.69.1 freeze ends. Either
+its window runs to 0.76 (5 equal slices, 0.72–0.76), or the last three releases take 5/3 of a slice each. This is
+operator decision 7 (§6). The plan does not pretend `P_cuda` fits equal slices inside 0.70–0.74.
 
 If 0.70's re-measurement differs from 8,819, every row is recomputed by A-2 from the new `B`. **Feasibility flag:**
 releases are 3 days apart, so each slice is about 10k covered lines in 3 days. §6 asks the operator.
@@ -136,20 +150,31 @@ releases are 3 days apart, so each slice is about 10k covered lines in 3 days. �
 The operator asked for "actual pv contract enforcement at deepest level". pv already grades depth (E0/E1/E2).
 Three countable units, all read from `pv coverage`, never hand-counted:
 
-| Unit | Baseline | 80% target at 0.74 | Per release |
-|---|---|---|---|
-| **B-1** E0 call sites (placeholder `!is_empty`) upgraded to ≥ E1 or deleted | 267 | ≤ 52 left | −43 |
-| **B-2** Contracts with obligations and zero falsifiers | 19 | 0 (the count is small, so this goes to 100%) | −4 (−3 at 0.74) |
-| **B-3** Bound equations (`Binding implemented`) | 219 / 3,250 | **operator decision (§6)**: 80% of the 3,031 unbound is ~485 bindings per release, which is not credible in 3-day releases. The proposal: 80% of the equations whose contracts **name an in-tree function**, a denominator `pv coverage --reverse` can derive | derived |
-| **B-4** `pv lint contracts/` is a **required PR check** | not wired | wired and green by 0.70.0 | one-time |
+**Deepest means E2.** The unit is the E2 call site (pre + post), not "no longer E0". Upgrading only to E1, or
+deleting a check, does not reduce the debt. Hence the second clause of B-1: the total number of call sites (pv's
+penetration numerator) may never fall.
 
-Gate: `pv coverage --binding contracts/aprender/binding.yaml --enforcement <crate>` per crate. The release gate refuses
-an E0 count above the floor, a falsifier-less-contract count above the floor, or a bound-equation count below it.
+| Unit | Baseline | 0.70 | 0.71 | 0.72 | 0.73 | 0.74 |
+|---|---|---|---|---|---|---|
+| **B-1** E2 call sites (debt = sites below E2 = 267 E0 + 128 E1 = **395**; 80% = 316; ⌈316/5⌉ = 64 per release). **Total call sites never fall below 510** | 115 | ≥ 179 | ≥ 243 | ≥ 307 | ≥ 371 | ≥ 435 |
+| **B-2** Contracts with obligations and zero falsifiers (small count, so this goes to 100%; ⌈19/5⌉ = 4) | 19 | ≤ 15 | ≤ 11 | ≤ 7 | ≤ 3 | 0 |
+| **B-3** Bound equations, **full denominator** (unbound 3,031; 80% = 2,425; ⌈2,425/5⌉ = 485 per release). **Not credible in 3-day releases `[U]`: see operator decision 3** | 219 | ≥ 704 | ≥ 1,189 | ≥ 1,674 | ≥ 2,159 | ≥ 2,644 |
+| **B-4** `pv lint contracts/` is a **required PR check** | not wired | wired and green | kept | kept | kept | kept |
+
+B-3's alternative denominator, "equations whose contract names an in-tree function", **cannot be derived with today's
+pv**. `pv coverage --reverse <crate>` lists unbound **pub fns** (1,358+ in `aprender-core` alone), which is the
+code-side view, not the contract-side one. Deriving the alternative needs a pv change (a step-2 child issue), so the
+table carries the full-denominator numbers until the operator rules.
+
+Gate: `pv coverage --binding contracts/aprender/binding.yaml --enforcement <crate>`, summed over every crate with
+`src/`. The release gate refuses an E2 count below the floor, a total call-site count below 510, a falsifier-less
+contract count above the floor, or a bound-equation count below the floor.
 
 ### C. ONT-001: unit = **rows bound** (a ledger row with a non-null `merged_sha`)
 
 - End state is **27 / 27**. The operator said "fully", so pillar C targets 100%, not 80%.
-- 14 unbound rows = **1,230 K̂**, about **246 K̂ per release**. The order is the spec's own selector (R-24): each slice is
+- 14 unbound rows = **1,230 K̂ `[U]`** (estimates, not measurements), about **246 K̂ `[U]` per release**. The **gate
+  unit is rows**, not K̂: K̂ only balances the slices, and the floors below are row counts. The order is the spec's own selector (R-24): each slice is
   the next rows whose `depends_on` are all bound, cut at ~246 K̂. The table below is a projection only. The selector
   picks each row live.
 
@@ -172,10 +197,17 @@ the **inflow** from 0.70.0 on.
 
 | Unit | Baseline | 0.70 | 0.71 | 0.72 | 0.73 | 0.74 |
 |---|---|---|---|---|---|---|
-| **D-1** open issues not in a release milestone (older than the 24 h grace) | 428 | ≤ 342 | ≤ 256 | ≤ 170 | ≤ 84 | **0** |
-| **D-2** open PRs older than 7 d with no head commit in 72 h | 22 | ≤ 17 | ≤ 12 | ≤ 7 | ≤ 2 | **0** |
-| **D-3** live remote branches with no open PR | 297 | ≤ 237 | ≤ 178 | ≤ 118 | ≤ 59 | **0** (except `main`, `release/*`) |
+Every floor is `B − k·⌈B/5⌉`, with the last slice clamped to 0.
+
+| Unit | Baseline | 0.70 | 0.71 | 0.72 | 0.73 | 0.74 |
+|---|---|---|---|---|---|---|
+| **D-1** open issues not in an **open release milestone ≥ the current release** (24 h grace); ⌈428/5⌉ = 86 | 428 | ≤ 342 | ≤ 256 | ≤ 170 | ≤ 84 | **0** |
+| **D-2** open PRs older than 7 d with no author activity in 72 h (G-D2 key); ⌈19/5⌉ = 4 | 19 | ≤ 15 | ≤ 11 | ≤ 7 | ≤ 3 | **0** |
+| **D-3** live remote branches with no open PR (excluding `main`, `release/*`); ⌈297/5⌉ = 60 | 297 | ≤ 237 | ≤ 177 | ≤ 117 | ≤ 57 | **0** |
 | **D-4** local branches `[gone]` + worktrees (host hygiene, not a repo gate) | 1,977 + 651 | reported per host; purged by a host janitor, not a release gate | | | | |
+
+D-3 is deliberately wider than `check_reconcile.sh` R3 ("no open PR **and** tip older than 14 d", 40 today). R3 stays
+as it is, and D-3 is the ratchet on the full stock.
 
 D-1 can be drained by **triage** (assign a release milestone, or close with a citation). Triage is a
 `paiml-implement kind=triage` run, not code work.
@@ -202,83 +234,115 @@ Laptop is **sm_89** (the same architecture as lambda's 4090) and was **idle** wh
    --features cuda --lib` held the lock for 25 min on lambda. llvm-cov overhead is typically 1.5–3×, which gives
    `N ≈ 4–8` for serve alone. That is an estimate, not a measurement.
 4. **Merge within a host by profdata, across hosts by LCOV.** `.profraw` merges only across **identical** instrumented
-   binaries, so all shards on one host come from one archive → `llvm-profdata merge` → one LCOV. Across hosts (yoga
-   x86 sm_89, lambda x86 sm_89, gx10 ARM64 sm_121) the binaries differ, so the merge is the **LCOV union at one pinned
-   SHA**: per `(file, line)`, covered if any host covered it. The job refuses to merge LCOVs from different SHAs.
+   binaries, so all shards on one host come from one archive → `llvm-profdata merge` → one LCOV. The report step names
+   its packages explicitly (`-p aprender-gpu -p aprender-cuda-edge -p …`): an unscoped two-phase `cargo llvm-cov report`
+   reports on the root facade and prints 0/0 (`Makefile:521-532` documents this trap). Across hosts (yoga x86 sm_89,
+   gx10 ARM64 sm_121, and lambda only by operator call) the binaries differ, so the merge is the **LCOV union at one
+   pinned SHA**:
+   - **LF** = the union of instrumented `(file, line)` over the hosts. A line that exists only on one architecture
+     (`cfg(target_arch)`) counts once.
+   - **LH** = the lines hit on **any** host.
+   - The merge refuses LCOVs from different SHAs.
+   - The merge also prints per-host LH/LF, so an architecture-only regression stays visible.
+
+   No LCOV-union tool exists in the tree. It is a step-2 child issue with a case table (the same line hit on one host
+   only; an x86-only line; an ARM-only line; a SHA mismatch is refused; an empty LCOV is refused).
 5. **Host roles.** yoga is the nightly home (idle card, already the coverage host). gx10 adds the ARM64 / sm_121
    (Blackwell) paths. lambda is **not** in the nightly rota: it is the release-evidence host, and #3986 measured it as
    the contended one. It joins only by operator call.
 6. **Freeze rule.** Nothing here touches a GPU host's queue before the 0.69.1 freeze (13:00Z 2026-09-23). The first
-   unsharded measurement run (item 3) is scheduled after the 0.69.1 tag.
+   unsharded measurement run (item 3) is scheduled after the 0.69.1 tag, so `B_cuda` first exists in the 0.71 window
+   (§3.A).
 7. **Output.** `P_cuda` = the lines of `aprender-gpu`, `aprender-cuda-edge`, and `cfg(feature = "cuda")` code, reported
    as its own figure (§3.A A-6), plus the union LCOV uploaded as an artifact keyed by SHA.
 
 ## 5. Pillar-D refusal gates, each with a first-green proof (question 5)
 
 **A gate that has never been green on its target is not a gate.** Both gates therefore land in two stages:
-**report-only with a ratchet on the count** (green on the real repo from day one, because the count must only fall),
-then **armed at zero** once the stock reaches 0 at 0.74.0.
+**ratchet mode** (the count may only fall to the slice's floor, so the gate is green on the real repo on the day it
+lands), then **armed at zero** at 0.74.0.
 
-### G-D1: the unmilestoned-issue gate (`scripts/check_issue_milestones.sh`)
+**Where they live:** they are **new predicates R6 and R7 in `scripts/check_reconcile.sh`**, the T-5 reconcile that is
+already a hard release gate. They are not new scripts. They reuse its file-fed predicate functions and its `--self-test`
+fixture pattern, so the self-test never touches the network. R3 (dead branches) and R4 (dirty stale PRs) already exist
+there and are unchanged. GitHub cannot refuse the **creation** of an issue or a PR, so the decision surfaces are
+(i) the release, via T-5, and (ii) the cop's triage duty, via an hourly report. Neither closes anything. Closing is a
+step-2 action, quorum-or-operator only.
 
-- **Universe:** `gh issue list --state open --json number,milestone,createdAt`, derived and never cached.
-- **Violation:** an open issue older than **24 h** whose milestone is not a release (`^[0-9]+\.[0-9]+\.[0-9]+$`).
-  The 24 h grace exists because 94 of the 128 unmilestoned issues are under a day old. The cop's triage duty assigns
-  them within the day.
-- **Where it refuses:** (i) the **release train's T-5 reconcile** (already a hard gate) fails when the count exceeds the
-  slice's floor; (ii) an hourly scheduled run posts the list. GitHub cannot refuse the creation of an issue, so the
-  decision surfaces are the release and the cop, not issue creation.
-- **First-green proof:** run against paiml/aprender today in ratchet mode, with `--max 428`: PASS at 428 (the real
-  target). Negative control: `--max 427`: FAIL, naming the issues. Case table: an issue in `0.70.0` passes; in `backlog`
-  it fails; with no milestone at 23 h it passes; at 25 h it fails; a closed issue is ignored; a PR is ignored (the
-  issues API returns PRs, and they must be filtered out).
+**What is and is not proven today.** Neither predicate exists yet, so **no first-green proof has been run**. What step 1
+measured is the count each predicate will read on its first run (below). The first-green proof is the **acceptance
+test of the step-2 child issue**, stated here so that it cannot be weakened later.
 
-### G-D2: the stale-PR gate (`scripts/check_stale_prs.sh`)
+### R6: the unmilestoned-issue predicate (G-D1)
 
-- **Violation:** an open PR more than **7 d** old (`createdAt`) whose **head commit author date** is more than **72 h**
-  ago. `updatedAt` is not used (§2.D, fact 2).
-- **Where it refuses:** the release's T-5 reconcile. PRs are never closed automatically. Closing is a step-2 action,
-  quorum-or-operator only.
-- **First-green proof:** ratchet mode with `--max 22` on the live PR list: PASS; `--max 21`: FAIL. Case table: a 10-day
-  PR with a commit 2 h ago passes; a 10-day PR with a commit 4 days ago fails; a 5-day PR passes; a draft is counted
-  the same (draft is not an exemption); a PR bumped only by `update-branch` still fails (the merge commit's author is
-  the bot, which is excluded).
+- **Universe:** `gh issue list -R paiml/aprender --state open --json number,milestone,createdAt` (the issues endpoint,
+  which never returns PRs), derived on each run and never cached.
+- **Violation:** an open issue older than **24 h** whose milestone is **not an open release milestone at or after the
+  current release**. A closed or past release (0.66.0 … 0.69.1) does not satisfy it, so an issue cannot be parked
+  there. Grace: 94 of the 128 unmilestoned issues are under a day old, and the cop's triage assigns them within the day.
+- **Count on its first run** (step-1 measurement, not a proof): **428**.
+- **Acceptance (first-green proof, step 2):** live run with `--max 428` (or the slice's floor at that moment): exit 0.
+  Live run with `--max <count−1>`: exit 1, naming the issues. Self-test case table:
+  - an issue in `0.70.0`: pass;
+  - in `backlog`: fail;
+  - in closed `0.68.0`: fail;
+  - no milestone at 23 h: pass;
+  - no milestone at 25 h: fail;
+  - a closed issue: ignored.
 
-Both scripts are **step 2**. This document specifies them, and their case tables become the tests.
+### R7: the stale-PR predicate (G-D2)
+
+- **Key:** PR age from `createdAt` > **7 d**, **and** no **author activity** in **72 h**. Author activity is
+  `max(authoredDate, committedDate)` of the newest head commit that is **not** a 2-parent merge committed by `GitHub`.
+  Measured: 25 of 56 PR heads are exactly such update-branch merges. `updatedAt` is not used (§2.D, fact 2). Taking
+  the max of the two dates keeps a rebase or an amend from reading as stale, because a rebase rewrites the committer
+  date.
+- **Count on its first run** (step-1 measurement over head commits, before the merge-commit exclusion): **19**
+  (of 20 PRs older than 7 d).
+- **Acceptance (step 2):** live run with `--max 19`: exit 0; with `--max 18`: exit 1. Self-test case table:
+  - a 10-day PR with a real commit 2 h ago: pass;
+  - a 10-day PR whose only commit in 72 h is a `GitHub` update-branch merge: fail;
+  - a 10-day PR rebased 2 h ago (old author date, new committer date): pass;
+  - a 5-day PR: pass;
+  - a draft: counted the same.
 
 ## 6. Decisions for the operator (not taken here)
 
 1. **Pillar-A feasibility:** ~10k newly covered lines per 3-day release. Keep equal slices, or slice by time rather than
    by release?
 2. **Pillar A, the exclude regex:** 415k physical lines (all of `apr-cli`) sit outside the denominator. Keep gating on
-   `P₀` and report `P_full`, or make shrinking the exclude list its own unit?
-3. **B-3 denominator:** all 3,031 unbound equations, or only those naming an in-tree function?
+   `P₀` and report `P_full` (proposed), or make shrinking the exclude list its own gated unit?
+3. **B-3 denominator:** all 3,031 unbound equations (485 bindings per release, which this plan judges not credible), or
+   a subset whose denominator needs a pv change first?
 4. **D targets zero**, per the operator's words, rather than 80%. Confirm.
-5. **What "refused" means for an issue or a PR:** blocking the release (proposed), a label, or closing.
-   Closing is never automated without a quorum.
+5. **What "refused" means for an issue or a PR:** a T-5 reconcile failure that blocks the release (proposed), a label,
+   or closing. Closing is never automated without a quorum.
 6. **0.70.0 is due 2026-09-26 with 176 open issues.** Should step 2's triage move issues forward out of 0.70.0, or only
    assign the unassigned ones?
+7. **`P_cuda` cannot fit 5 equal slices inside 0.70–0.74**, because its baseline first exists at 0.71. Extend its
+   window to 0.76, or compress it into 3 larger slices?
 
 ## 7. Commands (re-run these; the numbers above are their output on 2026-09-23)
 
 ```bash
 # A
-gh run list --workflow coverage-nightly.yml --limit 60 --json conclusion,createdAt,headSha           # A-1 history
-gh run view 33245815502 --log | grep -E 'TOTAL: [0-9]+/[0-9]+'                                        # A-2 last green
-gh run view 35800448700 --log | grep -E 'panicked|FAILED'                                             # A-3 why red
+gh run list -R paiml/aprender --workflow coverage-nightly.yml --limit 60 --json conclusion,createdAt,headSha   # A-1 history
+gh run view -R paiml/aprender 33245815502 --log | grep -E 'TOTAL: [0-9]+/[0-9]+'                     # A-2 last green
+gh run view -R paiml/aprender 35800448700 --log | grep -E 'panicked|FAILED'                          # A-3 why red
 git ls-files 'crates/**/src/**/*.rs' | grep -v ^crates/aprender-gpu/ | grep -E "$COVERAGE_EXCLUDE_REGEX" | xargs cat | wc -l   # A-4
 for c in aprender-gpu aprender-cuda-edge; do find crates/$c -path '*src*' -name '*.rs' | xargs cat | wc -l; done              # A-5
 # B
 pv coverage                                                                                            # B-1 totals, ft=0 rows
 pv coverage --binding contracts/aprender/binding.yaml --quiet | grep -A9 Totals                        # B-2 bound
-for c in crates/*/; do pv coverage --binding contracts/aprender/binding.yaml --enforcement "$c" --quiet | grep -c '\[E0\]'; done   # B-3
+for c in crates/*/; do pv coverage --binding contracts/aprender/binding.yaml --enforcement "$c" --quiet | grep -cE '\[E[012]\]'; done   # B-3 E0/E1/E2
 git ls-files 'crates/**/*.rs' | xargs grep -hE '^\s*#\[(\w+::)?contract\(' | wc -l                   # B-4
-grep -n 'make contracts' .github/workflows/*.yml                                                      # B-5 (no hits)
+grep -n 'make contracts\|pv lint' .github/workflows/*.yml                                             # B-5 (comment lines only)
 # C (in an infra worktree at origin/main)
 bash scripts/ont/precondition-lint.sh docs/specifications/paiml-ontology.md --ledger docs/audits/ONT-001/ledger.jsonl
 # D
-gh issue list --state open --limit 2000 --json number,milestone,createdAt                             # D-1..3
-gh pr list --state open --limit 500 --json number,createdAt,updatedAt,isDraft,milestone,headRefName   # D-4,5
+gh issue list -R paiml/aprender --state open --limit 2000 --json number,milestone,createdAt           # D-1..3
+gh pr list -R paiml/aprender --state open --limit 500 --json number,createdAt,updatedAt,isDraft,milestone,headRefName   # D-4,5
+gh api graphql -f query='…pullRequests(states:OPEN){nodes{number createdAt commits(last:1){nodes{commit{authoredDate committedDate committer{name} parents{totalCount}}}}}}'   # D-5b
 git ls-remote --heads origin | wc -l                                                                  # D-6
 git for-each-ref refs/heads --format='%(upstream:track)' | sort | uniq -c                             # D-7
 git worktree list --porcelain | grep -c '^worktree '                                                  # D-8
@@ -287,9 +351,38 @@ gh api 'repos/paiml/aprender/milestones?state=all&per_page=100'                 
 
 ## 8. Quorum
 
-This plan is grilled by a width-3 agy quorum (`--mode grillme`) before it goes to the operator. The lanes' verdicts
-and the changes they forced are recorded in §9.
+This plan was grilled by a width-3 agy quorum (`--mode grillme`) before going to the operator. §9 records the result.
 
 ## 9. Quorum record
 
-_Filled after the quorum returns._
+**Lanes:** `gemini-3.1-pro-high` → PASS-with-changes (8 must-fix) · `gemini-3.7-flash-high` → PASS ·
+`gemini-3.8-flash-high` → PASS-with-changes (14 must-fix). **One family only.** The gpt-oss seat hit a 429 with a 95 h
+reset (the openai/claude agy pool is out until about 2026-09-27) and fell back to gemini. Claude-family lanes are refused
+for a Claude-authored plan. **Every lane exited 3**: other fleet sessions moved shared refs and rewrote the shared
+`.git/config` during the window. The lanes were sandboxed, their clones came back byte-identical, and the tree witness
+verified on all three. The verdicts are recorded as **advisory**, not as a quorum PASS. agy conversations:
+`49c4b7a2-da9b-44fe-b37e-950b1740267c`, `01b9f5a5-dbff-4e75-9478-4a0bd89c3753`, `247bdc1b-5f20-46b9-a3f6-4ee7e344eb3e`.
+
+**Changes the quorum forced** (each re-checked against the tree before it was applied):
+
+| # | Finding | Lanes | Change |
+|---|---|---|---|
+| 1 | B-1 accepted E1 or deletion as "deepest" | 1, 3 | B-1 is now an **E2** ratchet, and the total call-site count may never fall |
+| 2 | G-D2's author-date key calls a rebased PR stale, and update-branch merges look like activity | 1, 3 | key = `max(authoredDate, committedDate)`, excluding `GitHub` 2-parent merges; baseline re-measured by GraphQL: **19**, not 22 |
+| 3 | The frozen regex still allows gaming (move code into an excluded directory) | 1, 3 | A-3 pins the excluded **file list** too; A-3b reports `P_full` |
+| 4 | First-green proofs were written as done, but the scripts do not exist | 3 | §5 now says **no proof has been run**; they are step-2 acceptance tests, and the counts are labelled step-1 measurements |
+| 5 | The gates ignored the existing `check_reconcile.sh` (R1–R5) | 3 | the gates are now predicates **R6/R7** in that script |
+| 6 | `COV_FLOOR_BP` does not exist | 3 | A-4 says so; it is the first 0.70 child issue |
+| 7 | 3 green nights by 09-26 fails on day one | 3 | 0.70 requires one green run on the release SHA |
+| 8 | `P_cuda` reached only 4/5 of its target | 3 | the table is honest (3/5 by 0.74); operator decision 7 |
+| 9 | D-3 floors broke the `⌈B/5⌉` rule | 1 | fixed to 237/177/117/57/0 |
+| 10 | K̂ presented as measured | 1 | labelled `[U]`; the gate unit is rows |
+| 11 | Report-step scoping (0/0 on the facade), and cross-arch LF in the LCOV union | 3 | §4 item 4 now says both |
+| 12 | The milestone regex accepted closed past releases | 3 | R6 requires an **open** release milestone ≥ the current one |
+| 13 | Bare `gh` fails without an origin remote | 3 | every `gh` call carries `-R paiml/aprender` |
+| 14 | B-3 had no numbers | 3 | full-denominator floors given, marked not credible `[U]`; `pv --reverse` measures the code side, not the contract side |
+
+**Refuted by the orchestrator:** lane 1's claim that an empty `COV_PCT` lets `make coverage` exit 0. `Makefile:628`
+sets `COV_PCT=0` when `LF` is 0 or empty, which fails the floor.
+**Not covered by any lane:** whether CI runs `pv lint`. The orchestrator's grep of `.github/workflows/*.yml` finds only
+comment lines (`ci.yml:1321`, `:1940`), and `make contracts` is invoked by no workflow.
