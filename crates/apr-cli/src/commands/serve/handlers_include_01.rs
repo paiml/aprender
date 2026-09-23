@@ -390,14 +390,17 @@ fn build_gpu_router(
     let tok_for_ogen = tokenizer;
     let cpu_for_ogen = cpu_state;
 
-    let router = Router::new()
+    // #3979: mounted AND recorded; GET / and the 404 come from the record.
+    let router = super::route_index::Indexed::new()
         .route(
+            "GET",
             "/health",
             get(|| async {
                 Json(serde_json::json!({"status": "healthy", "gpu": true, "gpu_fallback": true}))
             }),
         )
         .route(
+            "POST",
             "/v1/completions",
             post(move |Json(req): Json<GpuCompletionRequest>| {
                 let cuda = cuda_for_completions.clone();
@@ -409,6 +412,7 @@ fn build_gpu_router(
             }),
         )
         .route(
+            "POST",
             "/v1/chat/completions",
             post(move |Json(req): Json<serde_json::Value>| {
                 let cuda = cuda_for_chat.clone();
@@ -424,6 +428,7 @@ fn build_gpu_router(
         // NDJSON framing over the coalesced result (intermediate done:false +
         // terminal done:true); `stream:false` keeps a single object.
         .route(
+            "POST",
             "/api/chat",
             post(move |Json(req): Json<super::ollama::OllamaChatRequest>| {
                 let cuda = cuda_for_ochat.clone();
@@ -450,6 +455,7 @@ fn build_gpu_router(
         )
         // PMAT-923/928: Ollama native single-prompt generate endpoint.
         .route(
+            "POST",
             "/api/generate",
             post(move |Json(req): Json<super::ollama::OllamaGenerateRequest>| {
                 let cuda = cuda_for_ogen.clone();
@@ -476,19 +482,16 @@ fn build_gpu_router(
         )
         // PMAT-923: Ollama model-list — clients enumerate models before chatting.
         .route(
+            "GET",
             "/api/tags",
             get(move || {
                 let model = model_name_for_tags.clone();
                 async move { Json(super::ollama::ollama_tags_body(&model)) }
             }),
         )
-        .route(
-            "/",
-            get(|| async {
-                "APR v2 GPU Inference Server - POST /v1/completions, /v1/chat/completions, /api/chat, /api/generate"
-            }),
-        );
-    let router = super::ollama::add_ollama_stubs(router);
+
+        .routes(super::ollama::ollama_stub_table())
+        .finish();
     super::auth::layer(auth_gate, router)
 }
 

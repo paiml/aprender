@@ -20508,6 +20508,27 @@ roadmap:
   labels:
   - kind:code
   notes: 'ISSUE AMENDMENT (#3712 comment by the issue author, quoted verbatim): "done_when 1 amended (issue author, cop aprender-04, 2026-09-21 16:56Z): the guard that refuses `required: false` on a Q4_K rung (case row + mutant) is met by #3721. The contract''s own `qwen3-8b-q4km` rung flips to `required: true` in the 0.69.1 fold, together with aprender-fd''s qwen3-8b fix and a committed green lambda receipt. Flipping it earlier would turn `pv lint contracts/` red on every PR, because the armed ladder-green shape reads the committed 0.68.2 lambda receipt, in which qwen3-8b is red. This changes only the order of the work, not the bar: 0.69.1 does not tag until qwen3-8b is `required: true` and green on both lambda and gx10." ISSUE AMENDMENT 2 (#3712 comment 5764495191 by the issue author, quoted verbatim; lanes judge the cells scope against it): "done_when 5 added (issue author, cop aprender-04, 2026-09-21 17:12Z). Operator, verbatim, 2026-09-21: "lets ensure this release has MORE than enough tokens for our needs (overdo it), and our verbs are dogfooded, i.e chat with and without thinking, ditto run, ditto code, etc," - [ ] The cells matrix. A cell is (Q4_K model, required host, verb ∈ {run, chat, serve, code}, thinking mode derived from the model''s chat template, context rung). Rungs come from `evidence/release/context-rungs.json` up to the model''s declared `context_length`, which is read from the GGUF. The long rungs are owed by qwen35 (always the full set through the declared length) plus one representative per other arch, named in the ladder contract and echoed in the receipt (issue author''s ruling). - [ ] What each cell must do. Where the cell fits the host''s total GPU memory by the declared arithmetic, it must pass on CUDA. Where it doesn''t fit, it must be an honest pre-load refusal naming the arithmetic, never a CPU fallback (operator "a", #3710). - [ ] Coverage. Every rung must pass on at least one required host. The operator''s sentence is the requirement. The cell definition above is the issue author''s reading of it, so a lane judging scope judges against this comment. This is not unrequested scope." ACCEPTANCE (hand-entered from gh#3712; this row = done_when 1 + 2, the GATE side; cop assignment 2026-09-21: worker B). Issue done_when 1, verbatim: "Universe = measured inventory, not a list. The release gate derives the model set from what''s ON each required host (every `*Q4_K*` GGUF/APR under the declared models dir on lambda AND gx10), unioned with the ladder. A model present on a host but missing from the gate''s run is a FAIL naming it. The ladder has no `required: false` for any Q4_K rung; a guard refuses the key on a Q4_K rung (case row + mutant)." Issue done_when 2, verbatim: "Every (model, host) cell is GREEN on CUDA: capability_match passed (not skipped), golden_output passed (not skipped; #3711), `apr run --gpu` rc 0 with no fallback line. One red cell = NO-GO. There is no known, optional or pre-existing exemption, and no threshold like >= N%." WHAT THIS ROW DOES: (a) contracts/model-capability-ladder-v1.yaml gains `ladder.inventory` {dirs, patterns (case-insensitive *q4_k*/*q4k* .gguf/.apr), backends [cuda]}; (b) scripts/model_ladder.sh measures ladder UNION the host''s inventory (every match, depth 1), judges each inventory model on cuda with the SAME measure() as a rung, and writes receipt schema apr-model-ladder-receipt/v2 carrying `inventory` [{file, sha256, bytes}], `file` per row, and `apr_sha` (full 40-hex, for #3715); (c) scripts/check_model_ladder.sh FAILs: `required` not true on a Q4_K rung; a Q4_K rung that does not claim cuda; a ladder with no inventory; a receipt that is not v2 or has no inventory; an EMPTY inventory; an inventory file with no present row (MISSING from the run, named); an inventory-only model not green on cuda (skip, fallback, rc != 0 are RED); (d) case table grows 18 -> 26 (every case red for exactly its own reason, one FAIL line each except the two-host cases), plus 3 self-mutants each killed by its case (q4k-required-false, q4k-without-cuda, inventory-missing); --case with no such case is now RED, and the root is derived from the script path, not git rev-parse (#3581). WHAT IT DOES NOT DO (cop ruling 2026-09-21): qwen3-8b-q4km stays `required: false` in the contract, and the gate refuses that key at T-2, so the release cannot ship on it. Flipping it here would turn pv lint red on EVERY PR: the armed ladder-green shape reads the committed 0.68.2 lambda receipt (golden_output: Empty output), measured rc 0 -> 1 with only that flip. The flip folds into the 0.69.1 batch with the qwen3-8b fix and a committed green lambda receipt. So done_when 1''s `no required: false` clause is NOT met by this row: Refs, not Closes. Done_when 2''s cells turn green only through the model fixes under EPIC #3710; done_when 3 and 4 are aprender-f0''s (#3708). cells[] per verb x context (the widened bar, #3715 proposal) ships with the cop''s widened-bar delta, not here. WHERE THE GATE RUNS (so its rc=1 on the real contract is the release NO-GO, not a PR red): check_model_ladder.sh is declared ONLY in Cargo.toml [package.metadata.dogfood] gates (line 612, the T-2 pre-publish dogfood) and is listed in scripts/unwired_guards_baseline.txt (line 12): no PR workflow runs it, and guard_tree skips it (unwired-baseline). pv lint is a different tool that never runs this script; it reads the contract and PASSES with qwen3-8b at required: false. Measured on this head: guard_tree --no-cargo 0 failed, pv lint contracts/ PASS, cargo test -p aprender-contracts --lib 0 failed. THE GPU LOCK (cop ruling 2026-09-21, after a gx10 global OOM at 15:56:08Z killed CI containers): every apr call in model_ladder.sh goes through apr_locked = flock -E 75 -w ${MODEL_LADDER_LOCK_WAIT:-1800} /tmp/apr-gpu.lock choom -n 1000 --; a lock still held after the wait is an ENV decline (exit 2) naming the holder pid from /proc/locks, never a hang and never a model verdict. T-1 wraps the script in choom only (a second flock outside would deadlock). check_model_ladder.sh audits it statically in the REAL run (a raw "$APR" <subcommand> call is RED) and behaviourally in --self-test (fake apr via --lock-probe: lock held + oom 1000; a held lock declines naming the pid), with four producer mutants each killed: raw-apr-call, no-lock, no-choom, unbounded. FALSIFY-MCL-015. ROW B1 (the judge side of cells; stacked on row A; operator bar raise 2026-09-21: "lets ensure this release has MORE than enough tokens for our needs (overdo it), and our verbs are dogfooded, i.e chat with and without thinking, ditto run, ditto code, etc,"). A cell is (model, host, verb, thinking, context rung). contracts/model-capability-ladder-v1.yaml gains `ladder.cells` {verbs [run, chat, serve, code], long_rungs_for {families [qwen35], representatives: one file per other arch}}. The RUNGS are deliberately NOT in the contract: they live in evidence/release/context-rungs.json (apr-release-context-rungs/v1, landing in #3715), one declaration shared with pv; consumer-max = max over consumers[].max_prompt_tokens. The judge (scripts/lib/model_ladder_cells.py, called from check_model_ladder.sh) derives the owed set from the MEASURED inventory: short rungs for every model up to its context_length, long rungs for qwen35 and each arch''s representative; thinking modes from the template evidence (enable_thinking -> both; always-open <think> -> on; else off, #3723), never the producer''s claim; fit := weights + kv_bytes_per_token * tokens + workspace <= gpu_mem_total_bytes (operator ''a'', #3710; an unmeasured term keeps the cell owed in full). A fitting cell must pass (cuda, no fallback, rc 0, prompt_tokens >= rung, answer_chars > 0, think_closed when on); a non-fitting cell must be `refused` with required_bytes > the host TOTAL (a co-tenant refusal is RED); every owed cell must pass on >= 1 required host; every arch in any inventory has a representative some required host holds. A missing context-rungs file, a consumer without a number, a missing context_length (#3733) and a receipt with no cells are each a named FAIL, never an empty owed set. Anti-shrink floors vs origin/main: the cells block (block, verbs, long-rung families and representatives) AND the rung file evidence/release/context-rungs.json (its rung ids and consumers; git show origin/main, absent there = bootstrap), because the rungs live in that file, not in the cells block. A `pass` on a cell the declared arithmetic says cannot fit is RED (MCL-INV-008: not fits => refused): the arithmetic decides what is owed, so a pass beyond it proves the arithmetic wrong (#3596). The module itself keeps only REQUIRED hosts'' receipts. Case table 26 -> 47; 10 module mutants each killed by its case. The PRODUCER side (row B2: measuring the cells) is not in this row: it needs #3723 (thinking toggle), #3733 (inspect keys) and #3596 (capacity::plan, the pre-load refusal). Until it lands, the real T-2 run is RED on ''receipt carries no cells'', which is the operator''s bar, not a PR red: check_model_ladder.sh runs only in the release dogfood (Cargo.toml [package.metadata.dogfood]) and is listed in scripts/unwired_guards_baseline.txt. MEASURED (answers a round-3 lane claim that qwen35-family GGUFs report general.architecture = qwen2): on lambda, Qwen3.5-0.8B-Q4_K_M.gguf and Qwen3.5-4B-Q4_K_M.gguf report general.architecture = qwen35 (apr inspect --json, and a direct GGUF v3 header read whose keys are qwen35.block_count, qwen35.context_length 262144, qwen35.full_attention_interval 4, ...), so `families: [qwen35]` matches them by arch. The fixture''s q.gguf is arch qwen35 and owes 16 cells in green-cells, every long rung included; a mutant deleting the families check (family-long) is killed by red-cells-missing-cell. 11 cells mutants.'
+- id: PMAT-3714
+  github_issue: 3714
+  item_type: task
+  title: 'qwen3moe (Qwen3-30B-A3B, Qwen3-Coder-30B-A3B, Q4_K_M) has NO working CUDA path: apr run --gpu falls back to CPU (rc 14), apr qa emits no gates — blocks 0.69.1 under the all-Q4_K-CUDA rule'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-eb
+  created: 2026-09-21T16:40:00Z
+  updated: 2026-09-21T16:40:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Issue #3714 done_when 1, verbatim: "`apr run --gpu` on both qwen3moe Q4_K_M files runs on CUDA with no fallback on **lambda AND gx10**, and `apr qa` capability_match plus golden_output PASS (not skipped). The 30B-A3B at Q4_K_M (~18 GB) must fit the 4090''s 24 GB with KV, or the refusal names the memory arithmetic, and the operator rules."'
+  - 'done_when 2, verbatim: "GPU vs CPU parity on the qwen3moe forward (`apr parity` must no longer refuse it as UNMEASURED-TOOL, #3367''s residual) at ≥ 64 positions"'
+  - 'done_when 3, verbatim: "`apr qa` on qwen3moe emits its gates, never an empty report (an empty gate list is a FAIL of qa itself)"'
+  - 'done_when 4, verbatim: "both files added as REQUIRED ladder rungs (#3712)"'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Operator, verbatim (issue body): "you must ensure all models Q4_K CUDA work; the end. on gx10 and lambda-labs". Cop ruling relayed by aprender-04 (operator "yes, to all"): NEW kernels are cuda-oxide first, each with a CPU twin and a per-kernel differential test on sm_89 and sm_121; if oxide cannot express one, say which and why on #3714 before any hand PTX. Gap list, measured on 225b2a9ab cuda builds on both hosts before any code: https://github.com/paiml/aprender/issues/3714#issuecomment-5763628862. The issue is delivered as four rows, each its own PR, each `Refs #3714` until the last. R1 (this PR) = done_when 1 and 3. It adds NO kernel, so the oxide ruling does not apply to it: a device-resident Qwen3MoeCudaModel (gguf/cuda/forward_qwen3_moe_resident.rs) on the #3090 Qwen35CudaModel pattern, built from existing executor kernels (Q4_K/Q6_K/F32 GEMV, experts at base + e*stride in one stacked allocation, SwiGLU, RMSNorm, per-head RMSNorm, NEOX rope, GQA decode attention, residual add, and elementwise_mul_into, an allocation-free wrapper over the existing ElementwiseMul kernel), routing on the host through route_top_k, the one routing rule shared with the CPU layers; wired where the gap list showed CUDA was never tried (infer/inference_result.rs -> infer/qwen3_moe_dispatch.rs) behind the runtime F2 rule, whose CPU reference runs with FP32 activations (quantize::with_fp32_activations, a dedicated rayon pool); the fit check calls realizar::capacity::plan, lifted byte-identical from #3596 (aprender-3e) so one fit computation serves both paths; and qa: a gate that errors is a FAILED row and the report is always written (qa.rs dispatch_gate), qwen3moe routes golden/throughput through the runtime entry point (qa_gguf.rs), and the dense-instrument gates skip naming the MoE placeholder. Chat/serve --gpu (api/cuda_chat_backend.rs) keep the CPU chain in R1: they need a persistent resident model, a named remainder. R2 = done_when 2 (apr parity for qwen3moe at >= 64 positions, plus per-op rows for #3715). R3 = the v2 kernels (device top-k, fused scaled accumulate, expert gather), oxide first. R4 = done_when 4 with aprender-62 (#3712). Files owned by other sessions and not touched: crates/apr-cli/src/commands/golden_output.rs and output_verification.rs (aprender-0e #3711, aprender-fd), cuda/executor/layers/cublas_prefill* (aprender-37).'
 - id: PMAT-3715
   github_issue: 3715
   item_type: task
@@ -20780,6 +20801,28 @@ roadmap:
   labels:
   - kind:code
   notes: 'Parent #3568 (design note issuecomment-5763921678, ruled by the cop 2026-09-21): PR 1 of 4. Refs #3568 and Closes #3747. WHAT LANDS. crates/aprender-serve/src/constrain/mod.rs: TokenConstraint; ConstraintError with Display `SchemaInvalid: …`, `SchemaUnsupported: …`, `ConstraintDeadEnd: …`, `ConstraintRejected: …`, `ConstraintVocab: …`, `StructuredOutputNotCompiled: …`; load_schema (inline | @path); ConstraintVocab + validate(); ConstraintEnv (index once per model) -> json_schema / lark; doc: cross-field facts no JSON Schema expresses stay the consumer''s to check (rmedia, #3716). constrain/llg.rs (feature structured-output): special tokens carry TokTrie''s marker byte so no grammar can emit them as text. JSON is COMPACT unless the caller set its own x-guidance: llguidance''s default flexible whitespace ran away in this case table ({ then 63 bytes of whitespace). A boolean schema is normalised: `true` -> `{}`, compact; `false` -> SchemaInvalid (it admits no document). An approximation (grammar warnings, reachable only through a caller''s lenient/coerce_one_of x-guidance) is SchemaUnsupported, never used quietly. Engine compile errors map to SchemaUnsupported with the engine''s message verbatim: llguidance''s errors are untyped, and a substring sort would be a text match standing in for a type. A failed compute_mask (NoExtensionBias) and an empty mask are both DeadEnd. crates/aprender-serve/src/gguf/token.rs: GGUFModel::constraint_vocab() and push_token_bytes, which decode() now calls too. control/unused token_type (3, 5) are special, else the GH-320 <|…|> rule; SentencePiece''s ▁ is mapped on BYTES so a lone <0xNN> survives. test_factory gains add_i32_array. examples/constrain_mask_overhead.rs (required-features structured-output). DEPENDENCY. aprender-serve: llguidance 1.8.0 optional, default-features off, [lark, rayon, ahash] (referencing dropped: it duplicated referencing 0.28/0.29; a $ref schema is then refused by name). Feature structured-output = [dep:llguidance]; apr-cli inference adds realizar/structured-output. NOTE for reviewers: `realizar` IS aprender-serve. Root Cargo.toml has `realizar = { path = "crates/aprender-serve", package = "aprender-serve" }`, aprender-serve''s [lib] name is `realizar`, and apr-cli''s existing cuda feature enables `realizar/cuda` the same way. `cargo check -p apr-cli` rc 0 and the example (`use realizar::constrain`) builds rc 0. A round-1 lane read this as a mismatch and was refuted by the build. cargo deny check licenses / advisories / bans / sources: all rc 0; duplicate-crate warnings 64 on main -> 66, the +2 being strum/strum_macros 0.28 via derivre (llguidance''s regex engine). MEASURED at this commit. cargo test -p aprender-serve --lib --features structured-output -- constrain:: constraint_vocab: 24 passed. Without the feature: 12 passed, including StructuredOutputNotCompiled. Consumer schemas (RAH quorum-lane; rmedia quiz, outline, key-terms/reflection) compile exactly, accept real documents byte by byte to completion, allow nothing after one complete value, and refuse 7 violations at the byte (enum, minimum, pattern x2, additionalProperties:false, const, minLength). RAH row: a model intending the 2026-09-21 NULL vote {"verdict":"PASS","summary":"ok","finding":[]} is held until the required `findings` exists; unconstrained it writes the NULL vote. MUTANTS (8, each RED, re-run on this commit): mask a no-op (7 rows), special marker dropped (1, the in-string special row), flexible whitespace (3), approximations allowed (1), accept never refusing (2), token_type ignored (1), gpt2 bytes read as UTF-8 (1), boolean `true` left flexible (1). OVERHEAD, examples/constrain_mask_overhead, release, 3 runs, a real 124-token RAH verdict tokenized by the model''s own tokenizer and accepted end to end: Qwen3.5-9B-Q4_K_M (vocab 248,320) index 559-606 ms once per model, compile 0.67-0.79 ms, mask p50 155-163 us, p95 207-223 us, max 262-291 us per token; Qwen3-1.7B (151,936) p50 104-105 us. Against RAH''s measured decode of 1.0-2.9 tok/s that is under 0.05 percent. cargo fmt --all -- --check rc 0 (the example is formatted; round 1 caught it unformatted); clippy -p aprender-serve --lib --features structured-output -D warnings rc 0.'
+- id: PMAT-3750
+  github_issue: 3750
+  item_type: task
+  title: 'apr qa''s capability predicates std::fs::read the WHOLE model (twice, plus a to_vec copy) — RSS swings past 30 GB on Qwen3-30B-A3B, an OOM risk on GB10''s unified memory'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-0e
+  created: 2026-09-21T18:08:57Z
+  updated: 2026-09-21T21:45:00Z
+  spec: null
+  acceptance_criteria:
+  - 'THIS PR IS #3750 PR A. Cop ruling (aprender-04 to aprender-0e, 2026-09-21), verbatim: "split approved … PR A = the qa path + the FULL sweep ledger (every one of the 99 production sites with a verdict) + the gx10 before/after. It says **Refs #3750**, not Closes, because done_when 2 wants each site converted or justified, and \"convert later\" is neither. PR B = a sub-issue in **0.69.1**, not later." PR B is #3761.'
+  - 'Issue #3750 done_when 1, verbatim (PR A carries it in full): "Every qa capability predicate reads the header (mmap, or a bounded read) and never the tensor data. A test with a sparse multi-GB fixture asserts peak RSS stays under a small bound (the bound is measured, not guessed)."'
+  - 'Issue #3750 done_when 2, verbatim (PR A carries the LISTING; the conversions of the header-only sites are #3761): "Sibling sweep: every `std::fs::read` of a model path in apr-cli / aprender-serve / aprender-core is listed with its caller. Each is converted, or justified as needing the whole file."'
+  - 'Issue #3750 done_when 3, verbatim (PR A carries it in full): "Measured on gx10: `apr qa` on the 30B, peak RSS before and after, with the binary version + sha."'
+  - 'Cop dispatch, verbatim: "Header-only (mmap or bounded read) + the sibling sweep of every whole-file `std::fs::read` of a model path + a measured peak-RSS before/after on gx10 (under `flock /tmp/apr-gpu.lock choom -n 1000`). eb''s #3714 has an mmap predicate you can reuse; coordinate so there''s one header reader."'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Refs #3750 (not Closes: done_when 2 wants each site converted or justified, and the 17 header-only sites outside apr qa are #3761, PR B, 0.69.1). WHAT LANDS. crates/apr-cli/src/commands/model_header.rs: read_prefix, gguf_header (a GGUF header from a growing prefix: 16 MiB first, doubling, 256 MiB cap, refused past it, never read whole), gguf_arch_and_tensors, apr_header_prefix (APR v2 header + metadata + tensor index, bounded by data_offset). The 13 whole-file reads and one to_vec copy on the apr qa path are converted (docs/audits/3750-whole-file-model-reads.md, table 1): capability gate + cpu_only_architecture + hybrid_loader_architecture read the header (extract_gguf_arch_and_tensors and its to_vec are gone); is_gguf_format, the golden/format-parity/throughput/gpu-speedup magic checks read 8 bytes; the tokenizer reads in golden_output, throughput_gguf, format parity, gpu isolation and speedup x2 use the one map those gates already make (mapped.model). CASE ROW (done_when 1). model_header.rs header_reads_of_a_2_gib_gguf_keep_peak_rss_small: a real GGUF extended sparsely to 2 GiB; the probe runs gguf_arch_and_tensors, gguf_header, cpu_only_architecture and hybrid_loader_architecture in a CHILD process (this test binary, re-run on peak_rss_probe) and reads its VmHWM. Bound 256 MiB, measured not guessed: 44.4 MiB on the fixture, 59.5-60.3 MiB on a real 0.5B GGUF, 57.4-59.0 MiB on the real Qwen3-30B-A3B GGUF; with a whole-file read put back into gguf_arch_and_tensors, 2,136,776 KiB (RED). LEDGER (done_when 2, the LISTING). docs/audits/3750-whole-file-model-reads.md: git grep of fs::read( and read_to_end( over apr-cli, aprender-serve and aprender-core: 231 hits, 99 production + 132 test-only, plus the 13 converted. Every production site has a verdict and its use: DOC 9, NOT-MODEL 11, PR-B CONDITIONAL 1, PR-B HEADER-ONLY 11, PR-B MAGIC-ONLY 4, PR-B STREAMED 1 (eval verify_single_file hashes every byte), WHOLE-DATA 62. GX10 (done_when 3), apr qa on Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf (18,556,689,568 bytes), --features cuda builds, under flock /tmp/apr-gpu.lock choom -n 1000, --json --offline and every GPU/network gate skipped: before apr 0.69.0 (52f43da71) max RSS 36,278,440 KiB, after apr 0.69.0 (ff89fb6aa) 19,367,800 KiB, both qa passed rc 0. With --skip-contract (the capability predicates alone): 36,273,092 KiB in 1:10 -> 46,396 KiB in 0.14 s. The 19.36 GB left in the full run is HEAP (sampled RssAnon 19,357,084 KiB, RssFile 11,236 KiB) from the tensor_contract gate: RosettaStone::validate -> GgufReader::from_file, a read_to_end of the whole model. That gate reads every tensor value, so it is WHOLE-DATA in the ledger, marked could stream, and filed as #3790; it is not a capability predicate and this PR does not change it. ff89fb6aa is the measured binary''s commit; the commits after it add docs and the roadmap entry only, so the reviewed code is the code measured.'
 - id: PMAT-3754
   github_issue: 3754
   item_type: task
@@ -20929,6 +20972,26 @@ roadmap:
   labels:
   - kind:code
   notes: 'Minted by aprender-f8. The cop (aprender-04), verbatim: "(a) the JSON envelope missing on a driver error is a new 0.69.1 issue and **yours** (same area). Every exit writes exactly one JSON document to stdout, with the error fields matching fd''s #3720 schema (one schema)." The schema is the #3720 text aprender-f8 proposed (https://github.com/paiml/aprender/issues/3720#issuecomment-5767761121), which aprender-fd accepted (comment 5767765474), verbatim: "Accepted as written on #3720 (comment 5767765474), with one precision: `empty_completion` uses the command''s own inference-failure exit code (apr run 8, apr code 1), so nothing gets re-mapped." Fields: status ok|refused|failed; error {kind, message, exit_code} iff status != ok; capacity iff kind == capacity_refused; existing apr code fields (type/subtype/is_error/result) stay, is_error == (status != ok).'
+- id: PMAT-3778
+  github_issue: 3778
+  item_type: task
+  title: 'CRUX engine drivers for #3739: llamafile and HF transformers — probe/gen/tok/tmpl/greedy rows to row contract v1'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-21T19:11:28Z
+  updated: 2026-09-21T19:11:28Z
+  spec: null
+  acceptance_criteria:
+  - "scripts/crux_engine_llamafile.sh probe prints llamafile's --version and the sha256 of the forjar-declared binary; gen appends one row per cell to $CRUX_MANIFEST (row contract v1), a cell llamafile cannot run being a row with rc null and llamafile's own error as refused"
+  - "scripts/crux_engine_hf.sh runs uv run --frozen over scripts/crux_hf/uv.lock (transformers[serving]==5.17.0, torch==2.14.0 exact); probe prints resolved versions, CUDA state and the lock sha256; gen/tok/tmpl/greedy append one row each, refusals quoting the exception"
+  - "measured on lambda-labs (receipt docs/audits/impl-PMAT-3778-receipt.md): llamafile loads qwen35; --cli ignores thinking control and -n, the server honours both; HF every path on CPU"
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: "#3739 engine seam, agreed with the cop (aprender-04) and aprender-76 (#3774, correspondence + judge). Stops at the receipt."
 - id: PMAT-3785
   github_issue: 3785
   item_type: task
@@ -21207,4 +21270,88 @@ roadmap:
   estimated_effort: null
   labels:
   - kind:docs
+  notes: null
+- id: PMAT-3947
+  github_issue: 3947
+  item_type: task
+  title: 'aprender-core has no IQ dequantizer, so tensor_contract cannot inspect three release-blocking models — port from the validated aprender-serve decoders'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-9b
+  created: 2026-09-23T00:00:00Z
+  updated: 2026-09-23T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Per-tensor census of the three files, measured before any code'
+  - 'tensor_contract inspects those tensors, with an external oracle and a positive control that FAILS on a wrong decode'
+  - 'The three rows go green on their own merits, without weakening tensor_contract or whitelisting a type; #3850 must not regress'
+  - 'Report as capability cells (model, quant, tensor type, crate) -> number and oracle'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'PR #3958. CPU dequant only; the CUDA IQ4 GEMV kernels are out of scope.'
+- id: PMAT-3952
+  github_issue: 3952
+  item_type: task
+  title: 'CRUX: vLLM as a pre-release comparator engine; #3971 source-weight cache verification; #3964 ollama loads only inside
+    the GPU lock'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-83
+  created: '2026-09-23T08:40:00Z'
+  updated: '2026-09-23T13:40:00Z'
+  spec: null
+  acceptance_criteria:
+  - '#3952 done_when: --engines ...,vllm produces vLLM gen rows on at least one host, judged by the unchanged rule; each host
+    where it cannot run records a named refusal; a planted mismatch (vLLM right, apr wrong) is RED in the judge case table'
+  - '#3971: both source-weight drivers (hf, vllm) hash every cached file against the name it promises and refuse by name on
+    mismatch; CRUX uses its own HF_HOME'
+  - '#3964 (operator: ''yes you may change ollama''): every CRUX ollama model load runs while the GPU lock is held, proven
+    by a behavioural check that catches a no-lock mutant'
+  - 'cop ruling: an unpinned comparator makes the cell RED (''oracle unpinned''), never a third state'
+  - 'cop (critical path): both source-weight drivers run in BATCH mode — one engine load per gen-batch call, row contract
+    v1 per item; plus `serve stream` for #3962 (aprender-19)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Fold, per the cop (aprender-6a): #3781 (PMAT-3778 hf+llamafile drivers) + PMAT-3952-crux-vllm (vLLM driver, #3971
+    verification, batch mode, serve stream) + PMAT-3952-crux-vllm-judge (vllm comparator, unpinned-oracle RED, #3964 lock
+    check), on top of aprender-6c''s fix/3957-gate-hardening (F6), which this depends on. Stops at the receipt.'
+- id: PMAT-3957
+  github_issue: 3957
+  item_type: task
+  title: '0.69.1 gate hardening (no GPU): sha-bound receipts, missing-field=FAIL, verb output oracles, CRUX judge strength, DEFER exits 2 (+F1b, F8, F6 quorum-revised)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-6c
+  created: 2026-09-23T00:00:00Z
+  updated: 2026-09-23T00:00:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3962
+  github_issue: 3962
+  item_type: task
+  title: 'CRUX producer: per-verb prompt sets (incl. hard prompts) + code verb + hf/vllm quorum rows — prompt-certification half (aprender-dd)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-dd
+  created: 2026-09-23T00:00:00Z
+  updated: 2026-09-23T00:00:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
   notes: null

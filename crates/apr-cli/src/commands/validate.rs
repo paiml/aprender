@@ -53,7 +53,7 @@ pub(crate) fn run(
     if let Some(min) = min_score {
         if !produces_qa_score(format) {
             return Err(CliError::ValidationFailed(format!(
-                "--min-score {min} does not apply to {format}: the 100-point QA checklist is the .apr validator, and {format} validation reports per-tensor pass/fail with no score. Re-run without --min-score, or use --strict to fail on NaN/Inf/all-zero findings."
+                "--min-score {min} does not apply to {format}: the structural QA checklist is the .apr validator, and {format} validation reports per-tensor pass/fail with no score. Re-run without --min-score, or use --strict to fail on NaN/Inf/all-zero findings."
             )));
         }
     }
@@ -666,7 +666,7 @@ fn summary_line(report: &ValidationReport) -> String {
 fn print_summary(report: &ValidationReport) -> Result<(), CliError> {
     // PMAT-926: --strict is now honored via the fail-closed content gate
     // (`gate_apr_content`), not ignored here. This function prints only the
-    // structural 100-point summary table.
+    // structural summary table, scored on the checks that ran (#2394).
     println!();
     println!("{}", summary_line(report));
 

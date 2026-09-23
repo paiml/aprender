@@ -207,10 +207,10 @@ fn run_gpu_isolation_test(path: &Path) -> Result<GpuIsolationResult> {
         QuantizedGenerateConfig,
     };
 
-    let model_bytes = std::fs::read(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-    let gguf = GGUFModel::from_bytes(&model_bytes)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+    // #3750: one map; the tokenizer comes from its header, not from a whole-file read
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+    let gguf = &mapped.model;
 
     let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
     let tokens_a = gguf
@@ -227,8 +227,6 @@ fn run_gpu_isolation_test(path: &Path) -> Result<GpuIsolationResult> {
         ..Default::default()
     };
 
-    let mapped = MappedGGUFModel::from_path(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
     let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)

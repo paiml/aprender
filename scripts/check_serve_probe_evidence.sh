@@ -107,6 +107,12 @@ assert d["log_tail"] and last in d["log_tail"]
 ' "$out" "$LAST" 2>/dev/null; then echo "  ok    health-timeout-json-carries-the-last-line"
   else echo "  FAIL  health-timeout-json-carries-the-last-line   got [${out:0:160}]"; rc=1; fi
 
+  # #3943 merge: the emitter also names WHAT ended the wait, and the bounds, when told.
+  out=$(python3 -c "$health" 34 "$tail_txt" escalated stalled 90 900 2>&1) || true
+  if python3 -c 'import json,sys; d=json.loads(sys.argv[1]); w=d["why"]; assert "stalled after 34s" in w and "stall window 90s" in w and "ceiling 900s" in w and d["teardown"] == "escalated"' "$out" 2>/dev/null
+  then echo "  ok    health-timeout-names-the-wait-verdict"
+  else echo "  FAIL  health-timeout-names-the-wait-verdict   got [${out:0:160}]"; rc=1; fi
+
   out=$(python3 -c "$health" 90 "" clean 2>&1) || true
   if python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["log_tail"] is None and "empty" in d["why"]' "$out" 2>/dev/null
   then echo "  ok    health-timeout-with-no-log-says-so"

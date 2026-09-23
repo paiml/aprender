@@ -287,17 +287,13 @@ fn golden_prompt_for(architecture: Option<&str>, question: &str) -> String {
     format_messages(&[ChatMessage::user(question)], Some(architecture)).unwrap_or_else(|_| legacy())
 }
 
-/// The budget the THINKING-ON leg gets (#3724 done_when 3: "a budget that
-/// overdoes it").
-///
-/// Measured on lambda, qwen3-8b-q4km, greedy: at 2048 the three golden questions
-/// produce think blocks of 545 / 114 / 126 tokens and every block closes. 512 —
-/// the production leg's budget — is NOT enough for the first one on x86, which is
-/// the whole defect. This number belongs to the ON leg only: the production leg's
-/// budget is deliberately untouched, because the fix is the prompt, never the
-/// budget.
-#[cfg(feature = "inference")]
-const THINKING_ON_BUDGET: usize = 2048;
+// #3907 wiring: `const THINKING_ON_BUDGET: usize = 2048` was DELETED here, not
+// merely stopped-being-used. While it existed a third site could reach for it, and
+// a named constant reads as authoritative to the next reviewer — which is exactly
+// how the hybrid leg at output_verification.rs came to pass it to both its
+// generation and its judging while the dense leg used the resolver. The resolver
+// `thinking_on_budget_for` is now the ONLY way to obtain an ON-leg budget, and its
+// 2048 lives in contracts/thinking-budgets-v1.yaml's `default`, WITH its basis.
 
 /// The per-model budgets, embedded from the packaged mirror (#3907).
 ///
@@ -723,24 +719,27 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
     #[cfg(feature = "inference")]
     {
         use realizar::format::{detect_format, ModelFormat};
-        use realizar::gguf::{GGUFModel, MappedGGUFModel};
+        use realizar::gguf::MappedGGUFModel;
 
+        // #3711's helper (identical to #3714 R2's inline check, so one definition).
         let cuda_available = cuda_device_present();
-        let model_bytes = std::fs::read(path)
+        // #3750: the format from the 8-byte magic and the header from the map, never the whole
+        // model (it was read into memory here, beside a map of the same file)
+        let magic = super::model_header::read_prefix(path, 8)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-        let format = detect_format(&model_bytes[..8.min(model_bytes.len())])
+        let format = detect_format(&magic)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
 
         // GH-239: Only create GGUF objects when format is actually GGUF
-        let (mapped, gguf_model) = if format == ModelFormat::Gguf {
-            let m = MappedGGUFModel::from_path(path)
-                .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
-            let g = GGUFModel::from_bytes(&model_bytes)
-                .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
-            (Some(m), Some(g))
+        let mapped = if format == ModelFormat::Gguf {
+            Some(
+                MappedGGUFModel::from_path(path)
+                    .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?,
+            )
         } else {
-            (None, None)
+            None
         };
+        let gguf_model = mapped.as_ref().map(|m| &m.model);
 
         // #3711: the pass message names the GPU leg, so a skipped leg says which skip it was
         let mut gpu_leg = GpuGoldenLeg::NotRun("no golden case ran");
@@ -773,7 +772,7 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
                 config,
                 format,
                 mapped.as_ref(),
-                gguf_model.as_ref(),
+                gguf_model,
                 cuda_available,
                 start,
             )? {
@@ -810,7 +809,7 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
                 on_budget,
                 format,
                 mapped.as_ref(),
-                gguf_model.as_ref(),
+                gguf_model, // #3750 made this a borrow of the map; `Option<&T>` is Copy
             )? {
                 let generated = on_text.strip_prefix(on_prompt.as_str()).unwrap_or(&on_text);
                 if let Some(reason) = judge_thinking_on_output(generated, &on_patterns, on_budget)
@@ -921,20 +920,20 @@ fn measure_generate_throughput(
 #[cfg(feature = "inference")]
 fn throughput_gguf(
     path: &Path,
-    model_bytes: &[u8],
     config: &QaConfig,
     cuda_available: bool,
     tracer: &TracerImpl,
     prompt: &str,
 ) -> Result<(f64, Duration)> {
-    use realizar::gguf::{
-        GGUFModel, MappedGGUFModel, OwnedQuantizedModel,
-        QuantizedGenerateConfig,
-    };
+    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
 
-    let gguf = GGUFModel::from_bytes(model_bytes)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
-    let prompt_tokens = golden_prompt_tokens(&gguf, prompt);
+    // #3750: the tokenizer comes from the mapped header, not a whole-file read.
+    // #3870: and the BOS comes from the MODEL, not `SpecialTokens::qwen2()` — the
+    // fold's other side reintroduced `vec![qwen2().bos_id, 9707]`, the exact
+    // hardcode #3870 removed (151643 does not exist in a 32000-entry vocabulary).
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+    let prompt_tokens = golden_prompt_tokens(&mapped.model, prompt);
     let gen_config = QuantizedGenerateConfig {
         max_tokens: config.max_tokens,
         temperature: 0.0,
@@ -943,8 +942,6 @@ fn throughput_gguf(
     };
     let budget_us = config.max_tokens as u64 * config.iterations as u64 * 100_000;
 
-    let mapped = MappedGGUFModel::from_path(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
 
@@ -1056,10 +1053,21 @@ fn throughput_apr(
 mod thinking_budget_resolution {
     use super::{glob_match, thinking_on_budget_for};
 
+    /// `APR_THINKING_ON_BUDGET` is process-global and libtest runs these in parallel:
+    /// `the_probe_override_is_labelled_as_a_probe` sets it while a sibling resolves a
+    /// budget, and the sibling reads 8192 instead of refusing. Every test here that
+    /// resolves a budget holds this lock, so the override is seen by exactly one test.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     /// The listed model with NO budget must REFUSE, not inherit `default`. This is the
     /// whole mechanism: inheriting 2048 would republish an 8B's measurement as a 0.8B's.
     #[test]
     fn a_listed_model_without_a_budget_is_refused_not_defaulted() {
+        let _env = env_lock();
         let err = thinking_on_budget_for("Qwen3.5-0.8B-IQ4_XS.gguf")
             .expect_err("a model listed with no budget must refuse");
         assert!(err.contains("no measured thinking budget"), "{err}");
@@ -1071,6 +1079,7 @@ mod thinking_budget_resolution {
     /// default, so a reader of a failure can tell an inherited number from a measured one.
     #[test]
     fn an_unlisted_model_takes_the_default_and_says_so() {
+        let _env = env_lock();
         let (budget, basis) =
             thinking_on_budget_for("some-other-model-q4km.gguf").expect("default applies");
         assert_eq!(budget, 2048);
@@ -1083,6 +1092,7 @@ mod thinking_budget_resolution {
     /// number must never be mistakable for a measured one.
     #[test]
     fn the_probe_override_is_labelled_as_a_probe() {
+        let _env = env_lock();
         std::env::set_var("APR_THINKING_ON_BUDGET", "8192");
         let (budget, basis) = thinking_on_budget_for("Qwen3.5-0.8B-IQ4_XS.gguf")
             .expect("the override applies even to a refused model, so it can be probed");
@@ -1752,9 +1762,16 @@ mod golden_output_tests {
 
     /// The ON budget is the ON leg's alone. #3724's ruling: the fix is the prompt,
     /// never the budget — the production leg keeps the budget it had.
+    ///
+    /// #3907 wiring: this used to open `assert_eq!(THINKING_ON_BUDGET, 2048)`, which
+    /// pinned a constant's VALUE and said nothing about whether anything READ it. It
+    /// passed while the hybrid leg bypassed the resolver entirely, and it would have
+    /// passed after the bypass was fixed with the constant dead — an assertion
+    /// orthogonal to the property it appeared to guard. Deleted with the constant.
+    /// What remains is the claim that actually constrains something: the ON leg's
+    /// budget does not become the production leg's.
     #[test]
     fn the_thinking_on_budget_does_not_touch_the_production_leg() {
-        assert_eq!(THINKING_ON_BUDGET, 2048);
         let config = QaConfig::default();
         assert_eq!(
             config.max_tokens.max(512),

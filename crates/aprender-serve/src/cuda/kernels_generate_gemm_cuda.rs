@@ -7,6 +7,11 @@ impl CudaKernels {
             | KernelType::GemmOptimized {
                 m, n, k, tile_size, ..
             } => GemmKernel::tiled(*m, *n, *k, *tile_size).emit_ptx_for_target(target),
+            // #3975: grad_a[M, K] = grad_c[M, N] @ B[K, N]^T is A[m, k] @ W[n, k]^T
+            // with (M, N, K) = (m, k, n).
+            KernelType::GemmBtTiled { m, n, k, tile_size } => {
+                GemmBackwardAKernel::tiled(*m, *k, *n, *tile_size).emit_ptx_for_target(target)
+            },
             KernelType::GemmTensorCore { m, n, k } => {
                 GemmKernel::tensor_core(*m, *n, *k).emit_ptx_for_target(target)
             },
@@ -82,9 +87,11 @@ impl CudaKernels {
             KernelType::Q4_0Gemv { k, n } => generate_q4_0_candle_ptx(*k, *n),
             KernelType::Q4_1Gemv { k, n } => generate_q4_1_candle_ptx(*k, *n),
             KernelType::F16Gemv { k, n } => generate_f16_gemv_ptx(*k, *n),
+            KernelType::Bf16Gemv { k, n } => generate_bf16_gemv_ptx(*k, *n),
             KernelType::Iq4XsGemv { k, n } => generate_iq4_xs_gemv_ptx(*k, *n),
             KernelType::Iq4NlGemv { k, n } => generate_iq4_nl_gemv_ptx(*k, *n),
             KernelType::Iq3SGemv { k, n } => generate_iq3_s_gemv_ptx(*k, *n),
+            KernelType::Iq2XxsGemv { k, n } => generate_iq2_xxs_gemv_ptx(*k, *n),
             KernelType::Q5_1Gemv { k, n } => generate_q5_1_gemv_ptx(*k, *n),
             _ => return None,
         };

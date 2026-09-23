@@ -253,14 +253,80 @@ run_extraction_table() { # -> 0 all as expected
   return $rc
 }
 
+# ── layer 4: EVERY serve wire shape reaches the detector (#3957 F4c) ─────────────
+# The probe read each body with one `json.load`. Streaming bodies are SSE (/v1/*) or
+# NDJSON (/api/chat), so the load failed, the text was "" and the route read CLEAN:
+# measured before the fix on the three bodies below, all three `output_bad=''`.
+# The table pins both halves: the text is extracted from every shape, and a body
+# that yields no text is a reason ("nothing measured"), never clean.
+load_serve_judge() {
+  local src="$1" fn body out=""
+  [ -f "$src" ] || { echo "  cannot read $src" >&2; return 2; }
+  for fn in gibberish_reason serve_reply_text serve_route_bad; do
+    body=$(awk -v F="^$fn\\\\(\\\\) \\\\{" '$0 ~ F {f=1} f{print} f && /^\}$/{exit}' "$src")
+    [ -n "$body" ] || { echo "  $src defines no $fn() -- the serve body judge is gone" >&2; return 2; }
+    out="$out$body
+"
+  done
+  printf '%s' "$out"
+}
+
+judge_body() { # judge_body <src> <body-text> -> the reason, or nothing
+  local src="$1" tmp bodyf rc
+  tmp=$(mktemp) || return 2; bodyf=$(mktemp) || { rm -f "$tmp"; return 2; }
+  load_serve_judge "$src" > "$tmp" || { rm -f "$tmp" "$bodyf"; return 2; }
+  printf '%s' "$2" > "$bodyf"
+  printf 'serve_route_bad "$1" /probe\n' >> "$tmp"
+  bash "$tmp" "$bodyf"; rc=$?
+  rm -f "$tmp" "$bodyf"
+  return $rc
+}
+
+# name|printf-format of the body|expect  (clean · bad = a verdict about the text ·
+# empty = "nothing measured" · truncated = a stream with no terminal event; neither is ever clean)
+body_cases() {
+cat <<'CASES'
+json-nonstream-correct|{"choices":[{"message":{"role":"assistant","content":"The capital of France is Paris."}}]}|clean
+sse-chat-deltas-correct|data: {"choices":[{"delta":{"content":"The capital"}}]}\n\ndata: {"choices":[{"delta":{"content":" of France is Paris."}}]}\n\ndata: [DONE]\n\n|clean
+sse-completions-text-garbage|data: {"choices":[{"text":"zombie zombie "}]}\n\ndata: {"choices":[{"text":"zombie zombie zombie"}]}\n\ndata: [DONE]\n\n|bad
+sse-zero-deltas|data: [DONE]\n\n|empty
+sse-role-only-delta|data: {"choices":[{"delta":{"role":"assistant"}}]}\n\ndata: [DONE]\n\n|empty
+ndjson-api-chat-garbage|{"message":{"role":"assistant","content":"zombie zombie "},"done":false}\n{"message":{"role":"assistant","content":"zombie zombie zombie"},"done":false}\n{"done":true}\n|bad
+ndjson-api-chat-correct|{"message":{"role":"assistant","content":"Paris."},"done":false}\n{"done":true}\n|clean
+empty-body|\n|empty
+sse-truncated-no-done|data: {"choices":[{"delta":{"content":"The capital of France is Paris."}}]}\n\n|truncated
+ndjson-truncated-no-done|{"message":{"role":"assistant","content":"Paris."},"done":false}\n|truncated
+CASES
+}
+
+run_body_table() { # -> 0 all as expected
+  local src="$1" rc=0 name fmt want got cls body
+  while IFS='|' read -r name fmt want; do
+    [ -n "$name" ] || continue
+    # shellcheck disable=SC2059  # the format IS the fixture: it carries the \n escapes
+    body=$(printf "$fmt"; printf x); body=${body%x}
+    got=$(judge_body "$src" "$body") || return 2
+    if [ -z "$got" ]; then cls=clean
+    elif case "$got" in "nothing measured"*) true ;; *) false ;; esac; then cls=empty
+    elif case "$got" in "truncated stream"*) true ;; *) false ;; esac; then cls=truncated
+    else cls=bad; fi
+    if [ "$cls" = "$want" ]; then
+      printf '  ok    %-34s %s\n' "$name" "$cls"
+    else
+      printf '  FAIL  %-34s %s, expected %s  [%s]\n' "$name" "$cls" "$want" "${got:0:70}"; rc=1
+    fi
+  done < <(body_cases)
+  return $rc
+}
+
 if [ "$SELF_TEST" = 1 ]; then
   [ -f "$SCRIPT" ] || { echo "cannot read $SCRIPT" >&2; exit 2; }
-  m1=$(mktemp); m2=$(mktemp); m3=$(mktemp); m4=$(mktemp)
-  trap 'rm -f "$m1" "$m2" "$m3" "$m4"' EXIT
+  m1=$(mktemp); m2=$(mktemp); m3=$(mktemp); m4=$(mktemp); m5=$(mktemp); m6=$(mktemp); m7=$(mktemp)
+  trap 'rm -f "$m1" "$m2" "$m3" "$m4" "$m5" "$m6" "$m7"' EXIT
 
   echo "self-test: the shipped script"
   run_detector_table "$SCRIPT" > /dev/null && check_verdict "$SCRIPT" > /dev/null \
-    && run_extraction_table "$SCRIPT" > /dev/null \
+    && run_extraction_table "$SCRIPT" > /dev/null && run_body_table "$SCRIPT" > /dev/null \
     || { echo "SELF-TEST FAILED: the shipped script is already red" >&2; exit 1; }
   echo "  GREEN (expected)"
 
@@ -310,7 +376,52 @@ if [ "$SELF_TEST" = 1 ]; then
   fi
   echo "  RED (expected)"
 
-  echo "self-test: PASS — red when the detector stops flagging, when the verdict stops reading it, when an unlocatable reply passes silently, and when the reply is cut short"
+  # Mutant 5: the extractor is bypassed and the raw capture is judged again -- the
+  # exact state #3925 fixed, and so the one regression this file exists to catch.
+  # aprender-3e ran it by hand while folding #3926 and it was caught; naming it here
+  # means the next person does not have to re-derive that, and a refactor that
+  # reintroduces raw judging fails rather than being noticed in review.
+  sed 's#| assistant_reply); rc=$?#| cat); rc=$?#' "$SCRIPT" > "$m5"
+  cmp -s "$SCRIPT" "$m5" && { echo "SELF-TEST INCONCLUSIVE: mutant 5 changed nothing" >&2; exit 1; }
+  echo "self-test: mutant 5 (extractor bypassed, the transcript judged raw again)"
+  if run_extraction_table "$m5" > /dev/null 2>&1; then
+    echo "SELF-TEST FAILED: mutant 5 passed -- the chrome is being judged and nothing noticed" >&2
+    exit 1
+  fi
+  echo "  RED (expected)"
+
+
+  # Mutant 6 (#3957 F4c): the stream shapes are not parsed -- the state that shipped,
+  # where every stream=true body was read with one json.load.
+  sed 's/^elif any(ln.startswith("data:") for ln in raw.splitlines()):/elif False:/' "$SCRIPT" > "$m6"
+  cmp -s "$SCRIPT" "$m6" && { echo "SELF-TEST INCONCLUSIVE: mutant 6 changed nothing" >&2; exit 1; }
+  echo "self-test: mutant 6 (SSE bodies not parsed)"
+  if run_body_table "$m6" > /dev/null 2>&1; then
+    echo "SELF-TEST FAILED: mutant 6 passed -- an SSE body is judged without its text" >&2; exit 1
+  fi
+  echo "  RED (expected)"
+
+  # Mutant 7 (#3957 F4c): a body that yields no text passes silently.
+  sed 's/^  if \[ -z "${text\/\/\[\[:space:\]\]\/}" \]; then$/  if false; then/' "$SCRIPT" > "$m7"
+  cmp -s "$SCRIPT" "$m7" && { echo "SELF-TEST INCONCLUSIVE: mutant 7 changed nothing" >&2; exit 1; }
+  echo "self-test: mutant 7 (empty stream text reads clean)"
+  if run_body_table "$m7" > /dev/null 2>&1; then
+    echo "SELF-TEST FAILED: mutant 7 passed -- a stream that carried nothing reads as clean" >&2; exit 1
+  fi
+  echo "  RED (expected)"
+
+  # Mutant 8 (#3957 Q6): a stream with no terminal event is judged on its prefix.
+  m8=$(mktemp)
+  sed 's/^  if \[ "$term" = open \]; then$/  if false; then/' "$SCRIPT" > "$m8"
+  cmp -s "$SCRIPT" "$m8" && { rm -f "$m8"; echo "SELF-TEST INCONCLUSIVE: mutant 8 changed nothing" >&2; exit 1; }
+  echo "self-test: mutant 8 (truncated stream judged on its prefix)"
+  if run_body_table "$m8" > /dev/null 2>&1; then
+    rm -f "$m8"; echo "SELF-TEST FAILED: mutant 8 passed -- a stream that never finished reads as an answer" >&2; exit 1
+  fi
+  rm -f "$m8"
+  echo "  RED (expected)"
+
+  echo "self-test: PASS — red when the detector stops flagging, when the verdict stops reading it, when an unlocatable reply passes silently, when the reply is cut short, when the extractor is bypassed entirely, when a stream is not parsed, when a stream that carried nothing reads clean, and when a truncated stream is judged on its prefix"
   exit 0
 fi
 
@@ -320,6 +431,8 @@ run_detector_table "$SCRIPT" || rc=$?
 [ "$rc" = 2 ] && exit 2
 check_verdict "$SCRIPT" || rc=1
 run_extraction_table "$SCRIPT" || rc=$?
+[ "$rc" = 2 ] && exit 2
+run_body_table "$SCRIPT" || rc=$?
 [ "$rc" = 2 ] && exit 2
 if [ "$rc" = 0 ]; then
   echo "OK: the detector mirrors output_verification.rs, and the verdict reads it"

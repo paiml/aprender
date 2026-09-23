@@ -16,6 +16,15 @@ pub enum KernelType {
         k: u32,
         tile_size: u32,
     },
+    /// Tiled C[m, n] = A[m, k] @ B^T with B row-major `[n, k]` — a weight in the
+    /// `[out, in]` layout, used as-is (#3975). Emitted by trueno's
+    /// `GemmBackwardAKernel` bound as (M, N, K) = (m, k, n).
+    GemmBtTiled {
+        m: u32,
+        n: u32,
+        k: u32,
+        tile_size: u32,
+    },
     /// Tensor Core GEMM (fp16)
     GemmTensorCore {
         m: u32,
@@ -179,7 +188,8 @@ pub enum KernelType {
         k: u32,
         n: u32,
     },
-    /// PAR-063-V2: DP4A SIMD Q4_K GEMV with true integer accumulation
+    /// PAR-063-V2: generates the SAME PTX as `Dp4aQ4KGemv` (`Dp4aQ4KGemvKernel`),
+    /// so its entry is `dp4a_q4k_gemv` (#3976). No executor path launches it.
     Dp4aSIMDQ4KGemv {
         k: u32,
         n: u32,
@@ -349,6 +359,11 @@ pub enum KernelType {
         k: u32,
         n: u32,
     },
+    /// BF16 GEMV (exact widening load, no dequantization) - #3908
+    Bf16Gemv {
+        k: u32,
+        n: u32,
+    },
     /// IQ4_XS GEMV (codebook + split 6-bit scales) - #3477
     Iq4XsGemv {
         k: u32,
@@ -361,6 +376,11 @@ pub enum KernelType {
     },
     /// IQ3_S GEMV (9-bit grid indices, sign bytes, paired 4-bit scales) - #3884
     Iq3SGemv {
+        k: u32,
+        n: u32,
+    },
+    /// IQ2_XXS GEMV (8-bit grid indices, 7-bit sign codes, 4-bit scale) - #3931
+    Iq2XxsGemv {
         k: u32,
         n: u32,
     },
@@ -489,12 +509,6 @@ pub enum KernelType {
     /// PMAT-034: Fused gate + up + SwiGLU HW DP4A Q4K GEMV kernel
     /// Eliminates 2 kernel launches + 4 intermediate buffer passes
     FusedGateUpSwigluHwDp4aQ4KGemv {
-        k: u32,
-        n: u32,
-    },
-
-    /// trueno#237: Fused K+V HW DP4A Q4K GEMV — 2 projections in 1 launch
-    FusedKVHwDp4aQ4KGemv {
         k: u32,
         n: u32,
     },

@@ -32,15 +32,116 @@ mod gemv_entry_name_tests_3477 {
             KernelType::Iq4XsGemv { k, n },
             KernelType::Iq4NlGemv { k, n },
             KernelType::Iq3SGemv { k, n },
+            KernelType::Iq2XxsGemv { k, n },
+            KernelType::Bf16Gemv { k, n },
             KernelType::Q5_1Gemv { k, n },
         ]
+    }
+
+    /// #3970: the Q4_K / Q6_K STRATEGY kernels (tiled, DP4A, multi-warp, batched,
+    /// fused, ...) picked by the selection path rather than by `BoundWeight`.
+    /// They were excluded from the completeness check by a named rule, so none of
+    /// them — hot-path `MwvDp4aQ4KGemv` included — was ever ptxas-assembled.
+    /// Parameters are the values the executor dispatches with (4 warps / 4 rows /
+    /// 4 outputs per block, eps 1e-6).
+    fn every_strategy_gemv_kernel() -> Vec<KernelType> {
+        let (k, n, w) = (4096u32, 4096u32, 4u32);
+        vec![
+            KernelType::TiledQ4KGemv { k, n, outputs_per_block: w },
+            KernelType::ChunkedTiledQ4KGemv { k, n, outputs_per_block: w },
+            KernelType::CoalescedQ4KGemv { k, n },
+            KernelType::WideQ4KGemv { k, n },
+            KernelType::VectorizedQ4KGemv { k, n },
+            KernelType::MwvQ4KGemv { k, n, num_warps: w },
+            KernelType::MwvDp4aQ4KGemv { k, n, num_warps: w },
+            KernelType::HwDp4aQ4KGemv { k, n, num_warps: w },
+            KernelType::Dp4aQ4KGemv { k, n },
+            KernelType::Dp4aSIMDQ4KGemv { k, n },
+            KernelType::TrueDp4aQ4KGemv { k, n },
+            KernelType::BatchedQ4KGemv { m: w, k, n },
+            KernelType::MultiWarpBatchedQ4KGemv { k, n, warps: w },
+            KernelType::BatchedHwDp4aQ4KGemv { k, n, m: w, num_warps: w },
+            KernelType::FusedFp32Q4KGemv { k, n, m: w, num_warps: w },
+            KernelType::InlineQ8Dp4aQ4KGemv { k, n, m: w, num_warps: w },
+            KernelType::CoalescedQ6KGemv { k, n },
+            KernelType::BatchedQ6KGemv { k, n, m: w },
+            KernelType::MwvQ6KGemv { k, n, num_warps: w },
+            KernelType::Dp4aQ6KGemv { k, n, num_warps: w },
+            KernelType::HwDp4aQ6KGemv { k, n, num_warps: w },
+            KernelType::Fp16Q4KGemv { k, n },
+            KernelType::FusedRmsNormQ4KGemv { k, n, epsilon: 1e-6 },
+            KernelType::FusedGateUpQ4KGemv { k, n },
+            KernelType::FusedGateUpSwigluHwDp4aQ4KGemv { k, n },
+        ]
+    }
+
+    /// Every GEMV kernel the crate can emit: the per-weight-type set plus the
+    /// strategy set. The assembly and entry-name guards iterate THIS.
+    fn every_emitted_gemv_kernel() -> Vec<KernelType> {
+        let mut all = every_gemv_kernel();
+        all.extend(every_strategy_gemv_kernel());
+        all
+    }
+
+    /// #3931: `every_gemv_kernel` is a HAND-WRITTEN list, and every assembly and
+    /// entry-name guard in this file iterates it. A new kernel that is not added
+    /// here is never assembled by `every_emitted_kernel_assembles`, and that test
+    /// stays green — which is what happened to `Iq2XxsGemv` on its first build.
+    ///
+    /// So the list's completeness is derived from the enum's own source: every
+    /// `KernelType` variant whose name ends in `Gemv` and takes `{ k, n }` must
+    /// appear in `every_gemv_kernel`. A kernel the dispatch can reach cannot be
+    /// skipped by the guards meant to catch it.
+    #[test]
+    fn every_gemv_variant_is_in_the_list_the_guards_iterate() {
+        let enum_src = include_str!("kernel_type.rs");
+        let this_src = include_str!("gemv_entry_name_tests_3477.rs");
+        let listed: std::collections::BTreeSet<&str> =
+            ["fn every_gemv_kernel()", "fn every_strategy_gemv_kernel()"]
+                .iter()
+                .flat_map(|marker| {
+                    this_src
+                        .split(marker)
+                        .nth(1)
+                        .and_then(|t| t.split("]").next())
+                        .expect("a kernel list's vec! literal")
+                        .split("KernelType::")
+                        .skip(1)
+                        .filter_map(|t| t.split_whitespace().next())
+                })
+                .collect();
+        let declared: Vec<&str> = enum_src
+            .lines()
+            .map(str::trim)
+            .filter_map(|l| l.strip_suffix(" {"))
+            .filter(|name| {
+                name.ends_with("Gemv")
+                    && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            })
+            .collect();
+        assert!(
+            declared.len() >= 10,
+            "found only {} `*Gemv {{` variants in kernel_type.rs; the parse broke and \
+             this test would pass vacuously",
+            declared.len()
+        );
+        // No exclusions (#3970): the Q4_K/Q6_K strategy variants used to be
+        // skipped here by a named rule, and so were never assembled.
+        let missing: Vec<&str> =
+            declared.iter().copied().filter(|v| !listed.contains(v)).collect();
+        assert!(
+            missing.is_empty(),
+            "GEMV kernel variant(s) declared in kernel_type.rs but absent from \
+             every_gemv_kernel() / every_strategy_gemv_kernel(), so never assembled \
+             or name-checked: {missing:?}"
+        );
     }
 
     #[test]
     fn the_name_the_launcher_looks_up_exists_in_the_ptx_it_compiles() {
         let kernels = CudaKernels::new();
         let mut broken = Vec::new();
-        for kt in every_gemv_kernel() {
+        for kt in every_emitted_gemv_kernel() {
             let name = kernels.kernel_name(&kt);
             let ptx = kernels.generate_ptx(&kt);
             // ptxas rejects a non-ASCII byte ANYWHERE, comments included, and
@@ -187,11 +288,12 @@ mod gemv_entry_name_tests_3477 {
     /// it fell through to Q4_K and the bytes were read as a different scheme.
     ///
     /// These are not hypothetical: all were measured in lambda's inventory.
-    /// BF16 sits in `Qwen3-0.6B-BF16`,
     /// IQ2_XXS/IQ3_XXS/Q2_K in `Qwen3.5-0.8B-UD-IQ2_XXS`, IQ3_S in two more.
     ///
-    /// #3869/#3884/#3885: IQ4_NL, IQ3_S and Q5_1 were on this list and have
-    /// been REMOVED because they now have kernels. It is not deleted from the guard - it moved to
+    /// #3869/#3884/#3885/#3908: IQ4_NL, IQ3_S, Q5_1 and BF16 were on this list
+    /// and have been REMOVED because they now have kernels. BF16 sat in
+    /// `Qwen3-0.6B-BF16` and in `qwen2.5-coder-0.5b-instruct.apr` (290 of its
+    /// 291 tensors), the model whose rc=14 #3908 was filed for. It is not deleted from the guard - it moved to
     /// `iq4_nl_has_a_kernel_but_is_not_admitted_until_it_is_measured` below,
     /// which asserts the other half. A row that outlives its premise is
     /// converted, never dropped.
@@ -201,10 +303,8 @@ mod gemv_entry_name_tests_3477 {
         let census: &[(u32, &str)] = &[
             (10, "Q2_K"),
             (11, "Q3_K"),
-            (16, "IQ2_XXS"),
             (18, "IQ3_XXS"),
             (22, "IQ2_S"),
-            (30, "BF16"),
         ];
         let admitted: Vec<String> = census
             .iter()
@@ -364,6 +464,54 @@ mod gemv_entry_name_tests_3477 {
         );
     }
 
+    /// #3908: BF16 is admitted BECAUSE its kernel was measured, and it is the
+    /// only type here measured BIT-EXACTLY rather than within a tolerance.
+    ///
+    /// ```text
+    /// #3908 A/B: 64 rows, 0 ULP (bit-exact) on integer-exact data
+    /// #3908 A/B: 64 rows, worst relative disagreement 1.468e-5
+    /// ```
+    ///
+    /// RTX 4090 sm_89. bf16 decoding is `bits << 16` reinterpreted as f32, which
+    /// rounds nothing, so the decode can be held to 0 ULP. The GEMV still SUMS
+    /// and the GPU sums in a different order, so the exact comparison is made
+    /// well-posed with integer-exact data (every partial sum exact in f32) rather
+    /// than demanded of an arbitrary dot product -- which would fail a CORRECT
+    /// kernel. Ordinary bf16 values are measured separately at a tolerance.
+    ///
+    /// Proved able to fail first, on the three mechanisms this format has:
+    ///   shift 8 instead of 16       -> RED (all 3 A/B tests)
+    ///   byte-swapped halfword       -> RED (all 3)
+    ///   row stride k not k*2        -> RED (all 3)  the LAYOUT-001 fault
+    #[test]
+    fn bf16_is_admitted_because_its_kernel_was_measured() {
+        use crate::cuda::types::{GemvKernel, WeightQuantType};
+
+        assert_eq!(
+            WeightQuantType::from_ggml_type(30),
+            Some(WeightQuantType::BF16)
+        );
+        // 2 bytes per element, exactly F16's rule -- which is why size can never
+        // tell them apart and BF16 stays out of `from_size`'s ladder.
+        assert!(WeightQuantType::BF16.matches_size(2560 * 9216 * 2, 2560, 9216));
+        assert_eq!(
+            crate::cuda::types::BoundWeight::bind(
+                0x1000,
+                2560 * 9216 * 2,
+                WeightQuantType::BF16,
+                2560,
+                9216
+            )
+            .kernel(),
+            GemvKernel::BF16
+        );
+        assert!(
+            !crate::gguf::gpu_unsupported_quant_qtype(30),
+            "#3908: the kernel was measured BIT-EXACT against the CPU decoder on \
+             device (iq4_nl_device_ab_tests), so BF16 is GPU-eligible"
+        );
+    }
+
     /// The Q5_1 kernel's INDEX MATH in Rust, against the verified CPU decoder.
     ///
     /// Two things this pins that a port gets wrong. The 5TH BIT: byte `j`'s low
@@ -412,6 +560,136 @@ mod gemv_entry_name_tests_3477 {
             (0..32).any(|i| (qh >> i) & 1 != 0),
             "this fixture never sets a 5th bit, so it cannot see a 5th-bit bug"
         );
+    }
+
+    /// #3950: IQ2_XXS is admitted BECAUSE its kernel was measured.
+    ///
+    /// This row was `iq2_xxs_has_a_kernel_but_is_not_admitted_until_it_is_measured`,
+    /// which said in its body to flip this assertion and open the whitelist in the
+    /// same commit once the device A/B passed. Before that it was `(16, "IQ2_XXS")`
+    /// in `the_types_found_in_the_wild_without_kernels_resolve_to_none`. Converted
+    /// twice, never dropped.
+    ///
+    /// ```text
+    /// synthetic k=512 n=64, k=300 n=16          EXACT, 0.000e0
+    /// Qwen3.5-0.8B-UD-IQ2_XXS (a369165c...)       95/95 tensors, all 6 shapes:
+    ///   (k,n) (512,1024) (1024,2048) (1024,3584) (3584,1024) (4096,1024) (6144,1024)
+    ///   worst |err| / sum|w||x| = 2.713e-7   (bar 1e-5, NaN-prefilled, 0 unwritten)
+    ///   positive control, corrupted block scales on real bytes: 4.156e3 RED
+    /// ```
+    ///
+    /// Synthetic blocks have f16 scale 1.0 and agree exactly; real scales make
+    /// the GPU warp-tree sum and the CPU sequential sum round differently, which
+    /// is what the 2.7e-7 is. RTX 4090 sm_89, oracle `iq_parallel_matvec`. Proved able to fail rather than trusted for passing first time:
+    ///   FAULT sign-code width 7 -> 8:   row 49 GPU 378.875 vs CPU -2.625
+    ///   FAULT aux1 u16 halves swapped:  row 49 GPU 2753.375 vs CPU -2.625
+    ///   FAULT row stride 66 -> 64:      row 62 GPU -10820048 vs CPU 4815.125
+    ///   FAULT scale nibble dropped:     row 49 GPU 351.375 vs CPU -2.625
+    ///
+    /// Re-runnable: `every_iq2_xxs_tensor_in_a_real_model_agrees_on_device`
+    /// (`APR_IQ_AB_MODEL=<gguf> ... -- --ignored`).
+    #[test]
+    fn iq2_xxs_is_admitted_because_its_kernel_was_measured() {
+        use crate::cuda::types::{GemvKernel, WeightQuantType};
+        assert_eq!(WeightQuantType::from_ggml_type(16), Some(WeightQuantType::IQ2XXS));
+        assert_eq!(
+            crate::cuda::types::BoundWeight::bind(0x1000, 66 * 4, WeightQuantType::IQ2XXS, 4, 256)
+                .kernel(),
+            GemvKernel::IQ2XXS,
+            "binding IQ2_XXS to any other kernel decodes 66-byte blocks as another scheme"
+        );
+        assert!(
+            !crate::gguf::gpu_unsupported_quant_qtype(16),
+            "IQ2_XXS has a measured kernel (95/95 real tensors) and must be GPU-eligible"
+        );
+        // 66 bytes per 256 elements collides with no other format, so unlike
+        // IQ4_NL (byte-identical to Q4_0) it is safely inferable from size — and
+        // must actually be inferred there, at a real shape from the model.
+        let (k, n) = (3584usize, 1024usize);
+        assert_eq!(
+            WeightQuantType::from_size(n * k.div_ceil(256) * 66, n, k),
+            Some(WeightQuantType::IQ2XXS),
+            "a [1024 x 3584] IQ2_XXS tensor's byte count must resolve to IQ2XXS"
+        );
+    }
+
+    /// The IQ2_XXS kernel's INDEX MATH in Rust — the PTX's own fetches, lane by
+    /// lane — against the verified CPU decoder on the same bytes.
+    ///
+    /// What it pins that a port gets wrong:
+    ///   * `aux1` sits at block offset 6 + 8*ib, which is 2 mod 4. The PTX reads it
+    ///     as two u16 halves; reassembling them in the wrong order swaps the sign
+    ///     codes and the scale nibble and still yields plausible magnitudes.
+    ///   * the grid entry is a u64 fed to two lanes of four: LOW word -> columns
+    ///     j, HIGH word -> columns j+4, with sign bits j and j+4.
+    ///   * the sign code for index `l` is `(aux1 >> 7l) & 127` — a 7-bit field, not
+    ///     8. An 8-bit shift walks off the field after l = 0.
+    ///
+    /// Same limit as the rows below: this proves the mapping, not that the PTX
+    /// TEXT implements it. That closes only with the device A/B.
+    #[test]
+    fn the_iq2_xxs_thread_mapping_reproduces_the_cpu_decoder() {
+        use crate::quantize::iq2_xxs::{
+            dequantize_iq2_xxs_block, IQ2_XXS_BLOCK_BYTES, IQ2_XXS_BLOCK_ELEMS,
+        };
+        use crate::quantize::iq_grids::{IQ2XXS_GRID, KSIGNS_IQ2XS};
+
+        let mut block = [0u8; IQ2_XXS_BLOCK_BYTES];
+        let mut x: u32 = 0x2468_ace1;
+        for b in block.iter_mut() {
+            x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            *b = (x >> 24) as u8;
+        }
+        block[0] = 0x00;
+        block[1] = 0x3c; // f16 1.0
+
+        let mut expected = [0f32; IQ2_XXS_BLOCK_ELEMS];
+        dequantize_iq2_xxs_block(&block, &mut expected);
+
+        // ---- exactly what the PTX does, one lane at a time ----
+        let d = f32::from(half_from_le(block[0], block[1]));
+        let grid_u32: Vec<u32> = IQ2XXS_GRID
+            .iter()
+            .flat_map(|&v| [(v & 0xffff_ffff) as u32, (v >> 32) as u32])
+            .collect();
+        let u16_at = |o: usize| u32::from(u16::from_le_bytes([block[o], block[o + 1]]));
+        let mut scales_seen = std::collections::BTreeSet::new();
+        let mut got = [0f32; IQ2_XXS_BLOCK_ELEMS];
+        for tid in 0..32usize {
+            let ib = tid >> 2;
+            let l = tid & 3;
+            let sub = 2 + 8 * ib;
+            let idx = usize::from(block[sub + l]);
+            let aux1 = u16_at(sub + 4) | (u16_at(sub + 6) << 16);
+            let scale = aux1 >> 28;
+            scales_seen.insert(scale);
+            #[allow(clippy::cast_precision_loss)]
+            let db = d * ((0.5 + scale as f32) * 0.25);
+            let signs = u32::from(KSIGNS_IQ2XS[((aux1 >> (7 * l)) & 127) as usize]);
+            let (lo, hi) = (grid_u32[2 * idx], grid_u32[2 * idx + 1]);
+            let col0 = 32 * ib + 8 * l;
+            for j in 0..4usize {
+                #[allow(clippy::cast_precision_loss)]
+                let m1 = ((lo >> (8 * j)) & 0xff) as f32;
+                #[allow(clippy::cast_precision_loss)]
+                let m2 = ((hi >> (8 * j)) & 0xff) as f32;
+                let s1 = if (signs >> j) & 1 != 0 { -1.0 } else { 1.0 };
+                let s2 = if (signs >> (j + 4)) & 1 != 0 { -1.0 } else { 1.0 };
+                got[col0 + j] = m1 * db * s1;
+                got[col0 + j + 4] = m2 * db * s2;
+            }
+        }
+
+        for (i, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
+            assert!(
+                (g - e).abs() <= 1e-6,
+                "element {i}: kernel mapping {g}, CPU decoder {e}"
+            );
+        }
+        // The fixture must be able to see the bugs above, or agreement is empty.
+        assert!(scales_seen.len() >= 3, "fixture exercises only scales {scales_seen:?}");
+        assert!(expected.iter().any(|v| *v < 0.0), "fixture never sets a sign bit");
+        assert!(expected.iter().any(|v| *v > 0.0), "fixture is all negative");
     }
 
     /// The IQ3_S kernel's INDEX MATH in Rust, against the verified CPU decoder.
@@ -724,7 +1002,7 @@ mod gemv_entry_name_tests_3477 {
         let kernels = CudaKernels::new();
         let mut broken = Vec::new();
 
-        for kt in every_gemv_kernel() {
+        for kt in every_emitted_gemv_kernel() {
             let ptx = kernels.generate_ptx(&kt);
             // Assemble at the target the module itself declares.
             let target = ptx
@@ -737,11 +1015,13 @@ mod gemv_entry_name_tests_3477 {
             let dir = std::env::temp_dir().join(format!("apr_ptx_{}", std::process::id()));
             let _ = std::fs::create_dir_all(&dir);
             let path = dir.join(format!("{}.ptx", kernels.kernel_name(&kt)));
-            let Ok(mut f) = std::fs::File::create(&path) else { continue };
-            if f.write_all(ptx.as_bytes()).is_err() {
+            // A kernel that could not be written was not assembled; say so
+            // rather than `continue` past it and report it as clean.
+            let written = std::fs::File::create(&path).and_then(|mut f| f.write_all(ptx.as_bytes()));
+            if let Err(e) = written {
+                broken.push(format!("\n  - {kt:?}: could not write PTX to {} ({e})", path.display()));
                 continue;
             }
-            drop(f);
 
             let out = std::process::Command::new("ptxas")
                 .args(["--gpu-name", &target, "-o"])
@@ -801,6 +1081,42 @@ mod gemv_entry_name_tests_3477 {
         assert!(
             !ptx.contains("colmajor") && !ptx.contains("col_major"),
             "LAYOUT-001: GGUF/APR data is row-major on this path"
+        );
+    }
+
+    /// #3908: a size can AGREE with a declaration or CONTRADICT it; it cannot
+    /// out-rank one it agrees with. BF16 and F16 are both 2 bytes/element, so
+    /// size-first resolution relabelled a tied BF16 LM head as F16 and the GPU
+    /// decoded bf16 bytes as IEEE half (F2 gate: CPU argmax 319, GPU 14880).
+    #[test]
+    fn a_consistent_declaration_wins_over_the_size_guess() {
+        use crate::cuda::types::WeightQuantType as W;
+        let (rows, cols) = (151_936usize, 896usize); // qwen2.5-0.5b lm_head
+        let two_bytes = rows * cols * 2;
+
+        // The #3908 case: declared BF16, size agrees -> BF16, NOT F16.
+        assert_eq!(
+            W::resolve_declared_or_sized(Some(W::BF16), two_bytes, rows, cols),
+            Some(W::BF16)
+        );
+        assert_eq!(
+            W::resolve_declared_or_sized(Some(W::F16), two_bytes, rows, cols),
+            Some(W::F16)
+        );
+        // PAR-058 is preserved: a declaration the size CONTRADICTS is overridden.
+        // Q4_1 bytes (20/32) declared as Q4_0 (18/32) resolve to Q4_1.
+        let (r, c) = (896usize, 4864usize);
+        let q4_1_bytes = r * (c / 32) * 20;
+        assert_eq!(
+            W::resolve_declared_or_sized(Some(W::Q4_0), q4_1_bytes, r, c),
+            Some(W::Q4_1)
+        );
+        // No declaration: the size guess is all there is, unchanged.
+        assert_eq!(W::resolve_declared_or_sized(None, two_bytes, rows, cols), Some(W::F16));
+        // Neither matches: fall back to the declaration rather than inventing one.
+        assert_eq!(
+            W::resolve_declared_or_sized(Some(W::Q4K), 12_345, rows, cols),
+            Some(W::Q4K)
         );
     }
 }

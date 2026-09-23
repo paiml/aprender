@@ -19,6 +19,16 @@
 # model this host holds that the run did not prove.
 #
 # Usage:  bash scripts/model_ladder.sh [--host <id>] [--out <dir>] [--dry-run]
+#                                      [--only <rung-id>]
+#   --only  measure exactly ONE rung and write a SEPARATE receipt,
+#           <dir>/<host>.only-<id>.json. For separating a flake from a defect: a
+#           single rung costs minutes where the sweep costs hours, and #3936 spent
+#           four GPU measurements and a human establishing that one red serve cell
+#           was transient. The id is a rung id from the ladder, or `inv:<filename>`
+#           for an inventory-only model. An id that matches nothing is REFUSED
+#           before anything is measured -- a run that measures zero rungs and
+#           writes a receipt is the empty-universe vacuity, and it would look
+#           exactly like a pass.
 #   --host  ladder host id (default: derived from `hostname`, see host_id)
 #   --out   receipt dir (default: evidence/dogfood/models/<version>); writes <dir>/<host>.json
 #
@@ -35,11 +45,13 @@ LADDER="contracts/model-capability-ladder-v1.yaml"
 HOST_ID=""
 OUT_DIR=""
 DRY=0
+ONLY=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --host) [ $# -ge 2 ] || { echo "model_ladder: --host needs a value" >&2; exit 2; }; HOST_ID="$2"; shift 2 ;;
     --out)  [ $# -ge 2 ] || { echo "model_ladder: --out needs a value" >&2; exit 2; };  OUT_DIR="$2"; shift 2 ;;
     --dry-run) DRY=1; shift ;;
+    --only) [ $# -ge 2 ] || { echo "model_ladder: --only needs a value" >&2; exit 2; }; ONLY="$2"; shift 2 ;;
     # --lock-probe <apr args…>: one apr call through apr_locked, then exit with its rc. For the case
     # table in check_model_ladder.sh, which proves every apr call runs under the lock.
     --lock-probe) shift; LOCK_PROBE=1; break ;;
@@ -176,6 +188,107 @@ serve_log_tail() { # <file> [n] -> the last n non-empty lines, each cut to 200 c
 
 json_str_or_null() {
   python3 -c 'import json,sys; t=sys.stdin.read(); print(json.dumps(t) if t else "null")'
+}
+
+# ── #3957 F4c: the generated text of ONE serve response, in any of its three wire shapes ──
+# The probe read the body with a single `json.load`. Every `stream=true` body is NOT one
+# JSON object -- the OpenAI routes stream SSE (`data: {...}` lines ending `data: [DONE]`),
+# /api/chat streams NDJSON (one object per line) -- so the load failed, the text was "",
+# and `gibberish_reason("")` said nothing, which the row read as CLEAN. Half the serve
+# routes passed on http status alone; an NDJSON stream of "zombie zombie zombie" was clean.
+#
+# Prints the concatenated text (possibly empty). Shapes, tried in order:
+#   1. one JSON object: choices[].text | choices[].message.content | message.content | response
+#   2. SSE: every `data:` payload that is JSON, concatenating choices[].delta.content,
+#      choices[].text, message.content and response
+#   3. NDJSON: every line that is a JSON object, same fields
+serve_reply_text() { # <body-file>
+  python3 -c '
+import json, sys
+try:
+    raw = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+except OSError:
+    raise SystemExit
+def parts(d):
+    out = []
+    if not isinstance(d, dict):
+        return out
+    for c in (d.get("choices") or []):
+        if isinstance(c, dict):
+            out.append(c.get("text") or ((c.get("message") or {}).get("content") or "")
+                       or ((c.get("delta") or {}).get("content") or ""))
+    m = (d.get("message") or {}).get("content") if isinstance(d.get("message"), dict) else None
+    if isinstance(m, str):
+        out.append(m)
+    if isinstance(d.get("response"), str):
+        out.append(d["response"])
+    return [x for x in out if isinstance(x, str) and x]
+def objs(lines):
+    for ln in lines:
+        ln = ln.strip()
+        if not ln or ln == "[DONE]":
+            continue
+        try:
+            yield json.loads(ln)
+        except ValueError:
+            continue
+try:
+    whole = json.loads(raw)
+except ValueError:
+    whole = None
+if isinstance(whole, dict):
+    print("\n".join(parts(whole)))
+elif any(ln.startswith("data:") for ln in raw.splitlines()):
+    print("".join(p for d in objs(ln[5:] for ln in raw.splitlines() if ln.startswith("data:")) for p in parts(d)))
+else:
+    print("".join(p for d in objs(raw.splitlines()) for p in parts(d)))
+' "$1" 2>/dev/null
+}
+
+# serve_route_bad <body-file> <route label> -> prints the reason, or nothing when the reply is clean.
+# EMPTY TEXT IS A REASON, never clean: a route whose body yields no generated text measured nothing
+# about the model, and "" handed to the detector is the vacuous pass #3957 F4c removes.
+serve_route_bad() {
+  local text bytes term
+  # #3957 Q6: a STREAM must end with its terminal event -- `data: [DONE]` (SSE) or an object
+  # with `"done": true` (NDJSON). Without it the server stopped mid-reply (or curl's --max-time
+  # did), and the text that did arrive is a prefix judged as if it were the answer.
+  term=$(python3 -c '
+import json, sys
+raw = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+try:
+    one = json.loads(raw)
+except ValueError:
+    one = None
+else:
+    # A one-line NDJSON stream parses as one object. /api/chat says `done` on every chunk,
+    # and `done: false` is an unfinished reply whichever way it arrived.
+    print("open" if isinstance(one, dict) and one.get("done") is False else "single"); raise SystemExit
+lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+if any(ln.startswith("data:") for ln in lines):
+    print("ok" if any(ln[5:].strip() == "[DONE]" for ln in lines if ln.startswith("data:")) else "open")
+elif lines:
+    def done(ln):
+        try:
+            d = json.loads(ln)
+        except ValueError:
+            return False
+        return isinstance(d, dict) and d.get("done") is True
+    print("ok" if done(lines[-1]) else "open")
+else:
+    print("single")
+' "$1" 2> /dev/null)
+  if [ "$term" = open ]; then
+    printf 'truncated stream: the %s response has no terminal event (data: [DONE] / "done": true) -- a prefix is not an answer (#3957 Q6)' "$2"
+    return 0
+  fi
+  text=$(serve_reply_text "$1")
+  if [ -z "${text//[[:space:]]/}" ]; then
+    bytes=$(wc -c < "$1" 2> /dev/null | tr -d ' ')
+    printf 'nothing measured: the %s response carried no generated text (%s bytes) (#3957 F4c)' "$2" "${bytes:-0}"
+    return 0
+  fi
+  printf '%s' "$text" | gibberish_reason || true
 }
 
 # #3925: judge the model reply, not the transcript it arrived in. `apr chat` frames
@@ -339,7 +452,18 @@ for r in d["ladder"]["rungs"]:
 PY
 ) || { echo "decline: ladder unreadable" >&2; exit 2; }
 [ -n "$RUNGS" ] || { echo "decline: ladder has no rungs" >&2; exit 2; }
-LADDER_FILES=$(cut -d'|' -f2 <<< "$RUNGS")   # the files the rungs name; section 2 skips re-measuring them
+LADDER_FILES=$(cut -d'|' -f2 <<< "$RUNGS")
+# #3943 (b): the serve health wait is bounded by the contract, not by a literal here.
+SERVE_WAIT=$(python3 - "$LADDER" <<'PY'
+import sys, yaml
+w = (yaml.safe_load(open(sys.argv[1]))["ladder"].get("serve_health") or {})
+c, s = w.get("ceiling_s"), w.get("stall_s")
+if not isinstance(c, int) or not isinstance(s, int) or not (0 < s <= c):
+    sys.exit(1)
+print(s, c)
+PY
+) || { echo "decline: the ladder declares no valid serve_health {stall_s, ceiling_s} (0 < stall_s <= ceiling_s) -- the serve wait would be unbounded or arbitrary (#3943)" >&2; exit 2; }
+read -r SERVE_STALL_S SERVE_CEILING_S <<< "$SERVE_WAIT"   # the files the rungs name; section 2 skips re-measuring them
 
 # The inventory spec (#3712). MODEL_LADDER_INVENTORY_DIRS (colon-separated) is a test seam only.
 INV_SPEC=$(python3 - "$LADDER" <<'PY'
@@ -369,6 +493,36 @@ for f, p in seen.items():
     print(f + "|" + p)
 PY
 ) || { echo "decline: the inventory scan failed" >&2; exit 2; }
+
+# --only: the selectable universe is the same union the run measures -- rung ids plus
+# `inv:<file>` -- derived from the same two variables, so it cannot drift from what
+# --only can actually select. A hand-kept list of ids is exactly the drift #3843 names.
+only_universe() { # <rungs> <inventory> -> selectable ids, one per line
+  { cut -d'|' -f1 <<< "$1"; sed 's/^/inv:/; s/|.*$//' <<< "$2"; } | grep -v '^$' | sort -u
+}
+
+# 0 when <only> names something measurable, 1 when it does not. Split from the refusal
+# so a guard can exercise the DECISION without a pinned binary or a model on disk.
+only_selected() { # <only> <rungs> <inventory>
+  grep -qxF -- "$1" <<< "$(only_universe "$2" "$3")"
+}
+
+# Refuse BEFORE the first model is touched. A targeted run that matches nothing, measures
+# zero rungs and exits 0 is the empty-universe vacuity -- and it is the worst possible
+# instrument for the job --only exists to do, because settling a flake by re-running one
+# rung reads a green that means "nothing ran".
+if [ -n "$ONLY" ]; then
+  if ! only_selected "$ONLY" "$RUNGS" "$INVENTORY"; then
+    {
+      echo "decline: --only '$ONLY' names no rung and no inventory model on $HOST."
+      near=$(grep -iF -- "$ONLY" <<< "$(only_universe "$RUNGS" "$INVENTORY")" | head -5)
+      if [ -n "$near" ]; then echo "  did you mean:"; sed 's/^/    /' <<< "$near"
+      else echo "  selectable ids on this host:"; only_universe "$RUNGS" "$INVENTORY" | sed 's/^/    /' | head -24; fi
+    } >&2
+    exit 2
+  fi
+  printf -- '--only: measuring %s alone; the sweep receipt is not touched\n' "$ONLY"
+fi
 
 # ── #3828: ladder_serve_probe — the `serve` verb, over the ROUTER'S OWN ROUTES ──────
 # The ladder never started `apr serve`, so no rung ever asked a server to load a model
@@ -403,41 +557,135 @@ PY
 # Resolve the listener by PORT. The port is drawn at random per probe, so it can
 # never name another session's process — which is what makes escalating to a kill
 # safe on a box several agents share.
-ladder_serve_teardown() { # <wrapper-pid> <port> -> prints clean|escalated|failed
-    local pid="$1" port="$2" i spid
+ladder_serve_teardown() { # <wrapper-pid> <port> -> prints clean|escalated|failed|undetermined
+    local pid="$1" port="$2" i p c spid
+    local -a frontier next tree=() alive=()
+    # #3943: LIVENESS IS A PROPERTY OF THE PROCESS, NOT THE PORT. This used to kill the
+    # wrapper and then read "/health does not answer" as "the server is gone". That is
+    # only true of a server that was LISTENING. The health-wait timeout calls this for a
+    # server that never answered /health; a server still LOADING a model has not bound
+    # its port, so it did not answer on the first poll, and the function printed `clean`
+    # while that server kept loading. gx10's qwen35-27b-q4km serve log shows it: "Model
+    # ready ... listening on :25627", no request traffic, AFTER the probe gave up. The
+    # escalation was blind too, because it resolved the listener by the port.
+    #
+    # So resolve the server BY PARENTAGE, and do it BEFORE the wrapper dies. Once flock
+    # dies, the server is re-parented to init and parentage can no longer find it.
+    if ! command -v pgrep >/dev/null 2>&1; then
+        kill "$pid" 2>/dev/null
+        printf 'undetermined'; return 1     # cannot resolve the tree: say so, never `clean`
+    fi
+    frontier=("$pid")
+    while [ "${#frontier[@]}" -gt 0 ]; do
+        next=()
+        for p in "${frontier[@]}"; do
+            mapfile -t c < <(pgrep -P "$p" 2>/dev/null)
+            tree+=("${c[@]}"); next+=("${c[@]}")
+        done
+        frontier=("${next[@]}")
+    done
     kill "$pid" 2>/dev/null
     for i in $(seq 1 10); do
-        if ! curl -fsS --max-time 1 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
-            wait "$pid" 2>/dev/null
-            printf 'clean'; return 0
-        fi
+        alive=()
+        for p in "$pid" "${tree[@]}"; do kill -0 "$p" 2>/dev/null && alive+=("$p"); done
+        [ "${#alive[@]}" -eq 0 ] && break
         sleep 1
     done
-    # Still answering: the wrapper died and the server did not. Name it by port,
-    # then PROVE it is ours before signalling. The random port makes a collision
-    # unlikely; `/proc/PID/cwd` makes it checkable, and on a box several agents
-    # share, "unlikely" is an argument while the cwd is evidence (cop, #3828).
-    # A pid we cannot attribute to this tree is never signalled — it is reported.
-    spid=$(ss -tlnpH "sport = :$port" 2>/dev/null | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
-    if [ -n "$spid" ] && [ "$(readlink -f "/proc/$spid/cwd" 2>/dev/null)" != "$PWD" ]; then
-        printf 'failed'; return 1
-    fi
-    if [ -n "$spid" ]; then
-        kill "$spid" 2>/dev/null
-        for i in $(seq 1 10); do
-            if ! kill -0 "$spid" 2>/dev/null; then
-                wait "$pid" 2>/dev/null
-                printf 'escalated'; return 0
+    if [ "${#alive[@]}" -gt 0 ]; then
+        # Survivors: the wrapper died and they did not. They were found by parentage,
+        # so they are ours by construction. The cwd check still guards pid REUSE between
+        # the pgrep and the kill, on a box several agents share (cop, #3828).
+        for p in "${alive[@]}"; do
+            if kill -0 "$p" 2>/dev/null && [ "$(readlink -f "/proc/$p/cwd" 2>/dev/null)" != "$PWD" ]; then
+                printf 'failed'; return 1
             fi
+        done
+        kill "${alive[@]}" 2>/dev/null
+        for i in $(seq 1 10); do
+            next=()
+            for p in "${alive[@]}"; do kill -0 "$p" 2>/dev/null && next+=("$p"); done
+            [ "${#next[@]}" -eq 0 ] && break
             sleep 1
         done
-        kill -9 "$spid" 2>/dev/null
+        if [ "${#next[@]}" -gt 0 ]; then kill -9 "${next[@]}" 2>/dev/null; sleep 1; fi
+        for p in "${alive[@]}"; do
+            if kill -0 "$p" 2>/dev/null; then printf 'failed'; return 1; fi
+        done
         wait "$pid" 2>/dev/null
         printf 'escalated'; return 0
     fi
-    # Could not resolve a listener and /health still answers: do NOT `wait`, or we
-    # reproduce the hang this function exists to end. Report it as cell state.
-    printf 'failed'; return 1
+    wait "$pid" 2>/dev/null
+    # Every process in the tree is gone. The port is now evidence, not proof: if
+    # something still answers there, it was not ours by parentage. Resolve it by port
+    # and apply the cwd test before touching it, exactly as before.
+    if curl -fsS --max-time 1 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
+        spid=$(ss -tlnpH "sport = :$port" 2>/dev/null | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
+        if [ -z "$spid" ] || [ "$(readlink -f "/proc/$spid/cwd" 2>/dev/null)" != "$PWD" ]; then
+            printf 'failed'; return 1
+        fi
+        kill "$spid" 2>/dev/null
+        for i in $(seq 1 10); do
+            kill -0 "$spid" 2>/dev/null || { printf 'escalated'; return 0; }
+            sleep 1
+        done
+        kill -9 "$spid" 2>/dev/null
+        printf 'escalated'; return 0
+    fi
+    printf 'clean'; return 0
+}
+
+# ── #3943 (b): wait on the SERVER, not on a clock ────────────────────────────
+# The health wait was a fixed 90 s. gx10's qwen35-27b-q4km serve log shows the server
+# reach "Model ready ... listening" AFTER the wait gave up: the bound was shorter than a
+# 27B load, so the cell was `probed:false` for a HARNESS reason, not a model reason.
+#
+# Cop ruling (b), 2026-09-23: wait while the server process is ALIVE and making
+# PROGRESS, under one hard ceiling from the ladder contract. Progress is the log
+# growing OR the process tree's CPU time growing. The log alone is not enough evidence:
+# that same 27B log is three lines (Loading / Model ready / listening), so a healthy
+# load can be silent for minutes, and a log-only rule would call it hung. A loading
+# process burns CPU; a hung one does not.
+#
+# Prints one of:  ready <s> | died <s> | stalled <s> | ceiling <s>
+ladder_tree_jiffies() { # <pid> -> utime+stime summed over pid and every descendant
+    local -a frontier next c
+    local p total=0 f
+    frontier=("$1")
+    while [ "${#frontier[@]}" -gt 0 ]; do
+        next=()
+        for p in "${frontier[@]}"; do
+            if read -r -a f < "/proc/$p/stat" 2>/dev/null; then
+                total=$((total + f[13] + f[14]))
+            fi
+            mapfile -t c < <(pgrep -P "$p" 2>/dev/null)
+            next+=("${c[@]}")
+        done
+        frontier=("${next[@]}")
+    done
+    printf '%s' "$total"
+}
+
+ladder_serve_wait_health() { # <wrapper-pid> <port> <log> <stall-s> <ceiling-s>
+    local pid="$1" port="$2" log="$3" stall="$4" ceiling="$5"
+    local waited=0 quiet=0 size last_size=-1 jif last_jif=-1
+    while :; do
+        if curl -fsS --max-time 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
+            printf 'ready %s' "$waited"; return 0
+        fi
+        # A server that dies mid-load is RED now, not after a stall window: the
+        # wrapper (flock) exits only once its child has.
+        if ! kill -0 "$pid" 2>/dev/null; then printf 'died %s' "$waited"; return 1; fi
+        size=$(stat -c %s "$log" 2>/dev/null || printf 0)
+        jif=$(ladder_tree_jiffies "$pid")
+        if [ "$size" != "$last_size" ] || [ "$jif" != "$last_jif" ]; then
+            quiet=0; last_size="$size"; last_jif="$jif"
+        else
+            quiet=$((quiet + 1))
+        fi
+        if [ "$quiet" -ge "$stall" ]; then printf 'stalled %s' "$waited"; return 1; fi
+        if [ "$waited" -ge "$ceiling" ]; then printf 'ceiling %s' "$waited"; return 1; fi
+        sleep 1; waited=$((waited + 1))
+    done
 }
 
 ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <backend>
@@ -464,22 +712,28 @@ ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <ba
     port=$(( 20000 + (RANDOM % 20000) ))
     apr_locked serve run "$path" --port "$port" $flag > "$WORK/serve-$rid-$bname.log" 2>&1 &
     pid=$!
-    # Health, bounded. A server that never comes up is a FAIL naming the wait, never a skip.
-    while [ "$waited" -lt 90 ]; do
-        curl -fsS --max-time 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1 && break
-        kill -0 "$pid" 2>/dev/null || break
-        sleep 1; waited=$((waited + 1))
-    done
-    if ! curl -fsS --max-time 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
+    # Health, bounded by the SERVER (#3943 b). A server that never comes up is a FAIL
+    # naming WHY the wait ended, never a skip.
+    local wait_out wait_why
+    wait_out=$(ladder_serve_wait_health "$pid" "$port" "$WORK/serve-$rid-$bname.log" \
+        "$SERVE_STALL_S" "$SERVE_CEILING_S") || true
+    wait_why=${wait_out%% *}; waited=${wait_out##* }
+    if [ "$wait_why" != "ready" ]; then
         td=$(ladder_serve_teardown "$pid" "$port")
+        # #3943 + #3949: the WHY names what ended the wait (died / stalled / ceiling, with
+        # the bounds) AND carries the evidence itself, the last log line and log_tail,
+        # because $WORK is deleted by the EXIT trap, so a log PATH names a file that is
+        # gone. Arguments 1-3 keep the positions check_serve_probe_evidence.sh lifts.
         python3 -c '
 import json, sys
 tail = sys.argv[2]
+kind = sys.argv[4] if len(sys.argv) > 4 else "timeout"
+bounds = " (stall window %ss, ceiling %ss)" % (sys.argv[5], sys.argv[6]) if len(sys.argv) > 6 else ""
 last = tail.splitlines()[-1] if tail else "the serve log was empty"
 print(json.dumps({"probed": False,
-                  "why": "apr serve did not answer /health within %ss; last log line: %s" % (sys.argv[1], last),
+                  "why": "apr serve did not answer /health: %s after %ss%s; last log line: %s" % (kind, sys.argv[1], bounds, last),
                   "log_tail": tail or None, "teardown": sys.argv[3], "routes": {}}))
-' "$waited" "$(serve_log_tail "$WORK/serve-$rid-$bname.log")" "$td"
+' "$waited" "$(serve_log_tail "$WORK/serve-$rid-$bname.log")" "$td" "$wait_why" "$SERVE_STALL_S" "$SERVE_CEILING_S"
         return 1
     fi
 
@@ -517,19 +771,7 @@ print("null" if v is None else ("true" if v else "false"))
             # as "two gaps stacked"; it was this one gap. The generated text is
             # extracted from the response shape rather than judged raw, so JSON field
             # names and ids cannot themselves trip the repeated-fragment signal.
-            rtext=$(python3 -c '
-import json,sys
-try: d=json.load(open(sys.argv[1]))
-except Exception: print(""); raise SystemExit
-out=[]
-for c in (d.get("choices") or []):
-    out.append(c.get("text") or ((c.get("message") or {}).get("content") or ""))
-m=(d.get("message") or {}).get("content")
-if m: out.append(m)
-if d.get("response"): out.append(d["response"])
-print("\\n".join(x for x in out if x))
-' "$bodyf" 2>/dev/null)
-            rbad=$(printf '%s' "$rtext" | gibberish_reason) || rbad=""
+            rbad=$(serve_route_bad "$bodyf" "$r|stream=$stream")
             rbad_json=$(printf '%s' "$rbad" | json_str_or_null)
             [ $first = 1 ] || json="$json,"; first=0
             json="$json\"$r|stream=$stream\":{\"http\":$code,\"ok\":$([ "$code" = 200 ] && echo true || echo false),\"used_gpu\":$ug,\"output_bad\":$rbad_json}"
@@ -783,7 +1025,8 @@ def serve_ok(v):
     sv = (v.get("verbs") or {}).get("serve") or {}
     if not sv.get("probed"):
         return False
-    if sv.get("teardown") == "failed":
+    # #3943: `undetermined` is RED too - the doctrine has no third state.
+    if sv.get("teardown") in ("failed", "undetermined"):
         return False
     # #3921: a 200 carrying gibberish is not a working route.
     return all(
@@ -816,7 +1059,12 @@ def verb_ok(v, name):
         return False
     return bool(x.get("ran")) and (x.get("rc") or 0) == 0
 
-green = cap_ok and qa.get("golden_output", {}).get("passed", False) \
+# #3965: a SKIPPED golden gate is not a pass. Older `apr` builds wrote skips as
+# passed:true, skipped:true, and receipts from them still exist, so the ladder guards
+# `skipped` itself instead of trusting the producer: the same guard cap_ok has above.
+golden_ok = qa.get("golden_output", {}).get("passed", False) \
+    and not qa.get("golden_output", {}).get("skipped", False)
+green = cap_ok and golden_ok \
         and all(v["ran"] and not v["fallback"] and not v.get("escaped_special") and serve_ok(v)
                 and verb_ok(v, "chat") and verb_ok(v, "code")
                 for v in be.values())
@@ -923,6 +1171,8 @@ for b,v in r["backends"].items():
         w.append(b+": serve NOT PROBED: "+_disp(sv.get("why","")))
     elif sv.get("teardown")=="failed":
         w.append(b+": serve teardown FAILED (the server would not die — a real property of the verb)")
+    elif sv.get("teardown")=="undetermined":
+        w.append(b+": serve teardown UNDETERMINED (the process tree could not be resolved, so nothing proves the server died) (#3943)")
     else:
         routes=sv.get("routes") or {}
         bad=sorted(k for k,x in routes.items() if (x or {}).get("http")!=200)
@@ -941,6 +1191,7 @@ print("; ".join(w) or "unknown")')
 # ---- 1. the ladder's rungs
 while IFS='|' read -r -t 5 rid rfile rsha rbackends rreq rhosts; do
   [ -n "$rid" ] || continue
+  [ -z "$ONLY" ] || [ "$rid" = "$ONLY" ] || continue
   # A rung that lists hosts: is a claim only on those hosts (a 122B file fits gx10's unified memory and no
   # 24 GB card). Elsewhere it is neither absent nor passed: recorded as not listed, never counted RED.
   # An inventory model is never "not listed": if this host holds it, section 2 measures it.
@@ -988,6 +1239,9 @@ while IFS='|' read -r -t 5 ifile ipath; do
   isha=$(sha256sum "$ipath" | cut -d' ' -f1); ibytes=$(stat -Lc %s "$ipath" 2>/dev/null || echo 0)
   printf '{"file":"%s","sha256":"%s","bytes":%s}\n' "$ifile" "$isha" "$ibytes" >> "$INV_ROWS"
   if grep -qxF -- "$ifile" <<< "$LADDER_FILES"; then continue; fi   # a rung measured it above
+  # #3936: the inventory ROW above is recorded either way -- a targeted receipt still
+  # states the host's holdings -- but only the selected model is measured.
+  [ -z "$ONLY" ] || [ "inv:$ifile" = "$ONLY" ] || continue
   if [ "$DRY" = 1 ]; then printf '  [DRY   ] %-30s %s (inventory, not a rung)\n' "inv:$ifile" "$ipath"; continue; fi
   measure "inv:$ifile" "$ifile" "$ipath" "$isha" "$INV_BACKENDS" 1 1
 done <<EOF3
@@ -999,12 +1253,14 @@ if [ "$EXECUTED" -eq 0 ]; then
   echo "decline: nothing executed on $HOST — nothing was measured, no receipt written" >&2
   exit 2
 fi
+RECEIPT_BASE="$HOST"
+[ -z "$ONLY" ] || RECEIPT_BASE="$HOST.only-${ONLY//[^A-Za-z0-9._-]/_}"
 mkdir -p "$OUT_DIR"
 # The receipt names the binary by what it SAYS it is (`apr --version`, which
 # carries the built-from sha), never by its path: a path is machine-specific
 # (check_no_shipped_machine_paths) and says nothing about what was run.
 APR_VERSION=$("$APR" --version 2>/dev/null | head -1)
-python3 - "$ROWS" "$OUT_DIR/$HOST.json" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_ROWS" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" <<'PY'
+python3 - "$ROWS" "$OUT_DIR/$RECEIPT_BASE.json" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_ROWS" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" "$ONLY" <<'PY'
 import json, sys, datetime, platform
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 inv = [json.loads(l) for l in open(sys.argv[11]) if l.strip()]
@@ -1012,10 +1268,11 @@ out = {"schema": "apr-model-ladder-receipt/v2", "host": sys.argv[3], "version": 
        "isa": platform.machine(), "gpu": sys.argv[6] or None, "cc": sys.argv[7] or None,
        "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
        "apr_version": sys.argv[10], "executed": int(sys.argv[8]), "red": int(sys.argv[9]),
+       "only": (sys.argv[15] or None),
        "inventory": inv, "inventory_dirs": sys.argv[12].split(":"), "inventory_patterns": sys.argv[13].split(","),
        "rungs": rows}
 json.dump(out, open(sys.argv[2], "w"), indent=2); open(sys.argv[2], "a").write("\n")
 PY
-printf 'receipt: %s/%s.json (executed=%s red=%s inventory=%s)\n' "$OUT_DIR" "$HOST" "$EXECUTED" "$RED" "$(grep -c . "$INV_ROWS")"
+printf 'receipt: %s/%s.json (executed=%s red=%s inventory=%s)\n' "$OUT_DIR" "$RECEIPT_BASE" "$EXECUTED" "$RED" "$(grep -c . "$INV_ROWS")"
 [ "$RED" -eq 0 ] && exit 0
 exit 1

@@ -334,6 +334,67 @@ pub fn cmd_code(
     output_format: &str,
     input_format: &str,
 ) -> anyhow::Result<()> {
+    cmd_code_with(
+        model,
+        project,
+        resume,
+        prompt,
+        print,
+        max_turns,
+        manifest_path,
+        emit_trace,
+        output_format,
+        input_format,
+        CodeServeOptions::default(),
+    )
+}
+
+/// The `apr serve` controls `apr code` passes through (#3978).
+///
+/// Before these existed, `apr code` always launched `apr serve --gpu`, had no
+/// way to pin the generation length, and had no thinking switch. A caller that
+/// must hold those constant across engines (the CRUX code verb, quorum Q5)
+/// could only record them as "uncontrolled".
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CodeServeOptions {
+    /// Backend and `--max-tokens` for the `apr serve` child.
+    pub serve: crate::agent::driver::apr_serve::ServeLaunchOptions,
+    /// `--thinking on|off`. `Some(true)` is REFUSED: `apr serve` has no thinking-ON
+    /// path on any router (#3723), and a flag that is silently ignored would be
+    /// a false pin. `Some(false)` and `None` both run thinking OFF, which is
+    /// what `apr serve` does.
+    pub think: Option<bool>,
+}
+
+/// The refusal for `--thinking on` (#3978, #3723), settled before anything is launched.
+pub fn refuse_think_on(think: Option<bool>) -> anyhow::Result<()> {
+    if think == Some(true) {
+        anyhow::bail!(CodeOutcome::refused(
+            "invalid_input",
+            "--thinking on: apr serve has no thinking-ON path (#3723), so apr code cannot honour it; \
+             use --thinking off"
+                .to_string(),
+            exit_code::AGENT_ERROR,
+        ));
+    }
+    Ok(())
+}
+
+/// [`cmd_code`] with explicit `apr serve` controls (#3978).
+#[allow(clippy::too_many_arguments)]
+pub fn cmd_code_with(
+    model: Option<PathBuf>,
+    project: PathBuf,
+    resume: Option<Option<String>>,
+    prompt: Vec<String>,
+    print: bool,
+    max_turns: u32,
+    manifest_path: Option<PathBuf>,
+    emit_trace: Option<PathBuf>,
+    output_format: &str,
+    input_format: &str,
+    serve_opts: CodeServeOptions,
+) -> anyhow::Result<()> {
     let json_document = json_document_mode(print, &prompt, output_format);
     let started = std::time::Instant::now();
     // #2607: settled BEFORE the working directory changes, before any
@@ -346,6 +407,7 @@ pub fn cmd_code(
         manifest_path.as_ref(),
         resume.as_ref(),
     )?;
+    refuse_think_on(serve_opts.think)?;
 
     // --project: change working directory for project instructions.
     // A path that is not a directory used to be skipped silently, so
@@ -440,9 +502,10 @@ pub fn cmd_code(
     // PMAT-CODE-SPAWN-PARITY-001: driver stored as Arc so TaskTool can
     // share it with the AgentPool for sub-agent execution.
     let driver: Arc<dyn LlmDriver> = if let Some(model_path) = manifest.model.resolve_model_path() {
-        match crate::agent::driver::apr_serve::AprServeDriver::launch(
+        match crate::agent::driver::apr_serve::AprServeDriver::launch_with(
             model_path,
             manifest.model.context_window,
+            &serve_opts.serve,
         ) {
             Ok(d) => Arc::new(d),
             Err(e) => {

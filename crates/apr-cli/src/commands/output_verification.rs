@@ -15,11 +15,11 @@ fn run_metadata_plausibility_gate(path: &Path, config: &QaConfig) -> Result<Gate
         );
     }
 
-    // Extract metadata from the model file
-    let data = std::fs::read(path)
+    // #3750: the 4-byte magic here, and that format's header below, never the whole model
+    let magic = super::model_header::read_prefix(path, 4)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
 
-    if data.len() < 4 {
+    if magic.len() < 4 {
         let duration = start.elapsed();
         return Ok(GateResult::failed(
             "metadata_plausibility",
@@ -30,7 +30,7 @@ fn run_metadata_plausibility_gate(path: &Path, config: &QaConfig) -> Result<Gate
         ));
     }
 
-    let (architecture, rope_theta, max_pos, rms_norm_eps) = extract_model_metadata(&data, path)?;
+    let (architecture, rope_theta, max_pos, rms_norm_eps) = extract_model_metadata(&magic, path)?;
 
     let mut violations: Vec<String> = Vec::new();
     let mut checks_passed = 0usize;
@@ -38,7 +38,7 @@ fn run_metadata_plausibility_gate(path: &Path, config: &QaConfig) -> Result<Gate
     check_rope_theta(
         architecture.as_deref(),
         rope_theta,
-        &data,
+        &magic,
         &mut violations,
         &mut checks_passed,
     );
@@ -188,13 +188,16 @@ fn check_arch_theta_cross_validation(
 /// Metadata extracted from model file for plausibility validation.
 type ModelMetadata = (Option<String>, Option<f32>, Option<usize>, Option<f32>);
 
-/// Extract model metadata from file bytes (GGUF, APR, or SafeTensors format).
-fn extract_model_metadata(data: &[u8], path: &Path) -> Result<ModelMetadata> {
-    let magic = &data[0..4];
+/// Extract model metadata (GGUF, APR, or SafeTensors format) given the file's magic.
+///
+/// #3750: each format is read to the end of its header and no further: the GGUF header
+/// prefix, the APR header + metadata + tensor index, or SafeTensors' sibling config.json.
+fn extract_model_metadata(magic: &[u8], path: &Path) -> Result<ModelMetadata> {
+    let magic = &magic[0..4];
 
     if magic == b"GGUF" {
-        // GGUF format: use GgufReader
-        let reader = aprender::format::gguf::reader::GgufReader::from_bytes(data.to_vec())
+        // GGUF format: use GgufReader, over the header prefix
+        let reader = super::model_header::gguf_header(path)
             .map_err(|e| CliError::ValidationFailed(format!("GGUF parse failed: {e}")))?;
         let arch = reader.architecture();
         let rope_theta = reader.rope_theta();
@@ -204,7 +207,9 @@ fn extract_model_metadata(data: &[u8], path: &Path) -> Result<ModelMetadata> {
     } else if &magic[0..3] == b"APR" || magic == b"APRN" {
         // APR format: parse v2 header + JSON metadata
         use aprender::format::v2::AprV2Reader;
-        let reader = AprV2Reader::from_bytes(data)
+        let prefix = super::model_header::apr_header_prefix(path)
+            .map_err(|e| CliError::ValidationFailed(format!("APR parse failed: {e}")))?;
+        let reader = AprV2Reader::from_bytes(&prefix)
             .map_err(|e| CliError::ValidationFailed(format!("APR parse failed: {e}")))?;
         let meta = reader.metadata();
         let _ = path;
@@ -999,13 +1004,35 @@ fn run_golden_output_gate_runtime(
     // #3724 done_when 3: the hybrid rungs are thinking-capable too, and this leg
     // is where they are judged.
     if let Some((on_prompt, on_patterns)) = thinking_on_case(architecture.as_deref()) {
+        // #3907 WIRING (#3907 landed the resolver and reached only the DENSE leg at
+        // golden_output.rs:795; this is the HYBRID leg, and it kept passing the raw
+        // `THINKING_ON_BUDGET` const to BOTH the generation and the judging). Measured
+        // before this change: APR_THINKING_ON_BUDGET=8192, =512 and unset all produced
+        // byte-identical output — "within 2048 tokens ... 8901 chars" — and =abc, which
+        // the resolver must reject as "is not a token count", changed nothing. The
+        // override was compiled in and unreachable. So the one model the budget table
+        // was written for was the one model that could not reach it.
+        let model_file = path
+            .file_name()
+            .map(|f| f.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let (on_budget, _basis) = match thinking_on_budget_for(&model_file) {
+            Ok(v) => v,
+            Err(reason) => {
+                return Ok(GateResult::failed(
+                    "golden_output",
+                    &format!("golden_output_thinking_on: {reason}"),
+                    None,
+                    None,
+                    start.elapsed(),
+                ))
+            },
+        };
         // #3711 made this return the backend alongside the text; the ON leg judges
         // the answer, and the backend was already judged on the OFF cases above.
-        let (on_text, _used_gpu) =
-            golden_output_runtime(path, on_prompt.as_str(), THINKING_ON_BUDGET)?;
+        let (on_text, _used_gpu) = golden_output_runtime(path, on_prompt.as_str(), on_budget)?;
         let generated = on_text.strip_prefix(on_prompt.as_str()).unwrap_or(&on_text);
-        if let Some(reason) = judge_thinking_on_output(generated, &on_patterns, THINKING_ON_BUDGET)
-        {
+        if let Some(reason) = judge_thinking_on_output(generated, &on_patterns, on_budget) {
             return Ok(GateResult::failed(
                 "golden_output",
                 &reason,
@@ -1247,5 +1274,48 @@ mod loud_truncation_3904 {
             ),
             other => panic!("expected Fail, got {other:?}"),
         }
+    }
+
+    /// #3907 wiring: BOTH hybrid ON-leg sites take the resolver's budget.
+    ///
+    /// A source read, because the behavioural discriminator needs a GPU: measured on
+    /// lambda with `APR_THINKING_ON_BUDGET=256`, both-routed reports "within 256
+    /// tokens ... 1105 chars" and a JUDGING-unrouted mutant reports "within 2048
+    /// tokens ... 1105 chars" — the same generation, a misreported budget. A single
+    /// test touching only one site cannot tell a one-site fix from a two-site one,
+    /// and "a fix reaching one of N sites" is the defect this commit repairs.
+    #[test]
+    fn both_hybrid_on_leg_sites_take_the_resolved_budget() {
+        let src = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/commands/output_verification.rs"
+        ))
+        .expect("own source readable");
+
+        // EVERY assertion scans the code ABOVE the test module, never the whole file.
+        // The first draft did not, and all three positive assertions matched their OWN
+        // text inside this test — so the guard passed with BOTH sites unrouted. Caught
+        // by mutating it rather than by reading it: a source-reading guard that scans
+        // itself is satisfied by its own assertion strings, which is the vacuous shape
+        // this commit exists to remove one level down.
+        let code = src.split("#[cfg(test)]").next().unwrap_or(&src);
+
+        assert!(
+            code.contains("golden_output_runtime(path, on_prompt.as_str(), on_budget)"),
+            "the hybrid ON leg's GENERATION must take the resolved budget, not a literal (#3907)"
+        );
+        assert!(
+            code.contains("judge_thinking_on_output(generated, &on_patterns, on_budget)"),
+            "the hybrid ON leg's JUDGING must take the resolved budget, not a literal (#3907)"
+        );
+        assert!(
+            code.contains("thinking_on_budget_for(&model_file)"),
+            "the hybrid ON leg must resolve through thinking_on_budget_for, which carries the \
+             per-model row, its refusal path and the APR_THINKING_ON_BUDGET probe (#3907)"
+        );
+        assert!(
+            !code.contains("THINKING_ON_BUDGET)"),
+            "no ON-leg site may pass the old THINKING_ON_BUDGET const — it is deleted (#3907)"
+        );
     }
 }
