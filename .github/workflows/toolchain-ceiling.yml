@@ -102,11 +102,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           clean: false
-      - name: Self-test — a planted cuda-only finding reddens ONLY the cuda axis
+      - name: Self-test — an unreached feature is refused, and a planted cuda-only finding reddens only the cuda-reaching axes
         run: |
           export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
           bash scripts/check_clippy_feature_matrix.sh --self-test
-      - name: Strict clippy on every declared feature axis (default, cuda)
+      - name: Strict clippy on every feature axis — the axis table must reach every apr-cli feature (derived)
         run: |
           export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
           bash scripts/check_clippy_feature_matrix.sh

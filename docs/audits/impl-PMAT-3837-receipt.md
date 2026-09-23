@@ -46,7 +46,24 @@ Branch `fix/3837-cuda-feature-lint-gate` off `main@49fe19c28`; author aprender-d
 - Workflow: `toolchain-ceiling.yml` job `clippy-feature-matrix`, daily, clean-room X64, self-test step first.
   actionlint OK; `check_guards_are_wired.sh` PASS; `check_runner_labels.sh` OK; bashrs 0 errors.
 
+## Claim 3 (quorum round 2, lane 1's finding): EVERY feature axis is enumerated, and the list is derived
+- The gate reads apr-cli's feature table from `cargo metadata`, and every feature must be reached by an axis
+  (directly, or through the features the axis implies, plus `default` unless the axis disables it) or be excluded
+  with a ticket. Otherwise it refuses by name, before any clippy runs.
+- Measured, one axis at a time (`clippy -p apr-cli --lib --features X -D warnings`):
+  - `dev`: 0 · `dhat-heap`: 0.
+  - `full`: 1 finding (`aprender-core/src/hf_hub/xet.rs:97`, an elidable lifetime: `impl<'a> XetUploader<'a>`
+    → `impl XetUploader<'_>`). It is FIXED here, and full is then 0.
+  - `wgpu`: does NOT compile (5 errors), filed as #4056 (P1).
+- Axes: default, cuda, full (pulls in cuda-batch, training-gpu, code, xet, trueno-explain), dev, dhat-heap.
+  Excluded: `wgpu` (#4056) and the `--no-default-features` mode (#4041). Coverage: 24 features, 23 reached, 1
+  excluded.
+- `--self-test`, measured:
+  - (1) a planted `planted-3837-unreached = []` feature → refused by name (rc 1), with the manifest restored by
+    `git checkout --`;
+  - (2) the planted cuda-only cast → exactly `cuda` and `full` RED; `default`, `dev` and `dhat-heap` ok.
+  - PASS. The real run: 5 axes, 0 findings, PASS.
+
 ## Not done / out of scope
 - The `--no-default-features` axis: #4041 (is it a supported configuration?).
-- Single-feature axes (`training`, `visualization`, `zram`, `hf-hub`, …) are not measured.
 - The workflow edit needs the operator's OK at merge (batched by the cop with #3810/#3658). NOT ARMED.
