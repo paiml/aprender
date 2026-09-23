@@ -837,15 +837,22 @@ def collect(args):
 
     # #3962 J2 (per cell): the certification admits prompts PER MODEL (quant sha). A prompt it did not
     # admit for this model is RED on that cell, however right the answer -- it was never shown answerable.
-    admitted = None
+    # dd 292645efb: admission PER THINKING MODE when the receipt carries it. The strict key admits a
+    # prompt only if it certified in EVERY mode, so a model whose ON cells loop admitted nothing and its
+    # right OFF cells went RED "not certified". The cell's OWN mode decides; the strict key is used only
+    # when the receipt has no per-mode map.
+    admitted, admitted_mode = None, None
     if pdoc.get("schema") == "crux-inference-prompts/v2" and getattr(args, "certification", None):
         try:
             with open(args.certification, encoding="utf-8") as fh:
-                admitted = json.load(fh).get("admitted_by_sha")
+                cdoc = json.load(fh)
+            admitted, admitted_mode = cdoc.get("admitted_by_sha"), cdoc.get("admitted_by_sha_thinking")
         except (OSError, ValueError):
             admitted = None
         if not isinstance(admitted, dict):
             admitted = {}   # a receipt with no per-model admission admits nothing
+        if not isinstance(admitted_mode, dict):
+            admitted_mode = None
     cells = []
     for k in keys:
         prompt = prompts[k[5]]
@@ -868,7 +875,13 @@ def collect(args):
         fmt = next((by_key[k][e].get("format") for e in by_key[k] if by_key[k][e].get("format")), None) \
             or fmt_of_model.get(k[0])
         verdict, ok, reasons, extracted = judge_cell(entries, prompt, fmt)
-        if admitted is not None and k[5] not in admitted.get(k[0], ()):
+        if admitted_mode is not None:
+            by_mode = admitted_mode.get(k[0]) if isinstance(admitted_mode.get(k[0]), dict) else {}
+            if k[5] not in (by_mode.get(k[3]) or ()):
+                reasons = reasons + ["prompt %s is not admitted for this model with thinking %s by the certification "
+                                     "(admitted_by_sha_thinking) -- never shown answerable here (#3962 J2)" % (k[5], k[3])]
+                verdict = "RED"
+        elif admitted is not None and k[5] not in admitted.get(k[0], ()):
             reasons = reasons + ["prompt %s is not admitted for this model by the certification (admitted_by_sha) -- "
                                  "never shown answerable here (#3962 J2)" % k[5]]
             verdict = "RED"

@@ -78,6 +78,8 @@ sys.path.insert(0, sys.argv[1]); import crux_prompt_certify as c
 json.dump({"schema": c.SCHEMA, "prompts": sys.argv[2], "prompts_sha256": hashlib.sha256(open(sys.argv[2], "rb").read()).hexdigest(),
            "admitted": {"fixture/Q4_K_M": ["golden-2plus2", "golden-greeting", "golden-paris", "chat-arith-2turn"]},
            "admitted_by_sha": {"a" * 64: __import__("os").environ.get("ADMIT", "golden-2plus2,golden-greeting,golden-paris,chat-arith-2turn").split(",")},
+           **({"admitted_by_sha_thinking": {"a" * 64: json.loads(__import__("os").environ["ADMIT_THINKING"])}}
+              if __import__("os").environ.get("ADMIT_THINKING") else {}),
            "rejected": {}, "uncontrolled": [], "cells": []}, open(sys.argv[3], "w"))
 PY
 }
@@ -943,6 +945,18 @@ CERT_SAVED=$CERT; CERT="$d/cert.json"; run_judge "$d"; GOT_RC=$?; CERT=$CERT_SAV
 expect "J2: a right answer to a prompt NOT admitted for this model is RED" "$d" 1 golden-paris RED
 reason_has "  ...named as not certified for this model" "$d" golden-paris "not admitted for this model"
 
+# dd 292645efb: admission PER THINKING MODE. A model whose thinking-ON cells loop certifies no prompt
+# under the strict key, and its right thinking-OFF cells must not go RED "not certified" for it.
+d=$(newcase j_admitted_off_only); control_green "$d"
+ADMIT="" ADMIT_THINKING='{"off": ["golden-2plus2"], "on": []}' cert_for "$PROMPTS" "$d/cert.json"
+CERT_SAVED=$CERT; CERT="$d/cert.json"; run_judge "$d"; GOT_RC=$?; CERT=$CERT_SAVED
+expect "J2/thinking: strict admits nothing, the OFF mode admits -- the right OFF cell is GREEN" "$d" 0 $P GREEN
+d=$(newcase j_not_admitted_in_this_mode); control_green "$d"
+ADMIT_THINKING='{"off": [], "on": ["golden-2plus2"]}' cert_for "$PROMPTS" "$d/cert.json"
+CERT_SAVED=$CERT; CERT="$d/cert.json"; run_judge "$d"; GOT_RC=$?; CERT=$CERT_SAVED
+expect "J2/thinking: admitted only for thinking ON -- the OFF cell is RED" "$d" 1 $P RED
+reason_has "  ...named as not admitted in this thinking mode" "$d" $P "not admitted for this model"
+
 d=$(newcase f6_all_green); three "$d" "$T4" "$T4" "$T4"
 run_judge "$d"; GOT_RC=$?
 expect "F6 positive control of this section: apr, ggml and the bf16 control all right is GREEN and PASSES" "$d" 0 $P GREEN
@@ -971,7 +985,8 @@ negative-control-off|the lane is blind|s/^    blind = sorted(v for v, r in negat
 per-verb-control-off|does not control the serve lane|s/^    uncontrolled = \["%s/    uncontrolled = [] and ["%s/
 reasoning-not-rebuilt|read as UNCLOSED|s/^    if isinstance(doc, dict) and isinstance(doc.get("reasoning"), str) and doc.get("reasoning"):$/    if False:/
 route-not-keyed|J\/R1 route key|s/, mode, r.get("route") or "")$/, mode, "")/
-admission-off|NOT admitted for this model is RED|s/^        if admitted is not None and k\[5\] not in admitted.get(k\[0\], ()):$/        if False:/
+admission-mode-off|admitted only for thinking ON|s/^        if admitted_mode is not None:$/        if False:/
+admission-off|NOT admitted for this model is RED|s/^        elif admitted is not None and k\[5\] not in admitted.get(k\[0\], ()):$/        elif False:/
 certification-off|no certification receipt declines|s/^        certified = certification_ok(args.prompts, getattr(args, "certification", None))$/        certified = True/
 MUT
 fi
