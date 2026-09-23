@@ -456,9 +456,18 @@ tier4: tier3
 # ============================================================================
 # COVERAGE TARGETS (Two-Phase Pattern from bashrs)
 # ============================================================================
-# Pattern: bashrs/Makefile - Two-phase coverage with mold linker workaround
-# CRITICAL: mold linker breaks LLVM coverage instrumentation
-# Solution: Temporarily move ~/.cargo/config.toml during coverage runs
+# #3839: these targets used to `mv ~/.cargo/config.toml` aside for the whole run
+# (the bashrs "mold breaks LLVM coverage" workaround). That renames a file every
+# other cargo process of this user reads, so on a shared host it silently changes
+# other agents' builds mid-run. No fleet host has a global config (checked
+# 2026-09-23: lambda, intel, yoga, gx10), so the move was a no-op there. Instead,
+# COV_REFUSE_GLOBAL_MOLD refuses to measure where a global config enables mold,
+# and never edits it.
+COV_REFUSE_GLOBAL_MOLD = @if [ -f "$${CARGO_HOME:-$$HOME/.cargo}/config.toml" ] && grep -q mold "$${CARGO_HOME:-$$HOME/.cargo}/config.toml"; then \
+	echo "❌ $${CARGO_HOME:-$$HOME/.cargo}/config.toml enables mold, which breaks LLVM coverage instrumentation."; \
+	echo "   Refusing rather than moving a file every other cargo process on this host reads (issue 3839)."; \
+	echo "   Run with CARGO_HOME pointing at a copy without mold, or remove mold from that file."; \
+	exit 1; fi
 
 # Exclusion patterns for coverage reports
 # ONLY excludes truly external/feature-gated code - all apr subcommands INCLUDED
@@ -606,7 +615,7 @@ contracts:
 coverage: ## Coverage summary + threshold check (warm: ~3min)
 	@echo "📊 Running coverage ($(COV_THRESHOLD)%+ threshold)..."
 	@which cargo-llvm-cov > /dev/null 2>&1 || { cargo install cargo-llvm-cov --locked || exit 1; }
-	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.bak || true
+	$(COV_REFUSE_GLOBAL_MOLD)
 	@# Pre-clean: remove stale profraw files to avoid LLVM version mismatch
 	@COVDIR=$$($(COV_CARGO_ENV) cargo llvm-cov show-env 2>/dev/null | grep CARGO_LLVM_COV_TARGET_DIR | sed "s/.*=//"); \
 	if [ -n "$$COVDIR" ]; then find "$$COVDIR" -name '*.profraw' -delete 2>/dev/null || true; fi
@@ -619,7 +628,7 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 		--lcov --output-path target/coverage/lcov.info \
 		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" \
 		-- --exact $$(sed -e '/^#/d' -e '/^[[:space:]]*$$/d' -e 's/^/--skip /' scripts/coverage-skips.txt) \
-		|| { test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml; exit 1; }
+		|| exit 1
 	@echo "📊 Parsing LCOV for the threshold check..."
 	@# Parse LCOV for line coverage (LH=lines hit, LF=lines found)
 	@LH=$$(awk -F: '/^LH:/{s+=$$2} END{print s+0}' target/coverage/lcov.info); \
@@ -630,7 +639,6 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	mkdir -p .pmat-metrics || exit 1; \
 	printf '{"coverage_pct":%s}' "$$COV_PCT" > .pmat-metrics/coverage.result; \
 	echo "   wrote .pmat-metrics/coverage.result ($${COV_PCT}%) for pmat score"; \
-	test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml || true; \
 	if [ "$$COV_PCT" -lt "$(COV_FLOOR)" ]; then \
 		echo "❌ REGRESSION: coverage $${COV_PCT}% fell below the enforced floor $(COV_FLOOR)%"; \
 		echo "   The floor is the last measured value, so this means coverage went DOWN."; \
@@ -656,12 +664,11 @@ coverage-fast: coverage
 # gate anything - unlike `coverage`, whose 0% fed the >=95% threshold check.
 coverage-html: ## Generate HTML + LCOV reports from last coverage run
 	@echo "📊 Generating HTML + LCOV reports..."
-	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.bak || true
+	$(COV_REFUSE_GLOBAL_MOLD)
 	@mkdir -p target/coverage
 	@printf '%s' '$(COVERAGE_EXCLUDE_REGEX)' > target/coverage/.exclude-re
 	@$(COV_CARGO_ENV) cargo llvm-cov report --html --output-dir target/coverage/html --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
 	@$(COV_CARGO_ENV) cargo llvm-cov report --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
-	@test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml || true
 	@echo "📍 HTML: target/coverage/html/index.html"
 
 # Full coverage: All features (for CI, slower)
@@ -669,7 +676,7 @@ coverage-html: ## Generate HTML + LCOV reports from last coverage run
 coverage-full: ## Full coverage report (all features, CI only)
 	@echo "📊 Running full coverage analysis (all features)..."
 	@which cargo-llvm-cov > /dev/null 2>&1 || { cargo install cargo-llvm-cov --locked || exit 1; }
-	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.bak || true
+	$(COV_REFUSE_GLOBAL_MOLD)
 	@mkdir -p target/coverage
 	@printf '%s' '$(COVERAGE_EXCLUDE_REGEX)' > target/coverage/.exclude-re
 	@PROPTEST_CASES=10 QUICKCHECK_TESTS=10 CARGO_BUILD_JOBS=4 \
@@ -680,7 +687,6 @@ coverage-full: ## Full coverage report (all features, CI only)
 	@$(COV_CARGO_ENV) cargo llvm-cov report --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
 	@echo ""
 	@$(COV_CARGO_ENV) cargo llvm-cov report --summary-only --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
-	@test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml || true
 
 # Open coverage report in browser
 coverage-open: ## Open HTML coverage report in browser
