@@ -38,6 +38,52 @@ mod gemv_entry_name_tests_3477 {
         ]
     }
 
+    /// #3970: the Q4_K / Q6_K STRATEGY kernels (tiled, DP4A, multi-warp, batched,
+    /// fused, ...) picked by the selection path rather than by `BoundWeight`.
+    /// They were excluded from the completeness check by a named rule, so none of
+    /// them — hot-path `MwvDp4aQ4KGemv` included — was ever ptxas-assembled.
+    /// Parameters are the values the executor dispatches with (4 warps / 4 rows /
+    /// 4 outputs per block, eps 1e-6).
+    fn every_strategy_gemv_kernel() -> Vec<KernelType> {
+        let (k, n, w) = (4096u32, 4096u32, 4u32);
+        vec![
+            KernelType::TiledQ4KGemv { k, n, outputs_per_block: w },
+            KernelType::ChunkedTiledQ4KGemv { k, n, outputs_per_block: w },
+            KernelType::CoalescedQ4KGemv { k, n },
+            KernelType::WideQ4KGemv { k, n },
+            KernelType::VectorizedQ4KGemv { k, n },
+            KernelType::MwvQ4KGemv { k, n, num_warps: w },
+            KernelType::MwvDp4aQ4KGemv { k, n, num_warps: w },
+            KernelType::HwDp4aQ4KGemv { k, n, num_warps: w },
+            KernelType::Dp4aQ4KGemv { k, n },
+            KernelType::Dp4aSIMDQ4KGemv { k, n },
+            KernelType::TrueDp4aQ4KGemv { k, n },
+            KernelType::BatchedQ4KGemv { m: w, k, n },
+            KernelType::MultiWarpBatchedQ4KGemv { k, n, warps: w },
+            KernelType::BatchedHwDp4aQ4KGemv { k, n, m: w, num_warps: w },
+            KernelType::FusedFp32Q4KGemv { k, n, m: w, num_warps: w },
+            KernelType::InlineQ8Dp4aQ4KGemv { k, n, m: w, num_warps: w },
+            KernelType::CoalescedQ6KGemv { k, n },
+            KernelType::BatchedQ6KGemv { k, n, m: w },
+            KernelType::MwvQ6KGemv { k, n, num_warps: w },
+            KernelType::Dp4aQ6KGemv { k, n, num_warps: w },
+            KernelType::HwDp4aQ6KGemv { k, n, num_warps: w },
+            KernelType::Fp16Q4KGemv { k, n },
+            KernelType::FusedRmsNormQ4KGemv { k, n, epsilon: 1e-6 },
+            KernelType::FusedGateUpQ4KGemv { k, n },
+            KernelType::FusedGateUpSwigluHwDp4aQ4KGemv { k, n },
+            KernelType::FusedKVHwDp4aQ4KGemv { k, n },
+        ]
+    }
+
+    /// Every GEMV kernel the crate can emit: the per-weight-type set plus the
+    /// strategy set. The assembly and entry-name guards iterate THIS.
+    fn every_emitted_gemv_kernel() -> Vec<KernelType> {
+        let mut all = every_gemv_kernel();
+        all.extend(every_strategy_gemv_kernel());
+        all
+    }
+
     /// #3931: `every_gemv_kernel` is a HAND-WRITTEN list, and every assembly and
     /// entry-name guard in this file iterates it. A new kernel that is not added
     /// here is never assembled by `every_emitted_kernel_assembles`, and that test
@@ -51,15 +97,20 @@ mod gemv_entry_name_tests_3477 {
     fn every_gemv_variant_is_in_the_list_the_guards_iterate() {
         let enum_src = include_str!("kernel_type.rs");
         let this_src = include_str!("gemv_entry_name_tests_3477.rs");
-        let listed: std::collections::BTreeSet<&str> = this_src
-            .split("fn every_gemv_kernel()")
-            .nth(1)
-            .and_then(|t| t.split("]").next())
-            .expect("every_gemv_kernel's vec! literal")
-            .split("KernelType::")
-            .skip(1)
-            .filter_map(|t| t.split_whitespace().next())
-            .collect();
+        let listed: std::collections::BTreeSet<&str> =
+            ["fn every_gemv_kernel()", "fn every_strategy_gemv_kernel()"]
+                .iter()
+                .flat_map(|marker| {
+                    this_src
+                        .split(marker)
+                        .nth(1)
+                        .and_then(|t| t.split("]").next())
+                        .expect("a kernel list's vec! literal")
+                        .split("KernelType::")
+                        .skip(1)
+                        .filter_map(|t| t.split_whitespace().next())
+                })
+                .collect();
         let declared: Vec<&str> = enum_src
             .lines()
             .map(str::trim)
@@ -75,26 +126,15 @@ mod gemv_entry_name_tests_3477 {
              this test would pass vacuously",
             declared.len()
         );
-        // SCOPE, stated rather than silently narrowed. This file's list is the
-        // ONE-KERNEL-PER-WEIGHT-TYPE set: the kernel `BoundWeight` dispatches for
-        // each `WeightQuantType`. Q4_K and Q6_K additionally have many STRATEGY
-        // variants (tiled, DP4A, fused gate-up, batched, ...) chosen by a separate
-        // selection path. Those are excluded HERE by rule, not by omission — and
-        // the finding that they are not ptxas-assembled by any test in this crate
-        // is reported separately (#3931 thread), not quietly absorbed.
-        let is_q4k_q6k_strategy = |v: &str| {
-            (v.contains("Q4K") || v.contains("Q6K")) && v != "Q4KGemv" && v != "Q6KGemv"
-        };
-        let missing: Vec<&str> = declared
-            .iter()
-            .copied()
-            .filter(|v| !is_q4k_q6k_strategy(v))
-            .filter(|v| !listed.contains(v))
-            .collect();
+        // No exclusions (#3970): the Q4_K/Q6_K strategy variants used to be
+        // skipped here by a named rule, and so were never assembled.
+        let missing: Vec<&str> =
+            declared.iter().copied().filter(|v| !listed.contains(v)).collect();
         assert!(
             missing.is_empty(),
             "GEMV kernel variant(s) declared in kernel_type.rs but absent from \
-             every_gemv_kernel(), so never assembled or name-checked: {missing:?}"
+             every_gemv_kernel() / every_strategy_gemv_kernel(), so never assembled \
+             or name-checked: {missing:?}"
         );
     }
 
@@ -102,7 +142,7 @@ mod gemv_entry_name_tests_3477 {
     fn the_name_the_launcher_looks_up_exists_in_the_ptx_it_compiles() {
         let kernels = CudaKernels::new();
         let mut broken = Vec::new();
-        for kt in every_gemv_kernel() {
+        for kt in every_emitted_gemv_kernel() {
             let name = kernels.kernel_name(&kt);
             let ptx = kernels.generate_ptx(&kt);
             // ptxas rejects a non-ASCII byte ANYWHERE, comments included, and
@@ -963,7 +1003,7 @@ mod gemv_entry_name_tests_3477 {
         let kernels = CudaKernels::new();
         let mut broken = Vec::new();
 
-        for kt in every_gemv_kernel() {
+        for kt in every_emitted_gemv_kernel() {
             let ptx = kernels.generate_ptx(&kt);
             // Assemble at the target the module itself declares.
             let target = ptx
@@ -976,11 +1016,13 @@ mod gemv_entry_name_tests_3477 {
             let dir = std::env::temp_dir().join(format!("apr_ptx_{}", std::process::id()));
             let _ = std::fs::create_dir_all(&dir);
             let path = dir.join(format!("{}.ptx", kernels.kernel_name(&kt)));
-            let Ok(mut f) = std::fs::File::create(&path) else { continue };
-            if f.write_all(ptx.as_bytes()).is_err() {
+            // A kernel that could not be written was not assembled; say so
+            // rather than `continue` past it and report it as clean.
+            let written = std::fs::File::create(&path).and_then(|mut f| f.write_all(ptx.as_bytes()));
+            if let Err(e) = written {
+                broken.push(format!("\n  - {kt:?}: could not write PTX to {} ({e})", path.display()));
                 continue;
             }
-            drop(f);
 
             let out = std::process::Command::new("ptxas")
                 .args(["--gpu-name", &target, "-o"])
