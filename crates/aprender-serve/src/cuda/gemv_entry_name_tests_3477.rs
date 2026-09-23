@@ -1166,53 +1166,17 @@ mod gemv_entry_name_tests_3477 {
     /// runs without a toolchain; this one is the ground truth.
     #[test]
     fn every_emitted_kernel_assembles() {
-        use std::io::Write as _;
         let kernels = CudaKernels::new();
         let mut broken = Vec::new();
 
         for kt in every_emitted_gemv_kernel() {
             let ptx = kernels.generate_ptx(&kt);
-            // Assemble at the target the module itself declares.
-            let target = ptx
-                .lines()
-                .find_map(|l| l.trim().strip_prefix(".target "))
-                .unwrap_or("sm_70")
-                .trim()
-                .to_string();
-
-            let dir = std::env::temp_dir().join(format!("apr_ptx_{}", std::process::id()));
-            let _ = std::fs::create_dir_all(&dir);
-            let path = dir.join(format!("{}.ptx", kernels.kernel_name(&kt)));
-            // A kernel that could not be written was not assembled; say so
-            // rather than `continue` past it and report it as clean.
-            let written = std::fs::File::create(&path).and_then(|mut f| f.write_all(ptx.as_bytes()));
-            if let Err(e) = written {
-                broken.push(format!("\n  - {kt:?}: could not write PTX to {} ({e})", path.display()));
-                continue;
+            // Assemble at the declared target, or the first newer arch this ptxas
+            // still defines (gx10's CUDA 13 and yoga's no longer define sm_70).
+            let target = crate::test_ptxas::declared_target(&ptx);
+            if let Err(e) = crate::test_ptxas::assemble(&ptx, kernels.kernel_name(&kt), &[target.as_str()]) {
+                broken.push(format!("\n  - {kt:?}: {e}"));
             }
-
-            let out = std::process::Command::new("ptxas")
-                .args(["--gpu-name", &target, "-o"])
-                .arg(dir.join("out.cubin"))
-                .arg(&path)
-                .output();
-
-            match out {
-                Ok(o) if !o.status.success() => {
-                    let err = String::from_utf8_lossy(&o.stderr);
-                    broken.push(format!(
-                        "\n  - {kt:?} at {target}: {}",
-                        err.trim().lines().take(3).collect::<Vec<_>>().join(" | ")
-                    ));
-                },
-                Ok(_) => {},
-                Err(e) => {
-                    // A cuda-feature build implies a CUDA toolchain, so a
-                    // missing ptxas is a real finding, not a reason to skip.
-                    broken.push(format!("\n  - {kt:?}: could not run ptxas ({e})"));
-                },
-            }
-            let _ = std::fs::remove_file(&path);
         }
 
         assert!(

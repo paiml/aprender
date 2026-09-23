@@ -87,12 +87,8 @@ mod gemm_layout_tests_3975 {
             ptx.len()
         );
         assert!(ptx.is_ascii(), "ptxas rejects non-ASCII anywhere in a module");
-        let declared = ptx
-            .lines()
-            .find_map(|l| l.trim().strip_prefix(".target "))
-            .unwrap_or("sm_70")
-            .trim()
-            .to_string();
+        let declared = crate::test_ptxas::declared_target(&ptx);
+        let assemble = |ptx: &str, first: &[&str]| crate::test_ptxas::assemble(ptx, "gemm_bt", first);
 
         // Row 1: the real module assembles (at its declared target, or the first newer
         // arch this ptxas still defines).
@@ -107,51 +103,6 @@ mod gemm_layout_tests_3975 {
         let bogus = ptx.replacen("ret;", "bogus.plant.u32 %r0, %r0;\n    ret;", 1);
         assert_ne!(bogus, ptx, "the plant must land");
         assert!(assemble(&bogus, &[declared.as_str()]).is_err(), "a bogus instruction must fail ptxas");
-    }
-
-    /// Assemble `ptx` with ptxas, trying `first` and then newer archs, skipping ONLY
-    /// archs this ptxas does not define (`Value 'sm_NN' is not defined for option
-    /// 'gpu-name'`). PTX for sm_70 assembles for any later GPU, so a newer arch is a
-    /// valid stand-in; any other ptxas error is returned. Ok(arch) names the arch used.
-    fn assemble(ptx: &str, first: &[&str]) -> Result<String, String> {
-        const NEWER: [&str; 6] = ["sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_120"];
-        let dir = std::env::temp_dir().join(format!(
-            "apr_gemm_bt_{}_{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        std::fs::create_dir_all(&dir).expect("temp dir");
-        let src = dir.join("gemm_bt.ptx");
-        std::fs::write(&src, ptx).expect("write ptx");
-        let mut undefined = Vec::new();
-        let mut result = Err(String::new());
-        for arch in first.iter().chain(NEWER.iter()) {
-            let out = std::process::Command::new("ptxas")
-                .args(["--gpu-name", arch, "-o"])
-                .arg(dir.join("gemm_bt.cubin"))
-                .arg(&src)
-                .output()
-                .expect("a cuda-feature build implies ptxas on PATH");
-            let err = String::from_utf8_lossy(&out.stderr).into_owned();
-            if out.status.success() {
-                result = Ok((*arch).to_string());
-                break;
-            }
-            if err.contains("is not defined for option 'gpu-name'") {
-                undefined.push(*arch);
-                continue;
-            }
-            result = Err(format!("at {arch}: {err}"));
-            break;
-        }
-        let _ = std::fs::remove_dir_all(&dir);
-        result.map_err(|e| {
-            if e.is_empty() {
-                format!("this ptxas defines none of {undefined:?}")
-            } else {
-                e
-            }
-        })
     }
 
     #[test]
