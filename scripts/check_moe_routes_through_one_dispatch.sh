@@ -125,7 +125,14 @@ PY
 
 if [ "$SELF_TEST" = 1 ]; then
   T=$(mktemp -d) || exit 2
-  _rm() { case "${T:-}" in /tmp/?*) rm -rf -- "$T" ;; esac; }; trap _rm EXIT
+  # Remove only what mktemp made: never empty, never "/", never outside a temp root.
+  _rm() {
+    case "${T:-}" in
+      /tmp/?*|/var/folders/?*) [ -d "$T" ] && rm -rf -- "$T" ;;
+      *) : ;;
+    esac
+  }
+  trap _rm EXIT
   git -C "$ROOT" ls-files -z crates/apr-cli/src crates/aprender-serve/src | (cd "$ROOT" && xargs -0 cp --parents -t "$T")
   git -C "$T" init -q && git -C "$T" add -A >/dev/null
   check "$T" > /dev/null || { echo "SELF-TEST FAILED: the shipped tree is already red" >&2; exit 1; }
