@@ -4,7 +4,7 @@
 #
 #   bash scripts/crux_sweep_shards.sh <version> --host <id> --apr <binary> --out <dir>
 #        [--backend gpu|cpu] [--scope controls|admitted] [--models-dir <dir>]... [--certification <receipt>]
-#        [--greedy-model <gguf>]... [--dry-run]
+#        [--greedy-model <gguf>]... [--greedy-only] [--dry-run]
 #
 # WHY PER (MODEL, MODE). The certification admits prompts per quant sha AND thinking mode
 # (admitted_by_sha_thinking); a prompt run outside its admission is RED at the judge by design. So each shard is
@@ -17,12 +17,16 @@
 # --greedy-model (#3957 F9) runs greedy-only shards (--greedy --greedy-prompts <first control>, thinking OFF):
 # their GREEDY rows join the merge, their gen cells DO NOT — those models are not certified, so their gen cells
 # would be RED by design and say nothing about F9. That exclusion is written into the plan file beside the receipt.
+# --greedy-only (#4004, the CPU lane): run ONLY the greedy shards — the certified cells' 4096-token thinking-ON
+# budgets are impractical on a CPU lane, and F9's CPU reference needs greedy rows alone. The receipt then has no
+# judged cell, so the judge DECLINES it (exit 2, "no cell was measured") while its greedy[] carries the rows: a
+# greedy-only receipt is F9 evidence, never a CRUX verdict, and the plan file says so.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 PROG=crux_sweep_shards
 die() { printf '%s: %s\n' "$PROG" "$1" >&2; exit 2; }
 
-VERSION=""; HOST=""; APR_BIN=""; OUT=""; BACKEND=gpu; SCOPE=controls; DRY=0
+VERSION=""; HOST=""; APR_BIN=""; OUT=""; BACKEND=gpu; SCOPE=controls; DRY=0; GREEDY_ONLY=0
 CERT="evidence/crux/0.69.1/prompt-certification.json"; PROMPTS="scripts/crux_inference_prompts.v2.json"
 MODEL_DIRS=(); GREEDY_MODELS=()
 while [ $# -gt 0 ]; do
@@ -35,6 +39,7 @@ while [ $# -gt 0 ]; do
     --models-dir) MODEL_DIRS+=("$2"); shift 2 ;;
     --certification) CERT="$2"; shift 2 ;;
     --greedy-model) GREEDY_MODELS+=("$2"); shift 2 ;;
+    --greedy-only) GREEDY_ONLY=1; shift ;;
     --dry-run) DRY=1; shift ;;
     -*) die "unknown argument '$1'" ;;
     *) [ -z "$VERSION" ] || die "one version"; VERSION="$1"; shift ;;
@@ -85,6 +90,8 @@ with open(plan, "w") as out:
 PY
 printf '%s: plan for %s (%s lane, scope %s) -> %s\n' "$PROG" "$HOST" "$BACKEND" "$SCOPE" "$PLAN"
 sed 's/^/  /' "$PLAN"
+[ "$GREEDY_ONLY" = 1 ] && { [ "${#GREEDY_MODELS[@]}" -gt 0 ] || die "--greedy-only needs at least one --greedy-model"; \
+  printf '  GREEDY-ONLY\tthe certified RUN lines above are NOT run on this lane; this receipt is F9 greedy evidence, not a CRUX verdict\n' | tee -a "$PLAN"; }
 for g in "${GREEDY_MODELS[@]}"; do printf '  GREEDY\t%s\t(off; greedy rows only — its gen cells are NOT merged: uncertified)\n' "$g" | tee -a "$PLAN"; done
 [ "$DRY" = 1 ] && exit 0
 
@@ -97,7 +104,7 @@ run_shard() { # run_shard <name> <dogfood args...> — one dogfood run; echoes i
 }
 : > "$OUT/shards.tsv"
 while IFS=$'\t' read -r kind sha mode path ids; do
-  [ "$kind" = RUN ] || continue
+  [ "$kind" = RUN ] && [ "$GREEDY_ONLY" = 0 ] || continue
   run_shard "${sha:0:12}-$mode" --model "$path" --engines apr,llama.cpp,vllm,hf --verbs run,chat,serve,code \
     --thinking-modes "$mode" --only-prompts "$ids"
 done < "$PLAN"
@@ -119,7 +126,10 @@ for l in open(sys.argv[1]):
     *) cat "$work/manifest.jsonl" >> "$MERGED"; [ -n "$META" ] || META="$work/meta.json" ;;
   esac
 done < "$OUT/shards.tsv"
-[ -n "$META" ] || die "no certified shard produced a manifest; nothing to judge"
+if [ -z "$META" ] && [ "$GREEDY_ONLY" = 1 ]; then
+  META=$(sed -n 's/^greedy-[^\t]*\t[^\t]*\t//p' "$OUT/shards.tsv" | head -1)/meta.json
+fi
+[ -f "$META" ] || die "no shard produced a manifest; nothing to judge"
 python3 scripts/lib/crux_inference_judge.py collect --manifest "$MERGED" --prompts "$PROMPTS" --meta "$META" \
   --certification "$CERT" --out-json "$OUT/$HOST-$BACKEND.json" --out-md "$OUT/$HOST-$BACKEND.md"
 rc=$?
