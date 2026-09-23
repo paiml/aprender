@@ -21,6 +21,11 @@ moved to 0.74 (#3999 comment), so 0.73 is **pure performance parity**.
 | prefill tok/s | 3,067 | 11,290 | **0.27×** |
 | TTFT p50 | 33.3 ms | 9.0 ms | **3.7× slower** |
 | quiet re-run, decode (`quiet-*.json`) | 104.1 | 159.5 | 0.65× |
+| **gx10 GB10 sm_121** (`findings.json` `gx10_gb10_sm121`, same protocol) decode / prefill / TTFT | 31.09 / 2,976 / 34.3 ms | 46.87 / 3,950 / 25.8 ms | **0.66× / 0.75× / 1.33× slower** |
+
+The `findings.json` verdict: "decode ~0.65x on BOTH hosts, a consistent engine gap, not a host artifact". apr's
+prefill is flat across hosts (3,067 vs 2,976), which is what a host-bound prefill looks like. Its declared floor was
+0.80, and neither host met it on decode. (Quorum lane 2 cited these lines; aprender-cb re-read them.)
 
 - **It is 29 days old and covers one cell** (one model, one quant, one host, CUDA, c=1). R-0 re-measures it on the
   release candidate before any threshold is set.
@@ -42,12 +47,13 @@ version and sha are in every receipt.
 
 | Row | Item | done_when | Baseline (measured) | First-green proof |
 |---|---|---|---|---|
-| **R-0** | Re-measure the matrix before setting thresholds; derive the noise band from llama.cpp vs itself | a parity receipt per certified cell, with N runs per engine and the band in the receipt | 1 cell, 29 days old | the receipt itself. A planted self-comparison (apr vs apr) must give `r` ≈ 1.0 within the band, the positive control for the harness |
+| **R-0** | Re-measure the matrix before setting thresholds; derive the noise band from llama.cpp vs itself | a parity receipt per certified cell, with N runs per engine and the band in the receipt | 1 cell, 29 days old | the receipt itself. Positive control: apr vs apr must give `r` ≈ 1.0 within the band. **Negative control (quorum fix):** apr run with a planted 20% sleep per token must give `r` < 1 − band, i.e. RED |
 | **R-1** | `contracts/beat-llamacpp-*`: re-baseline the beat contracts against llama.cpp (Ollama stays as a secondary reference) | contracts per metric with the declared band, gated by `pv` and the nightly on exclusive GPU time | 0 contracts reference llama.cpp for perf | the contract goes RED on today's numbers (0.65× decode). That RED is the proof it is not vacuous, and it goes GREEN only when R-2..R-4 land |
 | **R-2** | Prefill: batched CPU prefill (#2801) and GPU prefill parity | prefill cells `r ≥ 1 − band` | 0.27× (the CUDA cell above); CPU prefill runs at decode rate (#2801, OPEN) | the prefill cell on lambda CUDA, and the CPU cell on lambda and gx10 |
 | **R-3** | Decode and TTFT gap on CUDA sm_89 | decode and TTFT cells within band | 0.65× decode, 3.7× TTFT | per cell |
-| **R-4** | GB10 (sm_121) shortfall (#2800) | gx10 cells within band | #2800 OPEN ("a real deficit, not warm-up") | per cell on gx10 |
+| **R-4** | GB10 (sm_121) shortfall (#2800) | gx10 cells within band | decode 0.66×, prefill 0.75×, TTFT 1.33× slower (`findings.json`, 08-24) | per cell on gx10 |
 | **R-5** | CPU x86/ARM and Apple Silicon cells | cells within band on every certified CPU/Metal host | not measured | per cell |
+| **R-5b** | Peak memory (quorum fix: the exit bar named it and no row did) | peak RSS/VRAM cells `apr ≤ llama.cpp × (1 + band)`, sampled by the harness at 10 Hz | not measured in `evidence/parity-http/` | per cell; a planted 2× allocation in apr must go RED |
 | **R-6** | Exclusive-time protocol | every parity run holds the exclusive GPU lock (benchmarks never share, per 0.70) and records `nvidia-smi --query-compute-apps` empty at start | protocol exists for the 08-25 run (it records mechanism lines) | a run started while a foreign GPU process is present must refuse (RED) |
 | **R-7** | **Ratchet slice 4 of 5** | the DEBT-RATCHET-001 slice-4 gates | see #4003 | see #4003 |
 
@@ -85,3 +91,29 @@ gh issue view 911 -R paiml/infra --json title,state
 ## 7. Quorum record
 
 _Filled after the quorum returns._
+
+## Quorum record: decision quorum, 2026-09-23 (aprender-cb)
+
+**Lanes (ADVISORY: single family, all gemini):** gemini-3.1-pro-high, gemini-3.8-flash-high, gemini-3.7-flash-high,
+all returning PASS-with-changes. gpt-oss returned 429. 2/3 exited 3 on foreign ref motion (one exited 0), with every
+clone byte-identical. Conversations: `fdd3f914`, `2185ec92`, `10c086b1`.
+
+| Q | Decision (tally) | Applied as |
+|---|---|---|
+| Q1 | **#3977 is out of 0.73** (the operator: "MOE goes in .71"), 3/3 | its cell joins the matrix once 0.71 certifies it |
+| Q2 | **N = 7 per engine; band = llama.cpp's self-noise**, 3/3 | R-0 |
+| Q3 | **parity per cell**, 3/3 | §2 |
+| Q4 | **every 0.71-certified cell, no exemption**, 2/3. Lane 1 would exempt the "PP-* cells deferred to 0.74". **Not adopted:** PP-QUANT/ARCH/TENSOR are code consolidation, not parity cells, so there is nothing to exempt | §2, R-3..R-5 |
+
+**Must-fix items applied:**
+- the GB10 baseline, re-read from `findings.json`;
+- the R-4 baseline;
+- a peak-memory row (R-5b);
+- R-0's negative control.
+
+**Must-fix items carried to step 2 as child-issue acceptance:**
+- exact `done_when` commands per row;
+- negative controls for R-2..R-5;
+- the 0.71 certified matrix, enumerated from the ladder contract at the 0.71 tag (it does not exist before then);
+- the slice-4 baselines and commands (#4003 §7; #4003 is a separate PR, so it is absent from this tree).
+
