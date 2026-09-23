@@ -28,6 +28,26 @@ import model_ladder_crux
 HEX40 = re.compile(r"[0-9a-f]{40}")
 
 
+def recorded_scope(L, version):
+    """#4086: the emergency scope RECORDED for `version`, for a caller that passed no --scope (the
+    dogfood runs every declared gate with no arguments). -> (name, None) when exactly one entry names
+    this release; (None, None) when none does -- the FULL ladder applies, the scope is never inferred;
+    (None, reason) when the record is unusable -- RED, because two rulings for one release are not one
+    ruling, and a scope with no name cannot be judged or printed."""
+    hits = [e for e in (L.get("emergency_scopes") or [])
+            if isinstance(e, dict) and str(e.get("release")) == str(version)]
+    if not hits:
+        return None, None
+    if len(hits) > 1:
+        names = ", ".join(str(e.get("name")) for e in hits)
+        return None, (f"{len(hits)} emergency scopes are recorded for release {version} ({names}) -- "
+                      f"one release takes one recorded ruling; pass --scope to choose, or fix the contract")
+    name = hits[0].get("name")
+    if not name:
+        return None, f"the emergency scope recorded for release {version} has no name -- it cannot be judged or printed"
+    return str(name), None
+
+
 def judge(L, version, crux_dir, cert_p, cut_sha, scope_name, out):
     """-> True when the emergency scope is NOT satisfied (RED)."""
     failed = False
