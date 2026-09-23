@@ -27,6 +27,7 @@
 #  14. an unreferenced file added to files{} (hashed, digest re-sealed) is STALE; a mutant without the converse
 #      rule REUSES it
 #  15. MUST-RED: an origin-only edit, not re-sealed, is STALE (the seal covers the whole entry)
+#  16. a driver answering one item TWICE: the cell is RED, the entry is never stored, the next run is a MISS
 #  NOT covered, by design: a coherent re-seal by a cache writer (see the lib's THREAT MODEL)
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
@@ -110,7 +111,7 @@ printf '{"text": "<answer>4</answer>", "raw_text": "<answer>4</answer>\\n", "rep
 : > "$d/$eng-$pid-$think.err"
 rv="STUB_REFUSE_$eng"
 python3 - "$CRUX_MANIFEST" "$eng" "$sha" "$host" "$verb" "$think" "$backend" "$pid" "$out" "$d/$eng-$pid-$think.err" "${!rv:-}" <<'PY'
-import json, sys
+import json, os, sys
 m, eng, sha, host, verb, think, backend, pid, out, err, refuse = sys.argv[1:12]
 row = {"kind": "gen", "engine": eng, "model_sha256": sha, "host": host, "verb": verb, "thinking": think,
        "backend": backend, "prompt_id": pid, "rc": 0, "stdout": out, "stderr": err,
@@ -118,6 +119,8 @@ row = {"kind": "gen", "engine": eng, "model_sha256": sha, "host": host, "verb": 
 if eng == "hf":
     row["source"] = {"repo": "stub/src", "revision": "0" * 40, "dtype": "bfloat16"}
 open(m, "a").write(json.dumps(row) + "\n")
+if os.environ.get("STUB_DUP_" + eng):
+    open(m, "a").write(json.dumps(row) + "\n")
 PY
 SH
     chmod +x "$t/scripts/crux_engine_$eng.sh"
@@ -511,6 +514,18 @@ case "$og" in
                   && ok "an origin-only edit (not re-sealed) is STALE ($og)" \
                   || broke "origin edit: RED but not for the seal ($og)" ;;
   *) broke "origin edit: $og — a false provenance was served" ;;
+esac
+
+# Row 16: a driver that appends TWO rows for one item: the cell refuses it (RED, never a pick) and the cache never
+# stores it — an entry is exactly one row — so the next run is a MISS that measures again (quorum round 7, lane 2).
+run_row dup "$T" "$TMP/cache-dup" STUB_DUP_hf=1
+dp=$(summary dup)
+hfe=$(find "$TMP/cache-dup" -name entry.json -exec grep -l '"engine": "hf"' {} + 2>/dev/null | wc -l)
+run_row dup2 "$T" "$TMP/cache-dup"
+d2=$(summary dup2)
+case "$dp|$hfe|$d2" in
+  *"=RED"*"|0|2 | "*"=GREEN"*) ok "an item answered TWICE: its cell RED ($dp), never stored (0 hf entries), next run a MISS measured again ($d2)" ;;
+  *) broke "duplicate rows: first $dp, hf entries $hfe, next $d2" ;;
 esac
 
 printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"

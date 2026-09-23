@@ -87,6 +87,8 @@ crux_plugin_rows() {
       if [ -n "$CELL_WHY" ]; then emit_gen "$eng" "$pid" "" "" "" "$CELL_WHY"
       elif [ "$(rows_for "$eng" "$pid")" -le "$b" ]; then
         emit_gen "$eng" "$pid" "" "" "" "engine driver ${EXT_SCRIPT[$eng]} gen exited $(cat "$d/$eng-$pid.driver.rc" 2> /dev/null || echo '?') without appending a row: $(tail -c 200 "$d/$eng-$pid.driver.err" 2> /dev/null | tr '\n' ' ')"
+      elif [ "$(rows_for "$eng" "$pid")" -gt $((b + 1)) ]; then
+        emit_gen "$eng" "$pid" "" "" "" "engine driver ${EXT_SCRIPT[$eng]} gen: a driver that returned $(( $(rows_for "$eng" "$pid") - b )) rows for ONE item is refused: the judge would keep whichever came last, and the reference cache would replay both (quorum round 7, lane 2)"
       fi
     done
   done

@@ -225,8 +225,8 @@ def why_stale(key, d, edir):
     if digest(ent["key"]) != d:
         return "its key hashes to a different digest"
     rows = ent.get("rows") or []
-    if not rows:
-        return "it holds no row"
+    if len(rows) != 1:
+        return "it holds %d rows; an entry is exactly one row for its (engine, verb, prompt)" % len(rows)
     for r in rows:
         ident = (r.get("model_sha256"), r.get("thinking"), r.get("engine"), r.get("verb"), r.get("prompt_id"))
         if ident != (key["model_sha256"], key["thinking"], key["engine"], key["verb"], key["prompt_id"]):
@@ -328,7 +328,9 @@ def cmd_store(a):
                 and r.get("thinking") == k["thinking"] and r.get("engine") == k["engine"]
                 and r.get("verb") == k["verb"] and r.get("prompt_id") == k["prompt_id"]
                 and "reference_cache" not in r]
-        if not mine or any(r.get("refused") or r.get("rc") != 0 for r in mine):
+        # exactly ONE clean row: several rows for one (engine, verb, prompt) are ambiguous — the judge keeps whichever
+        # came last — so they are never stored as truth (quorum round 7, lane 2)
+        if len(mine) != 1 or any(r.get("refused") or r.get("rc") != 0 for r in mine):
             skipped += 1
             continue
         os.makedirs(os.path.dirname(edir), exist_ok=True)

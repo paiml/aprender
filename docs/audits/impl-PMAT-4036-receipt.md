@@ -57,7 +57,7 @@ Author: aprender-83 (claude-opus-5-5).
 
 ## Hermetic tables (real dogfood + real judge, stub engines)
 
-**`scripts/check_crux_ref_cache.sh` — 15/15**
+**`scripts/check_crux_ref_cache.sh` — 16/16**
 
 1. Cold stores.
 2. Warm makes 0 reference calls, the receipt is identical cell for cell, and every injected row is provenanced.
@@ -74,13 +74,15 @@ Author: aprender-83 (claude-opus-5-5).
 13. A field REMOVED from a stored row, either `stdout` or `backend` (which no per-field rule reads and whose removal orphans no file), is STALE by the content digest. A mutant without the digest REUSES the `backend` edit.
 14. An unreferenced file added to `files{}`, hashed and with the digest re-sealed, is STALE (quorum round 5, lane 2). A mutant without the converse rule REUSES it.
 15. MUST-RED: an origin-only edit, not re-sealed, is STALE. The seal once covered only {key, rows, files}, and this edit passed (quorum round 6, lane 2).
+16. A driver that answers one item TWICE: the cell is RED, the entry is never stored (an entry is exactly one row), and the next run is a MISS measured again (quorum round 7, lane 2).
 
-**`scripts/check_crux_plugin_batch.sh` — 5/5**
+**`scripts/check_crux_plugin_batch.sh` — 6/6**
 
 - 1 load for 2 items.
 - `CRUX_NO_BATCH` gives the same receipt and the same rows, row for row.
 - A driver without the capability keeps the per-prompt path.
 - MUST-RED: a dropped item is refused by name.
+- MUST-RED: an item the batch answered TWICE (one row wrong) is refused by name, and that refusal is the row the judge keeps. The count guard once saw only a missing row (quorum round 7, lane 2). The per-prompt paths got the same guard.
 - MUTANT, never batch: caught by the load count.
 
 **Unchanged on this diff:** greedy 12/12, ollama-in-lock 6/6, serve_code 66/66, judge 153/153, oracles PASS.

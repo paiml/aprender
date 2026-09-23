@@ -522,10 +522,15 @@ PY
       --seed "$SEED" --temperature "$TEMP" --context "$CTX" "${HF_SRC[@]}"
     printf 'exit 0\n' >> "$cell"
     run_cell "$cell"
+    local now
     while IFS=$'\t' read -r v pid; do
+      now=$(VERB_KEY="$v" rows_for "$eng" "$pid")
       if [ -n "$CELL_WHY" ]; then VERB_KEY="$v" emit_gen "$eng" "$pid" "" "" "" "$CELL_WHY"
-      elif [ "$(VERB_KEY="$v" rows_for "$eng" "$pid")" -le "${before["$v|$pid"]}" ]; then
+      elif [ "$now" -le "${before["$v|$pid"]}" ]; then
         VERB_KEY="$v" emit_gen "$eng" "$pid" "" "" "" "engine driver ${EXT_SCRIPT[$eng]} gen-batch exited $(cat "$d/$group.driver.rc" 2>/dev/null || echo '?') without a row for this item: $(tail -c 200 "$d/$group.driver.err" 2>/dev/null | tr '\n' ' ')"
+      elif [ "$now" -gt $(( ${before["$v|$pid"]} + 1 )) ]; then
+        # appended LAST, so it is the row the judge keeps for this engine: the item is refused, never a pick
+        VERB_KEY="$v" emit_gen "$eng" "$pid" "" "" "" "engine driver ${EXT_SCRIPT[$eng]} gen-batch: a driver that returned $(( now - ${before["$v|$pid"]} )) rows for ONE item is refused: the judge would keep whichever came last, and the reference cache would replay both (quorum round 7, lane 2)"
       fi
     done < <(python3 -c 'import json,sys; [print("%s\t%s" % (i["verb"], i["prompt_id"])) for i in map(json.loads, open(sys.argv[1]))]' "$items")
   done
@@ -863,6 +868,8 @@ PY
       if [ -n "$CELL_WHY" ]; then emit_gen "$eng" "$pid" "" "" "" "$CELL_WHY"
       elif [ "$(rows_for "$eng" "$pid")" -le "$before" ]; then
         emit_gen "$eng" "$pid" "" "" "" "engine driver ${EXT_SCRIPT[$eng]} gen exited $(cat "$d/$eng-$pid.driver.rc" 2>/dev/null || echo '?') without appending a row: $(tail -c 200 "$d/$eng-$pid.driver.err" 2>/dev/null | tr '\n' ' ')"
+      elif [ "$(rows_for "$eng" "$pid")" -gt $(( before + 1 )) ]; then
+        emit_gen "$eng" "$pid" "" "" "" "engine driver ${EXT_SCRIPT[$eng]} gen: a driver that returned $(( $(rows_for "$eng" "$pid") - before )) rows for ONE item is refused: the judge would keep whichever came last, and the reference cache would replay both (quorum round 7, lane 2)"
       fi
     done
   done

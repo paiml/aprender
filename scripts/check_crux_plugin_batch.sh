@@ -10,6 +10,7 @@
 #                  and hf's rows are the same row for row (every field but the per-load `batch` id and the paths)
 #   3. a driver without gen-batch → the per-prompt path, one load per item: batching is a capability, never assumed
 #   4. MUST-RED: the batch returns no row for one item → that item is REFUSED by name, the cell RED, never absent
+#  4b. MUST-RED: the batch returns TWO rows for one item (one wrong) → refused by name, the cell RED, never a pick
 #   5. MUTANT: crux_batched always false → row 1 sees 2 loads, not 1: the table catches a batch that never happens
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
@@ -88,6 +89,10 @@ for it in items:
         row["source"] = {"repo": "stub/src", "revision": "0" * 40, "dtype": "bfloat16"}
         row["batch"] = {"id": str(os.getpid()), "size": len(items)}
     open(os.environ["CRUX_MANIFEST"], "a").write(json.dumps(row) + "\n")
+    if it["verb"] == os.environ.get("STUB_DUP", "-") and eng == "hf":
+        wrong = os.path.join(d, stem + ".dup.json")
+        json.dump({"text": "<answer>5</answer>", "reported": {"device": "stub"}}, open(wrong, "w"))
+        open(os.environ["CRUX_MANIFEST"], "a").write(json.dumps(dict(row, stdout=wrong)) + "\n")
 PY
 
 mk_tree() { # mk_tree <dir>: the real scripts with the two drivers stubbed
@@ -203,6 +208,18 @@ if printf '%s' "$dr" | grep -q 'chat/ctl-2plus2=RED' \
   ok "MUST-RED: an item the batch returned no row for is refused by name, its cell RED ($dr)"
 else
   broke "dropped item: $dr"
+fi
+
+# Row 5b: MUST-RED — the batch returns TWO rows for one item (one right, one wrong). The count guard only saw a
+# MISSING row, so this passed, the judge kept whichever row came last, and the cache replayed both (quorum round 7,
+# lane 2, measured). Now the item is refused by name, the refusal is the row the judge keeps, and the cell is RED.
+run_row dup "$T" STUB_DUP=chat
+du=$(summary dup)
+if printf '%s' "$du" | grep -q 'chat/ctl-2plus2=RED' \
+   && grep -q 'rows for ONE item is refused' "$(sed -n 's/^work kept: //p' "$TMP/dup.log" | tail -1)/manifest.jsonl"; then
+  ok "MUST-RED: an item the batch answered TWICE is refused by name, its cell RED ($du)"
+else
+  broke "duplicate item: $du"
 fi
 
 MT="$TMP/mutant"; mk_tree "$MT"
