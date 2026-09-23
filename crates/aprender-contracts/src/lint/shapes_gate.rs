@@ -378,7 +378,11 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
             not_armed_shapes: not_armed,
             unarmed_violations: counted.unarmed_violations,
             by_entity_type,
-            pc_extract,
+            controls: Box::new(super::ShapesControls {
+                pc_extract,
+                pc_shapes,
+                capability_cells: cells.as_ref().map(cells_gate::CapabilityCellsReport::from),
+            }),
             receipts: extraction.resolve.receipts,
             witnesses: extraction.resolve.witnesses,
             hex_mismatches: extraction.resolve.hex_mismatches,
@@ -390,8 +394,6 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
             lean_statements: extraction.lean.statements,
             lean_refs_unresolved: extraction.lean.refs_unresolved.len(),
             release: extraction.release.clone().map(Box::new),
-            capability_cells: cells.as_ref().map(cells_gate::CapabilityCellsReport::from),
-            pc_shapes,
         }),
     };
     ShapesOutcome::Ran {
@@ -800,12 +802,13 @@ mod tests {
                 match &result.extra {
                     Some(GateExtra::Shapes {
                         by_entity_type,
-                        pc_extract,
+                        controls,
                         witnesses,
                         unarmed_violations,
                         ..
                     }) => {
                         assert_eq!(by_entity_type.get("gguf"), Some(&2));
+                        let pc_extract = &controls.pc_extract;
                         assert_eq!(pc_extract.get("gguf").map(String::as_str), Some("fired"));
                         assert_eq!(
                             pc_extract.get("apr-model").map(String::as_str),
