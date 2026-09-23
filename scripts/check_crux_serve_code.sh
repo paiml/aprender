@@ -242,6 +242,26 @@ python3 "$ROUTES_PY" rows --out-dir "$TMP/ok" --prompt-list "$TMP/list.jsonl" --
 manifest_assert "T4 MUST-RED a failed teardown makes EVERY row of the cell RED" tdrows \
   'len(gen) == 11 and all(r["refused"].startswith("cell teardown FAILED") and r["rc"] is None for r in gen)'
 
+printf -- '--- %s: chat pty reply extraction (#3962 B3) ---\n' "$PROG"
+PTY_PY="$ROOT/scripts/lib/crux_pty_chat.py"
+pty_case() { # <py> <python assertion over P (the module)>: 0 when the assertion holds
+  python3 - "$1" "$2" <<'PY' > /dev/null 2>&1
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("p", sys.argv[1]); P = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(P)
+T = "What is 2+2? Reply with the final answer inside <answer></answer>."
+SPIN = "What is 2+2? Reply with the final answer inside <answer></\x08/\x08/answer>.\n<answer>4</answer>"
+assert eval(sys.argv[2])
+PY
+}
+prow() { if pty_case "$PTY_PY" "$2"; then ok "$1"; else bad "$1"; fi; }
+PX1='P.extract_reply(P.clean(SPIN), T) == ("<answer>4</answer>", None)'
+PX2='P.extract_reply("Loading...\n<answer>4</answer>", T)[0] is None and "echo" in P.extract_reply("Loading...\n<answer>4</answer>", T)[1]'
+prow "X1 a spinner-corrupted echo (the llama.cpp v2 shape) is stripped; the reply is the answer" "$PX1"
+prow "X2 MUST-RED an echo that cannot be found is an ERROR, never the whole transcript as the reply" "$PX2"
+prow "X3 --answer-after cuts at its LAST match" 'P.extract_reply(">>> a\n... b\nREPLY", "a\nb", r"^[.][.][.].*$") == ("REPLY", None)'
+prow "X4 --answer-after with no match falls back to the echo" 'P.extract_reply("hi there\nREPLY", "hi there", r"^[.][.][.].*$") == ("REPLY", None)'
+
 # ---- mutants: each must-RED row must FAIL against code with its check deleted --------
 printf -- '--- %s: mutants (each must be KILLED by its row) ---\n' "$PROG"
 mutant() { # <label> <file> <python-literal old> <python-literal new> <case command...>
@@ -295,6 +315,13 @@ m_t3() { sleep 30 > /dev/null 2>&1 & printf '%s\n' "$!" > "$TMP/srv3.pid"; cp "$
 mutant "M11 T3 vs no nvidia-smi check" "$TD" 'if [ "${#pids[@]}" -gt 0 ] && command -v "$SMI" > /dev/null 2>&1; then' 'if false; then' m_t3
 m_t4() { : > "$TMP/tdrows/manifest.jsonl"; python3 "$1" rows --out-dir "$TMP/ok" --prompt-list "$TMP/list.jsonl" --manifest "$TMP/tdrows/manifest.jsonl" --engine apr --sha abc --host h --backend gpu --cell-fault "cell teardown FAILED: x" > /dev/null 2>&1; python3 -c 'import json,sys; g=[json.loads(l) for l in open(sys.argv[1]) if l.strip()]; g=[r for r in g if r["kind"]=="gen"]; assert g and all(r["refused"] for r in g)' "$TMP/tdrows/manifest.jsonl" 2> /dev/null; }
 mutant "M12 T4 vs a teardown fault that does not reach the rows" "$ROUTES_PY" '        if a.cell_fault:' '        if False:' m_t4
+
+m_x1() { pty_case "$1" "$PX1"; }
+mutant "M13 X1 vs no backspace processing" "$PTY_PY" '        prev, t = t, BACKSPACE.sub("", t)' '        prev = t' m_x1
+m_x2() { pty_case "$1" "$PX2"; }
+mutant "M14 X2 vs a missing echo read as the reply" "$PTY_PY" '        if k < 0:
+            return None, (' '        if False:
+            return None, (' m_x2
 
 printf '%s: %d row(s), %d failed\n' "$PROG" "$ROWS" "$FAILS"
 [ "$ROWS" -gt 0 ] || { printf '%s: zero rows ran - that is a broken table, not a pass\n' "$PROG" >&2; exit 1; }
