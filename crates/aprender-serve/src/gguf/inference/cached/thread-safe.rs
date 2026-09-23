@@ -407,3 +407,5 @@ impl OwnedQuantizedModelCachedSync {
             })
     }
 }
+
+include!("gemm_layout_tests_3975.rs");

@@ -1,0 +1,145 @@
+// aprender#3975: `CudaExecutor::gemm` documents B as `[k, n]`, but for `m == 1` it
+// swaps in the `Gemv` kernel, which reads B as `[n, k]`. The GPU/CPU trace test
+// matched "the [k,n] buffer read as [n,k]" to 7 significant digits.
+//
+// Every `gemm` caller is pinned here at m = 1 AND m = 2 against a CPU oracle, on
+// a NON-SQUARE weight, so a layout misread cannot hide and a fix that repairs one
+// side of the m = 1 / m > 1 split cannot silently break the other:
+//
+//   caller                                      | passes B as    | RED today at
+//   --------------------------------------------|----------------|-------------
+//   CudaExecutor::gemm (its own contract)       | [k, n]         | m = 1
+//   CudaScheduler::matmul (GpuModel)            | [k, n]         | m = 1
+//   CachedSync::batch_matmul_gpu_prefer_cuda    | [out,in]=[n,k] | m = 2
+//   OwnedQuantizedModel::fused_matmul (cuda)    | [out,in]=[n,k] | m = 2
+//
+// GPU tests: they SKIP (with a printed line) on a host without a CUDA device.
+#[cfg(all(test, feature = "cuda"))]
+mod gemm_layout_tests_3975 {
+    const IN: usize = 4;
+    const OUT: usize = 3;
+
+    /// Row-major `W[out, in]` — the APR/GGUF weight contract.
+    fn w_out_in() -> Vec<f32> {
+        vec![
+            1.0, 0.0, -1.0, 2.0, //
+            0.5, 1.0, 0.0, -1.0, //
+            2.0, -2.0, 1.0, 0.0,
+        ]
+    }
+
+    /// The same weight as `[in, out]` (= `[k, n]`), what `gemm` documents for B.
+    fn w_in_out() -> Vec<f32> {
+        let w = w_out_in();
+        (0..IN)
+            .flat_map(|i| (0..OUT).map(move |o| (i, o)))
+            .map(|(i, o)| w[o * IN + i])
+            .collect()
+    }
+
+    /// `m` input rows; row 0 alone is the m = 1 case.
+    fn x(m: usize) -> Vec<f32> {
+        [[1.0, 2.0, 3.0, 4.0], [-1.0, 0.5, 2.0, -3.0]][..m].concat()
+    }
+
+    /// CPU oracle: `y[r, o] = sum_i x[r, i] * W[o, i]`.
+    fn oracle(x: &[f32]) -> Vec<f32> {
+        let w = w_out_in();
+        x.chunks(IN)
+            .flat_map(|row| {
+                (0..OUT)
+                    .map(|o| (0..IN).map(|i| row[i] * w[o * IN + i]).sum::<f32>())
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    fn assert_matches(got: &[f32], m: usize, caller: &str) {
+        let want = oracle(&x(m));
+        let off = got.iter().zip(&want).any(|(g, w)| (g - w).abs() > 1e-4);
+        assert!(
+            got.len() == want.len() && !off,
+            "#3975 {caller} at m={m}: got {got:?}, CPU oracle y = x*W^T is {want:?} -- \
+             a mismatch here is the weight read in the wrong layout"
+        );
+    }
+
+    #[test]
+    fn gemm_honours_its_k_n_contract_at_m1_and_m2() {
+        let mut exec = crate::cuda_executor_or_skip!(0);
+        for m in [1, 2] {
+            let mut c = vec![0.0f32; m * OUT];
+            exec.gemm(&x(m), &w_in_out(), &mut c, m as u32, OUT as u32, IN as u32)
+                .expect("gemm");
+            assert_matches(&c, m, "CudaExecutor::gemm");
+        }
+    }
+
+    #[test]
+    fn cuda_scheduler_matmul_honours_k_n_at_m1_and_m2() {
+        let mut sched = crate::cuda_scheduler_or_skip!();
+        for m in [1, 2] {
+            let got = sched.matmul(&x(m), &w_in_out(), m, IN, OUT).expect("matmul");
+            assert_matches(&got, m, "CudaScheduler::matmul (GpuModel)");
+        }
+    }
+
+    fn test_model() -> crate::gguf::OwnedQuantizedModel {
+        use crate::gguf::{ArchConstraints, GGUFConfig};
+        let config = GGUFConfig {
+            architecture: "llama".to_string(),
+            constraints: ArchConstraints::from_architecture("llama"),
+            hidden_dim: 64,
+            intermediate_dim: 128,
+            num_layers: 1,
+            num_heads: 4,
+            num_kv_heads: 4,
+            vocab_size: 256,
+            context_length: 64,
+            rope_theta: 10000.0,
+            eps: 1e-5,
+            rope_type: 0,
+            explicit_head_dim: None,
+            query_pre_attn_scalar: None,
+            bos_token_id: None,
+            eos_token_id: None,
+        };
+        crate::api::test_helpers::create_test_quantized_model(&config)
+    }
+
+    #[test]
+    fn cached_batch_matmul_reads_a_dequantized_out_in_weight_at_m1_and_m2() {
+        let cached = crate::gguf::OwnedQuantizedModelCachedSync::new(test_model());
+        let has_cuda = cached.get_cuda_scheduler().map(|g| g.is_some()).unwrap_or(false);
+        if !has_cuda {
+            eprintln!("SKIP: no CudaScheduler -- the wgpu fallback is not what #3975 pins");
+            return;
+        }
+        for m in [1, 2] {
+            // The production callers (batch_ffn_gpu, batch_qkv_projection_gpu, ...)
+            // pass `dequantize_weight(..)` output: row-major [out, in].
+            let got = cached
+                .batch_matmul_gpu_prefer_cuda(&x(m), &w_out_in(), m, IN, OUT)
+                .expect("batch matmul");
+            assert_matches(&got, m, "CachedSync::batch_matmul_gpu_prefer_cuda");
+        }
+    }
+
+    #[test]
+    fn fused_matmul_cuda_dequant_fallback_reads_out_in_at_m1_and_m2() {
+        let exec = crate::cuda_executor_or_skip!(0);
+        let mut model = test_model();
+        model.cuda_executor = Some(std::sync::Mutex::new(exec));
+        // F32 has no native quantized GEMV, so every m takes dequant + `gemm`.
+        let weight = crate::gguf::OwnedQuantizedTensor {
+            data: w_out_in().iter().flat_map(|v| v.to_le_bytes()).collect(),
+            in_dim: IN,
+            out_dim: OUT,
+            qtype: crate::gguf::GGUF_TYPE_F32,
+        };
+        for m in [1, 2] {
+            let got = model.fused_matmul(&x(m), &weight).expect("fused_matmul");
+            assert_matches(&got, m, "OwnedQuantizedModel::fused_matmul (cuda)");
+        }
+    }
+}
