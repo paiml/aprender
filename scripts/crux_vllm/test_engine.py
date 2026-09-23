@@ -198,7 +198,8 @@ finally:
             sys.modules[_m] = _v
     for _k, _v in _saved_attrs.items():
         setattr(engine, _k, _v)
-_ok = (engine.subprocess is __import__("subprocess") and not isinstance(sys.modules.get("vllm"), types.SimpleNamespace)
+_ok = (engine.subprocess is __import__("subprocess")
+       and all(sys.modules.get(m) is v for m, v in _saved_mods.items())
        and all(getattr(engine, k) is v for k, v in _saved_attrs.items()))
 print(f"{'ok  ' if _ok else 'FAIL'} [#4029] the fakes are gone once the case ends")
 failed += not _ok
