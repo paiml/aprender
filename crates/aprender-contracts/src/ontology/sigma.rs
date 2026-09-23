@@ -42,6 +42,11 @@ pub struct Sigma {
     pub extractors: Vec<ExtractorDecl>,
     #[serde(default)]
     pub not_expressible: Vec<NotExpressible>,
+    /// ONT-4d (R-19): the subsumption hierarchy, `sub ⊑ sup` between declared concepts. Acyclic (a cycle is
+    /// exit 3); shapes declared on `sup` apply to every instance of `sub`, through the type closure
+    /// `extract::all` materializes.
+    #[serde(default)]
+    pub subsumes: Vec<Subsumes>,
     /// Which reader claims each Σ key. The anti-decoration rule: a key nobody reads is refused (exit 3).
     #[serde(default)]
     pub readers: BTreeMap<String, String>,
@@ -133,6 +138,14 @@ pub struct NotExpressible {
     pub reader: String,
 }
 
+/// One subsumption edge: every instance of `sub` is an instance of `sup` (ONT-4d, R-19).
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Subsumes {
+    pub sub: String,
+    pub sup: String,
+}
+
 /// Σ is malformed. Every variant is exit 3 (`error:`): the corpus is not at fault, the declaration is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SigmaError {
@@ -149,6 +162,10 @@ pub enum SigmaError {
     NotExpressibleWithoutReader { key: String },
     /// An `extractors[]` entry without a `reader`.
     ExtractorWithoutReader { extractor: String },
+    /// ONT-4d: a `subsumes` edge names a concept `concepts` does not declare.
+    SubsumesUndeclared { concept: String },
+    /// ONT-4d (R-19): `subsumes` is cyclic. `path` walks the cycle and repeats its first concept at the end.
+    SubsumesCycle { path: Vec<String> },
 }
 
 impl fmt::Display for SigmaError {
@@ -180,6 +197,10 @@ impl fmt::Display for SigmaError {
             Self::ExtractorWithoutReader { extractor } => {
                 write!(f, "extractor `{extractor}` has no reader")
             }
+            Self::SubsumesUndeclared { concept } => {
+                write!(f, "subsumes names concept `{concept}`, which concepts does not declare")
+            }
+            Self::SubsumesCycle { path } => write!(f, "subsumes cycle {}", path.join(" -> ")),
         }
     }
 }
@@ -187,7 +208,7 @@ impl fmt::Display for SigmaError {
 impl std::error::Error for SigmaError {}
 
 /// The Σ keys that must be claimed by a reader when they are present and non-empty.
-pub const READABLE_KEYS: [&str; 9] = [
+pub const READABLE_KEYS: [&str; 10] = [
     "concepts",
     "roles",
     "symbols",
@@ -196,6 +217,7 @@ pub const READABLE_KEYS: [&str; 9] = [
     "entity_types",
     "extractors",
     "not_expressible",
+    "subsumes",
     // The contract schema owns this one; Σ only carries it (see `Sigma::metadata`).
     "metadata",
 ];
@@ -215,7 +237,88 @@ impl Sigma {
         self.check_entity_types()?;
         self.check_readers()?;
         self.check_not_expressible()?;
-        self.check_extractors()
+        self.check_extractors()?;
+        self.check_subsumes()
+    }
+
+    /// ONT-4d: every `subsumes` edge names declared concepts, and the hierarchy is acyclic (R-19). A cycle is
+    /// reported as the path that closes it, first concept repeated at the end.
+    fn check_subsumes(&self) -> Result<(), SigmaError> {
+        if let Some(c) = self
+            .subsumes
+            .iter()
+            .flat_map(|e| [&e.sub, &e.sup])
+            .find(|c| !self.concepts.contains_key(c.as_str()))
+        {
+            return Err(SigmaError::SubsumesUndeclared { concept: c.clone() });
+        }
+        let edges = self.subsumption_edges();
+        // Iterative DFS with an explicit path, so a cycle is reported by name. White/grey/black colouring.
+        let mut done: BTreeSet<&str> = BTreeSet::new();
+        for &root in edges.keys() {
+            if done.contains(root) {
+                continue;
+            }
+            let mut path: Vec<&str> = vec![root];
+            let mut iters: Vec<std::collections::btree_set::Iter<'_, &str>> =
+                vec![edges.get(root).map(|s| s.iter()).unwrap_or_default()];
+            while let Some(it) = iters.last_mut() {
+                match it.next() {
+                    Some(&next) if path.contains(&next) => {
+                        let at = path.iter().position(|p| *p == next).unwrap_or(0);
+                        let mut cycle: Vec<String> = path[at..].iter().map(|s| (*s).to_string()).collect();
+                        cycle.push(next.to_string());
+                        return Err(SigmaError::SubsumesCycle { path: cycle });
+                    }
+                    Some(&next) if !done.contains(next) => {
+                        path.push(next);
+                        iters.push(edges.get(next).map(|s| s.iter()).unwrap_or_default());
+                    }
+                    Some(_) => {}
+                    None => {
+                        iters.pop();
+                        if let Some(p) = path.pop() {
+                            done.insert(p);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// `sub → {sup}` as declared.
+    fn subsumption_edges(&self) -> BTreeMap<&str, BTreeSet<&str>> {
+        let mut edges: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+        for e in &self.subsumes {
+            edges.entry(e.sub.as_str()).or_default().insert(e.sup.as_str());
+        }
+        edges
+    }
+
+    /// ONT-4d: every STRICT super-concept of `concept` (the transitive closure of `subsumes`, R-19). Terminates on
+    /// a cyclic Σ too, though [`Sigma::check_integrity`] refuses one first.
+    #[must_use]
+    pub fn supers(&self, concept: &str) -> BTreeSet<String> {
+        let edges = self.subsumption_edges();
+        let mut out = BTreeSet::new();
+        let mut stack: Vec<&str> = edges.get(concept).map(|s| s.iter().copied().collect()).unwrap_or_default();
+        while let Some(c) = stack.pop() {
+            if c != concept && out.insert(c.to_string()) {
+                stack.extend(edges.get(c).into_iter().flatten().copied());
+            }
+        }
+        out
+    }
+
+    /// ONT-4d: every STRICT sub-concept of `concept`.
+    #[must_use]
+    pub fn subs(&self, concept: &str) -> BTreeSet<String> {
+        self.concepts
+            .keys()
+            .filter(|c| c.as_str() != concept && self.supers(c).contains(concept))
+            .cloned()
+            .collect()
     }
 
     /// Class 1: every `entity_types` entry names an extractor `extractors[]` declares.
@@ -303,6 +406,9 @@ impl Sigma {
         }
         if !self.not_expressible.is_empty() {
             keys.insert("not_expressible");
+        }
+        if !self.subsumes.is_empty() {
+            keys.insert("subsumes");
         }
         if self.metadata.is_some() {
             keys.insert("metadata");

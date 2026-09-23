@@ -24,6 +24,7 @@ pub mod shapes_gate;
 pub mod sigma_gate;
 pub mod sigma_symbols;
 mod strict_test_binding;
+pub mod subsumption;
 pub mod tbox_gate;
 pub mod trend;
 
@@ -245,6 +246,13 @@ pub enum GateExtra {
         /// ONT-4b2: Lean theorems extracted, and contract `lean_theorem:` references naming none of them.
         lean_statements: usize,
         lean_refs_unresolved: usize,
+        /// ONT-4d (R-19): applications of a shape to instances of a strict sub-concept of its target, summed
+        /// over shapes. Such a node may ALSO be typed the target directly (`pv_contract` asserts `ont:Contract`
+        /// on every contract), so this counts the hierarchy being applied, not reach that exists only through
+        /// it. The fixture `subsumption-inherit` is where inheritance is the ONLY path.
+        inherited_shapes_applied: usize,
+        /// ONT-4d: `<shape> <- <sub-concept>=<n>` for each shape inherited down the hierarchy, sorted.
+        inherited_by_shape: Vec<String>,
         /// aprender#3715: what `extract:release-evidence` derived — absent unless a release subject was given.
         #[serde(skip_serializing_if = "Option::is_none")]
         release: Option<Box<crate::ontology::extract::release_evidence::ReleaseStats>>,

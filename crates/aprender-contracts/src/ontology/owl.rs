@@ -147,6 +147,7 @@ pub fn export(sigma: &Sigma) -> Result<OwlExport, OwlError> {
         entity_types,
         extractors,
         not_expressible,
+        subsumes,    // ONT-4d → SubClassOf, and the intended subsumptions the TBox measures against
         readers: _,  // Σ bookkeeping: which reader claims which key
         metadata: _, // Σ bookkeeping: the contract schema's block, opaque to Σ
     } = sigma;
@@ -206,10 +207,15 @@ pub fn export(sigma: &Sigma) -> Result<OwlExport, OwlError> {
             axioms.insert(Axiom::SymmetricObjectProperty(name.clone()));
         }
     }
-    // Σ's subsumption edges arrive with ONT-4d (`subsumes[]`); until then Σ intends none.
-    let intended_subsumptions: BTreeSet<(String, String)> = BTreeSet::new();
-    for (sub, sup) in &intended_subsumptions {
-        axioms.insert(Axiom::SubClassOf(String::clone(sub), String::clone(sup)));
+    // ONT-4d: Σ's declared subsumption edges become told SubClassOf axioms AND the intent the TBox measures
+    // `unintended_subsumptions` against: a subsumption the writer emits that Σ never declared is exactly what
+    // the classification is there to catch.
+    let mut intended_subsumptions: BTreeSet<(String, String)> = BTreeSet::new();
+    for crate::ontology::sigma::Subsumes { sub, sup } in subsumes {
+        concept(format!("subsumes `{sub} ⊑ {sup}`"), sub)?;
+        concept(format!("subsumes `{sub} ⊑ {sup}`"), sup)?;
+        intended_subsumptions.insert((sub.clone(), sup.clone()));
+        axioms.insert(Axiom::SubClassOf(sub.clone(), sup.clone()));
     }
     Ok(OwlExport {
         axioms,

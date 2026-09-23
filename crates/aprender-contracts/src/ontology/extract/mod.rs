@@ -48,6 +48,39 @@ pub struct Extraction {
     pub parity: parity_receipt::ParityStats,
     /// aprender#3715: the release evidence — `None` unless a release subject was given (an ordinary PR has none).
     pub release: Option<release_evidence::ReleaseStats>,
+    /// ONT-4d: how many `rdf:type` triples the Σ closure added.
+    pub type_closure_added: usize,
+}
+
+/// Σ from `<contract_dir>/ontology.yaml`, when it parses and is well-formed. A malformed Σ is the `sigma`
+/// gate's to report (exit 3). Here it just means "no closure", which that gate's refusal already surfaces.
+#[must_use]
+pub fn sigma_of(contract_dir: &Path) -> Option<crate::ontology::sigma::Sigma> {
+    let text = std::fs::read_to_string(contract_dir.join("ontology.yaml")).ok()?;
+    let s = crate::ontology::sigma::Sigma::from_yaml(&text).ok()?;
+    s.check_integrity().ok()?;
+    Some(s)
+}
+
+/// ONT-4d: for every `?x rdf:type ont:C` where `C` is a Σ concept, add `?x rdf:type ont:S` for every strict
+/// super-concept `S` of `C`. Returns the number of triples added. Idempotent: a second pass adds none.
+pub fn materialize_type_closure(graph: &mut Graph, sigma: &crate::ontology::sigma::Sigma) -> usize {
+    use crate::ontology::rdf::{ont, Term, RDF_TYPE};
+    let mut adds: Vec<(String, String)> = Vec::new();
+    for c in sigma.concepts.keys() {
+        let supers = sigma.supers(c);
+        if supers.is_empty() {
+            continue;
+        }
+        for x in graph.instances_of(&ont(c)) {
+            adds.extend(supers.iter().map(|s| (x.to_string(), s.clone())));
+        }
+    }
+    let before = graph.len();
+    for (x, s) in adds {
+        graph.insert(x, RDF_TYPE, Term::iri(ont(&s)));
+    }
+    graph.len() - before
 }
 
 /// What a walk could not do. Every variant is the DECLARATION's fault (exit 3), never a corpus verdict.
@@ -107,6 +140,10 @@ pub fn all_with(
     out.code = code::extract(contract_dir, &mut out.graph);
     out.lean = lean::extract(contract_dir, &mut out.graph);
     out.parity = parity_receipt::extract(root, &mut out.graph);
+    // ONT-4d (R-19): the rdf:type closure over Σ's `subsumes`, materialized AFTER every extractor has run, so a
+    // focus node an extractor typed with a sub-concept is also an instance of every super-concept. This is
+    // how a shape on a super-concept reaches it (shapes.rs selects focus nodes by rdf:type).
+    out.type_closure_added = sigma_of(contract_dir).map_or(0, |s| materialize_type_closure(&mut out.graph, &s));
     if let Some(subject) = release {
         out.release = Some(
             release_evidence::extract(&mut out.graph, contract_dir, subject)
