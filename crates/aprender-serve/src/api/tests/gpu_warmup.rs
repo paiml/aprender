@@ -50,8 +50,10 @@ async fn test_gpu_status_endpoint() {
 }
 
 #[tokio::test]
+#[cfg(feature = "gpu")]
 async fn test_gpu_batch_completions_endpoint() {
-    let app = create_test_app_shared();
+    // #3991: only a `cached_model` state mounts this route.
+    let app = crate::api::test_helpers::create_test_cached_app();
     let body = serde_json::json!({
         "prompts": ["Hello", "World"],
         "max_tokens": 10
