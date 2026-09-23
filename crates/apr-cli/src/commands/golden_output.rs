@@ -198,6 +198,70 @@ fn golden_questions() -> Vec<(&'static str, Vec<&'static str>)> {
     ]
 }
 
+/// Format-distinctive markers. A template that renders one of these is making a claim
+/// about the model's chat format that the model's own declared template can refute.
+#[cfg(feature = "inference")]
+const FORMAT_MARKERS: &[&str] = &["[INST]", "<|im_start|>", "<|user|>", "<<SYS>>", "### Instruction"];
+
+/// Does `rendered` use a format marker that `declared` never mentions?
+#[cfg(feature = "inference")]
+fn contradicts_declared(rendered: &str, declared: &str) -> bool {
+    FORMAT_MARKERS
+        .iter()
+        .any(|m| rendered.contains(m) && !declared.contains(m))
+}
+
+/// Which string the template detector is keyed on (#3914).
+///
+/// `general.architecture` names the model's SHAPE; it does not name its chat format.
+/// TinyLlama-1.1B-Chat is a `llama`-architecture model fine-tuned on the Zephyr
+/// `<|user|>` format, and `detect_format_from_name` ALREADY has a `tinyllama` rule
+/// ordered ahead of `llama`, carrying the comment "check BEFORE llama!", for exactly
+/// this reason. That rule is UNREACHABLE when the key is an architecture, because
+/// "llama" does not contain "tinyllama". So the gate sent `[INST]` to a model never
+/// trained on it and got back "France is the capital of France." — no "Paris".
+///
+/// The model's own `tokenizer.chat_template` is the authority on its chat format, and
+/// it is used here as a REFEREE rather than as a renderer: only when the architecture's
+/// template renders a marker the declared template never mentions is the architecture
+/// treated as contradicted, and only then is the model NAME tried instead.
+///
+/// KEYING ON THE NAME UNCONDITIONALLY IS NOT SAFE, and was measured not to be.
+/// `Qwen3-Coder-30B-A3B-Instruct` has architecture `qwen3moe` (-> ChatML) and a name
+/// containing "qwen3" (-> Qwen3NoThink); `detect_format_from_name`'s own comment records
+/// that pre-injecting a think block makes that model emit `<|endoftext|>` immediately.
+/// Its declared template mentions `<|im_start|>` and nothing else, so it agrees with its
+/// architecture and the referee leaves it alone. Measured over the local inventory, this
+/// rule is inert for all three qwen models and fires only on tinyllama.
+#[cfg(feature = "inference")]
+fn template_key(
+    architecture: Option<&str>,
+    name: Option<&str>,
+    declared: Option<&str>,
+) -> Option<String> {
+    use realizar::chat_template::{format_messages, ChatMessage};
+
+    let arch = architecture.map(str::trim).filter(|a| !a.is_empty())?;
+    let declared = declared.map(str::trim).filter(|d| !d.is_empty());
+    let name = name.map(str::trim).filter(|n| !n.is_empty());
+    let (Some(declared), Some(name)) = (declared, name) else {
+        return Some(arch.to_string());
+    };
+    let render = |k: &str| {
+        format_messages(&[ChatMessage::user("x")], Some(k)).unwrap_or_default()
+    };
+    if !contradicts_declared(&render(arch), declared) {
+        return Some(arch.to_string());
+    }
+    // The architecture is contradicted. The name is only an improvement if it is not
+    // ALSO contradicted — otherwise keep the architecture rather than trade one wrong
+    // template for another.
+    if contradicts_declared(&render(name), declared) {
+        return Some(arch.to_string());
+    }
+    Some(name.to_string())
+}
+
 /// Render one golden question the way PRODUCTION renders it for this architecture
 /// (#3724 done_when 2): the same detector and the same template `apr serve` and
 /// `apr run` use, keyed on the GGUF's `general.architecture`.
@@ -640,7 +704,20 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             .as_ref()
             .and_then(|m| m.model.architecture())
             .map(String::from);
-        let test_cases = golden_test_cases_for(architecture.as_deref());
+        // #3914: the architecture is the model's SHAPE, not its chat format. Let the
+        // model's own declared template referee that choice.
+        let meta_str = |key: &str| match mapped.as_ref().and_then(|m| m.model.metadata.get(key)) {
+            Some(realizar::gguf::GGUFValue::String(s)) => Some(s.clone()),
+            _ => None,
+        };
+        let declared = meta_str("tokenizer.chat_template");
+        let model_name = meta_str("general.name");
+        let key = template_key(
+            architecture.as_deref(),
+            model_name.as_deref(),
+            declared.as_deref(),
+        );
+        let test_cases = golden_test_cases_for(key.as_deref());
 
         for (prompt, expected_patterns) in &test_cases {
             match validate_golden_test_case(
@@ -660,7 +737,7 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         }
 
         // #3724 done_when 3: a thinking-capable model is judged in BOTH modes.
-        if let Some((on_prompt, on_patterns)) = thinking_on_case(architecture.as_deref()) {
+        if let Some((on_prompt, on_patterns)) = thinking_on_case(key.as_deref()) {
             // #3907: the budget is per-model with a basis, and a model with no measured
             // budget REFUSES here rather than inheriting an 8B's number. The refusal is
             // reported as a budget gap, not as "the model was still reasoning" — the two
@@ -1661,3 +1738,105 @@ mod golden_output_tests {
 }
 
 include!("throughput.rs");
+
+
+/// #3914: which string the template detector is keyed on.
+///
+/// Every triple below is MEASURED from the GGUF on disk (`general.architecture`,
+/// `general.name`, `tokenizer.chat_template`), not invented, because the whole point of
+/// the referee is that it must be inert for models whose declared template agrees with
+/// their architecture — and "agrees" is a fact about real files.
+#[cfg(all(test, feature = "inference"))]
+mod template_key_3914 {
+    use super::*;
+
+    // Measured 2026-09-23 from the files in ~/.cache/apr-home/models.
+    const TINYLLAMA_DECLARED: &str = "{% for message in messages %}{% if message['role'] == 'user' %}{{ '<|user|>\n' + message['content'] + eos_token }}{% elif message['role'] == 'assistant' %}{{ '<|assistant|>\n' + message['content'] + eos_token }}{% endif %}{% endfor %}";
+    const QWEN_CHATML_DECLARED: &str = "{%- for message in messages %}{{- '<|im_start|>' + message.role + '\n' + message.content + '<|im_end|>' + '\n' }}{%- endfor %}";
+    const QWEN3_THINK_DECLARED: &str = "{%- for message in messages %}{{- '<|im_start|>' + message.role + '\n' + message.content + '<|im_end|>' + '\n' }}{%- endfor %}{{- '<think>' }}";
+
+    /// THE ROW. `llama` is the architecture; the Zephyr rule keyed on "tinyllama" is
+    /// unreachable from it. The model's own template never says `[INST]`, so the
+    /// architecture is refuted and the name is used.
+    #[test]
+    fn tinyllama_is_keyed_on_its_name_because_its_own_template_refutes_inst() {
+        let key = template_key(
+            Some("llama"),
+            Some("tinyllama_tinyllama-1.1b-chat-v1.0"),
+            Some(TINYLLAMA_DECLARED),
+        );
+        assert_eq!(key.as_deref(), Some("tinyllama_tinyllama-1.1b-chat-v1.0"));
+
+        let rendered = golden_prompt_for(key.as_deref(), "What is the capital of France?");
+        assert!(rendered.contains("<|user|>"), "{rendered:?}");
+        assert!(
+            !rendered.contains("[INST]"),
+            "the model was sent a format it was never trained on: {rendered:?}"
+        );
+    }
+
+    /// MUST-RED CONTROL for the naive fix. Keying on the name unconditionally sends
+    /// this MoE model a think block, which `detect_format_from_name`'s own comment says
+    /// makes it emit `<|endoftext|>` immediately. Its declared template agrees with its
+    /// architecture, so the referee must leave it ALONE.
+    #[test]
+    fn the_moe_architecture_survives_although_its_name_contains_qwen3() {
+        assert_eq!(
+            template_key(
+                Some("qwen3moe"),
+                Some("Qwen3-Coder-30B-A3B-Instruct"),
+                Some(QWEN_CHATML_DECLARED),
+            )
+            .as_deref(),
+            Some("qwen3moe"),
+            "keying on the name would flip this model to a thinking template"
+        );
+        // and the name really would have chosen differently — so the assertion above is
+        // discriminating, not incidentally true.
+        assert_ne!(
+            realizar::chat_template::detect_format_from_name("Qwen3-Coder-30B-A3B-Instruct"),
+            realizar::chat_template::detect_format_from_name("qwen3moe"),
+        );
+    }
+
+    #[test]
+    fn a_dense_qwen3_whose_template_agrees_is_left_alone() {
+        assert_eq!(
+            template_key(Some("qwen3"), Some("Qwen3-1.7B"), Some(QWEN3_THINK_DECLARED)).as_deref(),
+            Some("qwen3"),
+        );
+    }
+
+    /// No declared template is no evidence, and no evidence is not a licence to change
+    /// the key. A GGUF without `tokenizer.chat_template` keeps the architecture.
+    #[test]
+    fn without_a_declared_template_the_architecture_stands() {
+        assert_eq!(
+            template_key(Some("llama"), Some("tinyllama-1.1b-chat"), None).as_deref(),
+            Some("llama"),
+        );
+        assert_eq!(
+            template_key(Some("llama"), Some("tinyllama-1.1b-chat"), Some("   ")).as_deref(),
+            Some("llama"),
+        );
+    }
+
+    /// If the NAME is contradicted too, keep the architecture rather than trade one
+    /// wrong template for another.
+    #[test]
+    fn a_name_that_is_also_refuted_does_not_displace_the_architecture() {
+        // declared mentions none of the markers either template renders
+        assert_eq!(
+            template_key(Some("llama"), Some("qwen2-ish"), Some("{{ content }}")).as_deref(),
+            Some("llama"),
+        );
+    }
+
+    /// The referee only fires on a CONTRADICTION. A rendered marker the declared
+    /// template does mention is agreement, whatever the names are.
+    #[test]
+    fn agreement_is_not_a_contradiction() {
+        assert!(!contradicts_declared("<|im_start|>user\nx", QWEN_CHATML_DECLARED));
+        assert!(contradicts_declared("<s>[INST] x [/INST]", TINYLLAMA_DECLARED));
+    }
+}
