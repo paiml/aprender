@@ -183,12 +183,15 @@ struct Classification {
     ignored_kinds: BTreeSet<String>,
 }
 
-fn classify(java: &str, jar: &Path, ofn: &Path, work: &Path) -> Result<Classification, String> {
-    let out = work.join(format!("{}.taxonomy", ofn.file_name().and_then(|n| n.to_str()).unwrap_or("x")));
+/// Run ELK once: `(log, taxonomy text)`. ELK exits 0 even on an inconsistent ontology, so the caller reads
+/// consistency from the log and the taxonomy, never from this status.
+fn run_elk(java: &str, jar: &Path, ofn: &Path, work: &Path) -> Result<(String, String), String> {
+    let name = ofn.file_name().and_then(|n| n.to_str()).unwrap_or("x");
+    let out = work.join(format!("{name}.taxonomy"));
     let run = Command::new(java)
-        .args(["-jar"])
+        .arg("-jar")
         .arg(jar)
-        .args(["-i"])
+        .arg("-i")
         .arg(ofn)
         .args(["-c", "-o"])
         .arg(&out)
@@ -198,58 +201,68 @@ fn classify(java: &str, jar: &Path, ofn: &Path, work: &Path) -> Result<Classific
     if !run.status.success() {
         return Err(format!("ELK exited {:?}: {}", run.status.code(), log.lines().last().unwrap_or("")));
     }
-    let ignored_kinds = log
-        .lines()
+    let tax = std::fs::read_to_string(&out).map_err(|e| format!("no taxonomy written: {e}"))?;
+    Ok((log, tax))
+}
+
+/// The axiom kinds ELK logged as `axiomIgnored`.
+fn ignored_kinds(log: &str) -> BTreeSet<String> {
+    log.lines()
         .filter_map(|l| l.split("ELK does not support ").nth(1))
         .filter_map(|r| r.split('.').next())
         .map(String::from)
-        .collect();
-    let tax = std::fs::read_to_string(&out).map_err(|e| format!("no taxonomy written: {e}"))?;
-    let iri = |t: &str| t.trim_matches(|c| c == '<' || c == '>').to_string();
-    let mut direct: BTreeSet<(String, String)> = BTreeSet::new();
+        .collect()
+}
+
+/// The IRIs inside one `Keyword(<a> <b> …)` taxonomy line, or `None` for another keyword.
+fn taxonomy_args(line: &str, keyword: &str) -> Option<Vec<String>> {
+    let body = line.strip_prefix(keyword)?.strip_prefix('(')?.strip_suffix(')')?;
+    Some(body.split_whitespace().map(|t| t.trim_matches(|c| c == '<' || c == '>').to_string()).collect())
+}
+
+/// ELK's taxonomy as direct edges (both directions for an equivalence), and whether any class is `≡ ⊥`.
+fn parse_taxonomy(tax: &str) -> (BTreeSet<(String, String)>, bool) {
+    let mut direct = BTreeSet::new();
     let mut unsatisfiable = false;
     for line in tax.lines() {
-        if let Some(body) = line.strip_prefix("SubClassOf(").and_then(|b| b.strip_suffix(')')) {
-            let v: Vec<String> = body.split_whitespace().map(iri).collect();
-            if v.len() == 2 {
-                direct.insert((local(&v[0]), local(&v[1])));
-            }
-        } else if let Some(body) = line.strip_prefix("EquivalentClasses(").and_then(|b| b.strip_suffix(')')) {
-            let v: Vec<String> = body.split_whitespace().map(iri).collect();
-            if v.iter().any(|x| x.ends_with("owl#Nothing")) {
-                unsatisfiable = true;
-            }
+        if let Some(v) = taxonomy_args(line, "SubClassOf").filter(|v| v.len() == 2) {
+            direct.insert((local(&v[0]), local(&v[1])));
+        } else if let Some(v) = taxonomy_args(line, "EquivalentClasses") {
+            unsatisfiable |= v.iter().any(|x| x.ends_with("owl#Nothing"));
             for a in &v {
-                for b in &v {
-                    if a != b {
-                        direct.insert((local(a), local(b)));
-                    }
-                }
+                direct.extend(v.iter().filter(|b| *b != a).map(|b| (local(a), local(b))));
             }
         }
     }
-    let thing = |x: &str| x.ends_with("owl#Thing") || x.ends_with("owl#Nothing");
+    (direct, unsatisfiable)
+}
+
+fn is_top_or_bottom(x: &str) -> bool {
+    x.ends_with("owl#Thing") || x.ends_with("owl#Nothing")
+}
+
+/// Every strict subsumption between named classes the direct edges entail (transitive closure).
+fn closure(direct: &BTreeSet<(String, String)>) -> BTreeSet<(String, String)> {
     let mut entailed = BTreeSet::new();
-    for (a, _) in &direct {
+    for a in direct.iter().map(|(a, _)| a).filter(|a| !is_top_or_bottom(a)) {
         let mut stack = vec![a.clone()];
         let mut seen = BTreeSet::new();
         while let Some(n) = stack.pop() {
-            for (x, y) in &direct {
-                if x == &n && seen.insert(y.clone()) {
-                    stack.push(y.clone());
-                }
-            }
+            let next: Vec<String> = direct.iter().filter(|(x, _)| *x == n).map(|(_, y)| y.clone()).collect();
+            stack.extend(next.into_iter().filter(|y| seen.insert(y.clone())));
         }
-        for y in seen {
-            if &y != a && !thing(a) && !thing(&y) {
-                entailed.insert((a.clone(), y));
-            }
-        }
+        entailed.extend(seen.into_iter().filter(|y| y != a && !is_top_or_bottom(y)).map(|y| (a.clone(), y)));
     }
+    entailed
+}
+
+fn classify(java: &str, jar: &Path, ofn: &Path, work: &Path) -> Result<Classification, String> {
+    let (log, tax) = run_elk(java, jar, ofn, work)?;
+    let (direct, unsatisfiable) = parse_taxonomy(&tax);
     Ok(Classification {
         consistent: !log.contains("Ontology is inconsistent") && !unsatisfiable,
-        entailed,
-        ignored_kinds,
+        entailed: closure(&direct),
+        ignored_kinds: ignored_kinds(&log),
     })
 }
 
@@ -370,4 +383,47 @@ fn main() {
         }
     };
     std::process::exit(rc);
+}
+
+#[cfg(test)]
+mod tests {
+    //! The taxonomy shapes below are ELK 0.4.3's own output, measured on lambda 2026-09-23.
+    use super::*;
+
+    fn p(a: &str, b: &str) -> (String, String) {
+        (a.to_string(), b.to_string())
+    }
+
+    #[test]
+    fn a_chain_is_closed_transitively() {
+        let tax = format!(
+            "Ontology(\nSubClassOf(<{BASE}A> <{BASE}B>)\nSubClassOf(<{BASE}B> <{BASE}C>)\n)\n"
+        );
+        let (d, unsat) = parse_taxonomy(&tax);
+        assert!(!unsat);
+        assert_eq!(closure(&d), [p("A", "B"), p("A", "C"), p("B", "C")].into_iter().collect());
+    }
+
+    #[test]
+    fn an_equivalence_entails_both_directions() {
+        let tax = format!("Ontology(\nEquivalentClasses(<{BASE}A> <{BASE}B>)\n)\n");
+        let (d, _) = parse_taxonomy(&tax);
+        assert_eq!(closure(&d), [p("A", "B"), p("B", "A")].into_iter().collect());
+    }
+
+    #[test]
+    fn a_class_equivalent_to_nothing_is_unsatisfiable_and_top_bottom_are_not_pairs() {
+        let tax = format!(
+            "Ontology(\nEquivalentClasses(<http://www.w3.org/2002/07/owl#Nothing> <{BASE}A>)\n)\n"
+        );
+        let (d, unsat) = parse_taxonomy(&tax);
+        assert!(unsat, "A ≡ ⊥ must read as inconsistent");
+        assert!(closure(&d).is_empty(), "owl:Nothing is never reported as a Σ subsumption");
+    }
+
+    #[test]
+    fn ignored_kinds_are_read_from_the_log() {
+        let log = "90 [main] WARN x - [reasoner.indexing.axiomIgnored]ELK does not support ObjectPropertyRange. Axiom ignored:\n";
+        assert_eq!(ignored_kinds(log), ["ObjectPropertyRange".to_string()].into_iter().collect());
+    }
 }
