@@ -10,13 +10,23 @@ never hand-listed.
 k is ne[0] (the row length, the reduction axis of a GEMV), n is ne[1] (the output rows). A 1-D tensor is a
 vector, never a GEMV, and is skipped.
 
-CLI: gguf_census.py scan <dir>... [--depth 1]   -> census JSON on stdout
+CLI: gguf_census.py scan <dir>... --host <name> [--depth 1]   -> the committed census JSON on stdout
      exit 0 ok · 2 usage/ENV · a file that is not a readable GGUF is listed under `unreadable`, never dropped
+
+The output IS the committed evidence, byte for byte: evidence/gpu-shape-census/census-<host>.json is written by
+    python3 scripts/lib/gguf_census.py scan ~/models ~/.apr/models ~/.cache/apr/models --host <host> > census-<host>.json
+with no transform after it (#3968 quorum: a hand step between a scanner and its evidence makes the evidence
+unverifiable). It records its own roots (as given, `~` kept, so no host-specific absolute path), its depth, and
+every GGUF it did NOT read because it sits deeper than --depth (`skipped_for_depth`), so a coverage gap is visible
+in the evidence rather than silent.
+
+--depth N reads GGUFs in a root and in up to N levels of subdirectories below it (0 = the root only).
 """
 
 from __future__ import annotations
 
 import argparse
+from datetime import date
 import json
 import os
 import struct
@@ -101,14 +111,19 @@ def read_tensors(path: Path) -> tuple[str, list]:
 
 
 def scan(dirs: list, depth: int) -> dict:
-    files, unreadable = [], []
+    files, unreadable, skipped, missing = [], [], [], []
     seen = set()
     for d in dirs:
         root = Path(os.path.expanduser(d))
         if not root.is_dir():
+            missing.append(d)
             continue
         for p in sorted(root.rglob("*.gguf")):
-            if len(p.relative_to(root).parts) > depth or not p.is_file():
+            if not p.is_file():
+                continue
+            rel = p.relative_to(root)
+            if len(rel.parts) - 1 > depth:  # parts - 1 = subdirectory levels below the root
+                skipped.append(f"{d.rstrip('/')}/{rel}")
                 continue
             real = p.resolve()
             if real in seen:
@@ -117,7 +132,7 @@ def scan(dirs: list, depth: int) -> dict:
             try:
                 arch, tensors = read_tensors(p)
             except (OSError, ValueError, struct.error) as e:
-                unreadable.append({"file": str(p), "why": str(e)})
+                unreadable.append({"file": f"{d.rstrip('/')}/{rel}", "why": str(e)})
                 continue
             shapes = {}
             for name, qtype, dims in tensors:
@@ -125,11 +140,12 @@ def scan(dirs: list, depth: int) -> dict:
                     continue
                 key = (qtype, int(dims[0]), int(dims[1]))
                 shapes.setdefault(key, []).append(name)
-            files.append({"file": p.name, "path": str(p), "bytes": p.stat().st_size, "architecture": arch,
+            files.append({"file": p.name, "bytes": p.stat().st_size, "architecture": arch,
                           "shapes": [{"qtype": q, "type": GGML_TYPES.get(q, f"ggml{q}"), "k": k, "n": n,
                                       "block": block_of(q), "tensors": len(names), "example": names[0]}
                                      for (q, k, n), names in sorted(shapes.items())]})
-    return {"schema": SCHEMA, "files": files, "unreadable": unreadable}
+    return {"schema": SCHEMA, "roots": list(dirs), "depth": depth, "missing_roots": missing, "files": files,
+            "unreadable": unreadable, "skipped_for_depth": skipped}
 
 
 def main(argv: list) -> int:
@@ -138,8 +154,9 @@ def main(argv: list) -> int:
     s = sub.add_parser("scan")
     s.add_argument("dirs", nargs="+")
     s.add_argument("--depth", type=int, default=1)
+    s.add_argument("--host", required=True, help="the host name the census is committed under (census-<host>.json)")
     a = ap.parse_args(argv)
-    doc = scan(a.dirs, a.depth)
+    doc = {**scan(a.dirs, a.depth), "host": a.host, "measured": date.today().isoformat()}
     json.dump(doc, sys.stdout, indent=1)
     print()
     return 0
