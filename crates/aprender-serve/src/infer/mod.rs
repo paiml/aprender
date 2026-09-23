@@ -604,7 +604,7 @@ fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<Prepare
         );
         eprintln!(
             "[DEBUG] formatted_prompt={:?}",
-            &formatted_prompt[..formatted_prompt.len().min(200)]
+            log_head(&formatted_prompt, 200)
         );
     }
 
@@ -834,6 +834,77 @@ fn prepare_tokens_apr(config: &InferenceConfig, prompt: &str) -> Result<Prepared
 /// tensor-names-v1.yaml. No contains() heuristics, no model_name fallback.
 fn safetensors_arch_to_template_hint(architecture: &str, _model_name: &str) -> &'static str {
     crate::tensor_names::normalize_architecture(architecture)
+}
+
+/// #4018: at most the first `max` bytes of `s`, cut at a CHAR BOUNDARY, for a log or error line.
+///
+/// `&s[..s.len().min(max)]` panicked ("byte index N is not a char boundary") whenever byte `max`
+/// fell inside a multi-byte UTF-8 char, so `apr run -v` crashed on a non-ASCII prompt instead of
+/// answering. The cut floors to the previous boundary: at most 3 bytes short, since a char is at
+/// most 4 (the CRUX judge reads a logged prompt of >= max-3 bytes as possibly cut, #3962 B2).
+/// `str::floor_char_boundary` would do this, but is not stable at this crate's rust-version.
+pub(crate) fn log_head(s: &str, max: usize) -> &str {
+    let mut end = s.len().min(max);
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
+#[cfg(test)]
+mod log_head_4018 {
+    use super::log_head;
+
+    /// MUST-RED (#4018): `apr run -v` logs the formatted prompt's head, and a prompt whose byte 200
+    /// falls INSIDE a multi-byte char panicked ("byte index 200 is not a char boundary"). ChatML around
+    /// `x` + 80 CJK chars puts byte 200 mid-char.
+    #[test]
+    fn a_non_ascii_prompt_cut_mid_char_does_not_panic() {
+        let p = format!(
+            "<|im_start|>user\nx{}<|im_end|>\n<|im_start|>assistant\n",
+            "\u{6c34}".repeat(80)
+        );
+        assert!(
+            !p.is_char_boundary(200),
+            "the fixture must put byte 200 mid-char"
+        );
+        let head = log_head(&p, 200);
+        assert!(head.len() <= 200 && head.len() >= 197, "{}", head.len());
+        assert!(p.starts_with(head));
+    }
+
+    #[test]
+    fn ascii_and_short_inputs_are_unchanged() {
+        assert_eq!(log_head("What is 2+2?", 200), "What is 2+2?");
+        let a = "a".repeat(300);
+        assert_eq!(log_head(&a, 200).len(), 200);
+        assert_eq!(log_head("", 200), "");
+    }
+
+    /// #4018: the SITES use it -- the helper alone proves nothing if a caller still byte-slices.
+    #[test]
+    fn no_log_site_byte_slices_text_any_more() {
+        for (f, old) in [
+            (
+                "src/infer/mod.rs",
+                "&formatted_prompt[..formatted_prompt.len().min(200)]",
+            ),
+            (
+                "src/infer/inference_result.rs",
+                "&raw_text[..raw_text.len().min(200)]",
+            ),
+        ] {
+            let src = std::fs::read_to_string(format!("{}/{f}", env!("CARGO_MANIFEST_DIR")))
+                .expect("source");
+            // Scan the code ABOVE this test module: the module itself names the old pattern, and a
+            // source guard that reads its own assertion strings is satisfied by them (#3907's lesson).
+            let code = src.split("mod log_head_4018").next().unwrap_or(&src);
+            assert!(
+                !code.contains(old),
+                "{f} still slices text at a fixed byte length: {old}"
+            );
+        }
+    }
 }
 
 include!("inference_result.rs");
