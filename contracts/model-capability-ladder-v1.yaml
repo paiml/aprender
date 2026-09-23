@@ -153,39 +153,19 @@ ladder:
     # the case table proves. Delete this key when #3714 lands.
     deferred:
       "*A3B*": "mixture-of-experts: no CUDA forward for qwen3moe in this build (#3714, lands 0.70.0); operator ruling 2026-09-22 kicks the MoE work to later"
-      # OPERATOR RULING 2026-09-23, on the 0.69.1 ladder's seven FAIL rows. The five
-      # capability-gap rows split into two classes and the ruling treats them DIFFERENTLY:
-      #
-      #   CLASS 1 (these three) -- the model RUNS on CUDA and the GATE cannot INSPECT it.
-      #   DEFERRED. `apr qa` exits 5 on tensor_contract because aprender-core has no IQ
-      #   dequantizer and cannot read ~10 of the model's tensors (#3850, refusing as
-      #   designed). That is an inspection limit, not a capability gap.
-      #
-      #   CLASS 2 -- the model does NOT run on CUDA at all. HELD, NOT DEFERRED:
-      #   Qwen3.5-0.8B-UD-IQ2_XXS.gguf (ggml type 18, no verified GPU GEMV kernel) and
-      #   qwen2.5-coder-0.5b-instruct.apr (ggml type 30 BF16, `apr run --gpu` rc=14).
-      #   The operator kept "don't leave behind" intact for those two, so 0.69.1 WAITS on
-      #   an IQ2_XXS kernel and a BF16 kernel. They are deliberately absent from this map.
-      #
-      # MEASURED, not assumed, on lambda at apr_sha 9b7739951 -- each of the three:
-      #   capability_match passed, golden_output passed, cuda ran=True fallback=False,
-      #   verbs run=0 chat=0 code=0, zero bad serve routes. Only tensor_contract fails.
-      # A deferral whose "the model works" half is unmeasured is laundering; this one is
-      # not, and the receipt is the evidence.
-      #
-      # EXACT FILENAMES, NOT GLOBS, AND THE REASON IS MEASURED: `*IQ4_XS*` matches THREE
-      # held files -- these two plus Qwen3.5-0.8B-IQ4_XS.gguf, which is red for an
-      # unrelated reason (golden_output_thinking_on: think block unclosed within its
-      # budget) and Qwen3.5-35B-A3B-UD-IQ4_XS.gguf, already covered by *A3B*. A
-      # quantisation-shaped glob here would have silently excused a thinking-budget
-      # defect. A deferral key must be no wider than the mechanism it names.
-      #
-      # DELETE ALL THREE when the IQ dequantizer lands in aprender-core. #3880's amnesty
-      # check enforces that: a key matching held files that defers none is refused as
-      # stale, so these cannot outlive the limit they excuse.
-      "Qwen2.5-0.5B-Instruct-IQ3_M.gguf": "gate inspection limit, not a capability gap: aprender-core has no IQ3_M dequantizer so tensor_contract cannot inspect this model and `apr qa` exits 5 (#3850). The model RUNS on CUDA -- measured at apr_sha 9b7739951: capability_match and golden_output both pass, cuda ran with no fallback, verbs run/chat/code all rc=0. Operator ruling 2026-09-23 defers an inspection limit on a working model; delete when the IQ dequantizer lands"
-      "Qwen2.5-0.5B-Instruct-IQ4_XS.gguf": "gate inspection limit, not a capability gap: aprender-core has no IQ4_XS dequantizer so tensor_contract cannot inspect this model and `apr qa` exits 5 (#3850). The model RUNS on CUDA -- measured at apr_sha 9b7739951: capability_match and golden_output both pass, cuda ran with no fallback, verbs run/chat/code all rc=0. Operator ruling 2026-09-23 defers an inspection limit on a working model; delete when the IQ dequantizer lands"
-      "Qwen3.5-4B-UD-Q4_K_XL.gguf": "gate inspection limit, not a capability gap: this UD mix carries IQ4_XS tensors and aprender-core has no IQ4_XS dequantizer, so tensor_contract cannot inspect 10 tensors and `apr qa` exits 5 (#3850). The model RUNS on CUDA -- measured at apr_sha 9b7739951: capability_match and golden_output both pass, cuda ran with no fallback, verbs run/chat/code all rc=0, all 6 serve routes http 200. A prior quorum ruled DEFER on this row (#3900 Q1); operator ruling 2026-09-23 confirms it and extends the same treatment to the two IQ rows above; delete when the IQ dequantizer lands"
+      # THE THREE FILENAME DEFERRALS DECLARED HERE ON 2026-09-23 ARE RETIRED.
+      # Operator doctrine, same day, verbatim: "no defer; from now forward we practice
+      # toyota way and oracle approach of crux with capabiltiy report style from Alfredo".
+      # A capability is ORACLE-PROVEN or it is RED; there is no third state, so
+      # "the model runs but tensor_contract cannot inspect it" is RED and the work is the
+      # missing IQ dequantizer in aprender-core (#3850), not a declaration. Stop the line.
+      #   retired: Qwen2.5-0.5B-Instruct-IQ3_M.gguf
+      #            Qwen2.5-0.5B-Instruct-IQ4_XS.gguf
+      #            Qwen3.5-4B-UD-Q4_K_XL.gguf
+      # *A3B* stays for now: it is an EXPLICIT operator ruling of 2026-09-22 ("we kick the
+      # MoE work to later"), not the deferral habit the doctrine abolishes. Retiring it
+      # would make #3714 (qwen3moe CUDA forward) a release blocker, which is the operator's
+      # call and not this file's.
     backends: [cuda]
   # #3712 row B (operator 2026-09-21: "MORE than enough tokens for our needs (overdo it), and our verbs are
   # dogfooded, i.e chat with and without thinking, ditto run, ditto code"). A cell is (model, host, verb,
