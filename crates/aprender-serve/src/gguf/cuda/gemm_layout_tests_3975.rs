@@ -71,6 +71,46 @@ mod gemm_layout_tests_3975 {
         );
     }
 
+    /// GPU-FREE, so it runs on every cuda-feature build: the new `GemmBtTiled`
+    /// module is not empty, declares the entry the launcher looks up, and ptxas
+    /// assembles it. (#3970 found a kernel whose generate_ptx returned "".)
+    #[test]
+    fn gemm_bt_tiled_ptx_names_its_entry_and_assembles() {
+        use crate::cuda::{CudaKernels, KernelType};
+        let kernels = CudaKernels::new();
+        let kt = KernelType::GemmBtTiled { m: 37, n: 45, k: 70, tile_size: 16 };
+        let ptx = kernels.generate_ptx(&kt);
+        let name = kernels.kernel_name(&kt);
+        assert!(
+            ptx.contains(&format!(".visible .entry {name}(")),
+            "GemmBtTiled PTX ({} bytes) does not declare the entry `{name}` the launcher looks up",
+            ptx.len()
+        );
+        assert!(ptx.is_ascii(), "ptxas rejects non-ASCII anywhere in a module");
+        let target = ptx
+            .lines()
+            .find_map(|l| l.trim().strip_prefix(".target "))
+            .unwrap_or("sm_70")
+            .trim()
+            .to_string();
+        let dir = std::env::temp_dir().join(format!("apr_gemm_bt_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let src = dir.join("gemm_bt.ptx");
+        std::fs::write(&src, &ptx).expect("write ptx");
+        let out = std::process::Command::new("ptxas")
+            .args(["--gpu-name", &target, "-o"])
+            .arg(dir.join("gemm_bt.cubin"))
+            .arg(&src)
+            .output()
+            .expect("a cuda-feature build implies ptxas on PATH");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            out.status.success(),
+            "ptxas rejected GemmBtTiled at {target}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
     #[test]
     fn gemm_honours_its_k_n_contract_at_m1_and_m2() {
         let mut exec = crate::cuda_executor_or_skip!(0);
