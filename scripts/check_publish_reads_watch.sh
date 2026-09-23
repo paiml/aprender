@@ -9,6 +9,7 @@
 #
 #   check_publish_reads_watch.sh    (exit 0 every row and mutant landed, 1 not, 2 ENV)
 set -uo pipefail
+case "${1:-}" in -h|--help) echo "usage: bash scripts/check_publish_reads_watch.sh   (the case table; no arguments)"; exit 0 ;; esac
 ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
 SUBJECT="$ROOT/scripts/release/autopilot.sh"
 T=$(mktemp -d) || exit 2

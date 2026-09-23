@@ -129,5 +129,10 @@ MUT
   exit "$tbad"
 fi
 
-[ -n "$INFRA" ] || { echo "usage: $0 --infra <dir> --pin <sha> [--wt <dir>] [--ledger <file>] | --self-test" >&2; exit 2; }
+if [ -z "$INFRA" ]; then
+  # CI (guard_tree's bare run): REPORT-only, per the release cop -- G-ONT is RED by design until ONT-001 is done and
+  # GATES only at the 0.70.0 release, where it runs with --infra/--pin. The self-test (the gate's own proof) runs in CI.
+  echo "REPORT G-ONT: no --infra/--pin given -- the live gate runs at the 0.70.0 release (#4045); its self-test is the CI row"
+  exit 0
+fi
 judge "$INFRA" "$PIN" "$WT" "$LEDGER"
