@@ -15,7 +15,7 @@ from the contract, never from a list typed into a plan.
 
 | Axis | Baseline in the contract at `49fe19c28` | 0.71 target in the contract |
 |---|---|---|
-| hosts | **2** (lambda, gx10) | + a Mac host (Apple Silicon); yoga as a pre-screen only (0.70 R-3), not an evidence host |
+| hosts | **2** (lambda, gx10) | + a Mac host (Apple Silicon); yoga as a pre-screen only (0.70 FT-4), not an evidence host |
 | backends per rung | **cpu, cuda** only; **wgpu: 0 rungs, Metal: 0 rungs** | cpu, cuda, wgpu (Vulkan on lambda/gx10), Metal/wgpu + NEON on the Mac |
 | rungs (declared) | **8**, all `*-q4km` (qwen2-1.5b, qwen3-1.7b/8b, qwen35-0.8b/2b/4b/9b/27b) | + every inventory model that fits (`inventory.dirs`/`patterns` already declare the scan), including IQ*/Q2_K/f16/.apr and **qwen3moe + qwen35moe** |
 | verbs | **run, chat, serve, code** (`qa` runs per rung via `qa_gate`) | unchanged |
@@ -37,7 +37,7 @@ from the contract, never from a list typed into a plan.
 | **R-7** | MoE: #3987 qwen3moe chat/serve/code (rc 8, 501/500, rc 1), **#3977 qwen35moe 35B-A3B CUDA forward** (new SSM+MoE arch) | the qwen3moe and qwen35moe rungs green through all 4 verbs, on every host they fit | both OPEN; #3977 has no CUDA forward | per verb, per host. For #3977, correctness is judged against llama.cpp on the **official template** (an oracle fed apr's own prompt inherits apr's template bugs) |
 | **R-8** | GPU correctness underneath: #3973 (F2 fails open), #3976 (Q4_K GEMV empty PTX launched), #3975 (GPU/CPU f32 APR divergence at layer 0) | each issue's falsifier in CI or the cuda nightly | 3/3 OPEN | #3973: a planted CPU-reference failure must fail CLOSED |
 | **R-9** | Verb surface: #3978 (`apr code` hardcodes `--gpu`), #3979 (`.apr` serve routes, SSE `[DONE]`) | `apr code` has a CPU lane; serve's `.apr` routers carry `GET /` and end SSE with `[DONE]` | 2/2 OPEN | the ladder's `code` and `serve` verbs green on a CPU-only rung |
-| **R-10** | Re-bucket the milestone | every open 0.71.0 issue is judged against this bar: in / 0.72 / backlog | 0.71.0 holds **12** open issues today (#3994's "187" was the old 0.70.0 count) | step-2 triage, **operator approval before any move** |
+| **R-10** | Re-bucket the milestone | every open 0.71.0 issue is judged against this bar: in / 0.72 / backlog | 0.71.0 holds **12** open issues today. #3994's "187" was counted when this theme was the 0.70.0 epic; 0.70.0 holds 176 today | step-2 triage, **operator approval before any move** |
 | **R-11** | **Ratchet slice 2 of 5** | the DEBT-RATCHET-001 slice-2 gates | see #4003 | see #4003 |
 
 **Overlap with 0.70:** R-5/R-6 and the #3987 part of R-7 are the same issues as 0.70's FT-11
