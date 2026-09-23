@@ -408,13 +408,21 @@ fn thinking_mode(config: &InferenceConfig, formatted: String) -> Result<String> 
 /// #3990: `(chat_template, bos_token, eos_token)` from the `tokenizer_config.json` beside a
 /// SafeTensors model, or `None` when it has no string `chat_template`. A special token may be
 /// written as a string or as `{"content": ...}`.
-fn sibling_tokenizer_template(model_path: &std::path::Path) -> Option<(String, Option<String>, Option<String>)> {
+fn sibling_tokenizer_template(
+    model_path: &std::path::Path,
+) -> Option<(String, Option<String>, Option<String>)> {
     let text = std::fs::read_to_string(model_path.with_file_name("tokenizer_config.json")).ok()?;
     let v: serde_json::Value = serde_json::from_str(&text).ok()?;
-    let tpl = v.get("chat_template")?.as_str().filter(|s| !s.is_empty())?.to_string();
+    let tpl = v
+        .get("chat_template")?
+        .as_str()
+        .filter(|s| !s.is_empty())?
+        .to_string();
     let tok = |k: &str| -> Option<String> {
         let t = v.get(k)?;
-        t.as_str().or_else(|| t.get("content").and_then(|c| c.as_str())).map(str::to_string)
+        t.as_str()
+            .or_else(|| t.get("content").and_then(|c| c.as_str()))
+            .map(str::to_string)
     };
     Some((tpl, tok("bos_token"), tok("eos_token")))
 }
@@ -452,7 +460,10 @@ fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<Prepare
         });
         crate::chat_template::official_or_legacy(
             own,
-            || format_messages(&messages, Some(template_hint)).unwrap_or_else(|_| prompt.to_string()),
+            || {
+                format_messages(&messages, Some(template_hint))
+                    .unwrap_or_else(|_| prompt.to_string())
+            },
             config.thinking,
         )?
     } else {
@@ -569,12 +580,22 @@ fn prepare_tokens_safetensors(config: &InferenceConfig, prompt: &str) -> Result<
         let msgs = &messages;
         let own = tc.as_ref().map(|(tpl, bos, eos)| {
             move |t: Option<bool>| {
-                crate::chat_template::render_official(tpl, bos.as_deref(), eos.as_deref(), msgs, true, t)
+                crate::chat_template::render_official(
+                    tpl,
+                    bos.as_deref(),
+                    eos.as_deref(),
+                    msgs,
+                    true,
+                    t,
+                )
             }
         });
         crate::chat_template::official_or_legacy(
             own,
-            || format_messages(&messages, Some(template_hint)).unwrap_or_else(|_| prompt.to_string()),
+            || {
+                format_messages(&messages, Some(template_hint))
+                    .unwrap_or_else(|_| prompt.to_string())
+            },
             config.thinking,
         )?
     } else {
@@ -656,11 +677,16 @@ fn prepare_tokens_apr(config: &InferenceConfig, prompt: &str) -> Result<Prepared
         // so they stay undefined (a Qwen template references neither).
         let msgs = &messages;
         let own = own_template.as_deref().map(|tpl| {
-            move |t: Option<bool>| crate::chat_template::render_official(tpl, None, None, msgs, true, t)
+            move |t: Option<bool>| {
+                crate::chat_template::render_official(tpl, None, None, msgs, true, t)
+            }
         });
         crate::chat_template::official_or_legacy(
             own,
-            || format_messages(&messages, Some(template_hint)).unwrap_or_else(|_| prompt.to_string()),
+            || {
+                format_messages(&messages, Some(template_hint))
+                    .unwrap_or_else(|_| prompt.to_string())
+            },
             config.thinking,
         )?
     } else {
