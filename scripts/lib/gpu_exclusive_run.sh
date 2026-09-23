@@ -56,10 +56,43 @@ wait_empty() {
   return 0
 }
 
-wait_empty || { echo "gpu_exclusive_run: CONTENDED -- card never cleared in ${WAIT}s: $(card_apps | tr '\n' ' ')" >&2; exit 75; }
+# INHERITED LOCK. A caller that already holds $LOCK -- `gpu-q` ends in `exec flock $LOCK
+# choom -- <cmd>`, the ladder's apr_locked does the same -- used to DEADLOCK here: `flock 9`
+# opens a NEW file description, flock(2) locks conflict across descriptions, and the inner
+# call waited forever while the outer one held the fleet lock, stalling every GPU job on
+# the box (proven on a private lock, aprender-70). It also mis-read a legitimate holder: the
+# lockless wait_empty below saw the lock-holder's own GPU use and called it contention.
+# So: if an ANCESTOR of this process holds the lock, use that hold. Read from /proc/locks,
+# not from an environment marker -- a marker can be set by anyone, a held flock by an
+# ancestor cannot be faked -- and ancestry, not "any holder": a lock held by an unrelated
+# process is exactly the contention this script exists to wait for.
+lock_holder_ancestor() { # -> the ancestor pid holding $LOCK, or nothing
+  local ino holders p
+  [ -e "$LOCK" ] || return 1
+  ino=$(stat -Lc %i "$LOCK" 2>/dev/null) || return 1
+  # "1: FLOCK ADVISORY WRITE <pid> <maj:min:inode> ..."; blocked waiters read "1: -> FLOCK".
+  holders=$(awk -v i=":$ino" '$2 == "FLOCK" && substr($6, length($6) - length(i) + 1) == i { print $5 }' /proc/locks 2>/dev/null)
+  [ -n "$holders" ] || return 1
+  p=$PPID
+  while [ -n "$p" ] && [ "$p" -gt 1 ] 2>/dev/null; do
+    if printf '%s\n' "$holders" | grep -qx "$p"; then printf '%s' "$p"; return 0; fi
+    p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
+  done
+  return 1
+}
 
-exec 9>"$LOCK"
-flock 9
+TOOK_LOCK=0
+release_lock() { [ "$TOOK_LOCK" = 1 ] && flock -u 9; TOOK_LOCK=0; }
+if holder=$(lock_holder_ancestor); then
+  echo "gpu_exclusive_run: $LOCK is held by ancestor pid $holder -- using that hold, not re-taking it" >&2
+else
+  wait_empty || { echo "gpu_exclusive_run: CONTENDED -- card never cleared in ${WAIT}s: $(card_apps | tr '\n' ' ')" >&2; exit 75; }
+  exec 9>"$LOCK"
+  # BOUNDED. An unbounded wait here is what turned the inherited-lock case into a hang;
+  # if the ancestry check above ever regresses, this makes it a named refusal instead.
+  flock -w "$WAIT" 9 || { echo "gpu_exclusive_run: CONTENDED -- $LOCK not free after ${WAIT}s" >&2; exit 75; }
+  TOOK_LOCK=1
+fi
 SAMPLER=""
 cleanup() { [ -n "$SAMPLER" ] && kill "$SAMPLER" 2>/dev/null; }
 trap 'cleanup' EXIT
@@ -68,7 +101,7 @@ trap 'cleanup; exit 143' TERM
 
 # The card may have filled while we queued for the lock.
 if [ -n "$(card_apps)" ]; then
-  flock -u 9
+  release_lock
   echo "gpu_exclusive_run: CONTENDED -- card occupied after taking the lock: $(card_apps | tr '\n' ' ')" >&2
   exit 75
 fi
@@ -79,7 +112,7 @@ SAMPLER=$!
 "$@"
 rc=$?
 kill "$SAMPLER" 2>/dev/null; wait "$SAMPLER" 2>/dev/null; SAMPLER=""
-flock -u 9
+release_lock
 
 # A sample whose name nvidia-smi cannot resolve reads "[No data]" -- which is what OUR OWN
 # process looks like at teardown: the first release of this script refused a clean run
