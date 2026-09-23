@@ -2987,10 +2987,13 @@ jobs:
           export LC_ALL=C
           t="$RUNNER_TEMP"
           # 1. Derive: every lib test the cuda feature adds.
-          nice -n 19 cargo test -p aprender-serve --features cuda --lib --release -- --list 2>/dev/null \
-            | sed -n 's/: test$//p' | sort > "$t/serve-cuda-list.txt"
-          nice -n 19 cargo test -p aprender-serve --lib --release -- --list 2>/dev/null \
-            | sed -n 's/: test$//p' | sort > "$t/serve-cpu-list.txt"
+          # The default binary is listed FIRST so the cuda listing and the cuda run
+          # are adjacent (one cuda build, reused). stderr is kept, not discarded,
+          # so a listing that fails to build says why.
+          nice -n 19 cargo test -p aprender-serve --lib --release -- --list 2> "$t/serve-cpu-list.err" \
+            | sed -n 's/: test$//p' | sort > "$t/serve-cpu-list.txt" || { cat "$t/serve-cpu-list.err"; exit 1; }
+          nice -n 19 cargo test -p aprender-serve --features cuda --lib --release -- --list 2> "$t/serve-cuda-list.err" \
+            | sed -n 's/: test$//p' | sort > "$t/serve-cuda-list.txt" || { cat "$t/serve-cuda-list.err"; exit 1; }
           comm -23 "$t/serve-cuda-list.txt" "$t/serve-cpu-list.txt" > "$t/serve-cuda-only.txt"
           n_cuda=$(wc -l < "$t/serve-cuda-list.txt"); n_cpu=$(wc -l < "$t/serve-cpu-list.txt")
           n_only=$(wc -l < "$t/serve-cuda-only.txt")
@@ -3016,7 +3019,7 @@ jobs:
             exit 1
           fi
           # Anti-vacuity 3: a device skip is a pass libtest cannot tell apart (unanchored).
-          dev_skip='(CUDA|GPU) (executor |scheduler )?(unavailable|not available)|no CUDA device'
+          dev_skip='(CUDA|GPU) (executor |scheduler )?(unavailable|not available)|no CUDA device|CUDA model init failed'
           skips=$(grep -cE "$dev_skip" "$log" || true)
           if [ "${skips:-0}" -ne 0 ]; then
             grep -E "$dev_skip" "$log" | head -5
@@ -3024,7 +3027,7 @@ jobs:
             exit 1
           fi
           # Model-absent skips are legitimate on CI (the models are not on this runner): reported, not failed.
-          model_skips=$(grep -cE 'is absent|[Mm]odel not (found|available)' "$log" || true)
+          model_skips=$(grep -cE 'is absent|[Mm]odel not (found|available)|no model at|cannot map' "$log" || true)
           echo "$summary"
           printf 'cuda-only: %s passed + %s ignored = %s derived, 0 device skips, %s model-absent skip line(s)\n' \
             "$passed" "$ignored" "$n_only" "${model_skips:-0}"
