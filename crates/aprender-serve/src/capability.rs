@@ -971,7 +971,10 @@ mod capability_contract {
     /// contract exists to replace.
     #[test]
     fn every_quant_row_agrees_with_the_gpu_dispatch_predicate() {
-        use crate::gguf::gpu_unsupported_quant_qtype;
+        use crate::gguf::{gpu_qtype_excluded_on, gpu_unsupported_quant_qtype_on};
+        // The general (device-independent) predicate; per-capability exclusions are the
+        // `gpu_excluded_from_cc_major` field, checked below against the code (#3968/#4096).
+        let gpu_unsupported_quant_qtype = |q: u32| gpu_unsupported_quant_qtype_on(q, None);
         for r in rows(&contract(), "quant_types") {
             let name = r
                 .get("name")
@@ -993,6 +996,17 @@ mod capability_contract {
                 "contract says {name} (ggml {id}) gpu_supported={declared}, but the \
                  dispatch predicate says supported={}",
                 !gpu_unsupported_quant_qtype(id)
+            );
+            // The first capability major the code excludes this type at, if any.
+            let code_excluded_from = (0..=20i32).find(|&m| gpu_qtype_excluded_on(id, Some(m)));
+            let declared_excluded_from = r
+                .get("gpu_excluded_from_cc_major")
+                .and_then(serde_yaml_ng::Value::as_i64)
+                .map(|m| i32::try_from(m).expect("a compute-capability major fits i32"));
+            assert_eq!(
+                declared_excluded_from, code_excluded_from,
+                "contract says {name} (ggml {id}) gpu_excluded_from_cc_major={declared_excluded_from:?}, \
+                 but the dispatch predicate excludes it from {code_excluded_from:?}"
             );
         }
     }

@@ -73,13 +73,65 @@ fn apr_qtype_to_dtype(qtype: u32) -> Result<&'static str> {
 /// path gate) and `OwnedQuantizedModel::has_gpu_unsupported_quant` (the
 /// construction-time gate consumed by every `generate_gpu_resident` entry point)
 /// both delegate here so the policy can never drift between paths.
+///
+/// #3968/#4096: the answer depends on the DEVICE, not only the type. See
+/// [`gpu_unsupported_quant_qtype_on`] for the device-independent list and the
+/// per-capability exclusions; this asks the visible devices once per process.
 #[inline]
 #[must_use]
 pub(crate) fn gpu_unsupported_quant_qtype(qtype: u32) -> bool {
+    gpu_unsupported_quant_qtype_on(qtype, device_cc_major())
+}
+
+/// #3968/#4096: whitelisted types whose kernels do not LOAD at compute capability
+/// major >= [`GPU_QTYPE_EXCLUSION_MIN_CC_MAJOR`]. IQ3_S (21) and IQ2_S (22) carry
+/// a `.global` lookup-table initializer, and the sm_12x PTX backward-branch
+/// patcher inserts a register declaration inside it (`ModuleLoad` 218, measured
+/// on GB10 sm_121 by `scripts/gpu_shape_conformance.sh gx10`). On those devices
+/// they are refused here and run on the CPU; the capability reports RED, it is
+/// not deferred.
+///
+/// This list must shrink when #4096 lands: `scripts/check_gpu_shape_conformance.sh`
+/// goes RED on a STALE exclusion — an excluded type whose every held shape passes,
+/// with a RED negative control, on a host at or above the threshold.
+pub(crate) const GPU_QTYPES_UNLOADABLE_AT_CC: [u32; 2] = [21, 22];
+
+/// The compute-capability major at and above which [`GPU_QTYPES_UNLOADABLE_AT_CC`] applies.
+pub(crate) const GPU_QTYPE_EXCLUSION_MIN_CC_MAJOR: i32 = 12;
+
+/// The GPU whitelist for a device of compute-capability major `cc_major`
+/// (`None` = no device known: the device-independent list, which is what the
+/// conformance harness tests so an exclusion can be proven stale).
+#[inline]
+#[must_use]
+pub(crate) fn gpu_unsupported_quant_qtype_on(qtype: u32, cc_major: Option<i32>) -> bool {
     !matches!(
         qtype,
         0 | 1 | 2 | 3 | 6 | 7 | 8 | 10 | 12 | 13 | 14 | 16 | 18 | 20 | 21 | 22 | 23 | 30
-    )
+    ) || gpu_qtype_excluded_on(qtype, cc_major)
+}
+
+/// Is `qtype` whitelisted in general but excluded on a device of this capability?
+#[inline]
+#[must_use]
+pub(crate) fn gpu_qtype_excluded_on(qtype: u32, cc_major: Option<i32>) -> bool {
+    cc_major.is_some_and(|m| m >= GPU_QTYPE_EXCLUSION_MIN_CC_MAJOR)
+        && GPU_QTYPES_UNLOADABLE_AT_CC.contains(&qtype)
+}
+
+/// The highest compute-capability major among the visible CUDA devices, asked
+/// once per process; `None` without the `cuda` feature or without a device.
+#[must_use]
+pub(crate) fn device_cc_major() -> Option<i32> {
+    #[cfg(feature = "cuda")]
+    {
+        static CC: std::sync::OnceLock<Option<i32>> = std::sync::OnceLock::new();
+        *CC.get_or_init(|| trueno_gpu::driver::max_compute_capability_major().ok().flatten())
+    }
+    #[cfg(not(feature = "cuda"))]
+    {
+        None
+    }
 }
 
 /// #3477 / PMAT-781/783/785: the quantized projections the Qwen3.5 hybrid
@@ -583,7 +635,7 @@ mod dtype_characterization_tests;
 // tree (#3894 is the first two). A comment cannot be compiled, so it is parsed.
 #[cfg(test)]
 mod prose_whitelist_tests_3931 {
-    use super::gpu_unsupported_quant_qtype;
+    use super::gpu_unsupported_quant_qtype_on;
 
     /// Every `N=NAME` pair in the doc comment's "whitelist of GPU-eligible types
     /// is exactly:" sentence, as a set of type numbers.
@@ -617,9 +669,10 @@ mod prose_whitelist_tests_3931 {
         out
     }
 
-    /// The set the CODE permits, over every type id ggml defines.
+    /// The set the CODE permits, over every type id ggml defines — device-independent
+    /// (#3968: the per-capability exclusions are a separate, separately tested list).
     fn expression_whitelist() -> std::collections::BTreeSet<u32> {
-        (0..=39u32).filter(|&q| !gpu_unsupported_quant_qtype(q)).collect()
+        (0..=39u32).filter(|&q| !gpu_unsupported_quant_qtype_on(q, None)).collect()
     }
 
     #[test]

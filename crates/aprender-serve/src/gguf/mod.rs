@@ -97,7 +97,10 @@ pub use model::*;
 // the primary `apr run`/`apr serve` gate (infer::is_legacy_gguf_quant) and the
 // construction-time gate (OwnedQuantizedModel::has_gpu_unsupported_quant).
 // `loader.rs` include!()s `dtype.rs`, where the predicate is defined.
-pub(crate) use loader::gpu_unsupported_quant_qtype;
+pub(crate) use loader::{
+    device_cc_major, gpu_qtype_excluded_on, gpu_unsupported_quant_qtype,
+    gpu_unsupported_quant_qtype_on, GPU_QTYPES_UNLOADABLE_AT_CC, GPU_QTYPE_EXCLUSION_MIN_CC_MAJOR,
+};
 pub use quantized::*;
 pub use runtime::*;
 #[cfg(feature = "gpu")]

@@ -186,7 +186,9 @@ mod shape_conformance_tests {
             for file in doc["files"].as_array().unwrap() {
                 for s in file["shapes"].as_array().unwrap() {
                     let q = u32::try_from(s["qtype"].as_u64().unwrap()).unwrap();
-                    if crate::gguf::gpu_unsupported_quant_qtype(q) {
+                    // The DEVICE-INDEPENDENT list: a type excluded on this device (#4096) is still run, and
+                    // recorded `excluded`, so a stale exclusion is visible (check_gpu_shape_conformance.sh).
+                    if crate::gguf::gpu_unsupported_quant_qtype_on(q, None) {
                         continue; // not admitted: the whitelist refuses it, nothing to conform
                     }
                     rows.insert((q, s["k"].as_u64().unwrap() as usize, s["n"].as_u64().unwrap() as usize));
@@ -249,6 +251,9 @@ mod shape_conformance_tests {
         let max_k = rows.iter().map(|&(_, k, _)| k).max().unwrap_or(256);
         exec.init_workspace(max_k, max_k)
             .unwrap_or_else(|e| panic!("init_workspace({max_k}, {max_k}) failed on a bare executor: {e} — the harness cannot mirror production"));
+        // The capability the production gate sees (the same query), and the types it refuses here.
+        let cc_major = crate::gguf::device_cc_major();
+        let excluded = |q: u32| crate::gguf::gpu_qtype_excluded_on(q, cc_major);
         let mut results = Vec::new();
         let mut controls = BTreeMap::new();
         let mut failed = 0usize;
@@ -266,11 +271,15 @@ mod shape_conformance_tests {
                     .or_else(|| e.downcast_ref::<&str>().map(|s| (*s).to_string())).unwrap_or_else(|| "panic".into()))),
             };
             let pass = worst <= TOL;
-            failed += usize::from(!pass);
-            eprintln!("#3968 ggml={q:2} k={k:6} n={n:6} (held {n_held:6}) class={:7} worst={worst:.3e} {}{}", class(q, k),
-                      if pass { "ok" } else { "FAIL" }, panic_msg.as_deref().map(|m| format!(" (panicked: {m})")).unwrap_or_default());
+            // An excluded row never reaches the GPU in production: its failure is the RED the exclusion states,
+            // not a conformance failure. Its PASS is what check_gpu_shape_conformance.sh reads as a stale exclusion.
+            failed += usize::from(!pass && !excluded(q));
+            eprintln!("#3968 ggml={q:2} k={k:6} n={n:6} (held {n_held:6}) class={:7} worst={worst:.3e} {}{}{}", class(q, k),
+                      if pass { "ok" } else { "FAIL" }, if excluded(q) { " [excluded on this device]" } else { "" },
+                      panic_msg.as_deref().map(|m| format!(" (panicked: {m})")).unwrap_or_default());
             results.push(serde_json::json!({"qtype": q, "k": k, "n_held": n_held, "n_tested": n, "class": class(q, k),
-                "worst": if worst.is_finite() { serde_json::json!(worst) } else { serde_json::json!("inf") }, "pass": pass, "panic": panic_msg}));
+                "worst": if worst.is_finite() { serde_json::json!(worst) } else { serde_json::json!("inf") }, "pass": pass,
+                "excluded": excluded(q), "panic": panic_msg}));
 
             if let std::collections::btree_map::Entry::Vacant(slot) = controls.entry(q) {
                 // Negative control: corrupt block 0 of row 0 in the GPU copy only.
@@ -288,10 +297,13 @@ mod shape_conformance_tests {
                 slot.insert(serde_json::json!({"k": k, "n": n, "worst": if worst_bad.is_finite() { serde_json::json!(worst_bad) } else { serde_json::json!(worst_bad.to_string()) }, "red": red}));
             }
         }
-        let blind: Vec<u32> = controls.iter().filter(|(_, v)| v["red"] != true).map(|(q, _)| *q).collect();
+        let blind: Vec<u32> = controls.iter().filter(|(q, v)| v["red"] != true && !excluded(**q)).map(|(q, _)| *q).collect();
+        let excluded_types: Vec<u32> = controls.keys().copied().filter(|&q| excluded(q)).collect();
         let receipt = serde_json::json!({
             "schema": "gpu-shape-conformance/v1",
             "tolerance": TOL,
+            "cc_major": cc_major,
+            "excluded_types": excluded_types,
             "rows": results,
             "negative_controls": controls.iter().map(|(q, v)| (q.to_string(), v.clone())).collect::<serde_json::Map<_, _>>(),
             "failed": failed,

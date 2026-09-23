@@ -295,7 +295,7 @@ mod gemv_entry_name_tests_3477 {
         let wrong: Vec<String> = (0u32..=40)
             .filter(|&t| {
                 // admitted by the whitelist ...
-                !crate::gguf::gpu_unsupported_quant_qtype(t)
+                !crate::gguf::gpu_unsupported_quant_qtype_on(t, None)
                     // ... but no kernel to decode it with
                     && WeightQuantType::from_ggml_type(t).is_none()
             })
@@ -323,7 +323,7 @@ mod gemv_entry_name_tests_3477 {
     #[test]
     fn f16_is_admitted_because_its_kernel_was_measured() {
         assert!(
-            !crate::gguf::gpu_unsupported_quant_qtype(1),
+            !crate::gguf::gpu_unsupported_quant_qtype_on(1, None),
             "F16 has a measured kernel (217/217 exact) and must be GPU-eligible"
         );
     }
@@ -343,7 +343,7 @@ mod gemv_entry_name_tests_3477 {
     #[test]
     fn iq4_xs_is_admitted_because_its_kernel_was_measured() {
         assert!(
-            !crate::gguf::gpu_unsupported_quant_qtype(23),
+            !crate::gguf::gpu_unsupported_quant_qtype_on(23, None),
             "IQ4_XS has a measured kernel (10/10 exact) and must be GPU-eligible"
         );
     }
@@ -423,7 +423,7 @@ mod gemv_entry_name_tests_3477 {
             GemvKernel::IQ4NL
         );
         assert!(
-            !crate::gguf::gpu_unsupported_quant_qtype(20),
+            !crate::gguf::gpu_unsupported_quant_qtype_on(20, None),
             "#3869: the kernel was measured EXACT against the CPU decoder on device \
              (iq4_nl_device_ab_tests), so IQ4_NL is GPU-eligible"
         );
@@ -474,7 +474,7 @@ mod gemv_entry_name_tests_3477 {
              176 is Q5_K/Q5_0), so size inference may name IQ3_S"
         );
         assert!(
-            !crate::gguf::gpu_unsupported_quant_qtype(21),
+            !crate::gguf::gpu_unsupported_quant_qtype_on(21, None),
             "#3884: the kernel was measured EXACT against the CPU decoder on device \
              (iq4_nl_device_ab_tests), so IQ3_S is GPU-eligible"
         );
@@ -520,7 +520,7 @@ mod gemv_entry_name_tests_3477 {
             Some(WeightQuantType::Q5_1)
         );
         assert!(
-            !crate::gguf::gpu_unsupported_quant_qtype(7),
+            !crate::gguf::gpu_unsupported_quant_qtype_on(7, None),
             "#3885: the kernel was measured EXACT against the CPU decoder on device \
              (iq4_nl_device_ab_tests), so Q5_1 is GPU-eligible"
         );
@@ -568,7 +568,7 @@ mod gemv_entry_name_tests_3477 {
             GemvKernel::BF16
         );
         assert!(
-            !crate::gguf::gpu_unsupported_quant_qtype(30),
+            !crate::gguf::gpu_unsupported_quant_qtype_on(30, None),
             "#3908: the kernel was measured BIT-EXACT against the CPU decoder on \
              device (iq4_nl_device_ab_tests), so BF16 is GPU-eligible"
         );
@@ -664,7 +664,7 @@ mod gemv_entry_name_tests_3477 {
                 gk,
                 "binding type {q} to any other kernel decodes {bytes}-byte blocks as another scheme"
             );
-            assert!(!crate::gguf::gpu_unsupported_quant_qtype(q), "type {q} must be GPU-eligible");
+            assert!(!crate::gguf::gpu_unsupported_quant_qtype_on(q, None), "type {q} must be GPU-eligible");
             // Not ambiguous by size, and inferred at a real shape from the model.
             let (k, n) = (3584usize, 1024usize);
             assert_eq!(
@@ -712,7 +712,7 @@ mod gemv_entry_name_tests_3477 {
             "binding IQ2_XXS to any other kernel decodes 66-byte blocks as another scheme"
         );
         assert!(
-            !crate::gguf::gpu_unsupported_quant_qtype(16),
+            !crate::gguf::gpu_unsupported_quant_qtype_on(16, None),
             "IQ2_XXS has a measured kernel (95/95 real tensors) and must be GPU-eligible"
         );
         // 66 bytes per 256 elements collides with no other format, so unlike

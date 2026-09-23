@@ -119,7 +119,7 @@ pub use types::*;
 
 // Re-export CUDA wrappers when feature enabled
 #[cfg(feature = "cuda")]
-pub use context::{cuda_available, device_count, CudaContext};
+pub use context::{cuda_available, device_count, max_compute_capability_major, CudaContext};
 #[cfg(feature = "cuda")]
 pub use cublas::{CublasHandle, GemmOp};
 #[cfg(feature = "cuda")]

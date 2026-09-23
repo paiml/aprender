@@ -11,8 +11,11 @@
 //! must be flagged so it routes to CPU (loud) or errors, never shipping silent
 //! Q4_K-decode garbage on the GPU (PMAT-781/783 class).
 
-use crate::gguf::gpu_unsupported_quant_qtype;
 use crate::gguf::test_helpers::create_test_model_with_config;
+use crate::gguf::{
+    gpu_qtype_excluded_on, gpu_unsupported_quant_qtype_on, GPU_QTYPES_UNLOADABLE_AT_CC,
+    GPU_QTYPE_EXCLUSION_MIN_CC_MAJOR,
+};
 use crate::gguf::{ArchConstraints, GGUFConfig, OwnedQKVWeights};
 
 fn test_config() -> GGUFConfig {
@@ -71,7 +74,7 @@ fn gpu_unsupported_quant_qtype_whitelist_is_exact() {
         0u32, 1, 2, 3, 6, 7, 8, 10, 12, 13, 14, 16, 18, 20, 21, 22, 23, 30,
     ] {
         assert!(
-            !gpu_unsupported_quant_qtype(q),
+            !gpu_unsupported_quant_qtype_on(q, None),
             "qtype {q} has a verified GPU kernel and must be GPU-eligible"
         );
     }
@@ -84,8 +87,55 @@ fn gpu_unsupported_quant_qtype_whitelist_is_exact() {
         100,  /*IQ*/
     ] {
         assert!(
-            gpu_unsupported_quant_qtype(q),
+            gpu_unsupported_quant_qtype_on(q, None),
             "qtype {q} has no verified GPU kernel and MUST force CPU"
+        );
+    }
+}
+
+/// #3968/#4096: IQ3_S(21) and IQ2_S(22) are whitelisted in general but refused on a
+/// device of compute-capability major >= 12, where their kernels do not load. Below the
+/// threshold, and with no device known, the device-independent list applies unchanged.
+#[test]
+fn iq3s_iq2s_are_refused_at_cc12_and_admitted_below() {
+    assert_eq!(GPU_QTYPES_UNLOADABLE_AT_CC, [21, 22]);
+    assert_eq!(GPU_QTYPE_EXCLUSION_MIN_CC_MAJOR, 12);
+    for q in [21u32, 22] {
+        assert!(
+            !gpu_unsupported_quant_qtype_on(q, None),
+            "ggml {q}: no device known -> the general list admits it"
+        );
+        assert!(
+            !gpu_unsupported_quant_qtype_on(q, Some(8)),
+            "ggml {q}: sm_89 loads it (lambda, 163/163)"
+        );
+        assert!(
+            !gpu_unsupported_quant_qtype_on(q, Some(11)),
+            "ggml {q}: below the threshold is unchanged"
+        );
+        assert!(
+            gpu_unsupported_quant_qtype_on(q, Some(12)),
+            "ggml {q}: sm_12x must refuse it (#4096)"
+        );
+        assert!(gpu_qtype_excluded_on(q, Some(12)));
+    }
+}
+
+/// The exclusion is NARROW: at cc 12 every other whitelisted type is still admitted, and a
+/// type outside the whitelist is still refused below the threshold.
+#[test]
+fn the_cc12_exclusion_touches_only_its_listed_types() {
+    for q in [0u32, 1, 2, 3, 6, 7, 8, 10, 12, 13, 14, 16, 18, 20, 23, 30] {
+        assert!(
+            !gpu_unsupported_quant_qtype_on(q, Some(12)),
+            "ggml {q} must stay GPU-eligible on sm_12x"
+        );
+        assert!(!gpu_qtype_excluded_on(q, Some(12)));
+    }
+    for q in [9u32, 11, 15, 17] {
+        assert!(
+            gpu_unsupported_quant_qtype_on(q, Some(8)),
+            "ggml {q} has no kernel on any device"
         );
     }
 }

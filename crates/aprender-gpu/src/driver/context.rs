@@ -374,6 +374,33 @@ pub fn device_count() -> Result<usize, GpuError> {
     Ok(count as usize)
 }
 
+/// The highest compute-capability MAJOR among the visible devices, or `None` when there are none.
+///
+/// Needs no context: `cuDeviceGet` + `cuDeviceGetAttribute` only, so a capability gate can ask it BEFORE
+/// anything is loaded (#3968/#4096: a quant type whose kernels do not load at cc >= 12 must be refused
+/// there, not discovered by a `ModuleLoad` failure mid-forward). The MAX, so a mixed host fails closed.
+///
+/// # Errors
+///
+/// Returns `Err(GpuError::CudaNotAvailable)` if CUDA is not available, or the driver's error.
+pub fn max_compute_capability_major() -> Result<Option<i32>, GpuError> {
+    let driver = get_driver()?;
+    let mut best: Option<i32> = None;
+    for ordinal in 0..device_count()? {
+        let mut device: CUdevice = 0;
+        // SAFETY: ordinal < cuDeviceGetCount, so it names a device
+        let result = unsafe { (driver.cuDeviceGet)(&mut device, ordinal as i32) };
+        CudaDriver::check(result)?;
+        let mut major: i32 = 0;
+        // SAFETY: pointer is valid, device is a handle from cuDeviceGet;
+        // CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR = 75
+        let result = unsafe { (driver.cuDeviceGetAttribute)(&mut major, 75, device) };
+        CudaDriver::check(result)?;
+        best = Some(best.map_or(major, |b| b.max(major)));
+    }
+    Ok(best)
+}
+
 /// Check if CUDA is available
 ///
 /// Returns `true` if CUDA driver is installed and at least one device exists.
