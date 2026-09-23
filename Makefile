@@ -515,6 +515,8 @@ COV_THRESHOLD := 95
 # Raise this number whenever a run comes in higher; never lower it to make red
 # go away. Integer truncation gives ~0.78pt of headroom before 88 becomes 87.
 COV_FLOOR := 88
+# #4023: libtest threads for aprender-serve's `gpu` coverage shard (25.9 GB at 22 on yoga).
+COV_GPU_SHARD_THREADS ?= 4
 
 # NVMe target dir (mirrors cargo() shell function that sets CARGO_TARGET_DIR)
 # Without this, Make's subshell bypasses the function and uses ./target/ instead
@@ -644,15 +646,34 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	@$(COV_CARGO_ENV) cargo llvm-cov test --no-report -p aprender-serve --lib -- --list \
 		> target/coverage/serve-list.txt 2>> target/coverage/test.log || \
 		{ echo "❌ coverage DID NOT MEASURE: could not list aprender-serve's lib tests. No coverage verdict."; exit 1; }
-	@python3 scripts/coverage_serve_shards.py target/coverage/serve-list.txt scripts/coverage-skips.txt target/coverage/serve-shards
+	@python3 scripts/coverage_serve_shards.py target/coverage/serve-list.txt scripts/coverage-skips.txt \
+		target/coverage/serve-shards scripts/coverage-solo.txt
+	@# The gpu shard alone reached 25.9 GB on yoga at 22 threads (run 35881004821, a real RTX 4060),
+	@# so it runs at COV_GPU_SHARD_THREADS; the other shards keep libtest's default.
 	@for shard in target/coverage/serve-shards/shard-*.txt; do \
-		echo "   $$shard ($$(wc -l < $$shard) tests)"; \
+		threads=""; case "$$shard" in *-gpu.txt) threads="--test-threads=$(COV_GPU_SHARD_THREADS)" ;; esac; \
+		echo "   $$shard ($$(wc -l < $$shard) tests) $$threads"; \
 		PROPTEST_CASES=10 QUICKCHECK_TESTS=10 RUST_MIN_STACK=16777216 CARGO_BUILD_JOBS=4 \
 			$(COV_CARGO_ENV) cargo llvm-cov test --no-report -p aprender-serve --lib --ignore-run-fail \
-			-- --exact $$(cat $$shard) 2>&1 | tee -a target/coverage/test.log; \
+			-- --exact $$threads $$(cat $$shard) 2>&1 | tee -a target/coverage/test.log; \
 		rc=$${PIPESTATUS[0]}; \
 		if [ "$$rc" -ne 0 ]; then \
 			echo "❌ coverage DID NOT MEASURE: cargo llvm-cov exited $$rc on $$shard. No coverage verdict."; \
+			exit 1; \
+		fi; \
+	done
+	@# scripts/coverage-solo.txt: each runs in its OWN process and prints its test binary's peak RSS
+	@# (RUSAGE_CHILDREN.ru_maxrss), so a later skip carries a measured per-test reason.
+	@for solo in target/coverage/serve-shards/solo-*.txt; do \
+		[ -e "$$solo" ] || continue; \
+		t=$$(cat $$solo); \
+		PROPTEST_CASES=10 QUICKCHECK_TESTS=10 RUST_MIN_STACK=16777216 CARGO_BUILD_JOBS=4 \
+			$(COV_CARGO_ENV) python3 -c 'import resource, subprocess, sys; rc = subprocess.call(sys.argv[2:]); print("coverage-solo-maxrss", resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss, "KB", sys.argv[1], "rc=%d" % rc, flush=True); sys.exit(rc)' \
+			"$$t" cargo llvm-cov test --no-report -p aprender-serve --lib --ignore-run-fail -- --exact "$$t" \
+			2>&1 | tee -a target/coverage/test.log; \
+		rc=$${PIPESTATUS[0]}; \
+		if [ "$$rc" -ne 0 ]; then \
+			echo "❌ coverage DID NOT MEASURE: cargo llvm-cov exited $$rc on solo $$t. No coverage verdict."; \
 			exit 1; \
 		fi; \
 	done

@@ -8,10 +8,13 @@ top-level module alone stays small. On yoga's 28 GB box earlyoom SIGTERMed it un
 Running the suite as several processes, one module group each, keeps every process small;
 the `--no-report` runs' profiles are merged by one final `cargo llvm-cov report`.
 
-Usage: coverage_serve_shards.py <test-list> <skips-file> <out-dir>
+Usage: coverage_serve_shards.py <test-list> <skips-file> <out-dir> [<solo-file>]
   <test-list>   the binary's `--list` output (`path: test` lines; anything else is ignored)
   <skips-file>  scripts/coverage-skips.txt (exact paths; #-comments and blanks ignored)
-  <out-dir>     receives shard-NN.txt, one exact test path per line
+  <out-dir>     receives shard-NN-<module|pack>.txt, one exact test path per line, and
+                solo-NN.txt (one test each) for every entry of <solo-file>
+  <solo-file>   scripts/coverage-solo.txt: tests run in their own process and measured.
+                An entry that is not a listed test is an error, so a rename cannot hide it.
 
 Modules with >= ALONE tests get a shard of their own; the rest are packed, largest first,
 into shards of at most PACK tests. A module is never split, so each process holds one
@@ -27,7 +30,7 @@ PACK = 2000
 
 
 def main(argv):
-    if len(argv) != 4:
+    if len(argv) not in (4, 5):
         sys.exit(__doc__)
     listed = [l[: -len(": test")] for l in pathlib.Path(argv[1]).read_text().splitlines() if l.endswith(": test")]
     skips = {
@@ -38,37 +41,52 @@ def main(argv):
     wanted = [t for t in listed if t not in skips]
     if not wanted:
         sys.exit("coverage_serve_shards: the test list is empty; refusing to write zero shards")
+    solo = []
+    if len(argv) == 5:
+        solo = [
+            l.strip()
+            for l in pathlib.Path(argv[4]).read_text().splitlines()
+            if l.strip() and not l.strip().startswith("#")
+        ]
+        unknown = [t for t in solo if t not in set(wanted)]
+        if unknown:
+            sys.exit(f"coverage_serve_shards: solo entries that are not listed tests: {unknown}")
+    solo_set = set(solo)
 
     by_module = collections.OrderedDict()
     for t in sorted(wanted):
-        by_module.setdefault(t.split("::", 1)[0], []).append(t)
+        if t not in solo_set:
+            by_module.setdefault(t.split("::", 1)[0], []).append(t)
 
-    shards, packing = [], []
+    shards, packing = [], []  # shards: (label, tests)
     for mod, tests in sorted(by_module.items(), key=lambda kv: (-len(kv[1]), kv[0])):
         if len(tests) >= ALONE:
-            shards.append(tests)
+            shards.append((mod, tests))
         elif packing and len(packing) + len(tests) > PACK:
-            shards.append(packing)
+            shards.append(("pack", packing))
             packing = list(tests)
         else:
             packing.extend(tests)
     if packing:
-        shards.append(packing)
+        shards.append(("pack", packing))
 
-    flat = [t for s in shards for t in s]
+    flat = [t for _, s in shards for t in s] + solo
     if len(flat) != len(set(flat)) or set(flat) != set(wanted):
         missing, extra = set(wanted) - set(flat), len(flat) - len(set(flat))
         sys.exit(f"coverage_serve_shards: partition is wrong ({len(missing)} missing, {extra} duplicated)")
 
     out = pathlib.Path(argv[3])
     out.mkdir(parents=True, exist_ok=True)
-    for old in out.glob("shard-*.txt"):
+    for old in list(out.glob("shard-*.txt")) + list(out.glob("solo-*.txt")):
         old.unlink()
-    for i, s in enumerate(shards):
-        (out / f"shard-{i:02d}.txt").write_text("\n".join(s) + "\n")
+    for i, (label, s) in enumerate(shards):
+        (out / f"shard-{i:02d}-{label}.txt").write_text("\n".join(s) + "\n")
+    for i, t in enumerate(solo):
+        (out / f"solo-{i:02d}.txt").write_text(t + "\n")
     print(
         f"coverage_serve_shards: {len(wanted)} tests ({len(listed) - len(wanted)} skipped) "
-        f"in {len(shards)} shards: " + ", ".join(str(len(s)) for s in shards)
+        f"in {len(shards)} shards + {len(solo)} solo: "
+        + ", ".join(f"{label}={len(s)}" for label, s in shards)
     )
 
 
