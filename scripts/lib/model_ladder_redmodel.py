@@ -137,6 +137,21 @@ def _margins(a, b, step):
     return f" (top-2 margins there: apr {fmt(ma)}, reference {fmt(mb)})"
 
 
+def gpu_leg_problem(raw):
+    """#3957 F9: an apr GPU-lane row must PROVE it ran on the GPU. aprender-6c [3ada9a] measured a cuda
+    build that FALLS BACK to the CPU on Qwen3.5-0.8B-UD-IQ2_XXS (IQ3_XXS attn_gate not admitted), so a
+    "GPU" row from it is a CPU row with a GPU label -- and CPU == GPU would then compare a leg with
+    itself. The row's own `backend` record (apr run --format json: requested/ran/fell_back) is read;
+    an absent record is not a GPU run. -> None, or the reason."""
+    be = raw.get("backend") if isinstance(raw, dict) else None
+    if not isinstance(be, dict):
+        return "the apr GPU-lane row records no `backend` -- nothing shows it ran on the GPU"
+    if be.get("fell_back") is not False or str(be.get("ran") or "").lower() not in ("gpu", "cuda"):
+        return (f"the apr GPU-lane row did NOT run on the GPU (ran={be.get('ran')!r}, fell_back={be.get('fell_back')!r}) "
+                f"-- it is a CPU row with a GPU label, so CPU == GPU would compare a leg with itself")
+    return None
+
+
 def _ids(v):
     return isinstance(v, list) and bool(v) and all(isinstance(i, int) and not isinstance(i, bool) for i in v)
 
@@ -311,6 +326,9 @@ class RedVerdicts:
                 probs.append(f"{pid}: no raw generated_ids for " + " and ".join(n for n, v in (("apr", a), ("llama.cpp", o)) if v is None))
                 continue
             p = []
+            gp = gpu_leg_problem(a)
+            if gp:
+                p.append(f"{pid}: {gp}")
             if not (_ids(a.get("prompt_ids")) and a.get("prompt_ids") == o.get("prompt_ids")):
                 p.append(f"{pid}: the parity row's engines did not run on the same prompt ids -- a divergence would be the "
                          f"prompt's, not the engine's")
@@ -431,6 +449,9 @@ class RedVerdicts:
                 probs.append(f"{pid}/{th}: no raw apr greedy record on the GPU lane")
                 continue
             p = []
+            gp = gpu_leg_problem(a)
+            if gp:
+                p.append(f"{pid}/{th}: {gp}")
             for n, r in (("CPU", ref), ("CUDA", cuda)):
                 if not (_ids(r.get("template_prompt_ids")) and r.get("prompt_ids") == r.get("template_prompt_ids")):
                     p.append(f"{pid}/{th}: the llama.cpp@official {n} leg did not run on the official template's ids (#3990)")

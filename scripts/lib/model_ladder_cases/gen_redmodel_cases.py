@@ -189,6 +189,11 @@ def write(name, L, rec, crux, rc, must, must_not=None):
         with open(os.path.join(d, "receipts", f"{h}.json"), "w", encoding="utf-8") as fh:
             json.dump(R, fh, indent=1)
     for n, X in crux.items():
+        # every apr greedy row records the backend it RAN on (#3957 F9); a case overrides it to plant a fallback
+        lane = X.get("backend")
+        for gg in X.get("greedy", []):
+            if isinstance(gg.get("apr"), dict) and isinstance(gg["apr"].get("raw"), dict):
+                gg["apr"]["raw"].setdefault("backend", {"requested": lane, "ran": lane, "fell_back": False})
         with open(os.path.join(d, "crux", f"{n}.json"), "w", encoding="utf-8") as fh:
             json.dump(X, fh, indent=1)
     shutil.copy(os.path.join(BASE, "version"), os.path.join(d, "version"))
@@ -365,6 +370,12 @@ def main():
     L, rec, crux = build_wa()   # apr CPU != GPU
     crux["lambda-cpu"]["greedy"][0]["apr"]["raw"]["generated_ids"] = div(5)
     write("red-model-wrong-answer-cpu-ne-gpu", L, rec, crux, 1, r"apr CPU and GPU DIFFER at step 5")
+    L, rec, crux = build_wa()   # the apr "GPU" row fell back to the CPU (measured on IQ2_XXS, 165578f17)
+    crux["lambda-gpu"]["greedy"][0]["apr"]["raw"]["backend"] = {"requested": "gpu", "ran": "cpu", "fell_back": True}
+    write("red-model-wrong-answer-gpu-fell-back", L, rec, crux, 1, r"the apr GPU-lane row did NOT run on the GPU \(ran='cpu', fell_back=True\)")
+    L, rec, crux = build_f9()   # ... and the think-block class holds its GPU leg to the same rule
+    crux["lambda-gpu"]["greedy"][0]["apr"]["raw"]["backend"] = {"requested": "gpu", "ran": "cpu", "fell_back": True}
+    write("red-model-gpu-fell-back", L, rec, crux, 1, r"the apr GPU-lane row did NOT run on the GPU")
     L, rec, crux = build_wa()   # a wrong_answer key must say what the right answer is
     del L["ladder"]["inventory"]["red_model"][W]["expect"]
     write("red-model-wrong-answer-no-expect", L, rec, crux, 1, r"is a wrong_answer key with no `expect`")
