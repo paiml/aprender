@@ -32,6 +32,7 @@ mod gemv_entry_name_tests_3477 {
             KernelType::Iq4XsGemv { k, n },
             KernelType::Iq4NlGemv { k, n },
             KernelType::Iq3SGemv { k, n },
+            KernelType::Q2KGemv { k, n },
             KernelType::Iq2XxsGemv { k, n },
             KernelType::Bf16Gemv { k, n },
             KernelType::Q5_1Gemv { k, n },

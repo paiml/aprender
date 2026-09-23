@@ -267,6 +267,158 @@ mod iq4_nl_device_ab_tests {
         eprintln!("#3884 A/B: {n} rows, worst relative disagreement {worst:.3e}");
     }
 
+    /// #3960: deterministic Q2_K weights. `scales` and `qs` are pseudo-random, but `d` and
+    /// `dmin` are PINNED to small exactly-representable f16s: random bytes there can form an
+    /// f16 infinity or NaN, and an oracle of NaNs agrees with nothing -- or, worse, with a
+    /// kernel that also produces NaN.
+    fn q2_k_weights(n: usize, k: usize) -> Vec<u8> {
+        let blocks = n * k.div_ceil(256);
+        let (d, dmin) = (half::f16::from_f32(0.0125), half::f16::from_f32(0.00625));
+        let mut out = Vec::with_capacity(blocks * 84);
+        let mut state: u32 = 0x9E37_79B9;
+        for _ in 0..blocks {
+            for _ in 0..80 {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                out.push((state >> 24) as u8);
+            }
+            out.extend_from_slice(&d.to_le_bytes());
+            out.extend_from_slice(&dmin.to_le_bytes());
+        }
+        out
+    }
+
+    /// #3960: run the Q2_K kernel on `weights` and compare it with the CPU oracle -- the
+    /// decoder proven BITWISE against gguf-py on every Q2_K tensor
+    /// (`q2k_gguf_py_parity_tests`) -- dotted in f64, so the error measured is the GPU's.
+    /// Per-row |gpu - cpu| / sum|w||x| <= 1e-5; output PRE-FILLED WITH NaN so a row the
+    /// kernel never writes fails outright.
+    fn q2_k_device_ab(
+        exec: &mut CudaExecutor,
+        weights: &[u8],
+        k: usize,
+        n: usize,
+    ) -> Result<(f64, usize, f32, f64), String> {
+        let row_bytes = k.div_ceil(256) * 84;
+        assert_eq!(weights.len(), n * row_bytes, "buffer must be n * ceil(k/256) * 84 bytes");
+        let input: Vec<f32> = (0..k).map(|i| ((i % 17) as f32) - 8.0).collect();
+
+        let weight_buf = GpuBuffer::from_host(&exec.context, weights).unwrap();
+        let input_buf = GpuBuffer::from_host(&exec.context, &input).unwrap();
+        let output_buf = GpuBuffer::from_host(&exec.context, &vec![f32::NAN; n]).unwrap();
+        exec.q2_k_gemv_into(
+            weight_buf.as_ptr(),
+            &input_buf,
+            &output_buf,
+            u32::try_from(n).unwrap(),
+            u32::try_from(k).unwrap(),
+        )
+        .map_err(|e| format!("Q2_K GEMV launch: {e:?}"))?;
+        exec.stream.synchronize().unwrap();
+        let mut got = vec![0.0f32; n];
+        output_buf.copy_to_host(&mut got).unwrap();
+
+        let (mut worst, mut wrow, mut wexp) = (0.0f64, 0usize, 0.0f64);
+        let mut nonzero = 0usize;
+        for row in 0..n {
+            if !got[row].is_finite() {
+                return Err(format!(
+                    "row {row} is {} -- the kernel never wrote it (output was pre-filled with NaN)",
+                    got[row]
+                ));
+            }
+            let w = crate::quantize::dequant::dequantize_q2_k(&weights[row * row_bytes..(row + 1) * row_bytes])
+                .map_err(|e| format!("row {row} dequant: {e}"))?;
+            let exp: f64 = w.iter().zip(&input).map(|(a, b)| f64::from(*a) * f64::from(*b)).sum();
+            let scale: f64 = w.iter().zip(&input).map(|(a, b)| f64::from(a.abs() * b.abs())).sum();
+            if exp.abs() > 1e-6 {
+                nonzero += 1;
+            }
+            let ratio = (f64::from(got[row]) - exp).abs() / scale.max(f64::MIN_POSITIVE);
+            if ratio > worst {
+                (worst, wrow, wexp) = (ratio, row, exp);
+            }
+        }
+        if nonzero < n / 2 {
+            return Err(format!("only {nonzero}/{n} oracle rows non-zero: would pass on an all-zero kernel"));
+        }
+        Ok((worst, wrow, got[wrow], wexp))
+    }
+
+    fn q2_k_assert_within(label: &str, k: usize, n: usize, r: Result<(f64, usize, f32, f64), String>) {
+        let (worst, row, g, e) = r.unwrap_or_else(|m| panic!("#3960 {label} k={k} n={n}: {m}"));
+        assert!(
+            worst <= 1e-5,
+            "#3960 {label} k={k} n={n}: GPU and CPU Q2_K disagree. worst row {row}: GPU {g} vs \
+             CPU {e} (err/sum|w||x| {worst:.3e} > 1e-5). The CPU decoder is the oracle."
+        );
+        eprintln!("#3960 A/B {label} k={k} n={n}: worst err/sum|w||x| {worst:.3e} at row {row}");
+    }
+
+    /// Every (k, n) Qwen3.5-0.8B-UD-IQ2_XXS uses for type 10, from gguf-py's reader: three
+    /// tensors, blk.{0,4,5}.ffn_down.weight, all ne=[3584, 1024] -- ONE shape, 14 blocks/row.
+    const Q2K_REAL_SHAPES: &[(usize, usize)] = &[(3584, 1024)];
+
+    #[test]
+    fn the_q2_k_kernel_agrees_with_the_cpu_decoder_on_device() {
+        let Some(mut exec) = create_executor() else {
+            eprintln!("SKIP: no CUDA device");
+            return;
+        };
+        let (k, n) = (512usize, 48usize);
+        q2_k_assert_within("synthetic", k, n, q2_k_device_ab(&mut exec, &q2_k_weights(n, k), k, n));
+        for &(k, n) in Q2K_REAL_SHAPES {
+            q2_k_assert_within("synthetic", k, n, q2_k_device_ab(&mut exec, &q2_k_weights(n, k), k, n));
+        }
+    }
+
+    /// On the REAL bytes of every Q2_K tensor. The bytes are first shown to BE a weight
+    /// tensor (every block's d and dmin finite and small): with a wrong offset GPU and CPU
+    /// would read the same wrong bytes and agree perfectly. The dims order comes from
+    /// Q2K_REAL_SHAPES, not the API: 3584 and 1024 are both multiples of 256.
+    #[test]
+    fn the_q2_k_kernel_agrees_on_every_real_type10_tensor_on_device() {
+        use crate::gguf::MappedGGUFModel;
+        const MODEL: &str = "/home/noah/models/Qwen3.5-0.8B-UD-IQ2_XXS.gguf";
+        let Some(mut exec) = create_executor() else {
+            eprintln!("SKIP: no CUDA device");
+            return;
+        };
+        if !std::path::Path::new(MODEL).exists() {
+            eprintln!("SKIP: {MODEL} is not on this host -- the real-bytes A/B did NOT run");
+            return;
+        }
+        let mapped = MappedGGUFModel::from_path(MODEL).expect("map the model");
+        let data = mapped.data();
+        let base = mapped.model.tensor_data_start;
+        let mut seen = 0usize;
+        for t in mapped.model.tensors.iter().filter(|t| t.qtype == 10) {
+            let (a, b) = (t.dims[0] as usize, t.dims[1] as usize);
+            let (k, n) = if Q2K_REAL_SHAPES.contains(&(a, b)) {
+                (a, b)
+            } else if Q2K_REAL_SHAPES.contains(&(b, a)) {
+                (b, a)
+            } else {
+                panic!("{}: dims {:?} match no shape in Q2K_REAL_SHAPES -- the census is stale", t.name, t.dims)
+            };
+            let len = n * k.div_ceil(256) * 84;
+            let start = base + usize::try_from(t.offset).unwrap();
+            let bytes = &data[start..start + len];
+            let mut bad = 0usize;
+            for blk in bytes.chunks_exact(84) {
+                for off in [80usize, 82] {
+                    let v = half::f16::from_le_bytes([blk[off], blk[off + 1]]).to_f32();
+                    if !v.is_finite() || v.abs() > 1.0 {
+                        bad += 1;
+                    }
+                }
+            }
+            assert_eq!(bad, 0, "{}: {bad} implausible d/dmin -- these bytes are not this tensor (offset {start})", t.name);
+            q2_k_assert_within(&t.name, k, n, q2_k_device_ab(&mut exec, bytes, k, n));
+            seen += 1;
+        }
+        assert_eq!(seen, 3, "expected the 3 type-10 tensors the census found, saw {seen}");
+    }
+
     /// #3931: IQ2_XXS on the device, against the CPU decoder, at the shapes that
     /// exercise the stride and the tail. Returns `(worst relative disagreement,
     /// worst row)` so the planted-fault runs and the real run report the same

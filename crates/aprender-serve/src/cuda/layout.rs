@@ -1008,6 +1008,197 @@ $L_s3_exit:
     )
 }
 
+/// #3960: Q2_K (GGML type 10) GEMV, row-major.
+///
+/// 2.625 bits/weight, AFFINE: `w = d * lo(sc) * q - dmin * hi(sc)`. 84 bytes per
+/// 256-element super-block: `scales[16]` at +0 (each byte: low nibble scale, high nibble
+/// min), `qs[64]` at +16 (four 2-bit quants per byte), `d` f16 at +80, `dmin` f16 at +82.
+///
+/// THREAD MAPPING. One warp per output row; lane L owns the 8 consecutive outputs
+/// 8L..8L+7 of each super-block. ggml's order is o = 128g + 32s + 16h + i, with the quant
+/// at qs[32g + 16h + i] >> 2s and the scale at scales[8g + 2s + h]. Eight consecutive
+/// outputs never cross a 16-wide half, so per lane per block:
+///     g = L >> 4,  s = (L & 15) >> 2,  h = (L & 3) >> 1,  i = 8(L & 1) + j
+/// -- ONE scale byte, ONE shift, and 8 contiguous qs bytes at 16 + 32g + 16h + 8(L & 1).
+/// This mapping is reproduced in Rust by `q2k_gguf_py_parity_tests::q2_k_block_by_lanes`
+/// and proven BITWISE against gguf-py before this PTX existed.
+///
+/// BYTE LOADS, NO ALIGNMENT ASSUMPTION. The qs run is 4-aligned relative to the tensor
+/// base (84 = 4*21), but the tensor's offset in the real inference path is not something
+/// this kernel can see, so it does not rely on it: each quant byte is loaded as u8.
+///
+/// `.rn` on the dequant arithmetic is DEFENSIVE, not load-bearing: d is f16 (11 bits),
+/// times a 4-bit nibble and a 2-bit q, is at most 17 bits -- exact in f32 -- so there is
+/// one rounding whether or not ptxas contracts it. (A Rust `mul_add` mutant of the same
+/// expression survives for exactly this reason: it is equivalent.)
+///
+/// ASCII ONLY: ptxas rejects a non-ASCII byte anywhere in the module (#3477).
+/// LAYOUT-001: row-major. Row `ctaid` starts at `w_ptr + ctaid * ceil(k/256) * 84`.
+fn generate_q2_k_gemv_ptx(k: u32, n: u32) -> String {
+    let _ = (k, n);
+    String::from(
+        r"
+.version 7.5
+.target sm_70
+.address_size 64
+
+.visible .entry q2_k_gemv_warp_reduce(
+    .param .u64 y_ptr,
+    .param .u64 w_ptr,
+    .param .u64 x_ptr,
+    .param .u32 k_dim,
+    .param .u32 n_dim
+)
+{
+    .reg .u32 %r<40>;
+    .reg .u64 %rd<24>;
+    .reg .f32 %f<24>;
+    .reg .b16 %h<4>;
+    .reg .pred %p<12>;
+
+    mov.u32 %r0, %tid.x;
+    mov.u32 %r1, %ctaid.x;
+
+    ld.param.u32 %r2, [n_dim];
+    ld.param.u32 %r3, [k_dim];
+    ld.param.u64 %rd0, [y_ptr];
+    ld.param.u64 %rd1, [w_ptr];
+    ld.param.u64 %rd2, [x_ptr];
+
+    setp.ge.u32 %p0, %r1, %r2;
+    @%p0 bra $L_q2_exit;
+
+    mov.f32 %f0, 0f00000000;
+
+    // nb = ceil(k_dim / 256)
+    add.u32 %r4, %r3, 255;
+    shr.u32 %r4, %r4, 8;
+
+    // row_base = w_ptr + ctaid * nb * 84
+    mul.lo.u32 %r5, %r4, 84;
+    mul.wide.u32 %rd3, %r1, %r5;
+    add.u64 %rd3, %rd1, %rd3;
+
+    // lane decomposition: g = L>>4, s = (L&15)>>2, h = (L&3)>>1, odd = L&1
+    shr.u32 %r6, %r0, 4;                 // g
+    and.b32 %r7, %r0, 15;
+    shr.u32 %r7, %r7, 2;                 // s
+    and.b32 %r8, %r0, 3;
+    shr.u32 %r8, %r8, 1;                 // h
+    and.b32 %r9, %r0, 1;                 // odd
+
+    // scale index = 8g + 2s + h
+    shl.b32 %r10, %r6, 3;
+    shl.b32 %r11, %r7, 1;
+    add.u32 %r10, %r10, %r11;
+    add.u32 %r10, %r10, %r8;             // sidx
+
+    // shift = 2s
+    shl.b32 %r12, %r7, 1;                // shift
+
+    // qs run offset = 16 + 32g + 16h + 8*odd
+    shl.b32 %r13, %r6, 5;
+    shl.b32 %r14, %r8, 4;
+    add.u32 %r13, %r13, %r14;
+    shl.b32 %r14, %r9, 3;
+    add.u32 %r13, %r13, %r14;
+    add.u32 %r13, %r13, 16;              // qoff
+
+    // this lane's first output within a block = 8L
+    shl.b32 %r15, %r0, 3;
+
+    cvt.u64.u32 %rd4, %r10;              // sidx
+    cvt.u64.u32 %rd5, %r13;              // qoff
+
+    mov.u32 %r16, 0;                     // blk
+
+$L_q2_blk:
+    setp.ge.u32 %p1, %r16, %r4;
+    @%p1 bra $L_q2_blk_end;
+
+    mul.wide.u32 %rd6, %r16, 84;
+    add.u64 %rd6, %rd3, %rd6;            // block base
+
+    // d (f16 at +80), dmin (f16 at +82)
+    ld.global.b16 %h0, [%rd6+80];
+    cvt.f32.f16 %f1, %h0;                // d
+    ld.global.b16 %h1, [%rd6+82];
+    cvt.f32.f16 %f2, %h1;                // dmin
+
+    // sc = scales[sidx]: low nibble scales d, high nibble scales dmin
+    add.u64 %rd7, %rd6, %rd4;
+    ld.global.u8 %r17, [%rd7];
+    and.b32 %r18, %r17, 15;              // scale nibble
+    shr.u32 %r19, %r17, 4;               // min nibble
+    cvt.rn.f32.u32 %f3, %r18;
+    mul.rn.f32 %f3, %f1, %f3;            // dl = d * lo
+    cvt.rn.f32.u32 %f4, %r19;
+    mul.rn.f32 %f4, %f2, %f4;            // ml = dmin * hi
+
+    add.u64 %rd8, %rd6, %rd5;            // this lane's qs run
+
+    // col0 = blk*256 + 8L
+    shl.b32 %r20, %r16, 8;
+    add.u32 %r20, %r20, %r15;
+
+    mov.u32 %r21, 0;                     // j = 0..8
+
+$L_q2_j:
+    setp.ge.u32 %p2, %r21, 8;
+    @%p2 bra $L_q2_j_end;
+
+    cvt.u64.u32 %rd9, %r21;
+    add.u64 %rd9, %rd8, %rd9;
+    ld.global.u8 %r22, [%rd9];
+    shr.u32 %r22, %r22, %r12;
+    and.b32 %r22, %r22, 3;               // q
+
+    cvt.rn.f32.u32 %f5, %r22;
+    mul.rn.f32 %f5, %f3, %f5;            // dl * q
+    sub.rn.f32 %f5, %f5, %f4;            // - ml   (the affine min)
+
+    add.u32 %r23, %r20, %r21;            // col
+    setp.ge.u32 %p3, %r23, %r3;
+    @%p3 bra $L_q2_skip;
+    mul.wide.u32 %rd10, %r23, 4;
+    add.u64 %rd10, %rd2, %rd10;
+    ld.global.f32 %f6, [%rd10];
+    fma.rn.f32 %f0, %f5, %f6, %f0;
+$L_q2_skip:
+
+    add.u32 %r21, %r21, 1;
+    bra $L_q2_j;
+
+$L_q2_j_end:
+    add.u32 %r16, %r16, 1;
+    bra $L_q2_blk;
+
+$L_q2_blk_end:
+    shfl.sync.down.b32 %f10, %f0, 16, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f10;
+    shfl.sync.down.b32 %f11, %f0, 8, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f11;
+    shfl.sync.down.b32 %f12, %f0, 4, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f12;
+    shfl.sync.down.b32 %f13, %f0, 2, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f13;
+    shfl.sync.down.b32 %f14, %f0, 1, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f14;
+
+    setp.ne.u32 %p7, %r0, 0;
+    @%p7 bra $L_q2_exit;
+
+    mul.wide.u32 %rd14, %r1, 4;
+    add.u64 %rd14, %rd0, %rd14;
+    st.global.f32 [%rd14], %f0;
+
+$L_q2_exit:
+    ret;
+}
+",
+    )
+}
+
 /// #3931: IQ2_XXS (GGML type 16) GEMV, row-major.
 ///
 /// 256 elements in 66 bytes: an f16 `d`, then eight 8-byte sub-blocks. Each
