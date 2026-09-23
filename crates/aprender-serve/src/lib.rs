@@ -160,6 +160,9 @@ mod generated_contracts;
 #[cfg(all(test, feature = "cuda"))]
 #[macro_use]
 mod test_cuda_macros;
+// #3975: assemble emitted PTX with ptxas portably across CUDA toolchains (test-only).
+#[cfg(all(test, feature = "cuda"))]
+pub(crate) mod test_ptxas;
 // PMAT-779: process-global, cross-backend GPU-test concurrency cap (test-only).
 #[cfg(feature = "server")]
 pub mod api;
