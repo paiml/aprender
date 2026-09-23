@@ -13,5 +13,5 @@ import engine  # noqa: E402
 
 failed = bc.run(engine, "transformers serve") + bc.run_sse() + bc.run_proc()
 total = bc.CASE_COUNT + bc.SSE_CASE_COUNT + bc.PROC_CASE_COUNT
-print(f"{total - failed}/{total} cases")
-sys.exit(1 if failed else 0)
+print(f"{total - failed - bc.ENV_CASES}/{total} cases" + (f", {bc.ENV_CASES} not measurable here (ENV)" if bc.ENV_CASES else ""))
+sys.exit(1 if failed else (2 if bc.ENV_CASES else 0))

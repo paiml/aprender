@@ -1,5 +1,7 @@
 # F9 greedy rows — apr 0.69.1 (70d20d44c) vs llama.cpp b10987, lambda RTX 4090, 2026-09-23
 
+**What this directory is: PRODUCER OUTPUT, not a verdict.** F9's receipt is the F9 judge's (aprender-36,
+PMAT-3957) reading of `greedy-manifest.jsonl`. These are the rows it reads, bound to the apr binary that made them.
 Producer: `scripts/crux_inference_dogfood.sh 0.69.1 --engines apr,llama.cpp --verbs run --greedy
 --greedy-max-tokens 1024` on PMAT-3952-crux-greedy2, apr pinned to a snapshot of `70d20d44c`
 (sha256 408c726b7f78991a…, which has `apr run --thinking`). Models: Qwen3.5-0.8B-IQ4_XS, 0.8B-Q4_K_M, 2B-Q4_K_M,

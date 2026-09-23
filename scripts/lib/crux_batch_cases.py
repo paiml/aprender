@@ -259,6 +259,21 @@ def run_proc() -> int:
     import sys
 
     lib = str(Path(__file__).resolve().parent)
+    import importlib
+    sys.path.insert(0, lib)
+    crux_proc = importlib.import_module("crux_proc")
+
+    def sig(proc_pid, signum):
+        """Signal a process /proc numbers `proc_pid`. THIS test process may itself sit in a pid namespace whose
+        /proc is the host's (quorum lanes 2 and 3 ran exactly there: ProcessLookupError), so the pid is translated
+        through the same NSpid mapping the handler uses. A process not visible from here is skipped."""
+        t = crux_proc.signal_pid(proc_pid)
+        if t is None:
+            return
+        try:
+            os.kill(t, signum)
+        except ProcessLookupError:
+            pass
 
     def prog(marker):
         return (
@@ -282,12 +297,12 @@ def run_proc() -> int:
         line = parent.stdout.readline().strip()
         if not line.isdigit():
             parent.kill()
-            return "could not start (%s)" % parent.stderr.read().strip()[:160], survivors(marker)
+            return "ENV", parent.stderr.read().strip()[:160] or "no pid printed"
         deadline = time.time() + 5
         while time.time() < deadline and len(survivors(marker)) < 3:
             time.sleep(0.05)
-        target = int(line)  # the pid as THIS view's /proc numbers it
-        os.kill(target, signal.SIGTERM)
+        target = int(line)  # the pid as /proc numbers it
+        sig(target, signal.SIGTERM)
         if wrap:
             # the namespace's init (bash) outlives the target by design: wait for the TARGET to go, then look —
             # before init exits and the kernel tears the namespace (and every survivor) down
@@ -300,7 +315,7 @@ def run_proc() -> int:
             parent.kill()
             parent.wait()
             for k in left:
-                os.kill(k, signal.SIGKILL)
+                sig(k, signal.SIGKILL)
             return rc, left
         try:
             rc = parent.wait(timeout=20)
@@ -310,7 +325,7 @@ def run_proc() -> int:
         time.sleep(0.3)
         left = survivors(marker)
         for k in left:  # never leave the planted sleeps behind
-            os.kill(k, signal.SIGKILL)
+            sig(k, signal.SIGKILL)
         return rc, left
 
     import time
@@ -330,6 +345,14 @@ def run_proc() -> int:
     # be the namespace's init: init exiting makes the kernel kill the whole namespace, which would pass this case
     # whatever the handler did (it did: a pre-fix mutant survived until init became a separate bash)
     rc, left = case(install=True, wrap=("unshare", "-Urpf", "bash", "-c", '"$@"; echo "rc=$?" >&2; sleep 8', "_"))
+    if rc == "ENV":
+        # Not measurable HERE (unprivileged containers refuse `unshare -p`): named, and counted as ENV so the suite
+        # exits 2, never as a pass. Where this test process ALREADY runs in such a namespace, the two cases above
+        # exercise the same translation.
+        print(f"ENV  [proc] ...inside a pid namespace with the host's /proc: `unshare -Urpf` refused here ({left})")
+        global ENV_CASES
+        ENV_CASES += 1
+        return failed
     ok = rc == 143 and not left
     print(f"{'ok  ' if ok else 'FAIL'} [proc] ...and inside a pid namespace with the host's /proc (unshare -Urpf)"
           + ("" if ok else f"\n     got: rc={rc} survivors={left}"))
@@ -338,3 +361,5 @@ def run_proc() -> int:
 
 
 PROC_CASE_COUNT = 3
+#: cases that could not run in this environment (named when they happen): a suite with any exits 2, never 0
+ENV_CASES = 0

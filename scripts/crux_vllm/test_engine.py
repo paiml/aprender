@@ -144,5 +144,5 @@ for name, logs, must, must_not in CASES:
         must_not is None or must_not not in got)
     print(f"{'ok  ' if ok else 'FAIL'} {name}" + ("" if ok else f"\n     got: {got[:300]}"))
     failed += not ok
-print(f"{CASES_TOTAL - failed}/{CASES_TOTAL} cases")
-sys.exit(1 if failed else 0)
+print(f"{CASES_TOTAL - failed - bc.ENV_CASES}/{CASES_TOTAL} cases" + (f", {bc.ENV_CASES} not measurable here (ENV)" if bc.ENV_CASES else ""))
+sys.exit(1 if failed else (2 if bc.ENV_CASES else 0))
