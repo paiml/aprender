@@ -188,6 +188,10 @@ def main(argv: list) -> int:
     ap.add_argument("--work", required=True)
     ap.add_argument("--thinking", default="on,off")
     ap.add_argument("--context", type=int, default=16384)
+    ap.add_argument("--cap-on", type=int, default=0,
+                    help="cap thinking-ON max_tokens at N on every engine (0 = the prompt's own). Under greedy a reply "
+                         "that closes within the cap is the same prefix it would give uncapped, so a correct capped "
+                         "row is sound; an unclosed one only ever rejects. Each row records the budget it ran at.")
     ap.add_argument("--only", default="", help="comma-separated prompt ids (default: all)")
     ap.add_argument("--llama-server", default="llama-server")
     ap.add_argument("--drivers", default=str(ROOT), help="a checkout holding scripts/crux_engine_{hf,vllm}.sh")
@@ -197,6 +201,8 @@ def main(argv: list) -> int:
     if a.leg != "ggml" and not (a.source_repo and a.source_revision):
         die(f"--leg {a.leg} needs --source-repo and --source-revision (a moving branch is not a pin)")
     prompts = json.loads(Path(a.prompts).read_text(encoding="utf-8"))["prompts"]
+    if a.cap_on:
+        prompts = [dict(p, max_tokens=dict(p["max_tokens"], on=min(p["max_tokens"]["on"], a.cap_on))) for p in prompts]
     if a.only:
         keep = set(a.only.split(","))
         prompts = [p for p in prompts if p["id"] in keep]

@@ -140,7 +140,7 @@ def certify_one(prompt: dict, model: dict, quant: str, quant_sha: str, rows: lis
                 cells.append({"leg": leg, "thinking": thinking, "engine": r["engine"], "verb": r["verb"],
                               "host": r.get("host"), "correct": v["correct"], "why": v["why"],
                               "extracted": v["extracted"], "think": think_state(reply[0] if reply else None),
-                              "row": r["_at"]})
+                              "max_tokens": r.get("max_tokens"), "row": r["_at"]})
                 if not v["correct"]:
                     first_bad = first_bad or f"{leg} {r['engine']} {r['verb']} thinking={thinking} on {r.get('host')}: {v['why']}"
     return first_bad is None, first_bad, cells
