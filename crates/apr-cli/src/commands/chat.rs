@@ -464,6 +464,26 @@ fn find_qwen_tokenizer_sibling(model_path: &Path) -> Option<Qwen2BpeTokenizer> {
 }
 
 fn find_qwen_tokenizer(model_path: &Path) -> Result<Option<Qwen2BpeTokenizer>, CliError> {
+    find_qwen_tokenizer_from(model_path, dirs::home_dir().as_deref())
+}
+
+/// `find_qwen_tokenizer` with the MACHINE-GLOBAL cache root injected (#3917).
+///
+/// The two caches below live under `$HOME`, so the function's answer depends on
+/// unrelated work the machine has done. `test_find_qwen_tokenizer_nonexistent_path`
+/// asserted `InvalidFormat` — which is the error a box WITH a Qwen cache produces,
+/// because the search succeeds on some other model's tokenizer and the load then
+/// fails. On a clean machine nothing is found and the error is
+/// `MissingCompanionFile`. The test passed on developer boxes and failed on both CI
+/// platforms, and the passing answer was the wrong one.
+///
+/// Taking `home` as a parameter rather than reading it makes the clean-machine
+/// behaviour reachable from a test, so the assertion can be about the function
+/// instead of about the machine.
+fn find_qwen_tokenizer_from(
+    model_path: &Path,
+    home: Option<&Path>,
+) -> Result<Option<Qwen2BpeTokenizer>, CliError> {
     if let Some(tok) = find_qwen_tokenizer_sibling(model_path) {
         return Ok(Some(tok));
     }
@@ -491,7 +511,7 @@ fn find_qwen_tokenizer(model_path: &Path) -> Result<Option<Qwen2BpeTokenizer>, C
         return Ok(Some(tok));
     }
 
-    if let Some(home) = dirs::home_dir() {
+    if let Some(home) = home {
         if let Some(tok) = search_hf_cache_tokenizer(&home.join(".cache/huggingface/hub")) {
             return Ok(Some(tok));
         }
