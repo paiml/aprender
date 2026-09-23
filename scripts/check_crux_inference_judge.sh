@@ -133,8 +133,19 @@ print(d["verdict"], ref.get("first_difference"))' "$1/receipt.json" "$2" "$3" 2>
 }
 
 run_judge() { # run_judge <case dir> — prints the receipt path; returns the judge's rc
-  printf '{"version": "0.0.0", "host": "fixture", "backend": "gpu", "engines": %s}\n' \
-    "${META_ENGINES:-[\"apr\", \"llama.cpp\", \"ollama\"]}" > "$1/meta.json"
+  # Every engine's version is recorded, as the producer does; UNPIN_ENGINE=<e> drops one (#3952).
+  python3 - "$1/meta.json" "${META_ENGINES:-[\"apr\", \"llama.cpp\", \"ollama\"]}" "${UNPIN_ENGINE:-}" <<'PY'
+import json, sys
+out, engines, unpin = sys.argv[1], json.loads(sys.argv[2]), sys.argv[3]
+meta = {"version": "0.0.0", "host": "fixture", "backend": "gpu", "engines": engines,
+        "apr": {"version_line": "apr 0.0.0 (fixture)"}, "llama_cpp": {"build": "b0-fixture"},
+        "ollama": {"server_version": "0.0.0-fixture"}}
+for e in ("hf", "llamafile", "vllm"):
+    meta[e] = {"probe": "%s=fixture" % e}
+if unpin:
+    meta[unpin if unpin != "llama.cpp" else "llama_cpp"] = {}
+json.dump(meta, open(out, "w"))
+PY
   seal "$1/manifest.jsonl"
   python3 "$JUDGE" collect --manifest "$1/manifest.jsonl" --prompts "$PROMPTS" --meta "$1/meta.json" \
     --out-json "$1/receipt.json" --out-md "$1/receipt.md" > "$1/judge.out" 2> "$1/judge.err"
@@ -391,6 +402,83 @@ run_judge "$d"; GOT_RC=$?
 expect "apr's degenerate '!!!!' is no answer: RED where llama.cpp answered" "$d" 1 golden-greeting RED
 got=$(python3 -c 'import json,sys; c=[x for x in json.load(open(sys.argv[1]))["cells"] if x["key"]["prompt_id"]=="golden-greeting"][0]; print(c["engines"]["hf"]["answered"], c["engines"]["hf"]["why"][:18])' "$d/receipt.json" 2>/dev/null)
 case "$got" in "False degenerate output"*) ok "hf's degenerate '!!!!' cannot vouch either" ;; *) broke "hf degenerate: '$got'" ;; esac
+
+# V1-V5. vLLM (#3952): a plugin engine under the same rule. vLLM 0.30.0 cannot load
+#        the GGUF, so its row runs the SOURCE weights and says so in `source`.
+vllm_row() { # vllm_row <manifest> <pid> <rc> <stdout> [refused] — the driver's row, with its source
+  python3 - "$@" <<'PY'
+import json, os, sys
+m, pid, rc, o = sys.argv[1:5]
+ref = sys.argv[5] if len(sys.argv) > 5 else ""
+open(m, "a").write(json.dumps({"kind": "gen", "engine": "vllm", "prompt_id": pid, "rc": int(rc) if rc else None,
+    "stdout": o or None, "stderr": None, "refused": ref or None, "model_sha256": "%s", "host": "fixture",
+    "verb": os.environ.get("ROW_VERB", "run"), "thinking": "off", "backend": "gpu",
+    "source": {"repo": "Qwen/Qwen2.5-Coder-0.5B-Instruct", "revision": "ea3f2471", "dtype": "bfloat16",
+               "compares": "apr quantized file vs source weights (vLLM 0.30.0 cannot load the GGUF, #3952)"}}) + "\n")
+PY
+}
+META_ENGINES='["apr", "llama.cpp", "ollama", "hf", "llamafile", "vllm"]'
+d=$(newcase vllm_right_apr_wrong)
+apr_out "$d" $P "5" gpu false; engine_out "$d" vllm $P "2 + 2 = 4" "cuda:0 NVIDIA GeForce RTX 4090"
+row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"
+vllm_row "$d/manifest.jsonl" $P 0 "$d/vllm-$P.json"
+run_judge "$d"; GOT_RC=$?
+expect "vllm right and apr wrong is RED" "$d" 1 $P RED
+src=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cells"][0]["engines"]["vllm"]["source"]["compares"])' "$d/receipt.json" 2>/dev/null)
+case "$src" in *"source weights"*) ok "a vllm verdict carries what it compared (source weights, not the file)" ;; *) broke "vllm source: '$src'" ;; esac
+
+d=$(newcase vllm_refused)
+apr_out "$d" $P "4" gpu false; llama_out "$d" $P "$Q" "4"
+row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"
+row "$d/manifest.jsonl" llama.cpp $P 0 "$d/llama-$P.out" "$d/llama-$P.err"
+vllm_row "$d/manifest.jsonl" $P "" "" "RuntimeError: Engine core initialization failed — engine core: AssertionError: Error in memory profiling"
+run_judge "$d"; GOT_RC=$?
+expect "a vllm refusal beside a right llama.cpp is GREEN" "$d" 0 $P GREEN
+why=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cells"][0]["engines"]["vllm"]["why"])' "$d/receipt.json" 2>/dev/null)
+case "$why" in *"AssertionError: Error in memory profiling"*) ok "vllm's refusal is quoted, root cause included" ;; *) broke "vllm refusal: '$why'" ;; esac
+
+# V6. #3952: a comparator with no recorded version cannot vouch. Before this, every plugin cell's version
+#     was None (engine_versions read `version`; the producer writes `probe`) and it vouched anyway.
+d=$(newcase vllm_unpinned)
+apr_out "$d" $P "5" gpu false; engine_out "$d" vllm $P "2 + 2 = 4" "cuda:0 NVIDIA GeForce RTX 4090"
+row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"
+vllm_row "$d/manifest.jsonl" $P 0 "$d/vllm-$P.json"
+UNPIN_ENGINE=vllm run_judge "$d"; GOT_RC=$?
+expect "an UNPINNED vllm makes the cell RED: not proven (no third state)" "$d" 1 $P RED
+why=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cells"][0]["engines"]["vllm"]["why"])' "$d/receipt.json" 2>/dev/null)
+case "$why" in "unpinned:"*) ok "the unpinned vllm is named as unpinned" ;; *) broke "vllm unpinned why: '$why'" ;; esac
+rsn=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cells"][0]["verdict_reason"])' "$d/receipt.json" 2>/dev/null)
+case "$rsn" in "oracle unpinned: vllm"*"not a finding that apr was wrong"*) ok "the RED says it is an unpinned oracle, not apr being wrong" ;; *) broke "unpinned verdict_reason: '$rsn'" ;; esac
+# The same shape with apr RIGHT: an unpinned oracle still cannot make the cell GREEN.
+d=$(newcase vllm_unpinned_apr_right)
+apr_out "$d" $P "4" gpu false; engine_out "$d" vllm $P "2 + 2 = 4" "cuda:0 NVIDIA GeForce RTX 4090"
+row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"
+vllm_row "$d/manifest.jsonl" $P 0 "$d/vllm-$P.json"
+UNPIN_ENGINE=vllm run_judge "$d"; GOT_RC=$?
+expect "an UNPINNED vllm agreeing with a right apr is still RED, never GREEN" "$d" 1 $P RED
+rsn=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cells"][0]["verdict_reason"])' "$TMP/vllm_right_apr_wrong/receipt.json" 2>/dev/null)
+[ "$rsn" = "None" ] && ok "a plain-rule RED carries no verdict_reason" || broke "plain RED verdict_reason: '$rsn'"
+ver=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cells"][0]["engines"]["vllm"]["version"])' "$TMP/vllm_right_apr_wrong/receipt.json" 2>/dev/null)
+[ "$ver" = "vllm=fixture" ] && ok "a pinned vllm's cell carries its probe line as its version" || broke "vllm cell version: '$ver'"
+
+d=$(newcase vllm_wrong_device)
+apr_out "$d" $P "5" gpu false; engine_out "$d" vllm $P "4" "cpu"
+row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"
+vllm_row "$d/manifest.jsonl" $P 0 "$d/vllm-$P.json"
+run_judge "$d"; GOT_RC=$?
+expect "vllm on the CPU in the gpu lane is no oracle (UNJUDGED)" "$d" 2 $P UNJUDGED
+# The verdict alone would pass for an engine the judge does not know at all ("unknown engine");
+# the reason is what proves the lane check ran.
+why=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["cells"][0]["engines"]["vllm"]["why"])' "$d/receipt.json" 2>/dev/null)
+case "$why" in *"is not the gpu lane"*) ok "vllm is held to its lane by the device check, not refused as unknown" ;; *) broke "vllm lane: '$why'" ;; esac
+
+d=$(newcase vllm_serve_right_apr_wrong)
+apr_out "$d" $P "5" gpu false; engine_out "$d" vllm $P "4" "cuda:0 NVIDIA GB10 (vllm serve)"
+python3 -c 'import json,sys; json.dump({"text": "5", "reported": {}}, open(sys.argv[1], "w"))' "$d/apr-$P.json"
+ROW_VERB="serve run" row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.json" ""
+ROW_VERB="serve run" vllm_row "$d/manifest.jsonl" $P 0 "$d/vllm-$P.json"
+run_judge "$d"; GOT_RC=$?
+expect "vllm serve right and apr serve wrong is RED" "$d" 1 $P RED
 
 # C1-C3. the chat verb (#3739 slice 3): judged on the FINAL turn; apr's backend is
 #        recorded as unverified until apr chat reports one (#3794).
