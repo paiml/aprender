@@ -238,18 +238,37 @@ for i in range(len(lines) - 1, -1, -1):
     if d is not None and "backend" in d:
         env = i
         break
-if env < 0:
-    sys.exit(3)
 
 start = -1
-for i in range(env - 1, -1, -1):
-    if lines[i].lstrip().startswith("Assistant:"):
-        start = i
-        break
-if start < 0:
-    sys.exit(4)
+if env >= 0:
+    for i in range(env - 1, -1, -1):
+        if lines[i].lstrip().startswith("Assistant:"):
+            start = i
+            break
 
-body = [lines[start].lstrip()[len("Assistant:"):].lstrip()] + lines[start + 1:env]
+# 3. `apr run --verbose` (#3928). Its capture carries kernel counts, VRAM figures and
+#    a list of hex pointers; judged raw that is #3925 again with different chrome. The
+#    reply sits between two lines WE print: a bare `Output:` and `Completed in <t>`.
+oi = ci = -1
+if start < 0:
+    for i, l in enumerate(lines):
+        if l.strip() == "Output:":
+            oi = i
+    if oi >= 0:
+        for i in range(oi + 1, len(lines)):
+            if lines[i].lstrip().startswith("Completed in "):
+                ci = i
+                break
+
+if start >= 0:
+    body = [lines[start].lstrip()[len("Assistant:"):].lstrip()] + lines[start + 1:env]
+elif oi >= 0 and ci >= 0:
+    body = lines[oi + 1:ci]
+elif env >= 0 or oi >= 0:
+    # markers found but the capture does not close: truncated, not clean.
+    sys.exit(3)
+else:
+    sys.exit(4)
 
 # The session prints one fixed line on `/exit`. Strip THAT EXACT STRING and nothing
 # else: a general "starts with You:" rule is the cut this function exists to avoid.
@@ -662,6 +681,14 @@ PY
     if grep -qF -e '\u{200b}' -e $'\u200b' <<< "$fp"; then esc=true; fi
     if [ "$b" != cpu ] && [ -z "$GPU_NAME" ]; then ran=false; fi
     [ $run_rc -eq 0 ] || ran=false
+    # #3928: `run` was the last of the operator's four verbs whose TEXT nothing read.
+    # Its capture was inspected for two markers (fallback, escaped_special) and never
+    # for content, and `apr qa`'s golden leg does not cover it: qa runs ONCE PER RUNG,
+    # before this loop, while `run` is measured per backend -- so a model correct on
+    # one backend and degenerate on the other passed. That is the exact shape #3921
+    # was created for.
+    run_bad=""
+    if [ $run_rc -eq 0 ]; then run_bad=$(judge_reply "$run_out" run); fi
 
     # ── #3828: the OTHER THREE VERBS ────────────────────────────────────────────
     # This loop ran `apr run` and nothing else, so `serve`, `chat` and `code` cells in
@@ -697,7 +724,8 @@ PY
 
     [ $first = 1 ] || be_json="$be_json,"; first=0
     be_json="$be_json\"$b\":{\"ran\":$ran,\"fallback\":$fb,\"escaped_special\":$esc,\"rc\":$run_rc"
-    be_json="$be_json,\"verbs\":{\"run\":{\"ran\":$ran,\"rc\":$run_rc}"
+    run_bad_json=$(printf '%s' "${run_bad:-}" | json_str_or_null)
+    be_json="$be_json,\"verbs\":{\"run\":{\"ran\":$ran,\"rc\":$run_rc,\"output_bad\":$run_bad_json}"
     # #3921: `output_bad` carries the REASON, or null. A string here is a verdict
     # about what the verb produced; the rc beside it is only about whether it ran.
     chat_bad_json=$(printf '%s' "${chat_bad:-}" | json_str_or_null)
@@ -790,7 +818,7 @@ def verb_ok(v, name):
 
 green = cap_ok and qa.get("golden_output", {}).get("passed", False) \
         and all(v["ran"] and not v["fallback"] and not v.get("escaped_special") and serve_ok(v)
-                and verb_ok(v, "chat") and verb_ok(v, "code")
+                and verb_ok(v, "run") and verb_ok(v, "chat") and verb_ok(v, "code")
                 for v in be.values())
 # ANTI-VACUITY (#3863 item 16). `apr qa` exiting non-zero means at least one gate
 # failed. If the row records NO failed gate, the receipt cannot account for its own

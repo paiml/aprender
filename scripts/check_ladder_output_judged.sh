@@ -118,6 +118,20 @@ cat <<'JSON'
 JSON
 }
 
+# #3928: the same row with `run` as the offender. Planted separately from the chat
+# fixture because "the detector stopped flagging" and "the verdict stopped reading it"
+# are different failures, and #3901 was the fix that only closed one of them.
+row_run_garbage() {
+cat <<'JSON'
+{"cuda":{"ran":true,"fallback":false,"escaped_special":false,"rc":0,
+ "verbs":{"run":{"ran":true,"rc":0,"output_bad":"gibberish (fragment ' zombie' repeats 3+ times)"},
+          "chat":{"ran":true,"rc":0},
+          "code":{"ran":true,"rc":0},
+          "serve":{"probed":true,"teardown":"clean","routes":{
+            "/v1/completions|stream=false":{"http":200,"output_bad":null}}}}}}
+JSON
+}
+
 QA_OK='{"capability_match":{"passed":true,"skipped":false,"message":"ok"},
         "golden_output":{"passed":true,"skipped":false,"message":"ok"},
         "gates":{},"gates_failed":[],"gates_reported":2}'
@@ -131,14 +145,18 @@ green_of() { # green_of <src> <be-json> -> true|false
 
 check_verdict() { # -> 0 ok
   local src="$1" g
-  g=$(green_of "$src" "$(row_chat_garbage)") || return 2
-  if [ "$g" = "false" ]; then
-    printf '  ok    %-30s green=false\n' "chat-rc0-bad-output"
-    return 0
-  fi
-  printf '  FAIL  %-30s green=%s — a verb that ran and produced garbage is recorded as working\n' \
-    "chat-rc0-bad-output" "$g"
-  return 1
+  local rc=0
+  for case in chat run; do
+    if [ "$case" = chat ]; then g=$(green_of "$src" "$(row_chat_garbage)") || return 2
+    else g=$(green_of "$src" "$(row_run_garbage)") || return 2; fi
+    if [ "$g" = "false" ]; then
+      printf '  ok    %-30s green=false\n' "$case-rc0-bad-output"
+    else
+      printf '  FAIL  %-30s green=%s -- a verb that ran and produced garbage is recorded as working\n' \
+        "$case-rc0-bad-output" "$g"; rc=1
+    fi
+  done
+  return $rc
 }
 
 # ── layer 3: WHAT TEXT IS JUDGED (#3925) ─────────────────────────────────────
@@ -223,6 +241,39 @@ Loading model...
 T
 }
 
+# #3928: `apr run --verbose`. VERBATIM from gx10 -- the chatter is the point: kernel
+# counts, VRAM figures and a list of hex pointers, none of which is the model speaking.
+cap_run_verbose() { cat <<'T'
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[trueno#243] Manual graph: 591 kernels. first_args=Some(["0xe326a87db200", "0xe326a87e2e00", "0xe326b87a4000"]), last_args=Some(["0xe326e0320000", "0xe32427c00000"])
+Backend: GPU (NVIDIA GB10, 122502 MB VRAM)
+[DEBUG] generated token ids: [151668, 271, 785, 6722, 315, 9625, 374, 12095, 13]
+
+Output:
+The capital of France is Paris.
+
+Completed in 5.08s (cached)
+T
+}
+cap_run_degenerate() { cat <<'T'
+Backend: GPU (NVIDIA GB10, 122502 MB VRAM)
+
+Output:
+zombie zombie zombie zombie
+
+Completed in 5.08s (cached)
+T
+}
+# `Output:` opened and never closed -- the process was cut off mid-reply, so whatever
+# is there is a fragment. A refusal to judge, never a clean reply.
+cap_run_unterminated() { cat <<'T'
+Backend: GPU (NVIDIA GB10, 122502 MB VRAM)
+
+Output:
+The capital of France is Paris.
+T
+}
+
 # name|capture-fn|expect   (clean = no reason · bad = a verdict about the reply ·
 # red = a refusal to judge, which must never be silent)
 extraction_cases() {
@@ -233,6 +284,9 @@ chrome-does-not-mask-gibberish|cap_chrome_gibberish|bad
 reply-containing-You-judged-whole|cap_reply_with_you|bad
 truncated-capture-no-envelope|cap_no_envelope|red
 envelope-but-no-reply|cap_no_reply|red
+run-verbose-chatter-not-judged|cap_run_verbose|clean
+run-degenerate-reply-in-block|cap_run_degenerate|bad
+run-output-never-closed|cap_run_unterminated|red
 CASES
 }
 
@@ -255,8 +309,8 @@ run_extraction_table() { # -> 0 all as expected
 
 if [ "$SELF_TEST" = 1 ]; then
   [ -f "$SCRIPT" ] || { echo "cannot read $SCRIPT" >&2; exit 2; }
-  m1=$(mktemp); m2=$(mktemp); m3=$(mktemp); m4=$(mktemp); m5=$(mktemp)
-  trap 'rm -f "$m1" "$m2" "$m3" "$m4" "$m5"' EXIT
+  m1=$(mktemp); m2=$(mktemp); m3=$(mktemp); m4=$(mktemp); m5=$(mktemp); m6=$(mktemp); m7=$(mktemp)
+  trap 'rm -f "$m1" "$m2" "$m3" "$m4" "$m5" "$m6" "$m7"' EXIT
 
   echo "self-test: the shipped script"
   run_detector_table "$SCRIPT" > /dev/null && check_verdict "$SCRIPT" > /dev/null \
@@ -324,7 +378,33 @@ if [ "$SELF_TEST" = 1 ]; then
   fi
   echo "  RED (expected)"
 
-  echo "self-test: PASS — red when the detector stops flagging, when the verdict stops reading it, when an unlocatable reply passes silently, when the reply is cut short, and when the extractor is bypassed entirely"
+  # Mutant 6 (#3928): when `Completed in` never arrives, take the rest of the capture
+  # instead of refusing. A cut-off run then reads as a clean reply -- the silent-pass
+  # hazard again, on the path added for `run`.
+  sed -e 's|^elif oi >= 0 and ci >= 0:|elif oi >= 0:|' \
+      -e 's|^    body = lines\[oi + 1:ci\]|    body = lines[oi + 1:]|' "$SCRIPT" > "$m6"
+  cmp -s "$SCRIPT" "$m6" && { echo "SELF-TEST INCONCLUSIVE: mutant 6 changed nothing" >&2; exit 1; }
+  echo "self-test: mutant 6 (an unterminated run reply is taken as whole)"
+  if run_extraction_table "$m6" > /dev/null 2>&1; then
+    echo "SELF-TEST FAILED: mutant 6 passed -- a cut-off run reply reads as clean" >&2
+    exit 1
+  fi
+  echo "  RED (expected)"
+
+  # Mutant 7 (#3928): `run` drops out of the green expression while chat and code stay.
+  # Mutant 2 removes the output_bad check for EVERY verb at once, so it cannot tell
+  # whether `run` was ever wired in -- which is exactly how #3886 folded serve and left
+  # chat and code unread in the same structure. One verb, one mutant.
+  sed 's|and verb_ok(v, "run") and verb_ok(v, "chat")|and verb_ok(v, "chat")|' "$SCRIPT" > "$m7"
+  cmp -s "$SCRIPT" "$m7" && { echo "SELF-TEST INCONCLUSIVE: mutant 7 changed nothing" >&2; exit 1; }
+  echo "self-test: mutant 7 (green stops reading the run verb)"
+  if check_verdict "$m7" > /dev/null 2>&1; then
+    echo "SELF-TEST FAILED: mutant 7 passed -- run garbage no longer reddens the row" >&2
+    exit 1
+  fi
+  echo "  RED (expected)"
+
+  echo "self-test: PASS — red when the detector stops flagging, when the verdict stops reading it, when an unlocatable reply passes silently, when the reply is cut short, when the extractor is bypassed entirely, when an unterminated run reply is taken as whole, and when green stops reading the run verb"
   exit 0
 fi
 
