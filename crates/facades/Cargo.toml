@@ -38,10 +38,15 @@ members = [
 resolver = "2"
 
 [workspace.package]
-# The facades version INDEPENDENTLY of the aprender workspace. 0.3.1 -> 0.4.0
-# signals "something changed" (per aprender#2546) without claiming a 0.63.0
-# history these crate names do not have.
-version = "0.4.0"
+# The facades version on their OWN line, never the aprender version (aprender#2546:
+# 0.3.1 -> 0.4.0 without claiming a 0.63.0 history these names do not have). The line
+# must still ADVANCE whenever the `upstream` pin moves (#4111): 0.4.0 went out pinning
+# aprender-contracts ^0.64.0, the pin moved every release after that, and since 0.4.0
+# could not be re-uploaded the facades stayed frozen at 0.64 through 0.69.1.
+# scripts/bump-version.sh advances this (pin minor -> facade minor, pin patch -> facade
+# patch), and check_publish_preflight.sh R8 refuses a version that is already on
+# crates.io with a different pin.
+version = "0.5.0"
 edition = "2021"
 rust-version = "1.91"
 license = "MIT"

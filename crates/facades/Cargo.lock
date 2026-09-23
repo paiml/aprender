@@ -139,7 +139,7 @@ dependencies = [
 
 [[package]]
 name = "provable-contracts"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "aprender-contracts",
  "serde_json",
@@ -148,11 +148,11 @@ dependencies = [
 
 [[package]]
 name = "provable-contracts-cli"
-version = "0.4.0"
+version = "0.5.0"
 
 [[package]]
 name = "provable-contracts-macros"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "aprender-contracts-macros",
 ]

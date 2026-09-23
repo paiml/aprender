@@ -34,6 +34,11 @@
 #       scripts/check_model_ladder.sh -- the same judge autopilot's T-1 `models` step runs on its
 #       fresh measurement. Red, a missing receipt, a missing judge or a judge DECLINE (exit 2)
 #       refuses: a decline is not a pass.
+#   R8  every crates/facades crate can actually SHIP (#4111): a facade version that is already on
+#       crates.io must carry the SAME upstream requirement as the tree. 0.4.0 was published pinning
+#       aprender-contracts ^0.64.0; the tree's pin then moved every release while the facade version
+#       did not, so each cascade found "0.4.0 already exists", uploaded nothing, and the dry-run
+#       only warned. An unreadable index refuses (no verdict is not a pass).
 #
 # EXIT  0 every rule holds · 1 a rule refused · 2 the box cannot answer
 #       (no git/cargo/python3, not a repository). 2 is not a pass.
@@ -44,6 +49,7 @@
 #   PUBLISH_PREFLIGHT_MAIN_REF     the main ref for R4 (default: origin/main)
 #   PUBLISH_PREFLIGHT_RECEIPT_DIR  the dogfood receipt dir (default: $ROOT/.dogfood)
 #   PUBLISH_PREFLIGHT_LADDER_JUDGE the R7 judge (default: $ROOT/scripts/check_model_ladder.sh)
+#   PUBLISH_PREFLIGHT_INDEX_URL    the R8 sparse index (default: https://index.crates.io)
 #
 # USAGE
 #   bash scripts/check_publish_preflight.sh             # the gate
@@ -152,6 +158,21 @@ rule_r7() {
         2) echo "FAIL  R7 the model-matrix judge DECLINED (rc 2), and a decline is not a pass: $(tail -n 1 <<< "$out")" ;;
         *) printf 'FAIL  R7 model matrix NOT green for %s (rc %s):\n%s\n' "$version" "$rc" \
                "$(grep -E '^FAIL' <<< "$out" | head -n 10 | sed 's/^/        /')" ;;
+    esac
+    return 1
+}
+
+# R8 (#4111): each facade version in the tree either is not on crates.io yet, or is there with the
+# tree's own upstream requirements. rule_r8 root -> prints its row; 0 accepted, 1 refused
+rule_r8() {
+    local root="$1" index="${PUBLISH_PREFLIGHT_INDEX_URL:-https://index.crates.io}" out rc
+    out="$(python3 "$SCRIPT_DIR/lib/facade_registry_pin.py" "$root" "$index" 2>&1)"; rc=$?
+    case "$rc" in
+        0) printf 'ok    R8 every facade can ship:\n%s\n' "$(sed 's/^/        /' <<< "$out")"; return 0 ;;
+        1) printf 'FAIL  R8 a facade version is already on crates.io with a different upstream pin:\n%s\n' \
+               "$(grep -E '^FAIL' <<< "$out" | sed 's/^/        /')" ;;
+        *) printf 'FAIL  R8 the facade check could not answer (rc %s), and no answer is not a pass:\n%s\n' \
+               "$rc" "$(sed 's/^/        /' <<< "$out")" ;;
     esac
     return 1
 }
@@ -265,11 +286,14 @@ for n, t, req in sorted(vdev):
     # R7 the model matrix, re-read at T-4 through the T-1 judge (#3717)
     rule_r7 "$root" "$version" || fails=1
 
+    # R8 the facades can ship (#4111)
+    rule_r8 "$root" || fails=1
+
     if [ "$fails" -ne 0 ]; then
         echo "REFUSE $PROG: publishing is not allowed from this tree (see the FAIL rows)."
         return 1
     fi
-    echo "PASS  $PROG: clean, versioned, tagged, on $main_ref, dogfood GO, model matrix green"
+    echo "PASS  $PROG: clean, versioned, tagged, on $main_ref, dogfood GO, model matrix green, facades shippable"
     return 0
 }
 
@@ -474,6 +498,46 @@ selftest() {
     git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'no judge' >/dev/null
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     row r7_judge_absent_refuses        1 "FAIL  R7 no model-matrix judge" "$d"
+
+    # R8 (#4111): a facade workspace in the fixture, and a sparse index served from file://. The
+    # published record is the real shape of provable-contracts 0.4.0 (upstream renamed, req ^0.64.0).
+    add_facades() { # dir own-version upstream-pin
+        local fx="$1"
+        # SEC010: the dir is $tmp (mktemp -d) plus a literal; refuse a traversal explicitly anyway
+        case "$fx" in *..*) echo "ERROR: fixture path must not contain '..'" >&2; return 1 ;; esac
+        mkdir -p "$fx/crates/facades/fx-facade"
+        printf '[workspace]\nmembers = ["fx-facade"]\n\n[workspace.package]\nversion = "%s"\n' "$2" > "$fx/crates/facades/Cargo.toml"
+        printf '[package]\nname = "fx-facade"\nversion.workspace = true\n\n[dependencies]\nupstream = { path = "fx-up-src", version = "%s", package = "fx-up" }\nserde_json = "1.0"\n' "$3" \
+            > "$fx/crates/facades/fx-facade/Cargo.toml"
+        git -C "$fx" add -A
+        git -C "$fx" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'facades' >/dev/null
+        git -C "$fx" tag -f v1.2.3 >/dev/null; write_receipt "$fx" GO "$(git -C "$fx" rev-parse HEAD)" 1.2.3
+    }
+    mkdir -p "$tmp/index/fx/-f"
+    printf '{"name":"fx-facade","vers":"0.4.0","deps":[{"name":"serde_json","req":"^1.0"},{"name":"upstream","package":"fx-up","req":"^0.64.0"}]}\n' \
+        > "$tmp/index/fx/-f/fx-facade"
+    d="$tmp/r8-frozen"; build_repo "$d"; add_facades "$d" 0.4.0 0.69.0
+    PUBLISH_PREFLIGHT_INDEX_URL="file://$tmp/index" row r8_published_version_other_pin_refuses 1 "published ^0.64.0, tree ^0.69.0" "$d"
+    d="$tmp/r8-bumped"; build_repo "$d"; add_facades "$d" 0.5.0 0.69.0
+    PUBLISH_PREFLIGHT_INDEX_URL="file://$tmp/index" row r8_new_facade_version_passes 0 "fx-facade 0.5.0 is not on the index yet" "$d"
+    d="$tmp/r8-same"; build_repo "$d"; add_facades "$d" 0.4.0 0.64.0
+    PUBLISH_PREFLIGHT_INDEX_URL="file://$tmp/index" row r8_published_same_pin_passes 0 "same requirements" "$d"
+    d="$tmp/r8-noindex"; build_repo "$d"; add_facades "$d" 0.5.0 0.69.0
+    PUBLISH_PREFLIGHT_INDEX_URL="http://127.0.0.1:9" row r8_unreadable_index_refuses 1 "could not answer" "$d"
+    # an index that ANSWERS with a server error (a CDN 503) is unreadable, never "not published yet"
+    local srv_pid port=''
+    python3 -c 'import http.server, sys
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self): self.send_response(503); self.end_headers()
+    def log_message(self, *a): pass
+s = http.server.HTTPServer(("127.0.0.1", 0), H)
+open(sys.argv[1], "w").write(str(s.server_port)); s.serve_forever()' "$tmp/r8-port" &
+    srv_pid=$!
+    for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$tmp/r8-port" ] && break; sleep 0.2; done
+    port="$(cat "$tmp/r8-port" 2>/dev/null)"
+    d="$tmp/r8-503"; build_repo "$d"; add_facades "$d" 0.5.0 0.69.0
+    PUBLISH_PREFLIGHT_INDEX_URL="http://127.0.0.1:${port:-9}" row r8_index_server_error_refuses 1 "could not answer" "$d"
+    kill "$srv_pid" 2>/dev/null; wait "$srv_pid" 2>/dev/null
 
     # --receipt-only (#3708): the T-1 end of R5. An UNTAGGED tree with a GO
     # receipt passes it (the full gate refuses the same tree on R3 -- the row

@@ -21,14 +21,22 @@
 # not a mechanism; this script is, and the existing R3/R5 rows stay as the
 # backstop that catches a hand-edited bump that skipped it.
 #
-# WHAT IS DELIBERATELY *NOT* BUMPED
-# ---------------------------------
-# `crates/facades/Cargo.toml`'s own `[workspace.package] version` (0.4.0). The
-# facade crate NAMES version independently of the aprender version line, and
-# that independence is deliberate and documented (aprender#2546): 0.3.1 -> 0.4.0
-# signals "something changed" without claiming a 0.63.0 history these names do
-# not have. This script asserts that value is unchanged after it runs, so a
-# future edit cannot quietly couple the two lines.
+# THE FACADES' OWN VERSION: AN INDEPENDENT LINE THAT MUST STILL ADVANCE (#4111)
+# ---------------------------------------------------------------------------
+# `crates/facades/Cargo.toml`'s own `[workspace.package] version` stays on its
+# OWN line (aprender#2546: 0.3.1 -> 0.4.0 -> 0.5.0 ...; these names have no
+# 0.63.0 history), so it is never set to the aprender version. But it MUST move
+# whenever the upstream pin moves. Until #4111 this script asserted it did NOT
+# move at all, so the pin changed every release while the facade version stayed
+# 0.4.0. crates.io already held 0.4.0 (pinning aprender-contracts ^0.64.0), so
+# each cascade's tier 14 found "0.4.0 already published" and uploaded nothing,
+# and the published facades stayed frozen at contracts 0.64 through 0.69.1.
+# Rule (`next_facade_version`): an upstream MINOR/MAJOR change bumps the facade
+# minor, an upstream PATCH change bumps the facade patch, and no pin change
+# leaves it alone, so a re-run is still a no-op.
+# check_publish_preflight.sh R8 is the registry-side backstop: it refuses to
+# publish when the facade version in the tree is already on crates.io with a
+# DIFFERENT upstream requirement.
 #
 # What DOES track the aprender version is the facades' `upstream = { version =
 # "..." }` requirement — the version of `aprender-contracts*` a PUBLISHED facade
@@ -60,9 +68,32 @@ facade_pin() {  # manifest
     sed -n 's/^upstream *=.*version *= *"\([^"]*\)".*/\1/p' "$1" | head -1
 }
 
-# The facades' own package version — the one that must NOT move.
+# The facades' own package version — its own line, advanced by next_facade_version.
 facade_own_version() {  # root
     sed -n 's/^version *= *"\([^"]*\)".*/\1/p' "$1/crates/facades/Cargo.toml" | head -1
+}
+
+# next_facade_version OWN OLD_PIN NEW_PIN -> the facade version after the pin moves (#4111).
+# Pin unchanged: OWN. Pin major.minor changed: OWN's minor + 1 (x.y.z -> x.(y+1).0).
+# Only the pin's patch changed: OWN's patch + 1. Unparseable input prints nothing.
+next_facade_version() {
+    local own="$1" old="$2" new="$3" oM om op
+    grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' <<< "$own" || return 1
+    grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' <<< "$old" || return 1
+    grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' <<< "$new" || return 1
+    IFS=. read -r oM om op <<< "$own"
+    if [ "$old" = "$new" ]; then
+        printf '%s\n' "$own"
+    elif [ "${old%.*}" != "${new%.*}" ]; then
+        printf '%s.%s.0\n' "$oM" "$((om + 1))"
+    else
+        printf '%s.%s.%s\n' "$oM" "$om" "$((op + 1))"
+    fi
+}
+
+# Set the facades' own `[workspace.package] version` (the first `version =` line only).
+set_facade_own_version() {  # root new_version
+    sed -i -E "0,/^version *= *\"[^\"]*\"/s//version = \"$2\"/" "$1/crates/facades/Cargo.toml"
 }
 
 root_version() {  # root
@@ -113,14 +144,22 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'FAIL  row 2 rewrote %s manifest(s), expected 1\n' "$n"; fails=1
     fi
 
-    # Row 3: THE INDEPENDENCE. The facades' own version must be untouched. This
-    # is the row that stops a future "simplification" from coupling the two
-    # version lines (#2546).
-    if [ "$(facade_own_version "$TD")" = "0.4.0" ]; then
-        printf 'ok    row 3 crates/facades/Cargo.toml version = 0.4.0 is UNTOUCHED\n'
+    # Row 3: the facades' own version ADVANCES on its own line when the pin moves
+    # (#4111), and is never coupled to the aprender version (#2546). The table is
+    # next_facade_version's; the last case applies it to the fixture manifest.
+    r3=0
+    for c in "0.4.0 0.63.0 0.64.0 0.5.0" "0.4.0 0.64.0 0.64.0 0.4.0" "0.5.0 0.69.0 0.69.1 0.5.1" \
+             "0.5.1 0.69.1 0.70.0 0.6.0" "0.9.3 0.99.9 1.0.0 0.10.0" "0.4.0 0.63.0 bad -"; do
+        read -r c_own c_old c_new c_want <<< "$c"
+        got="$(next_facade_version "$c_own" "$c_old" "$c_new")" || got="-"
+        [ "$got" = "$c_want" ] || { printf 'FAIL  row 3 next_facade_version %s %s %s = %s, want %s\n' "$c_own" "$c_old" "$c_new" "$got" "$c_want"; r3=1; }
+    done
+    set_facade_own_version "$TD" "$(next_facade_version 0.4.0 0.63.0 0.64.0)"
+    if [ "$r3" = 0 ] && [ "$(facade_own_version "$TD")" = "0.5.0" ] \
+       && grep -q '^\[workspace.package\]' "$TD/crates/facades/Cargo.toml"; then
+        printf 'ok    row 3 the facades own version advances 0.4.0 -> 0.5.0 on its own line (6 cases)\n'
     else
-        printf 'FAIL  row 3 the facades own version moved to %s -- #2546 says it must not\n' \
-            "$(facade_own_version "$TD")"; fails=1
+        printf 'FAIL  row 3 the facades own version is %s, want 0.5.0\n' "$(facade_own_version "$TD")"; fails=1
     fi
 
     # Row 4: the signpost facade, which has no upstream at all, is left alone
@@ -161,7 +200,7 @@ if [ "${1:-}" = "--check" ]; then
     WS="$(root_version "$REPO_ROOT")"
     printf '=== version consistency across workspaces ===\n'
     printf 'root workspace:            %s\n' "$WS"
-    printf 'crates/facades own version: %s  (INDEPENDENT by design, #2546)\n' \
+    printf 'crates/facades own version: %s  (its own line, #2546; advances with the pin, #4111)\n' \
         "$(facade_own_version "$REPO_ROOT")"
     rc=0
     while IFS= read -r f; do
@@ -190,6 +229,12 @@ if ! grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' <<< "$NEW" ; then
 fi
 
 OLD_FACADE_OWN="$(facade_own_version "$REPO_ROOT")"
+OLD_PIN="$(facade_pin "$(facade_pinned_manifests "$REPO_ROOT" | head -1)")"
+WANT_FACADE_OWN="$(next_facade_version "$OLD_FACADE_OWN" "$OLD_PIN" "$NEW")" || {
+    printf 'FAIL  cannot derive the next facade version from own=%s pin=%s new=%s\n' \
+        "$OLD_FACADE_OWN" "$OLD_PIN" "$NEW" >&2
+    exit 1
+}
 printf '=== bumping to %s ===\n' "$NEW"
 
 printf -- '--- root workspace (cargo set-version --workspace) ---\n'
@@ -212,6 +257,9 @@ if [ "${N:-0}" -lt 1 ]; then
     exit 1
 fi
 
+set_facade_own_version "$REPO_ROOT" "$WANT_FACADE_OWN"
+printf 'facades own version %s -> %s (pin %s -> %s)\n' "$OLD_FACADE_OWN" "$WANT_FACADE_OWN" "$OLD_PIN" "$NEW"
+
 # Regenerate the second lockfile. `cargo metadata` resolves and writes it; no
 # build, about a second. check_lockfile_current.sh resolves the ROOT workspace
 # only and cannot see this file.
@@ -221,18 +269,18 @@ if ! ( cd "$REPO_ROOT/crates/facades" && cargo metadata --format-version 1 ) >/d
 fi
 printf 'regenerated crates/facades/Cargo.lock\n'
 
-# THE INDEPENDENCE ASSERTION. `cargo set-version --workspace` run from inside
-# crates/facades would move this, and so would a plausible "fix" to the rewrite
-# above. #2546 says it must not move.
+# THE LINE ASSERTION. The facades' own version is exactly what next_facade_version
+# derived: it advanced with the pin (#4111) and stayed on its own line (#2546).
+# `cargo set-version --workspace` run from inside crates/facades would set it to
+# $NEW instead, and that is refused here.
 NOW_FACADE_OWN="$(facade_own_version "$REPO_ROOT")"
-if [ "$NOW_FACADE_OWN" != "$OLD_FACADE_OWN" ]; then
-    printf 'FAIL  crates/facades/Cargo.toml version moved %s -> %s. The facade crate\n' \
-        "$OLD_FACADE_OWN" "$NOW_FACADE_OWN" >&2
-    printf '      NAMES version independently of the aprender line (#2546) -- these\n' >&2
-    printf '      names have no %s history. Revert that file.\n' "$NEW" >&2
+if [ "$NOW_FACADE_OWN" != "$WANT_FACADE_OWN" ] || [ "$NOW_FACADE_OWN" = "$NEW" ]; then
+    printf 'FAIL  crates/facades/Cargo.toml version is %s, want %s (own line, advanced\n' \
+        "$NOW_FACADE_OWN" "$WANT_FACADE_OWN" >&2
+    printf '      with the pin: #2546, #4111). Revert that file and re-run.\n' >&2
     exit 1
 fi
-printf 'crates/facades/Cargo.toml version left at %s (independent, #2546)\n' "$NOW_FACADE_OWN"
+printf 'crates/facades/Cargo.toml version %s (own line, #2546; advanced with the pin, #4111)\n' "$NOW_FACADE_OWN"
 
 printf -- '\n--- files that MUST ride in the bump commit ---\n'
 ( cd "$REPO_ROOT" && git status --porcelain -- crates/facades ) | sed 's/^/  /'
