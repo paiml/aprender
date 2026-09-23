@@ -128,6 +128,19 @@ impl GgufReader {
                 // Q6_K - dequantize (super blocks of 256 elements, 210 bytes/block)
                 dequantize_q6_k(&self.data, tensor_start, num_elements)?
             }
+            // #3947: IQ4_NL (20), IQ3_S (21) and IQ4_XS (23) have real decoders in
+            // trueno_quant, bit-exact against gguf-py on every IQ tensor of the three
+            // #3947 release models. Every other IQ type still reaches the refusal below.
+            20 | 21 | 23 => {
+                trueno_quant::dequantize_iq_to_f32(
+                    meta.dtype,
+                    self.data.get(tensor_start..).unwrap_or(&[]),
+                    num_elements,
+                )
+                .map_err(|e| AprenderError::FormatError {
+                    message: format!("GGUF tensor '{name}': {e}"),
+                })?
+            }
             // #3656: IQ types (16..=23) used to go to `dequantize_iq_approximate`, which
             // mapped each raw byte to `(b - 128) * 0.01` and returned Ok — `apr convert`
             // wrote those invented weights (std 36.6x the real tensor) and exited 0. With
