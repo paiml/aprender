@@ -55,24 +55,45 @@ pub struct CapabilityCells {
     pub refused_labels: Vec<String>,
 }
 
-/// A receipt version that is not dotted numerals: the declaration's fault (exit 3), never guessed.
+/// What the domain cannot be built from: the declaration's fault (exit 3), never guessed and never a verdict.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VersionError {
-    pub file: String,
-    pub version: String,
+pub enum CellsError {
+    /// A receipt `version` that is not dotted numerals, so V* cannot be chosen.
+    Version { file: String, version: String },
+    /// Two required rungs share an `id`. A cell is `<rung>@<host>`, so their cells would merge into one and one
+    /// rung's gap would be written onto the other's node (review lane B). ladder-green keys by sha256 and never
+    /// merges; this row refuses the declaration instead of guessing which rung a cell belongs to.
+    DuplicateRung { id: String, contracts: Vec<String> },
 }
 
-impl std::fmt::Display for VersionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}: receipt version {:?} is not dotted numerals, so the current release V* cannot be chosen — refused by name",
-            self.file, self.version
-        )
+impl CellsError {
+    /// The file to name in the refusal.
+    #[must_use]
+    pub fn file(&self) -> String {
+        match self {
+            Self::Version { file, .. } => file.clone(),
+            Self::DuplicateRung { contracts, .. } => contracts.join(", "),
+        }
     }
 }
 
-impl std::error::Error for VersionError {}
+impl std::fmt::Display for CellsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Version { file, version } => write!(
+                f,
+                "{file}: receipt version {version:?} is not dotted numerals, so the current release V* cannot be chosen — refused by name"
+            ),
+            Self::DuplicateRung { id, contracts } => write!(
+                f,
+                "required rung id {id:?} is declared more than once ({}) — a capability cell is <rung>@<host>, so the two would merge; refused by name",
+                contracts.join(", ")
+            ),
+        }
+    }
+}
+
+impl std::error::Error for CellsError {}
 
 /// `"0.69.1"` → `[0, 69, 1]`; `None` for anything that is not one or more dot-separated decimal numerals.
 fn version_key(v: &str) -> Option<Vec<u64>> {
@@ -91,10 +112,10 @@ fn version_key(v: &str) -> Option<Vec<u64>> {
 }
 
 /// V\*: the greatest version over `receipts`, or the first receipt whose version does not parse.
-fn v_star(receipts: &[Receipt]) -> Result<Option<String>, VersionError> {
+fn v_star(receipts: &[Receipt]) -> Result<Option<String>, CellsError> {
     let mut best: Option<(Vec<u64>, String)> = None;
     for r in receipts {
-        let key = version_key(&r.version).ok_or_else(|| VersionError {
+        let key = version_key(&r.version).ok_or_else(|| CellsError::Version {
             file: r.file.clone(),
             version: r.version.clone(),
         })?;
@@ -140,8 +161,27 @@ fn combine(acc: Option<Verdict>, v: Verdict) -> Verdict {
     }
 }
 
-/// D, the V\* cells, and their difference. `Err` only when a receipt version does not parse.
-pub fn compute(rungs: &[Rung], all: &[Receipt]) -> Result<CapabilityCells, VersionError> {
+/// Two required rungs with one `id`: refused before anything is computed.
+fn unique_required_ids(rungs: &[Rung]) -> Result<(), CellsError> {
+    let mut seen: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+    for r in rungs.iter().filter(|r| r.required) {
+        seen.entry(r.id.as_str())
+            .or_default()
+            .push(r.contract.clone());
+    }
+    match seen.into_iter().find(|(_, c)| c.len() > 1) {
+        Some((id, contracts)) => Err(CellsError::DuplicateRung {
+            id: id.to_string(),
+            contracts,
+        }),
+        None => Ok(()),
+    }
+}
+
+/// D, the V\* cells, and their difference. `Err` when the declaration cannot be read as a domain: a receipt
+/// version that does not parse, or two required rungs sharing an id.
+pub fn compute(rungs: &[Rung], all: &[Receipt]) -> Result<CapabilityCells, CellsError> {
+    unique_required_ids(rungs)?;
     let v_star = v_star(all)?;
     let hosts = receipts::receipt_hosts(all);
     let mut out = CapabilityCells {
@@ -189,7 +229,7 @@ pub fn apply(
     g: &mut Graph,
     rungs: &[Rung],
     all: &[Receipt],
-) -> Result<CapabilityCells, VersionError> {
+) -> Result<CapabilityCells, CellsError> {
     let cc = compute(rungs, all)?;
     for rung in rungs.iter().filter(|r| r.required) {
         let s = iri("model", &rung.sha256);
