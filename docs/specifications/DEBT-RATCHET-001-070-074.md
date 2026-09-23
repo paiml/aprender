@@ -212,6 +212,23 @@ as it is, and D-3 is the ratchet on the full stock.
 D-1 can be drained by **triage** (assign a release milestone, or close with a citation). Triage is a
 `paiml-implement kind=triage` run, not code work.
 
+## 3.E The 0.75.0 slice: the ratchet does not stop at 0.74 (operator ruling, 2026-09-23)
+
+Relayed on #3997 (comment 2026-09-23T10:46Z), operator's words: *"ALL releases in .7 have some rachet"*. The ≥80%-by-0.74
+target stands. **0.75.0 carries a 6th slice: no regression, plus continued paydown.** Every later 0.7x release does the
+same. The rule is the one in §1: each release refuses a level below the previous release's tag, and a pillar still
+above zero keeps paying down at its 0.70–0.74 rate.
+
+| Pillar | 0.74 floor | 0.75 floor | Basis |
+|---|---|---|---|
+| A: P₀ bp | 9,364 | **≥ 9,473** | one more 109 bp slice (reaches 100% of the gap only at 0.76: 9,500) |
+| A: `P_cuda` | `B_cuda + 3·s_cuda` | **`B_cuda + 4·s_cuda`** | continues its own window (decision 7) |
+| B-1: E2 call sites | 435 | **≥ 499** | one more 64-site slice |
+| B-2: contracts with no falsifier | 0 | **0** | hold |
+| B-3: bound equations | 2,644 `[U]` | **≥ 3,129 `[U]`** | pending decision 3 |
+| C: ONT rows bound | 27 | **27** | hold (and every row added to the spec after 0.74 must bind in the release that adds it) |
+| D-1 / D-2 / D-3 | 0 / 0 / 0 | **0 / 0 / 0** | hold, armed at zero |
+
 ## 4. Sharded CUDA coverage on yoga (+ lambda, gx10) (question 4)
 
 **What exists today:** coverage-nightly runs on `[clean-room, yoga]` (CPU, 60–70 min, 150 min timeout). cuda-nightly
