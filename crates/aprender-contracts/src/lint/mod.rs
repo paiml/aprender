@@ -9,6 +9,7 @@
 //! Spec: `docs/specifications/sub/lint.md`
 
 pub mod cache;
+pub mod capability_cells_gate;
 mod composition_gate;
 pub mod config;
 pub mod diff;
@@ -247,6 +248,13 @@ pub enum GateExtra {
         /// aprender#3715: what `extract:release-evidence` derived — absent unless a release subject was given.
         #[serde(skip_serializing_if = "Option::is_none")]
         release: Option<Box<crate::ontology::extract::release_evidence::ReleaseStats>>,
+        /// ONT-4c5: the capability-cell domain D and its NotRun cells at the current release — absent unless a
+        /// contract declares the `capability-cells` shape.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        capability_cells: Option<capability_cells_gate::CapabilityCellsReport>,
+        /// ONT-4c5: per-shape positive controls (`capability-cells` → `fired`); the gate never reaches `Ran`
+        /// with one that is not.
+        pc_shapes: std::collections::BTreeMap<String, String>,
     },
 }
 
@@ -757,6 +765,10 @@ fn shapes_result(contract_dir: &Path, validation_passed: bool) -> (GateResult, V
         ),
         shapes_gate::ShapesOutcome::NoReceipts { shapes_n, dir } => (
             skipped_gate("shapes", &format!("{shapes_n} shape(s) resolve receipts and the tree holds none under {dir}/ — R-2: unmeasured is a decline")),
+            Vec::new(),
+        ),
+        shapes_gate::ShapesOutcome::EmptyDomain { shapes_n } => (
+            skipped_gate("shapes", &format!("capability-cells: the required-cell domain D is empty ({shapes_n} shape(s)) — R-2: zero is a decline, never a pass")),
             Vec::new(),
         ),
         shapes_gate::ShapesOutcome::PositiveControlFailed { shapes_n, focus_nodes_n, which } => (
