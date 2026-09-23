@@ -993,6 +993,113 @@ SM
     xmutant certified-unheld  red-certified-not-held    's/^        if s_ not in held:$/        if False:/'
     xmutant cert-read-as-receipt green-cert-beside-crux-receipts 's/                   if not os.path.basename(f).startswith("prompt-certification")) if crux_dir else \[\]/                   ) if crux_dir else []/'
     xmutant certified-as-none red-certified-missing-crux 's/^    need = certified is None or bool(held \& certified)$/    need = False; certified = set()/'
+    # #4086: a scope RECORDED for the release applies when no --scope is passed -- the dogfood runs this
+    # gate with no arguments. First the pure selection, then the script END TO END: a recorded scope prints
+    # `SCOPED:` and judges the scope; NO recorded scope judges the full ladder, even beside CRUX smoke
+    # receipts that would satisfy a scope (the must-RED: a scope is read from the record, never inferred).
+    select_table() { # select_table <lib dir> -> 0 when every row lands
+      python3 - "$1" <<'SEL'
+import sys
+sys.path.insert(0, sys.argv[1]); import crux_smoke_scope as C
+E = lambda n, r: {"name": n, "release": r}
+rows = [
+  ("no scope recorded -> the full ladder", {}, "0.70.0", (None, False)),
+  ("a scope for another release -> the full ladder", {"emergency_scopes": [E("crux-smoke", "0.69.1")]}, "0.70.0", (None, False)),
+  ("a release is matched whole, never as a prefix", {"emergency_scopes": [E("crux-smoke", "0.69.1")]}, "0.69.10", (None, False)),
+  ("one scope for this release -> it applies", {"emergency_scopes": [E("crux-smoke", "0.69.1")]}, "0.69.1", ("crux-smoke", False)),
+  ("two scopes for one release -> RED", {"emergency_scopes": [E("a", "0.69.1"), E("b", "0.69.1")]}, "0.69.1", (None, True)),
+  ("a nameless scope -> RED", {"emergency_scopes": [E("", "0.69.1")]}, "0.69.1", (None, True)),
+]
+bad = 0
+for name, L, v, (want_name, want_red) in rows:
+    got, why = C.recorded_scope(L, v)
+    ok = got == want_name and bool(why) == want_red
+    print(("ok    select " if ok else "FAIL  select ") + name + ("" if ok else " -> %r %r" % (got, why)))
+    bad |= not ok
+sys.exit(bad)
+SEL
+    }
+    if select_table scripts/lib; then printf 'ok    select: the recorded-scope table lands on the shipped module\n'
+    else select_table scripts/lib; bad=$((bad+1)); fi
+    selmutant() { # selmutant <label> <sed deleting a rule in crux_smoke_scope.recorded_scope>
+      local md="$mdir/sel-$1"; mkdir -p "$md"
+      cp scripts/lib/model_ladder_crux.py "$md/"
+      sed "$2" scripts/lib/crux_smoke_scope.py > "$md/crux_smoke_scope.py"
+      if cmp -s scripts/lib/crux_smoke_scope.py "$md/crux_smoke_scope.py"; then echo "FAIL  select mutant $1 did not apply"; bad=$((bad+1)); return; fi
+      if select_table "$md" > /dev/null 2>&1; then echo "FAIL  select mutant $1 SURVIVED the table"; bad=$((bad+1))
+      else printf 'ok    select mutant %-17s killed by the table\n' "$1"; fi
+    }
+    selmutant any-release  's/            if isinstance(e, dict) and str(e.get("release")) == str(version)\]/            if isinstance(e, dict)]/'
+    selmutant prefix-match 's/and str(e.get("release")) == str(version)\]/and str(version).startswith(str(e.get("release")))]/'
+    selmutant first-wins   's/^    if len(hits) > 1:$/    if False:/'
+    selmutant nameless-ok  's/^    if not name:$/    if False:/'
+    # END TO END. Fixtures: the green case's ladder with (or without) a recorded scope, EMPTY ladder receipts
+    # (so the full ladder is RED, and says so by name: `no receipt at .../receipts/lambda.json` is the proof
+    # the LADDER was judged, and its absence that it was not), and CRUX smoke receipts that satisfy the scope, found through the
+    # MODEL_LADDER_CRUX_DIR seam the dogfood uses (it cannot pass --crux).
+    e2e="$mdir/e2e"; mkdir -p "$e2e/receipts"
+    python3 - "$CASES_DIR/green/ladder.yaml" "$e2e" "$CASE_CUT" <<'E2E'
+import json, os, sys, yaml
+src, d, cut = sys.argv[1], sys.argv[2], sys.argv[3]
+base = yaml.safe_load(open(src))
+scope = lambda rel, name="crux-smoke": {"name": name, "release": rel, "date": "2026-09-24", "quote": "q", "hosts": ["lambda", "gx10"], "thinking": ["off"]}
+for tag, scopes in {"none": None, "one": [scope("1.2.3")], "two": [scope("1.2.3"), scope("1.2.3", "other")], "other": [scope("1.2.4")]}.items():
+    L = json.loads(json.dumps(base))
+    if scopes is not None:
+        L["ladder"]["emergency_scopes"] = scopes
+    yaml.safe_dump(L, open(os.path.join(d, "ladder-%s.yaml" % tag), "w"))
+S = "4" * 64
+for tag, hosts in {"crux": ("lambda", "gx10"), "crux-short": ("lambda",)}.items():
+    c = os.path.join(d, tag); os.makedirs(c)
+    json.dump({"admitted_by_sha": {S: ["ctl"]}, "admitted_by_sha_thinking": {S: {"off": ["ctl"], "on": []}}},
+              open(os.path.join(c, "prompt-certification.json"), "w"))
+    for h in hosts:
+        json.dump({"schema": "crux-inference-receipt/v1", "host": h, "apr": {"sha": cut}, "summary": {"verdict": "PASS"},
+                   "cells": [{"key": {"model_sha256": S, "host": h, "thinking": "off", "verb": "run"}, "verdict": "GREEN", "positive_control": True}]},
+                  open(os.path.join(c, h + "-gpu.json"), "w"))
+E2E
+    e2e_row() { # e2e_row <label> <script> <ladder tag> <crux dir> <want rc: 0|red> <must_match|-> <must_not_match|-> [extra args]
+      local label="$1" sc="$2" tag="$3" cx="$4" want="$5" mm="$6" mn="$7" out got; shift 7
+      out=$(MODEL_LADDER_ROOT="$PWD" MODEL_LADDER_CRUX_DIR="$e2e/$cx" bash "$sc" --ladder "$e2e/ladder-$tag.yaml" \
+            --receipts "$e2e/receipts" --version 1.2.3 --cut-commit "$CASE_CUT" "$@" 2>&1); got=$?
+      if { [ "$want" = 0 ] && [ "$got" = 0 ]; } || { [ "$want" = red ] && [ "$got" = 1 ]; }; then :; else
+        [ "$sc" = "$SELF" ] && printf 'FAIL  scope e2e %s: rc=%s want=%s\n%s\n' "$label" "$got" "$want" "$(printf '%s\n' "$out" | tail -5)"; return 1; fi
+      if [ "$mm" != - ] && ! grep -qE "$mm" <<< "$out"; then [ "$sc" = "$SELF" ] && printf 'FAIL  scope e2e %s: no /%s/\n' "$label" "$mm"; return 1; fi
+      if [ "$mn" != - ] && grep -qE "$mn" <<< "$out"; then [ "$sc" = "$SELF" ] && printf 'FAIL  scope e2e %s: printed /%s/\n' "$label" "$mn"; return 1; fi
+      [ "$sc" = "$SELF" ] && printf 'ok    scope e2e %s rc=%s\n' "$label" "$got"
+      return 0
+    }
+    e2e_table() { # e2e_table <script> -> 0 when every row lands
+      local sc="$1" r=0
+      e2e_row "no recorded scope judges the FULL ladder beside satisfying smoke receipts" "$sc" none crux red \
+        'no receipt at .*/receipts/lambda\.json' '^SCOPED: |OPERATOR EMERGENCY SCOPE' || r=1
+      e2e_row "a recorded scope applies with no --scope, and says SCOPED" "$sc" one crux 0 \
+        '^SCOPED: crux-smoke -- .*release 1\.2\.3' - || r=1
+      e2e_row "a recorded scope's pass is the scope's verdict, not the ladder's" "$sc" one crux 0 \
+        'OPERATOR EMERGENCY SCOPE: CRUX smoke only -- satisfied' 'no receipt at .*/receipts/lambda\.json' || r=1
+      e2e_row "a recorded scope that is not satisfied is RED, still SCOPED" "$sc" one crux-short red \
+        '^SCOPED: crux-smoke' 'smoke only -- satisfied' || r=1
+      e2e_row "--scope none judges the full ladder on a scoped release" "$sc" one crux red \
+        'no receipt at .*/receipts/lambda\.json' '^SCOPED: |OPERATOR EMERGENCY SCOPE' --scope none || r=1
+      e2e_row "two scopes recorded for one release is RED, judging neither" "$sc" two crux red \
+        'is unusable' 'OPERATOR EMERGENCY SCOPE' || r=1
+      e2e_row "a scope recorded for another release leaves the full ladder" "$sc" other crux red \
+        'no receipt at .*/receipts/lambda\.json' '^SCOPED: ' || r=1
+      return $r
+    }
+    if e2e_table "$SELF"; then printf 'ok    scope e2e: a recorded scope is applied and SAID; none recorded is the full ladder\n'
+    else bad=$((bad+1)); fi
+    dmutant() { # dmutant <label> <sed on a COPY of this script> -- the e2e table must go RED
+      local ms="$mdir/d-$1.sh"
+      sed "$2" "$SELF" > "$ms"
+      if cmp -s "$SELF" "$ms"; then echo "FAIL  dispatch mutant $1 did not apply"; bad=$((bad+1)); return; fi
+      if e2e_table "$ms" > /dev/null 2>&1; then echo "FAIL  dispatch mutant $1 SURVIVED the table"; bad=$((bad+1))
+      else printf 'ok    dispatch mutant %-15s killed by the table\n' "$1"; fi
+    }
+    dmutant no-auto-scope 's/^if \[ -z "\$SCOPE" \]; then$/if false; then/'
+    dmutant silent-scope  "s/|| printf 'SCOPED: %s -- /|| printf 'scoped: %s -- /"
+    dmutant none-ignored  's/^  SCOPE=""$/  :/'
+    dmutant crux-env-unread 's/^\[ -n "\$CRUX_DIR" \] || CRUX_DIR="\${MODEL_LADDER_CRUX_DIR:-}"$/:/'
     if [ -n "$mdir" ] && [ "$mdir" != "/" ] && [ -d "$mdir" ]; then rm -rf -- "$mdir"; fi
   fi
   echo "self-test: $n case(s), $bad bad"
@@ -1025,6 +1132,28 @@ git show "origin/main:evidence/release/context-rungs.json" > "$TMP_RUNGS" 2> /de
 # #3957 F2: the cut. `--cut-commit`, else HEAD. safe.directory because a CI container's checkout
 # is owned by another uid and plain rev-parse dies there (#3581). Unresolvable -> the judge declines.
 [ -n "$CUT_COMMIT" ] || CUT_COMMIT=$(git -c safe.directory="$PWD" rev-parse HEAD 2> /dev/null || true)
+# #4086: the CRUX receipts' location for a caller that cannot pass --crux (the dogfood runs every declared
+# gate with no arguments). --crux wins; the env is the release runner's seam; the tree's evidence is last.
+[ -n "$CRUX_DIR" ] || CRUX_DIR="${MODEL_LADDER_CRUX_DIR:-}"
+# #4086: with no --scope, a scope RECORDED for this release in the contract applies -- the dogfood's declared
+# gate saw only the full ladder and went RED at 0.69.1 while the release gate judged the recorded scope. It is
+# never inferred: no entry for this version = the full ladder; two entries = RED; and it is printed as
+# `SCOPED:` so no reader (and no dogfood row) can take it for a full-ladder pass. `--scope none` forces the
+# full ladder on a scoped release (the nightly's "anything huge").
+if [ -z "$SCOPE" ]; then
+  SCOPE=$(python3 -c 'import sys, yaml
+sys.path.insert(0, "scripts/lib"); import crux_smoke_scope
+name, why = crux_smoke_scope.recorded_scope(yaml.safe_load(open(sys.argv[1]))["ladder"], sys.argv[2])
+if why: print(why, file=sys.stderr); sys.exit(1)
+print(name or "")' "$LADDER" "$VERSION"); src=$?
+  if [ "$src" != 0 ]; then
+    echo "RED   the recorded emergency scope for $VERSION is unusable (see above) -- neither the scope nor the ladder was judged"; exit 1
+  fi
+  [ -z "$SCOPE" ] || printf 'SCOPED: %s -- the emergency scope recorded for release %s in %s applies; this verdict is the SCOPE, not the model ladder (--scope none judges the full ladder)\n' \
+    "$SCOPE" "$VERSION" "$LADDER"
+elif [ "$SCOPE" = none ]; then
+  SCOPE=""
+fi
 # 0.69.1 OPERATOR EMERGENCY SCOPE (scripts/lib/crux_smoke_scope.py): `--scope crux-smoke` judges CRUX smoke
 # receipts from the release binary INSTEAD of the ladder, only for the release its contract entry names.
 if [ -n "$SCOPE" ]; then
