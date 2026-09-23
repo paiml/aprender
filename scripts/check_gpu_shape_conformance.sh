@@ -109,6 +109,12 @@ def check(root):
                 errs.append(f"{host}: the receipt names no compute capability, so exclusions {sorted(excl)} cannot be applied")
                 continue
             here = excl if cc >= excl_cc else set()
+        # The receipt must have measured the exclusion policy the tree states: a change to the exclusion list or
+        # threshold without a re-run is a stale receipt, as a census change is (round-2 quorum finding).
+        if "excluded_types" in r:
+            want = sorted(here & {q for q, _, _ in need})
+            if sorted(r["excluded_types"]) != want:
+                errs.append(f"{host}: STALE receipt — it excluded {sorted(r['excluded_types'])} but the tree excludes {want} at cc {cc}")
         need_here = {x for x in need if x[0] not in here}
         for q, k, n in sorted(need_here - covered):
             errs.append(f"{host}: ggml {q} at k={k} n={n} ({klass(k, q)}) is held and whitelisted but not proven on the device")
@@ -187,6 +193,9 @@ elif what.startswith("excl-"):          # #4096: ggml 23 excluded at cc>=12
     elif what == "excl-gpu-string-cc12":   # no cc_major: the capability comes from the nvidia-smi `gpu` line
         del r["cc_major"]; r["gpu"] = "NVIDIA GB10, 12.1"
         row23["pass"] = False; row23["excluded"] = True; r["negative_controls"]["23"]["red"] = False
+    elif what == "excl-policy-changed":   # receipt measured an exclusion the tree no longer states
+        r["cc_major"] = 12; r["excluded_types"] = [12, 23]
+        row23["pass"] = False; row23["excluded"] = True; r["negative_controls"]["23"]["red"] = False
     elif what == "excl-gpu-string-malformed":
         del r["cc_major"]; r["gpu"] = "NVIDIA GB10"
     elif what == "excl-half-parsed":
@@ -215,6 +224,7 @@ ED
   row RED-excluded-type-not-exercised    excl-unexercised   1 "ggml 23 is EXCLUDED here (cc>=12) but the receipt does not exercise it"
   row RED-exclusion-host-cc-unknown      excl-no-cc         1 "names no compute capability"
   row green-cc-from-gpu-line-applies-excl excl-gpu-string-cc12 0
+  row RED-receipt-measured-other-exclusions excl-policy-changed 1 "STALE receipt — it excluded [12, 23] but the tree excludes [23]"
   row RED-gpu-line-without-cc            excl-gpu-string-malformed 1 "names no compute capability"
   row REFUSED-exclusion-half-parsed      excl-half-parsed   2 "do not parse"
   [ "$fails" -eq 0 ] && { echo "$PROG --self-test: PASS"; exit 0; }

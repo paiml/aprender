@@ -15,6 +15,11 @@ reviewable code is:
 ## Claim 1: the rows are derived, never hand-listed
 - `gguf_census.py` reads every held GGUF's header and writes one (qtype, k, n) per 2-D tensor. There is one census
   per host (lambda, gx10).
+- The scanner's stdout IS the committed file, with no transform:
+  `python3 scripts/lib/gguf_census.py scan '~/models' '~/.apr/models' '~/.cache/apr/models' --host <host>`.
+  It records its roots, depth, missing roots and every depth-skipped GGUF. `--depth N` counts subdirectory levels.
+  Before round 2's fix it read only files directly in a root and skipped nested models silently: lambda 23 → 27 files,
+  gx10 14 → 18, and the union 163 → **188** rows. The 25 new rows (F32, Q8_0, BF16) had never been tested.
 - The harness builds its rows from the committed censuses, filtered by the device-independent whitelist. A newly
   held shape is therefore tested as soon as it is censused.
 
@@ -65,16 +70,18 @@ and the receipts.
   - an exclusion is **stale**: every held shape of the type passes at cc ≥ 12 with a RED control, so #4096 has
     landed and the exclusion must go.
 - **REFUSES** when the whitelist or an exclusion does not parse.
-- `--self-test` has 16 rows, two of them for the nvidia-smi `gpu`-line capability fallback the lambda receipt uses. The RED rows require their reason text, not only rc 1. Mutant (stale branch disabled):
+- A receipt whose `excluded_types` differs from what the tree's exclusions imply at its host's capability is a STALE
+  receipt (RED). A change to the exclusion policy without a re-run is caught, as a census change is.
+- `--self-test` has 17 rows, two of them for the nvidia-smi `gpu`-line capability fallback the lambda receipt uses. The RED rows require their reason text, not only rc 1. Mutant (stale branch disabled):
   exactly `RED-stale-exclusion` BROKE.
 
 ## Measured
-- **lambda** (RTX 4090 8.9), re-run @`b7f378ebe` (head, after quorum lane 1): `cc_major 8`, `excluded_types []`;
-  163/163; worst 1.3e-7; 17/17 negative controls RED. Receipt `7383d6f7b`.
-- **gx10** (GB10 12.1), run @`5c1df1b3e`:
-  - `cc_major 12`, `excluded_types [21, 22]`;
-  - the 3 excluded rows ran and failed (the stated RED); 0 passed, so the exclusion is not stale;
-  - the other 160 passed, worst 1.3e-7. Receipt `30edfa0ea`.
+Both hosts were re-run at `cd0457c82` against the regenerated 188-row censuses:
+- **lambda** (RTX 4090 8.9): `cc_major 8`, `excluded_types []`; 188/188; worst 1.3e-7; 17/17 negative controls RED.
+- **gx10** (GB10 12.1): `cc_major 12`, `excluded_types [21, 22]`.
+  - The 3 excluded rows ran and failed (the stated RED). 0 passed, so the exclusion is not stale.
+  - The other 185 passed, worst 1.3e-7.
+  - 15/17 controls are RED; the 2 that are not are the excluded types, whose kernels do not load.
 - `check_gpu_shape_conformance.sh` over both hosts: **PASS**. This is its first green on its real target.
 - `cargo test -p aprender-serve --lib` over pmat785, prose_whitelist, every_quant_row_agrees and gemv_entry_name:
   37 passed with cuda, 12 passed on default features. `apr-cli` capability tests 5/5; `capability_mirror` 3/3; clippy
@@ -87,7 +94,22 @@ Lane 1: FAIL. Its findings, all fixed in `b7f378ebe`/`7383d6f7b`:
 - the capability-query error failed open;
 - the lambda receipt predated the exclusion code.
 
-Also fixed: the packaged mirror, which the lane did not flag. A fresh round of three lanes judges the new head.
+Also fixed: the packaged mirror, which the lane did not flag.
+
+## Quorum round 2 (Sonnet 5 lanes, degraded: same-family)
+- Lane 1: PASS, with three non-blocking findings.
+  - Its "receipt not bound to the code" point is now the guard's exclusion-policy STALE check.
+  - Its untested fail-closed branch in `device_cc_major` stays a code-read claim: a driver error cannot be planted
+    without a mock seam.
+- Lane 2: FAIL, on census provenance.
+  - The committed censuses were not what the committed scanner writes.
+  - Depth-skipped models were silent.
+  - Both are fixed above, and the fix found 25 untested rows.
+  - Its `rcp.approx` point is noted, not emulated. The Q8_1 mirror uses exact `1/x` where the kernel uses
+    `rcp.approx` (≤1 ulp). It matters only on near-ties, and Q6_K's measured margin is ~500× (2.0e-8 vs 1e-5). If a
+    future shape erodes that margin, this is the first suspect.
+
+A fresh round of three lanes judges the new head.
 
 ## Not done
 - The guard is not yet wired into a workflow. Wiring it is a `.github/workflows` edit, which needs the standing

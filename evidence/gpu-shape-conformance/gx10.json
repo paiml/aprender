@@ -147,6 +147,17 @@
   {
    "class": "pow2",
    "excluded": false,
+   "k": 4,
+   "n_held": 12288,
+   "n_tested": 4096,
+   "panic": null,
+   "pass": true,
+   "qtype": 0,
+   "worst": 1.30223440919508e-07
+  },
+  {
+   "class": "pow2",
+   "excluded": false,
    "k": 2048,
    "n_held": 128,
    "n_tested": 128,
@@ -165,6 +176,17 @@
    "pass": true,
    "qtype": 0,
    "worst": 1.4835827677472935e-08
+  },
+  {
+   "class": "nonpow2",
+   "excluded": false,
+   "k": 3072,
+   "n_held": 256,
+   "n_tested": 256,
+   "panic": null,
+   "pass": true,
+   "qtype": 0,
+   "worst": 1.5679173515081857e-08
   },
   {
    "class": "nonpow2",
@@ -378,6 +400,17 @@
   {
    "class": "pow2",
    "excluded": false,
+   "k": 1024,
+   "n_held": 3072,
+   "n_tested": 3072,
+   "panic": null,
+   "pass": true,
+   "qtype": 8,
+   "worst": 2.039783630891634e-08
+  },
+  {
+   "class": "pow2",
+   "excluded": false,
    "k": 2048,
    "n_held": 16,
    "n_tested": 16,
@@ -453,6 +486,72 @@
    "worst": 9.654045562967895e-09
   },
   {
+   "class": "nonpow2",
+   "excluded": false,
+   "k": 3072,
+   "n_held": 64,
+   "n_tested": 64,
+   "panic": null,
+   "pass": true,
+   "qtype": 8,
+   "worst": 1.0775432102150262e-08
+  },
+  {
+   "class": "nonpow2",
+   "excluded": false,
+   "k": 3072,
+   "n_held": 512,
+   "n_tested": 512,
+   "panic": null,
+   "pass": true,
+   "qtype": 8,
+   "worst": 1.4492995248360785e-08
+  },
+  {
+   "class": "nonpow2",
+   "excluded": false,
+   "k": 3072,
+   "n_held": 1024,
+   "n_tested": 1024,
+   "panic": null,
+   "pass": true,
+   "qtype": 8,
+   "worst": 1.715960529224958e-08
+  },
+  {
+   "class": "nonpow2",
+   "excluded": false,
+   "k": 3072,
+   "n_held": 8192,
+   "n_tested": 4096,
+   "panic": null,
+   "pass": true,
+   "qtype": 8,
+   "worst": 2.099432094837539e-08
+  },
+  {
+   "class": "nonpow2",
+   "excluded": false,
+   "k": 3072,
+   "n_held": 12288,
+   "n_tested": 4096,
+   "panic": null,
+   "pass": true,
+   "qtype": 8,
+   "worst": 2.099432094837539e-08
+  },
+  {
+   "class": "nonpow2",
+   "excluded": false,
+   "k": 3072,
+   "n_held": 16384,
+   "n_tested": 4096,
+   "panic": null,
+   "pass": true,
+   "qtype": 8,
+   "worst": 2.099432094837539e-08
+  },
+  {
    "class": "pow2",
    "excluded": false,
    "k": 4096,
@@ -495,6 +594,17 @@
    "pass": true,
    "qtype": 8,
    "worst": 1.875857513766732e-08
+  },
+  {
+   "class": "pow2",
+   "excluded": false,
+   "k": 8192,
+   "n_held": 3072,
+   "n_tested": 3072,
+   "panic": null,
+   "pass": true,
+   "qtype": 8,
+   "worst": 1.9939797368806467e-08
   },
   {
    "class": "nonpow2",
@@ -1886,12 +1996,144 @@
    "class": "pow2",
    "excluded": false,
    "k": 2048,
+   "n_held": 16,
+   "n_tested": 16,
+   "panic": null,
+   "pass": true,
+   "qtype": 30,
+   "worst": 7.51546735955344e-09
+  },
+  {
+   "class": "pow2",
+   "excluded": false,
+   "k": 2048,
+   "n_held": 512,
+   "n_tested": 512,
+   "panic": null,
+   "pass": true,
+   "qtype": 30,
+   "worst": 1.463733756423835e-08
+  },
+  {
+   "class": "pow2",
+   "excluded": false,
+   "k": 2048,
    "n_held": 1024,
    "n_tested": 1024,
    "panic": null,
    "pass": true,
    "qtype": 30,
    "worst": 1.4861565311719005e-08
+  },
+  {
+   "class": "pow2",
+   "excluded": false,
+   "k": 2048,
+   "n_held": 2048,
+   "n_tested": 2048,
+   "panic": null,
+   "pass": true,
+   "qtype": 30,
+   "worst": 1.630212764780481e-08
+  },
+  {
+   "class": "pow2",
+   "excluded": false,
+   "k": 2048,
+   "n_held": 4096,
+   "n_tested": 4096,
+   "panic": null,
+   "pass": true,
+   "qtype": 30,
+   "worst": 1.9703925602243544e-08
+  },
+  {
+   "class": "pow2",
+   "excluded": false,
+   "k": 2048,
+   "n_held": 6144,
+   "n_tested": 4096,
+   "panic": null,
+   "pass": true,
+   "qtype": 30,
+   "worst": 1.9703925602243544e-08
+  },
+  {
+   "class": "pow2",
+   "excluded": false,
+   "k": 2048,
+   "n_held": 248320,
+   "n_tested": 4096,
+   "panic": null,
+   "pass": true,
+   "qtype": 30,
+   "worst": 1.9703925602243544e-08
+  },
+  {
+   "class": "nonpow2",
+   "excluded": false,
+   "k": 2560,
+   "n_held": 32,
+   "n_tested": 32,
+   "panic": null,
+   "pass": true,
+   "qtype": 30,
+   "worst": 9.258391386879339e-09
+  },
+  {
+   "class": "nonpow2",
+   "excluded": false,
+   "k": 2560,
+   "n_held": 1024,
+   "n_tested": 1024,
+   "panic": null,
+   "pass": true,
+   "qtype": 30,
+   "worst": 1.7997935586322455e-08
+  },
+  {
+   "class": "nonpow2",
+   "excluded": false,
+   "k": 2560,
+   "n_held": 4096,
+   "n_tested": 4096,
+   "panic": null,
+   "pass": true,
+   "qtype": 30,
+   "worst": 1.7267099750029047e-08
+  },
+  {
+   "class": "nonpow2",
+   "excluded": false,
+   "k": 2560,
+   "n_held": 8192,
+   "n_tested": 4096,
+   "panic": null,
+   "pass": true,
+   "qtype": 30,
+   "worst": 1.7267099750029047e-08
+  },
+  {
+   "class": "nonpow2",
+   "excluded": false,
+   "k": 2560,
+   "n_held": 9216,
+   "n_tested": 4096,
+   "panic": null,
+   "pass": true,
+   "qtype": 30,
+   "worst": 1.7267099750029047e-08
+  },
+  {
+   "class": "nonpow2",
+   "excluded": false,
+   "k": 2560,
+   "n_held": 248320,
+   "n_tested": 4096,
+   "panic": null,
+   "pass": true,
+   "qtype": 30,
+   "worst": 1.7267099750029047e-08
   },
   {
    "class": "nonpow2",
@@ -1903,17 +2145,50 @@
    "pass": true,
    "qtype": 30,
    "worst": 1.568325203038512e-08
+  },
+  {
+   "class": "pow2",
+   "excluded": false,
+   "k": 4096,
+   "n_held": 2560,
+   "n_tested": 2560,
+   "panic": null,
+   "pass": true,
+   "qtype": 30,
+   "worst": 1.6915617351287437e-08
+  },
+  {
+   "class": "nonpow2",
+   "excluded": false,
+   "k": 6144,
+   "n_held": 2048,
+   "n_tested": 2048,
+   "panic": null,
+   "pass": true,
+   "qtype": 30,
+   "worst": 1.6048124606982128e-08
+  },
+  {
+   "class": "nonpow2",
+   "excluded": false,
+   "k": 9216,
+   "n_held": 2560,
+   "n_tested": 2560,
+   "panic": null,
+   "pass": true,
+   "qtype": 30,
+   "worst": 1.6058757879022778e-08
   }
  ],
  "schema": "gpu-shape-conformance/v1",
  "tolerance": 9.999999747378752e-06,
  "host": "gx10",
- "commit": "5c1df1b3e60917120ad677b55c46737718dc98af",
+ "commit": "cd0457c8294c090730776936525959f6b88e30f6",
  "gpu": "NVIDIA GB10, 12.1",
  "harness_rc": 0,
  "census": {
-  "census-gx10.json": "db28f0b8c0b7de7d0069bcc99d2f36b56d3c498b614818f9a5af775b49c7f33a",
-  "census-lambda.json": "77288b004a6e7aaf3bf22f2911fb92900ee993e3c164feeb260e676fa3e0cd2d"
+  "census-gx10.json": "cf7e9721ce04db117a3194b39db1ba9b18c05e201ec363da104b315884a51494",
+  "census-lambda.json": "1a9e8dcd416aabe4c8089dfebb0722b7fe36e502f5a641d91162c17f1f6a6209"
  },
  "gpu_apps_before": "",
  "gpu_apps_after": ""
