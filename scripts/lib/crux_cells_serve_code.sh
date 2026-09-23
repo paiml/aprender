@@ -25,8 +25,8 @@
 #   ollama     both modes (the same-quant differential, quorum Q2a). Its
 #              /apply-template is also the REFERENCE RENDERER for apr's
 #              raw-prompt routes.
-#   plugins    hf / llamafile / vllm `gen --verb 'serve run'` (non-streaming,
-#              their own server).
+#   plugins    hf / llamafile / vllm `gen --verb 'serve run'` and `--verb 'serve stream'`
+#              (their own server), the bf16 row every serve GREEN needs.
 #
 # CODE, one cell per model:
 #   apr        `apr code -p` via crux_apr_code.py. apr code has no backend flag and
@@ -106,16 +106,23 @@ crux_stop_servers_lines() { # <cell> <pid files...>
 # chat_template_kwargs. apr gets nothing, because it reads no toggle and the row says so.
 crux_think_extra() { printf '{"chat_template_kwargs": {"enable_thinking": %s}}' "$([ "$THINK" = on ] && echo true || echo false)"; }
 
-serve_routes_cell() {
-  local d="$WORK/$SHA12/serve" cell pa pids=() srv_pids=() eng pid
-  local -A before=()
-  mkdir -p "$d/apr" "$d/llama" "$d/ollama" || return 1
-  [ -s "$WORK/serve-prompts.jsonl" ] || return 0
-  while IFS= read -r pid; do pids+=("$pid"); done < <(python3 -c 'import json,sys
+crux_serve_pids() { # <verb>: the serve prompts that carry that verb
+  python3 -c 'import json,sys
 for l in open(sys.argv[1]):
     if l.strip():
         i, v = json.loads(l)
-        if "serve run" in v: print(i)' "$WORK/serve-prompts.jsonl")
+        if sys.argv[2] in v: print(i)' "$WORK/serve-prompts.jsonl" "$1"
+}
+
+serve_routes_cell() {
+  local d="$WORK/$SHA12/serve" cell pa pids=() spids=() srv_pids=() eng pid
+  local -A before=() before_s=()
+  mkdir -p "$d/apr" "$d/llama" "$d/ollama" "$d/stream" || return 1
+  [ -s "$WORK/serve-prompts.jsonl" ] || return 0
+  # The plugins answer both serve verbs themselves (#3952 drivers: `serve run` and
+  # `serve stream`), so each apr stream cell has a bf16 row on the same verb (#3957 F6).
+  while IFS= read -r pid; do pids+=("$pid"); done < <(crux_serve_pids "serve run")
+  while IFS= read -r pid; do spids+=("$pid"); done < <(crux_serve_pids "serve stream")
   cell="$d/cell-serve.sh"
   pa=$(free_port)
   printf '#!/usr/bin/env bash\n# one CRUX serve cell (#3962): every route apr mounts x every mode x every serve prompt\n' > "$cell"
@@ -145,9 +152,11 @@ for l in open(sys.argv[1]):
   crux_stop_servers_lines "$cell" "${srv_pids[@]}"
   [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ] && cell_add_ollama_unload "$cell" "$d/ollama-serve" "$OL_NAME"
   [ "${#pids[@]}" -gt 0 ] && crux_plugin_lines "$cell" "$d" "serve run" "${pids[@]}"
+  [ "${#spids[@]}" -gt 0 ] && crux_plugin_lines "$cell" "$d/stream" "serve stream" "${spids[@]}"
   printf 'exit 0\n' >> "$cell"
 
   for pid in "${pids[@]}"; do for eng in $(crux_plugin_engines); do before[$eng-$pid]=$(VERB_KEY="serve run" rows_for "$eng" "$pid"); done; done
+  for pid in "${spids[@]}"; do for eng in $(crux_plugin_engines); do before_s[$eng-$pid]=$(VERB_KEY="serve stream" rows_for "$eng" "$pid"); done; done
   run_cell "$cell"
   local rowargs=(--prompt-list "$WORK/serve-prompts.jsonl" --manifest "$MANIFEST" --sha "$SHA" --host "$HOST"
     --backend "$BACKEND" --thinking "$THINK" --cell-why "$CELL_WHY")
@@ -166,6 +175,7 @@ for l in open(sys.argv[1]):
       --cell-why "${OL_REFUSED:-$OLLAMA_WHY}"
   fi
   VERB_KEY="serve run" crux_plugin_rows "$d" before "${pids[@]}"
+  VERB_KEY="serve stream" crux_plugin_rows "$d/stream" before_s "${spids[@]}"
 }
 
 code_cell() {
