@@ -348,3 +348,13 @@ fn a_deleted_current_release_row_rejects_naming_the_cell() {
     assert_eq!(r.code, 1, "{}", show(&r));
     assert!(r.stdout.contains("qwen3-1.7b-q4km@gx10"), "{}", show(&r));
 }
+
+/// Review lane C: the non-numeral-version refusal must reach the PROCESS exit, not only `compute()`'s `Err`.
+#[test]
+fn a_receipt_version_that_is_not_dotted_numerals_exits_3_naming_the_file() {
+    let r = lint("capcells-badversion");
+    assert_eq!(r.code, 3, "{}", show(&r));
+    assert!(r.stderr.contains("0.69.1-rc1"), "{}", show(&r));
+    assert!(r.stderr.contains("lambda.json"), "{}", show(&r));
+    assert!(r.stderr.contains("refused by name"), "{}", show(&r));
+}
