@@ -81,9 +81,6 @@ gh issue list -R paiml/aprender --state open --milestone 0.71.0 --limit 300 --js
 for i in 3963 3953 3960 3951 3987 3977 3973 3976 3975 3978 3979 3205; do gh issue view $i -R paiml/aprender --json state,milestone; done
 ```
 
-## 7. Quorum record
-
-_Filled after the quorum returns._
 
 ## Quorum record: decision quorum, 2026-09-23 (aprender-cb)
 
