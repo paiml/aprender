@@ -354,16 +354,37 @@ fn try_init_apr_cuda(
         },
     };
 
-    // F2: does the GPU agree with the CPU on the first token? A disagreement is a
-    // silently wrong kernel, which is exactly what this routing exists to stop
-    // being invisible. An empty probe context is the same one `run` uses.
-    let probe_config = QuantizedGenerateConfig::default();
-    eprintln!("[GH-480] F2 validation starting...");
-    if !realizar::infer::validate_gpu_first_token(&mut cuda_model, &probe_config, &[]) {
-        eprintln!("[GH-480] F2 validation FAILED — falling back to CPU");
-        return (None, true);
-    }
-    eprintln!("[GH-480] F2 validation PASSED — launching GPU generation");
+    // F2 CANNOT RUN HERE, AND THE LINE NOW SAYS SO (#3924).
+    //
+    // This called `validate_gpu_first_token(.., &[])` and printed "F2 validation
+    // PASSED". TRACED, and verified against the source rather than taken on report:
+    //
+    //   gpu_probe(model, &[])        -> probe_context.is_empty() -> vec![bos] (len 1),
+    //                                   or None when the model declares no BOS
+    //   f2_probe_to_judge(..)        -> if probe.len() < 2 { return None }  1 < 2, ALWAYS
+    //   validate_gpu_first_token(..) -> let Some(..) = .. else { return true }
+    //                                   — no forward pass runs
+    //
+    // BOTH branches reach the skip, for every model regardless of BOS. The gate
+    // could not fail, and the caller printed PASSED anyway.
+    //
+    // A true-looking signal is the exact class this release spent the night
+    // removing — rc=0 with garbage, `fell_back` unread, a `green` field that was
+    // not the verdict. Shipping a new one with a ticket as the mitigation is the
+    // "we documented it" pattern, so the line states what happened instead.
+    //
+    // THE COMMENT THAT WAS HERE WAS WRONG: "the same one `run` uses" is false.
+    // Both `run` sites pass the real prompt (`gguf_gpu_generate.rs:371` and `:964`,
+    // `input_tokens`); only `batch.rs:343` passes `&[]`, and its own comment
+    // explains why — model-init there has no prompt yet. `chat` HAS a prompt; it is
+    // simply not in scope at construction.
+    //
+    // WIRING IT IS #3924 AND DELIBERATELY NOT HERE: the check must move from
+    // construction to first generation, which changes where the fallback decision
+    // is made — the model is already built and cached by then, so a failed gate has
+    // to invalidate `cached_apr_cuda` and reroute that turn and every turn after.
+    // That is a design change on the path being stabilised.
+    eprintln!("{F2_CHAT_NOTE}");
 
     println!("{}", "[APR CUDA: fused Q4K kernels, F2-validated]".bright_green());
     (Some(cuda_model), false)
@@ -517,5 +538,47 @@ mod one_detector_tests {
         let from_architecture = detect_format_from_name("qwen3");
         assert_eq!(from_file_stem, from_architecture);
         assert_eq!(from_file_stem, TemplateFormat::Qwen3NoThink);
+    }
+}
+
+/// What `apr chat` prints where `apr run` prints an F2 verdict (#3924).
+///
+/// A CONST rather than an inline literal so the claim itself is testable: the
+/// guard below asserts what this string may and may not say, and a future edit
+/// restoring "PASSED" for symmetry with `run` turns that test red.
+#[cfg(feature = "cuda")]
+const F2_CHAT_NOTE: &str =
+    "[GH-480] F2 validation SKIPPED — no prompt at construction, nothing was checked (#3924)";
+
+#[cfg(all(test, feature = "cuda"))]
+mod f2_chat_note_tests {
+    use super::F2_CHAT_NOTE;
+
+    /// The line must not CLAIM a verdict it did not reach.
+    ///
+    /// `validate_gpu_first_token(.., &[])` returns true without running a forward
+    /// pass, so "PASSED" would be a true-looking signal for a check that did not
+    /// happen. The mutant is the one that will actually be attempted: restore the
+    /// "PASSED" wording for symmetry with `run`, and this reds.
+    #[test]
+    fn the_chat_f2_line_does_not_claim_a_verdict() {
+        assert!(
+            !F2_CHAT_NOTE.contains("PASSED"),
+            "chat cannot pass F2 at construction — the probe is empty and the gate \
+             returns true without checking: {F2_CHAT_NOTE}"
+        );
+        assert!(!F2_CHAT_NOTE.contains("FAILED"), "nor can it fail: {F2_CHAT_NOTE}");
+    }
+
+    /// And it must say what DID happen, with somewhere to look. "Skipped" alone
+    /// leaves a reader knowing only that something did not occur.
+    #[test]
+    fn the_chat_f2_line_says_what_happened_and_where_to_look() {
+        assert!(F2_CHAT_NOTE.contains("SKIPPED"), "{F2_CHAT_NOTE}");
+        assert!(
+            F2_CHAT_NOTE.contains("nothing was checked"),
+            "the consequence must be explicit, not inferred from SKIPPED: {F2_CHAT_NOTE}"
+        );
+        assert!(F2_CHAT_NOTE.contains("#3924"), "it must name its ticket: {F2_CHAT_NOTE}");
     }
 }
