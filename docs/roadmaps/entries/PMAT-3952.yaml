@@ -1,0 +1,26 @@
+- id: PMAT-3952
+  github_issue: 3952
+  item_type: task
+  title: 'CRUX: vLLM as a pre-release comparator engine; #3971 source-weight cache verification; #3964 ollama loads only inside
+    the GPU lock'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-83
+  created: '2026-09-23T08:40:00Z'
+  updated: '2026-09-23T11:30:00Z'
+  spec: null
+  acceptance_criteria:
+  - '#3952 done_when: --engines ...,vllm produces vLLM gen rows on at least one host, judged by the unchanged rule; each host
+    where it cannot run records a named refusal; a planted mismatch (vLLM right, apr wrong) is RED in the judge case table'
+  - '#3971: both source-weight drivers (hf, vllm) hash every cached file against the name it promises and refuse by name on
+    mismatch; CRUX uses its own HF_HOME'
+  - '#3964 (operator: ''yes you may change ollama''): every CRUX ollama model load runs while the GPU lock is held, proven
+    by a behavioural check that catches a no-lock mutant'
+  - 'cop ruling: an unpinned comparator makes the cell RED (''oracle unpinned''), never a third state'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Fold of #3781 (PMAT-3778 hf+llamafile drivers) + PMAT-3952-crux-vllm + PMAT-3952-crux-vllm-judge onto release/0.69.1-batch-2
+    @ fc942f6be, per the cop (aprender-6a). Stops at the receipt.'
