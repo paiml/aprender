@@ -29,10 +29,10 @@ SKILL_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # (scripts/check_publish_preflight.sh R5) reads BEFORE a cascade: the rows that
 # can only be measured against the PUBLISHED crate -- `publish-dry-run` of a
 # workspace root whose members are not on the registry yet, and the declared
-# multi-host `cargo install aprender` sweep -- are recorded DEFER, named in the
-# receipt with the obligation that discharges them, and are not FAIL. Every other
-# row is measured exactly as in a full run. The default is the full run: a
-# deferral outside the pre-publish phase is a FAIL, never a pass. Measured
+# multi-host `cargo install aprender` sweep -- are recorded OPEN, a named post-publish
+# obligation (#3957 F1b; DEFER is abolished), listed on the receipt as OPEN and never
+# as passed. Every other row is measured exactly as in a full run. The default is the
+# full run: an OPEN row outside the pre-publish phase is an unmet obligation, a FAIL. Measured
 # 2026-09-03: the full run is NO-GO on every commit before its own cascade, by
 # construction, which made a GO precondition on publishing unsatisfiable.
 DOGFOOD_PHASE="${DOGFOOD_PHASE:-full}"
@@ -217,13 +217,23 @@ gate() { # gate <name> <cmd...> — runs cmd, records pass/fail
   NOTES+=("${note:0:120}")
   printf '  [%s] %-26s %s\n' "$([ $rc -eq 0 ] && echo ' OK ' || echo 'FAIL')" "$name" "${note:0:80}"
 }
-mark() { # mark <name> <PASS|FAIL|SKIP|REPORT|WARN|MANUAL|DEFER> <note>
+# #3957 F1b, operator ruling (a) 2026-09-23. DEFER is ABOLISHED ("no defer": a row is
+# measured or it is RED). Exactly two rows cannot be measured BEFORE a publish by
+# construction -- a workspace root cannot dry-run before its members are on the registry,
+# and no host can `cargo install` a version that is not on crates.io -- and they alone may
+# be OPEN: a named post-publish obligation, legal in --phase pre-publish only, listed on the
+# receipt as OPEN and never as passed. In any other phase an OPEN row is an unmet obligation
+# and FAILs, which is what makes the post-publish dogfood discharge it. The list is closed.
+POST_PUBLISH_OBLIGATIONS="publish-dry-run declared:check_multiplatform_dogfood"
+mark() { # mark <name> <PASS|FAIL|SKIP|REPORT|WARN|MANUAL|OPEN> <note>
   local st="$2" note="$3"
-  # DEFER is legal in the pre-publish phase only: a row that needs the published
-  # crate is recorded with its obligation. Anywhere else it is a FAIL wearing a
-  # softer word, and is recorded as the FAIL it is.
-  if [ "$st" = DEFER ] && [ "$DOGFOOD_PHASE" != pre-publish ]; then
-    st=FAIL; note="deferred outside --phase pre-publish (that is a refusal to measure, not a pass): $note"
+  if [ "$st" = DEFER ]; then
+    st=FAIL; note="DEFER is abolished (operator 2026-09-23, \"no defer\"): a row is measured or it is RED -- $note"
+  fi
+  if [ "$st" = OPEN ] && [ "$DOGFOOD_PHASE" != pre-publish ]; then
+    st=FAIL; note="an OPEN post-publish obligation outside --phase pre-publish is an UNMET obligation: $note"
+  elif [ "$st" = OPEN ]; then
+    case " $POST_PUBLISH_OBLIGATIONS " in *" $1 "*) ;; *) st=FAIL; note="only [$POST_PUBLISH_OBLIGATIONS] may be OPEN; '$1' is not a post-publish obligation: $note" ;; esac
   fi
   NAMES+=("$1"); RESULTS+=("$st"); NOTES+=("${note:0:200}")
   [ "$st" = FAIL ] && FAILED=1
@@ -233,14 +243,18 @@ mark() { # mark <name> <PASS|FAIL|SKIP|REPORT|WARN|MANUAL|DEFER> <note>
 # code and log; returns 1 when the row counts against the declared gates. A function so the
 # rule can be lifted and driven by a case table (scripts/check_dogfood_no_defer.sh).
 classify_declared() {
-  local name="$1" path="$2" rc="$3" log="$4" tail defer
+  local name="$1" path="$2" rc="$3" log="$4" tail defer obl
   tail=$(tail -3 "$log" 2>/dev/null | strip_ansi | tr '\n' ' ')
   defer=$(grep -m1 '^DEFERRED: ' "$log" 2>/dev/null | strip_ansi)
+  obl=$(grep -m1 '^OPEN-OBLIGATION: ' "$log" 2>/dev/null | strip_ansi)
   if [ -n "$defer" ]; then
-    # The gate itself said it cannot be measured before the cascade. mark()
-    # turns this into a FAIL outside the pre-publish phase.
-    mark "$name" DEFER "$path: ${defer#DEFERRED: }"
-    [ "$DOGFOOD_PHASE" = pre-publish ] || return 1
+    # #3957 F1b: the DEFERRED: hatch is gone. A gate that still says it is a refusal to measure.
+    mark "$name" FAIL "$path printed a DEFERRED: line -- DEFER is abolished (#3957 F1b): ${defer#DEFERRED: }"
+    return 1
+  elif [ -n "$obl" ] && [ "$rc" -eq 0 ]; then
+    # A named post-publish obligation. mark() admits OPEN only for the closed list, pre-publish.
+    mark "$name" OPEN "$path: ${obl#OPEN-OBLIGATION: }"
+    [ "${RESULTS[${#RESULTS[@]}-1]}" = OPEN ] || return 1
   elif [ "$rc" -eq 0 ]; then
     mark "$name" PASS "$path exit=0"
   else
@@ -590,7 +604,7 @@ else
 DRY=$(env -u CARGO_REGISTRY_TOKEN cargo publish --dry-run --allow-dirty 2>&1); DRC=$?
 if [ "$DOGFOOD_PHASE" = post-publish ]; then
   # #3543: after the cascade the version SHOULD be on crates.io. The dry-run above still runs --
-  # row 10 (publish-dry-run) reads DRC, discharging the pre-publish DEFER -- but the version row is
+  # row 10 (publish-dry-run) reads DRC, discharging the pre-publish OPEN obligation -- but the version row is
   # the index lookup, asserting the opposite of pre-publish.
   mark_version_row post-publish
 # Here-string, never `printf | grep -q`: with the marker early and more than a
@@ -634,12 +648,10 @@ gate clippy           cargo clippy --all-targets $FEATS -- -D warnings
 gate test             cargo test $FEATS
 MAKEFILE_PATH=$(find_up Makefile)
 if [ -n "$MAKEFILE_PATH" ] && grep -qE '^coverage-check:' "$MAKEFILE_PATH" 2>/dev/null; then
-  # #3839, operator ruling 2026-09-22: coverage is DEFERRABLE in the pre-publish phase only.
-  #
-  # It is still RUN, and its measured number is still recorded. What changes is that a
-  # miss is an OWED row rather than a NO-GO. The row is deferred, never passed: the
-  # DEFER note carries the measured percentage and the obligation, because a deferral
-  # that does not say what it measured is indistinguishable from a gate that passed.
+  # #3839 made coverage DEFERRABLE in pre-publish (operator 2026-09-22). SUPERSEDED by #3957
+  # F1b (operator 2026-09-23: "no defer", and "fold in 88% coverage" blocks 0.69.1): a miss is
+  # RED in every phase. The pre-publish branch below keeps the measured percentage in its note,
+  # because a FAIL that does not say what it measured is harder to act on.
   #
   # WHY. 87.82% (824853/939270) against COV_FLOOR 88, red in the nightly for 8
   # consecutive runs back to 2026-09-15 and independent of any one release. The
@@ -649,8 +661,6 @@ if [ -n "$MAKEFILE_PATH" ] && grep -qE '^coverage-check:' "$MAKEFILE_PATH" 2>/de
   # instead of 580 in aprender-compute. Repairing that moves a release gate's
   # denominator in the direction that helps whoever moves it, so it is NOT done here.
   #
-  # OUTSIDE pre-publish this is still a FAIL. `mark` refuses a DEFER in any other
-  # phase for exactly that reason -- a DEFER elsewhere is a FAIL wearing a softer word.
   cov_out=$(make -C "$(dirname "$MAKEFILE_PATH")" coverage-check 2>&1); cov_rc=$?
   # KEEP THE LOG (#3844, aprender-45). `gate()` rows now write $WORKLOG/<name>.log,
   # but coverage is a `mark` row with its own command substitution, so it was still
@@ -672,7 +682,9 @@ if [ -n "$MAKEFILE_PATH" ] && grep -qE '^coverage-check:' "$MAKEFILE_PATH" 2>/de
   if [ "$cov_rc" -eq 0 ]; then
     mark coverage PASS "${cov_pct:+$cov_pct, }floor met"
   elif [ "$DOGFOOD_PHASE" = pre-publish ]; then
-    mark coverage DEFER "measured ${cov_pct:-NO PERCENTAGE (the run died before parsing LCOV)} against floor ${COV_FLOOR:-88}; owed by #3839 (stale COVERAGE_EXCLUDE_REGEX + the real gap). ${cov_why:0:60}"
+    # #3957 F1b: coverage is deferred WORK, not an unmeasurable row -- it is RED (operator
+    # rulings 2026-09-23: "no defer", and "fold in 88% coverage" blocks 0.69.1).
+    mark coverage FAIL "measured ${cov_pct:-NO PERCENTAGE (the run died before parsing LCOV)} against floor ${COV_FLOOR:-88}; owed by #3839 (stale COVERAGE_EXCLUDE_REGEX + the real gap). ${cov_why:0:60}"
   else
     mark coverage FAIL "${cov_why:-coverage-check failed (rc $cov_rc)}"
   fi
@@ -1279,7 +1291,7 @@ fi
 
 # ── 10. publish dry-run (already run above; verdict is its exit code) ───────
 if [ "$DOGFOOD_PHASE" = pre-publish ]; then
-  mark publish-dry-run DEFER "a workspace root cannot dry-run before its members are on the registry; discharged by the cascade's own per-tier publish and the post-publish dogfood"
+  mark publish-dry-run OPEN "a workspace root cannot dry-run before its members are on the registry; discharged by the cascade's own per-tier publish and the post-publish dogfood"
 elif [ $DRC -eq 0 ]; then mark publish-dry-run PASS "packages cleanly"
 else mark publish-dry-run FAIL "$(printf '%s' "$DRY" | grep -iE 'error' | head -1)"; fi
 
@@ -1288,10 +1300,10 @@ else mark publish-dry-run FAIL "$(printf '%s' "$DRY" | grep -iE 'error' | head -
 # so. The asset set is a POST-PUBLISH question by construction: binary-release.yml
 # fires on `release: published`, so the assets do not exist until the tag does.
 #
-# It is a SKIP, not a DEFER, before that. DEFER is spelled by
-# scripts/check_publish_preflight.sh's PREPUBLISH_DEFERRABLE list
-# ("publish-dry-run declared:check_multiplatform_dogfood"); a pre-publish receipt
-# that defers a row that list does not name is REFUSED by the publish gate. Adding
+# It is a SKIP, not an OPEN obligation, before that. OPEN is admitted only for
+# POST_PUBLISH_OBLIGATIONS above, mirrored by scripts/check_publish_preflight.sh's
+# PREPUBLISH_OPEN_OBLIGATIONS ("publish-dry-run declared:check_multiplatform_dogfood");
+# a pre-publish receipt with any other OPEN row, or any DEFER, is REFUSED (#3957 F1b). Adding
 # `release-assets` to that list is the honest shape and is owed by a follow-up
 # (that file is outside PMAT-1098's scope) — until then this row names the phase
 # that owes the measurement instead of borrowing a word that would turn the
@@ -1796,7 +1808,8 @@ print(json.dumps({
     "crate": os.environ["CRATE"], "version": os.environ["VERSION"],
     "timestamp": os.environ["TS"], "commit": os.environ["SHA"], "gates": gates,
     "phase": os.environ["PHASE"],
-    "deferred": [g["gate"] for g in gates if g["result"] == "DEFER"],
+    "deferred": [g["gate"] for g in gates if g["result"] == "DEFER"],   # always empty since #3957 F1b; R5 refuses any
+    "open_obligations": [g["gate"] for g in gates if g["result"] == "OPEN"],
     "verdict": os.environ["VERDICT"],
 }, indent=2))
 PY
@@ -1813,11 +1826,11 @@ echo "────────────────────────�
 echo "receipt: $RECEIPT"
 if [ $FAILED -eq 0 ]; then
   for i in "${!NAMES[@]}"; do
-    [ "${RESULTS[$i]}" = DEFER ] || continue
-    printf '  · DEFER %-18s %s\n' "${NAMES[$i]}" "${NOTES[$i]}"
+    [ "${RESULTS[$i]}" = OPEN ] || continue
+    printf '  · OPEN  %-18s %s\n' "${NAMES[$i]}" "${NOTES[$i]}"
   done
   if [ "$DOGFOOD_PHASE" = pre-publish ]; then
-    echo "VERDICT: ✅ GO (phase pre-publish) — every measurable gate green; the DEFER rows above are owed by the post-publish dogfood on the published crate."
+    echo "VERDICT: ✅ GO (phase pre-publish) — every measurable gate green; the OPEN rows above are post-publish obligations, NOT passed: the post-publish dogfood FAILs if any is unmet (#3957 F1b)."
   else
     echo "VERDICT: ✅ GO — all automated gates green. Complete clean-room (MANDATORY) then release."
   fi
