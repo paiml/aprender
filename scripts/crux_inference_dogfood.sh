@@ -78,6 +78,11 @@ TMO=600
 LOCK_WAIT=3600
 KEEP_OLLAMA=0
 KEEP_WORK=0
+# --greedy (#3957 F9, aprender-36): also write kind=greedy rows — apr and llama.cpp greedy ids on the identical
+# GGUF, thinking ON and OFF (scripts/lib/crux_cells_greedy.sh). Prompts default to the positive control.
+GREEDY=0
+GREEDY_PIDS=""
+GREEDY_MAXTOK=256
 MODELS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -91,6 +96,9 @@ while [ $# -gt 0 ]; do
     --timeout) [ $# -ge 2 ] || decline "--timeout needs a value"; TMO="$2"; shift 2 ;;
     --keep-ollama-models) KEEP_OLLAMA=1; shift ;;
     --keep-work) KEEP_WORK=1; shift ;;
+    --greedy) GREEDY=1; shift ;;
+    --greedy-prompts) [ $# -ge 2 ] || decline "--greedy-prompts needs a value"; GREEDY_PIDS="${2//,/ }"; shift 2 ;;
+    --greedy-max-tokens) [ $# -ge 2 ] || decline "--greedy-max-tokens needs a value"; GREEDY_MAXTOK="$2"; shift 2 ;;
     -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
     -*) decline "unknown argument '$1'" ;;
     *) [ -z "$VERSION" ] || decline "one version, got '$VERSION' and '$1'"; VERSION="$1"; shift ;;
@@ -287,6 +295,17 @@ PY
 pids_for() { printf '%s\n' "$PIDS_ALL" | sed -n "s/^$1 //p" | tr '\n' ' '; }
 PIDS=$(pids_for run)
 MAXTOK=$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1]))["max_tokens"]))' "$PROMPTS") || decline "max_tokens unreadable"
+if [ "$GREEDY" = 1 ]; then
+  case "$GREEDY_MAXTOK" in ''|*[!0-9]*) decline "--greedy-max-tokens must be a positive integer, got '$GREEDY_MAXTOK'" ;; esac
+  if [ -z "$GREEDY_PIDS" ]; then
+    GREEDY_PIDS=$(python3 -c 'import json,sys; print(" ".join(p["id"] for p in json.load(open(sys.argv[1]))["prompts"] if p.get("control")))' "$PROMPTS") \
+      || decline "cannot read the control prompt for --greedy"
+  fi
+  [ -n "$GREEDY_PIDS" ] || decline "--greedy: no prompt given and the prompt set declares no control"
+  for gp in $GREEDY_PIDS; do [ -f "$WORK/messages-$gp.json" ] || decline "--greedy prompt '$gp' is not in $PROMPTS"; done
+  # shellcheck disable=SC1091
+  . scripts/lib/crux_cells_greedy.sh || decline "scripts/lib/crux_cells_greedy.sh could not be sourced"
+fi
 
 # ONE CELL = ONE COMMAND UNDER THE GPU LOCK (the cop's rule rev 5, #3739). A cell is
 # one prompt through every engine. Its engine commands are written into one
@@ -712,6 +731,8 @@ PY
     done
   done
   done
+
+  [ "$GREEDY" = 1 ] && greedy_cells
 
   if [ "$OLLAMA_OK" = 1 ] && [ "$KEEP_OLLAMA" = 0 ]; then
     ollama_rm_own "$OL_NAME"
