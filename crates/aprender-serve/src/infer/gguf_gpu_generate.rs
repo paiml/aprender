@@ -918,9 +918,12 @@ fn log_apr_cuda_info(
         "Architecture: {} ({} layers, vocab_size={})",
         info.arch, info.num_layers, info.vocab_size
     );
+    // #4006: the loaded weights' qtypes, not a backend name in the quant field.
+    let m = cuda_model.model();
     eprintln!(
-        "Config: hidden_size={}, quant=CUDA+KVCache, threads=1 (GPU)",
-        info.hidden_dim
+        "Config: hidden_size={}, quant={}, backend=CUDA+KVCache, threads=1 (GPU)",
+        info.hidden_dim,
+        body_quant_label(&model_body_qtypes(m), m.lm_head_weight.qtype)
     );
     eprintln!("Model loaded in {:.1}ms", load_ms);
     eprintln!(
@@ -1060,8 +1063,10 @@ fn run_apr_quantized_cpu_inference(
             model.config.architecture, model.config.num_layers, model.config.vocab_size
         );
         eprintln!(
-            "Config: hidden_size={}, quant=Q4_K (OwnedQuantizedModel CPU), threads={}",
+            "Config: hidden_size={}, quant={} (OwnedQuantizedModel CPU), threads={}",
             model.config.hidden_dim,
+            // #4006: a BF16 .apr printed Q4_K here; name what loaded.
+            body_quant_label(&model_body_qtypes(&model), model.lm_head_weight.qtype),
             rayon::current_num_threads()
         );
         eprintln!("Model loaded in {:.1}ms", load_ms);
@@ -1255,9 +1260,11 @@ fn try_safetensors_cuda_inference(
             cuda_model.config().vocab_size
         );
         eprintln!(
-            "Config: hidden_size={}, context_length={}, quant=F16/BF16, threads=1 (GPU)",
+            "Config: hidden_size={}, context_length={}, quant={}, threads=1 (GPU)",
             cuda_model.config().hidden_dim,
-            cuda_model.config().context_length
+            cuda_model.config().context_length,
+            // #4006: read from the header, not an either/or guess.
+            safetensors_quant_label(&config.model_path)
         );
         eprintln!("Model loaded in {:.1}ms", load_ms);
         eprintln!(
