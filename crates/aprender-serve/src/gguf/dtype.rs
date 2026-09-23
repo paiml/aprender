@@ -121,12 +121,20 @@ pub(crate) fn gpu_qtype_excluded_on(qtype: u32, cc_major: Option<i32>) -> bool {
 
 /// The highest compute-capability major among the visible CUDA devices, asked
 /// once per process; `None` without the `cuda` feature or without a device.
+///
+/// FAILS CLOSED: when a device is present but its capability query errors, the
+/// answer is `i32::MAX`, so every per-capability exclusion applies — an unknown
+/// capability must not admit a type that does not load on some capabilities.
 #[must_use]
-pub(crate) fn device_cc_major() -> Option<i32> {
+pub fn device_cc_major() -> Option<i32> {
     #[cfg(feature = "cuda")]
     {
         static CC: std::sync::OnceLock<Option<i32>> = std::sync::OnceLock::new();
-        *CC.get_or_init(|| trueno_gpu::driver::max_compute_capability_major().ok().flatten())
+        *CC.get_or_init(|| match trueno_gpu::driver::max_compute_capability_major() {
+            Ok(cc) => cc,
+            Err(_) if !trueno_gpu::driver::cuda_available() => None, // no driver / no device: no GPU path at all
+            Err(_) => Some(i32::MAX),
+        })
     }
     #[cfg(not(feature = "cuda"))]
     {

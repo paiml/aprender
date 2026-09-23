@@ -352,6 +352,11 @@ quant_types:
   - name: IQ3_S
     ggml_type: 21
     gpu_supported: true
+    # #3968/#4096: its kernels do not LOAD at compute capability >= 12 (ModuleLoad 218 on
+    # GB10 sm_121 -- the sm_12x backward-branch PTX patcher corrupts its .global table).
+    # Refused there by the GPU gate and run on CPU: RED on cc >= 12, not deferred. Remove
+    # when #4096 lands; check_gpu_shape_conformance.sh goes RED on the stale exclusion.
+    gpu_excluded_from_cc_major: 12
     # Implemented for 0.69.1 (#3884). Device A/B against `iq_parallel_matvec`:
     # 48 rows, worst relative disagreement 0.000e0 on RTX 4090 sm_89, at
     # in_dim=512 so the row stride spans two super-blocks. Proved able to fail
@@ -363,6 +368,11 @@ quant_types:
   - name: IQ2_S
     ggml_type: 22
     gpu_supported: true
+    # #3968/#4096: its kernels do not LOAD at compute capability >= 12 (ModuleLoad 218 on
+    # GB10 sm_121 -- the sm_12x backward-branch PTX patcher corrupts its .global table).
+    # Refused there by the GPU gate and run on CPU: RED on cc >= 12, not deferred. Remove
+    # when #4096 lands; check_gpu_shape_conformance.sh goes RED on the stale exclusion.
+    gpu_excluded_from_cc_major: 12
     # Implemented for 0.69.1 (#3953, aprender-f5). CPU decoder BIT-EXACT vs
     # llama.cpp gguf-py on all 5 real IQ2_S tensors of Qwen3.5-0.8B-UD-IQ2_XXS.gguf,
     # 18,350,080 elements -- confirmed by two independent methods (gguf-py's

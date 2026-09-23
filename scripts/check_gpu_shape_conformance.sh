@@ -184,6 +184,11 @@ elif what.startswith("excl-"):          # #4096: ggml 23 excluded at cc>=12
         r["cc_major"] = 12; r["rows"].pop(1); del r["negative_controls"]["23"]
     elif what == "excl-no-cc":
         del r["cc_major"]
+    elif what == "excl-gpu-string-cc12":   # no cc_major: the capability comes from the nvidia-smi `gpu` line
+        del r["cc_major"]; r["gpu"] = "NVIDIA GB10, 12.1"
+        row23["pass"] = False; row23["excluded"] = True; r["negative_controls"]["23"]["red"] = False
+    elif what == "excl-gpu-string-malformed":
+        del r["cc_major"]; r["gpu"] = "NVIDIA GB10"
     elif what == "excl-half-parsed":
         rs.write_text(rs.read_text().replace("i32 = 12", "i32 = twelve"))
 if rp is not None and rp.exists(): rp.write_text(json.dumps(r))
@@ -209,6 +214,8 @@ ED
   row RED-stale-exclusion                excl-stale         1 "STALE exclusion — ggml 23"
   row RED-excluded-type-not-exercised    excl-unexercised   1 "ggml 23 is EXCLUDED here (cc>=12) but the receipt does not exercise it"
   row RED-exclusion-host-cc-unknown      excl-no-cc         1 "names no compute capability"
+  row green-cc-from-gpu-line-applies-excl excl-gpu-string-cc12 0
+  row RED-gpu-line-without-cc            excl-gpu-string-malformed 1 "names no compute capability"
   row REFUSED-exclusion-half-parsed      excl-half-parsed   2 "do not parse"
   [ "$fails" -eq 0 ] && { echo "$PROG --self-test: PASS"; exit 0; }
   echo "$PROG --self-test: FAIL"; exit 1
