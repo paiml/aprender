@@ -84,6 +84,11 @@ for verb, path, fn, pred, must, after in ENTRY:
     a = body.find(after) if after else len(body)
     if verb == "serve chat" and "qwen3_moe_generate::run_qwen3_moe_generate(" in body:
         print(f"  FAIL  {verb:18s} still calls the CPU-ONLY generator, not the dispatch"); bad = 1; continue
+    # #3987b: the live CPU streamer is legitimate only on a CPU server; a CUDA server's
+    # stream=true must reach the dispatch (measured: gx10 streamed on the CPU, U+FFFD).
+    st = body.find("run_qwen3_moe_generate_streaming(")
+    if verb == "serve chat" and st >= 0 and not (0 <= body.find("request.stream && state.moe_no_gpu()") < st):
+        print(f"  FAIL  {verb:18s} stream=true reaches the CPU-ONLY streamer on a CUDA server"); bad = 1; continue
     if p < 0 or d < 0:
         print(f"  FAIL  {verb:18s} predicate {'present' if p >= 0 else 'MISSING'}, `{must}` {'present' if d >= 0 else 'MISSING'}"); bad = 1; continue
     if a >= 0 and not (p < a and d < a):
@@ -113,6 +118,48 @@ out = subprocess.run(["git", "-C", root, "grep", "-lE", r"OwnedQuantizedModelCud
                       "--", "crates/apr-cli/src/**/*.rs", "crates/aprender-serve/src/api/**/*.rs"],
                      capture_output=True, text=True).stdout.split()
 sites = {f for f in out if not re.search(r'(_tests?\.rs|/tests/)', f)}
+# #3992 (aprender-30): OwnedQuantizedModelCuda::with_max_seq_len / new now REFUSE MoE by name
+# before CUDA init, so the 17 former KNOWN_UNROUTED files are audited by the constructor
+# itself. Flipped only once the gate was an ancestor of the release (460dd0613), never on a
+# promise. Layer 3 below is what makes that claim true rather than asserted.
+AUDITED |= KNOWN_UNROUTED
+KNOWN_UNROUTED = set()
+# Layer 3: the gate that makes those AUDITED claims true.
+def body_after(path, marker):
+    src = open(os.path.join(root, path), encoding="utf-8").read()
+    k = src.find(marker)
+    if k < 0: return None
+    i = src.index("{", k); d = 0; j = i
+    while j < len(src):
+        if src[j] == "{": d += 1
+        elif src[j] == "}":
+            d -= 1
+            if d == 0: return src[i:j+1]
+        j += 1
+    return None
+GATE = "crates/aprender-serve/src/gguf/cuda/mod.rs"
+wm = body_after(GATE, "pub fn with_max_seq_len(")
+nw = body_after(GATE, "pub fn new(model: OwnedQuantizedModel")
+ok_gate = (wm is not None and nw is not None
+           and "Self::check_not_moe(model)" in wm
+           and "Self::build(" in wm
+           and wm.find("Self::check_not_moe(model)") < wm.find("Self::build(")
+           and "CudaExecutor::new" not in wm
+           and "Self::with_max_seq_len(" in nw)
+if ok_gate:
+    print(f"  ok    {'moe gate':18s} with_max_seq_len refuses MoE before build(); new delegates to it")
+else:
+    print(f"  FAIL  {'moe gate':18s} with_max_seq_len must call check_not_moe before build() (no CUDA init in it), and new must delegate"); bad = 1
+# The one escape hatch, enumerated from source like layer 2: an escape hatch nobody
+# enumerates is how the next bypass happens.
+ALLOW_MOE_FORWARD = {"crates/apr-cli/src/commands/bench_moe.rs"}
+esc = subprocess.run(["git", "-C", root, "grep", "-lF", "new_for_moe_forward(", "--",
+                      "crates/apr-cli/src", "crates/aprender-serve/src"], capture_output=True, text=True).stdout.split()
+esc = {f for f in esc if not f.endswith("gguf/cuda/mod.rs") and not re.search(r'(_tests?\.rs|/tests/)', f)}
+if esc - ALLOW_MOE_FORWARD:
+    print(f"  FAIL  {'moe escape hatch':18s} new_for_moe_forward used outside the allow-list: {sorted(esc - ALLOW_MOE_FORWARD)}"); bad = 1
+else:
+    print(f"  ok    {'moe escape hatch':18s} new_for_moe_forward only in {sorted(esc) or '(none)'}")
 unaudited = sorted(sites - AUDITED - KNOWN_UNROUTED)
 if unaudited:
     print(f"  FAIL  {'new dense sites':18s} dense GGUF CUDA construction in an UNAUDITED file: {unaudited}")
@@ -149,6 +196,8 @@ if [ "$SELF_TEST" = 1 ]; then
       "s.replace('    if is_qwen3_moe_gguf(mapped) {\n        return Ok(GgufPreload', '    if false {\n        return Ok(GgufPreload', 1)"
   mut "serve chat back on the CPU-only generator" crates/aprender-serve/src/api/cuda_chat_backend.rs \
       "s.replace('crate::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(', 'crate::infer::qwen3_moe_generate::run_qwen3_moe_generate(', 1)"
+  mut "serve chat streams on the CPU on a CUDA server" crates/aprender-serve/src/api/cuda_chat_backend.rs \
+      "s.replace('if request.stream && state.moe_no_gpu() {', 'if request.stream {', 1)"
   mut "serve completions loses its MoE route" crates/aprender-serve/src/api/realize_handlers_embed_completion.rs \
       "s.replace('run_qwen3_moe_generate_dispatch(', 'removed_dispatch(', 1)"
   mkdir -p "$T/crates/apr-cli/src/commands"
@@ -156,6 +205,14 @@ if [ "$SELF_TEST" = 1 ]; then
   git -C "$T" add -A >/dev/null
   if check "$T" > /dev/null; then echo "SELF-TEST FAILED: a NEW dense construction site stayed green" >&2; exit 1; fi
   echo "self-test: mutant 'a new verb builds the dense model' RED"
+  rm -f "$T/crates/apr-cli/src/commands/new_verb.rs"; git -C "$T" add -A >/dev/null
+  mut "the MoE gate is removed from the dense constructor" crates/aprender-serve/src/gguf/cuda/mod.rs \
+      "s.replace('        let model = Self::check_not_moe(model)?;\n', '', 1)"
+  mkdir -p "$T/crates/apr-cli/src/commands"
+  printf 'fn sneaky() { let _ = OwnedQuantizedModelCuda::new_for_moe_forward(m, 0); }\n' > "$T/crates/apr-cli/src/commands/sneaky.rs"
+  git -C "$T" add -A >/dev/null
+  if check "$T" > /dev/null; then echo "SELF-TEST FAILED: the escape hatch used outside the allow-list stayed green" >&2; exit 1; fi
+  echo "self-test: mutant 'escape hatch used outside the allow-list' RED"
   echo "self-test: PASS"
   exit 0
 fi

@@ -28,4 +28,11 @@ export PATH="$UV_PROJECT_ENVIRONMENT/bin:$PATH"
 # snapshot symlink, and any other consumer's write can reach a shared cache. A declared path that only
 # CRUX populates, and engine.py hashes every file against its blob name before loading it.
 export HF_HOME="${CRUX_HF_HOME:-"$HOME/.local/share/crux/hf-home"}"
-exec uv run --quiet --frozen --project "$HERE/crux_vllm" python "$HERE/crux_vllm/engine.py" "$@"
+# NOT `exec uv run`: uv did not forward SIGTERM to python, and a stopped driver left VLLM::EngineCore on the card
+# holding 58928 MiB (aprender-dd, gx10, 2026-09-23). Sync the locked environment, then exec its python, so a
+# signal reaches engine.py, whose handler (scripts/lib/crux_proc.py) takes every engine child with it.
+uv sync --quiet --frozen --project "$HERE/crux_vllm" || {
+  echo "crux_engine_vllm: uv sync --frozen failed for $HERE/crux_vllm — the locked environment cannot be built here" >&2
+  exit 3
+}
+exec "$UV_PROJECT_ENVIRONMENT/bin/python" "$HERE/crux_vllm/engine.py" "$@"

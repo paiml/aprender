@@ -78,6 +78,8 @@ sys.path.insert(0, sys.argv[1]); import crux_prompt_certify as c
 json.dump({"schema": c.SCHEMA, "prompts": sys.argv[2], "prompts_sha256": hashlib.sha256(open(sys.argv[2], "rb").read()).hexdigest(),
            "admitted": {"fixture/Q4_K_M": ["golden-2plus2", "golden-greeting", "golden-paris", "chat-arith-2turn"]},
            "admitted_by_sha": {"a" * 64: __import__("os").environ.get("ADMIT", "golden-2plus2,golden-greeting,golden-paris,chat-arith-2turn").split(",")},
+           **({"admitted_by_sha_thinking": {"a" * 64: json.loads(__import__("os").environ["ADMIT_THINKING"])}}
+              if __import__("os").environ.get("ADMIT_THINKING") else {}),
            "rejected": {}, "uncontrolled": [], "cells": []}, open(sys.argv[3], "w"))
 PY
 }
@@ -90,7 +92,7 @@ SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 apr_out() { # apr_out <dir> <pid> <text> <ran> <fell_back> [ids]
   printf '{"text": %s, "tokens_generated": 3, "tok_per_sec": 9.5, "backend": {"requested": "gpu", "ran": "%s", "fell_back": %s}}\n' \
     "$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$3")" "$4" "$5" > "$1/apr-$2.out"
-  printf '[DEBUG] formatted_prompt="<|im_start|>user\\nq<|im_end|>\\n"\n[DEBUG] add_bos=false, encoded %s tokens: [%s]\n' \
+  printf '[DEBUG] formatted_prompt="%s"\n[DEBUG] add_bos=false, encoded %s tokens: [%s]\n' "${APR_RENDER:-<|im_start|>user\\nq<|im_end|>\\n}" \
     "$(printf '%s' "${6:-1,2,3}" | tr ',' '\n' | grep -c .)" "${6:-1,2,3}" > "$1/apr-$2.err"
 }
 llama_out() { # llama_out <dir> <pid> <prompt> <answer> — the pinned chat CLI's stdout
@@ -116,7 +118,8 @@ m, eng, pid, rc, o, e = sys.argv[1:7]
 ref = sys.argv[7] if len(sys.argv) > 7 else ""
 open(m, "a").write(json.dumps({"kind": "gen", "engine": eng, "prompt_id": pid, "rc": int(rc) if rc else None,
     "stdout": o or None, "stderr": e or None, "refused": ref or None, "model_sha256": "%s",
-    "host": "fixture", "verb": os.environ.get("ROW_VERB", "run"), "thinking": "off", "backend": "gpu"}) + "\n")
+    "host": "fixture", "verb": os.environ.get("ROW_VERB", "run"), "thinking": os.environ.get("ROW_THINKING", "off"),
+    "backend": "gpu"}) + "\n")
 PY
 }
 tokrow() { # tokrow <manifest> <dir> <pid> <ids csv>
@@ -924,6 +927,56 @@ done
 run_judge "$d"; GOT_RC=$?
 got=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(sorted((c["key"].get("route"), c["verdict"]) for c in r["cells"] if c["key"]["verb"]=="serve run"))' "$d/receipt.json" 2>/dev/null)
 [ "$GOT_RC" = 1 ] && [ "$got" = "[('POST /api/chat', 'RED'), ('POST /v1/chat/completions', 'GREEN')]" ] && ok "J/R1: a wrong /api/chat is its own RED cell beside a right /v1 route" || broke "J/R1 route key: rc $GOT_RC '$got'"
+# #3962 B4: each apr route is judged against the comparator route that asks its question in the
+# same representation (crux_serve_routes.ORACLE_ROUTE_BY_KIND), or the route-less plugin row.
+b4_row() { # b4_row <case dir> <engine> <route|""> <text>: one serve-run nonstream row on a route
+  local f="$1/b4-$2-${3//[^a-z0-9]/}.json"
+  python3 -c 'import json,sys; json.dump({"text": sys.argv[2], "reported": {"device": "fixture"}}, open(sys.argv[1], "w"))' "$f" "$4"
+  python3 -c 'import json,sys
+r = {"kind":"gen","engine":sys.argv[2],"prompt_id":"golden-2plus2","rc":0,"stdout":sys.argv[3],"stderr":None,"refused":None,
+     "model_sha256":"%s","host":"fixture","verb":"serve run","thinking":"off","backend":"gpu","mode":"nonstream"}
+if sys.argv[4]: r["route"] = sys.argv[4]
+open(sys.argv[1],"a").write(json.dumps(r)+"\n")' "$1/manifest.jsonl" "$2" "$f" "$3"
+}
+b4_cells() { # b4_cells <case dir> <apr routes, comma list>: [(route, verdict)] for those apr routes
+  python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); want=sys.argv[2].split(",")
+print(sorted((c["key"].get("route"), c["verdict"]) for c in r["cells"] if c["key"].get("route") in want))' "$1/receipt.json" "$2" 2>/dev/null
+}
+d=$(newcase j_route_oracle_borrow); control_green "$d"
+for rt in "POST /generate" "POST /api/chat"; do b4_row "$d" apr "$rt" "$T4"; done
+b4_row "$d" llama.cpp "POST /v1/completions" "$T4"; b4_row "$d" llama.cpp "POST /v1/chat/completions" "$T4"
+b4_row "$d" hf "" "$T4"
+run_judge "$d"; GOT_RC=$?
+got=$(b4_cells "$d" "POST /generate,POST /api/chat")
+[ "$got" = "[('POST /api/chat', 'GREEN'), ('POST /generate', 'GREEN')]" ] && ok "J/B4: a raw route and an ollama route are each judged by their oracle route" || broke "J/B4 oracle pairing: '$got'"
+got=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); c=[c for c in r["cells"] if c["key"].get("route")=="POST /generate"][0]
+print(c.get("oracle_route"), c["engines"]["llama.cpp"].get("borrowed_from_route"), c["engines"]["hf"].get("borrowed_from_route"))' "$d/receipt.json" 2>/dev/null)
+[ "$got" = "POST /v1/completions POST /v1/completions (route-less plugin row)" ] && ok "  ...and every borrowed engine entry names the route its answer came from" || broke "J/B4 provenance: '$got'"
+# aprender-83 (lambda, 2026-09-23): the plugin `serve stream` row has no mode, so it sat in a cell of its own
+# ("apr missing") while apr's stream route cells had no ground-truth control.
+d=$(newcase j_route_plugin_stream); control_green "$d"
+for e in apr llama.cpp; do
+  f="$d/b4s-$e.json"; python3 -c 'import json,sys; json.dump({"text": sys.argv[2], "reported": {"device": "fixture"}}, open(sys.argv[1], "w"))' "$f" "$T4"
+  python3 -c 'import json,sys; open(sys.argv[1],"a").write(json.dumps({"kind":"gen","engine":sys.argv[2],"prompt_id":"golden-2plus2","rc":0,"stdout":sys.argv[3],"stderr":None,"refused":None,"model_sha256":"%s","host":"fixture","verb":"serve stream","thinking":"off","backend":"gpu","mode":"stream","route":sys.argv[4]})+"\n")' "$d/manifest.jsonl" "$e" "$f" "$([ $e = apr ] && echo "POST /stream/generate" || echo "POST /v1/completions")"
+done
+f="$d/b4s-hf.json"; python3 -c 'import json,sys; json.dump({"text": sys.argv[2], "reported": {"device": "fixture"}}, open(sys.argv[1], "w"))' "$f" "$T4"
+python3 -c 'import json,sys; open(sys.argv[1],"a").write(json.dumps({"kind":"gen","engine":"hf","prompt_id":"golden-2plus2","rc":0,"stdout":sys.argv[2],"stderr":None,"refused":None,"model_sha256":"%s","host":"fixture","verb":"serve stream","thinking":"off","backend":"gpu"})+"\n")' "$d/manifest.jsonl" "$f"
+run_judge "$d"; GOT_RC=$?
+got=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(sorted((c["key"].get("route"), c["key"].get("mode"), c["verdict"]) for c in r["cells"] if c["key"]["verb"]=="serve stream"))' "$d/receipt.json" 2>/dev/null)
+[ "$got" = "[('POST /stream/generate', 'stream', 'GREEN')]" ] && ok "J/B4 plugin stream: a mode-less plugin stream row controls apr's stream route, and leaves no apr-less cell" || broke "J/B4 plugin stream: '$got' $(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print([(c["reasons"], c["engines"]["llama.cpp"]) for c in r["cells"] if c["key"]["verb"]=="serve stream"])' "$d/receipt.json" 2>/dev/null)"
+d=$(newcase j_route_native_wins); control_green "$d"
+b4_row "$d" apr "POST /api/chat" "$T4"; b4_row "$d" llama.cpp "POST /api/chat" "$T5"
+b4_row "$d" llama.cpp "POST /v1/chat/completions" "$T4"; b4_row "$d" hf "" "$T4"
+run_judge "$d"; GOT_RC=$?
+got=$(b4_cells "$d" "POST /api/chat")
+[ "$got" = "[('POST /api/chat', 'RED')]" ] && ok "J/B4: a native WRONG comparator row is never replaced by a borrowed right one" || broke "J/B4 native wins: '$got'"
+d=$(newcase j_route_unmapped); control_green "$d"
+b4_row "$d" apr "POST /v2/unmapped" "$T4"
+b4_row "$d" llama.cpp "POST /v1/chat/completions" "$T4"; b4_row "$d" llama.cpp "POST /v1/completions" "$T4"; b4_row "$d" hf "" "$T4"
+run_judge "$d"; GOT_RC=$?
+got=$(b4_cells "$d" "POST /v2/unmapped")
+reasons=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(" | ".join(x for c in r["cells"] if c["key"].get("route")=="POST /v2/unmapped" for x in c["reasons"]))' "$d/receipt.json" 2>/dev/null)
+case $got/$reasons in "[('POST /v2/unmapped', 'RED')]/"*"no oracle route mapped"*) ok "J/B4: a route with no oracle route mapped is RED, named" ;; *) broke "J/B4 unmapped route: '$got' '$reasons'" ;; esac
 # aprender-19 R2: a broken wire is named, never read as a missing text field.
 d=$(newcase j_protocol_fault); control_green "$d"
 python3 -c 'import json,sys; json.dump({"text": None, "protocol_fault": "stream_truncated", "reported": {"device": "fixture"}}, open(sys.argv[1], "w"))' "$d/apr-$P-stream.json"
@@ -943,12 +996,70 @@ CERT_SAVED=$CERT; CERT="$d/cert.json"; run_judge "$d"; GOT_RC=$?; CERT=$CERT_SAV
 expect "J2: a right answer to a prompt NOT admitted for this model is RED" "$d" 1 golden-paris RED
 reason_has "  ...named as not certified for this model" "$d" golden-paris "not admitted for this model"
 
+# dd 292645efb: admission PER THINKING MODE. A model whose thinking-ON cells loop certifies no prompt
+# under the strict key, and its right thinking-OFF cells must not go RED "not certified" for it.
+d=$(newcase j_admitted_off_only); control_green "$d"
+ADMIT="" ADMIT_THINKING='{"off": ["golden-2plus2"], "on": []}' cert_for "$PROMPTS" "$d/cert.json"
+CERT_SAVED=$CERT; CERT="$d/cert.json"; run_judge "$d"; GOT_RC=$?; CERT=$CERT_SAVED
+expect "J2/thinking: strict admits nothing, the OFF mode admits -- the right OFF cell is GREEN" "$d" 0 $P GREEN
+d=$(newcase j_not_admitted_in_this_mode); control_green "$d"
+ADMIT_THINKING='{"off": [], "on": ["golden-2plus2"]}' cert_for "$PROMPTS" "$d/cert.json"
+CERT_SAVED=$CERT; CERT="$d/cert.json"; run_judge "$d"; GOT_RC=$?; CERT=$CERT_SAVED
+expect "J2/thinking: admitted only for thinking ON -- the OFF cell is RED" "$d" 1 $P RED
+reason_has "  ...named as not admitted in this thinking mode" "$d" $P "not admitted for this model"
+
 d=$(newcase f6_all_green); three "$d" "$T4" "$T4" "$T4"
 run_judge "$d"; GOT_RC=$?
 expect "F6 positive control of this section: apr, ggml and the bf16 control all right is GREEN and PASSES" "$d" 0 $P GREEN
 neg=$(python3 -c 'import json,sys; n=json.load(open(sys.argv[1]))["summary"]["negative_controls"]["run"]; print(n["planted"], n["verdict"])' "$d/receipt.json" 2>/dev/null)
 [ "$neg" = "<answer>5</answer> RED" ] && ok "  ...and its negative control planted <answer>5</answer> and saw RED" || broke "negative control record: '$neg'"
 unset META_ENGINES
+
+# ── #3962 B2: thinking ON with the OFFICIAL template prefills `<think>\n` in the prompt (#3990), so apr's
+# reply starts INSIDE the block, and llama-cli prints `[Start thinking] ... [End thinking]`. The judge
+# re-attaches the tags; crux_oracles.strip_think decides. Measured: every ON cell of the smoke (apr
+# c08437cdd) was RED "answer_not_int" because the REASONING was judged as the answer.
+OPEN_RENDER='<|im_start|>user\nq<|im_end|>\n<|im_start|>assistant\n<think>\n'
+b2() { # b2 <case> <apr reply> <llama answer> [apr render]: one thinking-ON run cell, apr + llama.cpp + hf
+  local d; d=$(newcase "$1")
+  APR_RENDER="${4:-$OPEN_RENDER}" apr_out "$d" $P "$2" gpu false; llama_out "$d" $P "$Q" "$3"
+  ROW_THINKING=on row "$d/manifest.jsonl" apr $P 0 "$d/apr-$P.out" "$d/apr-$P.err"
+  ROW_THINKING=on row "$d/manifest.jsonl" llama.cpp $P 0 "$d/llama-$P.out" "$d/llama-$P.err"
+  engine_out "$d" hf $P "$T4"; ROW_THINKING=on row "$d/manifest.jsonl" hf $P 0 "$d/hf-$P.json" ""
+  printf '%s' "$d"
+}
+LL_CLOSED="[Start thinking]
+Two and two make four.
+[End thinking]
+
+$T4"
+d=$(b2 b2_prefilled_closed "Two and two make four.
+</think>
+
+$T4" "$LL_CLOSED"); run_judge "$d"; GOT_RC=$?
+expect "B2: a prefilled block that CLOSES, then the right answer, is GREEN in apr and llama-cli (was RED answer_not_int)" "$d" 0 $P GREEN
+d=$(b2 b2_prefilled_unclosed "Thinking: the answer is <answer>4</answer>, let me check again. The answer" "$LL_CLOSED"); run_judge "$d"; GOT_RC=$?
+expect "B2: a prefilled block that NEVER closes is RED, even with a right draft inside the reasoning" "$d" 1 $P RED
+reason_has "  ...named as an unclosed think block, never judged on the reasoning" "$d" $P "unclosed think"
+d=$(b2 b2_llama_unclosed "Two and two make four.
+</think>
+
+$T4" "[Start thinking]
+The answer is $T4 but let me") ; run_judge "$d"; GOT_RC=$?
+expect "B2: llama-cli [Start thinking] with no [End thinking] does not answer (unclosed), so it corroborates nothing" "$d" 1 $P RED
+d=$(b2 b2_prompt_unknown "Two and two make <answer>4</answer>" "$LL_CLOSED" "$(printf 'x%.0s' $(seq 1 200))"); run_judge "$d"; GOT_RC=$?
+expect "B2: nothing shows whether the prompt opened a block and the reply has no tag: RED, never judged on reasoning" "$d" 1 $P RED
+reason_has "  ...named as undecidable" "$d" $P "nothing shows whether the prompt opened a think block"
+# aprender-6c [8b6b78]: realizar logs the first 200 BYTES, and {:?} leaves CJK unescaped -- 70 CJK chars
+# (210 bytes) print SHORT. Counting the printed chars called that "whole, does not open" and judged the
+# cell on its reasoning (FALSE GREEN); the raw byte count makes it unknown.
+d=$(b2 b2_cjk_render_cut "Two and two make <answer>4</answer>" "$LL_CLOSED" "$(printf '问%.0s' $(seq 1 70))"); run_judge "$d"; GOT_RC=$?
+expect "B2: a CJK rendering cut at 200 bytes (70 chars) is NOT read as whole -- unknown, so RED by name" "$d" 1 $P RED
+reason_has "  ...named as undecidable, never judged on the reasoning" "$d" $P "nothing shows whether the prompt opened a think block"
+# #4018: flooring that cut to a char boundary logs 197-199 bytes for a CUT prompt (x + 66 x 3-byte chars
+# = 199 bytes). It must read as unknown too, not as whole.
+d=$(b2 b2_floored_cut "Two and two make <answer>4</answer>" "$LL_CLOSED" "x$(printf '水%.0s' $(seq 1 66))"); run_judge "$d"; GOT_RC=$?
+expect "B2: a rendering floored to a char boundary (199 bytes) is NOT read as whole -- unknown, so RED by name" "$d" 1 $P RED
 
 # ── #3957 F6 MUTANTS. Each rule deleted in a copy of the judge; the WHOLE table must then break.
 if [ -z "${CRUX_NO_MUTANTS:-}" ]; then
@@ -967,11 +1078,23 @@ no-control-ok|is no control: RED|s/^    if not ctl:$/    if False:/
 split-ignored|is a SPLIT|s/^        elif len(set(vals.values())) > 1 or None in vals.values():$/        elif False:/
 apr-differs-ignored|ANSWERED but WRONG does not corroborate|s/^        elif a.get("answered") and ext.get("apr") != next(iter(vals.values())):$/        elif False:/
 token-loop-off|named DEGENERATE|s/^    return top >= 0.9 \* len(chars) or token_loop(text) is not None$/    return top >= 0.9 * len(chars)/
+b2-no-opener|a prefilled block that NEVER closes is RED|s/^            p\["answer"\] = "<think>\\n" + p\["answer"\]$/            pass/
+b2-no-llama-map|llama-cli \[Start thinking\] with no \[End thinking\]|s/^        ans = ans.replace(marker, tag)$/        pass/
+b2-chars-not-bytes|a CJK rendering cut at 200 bytes|s/^    return False if len(raw.encode("utf-8")) < FORMATTED_PROMPT_WHOLE_BELOW else None$/    return False if len(rendered) < 180 else None/
+b2-floor-margin|floored to a char boundary|s/^FORMATTED_PROMPT_WHOLE_BELOW = FORMATTED_PROMPT_LOG_BYTES - 3$/FORMATTED_PROMPT_WHOLE_BELOW = FORMATTED_PROMPT_LOG_BYTES/
+b2-unknown-judged|nothing shows whether the prompt opened a block|s/^        elif opened is None and not re.search(r"<\/?think>", p\["answer"\], re.I):$/        elif False:/
 negative-control-off|the lane is blind|s/^    blind = sorted(v for v, r in negative.items() if r\["verdict"\] != "RED")$/    blind = []/
 per-verb-control-off|does not control the serve lane|s/^    uncontrolled = \["%s/    uncontrolled = [] and ["%s/
 reasoning-not-rebuilt|read as UNCLOSED|s/^    if isinstance(doc, dict) and isinstance(doc.get("reasoning"), str) and doc.get("reasoning"):$/    if False:/
 route-not-keyed|J\/R1 route key|s/, mode, r.get("route") or "")$/, mode, "")/
-admission-off|NOT admitted for this model is RED|s/^        if admitted is not None and k\[5\] not in admitted.get(k\[0\], ()):$/        if False:/
+b4-borrow-off|J\/B4 oracle pairing|s/^                    by_key\[k\]\[eng\] = dict(by_key\[src\]\[eng\], borrowed_from_route=src\[7\] or "(route-less plugin row)")$/                    pass/
+b4-native-overwritten|J\/B4 native wins|s/^            if eng in by_key\[k\]:$/            if False:/
+b4-modeless-off|J\/B4 plugin stream|s/^        sources = \[k\[:7\] + (orc,), k\[:7\] + ("",), k\[:6\] + ("", "")\]$/        sources = [k[:7] + (orc,), k[:7] + ("",)]/
+b4-lent-kept|J\/B4 plugin stream|s/^            or not all((k, e) in lent for e in by_key\[k\])\]$/            or True]/
+b4-stream-not-serve|J\/B4 plugin stream|s/^    if row.get("verb") in ("serve run", "serve stream"):$/    if row.get("verb") == "serve run":/
+b4-unmapped-borrows|J\/B4 unmapped route|s/^        orc = crux_serve_routes.oracle_route(k\[7\])$/        orc = crux_serve_routes.oracle_route(k[7]) or "POST \/v1\/chat\/completions"/
+admission-mode-off|admitted only for thinking ON|s/^        if admitted_mode is not None:$/        if False:/
+admission-off|NOT admitted for this model is RED|s/^        elif admitted is not None and k\[5\] not in admitted.get(k\[0\], ()):$/        elif False:/
 certification-off|no certification receipt declines|s/^        certified = certification_ok(args.prompts, getattr(args, "certification", None))$/        certified = True/
 MUT
 fi

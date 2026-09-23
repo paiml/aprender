@@ -150,7 +150,34 @@ def run(engine, serve_interface: str) -> int:
                 and not docs["pn"]["reported"]["interface"].endswith("(stream)"))
         return True if good else (dict(LOADS), CALLS, {k: v["reported"]["interface"] for k, v in docs.items()})
 
-    for name, fn in [("serve run and serve stream share ONE server; only the stream item streams", serve_stream),
+    def prefilled(text, want_text, want_reasoning):
+        def case():
+            w = batch_env()
+
+            def loader(_a):
+                LOADS["inproc"] += 1
+                return (lambda convo, thinking, max_tokens: (text, 7, 2, True)), "inproc-fake", "cuda:0 fake"
+            engine.load_inproc = loader
+            engine.run_batch(model_args(), [item("t", thinking="on", w=w)])
+            doc = json.load(open(rows(w)[0]["stdout"]))
+            good = (doc["text"] == want_text and doc.get("reasoning", "") == want_reasoning
+                    and doc["reported"]["prompt_opens_think"] is True and doc["raw_text"].startswith("<think>"))
+            return True if good else doc
+        return case
+
+    def not_prefilled():
+        w = batch_env()
+        engine.load_inproc = fake_inproc()  # a 3-tuple respond: no prefill signal
+        engine.run_batch(model_args(), [item("n", w=w)])
+        doc = json.load(open(rows(w)[0]["stdout"]))
+        return True if (doc["reported"]["prompt_opens_think"] is False and doc["raw_text"] == doc["text"]) else doc
+
+    for name, fn in [("a prompt that OPENED the think block (#3990): the closed block splits into answer + reasoning",
+                      prefilled("add them</think>4", "4", "add them")),
+                     ("...and a block that never closes is NO answer, not the reasoning handed back as one",
+                      prefilled("still adding", "", "still adding")),
+                     ("without a prefill signal nothing is prepended", not_prefilled),
+                     ("serve run and serve stream share ONE server; only the stream item streams", serve_stream),
                      ("5 items, ONE engine load, rows in order, per-item max_tokens", one_load),
                      ("a failed load refuses EVERY item with the load's reason", load_fails),
                      ("one item failing does not take the others down", isolation),
@@ -171,7 +198,7 @@ def run(engine, serve_interface: str) -> int:
     return failed
 
 
-CASE_COUNT = 9
+CASE_COUNT = 12
 
 
 def run_sse() -> int:
@@ -218,3 +245,121 @@ def run_sse() -> int:
 
 
 SSE_CASE_COUNT = 8
+
+
+def run_proc() -> int:
+    """crux_proc: SIGTERM to a driver takes EVERY engine child with it (aprender-dd measured VLLM::EngineCore left on
+    gx10's card holding 58928 MiB). A child process installs the handler and spawns a plain child, a child in its
+    OWN session (as `vllm serve` is started), and a grandchild behind a shell; SIGTERM to it must kill all three.
+    Survivors are found by a per-case marker on the planted sleeps (pgrep -f from this view), which works across a
+    pid namespace, where the pids the child prints would be the namespace's."""
+    import random
+    import signal
+    import subprocess
+    import sys
+
+    lib = str(Path(__file__).resolve().parent)
+    import importlib
+    sys.path.insert(0, lib)
+    crux_proc = importlib.import_module("crux_proc")
+
+    def sig(proc_pid, signum):
+        """Signal a process /proc numbers `proc_pid`. THIS test process may itself sit in a pid namespace whose
+        /proc is the host's (quorum lanes 2 and 3 ran exactly there: ProcessLookupError), so the pid is translated
+        through the same NSpid mapping the handler uses. A process not visible from here is skipped."""
+        t = crux_proc.signal_pid(proc_pid)
+        if t is None:
+            return
+        try:
+            os.kill(t, signum)
+        except ProcessLookupError:
+            pass
+
+    def prog(marker):
+        return (
+            "import os, sys, subprocess, time; sys.path.insert(0, %r); import crux_proc\n"
+            "if os.environ.get('CRUX_PROC_INSTALL', '1') == '1': crux_proc.install()\n"
+            "subprocess.Popen(['sleep', %r])\n"
+            "subprocess.Popen(['sleep', %r], start_new_session=True)\n"
+            "subprocess.Popen(['bash', '-c', 'sleep %s & wait'])\n"
+            "print(os.readlink('/proc/self'), flush=True)\n"
+            "time.sleep(120)\n" % (lib, marker, marker, marker))
+
+    def survivors(marker):
+        r = subprocess.run(["pgrep", "-f", "^sleep %s$" % marker], capture_output=True, text=True)
+        return [int(x) for x in r.stdout.split()]
+
+    def case(install, wrap=()):
+        marker = "300.%06d" % random.randrange(10 ** 6)
+        env = dict(os.environ, CRUX_PROC_INSTALL="1" if install else "0")
+        parent = subprocess.Popen(list(wrap) + [sys.executable, "-c", prog(marker)], stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, text=True, env=env)
+        line = parent.stdout.readline().strip()
+        if not line.isdigit():
+            parent.kill()
+            return "ENV", parent.stderr.read().strip()[:160] or "no pid printed"
+        deadline = time.time() + 5
+        while time.time() < deadline and len(survivors(marker)) < 3:
+            time.sleep(0.05)
+        target = int(line)  # the pid as /proc numbers it
+        sig(target, signal.SIGTERM)
+        if wrap:
+            # the namespace's init (bash) outlives the target by design: wait for the TARGET to go, then look —
+            # before init exits and the kernel tears the namespace (and every survivor) down
+            deadline = time.time() + 20
+            while time.time() < deadline and os.path.exists("/proc/%d" % target):
+                time.sleep(0.05)
+            time.sleep(0.3)
+            left = survivors(marker)
+            rc = int(parent.stderr.readline().strip().split("=")[1]) if not os.path.exists("/proc/%d" % target) else None
+            parent.kill()
+            parent.wait()
+            for k in left:
+                sig(k, signal.SIGKILL)
+            return rc, left
+        try:
+            rc = parent.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            parent.kill()
+            rc = None
+        time.sleep(0.3)
+        left = survivors(marker)
+        for k in left:  # never leave the planted sleeps behind
+            sig(k, signal.SIGKILL)
+        return rc, left
+
+    import time
+
+    failed = 0
+    rc, left = case(install=True)
+    ok = rc == 143 and not left
+    print(f"{'ok  ' if ok else 'FAIL'} [proc] SIGTERM takes a plain child, a new-session child and a grandchild; exit 143"
+          + ("" if ok else f"\n     got: rc={rc} survivors={left}"))
+    failed += not ok
+    rc, left = case(install=False)
+    ok = len(left) == 3
+    print(f"{'ok  ' if ok else 'FAIL'} [proc] control: WITHOUT the handler all three survive (the leak is real)"
+          + ("" if ok else f"\n     got: rc={rc} survivors={left}"))
+    failed += not ok
+    # the lane's sandbox: a pid namespace whose /proc is the host's (getpid() != /proc's pid). The target must NOT
+    # be the namespace's init: init exiting makes the kernel kill the whole namespace, which would pass this case
+    # whatever the handler did (it did: a pre-fix mutant survived until init became a separate bash)
+    rc, left = case(install=True, wrap=("unshare", "-Urpf", "bash", "-c", '"$@"; echo "rc=$?" >&2; sleep 8', "_"))
+    if rc == "ENV":
+        # Not measurable HERE (unprivileged containers refuse `unshare -p`): named, and counted as ENV so the suite
+        # exits 2, never as a pass. Where this test process ALREADY runs in such a namespace, the two cases above
+        # exercise the same translation.
+        print(f"ENV  [proc] ...inside a pid namespace with the host's /proc: `unshare -Urpf` refused here ({left})")
+        global ENV_CASES
+        ENV_CASES += 1
+        return failed
+    ok = rc == 143 and not left
+    print(f"{'ok  ' if ok else 'FAIL'} [proc] ...and inside a pid namespace with the host's /proc (unshare -Urpf)"
+          + ("" if ok else f"\n     got: rc={rc} survivors={left}"))
+    failed += not ok
+    return failed
+
+
+PROC_CASE_COUNT = 3
+#: cases that could not run in this environment (named when they happen): a suite with any exits 2, never 0
+ENV_CASES = 0

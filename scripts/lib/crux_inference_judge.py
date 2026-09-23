@@ -220,6 +220,64 @@ def parse_apr(stdout, stderr):
 RATE_LINE = re.compile(r"\[\s*Prompt:\s*([0-9.]+)\s*t/s\s*\|\s*Generation:\s*([0-9.]+)\s*t/s\s*\]")
 
 
+#: #3962 B2: llama-cli's thinking markers -> the tags crux_oracles.strip_think reads.
+LLAMA_CLI_THINK = (("[Start thinking]", "<think>"), ("[End thinking]", "</think>"))
+
+
+#: realizar logs `formatted_prompt` as `{:?}` of its first 200 BYTES (infer/mod.rs prepare_tokens_gguf).
+FORMATTED_PROMPT_LOG_BYTES = 200
+#: A cut at 200 bytes that is floored to a char boundary (the fix #4018 proposes for the slice that panics
+#: mid-char) can log as few as 197 bytes: a UTF-8 char is at most 4 bytes. So any logged length within 3
+#: of the limit may be a CUT prompt, and is unknown -- correct before and after #4018.
+FORMATTED_PROMPT_WHOLE_BELOW = FORMATTED_PROMPT_LOG_BYTES - 3
+_DEBUG_ESCAPE = re.compile(r"\\(u\{([0-9a-fA-F]{1,6})\}|.)", re.S)
+
+
+def undebug(s):
+    """Undo Rust's `{:?}` escaping of a str: \\n \\t \\r \\0 \\\\ \\" \\' and \\u{XXXX}. Printable
+    non-ASCII is NOT escaped by `{:?}`, so it passes through unchanged."""
+    simple = {"n": "\n", "t": "\t", "r": "\r", "0": "\0", "\\": "\\", '"': '"', "'": "'"}
+    def sub(m):
+        if m.group(2):
+            return chr(int(m.group(2), 16))
+        return simple.get(m.group(1), m.group(0))
+    return _DEBUG_ESCAPE.sub(sub, s)
+
+
+def rendered_opens_think(rendered):
+    """#3962 B2: did apr's rendered prompt (its -v `formatted_prompt`, Rust-Debug-escaped) end INSIDE an
+    open think block? -> True / False / None.
+
+    realizar logs only the first 200 BYTES of the raw prompt. The Debug form is not a byte count: it
+    lengthens escapes (\\n) and leaves printable non-ASCII as one char for 2-4 bytes, so a CJK prompt
+    cut at 200 bytes prints as ~70 chars (aprender-6c [8b6b78]). The escapes are therefore undone and
+    the RAW UTF-8 length measured: a rendering of >= 200 bytes may have been cut before its end, and
+    is None (unknown) -- never read as "whole, and it does not open"."""
+    if not isinstance(rendered, str):
+        return None
+    raw = undebug(rendered)
+    if raw.endswith("<think>\n"):
+        return True
+    return False if len(raw.encode("utf-8")) < FORMATTED_PROMPT_WHOLE_BELOW else None
+
+
+def prompt_opens_think(rows):
+    """#3962 B2: {(model_sha256, prompt_id): bool} -- whether the model's OWN thinking-ON template opens
+    the think block in the prompt, read off the reference engines' `tmpl` rows (the rendering apr's must
+    equal byte for byte; the tmpl cells judge that). Used when apr's own rendering is not visible (apr
+    chat prints none; apr run's is cut at 200 characters)."""
+    out = {}
+    for r in rows:
+        if r.get("kind") != "tmpl" or r.get("engine") == "apr" or r.get("thinking") != "on" or r.get("refused"):
+            continue
+        try:
+            text = _load_bytes(r["rendered"]).decode("utf-8", "replace")
+        except (OSError, KeyError, TypeError):
+            continue
+        out[(r.get("model_sha256"), r.get("prompt_id"))] = text.endswith("<think>\n")
+    return out
+
+
 def parse_llamacpp_cli(stdout, prompt_text):
     """The pinned llama.cpp chat CLI echoes `> <prompt>`, streams the answer,
     then prints `[ Prompt: X t/s | Generation: Y t/s ]`. The answer is the text
@@ -236,7 +294,13 @@ def parse_llamacpp_cli(stdout, prompt_text):
     if not m:
         out["why"] = "no end-of-turn timing line after the echoed prompt"
         return out
-    out["answer"] = rest[:m.start()].strip()
+    # #3962 B2: llama-cli prints its reasoning as `[Start thinking] ... [End thinking]`. Map the markers to
+    # the tags VERBATIM and let crux_oracles.strip_think judge it, so ONE place decides what the answer is:
+    # a closed block is stripped, and an unclosed one is RED "unclosed think", never read as the answer.
+    ans = rest[:m.start()].strip()
+    for marker, tag in LLAMA_CLI_THINK:
+        ans = ans.replace(marker, tag)
+    out["answer"] = ans
     out["reported"] = {
         "reported_by": "llama.cpp",
         "prompt_rate": float(m.group(1)),
@@ -377,6 +441,7 @@ def token_loop(text):
 #   Q5  a think block is stripped before judging; an UNCLOSED one is RED (budget exhausted).
 # ggml family = llama.cpp + ollama + llamafile: they share llama.cpp's code, so they are ONE vote.
 import crux_oracles  # noqa: E402  (scripts/lib is this file's own directory)
+import crux_serve_routes  # noqa: E402  (#3962 B4: the route -> oracle-route map lives with the route tables)
 
 FAMILY = {"llama.cpp": "ggml", "ollama": "ggml", "llamafile": "ggml", "hf": "bf16", "vllm": "bf16"}
 SAME_REP = {"gguf": "ggml", "safetensors": "bf16"}
@@ -414,8 +479,9 @@ def oracle_eval(prompt, entry):
             "extracted": crux_oracles.extract(prompt, judged)}
 
 
-def engine_entry(row, prompt):
-    """One engine's answer to one cell, from its manifest row."""
+def engine_entry(row, prompt, prompt_opened=None):
+    """One engine's answer to one cell, from its manifest row. `prompt_opened` is the model's own
+    template's answer to "does thinking ON open the block in the prompt?" (prompt_opens_think)."""
     e = {"answered": False, "rc": row.get("rc"), "why": None, "answer": None, "reported": {}}
     if "ollama_unloaded" in row:
         # Did ollama's model leave VRAM before the cell dropped the GPU lock?
@@ -427,9 +493,11 @@ def engine_entry(row, prompt):
     stdout, stderr = read_text(row.get("stdout")), read_text(row.get("stderr"))
     content = prompt["messages"][-1]["content"]
     engine = row["engine"]
-    if row.get("verb") == "serve run":
+    if row.get("verb") in ("serve run", "serve stream"):
         # serve (#3739 slice 4): every server, apr's included, is read through the ONE
-        # OpenAI client's contract JSON (scripts/lib/crux_openai_client.py).
+        # OpenAI client's contract JSON (scripts/lib/crux_openai_client.py). #3962 B4: the
+        # sweep writes stream cells as verb `serve stream`; read as run output, a comparator's
+        # JSON fell to the llama-cli echo parser ("the echoed prompt was not found").
         p = parse_engine_json(stdout)
         if engine == "apr":
             # apr serve's responses report no backend: recorded, not scored as verified.
@@ -467,6 +535,29 @@ def engine_entry(row, prompt):
     else:
         e["why"] = "unknown engine %r" % engine
         return e
+    # #3962 B2: thinking ON with the official template prefills `<think>\n` in the PROMPT (#3990), so apr's
+    # reply starts INSIDE the block with no opener, and the reasoning was judged AS the answer ("apr is
+    # wrong: answer_not_int" on every ON cell of the smoke, apr c08437cdd). Re-attach the opener and let
+    # crux_oracles.strip_think decide, as the Rust golden ON leg does (on_leg_judged_text): a closed block
+    # is stripped, an unclosed one is RED "unclosed think". When nothing shows whether the prompt opened
+    # the block and the reply carries no think tag, the cell is RED by name -- never judged on reasoning.
+    # run and chat only: `apr serve` has no thinking toggle (it always renders thinking OFF, #3990), so a
+    # serve reply is never inside a prefilled block and must not be given an opener.
+    if engine == "apr" and row.get("thinking") == "on" and row.get("verb") in ("run", "chat") \
+            and isinstance(p.get("answer"), str):
+        opened = rendered_opens_think(p.get("rendered_prompt"))
+        if opened is None:
+            opened = prompt_opened
+        e["prompt_opened_think"] = opened
+        if opened is True and not p["answer"].lstrip().lower().startswith("<think>"):
+            p["answer"] = "<think>\n" + p["answer"]
+        elif opened is None and not re.search(r"</?think>", p["answer"], re.I):
+            e["reported"] = p["reported"]
+            e["answer"] = p["answer"]
+            e["why"] = ("thinking ON, and nothing shows whether the prompt opened a think block (apr's rendering is "
+                        "not visible and no reference tmpl row covers it), while the reply carries no think tag -- "
+                        "the reasoning cannot be told from the answer (#3962 B2)")
+            return e
     e["reported"] = p["reported"]
     e["answer"] = p["answer"]
     if row.get("rc") != 0:
@@ -803,6 +894,16 @@ def collect(args):
             if line.strip():
                 rows.append(json.loads(line))
     gens = [r for r in rows if r.get("kind") == "gen"]
+    # #3962 B2: whether each (model, prompt)'s thinking-ON prompt opens the think block. The reference
+    # tmpl rows (the model's own template) first; else apr's own `run` rendering of that prompt in this
+    # sweep, when it was printed whole. `apr chat` prints no rendering, and uses the same template.
+    opened_by = prompt_opens_think(rows)
+    for r in gens:
+        if r.get("engine") == "apr" and r.get("verb") == "run" and r.get("thinking") == "on" and not r.get("refused"):
+            m = re.search(r'formatted_prompt="((?:[^"\\]|\\.)*)"', read_text(r.get("stderr")) or "")
+            o = rendered_opens_think(m.group(1) if m else None)
+            if o is not None:
+                opened_by.setdefault((r.get("model_sha256"), r.get("prompt_id")), o)
     # llama.cpp's template-level ids feed the REPORTED token_parity field; raw-text
     # `tok` rows (they carry `input`) are the byte-equal deterministic rows below.
     toks = {(r["model_sha256"], r["prompt_id"]): r for r in rows
@@ -835,17 +936,53 @@ def collect(args):
             by_key[k] = {}
         by_key[k][r["engine"]] = r
 
+    # #3962 B4: apr serve mounts ~11 generation routes; llama-server answers two of them and the
+    # plugins answer on no named route at all. An apr route cell with no comparator row ON ITS OWN
+    # ROUTE borrows one, per engine, from (1) the oracle route that asks its question in the same
+    # representation (crux_serve_routes.oracle_route, same mode), else (2) the route-less plugin row.
+    # A native row always wins; cells never merge (route stays a key part, R1); the borrowed entry
+    # names its source route. A route with no mapped oracle borrows NOTHING and is RED below.
+    # A plugin `serve stream` row carries no mode (its verb already says stream), so the route-less
+    # source is looked up at the cell's mode and then mode-less. A comparator-only cell whose rows
+    # were all borrowed has no subject of its own: it is dropped, not left RED "apr missing".
+    oracle_of, lent = {}, set()
+    for k in keys:
+        if not k[7] or "apr" not in by_key[k]:
+            continue
+        orc = crux_serve_routes.oracle_route(k[7])
+        oracle_of[k] = orc
+        if orc is None:
+            continue
+        sources = [k[:7] + (orc,), k[:7] + ("",), k[:6] + ("", "")]
+        for eng in COMPARATORS:
+            if eng in by_key[k]:
+                continue
+            for src in sources:
+                if src != k and eng in by_key.get(src, {}):
+                    by_key[k][eng] = dict(by_key[src][eng], borrowed_from_route=src[7] or "(route-less plugin row)")
+                    lent.add((src, eng))
+                    break
+    keys = [k for k in keys if "apr" in by_key[k] or not by_key[k]
+            or not all((k, e) in lent for e in by_key[k])]
+
     # #3962 J2 (per cell): the certification admits prompts PER MODEL (quant sha). A prompt it did not
     # admit for this model is RED on that cell, however right the answer -- it was never shown answerable.
-    admitted = None
+    # dd 292645efb: admission PER THINKING MODE when the receipt carries it. The strict key admits a
+    # prompt only if it certified in EVERY mode, so a model whose ON cells loop admitted nothing and its
+    # right OFF cells went RED "not certified". The cell's OWN mode decides; the strict key is used only
+    # when the receipt has no per-mode map.
+    admitted, admitted_mode = None, None
     if pdoc.get("schema") == "crux-inference-prompts/v2" and getattr(args, "certification", None):
         try:
             with open(args.certification, encoding="utf-8") as fh:
-                admitted = json.load(fh).get("admitted_by_sha")
+                cdoc = json.load(fh)
+            admitted, admitted_mode = cdoc.get("admitted_by_sha"), cdoc.get("admitted_by_sha_thinking")
         except (OSError, ValueError):
             admitted = None
         if not isinstance(admitted, dict):
             admitted = {}   # a receipt with no per-model admission admits nothing
+        if not isinstance(admitted_mode, dict):
+            admitted_mode = None
     cells = []
     for k in keys:
         prompt = prompts[k[5]]
@@ -857,7 +994,9 @@ def collect(args):
                 entries[eng] = {"answered": False, "missing": True,
                                 "why": "missing: no row for this engine" if eng in requested else "not requested"}
             else:
-                entries[eng] = engine_entry(row, prompt)
+                entries[eng] = engine_entry(row, prompt, opened_by.get((row.get("model_sha256"), row.get("prompt_id"))))
+                if row.get("borrowed_from_route"):
+                    entries[eng]["borrowed_from_route"] = row["borrowed_from_route"]
                 # #3952: a comparator the receipt cannot name a version for cannot vouch — for apr or against
                 # it. Its answer is kept on the record; it is not an oracle.
                 if eng in COMPARATORS and entries[eng].get("answered") and not versions.get(eng):
@@ -868,7 +1007,18 @@ def collect(args):
         fmt = next((by_key[k][e].get("format") for e in by_key[k] if by_key[k][e].get("format")), None) \
             or fmt_of_model.get(k[0])
         verdict, ok, reasons, extracted = judge_cell(entries, prompt, fmt)
-        if admitted is not None and k[5] not in admitted.get(k[0], ()):
+        if k in oracle_of and oracle_of[k] is None:
+            verdict = "RED"
+            reasons = reasons + ["no oracle route mapped for %s: no comparator route asks its question in the same "
+                                 "representation, so nothing can vouch for it -- map its kind in "
+                                 "crux_serve_routes.ORACLE_ROUTE_BY_KIND (#3962 B4)" % k[7]]
+        if admitted_mode is not None:
+            by_mode = admitted_mode.get(k[0]) if isinstance(admitted_mode.get(k[0]), dict) else {}
+            if k[5] not in (by_mode.get(k[3]) or ()):
+                reasons = reasons + ["prompt %s is not admitted for this model with thinking %s by the certification "
+                                     "(admitted_by_sha_thinking) -- never shown answerable here (#3962 J2)" % (k[5], k[3])]
+                verdict = "RED"
+        elif admitted is not None and k[5] not in admitted.get(k[0], ()):
             reasons = reasons + ["prompt %s is not admitted for this model by the certification (admitted_by_sha) -- "
                                  "never shown answerable here (#3962 J2)" % k[5]]
             verdict = "RED"
@@ -892,6 +1042,8 @@ def collect(args):
             "key": dict(zip(("model_sha256", "host", "verb", "thinking", "rung", "prompt_id"), k[:6]),
                         **({"mode": k[6]} if k[6] else {}), **({"route": k[7]} if k[7] else {})),
             "verdict": verdict,
+            # #3962 B4: the comparator route this apr route was judged against (None: unmapped).
+            **({"oracle_route": oracle_of[k]} if k in oracle_of else {}),
             # #3957: why a cell is RED, every reason, and what each engine's answer extracted to.
             "reasons": reasons,
             "format": fmt,

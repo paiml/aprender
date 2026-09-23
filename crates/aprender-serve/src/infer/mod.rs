@@ -39,6 +39,137 @@ pub(crate) fn qtype_to_dtype_str(qtype: u32) -> &'static str {
     crate::gguf::admitted_from_id(qtype).map_or("Unknown", crate::gguf::GgmlQuantType::as_str)
 }
 
+/// #4006: the `quant=` label for a GGUF model: the transformer BODY, not the head.
+///
+/// It printed `lm_head_weight.qtype`. Unsloth "UD" files tie the head to a
+/// high-precision `token_embd` while the blocks are mixed, so
+/// Qwen3.5-0.8B-UD-IQ2_XXS (95 IQ2_XXS block tensors) was labelled `Q5_K` and a
+/// receipt quoting it said none of the IQ kernels ran.
+///
+/// `body` is the qtype of every 2-D projection weight in the blocks. One type
+/// prints as that type; several print as `mixed(A×n,B×m,…)`, most frequent first
+/// (ties by name). `lm_head=<qtype>` is appended when the head differs from the
+/// dominant body type.
+pub(crate) fn body_quant_label(body: &[u32], lm_head: u32) -> String {
+    // The full GGML name table, not the admitted-kernel one: a label names what
+    // the file holds, whether or not a GPU kernel exists for it.
+    let name = |q: u32| {
+        trueno_quant::GgmlType::from_id(q)
+            .map_or_else(|| format!("ggml type {q}"), |t| t.as_str().to_string())
+    };
+    let mut counts: std::collections::BTreeMap<u32, usize> = std::collections::BTreeMap::new();
+    for &q in body {
+        *counts.entry(q).or_insert(0) += 1;
+    }
+    let mut ranked: Vec<(String, usize, u32)> =
+        counts.into_iter().map(|(q, n)| (name(q), n, q)).collect();
+    ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let Some((_, _, dominant)) = ranked.first().cloned() else {
+        return name(lm_head);
+    };
+    let body_label = if ranked.len() == 1 {
+        ranked[0].0.clone()
+    } else {
+        let parts: Vec<String> = ranked.iter().map(|(n, c, _)| format!("{n}×{c}")).collect();
+        format!("mixed({})", parts.join(","))
+    };
+    if lm_head == dominant {
+        body_label
+    } else {
+        format!("{body_label} lm_head={}", name(lm_head))
+    }
+}
+
+/// The qtype of every 2-D block tensor (`blk.*`, `n_dims >= 2`) in the GGUF header,
+/// for [`body_quant_label`]. Read from the FILE, not the loaded model struct: the
+/// Qwen3.5 hybrid path builds only a base model (embeddings, final norm, head) with
+/// no layers, and its block tensors are the ones that decide the label.
+pub(crate) fn body_qtypes(gguf: &crate::gguf::GGUFModel) -> Vec<u32> {
+    gguf.tensors
+        .iter()
+        .filter(|t| t.name.starts_with("blk.") && t.n_dims >= 2)
+        .map(|t| t.qtype)
+        .collect()
+}
+
+/// #4006 (APR paths): the qtype of every 2-D projection weight in a LOADED model's
+/// layers, for [`body_quant_label`]. For `.apr` files, whose loader builds every
+/// layer; GGUF uses [`body_qtypes`] on the header, because the qwen35 hybrid
+/// builds no layers.
+pub(crate) fn model_body_qtypes(model: &crate::gguf::OwnedQuantizedModel) -> Vec<u32> {
+    use crate::gguf::OwnedQKVWeights;
+    let mut out = Vec::new();
+    for layer in model.layers() {
+        match &layer.qkv_weight {
+            OwnedQKVWeights::Fused(t) => out.push(t.qtype),
+            OwnedQKVWeights::Separate { q, k, v } => out.extend([q.qtype, k.qtype, v.qtype]),
+        }
+        out.push(layer.attn_output_weight.qtype);
+        out.push(layer.ffn_up_weight.qtype);
+        out.push(layer.ffn_down_weight.qtype);
+        if let Some(gate) = layer.ffn_gate_weight.as_ref() {
+            out.push(gate.qtype);
+        }
+    }
+    out
+}
+
+/// #4006 (SafeTensors): the GGML id for a float SafeTensors dtype (F32 0, F16 1,
+/// BF16 30), so [`body_quant_label`] names SafeTensors weights the same way.
+/// Integer dtypes are not weights and are skipped.
+pub(crate) fn safetensors_dtype_ggml_id(
+    dtype: &crate::safetensors::SafetensorsDtype,
+) -> Option<u32> {
+    use crate::safetensors::SafetensorsDtype as D;
+    match dtype {
+        D::F32 => Some(0),
+        D::F16 => Some(1),
+        D::BF16 => Some(30),
+        _ => None,
+    }
+}
+
+/// #4006: the `quant=` label for a SafeTensors file, read from its header: every
+/// 2-D float tensor under `.layers.` is the body, `lm_head.weight` (else the tied
+/// `embed_tokens`) is the head. `unknown (…)` when the header cannot be read, never
+/// a guessed type.
+pub(crate) fn safetensors_quant_label(path: &std::path::Path) -> String {
+    let model = match crate::safetensors::MappedSafeTensorsModel::load(path) {
+        Ok(m) => m,
+        Err(e) => return format!("unknown (header unreadable: {e})"),
+    };
+    let mut body = Vec::new();
+    let mut head = None;
+    for name in model.tensor_names() {
+        let Some(info) = model.get_tensor_info(name) else {
+            continue;
+        };
+        let Some(id) = safetensors_dtype_ggml_id(&info.dtype) else {
+            continue;
+        };
+        if name.contains(".layers.") && info.shape.len() >= 2 {
+            body.push(id);
+        } else if name == "lm_head.weight"
+            || (head.is_none() && name.ends_with("embed_tokens.weight"))
+        {
+            head = Some(id);
+        }
+    }
+    match head {
+        Some(h) => body_quant_label(&body, h),
+        None if body.is_empty() => "unknown (no float weights in the header)".to_string(),
+        // No head tensor: label the body alone (the head clause only appears on a mismatch).
+        None => {
+            let dominant = body_quant_label(&body, u32::MAX);
+            dominant
+                .split(" lm_head=")
+                .next()
+                .unwrap_or(&dominant)
+                .to_string()
+        },
+    }
+}
+
 /// Configuration for inference
 #[derive(Debug, Clone)]
 pub struct InferenceConfig {
@@ -473,7 +604,7 @@ fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<Prepare
         );
         eprintln!(
             "[DEBUG] formatted_prompt={:?}",
-            &formatted_prompt[..formatted_prompt.len().min(200)]
+            log_head(&formatted_prompt, 200)
         );
     }
 
@@ -705,6 +836,77 @@ fn safetensors_arch_to_template_hint(architecture: &str, _model_name: &str) -> &
     crate::tensor_names::normalize_architecture(architecture)
 }
 
+/// #4018: at most the first `max` bytes of `s`, cut at a CHAR BOUNDARY, for a log or error line.
+///
+/// `&s[..s.len().min(max)]` panicked ("byte index N is not a char boundary") whenever byte `max`
+/// fell inside a multi-byte UTF-8 char, so `apr run -v` crashed on a non-ASCII prompt instead of
+/// answering. The cut floors to the previous boundary: at most 3 bytes short, since a char is at
+/// most 4 (the CRUX judge reads a logged prompt of >= max-3 bytes as possibly cut, #3962 B2).
+/// `str::floor_char_boundary` would do this, but is not stable at this crate's rust-version.
+pub(crate) fn log_head(s: &str, max: usize) -> &str {
+    let mut end = s.len().min(max);
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
+#[cfg(test)]
+mod log_head_4018 {
+    use super::log_head;
+
+    /// MUST-RED (#4018): `apr run -v` logs the formatted prompt's head, and a prompt whose byte 200
+    /// falls INSIDE a multi-byte char panicked ("byte index 200 is not a char boundary"). ChatML around
+    /// `x` + 80 CJK chars puts byte 200 mid-char.
+    #[test]
+    fn a_non_ascii_prompt_cut_mid_char_does_not_panic() {
+        let p = format!(
+            "<|im_start|>user\nx{}<|im_end|>\n<|im_start|>assistant\n",
+            "\u{6c34}".repeat(80)
+        );
+        assert!(
+            !p.is_char_boundary(200),
+            "the fixture must put byte 200 mid-char"
+        );
+        let head = log_head(&p, 200);
+        assert!(head.len() <= 200 && head.len() >= 197, "{}", head.len());
+        assert!(p.starts_with(head));
+    }
+
+    #[test]
+    fn ascii_and_short_inputs_are_unchanged() {
+        assert_eq!(log_head("What is 2+2?", 200), "What is 2+2?");
+        let a = "a".repeat(300);
+        assert_eq!(log_head(&a, 200).len(), 200);
+        assert_eq!(log_head("", 200), "");
+    }
+
+    /// #4018: the SITES use it -- the helper alone proves nothing if a caller still byte-slices.
+    #[test]
+    fn no_log_site_byte_slices_text_any_more() {
+        for (f, old) in [
+            (
+                "src/infer/mod.rs",
+                "&formatted_prompt[..formatted_prompt.len().min(200)]",
+            ),
+            (
+                "src/infer/inference_result.rs",
+                "&raw_text[..raw_text.len().min(200)]",
+            ),
+        ] {
+            let src = std::fs::read_to_string(format!("{}/{f}", env!("CARGO_MANIFEST_DIR")))
+                .expect("source");
+            // Scan the code ABOVE this test module: the module itself names the old pattern, and a
+            // source guard that reads its own assertion strings is satisfied by them (#3907's lesson).
+            let code = src.split("mod log_head_4018").next().unwrap_or(&src);
+            assert!(
+                !code.contains(old),
+                "{f} still slices text at a fixed byte length: {old}"
+            );
+        }
+    }
+}
+
 include!("inference_result.rs");
 include!("gguf_gpu_generate.rs");
 include!("mod_log_transformer_eos.rs");
@@ -717,6 +919,9 @@ pub mod qwen3_moe_generate;
 pub mod run_report;
 
 // #3760: `apr run` on a SafeTensors model samples.
+#[cfg(test)]
+#[path = "tests_quant_label_4006.rs"]
+mod tests_quant_label_4006;
 #[cfg(test)]
 #[path = "tests_sampling_3760.rs"]
 mod tests_sampling_3760;

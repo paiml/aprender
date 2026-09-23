@@ -292,7 +292,7 @@ fn run_gguf_inference(
     let gguf_arch = mapped.model.architecture().unwrap_or("transformer");
 
     if config.verbose {
-        print_gguf_verbose_info(gguf_arch, &model, load_ms);
+        print_gguf_verbose_info(gguf_arch, &model, &body_qtypes(&mapped.model), load_ms);
     }
 
     // PMAT-236: Use PreparedTokens (chat template already applied by prepare_tokens)
@@ -383,7 +383,7 @@ fn run_gguf_inference(
         );
         eprintln!(
             "[DEBUG] raw decoded: {:?}",
-            &raw_text[..raw_text.len().min(200)]
+            log_head(&raw_text, 200)
         );
     }
     let text = clean_model_output(&raw_text);
@@ -441,6 +441,7 @@ fn run_gguf_inference(
 fn print_gguf_verbose_info(
     gguf_arch: &str,
     model: &crate::gguf::OwnedQuantizedModel,
+    body: &[u32],
     load_ms: f64,
 ) {
     let arch = match gguf_arch.to_lowercase().as_str() {
@@ -450,7 +451,8 @@ fn print_gguf_verbose_info(
         "phi" | "phi3" => "Phi",
         _ => "Transformer",
     };
-    let quant_type = qtype_to_dtype_str(model.lm_head_weight.qtype);
+    // #4006: the body's quantization, not the (possibly tied, higher-precision) head.
+    let quant_type = body_quant_label(body, model.lm_head_weight.qtype);
     let thread_count = rayon::current_num_threads();
     eprintln!(
         "Architecture: {} [GGUF: {}] ({} layers, vocab_size={})",
