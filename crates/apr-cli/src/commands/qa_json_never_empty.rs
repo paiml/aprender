@@ -26,6 +26,7 @@ mod qa_json_never_empty_tests {
             gates: vec![],
             gates_executed: 1,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             total_duration_ms: 5,
             timestamp: "2026-09-22T00:00:00Z".to_string(),
             summary: "ok".to_string(),

@@ -177,7 +177,7 @@ fn test_is_legacy_gguf_quant() {
     assert!(!is_legacy_gguf_quant(7)); // Q5_1 — #3885 GEMV kernel
     assert!(!is_legacy_gguf_quant(20)); // IQ4_NL — #3869 GEMV kernel
     assert!(!is_legacy_gguf_quant(21)); // IQ3_S — #3884 GEMV kernel
-    assert!(is_legacy_gguf_quant(16)); // IQ2_XXS — still no kernel
+    assert!(!is_legacy_gguf_quant(16)); // IQ2_XXS — #3950 GEMV kernel, 95/95 measured
     assert!(is_legacy_gguf_quant(18)); // IQ3_XXS — still no kernel
     assert!(is_legacy_gguf_quant(22)); // IQ2_S — still no kernel
     assert!(is_legacy_gguf_quant(9)); // Q8_1

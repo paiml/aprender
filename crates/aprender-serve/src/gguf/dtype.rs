@@ -34,7 +34,7 @@ fn apr_qtype_to_dtype(qtype: u32) -> Result<&'static str> {
 ///
 /// The whitelist of GPU-eligible types is exactly:
 ///   0=F32, 1=F16, 2=Q4_0, 3=Q4_1, 6=Q5_0, 7=Q5_1, 8=Q8_0, 12=Q4_K, 13=Q5_K,
-///   14=Q6_K, 20=IQ4_NL, 21=IQ3_S, 23=IQ4_XS, 30=BF16.
+///   14=Q6_K, 16=IQ2_XXS, 20=IQ4_NL, 21=IQ3_S, 23=IQ4_XS, 30=BF16.
 /// Everything else — Q8_1(9), Q2_K(10), Q3_K(11), Q8_K(15), the rest of the
 /// IQ* families, unknown — is gated to CPU.
 ///
@@ -75,7 +75,7 @@ fn apr_qtype_to_dtype(qtype: u32) -> Result<&'static str> {
 #[inline]
 #[must_use]
 pub(crate) fn gpu_unsupported_quant_qtype(qtype: u32) -> bool {
-    !matches!(qtype, 0 | 1 | 2 | 3 | 6 | 7 | 8 | 12 | 13 | 14 | 20 | 21 | 23 | 30)
+    !matches!(qtype, 0 | 1 | 2 | 3 | 6 | 7 | 8 | 12 | 13 | 14 | 16 | 20 | 21 | 23 | 30)
 }
 
 /// #3477 / PMAT-781/783/785: the quantized projections the Qwen3.5 hybrid

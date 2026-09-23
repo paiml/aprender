@@ -1025,7 +1025,12 @@ def verb_ok(v, name):
         return False
     return bool(x.get("ran")) and (x.get("rc") or 0) == 0
 
-green = cap_ok and qa.get("golden_output", {}).get("passed", False) \
+# #3965: a SKIPPED golden gate is not a pass. Older `apr` builds wrote skips as
+# passed:true, skipped:true, and receipts from them still exist, so the ladder guards
+# `skipped` itself instead of trusting the producer: the same guard cap_ok has above.
+golden_ok = qa.get("golden_output", {}).get("passed", False) \
+    and not qa.get("golden_output", {}).get("skipped", False)
+green = cap_ok and golden_ok \
         and all(v["ran"] and not v["fallback"] and not v.get("escaped_special") and serve_ok(v)
                 and verb_ok(v, "chat") and verb_ok(v, "code")
                 for v in be.values())

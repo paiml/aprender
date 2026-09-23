@@ -201,17 +201,35 @@ fn json_plus_benchmark_is_not_a_machine_surface() {
 mod forced_accelerator_refusal_tests {
     use crate::commands::run::forced_accelerator_refusal;
 
-    /// done_when 1: refused by name, naming the architecture, the ticket and the
-    /// release — and saying it is a refusal rather than a fallback.
+    /// #3714 R2 folded a CUDA forward for qwen3moe into 0.69.1, so `--gpu` on it
+    /// now REACHES that forward instead of being refused. This test used to be
+    /// `gpu_forced_on_qwen3moe_is_refused_by_name`; the fold that landed the forward
+    /// inverted it, as the refusal's own doc said it would ("deleting the arm here
+    /// is what turns the refusal off"). Whether the GPU then actually serves is not a
+    /// unit-test question: it is measured per host, and a GPU that fails shows as
+    /// `fell_back: true` (#3826), never as a quiet CPU answer.
     #[test]
-    fn gpu_forced_on_qwen3moe_is_refused_by_name() {
-        let reason = forced_accelerator_refusal(true, Some("qwen3moe"))
-            .expect("--gpu on qwen3moe must refuse");
-        assert!(reason.contains("qwen3moe"), "{reason}");
-        assert!(reason.contains("#3714"), "{reason}");
-        assert!(reason.contains("0.70.0"), "{reason}");
-        assert!(reason.contains("refusal, not a fallback"), "{reason}");
-        assert!(reason.contains("--gpu"), "names the flag to drop: {reason}");
+    fn gpu_forced_on_qwen3moe_reaches_its_cuda_forward() {
+        for arch in ["qwen3moe", "qwen3_moe", "Qwen3MoeForCausalLM", "Qwen3CoderForCausalLM"] {
+            assert!(
+                forced_accelerator_refusal(true, Some(arch)).is_none(),
+                "{arch} has a CUDA forward (#3714) and --gpu must reach it"
+            );
+        }
+    }
+
+    /// Qwen3.5 MoE normalises to the same `qwen3_moe` but is a hybrid the qwen3moe
+    /// forward cannot run, so `--gpu` on it is still refused BY NAME, before a load.
+    #[test]
+    fn gpu_forced_on_qwen35_moe_is_still_refused_by_name() {
+        for arch in ["qwen35moe", "qwen3_5_moe", "Qwen3_5MoeForCausalLM"] {
+            let reason = forced_accelerator_refusal(true, Some(arch))
+                .unwrap_or_else(|| panic!("--gpu on {arch} must refuse"));
+            assert!(reason.contains(arch), "{reason}");
+            assert!(reason.contains("SSM"), "says why: {reason}");
+            assert!(reason.contains("refusal, not a fallback"), "{reason}");
+            assert!(reason.contains("--gpu"), "names the flag to drop: {reason}");
+        }
     }
 
     /// done_when 2: the working CPU path must not be touched. Without the forced
@@ -246,17 +264,18 @@ mod forced_accelerator_refusal_tests {
         assert!(forced_accelerator_refusal(true, None).is_none());
     }
 
-    /// THE MUTANT THIS ROW OWNS. Restoring the CPU fallback under `--gpu` means
-    /// `forced_accelerator_refusal` answering `None` for qwen3moe; this test is
-    /// what goes RED, and it says what it caught.
+    /// THE MUTANT THIS ROW OWNS, after the #3714 fold. Removing the refusal outright
+    /// (instead of narrowing it) would route a Qwen3.5-MoE hybrid to the qwen3moe
+    /// CUDA forward, which does not run its SSM layers: wrong output, where there used
+    /// to be a refusal. This is what goes RED if the narrowing is undone.
     #[test]
-    fn removing_the_refusal_would_restore_the_silent_cpu_fallback() {
-        let refused = forced_accelerator_refusal(true, Some("qwen3moe"));
+    fn removing_the_qwen35_moe_refusal_would_route_a_hybrid_to_the_wrong_forward() {
+        let refused = forced_accelerator_refusal(true, Some("qwen35moe"));
         assert!(
             refused.is_some(),
-            "MUTANT CAUGHT: --gpu on qwen3moe no longer refuses. Without this refusal the run \
-             loads 18 GB, generates on the CPU, and exits 14 AFTER the fact — the user asked for \
-             the GPU and was told the wrong thing about their own hardware (#3817)."
+            "MUTANT CAUGHT: --gpu on qwen35moe (Qwen3.5-35B-A3B) no longer refuses, and the \
+             normalizer folds it into qwen3_moe — so it would reach a forward that cannot run \
+             its Gated-DeltaNet/SSM layers (#3714, #3817)."
         );
     }
 }

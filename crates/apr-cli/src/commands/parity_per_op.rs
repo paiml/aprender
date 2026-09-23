@@ -37,6 +37,9 @@ pub fn run(
 
     let mapped = MappedGGUFModel::from_path(file)
         .map_err(|e| CliError::ValidationFailed(format!("GGUF load failed: {e}")))?;
+    if let Some(why) = per_op_refusal(mapped.model.architecture().unwrap_or_default()) {
+        return Err(CliError::NotImplemented(why));
+    }
     let tokens = mapped.model.encode(prompt).unwrap_or_else(|| vec![1u32]);
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("model load failed: {e}")))?;
@@ -186,6 +189,50 @@ fn stage_files(dir: &Path) -> Vec<(String, Option<u32>)> {
     }
     out.sort();
     out
+}
+
+/// #3714 R2: the per-op tap is wired into the DENSE pair only
+/// (`forward_single_with_cache` vs `forward_gpu_resident`). A hybrid or
+/// routed-expert file would reach the dense loop. For a MoE file that loop reads
+/// the 0-byte FFN placeholders `from_gguf_for_moe` leaves, which reports a TOOL
+/// gap as a divergence of the MODEL. So those arms are refused (exit 12,
+/// `PARITY_REFUSED_EXIT`), naming the command that does measure them. `None`
+/// for the dense arm.
+#[cfg(feature = "inference")]
+#[allow(dead_code)] // the only non-test caller is the cuda-gated `run`
+pub(crate) fn per_op_refusal(architecture: &str) -> Option<String> {
+    use super::parity::{parity_arm, ParityArm};
+    let arm = match parity_arm(architecture) {
+        ParityArm::Dense => return None,
+        ParityArm::Hybrid => "hybrid (Qwen3.5)",
+        ParityArm::Moe => "routed-expert (qwen3moe)",
+    };
+    Some(format!(
+        "apr parity --per-op: architecture '{architecture}' runs the {arm} forward, which has no \
+         per-op tap; the per-op instrument is dense-only. `apr parity` without --per-op measures \
+         this pair (logits at every position)."
+    ))
+}
+
+#[cfg(all(test, feature = "inference"))]
+mod per_op_refusal_tests {
+    use super::per_op_refusal;
+
+    /// Every arm that is not the dense pair is refused; the dense one is not.
+    #[test]
+    fn per_op_refuses_the_arms_it_has_no_tap_for() {
+        for arch in ["qwen2", "qwen3", "llama"] {
+            assert_eq!(per_op_refusal(arch), None, "{arch} is the dense pair");
+        }
+        for (arch, arm) in [("qwen35", "hybrid"), ("qwen3moe", "routed-expert")] {
+            let why = per_op_refusal(arch).unwrap_or_default();
+            assert!(why.contains(arm), "{arch}: {why}");
+            assert!(
+                why.contains("without --per-op"),
+                "{arch} must name what does measure it: {why}"
+            );
+        }
+    }
 }
 
 #[cfg(not(feature = "cuda"))]

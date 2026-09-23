@@ -369,6 +369,11 @@ pub enum KernelType {
         k: u32,
         n: u32,
     },
+    /// IQ2_XXS GEMV (8-bit grid indices, 7-bit sign codes, 4-bit scale) - #3931
+    Iq2XxsGemv {
+        k: u32,
+        n: u32,
+    },
     /// Q5_1 GEMV (affine 32-element block: w = q*d + m, 5th bit in qh) - #3885
     Q5_1Gemv {
         k: u32,

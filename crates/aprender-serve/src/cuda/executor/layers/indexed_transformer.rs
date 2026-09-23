@@ -100,6 +100,7 @@ impl CudaExecutor {
             | WeightQuantType::IQ4XS
             | WeightQuantType::IQ4NL
             | WeightQuantType::IQ3S
+            | WeightQuantType::IQ2XXS
             | WeightQuantType::Q5_1
             | WeightQuantType::BF16 => {
                 return Err(GpuError::InvalidParameter(format!(

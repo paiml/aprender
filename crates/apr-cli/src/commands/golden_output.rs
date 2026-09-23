@@ -719,24 +719,27 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
     #[cfg(feature = "inference")]
     {
         use realizar::format::{detect_format, ModelFormat};
-        use realizar::gguf::{GGUFModel, MappedGGUFModel};
+        use realizar::gguf::MappedGGUFModel;
 
+        // #3711's helper (identical to #3714 R2's inline check, so one definition).
         let cuda_available = cuda_device_present();
-        let model_bytes = std::fs::read(path)
+        // #3750: the format from the 8-byte magic and the header from the map, never the whole
+        // model (it was read into memory here, beside a map of the same file)
+        let magic = super::model_header::read_prefix(path, 8)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-        let format = detect_format(&model_bytes[..8.min(model_bytes.len())])
+        let format = detect_format(&magic)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
 
         // GH-239: Only create GGUF objects when format is actually GGUF
-        let (mapped, gguf_model) = if format == ModelFormat::Gguf {
-            let m = MappedGGUFModel::from_path(path)
-                .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
-            let g = GGUFModel::from_bytes(&model_bytes)
-                .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
-            (Some(m), Some(g))
+        let mapped = if format == ModelFormat::Gguf {
+            Some(
+                MappedGGUFModel::from_path(path)
+                    .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?,
+            )
         } else {
-            (None, None)
+            None
         };
+        let gguf_model = mapped.as_ref().map(|m| &m.model);
 
         // #3711: the pass message names the GPU leg, so a skipped leg says which skip it was
         let mut gpu_leg = GpuGoldenLeg::NotRun("no golden case ran");
@@ -769,7 +772,7 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
                 config,
                 format,
                 mapped.as_ref(),
-                gguf_model.as_ref(),
+                gguf_model,
                 cuda_available,
                 start,
             )? {
@@ -806,7 +809,7 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
                 on_budget,
                 format,
                 mapped.as_ref(),
-                gguf_model.as_ref(),
+                gguf_model, // #3750 made this a borrow of the map; `Option<&T>` is Copy
             )? {
                 let generated = on_text.strip_prefix(on_prompt.as_str()).unwrap_or(&on_text);
                 if let Some(reason) = judge_thinking_on_output(generated, &on_patterns, on_budget)
@@ -917,20 +920,20 @@ fn measure_generate_throughput(
 #[cfg(feature = "inference")]
 fn throughput_gguf(
     path: &Path,
-    model_bytes: &[u8],
     config: &QaConfig,
     cuda_available: bool,
     tracer: &TracerImpl,
     prompt: &str,
 ) -> Result<(f64, Duration)> {
-    use realizar::gguf::{
-        GGUFModel, MappedGGUFModel, OwnedQuantizedModel,
-        QuantizedGenerateConfig,
-    };
+    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
 
-    let gguf = GGUFModel::from_bytes(model_bytes)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
-    let prompt_tokens = golden_prompt_tokens(&gguf, prompt);
+    // #3750: the tokenizer comes from the mapped header, not a whole-file read.
+    // #3870: and the BOS comes from the MODEL, not `SpecialTokens::qwen2()` — the
+    // fold's other side reintroduced `vec![qwen2().bos_id, 9707]`, the exact
+    // hardcode #3870 removed (151643 does not exist in a 32000-entry vocabulary).
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+    let prompt_tokens = golden_prompt_tokens(&mapped.model, prompt);
     let gen_config = QuantizedGenerateConfig {
         max_tokens: config.max_tokens,
         temperature: 0.0,
@@ -939,8 +942,6 @@ fn throughput_gguf(
     };
     let budget_us = config.max_tokens as u64 * config.iterations as u64 * 100_000;
 
-    let mapped = MappedGGUFModel::from_path(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
 
