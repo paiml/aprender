@@ -68,6 +68,54 @@ ladder:
   serve_health:
     stall_s: 90
     ceiling_s: 900
+  # #3710 ruling 3 / #4022 (operator 2026-09-23, relayed by aprender-cf; "recommended for all questions"):
+  # the release commit X = 4f81bdea7 + #4022, a scoped hotfix. A receipt measured at `receipts_at`
+  # binds X ONLY when every path of the diff matches `paths` AND Cargo.lock changes no dependency
+  # (scripts/lib/ladder_equiv.py). The gate prints the diff it accepted; anything outside is STALE BY SHA.
+  hotfix_scope:
+    receipts_at: 4f81bdea7bdc17da7a4b22823ef000671b78a435
+    paths: ["crates/aprender-mcp/**", "crates/apr-cli/Cargo.toml", "Cargo.lock", "docs/**",
+            # #4032 (X2 = 1eb1fe808 + one commit, aprender-6c [3ada9a]): its two files EXACTLY -- a
+            # Qwen3.5-0.8B load-time known-issue warning. No lock or manifest change. Cop ruling 2026-09-23.
+            "crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs",
+            "crates/aprender-serve/src/gguf/inference/forward/qwen35_known_issue.rs"]
+    ruling: "#3710 ruling 3 / #4022 + #4032"
+    # OPERATOR OVERRIDE, 2026-09-23, relayed verbatim by the release cop aprender-cf: "nope, override.  I am
+    # the boss". #4022 (X = 1eb1fe808) removes aprender-mcp's `anyhow` edge -- a dependency change that
+    # ruling 3 excludes. The override is pinned to EXACTLY that Cargo.lock delta: its canonical JSON
+    # (ladder_equiv.lock_delta) hashes to delta_sha256 below. Any other lock change hashes differently
+    # and stays RED; the gate prints "OPERATOR OVERRIDE (#4022 lock delta)", never plain green.
+    lock_overrides:
+      - delta_sha256: d387a7e50c91b0f13ec1c924c06b9dcc46716cebf935357a8b9c6c0f9ee8f079
+        delta: '{"changed":{"aprender-mcp":{"attrs":null,"edges_added":[],"edges_removed":["anyhow"]}},"packages_added":[],"packages_removed":[]}'
+        ticket: "#4022"
+        date: "2026-09-23"
+        ruling: '"nope, override.  I am the boss" (operator, verbatim, via aprender-cf)'
+  # OPERATOR EMERGENCY SCOPE for 0.69.1 ONLY (relayed verbatim by the release cop aprender-cf,
+  # 2026-09-23). `check_model_ladder.sh --scope crux-smoke` judges CRUX smoke receipts from the RELEASE
+  # BINARY instead of the ladder (scripts/lib/crux_smoke_scope.py): every host below, every certified
+  # model (from the prompt certification), every thinking mode below, all GREEN with a GREEN positive
+  # control, receipts bound to the cut exactly. Refused for any other release.
+  emergency_scopes:
+    - name: crux-smoke
+      release: "0.69.1"
+      date: "2026-09-23"
+      quote: '"for this particular release we need emergency surgery.  after a binary is build we really only care about CRUX on gx10 and lambda (but "smoke test") style.  anything huge, must be nightly only"'
+      hosts: [lambda, gx10]
+      thinking: ["off", "on"]
+  # KNOWN REDs that ship with their ticket (operator selection via the release cop aprender-cf,
+  # 2026-09-23: "Ship as known RED + ticket"; recorded on #3907). check_model_ladder.sh covers a row
+  # only when EVERY reason it fails matches a clause pinned to this rung + sha256; anything else on it,
+  # or this clause on any other model, is RED. An entry that covers nothing on a sweep is STALE and
+  # RED, so it retires itself when #4030 lands.
+  known_red:
+    - rung: qwen35-0.8b-q4km
+      sha256: bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517
+      clause:
+        - '^golden_output FAIL: golden_output_thinking_on: think block unclosed within 2048 tokens\b'
+        - '^apr qa exited \d+ — gates_failed: golden_output \(#3898\)$'
+      ticket: "#4030"
+      ruling: "operator selection via aprender-cf 2026-09-23 on #3907: ship as known RED + ticket"
   inventory:
     # #3957 F2: `apr_sha_drift` (#3940) is DELETED. It declared, in prose no code read, that
     # receipts measured at 9b7739951 stood for the cut 28c24207a. check_model_ladder.sh now
