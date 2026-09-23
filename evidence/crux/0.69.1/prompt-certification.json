@@ -2,11 +2,11 @@
  "schema": "crux-prompt-certification/v1",
  "prompts": "scripts/crux_inference_prompts.v2.json",
  "prompts_sha256": "cea80df5e785213667e27697fe3d139b99dcba95cfc6e970d76ac005d50fc806",
- "apr_commit": "13a108edbec5e38991851347144bb22cad620856",
+ "apr_commit": "feb5ac9a547c97320d1b72565645a3bfc316bd6f",
  "inventory_sha256": "b8e4c4626b20b7764041f5b5fe6d8a98166a952a64b3a844207b796b388778e0",
  "manifests": {
   "evidence/crux/0.69.1/prompt-certification/manifest-lambda.jsonl": "f56747953b33bb2e4adac4bac12be902224a202b2a07c35ede3e47121d178728",
-  "evidence/crux/0.69.1/prompt-certification/manifest-gx10.jsonl": "2b31c8ee79c454c518a333f7064bb3a58271163b2f6da312ba0a5ebdc37dcda3"
+  "evidence/crux/0.69.1/prompt-certification/manifest-gx10.jsonl": "6a5657345a6a61ee95ca7a8d7237d7f9748ec8e6d652bdd95be042a586a4e45f"
  },
  "admitted": {
   "Qwen3.5-2B/Q4_K_M": [],
@@ -16,6 +16,7 @@
    "fact-capital-japan",
    "fact-capital-france",
    "golden-paris",
+   "nonascii-water-kanji",
    "arith-17x23",
    "arith-precedence",
    "arith-word-apples",
@@ -33,6 +34,7 @@
    "fact-capital-japan",
    "fact-capital-france",
    "golden-paris",
+   "nonascii-water-kanji",
    "arith-17x23",
    "arith-precedence",
    "arith-word-apples",
@@ -51,6 +53,7 @@
    "fact-capital-japan",
    "fact-capital-france",
    "golden-paris",
+   "nonascii-water-kanji",
    "arith-17x23",
    "arith-precedence",
    "arith-word-apples",
@@ -68,6 +71,7 @@
    "fact-capital-japan",
    "fact-capital-france",
    "golden-paris",
+   "nonascii-water-kanji",
    "arith-17x23",
    "arith-precedence",
    "arith-word-apples",
@@ -111,6 +115,7 @@
     "fact-capital-japan",
     "fact-capital-france",
     "golden-paris",
+    "nonascii-water-kanji",
     "arith-17x23",
     "arith-precedence",
     "arith-word-apples",
@@ -129,6 +134,7 @@
     "fact-capital-japan",
     "fact-capital-france",
     "golden-paris",
+    "nonascii-water-kanji",
     "arith-17x23",
     "arith-precedence",
     "arith-word-apples",
@@ -153,6 +159,7 @@
     "fact-capital-japan",
     "fact-capital-france",
     "golden-paris",
+    "nonascii-water-kanji",
     "arith-17x23",
     "arith-precedence",
     "arith-word-apples",
@@ -169,6 +176,7 @@
     "fact-capital-japan",
     "fact-capital-france",
     "golden-paris",
+    "nonascii-water-kanji",
     "arith-17x23",
     "arith-precedence",
     "arith-word-apples",
@@ -190,7 +198,7 @@
  "rejected": {
   "Qwen3.5-2B/Q4_K_M": {
    "ctl-2plus2": "ggml@bf16 llama.cpp serve run thinking=on on gx10: unclosed think (budget exhausted)",
-   "ctl-recall-7": "hf@bf16 thinking=on: no row",
+   "ctl-recall-7": "ggml@bf16 llama.cpp serve run thinking=on on gx10: unclosed think (budget exhausted)",
    "ctl-code-add": "hf@bf16 thinking=on: no row",
    "fact-capital-japan": "ggml@bf16 llama.cpp serve run thinking=on on gx10: unclosed think (budget exhausted)",
    "fact-capital-france": "hf@bf16 thinking=on: no row",
@@ -216,7 +224,6 @@
   "Qwen3.5-4B/Q4_K_M": {
    "ctl-recall-7": "ggml@quant llama.cpp serve run thinking=on on gx10: unclosed think (budget exhausted)",
    "fact-water-formula": "ggml@bf16 llama.cpp serve run thinking=on on gx10: unclosed think (budget exhausted)",
-   "nonascii-water-kanji": "ggml@quant thinking=on: no row",
    "hard-add-4digit": "ggml@quant llama.cpp serve run thinking=on on gx10: unclosed think (budget exhausted)",
    "recall-cats": "ggml@bf16 llama.cpp serve run thinking=on on gx10: unclosed think (budget exhausted)",
    "recall-name": "ggml@quant llama.cpp serve run thinking=on on gx10: unclosed think (budget exhausted)",
@@ -226,7 +233,6 @@
   "Qwen3.5-4B/UD-Q4_K_XL": {
    "ctl-recall-7": "ggml@quant llama.cpp serve run thinking=on on gx10: unclosed think (budget exhausted)",
    "fact-water-formula": "ggml@bf16 llama.cpp serve run thinking=on on gx10: unclosed think (budget exhausted)",
-   "nonascii-water-kanji": "ggml@quant thinking=on: no row",
    "hard-add-4digit": "ggml@quant llama.cpp serve run thinking=on on gx10: unclosed think (budget exhausted)",
    "hard-reverse-word": "ggml@quant llama.cpp serve run thinking=on on gx10: mismatch",
    "recall-cats": "ggml@bf16 llama.cpp serve run thinking=on on gx10: unclosed think (budget exhausted)",
@@ -258,7 +264,7 @@
    "ggml@bf16:llama.cpp": "unclosed"
   },
   "Qwen3.5-2B/Q4_K_M|ctl-recall-7": {
-   "ggml@bf16:llama.cpp": "closed"
+   "ggml@bf16:llama.cpp": "unclosed"
   },
   "Qwen3.5-2B/Q4_K_M|ctl-code-add": {
    "ggml@bf16:llama.cpp": "closed"
@@ -329,7 +335,8 @@
   "Qwen3.5-4B/Q4_K_M|nonascii-water-kanji": {
    "ggml@bf16:llama.cpp": "closed",
    "hf@bf16:hf": "closed",
-   "vllm@bf16:vllm": "closed"
+   "vllm@bf16:vllm": "closed",
+   "ggml@quant:llama.cpp": "closed"
   },
   "Qwen3.5-4B/Q4_K_M|arith-17x23": {
    "ggml@bf16:llama.cpp": "closed",
@@ -466,7 +473,8 @@
   "Qwen3.5-4B/UD-Q4_K_XL|nonascii-water-kanji": {
    "ggml@bf16:llama.cpp": "closed",
    "hf@bf16:hf": "closed",
-   "vllm@bf16:vllm": "closed"
+   "vllm@bf16:vllm": "closed",
+   "ggml@quant:llama.cpp": "closed"
   },
   "Qwen3.5-4B/UD-Q4_K_XL|arith-17x23": {
    "ggml@bf16:llama.cpp": "closed",
@@ -576,6 +584,21 @@
    "model": "Qwen3.5-2B/Q4_K_M"
   },
   {
+   "leg": "ggml@bf16",
+   "thinking": "on",
+   "engine": "llama.cpp",
+   "verb": "serve run",
+   "host": "gx10",
+   "correct": false,
+   "why": "unclosed think (budget exhausted)",
+   "extracted": null,
+   "think": "unclosed",
+   "max_tokens": 1024,
+   "row": "evidence/crux/0.69.1/prompt-certification/manifest-gx10.jsonl#L263",
+   "prompt_id": "ctl-2plus2",
+   "model": "Qwen3.5-2B/Q4_K_M"
+  },
+  {
    "leg": "hf@bf16",
    "thinking": "on",
    "correct": false,
@@ -668,12 +691,27 @@
    "engine": "llama.cpp",
    "verb": "serve run",
    "host": "gx10",
-   "correct": true,
-   "why": null,
-   "extracted": "7",
-   "think": "closed",
+   "correct": false,
+   "why": "unclosed think (budget exhausted)",
+   "extracted": null,
+   "think": "unclosed",
    "max_tokens": 4096,
    "row": "evidence/crux/0.69.1/prompt-certification/manifest-gx10.jsonl#L2",
+   "prompt_id": "ctl-recall-7",
+   "model": "Qwen3.5-2B/Q4_K_M"
+  },
+  {
+   "leg": "ggml@bf16",
+   "thinking": "on",
+   "engine": "llama.cpp",
+   "verb": "serve run",
+   "host": "gx10",
+   "correct": false,
+   "why": "unclosed think (budget exhausted)",
+   "extracted": null,
+   "think": "unclosed",
+   "max_tokens": 1024,
+   "row": "evidence/crux/0.69.1/prompt-certification/manifest-gx10.jsonl#L264",
    "prompt_id": "ctl-recall-7",
    "model": "Qwen3.5-2B/Q4_K_M"
   },
@@ -3800,9 +3838,15 @@
   {
    "leg": "ggml@quant",
    "thinking": "on",
-   "correct": false,
-   "why": "no row",
-   "row": null,
+   "engine": "llama.cpp",
+   "verb": "serve run",
+   "host": "gx10",
+   "correct": true,
+   "why": null,
+   "extracted": "水",
+   "think": "closed",
+   "max_tokens": 4096,
+   "row": "evidence/crux/0.69.1/prompt-certification/manifest-gx10.jsonl#L258",
    "prompt_id": "nonascii-water-kanji",
    "model": "Qwen3.5-4B/Q4_K_M"
   },
@@ -3824,9 +3868,15 @@
   {
    "leg": "hf@bf16",
    "thinking": "off",
-   "correct": false,
-   "why": "no row",
-   "row": null,
+   "engine": "hf",
+   "verb": "chat",
+   "host": "gx10",
+   "correct": true,
+   "why": null,
+   "extracted": "水",
+   "think": "none",
+   "max_tokens": null,
+   "row": "evidence/crux/0.69.1/prompt-certification/manifest-gx10.jsonl#L262",
    "prompt_id": "nonascii-water-kanji",
    "model": "Qwen3.5-4B/Q4_K_M"
   },
@@ -3848,9 +3898,15 @@
   {
    "leg": "ggml@quant",
    "thinking": "off",
-   "correct": false,
-   "why": "no row",
-   "row": null,
+   "engine": "llama.cpp",
+   "verb": "serve run",
+   "host": "gx10",
+   "correct": true,
+   "why": null,
+   "extracted": "水",
+   "think": "closed",
+   "max_tokens": 1024,
+   "row": "evidence/crux/0.69.1/prompt-certification/manifest-gx10.jsonl#L259",
    "prompt_id": "nonascii-water-kanji",
    "model": "Qwen3.5-4B/Q4_K_M"
   },
@@ -6758,9 +6814,15 @@
   {
    "leg": "ggml@quant",
    "thinking": "on",
-   "correct": false,
-   "why": "no row",
-   "row": null,
+   "engine": "llama.cpp",
+   "verb": "serve run",
+   "host": "gx10",
+   "correct": true,
+   "why": null,
+   "extracted": "水",
+   "think": "closed",
+   "max_tokens": 4096,
+   "row": "evidence/crux/0.69.1/prompt-certification/manifest-gx10.jsonl#L260",
    "prompt_id": "nonascii-water-kanji",
    "model": "Qwen3.5-4B/UD-Q4_K_XL"
   },
@@ -6782,9 +6844,15 @@
   {
    "leg": "hf@bf16",
    "thinking": "off",
-   "correct": false,
-   "why": "no row",
-   "row": null,
+   "engine": "hf",
+   "verb": "chat",
+   "host": "gx10",
+   "correct": true,
+   "why": null,
+   "extracted": "水",
+   "think": "none",
+   "max_tokens": null,
+   "row": "evidence/crux/0.69.1/prompt-certification/manifest-gx10.jsonl#L262",
    "prompt_id": "nonascii-water-kanji",
    "model": "Qwen3.5-4B/UD-Q4_K_XL"
   },
@@ -6806,9 +6874,15 @@
   {
    "leg": "ggml@quant",
    "thinking": "off",
-   "correct": false,
-   "why": "no row",
-   "row": null,
+   "engine": "llama.cpp",
+   "verb": "serve run",
+   "host": "gx10",
+   "correct": true,
+   "why": null,
+   "extracted": "水",
+   "think": "closed",
+   "max_tokens": 1024,
+   "row": "evidence/crux/0.69.1/prompt-certification/manifest-gx10.jsonl#L261",
    "prompt_id": "nonascii-water-kanji",
    "model": "Qwen3.5-4B/UD-Q4_K_XL"
   },
