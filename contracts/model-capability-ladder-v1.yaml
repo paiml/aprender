@@ -127,7 +127,21 @@ ladder:
     # correctly for Qwen3.5-0.8B-IQ4_XS (332 tok) and 0.8B-Q4_K_M (241 tok). The "never closes" /
     # "closes empty" behaviour came from apr's non-official ON prompt (#3990), in BOTH engines.
     # That is an apr defect, and a key for it would have laundered one into RED-MODEL.
-    red_model: {}
+    #
+    # wrong_answer (cop ruling 2026-09-23, within ruling (a)): Qwen3.5-0.8B-UD-IQ2_XXS answers
+    # "What is 2+2?" without "4" on the OFFICIAL template, in apr AND llama.cpp (aprender-6c
+    # [3ada9a], #4004), while its Q4_K_M sibling answers "4". The key is INERT until a sweep
+    # re-proves it: apr and llama.cpp greedy ids identical, or diverging only on a near-tie (both
+    # top-2 margins <= 0.5, from recorded top2_logits); every engine wrong; the control right in
+    # both engines; apr CPU == GPU. Until then the row is plain RED, as it would be without the key.
+    red_model:
+      Qwen3.5-0.8B-UD-IQ2_XXS.gguf:
+        ticket: "#4004"
+        defect: wrong_answer
+        thinking: "off"
+        expect: "4"
+        prompts: [golden-2plus2]
+        control: Qwen3.5-0.8B-Q4_K_M.gguf
     # F10, operator ruling 2026-09-23 on #3957 (verbatim): "c". apr has no CUDA forward for
     # qwen35moe (hybrid SSM + MoE) and must REFUSE it by name on `apr run --gpu`: no fallback, no
     # output (aprender-serve capability::no_cuda_forward_reason). The CUDA forward is 0.70.0 work.
