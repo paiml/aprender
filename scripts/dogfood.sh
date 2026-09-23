@@ -229,6 +229,26 @@ mark() { # mark <name> <PASS|FAIL|SKIP|REPORT|WARN|MANUAL|DEFER> <note>
   [ "$st" = FAIL ] && FAILED=1
   printf '  [%s] %-26s %s\n' "$([ "$st" = PASS ] && echo ' OK ' || echo "$st")" "$1" "${note:0:96}"
 }
+# classify_declared <name> <path> <rc> <log> — records ONE declared gate's row from its exit
+# code and log; returns 1 when the row counts against the declared gates. A function so the
+# rule can be lifted and driven by a case table (scripts/check_dogfood_no_defer.sh).
+classify_declared() {
+  local name="$1" path="$2" rc="$3" log="$4" tail defer
+  tail=$(tail -3 "$log" 2>/dev/null | strip_ansi | tr '\n' ' ')
+  defer=$(grep -m1 '^DEFERRED: ' "$log" 2>/dev/null | strip_ansi)
+  if [ -n "$defer" ]; then
+    # The gate itself said it cannot be measured before the cascade. mark()
+    # turns this into a FAIL outside the pre-publish phase.
+    mark "$name" DEFER "$path: ${defer#DEFERRED: }"
+    [ "$DOGFOOD_PHASE" = pre-publish ] || return 1
+  elif [ "$rc" -eq 0 ]; then
+    mark "$name" PASS "$path exit=0"
+  else
+    mark "$name" FAIL "$path exit=$rc — $tail"
+    return 1
+  fi
+  return 0
+}
 # run_to <logfile> <cmd...> — runs cmd with stdout+stderr to <logfile> and puts
 # the command's OWN exit status in $RUN_RC. Never a pipeline: `cmd | tee log`
 # yields tee's status, and `cmd | grep -q x || fallback` binds the `||` to grep.
@@ -404,20 +424,7 @@ else
       DG_BAD=$((DG_BAD + 1)); continue
     fi
     run_to "$WORKLOG/$(basename "$dg_path").log" bash "$dg_path"
-    dg_rc=$RUN_RC
-    dg_tail=$(tail -3 "$WORKLOG/$(basename "$dg_path").log" 2>/dev/null | strip_ansi | tr '\n' ' ')
-    dg_defer=$(grep -m1 '^DEFERRED: ' "$WORKLOG/$(basename "$dg_path").log" 2>/dev/null | strip_ansi)
-    if [ -n "$dg_defer" ]; then
-      # The gate itself said it cannot be measured before the cascade. mark()
-      # turns this into a FAIL outside the pre-publish phase.
-      mark "$dg_name" DEFER "$dg_path: ${dg_defer#DEFERRED: }"
-      [ "$DOGFOOD_PHASE" = pre-publish ] || DG_BAD=$((DG_BAD + 1))
-    elif [ "$dg_rc" -eq 0 ]; then
-      mark "$dg_name" PASS "$dg_path exit=0"
-    else
-      mark "$dg_name" FAIL "$dg_path exit=$dg_rc — $dg_tail"
-      DG_BAD=$((DG_BAD + 1))
-    fi
+    classify_declared "$dg_name" "$dg_path" "$RUN_RC" "$WORKLOG/$(basename "$dg_path").log" || DG_BAD=$((DG_BAD + 1))
   done <<EOF
 $DG_PLAN
 EOF
