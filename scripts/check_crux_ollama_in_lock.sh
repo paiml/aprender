@@ -16,19 +16,30 @@
 #   1. the real dogfood, gpu-q path   → every load held, and both kinds of load were seen (not vacuous)
 #   2. the real dogfood, flock path   → the same
 #   3. MUTANT: run_cell without a lock → at least one load NOT held (the check can fail)
+#   4. MUTANT: keep_alive 0 stripped from every ollama call → caught (cop 2026-09-23: gx10 has no host
+#      keep_alive=0 default, and an ollama llama-server of up to 8969 MiB was left on its card between legs; the
+#      per-REQUEST keep_alive 0 is what empties the card on every host, so every load must carry it)
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
 set -uo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd) || exit 2
 PROG=check_crux_ollama_in_lock
-for t in python3 flock choom; do
+for t in python3 flock; do
   command -v "$t" >/dev/null 2>&1 || { printf '%s: ENV - %s is missing\n' "$PROG" "$t" >&2; exit 2; }
 done
+
 DOGFOOD="$ROOT/scripts/crux_inference_dogfood.sh"
 [ -f "$DOGFOOD" ] || { printf '%s: ENV - %s not found\n' "$PROG" "$DOGFOOD" >&2; exit 2; }
 
 TMP=$(mktemp -d) || exit 2
+# `choom -n 1000` (run_cell's OOM-victim marking) is SHIMMED to a plain exec for this table: the table measures
+# whether each load holds the lock, not OOM scoring, and an unprivileged sandbox denies the real one (quorum lane 2, 2026-09-23), which
+# turned every row into a false BREAK. The shim runs the command exactly as given after `--`.
+mkdir -p "$TMP/shim"
+printf '#!/bin/sh\nwhile [ $# -gt 0 ] && [ "$1" != -- ]; do shift; done\n[ $# -gt 0 ] && shift\nexec "$@"\n' > "$TMP/shim/choom"
+chmod +x "$TMP/shim/choom"
+export PATH="$TMP/shim:$PATH"
 SRV_PIDS=()
 _cleanup() {
   local p
@@ -90,8 +101,10 @@ class H(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         req = json.loads(self.rfile.read(n) or b"{}")
         if self.path in ("/v1/chat/completions", "/api/chat", "/api/generate"):
+            ka = req.get("keep_alive")
             with open(log, "a") as fh:
-                fh.write("LOAD http-%s %s held=%s\n" % (mode, self.path, "yes" if held() else "no"))
+                fh.write("LOAD http-%s %s held=%s keepalive=%s\n" % (mode, self.path, "yes" if held() else "no",
+                                                                   "0" if ka in (0, "0", "0s") else "missing"))
             if req.get("stream"):
                 chunk = json.dumps({"choices": [{"delta": {"content": "4"}, "finish_reason": "stop"}]})
                 self.reply(200, "data: %s\n\ndata: [DONE]\n\n" % chunk, "text/event-stream")
@@ -117,6 +130,8 @@ case "${1:-}" in
     esac ;;
   run)
     case " $* " in *" --help "*) echo "Usage: ollama run MODEL [PROMPT] [flags]"; exit 0 ;; esac
+    ka=missing
+    case " $* " in *" --keepalive 0 "*|*" --keepalive=0 "*|*" --keepalive 0s "*|*" --keepalive=0s "*) ka=0 ;; esac
     if [ -t 0 ]; then
       # interactive, as the chat verb drives it through crux_pty_chat.py: a minimal REPL, one load check per turn
       while :; do
@@ -124,12 +139,12 @@ case "${1:-}" in
         IFS= read -r line || exit 0
         [ "$line" = /bye ] && exit 0
         if flock -n "$STUB_LOCK" true 2>/dev/null; then h=no; else h=yes; fi
-        echo "LOAD cli-chat held=$h" >> "$STUB_LOG"
+        echo "LOAD cli-chat held=$h keepalive=$ka" >> "$STUB_LOG"
         printf '4\n\n'
       done
     fi
     if flock -n "$STUB_LOCK" true 2>/dev/null; then h=no; else h=yes; fi
-    echo "LOAD cli-run held=$h" >> "$STUB_LOG"
+    echo "LOAD cli-run held=$h keepalive=$ka" >> "$STUB_LOG"
     echo "4"
     printf 'total duration:       1s\nprompt %s count:    3 token(s)\n%s count:           1 token(s)\n%s rate:            1.00 tokens/s\n' eval eval eval >&2 ;;
   *) echo "stub ollama: unhandled '$*'" >&2; exit 1 ;;
@@ -176,17 +191,19 @@ run_row() {
 # verdict <name>: "<loads> <not-held> <cli-run loads> <cli-chat loads> <http-ollama loads>"
 verdict() {
   local log="$TMP/$1.log"
-  printf '%s %s %s %s %s' "$(grep -c '^LOAD ' "$log")" "$(grep -c 'held=no$' "$log")" \
+  printf '%s %s %s %s %s' "$(grep -c '^LOAD ' "$log")" "$(grep -c ' held=no ' "$log")" \
     "$(grep -c '^LOAD cli-run' "$log")" "$(grep -c '^LOAD cli-chat' "$log")" "$(grep -c '^LOAD http-ollama' "$log")"
 }
 
 expect_held() { # expect_held <name> <label> — every KIND of load must be seen, or the row is vacuous
   local v loads notheld cli chat http
   v=$(verdict "$1"); read -r loads notheld cli chat http <<< "$v"
-  if [ "$cli" -gt 0 ] && [ "$chat" -gt 0 ] && [ "$http" -gt 0 ] && [ "$notheld" -eq 0 ]; then
-    ok "$2: $loads loads ($cli ollama run, $chat ollama chat turns, $http ollama HTTP), all with the lock held"
+  local noka
+  noka=$(grep -E '^LOAD (cli-|http-ollama)' "$TMP/$1.log" | grep -vc 'keepalive=0$')
+  if [ "$cli" -gt 0 ] && [ "$chat" -gt 0 ] && [ "$http" -gt 0 ] && [ "$notheld" -eq 0 ] && [ "$noka" -eq 0 ]; then
+    ok "$2: $loads loads ($cli ollama run, $chat ollama chat turns, $http ollama HTTP), all with the lock held, every ollama load keep_alive 0"
   else
-    broke "$2: loads=$loads not-held=$notheld run=$cli chat=$chat http=$http (dogfood rc $(cat "$TMP/$1.rc"); log $TMP/$1.dogfood.log)"
+    broke "$2: loads=$loads not-held=$notheld run=$cli chat=$chat http=$http no-keepalive=$noka (dogfood rc $(cat "$TMP/$1.rc"); log $TMP/$1.dogfood.log)"
     tail -5 "$TMP/$1.dogfood.log" | sed 's/^/        /'
   fi
 }
@@ -232,6 +249,32 @@ if [ "$loads" -gt 0 ] && [ "$notheld" -gt 0 ]; then
   ok "MUTANT (run_cell without a lock) is caught: $notheld of $loads loads ran with the lock free"
 else
   broke "MUTANT not caught: loads=$loads not-held=$notheld — the check cannot fail"
+fi
+
+# Row 4: MUTANT — keep_alive 0 stripped from every ollama call (run, chat pty, serve). The check must see it.
+MK="$TMP/mutant-ka-tree"; mkdir -p "$MK/scripts"
+for f in "$ROOT"/scripts/* "$ROOT"/scripts/.[!.]*; do
+  [ -e "$f" ] || continue
+  [ "$(basename "$f")" = crux_inference_dogfood.sh ] && continue
+  ln -s "$f" "$MK/scripts/$(basename "$f")"
+done
+for d in "$ROOT"/*; do [ "$(basename "$d")" = scripts ] || ln -s "$d" "$MK/$(basename "$d")"; done
+python3 - "$DOGFOOD" "$MK/scripts/crux_inference_dogfood.sh" <<'PY'
+import sys
+s = open(sys.argv[1]).read()
+n = s.count("--keepalive 0 ") + s.count("""--extra '{"keep_alive": 0}' """)
+assert n >= 3, "keep_alive anchors moved (%d found): update this check with the dogfood" % n
+s = s.replace("--keepalive 0 ", "").replace("""--extra '{"keep_alive": 0}' """, "")
+open(sys.argv[2], "w").write(s)
+PY
+[ $? -eq 0 ] || broke "keep_alive mutant: could not plant (anchors moved)"
+run_row mutantka "$MK" "/nonexistent/gpu-q"
+kaload=$(grep -cE '^LOAD (cli-|http-ollama)' "$TMP/mutantka.log")
+kamiss=$(grep -E '^LOAD (cli-|http-ollama)' "$TMP/mutantka.log" | grep -vc 'keepalive=0$')
+if [ "$kaload" -gt 0 ] && [ "$kamiss" -eq "$kaload" ]; then
+  ok "MUTANT (keep_alive 0 stripped) is caught: $kamiss of $kaload ollama loads carried no keep_alive 0"
+else
+  broke "keep_alive MUTANT not caught: ollama loads=$kaload without keep_alive=$kamiss"
 fi
 
 printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"

@@ -118,6 +118,14 @@ def split_think(text: str) -> tuple[str, str]:
     return text[e + 8 :].strip(), text[s + 7 : e].strip()
 
 
+def prompt_opens_think(rendered: str) -> bool:
+    """Does the rendered prompt END inside an opened think block? Qwen3.5's official thinking-ON template prefills
+    `<think>\\n` (measured, #3990), so the generation starts INSIDE the block with no opening tag, and split_think
+    — which looks for `<think>` — would hand the whole reasoning back as the answer, and an unclosed block as a
+    complete one. item_doc restores the opener before splitting when this is true."""
+    return rendered.rstrip().endswith("<think>")
+
+
 def load_messages(path: str) -> list:
     with open(path, encoding="utf-8") as f:
         return json.load(f)["messages"]
@@ -205,7 +213,8 @@ def load_inproc(a):
         n_prompt = int(inputs["input_ids"].shape[1])
         out = model.generate(**inputs, max_new_tokens=max_tokens, do_sample=False)
         new = out[0][n_prompt:]
-        return tok.decode(new, skip_special_tokens=True), n_prompt, int(new.shape[0])
+        rendered = tok.apply_chat_template(convo, tokenize=False, add_generation_prompt=True, **thinking_kwargs(thinking))
+        return tok.decode(new, skip_special_tokens=True), n_prompt, int(new.shape[0]), prompt_opens_think(rendered)
 
     return respond, "generate", device_label(model)
 
@@ -221,6 +230,9 @@ def serve_session(a, log_path: Path):
     """ONE `transformers serve` (the pinned version's own server) for the whole batch, stopped at the end."""
     device = device_of(a.backend)
     src, rev = source_of(a)
+    from transformers import AutoTokenizer
+
+    tok = AutoTokenizer.from_pretrained(src, revision=rev)  # the server renders with this template: ask it what it rendered
     port = free_port()
     cmd = [
         str(Path(sys.executable).parent / "transformers"), "serve", "--host", "127.0.0.1", "--port", str(port),
@@ -264,7 +276,9 @@ def serve_session(a, log_path: Path):
                     resp_path.with_suffix(".sse.txt").write_text(sse, encoding="utf-8")
                 # transformers serve 5.17.0 never sends `data: [DONE]`; its terminal event is the finish_reason chunk
                 raw, usage, _ = parse_sse(sse, terminal="finish_reason")
-                return raw, usage.get("prompt_tokens"), usage.get("completion_tokens")
+                return (raw, usage.get("prompt_tokens"), usage.get("completion_tokens"),
+                        prompt_opens_think(tok.apply_chat_template(convo, tokenize=False, add_generation_prompt=True,
+                                                                   **thinking_kwargs(thinking))))
             resp = json.loads(body_bytes)
             if resp_path is not None:
                 resp_path.write_text(json.dumps(resp, indent=1), encoding="utf-8")
@@ -273,7 +287,9 @@ def serve_session(a, log_path: Path):
             if msg.get("reasoning_content"):
                 raw = f"<think>{msg['reasoning_content']}</think>{raw}"
             usage = resp.get("usage") or {}
-            return raw, usage.get("prompt_tokens"), usage.get("completion_tokens")
+            return (raw, usage.get("prompt_tokens"), usage.get("completion_tokens"),
+                    prompt_opens_think(tok.apply_chat_template(convo, tokenize=False, add_generation_prompt=True,
+                                                               **thinking_kwargs(thinking))))
 
         # The server is a separate process: its device is the one it was TOLD, and on the cpu lane CUDA is
         # hidden from it too (inherited environment), so "cpu" there is the only device it can have used.
@@ -298,12 +314,18 @@ def item_doc(it: dict, respond, interface: str, device: str, resp_path: Path | N
     messages = load_messages(it["messages"])
     counts = {"prompt_tokens": 0, "completion_tokens": 0}
 
+    opened = []
+
     def one(convo):
         if interface == "transformers serve":
-            text, n_prompt, n_completion = respond(convo, it["thinking"], it["max_tokens"], resp_path,
-                                                   stream=it["verb"] == "serve stream")
+            res = respond(convo, it["thinking"], it["max_tokens"], resp_path, stream=it["verb"] == "serve stream")
         else:
-            text, n_prompt, n_completion = respond(convo, it["thinking"], it["max_tokens"])
+            res = respond(convo, it["thinking"], it["max_tokens"])
+        text, n_prompt, n_completion = res[:3]
+        if len(res) > 3 and res[3]:
+            # the prompt opened the think block (#3990): restore the opener so the split sees the block
+            opened.append(True)
+            text = "<think>" + text
         counts["prompt_tokens"] = n_prompt  # the FINAL turn's prompt, which holds the whole conversation
         if n_completion is not None and counts["completion_tokens"] is not None:
             counts["completion_tokens"] += n_completion
@@ -317,7 +339,7 @@ def item_doc(it: dict, respond, interface: str, device: str, resp_path: Path | N
     else:
         raw = one(messages)
     answer, reasoning = split_think(raw)
-    doc = {"text": answer}
+    doc = {"text": answer, "raw_text": raw}
     if turns is not None:
         doc["turns"] = turns  # every assistant answer, in order; `text` is the last of them
     if reasoning:
@@ -325,7 +347,8 @@ def item_doc(it: dict, respond, interface: str, device: str, resp_path: Path | N
     if it["verb"] == "serve stream":
         interface = interface + " (stream)"
     doc["reported"] = {"interface": interface, "thinking_requested": it["thinking"],
-                       "thinking_emitted": bool(reasoning), **counts, "device": device}
+                       "thinking_emitted": bool(reasoning), "prompt_opens_think": bool(opened), **counts,
+                       "device": device}
     return doc
 
 
@@ -528,6 +551,9 @@ def greedy(a) -> None:
 
 # ── CLI ────────────────────────────────────────────────────────────────────
 def main(argv: list[str]) -> None:
+    import crux_proc  # scripts/lib is on sys.path (see the verify import above)
+
+    crux_proc.install()  # a stopped driver takes its engine children with it (#3952, measured on gx10)
     p = argparse.ArgumentParser(prog="crux_engine_hf.sh")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("probe")
