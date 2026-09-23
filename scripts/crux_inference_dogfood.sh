@@ -213,7 +213,10 @@ GPUQ_OK=0
 # gpu-q priority classes (the cop, 2026-09-21): CRUX development runs = 3, the
 # release train's own T-1 run = 1 (its autopilot passes CRUX_GPU_PRIO=1).
 GPU_PRIO="${CRUX_GPU_PRIO:-3}"
-LOCK_VIA="flock /tmp/apr-gpu.lock (no gpu-q with \`wait\` on this host: may have jumped the queue)"
+# The lock file is overridable ONLY so scripts/check_crux_ollama_in_lock.sh can prove, hermetically, that every
+# model-loading call runs while it is held (#3964); a real run uses the one lock every GPU user takes.
+GPU_LOCK="${CRUX_GPU_LOCK:-/tmp/apr-gpu.lock}"
+LOCK_VIA="flock $GPU_LOCK (no gpu-q with \`wait\` on this host: may have jumped the queue)"
 if [ -x "$GPUQ" ]; then
   gpuq_caps=$("$GPUQ" --caps 2>/dev/null)
   case "$gpuq_caps" in *wait*) GPUQ_OK=1; LOCK_VIA="gpu-q --prio $GPU_PRIO (GPUQ_WAIT bound)" ;; esac
@@ -315,10 +318,10 @@ run_cell() { # run_cell <cell script>; sets CELL_WHY when the lock was not had
     return $?
   fi
   if [ "$GPUQ_OK" = 1 ]; then
-    GPUQ_WAIT="$LOCK_WAIT" "$GPUQ" --prio "$GPU_PRIO" -- bash "$1" 2> "$1.lock.err"
+    GPUQ_LOCK="$GPU_LOCK" GPUQ_WAIT="$LOCK_WAIT" "$GPUQ" --prio "$GPU_PRIO" -- bash "$1" 2> "$1.lock.err"
     rc=$?
   else
-    flock -w "$LOCK_WAIT" -E 75 /tmp/apr-gpu.lock choom -n 1000 -- bash "$1" 2> "$1.lock.err"
+    flock -w "$LOCK_WAIT" -E 75 "$GPU_LOCK" choom -n 1000 -- bash "$1" 2> "$1.lock.err"
     rc=$?
   fi
   if [ "$rc" -ne 0 ]; then
