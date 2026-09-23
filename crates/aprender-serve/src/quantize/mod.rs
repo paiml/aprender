@@ -87,6 +87,10 @@ pub mod iq4_nl;
 pub mod iq4_xs;
 pub mod iq_dispatch;
 pub mod iq_grids;
+#[cfg(test)]
+#[path = "ptx_codebook_tests_3931.rs"]
+mod ptx_codebook_tests_3931;
+
 pub mod parallel_dequant;
 pub mod parallel_k;
 pub mod simd;
