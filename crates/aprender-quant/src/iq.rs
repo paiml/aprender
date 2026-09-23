@@ -292,6 +292,7 @@ fn dequantize_iq3_s_block(block: &[u8], out: &mut [f32]) {
 }
 
 #[cfg(test)]
+#[allow(clippy::unreadable_literal)] // f32 bit patterns copied from gguf-py
 mod tests {
     use super::*;
 
@@ -523,7 +524,7 @@ mod tests {
     }
 
     /// #3850: a type this module does not decode is refused, never decoded as
-    /// something else. IQ2_XXS (16) is a real IQ type with no decoder here.
+    /// something else. `IQ2_XXS` (16) is a real IQ type with no decoder here.
     #[test]
     fn an_undecoded_iq_type_is_refused_not_approximated() {
         for ty in [16, 17, 18, 19, 22, 12, 999] {
