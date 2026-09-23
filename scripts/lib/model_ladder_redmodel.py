@@ -245,7 +245,9 @@ class RedVerdicts:
             asha = crux.apr_sha_of(R)
             if not (asha and crux.HEX40.fullmatch(asha)) or (asha != cut and asha not in equiv):
                 continue
-            if (R.get("summary") or {}).get("verdict") == "DECLINE":
+            # #4004: a greedy-only receipt (no cells) DECLINEs by construction and is still evidence here.
+            greedy_only = R.get("greedy_only") is True and not R.get("cells")
+            if (R.get("summary") or {}).get("verdict") == "DECLINE" and not greedy_only:
                 continue
             lane = R.get("backend")
             for g in R.get("greedy") or []:

@@ -177,6 +177,15 @@ def build_wa(apr_div=None, ref_div=None):
     return L, rec, crux
 
 
+def greedy_only_receipt(cpu):
+    """Move a CPU-lane receipt's greedy rows into a greedy-only receipt, as --greedy-only writes it."""
+    g = {"schema": "crux-inference-receipt/v1", "host": cpu.get("host"), "backend": "cpu", "apr": dict(cpu["apr"]),
+         "greedy_only": True, "cells": [], "greedy": cpu.pop("greedy", []),
+         "summary": {"verdict": "DECLINE", "declined_because": "no cell was measured", "cells": 0}}
+    cpu["greedy"] = []
+    return g
+
+
 def write(name, L, rec, crux, rc, must, must_not=None):
     d = os.path.join(HERE, name)
     if os.path.isdir(d):
@@ -382,6 +391,16 @@ def main():
     L, rec, crux = build_f9()   # ... and the think-block class holds its GPU leg to the same rule
     crux["lambda-gpu"]["greedy"][0]["apr"]["raw"]["backend"] = {"requested": "gpu", "ran": "cpu", "fell_back": True}
     write("red-model-gpu-fell-back", L, rec, crux, 1, r"the apr GPU-lane row did NOT run on the GPU")
+    # #4004: the CPU reference comes from a GREEDY-ONLY receipt (no cells, collect verdict DECLINE). It is
+    # evidence for F9 and not a lane verdict: the cell join skips it and the F9 judge reads its greedy rows.
+    L, rec, crux = build_wa(apr_div=4, ref_div=2)
+    crux["lambda-cpu-greedy"] = greedy_only_receipt(crux["lambda-cpu"])
+    write("green-red-model-wrong-answer-greedy-only-cpu", L, rec, crux, 0,
+          r"RED-MODEL lambda +Qwen3.5-0.8B-UD-IQ2_XXS.gguf +wrong_answer", r"FAIL")
+    L, rec, crux = build_wa(apr_div=4, ref_div=2)   # greedy_only AND cells: it cannot be both
+    crux["lambda-cpu-greedy"] = greedy_only_receipt(crux["lambda-cpu"])
+    crux["lambda-cpu-greedy"]["cells"] = [crux_cell(W_SHA, "lambda", "run", "off", "GREEN")]
+    write("red-crux-greedy-only-with-cells", L, rec, crux, 1, r"is marked greedy_only and carries 1 cell")
     L, rec, crux = build_wa()   # a wrong_answer key must say what the right answer is
     del L["ladder"]["inventory"]["red_model"][W]["expect"]
     write("red-model-wrong-answer-no-expect", L, rec, crux, 1, r"is a wrong_answer key with no `expect`")
