@@ -211,6 +211,12 @@ mod shape_conformance_tests {
     fn every_whitelisted_held_shape_conforms_on_the_device() {
         let mut exec = CudaExecutor::new(0).expect("a CUDA device: this is the one check that needs one");
         let rows = census();
+        // Production initialises the executor's workspace at model load, and some kernels (the Q6_K DP4A path)
+        // read its Q8 activation buffer; a bare executor panics there (#3178, measured on gx10 by this harness).
+        // Initialise it exactly as production does, sized to the largest row length in the census.
+        let max_k = rows.iter().map(|&(_, k, _)| k).max().unwrap_or(256);
+        exec.init_workspace(max_k, max_k)
+            .unwrap_or_else(|e| panic!("init_workspace({max_k}, {max_k}) failed on a bare executor: {e} — the harness cannot mirror production"));
         let mut results = Vec::new();
         let mut controls = BTreeMap::new();
         let mut failed = 0usize;
@@ -219,11 +225,20 @@ mod shape_conformance_tests {
             assert_eq!(k % per, 0, "ggml {q}: k={k} is a partial block (GGUF forbids it; admission must refuse it)");
             let n = if n_held <= 4096 { n_held } else { 4096 + n_held % 256 };
             let bytes = weights(q, n, k, (q << 20) ^ (k as u32) ^ ((n as u32) << 8));
-            let worst = ab(&mut exec, q, &bytes, &bytes, k, n);
+            // One row's panic (a kernel precondition, a launch error) is THAT row's failure, recorded with its
+            // message; it must not lose every other row's result (the first gx10 run wrote no receipt).
+            let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ab(&mut exec, q, &bytes, &bytes, k, n)));
+            let (worst, panic_msg) = match run {
+                Ok(w) => (w, None),
+                Err(e) => (f32::INFINITY, Some(e.downcast_ref::<String>().cloned()
+                    .or_else(|| e.downcast_ref::<&str>().map(|s| (*s).to_string())).unwrap_or_else(|| "panic".into()))),
+            };
             let pass = worst <= TOL;
             failed += usize::from(!pass);
-            eprintln!("#3968 ggml={q:2} k={k:6} n={n:6} (held {n_held:6}) class={:7} worst={worst:.3e} {}", class(q, k), if pass { "ok" } else { "FAIL" });
-            results.push(serde_json::json!({"qtype": q, "k": k, "n_held": n_held, "n_tested": n, "class": class(q, k), "worst": worst, "pass": pass}));
+            eprintln!("#3968 ggml={q:2} k={k:6} n={n:6} (held {n_held:6}) class={:7} worst={worst:.3e} {}{}", class(q, k),
+                      if pass { "ok" } else { "FAIL" }, panic_msg.as_deref().map(|m| format!(" (panicked: {m})")).unwrap_or_default());
+            results.push(serde_json::json!({"qtype": q, "k": k, "n_held": n_held, "n_tested": n, "class": class(q, k),
+                "worst": if worst.is_finite() { serde_json::json!(worst) } else { serde_json::json!("inf") }, "pass": pass, "panic": panic_msg}));
 
             if let std::collections::btree_map::Entry::Vacant(slot) = controls.entry(q) {
                 // Negative control: corrupt block 0 of row 0 in the GPU copy only.
@@ -234,10 +249,11 @@ mod shape_conformance_tests {
                 for b in &mut bad[lo..hi] {
                     *b ^= 0x5A;
                 }
-                let worst_bad = ab(&mut exec, q, &bytes, &bad, k, n);
+                let worst_bad = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ab(&mut exec, q, &bytes, &bad, k, n)))
+                    .unwrap_or(f32::NAN); // a panicking control proves nothing: NaN is not > TOL, so it counts as BLIND
                 let red = worst_bad > TOL;
                 eprintln!("#3968 ggml={q:2} NEGATIVE CONTROL worst={worst_bad:.3e} {}", if red { "RED (good)" } else { "GREEN — this type's greens license nothing" });
-                slot.insert(serde_json::json!({"k": k, "n": n, "worst": worst_bad, "red": red}));
+                slot.insert(serde_json::json!({"k": k, "n": n, "worst": if worst_bad.is_finite() { serde_json::json!(worst_bad) } else { serde_json::json!(worst_bad.to_string()) }, "red": red}));
             }
         }
         let blind: Vec<u32> = controls.iter().filter(|(_, v)| v["red"] != true).map(|(q, _)| *q).collect();
