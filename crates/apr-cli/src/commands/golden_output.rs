@@ -494,12 +494,41 @@ fn judge_thinking_on_output(generated: &str, patterns: &[&str], budget: usize) -
                      — the thinking mode this leg exists to judge was never entered"
                 ));
             }
+            // #3948: a block that opened and closed with nothing in it is the same
+            // outcome as no block at all — the model skipped the reasoning. Judging
+            // only the answer after it scored "skipped reasoning, answered" as
+            // "reasoned, answered", so the leg could not fail on the case it exists
+            // to catch (Qwen3.5-0.8B Q4_K_M answered at budget 8).
+            if !any_think_block_has_content(generated) {
+                return Some(format!(
+                    "golden_output_thinking_on: the <think> block closed EMPTY within {budget} tokens \
+                     — the model skipped the reasoning, so this leg judged an answer given without \
+                     thinking (#3948)"
+                ));
+            }
             match verify_output(&answer, "golden_output_thinking_on", patterns) {
                 OutputVerification::Fail { reason } => Some(reason),
                 OutputVerification::Pass => None,
             }
         }
     }
+}
+
+/// #3948: does any closed `<think>` block hold more than whitespace?
+#[cfg(feature = "inference")]
+fn any_think_block_has_content(generated: &str) -> bool {
+    let mut rest = generated;
+    while let Some(start) = rest.find("<think>") {
+        let body = &rest[start + "<think>".len()..];
+        let Some(end) = body.find("</think>") else {
+            return false;
+        };
+        if !body[..end].trim().is_empty() {
+            return true;
+        }
+        rest = &body[end + "</think>".len()..];
+    }
+    false
 }
 
 /// The golden cases as (prompt, expected patterns) for one architecture.
@@ -1745,6 +1774,13 @@ mod golden_output_tests {
         let absent = judge_thinking_on_output("2 + 2 = 4.", &patterns, 2048)
             .expect("no think block means the leg judged nothing");
         assert!(absent.contains("never entered"), "{absent}");
+        // #3948: closed but EMPTY → the reasoning was skipped; a right answer does not save it
+        for empty in ["<think></think>2 + 2 = 4.", "<think>\n\n</think>\n\n2 + 2 = 4."] {
+            let skipped = judge_thinking_on_output(empty, &patterns, 2048)
+                .expect("an empty think block proves no reasoning happened");
+            assert!(skipped.contains("closed EMPTY within 2048 tokens"), "{skipped}");
+            assert!(!skipped.contains("never entered"), "{skipped}");
+        }
     }
 
     /// The ON budget is the ON leg's alone. #3724's ruling: the fix is the prompt,
