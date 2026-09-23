@@ -45,6 +45,12 @@ reviewable code is:
   - every production gate (apr run/serve, the construction gate, the hybrid gate) calls this one function.
 - The capability contract rows carry `gpu_excluded_from_cc_major: 12`. FALSIFY-CAP's row test requires the value to
   equal the code's.
+- `apr capability` renders the same fact: `no … refused on THIS device` at cc ≥ 12, and `yes … except compute
+  capability >= 12` elsewhere. `--json` carries `this_device_cc_major` (from `realizar::gguf::device_cc_major`, the
+  function the gate calls). The packaged contract mirror `crates/apr-cli/contracts/…` is synced (`capability_mirror`
+  3/3).
+- A capability query that ERRORS on a present device fails closed (`i32::MAX`: every exclusion applies). `None` means
+  only that no driver or device exists.
 - The whitelist-exactness tests now assert the device-independent list, `_on(q, None)`. Without that they would fail
   on a sm_12x box.
 
@@ -59,19 +65,29 @@ and the receipts.
   - an exclusion is **stale**: every held shape of the type passes at cc ≥ 12 with a RED control, so #4096 has
     landed and the exclusion must go.
 - **REFUSES** when the whitelist or an exclusion does not parse.
-- `--self-test` has 14 rows. The RED rows require their reason text, not only rc 1. Mutant (stale branch disabled):
+- `--self-test` has 16 rows, two of them for the nvidia-smi `gpu`-line capability fallback the lambda receipt uses. The RED rows require their reason text, not only rc 1. Mutant (stale branch disabled):
   exactly `RED-stale-exclusion` BROKE.
 
 ## Measured
-- **lambda** (RTX 4090 8.9), run @`65f752cd5`: 163/163; worst 1.3e-7; 17/17 negative controls RED. Receipt
-  `9700b26f8`.
+- **lambda** (RTX 4090 8.9), re-run @`b7f378ebe` (head, after quorum lane 1): `cc_major 8`, `excluded_types []`;
+  163/163; worst 1.3e-7; 17/17 negative controls RED. Receipt `7383d6f7b`.
 - **gx10** (GB10 12.1), run @`5c1df1b3e`:
   - `cc_major 12`, `excluded_types [21, 22]`;
   - the 3 excluded rows ran and failed (the stated RED); 0 passed, so the exclusion is not stale;
   - the other 160 passed, worst 1.3e-7. Receipt `30edfa0ea`.
 - `check_gpu_shape_conformance.sh` over both hosts: **PASS**. This is its first green on its real target.
 - `cargo test -p aprender-serve --lib` over pmat785, prose_whitelist, every_quant_row_agrees and gemv_entry_name:
-  37 passed with cuda, 12 passed on default features.
+  37 passed with cuda, 12 passed on default features. `apr-cli` capability tests 5/5; `capability_mirror` 3/3; clippy
+  `-D warnings` clean on `aprender-serve --features cuda` and `apr-cli`.
+
+## Quorum round 1 (agy quota exhausted on every family, so Claude Code Sonnet 5 lanes, degraded: same-family)
+Lane 1: FAIL. Its findings, all fixed in `b7f378ebe`/`7383d6f7b`:
+- `apr capability` ignored the exclusion;
+- the `gpu`-line fallback had no self-test row;
+- the capability-query error failed open;
+- the lambda receipt predated the exclusion code.
+
+Also fixed: the packaged mirror, which the lane did not flag. A fresh round of three lanes judges the new head.
 
 ## Not done
 - The guard is not yet wired into a workflow. Wiring it is a `.github/workflows` edit, which needs the standing
