@@ -375,13 +375,29 @@ fn format_gguf_prompt(
 
     let formatted_prompt = if is_instruct {
         let messages = vec![ChatMessage::user(prompt)];
-        match format_messages(&messages, Some(model_name)) {
-            Ok(formatted) => formatted,
-            Err(e) => {
+        // #3990: the GGUF's OWN chat_template first (thinking off, production's default since
+        // #3801); the name-keyed family template only when the file declares none, or when
+        // the declared one fails -- which is said, not swallowed.
+        let official = mapped_model
+            .model
+            .metadata
+            .contains_key("tokenizer.chat_template")
+            .then(|| realizar::chat_template::render_official_for_model(&mapped_model.model, &messages, Some(false)));
+        match official {
+            Some(Ok(formatted)) => Ok(formatted),
+            Some(Err(e)) => {
+                eprintln!("[#3990] WARNING: the model's own chat_template failed to render ({e}); using the detected family template, which is NOT this model's prompt format");
+                format_messages(&messages, Some(model_name))
+            }
+            None => format_messages(&messages, Some(model_name)),
+        }
+        .map_or_else(
+            |e| {
                 eprintln!("Warning: chat template formatting failed, using raw prompt: {e}");
                 prompt.to_owned()
-            }
-        }
+            },
+            |formatted| formatted,
+        )
     } else {
         prompt.to_owned()
     };
