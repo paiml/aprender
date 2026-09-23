@@ -129,6 +129,11 @@ impl CudaExecutor {
             WeightQuantType::F16 => {
                 self.f16_gemv_into(lm_head_ptr, normed_hidden, logits_gpu, vocab_size, hidden_dim)?;
             },
+            // #3908: reachable -- qwen2.5-coder-0.5b-instruct.apr is BF16
+            // throughout, lm_head included.
+            WeightQuantType::BF16 => {
+                self.bf16_gemv_into(lm_head_ptr, normed_hidden, logits_gpu, vocab_size, hidden_dim)?;
+            },
             WeightQuantType::IQ4XS => {
                 self.iq4_xs_gemv_into(
                     lm_head_ptr, normed_hidden, logits_gpu, vocab_size, hidden_dim,
