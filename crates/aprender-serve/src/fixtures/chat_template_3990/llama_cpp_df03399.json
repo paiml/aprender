@@ -4,6 +4,8 @@
   "path": "/home/noah/models/qwen2.5-1.5b-instruct-q4_k_m.gguf",
   "system": false,
   "thinking": false,
+  "bos": "<|endoftext|>",
+  "eos": "<|im_end|>",
   "messages": [
    {
     "role": "user",
@@ -60,6 +62,8 @@
   "path": "/home/noah/models/qwen2.5-1.5b-instruct-q4_k_m.gguf",
   "system": false,
   "thinking": true,
+  "bos": "<|endoftext|>",
+  "eos": "<|im_end|>",
   "messages": [
    {
     "role": "user",
@@ -116,6 +120,8 @@
   "path": "/home/noah/models/qwen2.5-1.5b-instruct-q4_k_m.gguf",
   "system": true,
   "thinking": false,
+  "bos": "<|endoftext|>",
+  "eos": "<|im_end|>",
   "messages": [
    {
     "role": "system",
@@ -167,6 +173,8 @@
   "path": "/home/noah/models/qwen2.5-1.5b-instruct-q4_k_m.gguf",
   "system": true,
   "thinking": true,
+  "bos": "<|endoftext|>",
+  "eos": "<|im_end|>",
   "messages": [
    {
     "role": "system",
@@ -218,6 +226,8 @@
   "path": "/home/noah/models/Qwen3-1.7B-Q4_K_M.gguf",
   "system": false,
   "thinking": false,
+  "bos": null,
+  "eos": "<|im_end|>",
   "messages": [
    {
     "role": "user",
@@ -257,6 +267,8 @@
   "path": "/home/noah/models/Qwen3-1.7B-Q4_K_M.gguf",
   "system": false,
   "thinking": true,
+  "bos": null,
+  "eos": "<|im_end|>",
   "messages": [
    {
     "role": "user",
@@ -292,6 +304,8 @@
   "path": "/home/noah/models/Qwen3-1.7B-Q4_K_M.gguf",
   "system": true,
   "thinking": false,
+  "bos": null,
+  "eos": "<|im_end|>",
   "messages": [
    {
     "role": "system",
@@ -347,6 +361,8 @@
   "path": "/home/noah/models/Qwen3-1.7B-Q4_K_M.gguf",
   "system": true,
   "thinking": true,
+  "bos": null,
+  "eos": "<|im_end|>",
   "messages": [
    {
     "role": "system",
@@ -398,6 +414,8 @@
   "path": "/home/noah/models/Qwen3.5-0.8B-IQ4_XS.gguf",
   "system": false,
   "thinking": false,
+  "bos": null,
+  "eos": "<|im_end|>",
   "messages": [
    {
     "role": "user",
@@ -437,6 +455,8 @@
   "path": "/home/noah/models/Qwen3.5-0.8B-IQ4_XS.gguf",
   "system": false,
   "thinking": true,
+  "bos": null,
+  "eos": "<|im_end|>",
   "messages": [
    {
     "role": "user",
@@ -474,6 +494,8 @@
   "path": "/home/noah/models/Qwen3.5-0.8B-IQ4_XS.gguf",
   "system": true,
   "thinking": false,
+  "bos": null,
+  "eos": "<|im_end|>",
   "messages": [
    {
     "role": "system",
@@ -529,6 +551,8 @@
   "path": "/home/noah/models/Qwen3.5-0.8B-IQ4_XS.gguf",
   "system": true,
   "thinking": true,
+  "bos": null,
+  "eos": "<|im_end|>",
   "messages": [
    {
     "role": "system",
@@ -575,6 +599,230 @@
    198,
    248068,
    198
+  ]
+ },
+ {
+  "model": "tinyllama",
+  "path": "/mnt/nvme-raid0/cache/apr-home/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+  "system": false,
+  "thinking": false,
+  "bos": "<s>",
+  "eos": "</s>",
+  "messages": [
+   {
+    "role": "user",
+    "content": "What is the capital of France? Answer in one word."
+   }
+  ],
+  "prompt": "<|user|>\nWhat is the capital of France? Answer in one word.</s>\n<|assistant|>\n",
+  "ids": [
+   529,
+   29989,
+   1792,
+   29989,
+   29958,
+   13,
+   5618,
+   338,
+   278,
+   7483,
+   310,
+   3444,
+   29973,
+   673,
+   297,
+   697,
+   1734,
+   29889,
+   2,
+   29871,
+   13,
+   29966,
+   29989,
+   465,
+   22137,
+   29989,
+   29958,
+   13
+  ]
+ },
+ {
+  "model": "tinyllama",
+  "path": "/mnt/nvme-raid0/cache/apr-home/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+  "system": false,
+  "thinking": true,
+  "bos": "<s>",
+  "eos": "</s>",
+  "messages": [
+   {
+    "role": "user",
+    "content": "What is the capital of France? Answer in one word."
+   }
+  ],
+  "prompt": "<|user|>\nWhat is the capital of France? Answer in one word.</s>\n<|assistant|>\n",
+  "ids": [
+   529,
+   29989,
+   1792,
+   29989,
+   29958,
+   13,
+   5618,
+   338,
+   278,
+   7483,
+   310,
+   3444,
+   29973,
+   673,
+   297,
+   697,
+   1734,
+   29889,
+   2,
+   29871,
+   13,
+   29966,
+   29989,
+   465,
+   22137,
+   29989,
+   29958,
+   13
+  ]
+ },
+ {
+  "model": "tinyllama",
+  "path": "/mnt/nvme-raid0/cache/apr-home/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+  "system": true,
+  "thinking": false,
+  "bos": "<s>",
+  "eos": "</s>",
+  "messages": [
+   {
+    "role": "system",
+    "content": "You are a terse geography assistant."
+   },
+   {
+    "role": "user",
+    "content": "What is the capital of France? Answer in one word."
+   }
+  ],
+  "prompt": "<|system|>\nYou are a terse geography assistant.</s>\n<|user|>\nWhat is the capital of France? Answer in one word.</s>\n<|assistant|>\n",
+  "ids": [
+   529,
+   29989,
+   5205,
+   29989,
+   29958,
+   13,
+   3492,
+   526,
+   263,
+   1935,
+   344,
+   1737,
+   5275,
+   20255,
+   29889,
+   2,
+   29871,
+   13,
+   29966,
+   29989,
+   1792,
+   29989,
+   29958,
+   13,
+   5618,
+   338,
+   278,
+   7483,
+   310,
+   3444,
+   29973,
+   673,
+   297,
+   697,
+   1734,
+   29889,
+   2,
+   29871,
+   13,
+   29966,
+   29989,
+   465,
+   22137,
+   29989,
+   29958,
+   13
+  ]
+ },
+ {
+  "model": "tinyllama",
+  "path": "/mnt/nvme-raid0/cache/apr-home/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+  "system": true,
+  "thinking": true,
+  "bos": "<s>",
+  "eos": "</s>",
+  "messages": [
+   {
+    "role": "system",
+    "content": "You are a terse geography assistant."
+   },
+   {
+    "role": "user",
+    "content": "What is the capital of France? Answer in one word."
+   }
+  ],
+  "prompt": "<|system|>\nYou are a terse geography assistant.</s>\n<|user|>\nWhat is the capital of France? Answer in one word.</s>\n<|assistant|>\n",
+  "ids": [
+   529,
+   29989,
+   5205,
+   29989,
+   29958,
+   13,
+   3492,
+   526,
+   263,
+   1935,
+   344,
+   1737,
+   5275,
+   20255,
+   29889,
+   2,
+   29871,
+   13,
+   29966,
+   29989,
+   1792,
+   29989,
+   29958,
+   13,
+   5618,
+   338,
+   278,
+   7483,
+   310,
+   3444,
+   29973,
+   673,
+   297,
+   697,
+   1734,
+   29889,
+   2,
+   29871,
+   13,
+   29966,
+   29989,
+   465,
+   22137,
+   29989,
+   29958,
+   13
   ]
  }
 ]
