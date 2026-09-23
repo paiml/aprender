@@ -35,7 +35,7 @@ Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 a
 2. **Theme.** Otherwise the issue goes to the release whose exit bar it blocks. Correctness of a certified cell → 0.71; the serve/agent surface and telemetry → 0.72; the performance path (including correctness bugs *in* batched/FP8 paths, which must be fixed before parity is claimed) → 0.73; dispatch/tensor/arch consolidation → 0.74; training → 0.75; release/CI/gates/lock/sweep infrastructure → 0.70.
 3. **Debt ratchet (#3997).** Debt goes to a slice by pillar: A coverage → 0.70 (the floor gates the 0.70 train); B/C pv + ontology → 0.71; D backlog/docs/packaging → 0.73. The slices are a proposal for equal portions; the operator rebalances.
 4. **Not a milestone.** `0.69.1 (in flight)`: worked in the current train, closes at the tag or carries to 0.70. `verify-close`: the release tree already implements it -- cited in code on origin/release/0.69.1-batch-2 @ c619dddd4 (not yet on main). `close?`: a superseded or stale epic/row. `none (pinned)`: a standing coordination thread.
-5. **Hand review.** Every row was hand-checked after the keyword pass; about 120 reasons are hand-written.
+5. **Review.** A keyword pass placed the rows, and a title-level hand review overrode about 120 of them. That was NOT enough: the #4024 quorum (lane 2) found keyword misplacements, and a body-level re-review of the 184 rows with a template reason found 10 clearly wrong placements (see **Corrections**). Treat a template reason as the weakest evidence in this table.
 
 **Totals.**
 
@@ -56,6 +56,32 @@ Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 a
 - #3978 → **0.71.0/0.72.0**: named must-carry in #3994 (0.71.0) and #4000 (0.72.0) -- operator picks one. _apr code hardcodes 'apr serve --gpu' (no CPU lane, no --max-tokens/thinking flag) and picks a collid_
 - #3979 → **0.71.0/0.72.0**: named must-carry in #3994 (0.71.0) and #4000 (0.72.0) -- operator picks one. _apr serve: APR-CPU fallback and safetensors routers have no GET / route index and SSE ends without f_
 - #4008 → **0.73.0/0.74.0**: qwen35moe arch constraints: goes with #3977, whose release is #3999's open decision. _arch constraints: qwen35moe (Qwen3.5-35B-A3B) has is_moe=false; replace #3992's substring MoE predic_
+
+## Corrections (pending operator approval)
+
+These rows were APPLIED as the table first proposed, and a body-level re-review shows the placement is clearly wrong. Re-moving them is a change the operator has not approved, so they sit at the applied milestone until approved.
+
+| # | Applied | Correct | Why |
+|---|---|---|---|
+| #3779 | 0.75.0 | 0.71.0 | placed by a keyword (finetune.rs): the defect is the apr-cli --features wgpu build failing, the same as #3995 (0.71) |
+| #3513 | 0.73.0 | 0.71.0 | a numerical correctness defect in the DEFAULT sm_89 DP4A GEMV through the Gated DeltaNet path (Qwen3.5), not performance; 'profile' means the error profile |
+| #3595 | 0.72.0 | 0.71.0 | apr chat hard-skips CUDA for every qwen35 model: a verb missing on a backend (#3994's bar), not the serve surface |
+| #3925 | 0.72.0 | 0.71.0 | the ladder's gibberish detector judges apr chat's separator and reddens every rung: the certification instrument, not the serve surface |
+| #3850 | 0.74.0 | 0.71.0 | resolve_qtype decodes an UNKNOWN ggml type as Q4_K on the qa GPU path: quant-admission correctness, not type-list consolidation |
+| #4018 | 0.70.0 | 0.71.0 | apr run -v panics on a non-ASCII prompt (a str slice at byte 200): a crash in a release verb, not CI/gate speed |
+| #4006 | 0.71.0 | 0.72.0 | apr run labels a mixed UD-IQ2_XXS file by its lm_head qtype: a label only, i.e. honest telemetry |
+| #3935 | 0.71.0 | 0.73.0 | a stale README claim: docs debt (pillar D), not pv/ontology |
+| #3151 | 0.75.0 | 0.73.0 | CNN autodiff ops: general backlog (pillar D); the issue itself says Qwen3.5 fine-tuning does not need them |
+| #3170 | 0.72.0 | 0.70.0 | apr-agent is fleet worktree tooling (its --help created a worktree/branch/lock), not the apr serve/code agent surface |
+
+**Duplicates found** (close one of each pair; no action taken):
+
+- #3779 / #3995: the same apr-cli --features wgpu build failure, split across 0.75 and 0.71 (the correction above aligns them)
+- #3891 / #3894: the same hardcoded GPU quant list (both 0.74)
+- #3869 / #3870: IQ4_NL has no dequant path (both 0.71; #3852 shares the root cause)
+- #3882 / #3883: the golden ON prompt in neither declared mode (both 0.71)
+- #3871 / #3940: the ladder receipt does not bind the binary (both 0.71)
+- #3636 / #3837: clippy --features cuda red and ungated (both 0.70; #3996 related)
 
 ## Currently in 0.70.0
 
@@ -188,13 +214,13 @@ Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 a
 | #4016 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | Process rule: llama.cpp fit (llama-fit-params) is the required placement gate for every model certification/te |
 | #2507 | 0.72.0 | serve/agent/telemetry surface: Agent Ready (#4000) | R13: `apr serve` has three different HTTP surfaces and which one you get depends on the format of the file you |
 | #2853 | 0.72.0 | serve/agent/telemetry surface: Agent Ready (#4000) | SafeTensors serve route drops `ignore_eos` and `seed`: apr-cli's ChatCompletionRequest has no such fields |
-| #3170 | 0.72.0 | serve/agent/telemetry surface: Agent Ready (#4000) | apr-agent accepts any flag as a task slug — 'apr-agent --help' created a worktree, a branch and a claim lockfi |
+| #3170 | 0.72.0 | serve/agent/telemetry surface: Agent Ready (#4000) **[CORRECTION pending approval: 0.72.0 → 0.70.0, see Corrections]** | apr-agent accepts any flag as a task slug — 'apr-agent --help' created a worktree, a branch and a claim lockfi |
 | #3541 | 0.72.0 | serve/agent/telemetry surface: Agent Ready (#4000) | apr run: the --no-gpu arm prints no Backend: line, so the CPU arm cannot be proved (post-publish 0.68.2) |
 | #3542 | 0.72.0 | apr run reports no tok/s: honest telemetry (#4000) | apr run emits no tok/s — every throughput claim from it is wall time including model load (post-publish 0.68.2 |
 | #3545 | 0.72.0 | serve/agent/telemetry surface: Agent Ready (#4000) | apr devices reports 'cuda unavailable reason=NotCompiled' on a binary that demonstrably runs CUDA — the first  |
 | #3553 | 0.72.0 | serve/agent/telemetry surface: Agent Ready (#4000) | prefix_cache_hits is counted and unit-tested but exposed nowhere: /metrics has no prefix/cache counter, so a p |
 | #3574 | 0.72.0 | parity receipt for the agent decide lane: Agent Ready (#4000) | ARB-APR-3: parity receipt for the decide lane's cell on the agent's host (Qwen3.5-9B-Q4_K_M @ lambda-labs) |
-| #3595 | 0.72.0 | serve/agent/telemetry surface: Agent Ready (#4000) | apr chat hard-skips CUDA for every qwen35 model and prints a banner citing #3090 as unimplemented — #3090 ship |
+| #3595 | 0.72.0 | serve/agent/telemetry surface: Agent Ready (#4000) **[CORRECTION pending approval: 0.72.0 → 0.71.0, see Corrections]** | apr chat hard-skips CUDA for every qwen35 model and prints a banner citing #3090 as unimplemented — #3090 ship |
 | #3598 | 0.72.0 | named must-carry in epic #4000 | 0.69 serve + instrument lane: apr run --json timing fields, apr serve resident, apr devices stops reporting No |
 | #3776 | 0.72.0 | serve/agent/telemetry surface: Agent Ready (#4000) | apr code --emit-trace never records a tool call (4 records, one text block; code.rs calls it 'M29+') — the tra |
 | #3826 | 0.72.0 | serve/agent/telemetry surface: Agent Ready (#4000) | apr run --format json reports "fell_back": false on a run whose own stderr says "attempting fallback" |
@@ -208,7 +234,7 @@ Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 a
 | #2770 | 0.73.0 | cuBLAS decode diverges at m>=4: batched decode correctness before parity (#3999) | cuBLAS decode route diverges at m>=4: coherent but different continuation, so c=4 fails parity while c=2 passe |
 | #3076 | 0.73.0 | performance/decode-prefill path: llama.cpp Parity (#3999) | F16/BF16 GGUF CPU matmul has no SIMD path — unquantized models appear to hang |
 | #3161 | 0.73.0 | debt ratchet pillar D (#3997: backlog, docs, packaging), slice 4 | P1: three license states across 79 crates — 14 publishable crates offer Apache-2.0 with no LICENSE-APACHE to b |
-| #3513 | 0.73.0 | performance/decode-prefill path: llama.cpp Parity (#3999) | DP4A Q4K/Q6K GEMV profile is catastrophic through the Gated DeltaNet recurrence — Qwen3.5 on sm_89 needs the f |
+| #3513 | 0.73.0 | performance/decode-prefill path: llama.cpp Parity (#3999) **[CORRECTION pending approval: 0.73.0 → 0.71.0, see Corrections]** | DP4A Q4K/Q6K GEMV profile is catastrophic through the Gated DeltaNet recurrence — Qwen3.5 on sm_89 needs the f |
 | #3547 | 0.73.0 | debt ratchet pillar D (#3997: backlog, docs, packaging), slice 4 | crates/aprender-serve/models/qwen2-0.5b-q4.gguf is 0 bytes — the in-tree fixture model cannot load |
 | #3548 | 0.73.0 | debt ratchet pillar D (#3997: backlog, docs, packaging), slice 4 | aprender-viz's lib is trueno_viz and nothing says so — 'use aprender_viz::' does not compile and no tool will  |
 | #3549 | 0.73.0 | debt ratchet pillar D (#3997: backlog, docs, packaging), slice 4 | aprender-viz ships 396 KB of fixtures/breaks/ to every consumer in the published .crate |
@@ -232,13 +258,13 @@ Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 a
 | #3443 | 0.74.0 | quant/tensor/arch dispatch consolidation: Any Model core (#4001) | PP-QUANT-001 P4: #3077 support table GENERATED from `TRAITS` (type × backend × tier) |
 | #3583 | 0.74.0 | quant/tensor/arch dispatch consolidation: Any Model core (#4001) | ggml_dtype_element_size is ordered by its own comment, not by ggml id: BF16 reads 0.375 B/elem instead of 2.0, |
 | #3820 | 0.74.0 | name-derived model config: the pattern Any Model replaces with config (#4001) | estimate_model_params_from_name documents 0.0 as "assume large model" but its only caller tests params_b < 2.0 |
-| #3850 | 0.74.0 | quant/tensor/arch dispatch consolidation: Any Model core (#4001) | resolve_qtype silently decodes an UNKNOWN ggml quant as Q4_K, and the whitelist that would refuse it is not on |
+| #3850 | 0.74.0 | quant/tensor/arch dispatch consolidation: Any Model core (#4001) **[CORRECTION pending approval: 0.74.0 → 0.71.0, see Corrections]** | resolve_qtype silently decodes an UNKNOWN ggml quant as Q4_K, and the whitelist that would refuse it is not on |
 | #3891 | 0.74.0 | quant/tensor/arch dispatch consolidation: Any Model core (#4001) | A GPU-supported quant list is hardcoded in a user-facing error string — a third source of truth beside gpu_sup |
 | #2906 | 0.75.0 | fine-tune/train surface: CRUX declarative fine-tune/distill (#4002) | R-3: T-6 honest training banner: -m lora --gpu-backend cuda refuses or trains on the GPU; the cuBLAS-backward  |
 | #2924 | 0.75.0 | fine-tune/train surface: CRUX declarative fine-tune/distill (#4002) | T-2: apr finetune --max-seq-len honoured or refused with one line and the refusal code on every path; the effe |
 | #2926 | 0.75.0 | fine-tune/train surface: CRUX declarative fine-tune/distill (#4002) | T-0: the four WT receipts: Unsloth QLoRA and apr finetune -m qlora on Qwen2.5-7B-Instruct, both hosts, n=5 int |
-| #3151 | 0.75.0 | fine-tune/train surface: CRUX declarative fine-tune/distill (#4002) | P1: autodiff op coverage — conv/pool/embedding/gather; aprender cannot train a CNN today |
-| #3779 | 0.75.0 | fine-tune/train surface: CRUX declarative fine-tune/distill (#4002) | cargo check -p apr-cli --features wgpu fails: finetune.rs imports entrenar's WgpuInstructPipeline / wgpu_train |
+| #3151 | 0.75.0 | fine-tune/train surface: CRUX declarative fine-tune/distill (#4002) **[CORRECTION pending approval: 0.75.0 → 0.73.0, see Corrections]** | P1: autodiff op coverage — conv/pool/embedding/gather; aprender cannot train a CNN today |
+| #3779 | 0.75.0 | fine-tune/train surface: CRUX declarative fine-tune/distill (#4002) **[CORRECTION pending approval: 0.75.0 → 0.71.0, see Corrections]** | cargo check -p apr-cli --features wgpu fails: finetune.rs imports entrenar's WgpuInstructPipeline / wgpu_train |
 
 ## Currently with no milestone
 
@@ -283,7 +309,7 @@ Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 a
 | #3805 | 0.70.0 | release/CI/gate speed and reliability: Fast Train (#3998) | check_multiplatform_dogfood demands a cuda parity lane from the crates.io binary, which has no cuda feature —  |
 | #3809 | 0.70.0 | 5 dark serve test files: dark test targets into CI (#3998) | 5 test files under apr-cli/serve/ (124 #[test] fns, incl. the apr-serve-v1/http-api-v1 FALSIFY contract tests) |
 | #3810 | 0.70.0 | release/CI/gate speed and reliability: Fast Train (#3998) | CI never runs 1,256 of aprender-serve's cuda-only lib tests: cuda-unit filters `gguf::cuda::` on the premise n |
-| #3857 | 0.70.0 | debt ratchet pillar A (#3997), slice 1: the coverage floor gates the 0.70 train | CB-510 has no coverage for `include_str!`: one guard greps the wrong directive, the other checks git instead o |
+| #3857 | 0.70.0 | include_str! files missing from the published crate: a publish-gate packaging defect, Fast Train (#3998). The earlier 'pillar A coverage' reason read 'coverage' in the title as line coverage | CB-510 has no coverage for `include_str!`: one guard greps the wrong directive, the other checks git instead o |
 | #3879 | 0.70.0 | release/CI/gate speed and reliability: Fast Train (#3998) | gpu-q does not pin the binary it runs — the GPU has two entrances and only one is guarded |
 | #3902 | 0.70.0 | release/CI/gate speed and reliability: Fast Train (#3998) | No gate runs aprender-serve under --features cuda: 5 tests red there, green in CI, and the tests are the wrong |
 | #3904 | 0.70.0 | truncation-slice surface, with #3916: gate hygiene (#3998) | #3872 removed the four slices someone FOUND; nobody enumerated the surface — here it is, and the 5th is in the |
@@ -304,7 +330,7 @@ Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 a
 | #3996 | 0.70.0 | release/CI/gate speed and reliability: Fast Train (#3998) | aprender-train: ~60 clippy errors under --features cuda hide every downstream crate's lint (use --no-deps) |
 | #3997 | DECIDE (recommend 0.70.0) | the ratchet epic is named by #3998, #4000, #3999, #4001 and #4002; recommend 0.70.0 as its first slice -- operator picks. Moved in error and REVERTED to no milestone after the #4024 quorum | EPIC: debt ratchet 0.70→0.74 — 80% of tech debt in 5 equal slices (coverage→95% w/ yoga CUDA shards, pv deepes |
 | #4015 | 0.70.0 | the serve health wait counts lock-queue time: named sweep hygiene in #3998 | ladder serve wait: #3943's stall rule counts time blocked in flock as no progress, a false 'stalled' serve RED |
-| #4018 | 0.70.0 | release/CI/gate speed and reliability: Fast Train (#3998) | apr run -v PANICS on a non-ASCII prompt: formatted_prompt log slices a str at byte 200 (not a char boundary) |
+| #4018 | 0.70.0 | release/CI/gate speed and reliability: Fast Train (#3998) **[CORRECTION pending approval: 0.70.0 → 0.71.0, see Corrections]** | apr run -v PANICS on a non-ASCII prompt: formatted_prompt log slices a str at byte 200 (not a char boundary) |
 | #4020 | 0.70.0 | release/CI/gate speed and reliability: Fast Train (#3998) | falsify_2384_run_apr_executes_the_resolved_binary is flaky: ETXTBSY (Text file busy) under parallel lib tests |
 | #3532 | 0.71.0 | 23 GB peak VRAM and a golden failure for a 5 GB model: certified-cell correctness (#3994) | qwen3-8b Q4_K_M on CUDA sm_89 (24 GB): 23.1 GB peak VRAM for a 5 GB model, apr qa golden_output Empty output — |
 | #3648 | 0.71.0 | debt ratchet pillars B/C (#3997: pv at the deepest level, ontology merge), slice 2 | pv shapes: the LONE-contract venue declines with no report — by_shape and declines exist only on the directory |
@@ -337,7 +363,7 @@ Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 a
 | #3922 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | RULE A VIOLATION: a Q4_K .apr produces garbage on CUDA on BOTH hosts while answering correctly on CPU — rc=0,  |
 | #3928 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | apr run is the last verb whose generated text nothing judges — and qa's golden leg runs once per rung, not onc |
 | #3931 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | golden_output's GPU leg judges GGUF only, so every .apr rung gets a CPU-only verdict that reports as passed |
-| #3935 | 0.71.0 | debt ratchet pillars B/C (#3997: pv at the deepest level, ontology merge), slice 2 | README.md:162 advertises a "100-pt structural audit" that #1870 replaced — the tool scores only the 5 of 26 ch |
+| #3935 | 0.71.0 | debt ratchet pillars B/C (#3997: pv at the deepest level, ontology merge), slice 2 **[CORRECTION pending approval: 0.71.0 → 0.73.0, see Corrections]** | README.md:162 advertises a "100-pt structural audit" that #1870 replaced — the tool scores only the 5 of 26 ch |
 | #3936 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | the ladder's serve /health window is a fixed 90s, so the 27B is red for load time while passing capability_mat |
 | #3940 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | check_model_ladder.sh binds the model file's sha and the release version, but never the binary that produced t |
 | #3942 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | Decide: should golden_output judge .apr on the GPU, or formally delegate that to chat/serve? (the gap #3931 ma |
@@ -350,12 +376,12 @@ Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 a
 | #3976 | 0.71.0 | named must-carry in epic #3994 | Q4_K GEMV kernels: FusedKVHwDp4aQ4KGemv generate_ptx returns "" but is launched (q4k_mwv_gemv.rs:602); Dp4aSIM |
 | #3992 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | 17 more files build the dense GGUF CUDA model with no qwen3moe route — audit each (derived from #3987's guard) |
 | #3995 | 0.71.0 | the wgpu build does not compile: the wgpu backend row (#3994) | apr-cli --features wgpu does not compile on the release branch; the wgpu serve router is unbuildable |
-| #4006 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | apr run labels a mixed UD-IQ2_XXS model 'quant=Q5_K' — it prints the tied lm_head's qtype, not the body's |
+| #4006 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) **[CORRECTION pending approval: 0.71.0 → 0.72.0, see Corrections]** | apr run labels a mixed UD-IQ2_XXS model 'quant=Q5_K' — it prints the tied lm_head's qtype, not the body's |
 | #4019 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | apr thinking-ON closes </think> far less often than llama.cpp on the official template (0.8B Q4_K_M: 1/13 vs 5 |
 | #3734 | 0.72.0 | replace the grammar module with TokenConstraint: structured output for agents (#4000) | Replace or remove crates/aprender-serve/src/grammar once #3568's TokenConstraint lands — an unwired, char-leve |
 | #3735 | 0.72.0 | schema-constrained decoding with thinking: structured output for agents (#4000) | Schema-constrained decoding with a thinking template: constrain only after </think> (0.70; 0.69.1 refuses Sche |
 | #3889 | 0.72.0 | serve/agent/telemetry surface: Agent Ready (#4000) | apr serve reports HTTP 200 for a forced-accelerator request that silently fell back to CPU — it has no after_g |
-| #3925 | 0.72.0 | serve/agent/telemetry surface: Agent Ready (#4000) | the ladder judges the terminal, not the model: apr chat's own separator reads as gibberish and reddens every r |
+| #3925 | 0.72.0 | serve/agent/telemetry surface: Agent Ready (#4000) **[CORRECTION pending approval: 0.72.0 → 0.71.0, see Corrections]** | the ladder judges the terminal, not the model: apr chat's own separator reads as gibberish and reddens every r |
 | #3927 | 0.72.0 | serve/agent/telemetry surface: Agent Ready (#4000) | apr chat --json emits the backend, not the reply — the transcript is the only place the model's text exists |
 | #3954 | 0.72.0 | aprender-mcp generic server: the MCP protocol row of Agent Ready (#4000, #2794) | aprender-mcp: a generic McpServer over a caller-supplied ToolSet, apr tools behind a default feature (blocks p |
 | #3955 | 0.72.0 | chat banner claims an unverified kernel: honest telemetry (#4000) | False provenance: chat banner claims 'fused Q4K, F2-validated' on BF16 with F2 SKIPPED; chat envelope requeste |
