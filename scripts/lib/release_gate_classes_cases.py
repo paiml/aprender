@@ -25,6 +25,8 @@ def scratch():
         "mark() { :; }\n  mark bashrs FAIL \"x\"\n    mark model-parity PASS \"y\"\n"
         "version_row() {\n  printf 'version-unpublished PASS x\\n'\n}\n")
     open(os.path.join(d, "scripts/check_publish_preflight.sh"), "w").write("#   R1  clean tree\n#   R4  on main\n")
+    open(os.path.join(d, "Cargo.toml"), "w").write(
+        '[package]\nname = "aprender"\n[package.metadata.dogfood]\ngates = ["scripts/check_model_ladder.sh"]\n')
     md = {"packages": [{"name": "aprender", "metadata": {"dogfood": {"gates": ["scripts/check_model_ladder.sh"]}}}]}
     return d, json.dumps(md)
 
@@ -43,6 +45,8 @@ def run(mod):
     res["derive-declared"] = ("dogfood:declared:check_model_ladder" in u, sorted(u))
     res["derive-preflight"] = ({"preflight:R1", "preflight:R4"} <= u, sorted(u))
     res["derive-exact"] = (u == WANT and not errs, (sorted(u ^ WANT), errs))
+    ut, et = mod.derive(d)   # no cargo: the declaration read from the root manifest, parsed by dogfood_gates.plan
+    res["derive-from-manifest-no-cargo"] = (ut == WANT and not et, (sorted(ut ^ WANT), et))
     full = {g: {"class": "real", "why": "w"} for g in WANT}
     res["all-classified-clean"] = (mod.check(WANT, full) == [], mod.check(WANT, full))
     part = {g: c for g, c in full.items() if g != "dogfood:bashrs"}
@@ -67,6 +71,7 @@ MUTANTS = [
     ("version-rows-unread", "vr = re.search(", "vr = None and re.search(", "derive-version-rows"),
     ("declared-unread", 'ids.add("dogfood:declared:"', 'ids.discard("dogfood:declared:"', "derive-declared"),
     ("preflight-unread", 'ids |= {"preflight:" + r for r in re.findall(r"^#\\s+(R[0-9]+)\\s", pf, re.M)}', "pass", "derive-preflight"),
+    ("manifest-unread", '            metadata = {"packages": [{"name": man.get("name"), "metadata": man.get("metadata") or {}}]}', "            pass", "derive-from-manifest-no-cargo"),
     ("unclassified-ok", "    for g in sorted(universe - set(classes)):", "    for g in []:", "unclassified-refused"),
     ("stale-ok", "    for g in sorted(set(classes) - universe):", "    for g in []:", "stale-refused"),
     ("any-class-ok", 'c.get("class") not in CLASSES or ', "", "malformed-class-refused"),

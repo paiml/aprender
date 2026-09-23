@@ -8,7 +8,7 @@ gates". From 0.70 every publish-blocking gate is classified:
 THE UNIVERSE IS DERIVED, never hand-kept (a hand list is how a new gate slips in unclassified):
   step:<name>              scripts/release/autopilot.sh's STEPS=(...)
   dogfood:<row>            every literal `mark <row>` in scripts/dogfood.sh, and version_row's printed rows
-  dogfood:declared:<gate>  [package.metadata.dogfood] gates (scripts/lib/dogfood_gates.py over cargo metadata)
+  dogfood:declared:<gate>  [package.metadata.dogfood] gates (scripts/lib/dogfood_gates.py over the root manifest)
   preflight:<Rn>           the `#   Rn` rule headers of scripts/check_publish_preflight.sh
 The classes live in scripts/release/gate_classes.yaml. A derived gate with no class is UNCLASSIFIED (refused); a
 class for a gate that no longer exists is STALE (refused): the registry and the publish path cannot drift apart.
@@ -19,7 +19,6 @@ class for a gate that no longer exists is STALE (refused): the registry and the 
 import json
 import os
 import re
-import subprocess
 import sys
 
 CLASSES = ("real", "bookkeeping")
@@ -54,12 +53,16 @@ def derive(root, metadata=None):
     else:
         ids |= {"preflight:" + r for r in re.findall(r"^#\s+(R[0-9]+)\s", pf, re.M)}
     if metadata is None:
-        r = subprocess.run(["cargo", "metadata", "--no-deps", "--offline", "--format-version", "1",
-                            "--manifest-path", os.path.join(root, "Cargo.toml")], capture_output=True, text=True)
-        metadata = r.stdout if r.returncode == 0 else None
-    if metadata is None:
-        errs.append("cargo metadata failed: the declared dogfood gates are unknown")
-    else:
+        # No cargo needed (guard_tree's cargo-free CI job runs this): the root manifest's own [package] table in the
+        # shape `cargo metadata` gives it -- `metadata` there IS the TOML table verbatim -- so the declaration is
+        # still parsed by dogfood_gates.plan, its ONE parser (#2644).
+        try:
+            import tomllib
+            man = tomllib.load(open(os.path.join(root, "Cargo.toml"), "rb")).get("package") or {}
+            metadata = {"packages": [{"name": man.get("name"), "metadata": man.get("metadata") or {}}]}
+        except (OSError, ValueError) as exc:
+            errs.append("the root Cargo.toml is unreadable (%s): the declared dogfood gates are unknown" % exc)
+    if metadata is not None:
         sys.path.insert(0, os.path.join(root, "scripts/lib"))
         import dogfood_gates
         md = json.loads(metadata) if isinstance(metadata, str) else metadata

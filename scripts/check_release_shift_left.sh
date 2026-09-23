@@ -17,10 +17,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# 1 + 2 (the declared dogfood gates come from cargo metadata: this guard needs cargo, so guard_tree runs it in
-# the guard-cargo job)
-cargo metadata --no-deps --offline --format-version 1 > "$T/md.json" 2> "$T/md.err" || { echo "FAIL  cargo metadata: $(tail -1 "$T/md.err")"; bad=1; }
-if python3 scripts/lib/release_gate_classes.py check . "$T/md.json" > "$T/live.out" 2>&1; then echo "ok    live: $(tail -1 "$T/live.out")"
+# 1 + 2 (cargo-free: the declared gates are read from the root manifest, so guard_tree's --no-cargo PR job runs this)
+if python3 scripts/lib/release_gate_classes.py check . > "$T/live.out" 2>&1; then echo "ok    live: $(tail -1 "$T/live.out")"
 else cat "$T/live.out"; bad=1; fi
 if python3 scripts/lib/release_gate_classes_cases.py --mutants > "$T/cls.out" 2>&1; then echo "ok    classes: $(tail -1 "$T/cls.out")"
 else grep -E 'FAIL|SURVIVED|ANCHOR|CRASHED' "$T/cls.out"; bad=1; fi
