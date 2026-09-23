@@ -20,9 +20,9 @@ use axum::{
 use futures::stream::Stream;
 
 use super::{
-    build_trace_data, clean_chat_output, format_chat_messages, format_chat_messages_for_state, AppState, ChatChoice,
-    ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ErrorResponse,
-    FinishReason, OpenAIModel, OpenAIModelsResponse, StreamMode, Usage,
+    build_trace_data, clean_chat_output, format_chat_messages, format_chat_messages_for_state,
+    AppState, ChatChoice, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
+    ChatMessage, ErrorResponse, FinishReason, OpenAIModel, OpenAIModelsResponse, StreamMode, Usage,
 };
 use crate::generate::{CancelToken, GenerationConfig, SamplingStrategy};
 use crate::tokenizer::BPETokenizer;

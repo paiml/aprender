@@ -247,7 +247,7 @@ pub fn format_chat_messages_official(
                  model was trained on"
             );
             format_chat_messages(messages, model_hint)
-        }
+        },
     }
 }
 
