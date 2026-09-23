@@ -1,3 +1,30 @@
+// #3981: where generation BEGAN, marked by the backend on the dispatch thread after
+// its setup (weight upload, F2 validation). `inference_ms` wrapped the whole dispatch,
+// so `apr run --format json` reported 0.2 tok/s for a Qwen3-30B-A3B run that
+// generated at tens of tok/s: it divided by load + a 5.2 s F2 check. Thread-local
+// because generation is dispatched and returns on this thread; a mark left by an
+// earlier run is cleared before each dispatch.
+std::thread_local! {
+    static GENERATION_START: std::cell::Cell<Option<std::time::Instant>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Mark that generation starts now (call after setup, right before the first forward).
+pub(crate) fn mark_generation_start() {
+    GENERATION_START.with(|c| c.set(Some(std::time::Instant::now())));
+}
+
+fn take_generation_start() -> Option<std::time::Instant> {
+    GENERATION_START.with(std::cell::Cell::take)
+}
+
+/// #3981: tokens per second over generation when it was measured, else over the whole
+/// inference window. Pure, so the rule is tested without a model.
+#[must_use]
+pub(crate) fn throughput(generated: usize, inference_ms: f64, generation_ms: Option<f64>) -> f64 {
+    tok_per_sec(generated, generation_ms.unwrap_or(inference_ms))
+}
+
 /// Result from inference
 #[derive(Debug, Clone)]
 pub struct InferenceResult {
@@ -11,8 +38,15 @@ pub struct InferenceResult {
     pub generated_token_count: usize,
     /// Inference time in milliseconds
     pub inference_ms: f64,
-    /// Tokens per second
+    /// Tokens per second. #3981: over GENERATION time when the backend marked where
+    /// generation began (see `generation_ms`); otherwise over `inference_ms`, which
+    /// includes weight upload and the F2 check.
     pub tok_per_sec: f64,
+    /// #3981: wall time from the moment the backend started generating (after weight
+    /// upload and F2 validation) to the end of generation: prefill plus decode.
+    /// `None` when the path that ran does not mark it, and then `tok_per_sec` still
+    /// includes setup, so a consumer must not read it as a generation rate.
+    pub generation_ms: Option<f64>,
     /// Model load time in milliseconds
     pub load_ms: f64,
     /// Model format that was loaded
@@ -291,6 +325,7 @@ fn run_gguf_inference(
     // run_gguf_generate as before. This replaces M32c.2.1's
     // gguf_gpu_generate.rs short-circuit with an actual forward pass.
     let infer_start = Instant::now();
+    let _ = take_generation_start(); // #3981: never inherit a mark from an earlier run
     let canonical_arch = crate::tensor_names::normalize_architecture(&model.config.architecture);
     // #3714 R2: `moe_forward_handles` is the one dispatch predicate — `apr
     // parity` and `apr qa` ask the same function, so no tool can route this
@@ -331,6 +366,7 @@ fn run_gguf_inference(
         run_gguf_generate(model, &input_tokens, &gen_config, config)?
     };
     let inference_ms = infer_start.elapsed().as_secs_f64() * 1000.0;
+    let generation_ms = take_generation_start().map(|t| t.elapsed().as_secs_f64() * 1000.0);
 
     let generated_tokens = &tokens[input_token_count..];
     let raw_text = mapped.model.decode(generated_tokens);
@@ -352,7 +388,7 @@ fn run_gguf_inference(
     }
     let text = clean_model_output(&raw_text);
     let generated_token_count = generated_tokens.len();
-    let tps = tok_per_sec(generated_token_count, inference_ms);
+    let tps = throughput(generated_token_count, inference_ms, generation_ms);
 
     write_gguf_trace(
         config,
@@ -391,6 +427,7 @@ fn run_gguf_inference(
             generated_token_count,
             inference_ms,
             tok_per_sec: tps,
+            generation_ms,
             load_ms,
             format: "GGUF".to_string(),
             used_gpu,
@@ -2225,6 +2262,34 @@ mod f2_outcome_3973_tests {
             },
             other => panic!("a real prompt on a sound model must validate; got {other:?}"),
         }
+    }
+}
+
+// ============================================================================
+// #3981: tok_per_sec must be a GENERATION rate, not diluted by setup.
+#[cfg(test)]
+mod throughput_3981_tests {
+    use super::*;
+
+    /// The ticket's must-RED shape: 5 s of setup (load/upload + F2) around 1 s of
+    /// generating 100 tokens. The rate is 100 tok/s, not 100/6 = 16.7.
+    #[test]
+    fn a_five_second_setup_does_not_dilute_the_generation_rate() {
+        let rate = throughput(100, 6_000.0, Some(1_000.0));
+        assert!((rate - 100.0).abs() < 1e-9, "setup must not dilute tok/s: got {rate}");
+        let diluted = throughput(100, 6_000.0, None);
+        assert!(diluted < 17.0, "with no generation mark the old window is all there is: {diluted}");
+    }
+
+    /// The mark is consumed once, so a stale mark from an earlier run cannot be
+    /// read as this run's generation start.
+    #[test]
+    fn the_generation_mark_is_taken_once() {
+        let _ = take_generation_start();
+        assert!(take_generation_start().is_none(), "no mark yet");
+        mark_generation_start();
+        assert!(take_generation_start().is_some(), "the mark must be readable once");
+        assert!(take_generation_start().is_none(), "and then gone");
     }
 }
 

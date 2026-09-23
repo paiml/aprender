@@ -115,6 +115,7 @@ mod tests {
     #[test]
     fn test_result_clone_preserves_all_fields() {
         let original = InferenceResult {
+            generation_ms: None,
             text: "original text".to_string(),
             tokens: vec![1, 2, 3, 4, 5],
             input_token_count: 2,
@@ -143,6 +144,7 @@ mod tests {
     #[test]
     fn test_result_debug_contains_all_field_names() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "t".to_string(),
             tokens: vec![1],
             input_token_count: 1,

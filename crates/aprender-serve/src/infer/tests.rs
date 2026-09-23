@@ -44,6 +44,7 @@ mod tests {
     fn test_inference_result_tok_per_sec_calculation() {
         // Test tok/s calculation edge case: zero inference_ms
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1, 2, 3],
             input_token_count: 1,

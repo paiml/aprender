@@ -117,6 +117,7 @@ fn run_safetensors_cpu_inference(
         generated_token_count,
         inference_ms,
         tok_per_sec: tok_per_sec(generated_token_count, inference_ms),
+        generation_ms: Some(inference_ms), // #3981: this path starts its clock AFTER setup, right before generation
         load_ms,
         format: "SafeTensors".to_string(),
         used_gpu: false,
@@ -186,6 +187,7 @@ fn run_sharded_safetensors_inference(
         generated_token_count,
         inference_ms,
         tok_per_sec: tok_per_sec(generated_token_count, inference_ms),
+        generation_ms: Some(inference_ms), // #3981: this path starts its clock AFTER setup, right before generation
         load_ms,
         format: "SafeTensors".to_string(),
         used_gpu: false,
@@ -441,6 +443,7 @@ pub fn run_mock_inference(config: &InferenceConfig) -> Result<InferenceResult> {
         generated_token_count,
         inference_ms,
         tok_per_sec,
+        generation_ms: None, // #3981: mock, nothing measured
         load_ms,
         format: "Mock".to_string(),
         used_gpu: false,

@@ -256,6 +256,7 @@ Line with \n escaped newline<|im_end|>";
     #[test]
     fn test_inference_result_high_precision_times() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1],
             input_token_count: 1,
@@ -274,6 +275,7 @@ Line with \n escaped newline<|im_end|>";
     #[test]
     fn test_inference_result_extreme_token_counts() {
         let result = InferenceResult {
+            generation_ms: None,
             text: "test".to_string(),
             tokens: vec![1; 100000],
             input_token_count: 50000,

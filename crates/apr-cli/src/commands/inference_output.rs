@@ -420,6 +420,11 @@ fn execute_with_realizar(
             completion_tokens: Some(result.generated_token_count),
             finish_reason: report.finish_reason.map(|r| r.as_str()),
             context_length: report.context_length,
+            // #3981: realizar's generation window, and what the rest of its window was.
+            generation_ms: result.generation_ms.map(|g| g.round() as u64),
+            setup_ms: result
+                .generation_ms
+                .map(|g| (result.inference_ms - g).max(0.0).round() as u64),
         },
     })
 }

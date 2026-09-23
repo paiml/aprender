@@ -201,6 +201,7 @@ fn test_tok_per_sec_single_token_gh219() {
 #[test]
 fn test_inference_result_debug_gh219() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "Hello".to_string(),
         tokens: vec![1, 2, 3],
         input_token_count: 1,
@@ -220,6 +221,7 @@ fn test_inference_result_debug_gh219() {
 #[test]
 fn test_inference_result_clone_gh219() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "test".to_string(),
         tokens: vec![100, 101],
         input_token_count: 0,

@@ -140,6 +140,7 @@ pub(crate) mod gpu {
             input_tokens,
         )?;
         let decode_start = std::time::Instant::now();
+        crate::infer::mark_generation_start(); // #3981: upload + F2 end here
         let tokens = decode(&mut gpu, input_tokens, gen_config)?;
         let generated = tokens.len().saturating_sub(input_tokens.len());
         let decode_s = decode_start.elapsed().as_secs_f64();

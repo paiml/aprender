@@ -503,6 +503,7 @@ fn test_clean_model_output_complex_markers() {
 #[test]
 fn test_inference_result_fields() {
     let result = InferenceResult {
+        generation_ms: None,
         text: "Hello".to_string(),
         tokens: vec![1, 2, 3],
         input_token_count: 1,
