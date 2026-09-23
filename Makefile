@@ -682,9 +682,18 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 		exit 1; \
 	fi
 	@echo "📊 Merging every run's profiles into one report..."
-	@$(COV_CARGO_ENV) cargo llvm-cov report --lcov --output-path target/coverage/lcov.info \
+	@# `--workspace --exclude aprender-gpu` is REQUIRED: the root Cargo.toml is also a package (the
+	@# `apr` facade), and an unqualified `report` covers ONLY the root package. Proof run
+	@# 35892421393 printed "Finished report saved" and then found no (non-empty) lcov. Measured with
+	@# cargo-llvm-cov 0.9.0 (CI's version) on a root-package workspace: without --workspace the
+	@# lcov held only src/lib.rs; with it, every member.
+	@$(COV_CARGO_ENV) cargo llvm-cov report --workspace --exclude aprender-gpu \
+		--lcov --output-path $(CURDIR)/target/coverage/lcov.info \
 		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" 2>&1 | tee -a target/coverage/test.log; \
 	rc=$${PIPESTATUS[0]}; \
+	echo "   lcov: $$(ls -la $(CURDIR)/target/coverage/lcov.info 2>&1)"; \
+	echo "   lcov files under the workspace: $$(find $(CURDIR) -name lcov.info -newer target/coverage/.exclude-re 2>/dev/null | tr '\n' ' ')"; \
+	echo "   profraw files: $$(find $${CARGO_TARGET_DIR:-$(CURDIR)/target} -name '*.profraw' 2>/dev/null | wc -l)"; \
 	if [ "$$rc" -ne 0 ]; then echo "❌ coverage DID NOT MEASURE: cargo llvm-cov report exited $$rc. No coverage verdict."; exit 1; fi
 	@# #3839: --ignore-run-fail keeps one failing test from blanking the number (the 2026-09-23
 	@# nightly wrote no lcov because of one timing test). Failures are LISTED, not hidden, and
