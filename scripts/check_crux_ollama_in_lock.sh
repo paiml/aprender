@@ -9,8 +9,8 @@
 # the only question that matters, at the moment of each call: is the lock held right now? (flock -n on the
 # same file fails exactly when another process holds it.)
 #
-# Load-capable calls: `ollama run` (CLI) and the server's /v1/chat/completions, /api/chat, /api/generate
-# (the serve verb). create/show/rm/ps/stop/--version only read or write the store and load nothing.
+# Load-capable calls: `ollama run` one-shot (run verb) and interactive through crux_pty_chat.py (chat verb),
+# and the server's /v1/chat/completions, /api/chat, /api/generate (the serve verb). create/show/rm/ps/stop/--version only read or write the store and load nothing.
 #
 # Rows:
 #   1. the real dogfood, gpu-q path   → every load held, and both kinds of load were seen (not vacuous)
@@ -117,6 +117,17 @@ case "${1:-}" in
     esac ;;
   run)
     case " $* " in *" --help "*) echo "Usage: ollama run MODEL [PROMPT] [flags]"; exit 0 ;; esac
+    if [ -t 0 ]; then
+      # interactive, as the chat verb drives it through crux_pty_chat.py: a minimal REPL, one load check per turn
+      while :; do
+        printf '>>> '
+        IFS= read -r line || exit 0
+        [ "$line" = /bye ] && exit 0
+        if flock -n "$STUB_LOCK" true 2>/dev/null; then h=no; else h=yes; fi
+        echo "LOAD cli-chat held=$h" >> "$STUB_LOG"
+        printf '4\n\n'
+      done
+    fi
     if flock -n "$STUB_LOCK" true 2>/dev/null; then h=no; else h=yes; fi
     echo "LOAD cli-run held=$h" >> "$STUB_LOG"
     echo "4"
@@ -132,6 +143,10 @@ case "${1:-}" in
   run)
     printf '{"text": "4", "tokens_generated": 1, "tok_per_sec": 1.0, "backend": {"requested": "gpu", "ran": "gpu", "fell_back": false}}\n'
     printf '[DEBUG] formatted_prompt="q"\n[DEBUG] add_bos=false, encoded 1 tokens: [1]\n' >&2 ;;
+  chat)
+    # apr chat reads one user turn per stdin line and prints a transcript
+    while IFS= read -r _turn; do printf 'You: \nAssistant: 4\n'; done
+    printf 'You: \nGoodbye!\n' ;;
   serve)
     port=""; while [ $# -gt 0 ]; do [ "$1" = --port ] && port="$2"; shift; done
     exec python3 "$(dirname "$0")/stub_server.py" apr "$port" "$STUB_LOCK" "$STUB_LOG" ;;
@@ -154,24 +169,24 @@ run_row() {
       GPUQ_DIR="$TMP/$name.q" OLLAMA_BIN="$BIN/ollama" OLLAMA_HOST="127.0.0.1:$port" \
       DOGFOOD_ALLOW_UNPINNED=1 APR="$BIN/apr" \
       timeout 600 bash scripts/crux_inference_dogfood.sh 0.0.0 --model "$MODEL" --engines apr,ollama \
-        --verbs run,serve --host stub --out "$TMP/$name.out" --timeout 60 > "$TMP/$name.dogfood.log" 2>&1 )
+        --verbs run,chat,serve --host stub --out "$TMP/$name.out" --timeout 60 > "$TMP/$name.dogfood.log" 2>&1 )
   echo "$?" > "$TMP/$name.rc"
 }
 
-# verdict <name>: "<loads> <not-held> <cli loads> <http-ollama loads>"
+# verdict <name>: "<loads> <not-held> <cli-run loads> <cli-chat loads> <http-ollama loads>"
 verdict() {
   local log="$TMP/$1.log"
-  printf '%s %s %s %s' "$(grep -c '^LOAD ' "$log")" "$(grep -c 'held=no$' "$log")" \
-    "$(grep -c '^LOAD cli-run' "$log")" "$(grep -c '^LOAD http-ollama' "$log")"
+  printf '%s %s %s %s %s' "$(grep -c '^LOAD ' "$log")" "$(grep -c 'held=no$' "$log")" \
+    "$(grep -c '^LOAD cli-run' "$log")" "$(grep -c '^LOAD cli-chat' "$log")" "$(grep -c '^LOAD http-ollama' "$log")"
 }
 
-expect_held() { # expect_held <name> <label>
-  local v loads notheld cli http
-  v=$(verdict "$1"); read -r loads notheld cli http <<< "$v"
-  if [ "$cli" -gt 0 ] && [ "$http" -gt 0 ] && [ "$notheld" -eq 0 ]; then
-    ok "$2: $loads loads ($cli ollama run, $http ollama HTTP), all with the lock held"
+expect_held() { # expect_held <name> <label> — every KIND of load must be seen, or the row is vacuous
+  local v loads notheld cli chat http
+  v=$(verdict "$1"); read -r loads notheld cli chat http <<< "$v"
+  if [ "$cli" -gt 0 ] && [ "$chat" -gt 0 ] && [ "$http" -gt 0 ] && [ "$notheld" -eq 0 ]; then
+    ok "$2: $loads loads ($cli ollama run, $chat ollama chat turns, $http ollama HTTP), all with the lock held"
   else
-    broke "$2: loads=$loads not-held=$notheld cli=$cli http=$http (dogfood rc $(cat "$TMP/$1.rc"); log $TMP/$1.dogfood.log)"
+    broke "$2: loads=$loads not-held=$notheld run=$cli chat=$chat http=$http (dogfood rc $(cat "$TMP/$1.rc"); log $TMP/$1.dogfood.log)"
     tail -5 "$TMP/$1.dogfood.log" | sed 's/^/        /'
   fi
 }
@@ -212,7 +227,7 @@ open(sys.argv[2], "w").write(s)
 PY
 [ $? -eq 0 ] || { broke "mutant: could not plant (anchors moved)"; }
 run_row mutant "$MT" "/nonexistent/gpu-q"
-read -r loads notheld cli http <<< "$(verdict mutant)"
+read -r loads notheld cli chat http <<< "$(verdict mutant)"
 if [ "$loads" -gt 0 ] && [ "$notheld" -gt 0 ]; then
   ok "MUTANT (run_cell without a lock) is caught: $notheld of $loads loads ran with the lock free"
 else
