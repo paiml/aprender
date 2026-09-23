@@ -1107,10 +1107,21 @@ fn throughput_apr(
 mod thinking_budget_resolution {
     use super::{glob_match, thinking_on_budget_for};
 
+    /// `APR_THINKING_ON_BUDGET` is process-global and libtest runs these in parallel:
+    /// `the_probe_override_is_labelled_as_a_probe` sets it while a sibling resolves a
+    /// budget, and the sibling reads 8192 instead of refusing. Every test here that
+    /// resolves a budget holds this lock, so the override is seen by exactly one test.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     /// The listed model with NO budget must REFUSE, not inherit `default`. This is the
     /// whole mechanism: inheriting 2048 would republish an 8B's measurement as a 0.8B's.
     #[test]
     fn a_listed_model_without_a_budget_is_refused_not_defaulted() {
+        let _env = env_lock();
         let err = thinking_on_budget_for("Qwen3.5-0.8B-IQ4_XS.gguf")
             .expect_err("a model listed with no budget must refuse");
         assert!(err.contains("no measured thinking budget"), "{err}");
@@ -1122,6 +1133,7 @@ mod thinking_budget_resolution {
     /// default, so a reader of a failure can tell an inherited number from a measured one.
     #[test]
     fn an_unlisted_model_takes_the_default_and_says_so() {
+        let _env = env_lock();
         let (budget, basis) =
             thinking_on_budget_for("some-other-model-q4km.gguf").expect("default applies");
         assert_eq!(budget, 2048);
@@ -1134,6 +1146,7 @@ mod thinking_budget_resolution {
     /// number must never be mistakable for a measured one.
     #[test]
     fn the_probe_override_is_labelled_as_a_probe() {
+        let _env = env_lock();
         std::env::set_var("APR_THINKING_ON_BUDGET", "8192");
         let (budget, basis) = thinking_on_budget_for("Qwen3.5-0.8B-IQ4_XS.gguf")
             .expect("the override applies even to a refused model, so it can be probed");
