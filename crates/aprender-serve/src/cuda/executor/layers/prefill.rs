@@ -1547,9 +1547,14 @@ impl CudaExecutor {
 
         // 3. LM head GEMV (vocab_size × hidden_dim → vocab_size logits)
         let lm_head_ptr = self.lm_head_ptr;
-        let lm_head_qtype =
-            WeightQuantType::from_size(self.lm_head_len, vocab_size as usize, hidden_dim as usize)
-                .unwrap_or(self.lm_head_qtype);
+        // #3908: a consistent declaration wins over the size guess (BF16 == F16 in size).
+        let lm_head_qtype = WeightQuantType::resolve_declared_or_sized(
+            Some(self.lm_head_qtype),
+            self.lm_head_len,
+            vocab_size as usize,
+            hidden_dim as usize,
+        )
+        .unwrap_or(self.lm_head_qtype);
 
         if lm_head_ptr == 0 {
             return Err(GpuError::InvalidLaunchConfig(

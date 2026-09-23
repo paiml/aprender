@@ -124,7 +124,8 @@
         }
       },
       "green": true,
-      "file": "c.gguf"
+      "file": "c.gguf",
+      "qa_rc": 0
     }
   ],
   "inventory": [
@@ -133,5 +134,6 @@
       "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "bytes": 1
     }
-  ]
+  ],
+  "apr_sha": "ca5eca5eca5eca5eca5eca5eca5eca5eca5eca5e"
 }

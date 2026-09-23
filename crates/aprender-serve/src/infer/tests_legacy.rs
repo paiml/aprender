@@ -57,7 +57,7 @@ fn test_is_legacy_gguf_quant_non_legacy_types_gh219() {
     // silent Q4K fallback with a refusal, so both halves of that reasoning are
     // now addressed rather than assumed.
     assert!(!is_legacy_gguf_quant(1));
-    assert!(is_legacy_gguf_quant(30)); // BF16 — no kernel, still gated
+    assert!(!is_legacy_gguf_quant(30)); // BF16 — #3908 GEMV kernel, measured 0 ULP
 }
 
 #[test]

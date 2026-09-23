@@ -1529,12 +1529,13 @@ mod pmat3757_wgpu_attempt_gate {
         };
         let eligible = crate::gguf::test_helpers::create_test_model_with_config(&cfg);
 
-        // 30 is BF16 — the type that produced #3908, absent from the whitelist.
+        // Was 30 (BF16), the type that produced #3908 - until #3908 gave BF16 a
+        // measured kernel and admitted it. IQ1_M(29) still has none.
         let mut bad = crate::gguf::test_helpers::create_test_model_with_config(&cfg);
-        bad.lm_head_weight.qtype = 30;
+        bad.lm_head_weight.qtype = 29;
         let notice = super::apr_cuda_decline_notice(&bad)
             .expect("a model whose lm_head has no verified GPU kernel owes the user a notice");
-        assert!(notice.contains("30"), "the notice must NAME the declining type: {notice}");
+        assert!(notice.contains("29"), "the notice must NAME the declining type: {notice}");
         assert!(
             notice.starts_with(super::CUDA_FALLBACK_LOG_PREFIX),
             "the notice must announce which backend was rejected: {notice}"

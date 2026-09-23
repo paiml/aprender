@@ -26,7 +26,8 @@
 # Anti-shrink: the ladder as it exists at origin/main is the floor for rungs,
 # hosts and backends (check_multiplatform_dogfood.sh layer 2). Growing is free.
 #
-# Exit: 0 green · 1 red · 2 decline (unreadable ladder / no required host) ·
+# Exit: 0 green · 1 red · 2 not green, not red: decline (unreadable ladder / no required
+#       host / unresolvable cut commit) or DEFER (a declared deferral was used, #3957 F1) ·
 #       self-test: 0 all cases as expected, 1 otherwise.
 set -uo pipefail
 
@@ -34,7 +35,7 @@ LADDER="contracts/model-capability-ladder-v1.yaml"
 # Overridable so the floor below can be PROVEN against a planted case in a temp dir
 # rather than by planting a permanently-failing case in the real table (#3887).
 CASES_DIR="${MODEL_LADDER_CASES_DIR:-scripts/lib/model_ladder_cases}"
-SELF_TEST=0; ONLY_CASE=""; RECEIPT_DIR=""; LADDER_MAIN_OVERRIDE=""
+SELF_TEST=0; ONLY_CASE=""; RECEIPT_DIR=""; LADDER_MAIN_OVERRIDE=""; CUT_COMMIT=""; CRUX_DIR=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --self-test) SELF_TEST=1; shift ;;
@@ -43,6 +44,8 @@ while [ $# -gt 0 ]; do
     --ladder) [ $# -ge 2 ] || { echo "--ladder needs a value" >&2; exit 2; }; LADDER="$2"; shift 2 ;;
     --ladder-main) [ $# -ge 2 ] || { echo "--ladder-main needs a value" >&2; exit 2; }; LADDER_MAIN_OVERRIDE="$2"; shift 2 ;;
     --version) [ $# -ge 2 ] || { echo "--version needs a value" >&2; exit 2; }; VERSION_OVERRIDE="$2"; shift 2 ;;
+    --cut-commit) [ $# -ge 2 ] || { echo "--cut-commit needs a value" >&2; exit 2; }; CUT_COMMIT="$2"; shift 2 ;;
+    --crux) [ $# -ge 2 ] || { echo "--crux needs a value" >&2; exit 2; }; CRUX_DIR="$2"; shift 2 ;;
     -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) echo "check_model_ladder: unknown argument '$1'" >&2; exit 2 ;;
   esac
@@ -54,13 +57,19 @@ SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"   # before the cd: the mu
 cd "${MODEL_LADDER_ROOT:-$(dirname "$SELF")/..}" || exit 2
 
 # ---------------------------------------------------------------- the judge
-# judge <ladder> <ladder_at_main_or_empty> <receipt_dir> <version> [context-rungs.json] [its origin/main copy]  → exit 0/1/2
+# judge <ladder> <ladder_at_main_or_empty> <receipt_dir> <version> <context-rungs.json> <its origin/main copy>
+#       <cut commit, 40-hex> <file of apr_shas proven equal to the cut modulo evidence/>
+#       <CRUX receipt dir>  → exit 0/1/2
 judge() {
-  python3 - "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" <<'PY'
+  python3 - "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" "${7:-}" "${8:-}" "${9:-}" <<'PY'
 import fnmatch, json, os, sys, yaml
-ladder_p, main_p, rdir, version, rungs_p, rungs_main_p = sys.argv[1:7]
-sys.path.insert(0, os.environ.get("MODEL_LADDER_CELLS_LIB") or "scripts/lib")  # a mutant copy of the module, in --self-test
+ladder_p, main_p, rdir, version, rungs_p, rungs_main_p, cut, equiv_p, crux_dir = sys.argv[1:10]
+# A mutant copy of a module, in --self-test: each directory is searched first when set.
+sys.path.insert(0, "scripts/lib")
+for _lib in (os.environ.get("MODEL_LADDER_CRUX_LIB"), os.environ.get("MODEL_LADDER_CELLS_LIB")):
+    if _lib: sys.path.insert(0, _lib)
 import model_ladder_cells
+import model_ladder_crux
 try:
     L = yaml.safe_load(open(ladder_p))["ladder"]
 except Exception as e:
@@ -71,6 +80,21 @@ if not hosts: print("decline: ladder names no required host"); sys.exit(2)
 if not rungs: print("decline: ladder has no rungs"); sys.exit(2)
 rc = 0
 import re
+# #3957 F2: A RECEIPT IS BOUND TO THE COMMIT, NOT TO THE VERSION STRING. `version` is a
+# label every build between two bumps shares: the 0.69.1 receipts were measured at
+# 9b7739951 and the cut was 28c24207a, 7 commits later, and the only record of that was
+# `inventory.apr_sha_drift` -- prose no code read. A receipt is evidence for the cut only
+# when its `apr_sha` IS the cut, or is a commit whose tree equals the cut's outside
+# evidence/ (the receipts-commit rule of release-readiness-v1 `fresh`, R7), which the
+# caller proves with git and passes in. A short or absent sha binds to nothing.
+if not re.fullmatch(r"[0-9a-f]{40}", cut or ""):
+    print(f"decline: the cut commit {cut!r} is not a full 40-hex sha — a receipt cannot be bound to it (#3957 F2)"); sys.exit(2)
+equiv = set()
+if equiv_p and os.path.exists(equiv_p):
+    equiv = {ln.strip() for ln in open(equiv_p) if re.fullmatch(r"[0-9a-f]{40}", ln.strip())}
+if "apr_sha_drift" in (L.get("inventory") or {}) or "apr_sha_drift" in L:
+    print("FAIL  the ladder carries `apr_sha_drift` — a prose declaration no code reads cannot excuse a receipt measured at another commit; "
+          "the gate binds receipts by apr_sha. Delete the key and re-measure at the cut (#3957 F2)"); rc = 1
 def is_q4k(r):  # a Q4_K model, by its file or its id (#3712)
     return bool(re.search(r"q4_?k", f"{r.get('gguf', '')} {r.get('id', '')}", re.I))
 # #3872: DO NOT CAP. A length cap is structurally wrong for this field: the classification
@@ -117,7 +141,13 @@ def why_of(x, backends):  # every reason a measured row is not green on the clai
     # reason is printed DEFERRED and never counted green (#3846/#3880). A gate that cannot
     # tell an accepted refusal from a new regression is not reading either.
     qa_rc = x.get("qa_rc")
-    if qa_rc not in (0, None):
+    # #3957 F3: `not in (0, None)` let a row with NO qa_rc through as if apr qa had exited 0.
+    # An absent field is never the passing value (release-readiness-v1 cell_pass precondition);
+    # the producer writes qa_rc on every row it builds, so absence means the row was not built
+    # by it, or was built from nothing.
+    if "qa_rc" not in x or not isinstance(qa_rc, int) or isinstance(qa_rc, bool):
+        why.append(f"`qa_rc` is MISSING or not an integer ({qa_rc!r}) — a row that cannot say how apr qa exited has not shown that it passed (#3957 F3)")
+    elif qa_rc != 0:
         gf = x.get("gates_failed") or []
         named = ", ".join(str(g) for g in gf) if gf else "NO GATE NAMED"
         why.append(f"apr qa exited {qa_rc} — gates_failed: {named} (#3898)")
@@ -146,6 +176,12 @@ def why_of(x, backends):  # every reason a measured row is not green on the clai
                 r = vb.get(verb)
                 if r is None: why.append(f"{b}: verb `{verb}` is MISSING from the receipt — not measured is not passed (#3828)")
                 elif not r.get("ran"): why.append(f"{b}: verb `{verb}` did not run (rc={r.get('rc')})")
+                # #3957 F4a: the producer's verb_ok reads `output_bad` and this judge did not, so a
+                # verb that exited 0 while printing gibberish was ok HERE -- the #3897 asymmetry in
+                # the other direction. The judge is the decision surface; it reads what the
+                # producer read.
+                if r is not None and r.get("output_bad"):
+                    why.append(f"{b}: verb `{verb}` produced bad output: {_disp(r.get('output_bad'))} (#3957 F4a)")
             sv = vb.get("serve")
             if sv is None:
                 why.append(f"{b}: verb `serve` is MISSING from the receipt — no rung has ever asked apr serve to load a model (#3571, #3828)")
@@ -162,6 +198,7 @@ def why_of(x, backends):  # every reason a measured row is not green on the clai
                     why.append(f"{b}: verb `serve` recorded no /api/chat probe — the ollama-compat route is the one real Ollama harnesses hit and it cannot inherit /v1 coverage (alfredodeza, #3715; #3828)")
                 for rk, rv in sorted(rts.items()):
                     if not rv.get("ok"): why.append(f"{b}: serve route {rk} returned http {rv.get('http')} (#3828)")
+                    if rv.get("output_bad"): why.append(f"{b}: serve route {rk} produced bad output: {_disp(rv.get('output_bad'))} (#3957 F4a)")
             # #3838: the teardown is part of the measurement, and the JUDGE has to read it.
             # The producer marks its own cell red on a failed teardown, but that enforces the
             # rule only in the code that happened to observe the failure -- a receipt written
@@ -177,8 +214,10 @@ def why_of(x, backends):  # every reason a measured row is not green on the clai
                     why.append(f"{b}: verb `serve` records no `teardown` — a probe that does not say whether its server died is not a completed measurement (#3838)")
                 elif td == "failed":
                     why.append(f"{b}: verb `serve` teardown FAILED — the server outlived its launcher and could not be proven to belong to this tree, so the route results were taken from a process still running (#3838)")
+                elif td == "undetermined":
+                    why.append(f"{b}: verb `serve` teardown UNDETERMINED — the process tree could not be resolved, so nothing proves the server died; a cell cannot claim a clean teardown from an observation that does not discriminate (#3943)")
                 elif td not in ("clean", "escalated"):
-                    why.append(f"{b}: verb `serve` teardown is {td!r}, which is not one of clean/escalated/failed (#3838)")
+                    why.append(f"{b}: verb `serve` teardown is {td!r}, which is not one of clean/escalated/failed/undetermined (#3838, #3943)")
     return why
 # #3712: no Q4_K rung is optional, and every one claims cuda. The key is refused, not tolerated.
 for r in rungs:
@@ -264,6 +303,11 @@ for h in hosts:
         print(f"FAIL  {h['id']:7} receipt unreadable: {e}"); rc = 1; continue
     if R.get("version") != version:
         print(f"FAIL  {h['id']:7} receipt is for {R.get('version')!r}, this cut is {version!r} — STALE"); rc = 1; continue
+    asha = R.get("apr_sha")
+    if not (isinstance(asha, str) and re.fullmatch(r"[0-9a-f]{40}", asha)):
+        print(f"FAIL  {h['id']:7} receipt carries no 40-hex apr_sha ({asha!r}) — it names a version, and a version is not a build (#3957 F2)"); rc = 1; continue
+    if asha != cut and asha not in equiv:
+        print(f"FAIL  {h['id']:7} receipt measured at apr_sha {asha[:12]}, cut is {cut[:12]}, and the trees differ outside evidence/ — STALE BY SHA: re-measure at the cut (#3957 F2)"); rc = 1; continue
     if int(R.get("executed", 0)) < 1:
         print(f"FAIL  {h['id']:7} receipt executed=0 — a receipt that measured nothing is not evidence"); rc = 1; continue
     inv = R.get("inventory")
@@ -337,7 +381,10 @@ for h in hosts:
             if req: print(f"FAIL  {h['id']:7} {rid:22} ABSENT — a required rung the host does not hold is unmeasured, not passed"); rc = 1
             else:   print(f"skip  {h['id']:7} {rid:22} absent ({tag})")
             continue
-        if x.get("sha_ok") is False:
+        # #3957 F3: `is False` passed a row with no sha_ok at all. Only an explicit True is a match.
+        if "sha_ok" not in x:
+            print(f"FAIL  {h['id']:7} {rid:22} `sha_ok` is MISSING — a row that does not say its file matched the pinned sha256 has not shown it measured this rung (#3957 F3)"); rc = 1; continue
+        if x.get("sha_ok") is not True:
             print(f"FAIL  {h['id']:7} {rid:22} sha256 mismatch — a different file is a different measurement"); rc = 1; continue
         why = why_of(x, r.get("backends", []))
         if why:
@@ -368,6 +415,21 @@ for pat in inv_deferred:
         rc = 1
 if model_ladder_cells.judge(L, good, rungs_doc, print, rungs_main):
     rc = 1
+# #3957 F4/F8: every (model, format, quant, host, backend, verb) cell must be PROVEN by an outside
+# oracle -- the CRUX receipts bound to the cut -- or, for .apr, by the chain to its source.
+if model_ladder_crux.judge(L, good, crux_dir, cut, equiv, print):
+    rc = 1
+# #3957 F1: a DEFERRED row is not green. DEFER is `Unknown(NotRun)` in the fleet vocabulary
+# (crates/aprender-contracts/src/ontology/verdict.rs FLEET_LABELS), the same element as
+# `decline` -- exit 2. It used to fall through to exit 0, so a run whose only non-green rows
+# were deferred printed "every required rung green". FAIL still dominates: rc 1 stays 1.
+# The line below must NEVER start `DEFERRED: ` (with the colon): scripts/dogfood.sh reads
+# that exact prefix as "this gate cannot be measured pre-publish" and marks it DEFER instead
+# of FAIL. Pinned by must_not_match in the defer-* cases.
+deferred_rows = sum(defer_used.values())
+if deferred_rows and rc == 0:
+    print(f"DEFERRED {deferred_rows} row(s) — declared, not proven: exit 2, never green (#3957 F1)")
+    rc = 2
 sys.exit(rc)
 PY
 }
@@ -412,6 +474,7 @@ lock_probe() {
   return "$bad"
 }
 
+CASE_CUT=ca5eca5eca5eca5eca5eca5eca5eca5eca5eca5e
 if [ "$SELF_TEST" = 1 ]; then
   n=0; bad=0
   for c in "$CASES_DIR"/*/; do
@@ -432,7 +495,11 @@ if [ "$SELF_TEST" = 1 ]; then
     fi
     lad="$c/ladder.yaml"; [ -f "$lad" ] || lad="$LADDER"
     main=""; [ -f "$c/ladder_main.yaml" ] && main="$c/ladder_main.yaml"
-    out=$(judge "$lad" "$main" "$c/receipts" "$(cat "$c/version" 2>/dev/null || echo 0.0.0-case)" "$c/context-rungs.json" "$c/context-rungs_main.json"); got=$?
+    # #3957 F2: every case is judged against a cut commit. CASE_CUT is the table's convention
+    # (every fixture receipt carries it as apr_sha); a case overrides it with a `cut_commit` file,
+    # and lists shas proven equal to the cut in `equivalent_shas`.
+    cut=$(cat "$c/cut_commit" 2>/dev/null || echo "$CASE_CUT")
+    out=$(judge "$lad" "$main" "$c/receipts" "$(cat "$c/version" 2>/dev/null || echo 0.0.0-case)" "$c/context-rungs.json" "$c/context-rungs_main.json" "$cut" "$c/equivalent_shas" "$c/crux"); got=$?
     n=$((n+1))
     # #3887 THE OTHER POLARITY. A case that exists to prove a gate stays QUIET rests on rc
     # alone otherwise, and that works only because an over-eager check happens to flip rc.
@@ -490,8 +557,24 @@ if [ "$SELF_TEST" = 1 ]; then
     mutant q4k-without-cuda   red-q4k-rung-cpu-only  's/if is_q4k(r) and "cuda" not in (r.get("backends") or \[\]):/if False:/'
     mutant inventory-missing  red-inventory-model-missing 's/if x is None or not x.get("present"):  # held by the host, absent from the run/if False:/'
     # #3898: the rule that reads `qa_rc`. Deleting it must break the case that names it.
-    mutant qa-rc-ignored      red-qa-rc-nonzero-refused 's/if qa_rc not in (0, None):/if False:/'
+    mutant qa-rc-ignored      red-qa-rc-nonzero-refused 's/    elif qa_rc != 0:/    elif False:/'
     mutant gates-unaccounted  red-gates-do-not-account-for-rc 's|if x.get("gates_account_for_rc") is False:|if False:|'
+    # #3957 F4a: the judge reads `output_bad` on chat, code and every serve route.
+    # #3957 F3: an ABSENT qa_rc / sha_ok is a FAIL, never the passing value.
+    mutant qa-rc-absent       red-qa-rc-missing           's/if "qa_rc" not in x or not isinstance(qa_rc, int) or isinstance(qa_rc, bool):/if False:/'
+    mutant sha-ok-absent      red-sha-ok-missing          's/        if "sha_ok" not in x:/        if False:/'
+    # #3957 F1: a deferred row exits 2 (Unknown/NotRun), never 0.
+    mutant defer-exits-0      defer-inventory-declared    's/if deferred_rows and rc == 0:/if False:/'
+    mutant defer-exits-0-qa   defer-qa-rc-declared        's/if deferred_rows and rc == 0:/if False:/'
+    mutant defer-colon        defer-inventory-declared    's/DEFERRED {deferred_rows} row(s)/DEFERRED: {deferred_rows} row(s)/'
+    # #3957 F2: receipts bind to the cut commit's sha; the prose drift key is refused.
+    mutant sha-stale          red-receipt-sha-stale       's/    if asha != cut and asha not in equiv:/    if False:/'
+    mutant sha-missing        red-receipt-sha-missing     's/    if not (isinstance(asha, str) and re.fullmatch(r"\[0-9a-f\]{40}", asha)):/    if False:/'
+    mutant sha-equiv-ignored  green-receipt-sha-equivalent 's/    if asha != cut and asha not in equiv:/    if asha != cut:/'
+    mutant sha-drift-key      red-ladder-apr-sha-drift-key 's/^if "apr_sha_drift" in (L.get("inventory") or {}) or "apr_sha_drift" in L:/if False:/'
+    mutant verb-output-bad    red-chat-output-bad-rc0     's/if r is not None and r.get("output_bad"):/if False:/'
+    mutant verb-output-bad-code red-code-output-bad-rc0   's/if r is not None and r.get("output_bad"):/if False:/'
+    mutant route-output-bad   red-serve-route-output-bad  's/if rv.get("output_bad"): why.append/if False: why.append/'
     # AND THE CROSS-CHECK THAT MAKES THE MUTANT MEAN SOMETHING (#3898).
     # A mutant killed by its own case only proves the case reads the rule. It does NOT
     # prove the rule covers a surface nothing else covers — and #3842's reconcile is the
@@ -499,7 +582,7 @@ if [ "$SELF_TEST" = 1 ]; then
     # So: delete the qa_rc rule and require the #3842 case to stay GREEN. If #3842 went red
     # too, the two rules would be redundant and this one would be unjustified.
     qa_mut="$mdir/cross-qa-rc.sh"
-    sed 's/if qa_rc not in (0, None):/if False:/' "$SELF" > "$qa_mut"
+    sed 's/    elif qa_rc != 0:/    elif False:/' "$SELF" > "$qa_mut"
     if cmp -s "$SELF" "$qa_mut"; then
       echo "FAIL  cross-check mutant did not apply -- the #3842 independence claim proves nothing"; bad=$((bad+1))
     elif MODEL_LADDER_ROOT="$PWD" bash "$qa_mut" --self-test --case red-receipt-red-not-recorded >/dev/null 2>&1; then
@@ -543,6 +626,25 @@ if [ "$SELF_TEST" = 1 ]; then
     cmutant pass-beyond-fit red-cells-pass-beyond-its-arithmetic 's/                            if not fit:/                            if False:/'
     cmutant family-long     red-cells-missing-cell          's/    if arch in (long_for.get("families") or \[\]):/    if False:/'
     cmutant rungs-floor     red-cells-rung-dropped-vs-main  's/            if gone:/            if False:/'
+    # #3957 F4/F8: the CRUX join (scripts/lib/model_ladder_crux.py), each rule deleted in a copy
+    # imported through MODEL_LADDER_CRUX_LIB; the case that names the rule must go RED.
+    xmutant() { # xmutant <label> <case that must kill it> <sed expression deleting the rule>
+      local md="$mdir/x-$1"; mkdir -p "$md"
+      sed "$3" scripts/lib/model_ladder_crux.py > "$md/model_ladder_crux.py"
+      if cmp -s scripts/lib/model_ladder_crux.py "$md/model_ladder_crux.py"; then echo "FAIL  crux mutant $1 did not apply -- case $2 proves nothing"; bad=$((bad+1)); return; fi
+      if MODEL_LADDER_CRUX_LIB="$md" bash "$SELF" --self-test --case "$2" > /dev/null 2>&1; then echo "FAIL  crux mutant $1 SURVIVED: case $2 stays ok with the rule deleted"; bad=$((bad+1))
+      else printf 'ok    crux mutant %-18s killed by case %s\n' "$1" "$2"; fi
+    }
+    xmutant no-receipts       red-crux-missing        's/^    if not files:/    if False:/'
+    xmutant cell-red-ignored  red-crux-cell-red       's/^    if bad:/    if False:/'
+    xmutant cell-absent-ok    red-crux-verb-absent    's/^    if not got:/    if False and not got:/'
+    xmutant unbound-receipt   red-crux-unbound        's/^        if not (asha and HEX40.fullmatch(asha)) or (asha != cut and asha not in equiv):/        if False:/'
+    xmutant declined-receipt  red-crux-declined       's/^        if summ.get("verdict") == "DECLINE":/        if False:/'
+    xmutant apr-no-source     red-apr-no-source       's/^    if not isinstance(src, dict) or not src.get("file") or not HEX64.fullmatch(str(src.get("sha256") or "")):/    if False:/'
+    xmutant apr-tensor-diff   red-apr-tensor-perturbed 's/^    elif td.get("tensors_differing") != 0:/    elif False:/'
+    xmutant apr-summary-diff  red-apr-summary-diff-only 's/td.get("method") != "elementwise" or //'
+    xmutant apr-greedy        red-apr-greedy-differs  's/^        elif e.get("equal") is not True:/        elif False:/'
+    xmutant apr-source-proven red-apr-source-red      's/s_ok, s_why = crux_cell(index, src_sha, host, b, v)/s_ok, s_why = True, "mutant"/'
     if [ -n "$mdir" ] && [ "$mdir" != "/" ] && [ -d "$mdir" ]; then rm -rf -- "$mdir"; fi
   fi
   echo "self-test: $n case(s), $bad bad"
@@ -572,12 +674,32 @@ fi
 printf -- '--- model capability ladder receipts for %s (%s) ---------------------\n' "$VERSION" "$RECEIPT_DIR"
 TMP_RUNGS=$(mktemp)
 git show "origin/main:evidence/release/context-rungs.json" > "$TMP_RUNGS" 2> /dev/null || : > "$TMP_RUNGS"   # absent at main: the bootstrap
-judge "$LADDER" "$MAIN_LADDER" "$RECEIPT_DIR" "$VERSION" evidence/release/context-rungs.json "$TMP_RUNGS"; rc=$?
+# #3957 F2: the cut. `--cut-commit`, else HEAD. safe.directory because a CI container's checkout
+# is owned by another uid and plain rev-parse dies there (#3581). Unresolvable -> the judge declines.
+[ -n "$CUT_COMMIT" ] || CUT_COMMIT=$(git -c safe.directory="$PWD" rev-parse HEAD 2> /dev/null || true)
+TMP_EQUIV=$(mktemp)
+# A receipt measured at another commit still binds when that commit's tree equals the cut's
+# outside evidence/ -- committing the receipts is itself a commit. Proven here, per sha, with git.
+python3 -c 'import glob, json, sys
+for f in glob.glob(sys.argv[1] + "/*.json"):
+    try: print(json.load(open(f)).get("apr_sha") or "")
+    except Exception: pass' "$RECEIPT_DIR" 2> /dev/null | sort -u | while read -r s; do
+  [ -n "$s" ] && [ -n "$CUT_COMMIT" ] || continue
+  if git -c safe.directory="$PWD" cat-file -e "$s^{commit}" 2> /dev/null \
+     && git -c safe.directory="$PWD" diff --quiet "$s" "$CUT_COMMIT" -- . ':(exclude)evidence' 2> /dev/null; then
+    printf '%s\n' "$s"
+  fi
+done > "$TMP_EQUIV"
+[ -n "$CRUX_DIR" ] || CRUX_DIR="evidence/crux/$VERSION"
+judge "$LADDER" "$MAIN_LADDER" "$RECEIPT_DIR" "$VERSION" evidence/release/context-rungs.json "$TMP_RUNGS" "$CUT_COMMIT" "$TMP_EQUIV" "$CRUX_DIR"; rc=$?
+rm -f "$TMP_EQUIV"
 [ -n "$TMP_RUNGS" ] && [ -f "$TMP_RUNGS" ] && rm -f "$TMP_RUNGS"
 # The producer that writes these receipts must not bypass the fleet GPU lock (#3712): RED, not a decline.
-if ! lock_audit scripts/model_ladder.sh; then [ "$rc" = 2 ] || rc=1; fi
+# #3957 F1: exit 2 now also means DEFER, so a raw GPU call must not hide behind it -- always RED.
+if ! lock_audit scripts/model_ladder.sh; then rc=1; fi
 case $rc in
   0) echo "ok    every required rung green on every required host" ;;
   1) echo "RED   the release claims a capability no receipt proves — see FAIL rows (EPIC #3477)" ;;
+  2) echo "NO-GO the verdict is not green: see DEFER / decline lines above (#3957 F1)" ;;
 esac
 exit $rc
