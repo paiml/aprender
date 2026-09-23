@@ -9,13 +9,13 @@
 //! # Example
 //!
 //! ```no_run
-//! # #[cfg(feature = "native")]
-//! # fn main() -> anyhow::Result<()> {
+//! # #[cfg(all(feature = "native", feature = "apr-tools"))]
+//! # fn main() -> std::io::Result<()> {
 //! let mut server = aprender_mcp::AprMcpServer::new();
 //! server.run_stdio()?;
 //! # Ok(())
 //! # }
-//! # #[cfg(not(feature = "native"))]
+//! # #[cfg(not(all(feature = "native", feature = "apr-tools")))]
 //! # fn main() {}
 //! ```
 //!
