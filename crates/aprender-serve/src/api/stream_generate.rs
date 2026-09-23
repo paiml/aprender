@@ -231,6 +231,8 @@ pub async fn stream_generate_handler(
         resolved
     } else if let Some(resolved) = try_apr_stream_tokens(&state, &request, &cancel)? {
         resolved
+    } else if let Some(resolved) = try_qwen35_stream_tokens(&state, &request, &cancel)? {
+        resolved
     } else {
         dense_stream_tokens(&state, &request, &cancel)?
     };

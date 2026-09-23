@@ -407,6 +407,14 @@ pub async fn generate_handler(
         return Ok(Json(resp));
     }
 
+    // Qwen3.5 holds no dense or quantized model for the arms above (see qwen35_raw_generate.rs).
+    if let Some(resp) = try_qwen35_generate(&state, &request, &cancel)? {
+        state
+            .metrics
+            .record_success(resp.num_generated, start.elapsed());
+        return Ok(Json(resp));
+    }
+
     let resp = registry_generate(&state, &request, &cancel)?;
     state
         .metrics
@@ -723,6 +731,10 @@ pub async fn batch_generate_handler(
     }
 
     if let Some(results) = try_apr_batch_generate(&state, &request, &cancel)? {
+        return Ok(Json(BatchGenerateResponse { results }));
+    }
+
+    if let Some(results) = try_qwen35_batch_generate(&state, &request, &cancel)? {
         return Ok(Json(BatchGenerateResponse { results }));
     }
 
