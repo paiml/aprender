@@ -290,6 +290,10 @@ only after that device A/B came back exact.
   (PMAT-3954: `3805a3371`, `1eb1fe808`). Its `Cargo.lock` delta is one dependency edge:
   aprender-mcp no longer depends on `anyhow`. It was not part of the frozen tree the sweep
   measured.
+- **IQ3_S and IQ2_S CUDA GEMV kernels fail to load on compute capability ≥ 12** (GB10 sm_121,
+  RTX 50xx sm_120), from a PTX patch-pass bug. apr **fails closed**: it runs on the CPU and says
+  so in its provenance (`fell_back: true`), and a forced `--gpu` exits 14. No output is wrong,
+  and no CRUX-certified model uses these types. The fix targets 0.70. (#4096)
 - `apr code --thinking on` refuses: `apr serve` has no thinking-ON path yet. (#3723)
 - **Known gap: the `apr capability` verb has no book page in 0.69.1.** `apr capability --help`
   and `--json` document it. The book's CLI parity check reads 112/113
