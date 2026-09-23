@@ -292,9 +292,49 @@ fn decide_named_gate(
             Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
         }
         NamedGateOutcome::Shapes(outcome) => decide_shapes_gate(outcome),
+        NamedGateOutcome::Tbox(outcome) => decide_tbox_gate(outcome),
         NamedGateOutcome::Sigma(SigmaOutcome::Ran { result, findings })
         | NamedGateOutcome::Relations(RelationsOutcome::Ran { result, findings })
         | NamedGateOutcome::Ran { result, findings } => Ok((result, findings)),
+    }
+}
+
+/// The `tbox` gate's answers (ONT-2c). There is no verdict arm: a clean classification is `Unknown{Advisory}`
+/// (R-7, no inferred fact arms a merge); everything else is the declaration's fault (exit 3).
+fn decide_tbox_gate(
+    outcome: provable_contracts::lint::tbox_gate::TboxOutcome,
+) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
+    use provable_contracts::lint::tbox_gate::TboxOutcome;
+    use provable_contracts::ontology::verdict::Reason;
+
+    match outcome {
+        TboxOutcome::NoSigma => Err(LintDeclined {
+            reason: Reason::NoCheckable,
+        }
+        .into()),
+        TboxOutcome::Malformed(e) | TboxOutcome::Stale(e) => {
+            Err(crate::contract_walk::SigmaMalformed(e).into())
+        }
+        TboxOutcome::PreconditionFailed(refused) => {
+            Err(crate::contract_walk::SigmaMalformed(format!(
+                "told-closure precondition fails, so no classification is claimed: {}",
+                refused.join("; ")
+            ))
+            .into())
+        }
+        TboxOutcome::Advisory(report) => {
+            eprintln!(
+                "tbox: {} classes, consistent={}, unintended_subsumptions={} (method {}, advisory; never arms)",
+                report.classes,
+                report.consistent,
+                report.unintended_subsumptions.len(),
+                report.method
+            );
+            Err(LintDeclined {
+                reason: Reason::Advisory,
+            }
+            .into())
+        }
     }
 }
 

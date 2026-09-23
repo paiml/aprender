@@ -133,6 +133,7 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(crate::contract_walk::ReleaseArgsRefused)?;
             commands::extract_rdf::run(&contract_dir, check, subject.as_ref(), out.as_deref())
         }
+        Commands::Ontology { command } => commands::ontology::run(&command),
         Commands::Coverage {
             contract_dir,
             binding,

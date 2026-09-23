@@ -20593,3 +20593,25 @@ roadmap:
   labels:
   - kind:code
   notes: 'The cop (aprender-04) requested this, verbatim: "Please land a pure-refactor commit on a branch OFF release/0.69.1-batch-1 (not your old branch) that brings it under threshold with no behaviour change. Proof: `bash scripts/check_complexity_ratchet.sh` rc 0, `cargo test -p aprender-contracts --lib` green, and `pv lint contracts --gate shapes` 8/8 controls fired." SCOPE: this ticket IS the refactor. It is NOT #3715''s feature, which was already folded at ded8a932a; the diff against ded8a932a is only this refactor plus this fragment and receipt. The ratchet was RED on release/0.69.1-batch-1 (ded8a932a) vs main a9502d992: run_shapes_gate_with cyclomatic 13 cognitive 28 (the limit is 25). The fix moves the preamble (collect -> empty -> arming -> family, same order), the family ordering, the verdict rule and the two report maps into prepare / order_by_family / needs_receipts / verdict_of / by_shape / by_entity_type. MEASURED at 2a40dda85: the ratchet no longer lists run_shapes_gate_with (rc stays 1 only for crates/aprender-serve/src/constrain/tests.rs::generate_intent, not in this diff and not this ticket''s); cargo test -p aprender-contracts --lib 1701 passed; pv lint contracts --gate shapes Pass, 8/8 pc_extract fired; ont_release_readiness / ont4b / ont4c1 / ont4c3 CLI targets 34/11/12/10 passed; clippy -D warnings clean. A prior round under PMAT-3715 had a lane FAIL on SCOPE because it judged this delta against the #3715 feature ticket; the cop ruled that this refactor gets its own ticket.'
+- id: PMAT-4071
+  github_issue: 4071
+  item_type: task
+  title: 'ONT-2c: in-house OWL 2 EL writer; TBox check via the oracle, advisory'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-19
+  created: 2026-09-23T18:30:00Z
+  updated: 2026-09-23T20:50:00Z
+  spec: paiml/infra docs/specifications/paiml-ontology.md@948ae923 (ONT-2c, line 626; §3.8)
+  acceptance_criteria:
+  - 'Row ONT-2c RED, verbatim: "writer output re-parsed by the oracle equals the fixture''s axiom set; two writes byte-identical; every Σ key mapped or in `not_expressible`; `acyclic` yields no axiom; `tbox-report.json` has `advisory: true`; gate maps it to `Unknown{Advisory}`; inferred subsumption between distinct Σ concepts → `unintended_subsumptions` non-empty."'
+  - 'Row ONT-2c mutation: "write `acyclic` as transitive + irreflexive → oracle round-trip RED."'
+  - 'Cop ruling 2026-09-23 (aprender-cf, refined per infra-83): (B) told-closure in-tree, precondition-guarded, advisory; (A) ELK 0.4.3 via a JVM as the independent oracle, agreement required at the RELEASE gate only; no JVM is a `decline:` NOT MEASURED, RED at release; a planted unintended subsumption must go RED in both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: 'ONT-001 R-22: kind:code,orch:fable,orch-basis:state admits Fable or Opus. No Rust EL reasoner exists (infra ont-oracle-ledger [V 2026-09-14]); ELK 0.4.3 pinned (zip 965ad946…, jar de1fffaf…, Apache-2.0), sent to infra-83 for the ledger. The OWL oracle is its own detached crate tests/oracle/owl/: oxigraph (via shacl) enables oxrdf Triple and breaks horned-owl''s horned-pretty-rdf under feature unification (E0004, measured).'

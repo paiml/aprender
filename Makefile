@@ -562,6 +562,7 @@ readme-sync-check: ## Fail if README.md is not what the generator produces
 # merge-tree measurement READS A FILE ON DISK must turn the hand-edited rows
 # GREEN, which is what makes their RED load-bearing rather than incidental.
 # `--class complexity` and `--class satd` are stubs and exit 3, never 0.
+.PHONY: oracle-owl oracle-owl-check
 .PHONY: roadmap-aggregate roadmap-aggregate-check
 roadmap-aggregate: ## Regenerate docs/roadmaps/roadmap.yaml from docs/roadmaps/entries/ (#3296)
 	@python3 scripts/lib/roadmap_fragments.py aggregate --write
@@ -1381,3 +1382,22 @@ oracle:
 oracle-check: oracle
 	@git diff --exit-code tests/oracle/differential.json \
 	  || { echo "FAIL: tests/oracle/differential.json differs from a fresh run — commit it"; exit 1; }
+
+# ONT-001 §3.8 / ONT-2c — the OWL oracle (release gate only, R-13; never per PR). Three arms:
+# horned-owl re-parses the fixture's written .ofn and must equal the HAND-WRITTEN axiom list; every live
+# axiom must be a told-closure-admitted kind; ELK 0.4.3 (pinned by sha256, needs a JVM) must agree with
+# contracts/tbox-report.json, with a planted positive control turning it RED every run. No JVM exits 2 with
+# `decline: NOT MEASURED`, which is RED at the release gate and never a skip. The crate is detached from the
+# workspace AND from tests/oracle's SHACL crate (feature unification breaks horned-owl there).
+oracle-owl:
+	@echo "== OWL oracle: horned-owl round-trip + admitted kinds + ELK TBox differential (out of gate) =="
+	@. scripts/pv_bin.sh && "$$PV" ontology export --owl tests/fixtures/ont/owl/ontology.yaml > "$${TMPDIR:-/tmp}/ont2c-fixture.ofn"
+	@cargo build --release --quiet --manifest-path tests/oracle/owl/Cargo.toml
+	@O="$$(cargo metadata --no-deps --format-version 1 --manifest-path tests/oracle/owl/Cargo.toml | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')/release/owl-oracle"; \
+	"$$O" roundtrip "$${TMPDIR:-/tmp}/ont2c-fixture.ofn" tests/fixtures/ont/owl/axioms.txt && \
+	"$$O" kinds contracts/ontology.ofn && \
+	"$$O" elk .
+
+oracle-owl-check: oracle-owl
+	@git diff --exit-code tests/oracle/tbox-differential.json \
+	  || { echo "FAIL: tests/oracle/tbox-differential.json differs from a fresh run — commit it"; exit 1; }

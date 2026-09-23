@@ -112,6 +112,11 @@ pub enum Commands {
         #[command(flatten)]
         release: Box<ReleaseArgs>,
     },
+    /// Σ as OWL and its advisory TBox (ONT-001 §3.8, ONT-2c)
+    Ontology {
+        #[command(subcommand)]
+        command: OntologyCommand,
+    },
     /// Show cross-contract obligation coverage report
     Coverage {
         /// Directory containing contract YAML files
@@ -550,4 +555,30 @@ impl ReleaseArgs {
             .clone_from(&self.tokenizer_receipts);
         Ok(Some(s))
     }
+}
+
+/// `pv ontology …` (ONT-001 §3.8, row ONT-2c).
+#[derive(Subcommand, Clone, Debug)]
+pub enum OntologyCommand {
+    /// Write Σ as OWL 2 EL functional syntax (the in-house writer; byte-deterministic)
+    Export {
+        /// Σ, the ontology declaration
+        #[arg(default_value = "contracts/ontology.yaml")]
+        sigma: PathBuf,
+        /// OWL 2 functional syntax. The only format this command writes; required so the output is named
+        #[arg(long)]
+        owl: bool,
+        /// Write `ontology.ofn` next to Σ instead of printing it
+        #[arg(long)]
+        write: bool,
+    },
+    /// The told-closure TBox report (advisory; `tbox-report.json`). Exit 3 if its precondition fails
+    Tbox {
+        /// Σ, the ontology declaration
+        #[arg(default_value = "contracts/ontology.yaml")]
+        sigma: PathBuf,
+        /// Write `tbox-report.json` next to Σ instead of printing it
+        #[arg(long)]
+        write: bool,
+    },
 }
