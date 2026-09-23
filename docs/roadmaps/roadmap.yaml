@@ -21447,7 +21447,7 @@ roadmap:
 - id: PMAT-4034
   github_issue: 4034
   item_type: task
-  title: 'ladder: run a cell''s CPU and CUDA lanes concurrently; the CPU lane does not hold the GPU lock (#4033 lever a)'
+  title: 'ladder: run a cell''s CPU and CUDA lanes concurrently; the CPU lane does not hold the GPU lock (#4033)'
   status: in_progress
   priority: high
   assigned_to: aprender-36
