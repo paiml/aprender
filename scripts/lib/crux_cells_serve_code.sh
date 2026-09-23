@@ -3,7 +3,7 @@
 # scripts/crux_inference_dogfood.sh and never run on its own. It is OPTION-NEUTRAL (no
 # `set`), per the CLAUDE.md rule for sourced libraries, and it reads the driver's
 # globals: WORK, M, SHA, SHA12, APR, APR_BE, BACKEND, HOST, THINK, TEMP, SEED, CTX,
-# TMO, NGL, LLAMA_DEV, LLAMA_OK, LLAMA_SERVER, LLAMA_DEVICE, OLLAMA_OK, OL_REFUSED,
+# TMO, NGL, LLAMA_DEV, HAVE_LLAMA, LLAMA_SERVER, LLAMA_DEVICE, HAVE_OLLAMA, OL_REFUSED,
 # OL_NAME, OL_DEVICE, OLLAMA_HOST_URL, MANIFEST, EXT_OK, EXT_SCRIPT, EXT_WHY, HF_SRC,
 # HF_MODEL_WHY, CELL_WHY. It also uses the driver's cell_add, run_cell,
 # cell_result, cell_add_ollama_unload, emit_gen, rows_for, free_port and
@@ -146,7 +146,7 @@ serve_routes_cell() {
   { printf '%q ' "$APR" serve run "$M" --port "$pa" "$APR_BE"; printf '> %q 2>&1 < /dev/null &\necho $! > %q\n' "$d/apr-serve.log" "$d/apr-serve.pid"; } >> "$cell"
   serve_wait_line "$cell" "$pa" /health "$d/apr-serve.pid"
   local render=()
-  if [ "$LLAMA_OK" = 1 ]; then
+  if [ "$HAVE_LLAMA" = 1 ]; then
     crux_llama_server_lines "$cell" "$d"
     render=(--render-url "http://127.0.0.1:$CRUX_PL")
   fi
@@ -154,19 +154,19 @@ serve_routes_cell() {
     --thinking "$THINK" --timeout "$TMO")
   cell_add "$cell" "$d/apr-sweep" python3 scripts/lib/crux_serve_routes.py sweep --url "http://127.0.0.1:$pa" \
     --out-dir "$d/apr" --device "apr serve $APR_BE" "${render[@]}" "${common[@]}"
-  if [ "$LLAMA_OK" = 1 ]; then
+  if [ "$HAVE_LLAMA" = 1 ]; then
     # #3962 B4: every oracle route, not only chat -- apr's raw routes are judged against llama's
     # /v1/completions on the byte-identical rendered prompt (--render-url: llama renders for itself).
     cell_add "$cell" "$d/llama-sweep" python3 scripts/lib/crux_serve_routes.py sweep --url "http://127.0.0.1:$CRUX_PL" \
       --routes "$(python3 scripts/lib/crux_serve_routes.py oracle-routes)" --model gguf --extra "$(crux_think_extra)" \
       --out-dir "$d/llama" --device "$LLAMA_DEVICE" "${render[@]}" "${common[@]}"
   fi
-  if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then
+  if [ "$HAVE_OLLAMA" = 1 ] && [ -z "$OL_REFUSED" ]; then
     cell_add "$cell" "$d/ollama-sweep" python3 scripts/lib/crux_serve_routes.py sweep --url "$OLLAMA_HOST_URL" \
       --routes "POST /v1/chat/completions" --model "$OL_NAME" --extra '{"keep_alive": 0}' \
       --out-dir "$d/ollama" --device "$OL_DEVICE" "${common[@]}"
   fi
-  [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ] && cell_add_ollama_unload "$cell" "$d/ollama-serve" "$OL_NAME"
+  [ "$HAVE_OLLAMA" = 1 ] && [ -z "$OL_REFUSED" ] && cell_add_ollama_unload "$cell" "$d/ollama-serve" "$OL_NAME"
   [ "${#pids[@]}" -gt 0 ] && crux_plugin_lines "$cell" "$d" "serve run" "${pids[@]}"
   [ "${#spids[@]}" -gt 0 ] && crux_plugin_lines "$cell" "$d/stream" "serve stream" "${spids[@]}"
   printf 'exit 0\n' >> "$cell"
@@ -179,14 +179,14 @@ serve_routes_cell() {
   local rowargs=(--prompt-list "$WORK/serve-prompts.jsonl" --manifest "$MANIFEST" --sha "$SHA" --host "$HOST"
     --backend "$BACKEND" --thinking "$THINK" --cell-why "$CELL_WHY" --cell-fault "$td_why")
   python3 scripts/lib/crux_serve_routes.py rows --out-dir "$d/apr" --engine apr "${rowargs[@]}"
-  if [ "$LLAMA_OK" = 1 ]; then
+  if [ "$HAVE_LLAMA" = 1 ]; then
     python3 scripts/lib/crux_serve_routes.py rows --out-dir "$d/llama" --engine llama.cpp "${rowargs[@]}"
   elif want llama.cpp; then
     # argparse keeps the LAST --cell-why, so the engine's own reason replaces the cell's
     python3 scripts/lib/crux_serve_routes.py rows --out-dir "$d/llama" --engine llama.cpp "${rowargs[@]}" \
       --cell-why "$LLAMA_WHY"
   fi
-  if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then
+  if [ "$HAVE_OLLAMA" = 1 ] && [ -z "$OL_REFUSED" ]; then
     python3 scripts/lib/crux_serve_routes.py rows --out-dir "$d/ollama" --engine ollama "${rowargs[@]}"
   elif want ollama; then
     python3 scripts/lib/crux_serve_routes.py rows --out-dir "$d/ollama" --engine ollama "${rowargs[@]}" \
@@ -217,7 +217,7 @@ code_cell() {
       --prompt-file "$WORK/prompt-$pid.json" --max-tokens "$mt" --thinking "$THINK" --backend "$BACKEND" --timeout "$TMO" \
       --serve-pid-file "$d/apr-code-serve.pids" --out "$d/apr-$pid.json"
   done
-  if [ "$LLAMA_OK" = 1 ]; then
+  if [ "$HAVE_LLAMA" = 1 ]; then
     crux_llama_server_lines "$cell" "$d"
     for pid in "${pids[@]}"; do
       cell_add "$cell" "$d/llama-$pid" python3 scripts/lib/crux_serve_routes.py drive --url "http://127.0.0.1:$CRUX_PL" \
@@ -226,7 +226,7 @@ code_cell() {
         --model gguf --extra "$(crux_think_extra)" --device "$LLAMA_DEVICE" --timeout "$TMO" --out "$d/llama-$pid.json"
     done
   fi
-  if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then
+  if [ "$HAVE_OLLAMA" = 1 ] && [ -z "$OL_REFUSED" ]; then
     for pid in "${pids[@]}"; do
       cell_add "$cell" "$d/ollama-$pid" python3 scripts/lib/crux_serve_routes.py drive --url "$OLLAMA_HOST_URL" \
         --route "POST /v1/chat/completions" --mode nonstream --prompt-file "$WORK/prompt-$pid.json" \
@@ -234,7 +234,7 @@ code_cell() {
         --model "$OL_NAME" --extra '{"keep_alive": 0}' --device "$OL_DEVICE" --timeout "$TMO" --out "$d/ollama-$pid.json"
     done
   fi
-  [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ] && cell_add_ollama_unload "$cell" "$d/ollama-code" "$OL_NAME"
+  [ "$HAVE_OLLAMA" = 1 ] && [ -z "$OL_REFUSED" ] && cell_add_ollama_unload "$cell" "$d/ollama-code" "$OL_NAME"
   crux_plugin_lines "$cell" "$d" code "${pids[@]}"
   printf 'exit 0\n' >> "$cell"
 
@@ -246,9 +246,9 @@ code_cell() {
   for pid in "${pids[@]}"; do
     if [ -n "$apr_why" ]; then VERB_KEY=code emit_gen apr "$pid" "" "" "" "$apr_why"
     else VERB_KEY=code cell_result apr "$pid" "$d/apr-$pid" "$d/apr-$pid.json"; fi
-    if [ "$LLAMA_OK" = 1 ]; then VERB_KEY=code cell_result llama.cpp "$pid" "$d/llama-$pid" "$d/llama-$pid.json"
+    if [ "$HAVE_LLAMA" = 1 ]; then VERB_KEY=code cell_result llama.cpp "$pid" "$d/llama-$pid" "$d/llama-$pid.json"
     elif want llama.cpp; then VERB_KEY=code emit_gen llama.cpp "$pid" "" "" "" "$LLAMA_WHY"; fi
-    if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then VERB_KEY=code cell_result ollama "$pid" "$d/ollama-$pid" "$d/ollama-$pid.json"
+    if [ "$HAVE_OLLAMA" = 1 ] && [ -z "$OL_REFUSED" ]; then VERB_KEY=code cell_result ollama "$pid" "$d/ollama-$pid" "$d/ollama-$pid.json"
     elif want ollama; then VERB_KEY=code emit_gen ollama "$pid" "" "" "" "${OL_REFUSED:-$OLLAMA_WHY}"; fi
   done
   VERB_KEY=code crux_plugin_rows "$d" before "${pids[@]}"
