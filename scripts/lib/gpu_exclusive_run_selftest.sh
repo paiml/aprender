@@ -21,7 +21,7 @@ row() { # row <want rc> <label> <must_match> -- env and command follow
   # Match against the output JOINED: the script names each foreign process on its own
   # line, so a line-based match cannot see "CONTENDED ... llama-server" across the break.
   if [ "$rc" = "$want" ] && grep -qE "$mm" <<< "$(tr '\n' ' ' <<< "$out")"; then printf 'ok    row %s rc=%s  %s\n' "$n" "$rc" "$label"
-  else printf 'FAIL  row %s rc=%s (want %s)  %s\n        %s\n' "$n" "$rc" "$want" "$label" "$(echo "$out" | tail -2 | tr '\n' ' ')"; bad=1; fi
+  else printf 'FAIL  row %s rc=%s (want %s)  %s\n        %s\n' "$n" "$rc" "$want" "$label" "$(echo "$out" | tail -2 | tr '\n' ' ')"; bad=$((bad + 1)); fi
 }
 MINE=/work/mine/target/
 S="$HERE/gpu_exclusive_run.sh"
@@ -45,12 +45,34 @@ row 75 "a nameless pid never seen as ours: CONTENDED (conservative)" "CONTENDED 
 # 4. card never clears within the wait: refuse before taking the lock
 row 75 "card occupied throughout: CONTENDED, command never runs" "never cleared" \
   bash -c "echo '404921, /usr/local/lib/ollama/llama-server' > $T/card; GPU_OWNED_PREFIX=$MINE CARD_FILE=$T/card $S bash -c 'echo RAN > $T/ran'"
-[ ! -f "$T/ran" ] || { echo "FAIL  row 4 ran the command on an occupied card"; bad=1; }
+[ ! -f "$T/ran" ] || { echo "FAIL  row 4 ran the command on an occupied card"; bad=$((bad + 1)); }
 # 5. nothing observed: a run no sample caught cannot claim exclusivity
 row 75 "run too short to be sampled: UNVERIFIED, not EXCLUSIVE" "UNVERIFIED" \
   bash -c ": > $T/card; GPU_OWNED_PREFIX=$MINE CARD_FILE=$T/card $S true"
 # 6. no prefix: refuse -- a default would accept every process as ours
 row 2 "GPU_OWNED_PREFIX unset: usage error" "GPU_OWNED_PREFIX is required" \
   bash -c "unset GPU_OWNED_PREFIX; $S true"
+# ---- INHERITED LOCK (#3964 follow-up) ---------------------------------------------------
+# A caller that already holds the lock -- gpu-q ends in `exec flock $LOCK choom -- <cmd>` --
+# used to DEADLOCK: the script re-took the lock on a new file description with no bound, and
+# waited forever while its own ancestor held it. Every row below is wrapped in `timeout 20`
+# so a regression FAILS the table instead of hanging it; the outer flock uses -w 5.
+# 7. THE ROW f5 asked for: caller holds the lock -> proceeds, EXCLUSIVE, no deadlock.
+row 0 "caller already holds the lock: proceeds, no deadlock" "held by ancestor pid [0-9]+.*EXCLUSIVE -- [1-9]" \
+  bash -c ": > $T/card; timeout 20 flock -w 5 $T/lock env GPU_OWNED_PREFIX=$MINE CARD_FILE=$T/card $S bash -c 'echo \"111, ${MINE}deps/realizar\" > $T/card; sleep 2.5; : > $T/card; exit 0'"
+# 8. holding the lock does not excuse a foreigner: one arriving mid-run is still refused.
+row 75 "caller holds the lock, a foreigner arrives mid-run: still CONTENDED" "held by ancestor.*CONTENDED -- foreign.*llama-server" \
+  bash -c ": > $T/card; timeout 20 flock -w 5 $T/lock env GPU_OWNED_PREFIX=$MINE CARD_FILE=$T/card $S bash -c 'printf \"111, ${MINE}deps/realizar\n404921, /usr/local/lib/ollama/llama-server\n\" > $T/card; sleep 2.5; : > $T/card; exit 0'"
+# 9. held lock but the card is ALREADY occupied: refuse, and never run the command.
+rm -f "$T/ran9"
+row 75 "caller holds the lock but the card is occupied: refused, command never runs" "held by ancestor.*occupied after taking the lock" \
+  bash -c "echo '404921, /usr/local/lib/ollama/llama-server' > $T/card; timeout 20 flock -w 5 $T/lock env GPU_OWNED_PREFIX=$MINE CARD_FILE=$T/card $S bash -c 'echo RAN > $T/ran9'"
+[ ! -f "$T/ran9" ] || { echo "FAIL  row 9 ran the command on an occupied card"; bad=$((bad + 1)); }
+# 10. a lock held by an UNRELATED process is contention, not inheritance: bounded wait,
+#     then a named refusal. Proves the check is ANCESTRY, not "someone holds it".
+rm -f "$T/ran10"
+row 75 "lock held by a non-ancestor: NOT inherited, bounded wait then refused" "not free after [0-9]+s" \
+  bash -c ": > $T/card; flock $T/lock sleep 6 & sleep 0.3; timeout 20 env GPU_OWNED_PREFIX=$MINE CARD_FILE=$T/card $S bash -c 'echo RAN > $T/ran10'; rc=\$?; wait; exit \$rc"
+[ ! -f "$T/ran10" ] || { echo "FAIL  row 10 ran the command while an unrelated process held the lock"; bad=$((bad + 1)); }
 printf '%s/%s rows\n' "$((n - bad))" "$n"
 [ "$bad" = 0 ]
