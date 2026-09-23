@@ -1,0 +1,215 @@
+# Every publish-blocking gate, DERIVED by scripts/lib/release_gate_classes.py, and its class (#4045 M8).
+# real = protects users: red stops the train. bookkeeping = the repo's own accounting: auto-fix or report, NEVER
+# blocks a publish. A derived gate missing here, or an entry for a gate that no longer runs, fails
+# scripts/check_release_gate_classes.sh.
+schema: apr-release-gate-classes/v1
+ruling: 'operator 2026-09-23 via the release cop: "all of these trivial issues should be caught hours early and are \"fake\" gates" (#4045 M8)'
+review: 'PROPOSED by aprender-6c for the release cop''s review: every class below is a judgement, stated with its reason'
+gates:
+  dogfood:bashrs:
+    class: bookkeeping
+    why: 'shell lint of repo/release scripts: a finding does not change what users get (0.69.1: 8 late findings)'
+  dogfood:clean-room:
+    class: real
+    why: clean-room build of the candidate
+  dogfood:cli-surface:
+    class: real
+    why: the release binary answers --help with its registered surface
+  dogfood:contracts:
+    class: bookkeeping
+    why: contract counts/validation bookkeeping (make contracts)
+  dogfood:contracts-exit-integrity:
+    class: bookkeeping
+    why: 'the contracts recipe''s own exit-code hygiene: tooling integrity, not user output'
+  dogfood:coverage:
+    class: bookkeeping
+    why: 'line coverage against the floor: engineering health, reported, never a publish block'
+  dogfood:declared:check_bench_receipt:
+    class: bookkeeping
+    why: benchmark receipt shape
+  dogfood:declared:check_dogfood_no_defer:
+    class: bookkeeping
+    why: the dogfood protocol's own no-DEFER rule
+  dogfood:declared:check_dogfood_shim:
+    class: bookkeeping
+    why: the dogfood shim wiring
+  dogfood:declared:check_ladder_output_judged:
+    class: real
+    why: ladder verbs judged on what they OUTPUT, not their exit code
+  dogfood:declared:check_ladder_provenance:
+    class: real
+    why: ladder receipts come from the binary being released
+  dogfood:declared:check_ladder_serve_verdict:
+    class: real
+    why: apr serve's routes answer correctly
+  dogfood:declared:check_model_ladder:
+    class: real
+    why: the model capability ladder judge
+  dogfood:declared:check_multiplatform_dogfood:
+    class: real
+    why: the release works on every platform it ships for
+  dogfood:declared:check_no_claim_literals:
+    class: bookkeeping
+    why: docs claim literals derived from measurements (0.69.1 late surprise)
+  dogfood:declared:check_parity_receipt:
+    class: real
+    why: 'published parity claims are backed by a receipt: a false claim misleads users'
+  dogfood:declared:check_perf041_marker:
+    class: bookkeeping
+    why: a perf-ticket marker
+  dogfood:declared:check_serve_backend_record:
+    class: real
+    why: apr serve records the backend it actually used
+  dogfood:declared:check_tokenizer_nonascii_parity:
+    class: real
+    why: tokenizer output on non-ASCII text matches the reference
+  dogfood:declared:check_verifier_pinning:
+    class: bookkeeping
+    why: the verifiers this protocol runs are pinned
+  dogfood:declared:float16_greedy_parity:
+    class: real
+    why: f16 greedy output matches the reference
+  dogfood:declared:tokenizer_parity:
+    class: real
+    why: tokenizer parity with the reference
+  dogfood:deterministic-tools:
+    class: bookkeeping
+    why: pv/bashrs/pmat/probador versions recorded
+  dogfood:dogfood-gates:
+    class: bookkeeping
+    why: the dogfood declaration is well-formed
+  dogfood:dogfood-use:
+    class: real
+    why: the release binary builds and is usable
+  dogfood:feature-scope:
+    class: bookkeeping
+    why: records which features clippy/test ran with (INFO)
+  dogfood:git-clean:
+    class: real
+    why: 'the judged tree is clean: what is packaged is what was dogfooded'
+  dogfood:interface-parity:
+    class: real
+    why: every transport exposes the same interface to users
+  dogfood:model-parity:
+    class: real
+    why: model outputs match the reference
+  dogfood:model-parity-falsifier:
+    class: real
+    why: the model-parity check can fail (positive control)
+  dogfood:pmat-comply:
+    class: bookkeeping
+    why: 'pmat comply (CB-200 and friends): code-health rules (0.69.1 late CB-200 surprise)'
+  dogfood:pmat-pin:
+    class: bookkeeping
+    why: the pmat binary is pinned
+  dogfood:pmat-verify:
+    class: bookkeeping
+    why: 'format/complexity/SATD/clippy (0.69.1: 10 late complexity fns); its tests half is also `deep` + CI workspace-test, which stay real'
+  dogfood:probador-suite:
+    class: real
+    why: the probador test suite on the release binary
+  dogfood:publish-dry-run:
+    class: real
+    why: cargo publish --dry-run of the crate
+  dogfood:pv-bindings:
+    class: bookkeeping
+    why: contract bindings accounting
+  dogfood:pv-contracts:
+    class: bookkeeping
+    why: contract validation accounting
+  dogfood:pv-lint:
+    class: bookkeeping
+    why: contract lint
+  dogfood:reachability:
+    class: bookkeeping
+    why: unreachable files/tests report (WARN)
+  dogfood:release-assets:
+    class: real
+    why: the release assets users download
+  dogfood:release-binary:
+    class: real
+    why: the release binary builds
+  dogfood:renacer:
+    class: bookkeeping
+    why: renacer tracing config presence (WARN)
+  dogfood:security-2nd-source:
+    class: real
+    why: a second security-advisory source over the shipped dependency tree
+  dogfood:surface-derivation:
+    class: bookkeeping
+    why: whether the transport surface is derived (REPORT)
+  dogfood:transport-absence:
+    class: real
+    why: no transport exposes what it must not
+  dogfood:transport-decl:
+    class: real
+    why: the transport declaration is readable
+  dogfood:transport-invariance:
+    class: real
+    why: the same call gives the same answer on every transport
+  dogfood:version-published:
+    class: real
+    why: 'post-publish: the version is on the index'
+  dogfood:version-unpublished:
+    class: real
+    why: 'pre-publish: the version is not already taken on crates.io'
+  preflight:R1:
+    class: real
+    why: 'a clean tree: the packaged crate is exactly the judged tree'
+  preflight:R2:
+    class: real
+    why: the version comes from cargo metadata, not a literal
+  preflight:R3:
+    class: real
+    why: 'the tag points at HEAD: what is uploaded is what was tagged'
+  preflight:R4:
+    class: real
+    why: 'HEAD is on main: what publishes was reviewed and merged (0.69.1''s late R4 squash surprise)'
+  preflight:R5:
+    class: real
+    why: a GO dogfood receipt for this commit
+  preflight:R6:
+    class: real
+    why: 'no versioned dev-dependency cycle: the cascade would fail mid-publish'
+  preflight:R7:
+    class: real
+    why: 'the model matrix receipts for this cut (the release gate, #4045)'
+  step:assets:
+    class: real
+    why: the release binaries users download exist and run
+  step:cascade:
+    class: real
+    why: the publish itself
+  step:cleanroom:
+    class: real
+    why: 'the candidate builds from scratch on a clean runner: what crates.io users build'
+  step:close:
+    class: bookkeeping
+    why: epic comment and milestone bookkeeping after the publish
+  step:deep:
+    class: real
+    why: 'doctests, --no-default-features and examples build: what a user compiles'
+  step:dogfood:
+    class: real
+    why: the aggregate of the dogfood rows; each row carries its own class below
+  step:dryrun:
+    class: real
+    why: 'the crates.io cascade can publish: a broken publish strands users mid-cascade'
+  step:hosts:
+    class: real
+    why: the CUDA asset runs on the GPU hosts
+  step:install:
+    class: real
+    why: '`cargo install aprender` works for a user, then post-publish dogfood'
+  step:models:
+    class: real
+    why: 'model capability on the release binary (#3712): a wrong model is a user-facing defect'
+  step:preflight:
+    class: real
+    why: the aggregate of R1-R7; each carries its own class below
+  step:tag:
+    class: real
+    why: the tag names exactly the judged commit
+  step:wait:
+    class: real
+    why: the release commit must exist (the bump PR merged); nothing else is judged without it
