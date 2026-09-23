@@ -33,7 +33,11 @@ REPO=$(cd "$(dirname "$SCRIPT")/.." && pwd) || { echo "  cannot check: no repo r
 
 T=$(mktemp -d) || { echo "  cannot check: mktemp failed" >&2; exit 2; }
 case "$T" in /tmp/?*) ;; *) echo "  cannot check: expected a temp dir under /tmp, got '$T'" >&2; exit 2 ;; esac
-cleanup() { [ -n "${KEEP_T:-}" ] && { echo "kept $T" >&2; return; }; case "${T:-}" in /tmp/?*) rm -rf -- "$T" ;; esac; }
+cleanup() {
+  case "${T:-}" in
+    /tmp/?*) [ -d "$T" ] && rm -rf -- "$T" ;;
+  esac
+}
 trap cleanup EXIT
 
 REFUSAL="error: Not implemented: this build has no CUDA forward for architecture 'qwen35moe': fixture. This is a refusal, not a fallback: nothing was loaded and nothing was generated."

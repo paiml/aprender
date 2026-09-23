@@ -982,8 +982,8 @@ except Exception: print("unknown")' "$arch_json")
 
     R_RC[$b]=$run_rc; R_FB[$b]=$fb; R_RAN[$b]=$ran; R_ESC[$b]=$esc
     R_SB[$b]=$run_stdout_bytes; R_GB[$b]=$run_generated_bytes; R_RJ[$b]=$run_refusal_json; R_REF[$b]=0
-    if refused_by_name "$b" "$run_rc" "$ran" "$fb" "$run_generated_bytes" \
-         "$(grep -h -m1 -F 'no CUDA forward for architecture' "$run_e" "$run_o" | head -1)" "$row_arch"; then
+    ref_line=$(grep -h -m1 -F 'no CUDA forward for architecture' "$run_e" "$run_o" | head -1)
+    if refused_by_name "$b" "$run_rc" "$ran" "$fb" "$run_generated_bytes" "$ref_line" "$row_arch"; then
       R_REF[$b]=1; any_refused=1
       printf '    short-circuit %s (%s): apr refused %s BY NAME -- its remaining verbs are recorded not-run, never pass (#4052)\n' "$rid" "$b" "$row_arch"
     fi
