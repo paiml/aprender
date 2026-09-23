@@ -8,6 +8,7 @@
 # Also: crate<TAB>--test<TAB>name (integration binary) and crate<TAB>--bins.
 apr-cli	--lib
 apr-cli	--lib	commands::aliases
+apr-cli	--lib	commands::capability
 apr-cli	--lib	commands::eval
 apr-cli	--lib	commands::glob_filter
 apr-cli	--lib	commands::kernel_explain
@@ -16,6 +17,7 @@ apr-cli	--lib	commands::parity_admission
 apr-cli	--lib	commands::ptx_map
 apr-cli	--lib	commands::publish
 apr-cli	--lib	commands::pull
+apr-cli	--lib	commands::qa
 apr-cli	--lib	commands::qualify
 apr-cli	--lib	commands::serve
 apr-cli	--lib	commands::serve_plan
@@ -87,6 +89,7 @@ aprender-core	--lib	format::special_tokens_contract_falsify
 aprender-core	--lib	format::tokenizer_vocab_contract_falsify
 aprender-core	--lib	qa::docs
 aprender-core	--lib	qa::velocity
+aprender-core	--lib	release_section
 aprender-core	--lib	setfit::artifact
 aprender-core	--lib	setfit::classify
 aprender-core	--lib	setfit::model_tests
@@ -123,6 +126,7 @@ aprender-profile	--lib	cluster::registry
 aprender-qa-certify	--lib	<root>
 aprender-rag	--lib	loader::text
 aprender-rag-cli	--lib	<root>
+aprender-serve	--lib	capability
 aprender-serve	--lib	cli::cli_tests
 aprender-serve	--lib	quantize::contract_tests
 aprender-shell	--lib	model
