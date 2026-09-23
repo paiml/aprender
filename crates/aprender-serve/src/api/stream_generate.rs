@@ -203,6 +203,27 @@ fn try_apr_stream_tokens(
     Ok(Some((generated, prompt_len, tokenizer)))
 }
 
+/// The `event: token` payloads for generated ids, never split inside a character.
+///
+/// Decoding each id alone turned a character spanning two byte tokens into two
+/// U+FFFD (the defect a29989039 fixed on the chat SSE path). A held id emits no
+/// event; the event that completes the character carries the text of every id
+/// it covers and the LAST id's `token_id`.
+fn raw_stream_token_events(tokenizer: &BPETokenizer, generated: &[u32]) -> Vec<StreamTokenEvent> {
+    let mut utf8 = crate::api::LiveUtf8Deltas::new();
+    let mut events: Vec<StreamTokenEvent> = generated
+        .iter()
+        .filter_map(|&token_id| {
+            utf8.push(tokenizer, token_id)
+                .map(|text| StreamTokenEvent { token_id, text })
+        })
+        .collect();
+    if let (Some(text), Some(&token_id)) = (utf8.finish(tokenizer), generated.last()) {
+        events.push(StreamTokenEvent { token_id, text });
+    }
+    events
+}
+
 /// Stream generate handler — generates tokens one by one via Server-Sent Events.
 ///
 /// Tries the quantized backend first (the `apr serve run model.gguf` path), then
@@ -243,14 +264,7 @@ pub async fn stream_generate_handler(
         // on the first sampled token returns the prompt alone, so clamp rather
         // than slice past the end.
         let generated_start = prompt_len.min(token_ids.len());
-        for &token_id in &token_ids[generated_start..] {
-            // Decode single token
-            let text = match tokenizer_clone.decode(&[token_id]) {
-                Ok(t) => t,
-                Err(_) => String::from("<error>"),
-            };
-
-            let event = StreamTokenEvent { token_id, text };
+        for event in raw_stream_token_events(&tokenizer_clone, &token_ids[generated_start..]) {
             // Serialization of simple struct should not fail, but handle gracefully
             let data = serde_json::to_string(&event)
                 .unwrap_or_else(|_| r#"{"error":"serialization failed"}"#.to_string());

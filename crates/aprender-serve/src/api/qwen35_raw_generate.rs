@@ -188,3 +188,34 @@ mod qwen35_raw_generate_tests {
         assert!(matches!(try_qwen35_stream_tokens(&state, &one, &cancel), Ok(None)));
     }
 }
+
+/// `/stream/generate` and `/realize/generate` must not split a character across two
+/// `event: token` payloads: decoded one id at a time, "é" (C3 A9, two byte tokens)
+/// streamed as two U+FFFD.
+#[cfg(test)]
+mod raw_stream_utf8_tests {
+    use super::*;
+
+    /// ids: 0 <unk>, 1 "caf", 2 <0xC3>, 3 <0xA9>, 4 "Ġquick".
+    fn tok() -> BPETokenizer {
+        let vocab = ["<unk>", "caf", "<0xC3>", "<0xA9>", "Ġquick"];
+        BPETokenizer::new(vocab.iter().map(|s| (*s).to_string()).collect(), vec![], "<unk>")
+            .expect("test tokenizer")
+    }
+
+    #[test]
+    fn a_multi_byte_character_streams_whole() {
+        let events = raw_stream_token_events(&tok(), &[1, 2, 3, 4]);
+        let texts: Vec<&str> = events.iter().map(|e| e.text.as_str()).collect();
+        assert_eq!(texts.concat(), "café quick", "events: {texts:?}");
+        assert!(texts.iter().all(|t| !t.contains('\u{FFFD}')), "events: {texts:?}");
+        assert_eq!(events.last().map(|e| e.token_id), Some(4));
+    }
+
+    #[test]
+    fn an_unfinished_character_at_the_end_is_flushed_not_dropped() {
+        let events = raw_stream_token_events(&tok(), &[1, 2]);
+        let text: String = events.iter().map(|e| e.text.as_str()).collect();
+        assert_eq!(text, "caf\u{FFFD}");
+    }
+}

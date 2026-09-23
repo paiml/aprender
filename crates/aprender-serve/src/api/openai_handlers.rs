@@ -748,7 +748,7 @@ fn sse_event(value: &impl serde::Serialize) -> Option<Result<Event, Infallible>>
 /// pending window is decoded as one slice, and is flushed as-is after
 /// [`Self::MAX_PENDING`] tokens or at end of stream, so a token that never
 /// completes a character still reaches the client rather than vanishing.
-struct LiveUtf8Deltas {
+pub(crate) struct LiveUtf8Deltas {
     pending: Vec<u32>,
 }
 
@@ -756,14 +756,14 @@ impl LiveUtf8Deltas {
     /// A UTF-8 character is at most 4 bytes, so 4 byte-tokens always complete one.
     const MAX_PENDING: usize = 4;
 
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             pending: Vec::new(),
         }
     }
 
     /// Accept one token; the text that is now safe to send, if any.
-    fn push(&mut self, tokenizer: &BPETokenizer, token_id: u32) -> Option<String> {
+    pub(crate) fn push(&mut self, tokenizer: &BPETokenizer, token_id: u32) -> Option<String> {
         self.pending.push(token_id);
         let text = tokenizer.decode(&self.pending).ok()?;
         if text.ends_with('\u{FFFD}') && self.pending.len() < Self::MAX_PENDING {
@@ -774,7 +774,7 @@ impl LiveUtf8Deltas {
     }
 
     /// Whatever is still held back when the stream ends.
-    fn finish(&mut self, tokenizer: &BPETokenizer) -> Option<String> {
+    pub(crate) fn finish(&mut self, tokenizer: &BPETokenizer) -> Option<String> {
         if self.pending.is_empty() {
             return None;
         }
