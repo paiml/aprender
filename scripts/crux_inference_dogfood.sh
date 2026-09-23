@@ -90,6 +90,10 @@ GREEDY=0
 # --thinking-modes (#3962 final sweep): which modes a THINKING-CAPABLE model is judged in; a model without a
 # thinking template is judged OFF only. Default both.
 THINK_MODES="off,on"
+# --only-prompts a,b,c (#3962 final sweep): run only these prompt ids FROM the certified file. The file itself is
+# never rewritten — its sha256 is what the certification receipt binds (a subset file would be uncertified and
+# the judge would decline it). An id the file does not hold declines the run by name.
+ONLY_PROMPTS=""
 GREEDY_PIDS=""
 GREEDY_MAXTOK=256
 MODELS=()
@@ -107,6 +111,7 @@ while [ $# -gt 0 ]; do
     --keep-ollama-models) KEEP_OLLAMA=1; shift ;;
     --keep-work) KEEP_WORK=1; shift ;;
     --thinking-modes) [ $# -ge 2 ] || decline "--thinking-modes needs a value"; THINK_MODES="$2"; shift 2 ;;
+    --only-prompts) [ $# -ge 2 ] || decline "--only-prompts needs a value"; ONLY_PROMPTS="$2"; shift 2 ;;
     --greedy) GREEDY=1; shift ;;
     --greedy-prompts) [ $# -ge 2 ] || decline "--greedy-prompts needs a value"; GREEDY_PIDS="${2//,/ }"; shift 2 ;;
     --greedy-max-tokens) [ $# -ge 2 ] || decline "--greedy-max-tokens needs a value"; GREEDY_MAXTOK="$2"; shift 2 ;;
@@ -298,10 +303,17 @@ MODELS_JSONL="$WORK/models.jsonl"; : > "$MODELS_JSONL"
 # prompt is also a serve prompt in both modes, because the serve cell always drove
 # the run prompts. A chat prompt's messages are the USER turns of one conversation,
 # and it is judged on the final turn.
-PIDS_ALL=$(python3 - "$PROMPTS" "$WORK" <<'PY'
+PIDS_ALL=$(python3 - "$PROMPTS" "$WORK" "$ONLY_PROMPTS" 2> "$WORK/prompts.err" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))
 w = sys.argv[2]
+only = [x for x in sys.argv[3].split(",") if x]
+unknown = sorted(set(only) - {p["id"] for p in d["prompts"]})
+if unknown:
+    sys.stderr.write("--only-prompts names ids the prompt set does not hold: %s\n" % ", ".join(unknown))
+    sys.exit(3)
+if only:
+    d["prompts"] = [p for p in d["prompts"] if p["id"] in only]
 glob_mt = d.get("max_tokens")
 serve, code = open("%s/serve-prompts.jsonl" % w, "w"), open("%s/code-prompts.txt" % w, "w")
 for p in d["prompts"]:
@@ -328,7 +340,7 @@ for p in d["prompts"]:
         if x in ("run", "chat"):
             print("%s %s" % (x, p["id"]))
 PY
-) || decline "prompt set $PROMPTS unreadable"
+) || decline "prompt set $PROMPTS: $(tr '\n' ' ' < "$WORK/prompts.err" 2>/dev/null | cut -c1-300)"
 pids_for() { printf '%s\n' "$PIDS_ALL" | sed -n "s/^$1 //p" | tr '\n' ' '; }
 PIDS=$(pids_for run)
 # The global cap for the run/chat cells: v1's `max_tokens`, else the largest per-prompt `off` budget.
@@ -336,6 +348,7 @@ MAXTOK=$(python3 -c 'import json,sys
 d = json.load(open(sys.argv[1]))
 m = d.get("max_tokens")
 print(int(m) if m is not None else max(int(p["max_tokens"]["off"]) for p in d["prompts"]))' "$PROMPTS") || decline "max_tokens unreadable"
+[ -z "$PIDS_ALL" ] && decline "no prompt selected (--only-prompts '$ONLY_PROMPTS' matched nothing runnable)"
 # The same cap in thinking-ON mode: v1's global, else the largest per-prompt `on` budget.
 MAXTOK_ON=$(python3 -c 'import json,sys
 d = json.load(open(sys.argv[1]))

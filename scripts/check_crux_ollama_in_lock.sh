@@ -184,7 +184,7 @@ run_row() {
       GPUQ_DIR="$TMP/$name.q" OLLAMA_BIN="$BIN/ollama" OLLAMA_HOST="127.0.0.1:$port" \
       DOGFOOD_ALLOW_UNPINNED=1 APR="$BIN/apr" \
       timeout 600 bash scripts/crux_inference_dogfood.sh 0.0.0 --model "$MODEL" --engines apr,ollama \
-        --verbs run,chat,serve --host stub --out "$TMP/$name.out" --timeout 60 > "$TMP/$name.dogfood.log" 2>&1 )
+        --verbs run,chat,serve --host stub --out "$TMP/$name.out" --timeout 60 ${RUN_ROW_EXTRA:-} > "$TMP/$name.dogfood.log" 2>&1 )
   echo "$?" > "$TMP/$name.rc"
 }
 
@@ -286,6 +286,27 @@ if [ "$kaload" -gt 0 ] && [ "$kamiss" -eq "$kaload" ]; then
   ok "MUTANT (keep_alive 0 stripped) is caught: $kamiss of $kaload ollama loads carried no keep_alive 0"
 else
   broke "keep_alive MUTANT not caught: ollama loads=$kaload without keep_alive=$kamiss"
+fi
+
+# Row 5: --only-prompts runs only the named prompts FROM the certified file (the file is never rewritten, since its sha
+# is what the certification binds). Every cell dir must belong to the named prompt, and there must be some.
+PSET="$ROOT/$(sed -n 's/^PROMPTS="\(.*\)"$/\1/p' "$DOGFOOD" | head -1)"
+ONLY=$(python3 -c 'import json,sys; print(next(p["id"] for p in json.load(open(sys.argv[1]))["prompts"] if p.get("control")))' "$PSET" 2>/dev/null)
+RUN_ROW_EXTRA="--only-prompts $ONLY" run_row only "$ROOT" "/nonexistent/gpu-q"
+cells=$(find /tmp -maxdepth 6 -path "*/cell-*.sh" -newer "$TMP/only.lock" 2>/dev/null | grep -c . )
+wrong=$(sed -n 's/.*work kept: //p' "$TMP/only.dogfood.log" | head -1 | xargs -r -I{} find {} -name 'cell-*.sh' 2>/dev/null | grep -v -e "cell-$ONLY.sh" -e 'cell-serve.sh' -e 'cell-code.sh' -e 'cell-greedy.sh' | grep -c .)
+nloads=$(grep -c '^LOAD ' "$TMP/only.log")
+read -r floads _ <<< "$(verdict flock)"
+if [ -n "$ONLY" ] && [ "$wrong" = 0 ] && [ "$nloads" -gt 0 ] && [ "$nloads" -lt "$floads" ]; then
+  ok "--only-prompts $ONLY: only its cells ran ($nloads loads vs $floads for the whole set)"
+else
+  broke "--only-prompts: only='$ONLY' foreign cells=$wrong loads=$nloads (whole set $floads) — see $TMP/only.dogfood.log"
+fi
+RUN_ROW_EXTRA="--only-prompts no-such-prompt" run_row unknown "$ROOT" "/nonexistent/gpu-q"
+if grep -q "only-prompts names ids the prompt set does not hold: no-such-prompt" "$TMP/unknown.dogfood.log" && [ "$(cat "$TMP/unknown.rc")" != 0 ]; then
+  ok "--only-prompts with an unknown id declines by name (rc $(cat "$TMP/unknown.rc"))"
+else
+  broke "--only-prompts unknown id: rc $(cat "$TMP/unknown.rc"); $(tail -2 "$TMP/unknown.dogfood.log" | tr '\n' ' ')"
 fi
 
 printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"
