@@ -116,6 +116,12 @@ def selftest():
     case("the order is total: shuffling the input does not change it", order(plan[::-1], {A, C}) == got)
     tie = [f"inv|z.gguf|/m/z.gguf|{'f' * 64}|7", f"rung|y|y.gguf|{'0' * 64}|cpu|1||7"]
     case("a size tie puts the rung before the inventory model", order(tie, set())[0].startswith("rung|y|"))
+    same = [f"rung|m-b|b2.gguf|{'1' * 64}|cpu|1||50", f"rung|m-a|a2.gguf|{'2' * 64}|cpu|1||50"]
+    case("a full tie (kind, size, certification) orders by id, whatever the input order",
+         order(same, set()) == order(same[::-1], set()) == [same[1], same[0]])
+    bad_size = f"rung|r-nosize|n.gguf|{'3' * 64}|cpu|1||unknown"
+    case("a non-numeric size sorts as 0 (last), never first", order([bad_size, absent, big], set())[0] == big
+         and order([bad_size, big], set())[-1] == bad_size)
     case("the output is a permutation of the input", is_permutation(plan, got))
     # must-RED: the guard that makes a reorder unable to turn a RED green
     case("must-RED: a dropped cell is not a permutation", not is_permutation(plan, got[:-1]))
@@ -156,7 +162,7 @@ def selftest():
     case("CLI must-RED: an order that drops a cell exits 2 and prints NO plan", rc == 2 and out == "" and "REFUSED" in err)
     rc, out, err = cli("\n".join(plan) + "\n", "m.order = lambda lines, cert: lines + lines[:1]")
     case("CLI must-RED: an order that duplicates a cell exits 2", rc == 2 and out == "" and "REFUSED" in err)
-    total = 18
+    total = 20
     print(f"{total - fails}/{total} cases")
     return 1 if fails else 0
 

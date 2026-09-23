@@ -18,7 +18,11 @@
 #           later `run` fails while it lives (the #4055 shape) -> the rows differ with order (must be RED:
 #           this is the positive control that the comparison can see order-dependence at all)
 # Both orders must also measure the same SET of cells in the order the plan asked for, or the comparison
-# compares nothing.
+# compares nothing. And because a field slip is wrong the SAME way in both orders, every row's sha256 and the
+# inventory record are also checked against the fixture's own files. The largest rung is a symlink, so its
+# planned size must follow the link.
+# Two --dry-runs go through the DEFAULT --certification resolution: this version's file, else the newest by
+# version. A dry run must invoke no measuring verb.
 #
 # Usage: bash scripts/check_ladder_order_verdicts.sh [--self-test]
 # Exit: 0 clean is order-independent AND leaky is caught · 1 a case landed wrong · 2 could not check.
@@ -37,7 +41,7 @@ st=$(python3 "$ORDER" --selftest 2>&1); st_rc=$?
 if [ "$st_rc" -ne 0 ]; then echo "FAIL: $ORDER --selftest (rc $st_rc):"; printf '%s\n' "$st" | grep -v '^ok'; exit 1; fi
 echo "ok: $ORDER --selftest ($(printf '%s\n' "$st" | tail -1))"
 
-TMP=$(mktemp -d) || exit 2
+TMP=$(mktemp -d -t ladder-order.XXXXXX) || exit 2   # a named prefix: this box runs ~30 sessions sharing /tmp
 HOGS="$TMP/hogs"
 cleanup() {
   if [ -d "$HOGS" ]; then
@@ -56,9 +60,14 @@ cp "$ORDER" "$ROOT/scripts/lib/ladder_order.py"
 printf '[package]\nname = "ladder-order-fixture"\nversion = "0.0.1"\nedition = "2021"\n' > "$ROOT/Cargo.toml"
 : > "$ROOT/src/lib.rs"
 printf '"/v1/chat/completions"\n' > "$ROOT/crates/aprender-serve/src/api/router.rs"
-head -c 4096 /dev/zero > "$TMP/models/leaky-big.gguf"     # the larger file: first by size
+# The largest rung is a SYMLINK, as fleet model dirs hold them (#3876): its planned size must be the target's
+# 4096 bytes (stat -L). The link text is far shorter, and would sort it last.
+mkdir -p "$TMP/real"
+head -c 4096 /dev/zero > "$TMP/real/leaky-big.gguf"
+ln -s "$TMP/real/leaky-big.gguf" "$TMP/models/leaky-big.gguf"
 head -c 2048 /dev/zero > "$TMP/models/victim-small.gguf"
 head -c 3000 /dev/zero > "$TMP/inv/middle-inv.gguf"   # an INVENTORY-only model, sized between the two rungs
+INV_SHA=$(sha256sum "$TMP/inv/middle-inv.gguf" | cut -d' ' -f1)
 LEAKY_SHA=$(sha256sum "$TMP/models/leaky-big.gguf" | cut -d' ' -f1)
 VICTIM_SHA=$(sha256sum "$TMP/models/victim-small.gguf" | cut -d' ' -f1)
 [ "$LEAKY_SHA" != "$VICTIM_SHA" ] || { head -c 2047 /dev/zero > "$TMP/models/victim-small.gguf"; printf 'v' >> "$TMP/models/victim-small.gguf"; VICTIM_SHA=$(sha256sum "$TMP/models/victim-small.gguf" | cut -d' ' -f1); }
@@ -84,6 +93,8 @@ if a[:1] == ["--version"]:
 if len(a) >= 2 and a[-1] == "--help":
     print("--gpu --no-gpu --json --verbose"); sys.exit(0)
 verb = a[0] if a else ""
+if os.environ.get("FAKE_CALLS"):
+    open(os.environ["FAKE_CALLS"], "a").write(verb + "\n")
 model = next((x for x in a if x.endswith(".gguf")), "")
 def hog_alive():
     for f in os.listdir(hogs):
@@ -142,7 +153,11 @@ def norm(v):
     return v
 by = {r.get("id"): norm(r) for r in rows}
 inv = sorted(norm(x).get("file") for x in (R.get("inventory") or []))
-print(json.dumps({"order": [r.get("id") for r in rows], "rows": by, "inventory": inv}, sort_keys=True))
+# Absolute content, unnormalized: a field slip is wrong the SAME way in both orders, so A == B cannot see it.
+absolute = {"rows": {r.get("id"): r.get("sha256") for r in rows},
+            "inventory": [[x.get("file"), x.get("sha256"), x.get("bytes")] for x in (R.get("inventory") or [])]}
+print(json.dumps({"order": [r.get("id") for r in rows], "rows": by, "inventory": inv, "absolute": absolute},
+                 sort_keys=True))
 PY
 }
 
@@ -184,6 +199,13 @@ for leak in 0 1; do
   else
     case_line FAIL "$name: the inventory record is missing or wrong" "${ia:-none} | ${ib:-none}"
   fi
+  for J in "$A" "$B"; do
+    got=$(python3 -c 'import json,sys; a=json.loads(sys.argv[1])["absolute"]; print(json.dumps(a, sort_keys=True))' "$J")
+    want=$(printf '{"inventory": [["middle-inv.gguf", "%s", 3000]], "rows": {"inv:middle-inv.gguf": "%s", "leaky": "%s", "victim": "%s"}}' \
+           "$INV_SHA" "$INV_SHA" "$LEAKY_SHA" "$VICTIM_SHA")
+    if [ "$got" = "$want" ]; then case_line ok "$name: every row's sha256 and the inventory record are the files' own" "exact"
+    else case_line FAIL "$name: a row or inventory record does not describe its file" "$got"; fi
+  done
   verdict=$(compare "$A" "$B")
   if [ "$leak" = 0 ]; then
     [ "$verdict" = same ] && case_line ok "clean: every cell's row is the same in both orders" "$verdict" \
@@ -193,6 +215,34 @@ for leak in 0 1; do
                            || case_line FAIL "leaky (positive control): an order-dependent leak went unseen" "$verdict"
   fi
 done
+
+# ---- --dry-run through the DEFAULT --certification resolution (no flag): this version's file wins; with none,
+# the newest by VERSION order (0.0.10 is newer than 0.0.9, which a plain sort gets wrong). A dry run must invoke
+# no measuring verb at all.
+dry_order() { # <tag> -> the DRY ids in printed order; fails the case if any measuring verb ran
+  local calls="$TMP/calls-$1" log="$TMP/dry-$1"
+  : > "$calls"
+  FAKE_LEAK=0 FAKE_HOGS="$HOGS" FAKE_CALLS="$calls" DOGFOOD_ALLOW_UNPINNED=1 APR="$TMP/apr" APR_MODELS_DIR="$TMP/models" \
+    MODEL_LADDER_ROOT="$ROOT" MODEL_LADDER_GPU_LOCK="$TMP/gpu.lock" MODEL_LADDER_LOCK_WAIT=5 \
+    MODEL_LADDER_INVENTORY_DIRS="$TMP/inv" \
+    timeout 120 bash "$ROOT/scripts/model_ladder.sh" --host lambda --dry-run > "$log" 2>&1
+  measured=$(grep -cvE '^(|--version)$' "$calls")
+  [ "$measured" = 0 ] || { echo "MEASURED($(sort -u "$calls" | tr '\n' ' '))"; return; }
+  awk '/\[DRY   \]/ { print $3 }' "$log" | paste -sd, -
+}
+mkdir -p "$ROOT/evidence/crux/0.0.1" "$ROOT/evidence/crux/0.0.9" "$ROOT/evidence/crux/0.0.10"
+cp "$TMP/cert-victim-first.json" "$ROOT/evidence/crux/0.0.1/prompt-certification.json"
+cp "$TMP/cert-victim-first.json" "$ROOT/evidence/crux/0.0.9/prompt-certification.json"
+cp "$TMP/cert-leaky-first.json" "$ROOT/evidence/crux/0.0.10/prompt-certification.json"
+d1=$(dry_order own)
+[ "$d1" = "victim,leaky,inv:middle-inv.gguf" ] \
+  && case_line ok "dry run, no flag: this version's certification orders it" "$d1" \
+  || case_line FAIL "dry run, no flag: this version's certification was not used (or a verb ran)" "$d1"
+rm -f "$ROOT/evidence/crux/0.0.1/prompt-certification.json"   # this version now has none
+d2=$(dry_order newest)
+[ "$d2" = "leaky,inv:middle-inv.gguf,victim" ] \
+  && case_line ok "dry run, no flag, none for this version: the newest (0.0.10 > 0.0.9)" "$d2" \
+  || case_line FAIL "dry run: the fallback did not pick the newest certification (or a verb ran)" "$d2"
 
 if [ "$SELF_TEST" = 1 ]; then
   if [ "$fails" -gt 0 ]; then echo "self-test: PASS -- a comparison that ignores the rows turns this RED"; exit 0; fi
