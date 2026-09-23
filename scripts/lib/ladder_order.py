@@ -144,6 +144,15 @@ def selftest():
     with open(p, "w", encoding="utf-8") as fh:
         json.dump({"admitted_by_sha": {"x" + A: ["p"], A + "0": ["p"]}}, fh)
     case("a key that only CONTAINS a sha is not a certified sha", certified(p)[0] == set())
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write('{"admitted_by_sha": {"' + A + '": [')   # truncated mid-write
+    got_c = certified(p)
+    case("a corrupt certification orders by size and says so, never crashes", got_c[0] == set() and "unreadable" in got_c[1])
+    try:
+        parse(big + "|extra")
+        case("a rung line with an extra field is refused", False)
+    except ValueError:
+        case("a rung line with an extra field is refused", True)
 
     # The CLI path, as model_ladder.sh calls it: the refusals must fire through main(), not only in the helpers.
     import subprocess
@@ -158,11 +167,13 @@ def selftest():
     case("CLI: a good plan exits 0 and prints every cell", rc == 0 and sorted(out.splitlines()) == sorted(plan))
     rc, out, err = cli("\n".join(plan + ["rung|too|few"]) + "\n")
     case("CLI must-RED: a malformed line exits 2 and prints NO plan", rc == 2 and out == "" and "not a plan line" in err)
+    r = subprocess.run([sys.executable, me, "-", "extra"], input="\n".join(plan) + "\n", capture_output=True, text=True)
+    case("CLI must-RED: an extra argument is refused (exit 2, NO plan)", r.returncode == 2 and r.stdout == "")
     rc, out, err = cli("\n".join(plan) + "\n", "m.order = lambda lines, cert: lines[:-1]")
     case("CLI must-RED: an order that drops a cell exits 2 and prints NO plan", rc == 2 and out == "" and "REFUSED" in err)
     rc, out, err = cli("\n".join(plan) + "\n", "m.order = lambda lines, cert: lines + lines[:1]")
     case("CLI must-RED: an order that duplicates a cell exits 2", rc == 2 and out == "" and "REFUSED" in err)
-    total = 20
+    total = 23
     print(f"{total - fails}/{total} cases")
     return 1 if fails else 0
 

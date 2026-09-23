@@ -72,6 +72,8 @@ ln -s "$TMP/real/leaky-big.gguf" "$TMP/models/leaky-big.gguf"
 head -c 2048 /dev/zero > "$TMP/inv/victim-small.gguf"
 head -c 3000 /dev/zero > "$TMP/inv/middle-inv.gguf"   # an INVENTORY-only model, sized between the two rungs
 INV_SHA=$(sha256sum "$TMP/inv/middle-inv.gguf" | cut -d' ' -f1)
+# absent-req's file name CONTAINS middle-inv.gguf: the rung-duplicate skip must be an EXACT name match, or the
+# inventory-only model would be skipped as "measured by a rung" while its record still says it is held.
 # Three rungs the loop must NOT measure: a file whose sha is not the pinned one (sha-mismatch RED), a required
 # file that is absent (ABSENT RED), and a rung listed only for another host (N/A, never counted).
 head -c 1000 /dev/zero > "$TMP/models/mismatch-mid.gguf"
@@ -86,7 +88,7 @@ ladder:
     - {id: leaky, gguf: leaky-big.gguf, sha256: $LEAKY_SHA, backends: [cpu], required: true}
     - {id: victim, gguf: victim-small.gguf, sha256: $VICTIM_SHA, backends: [cpu], required: true}
     - {id: mismatch, gguf: mismatch-mid.gguf, sha256: "$(printf '0%.0s' $(seq 64))", backends: [cpu], required: true}
-    - {id: absent-req, gguf: absent-req.gguf, sha256: "$(printf '1%.0s' $(seq 64))", backends: [cpu], required: true}
+    - {id: absent-req, gguf: absent-req-middle-inv.gguf, sha256: "$(printf '1%.0s' $(seq 64))", backends: [cpu], required: true}
     - {id: gx10-only, gguf: gx10-only.gguf, sha256: "$(printf '2%.0s' $(seq 64))", backends: [cpu], required: true, hosts: [gx10]}
 EOF
 printf '{"admitted_by_sha":{"%s":["p"]}}' "$LEAKY_SHA" > "$TMP/cert-leaky-first.json"
