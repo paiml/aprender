@@ -28,6 +28,7 @@
 #      rule REUSES it
 #  15. MUST-RED: an origin-only edit, not re-sealed, is STALE (the seal covers the whole entry)
 #  16. a driver answering one item TWICE: the cell is RED, the entry is never stored, the next run is a MISS
+#  17. an artifact field (stdout) as a bare string, its file dropped, digest re-sealed: STALE by the field-shape rule
 #  NOT covered, by design: a coherent re-seal by a cache writer (see the lib's THREAT MODEL)
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
@@ -526,6 +527,30 @@ d2=$(summary dup2)
 case "$dp|$hfe|$d2" in
   *"=RED"*"|0|2 | "*"=GREEN"*) ok "an item answered TWICE: its cell RED ($dp), never stored (0 hf entries), next run a MISS measured again ($d2)" ;;
   *) broke "duplicate rows: first $dp, hf entries $hfe, next $d2" ;;
+esac
+
+# Row 17: an artifact FIELD in the wrong shape — `stdout` a bare string (not a refcache: pointer), its file dropped
+# from files{} and the digest RE-SEALED, so neither the digest nor the pointer rules see it. The judge would open
+# the string as a relative path. The field-shape rule refuses it (quorum round 8, lane 2, measured as a HIT).
+cp -r "$CACHE" "$TMP/cache-shape"
+python3 - "$TMP/cache-shape" <<'PY' || exit 2
+import glob, hashlib, json, sys
+for p in glob.glob(sys.argv[1] + "/*/*/entry.json"):
+    e = json.load(open(p))
+    old = e["rows"][0]["stdout"]
+    e["rows"][0]["stdout"] = "FABRICATED-NOT-A-POINTER"
+    e["files"].pop(old[len("refcache:"):], None)
+    e["content_sha256"] = hashlib.sha256(json.dumps({k: v for k, v in e.items() if k != "content_sha256"},
+                                                    sort_keys=True).encode()).hexdigest()
+    json.dump(e, open(p, "w"), indent=1, sort_keys=True)
+PY
+run_row shape "$T" "$TMP/cache-shape"
+sh=$(summary shape)
+case "$sh" in
+  "0 | "*"=RED"*) grep -q 'an artifact field is null or a refcache: pointer' "$TMP/shape.out/stub-gpu.json" \
+                  && ok "an artifact field in the wrong shape (bare string, re-sealed) is STALE ($sh)" \
+                  || broke "field shape: RED but not for the shape ($sh)" ;;
+  *) broke "field shape: $sh — a bare-string artifact field was served" ;;
 esac
 
 printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"

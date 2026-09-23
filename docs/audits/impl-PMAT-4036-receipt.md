@@ -21,7 +21,8 @@ Author: aprender-83 (claude-opus-5-5).
       - its **content digest** fails: the WHOLE entry (key, rows, files map, origin) is sealed at store time, so any field added, removed or changed anywhere is caught (quorum round 4, lane 1; the origin since quorum round 6, lane 2);
       - an **artifact's sha256** moved;
       - a row's **pointer** is not a plain name that the entry's own `files{}` holds, even if the digest was re-sealed (quorum round 3, lane 2);
-      - `files{}` holds a file **no row points at** (quorum round 5, lane 2).
+      - `files{}` holds a file **no row points at** (quorum round 5, lane 2);
+      - an **artifact field** (`stdout`, `stderr`) is neither null nor a `refcache:` pointer, even re-sealed (quorum round 8, lane 2).
   - **Exit contract.** `lookup` exits 0 hit, 10 miss, 11 stale. A keying refusal (1) or a crash (2) is none of the three, and the dogfood declines the run on it. A crash once shared the miss code, so a corrupted cache was silently recomputed (quorum round 3, lane 2).
 - `scripts/crux_inference_dogfood.sh` changes:
   - `--reference-cache <dir>` adds a lookup per mode and an inject or store after the mode.
@@ -57,7 +58,7 @@ Author: aprender-83 (claude-opus-5-5).
 
 ## Hermetic tables (real dogfood + real judge, stub engines)
 
-**`scripts/check_crux_ref_cache.sh` — 16/16**
+**`scripts/check_crux_ref_cache.sh` — 17/17**
 
 1. Cold stores.
 2. Warm makes 0 reference calls, the receipt is identical cell for cell, and every injected row is provenanced.
@@ -75,6 +76,7 @@ Author: aprender-83 (claude-opus-5-5).
 14. An unreferenced file added to `files{}`, hashed and with the digest re-sealed, is STALE (quorum round 5, lane 2). A mutant without the converse rule REUSES it.
 15. MUST-RED: an origin-only edit, not re-sealed, is STALE. The seal once covered only {key, rows, files}, and this edit passed (quorum round 6, lane 2).
 16. A driver that answers one item TWICE: the cell is RED, the entry is never stored (an entry is exactly one row), and the next run is a MISS measured again (quorum round 7, lane 2).
+17. An artifact field (`stdout`) holds a bare string, its file is dropped and the digest re-sealed. It is STALE by the field-shape rule: an artifact field is null or a `refcache:` pointer (quorum round 8, lane 2).
 
 **`scripts/check_crux_plugin_batch.sh` — 6/6**
 

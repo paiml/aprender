@@ -58,6 +58,7 @@ CACHED_ENGINES = ("hf", "vllm", "llamafile")
 NOT_CACHEABLE = {"llama.cpp": "its llama-server is apr's reference renderer on the serve routes, so it must run "
                               "wherever apr runs (#4036, measured on gx10)"}
 SOURCE_ENGINES = ("hf", "vllm")
+ARTIFACT_FIELDS = ("stdout", "stderr")  # the row fields the judge opens as files
 
 # The harness files that PRODUCE a reference row. The judge's files (crux_inference_judge.py, crux_oracles.py, the
 # certifier, the smoke scope) are not here: they read rows and never change one.
@@ -233,6 +234,12 @@ def why_stale(key, d, edir):
             return "a row's identity %r contradicts the key" % (ident,)
         if r.get("refused") or r.get("rc") != 0:
             return "it holds a refused or failed row, which is never truth"
+        # An artifact field is null or a cache pointer — never another shape: the judge opens it as a path, so a bare
+        # string would be read relative to wherever it runs (quorum round 8, lane 2, measured under a re-seal).
+        for f in ARTIFACT_FIELDS:
+            v = r.get(f)
+            if v is not None and not (isinstance(v, str) and v.startswith("refcache:")):
+                return "a row's %s is %r: an artifact field is null or a refcache: pointer" % (f, v)
         for box, f in row_paths_rel(r):
             rel = box[f][len("refcache:"):]
             # A pointer is a plain name the entry's own files{} holds — never a path: `../` would read or write outside
