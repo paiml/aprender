@@ -162,6 +162,24 @@ CERTROWS = [
   ("RED an unpinned source revision is no hf/vllm row", {"source": {"repo": "Q/M", "revision": "main"}}, [], ["M/Q4"]),
   ("RED an uncertified control marks the model uncontrolled", {"wrong": [("ctl", "hf@bf16")]}, ["arith"], ["M/Q4"]),
 ]
+# A second control failing does not un-control lanes the first one covers.
+PSET2 = {"schema": o.SCHEMA, "prompts": [dict(base["prompts"][0], id="ctl"), dict(base["prompts"][0], id="ctl2", verb=["chat"]),
+                                         dict(ans("391", "int"), id="arith", verb=["run"])]}
+def certify2(d, wrong):
+    global PSET, RIGHT
+    saved = (PSET, RIGHT)
+    PSET, RIGHT = PSET2, {"ctl": "<answer>4</answer>", "ctl2": "<answer>4</answer>", "arith": "<answer>391</answer>"}
+    try:
+        return certify(d, wrong=wrong)
+    finally:
+        PSET, RIGHT = saved
+with tempfile.TemporaryDirectory() as d:
+    r = certify2(d, [("ctl2", "hf@bf16")])
+got = (r["uncontrolled"], sorted(r["admitted"]["M/Q4"]))
+good = got == ([], ["arith", "ctl"])
+print(f"  {'ok   ' if good else 'BROKE'} certify: a redundant control failing leaves the lane controlled  ->  {got}")
+fail += not good
+
 for name, kw, want_adm, want_unc in CERTROWS:
     with tempfile.TemporaryDirectory() as d:
         r = certify(d, **kw)
@@ -242,11 +260,16 @@ with tempfile.TemporaryDirectory() as d:
         return subprocess.run([sys.executable, CERT, "check", "--prompts", f"{d}/p.json", "--receipt", f"{d}/r.json"],
                               capture_output=True, text=True).returncode
     rc_same = chk()
+    r = json.load(open(f"{d}/r.json")); r["uncontrolled"] = ["M/Q4"]
+    r["uncontrolled_detail"] = [{"model": "M/Q4", "sha256": "q" * 64, "thinking": "on", "verbs": ["run"]}]
+    json.dump(r, open(f"{d}/r.json", "w"))
+    rc_uncontrolled = chk()
     with open(f"{d}/p.json", "a") as fh:
         fh.write(" ")
     rc_edited = chk()
-good = rc_same == 0 and rc_edited == 1
-print(f"  {'ok   ' if good else 'BROKE'} check: certified bytes pass (rc {rc_same}); one added byte is refused (rc {rc_edited})")
+good = rc_same == 0 and rc_edited == 1 and rc_uncontrolled == 0
+print(f"  {'ok   ' if good else 'BROKE'} check: certified bytes pass (rc {rc_same}); an uncontrolled LANE is reported, "
+      f"not a refusal (rc {rc_uncontrolled}); one added byte is refused (rc {rc_edited})")
 fail += not good
 sys.exit(1 if fail else 0)
 PY

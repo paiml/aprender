@@ -24,7 +24,8 @@ inventory.json - one entry per model family:
 CLI:
   crux_prompt_certify.py certify --prompts P --inventory I --apr-commit SHA -o OUT MANIFEST...
   crux_prompt_certify.py check --prompts P --receipt R      the judge's gate (J2): exit 0 only when the
-                                                            receipt certifies exactly these prompt bytes
+                                                            receipt certifies exactly these prompt bytes;
+                                                            uncontrolled lanes are printed, not refused
   exit 0 ok · 1 refused (check) · 2 usage/ENV
 """
 
@@ -199,9 +200,20 @@ def certify(a) -> int:
                     admitted[key].append(p["id"])
                 else:
                     rejected[key][p["id"]] = why
-    # A (model, quant) whose positive controls did not certify cannot be gated at all (#3957: no control, no run).
-    controls = [p["id"] for p in doc["prompts"] if p.get("control")]
-    uncontrolled = sorted(k for k, ids in admitted.items() if not set(controls) <= set(ids))
+    # A lane needs ONE certified positive control serving its verb, per thinking mode (#3957, the cop's
+    # "positive control per (host, verb, thinking)"). A second control that fails (e.g. the multi-turn
+    # recall control looping at greedy on a quant) does not un-control a lane another control covers.
+    verbs = sorted({v for p in doc["prompts"] for v in p["verb"]})
+    uncontrolled_detail = []
+    for model in inventory:
+        for quant, qsha in sorted(model["quants"].items()):
+            for t, ids in by_thinking[qsha].items():
+                bare = [v for v in verbs if not any(p.get("control") and p["id"] in ids and v in p["verb"]
+                                                    for p in doc["prompts"])]
+                if bare:
+                    uncontrolled_detail.append({"model": f"{model['model']}/{quant}", "sha256": qsha,
+                                                "thinking": t, "verbs": bare})
+    uncontrolled = sorted({u["model"] for u in uncontrolled_detail})
     receipt = {
         "schema": SCHEMA,
         "prompts": str(prompts_path),
@@ -220,6 +232,9 @@ def certify(a) -> int:
         "admitted_by_sha_thinking": by_thinking,
         "rejected": rejected,
         "uncontrolled": uncontrolled,
+        # Which (model, thinking, verb) lanes have no certified control. Those lanes DECLINE at the judge;
+        # the receipt itself stays valid for every other lane.
+        "uncontrolled_detail": uncontrolled_detail,
         # Per (model, prompt): did each engine's thinking-ON reply close its think block? The judge joins
         # this against apr's cell: every oracle leg unclosed too = the model's behaviour at greedy
         # (RED-MODEL via F9); the oracle closed and apr looped = an apr defect (cop ruling, 2026-09-23).
@@ -227,9 +242,13 @@ def certify(a) -> int:
         "cells": cells,
     }
     Path(a.out).write_text(json.dumps(receipt, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-    for k in admitted:
-        print(f"{k}: {len(admitted[k])} admitted, {len(rejected[k])} rejected"
-              + ("  [CONTROL NOT CERTIFIED]" if k in uncontrolled else ""))
+    for model in inventory:
+        for quant, qsha in sorted(model["quants"].items()):
+            k = f"{model['model']}/{quant}"
+            modes = ", ".join(f"{t} {len(v)}" for t, v in by_thinking[qsha].items())
+            gaps = [f"{u['thinking']}:{'/'.join(u['verbs'])}" for u in uncontrolled_detail if u["model"] == k]
+            print(f"{k}: admitted {modes} (all modes {len(admitted[k])})"
+                  + (f"  [no certified control: {'; '.join(gaps)}]" if gaps else ""))
     return 0
 
 
@@ -243,9 +262,10 @@ def check(a) -> int:
         print(f"refused: {a.prompts} is sha256 {have[:12]}, the certification covers {str(receipt.get('prompts_sha256'))[:12]}"
               " - an edited prompt set is uncertified until it is certified again")
         return 1
-    if receipt.get("uncontrolled"):
-        print("refused: positive control not certified for " + ", ".join(receipt["uncontrolled"]))
-        return 1
+    for u in receipt.get("uncontrolled_detail") or []:
+        # Reported, not refused: an uncontrolled LANE declines at the judge; refusing the whole receipt here
+        # would turn every other lane's certified prompts RED too.
+        print(f"note: {u['model']} thinking={u['thinking']} has no certified control for {', '.join(u['verbs'])}")
     print(f"certified: {sum(len(v) for v in receipt['admitted'].values())} (model, prompt) admissions")
     return 0
 
