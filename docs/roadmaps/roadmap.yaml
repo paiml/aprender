@@ -21444,3 +21444,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4116
+  github_issue: 4116
+  item_type: task
+  title: '0.69.1 post-release follow-up: preflight tooling (R4 --via, R7 --scope-tree/--crux), crux-smoke meta skip, apr capability book chapter'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-6c
+  created: 2026-09-23T23:52:51Z
+  updated: 2026-09-23T23:52:51Z
+  spec: null
+  acceptance_criteria:
+  - 'f5 preflight tooling (fix/prepub-skip-cfg-test-includes @ 942437eca) lands: R4 cut-contained-in-main with --via; R7 --scope-tree / --crux DIR; r7_scope_judge.sh; the KNOWN-RED adjudicator. check_publish_preflight.sh --selftest passes.'
+  - 'the crux-smoke judge skips the sweep''s *.meta.json merge meta by name; any other non-receipt still FAILs (f19a3ee6d). check_model_ladder.sh --self-test passes.'
+  - 'apr capability has a book chapter, a page contract and a SUMMARY entry: FALSIFY-BOOK-CLI-PARITY-001 goes from 112/113 to 113/113.'
+  - 'the bashrs, shell-lint, claim-literal, fabricated-baseline, perf-citation and tree-reader gates stay green; any suppression is per line, with its reason on the line above.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'PR #4115, stacked on the merge-back #4046; retarget to main after #4046 lands. Batching default: stops at the quorum receipt, not armed.'
