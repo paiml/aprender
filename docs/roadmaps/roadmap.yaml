@@ -21444,3 +21444,28 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4036
+  github_issue: 4036
+  item_type: task
+  title: 'CRUX: reference cache keyed by model sha + prompt ids + oracle version; only the apr legs run per host (+ one
+    source-weight engine load per mode, #4033 lever c)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-83
+  created: 2026-09-23T18:00:00Z
+  updated: 2026-09-23T18:40:00Z
+  spec: null
+  acceptance_criteria:
+  - 'A reference row is cached under a key bound to model sha256, thinking mode, backend, engine, verb, prompt sha256,
+    sampling, oracle version and the producing harness files; the host is not in the key'
+  - 'On a miss the mode recomputes and stores only clean rows; a stale entry (any edit, even answer-preserving) is RED,
+    never reused — a must-RED falsifier in scripts/check_crux_ref_cache.sh'
+  - 'Only pure comparators are cached (hf, vLLM, llamafile); llama.cpp is refused because it renders apr''s serve routes'
+  - 'Source-weight engines load once per mode per interface (gen-batch); rows identical row for row to the per-cell path'
+  - 'The saving is measured in minutes against the 0.69.1 baseline on real engines, receipts identical cell for cell'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
