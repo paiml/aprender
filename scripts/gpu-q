@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# gpu-q — ordered access to /tmp/apr-gpu.lock (aprender cop, 2026-09-21, rule rev 5).
+# flock alone is not FIFO: with ~15 waiters a P0 row starved for 40+ min. gpu-q adds a ticket queue
+# IN FRONT of the same flock, served by (priority, arrival): 0 = highest.
+#   gpu-q [--prio 0-9] -- <cmd> [args…]      (default prio 5; the cop assigns P0 rows prio 1)
+#   gpu-q --caps                             prints the capabilities this gpu-q has, one per line (prio, wait)
+# GPUQ_WAIT=<seconds> BOUNDS the whole wait (queue + flock): on timeout gpu-q exits 75 (EX_TEMPFAIL) naming the
+# head ticket's holder, and never runs the command. It bounds the WAIT, not the command (wrap the command itself
+# in `timeout` for that). GPUQ_DIR / GPUQ_LOCK override the queue dir and the lock (for case tables).
+# The command then runs as `flock ${GPUQ_LOCK:-/tmp/apr-gpu.lock} choom -n 1000 -- <cmd>`, exactly as rule rev 2 requires,
+# so legacy direct-flock callers still exclude correctly (they may only jump the queue, never overlap).
+# A ticket is "<prio>-<ns>-<pid>" holding "pid starttime". A dead holder (pid gone, or pid reused with a
+# different start time) is pruned by any waiter, so a crashed job never wedges the queue.
+# v5 (2026-09-21, found by aprender-eb): the whole body is one function, parsed COMPLETELY before it runs. A running
+# instance can then never read a replaced file mid-execution (an in-place upgrade once made a waiting v3 run off the
+# end of the new file and exit 0 WITHOUT running its command). Deploys are also atomic (tmp + mv).
+main() {
+set -u
+prio=5
+if [ "${1:-}" = "--caps" ]; then printf 'prio\nwait\n'; exit 0; fi
+if [ "${1:-}" = "--prio" ]; then prio=$2; shift 2; fi
+[ "${1:-}" = "--" ] && shift
+case "$prio" in [0-9]) ;; *) echo "gpu-q: --prio must be 0-9" >&2; exit 2 ;; esac
+[ $# -gt 0 ] || { echo "gpu-q: no command" >&2; exit 2; }
+Q=${GPUQ_DIR:-/tmp/apr-gpu-queue}; mkdir -p "$Q"; chmod 1777 "$Q" 2>/dev/null || true
+st() { awk '{print $22}' "/proc/$1/stat" 2>/dev/null; }
+me="$Q/$prio-$(date +%s%N)-$$"
+printf '%s %s\n' "$$" "$(st $$)" > "$me"
+trap 'rm -f "$me"; exit 143' TERM; trap 'rm -f "$me"; exit 130' INT
+alive() { local p s; read -r p s < "$1" 2>/dev/null || return 1; [ -n "$p" ] && [ "$(st "$p")" = "$s" ]; }
+waited=0
+wait_max=${GPUQ_WAIT:-}
+case "$wait_max" in ''|[0-9]*) ;; *) echo "gpu-q: GPUQ_WAIT must be whole seconds" >&2; exit 2 ;; esac
+start=$(date +%s)
+while :; do
+  for t in "$Q"/*; do [ -e "$t" ] || continue; alive "$t" || rm -f "$t"; done
+  head=$(ls -1 "$Q" | sort | head -1)
+  [ "$head" = "$(basename "$me")" ] && break
+  if [ -n "$wait_max" ] && [ $(( $(date +%s) - start )) -ge "$wait_max" ]; then
+    holder=$(cat "$Q/$head" 2>/dev/null | cut -d' ' -f1)
+    echo "gpu-q: ENV waited ${wait_max}s in the queue (head ticket $head, pid ${holder:-?}: $(ps -o args= -p "${holder:-0}" 2>/dev/null | cut -c1-120)); not run" >&2
+    rm -f "$me"; exit 75
+  fi
+  [ $((waited % 60)) -eq 0 ] && echo "gpu-q: waiting (prio $prio, $(ls -1 "$Q" | sort | grep -n -x "$(basename "$me")" | cut -d: -f1)/$(ls -1 "$Q" | wc -l) in queue)" >&2
+  nap=5
+  if [ -n "$wait_max" ]; then left=$(( wait_max - ($(date +%s) - start) )); [ "$left" -lt "$nap" ] && nap=$(( left > 0 ? left : 1 )); fi
+  sleep "$nap" & wait $! 2>/dev/null; waited=$((waited+nap))   # `wait` is interruptible, so TERM/INT act at once
+done
+# exec keeps this pid, so the ticket stays at the head while the job runs, and is pruned once it exits.
+if [ -n "$wait_max" ]; then
+  # Not exec: a flock timeout must be NAMED, never a silent 75. This shell stays alive holding the ticket while
+  # the command runs, so the ticket stays live; it is removed on the way out. flock's own conflict code is 175,
+  # so a command that itself exits 75 is never mistaken for a lock timeout.
+  left=$(( wait_max - ($(date +%s) - start) )); [ "$left" -lt 1 ] && left=1
+  flock -E 175 -w "$left" "${GPUQ_LOCK:-/tmp/apr-gpu.lock}" choom -n 1000 -- "$@"; rc=$?
+  rm -f "$me"
+  if [ "$rc" -eq 175 ]; then
+    holders=$(awk -v ino="$(stat -c %i "${GPUQ_LOCK:-/tmp/apr-gpu.lock}" 2>/dev/null)" '$0 ~ ":"ino" " && $0 !~ /->/ {print $5}' /proc/locks | head -1)
+    echo "gpu-q: ENV waited ${wait_max}s total; the lock ${GPUQ_LOCK:-/tmp/apr-gpu.lock} is held by pid ${holders:-?} ($(ps -o args= -p "${holders:-0}" 2>/dev/null | cut -c1-120)); not run" >&2
+    exit 75
+  fi
+  exit "$rc"
+fi
+exec flock ${GPUQ_LOCK:-/tmp/apr-gpu.lock} choom -n 1000 -- "$@"
+}
+main "$@"
+exit $?
