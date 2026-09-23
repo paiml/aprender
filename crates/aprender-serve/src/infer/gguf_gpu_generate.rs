@@ -368,9 +368,17 @@ fn try_gguf_gpu_generate(
         );
     }
 
-    if !validate_gpu_first_token(&mut cuda_model, gen_config, input_tokens) {
-        // Validation failed — extract model back for CPU fallback
-        return Err(Box::new(cuda_model.into_model()));
+    // #3973: three states, each handled here. Routing is unchanged: only a MISMATCH
+    // leaves the GPU. A not-measured probe proceeds, and says it is unvalidated.
+    match validate_gpu_first_token(&mut cuda_model, gen_config, input_tokens) {
+        F2Outcome::Mismatch => {
+            // Validation failed — extract model back for CPU fallback
+            return Err(Box::new(cuda_model.into_model()));
+        },
+        F2Outcome::NotMeasured { reason } => {
+            eprintln!("[GH-480] F2 validation NOT MEASURED — {reason}. GPU output is UNVALIDATED (#3973)");
+        },
+        F2Outcome::Validated { .. } => {},
     }
 
     // Reuse existing CUDA model — generate_gpu_resident() creates fresh KV cache
@@ -961,11 +969,14 @@ fn try_apr_cuda_inference(
     config.apply_sampling_to(&mut gen_config);
 
     eprintln!("[GH-480] F2 validation starting...");
-    if !validate_gpu_first_token(&mut cuda_model, &gen_config, input_tokens) {
-        eprintln!("[GH-480] F2 validation FAILED — falling back to CPU");
+    // #3973: "PASSED" is printed ONLY for a comparison that ran and agreed, and it
+    // now carries the measured cosine. It used to print for every non-failure,
+    // including the two branches that compared nothing.
+    let f2 = validate_gpu_first_token(&mut cuda_model, &gen_config, input_tokens);
+    eprintln!("{}", f2_status_line(&f2));
+    if f2 == F2Outcome::Mismatch {
         return None;
     }
-    eprintln!("[GH-480] F2 validation PASSED — launching GPU generation");
 
     let infer_start = Instant::now();
 

@@ -41,6 +41,7 @@ impl CudaKernels {
             KernelType::GemmTiled { .. }
             | KernelType::GemmOptimized { .. }
             | KernelType::GemmBiasActivation { .. } => "gemm_tiled",
+            KernelType::GemmBtTiled { .. } => "gemm_backward_a_tiled",
             KernelType::GemmTensorCore { .. } => "gemm_tensor_core",
             KernelType::GemmFp16TensorCore { .. } => "gemm_wmma_fp16",
             KernelType::QuantizedGemm { .. } => "q4k_gemm_fused",
@@ -81,7 +82,10 @@ impl CudaKernels {
             KernelType::Iq4XsGemv { .. } => "iq4_xs_gemv_warp_reduce",
             KernelType::Iq4NlGemv { .. } => "iq4_nl_gemv_warp_reduce",
             KernelType::Iq3SGemv { .. } => "iq3_s_gemv_warp_reduce",
+            KernelType::Q2KGemv { .. } => "q2_k_gemv_warp_reduce",
             KernelType::Iq2XxsGemv { .. } => "iq2_xxs_gemv_warp_reduce",
+            KernelType::Iq2SGemv { .. } => "iq2_s_gemv_warp_reduce",
+            KernelType::Iq3XxsGemv { .. } => "iq3_xxs_gemv_warp_reduce",
             KernelType::Q5_1Gemv { .. } => "q5_1_gemv_warp_reduce",
             _ => return None,
         };

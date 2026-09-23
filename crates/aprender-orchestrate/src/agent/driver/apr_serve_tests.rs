@@ -480,3 +480,65 @@ fn ready_timeout_qwen3_coder_30b_real_size() {
     );
     assert!(secs <= 90, "Default scaling must not exceed reasonable max; got {secs}s");
 }
+
+// ═══ #3978: `apr code` passes the backend, length and port through ═══
+//
+// It hardcoded `apr serve run … --gpu`, capped every request at 1024 tokens with
+// no flag to pin it, and asked for port `19384 + pid % 1000`, so two sessions
+// whose pids agreed mod 1000 fought over one port.
+
+#[test]
+fn f3978_cpu_backend_launches_no_gpu_and_never_gpu() {
+    let opts = ServeLaunchOptions { backend: ServeBackend::Cpu, max_tokens: None };
+    let args = serve_args(std::path::Path::new("/m/x.gguf"), 4242, &opts);
+    assert!(args.iter().any(|a| a == "--no-gpu"), "cpu lane must pass --no-gpu: {args:?}");
+    assert!(!args.iter().any(|a| a == "--gpu"), "cpu lane must NOT pass --gpu: {args:?}");
+    assert_eq!(&args[..3], ["serve", "run", "/m/x.gguf"]);
+    let port = args.iter().position(|a| a == "--port").expect("--port present");
+    assert_eq!(args[port + 1], "4242");
+}
+
+#[test]
+fn f3978_default_backend_is_still_gpu() {
+    let args = serve_args(std::path::Path::new("m.gguf"), 1, &ServeLaunchOptions::default());
+    assert!(args.iter().any(|a| a == "--gpu") && !args.iter().any(|a| a == "--no-gpu"), "{args:?}");
+}
+
+#[test]
+fn f3978_reserved_port_is_never_one_a_listener_holds() {
+    // Hold a port; every reservation made while it is held must avoid it. The old
+    // pid-derived port is the SAME value on every call from one process, so it
+    // fails the "two reservations differ" half of this at once.
+    let held = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("bind");
+    let held_port = held.local_addr().expect("addr").port();
+    let mut seen = std::collections::HashSet::new();
+    for _ in 0..16 {
+        let p = reserve_port().expect("reserve");
+        assert_ne!(p, 0);
+        assert_ne!(p, held_port, "reserved a port a live listener holds");
+        seen.insert(p);
+    }
+    assert!(seen.len() > 1, "16 reservations returned one port: {seen:?}");
+}
+
+#[test]
+fn f3978_port_race_is_recognised_for_relaunch() {
+    assert!(is_addr_in_use("apr serve exited with exit status: 1 during startup\nsubprocess stderr:\nError: Address already in use (os error 98)"));
+    assert!(is_addr_in_use("bind: AddrInUse"));
+    assert!(!is_addr_in_use(
+        "apr serve exited with exit status: 1 during startup\nsubprocess stderr:\nmodel not found"
+    ));
+}
+
+#[test]
+fn f3978_max_tokens_override_is_exact_and_uncapped() {
+    assert_eq!(effective_max_tokens(Some(3072), 4096, None), 3072, "the override is uncapped");
+    assert_eq!(
+        effective_max_tokens(Some(64), 4096, Some("16")),
+        64,
+        "the override beats the env cap"
+    );
+    assert_eq!(effective_max_tokens(None, 4096, None), 1024, "no override: PMAT-170 cap");
+    assert_eq!(effective_max_tokens(None, 4096, Some("100")), 100);
+    assert_eq!(effective_max_tokens(None, 50, None), 50);
+}

@@ -1008,6 +1008,197 @@ $L_s3_exit:
     )
 }
 
+/// #3960: Q2_K (GGML type 10) GEMV, row-major.
+///
+/// 2.625 bits/weight, AFFINE: `w = d * lo(sc) * q - dmin * hi(sc)`. 84 bytes per
+/// 256-element super-block: `scales[16]` at +0 (each byte: low nibble scale, high nibble
+/// min), `qs[64]` at +16 (four 2-bit quants per byte), `d` f16 at +80, `dmin` f16 at +82.
+///
+/// THREAD MAPPING. One warp per output row; lane L owns the 8 consecutive outputs
+/// 8L..8L+7 of each super-block. ggml's order is o = 128g + 32s + 16h + i, with the quant
+/// at qs[32g + 16h + i] >> 2s and the scale at scales[8g + 2s + h]. Eight consecutive
+/// outputs never cross a 16-wide half, so per lane per block:
+///     g = L >> 4,  s = (L & 15) >> 2,  h = (L & 3) >> 1,  i = 8(L & 1) + j
+/// -- ONE scale byte, ONE shift, and 8 contiguous qs bytes at 16 + 32g + 16h + 8(L & 1).
+/// This mapping is reproduced in Rust by `q2k_gguf_py_parity_tests::q2_k_block_by_lanes`
+/// and proven BITWISE against gguf-py before this PTX existed.
+///
+/// BYTE LOADS, NO ALIGNMENT ASSUMPTION. The qs run is 4-aligned relative to the tensor
+/// base (84 = 4*21), but the tensor's offset in the real inference path is not something
+/// this kernel can see, so it does not rely on it: each quant byte is loaded as u8.
+///
+/// `.rn` on the dequant arithmetic is DEFENSIVE, not load-bearing: d is f16 (11 bits),
+/// times a 4-bit nibble and a 2-bit q, is at most 17 bits -- exact in f32 -- so there is
+/// one rounding whether or not ptxas contracts it. (A Rust `mul_add` mutant of the same
+/// expression survives for exactly this reason: it is equivalent.)
+///
+/// ASCII ONLY: ptxas rejects a non-ASCII byte anywhere in the module (#3477).
+/// LAYOUT-001: row-major. Row `ctaid` starts at `w_ptr + ctaid * ceil(k/256) * 84`.
+fn generate_q2_k_gemv_ptx(k: u32, n: u32) -> String {
+    let _ = (k, n);
+    String::from(
+        r"
+.version 7.5
+.target sm_70
+.address_size 64
+
+.visible .entry q2_k_gemv_warp_reduce(
+    .param .u64 y_ptr,
+    .param .u64 w_ptr,
+    .param .u64 x_ptr,
+    .param .u32 k_dim,
+    .param .u32 n_dim
+)
+{
+    .reg .u32 %r<40>;
+    .reg .u64 %rd<24>;
+    .reg .f32 %f<24>;
+    .reg .b16 %h<4>;
+    .reg .pred %p<12>;
+
+    mov.u32 %r0, %tid.x;
+    mov.u32 %r1, %ctaid.x;
+
+    ld.param.u32 %r2, [n_dim];
+    ld.param.u32 %r3, [k_dim];
+    ld.param.u64 %rd0, [y_ptr];
+    ld.param.u64 %rd1, [w_ptr];
+    ld.param.u64 %rd2, [x_ptr];
+
+    setp.ge.u32 %p0, %r1, %r2;
+    @%p0 bra $L_q2_exit;
+
+    mov.f32 %f0, 0f00000000;
+
+    // nb = ceil(k_dim / 256)
+    add.u32 %r4, %r3, 255;
+    shr.u32 %r4, %r4, 8;
+
+    // row_base = w_ptr + ctaid * nb * 84
+    mul.lo.u32 %r5, %r4, 84;
+    mul.wide.u32 %rd3, %r1, %r5;
+    add.u64 %rd3, %rd1, %rd3;
+
+    // lane decomposition: g = L>>4, s = (L&15)>>2, h = (L&3)>>1, odd = L&1
+    shr.u32 %r6, %r0, 4;                 // g
+    and.b32 %r7, %r0, 15;
+    shr.u32 %r7, %r7, 2;                 // s
+    and.b32 %r8, %r0, 3;
+    shr.u32 %r8, %r8, 1;                 // h
+    and.b32 %r9, %r0, 1;                 // odd
+
+    // scale index = 8g + 2s + h
+    shl.b32 %r10, %r6, 3;
+    shl.b32 %r11, %r7, 1;
+    add.u32 %r10, %r10, %r11;
+    add.u32 %r10, %r10, %r8;             // sidx
+
+    // shift = 2s
+    shl.b32 %r12, %r7, 1;                // shift
+
+    // qs run offset = 16 + 32g + 16h + 8*odd
+    shl.b32 %r13, %r6, 5;
+    shl.b32 %r14, %r8, 4;
+    add.u32 %r13, %r13, %r14;
+    shl.b32 %r14, %r9, 3;
+    add.u32 %r13, %r13, %r14;
+    add.u32 %r13, %r13, 16;              // qoff
+
+    // this lane's first output within a block = 8L
+    shl.b32 %r15, %r0, 3;
+
+    cvt.u64.u32 %rd4, %r10;              // sidx
+    cvt.u64.u32 %rd5, %r13;              // qoff
+
+    mov.u32 %r16, 0;                     // blk
+
+$L_q2_blk:
+    setp.ge.u32 %p1, %r16, %r4;
+    @%p1 bra $L_q2_blk_end;
+
+    mul.wide.u32 %rd6, %r16, 84;
+    add.u64 %rd6, %rd3, %rd6;            // block base
+
+    // d (f16 at +80), dmin (f16 at +82)
+    ld.global.b16 %h0, [%rd6+80];
+    cvt.f32.f16 %f1, %h0;                // d
+    ld.global.b16 %h1, [%rd6+82];
+    cvt.f32.f16 %f2, %h1;                // dmin
+
+    // sc = scales[sidx]: low nibble scales d, high nibble scales dmin
+    add.u64 %rd7, %rd6, %rd4;
+    ld.global.u8 %r17, [%rd7];
+    and.b32 %r18, %r17, 15;              // scale nibble
+    shr.u32 %r19, %r17, 4;               // min nibble
+    cvt.rn.f32.u32 %f3, %r18;
+    mul.rn.f32 %f3, %f1, %f3;            // dl = d * lo
+    cvt.rn.f32.u32 %f4, %r19;
+    mul.rn.f32 %f4, %f2, %f4;            // ml = dmin * hi
+
+    add.u64 %rd8, %rd6, %rd5;            // this lane's qs run
+
+    // col0 = blk*256 + 8L
+    shl.b32 %r20, %r16, 8;
+    add.u32 %r20, %r20, %r15;
+
+    mov.u32 %r21, 0;                     // j = 0..8
+
+$L_q2_j:
+    setp.ge.u32 %p2, %r21, 8;
+    @%p2 bra $L_q2_j_end;
+
+    cvt.u64.u32 %rd9, %r21;
+    add.u64 %rd9, %rd8, %rd9;
+    ld.global.u8 %r22, [%rd9];
+    shr.u32 %r22, %r22, %r12;
+    and.b32 %r22, %r22, 3;               // q
+
+    cvt.rn.f32.u32 %f5, %r22;
+    mul.rn.f32 %f5, %f3, %f5;            // dl * q
+    sub.rn.f32 %f5, %f5, %f4;            // - ml   (the affine min)
+
+    add.u32 %r23, %r20, %r21;            // col
+    setp.ge.u32 %p3, %r23, %r3;
+    @%p3 bra $L_q2_skip;
+    mul.wide.u32 %rd10, %r23, 4;
+    add.u64 %rd10, %rd2, %rd10;
+    ld.global.f32 %f6, [%rd10];
+    fma.rn.f32 %f0, %f5, %f6, %f0;
+$L_q2_skip:
+
+    add.u32 %r21, %r21, 1;
+    bra $L_q2_j;
+
+$L_q2_j_end:
+    add.u32 %r16, %r16, 1;
+    bra $L_q2_blk;
+
+$L_q2_blk_end:
+    shfl.sync.down.b32 %f10, %f0, 16, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f10;
+    shfl.sync.down.b32 %f11, %f0, 8, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f11;
+    shfl.sync.down.b32 %f12, %f0, 4, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f12;
+    shfl.sync.down.b32 %f13, %f0, 2, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f13;
+    shfl.sync.down.b32 %f14, %f0, 1, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f14;
+
+    setp.ne.u32 %p7, %r0, 0;
+    @%p7 bra $L_q2_exit;
+
+    mul.wide.u32 %rd14, %r1, 4;
+    add.u64 %rd14, %rd0, %rd14;
+    st.global.f32 [%rd14], %f0;
+
+$L_q2_exit:
+    ret;
+}
+",
+    )
+}
+
 /// #3931: IQ2_XXS (GGML type 16) GEMV, row-major.
 ///
 /// 256 elements in 66 bytes: an f16 `d`, then eight 8-byte sub-blocks. Each
@@ -1246,6 +1437,515 @@ $L_x2_blk_end:
     st.global.f32 [%rd14], %f0;
 
 $L_x2_exit:
+    ret;
+}
+",
+    );
+    ptx
+}
+
+/// #3953: IQ2_S (GGML type 22) GEMV, row-major.
+///
+/// 2.5625 bits/weight: 10-bit indices into the 1024-entry `IQ2S_GRID` (8 bits in
+/// `qs`, 2 in `qh`), one explicit sign byte per 8 outputs, and 4-bit scales, two
+/// per sub-block. 82 bytes per 256-element super-block: `d` f16 at +0, `qs[32]`
+/// at +2, `signs[32]` at +34, `qh[8]` at +66, `scales[8]` at +74.
+///
+/// THREAD MAPPING, identical to IQ3_S (#3884): 8 sub-blocks x 4 groups is exactly
+/// 32, so `ib = tid >> 2` and `l = tid & 3` gives one lane per (sub-block, group),
+/// each owning the 8 outputs at `32*ib + 8*l`. Unlike IQ2_XXS, every field a lane
+/// needs is a SINGLE BYTE at a fixed offset, so there is no unaligned u32 to
+/// assemble from a 66-byte stride.
+///
+/// Per lane, following `quantize::iq2_s::dequantize_iq2_s_block` exactly:
+///   idx = qs[4ib+l] | ((qh[ib] >> 2l) & 3) << 8         (0..1023)
+///   nib = scales[ib] low nibble for l < 2, high for l >= 2  (the reference's
+///         `db[l / 2]`, so the selector is `l >> 1` -- NOT `l & 1`)
+///   db  = (d * (0.5 + nib)) * 0.25                       (the reference's order)
+///   out[8l + j] = db * byte_j(IQ2S_GRID[idx]) * (bit j of signs[4ib+l] ? -1 : 1)
+/// `KMASK_IQ2XS` is `[1,2,4,...,128]`, so `& KMASK[j]` is bit `j` (pinned by a test).
+///
+/// THE GRID IS GENERATED, NOT COPIED. IQ3_S's PTX carries 512 hand-copied numbers
+/// in a different base than the Rust table, and nothing compared them until a
+/// later test did. Here the 2048 u32 words are emitted FROM `IQ2S_GRID` at
+/// generation time, so the PTX table cannot disagree with the CPU oracle's table.
+/// Each u64 entry is laid out little-endian as (lo, hi): bytes 0..3 serve outputs
+/// j = 0..3, bytes 4..7 serve j = 4..7 -- which is exactly IQ3_S's (g1, g2) pair,
+/// so the proven 4-iteration inner loop is reused unchanged.
+///
+/// ASCII ONLY. ptxas rejects a non-ASCII byte anywhere in the module, comments
+/// included (#3477); every comment in the emitted text below is plain ASCII.
+///
+/// LAYOUT-001: row-major. Row `ctaid` starts at `w_ptr + ctaid * ceil(k/256) * 82`.
+fn generate_iq2_s_gemv_ptx(k: u32, n: u32) -> String {
+    let _ = (k, n);
+    let grid = &crate::quantize::iq_grids::IQ2S_GRID;
+    let mut table = String::with_capacity(grid.len() * 24);
+    for (i, e) in grid.iter().enumerate() {
+        if i % 4 == 0 {
+            table.push_str("\n    ");
+        }
+        table.push_str(&format!("{}, {}", *e as u32, (*e >> 32) as u32));
+        if i + 1 != grid.len() {
+            table.push_str(", ");
+        }
+    }
+
+    let mut ptx = String::from(
+        r"
+.version 7.5
+.target sm_70
+.address_size 64
+
+// IQ2S_GRID: generated from quantize::iq_grids::IQ2S_GRID, 1024 u64 entries as
+// 2048 little-endian u32 words (lo, hi).
+.global .align 8 .u32 iq2s_grid_g[2048] = {",
+    );
+    ptx.push_str(&table);
+    ptx.push_str(
+        r"
+};
+
+.visible .entry iq2_s_gemv_warp_reduce(
+    .param .u64 y_ptr,
+    .param .u64 w_ptr,
+    .param .u64 x_ptr,
+    .param .u32 k_dim,
+    .param .u32 n_dim
+)
+{
+    .reg .u32 %r<48>;
+    .reg .u64 %rd<32>;
+    .reg .f32 %f<24>;
+    .reg .b16 %h<4>;
+    .reg .pred %p<12>;
+
+    mov.u32 %r0, %tid.x;
+    mov.u32 %r1, %ctaid.x;
+
+    ld.param.u32 %r2, [n_dim];
+    ld.param.u32 %r3, [k_dim];
+    ld.param.u64 %rd0, [y_ptr];
+    ld.param.u64 %rd1, [w_ptr];
+    ld.param.u64 %rd2, [x_ptr];
+
+    setp.ge.u32 %p0, %r1, %r2;
+    @%p0 bra $L_2s_exit;
+
+    mov.f32 %f0, 0f00000000;
+
+    // nb = ceil(k_dim / 256)
+    add.u32 %r4, %r3, 255;
+    shr.u32 %r4, %r4, 8;
+
+    // row_base = w_ptr + ctaid * nb * 82
+    mul.lo.u32 %r5, %r4, 82;
+    mul.wide.u32 %rd3, %r1, %r5;
+    add.u64 %rd3, %rd1, %rd3;
+
+    // ib = tid >> 2   (0..8),  l = tid & 3   (0..4)
+    shr.u32 %r6, %r0, 2;
+    and.b32 %r7, %r0, 3;
+
+    mov.u64 %rd10, iq2s_grid_g;
+
+    mov.u32 %r8, 0;                      // blk
+
+$L_2s_blk:
+    setp.ge.u32 %p1, %r8, %r4;
+    @%p1 bra $L_2s_blk_end;
+
+    mul.wide.u32 %rd4, %r8, 82;
+    add.u64 %rd4, %rd3, %rd4;
+
+    // d (f16 at +0)
+    ld.global.b16 %h0, [%rd4];
+    cvt.f32.f16 %f1, %h0;
+
+    // sc = scales[ib]   (scales at +74)
+    cvt.u64.u32 %rd5, %r6;
+    add.u64 %rd5, %rd4, %rd5;
+    add.u64 %rd5, %rd5, 74;
+    ld.global.u8 %r10, [%rd5];
+
+    // nibble: l >> 1 selects it -- low for l = 0,1, high for l = 2,3
+    shr.u32 %r11, %r7, 1;
+    shl.b32 %r12, %r11, 2;               // 0 or 4
+    shr.u32 %r13, %r10, %r12;
+    and.b32 %r13, %r13, 15;
+
+    // db = (d * (0.5 + nib)) * 0.25, in the reference's order
+    cvt.rn.f32.u32 %f2, %r13;
+    add.f32 %f2, %f2, 0f3F000000;        // + 0.5
+    mul.f32 %f3, %f1, %f2;               // d * (0.5 + nib)
+    mul.f32 %f3, %f3, 0f3E800000;        // * 0.25  -> db
+
+    // qh_byte = qh[ib]   (qh at +66)
+    cvt.u64.u32 %rd6, %r6;
+    add.u64 %rd6, %rd4, %rd6;
+    add.u64 %rd6, %rd6, 66;
+    ld.global.u8 %r14, [%rd6];
+
+    // lane = 4*ib + l
+    shl.b32 %r15, %r6, 2;
+    add.u32 %r15, %r15, %r7;
+    cvt.u64.u32 %rd7, %r15;
+
+    // idx low 8 bits = qs[4ib + l]   (qs at +2)
+    add.u64 %rd8, %rd4, %rd7;
+    add.u64 %rd8, %rd8, 2;
+    ld.global.u8 %r17, [%rd8];
+
+    // idx high 2 bits = (qh_byte >> 2l) & 3, placed at bit 8
+    shl.b32 %r16, %r7, 1;                // 2l
+    shr.u32 %r19, %r14, %r16;
+    and.b32 %r19, %r19, 3;
+    shl.b32 %r19, %r19, 8;
+    or.b32 %r17, %r17, %r19;             // idx, 0..1023
+
+    // grid entry = 8 bytes: lo word bytes 0..3, hi word bytes 4..7
+    mul.wide.u32 %rd9, %r17, 8;
+    add.u64 %rd9, %rd10, %rd9;
+    ld.global.u32 %r22, [%rd9];          // g_lo
+    ld.global.u32 %r23, [%rd9+4];        // g_hi
+
+    // sign_byte = signs[4ib + l]   (signs at +34)
+    add.u64 %rd11, %rd4, %rd7;
+    add.u64 %rd11, %rd11, 34;
+    ld.global.u8 %r25, [%rd11];
+
+    // col0 = blk*256 + 32*ib + 8*l
+    shl.b32 %r26, %r8, 8;
+    shl.b32 %r27, %r6, 5;
+    add.u32 %r26, %r26, %r27;
+    shl.b32 %r28, %r7, 3;
+    add.u32 %r26, %r26, %r28;
+
+    mov.u32 %r29, 0;                     // j = 0..4
+
+$L_2s_j:
+    setp.ge.u32 %p2, %r29, 4;
+    @%p2 bra $L_2s_j_end;
+
+    shl.b32 %r30, %r29, 3;               // 8*j
+    shr.u32 %r31, %r22, %r30;
+    and.b32 %r31, %r31, 255;             // m_lo = byte j
+    shr.u32 %r32, %r23, %r30;
+    and.b32 %r32, %r32, 255;             // m_hi = byte j+4
+
+    // sign bits: j for the lo byte, j+4 for the hi byte
+    shr.u32 %r33, %r25, %r29;
+    and.b32 %r33, %r33, 1;
+    add.u32 %r34, %r29, 4;
+    shr.u32 %r35, %r25, %r34;
+    and.b32 %r35, %r35, 1;
+
+    cvt.rn.f32.u32 %f4, %r31;
+    mul.f32 %f4, %f3, %f4;               // db * m_lo
+    setp.ne.u32 %p3, %r33, 0;
+    @%p3 neg.f32 %f4, %f4;
+
+    cvt.rn.f32.u32 %f5, %r32;
+    mul.f32 %f5, %f3, %f5;               // db * m_hi
+    setp.ne.u32 %p4, %r35, 0;
+    @%p4 neg.f32 %f5, %f5;
+
+    // x[col0 + j]
+    add.u32 %r36, %r26, %r29;
+    setp.ge.u32 %p5, %r36, %r3;
+    @%p5 bra $L_2s_skip1;
+    mul.wide.u32 %rd12, %r36, 4;
+    add.u64 %rd12, %rd2, %rd12;
+    ld.global.f32 %f6, [%rd12];
+    fma.rn.f32 %f0, %f4, %f6, %f0;
+$L_2s_skip1:
+
+    // x[col0 + j + 4]
+    add.u32 %r37, %r36, 4;
+    setp.ge.u32 %p6, %r37, %r3;
+    @%p6 bra $L_2s_skip2;
+    mul.wide.u32 %rd13, %r37, 4;
+    add.u64 %rd13, %rd2, %rd13;
+    ld.global.f32 %f7, [%rd13];
+    fma.rn.f32 %f0, %f5, %f7, %f0;
+$L_2s_skip2:
+
+    add.u32 %r29, %r29, 1;
+    bra $L_2s_j;
+
+$L_2s_j_end:
+    add.u32 %r8, %r8, 1;
+    bra $L_2s_blk;
+
+$L_2s_blk_end:
+    shfl.sync.down.b32 %f10, %f0, 16, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f10;
+    shfl.sync.down.b32 %f11, %f0, 8, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f11;
+    shfl.sync.down.b32 %f12, %f0, 4, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f12;
+    shfl.sync.down.b32 %f13, %f0, 2, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f13;
+    shfl.sync.down.b32 %f14, %f0, 1, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f14;
+
+    setp.ne.u32 %p7, %r0, 0;
+    @%p7 bra $L_2s_exit;
+
+    mul.wide.u32 %rd14, %r1, 4;
+    add.u64 %rd14, %rd0, %rd14;
+    st.global.f32 [%rd14], %f0;
+
+$L_2s_exit:
+    ret;
+}
+",
+    );
+    ptx
+}
+
+/// #3963: IQ3_XXS (GGML type 18) GEMV, row-major.
+///
+/// 256 elements in 98 bytes: an f16 `d`, 64 one-byte grid indices, then eight
+/// u32 words (one per 32-element sub-block) of four 7-bit sign codes and a 4-bit
+/// scale. Each index selects one `IQ3XXS_GRID` entry of FOUR magnitudes; a
+/// sub-block's 32 values are four (index pair, sign code) groups of eight.
+///
+/// It is IQ3_S's thread shape without the 9th grid bit: lane `tid` is `(ib =
+/// tid>>2, l = tid&3)`, entry `qs[8ib+2l]` feeds columns `j` with sign bit `j`,
+/// entry `qs[8ib+2l+1]` feeds `j+4` with bit `j+4`. What differs: a 98-byte
+/// stride, `db = d * (0.5 + s) * 0.5`, and signs from `KSIGNS_IQ2XS` rather than
+/// raw sign bytes.
+///
+/// The oracle is `quantize::iq3_xxs::dequantize_iq3_xxs_block`, proven BIT-EXACT
+/// against llama.cpp's gguf-py on all 24 IQ3_XXS tensors of
+/// Qwen3.5-0.8B-UD-IQ2_XXS (40,894,464 elements) by
+/// `quantize::iq_gguf_py_parity_tests`. A disagreement is this kernel's bug.
+///
+/// As with IQ2_XXS: the codebook and sign tables are EMITTED from the Rust
+/// constants, and the scale/sign word at block offset 66 + 4*ib (2 mod 4) is
+/// read as two u16 loads, never a misaligned u32.
+fn generate_iq3_xxs_gemv_ptx(k: u32, n: u32) -> String {
+    let _ = (k, n);
+    let grid = crate::quantize::iq_grids::IQ3XXS_GRID
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let signs = crate::quantize::iq_grids::KSIGNS_IQ2XS
+        .iter()
+        .map(u8::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let mut ptx = String::from(
+        r"
+.version 7.5
+.target sm_70
+.address_size 64
+
+// IQ3XXS_GRID: 256 packed 4-magnitude entries. GENERATED from
+// quantize::iq_grids::IQ3XXS_GRID when this PTX is built, never hand-copied.
+.global .align 4 .u32 iq3xxs_grid_g[256] = {",
+    );
+    ptx.push_str(&grid);
+    ptx.push_str(
+        r"};
+
+// KSIGNS_IQ2XS: 128 sign bytes. GENERATED from quantize::iq_grids::KSIGNS_IQ2XS.
+.global .align 1 .u8 iq3xxs_ksigns_g[128] = {",
+    );
+    ptx.push_str(&signs);
+    ptx.push_str(
+        r"};
+
+.visible .entry iq3_xxs_gemv_warp_reduce(
+    .param .u64 y_ptr,
+    .param .u64 w_ptr,
+    .param .u64 x_ptr,
+    .param .u32 k_dim,
+    .param .u32 n_dim
+)
+{
+    .reg .u32 %r<48>;
+    .reg .u64 %rd<32>;
+    .reg .f32 %f<24>;
+    .reg .b16 %h<4>;
+    .reg .pred %p<12>;
+
+    mov.u32 %r0, %tid.x;
+    mov.u32 %r1, %ctaid.x;
+
+    ld.param.u32 %r2, [n_dim];
+    ld.param.u32 %r3, [k_dim];
+    ld.param.u64 %rd0, [y_ptr];
+    ld.param.u64 %rd1, [w_ptr];
+    ld.param.u64 %rd2, [x_ptr];
+
+    setp.ge.u32 %p0, %r1, %r2;
+    @%p0 bra $L_x3_exit;
+
+    mov.f32 %f0, 0f00000000;
+
+    // nb = ceil(k_dim / 256)
+    add.u32 %r4, %r3, 255;
+    shr.u32 %r4, %r4, 8;
+
+    // row_base = w_ptr + ctaid * nb * 98
+    mul.lo.u32 %r5, %r4, 98;
+    mul.wide.u32 %rd3, %r1, %r5;
+    add.u64 %rd3, %rd1, %rd3;
+
+    // ib = tid >> 2   (0..8),  l = tid & 3   (0..4)
+    shr.u32 %r6, %r0, 2;
+    and.b32 %r7, %r0, 3;
+
+    mov.u64 %rd10, iq3xxs_grid_g;
+    mov.u64 %rd15, iq3xxs_ksigns_g;
+
+    // this lane's scale/sign word offset: 66 + 4*ib
+    shl.b32 %r9, %r6, 2;
+    add.u32 %r9, %r9, 66;
+    // this lane's grid-index pair offset: 2 + 8*ib + 2*l
+    shl.b32 %r16, %r6, 3;
+    shl.b32 %r19, %r7, 1;
+    add.u32 %r16, %r16, %r19;
+    add.u32 %r16, %r16, 2;
+    // this lane's sign-code shift: 7*l
+    mul.lo.u32 %r10, %r7, 7;
+
+    mov.u32 %r8, 0;                      // blk
+
+$L_x3_blk:
+    setp.ge.u32 %p1, %r8, %r4;
+    @%p1 bra $L_x3_blk_end;
+
+    mul.wide.u32 %rd4, %r8, 98;
+    add.u64 %rd4, %rd3, %rd4;            // block base
+
+    // d (f16 at +0)
+    ld.global.b16 %h0, [%rd4];
+    cvt.f32.f16 %f1, %h0;
+
+    // aux = u16[+66+4ib] | u16[+68+4ib] << 16   (2-byte aligned only)
+    cvt.u64.u32 %rd5, %r9;
+    add.u64 %rd5, %rd4, %rd5;
+    ld.global.u16 %r12, [%rd5];
+    ld.global.u16 %r13, [%rd5+2];
+    shl.b32 %r13, %r13, 16;
+    or.b32 %r12, %r12, %r13;
+
+    // db = d * (0.5 + (aux >> 28)) * 0.5
+    shr.u32 %r14, %r12, 28;
+    cvt.rn.f32.u32 %f2, %r14;
+    add.f32 %f2, %f2, 0f3F000000;        // +0.5
+    mul.f32 %f2, %f2, 0f3F000000;        // *0.5 (exact: a power of two)
+    mul.f32 %f3, %f1, %f2;               // db
+
+    // sign byte = ksigns[(aux >> 7l) & 127]
+    shr.u32 %r15, %r12, %r10;
+    and.b32 %r15, %r15, 127;
+    cvt.u64.u32 %rd7, %r15;
+    add.u64 %rd7, %rd15, %rd7;
+    ld.global.u8 %r25, [%rd7];
+
+    // grid indices qs[8ib+2l], qs[8ib+2l+1]
+    cvt.u64.u32 %rd6, %r16;
+    add.u64 %rd6, %rd4, %rd6;
+    ld.global.u8 %r17, [%rd6];
+    ld.global.u8 %r18, [%rd6+1];
+
+    // g1 = grid[i1] (columns j), g2 = grid[i2] (columns j+4)
+    mul.wide.u32 %rd8, %r17, 4;
+    add.u64 %rd8, %rd10, %rd8;
+    ld.global.u32 %r22, [%rd8];
+    mul.wide.u32 %rd9, %r18, 4;
+    add.u64 %rd9, %rd10, %rd9;
+    ld.global.u32 %r23, [%rd9];
+
+    // col0 = blk*256 + 32*ib + 8*l
+    shl.b32 %r26, %r8, 8;
+    shl.b32 %r27, %r6, 5;
+    add.u32 %r26, %r26, %r27;
+    shl.b32 %r28, %r7, 3;
+    add.u32 %r26, %r26, %r28;
+
+    mov.u32 %r29, 0;                     // j = 0..4
+
+$L_x3_j:
+    setp.ge.u32 %p2, %r29, 4;
+    @%p2 bra $L_x3_j_end;
+
+    shl.b32 %r30, %r29, 3;               // 8*j
+    shr.u32 %r31, %r22, %r30;
+    and.b32 %r31, %r31, 255;             // m1
+    shr.u32 %r32, %r23, %r30;
+    and.b32 %r32, %r32, 255;             // m2
+
+    // s1 = bit j of the sign byte, s2 = bit j+4
+    shr.u32 %r33, %r25, %r29;
+    and.b32 %r33, %r33, 1;
+    add.u32 %r34, %r29, 4;
+    shr.u32 %r35, %r25, %r34;
+    and.b32 %r35, %r35, 1;
+
+    cvt.rn.f32.u32 %f4, %r31;
+    mul.f32 %f4, %f4, %f3;
+    setp.ne.u32 %p3, %r33, 0;
+    @%p3 neg.f32 %f4, %f4;
+
+    cvt.rn.f32.u32 %f5, %r32;
+    mul.f32 %f5, %f5, %f3;
+    setp.ne.u32 %p4, %r35, 0;
+    @%p4 neg.f32 %f5, %f5;
+
+    // x[col0 + j]
+    add.u32 %r36, %r26, %r29;
+    setp.ge.u32 %p5, %r36, %r3;
+    @%p5 bra $L_x3_skip1;
+    mul.wide.u32 %rd12, %r36, 4;
+    add.u64 %rd12, %rd2, %rd12;
+    ld.global.f32 %f6, [%rd12];
+    fma.rn.f32 %f0, %f4, %f6, %f0;
+$L_x3_skip1:
+
+    // x[col0 + j + 4]
+    add.u32 %r37, %r36, 4;
+    setp.ge.u32 %p6, %r37, %r3;
+    @%p6 bra $L_x3_skip2;
+    mul.wide.u32 %rd13, %r37, 4;
+    add.u64 %rd13, %rd2, %rd13;
+    ld.global.f32 %f7, [%rd13];
+    fma.rn.f32 %f0, %f5, %f7, %f0;
+$L_x3_skip2:
+
+    add.u32 %r29, %r29, 1;
+    bra $L_x3_j;
+
+$L_x3_j_end:
+    add.u32 %r8, %r8, 1;
+    bra $L_x3_blk;
+
+$L_x3_blk_end:
+    shfl.sync.down.b32 %f10, %f0, 16, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f10;
+    shfl.sync.down.b32 %f11, %f0, 8, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f11;
+    shfl.sync.down.b32 %f12, %f0, 4, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f12;
+    shfl.sync.down.b32 %f13, %f0, 2, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f13;
+    shfl.sync.down.b32 %f14, %f0, 1, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f14;
+
+    setp.ne.u32 %p7, %r0, 0;
+    @%p7 bra $L_x3_exit;
+
+    mul.wide.u32 %rd14, %r1, 4;
+    add.u64 %rd14, %rd0, %rd14;
+    st.global.f32 [%rd14], %f0;
+
+$L_x3_exit:
     ret;
 }
 ",

@@ -82,17 +82,17 @@ impl AprF32ToGpuAdapter {
         // Embedding weights (already F32)
         let embedding_weights = apr.token_embedding.clone();
 
-        // LM head weights (already F32)
-        // APR get_f32() with transpose_cublas_weights produces [vocab_size, hidden_dim] (HF convention).
-        // GpuModel expects lm_head_weight as [hidden_dim, vocab_size] (same as GGUF loader).
-        // So the APR weight is the "transposed" form and vice versa.
+        // LM head weights (already F32), wrapped per the newtype contract in
+        // `scheduler/types.rs`: `LmHeadWeight` is [vocab_size, hidden_dim] and
+        // `LmHeadWeightTransposed` is [hidden_dim, vocab_size] (#3975). This adapter
+        // used to wrap them the other way round ("vice versa"), and its forward pass
+        // was right at m = 1 only because `gemm` misread [k, n] as [n, k] there.
+        // The AprToGpuAdapter below always followed the contract.
         // PMAT-788: source `lm_head_f32()` so tied-embedding models (empty
         // `lm_head_weight`) upload the byte-identical `token_embedding` instead
         // of an empty buffer — bit-identical to the un-deduplicated form.
-        let apr_lm_head = apr.lm_head_f32().to_vec(); // [vocab_size, hidden_dim]
-        let apr_lm_head_t = transpose_matrix(&apr_lm_head, config.vocab_size, hidden_dim); // [hidden_dim, vocab_size]
-        let lm_head_weight = apr_lm_head_t; // [hidden_dim, vocab_size] — GPU matmul layout (matches GGUF)
-        let lm_head_weight_t = apr_lm_head; // [vocab_size, hidden_dim] — CPU matmul layout
+        let lm_head_weight = apr.lm_head_f32().to_vec(); // [vocab_size, hidden_dim]
+        let lm_head_weight_t = transpose_matrix(&lm_head_weight, config.vocab_size, hidden_dim); // [hidden_dim, vocab_size]
 
         // Convert each layer
         let mut block_weights = Vec::with_capacity(apr.layers.len());

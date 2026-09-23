@@ -86,6 +86,32 @@ impl CudaScheduler {
         Ok(output)
     }
 
+    /// C[m, n] = A[m, k] @ B^T with B row-major `[n, k]` — a dequantized weight
+    /// in its native `[out, in]` layout (#3975). Use [`Self::matmul`] only when B
+    /// really is `[k, n]`.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if CUDA execution fails.
+    pub fn matmul_bt(
+        &mut self,
+        a: &[f32],
+        b: &[f32],
+        m: usize,
+        k: usize,
+        n: usize,
+    ) -> Result<Vec<f32>> {
+        let mut output = vec![0.0f32; m * n];
+
+        self.executor
+            .gemm_bt(a, b, &mut output, m as u32, n as u32, k as u32)
+            .map_err(|e| RealizarError::GpuError {
+                reason: format!("CUDA GEMM (B^T) failed: {}", e),
+            })?;
+
+        Ok(output)
+    }
+
     /// Get device name
     pub fn device_name(&self) -> Result<String> {
         self.executor

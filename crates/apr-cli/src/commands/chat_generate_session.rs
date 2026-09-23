@@ -141,7 +141,15 @@ fn run_repl(path: &Path, config: &ChatConfig) -> Result<(), CliError> {
 /// string-returning so the shape is unit-testable without a model or a GPU.
 #[cfg(feature = "inference")]
 pub(crate) fn chat_backend_report(config: &ChatConfig, generated_on_gpu: bool) -> String {
-    let requested = if config.force_cpu { "cpu" } else { "default" };
+    // #3955: `accel_forced` is `run_accelerator_forced`, the derivation `apr run`
+    // uses, so `--gpu` records "gpu" on both surfaces.
+    let requested = if config.force_cpu {
+        "cpu"
+    } else if config.accel_forced {
+        "gpu"
+    } else {
+        "default"
+    };
     let ran = if generated_on_gpu { "gpu" } else { "cpu" };
     // A fallback is a request for an accelerator that CPU answered. Asking for
     // cpu and getting cpu is not a fallback, and neither is never asking.
@@ -355,6 +363,21 @@ mod pmat3794_chat_backend_report {
              visible if the gate ever regresses",
         ),
     ];
+
+    /// #3955: `apr chat --gpu` recorded `requested:"default"` while `apr run --gpu`
+    /// recorded `"gpu"`. The field records the REQUEST, derived the way `run` does.
+    #[test]
+    fn a_gpu_request_is_recorded_as_gpu_like_run() {
+        let config = ChatConfig { accel_forced: true, json: true, ..Default::default() };
+        assert_eq!(
+            chat_backend_report(&config, true),
+            r#"{"backend":{"requested":"gpu","ran":"gpu","fell_back":false}}"#
+        );
+        assert_eq!(
+            chat_backend_report(&config, false),
+            r#"{"backend":{"requested":"gpu","ran":"cpu","fell_back":true}}"#
+        );
+    }
 
     #[test]
     fn the_whole_report_table_holds() {

@@ -32,8 +32,11 @@ mod gemv_entry_name_tests_3477 {
             KernelType::Iq4XsGemv { k, n },
             KernelType::Iq4NlGemv { k, n },
             KernelType::Iq3SGemv { k, n },
+            KernelType::Q2KGemv { k, n },
             KernelType::Iq2XxsGemv { k, n },
+            KernelType::Iq3XxsGemv { k, n },
             KernelType::Bf16Gemv { k, n },
+            KernelType::Iq2SGemv { k, n },
             KernelType::Q5_1Gemv { k, n },
         ]
     }
@@ -135,6 +138,68 @@ mod gemv_entry_name_tests_3477 {
              every_gemv_kernel() / every_strategy_gemv_kernel(), so never assembled \
              or name-checked: {missing:?}"
         );
+    }
+
+    /// #3953: a generator's OUTPUT must not contain generator SOURCE, and each module
+    /// must declare exactly one kernel -- its own.
+    ///
+    /// WHAT THE COMPILER ALREADY CATCHES, stated so this guard does not claim it. Every PTX
+    /// literal in these generators is a plain `r"..."`, where any `"` ENDS the string. So
+    /// Rust source that leaks into a literal -- a function body almost always carries
+    /// quotes -- is a `mismatched closing delimiter` compile error, not a silent pass.
+    /// (The IQ2_S generator was once inserted inside IQ3_S's literal by a bad anchor; that
+    /// would NOT have compiled. The first draft of this comment said it would; it did not
+    /// check, and a planted copy failed to compile.)
+    ///
+    /// WHAT IT DOES NOT CATCH, and this guard does:
+    ///   (a) a QUOTE-FREE fragment -- `fn generate_x_ptx(k: u32) -> String {` or
+    ///       `let mut acc = 0;` -- which a raw string accepts silently;
+    ///   (b) duplicated PTX inside ONE literal. PTX has no quotes, so a kernel body pasted
+    ///       twice compiles cleanly, and only ptxas objects, with an opaque duplicate-symbol
+    ///       message. Here it is named: "declares 2 `.visible .entry`";
+    ///   (c) any literal later switched to `r#"..."#`, where a bare `"` no longer ends it
+    ///       and every leak becomes compile-invisible.
+    #[test]
+    fn no_generator_leaks_into_another_kernels_ptx_3953() {
+        // None of these is valid PTX. `///` is deliberately absent: a PTX comment can
+        // legitimately contain it, and a guard with false positives gets disabled.
+        const RUST_ONLY: &[&str] = &["fn generate_", "String::from(", ".push_str(", "let mut "];
+        let kernels = CudaKernels::new();
+        let all: Vec<(KernelType, String)> = every_gemv_kernel()
+            .into_iter()
+            .map(|kt| {
+                let name = kernels.kernel_name(&kt).to_string();
+                (kt, name)
+            })
+            .collect();
+        let mut broken = Vec::new();
+        for (kt, own) in &all {
+            let ptx = kernels.generate_ptx(kt);
+            for tok in RUST_ONLY {
+                if let Some(line) = ptx.lines().find(|l| l.contains(tok)) {
+                    broken.push(format!(
+                        "\n  - {kt:?}: emitted PTX contains the Rust token {tok:?} -- generator \
+                         SOURCE leaked into this kernel's literal: {:?}",
+                        line.trim()
+                    ));
+                }
+            }
+            let entries = ptx.matches(".visible .entry ").count();
+            if entries != 1 {
+                broken.push(format!(
+                    "\n  - {kt:?}: declares {entries} `.visible .entry`, expected exactly 1 (`{own}`)"
+                ));
+            }
+            for (okt, other) in &all {
+                if other != own && ptx.contains(&format!(".visible .entry {other}(")) {
+                    broken.push(format!(
+                        "\n  - {kt:?}: contains ANOTHER kernel's entry `{other}` ({okt:?}) -- one \
+                         generator's body is inside another's literal"
+                    ));
+                }
+            }
+        }
+        assert!(broken.is_empty(), "PTX generators leaked into each other:{}", broken.concat());
     }
 
     #[test]
@@ -301,10 +366,7 @@ mod gemv_entry_name_tests_3477 {
     fn the_types_found_in_the_wild_without_kernels_resolve_to_none() {
         use crate::cuda::types::WeightQuantType;
         let census: &[(u32, &str)] = &[
-            (10, "Q2_K"),
             (11, "Q3_K"),
-            (18, "IQ3_XXS"),
-            (22, "IQ2_S"),
         ];
         let admitted: Vec<String> = census
             .iter()
@@ -562,6 +624,57 @@ mod gemv_entry_name_tests_3477 {
         );
     }
 
+    /// #3953/#3963/#3960: IQ2_S, IQ3_XXS and Q2_K are admitted BECAUSE their
+    /// kernels were measured, in one combined admission.
+    ///
+    /// The rows were `(22, "IQ2_S")`, `(18, "IQ3_XXS")` and `(10, "Q2_K")` in
+    /// `the_types_found_in_the_wild_without_kernels_resolve_to_none` — converted
+    /// here, not dropped. Each type's CPU decoder was proven BIT-EXACT against
+    /// llama.cpp gguf-py on every real tensor BEFORE it judged the kernel
+    /// (`quantize::iq_gguf_py_parity_tests`), because the decoder is what decides
+    /// admission.
+    ///
+    /// ```text
+    /// IQ2_S   (22)  decoder vs gguf-py  5/5 tensors, 18,350,080 elements bit-exact
+    ///               device, real bytes  (3584,1024) x5, worst |err|/sum|w||x| 1.903e-7
+    ///               faults RED: sign bits ignored; qh high bits dropped;
+    ///                           scale nibble by l&1 not l>>1; grid lo/hi swapped
+    /// IQ3_XXS (18)  decoder vs gguf-py  24/24 tensors, 40,894,464 elements bit-exact
+    ///               device, real bytes  (512,1024) x6 2.381e-7, (2048,1024) x18 2.346e-7
+    ///               positive control on real bytes: 8.005e3 RED
+    ///               faults RED: sign width 7->8; aux u16 halves swapped;
+    ///                           stride 98->96; 2nd grid index reads 1st
+    /// Q2_K    (10)  decoder vs gguf-py  11,010,048/11,010,048 values bitwise
+    ///               device, real bytes  (3584,1024) x3, worst 4.342e-9 (f64 dot)
+    ///               faults RED: scale/min nibbles swapped; half selector L&1;
+    ///                           affine min dropped; shift from h not s
+    /// ```
+    /// Bar 1e-5, NaN-prefilled, RTX 4090 sm_89, card exclusive. Qwen3.5-0.8B-UD-IQ2_XXS.
+    #[test]
+    fn iq2_s_iq3_xxs_and_q2_k_are_admitted_because_their_kernels_were_measured() {
+        use crate::cuda::types::{GemvKernel, WeightQuantType};
+        for (q, wqt, gk, bytes) in [
+            (22u32, WeightQuantType::IQ2S, GemvKernel::IQ2S, 82usize),
+            (18u32, WeightQuantType::IQ3XXS, GemvKernel::IQ3XXS, 98usize),
+            (10u32, WeightQuantType::Q2K, GemvKernel::Q2K, 84usize),
+        ] {
+            assert_eq!(WeightQuantType::from_ggml_type(q), Some(wqt), "type {q}");
+            assert_eq!(
+                crate::cuda::types::BoundWeight::bind(0x1000, bytes * 4, wqt, 4, 256).kernel(),
+                gk,
+                "binding type {q} to any other kernel decodes {bytes}-byte blocks as another scheme"
+            );
+            assert!(!crate::gguf::gpu_unsupported_quant_qtype(q), "type {q} must be GPU-eligible");
+            // Not ambiguous by size, and inferred at a real shape from the model.
+            let (k, n) = (3584usize, 1024usize);
+            assert_eq!(
+                WeightQuantType::from_size(n * k.div_ceil(256) * bytes, n, k),
+                Some(wqt),
+                "a [1024 x 3584] type-{q} tensor's byte count must resolve to it"
+            );
+        }
+    }
+
     /// #3950: IQ2_XXS is admitted BECAUSE its kernel was measured.
     ///
     /// This row was `iq2_xxs_has_a_kernel_but_is_not_admitted_until_it_is_measured`,
@@ -690,6 +803,61 @@ mod gemv_entry_name_tests_3477 {
         assert!(scales_seen.len() >= 3, "fixture exercises only scales {scales_seen:?}");
         assert!(expected.iter().any(|v| *v < 0.0), "fixture never sets a sign bit");
         assert!(expected.iter().any(|v| *v > 0.0), "fixture is all negative");
+    }
+
+    /// #3963: the IQ3_XXS kernel's INDEX MATH in Rust — the PTX's own fetches,
+    /// lane by lane — against the CPU decoder (bit-exact vs gguf-py) on one block.
+    ///
+    /// Pins: the scale/sign word at 66 + 4*ib assembled from two u16 halves in
+    /// the right order; grid indices at 2 + 8*ib + 2*l and +1 (a PAIR per lane,
+    /// not IQ2_XXS's single index); the 0.5 scale factor (IQ2_XXS uses 0.25);
+    /// and the 7-bit sign-code field.
+    #[test]
+    fn the_iq3_xxs_thread_mapping_reproduces_the_cpu_decoder() {
+        use crate::quantize::iq3_xxs::{dequantize_iq3_xxs_block, IQ3_XXS_BLOCK_BYTES, IQ3_XXS_BLOCK_ELEMS};
+        use crate::quantize::iq_grids::{IQ3XXS_GRID, KSIGNS_IQ2XS};
+
+        let mut block = [0u8; IQ3_XXS_BLOCK_BYTES];
+        let mut x: u32 = 0x1357_9bdf;
+        for b in block.iter_mut() {
+            x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            *b = (x >> 24) as u8;
+        }
+        block[0] = 0x00;
+        block[1] = 0x3c; // f16 1.0
+        let mut expected = [0f32; IQ3_XXS_BLOCK_ELEMS];
+        dequantize_iq3_xxs_block(&block, &mut expected);
+
+        let d = f32::from(half_from_le(block[0], block[1]));
+        let u16_at = |o: usize| u32::from(u16::from_le_bytes([block[o], block[o + 1]]));
+        let mut scales = std::collections::BTreeSet::new();
+        let mut got = [0f32; IQ3_XXS_BLOCK_ELEMS];
+        for tid in 0..32usize {
+            let (ib, l) = (tid >> 2, tid & 3);
+            let aux = u16_at(66 + 4 * ib) | (u16_at(68 + 4 * ib) << 16);
+            scales.insert(aux >> 28);
+            #[allow(clippy::cast_precision_loss)]
+            let db = d * ((0.5 + (aux >> 28) as f32) * 0.5);
+            let signs = u32::from(KSIGNS_IQ2XS[((aux >> (7 * l)) & 127) as usize]);
+            let q = 2 + 8 * ib + 2 * l;
+            let (g1, g2) = (IQ3XXS_GRID[usize::from(block[q])], IQ3XXS_GRID[usize::from(block[q + 1])]);
+            let col0 = 32 * ib + 8 * l;
+            for j in 0..4usize {
+                #[allow(clippy::cast_precision_loss)]
+                let m1 = ((g1 >> (8 * j)) & 0xff) as f32;
+                #[allow(clippy::cast_precision_loss)]
+                let m2 = ((g2 >> (8 * j)) & 0xff) as f32;
+                let s1 = if (signs >> j) & 1 != 0 { -1.0 } else { 1.0 };
+                let s2 = if (signs >> (j + 4)) & 1 != 0 { -1.0 } else { 1.0 };
+                got[col0 + j] = m1 * db * s1;
+                got[col0 + j + 4] = m2 * db * s2;
+            }
+        }
+        for (i, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
+            assert!((g - e).abs() <= 1e-6, "element {i}: kernel mapping {g}, CPU decoder {e}");
+        }
+        assert!(scales.len() >= 3, "fixture exercises only scales {scales:?}");
+        assert!(expected.iter().any(|v| *v < 0.0) && expected.iter().any(|v| *v > 0.0));
     }
 
     /// The IQ3_S kernel's INDEX MATH in Rust, against the verified CPU decoder.
