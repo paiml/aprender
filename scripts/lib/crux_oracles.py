@@ -63,9 +63,15 @@ def verdict(correct: bool, why, extracted=None) -> dict:
 
 
 def strip_think(text: str):
-    """The text after every closed think block, or None when a think block never closed."""
+    """The text after every closed think block, or None when a think block never closed.
+
+    A `</think>` with no opening tag is a reasoning block whose `<think>` the chat template prefilled
+    (it is in the prompt, not the reply): everything up to the LAST `</think>` is reasoning."""
     rest = THINK_RE.sub("", text)
-    return None if re.search(r"<think>", rest, re.I) else rest
+    if re.search(r"<think>", rest, re.I):
+        return None
+    closes = [m.end() for m in re.finditer(r"</think>", rest, re.I)]
+    return rest[closes[-1]:] if closes else rest
 
 
 def extract_answer(text: str):
