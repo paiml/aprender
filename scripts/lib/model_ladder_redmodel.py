@@ -72,7 +72,34 @@ import re
 import model_ladder_crux as crux
 
 TICKET = re.compile(r"#\d+")
-DEFECTS = {"think_never_closed": "never_closed", "think_empty": "empty"}
+DEFECTS = {"think_never_closed": "never_closed", "think_empty": "empty", "wrong_answer": None}
+AXES = {"on": {"on"}, "off": {"off"}, "any": {"on", "off"}}
+
+
+def answer_of(text):
+    """The final answer of a completion: the text after the last </think>, or all of it when there is
+    no think block. An unclosed block has no answer (None)."""
+    if not isinstance(text, str):
+        return None
+    if "</think>" in text:
+        return text.rsplit("</think>", 1)[1]
+    return None if "<think>" in text else text
+
+
+def answers(text, expect):
+    """True when `expect` appears as a whole token in the final answer (a number, a word)."""
+    a = answer_of(text)
+    return a is not None and re.search(r"(?<![\w.])" + re.escape(expect) + r"(?![\w])", a) is not None
+
+
+def top2_margin(raw, step):
+    """top-1 minus top-2 logit at generated `step`, from raw["top2_logits"][step] = [top1, top2]."""
+    t = raw.get("top2_logits") if isinstance(raw, dict) else None
+    try:
+        a, b = t[step]
+        return float(a) - float(b)
+    except (TypeError, ValueError, IndexError, KeyError):
+        return None
 REFUSAL_CLASS = "This is a refusal, not a fallback"
 
 
@@ -97,6 +124,32 @@ def _raw(g, engine):
     if not (isinstance(ids, list) and ids and all(isinstance(i, int) and not isinstance(i, bool) for i in ids)):
         return None
     return r
+
+
+def _margins(a, b, step):
+    """Evidence only (cop ruling: logits are recorded, not the bar): the top-2 margins at `step`."""
+    if step is None:
+        return ""
+    ma, mb = top2_margin(a, step), top2_margin(b, step)
+    if ma is None and mb is None:
+        return ""
+    fmt = lambda m: "n/a" if m is None else f"{m:.3f}"
+    return f" (top-2 margins there: apr {fmt(ma)}, reference {fmt(mb)})"
+
+
+def gpu_leg_problem(raw):
+    """#3957 F9: an apr GPU-lane row must PROVE it ran on the GPU. aprender-6c [3ada9a] measured a cuda
+    build that FALLS BACK to the CPU on Qwen3.5-0.8B-UD-IQ2_XXS (IQ3_XXS attn_gate not admitted), so a
+    "GPU" row from it is a CPU row with a GPU label -- and CPU == GPU would then compare a leg with
+    itself. The row's own `backend` record (apr run --format json: requested/ran/fell_back) is read;
+    an absent record is not a GPU run. -> None, or the reason."""
+    be = raw.get("backend") if isinstance(raw, dict) else None
+    if not isinstance(be, dict):
+        return "the apr GPU-lane row records no `backend` -- nothing shows it ran on the GPU"
+    if be.get("fell_back") is not False or str(be.get("ran") or "").lower() not in ("gpu", "cuda"):
+        return (f"the apr GPU-lane row did NOT run on the GPU (ran={be.get('ran')!r}, fell_back={be.get('fell_back')!r}) "
+                f"-- it is a CPU row with a GPU label, so CPU == GPU would compare a leg with itself")
+    return None
 
 
 def _ids(v):
@@ -126,7 +179,7 @@ class RedVerdicts:
         self.failed = False
         self.tables = {"red_model": {}, "red_unsupported": {}}
         self.keys = []        # (kind, pattern) of every admitted key
-        self.proven = {}      # (host, file) -> "RED-MODEL" | "RED-UNSUPPORTED"
+        self.proven = {}      # (host, file) -> "RED-MODEL:<thinking axis>" | "RED-UNSUPPORTED"
         self.greedy = {}      # (sha, host, lane) -> [thinking-ON greedy entry]
         self.ctl_cells = {}   # (sha, host) -> [verdict of each thinking-ON positive-control cell]
         for kind in self.tables:
@@ -159,7 +212,12 @@ class RedVerdicts:
                 return f"declares defect {e.get('defect')!r}, not one of {sorted(DEFECTS)}"
             if not isinstance(e.get("control"), str) or not e["control"].strip():
                 return "names no sibling `control` file for the oracle's positive control"
-            if e.get("thinking") != "on":
+            if e["defect"] == "wrong_answer":
+                if e.get("thinking") not in AXES:
+                    return f"covers thinking {e.get('thinking')!r}; a wrong_answer key names its axis: on, off or any"
+                if not isinstance(e.get("expect"), str) or not e["expect"].strip():
+                    return "is a wrong_answer key with no `expect` -- a wrong answer needs the right one to be judged against"
+            elif e.get("thinking") != "on":
                 return f"covers thinking {e.get('thinking')!r}; a think-block defect is a thinking-ON verdict (`thinking: on`)"
             if e.get("bf16_reproduces", False) not in (True, False):
                 return "has a `bf16_reproduces` that is not a boolean"
@@ -192,7 +250,7 @@ class RedVerdicts:
             lane = R.get("backend")
             for g in R.get("greedy") or []:
                 k = g.get("key") or {}
-                if k.get("thinking") == "on":
+                if k.get("thinking") in ("on", "off"):
                     self.greedy.setdefault((k.get("model_sha256"), k.get("host") or R.get("host"), lane), []).append(g)
             for c in R.get("cells") or []:
                 k = c.get("key") or {}
@@ -219,11 +277,12 @@ class RedVerdicts:
             probs, evidence = self._prove_model(host, f, x, e, sha_of)
             resid = residual_of(neutralise_golden(x))
             if resid:
-                probs.append("RED-MODEL excuses only the think-block defect, and the row ALSO fails: " + "; ".join(resid))
+                probs.append(f"RED-MODEL excuses only the declared {e['defect']} defect, and the row ALSO fails: " + "; ".join(resid))
             if probs:
                 return True, (f"FAIL  {tag} declared RED-MODEL ({e['defect']}, {e['ticket']}) but NOT RE-PROVEN on this sweep, "
                               f"so it is plain RED: " + "; ".join(probs) + " -- was: " + "; ".join(why))
-            self.proven[(host, f)] = "RED-MODEL"
+            # The axis travels with the verdict: model_ladder_crux sets aside that axis's cells only.
+            self.proven[(host, f)] = "RED-MODEL:" + ",".join(sorted(AXES.get(e["thinking"], {"on"})))
             return False, f"RED-MODEL {tag} {e['defect']} ({e['ticket']}) -- the FILE is defective, never green: {evidence}"
         probs, refusal = self._prove_unsupported(x, e)
         if probs:
@@ -236,10 +295,12 @@ class RedVerdicts:
     def _hits(self, f):
         return [(kind, p) for kind, p in self.keys if fnmatch.fnmatch(str(f).lower(), str(p).lower())]
 
-    def _greedy_on(self, sha, host, lane):
-        return self.greedy.get((sha, host, lane)) or []
+    def _greedy_on(self, sha, host, lane, axis=frozenset({"on"})):
+        return [g for g in self.greedy.get((sha, host, lane)) or [] if (g.get("key") or {}).get("thinking") in axis]
 
     def _prove_model(self, host, f, x, e, sha_of):
+        if e["defect"] == "wrong_answer":
+            return self._prove_wrong_answer(host, f, x, e, sha_of)
         sha = x.get("sha256") or sha_of(host, f)
         if not (isinstance(sha, str) and crux.HEX64.fullmatch(sha)):
             return ["the row has no 64-hex sha256, so no oracle can be joined to it"], ""
@@ -265,6 +326,9 @@ class RedVerdicts:
                 probs.append(f"{pid}: no raw generated_ids for " + " and ".join(n for n, v in (("apr", a), ("llama.cpp", o)) if v is None))
                 continue
             p = []
+            gp = gpu_leg_problem(a)
+            if gp:
+                p.append(f"{pid}: {gp}")
             if not (_ids(a.get("prompt_ids")) and a.get("prompt_ids") == o.get("prompt_ids")):
                 p.append(f"{pid}: the parity row's engines did not run on the same prompt ids -- a divergence would be the "
                          f"prompt's, not the engine's")
@@ -326,6 +390,124 @@ class RedVerdicts:
         return probs, (f"apr == llama.cpp on apr's ids ({', '.join(shown)}); llama.cpp shows it on the official template; "
                        f"control {cfile} closes and answers; apr CPU == GPU")
 
+    def _prove_wrong_answer(self, host, f, x, e, sha_of):
+        """#3957 F9 `wrong_answer` (cop rulings 2026-09-23, within operator ruling (a)): the FILE answers
+        wrong, proven by llama.cpp. PARITY IS CALIBRATED PER SWEEP against the oracle's own noise
+        (aprender-6c [3ada9a], #4004: llama.cpp CPU vs llama.cpp CUDA, same build, identical official
+        ids, first-diverge at step 2 -- so no fixed margin separates an apr fault from the reference's
+        backend noise). Per greedy entry on the key's thinking axis, all on the OFFICIAL template ids:
+          - reference = llama.cpp@official on the CPU lane; oracle CUDA leg = llama.cpp@official on
+            the GPU lane; apr = apr on the GPU lane (with apr CPU == GPU required separately);
+          - apr ran the official ids (its prompt_ids == the template's);
+          - apr's first divergence step from the reference is >= the oracle CUDA leg's own first
+            divergence step from the reference (apr is at least as close to the CPU reference as the
+            reference's own GPU backend). apr identical to the reference passes; the oracle's two
+            backends agreeing FULLY while apr diverges is plain RED; a missing CUDA leg is plain RED;
+          - apr and both llama.cpp backends all answer WRONG (`expect` absent from the final answer);
+          - apr's own CPU/GPU first divergence is >= the oracle's CPU/CUDA one (cop ruling (b));
+        and the `control` (the same architecture at a higher quant) answers CORRECTLY on the same
+        prompt in BOTH engines. raw.top2_logits, when present, are reported as evidence, never the bar."""
+        sha = x.get("sha256") or sha_of(host, f)
+        if not (isinstance(sha, str) and crux.HEX64.fullmatch(sha)):
+            return ["the row has no 64-hex sha256, so no oracle can be joined to it"], ""
+        axis = AXES[e["thinking"]]
+        expect = e["expect"].strip()
+        gpu = self._greedy_on(sha, host, "gpu", axis)
+        named = e.get("prompts")
+        if named:
+            gpu = [g for g in gpu if (g.get("key") or {}).get("prompt_id") in named]
+            gone = [p for p in named if p not in {(g.get("key") or {}).get("prompt_id") for g in gpu}]
+            if gone:
+                return [f"the key claims the wrong answer on prompt(s) {gone}, and this sweep has no greedy entry for them"], ""
+        if not gpu:
+            return [f"no thinking-{e['thinking']} greedy entry for sha {sha[:12]} on {host} in a gpu-lane CRUX receipt "
+                    f"bound to the cut -- no oracle ran on this sweep (#3957 F9)"], ""
+
+        def by_pid(entries):
+            return {((g.get("key") or {}).get("prompt_id"), (g.get("key") or {}).get("thinking")): g for g in entries}
+        cpu = by_pid(self._greedy_on(sha, host, "cpu", axis))
+        cfile = e["control"]
+        csha = sha_of(host, cfile)
+        ctl = by_pid(self._greedy_on(csha, host, "gpu", axis)) if isinstance(csha, str) else {}
+        probs, shown = [], []
+        if not (isinstance(csha, str) and crux.HEX64.fullmatch(csha)):
+            probs.append(f"the higher-quant control {cfile} is not held on {host}")
+        elif csha == sha or cfile == f:
+            probs.append(f"the control {cfile} is the defective file itself, so it controls nothing")
+        for g in gpu:
+            k = g.get("key") or {}
+            pid, th = k.get("prompt_id"), k.get("thinking")
+            c = cpu.get((pid, th))
+            a, cuda, ref, ca = _raw(g, "apr"), _raw(g, "llama.cpp@official"), _raw(c, "llama.cpp@official"), _raw(c, "apr")
+            if ref is None:
+                probs.append(f"{pid}/{th}: no llama.cpp@official CPU-lane record -- there is no reference to measure against")
+                continue
+            if cuda is None:
+                probs.append(f"{pid}/{th}: the oracle's CUDA leg (llama.cpp@official, GPU lane) is MISSING -- the "
+                             f"reference's own backend noise is unmeasured, so apr cannot be calibrated against it")
+                continue
+            if a is None:
+                probs.append(f"{pid}/{th}: no raw apr greedy record on the GPU lane")
+                continue
+            p = []
+            gp = gpu_leg_problem(a)
+            if gp:
+                p.append(f"{pid}/{th}: {gp}")
+            for n, r in (("CPU", ref), ("CUDA", cuda)):
+                if not (_ids(r.get("template_prompt_ids")) and r.get("prompt_ids") == r.get("template_prompt_ids")):
+                    p.append(f"{pid}/{th}: the llama.cpp@official {n} leg did not run on the official template's ids (#3990)")
+            if cuda.get("prompt_ids") != ref.get("prompt_ids"):
+                p.append(f"{pid}/{th}: the oracle's CPU and CUDA legs did not run on identical ids")
+            if a.get("prompt_ids") != ref.get("template_prompt_ids"):
+                p.append(f"{pid}/{th}: apr did not run on the model's OFFICIAL template, so its wrong answer may be apr's "
+                         f"prompt, not the model (#3990)")
+            d_apr = _first_diff(a["generated_ids"], ref["generated_ids"])
+            d_ref = _first_diff(cuda["generated_ids"], ref["generated_ids"])
+            ev = _margins(a, ref, d_apr)
+            if d_apr is None:
+                shown.append(f"{pid}/{th}: apr identical to the llama.cpp CPU reference ({len(a['generated_ids'])} ids)")
+            elif d_ref is None:
+                p.append(f"{pid}/{th}: the oracle's CPU and CUDA legs agree on every token, and apr diverges from them at "
+                         f"step {d_apr}{ev} -- the divergence is apr's, not noise the reference shares")
+            elif d_apr < d_ref:
+                p.append(f"{pid}/{th}: apr diverges from the llama.cpp CPU reference at step {d_apr}{ev}, EARLIER than the "
+                         f"reference's own CUDA leg does (step {d_ref}) -- apr is further from the reference than its noise")
+            else:
+                shown.append(f"{pid}/{th}: apr first diverges at step {d_apr}{ev}, not earlier than the oracle's own "
+                             f"CPU/CUDA divergence at step {d_ref}")
+            for n, r in (("apr", a), ("llama.cpp CPU", ref), ("llama.cpp CUDA", cuda)):
+                if answers(r.get("generated_text"), expect):
+                    p.append(f"{pid}/{th}: {n} answers CORRECTLY ({expect!r}) -- the file can answer, so the wrong answer "
+                             f"is not the model's")
+            # Cop ruling (b), 2026-09-23: apr's own CPU/GPU split is calibrated like parity -- it must come
+            # no earlier than the oracle's own CPU/CUDA split on the same ids (6c: apr splits at step 31 on a
+            # 0.015 margin, the oracle at step 2).
+            d_cg = None if ca is None else _first_diff(ca["generated_ids"], a["generated_ids"])
+            if ca is None:
+                p.append(f"{pid}/{th}: no apr CPU leg with raw ids in a cpu-lane receipt -- apr CPU vs GPU is unmeasured")
+            elif d_cg is None:
+                shown.append(f"{pid}/{th}: apr CPU == GPU")
+            elif d_ref is None:  # the oracle never split: apr CPU/GPU split is its own
+                p.append(f"{pid}/{th}: apr CPU and GPU diverge at step {d_cg}{_margins(ca, a, d_cg)} while the oracle's CPU "
+                         f"and CUDA legs agree on every token -- apr's split is its own, not shared noise")
+            elif d_cg < d_ref:
+                p.append(f"{pid}/{th}: apr CPU and GPU diverge at step {d_cg}, EARLIER than the oracle's own CPU/CUDA split "
+                         f"(step {d_ref}) -- apr's backends disagree more than the reference's do")
+            else:
+                shown.append(f"{pid}/{th}: apr CPU/GPU split at step {d_cg}{_margins(ca, a, d_cg)}, not earlier than the "
+                             f"oracle's own at step {d_ref}")
+            cc = ctl.get((pid, th))
+            ca2, co2 = _raw(cc, "apr"), _raw(cc, "llama.cpp@official")
+            if ca2 is None or co2 is None:
+                p.append(f"{pid}/{th}: the higher-quant control {cfile} has no apr + llama.cpp@official greedy record for "
+                         f"this prompt -- nothing shows the architecture CAN answer it")
+            elif not (answers(ca2.get("generated_text"), expect) and answers(co2.get("generated_text"), expect)):
+                p.append(f"{pid}/{th}: the higher-quant control {cfile} does not answer {expect!r} in both engines -- the "
+                         f"prompt, not the quant, may be at fault")
+            probs.extend(p)
+        return probs, (f"wrong answer in apr and both llama.cpp backends on the official template: {'; '.join(shown)}; "
+                       f"control {cfile} answers {e['expect']!r} in both engines")
+
     @staticmethod
     def _prove_unsupported(x, e):
         arch = e["architecture"]
@@ -380,7 +562,7 @@ class RedVerdicts:
                                    f"{x.get('file')} of that architecture is GREEN on cuda -- the architecture HAS a CUDA "
                                    f"path, so the key is refused (#3957 F10)")
         if self.proven:
-            n_m = sum(1 for v in self.proven.values() if v == "RED-MODEL")
+            n_m = sum(1 for v in self.proven.values() if v.startswith("RED-MODEL"))
             self.out(f"RED   {n_m} RED-MODEL + {len(self.proven) - n_m} RED-UNSUPPORTED cell(s): counted RED, never green. "
                      f"They do not block only because this sweep re-proved each cause (#3957 F9/F10)")
         return self.failed

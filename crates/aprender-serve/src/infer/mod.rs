@@ -458,6 +458,28 @@ fn thinking_mode(config: &InferenceConfig, formatted: String) -> Result<String> 
     crate::chat_template::apply_thinking_mode(&formatted, config.thinking)
 }
 
+/// #3990: `(chat_template, bos_token, eos_token)` from the `tokenizer_config.json` beside a
+/// SafeTensors model, or `None` when it has no string `chat_template`. A special token may be
+/// written as a string or as `{"content": ...}`.
+fn sibling_tokenizer_template(
+    model_path: &std::path::Path,
+) -> Option<(String, Option<String>, Option<String>)> {
+    let text = std::fs::read_to_string(model_path.with_file_name("tokenizer_config.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let tpl = v
+        .get("chat_template")?
+        .as_str()
+        .filter(|s| !s.is_empty())?
+        .to_string();
+    let tok = |k: &str| -> Option<String> {
+        let t = v.get(k)?;
+        t.as_str()
+            .or_else(|| t.get("content").and_then(|c| c.as_str()))
+            .map(str::to_string)
+    };
+    Some((tpl, tok("bos_token"), tok("eos_token")))
+}
+
 fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<PreparedTokens> {
     use crate::chat_template::{format_messages, ChatMessage};
     use crate::gguf::{GGUFValue, MappedGGUFModel};
@@ -485,11 +507,21 @@ fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<Prepare
     let formatted_prompt = if config.force_chat_template || has_chat_template || filename_instruct {
         let template_hint = apr_arch_to_template_hint(gguf_arch, model_name);
         let messages = vec![ChatMessage::user(prompt)];
-        format_messages(&messages, Some(template_hint)).unwrap_or_else(|_| prompt.to_string())
+        // #3990: the GGUF's own tokenizer.chat_template, when it carries one.
+        let own = has_chat_template.then_some(|t: Option<bool>| {
+            crate::chat_template::render_official_for_model(&mapped.model, &messages, t)
+        });
+        crate::chat_template::official_or_legacy(
+            own,
+            || {
+                format_messages(&messages, Some(template_hint))
+                    .unwrap_or_else(|_| prompt.to_string())
+            },
+            config.thinking,
+        )?
     } else {
-        prompt.to_string()
+        thinking_mode(config, prompt.to_string())?
     };
-    let formatted_prompt = thinking_mode(config, formatted_prompt)?;
 
     if config.verbose {
         eprintln!(
@@ -596,11 +628,32 @@ fn prepare_tokens_safetensors(config: &InferenceConfig, prompt: &str) -> Result<
     let formatted_prompt = if is_instruct {
         let template_hint = safetensors_arch_to_template_hint(&architecture, model_name);
         let messages = vec![ChatMessage::user(prompt)];
-        format_messages(&messages, Some(template_hint)).unwrap_or_else(|_| prompt.to_string())
+        // #3990: the sibling tokenizer_config.json's own chat_template, when it carries one.
+        let tc = sibling_tokenizer_template(&config.model_path);
+        let msgs = &messages;
+        let own = tc.as_ref().map(|(tpl, bos, eos)| {
+            move |t: Option<bool>| {
+                crate::chat_template::render_official(
+                    tpl,
+                    bos.as_deref(),
+                    eos.as_deref(),
+                    msgs,
+                    true,
+                    t,
+                )
+            }
+        });
+        crate::chat_template::official_or_legacy(
+            own,
+            || {
+                format_messages(&messages, Some(template_hint))
+                    .unwrap_or_else(|_| prompt.to_string())
+            },
+            config.thinking,
+        )?
     } else {
-        prompt.to_string()
+        thinking_mode(config, prompt.to_string())?
     };
-    let formatted_prompt = thinking_mode(config, formatted_prompt)?;
 
     let tokens =
         AprV2Model::encode_text(&config.model_path, &formatted_prompt).ok_or_else(|| {
@@ -645,24 +698,25 @@ fn prepare_tokens_apr(config: &InferenceConfig, prompt: &str) -> Result<Prepared
         .and_then(|n| n.to_str())
         .unwrap_or("");
 
-    let (apr_arch, has_chat_template) = if config.model_path.extension().is_some_and(|e| e == "apr")
-    {
+    let (apr_arch, own_template) = if config.model_path.extension().is_some_and(|e| e == "apr") {
         match AprV2Model::load(&config.model_path) {
             Ok(model) => {
                 let meta = model.metadata();
                 let arch = meta.architecture.clone().unwrap_or_default();
-                let has_tmpl = meta
+                let tmpl = meta
                     .extra
                     .get("tokenizer.chat_template")
                     .and_then(|v| v.as_str())
-                    .is_some_and(|s| !s.is_empty());
-                (arch, has_tmpl)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string);
+                (arch, tmpl)
             },
-            Err(_) => (String::new(), false),
+            Err(_) => (String::new(), None),
         }
     } else {
-        (String::new(), false)
+        (String::new(), None)
     };
+    let has_chat_template = own_template.is_some();
 
     let filename_instruct = model_name.to_lowercase().contains("instruct")
         || model_name.to_lowercase().contains("-chat");
@@ -672,11 +726,25 @@ fn prepare_tokens_apr(config: &InferenceConfig, prompt: &str) -> Result<Prepared
     let formatted_prompt = if is_instruct {
         let template_hint = apr_arch_to_template_hint(&apr_arch, model_name);
         let messages = vec![ChatMessage::user(prompt)];
-        format_messages(&messages, Some(template_hint)).unwrap_or_else(|_| prompt.to_string())
+        // #3990: the .apr's own tokenizer.chat_template. The .apr carries no bos/eos STRINGS,
+        // so they stay undefined (a Qwen template references neither).
+        let msgs = &messages;
+        let own = own_template.as_deref().map(|tpl| {
+            move |t: Option<bool>| {
+                crate::chat_template::render_official(tpl, None, None, msgs, true, t)
+            }
+        });
+        crate::chat_template::official_or_legacy(
+            own,
+            || {
+                format_messages(&messages, Some(template_hint))
+                    .unwrap_or_else(|_| prompt.to_string())
+            },
+            config.thinking,
+        )?
     } else {
-        prompt.to_string()
+        thinking_mode(config, prompt.to_string())?
     };
-    let formatted_prompt = thinking_mode(config, formatted_prompt)?;
 
     let tokens =
         AprV2Model::encode_text(&config.model_path, &formatted_prompt).ok_or_else(|| {

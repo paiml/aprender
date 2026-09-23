@@ -29,8 +29,15 @@ fn report_loaded_format(format: ModelFormat, model_bytes: &[u8], elapsed: std::t
 }
 
 /// GH-339: warn on a Raw fallback instead of degrading silently.
-fn report_template_detection(template_format: TemplateFormat, model_name: &str) {
-    if matches!(template_format, TemplateFormat::Raw) {
+fn report_template_detection(template_format: TemplateFormat, model_name: &str, own_template: bool) {
+    // #3990: a GGUF that declares its own chat_template is rendered with it (the detected
+    // family is only the fallback), so the banner names that -- not a family never used.
+    if own_template {
+        println!(
+            "{} the model's own chat template (tokenizer.chat_template, #3990)",
+            "Using".green()
+        );
+    } else if matches!(template_format, TemplateFormat::Raw) {
         eprintln!(
             "{} Could not detect chat template for '{}', using raw format (no ChatML/Instruct wrapping)",
             "Warning:".yellow(),
@@ -172,7 +179,6 @@ impl ChatSession {
             let template_format = detect_format_from_name(&model_name);
             let chat_template = auto_detect_template(&model_name);
 
-            report_template_detection(template_format, &model_name);
 
             // GH-224: Eagerly initialize GPU models during "Loading model..." phase
             let model_path_buf = path.to_path_buf();
@@ -203,6 +209,14 @@ impl ChatSession {
                     }
                 }
             }
+
+            report_template_detection(
+                template_format,
+                &model_name,
+                cached_gguf_mapped
+                    .as_ref()
+                    .is_some_and(|m| m.model.metadata.contains_key("tokenizer.chat_template")),
+            );
 
             #[cfg(feature = "cuda")]
             let mut cached_apr_cuda = None;

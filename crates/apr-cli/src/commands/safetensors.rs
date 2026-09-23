@@ -364,7 +364,7 @@ fn format_gguf_prompt(
     model_path: &Path,
     options: &RunOptions,
     mapped_model: &realizar::gguf::MappedGGUFModel,
-) -> Vec<u32> {
+) -> Result<Vec<u32>> {
     use realizar::chat_template::{format_messages, ChatMessage};
 
     let model_name = model_path
@@ -375,13 +375,25 @@ fn format_gguf_prompt(
 
     let formatted_prompt = if is_instruct {
         let messages = vec![ChatMessage::user(prompt)];
-        match format_messages(&messages, Some(model_name)) {
-            Ok(formatted) => formatted,
-            Err(e) => {
+        // #3990: the GGUF's OWN chat_template first, through the one rule `apr run`'s realizar
+        // path and `apr chat` share: `--thinking` honoured (absent = OFF, production's default
+        // since #3801), an explicit `on` the template cannot express refused (#3723), a render
+        // failure warned about before the name-keyed family template answers.
+        let own = mapped_model
+            .model
+            .metadata
+            .contains_key("tokenizer.chat_template")
+            .then_some(|t: Option<bool>| {
+                realizar::chat_template::render_official_for_model(&mapped_model.model, &messages, t)
+            });
+        let legacy = || {
+            format_messages(&messages, Some(model_name)).unwrap_or_else(|e| {
                 eprintln!("Warning: chat template formatting failed, using raw prompt: {e}");
                 prompt.to_owned()
-            }
-        }
+            })
+        };
+        realizar::chat_template::official_or_legacy(own, legacy, options.thinking)
+            .map_err(|e| CliError::ValidationFailed(e.to_string()))?
     } else {
         prompt.to_owned()
     };
@@ -401,7 +413,7 @@ fn format_gguf_prompt(
             tokens.as_ref().map(std::vec::Vec::len)
         );
     }
-    tokens.unwrap_or_else(|| vec![1u32])
+    Ok(tokens.unwrap_or_else(|| vec![1u32]))
 }
 
 /// Prepare input tokens for GGUF inference (prompt encoding with chat template).
@@ -416,7 +428,7 @@ fn prepare_gguf_input_tokens(
         if prompt.contains(',') || prompt.chars().all(|c| c.is_ascii_digit() || c == ',') {
             return parse_token_ids(prompt);
         }
-        return Ok(format_gguf_prompt(prompt, model_path, options, mapped_model));
+        return format_gguf_prompt(prompt, model_path, options, mapped_model);
     }
     if let Some(path) = input_path {
         let content = std::fs::read_to_string(path)?;

@@ -178,6 +178,55 @@ pub fn format_messages(
     template.format_conversation(messages)
 }
 
+/// #3990: the prompt a chat-templated model is sent. When the model carries its OWN template,
+/// that template is rendered (the official renderer, llama.cpp/HF semantics), on every path, the
+/// default included; `thinking` is passed as `enable_thinking`, and ABSENT means `Some(false)`:
+/// production's default has been thinking OFF since #3801 (serve prints "thinking off"), and an
+/// undefined `enable_thinking` would flip a Qwen3 template to ON silently. serve and code pass the
+/// same default (aprender-f5, #3990), so `serve == run` on the same prompt holds. A model with no template of its own gets
+/// apr's built-in formatter (`legacy`). A template that FAILS to render is warned about loudly and
+/// then falls back -- never silently (#3990, aprender-f5).
+///
+/// Shared by `apr run` (realizar `prepare_tokens`, three formats) and `apr chat`
+/// (`build_formatted_prompt`), so the two cannot pick the template differently.
+///
+/// # Errors
+///
+/// #3723: `--thinking on` is refused by name when the model's template renders ON and OFF
+/// identically -- it has no thinking mode, and answering in OFF mode would be the silent defect.
+pub fn official_or_legacy<R, L>(
+    render: Option<R>,
+    legacy: L,
+    thinking: Option<bool>,
+) -> Result<String, RealizarError>
+where
+    R: Fn(Option<bool>) -> Result<String, RealizarError>,
+    L: FnOnce() -> String,
+{
+    let Some(render) = render else {
+        return crate::chat_template::apply_thinking_mode(&legacy(), thinking);
+    };
+    match render(thinking.or(Some(false))) {
+        Ok(p) => {
+            if thinking == Some(true) && render(Some(false)).ok().as_deref() == Some(p.as_str()) {
+                return Err(RealizarError::InferenceError(
+                    "--thinking on: this model's own chat template renders thinking ON and OFF identically, \
+                     so it has no thinking mode to enable (#3723). Refused, not ignored."
+                        .to_string(),
+                ));
+            }
+            Ok(p)
+        },
+        Err(e) => {
+            eprintln!(
+                "warning: the model's own chat template failed to render ({e}); falling back to apr's \
+                 built-in template, which may not match what the model was trained on (#3990)"
+            );
+            crate::chat_template::apply_thinking_mode(&legacy(), thinking)
+        },
+    }
+}
+
 /// #3723: set the thinking mode of an already RENDERED prompt, for `--thinking on|off`.
 ///
 /// `None` and `Some(false)` return the rendering unchanged: OFF is what production renders
@@ -271,5 +320,73 @@ mod thinking_mode_tests {
             apply_thinking_mode("u<think>  \n\t</think>\n", Some(true)).expect("whitespace-only is empty"),
             "u"
         );
+    }
+}
+
+#[cfg(test)]
+mod official_or_legacy_tests {
+    use super::*;
+
+    const QWEN35: &str = include_str!("fixtures/chat_template_3990/qwen35.jinja");
+    const QWEN25: &str = include_str!("fixtures/chat_template_3990/qwen25.jinja");
+
+    fn go(tpl: Option<&str>, thinking: Option<bool>) -> Result<String, RealizarError> {
+        let msgs = vec![ChatMessage::user("What is 2+2?")];
+        let own = tpl.map(|t| {
+            let m = &msgs;
+            move |th: Option<bool>| render_official(t, None, None, m, true, th)
+        });
+        official_or_legacy(own, || "LEGACY<think>\n</think>\n".to_string(), thinking)
+    }
+
+    /// #3990 + #3723 must-RED: `--thinking on` on Qwen3.5 renders the OFFICIAL ON form, which opens the
+    /// block in the prompt -- not apr's old strip derivation (`assistant\n`).
+    #[test]
+    fn thinking_on_renders_the_official_open_block_3990() {
+        let on = go(Some(QWEN35), Some(true)).expect("qwen3.5 has a thinking mode");
+        assert!(on.ends_with("<|im_start|>assistant\n<think>\n"), "{on:?}");
+    }
+
+    /// OFF and the DEFAULT render the model's own no-think form (`\n\n`, not apr's old `\n`).
+    #[test]
+    fn default_and_off_render_the_official_no_think_form_3990() {
+        for t in [None, Some(false)] {
+            let p = go(Some(QWEN35), t).expect("render");
+            assert!(p.ends_with("<|im_start|>assistant\n<think>\n\n</think>\n\n"), "{t:?}: {p:?}");
+        }
+    }
+
+    const QWEN3: &str = include_str!("fixtures/chat_template_3990/qwen3.jinja");
+
+    /// ABSENT is OFF, not the template's own default: Qwen3's template thinks when
+    /// `enable_thinking` is undefined, and production has been thinking OFF since #3801.
+    #[test]
+    fn absent_thinking_is_off_even_where_the_template_defaults_on_3801() {
+        let p = go(Some(QWEN3), None).expect("render");
+        assert!(p.ends_with("<|im_start|>assistant\n<think>\n\n</think>\n\n"), "{p:?}");
+        let on = go(Some(QWEN3), Some(true)).expect("qwen3 has a thinking mode");
+        assert!(on.ends_with("<|im_start|>assistant\n"), "{on:?}");
+    }
+
+    /// A template with no enable_thinking branch renders ON == OFF, so `on` is refused by name.
+    #[test]
+    fn thinking_on_is_refused_on_a_template_without_a_thinking_mode_3723() {
+        let err = go(Some(QWEN25), Some(true)).expect_err("qwen2.5 has no thinking mode");
+        assert!(err.to_string().contains("no thinking mode to enable (#3723)"), "{err}");
+        assert!(go(Some(QWEN25), Some(false)).is_ok());
+    }
+
+    /// No template of the model's own: the legacy formatter, with --thinking by its prefill rule.
+    #[test]
+    fn no_own_template_uses_the_legacy_formatter() {
+        assert_eq!(go(None, None).expect("legacy"), "LEGACY<think>\n</think>\n");
+        assert_eq!(go(None, Some(true)).expect("strip"), "LEGACY");
+    }
+
+    /// A template that fails to render falls back to the legacy formatter (warned loudly on stderr).
+    #[test]
+    fn a_template_that_fails_to_render_falls_back_to_legacy() {
+        let p = go(Some("{% if %}broken"), None).expect("fallback");
+        assert_eq!(p, "LEGACY<think>\n</think>\n");
     }
 }

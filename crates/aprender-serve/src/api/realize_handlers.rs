@@ -238,7 +238,9 @@ pub fn format_chat_messages_official(
         .iter()
         .map(|m| TemplateMessage::new(&m.role, &m.content))
         .collect();
-    match chat_template::render_official_for_model(gguf, &template_messages, None) {
+    // Thinking OFF: production's default for every verb since #3801 -- now rendered the
+    // template's own way (`enable_thinking=false`), not by a hand-coded prefill.
+    match chat_template::render_official_for_model(gguf, &template_messages, Some(false)) {
         Ok(prompt) => prompt,
         Err(e) => {
             eprintln!(
@@ -252,13 +254,20 @@ pub fn format_chat_messages_official(
 }
 
 /// [`format_chat_messages_official`] against whatever GGUF the server retained.
+///
+/// #4007: `model_hint` is often the HTTP client's `"model"` string (`"m"`, `"gpt-4"`), which
+/// says nothing about the loaded model. The template comes from the GGUF; failing that, the
+/// fallback is keyed on the LOADED model's architecture, and the caller's hint is used only
+/// when the server knows no architecture.
 pub fn format_chat_messages_for_state(
     state: &AppState,
     messages: &[ChatMessage],
     model_hint: Option<&str>,
 ) -> String {
     let mapped = state.mapped_gguf_model();
-    format_chat_messages_official(mapped.as_ref().map(|m| &m.model), messages, model_hint)
+    let architecture = state.model_architecture();
+    let hint = architecture.as_deref().or(model_hint);
+    format_chat_messages_official(mapped.as_ref().map(|m| &m.model), messages, hint)
 }
 
 /// Clean chat output to prevent prompt injection (PMAT-088)
