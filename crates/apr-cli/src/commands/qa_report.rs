@@ -310,6 +310,7 @@
             summary: "No gates run".to_string(),
             gates_executed: 0,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             system_info: None,
         };
         assert!(report.passed);
@@ -342,6 +343,7 @@
             summary: "All passed".to_string(),
             gates_executed: 0,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             system_info: None,
         };
         let json = serde_json::to_string(&report).expect("serialize many gates");

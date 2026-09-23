@@ -427,6 +427,7 @@
             summary: "All skipped".to_string(),
             gates_executed: 0,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             system_info: None,
         };
         assert!(report.passed);

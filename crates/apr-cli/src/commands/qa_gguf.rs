@@ -382,6 +382,17 @@ fn finalize_qa_report(
 
     warn_excessive_skips(config.json, gates_executed, gates_skipped);
 
+    // #3965: the pipeline must emit exactly the registry, or the report says so.
+    let mut gates = gates;
+    if let Some(why) = gate_registry_mismatch(&gates) {
+        gates.push(GateResult::failed(
+            "gate_registry",
+            &why,
+            None,
+            None,
+            std::time::Duration::ZERO,
+        ));
+    }
     let mut passed = gates_pass(&gates);
     if !check_min_executed(config, gates_executed, &mut passed) && !config.json {
         println!(
@@ -403,6 +414,7 @@ fn finalize_qa_report(
         gates,
         gates_executed,
         gates_skipped,
+        gates_registered: QA_GATES.iter().map(|g| (*g).to_string()).collect(),
         total_duration_ms: total_duration.as_millis() as u64,
         timestamp: chrono::Utc::now().to_rfc3339(),
         summary,

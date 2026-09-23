@@ -121,6 +121,31 @@
         assert!(result.message.contains("100"));
     }
 
+    /// #3965: the registry check, both directions. A pipeline that drops a gate, adds
+    /// an unregistered one, or emits one twice must be caught; the exact set passes.
+    #[test]
+    fn gate_registry_mismatch_catches_drop_add_and_repeat() {
+        let all: Vec<GateResult> = QA_GATES.iter().map(|n| GateResult::skipped(n, "x")).collect();
+        assert_eq!(gate_registry_mismatch(&all), None, "the exact registry must pass");
+
+        let dropped = &all[1..];
+        let why = gate_registry_mismatch(dropped).expect("a dropped gate must be caught");
+        assert!(why.contains(QA_GATES[0]), "must NAME the missing gate: {why}");
+
+        let mut added = all.clone();
+        added.push(GateResult::skipped("not_a_registered_gate", "x"));
+        assert!(gate_registry_mismatch(&added).is_some(), "an unregistered gate must be caught");
+
+        let mut repeated = all.clone();
+        repeated.push(GateResult::skipped(QA_GATES[3], "x"));
+        assert!(gate_registry_mismatch(&repeated).is_some(), "a repeated gate must be caught");
+
+        let mut uniq = QA_GATES.to_vec();
+        uniq.sort_unstable();
+        uniq.dedup();
+        assert_eq!(uniq.len(), QA_GATES.len(), "QA_GATES must not name a gate twice");
+    }
+
     #[test]
     fn test_gate_result_skipped() {
         let result = GateResult::skipped("test_gate", "No GPU available");
@@ -201,6 +226,7 @@
             summary: "All gates passed".to_string(),
             gates_executed: 0,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             system_info: None,
         };
 
@@ -241,6 +267,7 @@
             summary: "1 gate failed".to_string(),
             gates_executed: 0,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             system_info: None,
         };
         assert!(!report.passed);
@@ -268,6 +295,7 @@
             summary: "All passed".to_string(),
             gates_executed: 0,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             system_info: None,
         };
         assert_eq!(report.gates.len(), 3);
@@ -284,6 +312,7 @@
             summary: "ok".to_string(),
             gates_executed: 0,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             system_info: None,
         };
         let cloned = report.clone();
@@ -301,6 +330,7 @@
             summary: "ok".to_string(),
             gates_executed: 0,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             system_info: None,
         };
         let debug = format!("{report:?}");

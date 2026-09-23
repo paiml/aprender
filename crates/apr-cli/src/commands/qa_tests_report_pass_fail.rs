@@ -102,6 +102,7 @@
             summary: "Failed gates: throughput".to_string(),
             gates_executed: 0,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             system_info: None,
         };
 

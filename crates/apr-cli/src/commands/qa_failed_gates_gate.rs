@@ -379,6 +379,7 @@
             summary: "All passed".to_string(),
             gates_executed: 0,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             system_info: None,
         };
         let json = serde_json::to_string_pretty(&report).expect("pretty serialize");
@@ -407,6 +408,7 @@
             summary: String::new(),
             gates_executed: 0,
             gates_skipped: 0,
+            gates_registered: Vec::new(),
             system_info: None,
         };
         // This is what run() does: serde_json::to_string_pretty(&report).unwrap_or_default()
