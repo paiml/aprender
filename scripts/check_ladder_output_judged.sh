@@ -321,8 +321,8 @@ run_body_table() { # -> 0 all as expected
 
 if [ "$SELF_TEST" = 1 ]; then
   [ -f "$SCRIPT" ] || { echo "cannot read $SCRIPT" >&2; exit 2; }
-  m1=$(mktemp); m2=$(mktemp); m3=$(mktemp); m4=$(mktemp); m5=$(mktemp); m6=$(mktemp)
-  trap 'rm -f "$m1" "$m2" "$m3" "$m4" "$m5" "$m6"' EXIT
+  m1=$(mktemp); m2=$(mktemp); m3=$(mktemp); m4=$(mktemp); m5=$(mktemp); m6=$(mktemp); m7=$(mktemp)
+  trap 'rm -f "$m1" "$m2" "$m3" "$m4" "$m5" "$m6" "$m7"' EXIT
 
   echo "self-test: the shipped script"
   run_detector_table "$SCRIPT" > /dev/null && check_verdict "$SCRIPT" > /dev/null \
@@ -376,37 +376,52 @@ if [ "$SELF_TEST" = 1 ]; then
   fi
   echo "  RED (expected)"
 
-  # Mutant 5 (#3957 F4c): the stream shapes are not parsed -- the state that shipped,
-  # where every stream=true body was read with one json.load.
-  sed 's/^elif any(ln.startswith("data:") for ln in raw.splitlines()):/elif False:/' "$SCRIPT" > "$m5"
+  # Mutant 5: the extractor is bypassed and the raw capture is judged again -- the
+  # exact state #3925 fixed, and so the one regression this file exists to catch.
+  # aprender-3e ran it by hand while folding #3926 and it was caught; naming it here
+  # means the next person does not have to re-derive that, and a refactor that
+  # reintroduces raw judging fails rather than being noticed in review.
+  sed 's#| assistant_reply); rc=$?#| cat); rc=$?#' "$SCRIPT" > "$m5"
   cmp -s "$SCRIPT" "$m5" && { echo "SELF-TEST INCONCLUSIVE: mutant 5 changed nothing" >&2; exit 1; }
-  echo "self-test: mutant 5 (SSE bodies not parsed)"
-  if run_body_table "$m5" > /dev/null 2>&1; then
-    echo "SELF-TEST FAILED: mutant 5 passed -- an SSE body is judged without its text" >&2; exit 1
+  echo "self-test: mutant 5 (extractor bypassed, the transcript judged raw again)"
+  if run_extraction_table "$m5" > /dev/null 2>&1; then
+    echo "SELF-TEST FAILED: mutant 5 passed -- the chrome is being judged and nothing noticed" >&2
+    exit 1
   fi
   echo "  RED (expected)"
 
-  # Mutant 6 (#3957 F4c): a body that yields no text passes silently.
-  sed 's/^  if \[ -z "${text\/\/\[\[:space:\]\]\/}" \]; then$/  if false; then/' "$SCRIPT" > "$m6"
+
+  # Mutant 6 (#3957 F4c): the stream shapes are not parsed -- the state that shipped,
+  # where every stream=true body was read with one json.load.
+  sed 's/^elif any(ln.startswith("data:") for ln in raw.splitlines()):/elif False:/' "$SCRIPT" > "$m6"
   cmp -s "$SCRIPT" "$m6" && { echo "SELF-TEST INCONCLUSIVE: mutant 6 changed nothing" >&2; exit 1; }
-  echo "self-test: mutant 6 (empty stream text reads clean)"
+  echo "self-test: mutant 6 (SSE bodies not parsed)"
   if run_body_table "$m6" > /dev/null 2>&1; then
-    echo "SELF-TEST FAILED: mutant 6 passed -- a stream that carried nothing reads as clean" >&2; exit 1
+    echo "SELF-TEST FAILED: mutant 6 passed -- an SSE body is judged without its text" >&2; exit 1
   fi
   echo "  RED (expected)"
 
-  # Mutant 7 (#3957 Q6): a stream with no terminal event is judged on its prefix.
-  m7=$(mktemp)
-  sed 's/^  if \[ "$term" = open \]; then$/  if false; then/' "$SCRIPT" > "$m7"
-  cmp -s "$SCRIPT" "$m7" && { rm -f "$m7"; echo "SELF-TEST INCONCLUSIVE: mutant 7 changed nothing" >&2; exit 1; }
-  echo "self-test: mutant 7 (truncated stream judged on its prefix)"
+  # Mutant 7 (#3957 F4c): a body that yields no text passes silently.
+  sed 's/^  if \[ -z "${text\/\/\[\[:space:\]\]\/}" \]; then$/  if false; then/' "$SCRIPT" > "$m7"
+  cmp -s "$SCRIPT" "$m7" && { echo "SELF-TEST INCONCLUSIVE: mutant 7 changed nothing" >&2; exit 1; }
+  echo "self-test: mutant 7 (empty stream text reads clean)"
   if run_body_table "$m7" > /dev/null 2>&1; then
-    rm -f "$m7"; echo "SELF-TEST FAILED: mutant 7 passed -- a stream that never finished reads as an answer" >&2; exit 1
+    echo "SELF-TEST FAILED: mutant 7 passed -- a stream that carried nothing reads as clean" >&2; exit 1
   fi
-  rm -f "$m7"
   echo "  RED (expected)"
 
-  echo "self-test: PASS — red when the detector stops flagging, when the verdict stops reading it, when an unlocatable reply passes silently, and when the reply is cut short"
+  # Mutant 8 (#3957 Q6): a stream with no terminal event is judged on its prefix.
+  m8=$(mktemp)
+  sed 's/^  if \[ "$term" = open \]; then$/  if false; then/' "$SCRIPT" > "$m8"
+  cmp -s "$SCRIPT" "$m8" && { rm -f "$m8"; echo "SELF-TEST INCONCLUSIVE: mutant 8 changed nothing" >&2; exit 1; }
+  echo "self-test: mutant 8 (truncated stream judged on its prefix)"
+  if run_body_table "$m8" > /dev/null 2>&1; then
+    rm -f "$m8"; echo "SELF-TEST FAILED: mutant 8 passed -- a stream that never finished reads as an answer" >&2; exit 1
+  fi
+  rm -f "$m8"
+  echo "  RED (expected)"
+
+  echo "self-test: PASS — red when the detector stops flagging, when the verdict stops reading it, when an unlocatable reply passes silently, when the reply is cut short, when the extractor is bypassed entirely, when a stream is not parsed, when a stream that carried nothing reads clean, and when a truncated stream is judged on its prefix"
   exit 0
 fi
 

@@ -292,20 +292,28 @@ fn run_gguf_inference(
     // gguf_gpu_generate.rs short-circuit with an actual forward pass.
     let infer_start = Instant::now();
     let canonical_arch = crate::tensor_names::normalize_architecture(&model.config.architecture);
-    // #3826: `gpu_attempted` is threaded from the DENSE path, which is where the
-    // reported defect lives (a bare `apr run` on a cuda build attempts CUDA, is
-    // refused, and falls back). The qwen3_moe branch is CPU-only so it cannot
-    // attempt. The qwen35 dispatch does not yet report its attempt separately —
-    // it PRINTS its GPU failure rather than returning it, so a rejected hybrid
-    // still under-reports here. Named as an open obligation rather than guessed.
-    let (tokens, used_gpu, gpu_attempted) = if canonical_arch == "qwen3_moe" {
-        let tokens = crate::infer::qwen3_moe_generate::run_qwen3_moe_generate(
+    // #3714 R2: `moe_forward_handles` is the one dispatch predicate — `apr
+    // parity` and `apr qa` ask the same function, so no tool can route this
+    // architecture differently from `apr run`. (It is exactly
+    // `canonical_arch == "qwen3_moe"`, so taking it changes no routing.)
+    //
+    // #3826: `gpu_attempted` is part of the envelope, so a GPU that was tried and
+    // refused reads as `fell_back: true` rather than as a CPU run nobody asked for.
+    // The MoE dispatch now TRIES CUDA (#3714): it attempts exactly when this is a
+    // cuda build and `--no-gpu` was not given, and on failure prints its reason and
+    // runs the CPU chain. So its attempt is derived from those same two facts here,
+    // which is what makes #3817 (a silent `--gpu` fallback to CPU) visible as
+    // attempted && !used_gpu. The qwen35 dispatch still does not report its attempt
+    // separately; that obligation is unchanged.
+    let (tokens, used_gpu, gpu_attempted) = if crate::gguf::moe_forward_handles(&model.config.architecture) {
+        let (tokens, used_gpu) = crate::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(
             &mapped,
             &model,
             &input_tokens,
             &gen_config,
+            config.no_gpu,
         )?;
-        (tokens, false, false) // CPU-only path; GPU MoE wiring is M32d follow-up
+        (tokens, used_gpu, cfg!(feature = "cuda") && !config.no_gpu)
     } else if is_qwen35 {
         // #3477: the hybrid now has a GPU forward (#3090), so `apr run --gpu`
         // routes to it and reports CUDA; the CPU forward (#3091) serves

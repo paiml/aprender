@@ -20,7 +20,8 @@ table exists to prevent is the surprise: assuming an RTX 4090 makes any GGUF fas
 | `qwen2` | Qwen2, Qwen2.5 (incl. Coder) | yes | — |
 | `qwen3` | Qwen3 dense | yes | — |
 | `qwen35` | Qwen3.5 hybrid (Gated DeltaNet) | yes | — |
-| `qwen3_moe` | Qwen3 / Qwen3.5 MoE (A3B) | **refused** | no CUDA forward at all (#3714) |
+| `qwen3_moe` | Qwen3 MoE (Qwen3-30B-A3B, Qwen3-Coder-30B-A3B) | yes | — |
+| `qwen3_5_moe` | Qwen3.5 MoE (A3B, hybrid Gated DeltaNet) | **refused** | no CUDA forward: hybrid SSM MoE, not run by the qwen3moe forward (#3714) |
 | `gemma2` | Gemma 2 | CPU fallback | missing `AttnFinalSoftcap`, `PostAttnFfnNorm` |
 | `gemma3` | Gemma 3 | CPU fallback | missing `AttnFinalSoftcap`, `PostAttnFfnNorm` |
 | `phi2` | Phi-2 | CPU fallback | missing `GeluMlp`, `LayerNorm` |
@@ -49,7 +50,7 @@ CPU path deliberately and works for every row above.
 | Q5_K | yes | ggml type 13 |
 | Q6_K | yes | ggml type 14 |
 | Q8_K | no | ggml type 15 — no GPU GEMV kernel |
-| IQ2_XXS | no | ggml type 16 — no GPU GEMV kernel; IQ also fails the CPU dequant path |
+| IQ2_XXS | yes | ggml type 16 |
 | IQ2_XS | no | ggml type 17 — no GPU GEMV kernel; IQ also fails the CPU dequant path |
 | IQ3_XXS | no | ggml type 18 — no GPU GEMV kernel; IQ also fails the CPU dequant path |
 | IQ1_S | no | ggml type 19 — no GPU GEMV kernel; IQ also fails the CPU dequant path |

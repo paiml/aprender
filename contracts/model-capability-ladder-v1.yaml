@@ -94,8 +94,12 @@ ladder:
     # A3B model owes cells no code can satisfy. This is a DECLARED deferral carrying a reason, not
     # an exemption -- an inventory model that fails and is not named here is still refused, which
     # the case table proves. Delete this key when #3714 lands.
-    deferred:
-      "*A3B*": "mixture-of-experts: no CUDA forward for qwen3moe in this build (#3714, lands 0.70.0); operator ruling 2026-09-22 kicks the MoE work to later"
+    # EMPTY. The last deferral, "*A3B*", is RETIRED with this fold: the qwen3moe CUDA forward
+    # (#3714 R2, PMAT-3714-r2-on-v2@6f6fa9a83) is folded into 0.69.1 on the operator ruling of
+    # 2026-09-23, relayed verbatim by aprender-6a (cop): "fold in MoE". An A3B model now owes
+    # every cell like any other rung, and #3817 (run --gpu silently falling back to CPU) must be
+    # shown fixed by the envelope, not assumed from parity.
+    deferred: {}
       # THE THREE FILENAME DEFERRALS DECLARED HERE ON 2026-09-23 ARE RETIRED.
       # Operator doctrine, same day, verbatim: "no defer; from now forward we practice
       # toyota way and oracle approach of crux with capabiltiy report style from Alfredo".
@@ -105,10 +109,9 @@ ladder:
       #   retired: Qwen2.5-0.5B-Instruct-IQ3_M.gguf
       #            Qwen2.5-0.5B-Instruct-IQ4_XS.gguf
       #            Qwen3.5-4B-UD-Q4_K_XL.gguf
-      # *A3B* stays for now: it is an EXPLICIT operator ruling of 2026-09-22 ("we kick the
-      # MoE work to later"), not the deferral habit the doctrine abolishes. Retiring it
-      # would make #3714 (qwen3moe CUDA forward) a release blocker, which is the operator's
-      # call and not this file's.
+      # *A3B* was the one deferral kept past that doctrine, as an explicit operator ruling of
+      # 2026-09-22 ("we kick the MoE work to later"). It is retired by the ruling of 2026-09-23
+      # above, which makes #3714 a 0.69.1 requirement.
     backends: [cuda]
   # #3712 row B (operator 2026-09-21: "MORE than enough tokens for our needs (overdo it), and our verbs are
   # dogfooded, i.e chat with and without thinking, ditto run, ditto code"). A cell is (model, host, verb,

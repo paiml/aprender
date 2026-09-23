@@ -7,16 +7,26 @@
 mod parity_refusal_case_table {
     use super::{capability_refusal, cuda_init_error, parity_refusal_for, PARITY_REFUSED_EXIT};
 
-    /// The three architectures the 0.68.0 T-2 dogfood measured as FAIL rows.
-    /// Each one is a TOOL refusal, not a model defect.
+    /// The three architectures the 0.68.0 T-2 dogfood measured as FAIL rows
+    /// were TOOL refusals, not model defects. #3714 R2 lifts the MoE one for
+    /// the spellings the runtime dispatches to the routed-expert forward
+    /// (`moe_forward_handles`): they now have a CUDA forward as well as the CPU
+    /// one, and the MoE arm measures them. `qwen3_5_moe` is admitted with them
+    /// because the runtime's normalizer folds it to `qwen3_moe`, so `apr run`
+    /// would run the Qwen3-MoE forward on it too (it is the HF `model_type`;
+    /// GGUF Qwen3.5-MoE files carry `qwen35moe`). Every other spelling
+    /// `ArchConstraints` calls MoE reaches no MoE forward and keeps the refusal.
     #[test]
     fn parity_refusal_moe_architecture_is_refused_with_issue_3367() {
-        // `qwen3moe` is the RAW general.architecture string Qwen3-Coder-30B-A3B
-        // and Qwen3-30B-A3B ship; `qwen3_moe` is the canonical key. Every
-        // spelling `ArchConstraints` calls MoE must be refused, canonical or not.
-        for raw in ["qwen3moe", "qwen3_moe", "qwen3_5_moe", "qwen3_5moe"] {
+        for raw in ["qwen3moe", "qwen3_moe", "qwen3_5_moe"] {
+            assert!(
+                parity_refusal_for(raw, Vec::<&str>::new()).is_none(),
+                "{raw} runs the routed-expert forward on both backends: the MoE arm measures it"
+            );
+        }
+        for raw in ["qwen3_5moe"] {
             let r = parity_refusal_for(raw, Vec::<&str>::new()).unwrap_or_else(|| {
-                panic!("{raw} must be refused: the dense parity loop cannot route it")
+                panic!("{raw} must be refused: no MoE forward handles it")
             });
             assert_eq!(r.issue, "#3367");
             assert!(
@@ -37,12 +47,10 @@ mod parity_refusal_case_table {
     /// fold would do. When in doubt the refusal reports what the file said.
     #[test]
     fn parity_refusal_moe_names_the_canonical_key_only_when_the_normalizer_knows_it() {
-        for (raw, named) in [
-            ("qwen3moe", "qwen3_moe"),
-            ("qwen3_moe", "qwen3_moe"),
-            ("qwen3_5_moe", "qwen3_moe"),
-            ("qwen3_5moe", "qwen3_5moe"),
-        ] {
+        // The spellings `normalize_architecture` folds to `qwen3_moe` are no
+        // longer refused (#3714 R2); the one it does not fold still is, under
+        // the raw tag.
+        for (raw, named) in [("qwen3_5moe", "qwen3_5moe")] {
             let r = parity_refusal_for(raw, Vec::<&str>::new()).expect("refused");
             assert_eq!(r.architecture, named, "arch named for raw tag {raw}");
             assert_ne!(
@@ -127,7 +135,7 @@ mod parity_refusal_case_table {
     #[test]
     fn parity_refusal_exit_code_is_distinct_from_the_codes_parity_already_emits() {
         use crate::error::CliError;
-        let refused = parity_refusal_for("qwen3moe", Vec::<&str>::new())
+        let refused = parity_refusal_for("qwen3_5moe", Vec::<&str>::new())
             .expect("refused")
             .into_error();
         assert_eq!(refused.exit_code_value(), PARITY_REFUSED_EXIT);
@@ -150,10 +158,10 @@ mod parity_refusal_case_table {
     /// so the literal prefix is asserted here and in the script's case table.
     #[test]
     fn parity_refusal_line_has_the_shape_c14_greps_for() {
-        let r = parity_refusal_for("qwen3moe", Vec::<&str>::new()).expect("refused");
+        let r = parity_refusal_for("qwen3_5moe", Vec::<&str>::new()).expect("refused");
         let line = r.line();
         assert!(
-            line.starts_with("parity: REFUSED architecture=qwen3_moe — "),
+            line.starts_with("parity: REFUSED architecture=qwen3_5moe — "),
             "C14 greps this prefix: {line}"
         );
         assert!(
