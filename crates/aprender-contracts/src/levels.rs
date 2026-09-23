@@ -59,61 +59,66 @@ pub fn ladder_block() -> String {
     out
 }
 
+// The tests live DIRECTLY in `levels` (not in a `tests` submodule): PVL-001 EV-3's accept is
+// `cargo test -p aprender-contracts --lib -- levels::readme_and_ladder_docs_match_enum`, and
+// libtest's filter is a substring of the full path, so under `levels::tests::` that accept
+// command ran ZERO tests and passed.
+
+/// The three copies of the ladder doc (PVL-001 EV-3 names exactly these).
 #[cfg(test)]
-mod tests {
-    use super::*;
+const LADDER_COPIES: [(&str, &str); 3] = [
+    (
+        "crates/aprender-contracts-staging/docs/specifications/sub/verification-ladder.md",
+        include_str!(
+            "../../aprender-contracts-staging/docs/specifications/sub/verification-ladder.md"
+        ),
+    ),
+    (
+        "crates/aprender-contracts-staging/book/src/verification-ladder.md",
+        include_str!("../../aprender-contracts-staging/book/src/verification-ladder.md"),
+    ),
+    (
+        "docs/specifications/aprender-contracts-staging/sub/verification-ladder.md",
+        include_str!(
+            "../../../docs/specifications/aprender-contracts-staging/sub/verification-ladder.md"
+        ),
+    ),
+];
 
-    /// The three copies of the ladder doc (PVL-001 EV-3 names exactly these).
-    const LADDER_COPIES: [(&str, &str); 3] = [
-        (
-            "crates/aprender-contracts-staging/docs/specifications/sub/verification-ladder.md",
-            include_str!("../../aprender-contracts-staging/docs/specifications/sub/verification-ladder.md"),
-        ),
-        (
-            "crates/aprender-contracts-staging/book/src/verification-ladder.md",
-            include_str!("../../aprender-contracts-staging/book/src/verification-ladder.md"),
-        ),
-        (
-            "docs/specifications/aprender-contracts-staging/sub/verification-ladder.md",
-            include_str!("../../../docs/specifications/aprender-contracts-staging/sub/verification-ladder.md"),
-        ),
-    ];
-
-    /// PVL-001 EV-3's accept test: `levels::readme_and_ladder_docs_match_enum`.
-    #[test]
-    fn readme_and_ladder_docs_match_enum() {
-        // 1. The README's verification table prints, for each level, the enum's method.
-        let readme = crate::readme_gen::verification_ladder_table(&[0, 0, 0, 0, 0]);
-        for level in ProofLevel::ALL_DESCENDING {
-            let row = format!("| {level} | 0 | {} |", level.method());
-            assert!(
-                readme.lines().any(|l| l == row),
-                "README ladder row for {level} is not the enum's definition.\nwant: {row}\nREADME table:\n{readme}"
-            );
-        }
-        // 2. Every ladder doc copy carries the generated block, byte for byte.
-        let block = ladder_block();
-        for (path, text) in LADDER_COPIES {
-            assert!(
-                text.contains(&block),
-                "{path} does not carry the block generated from ProofLevel. Replace its \
-                 proof-level table with:\n{block}"
-            );
-        }
+/// PVL-001 EV-3's accept test: `levels::readme_and_ladder_docs_match_enum`.
+#[test]
+fn readme_and_ladder_docs_match_enum() {
+    // 1. The README's verification table prints, for each level, the enum's method.
+    let readme = crate::readme_gen::verification_ladder_table(&[0, 0, 0, 0, 0]);
+    for level in ProofLevel::ALL_DESCENDING {
+        let row = format!("| {level} | 0 | {} |", level.method());
+        assert!(
+            readme.lines().any(|l| l == row),
+            "README ladder row for {level} is not the enum's definition.\nwant: {row}\nREADME table:\n{readme}"
+        );
     }
-
-    /// The block itself names every level exactly once, in order: a regression in
-    /// `ladder_block` cannot pass by printing nothing.
-    #[test]
-    fn the_ladder_block_names_each_level_once_highest_first() {
-        let block = ladder_block();
-        let is_level_row =
-            |l: &&str| l.len() > 4 && l.starts_with("| L") && l.as_bytes()[3].is_ascii_digit();
-        let rows: Vec<&str> = block.lines().filter(is_level_row).collect();
-        assert_eq!(rows.len(), 5, "{block}");
-        for (row, level) in rows.iter().zip(ProofLevel::ALL_DESCENDING) {
-            assert!(row.starts_with(&format!("| {level} |")), "{row}");
-        }
-        assert!(block.starts_with(MARKER) && block.ends_with(END_MARKER));
+    // 2. Every ladder doc copy carries the generated block, byte for byte.
+    let block = ladder_block();
+    for (path, text) in LADDER_COPIES {
+        assert!(
+            text.contains(&block),
+            "{path} does not carry the block generated from ProofLevel. Replace its \
+             proof-level table with:\n{block}"
+        );
     }
+}
+
+/// The block itself names every level exactly once, in order: a regression in
+/// `ladder_block` cannot pass by printing nothing.
+#[test]
+fn the_ladder_block_names_each_level_once_highest_first() {
+    let block = ladder_block();
+    let is_level_row =
+        |l: &&str| l.len() > 4 && l.starts_with("| L") && l.as_bytes()[3].is_ascii_digit();
+    let rows: Vec<&str> = block.lines().filter(is_level_row).collect();
+    assert_eq!(rows.len(), 5, "{block}");
+    for (row, level) in rows.iter().zip(ProofLevel::ALL_DESCENDING) {
+        assert!(row.starts_with(&format!("| {level} |")), "{row}");
+    }
+    assert!(block.starts_with(MARKER) && block.ends_with(END_MARKER));
 }

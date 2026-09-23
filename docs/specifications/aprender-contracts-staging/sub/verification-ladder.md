@@ -5,16 +5,17 @@ the math) and **enforcement layers** (how we enforce it in the build).
 
 ## Proof Levels (theoretical guarantees)
 
-```
-Level   Method                  Tool            Guarantee
------   ------                  ----            ---------
-  L5    Theorem proving         Lean 4          True for ALL inputs. Period.
-  L4    Bounded model check     Kani            True for ALL inputs <= size N.
-  L3    Property-based test     probar/proptest True for ~10,000 random inputs.
-  L2    Falsification test      #[test]         True for specific edge cases.
-  L1    Type system             rustc           True by construction.
-  L0    Code review             Human eyes      "Looks right to me."
-```
+<!-- generated from ProofLevel; do not edit -->
+| Level | Method |
+|-------|--------|
+| L5 | Lean 4 theorem proved + every binding verified implemented |
+| L4 | Lean 4 theorem proved |
+| L3 | Kani bounded model check |
+| L2 | Falsification tests cover the obligations |
+| L1 | Contract YAML with equations |
+
+L4 and L5 are self-declared until PVL-001 EV-8b lands: the level is computed from the contract's own YAML, not from a checked Lean discharge summary.
+<!-- end generated from ProofLevel -->
 
 ## Enforcement Layers (practical deployment, strictest first)
 

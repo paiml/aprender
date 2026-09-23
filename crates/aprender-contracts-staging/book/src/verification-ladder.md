@@ -4,28 +4,17 @@ Every proof obligation in a contract is verified at multiple levels. Higher
 levels subsume lower ones. The goal is to push every obligation as high as
 practically possible.
 
-```
-Level   Method                  Tool            What it proves
-─────   ──────                  ────            ──────────────
-  5     Mathematical proof      Lean 4 ←──────  True for ALL inputs. Period.
-        (theorem proving)       + Mathlib       Unbounded. Unconditional.
-                                                Machine-checked.  ← PHASE 7
+<!-- generated from ProofLevel; do not edit -->
+| Level | Method |
+|-------|--------|
+| L5 | Lean 4 theorem proved + every binding verified implemented |
+| L4 | Lean 4 theorem proved |
+| L3 | Kani bounded model check |
+| L2 | Falsification tests cover the obligations |
+| L1 | Contract YAML with equations |
 
-  4     Bounded model check     Kani ←────────  True for ALL inputs up to size N.
-        (formal verification)                   Exhaustive. No sampling. ACTUAL PROOF
-                                                within the bound.        ← TARGET
-
-  3     Property-based test     probar/proptest  True for ~10,000 random inputs.
-        + metamorphic                            High confidence, not proof.
-
-  2     Contract test           #[test]          True for specific edge cases
-        (falsification)                          chosen by developer.
-
-  1     Type system             rustc            True by construction.
-        (Poka-Yoke)                              Compile error if violated.
-
-  0     Code review             Human eyes       "Looks right to me."
-```
+L4 and L5 are self-declared until PVL-001 EV-8b lands: the level is computed from the contract's own YAML, not from a checked Lean discharge summary.
+<!-- end generated from ProofLevel -->
 
 ## Where Each Tool Lives
 

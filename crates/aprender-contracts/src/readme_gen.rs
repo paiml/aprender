@@ -11,7 +11,7 @@ use std::fmt::Write;
 
 use crate::binding::BindingRegistry;
 use crate::coverage::{coverage_report, CoverageReport};
-use crate::proof_status::compute_proof_level;
+use crate::proof_status::{compute_proof_level, ProofLevel};
 use crate::schema::Contract;
 
 /// Generate a deterministic CONTRACT-README.md for a consumer project.
@@ -131,16 +131,16 @@ fn write_verification_summary(
 }
 
 /// The README's verification-ladder table, counts given highest level first.
+///
+/// PVL-001 EV-3: the method column is [`ProofLevel::method`], the one definition.
+/// It printed its own strings, one level off (the Kani row labelled one level too high).
 pub(crate) fn verification_ladder_table(counts_desc: &[usize; 5]) -> String {
-    let [l5, l4, l3, l2, l1] = *counts_desc;
     let mut out = String::new();
     let _ = writeln!(out, "| Level | Count | Method |");
     let _ = writeln!(out, "|-------|-------|--------|");
-    let _ = writeln!(out, "| L5 | {l5} | Lean 4 theorem |");
-    let _ = writeln!(out, "| L4 | {l4} | Kani BMC |");
-    let _ = writeln!(out, "| L3 | {l3} | Kani + probar |");
-    let _ = writeln!(out, "| L2 | {l2} | Falsification |");
-    let _ = writeln!(out, "| L1 | {l1} | Type system |");
+    for (level, count) in ProofLevel::ALL_DESCENDING.iter().zip(counts_desc) {
+        let _ = writeln!(out, "| {level} | {count} | {} |", level.method());
+    }
     out
 }
 
