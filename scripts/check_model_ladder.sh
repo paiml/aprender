@@ -698,6 +698,8 @@ if [ "$SELF_TEST" = 1 ]; then
     rmutant control-self      red-model-control-is-self      's/^        elif csha == sha or cfile == f:/        elif False:/'
     rmutant control-cell      red-model-control-cell-red     's/^            elif any(v != "GREEN" for v in vs):/            elif False:/'
     rmutant bf16-leg          red-model-bf16-not-reproduced  's/^                    if think_state(t) != want:/                    if False:/'
+    rmutant named-filter      green-red-model-named-prompts  's/^        if named:/        if False:/'
+    rmutant named-prompt      red-model-named-prompt-unmeasured 's/^            if gone:/            if False:/'
     rmutant axis-on           red-model-axis-not-on          's/^            if e.get("thinking") != "on":/            if False:/'
     rmutant residual          red-model-residual             's/^            if resid:/            if False:/'
     rmutant stale             red-model-stale                's/^        if not why:/        if False:/'

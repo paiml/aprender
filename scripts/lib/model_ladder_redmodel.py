@@ -34,6 +34,10 @@ answers "what does llama.cpp do on this file", not a second runner in the ladder
   5. WHEN THE KEY SAYS `bf16_reproduces: true` (a defect of the MODEL, not of the quant),
      every hf/vLLM bf16 leg in that greedy entry, and at least one, also shows the defect.
      Those legs read other weights, so they are judged on their text, never on ids.
+  5b. WHEN THE KEY NAMES `prompts`, the defect is claimed on exactly those prompts: each one
+     must have a greedy entry, and entries for other prompts are not part of the claim (the
+     2B loops on 4 of 7 thinking-ON prompts, measured by aprender-dd; one that closes is not
+     evidence against a claim made on the other four). Without `prompts`, every entry is.
   6. THE AXIS IS thinking-ON ONLY. The key covers `thinking: on`; the file's thinking-OFF
      CRUX cells must still be GREEN, and model_ladder_crux enforces that.
   7. THE DEFECT IS THE WHOLE FAILURE. With golden_output neutralised (and qa_rc too, when
@@ -151,6 +155,9 @@ class RedVerdicts:
                 return f"covers thinking {e.get('thinking')!r}; a think-block defect is a thinking-ON verdict (`thinking: on`)"
             if e.get("bf16_reproduces", False) not in (True, False):
                 return "has a `bf16_reproduces` that is not a boolean"
+            ps = e.get("prompts")
+            if ps is not None and not (isinstance(ps, list) and ps and all(isinstance(p, str) and p for p in ps)):
+                return "has a `prompts` that is not a non-empty list of prompt ids"
         elif not isinstance(e.get("architecture"), str) or not e["architecture"].strip():
             return "names no `architecture`"
         return None
@@ -229,6 +236,14 @@ class RedVerdicts:
         if not (isinstance(sha, str) and crux.HEX64.fullmatch(sha)):
             return ["the row has no 64-hex sha256, so no oracle can be joined to it"], ""
         gpu = self._greedy_on(sha, host, "gpu")
+        named = e.get("prompts")
+        if named:
+            gpu = [g for g in gpu if (g.get("key") or {}).get("prompt_id") in named]
+            have = {(g.get("key") or {}).get("prompt_id") for g in gpu}
+            gone = [p for p in named if p not in have]
+            if gone:
+                return [f"the key claims the defect on prompt(s) {gone}, and this sweep has no thinking-ON greedy entry "
+                        f"for them on {host} (gpu lane) -- a claim nothing measured (#3957 F9)"], ""
         if not gpu:
             return [f"no thinking-ON greedy entry for sha {sha[:12]} on {host} in a gpu-lane CRUX receipt bound to the cut -- "
                     f"no oracle ran on this sweep (#3957 F9)"], ""

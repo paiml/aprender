@@ -246,6 +246,19 @@ def main():
     write("red-model-receipt-rejected-not-judged", L, rec, crux, 1, r"not judged, because no receipt was accepted from \['lambda'\]",
           r"matches NO held file")
 
+    L, rec, crux = build_f9()   # `prompts`: the claim covers the named prompt only; a closing prompt beside it is not evidence
+    L["ladder"]["inventory"]["red_model"][D]["prompts"] = ["think-2plus2"]
+    for lane in ("cpu", "gpu"):
+        g = copy.deepcopy(crux[f"lambda-{lane}"]["greedy"][0])
+        g["key"]["prompt_id"] = "fact-capital-france"
+        g["llama.cpp"]["raw"]["generated_text"] = "<think>\nParis is the capital.\n</think>\n<answer>Paris</answer>"
+        crux[f"lambda-{lane}"]["greedy"].append(g)
+    write("green-red-model-named-prompts", L, rec, crux, 0, r"RED-MODEL lambda +Qwen3.5-0.8B-IQ4_XS.gguf", r"FAIL")
+
+    L, rec, crux = build_f9()   # a named prompt this sweep did not measure
+    L["ladder"]["inventory"]["red_model"][D]["prompts"] = ["think-2plus2", "arith-17x23"]
+    write("red-model-named-prompt-unmeasured", L, rec, crux, 1, r"claims the defect on prompt\(s\) \['arith-17x23'\]")
+
     # ---------------------------------------------------------------- F10 RED-UNSUPPORTED
     L, rec, crux = build_f10()
     write("green-red-unsupported-proven", L, rec, crux, 0,
