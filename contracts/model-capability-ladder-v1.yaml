@@ -91,6 +91,18 @@ ladder:
         ticket: "#4022"
         date: "2026-09-23"
         ruling: '"nope, override.  I am the boss" (operator, verbatim, via aprender-cf)'
+  # OPERATOR EMERGENCY SCOPE for 0.69.1 ONLY (relayed verbatim by the release cop aprender-cf,
+  # 2026-09-23). `check_model_ladder.sh --scope crux-smoke` judges CRUX smoke receipts from the RELEASE
+  # BINARY instead of the ladder (scripts/lib/crux_smoke_scope.py): every host below, every certified
+  # model (from the prompt certification), every thinking mode below, all GREEN with a GREEN positive
+  # control, receipts bound to the cut exactly. Refused for any other release.
+  emergency_scopes:
+    - name: crux-smoke
+      release: "0.69.1"
+      date: "2026-09-23"
+      quote: '"for this particular release we need emergency surgery.  after a binary is build we really only care about CRUX on gx10 and lambda (but "smoke test") style.  anything huge, must be nightly only"'
+      hosts: [lambda, gx10]
+      thinking: ["off", "on"]
   # KNOWN REDs that ship with their ticket (operator selection via the release cop aprender-cf,
   # 2026-09-23: "Ship as known RED + ticket"; recorded on #3907). check_model_ladder.sh covers a row
   # only when EVERY reason it fails matches a clause pinned to this rung + sha256; anything else on it,

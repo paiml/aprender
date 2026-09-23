@@ -35,7 +35,7 @@ LADDER="contracts/model-capability-ladder-v1.yaml"
 # Overridable so the floor below can be PROVEN against a planted case in a temp dir
 # rather than by planting a permanently-failing case in the real table (#3887).
 CASES_DIR="${MODEL_LADDER_CASES_DIR:-scripts/lib/model_ladder_cases}"
-SELF_TEST=0; ONLY_CASE=""; RECEIPT_DIR=""; LADDER_MAIN_OVERRIDE=""; CUT_COMMIT=""; CRUX_DIR=""
+SELF_TEST=0; ONLY_CASE=""; RECEIPT_DIR=""; LADDER_MAIN_OVERRIDE=""; CUT_COMMIT=""; CRUX_DIR=""; SCOPE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --self-test) SELF_TEST=1; shift ;;
@@ -46,6 +46,7 @@ while [ $# -gt 0 ]; do
     --version) [ $# -ge 2 ] || { echo "--version needs a value" >&2; exit 2; }; VERSION_OVERRIDE="$2"; shift 2 ;;
     --cut-commit) [ $# -ge 2 ] || { echo "--cut-commit needs a value" >&2; exit 2; }; CUT_COMMIT="$2"; shift 2 ;;
     --crux) [ $# -ge 2 ] || { echo "--crux needs a value" >&2; exit 2; }; CRUX_DIR="$2"; shift 2 ;;
+    --scope) [ $# -ge 2 ] || { echo "--scope needs a value" >&2; exit 2; }; SCOPE="$2"; shift 2 ;;
     -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) echo "check_model_ladder: unknown argument '$1'" >&2; exit 2 ;;
   esac
@@ -877,6 +878,69 @@ EQ
     emutant any-receipt    's/^    if receipt_sha != scope.get("receipts_at"):$/    if False:/'
     emutant override-any-delta 's/o.get("delta_sha256") == delta_sha/True/'
     emutant override-no-ruling 's/and all(str(o.get(k) or "").strip() for k in ("ticket", "ruling", "date"))/and True/'
+    # 0.69.1 OPERATOR EMERGENCY SCOPE (scripts/lib/crux_smoke_scope.py): a hermetic table over generated
+    # receipts. Every must-RED names its reason; the green row is the control.
+    smoke_table() { # smoke_table <lib dir> -> 0 when every row lands
+      python3 - "$1" <<'SM'
+import json, os, sys, tempfile
+sys.path.insert(0, sys.argv[1]); import crux_smoke_scope as C
+CUT = "d" * 40
+SH = ["1" * 64, "2" * 64, "3" * 64]
+L = {"emergency_scopes": [{"name": "crux-smoke", "release": "0.69.1", "date": "2026-09-23", "quote": "q",
+                            "hosts": ["lambda", "gx10"], "thinking": ["off", "on"]}]}
+def build(d, hosts=("lambda", "gx10"), drop=None, ctl="GREEN", noctl=False, sha=CUT, cell="GREEN"):
+    json.dump({"schema": "crux-prompt-certification/v1", "admitted_by_sha": {s: ["ctl"] for s in SH}},
+              open(os.path.join(d, "prompt-certification.json"), "w"))
+    for h in hosts:
+        cells = []
+        for s in SH:
+            if drop == (h, s):
+                continue
+            for t in ("off", "on"):
+                cells.append({"key": {"model_sha256": s, "host": h, "thinking": t, "verb": "run"},
+                              "verdict": cell if (h, s, t) == ("lambda", "3" * 64, "on") else "GREEN", "positive_control": False})
+                if not noctl:
+                    cells.append({"key": {"model_sha256": s, "host": h, "thinking": t, "verb": "run"}, "verdict": ctl, "positive_control": True})
+        json.dump({"schema": "crux-inference-receipt/v1", "host": h, "backend": "gpu", "apr": {"sha": sha},
+                   "cells": cells, "summary": {"verdict": "PASS"}}, open(os.path.join(d, h + "-gpu.json"), "w"))
+rows = [
+  ("green: both hosts, 3 certified models x off/on, controls GREEN", False, "OPERATOR EMERGENCY SCOPE: CRUX smoke only", {}, "0.69.1"),
+  ("a host missing is RED", True, "host gx10 has no CRUX receipt", {"hosts": ("lambda",)}, "0.69.1"),
+  ("a certified model missing on a host is RED", True, "no CRUX cell", {"drop": ("gx10", "2" * 64)}, "0.69.1"),
+  ("the positive control RED is RED", True, "not GREEN", {"ctl": "RED"}, "0.69.1"),
+  ("a non-control cell RED beside a GREEN control is RED", True, "1 of 2 cell(s) not GREEN", {"cell": "RED"}, "0.69.1"),
+  ("no positive control is RED", True, "positive control is missing", {"noctl": True}, "0.69.1"),
+  ("a receipt at a sha other than the cut is RED", True, "not the release binary", {"sha": "e" * 40}, "0.69.1"),
+  ("the scope used for another release is RED", True, "for release 0.69.1 ONLY", {}, "0.70.0"),
+]
+bad = 0
+for name, want_fail, needle, kw, version in rows:
+    with tempfile.TemporaryDirectory() as d:
+        build(d, **kw)
+        lines = []
+        got = C.judge(L, version, d, os.path.join(d, "prompt-certification.json"), CUT, "crux-smoke", lines.append)
+        ok = got == want_fail and any(needle in ln for ln in lines)
+        print(("ok    smoke " if ok else "FAIL  smoke ") + name + ("" if ok else " -> failed=%s %s" % (got, lines[-3:])))
+        bad |= not ok
+sys.exit(bad)
+SM
+    }
+    if smoke_table scripts/lib; then printf 'ok    smoke: the emergency-scope table lands on the shipped module\n'
+    else smoke_table scripts/lib; bad=$((bad+1)); fi
+    smutant() { # smutant <label> <sed deleting the rule>
+      local md="$mdir/s-$1"; mkdir -p "$md"
+      cp scripts/lib/model_ladder_crux.py "$md/"
+      sed "$2" scripts/lib/crux_smoke_scope.py > "$md/crux_smoke_scope.py"
+      if cmp -s scripts/lib/crux_smoke_scope.py "$md/crux_smoke_scope.py"; then echo "FAIL  smoke mutant $1 did not apply"; bad=$((bad+1)); return; fi
+      if smoke_table "$md" > /dev/null 2>&1; then echo "FAIL  smoke mutant $1 SURVIVED the table"; bad=$((bad+1))
+      else printf 'ok    smoke mutant %-18s killed by the table\n' "$1"; fi
+    }
+    smutant host-optional     's/^        if h not in seen_hosts:$/        if False:/'
+    smutant model-optional    's/^                if not got:$/                if False:/'
+    smutant red-cells-ok      's/^                if red:$/                if False:/'
+    smutant control-optional  's/^                elif not ctl or any(v != "GREEN" for v in ctl):$/                elif False:/'
+    smutant any-sha           's/^        if asha != cut:$/        if False:/'
+    smutant any-release       's/^    if str(version) != str(entry\["release"\]):$/    if False:/'
     # #3710 ruling 1: CRUX coverage scoped to the certified models (model_ladder_crux.py).
     xmutant uncertified-owes-crux green-uncertified-no-crux 's/^                    elif certified is not None and sha not in certified:$/                    elif False:/'
     xmutant no-cert-relaxes   red-certification-missing 's/^        return None, True$/        return set(), False/'
@@ -915,6 +979,23 @@ git show "origin/main:evidence/release/context-rungs.json" > "$TMP_RUNGS" 2> /de
 # #3957 F2: the cut. `--cut-commit`, else HEAD. safe.directory because a CI container's checkout
 # is owned by another uid and plain rev-parse dies there (#3581). Unresolvable -> the judge declines.
 [ -n "$CUT_COMMIT" ] || CUT_COMMIT=$(git -c safe.directory="$PWD" rev-parse HEAD 2> /dev/null || true)
+# 0.69.1 OPERATOR EMERGENCY SCOPE (scripts/lib/crux_smoke_scope.py): `--scope crux-smoke` judges CRUX smoke
+# receipts from the release binary INSTEAD of the ladder, only for the release its contract entry names.
+if [ -n "$SCOPE" ]; then
+  [ -n "$CRUX_DIR" ] || CRUX_DIR="evidence/crux/$VERSION"
+  python3 -c 'import sys, yaml
+sys.path.insert(0, "scripts/lib"); import crux_smoke_scope
+L = yaml.safe_load(open(sys.argv[1]))["ladder"]
+sys.exit(1 if crux_smoke_scope.judge(L, sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], print) else 0)' \
+    "$LADDER" "$VERSION" "$CRUX_DIR" "${CRUX_CERT:-$CRUX_DIR/prompt-certification.json}" "$CUT_COMMIT" "$SCOPE"
+  rc=$?
+  if [ "$rc" = 0 ]; then
+    echo "ok    OPERATOR EMERGENCY SCOPE: CRUX smoke only -- satisfied. The model ladder was NOT run for this release (nightly only); this is not \"every rung green\""
+  else
+    echo "RED   OPERATOR EMERGENCY SCOPE: CRUX smoke only -- NOT satisfied (see FAIL rows)"; rc=1
+  fi
+  exit "$rc"
+fi
 TMP_EQUIV=$(mktemp)
 # A receipt measured at another commit still binds when that commit's tree equals the cut's
 # outside evidence/ -- committing the receipts is itself a commit. Proven here, per sha, with git.
