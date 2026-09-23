@@ -1355,6 +1355,8 @@ then
     rm -f "$RECEIPT_TMP" 2>/dev/null
     ladder_write_decline "the receipt could not be written and verified (python rc=$receipt_rc)"
 fi
+# bashrs SEC010: $OUT_DIR is the operator's --out argument; RECEIPT_BASE is the host id from host_id.
+# bashrs disable-next-line=SEC010
 mv -f "$RECEIPT_TMP" "$OUT_DIR/$RECEIPT_BASE.json" 2>/dev/null || { rm -f "$RECEIPT_TMP"; ladder_write_decline "could not move the receipt into $OUT_DIR"; }
 printf 'receipt: %s/%s.json (executed=%s red=%s inventory=%s)\n' "$OUT_DIR" "$RECEIPT_BASE" "$EXECUTED" "$RED" "$(grep -c . "$INV_ROWS")"
 [ "$RED" -eq 0 ] && exit 0

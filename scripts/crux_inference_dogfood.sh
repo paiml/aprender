@@ -625,6 +625,8 @@ PY
   # every cell dir of this mode lives under <sha12>/<mode>: ON and OFF cells of one prompt must not overwrite each
   # other's artifacts (the run/chat cells here and the serve/code lib all build $WORK/$SHA12/<verb>/...)
   SHA12="$SHA12_MODEL/$THINK"
+  # bashrs SEC010: $WORK is this script's own mktemp -d dir; the rest of the path is a sha12 and a thinking mode.
+  # bashrs disable-next-line=SEC010
   mkdir -p "$WORK/$SHA12" || decline "cannot create $WORK/$SHA12"
   if [ "$THINK" = on ] && [ "$apr_think_flag" = 0 ]; then
     decline "thinking ON was asked for $NAME, but this apr has no \`run --thinking\` (#3723): pass --thinking-modes off, or use an apr that has it"
@@ -670,6 +672,8 @@ PY
       serve) d="$WORK/$SHA12/serve" ;;
       *) decline "unknown verb '$VERB' for the cell dir (add it here and at the --verbs whitelist)" ;;
     esac
+    # bashrs SEC010: $d is under $WORK, this script's own mktemp -d dir, with a whitelisted verb.
+    # bashrs disable-next-line=SEC010
     mkdir -p "$d" || decline "cannot create cell dir $d"
     cell="$d/cell-$pid.sh"
     printf '#!/usr/bin/env bash\n# one CRUX cell: %s prompt %s through every engine, one hold of the GPU lock\n' "$VERB" "$pid" > "$cell"
