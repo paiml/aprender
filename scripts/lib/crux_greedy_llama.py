@@ -68,6 +68,9 @@ def main(argv):
     g.add_argument("--seed", type=int, required=True)
     g.add_argument("--out", required=True)
     g.add_argument("--apr-stderr")
+    g.add_argument("--prompt-source", choices=["apr", "official"], default="apr",
+                   help="apr: generate from apr's own prompt ids (engine parity); official: from llama.cpp's own "
+                        "/apply-template rendering (the model's true behaviour; #3990 / cop ruling on F9)")
     r = sub.add_parser("apr")
     r.add_argument("--url", required=True)
     r.add_argument("--apr-json", required=True)
@@ -83,7 +86,13 @@ def main(argv):
             own_ids = post(a.url, "/tokenize", {"content": rendered, "add_special": True,
                                                 "parse_special": True})["tokens"]
             apr_ids, apr_rendered = apr_prompt(a.apr_stderr)
-            prompt_ids = apr_ids if apr_ids else own_ids
+            if a.prompt_source == "apr":
+                if not apr_ids:
+                    raise RuntimeError("no apr prompt ids to reuse (apr did not run for this cell, or its -v stderr "
+                                       "carried no `encoded N tokens` line), so there is no engine-parity prompt")
+                prompt_ids = apr_ids
+            else:
+                prompt_ids = own_ids
             resp = post(a.url, "/completion", {"prompt": prompt_ids, "n_predict": a.max_tokens, "temperature": 0.0,
                                                "top_k": 1, "seed": a.seed, "return_tokens": True,
                                                "cache_prompt": False})
@@ -91,11 +100,11 @@ def main(argv):
             if not isinstance(ids, list):
                 raise RuntimeError("llama-server /completion returned no `tokens` list (return_tokens unsupported?)")
             doc = {"generated_ids": ids, "generated_text": detok(a.url, ids), "greedy": True, "special": True,
-                   "max_tokens": a.max_tokens, "prompt_ids": prompt_ids,
-                   "prompt_source": "apr's own prompt ids (identical tokens)" if apr_ids else
-                                    "llama.cpp /apply-template (no apr prompt ids to reuse)",
-                   "llama_template_rendered": rendered, "llama_template_prompt_ids": own_ids,
-                   "apr_rendered_prompt": apr_rendered,
+                   "max_tokens": a.max_tokens,
+                   # the ids this generation RAN on, and llama.cpp's own template ids (field names agreed with
+                   # aprender-36): equal on an "official" row by construction, compared on an "apr" row
+                   "prompt_ids": prompt_ids, "template_prompt_ids": own_ids, "prompt_source": a.prompt_source,
+                   "template_rendered": rendered, "apr_rendered_prompt": apr_rendered,
                    "prompt_ids_equal": (own_ids == apr_ids) if apr_ids else None,
                    "thinking": a.thinking, "stop_type": resp.get("stop_type"),
                    "decoded_by": "llama.cpp /detokenize (special tokens kept)"}

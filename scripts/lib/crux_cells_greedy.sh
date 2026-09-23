@@ -13,6 +13,10 @@
 #              from IDENTICAL tokens (aprender-36). apr runs FIRST in each (prompt, thinking) pair for that reason.
 #   apr ON     needs `apr run --thinking` (aprender-36, fix/3957-f9-f10). An apr without it is REFUSED by name for
 #              ON: #3723 (realizar routes every Qwen3/3.5 to the no-think template). Never an absence.
+#   llama.cpp  TWO rows per (prompt, thinking) (cop ruling on F9, #3990): prompt_source "apr" — greedy on apr's own
+#              prompt ids (ENGINE PARITY) — and "official" — greedy on llama.cpp's own /apply-template rendering
+#              (the MODEL's true behaviour; apr's rendering was measured to differ from Qwen3.5's official template
+#              in both modes). RED-MODEL needs the official row to show the defect too.
 # Each is one `kind: "greedy"` manifest row, key (model_sha256, host, prompt_id, thinking), whose `tokens`
 # file is the `raw` object: {generated_ids, generated_text, greedy, special, max_tokens}. Both engines use the
 # same max_tokens ($GREEDY_MAXTOK).
@@ -41,9 +45,14 @@ greedy_cells() {
           --url "http://127.0.0.1:$port" --apr-json "$d/apr-$pid-$th.run.out" --apr-stderr "$d/apr-$pid-$th.run.err" \
           --max-tokens "$GREEDY_MAXTOK" --out "$d/apr-$pid-$th.json"
       fi
-      [ "$LLAMA_OK" = 1 ] && cell_add "$cell" "$d/llama-$pid-$th" python3 scripts/lib/crux_greedy_llama.py gen \
-        --url "http://127.0.0.1:$port" --messages "$WORK/messages-$pid.json" --thinking "$th" \
-        --max-tokens "$GREEDY_MAXTOK" --seed "$SEED" --out "$d/llama-$pid-$th.json" --apr-stderr "$d/apr-$pid-$th.run.err"
+      if [ "$LLAMA_OK" = 1 ]; then
+        cell_add "$cell" "$d/llama-$pid-$th" python3 scripts/lib/crux_greedy_llama.py gen --prompt-source apr \
+          --url "http://127.0.0.1:$port" --messages "$WORK/messages-$pid.json" --thinking "$th" \
+          --max-tokens "$GREEDY_MAXTOK" --seed "$SEED" --out "$d/llama-$pid-$th.json" --apr-stderr "$d/apr-$pid-$th.run.err"
+        cell_add "$cell" "$d/llama-$pid-$th-official" python3 scripts/lib/crux_greedy_llama.py gen --prompt-source official \
+          --url "http://127.0.0.1:$port" --messages "$WORK/messages-$pid.json" --thinking "$th" \
+          --max-tokens "$GREEDY_MAXTOK" --seed "$SEED" --out "$d/llama-$pid-$th-official.json"
+      fi
     done
   done
   [ "$LLAMA_OK" = 1 ] && printf 'kill "$(cat %q)" 2> /dev/null; wait "$(cat %q)" 2> /dev/null\n' \
@@ -60,9 +69,10 @@ NO_ON = ("#3723: this apr has no `run --thinking` flag — realizar routes every
          "so apr cannot generate greedily with thinking ON")
 
 
-def row(engine, pid, th, path, refused):
+def row(engine, pid, th, path, refused, source="apr"):
     r = {"kind": "greedy", "engine": engine, "model_sha256": sha, "host": host, "backend": backend, "prompt_id": pid,
-         "thinking": th, "max_tokens": int(maxtok), "tokens": None, "logits": None, "refused": refused}
+         "thinking": th, "prompt_source": source, "max_tokens": int(maxtok), "tokens": None, "logits": None,
+         "refused": refused}
     if refused is None:
         r["tokens"] = path
     open(m, "a").write(json.dumps(r) + "\n")
@@ -93,8 +103,10 @@ def judged(path, rc_path):
 
 for pid in pids:
     for th in ("on", "off"):
-        p = os.path.join(d, "llama-%s-%s.json" % (pid, th))
-        row("llama.cpp", pid, th, p, judged(p, p[:-5] + ".rc") if llama_ok == "1" else (llama_why or "llama.cpp unavailable"))
+        for source, suffix in (("apr", ""), ("official", "-official")):
+            p = os.path.join(d, "llama-%s-%s%s.json" % (pid, th, suffix))
+            row("llama.cpp", pid, th, p, judged(p, p[:-5] + ".rc") if llama_ok == "1" else
+                (llama_why or "llama.cpp unavailable"), source)
     for th in ("on", "off"):
         if th == "on" and think_flag != "1":
             row("apr", pid, "on", None, NO_ON)

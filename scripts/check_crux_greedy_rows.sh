@@ -10,7 +10,8 @@
 #   1. apr WITH `run --thinking` → apr ON and OFF measured; llama.cpp generates from apr's OWN prompt ids
 #                               (prompt_source apr, prompt_ids_equal true); the ON text shows <think>
 #   1b. apr WITHOUT it          → apr ON REFUSED naming #3723; OFF still measured
-#   1c. apr's prompt ≠ llama's template → still generated from apr's ids; prompt_ids_equal FALSE, visible
+#   1c. apr's prompt ≠ llama's template → the parity row runs on apr's ids (prompt_ids_equal FALSE, visible),
+#       the OFFICIAL row on the template's own ids (cop ruling on F9, #3990: RED-MODEL needs the official row)
 #   2. llama.cpp returns no `tokens` (return_tokens unsupported) → its rows refused BY NAME, never absent
 #   3. llama.cpp unavailable (LLAMA_OK=0) → llama rows refused with LLAMA_WHY; apr OFF refused naming why
 #   4. apr prints no `tokens`  → apr OFF refused by name
@@ -143,10 +144,10 @@ import json, sys
 for l in open(sys.argv[1]):
     r = json.loads(l)
     if r["refused"]:
-        print("row %s %s REFUSED %s" % (r["engine"], r["thinking"], r["refused"][:60]))
+        print("row %s %s %s REFUSED %s" % (r["engine"], r["thinking"], r["prompt_source"], r["refused"][:60]))
     else:
         d = json.load(open(r["tokens"]))
-        print("row %s %s ids=%s text=%r max=%s special=%s" % (r["engine"], r["thinking"], d["generated_ids"],
+        print("row %s %s %s ids=%s text=%r max=%s special=%s" % (r["engine"], r["thinking"], r["prompt_source"], d["generated_ids"],
               d["generated_text"], d["max_tokens"], d["special"]))
 PY
 }
@@ -155,46 +156,73 @@ printf '%s: greedy rows for #3957 F9\n' "$PROG"
 
 run_case up "$LIB" STUB_APR_THINKING=1
 got=$(rows up)
-want_up="row llama.cpp on ids=[1, 2, 3, 4, 5] text='<think>\n</think>4<|im_end|>' max=64 special=True
-row llama.cpp off ids=[4, 5] text='4<|im_end|>' max=64 special=True
-row apr on ids=[1, 2, 3, 4, 5] text='<think>\n</think>4<|im_end|>' max=64 special=True
-row apr off ids=[4, 5] text='4<|im_end|>' max=64 special=True"
+want_up="row llama.cpp on apr ids=[1, 2, 3, 4, 5] text='<think>\n</think>4<|im_end|>' max=64 special=True
+row llama.cpp on official ids=[1, 2, 3, 4, 5] text='<think>\n</think>4<|im_end|>' max=64 special=True
+row llama.cpp off apr ids=[4, 5] text='4<|im_end|>' max=64 special=True
+row llama.cpp off official ids=[4, 5] text='4<|im_end|>' max=64 special=True
+row apr on apr ids=[1, 2, 3, 4, 5] text='<think>\n</think>4<|im_end|>' max=64 special=True
+row apr off apr ids=[4, 5] text='4<|im_end|>' max=64 special=True"
 [ "$got" = "$want_up" ] && ok "apr with --thinking: apr ON and OFF measured beside llama.cpp, special text kept" \
   || { broke "apr with --thinking"; printf '%s\n--- want\n%s\n' "$got" "$want_up" | sed 's/^/        /'; }
 prov=$(python3 -c 'import json,sys
-r=[json.loads(l) for l in open(sys.argv[1])]; d=json.load(open([x for x in r if x["engine"]=="llama.cpp" and x["thinking"]=="on"][0]["tokens"]))
-print(d["prompt_source"].split(" (")[0], d["prompt_ids"], d["prompt_ids_equal"])' "$TMP/up/manifest.jsonl")
-[ "$prov" = "apr's own prompt ids [9, 9, 9, 8] True" ] && ok "llama.cpp generated from apr's OWN prompt ids, and they equal its template" \
-  || broke "llama prompt provenance: '$prov'"
+r=[json.loads(l) for l in open(sys.argv[1])]; d=json.load(open([x for x in r if x["engine"]=="llama.cpp" and x["thinking"]=="on" and x["prompt_source"]=="apr"][0]["tokens"]))
+print(d["prompt_source"], d["prompt_ids"], d["template_prompt_ids"], d["prompt_ids_equal"])' "$TMP/up/manifest.jsonl")
+[ "$prov" = "apr [9, 9, 9, 8] [9, 9, 9, 8] True" ] && ok "the parity row ran on apr's OWN prompt ids, and they equal the template" \
+  || broke "llama parity provenance: '$prov'"
 
 run_case noflag "$LIB"
 got=$(rows noflag)
 got_on=$(printf '%s\n' "$got" | grep '^row apr on')
-case "$got_on" in "row apr on REFUSED #3723: this apr has no \`run --thinking\` flag"*) ok "apr without --thinking: its ON row refused naming #3723; OFF measured" ;;
+case "$got_on" in "row apr on apr REFUSED #3723: this apr has no \`run --thinking\` flag"*) ok "apr without --thinking: its ON row refused naming #3723; OFF measured" ;;
   *) broke "apr no-flag ON row: '$got_on'" ;; esac
+got_par=$(printf '%s\n' "$got" | grep '^row llama.cpp on ')
+case "$got_par" in *"row llama.cpp on apr REFUSED RuntimeError: no apr prompt ids to reuse"*"row llama.cpp on official ids="*)
+  ok "...and llama.cpp's ON PARITY row is refused (no apr prompt), while its OFFICIAL row is measured" ;;
+  *) broke "no-flag llama ON rows: '$got_par'" ;; esac
 
 run_case drift "$LIB" STUB_APR_THINKING=1 STUB_APR_PROMPT_DRIFT=1
 prov=$(python3 -c 'import json,sys
-r=[json.loads(l) for l in open(sys.argv[1])]; d=json.load(open([x for x in r if x["engine"]=="llama.cpp" and x["thinking"]=="off"][0]["tokens"]))
-print(d["prompt_ids"], d["llama_template_prompt_ids"], d["prompt_ids_equal"])' "$TMP/drift/manifest.jsonl")
-[ "$prov" = "[7, 9, 9, 1] [9, 9, 9, 1] False" ] && ok "a prompt drift is VISIBLE: llama.cpp used apr's ids, prompt_ids_equal false" \
+r=[json.loads(l) for l in open(sys.argv[1])]
+par=json.load(open([x for x in r if x["engine"]=="llama.cpp" and x["thinking"]=="off" and x["prompt_source"]=="apr"][0]["tokens"]))
+off=json.load(open([x for x in r if x["engine"]=="llama.cpp" and x["thinking"]=="off" and x["prompt_source"]=="official"][0]["tokens"]))
+print(par["prompt_ids"], par["template_prompt_ids"], par["prompt_ids_equal"], "|", off["prompt_ids"], off["template_prompt_ids"])' "$TMP/drift/manifest.jsonl")
+[ "$prov" = "[7, 9, 9, 1] [9, 9, 9, 1] False | [9, 9, 9, 1] [9, 9, 9, 1]" ] \
+  && ok "a prompt drift is VISIBLE: parity ran on apr's ids (equal=false); official ran on the template's ids" \
   || broke "prompt drift provenance: '$prov'"
+
+# 1d. the HELPER ITSELF (not only the lib's call convention): handed an apr prompt that DIFFERS, --prompt-source
+#     official must still run on the template's ids, and --prompt-source apr on apr's. (A mutant that let the
+#     official row reuse apr's ids survived the table until this case: the lib never passes apr's stderr there.)
+hp=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')
+"$BIN/llama-server" -m /stub --port "$hp" > "$TMP/helper-srv.log" 2>&1 &
+hsp=$!
+for _ in $(seq 1 50); do python3 -c 'import sys,urllib.request;urllib.request.urlopen("http://127.0.0.1:%s/health"%sys.argv[1],timeout=1)' "$hp" 2>/dev/null && break; sleep 0.1; done
+printf '[DEBUG] add_bos=true, encoded 4 tokens: [7, 9, 9, 1]\n' > "$TMP/drift.err"
+printf '{"messages": [{"role": "user", "content": "q"}]}' > "$TMP/h-msg.json"
+for src in official apr; do
+  python3 "$ROOT/scripts/lib/crux_greedy_llama.py" gen --prompt-source "$src" --url "http://127.0.0.1:$hp" \
+    --messages "$TMP/h-msg.json" --thinking off --max-tokens 8 --seed 1 --apr-stderr "$TMP/drift.err" --out "$TMP/h-$src.json"
+done
+kill "$hsp" 2>/dev/null; wait "$hsp" 2>/dev/null
+got=$(python3 -c 'import json,sys; print(" | ".join("%s %s" % (s, json.load(open(sys.argv[1] + "/h-%s.json" % s))["prompt_ids"]) for s in ("official", "apr")))' "$TMP")
+[ "$got" = "official [9, 9, 9, 1] | apr [7, 9, 9, 1]" ] && ok "helper: official runs on the template's ids even when handed apr's; apr on apr's" \
+  || broke "helper prompt selection: '$got'"
 
 run_case notokens "$LIB" STUB_NO_TOKENS=1
 got=$(rows notokens | grep '^row llama.cpp')
-case "$got" in *"llama.cpp on REFUSED RuntimeError: llama-server /completion returned no"*"llama.cpp off REFUSED RuntimeError"*)
+case "$got" in *"llama.cpp on apr REFUSED RuntimeError"*"llama.cpp on official REFUSED RuntimeError: llama-server /completion returned no"*"llama.cpp off official REFUSED RuntimeError"*)
   ok "llama.cpp without return_tokens: both its rows refused by name" ;;
   *) broke "no-tokens llama rows: $got" ;; esac
 
 run_case nollama "$LIB" LLAMA_OK=0 "LLAMA_WHY=llama.cpp unresolved: fixture"
 got=$(rows nollama)
-case "$got" in *"llama.cpp on REFUSED llama.cpp unresolved: fixture"*"apr off REFUSED apr's ids are decoded through llama-server"*)
+case "$got" in *"llama.cpp on apr REFUSED llama.cpp unresolved: fixture"*"llama.cpp on official REFUSED llama.cpp unresolved: fixture"*"apr off apr REFUSED apr's ids are decoded through llama-server"*)
   ok "llama.cpp unavailable: its rows carry LLAMA_WHY; apr OFF names why it cannot be decoded" ;;
   *) broke "no-llama rows: $got" ;; esac
 
 run_case noaprtokens "$LIB" STUB_APR_THINKING=1 STUB_APR_NO_TOKENS=1
 got=$(rows noaprtokens | grep '^row apr off')
-case "$got" in "row apr off REFUSED RuntimeError: apr --format json carried no "*) ok "apr with no tokens: its OFF row refused by name" ;;
+case "$got" in "row apr off apr REFUSED RuntimeError: apr --format json carried no "*) ok "apr with no tokens: its OFF row refused by name" ;;
   *) broke "apr no-tokens row: $got" ;; esac
 
 # Row 5: MUTANT — the apr-ON refusal row dropped. The table must notice the missing row.
