@@ -84,6 +84,11 @@ for verb, path, fn, pred, must, after in ENTRY:
     a = body.find(after) if after else len(body)
     if verb == "serve chat" and "qwen3_moe_generate::run_qwen3_moe_generate(" in body:
         print(f"  FAIL  {verb:18s} still calls the CPU-ONLY generator, not the dispatch"); bad = 1; continue
+    # #3987b: the live CPU streamer is legitimate only on a CPU server; a CUDA server's
+    # stream=true must reach the dispatch (measured: gx10 streamed on the CPU, U+FFFD).
+    st = body.find("run_qwen3_moe_generate_streaming(")
+    if verb == "serve chat" and st >= 0 and not (0 <= body.find("request.stream && state.moe_no_gpu()") < st):
+        print(f"  FAIL  {verb:18s} stream=true reaches the CPU-ONLY streamer on a CUDA server"); bad = 1; continue
     if p < 0 or d < 0:
         print(f"  FAIL  {verb:18s} predicate {'present' if p >= 0 else 'MISSING'}, `{must}` {'present' if d >= 0 else 'MISSING'}"); bad = 1; continue
     if a >= 0 and not (p < a and d < a):
@@ -191,6 +196,8 @@ if [ "$SELF_TEST" = 1 ]; then
       "s.replace('    if is_qwen3_moe_gguf(mapped) {\n        return Ok(GgufPreload', '    if false {\n        return Ok(GgufPreload', 1)"
   mut "serve chat back on the CPU-only generator" crates/aprender-serve/src/api/cuda_chat_backend.rs \
       "s.replace('crate::infer::qwen3_moe_dispatch::run_qwen3_moe_generate_dispatch(', 'crate::infer::qwen3_moe_generate::run_qwen3_moe_generate(', 1)"
+  mut "serve chat streams on the CPU on a CUDA server" crates/aprender-serve/src/api/cuda_chat_backend.rs \
+      "s.replace('if request.stream && state.moe_no_gpu() {', 'if request.stream {', 1)"
   mut "serve completions loses its MoE route" crates/aprender-serve/src/api/realize_handlers_embed_completion.rs \
       "s.replace('run_qwen3_moe_generate_dispatch(', 'removed_dispatch(', 1)"
   mkdir -p "$T/crates/apr-cli/src/commands"

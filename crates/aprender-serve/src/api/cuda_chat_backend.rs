@@ -1067,7 +1067,12 @@ fn try_qwen3_moe_backend(
     // qwen3-moe-streaming-sse-v1: per-token SSE when stream=true.
     // Dispatches to the callback variant + builds an SSE response from
     // a tokio mpsc channel. Non-streaming path falls through below.
-    if request.stream {
+    //
+    // #3987: that callback variant is the CPU forward. A CUDA server
+    // (`with_moe_gpu`) must stream what the GPU generated, so it goes through
+    // the ONE dispatch below and replays the result — the same
+    // `stream_mode: "replayed"` every other CUDA chat stream declares.
+    if request.stream && state.moe_no_gpu() {
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(64);
         let mapped_clone = mapped.clone();
         let quantized_clone = quantized.clone();
@@ -1126,6 +1131,19 @@ fn try_qwen3_moe_backend(
 
     let generated_ids: Vec<u32> = tokens[input_ids.len()..].to_vec();
     let completion_tokens = generated_ids.len();
+
+    if request.stream {
+        state.metrics.record_success(completion_tokens, start.elapsed());
+        return Some(pregenerated_sse_response(
+            generated_ids,
+            tokenizer,
+            request_id.to_string(),
+            request.model.clone(),
+            request.stop.as_deref(),
+            max_tokens,
+            prompt_token_count,
+        ));
+    }
 
     // Apply clean_chat_output to strip self-emitted "Human:" / "User:" /
     // "<|im_end|>" / etc. prefixes from response text. Mirrors the dense
