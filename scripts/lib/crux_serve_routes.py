@@ -133,6 +133,21 @@ NOT_GENERATION = {
     "POST /v1/perplexity": "perplexity of GIVEN text, no generation",
 }
 RAW_KINDS = ("text_prompt", "raw_generate", "raw_sse", "raw_batch")
+# Wires that carry ONE prompt and no conversation: ollama /api/generate takes `prompt` (apr accepts no
+# Ollama `context` continuation). A multi-turn prompt on it would be asked as its LAST turn only -- a
+# different question from the one its oracle answers with the full history (aprender-83's freeze sweep:
+# ctl-recall-7 on /api/generate, apr correctly said "I do not have access to your past conversations").
+SINGLE_PROMPT_KINDS = ("ollama_generate",)
+
+
+def history_refusal(route, prompt):
+    """Why `route` cannot be asked `prompt` (a multi-turn prompt on a single-prompt wire), else None."""
+    spec = GENERATION.get(route)
+    turns = sum(1 for m in prompt.get("messages") or () if m.get("role") == "user")
+    if spec and spec["kind"] in SINGLE_PROMPT_KINDS and turns > 1:
+        return ("route %s takes one prompt and carries no conversation: a %d-turn prompt would be asked as "
+                "its last turn only, a different question from the one its oracle answers" % (route, turns))
+    return None
 
 # #3962 B4: the ORACLE for each apr route. apr serve mounts ~11 generation routes; a comparator
 # (llama-server) mounts two of them. A route is paired with the comparator route that asks the
@@ -393,6 +408,10 @@ def drive(a):
     if a.mode not in spec["modes"]:
         out["refused"] = "route %s does not support mode %s (its wire: %s)" % (a.route, a.mode, "/".join(spec["modes"]))
         return finish(4)
+    why = history_refusal(a.route, prompt)
+    if why:
+        out["refused"] = why
+        return finish(4)
     raw = spec["kind"] in RAW_KINDS
     if raw and not a.render_url:
         out["refused"] = ("route %s takes a raw prompt and no reference renderer was given: "
@@ -471,9 +490,15 @@ def sweep(a):
         else:
             p = classify(index)
             p["index"] = index
-    cells = []
+    cells, not_applicable = [], []
     for pid, verbs in (json.loads(x) for x in open(a.prompt_list) if x.strip()):
+        prompt = json.load(open("%s/prompt-%s.json" % (a.prompt_dir, pid)))
         for g in p["generation"]:
+            why = history_refusal(g["route"], prompt)
+            if why:
+                # Like a mode the wire lacks: never asked, and said so in the plan.
+                not_applicable.append({"route": g["route"], "prompt_id": pid, "why": why})
+                continue
             for mode in g["modes"]:
                 if MODE_VERB[mode] not in verbs:
                     continue
@@ -492,6 +517,7 @@ def sweep(a):
                                "protocol_fault": "driver_crash: %s: %s" % (type(exc).__name__, exc)}, open(out, "w"))
                 cells.append({"route": g["route"], "mode": mode, "prompt_id": pid, "out": out, "rc": rc})
     p["cells"] = cells
+    p["not_applicable"] = not_applicable
     p["prompts"] = [json.loads(x) for x in open(a.prompt_list) if x.strip()]
     json.dump(p, open("%s/plan.json" % a.out_dir, "w"), indent=1)
     return 0
