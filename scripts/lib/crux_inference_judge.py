@@ -220,6 +220,38 @@ def parse_apr(stdout, stderr):
 RATE_LINE = re.compile(r"\[\s*Prompt:\s*([0-9.]+)\s*t/s\s*\|\s*Generation:\s*([0-9.]+)\s*t/s\s*\]")
 
 
+#: #3962 B2: llama-cli's thinking markers -> the tags crux_oracles.strip_think reads.
+LLAMA_CLI_THINK = (("[Start thinking]", "<think>"), ("[End thinking]", "</think>"))
+
+
+def rendered_opens_think(rendered):
+    """#3962 B2: did apr's rendered prompt (its -v `formatted_prompt`, Rust-Debug-escaped) end INSIDE an
+    open think block? -> True / False / None. realizar prints only the first 200 characters, so a
+    rendering that long may be cut before its end: that is None (unknown), never guessed."""
+    if not isinstance(rendered, str):
+        return None
+    if rendered.endswith("<think>\\n"):
+        return True
+    return False if len(rendered) < 180 else None
+
+
+def prompt_opens_think(rows):
+    """#3962 B2: {(model_sha256, prompt_id): bool} -- whether the model's OWN thinking-ON template opens
+    the think block in the prompt, read off the reference engines' `tmpl` rows (the rendering apr's must
+    equal byte for byte; the tmpl cells judge that). Used when apr's own rendering is not visible (apr
+    chat prints none; apr run's is cut at 200 characters)."""
+    out = {}
+    for r in rows:
+        if r.get("kind") != "tmpl" or r.get("engine") == "apr" or r.get("thinking") != "on" or r.get("refused"):
+            continue
+        try:
+            text = _load_bytes(r["rendered"]).decode("utf-8", "replace")
+        except (OSError, KeyError, TypeError):
+            continue
+        out[(r.get("model_sha256"), r.get("prompt_id"))] = text.endswith("<think>\n")
+    return out
+
+
 def parse_llamacpp_cli(stdout, prompt_text):
     """The pinned llama.cpp chat CLI echoes `> <prompt>`, streams the answer,
     then prints `[ Prompt: X t/s | Generation: Y t/s ]`. The answer is the text
@@ -236,7 +268,13 @@ def parse_llamacpp_cli(stdout, prompt_text):
     if not m:
         out["why"] = "no end-of-turn timing line after the echoed prompt"
         return out
-    out["answer"] = rest[:m.start()].strip()
+    # #3962 B2: llama-cli prints its reasoning as `[Start thinking] ... [End thinking]`. Map the markers to
+    # the tags VERBATIM and let crux_oracles.strip_think judge it, so ONE place decides what the answer is:
+    # a closed block is stripped, and an unclosed one is RED "unclosed think", never read as the answer.
+    ans = rest[:m.start()].strip()
+    for marker, tag in LLAMA_CLI_THINK:
+        ans = ans.replace(marker, tag)
+    out["answer"] = ans
     out["reported"] = {
         "reported_by": "llama.cpp",
         "prompt_rate": float(m.group(1)),
@@ -414,8 +452,9 @@ def oracle_eval(prompt, entry):
             "extracted": crux_oracles.extract(prompt, judged)}
 
 
-def engine_entry(row, prompt):
-    """One engine's answer to one cell, from its manifest row."""
+def engine_entry(row, prompt, prompt_opened=None):
+    """One engine's answer to one cell, from its manifest row. `prompt_opened` is the model's own
+    template's answer to "does thinking ON open the block in the prompt?" (prompt_opens_think)."""
     e = {"answered": False, "rc": row.get("rc"), "why": None, "answer": None, "reported": {}}
     if "ollama_unloaded" in row:
         # Did ollama's model leave VRAM before the cell dropped the GPU lock?
@@ -467,6 +506,29 @@ def engine_entry(row, prompt):
     else:
         e["why"] = "unknown engine %r" % engine
         return e
+    # #3962 B2: thinking ON with the official template prefills `<think>\n` in the PROMPT (#3990), so apr's
+    # reply starts INSIDE the block with no opener, and the reasoning was judged AS the answer ("apr is
+    # wrong: answer_not_int" on every ON cell of the smoke, apr c08437cdd). Re-attach the opener and let
+    # crux_oracles.strip_think decide, as the Rust golden ON leg does (on_leg_judged_text): a closed block
+    # is stripped, an unclosed one is RED "unclosed think". When nothing shows whether the prompt opened
+    # the block and the reply carries no think tag, the cell is RED by name -- never judged on reasoning.
+    # run and chat only: `apr serve` has no thinking toggle (it always renders thinking OFF, #3990), so a
+    # serve reply is never inside a prefilled block and must not be given an opener.
+    if engine == "apr" and row.get("thinking") == "on" and row.get("verb") in ("run", "chat") \
+            and isinstance(p.get("answer"), str):
+        opened = rendered_opens_think(p.get("rendered_prompt"))
+        if opened is None:
+            opened = prompt_opened
+        e["prompt_opened_think"] = opened
+        if opened is True and not p["answer"].lstrip().lower().startswith("<think>"):
+            p["answer"] = "<think>\n" + p["answer"]
+        elif opened is None and not re.search(r"</?think>", p["answer"], re.I):
+            e["reported"] = p["reported"]
+            e["answer"] = p["answer"]
+            e["why"] = ("thinking ON, and nothing shows whether the prompt opened a think block (apr's rendering is "
+                        "not visible and no reference tmpl row covers it), while the reply carries no think tag -- "
+                        "the reasoning cannot be told from the answer (#3962 B2)")
+            return e
     e["reported"] = p["reported"]
     e["answer"] = p["answer"]
     if row.get("rc") != 0:
@@ -803,6 +865,16 @@ def collect(args):
             if line.strip():
                 rows.append(json.loads(line))
     gens = [r for r in rows if r.get("kind") == "gen"]
+    # #3962 B2: whether each (model, prompt)'s thinking-ON prompt opens the think block. The reference
+    # tmpl rows (the model's own template) first; else apr's own `run` rendering of that prompt in this
+    # sweep, when it was printed whole. `apr chat` prints no rendering, and uses the same template.
+    opened_by = prompt_opens_think(rows)
+    for r in gens:
+        if r.get("engine") == "apr" and r.get("verb") == "run" and r.get("thinking") == "on" and not r.get("refused"):
+            m = re.search(r'formatted_prompt="((?:[^"\\]|\\.)*)"', read_text(r.get("stderr")) or "")
+            o = rendered_opens_think(m.group(1) if m else None)
+            if o is not None:
+                opened_by.setdefault((r.get("model_sha256"), r.get("prompt_id")), o)
     # llama.cpp's template-level ids feed the REPORTED token_parity field; raw-text
     # `tok` rows (they carry `input`) are the byte-equal deterministic rows below.
     toks = {(r["model_sha256"], r["prompt_id"]): r for r in rows
@@ -864,7 +936,7 @@ def collect(args):
                 entries[eng] = {"answered": False, "missing": True,
                                 "why": "missing: no row for this engine" if eng in requested else "not requested"}
             else:
-                entries[eng] = engine_entry(row, prompt)
+                entries[eng] = engine_entry(row, prompt, opened_by.get((row.get("model_sha256"), row.get("prompt_id"))))
                 # #3952: a comparator the receipt cannot name a version for cannot vouch — for apr or against
                 # it. Its answer is kept on the record; it is not an oracle.
                 if eng in COMPARATORS and entries[eng].get("answered") and not versions.get(eng):
