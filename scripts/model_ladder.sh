@@ -795,7 +795,41 @@ find_model() { # find_model <basename> — the inventory's copy first, then the 
   return 1
 }
 
-WORK=$(mktemp -d 2>/dev/null) && [ -d "$WORK" ] || { echo "decline: cannot create a scratch dir (mktemp -d failed: is TMPDIR writable, or the disk full?)" >&2; exit 2; }
+# ── #4053: WORK lives on the NVMe array, never on /tmp ─────────────────────────────
+# The gx10 rehearsal at c619dddd4 died "No space left on device" on /tmp at the 27B cell: WORK
+# was a bare `mktemp -d`, and every `apr` the cell runs inherits TMPDIR, so its temporaries went
+# there too. WORK now sits under APR_LADDER_WORK_ROOT (default: the NVMe array where it exists),
+# TMPDIR is pointed INTO it for every child, and a preflight refuses by name BEFORE any cell: a
+# RAM-backed WORK (tmpfs/ramfs), or less free space than the largest held model plus the floor
+# (a cell can write a model-sized temporary).
+ladder_work_root() { # -> the directory WORK dirs are created under
+    if [ -n "${APR_LADDER_WORK_ROOT:-}" ]; then printf '%s' "$APR_LADDER_WORK_ROOT"; return 0; fi
+    if [ -d /mnt/nvme-raid0 ] && [ -w /mnt/nvme-raid0 ]; then printf '%s' /mnt/nvme-raid0/apr-ladder-work; return 0; fi
+    printf '%s' "${TMPDIR:-/tmp}"
+}
+ladder_work_preflight() { # <work-dir> <inventory file|path lines> -> 0, or prints why and returns 1
+    local d="$1" inv="$2" fst big=0 bigf="" sz p avail need
+    fst=$(stat -f -c %T "$d" 2>/dev/null)
+    case "$fst" in
+        tmpfs|ramfs) printf 'the ladder WORK dir %s is on %s (RAM-backed; the 27B cell filled gx10'"'"'s /tmp, #4053): set APR_LADDER_WORK_ROOT to a disk-backed directory' "$d" "$fst"; return 1 ;;
+    esac
+    while IFS='|' read -r _f p; do
+        [ -n "${p:-}" ] || continue
+        sz=$(stat -L -c %s "$p" 2>/dev/null || echo 0)
+        [ "$sz" -gt "$big" ] && { big=$sz; bigf=$p; }
+    done <<< "$inv"
+    need=$(( (big + 1048575) / 1048576 + LADDER_MIN_FREE_MB ))
+    avail=$(df -Pm "$d" 2>/dev/null | awk 'NR==2{print $4}')
+    if [ -z "$avail" ] || [ "$avail" -lt "$need" ]; then
+        printf 'the ladder WORK dir %s has %s MB free, under the %s MB its largest cell needs (%s, %s MB, + the %s MB floor, #4053)' \
+            "$d" "${avail:-?}" "$need" "${bigf:-no held model}" "$(( (big + 1048575) / 1048576 ))" "$LADDER_MIN_FREE_MB"
+        return 1
+    fi
+}
+WORK_ROOT=$(ladder_work_root)
+mkdir -p "$WORK_ROOT" 2>/dev/null || { echo "decline: cannot create the ladder work root $WORK_ROOT (#4053)" >&2; exit 2; }
+WORK=$(mktemp -d -p "$WORK_ROOT" ladder.XXXXXX 2>/dev/null) && [ -d "$WORK" ] || { echo "decline: cannot create a scratch dir under $WORK_ROOT (is it writable, or the disk full?)" >&2; exit 2; }
+export TMPDIR="$WORK"   # every apr the cells run writes its temporaries here, not /tmp (#4053)
 # The delete is guarded (SEC011): only a path under a temp root is removed.
 _rm_work() {
   local v="${WORK:-}"
@@ -849,6 +883,7 @@ ladder_append() { # <file> <line>: append one record or decline
 mkdir -p "$OUT_DIR" 2>/dev/null || ladder_write_decline "cannot create the receipt dir $OUT_DIR"
 why=$(ladder_disk_probe "$WORK") || ladder_write_decline "$why"
 why=$(ladder_disk_probe "$OUT_DIR") || ladder_write_decline "$why"
+why=$(ladder_work_preflight "$WORK" "$INVENTORY") || ladder_write_decline "$why"
 EXECUTED=0; RED=0
 printf -- '--- model capability ladder on %s (%s, cc %s) apr=%s sha=%s version=%s ---\n' \
   "$HOST" "${GPU_NAME:-no-gpu}" "${GPU_CC:-?}" "$APR" "$SHA" "$VERSION"
