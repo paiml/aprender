@@ -27,6 +27,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 LOCK = HERE / "uv.lock"
+# #3971: every source file is hashed against its blob name before it is loaded (shared with vllm).
+sys.path.insert(0, str(HERE.parent / "lib"))
+from crux_hf_verify import verified_source  # noqa: E402
 
 
 def die(msg: str, code: int = 2) -> None:
@@ -119,9 +122,10 @@ def load_messages(path: str) -> list:
 
 
 def source_of(a: argparse.Namespace) -> tuple[str, str | None]:
-    """What HF loads: the source repo at its revision when given (a GGUF cell runs the bf16 source), else --model."""
+    """What HF loads: the source repo at its revision when given (a GGUF cell runs the bf16 source), else --model.
+    A source repo is loaded from its VERIFIED local snapshot (#3971), so the revision is already applied."""
     if a.source_repo:
-        return a.source_repo, a.source_revision
+        return str(verified_source(a.source_repo, a.source_revision)), None
     return a.model, None
 
 
@@ -314,7 +318,7 @@ def tok(a) -> None:
     try:
         from transformers import AutoTokenizer
 
-        t = AutoTokenizer.from_pretrained(a.source_repo, revision=a.source_revision)
+        t = AutoTokenizer.from_pretrained(str(verified_source(a.source_repo, a.source_revision)))
         text = Path(a.input).read_bytes().decode("utf-8")
         ids = t.encode(text, add_special_tokens=a.add_special)
         ids_path.write_text(json.dumps({"tokens": ids}), encoding="utf-8")
@@ -339,7 +343,7 @@ def tmpl(a) -> None:
     try:
         from transformers import AutoTokenizer
 
-        t = AutoTokenizer.from_pretrained(a.source_repo, revision=a.source_revision)
+        t = AutoTokenizer.from_pretrained(str(verified_source(a.source_repo, a.source_revision)))
         text = t.apply_chat_template(
             load_messages(a.messages), tokenize=False, add_generation_prompt=True, **thinking_kwargs(a.thinking)
         )

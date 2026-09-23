@@ -8,7 +8,8 @@
 # `probe` prints the resolved versions plus the lockfile's sha256 into the receipt.
 #
 # The environment lives OUTSIDE the tree (vllm + torch are gigabytes): $UV_PROJECT_ENVIRONMENT if the
-# caller set it, else ~/.local/share/crux/vllm-venv. The model cache is the caller's HF_HOME.
+# caller set it, else ~/.local/share/crux/vllm-venv. The model cache is CRUX's own: $CRUX_HF_HOME, else
+# ~/.local/share/crux/hf-home — never the shared ~/.cache/huggingface (#3971).
 #
 # The venv's bin goes on PATH because vLLM's engine init shells out to `ninja` (measured on lambda,
 # 2026-09-23: FileNotFoundError: 'ninja' without it). engine.py checks it by name before any model loads.
@@ -23,4 +24,8 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-"$HOME/.local/share/crux/vllm-venv"}"
 export PATH="$UV_PROJECT_ENVIRONMENT/bin:$PATH"
+# CRUX's OWN model cache (#3971): the shared ~/.cache/huggingface held a blob rewritten through its
+# snapshot symlink, and any other consumer's write can reach a shared cache. A declared path that only
+# CRUX populates, and engine.py hashes every file against its blob name before loading it.
+export HF_HOME="${CRUX_HF_HOME:-"$HOME/.local/share/crux/hf-home"}"
 exec uv run --quiet --frozen --project "$HERE/crux_vllm" python "$HERE/crux_vllm/engine.py" "$@"

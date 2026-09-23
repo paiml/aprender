@@ -192,6 +192,12 @@ def preflight(a) -> None:
         raise RuntimeError("`ninja` is not on PATH — vLLM's engine init shells out to it")
 
 
+# ── cache integrity (#3971): shared with the hf engine ─────────────────────────
+sys.path.insert(0, str(HERE.parent / "lib"))
+import crux_hf_verify  # noqa: E402
+from crux_hf_verify import verified_source  # noqa: E402
+
+
 def device_label() -> str:
     import torch
 
@@ -221,8 +227,9 @@ def gen_generate(a, messages):
     """`run`: one reply. `chat`: the conversation driven turn by turn. The engine is built ONCE either way."""
     from vllm import LLM, SamplingParams
 
+    src = verified_source(a.source_repo, a.source_revision)
     llm = LLM(
-        model=a.source_repo, revision=a.source_revision, tokenizer_revision=a.source_revision,
+        model=str(src), tokenizer=str(src), served_model_name=a.source_repo,
         dtype=a.dtype, max_model_len=a.context, seed=a.seed,
         gpu_memory_utilization=gpu_memory_utilization(), enforce_eager=True,
     )
@@ -250,10 +257,11 @@ def free_port() -> int:
 
 def gen_serve(a, messages, d: Path, stem: str):
     """`vllm serve`, the pinned version's own OpenAI-compatible server, one request, then stopped."""
+    src = verified_source(a.source_repo, a.source_revision)
     port = free_port()
     cmd = [
-        str(Path(sys.executable).parent / "vllm"), "serve", a.source_repo, "--revision", a.source_revision,
-        "--tokenizer-revision", a.source_revision, "--host", "127.0.0.1", "--port", str(port),
+        str(Path(sys.executable).parent / "vllm"), "serve", str(src), "--served-model-name", a.source_repo,
+        "--host", "127.0.0.1", "--port", str(port),
         "--dtype", a.dtype, "--max-model-len", str(a.context), "--seed", str(a.seed),
         "--gpu-memory-utilization", str(gpu_memory_utilization()), "--enforce-eager",
     ]
