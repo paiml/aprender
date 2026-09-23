@@ -32,6 +32,7 @@ aprender-cgp	--lib	analysis::contracts
 aprender-compute-xtask	--bins
 aprender-contracts	--lib	binding
 aprender-contracts	--lib	build_helper
+aprender-contracts	--lib	lint::capability_cells_gate
 aprender-contracts	--lib	lint::diff
 aprender-contracts	--lib	lint::duplicate_stems
 aprender-contracts	--lib	lint::finding

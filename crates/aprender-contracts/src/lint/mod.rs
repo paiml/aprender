@@ -138,6 +138,21 @@ pub enum GateDetail {
     Skipped { reason: String },
 }
 
+/// The `shapes` gate's positive controls and ONT-4c5's cell report — one boxed, flattened block of
+/// [`GateExtra::Shapes`].
+#[derive(Debug, Clone, Serialize)]
+pub struct ShapesControls {
+    /// The extractor positive controls: `gguf` (corrupt magic refused), `apr-model` (lying header refused).
+    pub pc_extract: std::collections::BTreeMap<String, String>,
+    /// ONT-4c5: per-shape positive controls (`capability-cells` → `fired`); the gate never reaches `Ran` with
+    /// one that is not.
+    pub pc_shapes: std::collections::BTreeMap<String, String>,
+    /// ONT-4c5: the capability-cell domain D and its NotRun cells at the current release — absent unless a
+    /// contract declares the `capability-cells` shape.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability_cells: Option<capability_cells_gate::CapabilityCellsReport>,
+}
+
 /// Out-of-band structured detail for gates that post-date the frozen [`GateDetail`]
 /// vocabulary.
 ///
@@ -264,8 +279,11 @@ pub enum GateExtra {
         unarmed_violations: usize,
         /// Focus nodes each extractor produced: `pv-contract`, `gguf`, `apr-model`.
         by_entity_type: std::collections::BTreeMap<String, usize>,
-        /// The extractor positive controls: `gguf` (corrupt magic refused), `apr-model` (lying header refused).
-        pc_extract: std::collections::BTreeMap<String, String>,
+        /// The positive controls (`pc_extract`, `pc_shapes`) and ONT-4c5's `capability_cells`, boxed and
+        /// FLATTENED: the JSON keys stay top-level where the §5 probes read them, and the variant stays under
+        /// clippy's large-enum-variant bound (it sat exactly at it before ONT-4c5).
+        #[serde(flatten)]
+        controls: Box<ShapesControls>,
         /// Ladder receipt files read under `evidence/dogfood/models/`.
         receipts: usize,
         /// Receipt rows whose `sha256` equals a rung's.
@@ -286,13 +304,6 @@ pub enum GateExtra {
         /// aprender#3715: what `extract:release-evidence` derived — absent unless a release subject was given.
         #[serde(skip_serializing_if = "Option::is_none")]
         release: Option<Box<crate::ontology::extract::release_evidence::ReleaseStats>>,
-        /// ONT-4c5: the capability-cell domain D and its NotRun cells at the current release — absent unless a
-        /// contract declares the `capability-cells` shape.
-        #[serde(skip_serializing_if = "Option::is_none")]
-        capability_cells: Option<capability_cells_gate::CapabilityCellsReport>,
-        /// ONT-4c5: per-shape positive controls (`capability-cells` → `fired`); the gate never reaches `Ran`
-        /// with one that is not.
-        pc_shapes: std::collections::BTreeMap<String, String>,
     },
 }
 

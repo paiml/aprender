@@ -232,10 +232,11 @@ fn the_tracked_repo_graph_is_fresh() {
     // `release-readiness-v1` family (shapes_n=18, triples=15863, measured on its branch); it contributes no focus
     // node to a PR's graph — the release evidence is extracted only under `--release-*`. #3745 S2 (#3777) added
     // six more for the DERIVED cell classes (effect, probe, model-cell, effect-cell) CRUX (crux-verb, crux) and a8's sampling controls (sampling): 25.
+    // ONT-4c5 (PMAT-3972) added `capability-cells`: 26.
     assert_eq!(
         v["shapes_n"],
-        25,
-        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + release-readiness-v1{{.effect,.probe,.model-cell,.effect-cell,.crux-verb,.crux,.sampling}} (#3745 S2)\n{}",
+        26,
+        "ont-shapes-v1 + ladder-measured + ladder-green (ONT-4c1) + bound-symbols-resolve + lean-statements-grounded (ONT-4b2) + refusal-receipt-v1 (#3605) + parity-receipt-complete + parity-comparator-self + parity-comparator-oracle (parity-receipt-v2, #3600) + release-readiness-v1{{,.release,.host,.context,.model,.coverage,.tokenizer,.kernel,.refusal}} (#3715) + release-readiness-v1{{.effect,.probe,.model-cell,.effect-cell,.crux-verb,.crux,.sampling}} (#3745 S2) + capability-cells (ONT-4c5)\n{}",
         show(&r)
     );
 }
