@@ -55,6 +55,8 @@ while [ $# -gt 0 ]; do
     # --lock-probe <apr args…>: one apr call through apr_locked, then exit with its rc. For the case
     # table in check_model_ladder.sh, which proves every apr call runs under the lock.
     --lock-probe) shift; LOCK_PROBE=1; break ;;
+    # --lane-probe <backend> <apr args…>: one apr call through apr_lane (#4034), for the same table.
+    --lane-probe) [ $# -ge 2 ] || { echo "model_ladder: --lane-probe needs a backend" >&2; exit 2; }; LANE_PROBE="$2"; shift 2; break ;;
     -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) echo "model_ladder: unknown argument '$1'" >&2; exit 2 ;;
   esac
@@ -87,6 +89,21 @@ LOCK_BUSY=75   # flock -E: the lock was not free in LOCK_WAIT seconds (an apr ex
 command -v flock > /dev/null && command -v choom > /dev/null \
   || { echo "decline: flock and choom (util-linux) are required -- every apr call runs under the fleet GPU lock" >&2; exit 2; }
 apr_locked() { flock -E "$LOCK_BUSY" -w "$LOCK_WAIT" "$GPU_LOCK" choom -n 1000 -- "$APR" "$@"; }
+# #4034: THE CPU LANE RUNS OUTSIDE THE LOCK, AND CANNOT REACH A GPU. It takes no fleet lock because
+# CUDA_VISIBLE_DEVICES is set and EMPTY, so the process cannot open a CUDA context. The lock exists
+# to serialize GPU use (and host OOM on gx10), and a process that sees no device is not GPU use.
+# It keeps choom 1000 (it is still the OOM victim, never the pool) and runs niced, so it cannot
+# starve the GPU lane's host threads. Measured with apr 0.69.1 (fc942f6be): `--no-gpu` run and chat
+# with the devices hidden exit 0, print none of the fallback strings the cell greps for, and chat
+# reports {"requested":"cpu","ran":"cpu","fell_back":false}. check_model_ladder.sh probes both
+# lanes through --lane-probe: the cpu lane must see no device and no lock, and every other lane
+# must hold the lock.
+CPU_LANE_NICE="${MODEL_LADDER_CPU_LANE_NICE:-10}"
+apr_cpu_unlocked() { CUDA_VISIBLE_DEVICES= nice -n "$CPU_LANE_NICE" choom -n 1000 -- "$APR" "$@"; }
+apr_lane() { # apr_lane <backend> <apr args…>: cpu -> unlocked with no device; any other backend -> apr_locked
+  local lane="$1"; shift
+  if [ "$lane" = cpu ]; then apr_cpu_unlocked "$@"; else apr_locked "$@"; fi
+}
 
 # ── #3843: ASK THE BINARY whether a verb takes a flag; never assume ───────────
 # The verb loop hard-coded one backend flag and passed it to all four verbs. Their
@@ -410,6 +427,11 @@ lock_timeout() { # lock_timeout <what> -> exit 2, naming the holder from /proc/l
   echo "decline: ENV the GPU lock $GPU_LOCK was not free after ${LOCK_WAIT}s for $1 -- holder: ${holder:-unknown}. Not a model verdict." >&2
   exit 2
 }
+if [ -n "${LANE_PROBE:-}" ]; then
+  apr_lane "$LANE_PROBE" "$@"; rc=$?
+  [ "$rc" = "$LOCK_BUSY" ] && lock_timeout "apr $* ($LANE_PROBE lane)"
+  exit "$rc"
+fi
 if [ "${LOCK_PROBE:-0}" = 1 ]; then
   apr_locked "$@"; rc=$?
   [ "$rc" = "$LOCK_BUSY" ] && lock_timeout "apr $*"
@@ -710,7 +732,7 @@ ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <ba
     fi
 
     port=$(( 20000 + (RANDOM % 20000) ))
-    apr_locked serve run "$path" --port "$port" $flag > "$WORK/serve-$rid-$bname.log" 2>&1 &
+    apr_lane "$bname" serve run "$path" --port "$port" $flag > "$WORK/serve-$rid-$bname.log" 2>&1 &
     pid=$!
     # Health, bounded by the SERVER (#3943 b). A server that never comes up is a FAIL
     # naming WHY the wait ended, never a skip.
@@ -797,8 +819,17 @@ find_model() { # find_model <basename> — the inventory's copy first, then the 
 
 WORK=$(mktemp -d 2>/dev/null) && [ -d "$WORK" ] || { echo "decline: cannot create a scratch dir (mktemp -d failed: is TMPDIR writable, or the disk full?)" >&2; exit 2; }
 # The delete is guarded (SEC011): only a path under a temp root is removed.
+LADDER_LANE_BG_PID=""
 _rm_work() {
-  local v="${WORK:-}"
+  local v="${WORK:-}" p
+  # #4034: a background CPU lane still running when the script exits (a decline on the GPU lane)
+  # must not outlive it. Its apr would keep a model loaded and write into a deleted $WORK.
+  if [ -n "${LADDER_LANE_BG_PID:-}" ]; then
+    for p in $(pgrep -P "$LADDER_LANE_BG_PID" 2> /dev/null) "$LADDER_LANE_BG_PID"; do
+      pkill -TERM -P "$p" 2> /dev/null; kill -TERM "$p" 2> /dev/null
+    done
+    wait "$LADDER_LANE_BG_PID" 2> /dev/null
+  fi
   case "$v" in
     /tmp/?*|/var/folders/?*|/mnt/?*) if [ -n "$v" ] && [ "$v" != "/" ]; then rm -rf -- "$v" || :; fi ;;
     *) return 0 ;;
@@ -858,6 +889,182 @@ printf '    inventory: %s model(s) matching %s under %s\n' "$(grep -c . <<< "$IN
 # The per-model checks, one function so a ladder rung and an inventory model cannot drift:
 #   1. apr qa --json: capability_match + golden_output (the two gates that name a wrong model)
 #   2. per claimed backend: `apr run` rc 0 and no fallback line (did it stay on that backend?)
+# ── #4034: ONE BACKEND LANE of a cell, as a function so the lanes can run concurrently ──
+# Prints the lane's receipt fragment (`"<backend>":{…}`) on stdout and nothing else. It reads
+# measure()'s locals (path, rid, the once-per-rung `code` result) through bash's dynamic scope, and
+# every apr call goes through apr_lane, so the CPU lane never takes the GPU lock and never
+# sees a device (apr_cpu_unlocked). In the foreground it behaves exactly as the old loop
+# body did, lock_timeout's `exit 2` included; measure() handles the background case.
+ladder_backend_cell() { # ladder_backend_cell <backend>
+  local b="$1" flag frag run_flag run_o run_e run_rc run_out run_stdout_bytes run_generated_bytes
+  local run_refusal_json fb ran esc fp chat_flag chat_out chat_rc chat_ran chat_bad
+  local serve_err serve_json serve_rc chat_bad_json code_bad_json
+  case "$b" in cpu) flag="--no-gpu" ;; cuda|gpu) flag="--gpu" ;; *) flag="" ;; esac
+  # --verbose prints realizar's `[DEBUG] formatted_prompt=…`, which the #3743 check reads.
+  # apr_locked / LOCK_BUSY are KEPT from main: the GPU lock is what serialises the
+  # ladder against every other session on the box. #3743's side dropped it.
+  run_flag=$(flag_for run "$flag")
+  # #3957 F10: stdout and stderr go to SEPARATE files. A refusal generates nothing, and the only way
+  # to observe "nothing" is a stdout byte count that the merged stream cannot give. `generated_bytes`
+  # leaves out apr's own `verbose: ` preamble, which --verbose prints BEFORE the pre-load refusal
+  # (measured on lambda, apr 0.69.1 (7b8aa7e32) on Qwen3.5-35B-A3B-UD-IQ4_XS: rc 12, 178 stdout
+  # bytes, all four of them `verbose:` lines). The refusal is recorded verbatim, so the judge can
+  # check that apr refused BY NAME (capability::no_cuda_forward_reason) and did not just fail.
+  run_o="$WORK/${rid//[^A-Za-z0-9._-]/_}.$b.run.out"; run_e="$WORK/${rid//[^A-Za-z0-9._-]/_}.$b.run.err"
+  # shellcheck disable=SC2086
+  apr_lane "$b" run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 --verbose $run_flag > "$run_o" 2> "$run_e"; run_rc=$?
+  [ "$run_rc" = "$LOCK_BUSY" ] && lock_timeout "apr run $rid ($b)"
+  run_out=$(cat "$run_o" "$run_e")
+  run_stdout_bytes=$(stat -c %s "$run_o" 2> /dev/null || echo null)
+  run_generated_bytes=$(grep -v '^verbose: ' "$run_o" | wc -c)
+  run_refusal_json=$(grep -h -m1 -F 'no CUDA forward for architecture' "$run_e" "$run_o" | head -1 | tr -d '\r\n' | json_str_or_null)
+  fb=false; ran=true; esc=false
+  if grep -qE 'falling back to CPU|path rejected, attempting fallback|runs on the CPU; the GPU backend' <<< "$run_out"; then fb=true; fi
+  # #3743: realizar zero-width-escapes special tokens it finds INSIDE the user text,
+  # so an escaped special in the formatted prompt means the prompt reached the model
+  # templated twice (0.69.0: `--prompt` on an instruct-named model). The debug line
+  # prints it Debug-escaped (`\u{200b}`); the raw character is checked too.
+  # NOT a pipeline. `producer | grep -q` under pipefail takes the PRODUCER's status,
+  # and `grep -q` closes the pipe on its first match -- so a MATCH makes the producer
+  # die with SIGPIPE (141) and the pipeline non-zero, and this `if` goes false BECAUSE
+  # the check succeeded. Measured by aprender-d8 as a script (both bash and zsh): correct
+  # at 1 and 1,000 matching lines, WRONG from 10,000 up, with PIPESTATUS reading [141, 0]
+  # -- the consumer matched and the producer was killed. It fails OPEN in proportion to
+  # the evidence it inspects, in `escaped_special`, which is one of the three fields the
+  # ladder verdict actually reads. Latent only because a normal run logs one prompt line.
+  # `|| true` is the honest "nothing to inspect" case: grep returns 1 when a run logged
+  # no prompt line at all (#3864).
+  fp=$(grep -F 'formatted_prompt=' <<< "$run_out" || true)
+  if grep -qF -e '\u{200b}' -e $'\u200b' <<< "$fp"; then esc=true; fi
+  if [ "$b" != cpu ] && [ -z "$GPU_NAME" ]; then ran=false; fi
+  [ $run_rc -eq 0 ] || ran=false
+
+  # ── #3828: the OTHER THREE VERBS ────────────────────────────────────────────
+  # This loop ran `apr run` and nothing else, so `serve`, `chat` and `code` cells in
+  # release-readiness-v1 (#3715) were computed over a verb set of ONE. A live defect
+  # walked straight through: /api/chat could not reach the Qwen3.5 hybrid session at
+  # all (alfredodeza, #3715 comment 2026-09-22) while every gate we own stayed green,
+  # because no rung had ever asked `apr serve` to load a model (#3571's own words).
+  # A verb that is not probed must never read as a verb that passed, so each of these
+  # records its own rc and the judge refuses a receipt missing any of them.
+
+  # chat: stdin-driven, one turn, machine envelope. `/exit` closes the session.
+  chat_flag=$(flag_for chat "$flag")
+  # shellcheck disable=SC2086
+  chat_out=$(printf 'What is the capital of France? Answer briefly.\n/exit\n' \
+      | apr_lane "$b" chat "$path" --json --max-tokens 16 $chat_flag 2>&1); chat_rc=$?
+  [ "$chat_rc" = "$LOCK_BUSY" ] && lock_timeout "apr chat $rid ($b)"
+  chat_ran=true; [ $chat_rc -eq 0 ] || chat_ran=false
+  # #3921: rc=0 says the process did not fail, never that it produced the right
+  # thing. Judge the text the run already captured.
+  chat_bad=""
+  if [ $chat_rc -eq 0 ]; then chat_bad=$(judge_reply "$chat_out" chat); fi
+
+  # code: measured once per rung, above this loop — see #3843.
+
+  # serve: the route set is DERIVED from the router's registered paths, never a
+  # hand-listed constant (alfredodeza's amendment, adopted on #3715) — a route that
+  # exists but is not probed is exactly how /api/chat stayed broken. Each route is
+  # probed non-streaming and streaming, because the ollama-compat wire has its own
+  # translation layer that has already diverged from the OpenAI-compat one twice
+  # independently (#3825's tool_calls gap, and this defect).
+  serve_err="$WORK/serve-probe-$rid-$b.err"
+  serve_json=$(ladder_serve_probe "$path" "$(flag_for "serve run" "$flag")" "$rid" "$b" 2> "$serve_err")
+  serve_rc=$?
+  [ -s "$serve_err" ] && cat "$serve_err" >&2
+
+  frag="\"$b\":{\"ran\":$ran,\"fallback\":$fb,\"escaped_special\":$esc,\"rc\":$run_rc"
+  frag="$frag,\"verbs\":{\"run\":{\"ran\":$ran,\"rc\":$run_rc,\"stdout_bytes\":$run_stdout_bytes,\"generated_bytes\":$run_generated_bytes,\"refusal\":$run_refusal_json}"
+  # #3921: `output_bad` carries the REASON, or null. A string here is a verdict
+  # about what the verb produced; the rc beside it is only about whether it ran.
+  chat_bad_json=$(printf '%s' "${chat_bad:-}" | json_str_or_null)
+  code_bad_json=$(printf '%s' "${code_bad:-}" | json_str_or_null)
+  frag="$frag,\"chat\":{\"ran\":$chat_ran,\"rc\":$chat_rc,\"output_bad\":$chat_bad_json}"
+  frag="$frag,\"code\":{\"ran\":$code_ran,\"rc\":$code_rc,\"backend\":\"inherited-from-spawned-serve\",\"output_bad\":$code_bad_json}"
+  # #3847: an EMPTY `serve_json` yields `"serve":}}` — invalid JSON that only
+  # surfaces three steps later as "the row could not be built", with the backend
+  # long out of scope. `ladder_serve_probe` prints an object on every one of its
+  # return paths, so an empty value here means it produced none at all (it hit a
+  # path that exits rather than returns — inside `$( )` that ends only the
+  # SUBSHELL, so the parent carries on with an empty string). Substitute a
+  # well-formed refusal, at the point where we still know which backend it was.
+  if [ -z "$serve_json" ] || ! python3 -c 'import json,sys; json.load(sys.stdin)' <<< "$serve_json" 2>/dev/null; then
+    # #3943: the exit STATUS is the cheapest discriminator there is -- 137/143 is a
+    # signal, 2 is lock_timeout's exit, anything else is a path nobody expected -- and
+    # it was being overwritten with 1 before anything recorded it.
+    serve_json=$(python3 -c '
+import json, sys
+print(json.dumps({"probed": False,
+                "why": "the serve probe produced no parseable object for backend %s -- it exited (status %s) rather than returned" % (sys.argv[1], sys.argv[2]),
+                "probe_exit": int(sys.argv[2]),
+                "probe_stderr_tail": sys.argv[3] or None,
+                "log_tail": sys.argv[4] or None, "routes": {}}))
+' "$b" "$serve_rc" "$(serve_log_tail "$serve_err" 6)" "$(serve_log_tail "$WORK/serve-$rid-$b.log")")
+    serve_rc=1
+  fi
+  frag="$frag,\"serve\":$serve_json}}"
+  printf '%s' "$frag"
+}
+
+# ── #4034: run a cell's backend lanes and assemble be_json ─────────────────────────
+# Called DIRECTLY from measure(), never through $( ), so an `exit 2` (a decline) still ends the
+# ladder. It appends to measure()'s be_json/first through bash's dynamic scope. It is a function
+# so check_ladder_cpu_lane.sh can lift and run it against stub lanes.
+ladder_run_lanes() {
+  # #4034: the lanes. Every lane except the CPU one runs in the FOREGROUND, in order, under
+  # the GPU lock as before. The CPU lane runs in the BACKGROUND at the same time: it holds no
+  # lock and sees no device, so it cannot contend with the GPU lane. It used to hold the fleet
+  # lock for its whole duration with the GPU idle: 50 of 83 nvidia-smi samples (60%) on lambda's
+  # qwen35-9b-q4km rung (#4033 baseline). MODEL_LADDER_SERIAL_LANES=1 restores the one-at-a-time
+  # order.
+  #
+  # A lane that produced no parseable fragment is NOT dropped. `green` is an all() over the
+  # backends it is given, so a missing backend would be judged over the ones that remain. It
+  # becomes an explicit RED fragment naming the lane's exit status and stderr tail.
+  local rid_s="${rid//[^A-Za-z0-9._-]/_}" lane_bg="" lane_bg_b="" lane_rc lane_frag lane_err
+  local -A lane_rcs=()
+  # The background lane is STARTED FIRST, whatever the rung's backend order is. Started in loop
+  # order, a `cuda,cpu` rung would launch it only after the foreground lane had finished, and
+  # nothing would overlap (check_ladder_cpu_lane.sh case `concurrent`).
+  if [ "${#bes[@]}" -gt 1 ] && [ "${MODEL_LADDER_SERIAL_LANES:-0}" != 1 ]; then
+    for b in "${bes[@]}"; do
+      [ "$b" = cpu ] || continue
+      ladder_backend_cell "$b" > "$WORK/$rid_s.$b.lane.json" 2> "$WORK/$rid_s.$b.lane.err" &
+      lane_bg=$!; lane_bg_b=$b; LADDER_LANE_BG_PID=$lane_bg
+      break
+    done
+  fi
+  for b in "${bes[@]}"; do
+    [ -n "$lane_bg" ] && [ "$b" = "$lane_bg_b" ] && continue
+    lane_frag="$WORK/$rid_s.$b.lane.json"; lane_err="$WORK/$rid_s.$b.lane.err"
+    ladder_backend_cell "$b" > "$lane_frag" 2> "$lane_err"; lane_rcs[$b]=$?
+    [ -s "$lane_err" ] && cat "$lane_err" >&2
+  done
+  if [ -n "$lane_bg" ]; then
+    wait "$lane_bg"; lane_rcs[$lane_bg_b]=$?; LADDER_LANE_BG_PID=""
+    lane_err="$WORK/$rid_s.$lane_bg_b.lane.err"
+    [ -s "$lane_err" ] && cat "$lane_err" >&2
+    # A decline raised inside the background lane ended only that subshell. Carry it out.
+    if [ "${lane_rcs[$lane_bg_b]}" = 2 ] && grep -q '^decline: ' "$lane_err" 2> /dev/null; then exit 2; fi
+  fi
+  for b in "${bes[@]}"; do
+    lane_frag="$WORK/$rid_s.$b.lane.json"; lane_rc=${lane_rcs[$b]:-missing}
+    # Exactly ONE key, and it is this lane's: an EMPTY fragment parses as `{}` and would drop the
+    # backend from the row without a trace (case `cpu-silent`).
+    if ! python3 -c 'import json,sys; d = json.loads("{" + open(sys.argv[1]).read() + "}"); sys.exit(0 if list(d) == [sys.argv[2]] else 1)' "$lane_frag" "$b" 2> /dev/null; then
+      python3 - "$b" "$lane_rc" "$(serve_log_tail "$WORK/$rid_s.$b.lane.err" 6)" > "$lane_frag" <<'LANEPY'
+import json, sys
+b, rc, tail = sys.argv[1], sys.argv[2], sys.argv[3]
+why = "the %s lane produced no parseable receipt fragment (lane exit %s) -- a lane that did not report is RED, never absent" % (b, rc)
+print(json.dumps(b) + ":" + json.dumps({"ran": False, "fallback": False, "escaped_special": False,
+      "rc": None, "lane_error": why, "lane_stderr_tail": tail or None, "verbs": {}}), end="")
+LANEPY
+    fi
+    [ "$first" = 1 ] || be_json="$be_json,"; first=0
+    be_json="$be_json$(cat "$lane_frag")"
+  done
+}
+
 measure() {
   local rid=$1 rfile=$2 path=$3 got=$4 rbackends=$5 rreq=$6 rinv=$7
   local probe_why
@@ -942,113 +1149,7 @@ except Exception: print("unknown")' "$arch_json")
   code_bad=""
   if [ $code_rc -eq 0 ]; then code_bad=$(judge_reply "$code_out" code); fi
 
-  for b in "${bes[@]}"; do
-    case "$b" in cpu) flag="--no-gpu" ;; cuda|gpu) flag="--gpu" ;; *) flag="" ;; esac
-    # --verbose prints realizar's `[DEBUG] formatted_prompt=…`, which the #3743 check reads.
-    # apr_locked / LOCK_BUSY are KEPT from main: the GPU lock is what serialises the
-    # ladder against every other session on the box. #3743's side dropped it.
-    run_flag=$(flag_for run "$flag")
-    # #3957 F10: stdout and stderr go to SEPARATE files. A refusal generates nothing, and the only way
-    # to observe "nothing" is a stdout byte count that the merged stream cannot give. `generated_bytes`
-    # leaves out apr's own `verbose: ` preamble, which --verbose prints BEFORE the pre-load refusal
-    # (measured on lambda, apr 0.69.1 (7b8aa7e32) on Qwen3.5-35B-A3B-UD-IQ4_XS: rc 12, 178 stdout
-    # bytes, all four of them `verbose:` lines). The refusal is recorded verbatim, so the judge can
-    # check that apr refused BY NAME (capability::no_cuda_forward_reason) and did not just fail.
-    run_o="$WORK/${rid//[^A-Za-z0-9._-]/_}.$b.run.out"; run_e="$WORK/${rid//[^A-Za-z0-9._-]/_}.$b.run.err"
-    # shellcheck disable=SC2086
-    apr_locked run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 --verbose $run_flag > "$run_o" 2> "$run_e"; run_rc=$?
-    [ "$run_rc" = "$LOCK_BUSY" ] && lock_timeout "apr run $rid ($b)"
-    run_out=$(cat "$run_o" "$run_e")
-    run_stdout_bytes=$(stat -c %s "$run_o" 2> /dev/null || echo null)
-    run_generated_bytes=$(grep -v '^verbose: ' "$run_o" | wc -c)
-    run_refusal_json=$(grep -h -m1 -F 'no CUDA forward for architecture' "$run_e" "$run_o" | head -1 | tr -d '\r\n' | json_str_or_null)
-    fb=false; ran=true; esc=false
-    if grep -qE 'falling back to CPU|path rejected, attempting fallback|runs on the CPU; the GPU backend' <<< "$run_out"; then fb=true; fi
-    # #3743: realizar zero-width-escapes special tokens it finds INSIDE the user text,
-    # so an escaped special in the formatted prompt means the prompt reached the model
-    # templated twice (0.69.0: `--prompt` on an instruct-named model). The debug line
-    # prints it Debug-escaped (`\u{200b}`); the raw character is checked too.
-    # NOT a pipeline. `producer | grep -q` under pipefail takes the PRODUCER's status,
-    # and `grep -q` closes the pipe on its first match -- so a MATCH makes the producer
-    # die with SIGPIPE (141) and the pipeline non-zero, and this `if` goes false BECAUSE
-    # the check succeeded. Measured by aprender-d8 as a script (both bash and zsh): correct
-    # at 1 and 1,000 matching lines, WRONG from 10,000 up, with PIPESTATUS reading [141, 0]
-    # -- the consumer matched and the producer was killed. It fails OPEN in proportion to
-    # the evidence it inspects, in `escaped_special`, which is one of the three fields the
-    # ladder verdict actually reads. Latent only because a normal run logs one prompt line.
-    # `|| true` is the honest "nothing to inspect" case: grep returns 1 when a run logged
-    # no prompt line at all (#3864).
-    fp=$(grep -F 'formatted_prompt=' <<< "$run_out" || true)
-    if grep -qF -e '\u{200b}' -e $'\u200b' <<< "$fp"; then esc=true; fi
-    if [ "$b" != cpu ] && [ -z "$GPU_NAME" ]; then ran=false; fi
-    [ $run_rc -eq 0 ] || ran=false
-
-    # ── #3828: the OTHER THREE VERBS ────────────────────────────────────────────
-    # This loop ran `apr run` and nothing else, so `serve`, `chat` and `code` cells in
-    # release-readiness-v1 (#3715) were computed over a verb set of ONE. A live defect
-    # walked straight through: /api/chat could not reach the Qwen3.5 hybrid session at
-    # all (alfredodeza, #3715 comment 2026-09-22) while every gate we own stayed green,
-    # because no rung had ever asked `apr serve` to load a model (#3571's own words).
-    # A verb that is not probed must never read as a verb that passed, so each of these
-    # records its own rc and the judge refuses a receipt missing any of them.
-
-    # chat: stdin-driven, one turn, machine envelope. `/exit` closes the session.
-    chat_flag=$(flag_for chat "$flag")
-    # shellcheck disable=SC2086
-    chat_out=$(printf 'What is the capital of France? Answer briefly.\n/exit\n' \
-        | apr_locked chat "$path" --json --max-tokens 16 $chat_flag 2>&1); chat_rc=$?
-    [ "$chat_rc" = "$LOCK_BUSY" ] && lock_timeout "apr chat $rid ($b)"
-    chat_ran=true; [ $chat_rc -eq 0 ] || chat_ran=false
-    # #3921: rc=0 says the process did not fail, never that it produced the right
-    # thing. Judge the text the run already captured.
-    chat_bad=""
-    if [ $chat_rc -eq 0 ]; then chat_bad=$(judge_reply "$chat_out" chat); fi
-
-    # code: measured once per rung, above this loop — see #3843.
-
-    # serve: the route set is DERIVED from the router's registered paths, never a
-    # hand-listed constant (alfredodeza's amendment, adopted on #3715) — a route that
-    # exists but is not probed is exactly how /api/chat stayed broken. Each route is
-    # probed non-streaming and streaming, because the ollama-compat wire has its own
-    # translation layer that has already diverged from the OpenAI-compat one twice
-    # independently (#3825's tool_calls gap, and this defect).
-    serve_err="$WORK/serve-probe-$rid-$b.err"
-    serve_json=$(ladder_serve_probe "$path" "$(flag_for "serve run" "$flag")" "$rid" "$b" 2> "$serve_err")
-    serve_rc=$?
-    [ -s "$serve_err" ] && cat "$serve_err" >&2
-
-    [ $first = 1 ] || be_json="$be_json,"; first=0
-    be_json="$be_json\"$b\":{\"ran\":$ran,\"fallback\":$fb,\"escaped_special\":$esc,\"rc\":$run_rc"
-    be_json="$be_json,\"verbs\":{\"run\":{\"ran\":$ran,\"rc\":$run_rc,\"stdout_bytes\":$run_stdout_bytes,\"generated_bytes\":$run_generated_bytes,\"refusal\":$run_refusal_json}"
-    # #3921: `output_bad` carries the REASON, or null. A string here is a verdict
-    # about what the verb produced; the rc beside it is only about whether it ran.
-    chat_bad_json=$(printf '%s' "${chat_bad:-}" | json_str_or_null)
-    code_bad_json=$(printf '%s' "${code_bad:-}" | json_str_or_null)
-    be_json="$be_json,\"chat\":{\"ran\":$chat_ran,\"rc\":$chat_rc,\"output_bad\":$chat_bad_json}"
-    be_json="$be_json,\"code\":{\"ran\":$code_ran,\"rc\":$code_rc,\"backend\":\"inherited-from-spawned-serve\",\"output_bad\":$code_bad_json}"
-    # #3847: an EMPTY `serve_json` yields `"serve":}}` — invalid JSON that only
-    # surfaces three steps later as "the row could not be built", with the backend
-    # long out of scope. `ladder_serve_probe` prints an object on every one of its
-    # return paths, so an empty value here means it produced none at all (it hit a
-    # path that exits rather than returns — inside `$( )` that ends only the
-    # SUBSHELL, so the parent carries on with an empty string). Substitute a
-    # well-formed refusal, at the point where we still know which backend it was.
-    if [ -z "$serve_json" ] || ! python3 -c 'import json,sys; json.load(sys.stdin)' <<< "$serve_json" 2>/dev/null; then
-      # #3943: the exit STATUS is the cheapest discriminator there is -- 137/143 is a
-      # signal, 2 is lock_timeout's exit, anything else is a path nobody expected -- and
-      # it was being overwritten with 1 before anything recorded it.
-      serve_json=$(python3 -c '
-import json, sys
-print(json.dumps({"probed": False,
-                  "why": "the serve probe produced no parseable object for backend %s -- it exited (status %s) rather than returned" % (sys.argv[1], sys.argv[2]),
-                  "probe_exit": int(sys.argv[2]),
-                  "probe_stderr_tail": sys.argv[3] or None,
-                  "log_tail": sys.argv[4] or None, "routes": {}}))
-' "$b" "$serve_rc" "$(serve_log_tail "$serve_err" 6)" "$(serve_log_tail "$WORK/serve-$rid-$b.log")")
-      serve_rc=1
-    fi
-    be_json="$be_json,\"serve\":$serve_json}}"
-  done
+  ladder_run_lanes
   be_json="$be_json}"
   # The receipt carries the MEASURED file hash (ONT-4c1): a resolver joining the ladder contract to
   # this receipt compares two measurements instead of trusting the receipt's own claim that it checked.
