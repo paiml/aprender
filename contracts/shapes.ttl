@@ -2,6 +2,18 @@
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix ont: <https://ont.paiml.dev/v1alpha1/> .
 
+<https://ont.paiml.dev/v1alpha1/shape/capability-cells> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/model/RequiredModel> ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/model/notRunCell> ;
+        sh:maxCount 0 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/model/refusedLabel> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
 <https://ont.paiml.dev/v1alpha1/shape/bound-symbols-resolve> a sh:NodeShape ;
     sh:targetClass <https://ont.paiml.dev/v1alpha1/Symbol> ;
     sh:property [
