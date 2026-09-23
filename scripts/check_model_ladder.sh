@@ -35,7 +35,7 @@ LADDER="contracts/model-capability-ladder-v1.yaml"
 # Overridable so the floor below can be PROVEN against a planted case in a temp dir
 # rather than by planting a permanently-failing case in the real table (#3887).
 CASES_DIR="${MODEL_LADDER_CASES_DIR:-scripts/lib/model_ladder_cases}"
-SELF_TEST=0; ONLY_CASE=""; RECEIPT_DIR=""; LADDER_MAIN_OVERRIDE=""; CUT_COMMIT=""; CRUX_DIR=""; SCOPE=""
+EQUIV_ONLY=0; SELF_TEST=0; ONLY_CASE=""; RECEIPT_DIR=""; LADDER_MAIN_OVERRIDE=""; CUT_COMMIT=""; CRUX_DIR=""; SCOPE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --self-test) SELF_TEST=1; shift ;;
@@ -46,6 +46,7 @@ while [ $# -gt 0 ]; do
     --version) [ $# -ge 2 ] || { echo "--version needs a value" >&2; exit 2; }; VERSION_OVERRIDE="$2"; shift 2 ;;
     --cut-commit) [ $# -ge 2 ] || { echo "--cut-commit needs a value" >&2; exit 2; }; CUT_COMMIT="$2"; shift 2 ;;
     --crux) [ $# -ge 2 ] || { echo "--crux needs a value" >&2; exit 2; }; CRUX_DIR="$2"; shift 2 ;;
+    --equiv-only) EQUIV_ONLY=1; shift ;;   # self-test hook: print equiv_lines for --receipts/--crux/--cut-commit
     --scope) [ $# -ge 2 ] || { echo "--scope needs a value" >&2; exit 2; }; SCOPE="$2"; shift 2 ;;
     -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) echo "check_model_ladder: unknown argument '$1'" >&2; exit 2 ;;
@@ -584,6 +585,46 @@ PY
 #               held and its own oom_score_adj at 1000; with the lock held elsewhere the call must
 #               decline (exit 2) within the bounded wait, naming the holder's pid.
 # lock_audit <producer> -> prints FAIL lines, exit 1 on any raw call
+# ---------------------------------------------------------------- receipt equivalence
+# equiv_lines <ladder> <receipt dir> <crux dir> <cut> <scratch prefix> -> "sha<TAB>proof" per receipt sha that
+# binds the cut without being the cut. Run from the repo root (git, scripts/lib). A function so the
+# self-test drives the SAME code on a scratch repository (`--equiv-only`).
+equiv_lines() {
+  # A receipt measured at another commit still binds when that commit's tree equals the cut's
+  # outside evidence/ -- committing the receipts is itself a commit. Proven here, per sha, with git.
+  # The shas: every ladder receipt's apr_sha and every CRUX receipt's binary (apr_sha_of, #3957 F2).
+  python3 -c 'import glob, json, os, sys
+sys.path.insert(0, "scripts/lib"); import model_ladder_crux
+for f in glob.glob(sys.argv[1] + "/*.json"):
+    try: print(json.load(open(f)).get("apr_sha") or "")
+    except Exception: pass
+for f in glob.glob(sys.argv[2] + "/*.json"):
+    if os.path.basename(f).startswith("prompt-certification"): continue
+    try: print(model_ladder_crux.apr_sha_of(json.load(open(f))) or "")
+    except Exception: pass' "$2" "$3" 2> /dev/null | sort -u | while read -r s; do
+    [ -n "$s" ] && [ -n "$4" ] || continue
+    git -c safe.directory="$PWD" cat-file -e "$s^{commit}" 2> /dev/null || continue
+    # #3957 F2 + #3710 ruling 3: evidence-only, or the contract's scoped hotfix -- scripts/lib/ladder_equiv.py.
+    git -c safe.directory="$PWD" diff --name-only "$s" "$4" 2> /dev/null > "$5.paths" || continue
+    git -c safe.directory="$PWD" show "$s:Cargo.lock" > "$5.lock_a" 2> /dev/null || : > "$5.lock_a"
+    git -c safe.directory="$PWD" show "$4:Cargo.lock" > "$5.lock_b" 2> /dev/null || : > "$5.lock_b"
+    python3 -c 'import sys, yaml
+sys.path.insert(0, "scripts/lib"); import ladder_equiv
+scope = (yaml.safe_load(open(sys.argv[3]))["ladder"] or {}).get("hotfix_scope") or {}
+paths = [ln.strip() for ln in open(sys.argv[4]) if ln.strip()]
+kind, proof = ladder_equiv.classify(sys.argv[1], sys.argv[2], paths, scope, open(sys.argv[5]).read(), open(sys.argv[6]).read())
+if kind: print(sys.argv[1] + "\t" + proof)
+sys.exit(0 if kind else 3)' "$s" "$4" "$1" "$5.paths" "$5.lock_a" "$5.lock_b" && continue
+    # #4037: CARRY-FORWARD -- no path in the diff can reach the apr binary's inference (closure derived from
+    # both endpoints' crate graphs, embedded and measurement inputs derived from their sources). Each
+    # endpoint is checked out detached in a throwaway worktree. Any failure does not carry.
+    if proof=$(python3 scripts/lib/ladder_carry.py "$PWD" "$s" "$4" 2> /dev/null); then
+      printf '%s\tCARRIED FORWARD (#4037) -- %s\n' "$s" "$proof"
+    fi
+  done
+  rm -f "$5.paths" "$5.lock_a" "$5.lock_b"
+}
+
 lock_audit() {
   python3 - "$1" <<'LOCKPY'
 import re, sys
@@ -616,6 +657,9 @@ lock_probe() {
 }
 
 CASE_CUT=ca5eca5eca5eca5eca5eca5eca5eca5eca5eca5e
+if [ "$EQUIV_ONLY" = 1 ]; then
+  t=$(mktemp); equiv_lines "$LADDER" "$RECEIPT_DIR" "$CRUX_DIR" "$CUT_COMMIT" "$t"; rm -f "$t"; exit 0
+fi
 if [ "$SELF_TEST" = 1 ]; then
   n=0; bad=0
   for c in "$CASES_DIR"/*/; do
@@ -1008,13 +1052,19 @@ EQ
 import json, os, sys, tempfile
 sys.path.insert(0, sys.argv[1]); import crux_smoke_scope as C
 CUT = "d" * 40
+# the checkout's `git rev-parse` stand-in: only the cut's own short sha resolves
+C.model_ladder_crux._git_resolve = lambda short: CUT if CUT.startswith(short) else ("e" * 40 if ("e" * 40).startswith(short) else None)
 SH = ["1" * 64, "2" * 64, "3" * 64]
 L = {"emergency_scopes": [{"name": "crux-smoke", "release": "0.69.1", "date": "2026-09-23", "quote": "q",
                             "hosts": ["lambda", "gx10"], "thinking": ["off", "on"]}]}
 # 2 = SH[1] is admitted with thinking OFF only (its ON leg loops at greedy, the real 2B's shape)
 ADMIT = {s: {"off": ["ctl"], "on": ["ctl"]} for s in SH}
 ADMIT[SH[1]] = {"off": ["ctl"], "on": []}
-def build(d, hosts=("lambda", "gx10"), drop=None, ctl="GREEN", noctl=False, sha=CUT, cell="GREEN", admit=None, dropmode=None, onlymode=None):
+def build(d, hosts=("lambda", "gx10"), drop=None, ctl="GREEN", noctl=False, sha=CUT, cell="GREEN", admit=None, dropmode=None, onlymode=None,
+          real=None, cellver=None):
+    # real=<version line>: the shape crux_inference_dogfood.sh ACTUALLY writes (copied from lambda's X2 shard
+    # evidence/crux/0.69.1/d8a6df53a/shards/00fe7986ff5f-off/lambda-gpu.json): no apr.sha, a SHORT harness.sha,
+    # and the binary named only by `apr --version`'s line, repeated in every cell's engines.apr.version.
     json.dump({"schema": "crux-prompt-certification/v1", "admitted_by_sha": {s: ["ctl"] for s in SH},
                "admitted_by_sha_thinking": admit or ADMIT}, open(os.path.join(d, "prompt-certification.json"), "w"))
     for h in hosts:
@@ -1026,10 +1076,13 @@ def build(d, hosts=("lambda", "gx10"), drop=None, ctl="GREEN", noctl=False, sha=
                 if dropmode == (h, s, t):
                     continue
                 cells.append({"key": {"model_sha256": s, "host": h, "thinking": t, "verb": "run"},
-                              "verdict": cell if (h, s, t) == ("lambda", "3" * 64, "on") else "GREEN", "positive_control": False})
+                              "verdict": cell if (h, s, t) == ("lambda", "3" * 64, "on") else "GREEN", "positive_control": False,
+                              "engines": {"apr": {"answered": True, "version": (cellver or {}).get((h, s, t), real)}} if real else {}})
                 if not noctl:
                     cells.append({"key": {"model_sha256": s, "host": h, "thinking": t, "verb": "run"}, "verdict": ctl, "positive_control": True})
-        json.dump({"schema": "crux-inference-receipt/v1", "host": h, "backend": "gpu", "apr": {"sha": sha},
+        json.dump({"schema": "crux-inference-receipt/v1", "host": h, "backend": "gpu",
+                   **({"apr": {"version_line": real}, "harness": {"sha": real.split("(")[-1].rstrip(")")[:9],
+                       "driver": "scripts/crux_inference_dogfood.sh"}} if real else {"apr": {"sha": sha}}),
                    "cells": cells, "summary": {"verdict": "PASS"}}, open(os.path.join(d, h + "-gpu.json"), "w"))
 rows = [
   ("green: both hosts, 3 certified models x off/on, controls GREEN", False, "OPERATOR EMERGENCY SCOPE: CRUX smoke only", {}, "0.69.1"),
@@ -1045,6 +1098,15 @@ rows = [
    {"admit": dict(ADMIT, **{"3" * 64: {"off": [], "on": []}})}, "0.69.1"),
   ("an UNADMITTED mode's green cells never count toward the pass", True, "thinking=off: no CRUX cell",
    {"onlymode": {("lambda", "2" * 64): ("on",)}}, "0.69.1"),
+  ("a REAL-shaped receipt (version line only, short harness sha) binds to the cut", False,
+   "OPERATOR EMERGENCY SCOPE: CRUX smoke only", {"real": "apr 0.69.1 (ddddddddd)"}, "0.69.1"),
+  ("a real-shaped receipt from another binary is RED", True, "not the release binary", {"real": "apr 0.69.1 (eeeeeeeee)"}, "0.69.1"),
+  ("a real-shaped receipt whose short sha resolves to nothing is RED", True, "not the release binary",
+   {"real": "apr 0.69.1 (abcdef012)"}, "0.69.1"),
+  ("a DIRTY binary's version line binds to nothing and is RED", True, "not the release binary",
+   {"real": "apr 0.69.1 (ddddddddd-dirty)"}, "0.69.1"),
+  ("a cell measured by a different binary unbinds the whole receipt", True, "not the release binary",
+   {"real": "apr 0.69.1 (ddddddddd)", "cellver": {("gx10", "1" * 64, "on"): "apr 0.69.1 (eeeeeeeee)"}}, "0.69.1"),
   ("the admitted matrix is printed", False, "2222222222 -> off;", {}, "0.69.1"),
   ("a mode the certification does NOT admit needs no cells (the real 2B shape: OFF only)", False,
    "ok    gx10 certified model 222222222222 thinking=off",
@@ -1080,6 +1142,91 @@ SM
     smutant any-release       's/^    if str(version) != str(entry\["release"\]):$/    if False:/'
     smutant zero-modes-ok     's/^        if not m:$/        if False:/'
     smutant all-modes-counted 's/^            for mode in matrix\[sha\]:$/            for mode in ("off", "on"):/'
+    vmutant() { # vmutant <label> <sed deleting a binding rule in model_ladder_crux.apr_sha_of> -- the smoke table must go RED
+      local md="$mdir/v-$1"; mkdir -p "$md"
+      cp scripts/lib/crux_smoke_scope.py "$md/"
+      sed "$2" scripts/lib/model_ladder_crux.py > "$md/model_ladder_crux.py"
+      if cmp -s scripts/lib/model_ladder_crux.py "$md/model_ladder_crux.py"; then echo "FAIL  binding mutant $1 did not apply"; bad=$((bad+1)); return; fi
+      if smoke_table "$md" > /dev/null 2>&1; then echo "FAIL  binding mutant $1 SURVIVED the table"; bad=$((bad+1))
+      else printf 'ok    binding mutant %-16s killed by the table\n' "$1"; fi
+    }
+    vmutant version-line-unread 's/^    if not m:$/    if True:/'
+    vmutant short-sha-unresolved 's/^    return (resolve or _git_resolve)(m.group(1))$/    return m.group(1)/'
+    vmutant dirty-accepted      's/(\[0-9a-f\]{7,40})\\)\$/([0-9a-f]{7,40})/'
+    vmutant mixed-cells-ok      's/^        if v is not None and (not isinstance(v, str) or v.strip() != line.strip()):$/        if False:/'
+    # #4037 CARRY-FORWARD, wired: equiv_lines on a scratch cargo workspace (a root facade with an `apr` bin
+    # and a path dependency `core`). The table drives THIS script (`--equiv-only`), so a mutant of the
+    # wiring is a sed copy of the script; a mutant of the rule is a copy of ladder_carry.py.
+    carry_wiring() { # carry_wiring <script> <lib dir> -> 0 when every row lands
+      local r; r=$(mktemp -d) || return 1
+      python3 - "$r" "$1" "$2" "$PWD/scripts/lib" <<'CW'
+import json, os, shutil, subprocess, sys
+r, script, lib, reallib = sys.argv[1:5]
+def w(p, t):
+    os.makedirs(os.path.dirname(os.path.join(r, p)) or r, exist_ok=True); open(os.path.join(r, p), "w").write(t)
+def git(*a):
+    return subprocess.run(["git", "-C", r, "-c", "core.hooksPath=/dev/null", "-c", "user.name=t", "-c", "user.email=t@t", *a],
+                          capture_output=True, text=True, check=True).stdout.strip()
+w("Cargo.toml", '[workspace]\nmembers = ["core"]\n[package]\nname = "facade"\nversion = "0.1.0"\nedition = "2021"\n'
+                '[dependencies]\ncore = { path = "core" }\n[[bin]]\nname = "apr"\npath = "src/bin/apr.rs"\n')
+w("src/bin/apr.rs", "fn main() {}\n"); w("core/Cargo.toml", '[package]\nname = "core"\nversion = "0.1.0"\nedition = "2021"\n')
+w("core/src/lib.rs", "pub fn f() {}\n"); w("docs/a.md", "a\n")
+w("contracts/ladder.yaml", "ladder:\n  hotfix_scope: {}\n")
+git("init", "-q"); git("add", "-A"); git("commit", "-qm", "A"); A = git("rev-parse", "HEAD")
+w("docs/a.md", "b\n"); git("commit", "-qam", "docs"); DOCS = git("rev-parse", "HEAD")
+git("checkout", "-q", A); w("core/src/lib.rs", "pub fn f() { let _ = 1; }\n"); git("commit", "-qam", "core"); CORE = git("rev-parse", "HEAD")
+git("checkout", "-q", A); w("docs/a.md", "c\n"); git("commit", "-qam", "A2"); A2 = git("rev-parse", "HEAD")
+w("docs/a.md", "d\n"); git("commit", "-qam", "docs2"); DOCS2 = git("rev-parse", "HEAD")
+# the gate's libs, untracked in the scratch repo (never part of any diff); the rule under test from `lib`
+os.makedirs(os.path.join(r, "scripts/lib"))
+for f in ("ladder_equiv.py", "model_ladder_crux.py"):
+    shutil.copy(os.path.join(reallib, f), os.path.join(r, "scripts/lib", f))
+shutil.copy(os.path.join(lib, "ladder_carry.py"), os.path.join(r, "scripts/lib/ladder_carry.py"))
+def rec(sha_ladder=None, sha_crux=None):
+    d = os.path.join(r, "rc"); shutil.rmtree(d, ignore_errors=True); os.makedirs(d + "/receipts"); os.makedirs(d + "/crux")
+    if sha_ladder:
+        json.dump({"apr_sha": sha_ladder}, open(d + "/receipts/x.json", "w"))
+    if sha_crux:   # the REAL producer's shape: only `apr --version`'s line names the binary
+        json.dump({"schema": "crux-inference-receipt/v1", "apr": {"version_line": "apr 0.1.0 (%s)" % sha_crux[:9]}},
+                  open(d + "/crux/lambda-gpu.json", "w"))
+    return d
+def lines(d, cut):
+    out = subprocess.run(["bash", script, "--equiv-only", "--ladder", "contracts/ladder.yaml", "--receipts", d + "/receipts",
+                          "--crux", d + "/crux", "--cut-commit", cut], cwd=r, capture_output=True, text=True,
+                         env=dict(os.environ, MODEL_LADDER_ROOT=r)).stdout
+    return {ln.split("\t")[0]: ln.split("\t", 1)[1] for ln in out.splitlines() if "\t" in ln}
+rows = [
+  ("carry-docs-only-diff binds by CARRIED FORWARD", lambda: "CARRIED FORWARD (#4037)" in lines(rec(A), DOCS).get(A, "")),
+  ("carry-closure-diff MUST NOT bind (must-RED)", lambda: A not in lines(rec(A), CORE)),
+  ("carry-crux-receipt sha enumerated and carried", lambda: "CARRIED FORWARD" in lines(rec(None, A2), DOCS2).get(A2, "")),
+  ("carry-unknown-sha never binds", lambda: not lines(rec("f" * 40), DOCS)),
+]
+bad = 0
+for name, fn in rows:
+    ok = fn()
+    print(("ok    carry " if ok else "FAIL  carry ") + name)
+    bad |= not ok
+sys.exit(bad)
+CW
+      local rc=$?; rm -rf -- "$r"; return $rc
+    }
+    if carry_wiring "$SELF" scripts/lib; then printf 'ok    carry: the #4037 wiring table lands on the shipped script\n'
+    else carry_wiring "$SELF" scripts/lib; bad=$((bad+1)); fi
+    if python3 scripts/lib/ladder_carry_cases.py --mutants > /dev/null 2>&1; then printf 'ok    carry: ladder_carry_cases.py rows + mutants (#4037)\n'
+    else python3 scripts/lib/ladder_carry_cases.py --mutants | grep -E 'FAIL|SURVIVED|ANCHOR'; bad=$((bad+1)); fi
+    cwmutant() { # cwmutant <label> <row that must go RED> <sed on the script | -> <sed on ladder_carry.py | ->
+      local md="$mdir/cw-$1"; mkdir -p "$md"; cp scripts/lib/ladder_carry.py "$md/"; cp "$SELF" "$md/gate.sh"
+      [ "$3" = - ] || sed -i "$3" "$md/gate.sh"
+      [ "$4" = - ] || sed -i "$4" "$md/ladder_carry.py"
+      if cmp -s "$SELF" "$md/gate.sh" && cmp -s scripts/lib/ladder_carry.py "$md/ladder_carry.py"; then echo "FAIL  carry mutant $1 did not apply"; bad=$((bad+1)); return; fi
+      local out; out=$(carry_wiring "$md/gate.sh" "$md")   # never through a pipe: the table's own rc is 1 here
+      if printf '%s\n' "$out" | grep -q "^FAIL  carry $2"; then printf 'ok    carry mutant %-18s killed by %s\n' "$1" "$2"
+      else echo "FAIL  carry mutant $1 SURVIVED row $2"; bad=$((bad+1)); fi
+    }
+    cwmutant carry-unwired   carry-docs-only-diff 's/^    if proof=$(python3 scripts\/lib\/ladder_carry.py /    if false \&\& proof=$(python3 scripts\/lib\/ladder_carry.py /' -
+    cwmutant crux-unlisted   carry-crux-receipt   's/^for f in glob.glob(sys.argv\[2\] + "\/\*.json"):$/for f in []:/' -
+    cwmutant src-test-only   carry-closure-diff   - 's/^TEST_ONLY_DIRS = ("tests", "benches", "examples")$/TEST_ONLY_DIRS = ("tests", "benches", "examples", "src")/'
+    cwmutant carry-ignores-rc carry-closure-diff   's/^    if proof=$(python3 scripts\/lib\/ladder_carry.py "$PWD" "$s" "$4" 2> \/dev\/null); then$/    if proof=$(python3 scripts\/lib\/ladder_carry.py "$PWD" "$s" "$4" 2> \/dev\/null; true); then/' -
     # #3710 ruling 1: CRUX coverage scoped to the certified models (model_ladder_crux.py).
     xmutant uncertified-owes-crux green-uncertified-no-crux 's/^                    elif certified is not None and sha not in certified:$/                    elif False:/'
     xmutant no-cert-relaxes   red-certification-missing 's/^        return None, True$/        return set(), False/'
@@ -1137,26 +1284,8 @@ sys.exit(1 if crux_smoke_scope.judge(L, sys.argv[2], sys.argv[3], sys.argv[4], s
   exit "$rc"
 fi
 TMP_EQUIV=$(mktemp)
-# A receipt measured at another commit still binds when that commit's tree equals the cut's
-# outside evidence/ -- committing the receipts is itself a commit. Proven here, per sha, with git.
-python3 -c 'import glob, json, sys
-for f in glob.glob(sys.argv[1] + "/*.json"):
-    try: print(json.load(open(f)).get("apr_sha") or "")
-    except Exception: pass' "$RECEIPT_DIR" 2> /dev/null | sort -u | while read -r s; do
-  [ -n "$s" ] && [ -n "$CUT_COMMIT" ] || continue
-  git -c safe.directory="$PWD" cat-file -e "$s^{commit}" 2> /dev/null || continue
-  # #3957 F2 + #3710 ruling 3: evidence-only, or the contract's scoped hotfix -- scripts/lib/ladder_equiv.py.
-  git -c safe.directory="$PWD" diff --name-only "$s" "$CUT_COMMIT" 2> /dev/null > "$TMP_EQUIV.paths" || continue
-  git -c safe.directory="$PWD" show "$s:Cargo.lock" > "$TMP_EQUIV.lock_a" 2> /dev/null || : > "$TMP_EQUIV.lock_a"
-  git -c safe.directory="$PWD" show "$CUT_COMMIT:Cargo.lock" > "$TMP_EQUIV.lock_b" 2> /dev/null || : > "$TMP_EQUIV.lock_b"
-  python3 -c 'import sys, yaml
-sys.path.insert(0, "scripts/lib"); import ladder_equiv
-scope = (yaml.safe_load(open(sys.argv[3]))["ladder"] or {}).get("hotfix_scope") or {}
-paths = [ln.strip() for ln in open(sys.argv[4]) if ln.strip()]
-kind, proof = ladder_equiv.classify(sys.argv[1], sys.argv[2], paths, scope, open(sys.argv[5]).read(), open(sys.argv[6]).read())
-if kind: print(sys.argv[1] + "\t" + proof)' "$s" "$CUT_COMMIT" "$LADDER" "$TMP_EQUIV.paths" "$TMP_EQUIV.lock_a" "$TMP_EQUIV.lock_b"
-done > "$TMP_EQUIV"
 [ -n "$CRUX_DIR" ] || CRUX_DIR="evidence/crux/$VERSION"
+equiv_lines "$LADDER" "$RECEIPT_DIR" "$CRUX_DIR" "$CUT_COMMIT" "$TMP_EQUIV" > "$TMP_EQUIV"
 TMP_OUT=$(mktemp)
 judge "$LADDER" "$MAIN_LADDER" "$RECEIPT_DIR" "$VERSION" evidence/release/context-rungs.json "$TMP_RUNGS" "$CUT_COMMIT" "$TMP_EQUIV" "$CRUX_DIR" "$CRUX_DIR/prompt-certification.json" > "$TMP_OUT"; rc=$?
 cat "$TMP_OUT"
