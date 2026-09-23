@@ -9,7 +9,8 @@
 # necessary and not sufficient.
 #
 # WHAT THIS CHECKS, AND WHY IT IS NOT A GREP. It runs the SHIPPED model_ladder.sh end to end, twice, against
-# a temp root (MODEL_LADDER_ROOT) with a two-rung ladder and a fake `apr`, in OPPOSITE orders. It picks the
+# a temp root (MODEL_LADDER_ROOT) with a two-rung ladder, one inventory-only model and a fake `apr`, in
+# OPPOSITE orders. It picks the
 # order with --certification, the knob #4039 added. Then it compares every cell's row, normalized for scratch
 # paths, across the two runs.
 #   clean   the fake leaves nothing behind           -> rows identical in both orders   (must be GREEN)
@@ -57,13 +58,14 @@ printf '[package]\nname = "ladder-order-fixture"\nversion = "0.0.1"\nedition = "
 printf '"/v1/chat/completions"\n' > "$ROOT/crates/aprender-serve/src/api/router.rs"
 head -c 4096 /dev/zero > "$TMP/models/leaky-big.gguf"     # the larger file: first by size
 head -c 2048 /dev/zero > "$TMP/models/victim-small.gguf"
+head -c 3000 /dev/zero > "$TMP/inv/middle-inv.gguf"   # an INVENTORY-only model, sized between the two rungs
 LEAKY_SHA=$(sha256sum "$TMP/models/leaky-big.gguf" | cut -d' ' -f1)
 VICTIM_SHA=$(sha256sum "$TMP/models/victim-small.gguf" | cut -d' ' -f1)
 [ "$LEAKY_SHA" != "$VICTIM_SHA" ] || { head -c 2047 /dev/zero > "$TMP/models/victim-small.gguf"; printf 'v' >> "$TMP/models/victim-small.gguf"; VICTIM_SHA=$(sha256sum "$TMP/models/victim-small.gguf" | cut -d' ' -f1); }
 cat > "$ROOT/contracts/model-capability-ladder-v1.yaml" <<EOF
 ladder:
   serve_health: {stall_s: 2, ceiling_s: 5}
-  inventory: {dirs: ["$TMP/inv"], patterns: ["*.nomatch"], backends: [cpu]}
+  inventory: {dirs: ["$TMP/inv"], patterns: ["*-inv.gguf"], backends: [cpu]}
   rungs:
     - {id: leaky, gguf: leaky-big.gguf, sha256: $LEAKY_SHA, backends: [cpu], required: true}
     - {id: victim, gguf: victim-small.gguf, sha256: $VICTIM_SHA, backends: [cpu], required: true}
@@ -139,7 +141,8 @@ def norm(v):
         return re.sub(r"\b\d+(\.\d+)?s\b", "<N>s", re.sub(r"/tmp/[^\s\"']+", "<tmp>", v))
     return v
 by = {r.get("id"): norm(r) for r in rows}
-print(json.dumps({"order": [r.get("id") for r in rows], "rows": by}, sort_keys=True))
+inv = sorted(norm(x).get("file") for x in (R.get("inventory") or []))
+print(json.dumps({"order": [r.get("id") for r in rows], "rows": by, "inventory": inv}, sort_keys=True))
 PY
 }
 
@@ -167,10 +170,19 @@ for leak in 0 1; do
   B=$(ladder_run "$leak" "$TMP/cert-victim-first.json" "$name-b") || exit 2
   oa=$(python3 -c 'import json,sys; print(",".join(json.loads(sys.argv[1])["order"]))' "$A")
   ob=$(python3 -c 'import json,sys; print(",".join(json.loads(sys.argv[1])["order"]))' "$B")
-  if [ "$oa" = "leaky,victim" ] && [ "$ob" = "victim,leaky" ]; then
+  # leaky-first: leaky (certified), then largest first -- the inventory model (3000 B) before victim (2048 B).
+  # victim-first: victim (certified), then leaky (4096 B), then the inventory model.
+  if [ "$oa" = "leaky,inv:middle-inv.gguf,victim" ] && [ "$ob" = "victim,leaky,inv:middle-inv.gguf" ]; then
     case_line ok "$name: the two runs measured in opposite orders" "$oa | $ob"
   else
     case_line FAIL "$name: the runs were not in the orders asked for" "$oa | $ob"
+  fi
+  ia=$(python3 -c 'import json,sys; print(",".join(json.loads(sys.argv[1])["inventory"]))' "$A")
+  ib=$(python3 -c 'import json,sys; print(",".join(json.loads(sys.argv[1])["inventory"]))' "$B")
+  if [ "$ia" = "middle-inv.gguf" ] && [ "$ib" = "middle-inv.gguf" ]; then
+    case_line ok "$name: the held inventory model is recorded in both receipts" "$ia | $ib"
+  else
+    case_line FAIL "$name: the inventory record is missing or wrong" "${ia:-none} | ${ib:-none}"
   fi
   verdict=$(compare "$A" "$B")
   if [ "$leak" = 0 ]; then

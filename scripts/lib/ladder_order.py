@@ -121,6 +121,7 @@ def selftest():
     case("must-RED: a dropped cell is not a permutation", not is_permutation(plan, got[:-1]))
     case("must-RED: a duplicated cell is not a permutation", not is_permutation(plan, got[:-1] + [got[0]]))
     case("must-RED: a substituted cell is not a permutation", not is_permutation(plan, got[:-1] + [tie[0]]))
+    case("must-RED: a pure duplicate (nothing dropped) is not a permutation", not is_permutation(plan, plan + [plan[0]]))
     try:
         parse("rung|too|few")
         case("a malformed plan line is refused", False)
@@ -134,7 +135,29 @@ def selftest():
         json.dump({"admitted_by_sha": {A: ["x"]}, "admitted_by_sha_thinking": {C: {"on": ["y"]}, "junk": {}}}, fh)
     case("the certified set is the admission keys (both fields; a non-sha key ignored)", certified(p)[0] == {A, C})
     case("an absent certification orders by size, never fails", certified(os.path.join(d, "nope.json"))[0] == set())
-    print(f"{12 - fails}/12 cases")
+    with open(p, "w", encoding="utf-8") as fh:
+        json.dump({"admitted_by_sha": {"x" + A: ["p"], A + "0": ["p"]}}, fh)
+    case("a key that only CONTAINS a sha is not a certified sha", certified(p)[0] == set())
+
+    # The CLI path, as model_ladder.sh calls it: the refusals must fire through main(), not only in the helpers.
+    import subprocess
+    me = os.path.abspath(__file__)
+
+    def cli(stdin, patch="pass"):
+        code = ("import sys; sys.path.insert(0, %r); import ladder_order as m; %s; sys.exit(m.main(['ladder_order', '-']))"
+                % (os.path.dirname(me), patch))
+        r = subprocess.run([sys.executable, "-c", code], input=stdin, capture_output=True, text=True)
+        return r.returncode, r.stdout, r.stderr
+    rc, out, _ = cli("\n".join(plan) + "\n")
+    case("CLI: a good plan exits 0 and prints every cell", rc == 0 and sorted(out.splitlines()) == sorted(plan))
+    rc, out, err = cli("\n".join(plan + ["rung|too|few"]) + "\n")
+    case("CLI must-RED: a malformed line exits 2 and prints NO plan", rc == 2 and out == "" and "not a plan line" in err)
+    rc, out, err = cli("\n".join(plan) + "\n", "m.order = lambda lines, cert: lines[:-1]")
+    case("CLI must-RED: an order that drops a cell exits 2 and prints NO plan", rc == 2 and out == "" and "REFUSED" in err)
+    rc, out, err = cli("\n".join(plan) + "\n", "m.order = lambda lines, cert: lines + lines[:1]")
+    case("CLI must-RED: an order that duplicates a cell exits 2", rc == 2 and out == "" and "REFUSED" in err)
+    total = 18
+    print(f"{total - fails}/{total} cases")
     return 1 if fails else 0
 
 
