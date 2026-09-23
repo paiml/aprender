@@ -54,6 +54,7 @@ pub mod types;
 /// Tools MUST source both fields from this module — hand-coding either in
 /// the tool's source file is caught by `tests/falsify_mcp_008.rs`
 /// (PMAT-514, 2026-04-18).
+#[cfg(feature = "apr-tools")]
 pub mod schemas {
     include!(concat!(env!("OUT_DIR"), "/schemas.rs"));
 }
