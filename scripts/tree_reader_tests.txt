@@ -40,6 +40,7 @@ aprender-contracts	--lib	build_helper
 aprender-contracts	--lib	discharge::comparator
 aprender-contracts	--lib	levels
 aprender-contracts	--lib	lint::bindings_gate
+aprender-contracts	--lib	lint::capability_cells_gate
 aprender-contracts	--lib	lint::consistency_gate
 aprender-contracts	--lib	lint::diff
 aprender-contracts	--lib	lint::duplicate_stems
