@@ -67,9 +67,6 @@ grep -rlE 'match .*(qtype|quant_type|ggml_type|dtype)' crates/aprender-serve/src
 for i in 3423 3422 3418 3421 3420 3424 3428; do gh issue view $i -R paiml/aprender --json state,milestone; done
 ```
 
-## 7. Quorum record
-
-_Filled after the quorum returns._
 
 ## Quorum record: decision quorum, 2026-09-23 (aprender-cb)
 
