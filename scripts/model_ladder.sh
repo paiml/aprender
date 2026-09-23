@@ -19,6 +19,16 @@
 # model this host holds that the run did not prove.
 #
 # Usage:  bash scripts/model_ladder.sh [--host <id>] [--out <dir>] [--dry-run]
+#                                      [--only <rung-id>]
+#   --only  measure exactly ONE rung and write a SEPARATE receipt,
+#           <dir>/<host>.only-<id>.json. For separating a flake from a defect: a
+#           single rung costs minutes where the sweep costs hours, and #3936 spent
+#           four GPU measurements and a human establishing that one red serve cell
+#           was transient. The id is a rung id from the ladder, or `inv:<filename>`
+#           for an inventory-only model. An id that matches nothing is REFUSED
+#           before anything is measured -- a run that measures zero rungs and
+#           writes a receipt is the empty-universe vacuity, and it would look
+#           exactly like a pass.
 #   --host  ladder host id (default: derived from `hostname`, see host_id)
 #   --out   receipt dir (default: evidence/dogfood/models/<version>); writes <dir>/<host>.json
 #
@@ -35,11 +45,13 @@ LADDER="contracts/model-capability-ladder-v1.yaml"
 HOST_ID=""
 OUT_DIR=""
 DRY=0
+ONLY=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --host) [ $# -ge 2 ] || { echo "model_ladder: --host needs a value" >&2; exit 2; }; HOST_ID="$2"; shift 2 ;;
     --out)  [ $# -ge 2 ] || { echo "model_ladder: --out needs a value" >&2; exit 2; };  OUT_DIR="$2"; shift 2 ;;
     --dry-run) DRY=1; shift ;;
+    --only) [ $# -ge 2 ] || { echo "model_ladder: --only needs a value" >&2; exit 2; }; ONLY="$2"; shift 2 ;;
     # --lock-probe <apr args…>: one apr call through apr_locked, then exit with its rc. For the case
     # table in check_model_ladder.sh, which proves every apr call runs under the lock.
     --lock-probe) shift; LOCK_PROBE=1; break ;;
@@ -359,6 +371,36 @@ for f, p in seen.items():
     print(f + "|" + p)
 PY
 ) || { echo "decline: the inventory scan failed" >&2; exit 2; }
+
+# --only: the selectable universe is the same union the run measures -- rung ids plus
+# `inv:<file>` -- derived from the same two variables, so it cannot drift from what
+# --only can actually select. A hand-kept list of ids is exactly the drift #3843 names.
+only_universe() { # <rungs> <inventory> -> selectable ids, one per line
+  { cut -d'|' -f1 <<< "$1"; sed 's/^/inv:/; s/|.*$//' <<< "$2"; } | grep -v '^$' | sort -u
+}
+
+# 0 when <only> names something measurable, 1 when it does not. Split from the refusal
+# so a guard can exercise the DECISION without a pinned binary or a model on disk.
+only_selected() { # <only> <rungs> <inventory>
+  grep -qxF -- "$1" <<< "$(only_universe "$2" "$3")"
+}
+
+# Refuse BEFORE the first model is touched. A targeted run that matches nothing, measures
+# zero rungs and exits 0 is the empty-universe vacuity -- and it is the worst possible
+# instrument for the job --only exists to do, because settling a flake by re-running one
+# rung reads a green that means "nothing ran".
+if [ -n "$ONLY" ]; then
+  if ! only_selected "$ONLY" "$RUNGS" "$INVENTORY"; then
+    {
+      echo "decline: --only '$ONLY' names no rung and no inventory model on $HOST."
+      near=$(grep -iF -- "$ONLY" <<< "$(only_universe "$RUNGS" "$INVENTORY")" | head -5)
+      if [ -n "$near" ]; then echo "  did you mean:"; sed 's/^/    /' <<< "$near"
+      else echo "  selectable ids on this host:"; only_universe "$RUNGS" "$INVENTORY" | sed 's/^/    /' | head -24; fi
+    } >&2
+    exit 2
+  fi
+  printf -- '--only: measuring %s alone; the sweep receipt is not touched\n' "$ONLY"
+fi
 
 # ── #3828: ladder_serve_probe — the `serve` verb, over the ROUTER'S OWN ROUTES ──────
 # The ladder never started `apr serve`, so no rung ever asked a server to load a model
@@ -913,6 +955,7 @@ print("; ".join(w) or "unknown")')
 # ---- 1. the ladder's rungs
 while IFS='|' read -r -t 5 rid rfile rsha rbackends rreq rhosts; do
   [ -n "$rid" ] || continue
+  [ -z "$ONLY" ] || [ "$rid" = "$ONLY" ] || continue
   # A rung that lists hosts: is a claim only on those hosts (a 122B file fits gx10's unified memory and no
   # 24 GB card). Elsewhere it is neither absent nor passed: recorded as not listed, never counted RED.
   # An inventory model is never "not listed": if this host holds it, section 2 measures it.
@@ -960,6 +1003,9 @@ while IFS='|' read -r -t 5 ifile ipath; do
   isha=$(sha256sum "$ipath" | cut -d' ' -f1); ibytes=$(stat -Lc %s "$ipath" 2>/dev/null || echo 0)
   printf '{"file":"%s","sha256":"%s","bytes":%s}\n' "$ifile" "$isha" "$ibytes" >> "$INV_ROWS"
   if grep -qxF -- "$ifile" <<< "$LADDER_FILES"; then continue; fi   # a rung measured it above
+  # #3936: the inventory ROW above is recorded either way -- a targeted receipt still
+  # states the host's holdings -- but only the selected model is measured.
+  [ -z "$ONLY" ] || [ "inv:$ifile" = "$ONLY" ] || continue
   if [ "$DRY" = 1 ]; then printf '  [DRY   ] %-30s %s (inventory, not a rung)\n' "inv:$ifile" "$ipath"; continue; fi
   measure "inv:$ifile" "$ifile" "$ipath" "$isha" "$INV_BACKENDS" 1 1
 done <<EOF3
@@ -971,12 +1017,14 @@ if [ "$EXECUTED" -eq 0 ]; then
   echo "decline: nothing executed on $HOST — nothing was measured, no receipt written" >&2
   exit 2
 fi
+RECEIPT_BASE="$HOST"
+[ -z "$ONLY" ] || RECEIPT_BASE="$HOST.only-${ONLY//[^A-Za-z0-9._-]/_}"
 mkdir -p "$OUT_DIR"
 # The receipt names the binary by what it SAYS it is (`apr --version`, which
 # carries the built-from sha), never by its path: a path is machine-specific
 # (check_no_shipped_machine_paths) and says nothing about what was run.
 APR_VERSION=$("$APR" --version 2>/dev/null | head -1)
-python3 - "$ROWS" "$OUT_DIR/$HOST.json" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_ROWS" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" <<'PY'
+python3 - "$ROWS" "$OUT_DIR/$RECEIPT_BASE.json" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" "$INV_ROWS" "$INV_DIRS" "$INV_PATTERNS" "$APR_SHA" "$ONLY" <<'PY'
 import json, sys, datetime, platform
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 inv = [json.loads(l) for l in open(sys.argv[11]) if l.strip()]
@@ -984,10 +1032,11 @@ out = {"schema": "apr-model-ladder-receipt/v2", "host": sys.argv[3], "version": 
        "isa": platform.machine(), "gpu": sys.argv[6] or None, "cc": sys.argv[7] or None,
        "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
        "apr_version": sys.argv[10], "executed": int(sys.argv[8]), "red": int(sys.argv[9]),
+       "only": (sys.argv[15] or None),
        "inventory": inv, "inventory_dirs": sys.argv[12].split(":"), "inventory_patterns": sys.argv[13].split(","),
        "rungs": rows}
 json.dump(out, open(sys.argv[2], "w"), indent=2); open(sys.argv[2], "a").write("\n")
 PY
-printf 'receipt: %s/%s.json (executed=%s red=%s inventory=%s)\n' "$OUT_DIR" "$HOST" "$EXECUTED" "$RED" "$(grep -c . "$INV_ROWS")"
+printf 'receipt: %s/%s.json (executed=%s red=%s inventory=%s)\n' "$OUT_DIR" "$RECEIPT_BASE" "$EXECUTED" "$RED" "$(grep -c . "$INV_ROWS")"
 [ "$RED" -eq 0 ] && exit 0
 exit 1
