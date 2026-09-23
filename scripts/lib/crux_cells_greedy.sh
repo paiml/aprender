@@ -43,7 +43,7 @@ greedy_cells() {
           --temperature 0 --seed "$SEED" --format json -v "$APR_BE" "${aprflag[@]}"
         [ "$LLAMA_OK" = 1 ] && cell_add "$cell" "$d/apr-$pid-$th" python3 scripts/lib/crux_greedy_llama.py apr \
           --url "http://127.0.0.1:$port" --apr-json "$d/apr-$pid-$th.run.out" --apr-stderr "$d/apr-$pid-$th.run.err" \
-          --max-tokens "$GREEDY_MAXTOK" --out "$d/apr-$pid-$th.json"
+          --messages "$WORK/messages-$pid.json" --thinking "$th" --max-tokens "$GREEDY_MAXTOK" --out "$d/apr-$pid-$th.json"
       fi
       if [ "$LLAMA_OK" = 1 ]; then
         cell_add "$cell" "$d/llama-$pid-$th" python3 scripts/lib/crux_greedy_llama.py gen --prompt-source apr \
@@ -87,6 +87,20 @@ def load_first_object(path):
     return json.JSONDecoder().raw_decode(text[start:])[0]
 
 
+def lane_mismatch(be):
+    """None when apr RAN on this row's lane; else the refusal, by name. A gpu-lane cell that fell back to the CPU is
+    no GPU row (aprender-36: 40ae453c7's cuda build fell back on Qwen3.5-0.8B-UD-IQ2_XXS, measured here too:
+    requested gpu, ran cpu, fell_back true), and a missing backend record cannot say where it ran."""
+    if not isinstance(be, dict) or "ran" not in be or "fell_back" not in be:
+        return "apr's --format json carried no backend record {requested, ran, fell_back}: the lane is unverifiable"
+    ran = str(be.get("ran"))
+    ok = (ran in ("gpu", "cuda")) if backend == "gpu" else (ran == "cpu")
+    if be.get("fell_back") is not False or not ok:
+        return ("apr did not run on the %s lane: requested %s, ran %s, fell_back %s — refused, never recorded as a "
+                "%s row" % (backend, be.get("requested"), ran, be.get("fell_back"), backend))
+    return None
+
+
 def judged(path, rc_path):
     """None if the artifact is a good raw object; else the reason, by name."""
     if cell_why:
@@ -118,6 +132,8 @@ for pid in pids:
             why = judged(os.path.join(d, "apr-%s-%s.run.out" % (pid, th)), os.path.join(d, "apr-%s-%s.run.rc" % (pid, th)))
             if why is None:
                 why = judged(p, p[:-5] + ".rc")
+            if why is None:
+                why = lane_mismatch(load_first_object(p).get("backend"))
         row("apr", pid, th, p, why)
 PY
 }

@@ -86,6 +86,9 @@ def main(argv):
     r.add_argument("--max-tokens", type=int, required=True)
     r.add_argument("--out", required=True)
     r.add_argument("--apr-stderr")
+    r.add_argument("--messages", help="with --thinking: record llama.cpp's own template ids beside apr's (PMAT-3957: "
+                                      "raw.template_prompt_ids is a required field on every row)")
+    r.add_argument("--thinking", choices=["on", "off"])
     a = ap.parse_args(argv)
     try:
         if a.cmd == "gen":
@@ -121,12 +124,20 @@ def main(argv):
         else:
             apr = apr_json(a.apr_json)
             apr_ids, apr_rendered = apr_prompt(a.apr_stderr)
+            template_ids = None
+            if a.messages and a.thinking:
+                msgs = json.load(open(a.messages))["messages"]
+                rendered = post(a.url, "/apply-template", {"messages": msgs, "chat_template_kwargs":
+                                                           {"enable_thinking": a.thinking == "on"}})["prompt"]
+                template_ids = post(a.url, "/tokenize", {"content": rendered, "add_special": True,
+                                                         "parse_special": True})["tokens"]
             ids = apr.get("tokens")
             if not isinstance(ids, list):
                 raise RuntimeError("apr --format json carried no `tokens` list")
             doc = {"generated_ids": ids, "generated_text": detok(a.url, ids), "greedy": True, "special": True,
                    "max_tokens": a.max_tokens, "apr_text": apr.get("text"), "finish_reason": apr.get("finish_reason"),
-                   "prompt_ids": apr_ids, "rendered_prompt": apr_rendered,
+                   "prompt_ids": apr_ids, "rendered_prompt": apr_rendered, "template_prompt_ids": template_ids,
+                   "prompt_ids_equal": (template_ids == apr_ids) if (template_ids and apr_ids) else None,
                    "prompt_opens_think": opens_think(a.url, apr_ids),
                    "backend": apr.get("backend"),
                    "decoded_by": "llama.cpp /detokenize of apr's own ids (one tokenizer for both engines' text)"}

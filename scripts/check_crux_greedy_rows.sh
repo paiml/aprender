@@ -111,7 +111,8 @@ printf '[DEBUG] formatted_prompt="<|im_start|>user\\nq<|im_end|>\\n"\n[DEBUG] ad
 ids="[4, 5]"; [ "$th" = on ] && ids="[1, 2, 3, 4, 5]"
 # -v puts `verbose:` lines on stdout BEFORE the JSON, exactly as the real apr does (measured on lambda)
 printf 'verbose: apr 0.0.0\nverbose: model = /stub/model.gguf\n'
-if [ -n "${STUB_APR_NO_TOKENS:-}" ]; then printf '{"text": "4"}\n'; else printf '{"text": "4", "tokens": %s, "finish_reason": "stop", "backend": {"ran": "gpu"}}\n' "$ids"; fi
+ran=gpu; fb=false; [ -n "${STUB_APR_FELL_BACK:-}" ] && { ran=cpu; fb=true; }
+if [ -n "${STUB_APR_NO_TOKENS:-}" ]; then printf '{"text": "4"}\n'; else printf '{"text": "4", "tokens": %s, "finish_reason": "stop", "backend": {"requested": "gpu", "ran": "%s", "fell_back": %s}}\n' "$ids" "$ran" "$fb"; fi
 SH
 chmod +x "$BIN/llama-server" "$BIN/apr"
 
@@ -215,6 +216,18 @@ kill "$hsp" 2>/dev/null; wait "$hsp" 2>/dev/null
 got=$(python3 -c 'import json,sys; print(" / ".join("%s=%s" % ({"apr": "parity"}.get(s, s), json.load(open(sys.argv[1] + "/h-%s.json" % s))["prompt_ids"]) for s in ("official", "apr")))' "$TMP")
 [ "$got" = "official=[9, 9, 9, 1] / parity=[7, 9, 9, 1]" ] && ok "helper: official runs on the template's ids even when handed apr's prompt, parity on apr's own" \
   || broke "helper prompt selection: '$got'"
+
+# 1e. apr on the gpu lane FELL BACK to the CPU (measured on IQ2_XXS with 40ae453c7): refused by name, never a GPU row
+run_case fellback "$LIB" STUB_APR_THINKING=1 STUB_APR_FELL_BACK=1
+got=$(rows fellback | grep '^row apr ')
+case "$got" in *"row apr on apr REFUSED apr did not run on the gpu lane: requested gpu, ran cpu"*"row apr off apr REFUSED apr did not run on the gpu lane"*)
+  ok "apr that fell back to the CPU on the gpu lane: both its rows refused by name" ;;
+  *) broke "fell-back apr rows: '$got'" ;; esac
+# 1f. every apr raw carries template_prompt_ids (PMAT-3957: a missing field is a FAIL; quorum round 3, lane 3)
+got=$(python3 -c 'import json,sys
+r=[json.loads(l) for l in open(sys.argv[1])]
+print(sorted(set(tuple(json.load(open(x["tokens"])).get("template_prompt_ids") or []) != () for x in r if x["engine"]=="apr" and x["tokens"])))' "$TMP/up/manifest.jsonl")
+[ "$got" = "[True]" ] && ok "every apr raw carries template_prompt_ids" || broke "apr template_prompt_ids: '$got'"
 
 run_case notokens "$LIB" STUB_NO_TOKENS=1
 got=$(rows notokens | grep '^row llama.cpp')
