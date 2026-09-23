@@ -427,8 +427,6 @@ def run_batch(a, items: list) -> None:
     """Every item gets exactly one row, in order; the engine is loaded at most ONCE for the batch."""
     manifest, work = env_paths()
     check_sha(a.model_sha256)
-    # Sized by the items that can RUN: one refused before any engine must not push the load past what the model holds.
-    a.batch_max_tokens = max((it["max_tokens"] for it in items if item_error(it) is None), default=0)
     batch_id = f"{os.getpid()}-{time.time_ns()}"
     slots = []
     for it in items:
@@ -443,7 +441,7 @@ def run_batch(a, items: list) -> None:
             # The comparison this row is: apr's file (model_sha256) against these SOURCE weights, never the file.
             "source": {"repo": a.source_repo, "revision": a.source_revision, "dtype": a.dtype, "compares": COMPARES},
             "gpu_memory_utilization": gpu_memory_utilization(),
-            "max_model_len": model_len(a),
+            "max_model_len": None,  # set once the loading group is known (#4029)
             "batch": {"id": batch_id, "size": len(items)},
         }
         slots.append({"it": it, "row": row, "d": d, "stem": stem, "out": out, "err": err, "reason": item_error(it)})
@@ -464,6 +462,11 @@ def run_batch(a, items: list) -> None:
                       "engine on the same card; send serve/code items in their own gen-batch call")
         serve = []
     group = inproc or serve
+    # Sized by the items the engine will actually RUN (#4029): one refused before the load, for a bad field or for
+    # sharing the batch with the other interface, must not push the load past what the model holds.
+    a.batch_max_tokens = max((s["it"]["max_tokens"] for s in group), default=0)
+    for s in slots:
+        s["row"]["max_model_len"] = model_len(a)
     engine_log = work / a.model_sha256[:12] / f"{ENGINE}-batch-{batch_id}.engine.log"
     server_log = work / a.model_sha256[:12] / f"{ENGINE}-batch-{batch_id}.server.log"
     for s in group:

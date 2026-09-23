@@ -176,18 +176,31 @@ try:
     engine.subprocess = types.SimpleNamespace(Popen=_fake_popen, STDOUT=None)
     engine.preflight = lambda a: None
     engine.load_inproc, engine.serve_session = REAL_LOAD_INPROC, REAL_SERVE_SESSION
-    for _path, _verb in (("inproc", "run"), ("serve", "serve run")):
+    # (label, path, context, items as (verb, max_tokens), expected max_model_len). The incident numbers (context 4096,
+    # ON budget 4096) plus a context that differs from every budget, so 2*context or a hardcoded +4096 cannot pass.
+    # A bad-verb item and a serve item refused for sharing the batch with run items must not size the engine.
+    _cases = [
+        ("inproc incident", "inproc", 4096, [("run", 5), ("run", 4096), ("run", 300), ("no-such-verb", 100_000)], 8192),
+        ("serve incident", "serve", 4096,
+         [("serve run", 5), ("serve run", 4096), ("serve run", 300), ("no-such-verb", 100_000)], 8192),
+        ("inproc context != budget", "inproc", 2048, [("run", 5), ("run", 1024), ("chat", 900)], 3072),
+        ("serve context != budget", "serve", 2048, [("serve run", 900), ("serve stream", 1024)], 3072),
+        ("mixed: refused serve item does not size the run engine", "inproc", 4096,
+         [("run", 5), ("serve run", 100_000)], 4101),
+    ]
+    for _label, _path, _ctx, _items, _want in _cases:
+        _given.clear()
         _w = bc.batch_env()
-        engine.run_batch(bc.model_args(context=4096), [
-            {"prompt_id": p, "verb": v, "messages": bc.msgs(_w, p, ["q"]), "thinking": "on", "max_tokens": n}
-            for p, v, n in (("small", _verb, 5), ("on-budget", _verb, 4096), ("mid", _verb, 300),
-                            ("refused", "no-such-verb", 100_000))])
+        engine.run_batch(bc.model_args(context=_ctx), [
+            {"prompt_id": f"p{i}", "verb": v, "messages": bc.msgs(_w, f"p{i}", ["q"]), "thinking": "on",
+             "max_tokens": n} for i, (v, n) in enumerate(_items)])
         _r = bc.rows(_w)
-        _ok = (_given.get(_path) == 8192 and len(_r) == 4 and all(r.get("max_model_len") == 8192 for r in _r)
-               and all("_Stop" in (r.get("refused") or "") or "fake" in (r.get("refused") or "") for r in _r[:3]))
-        print(f"{'ok  ' if _ok else 'FAIL'} [#4029 {_path}] vLLM is handed context + the largest runnable budget, "
-              "and every row records it" + ("" if _ok else f"\n     vLLM got {_given.get(_path)}, rows "
-                                             f"{[(r.get('max_model_len'), (r.get('refused') or '')[:60]) for r in _r]}"))
+        _loaded = [r for r in _r if "fake" in (r.get("refused") or "")]
+        _ok = (_given.get(_path) == _want and len(_r) == len(_items) and _loaded
+               and all(r.get("max_model_len") == _want for r in _r))
+        print(f"{'ok  ' if _ok else 'FAIL'} [#4029 {_label}] vLLM is handed context + the largest budget it will run, "
+              "and every row records it" + ("" if _ok else f"\n     vLLM got {_given}, want {_want}; rows "
+                                             f"{[(r.get('max_model_len'), (r.get('refused') or '')[:50]) for r in _r]}"))
         failed += not _ok
         CASES_TOTAL += 1
 finally:
