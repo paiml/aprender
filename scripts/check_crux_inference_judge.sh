@@ -1006,6 +1006,10 @@ reason_has "  ...named as undecidable" "$d" $P "nothing shows whether the prompt
 d=$(b2 b2_cjk_render_cut "Two and two make <answer>4</answer>" "$LL_CLOSED" "$(printf '问%.0s' $(seq 1 70))"); run_judge "$d"; GOT_RC=$?
 expect "B2: a CJK rendering cut at 200 bytes (70 chars) is NOT read as whole -- unknown, so RED by name" "$d" 1 $P RED
 reason_has "  ...named as undecidable, never judged on the reasoning" "$d" $P "nothing shows whether the prompt opened a think block"
+# #4018: flooring that cut to a char boundary logs 197-199 bytes for a CUT prompt (x + 66 x 3-byte chars
+# = 199 bytes). It must read as unknown too, not as whole.
+d=$(b2 b2_floored_cut "Two and two make <answer>4</answer>" "$LL_CLOSED" "x$(printf '水%.0s' $(seq 1 66))"); run_judge "$d"; GOT_RC=$?
+expect "B2: a rendering floored to a char boundary (199 bytes) is NOT read as whole -- unknown, so RED by name" "$d" 1 $P RED
 
 # ── #3957 F6 MUTANTS. Each rule deleted in a copy of the judge; the WHOLE table must then break.
 if [ -z "${CRUX_NO_MUTANTS:-}" ]; then
@@ -1026,7 +1030,8 @@ apr-differs-ignored|ANSWERED but WRONG does not corroborate|s/^        elif a.ge
 token-loop-off|named DEGENERATE|s/^    return top >= 0.9 \* len(chars) or token_loop(text) is not None$/    return top >= 0.9 * len(chars)/
 b2-no-opener|a prefilled block that NEVER closes is RED|s/^            p\["answer"\] = "<think>\\n" + p\["answer"\]$/            pass/
 b2-no-llama-map|llama-cli \[Start thinking\] with no \[End thinking\]|s/^        ans = ans.replace(marker, tag)$/        pass/
-b2-chars-not-bytes|a CJK rendering cut at 200 bytes|s/^    return False if len(raw.encode("utf-8")) < FORMATTED_PROMPT_LOG_BYTES else None$/    return False if len(rendered) < 180 else None/
+b2-chars-not-bytes|a CJK rendering cut at 200 bytes|s/^    return False if len(raw.encode("utf-8")) < FORMATTED_PROMPT_WHOLE_BELOW else None$/    return False if len(rendered) < 180 else None/
+b2-floor-margin|floored to a char boundary|s/^FORMATTED_PROMPT_WHOLE_BELOW = FORMATTED_PROMPT_LOG_BYTES - 3$/FORMATTED_PROMPT_WHOLE_BELOW = FORMATTED_PROMPT_LOG_BYTES/
 b2-unknown-judged|nothing shows whether the prompt opened a block|s/^        elif opened is None and not re.search(r"<\/?think>", p\["answer"\], re.I):$/        elif False:/
 negative-control-off|the lane is blind|s/^    blind = sorted(v for v, r in negative.items() if r\["verdict"\] != "RED")$/    blind = []/
 per-verb-control-off|does not control the serve lane|s/^    uncontrolled = \["%s/    uncontrolled = [] and ["%s/
