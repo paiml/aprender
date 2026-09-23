@@ -1,6 +1,6 @@
 # Milestone triage: 0.70.0 and unmilestoned issues (2026-09-23, applied)
 
-**APPLIED 2026-09-23** on the operator's approval ("yes apply both", relayed by aprender-cf): 201 issues moved to the milestone proposed below, each with a comment naming this file, #4024 and its reason. Row requested by aprender-cf (cop) under #3998.
+**APPLIED 2026-09-23** on the operator's approval ("yes apply both", relayed by aprender-cf): 202 issues moved (97 out of 0.70.0, 105 from no milestone) to the milestone proposed below, each with a comment naming this file, #4024 and its reason. Row requested by aprender-cf (cop) under #3998.
 
 **NOT applied (left untouched, pending): 35 rows.** These are the 8 `DECIDE` rows (operator), 7 `close?`, 6 `verify-close`, 13 `0.69.1 (in flight)` and 1 `none (pinned)`. No issue was closed.
 
