@@ -99,6 +99,10 @@ pub struct InferenceConfig {
     /// name marks it as an instruct model (`apr run --chat`). The prompt stays raw text:
     /// the template is applied once, by `prepare_tokens`, never pre-wrapped by a caller.
     pub force_chat_template: bool,
+    /// #3723: `--thinking on|off`. `None` renders what production always has; `Some(true)`
+    /// removes the empty `<think>` prefill so the model reasons, and is refused by name on a
+    /// template with no thinking mode ([`crate::chat_template::apply_thinking_mode`]).
+    pub thinking: Option<bool>,
 }
 
 /// The top-k a SAMPLED generation uses when the caller names none (#3754).
@@ -152,6 +156,7 @@ impl InferenceConfig {
             stop_tokens: Vec::new(),
             use_mock_backend: false,
             force_chat_template: false,
+            thinking: None,
         }
     }
 
@@ -243,6 +248,13 @@ impl InferenceConfig {
     #[must_use]
     pub fn with_force_chat_template(mut self, force: bool) -> Self {
         self.force_chat_template = force;
+        self
+    }
+
+    /// #3723: the thinking mode `--thinking on|off` asks for (`None`: the production default).
+    #[must_use]
+    pub fn with_thinking(mut self, thinking: Option<bool>) -> Self {
+        self.thinking = thinking;
         self
     }
 
@@ -384,6 +396,15 @@ pub fn prepare_tokens(config: &InferenceConfig, format: &ModelFormat) -> Result<
 /// BOS token: Prepend BOS when the model metadata says `add_bos_token = true`
 /// or when a BOS token ID exists and `add_bos_token` is not explicitly false.
 /// This matches llama.cpp behavior for LLaMA-family models.
+/// #3723: apply `--thinking` to a rendered prompt. A prompt that no chat template rendered has
+/// no thinking mode, so ON is refused there too; OFF and `None` leave every prompt unchanged.
+fn thinking_mode(config: &InferenceConfig, formatted: String) -> Result<String> {
+    if config.thinking.is_none() {
+        return Ok(formatted);
+    }
+    crate::chat_template::apply_thinking_mode(&formatted, config.thinking)
+}
+
 fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<PreparedTokens> {
     use crate::chat_template::{format_messages, ChatMessage};
     use crate::gguf::{GGUFValue, MappedGGUFModel};
@@ -415,6 +436,7 @@ fn prepare_tokens_gguf(config: &InferenceConfig, prompt: &str) -> Result<Prepare
     } else {
         prompt.to_string()
     };
+    let formatted_prompt = thinking_mode(config, formatted_prompt)?;
 
     if config.verbose {
         eprintln!(
@@ -525,6 +547,7 @@ fn prepare_tokens_safetensors(config: &InferenceConfig, prompt: &str) -> Result<
     } else {
         prompt.to_string()
     };
+    let formatted_prompt = thinking_mode(config, formatted_prompt)?;
 
     let tokens =
         AprV2Model::encode_text(&config.model_path, &formatted_prompt).ok_or_else(|| {
@@ -600,6 +623,7 @@ fn prepare_tokens_apr(config: &InferenceConfig, prompt: &str) -> Result<Prepared
     } else {
         prompt.to_string()
     };
+    let formatted_prompt = thinking_mode(config, formatted_prompt)?;
 
     let tokens =
         AprV2Model::encode_text(&config.model_path, &formatted_prompt).ok_or_else(|| {

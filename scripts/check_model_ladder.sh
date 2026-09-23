@@ -66,10 +66,12 @@ import fnmatch, json, os, sys, yaml
 ladder_p, main_p, rdir, version, rungs_p, rungs_main_p, cut, equiv_p, crux_dir = sys.argv[1:10]
 # A mutant copy of a module, in --self-test: each directory is searched first when set.
 sys.path.insert(0, "scripts/lib")
-for _lib in (os.environ.get("MODEL_LADDER_CRUX_LIB"), os.environ.get("MODEL_LADDER_CELLS_LIB")):
+for _lib in (os.environ.get("MODEL_LADDER_CRUX_LIB"), os.environ.get("MODEL_LADDER_CELLS_LIB"),
+             os.environ.get("MODEL_LADDER_REDMODEL_LIB")):
     if _lib: sys.path.insert(0, _lib)
 import model_ladder_cells
 import model_ladder_crux
+import model_ladder_redmodel
 try:
     L = yaml.safe_load(open(ladder_p))["ladder"]
 except Exception as e:
@@ -226,6 +228,33 @@ for r in rungs:
     if is_q4k(r) and "cuda" not in (r.get("backends") or []):
         print(f"FAIL  rung {r['id']} is a Q4_K rung that does not claim cuda — every Q4_K model must be green on CUDA (#3712)"); rc = 1
 inv_backends = list((L.get("inventory") or {}).get("backends") or [])
+# #3957 F9/F10: the two NAMED RED verdicts, RED-MODEL and RED-UNSUPPORTED. Each is a claim about
+# CAUSE and is admitted only when THIS sweep re-proves it; otherwise the row is plain FAIL. The
+# rules live in scripts/lib/model_ladder_redmodel.py, and the case table proves each one RED first.
+RV = model_ladder_redmodel.RedVerdicts(L, print)
+if RV.failed: rc = 1
+RV.load_crux(crux_dir, cut, equiv)
+held_sha = {}  # host -> {file: sha256}, the host's measured inventory (for the F9 control sibling)
+def sha_of(host, f): return (held_sha.get(host) or {}).get(f)
+def named_red(host, f, x, why, backends):
+    """-> True when a key covers the row (the line is printed and rc is set); None otherwise."""
+    gpu = {"cuda", "gpu"}
+    others = [b for b in backends if b not in gpu]
+    def residual(y):  # RED-MODEL: the ladder's own verdict over the row with the defect neutralised
+        return why_of(y, backends)
+    v = RV.classify(host, f, x, why, residual, sha_of)
+    if v is None: return None
+    blocking, line = v
+    # RED-UNSUPPORTED excuses the CUDA backend only: every other claimed backend is judged as usual.
+    if not blocking and RV.proven.get((host, f)) == "RED-UNSUPPORTED" and others:
+        rest = [w for w in why_of(x, others) if any(w.startswith(f"{o}:") for o in others)]
+        if rest:
+            RV.proven.pop((host, f), None)
+            blocking, line = True, f"FAIL  {host:7} {f:22} RED-UNSUPPORTED excuses cuda only, and " + "; ".join(rest)
+    print(line)
+    global rc
+    if blocking: rc = 1
+    return True
 # #3846: the DECLARED inventory deferrals (glob -> reason). Empty when absent, so a
 # contract without the key defers nothing and every failing row is refused as before.
 inv_deferred = dict((L.get("inventory") or {}).get("deferred") or {})
@@ -334,6 +363,7 @@ for h in hosts:
             # check exists to expose.
             print(f"FAIL  {h['id']:7} receipt says red={declared_red} but carries {rows_red} non-green row(s) — a red that is counted and not recorded is a red nobody can read (#3842)"); rc = 1
     good[h["id"]] = R
+    held_sha[h["id"]] = {i.get("file"): i.get("sha256") for i in inv if isinstance(i, dict)}
     by = {r.get("id"): r for r in R.get("rungs", [])}
     by_file = {x.get("file"): x for x in R.get("rungs", []) if x.get("file")}
     ladder_files = {r.get("gguf") for r in rungs}
@@ -346,6 +376,7 @@ for h in hosts:
         if f in ladder_files:
             continue  # a ladder rung: judged, required, in the rung loop below
         why = why_of(x, inv_backends)
+        if named_red(h["id"], f, x, why, inv_backends): continue
         # #3846 / operator ruling 2026-09-22 ("we kick the MoE work to later"): a DECLARED
         # deferral. `inventory.deferred` maps a filename glob to a REASON, and a failing row
         # whose file matches one is printed DEFERRED with that reason instead of refusing.
@@ -387,6 +418,7 @@ for h in hosts:
         if x.get("sha_ok") is not True:
             print(f"FAIL  {h['id']:7} {rid:22} sha256 mismatch — a different file is a different measurement"); rc = 1; continue
         why = why_of(x, r.get("backends", []))
+        if named_red(h["id"], r.get("gguf") or x.get("file") or rid, x, why, r.get("backends", [])): continue
         if why:
             if req: print(f"FAIL  {h['id']:7} {rid:22} " + "; ".join(why)); rc = 1
             else:   print(f"warn  {h['id']:7} {rid:22} ({tag}) " + "; ".join(why))
@@ -413,11 +445,13 @@ for pat in inv_deferred:
         print(f"FAIL  deferral {pat!r} is STALE: it covers {defer_matched[pat]} held model(s) and deferred NOTHING — "
               f"every file it excuses is green, so the capability arrived and the key outlived it. Delete it (#3880).")
         rc = 1
+if RV.finish(good, {k: list(v) for k, v in held_sha.items()}, [h["id"] for h in hosts], lambda y: not why_of(y, ["cuda"])):
+    rc = 1
 if model_ladder_cells.judge(L, good, rungs_doc, print, rungs_main):
     rc = 1
 # #3957 F4/F8: every (model, format, quant, host, backend, verb) cell must be PROVEN by an outside
 # oracle -- the CRUX receipts bound to the cut -- or, for .apr, by the chain to its source.
-if model_ladder_crux.judge(L, good, crux_dir, cut, equiv, print):
+if model_ladder_crux.judge(L, good, crux_dir, cut, equiv, print, RV.proven):
     rc = 1
 # #3957 F1: a DEFERRED row is not green. DEFER is `Unknown(NotRun)` in the fleet vocabulary
 # (crates/aprender-contracts/src/ontology/verdict.rs FLEET_LABELS), the same element as
@@ -645,6 +679,46 @@ if [ "$SELF_TEST" = 1 ]; then
     xmutant apr-summary-diff  red-apr-summary-diff-only 's/td.get("method") != "elementwise" or //'
     xmutant apr-greedy        red-apr-greedy-differs  's/^        elif e.get("equal") is not True:/        elif False:/'
     xmutant apr-source-proven red-apr-source-red      's/s_ok, s_why = crux_cell(index, src_sha, host, b, v)/s_ok, s_why = True, "mutant"/'
+    # #3957 F9/F10: the named RED verdicts (scripts/lib/model_ladder_redmodel.py). Each rule deleted in a copy
+    # imported through MODEL_LADDER_REDMODEL_LIB; the case that isolates the rule must go RED under the copy.
+    rmutant() { # rmutant <label> <case that must kill it> <sed expression deleting the rule>
+      local md="$mdir/r-$1"; mkdir -p "$md"
+      sed "$3" scripts/lib/model_ladder_redmodel.py > "$md/model_ladder_redmodel.py"
+      if cmp -s scripts/lib/model_ladder_redmodel.py "$md/model_ladder_redmodel.py"; then echo "FAIL  redmodel mutant $1 did not apply -- case $2 proves nothing"; bad=$((bad+1)); return; fi
+      if MODEL_LADDER_REDMODEL_LIB="$md" bash "$SELF" --self-test --case "$2" > /dev/null 2>&1; then echo "FAIL  redmodel mutant $1 SURVIVED: case $2 stays ok with the rule deleted"; bad=$((bad+1))
+      else printf 'ok    redmodel mutant %-19s killed by case %s\n' "$1" "$2"; fi
+    }
+    rmutant oracle-closes     red-model-oracle-closes        's/^            elif think_state(off.get("generated_text")) != want:/            elif False:/'
+    rmutant empty-has-content red-model-empty-oracle-has-content 's/^            elif think_state(off.get("generated_text")) != want:/            elif False:/'
+    rmutant official-missing  red-model-official-missing     's/^            if off is None:/            if False:/'
+    rmutant official-ids      red-model-official-not-official 's/^            elif not (_ids(off.get("template_prompt_ids")) and off.get("prompt_ids") == off.get("template_prompt_ids")):/            elif False:/'
+    rmutant parity-prompt     red-model-parity-prompt-differs 's/^            if not (_ids(a.get("prompt_ids")) and a.get("prompt_ids") == o.get("prompt_ids")):/            if False:/'
+    rmutant no-oracle         red-model-no-oracle            's/^        if not gpu:/        if False:/'
+    rmutant ids-differ        red-model-apr-ne-oracle        's/^            if a\["generated_ids"\] != o\["generated_ids"\]:/            if False:/'
+    rmutant equal-flag        red-model-equal-flag-not-trusted 's/^            if a\["generated_ids"\] != o\["generated_ids"\]:/            if False:/'
+    rmutant cpu-ne-gpu        red-model-cpu-ne-gpu           's/^            elif ca\["generated_ids"\] != a\["generated_ids"\]:/            elif False:/'
+    rmutant control-blind     red-model-control-blind        's/^            elif any(think_state(r.get("generated_text")) != "ok" for r in co):/            elif False:/'
+    rmutant control-self      red-model-control-is-self      's/^        elif csha == sha or cfile == f:/        elif False:/'
+    rmutant control-cell      red-model-control-cell-red     's/^            elif any(v != "GREEN" for v in vs):/            elif False:/'
+    rmutant bf16-leg          red-model-bf16-not-reproduced  's/^                    if think_state(t) != want:/                    if False:/'
+    rmutant named-filter      green-red-model-named-prompts  's/^        if named:/        if False:/'
+    rmutant named-prompt      red-model-named-prompt-unmeasured 's/^            if gone:/            if False:/'
+    rmutant axis-on           red-model-axis-not-on          's/^            if e.get("thinking") != "on":/            if False:/'
+    rmutant residual          red-model-residual             's/^            if resid:/            if False:/'
+    rmutant stale             red-model-stale                's/^        if not why:/        if False:/'
+    rmutant ticket            red-model-no-ticket            's/^        if not TICKET.search/        if False and not TICKET.search/'
+    rmutant no-file           red-model-key-no-file          's/^            if n:$/            if True:/'
+    rmutant no-file-unsup     red-unsupported-key-no-file    's/^            if n:$/            if True:/'
+    rmutant not-judged-honest red-model-receipt-rejected-not-judged 's/^            if missing:/            if False:/'
+    rmutant unsup-ran         red-unsupported-ran            's/^        if be.get("rc") in (0, None) or be.get("ran") is not False:/        if False:/'
+    rmutant unsup-stdout      red-unsupported-stdout         's/^        if run.get("generated_bytes") != 0:/        if False:/'
+    rmutant unsup-fell-back   red-unsupported-fell-back      's/^        if be.get("fallback") or/        if False and be.get("fallback") or/'
+    rmutant unsup-by-name     red-unsupported-no-refusal     's/^        if not isinstance(refusal, str) or needle not in refusal or REFUSAL_CLASS not in refusal:/        if False:/'
+    rmutant unsup-arch-header red-unsupported-arch-mismatch  's/^        elif got != arch:/        elif False:/'
+    rmutant unsup-has-path    red-unsupported-supported-arch 's/^                    if x.get("present") and x.get("architecture") == arch and green_on_cuda(x):/                    if False:/'
+    # The crux-join half of F9/F10: the thinking-OFF axis stays owed, and a proven verdict is what lets a green case pass.
+    xmutant red-model-off-owed red-model-thinking-off-missing 's/^    if red_model and not got:/    if False:/'
+    xmutant unsup-cell-named  green-red-unsupported-proven  's/^                    if named == "RED-UNSUPPORTED" and b in ("cuda", "gpu"):/                    if False:/'
     if [ -n "$mdir" ] && [ "$mdir" != "/" ] && [ -d "$mdir" ]; then rm -rf -- "$mdir"; fi
   fi
   echo "self-test: $n case(s), $bad bad"
@@ -691,14 +765,24 @@ for f in glob.glob(sys.argv[1] + "/*.json"):
   fi
 done > "$TMP_EQUIV"
 [ -n "$CRUX_DIR" ] || CRUX_DIR="evidence/crux/$VERSION"
-judge "$LADDER" "$MAIN_LADDER" "$RECEIPT_DIR" "$VERSION" evidence/release/context-rungs.json "$TMP_RUNGS" "$CUT_COMMIT" "$TMP_EQUIV" "$CRUX_DIR"; rc=$?
+TMP_OUT=$(mktemp)
+judge "$LADDER" "$MAIN_LADDER" "$RECEIPT_DIR" "$VERSION" evidence/release/context-rungs.json "$TMP_RUNGS" "$CUT_COMMIT" "$TMP_EQUIV" "$CRUX_DIR" > "$TMP_OUT"; rc=$?
+cat "$TMP_OUT"
+# #3957 F9/F10: a run whose only non-green cells are re-proven RED-MODEL / RED-UNSUPPORTED exits 0,
+# and must not then claim "every required rung green". Read from the file, never through a pipe.
+named_red=0; grep -q '^RED   [0-9]* RED-MODEL' "$TMP_OUT" && named_red=1
+rm -f "$TMP_OUT"
 rm -f "$TMP_EQUIV"
 [ -n "$TMP_RUNGS" ] && [ -f "$TMP_RUNGS" ] && rm -f "$TMP_RUNGS"
 # The producer that writes these receipts must not bypass the fleet GPU lock (#3712): RED, not a decline.
 # #3957 F1: exit 2 now also means DEFER, so a raw GPU call must not hide behind it -- always RED.
 if ! lock_audit scripts/model_ladder.sh; then rc=1; fi
 case $rc in
-  0) echo "ok    every required rung green on every required host" ;;
+  0) if [ "$named_red" = 1 ]; then
+       echo "ok    no blocking cell: every required rung is green, or RED-MODEL / RED-UNSUPPORTED re-proven on this sweep (counted RED above, never green)"
+     else
+       echo "ok    every required rung green on every required host"
+     fi ;;
   1) echo "RED   the release claims a capability no receipt proves — see FAIL rows (EPIC #3477)" ;;
   2) echo "NO-GO the verdict is not green: see DEFER / decline lines above (#3957 F1)" ;;
 esac

@@ -143,6 +143,8 @@ elif kind == "tmpl":
     row.update({"thinking": thinking, "messages": path + ".messages.json", "rendered": path})
 else:
     row.update({"steps": 4, "tokens": path, "logits": path + ".npy"})
+    if len(sys.argv) > 6:
+        row["thinking"] = thinking   # #3957 F9: a greedy row's thinking mode is part of its key
 open(m, "a").write(json.dumps(row) + "\n")
 PY
 }
@@ -653,6 +655,24 @@ detrow "$d/manifest.jsonl" greedy apr golden-paris "$d/apr-g.json"; detrow "$d/m
 run_judge "$d"; GOT_RC=$?
 got=$(python3 -c 'import json,sys; g=json.load(open(sys.argv[1]))["greedy"][0]["hf"]; print(g.get("first_divergence"), round(g.get("logit_cosine_at_divergence") or -9, 4))' "$d/receipt.json" 2>/dev/null)
 [ "$GOT_RC" = 0 ] && [ "$got" = "2 0.7071" ] && ok "greedy divergence at step 2 is reported with its logit cosine (0.7071), not judged" || broke "greedy: rc $GOT_RC, '$got'"
+# R1b (#3957 F9). The receipt carries each engine's RAW greedy record, keyed by thinking, so the
+# ladder judge compares the id lists itself; an engine that refused carries its refusal, never ids.
+d=$(newcase greedy_raw_carried); control_green "$d"
+printf '{"generated_ids": [5, 6, 7, 8], "generated_text": "<think>\\nx", "greedy": true, "special": true, "max_tokens": 4}\n' > "$d/ll-g.json"
+detrow "$d/manifest.jsonl" greedy llama.cpp golden-paris "$d/ll-g.json" on
+detrow "$d/manifest.jsonl" greedy apr golden-paris "$d/none.json" on "#3723: apr has no thinking toggle"
+# #3990: llama.cpp on the model's OWN template is a second row for the same engine, kept under "llama.cpp@official".
+printf '{"generated_ids": [9], "generated_text": "<think>\\ny", "greedy": true, "special": true, "max_tokens": 4}\n' > "$d/off-g.json"
+detrow "$d/manifest.jsonl" greedy llama.cpp golden-paris "$d/off-g.json" on
+python3 - "$d/manifest.jsonl" <<'PY'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+rows[-1]["prompt_source"] = "official"
+open(sys.argv[1], "w").write("".join(json.dumps(r) + "\n" for r in rows))
+PY
+run_judge "$d"; GOT_RC=$?
+got=$(python3 -c 'import json,sys; g=json.load(open(sys.argv[1]))["greedy"][0]; print(g["key"].get("thinking"), (g.get("llama.cpp") or {}).get("raw", {}).get("generated_ids"), (g.get("llama.cpp@official") or {}).get("raw", {}).get("generated_ids"), (g.get("apr") or {}).get("refused"), "raw" in (g.get("apr") or {}))' "$d/receipt.json" 2>/dev/null)
+[ "$GOT_RC" = 0 ] && [ "$got" = "on [5, 6, 7, 8] [9] #3723: apr has no thinking toggle False" ] && ok "greedy receipt carries the raw ids keyed by thinking, the official-template row apart, and a refusal in place of ids (#3957 F9, #3990)" || broke "greedy raw: rc $GOT_RC, '$got'"
 unset META_ENGINES
 
 # 10-11. token parity: equal ids agree; a divergence is located, never averaged away.

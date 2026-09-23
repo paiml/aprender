@@ -173,6 +173,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             batch_jsonl,
             verbose,
             backend: BackendArg { backend },
+            thinking,
         } => {
             request_f2_revalidate(*revalidate);
             // GH-614: --backend cpu forces CPU-only inference
@@ -248,6 +249,15 @@ or drop `--backend`."
             // Batch JSONL mode: load model once, process all prompts
             #[cfg(feature = "inference")]
             if let Some(ref batch_file) = batch_jsonl {
+                // #3723: the batch path renders its own prompts; a flag it cannot honour is
+                // refused by name rather than ignored.
+                if thinking.mode().is_some() {
+                    return Some(Err(CliError::ValidationFailed(
+                        "--thinking is not supported with --batch-jsonl (#3723): the batch path \
+renders its own prompts. Run the prompts through `apr run --thinking` instead."
+                            .to_string(),
+                    )));
+                }
                 return Some(run::run_batch(
                     source,
                     batch_file,
@@ -292,6 +302,7 @@ or drop `--backend`."
                 *repeat_penalty,
                 *repeat_last_n,
                 *split_prompt,
+                thinking.mode(),
             )
         }
 

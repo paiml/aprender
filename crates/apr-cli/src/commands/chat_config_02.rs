@@ -15,6 +15,7 @@
             json: false,
             trace: false,
             trace_output: None,
+            thinking: None,
         };
         assert_eq!(config.temperature, 0.0);
         assert_eq!(config.top_p, 0.0);
@@ -33,6 +34,7 @@
             json: false,
             trace: true,
             trace_output: Some(PathBuf::from("/tmp/creative_trace.json")),
+            thinking: None,
         };
         assert_eq!(config.temperature, 2.0);
         assert_eq!(config.max_tokens, 4096);
