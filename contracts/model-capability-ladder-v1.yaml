@@ -102,6 +102,20 @@ ladder:
   # BINARY instead of the ladder (scripts/lib/crux_smoke_scope.py): every host below, every certified
   # model (from the prompt certification), every thinking mode below, all GREEN with a GREEN positive
   # control, receipts bound to the cut exactly. Refused for any other release.
+  # #4045: the NORMAL release gate from 0.70.0 (check_model_ladder.sh --scope release --nightly <root>). Operator,
+  # relayed by the release cop aprender-cf, 2026-09-23: "lets update our process for .70 and one of your workers on
+  # that epic ensure new optimization is part of workflow and we change nightly for the long releaes"; and "anything
+  # huge, must be nightly only". A release = CRUX smoke on the RELEASE BINARY (these hosts x the certification's
+  # admitted modes, positive control GREEN) AND a GREEN nightly long certification <= 24 h old at an ancestor,
+  # bound to the cut by equivalence / the #4037 carry. The emergency scope below is 0.69.1's alone.
+  release_gate:
+    from: "0.70.0"
+    ruling: '#4045, operator 2026-09-23: "we change nightly for the long releases" / "anything huge, must be nightly only"'
+    crux_smoke:
+      hosts: [lambda, gx10]
+      thinking: ["off", "on"]
+    nightly:
+      max_age_h: 24
   emergency_scopes:
     - name: crux-smoke
       release: "0.69.1"

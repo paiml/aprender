@@ -28,9 +28,33 @@ import model_ladder_crux
 HEX40 = re.compile(r"[0-9a-f]{40}")
 
 
+def _semver(v):
+    m = re.match(r"(\d+)\.(\d+)\.(\d+)", str(v or ""))
+    return tuple(int(g) for g in m.groups()) if m else None
+
+
 def judge(L, version, crux_dir, cert_p, cut, scope_name, out):
-    """-> True when the emergency scope is NOT satisfied (RED)."""
+    """-> True when the scope is NOT satisfied (RED).
+
+    `release` is the NORMAL release gate from 0.70.0 (#4045): `ladder.release_gate.crux_smoke`, the same
+    smoke rules, for every release from `release_gate.from` on -- no per-release override. The caller
+    (check_model_ladder.sh --scope release) ALSO requires a nightly admitted and bound to the cut."""
     failed = False
+    if scope_name == "release":
+        g = L.get("release_gate") or {}
+        cs = g.get("crux_smoke") or {}
+        missing = [k for k in ("from", "ruling") if not g.get(k)] + [k for k in ("hosts", "thinking") if not cs.get(k)]
+        if missing:
+            out(f"FAIL  ladder.release_gate is missing {missing} -- the normal release gate is recorded, never improvised (#4045)")
+            return True
+        frm, cur = _semver(g["from"]), _semver(version)
+        if frm is None or cur is None or cur < frm:
+            out(f"FAIL  the normal release gate applies from {g['from']}, and this cut is {version} -- "
+                f"an earlier release is judged by the full gate or its own recorded scope")
+            return True
+        out(f"RELEASE GATE (normal, #4045): CRUX smoke on the release binary + the nightly long certification -- {g.get('ruling')}")
+        entry = {"hosts": cs["hosts"], "thinking": cs["thinking"]}
+        return _smoke(entry, crux_dir, cert_p, cut, out)
     entry = next((e for e in (L.get("emergency_scopes") or [])
                   if isinstance(e, dict) and e.get("name") == scope_name), None)
     if entry is None:
@@ -45,6 +69,12 @@ def judge(L, version, crux_dir, cert_p, cut, scope_name, out):
         out(f"FAIL  emergency scope {scope_name} is recorded for release {entry['release']} ONLY, and this cut is {version} "
             f"-- the full gate applies")
         return True
+    return _smoke(entry, crux_dir, cert_p, cut, out)
+
+
+def _smoke(entry, crux_dir, cert_p, cut, out):
+    """The smoke rules, shared by the emergency scope and the normal release gate. -> True when RED."""
+    failed = False
     if not HEX40.fullmatch(cut or ""):
         out(f"FAIL  the cut {cut!r} is not a full 40-hex sha -- smoke receipts are bound to the release binary's commit")
         return True

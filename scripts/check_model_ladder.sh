@@ -1080,7 +1080,8 @@ CUT = "d" * 40
 C.model_ladder_crux._git_resolve = lambda short: CUT if CUT.startswith(short) else ("e" * 40 if ("e" * 40).startswith(short) else None)
 SH = ["1" * 64, "2" * 64, "3" * 64]
 L = {"emergency_scopes": [{"name": "crux-smoke", "release": "0.69.1", "date": "2026-09-23", "quote": "q",
-                            "hosts": ["lambda", "gx10"], "thinking": ["off", "on"]}]}
+                            "hosts": ["lambda", "gx10"], "thinking": ["off", "on"]}],
+     "release_gate": {"from": "0.70.0", "ruling": "r", "crux_smoke": {"hosts": ["lambda", "gx10"], "thinking": ["off", "on"]}}}
 # 2 = SH[1] is admitted with thinking OFF only (its ON leg loops at greedy, the real 2B's shape)
 ADMIT = {s: {"off": ["ctl"], "on": ["ctl"]} for s in SH}
 ADMIT[SH[1]] = {"off": ["ctl"], "on": []}
@@ -1116,6 +1117,11 @@ def build(d, hosts=("lambda", "gx10"), drop=None, ctl="GREEN", noctl=False, sha=
     if junk:
         json.dump({"note": "not a receipt"}, open(os.path.join(d, "stray.json"), "w"))
 rows = [
+  ("RELEASE GATE: the normal smoke from 0.70.0 on, no per-release entry", False, "RELEASE GATE (normal, #4045)", {"_scope": "release"}, "0.70.0"),
+  ("RELEASE GATE: a later release uses it too", False, "RELEASE GATE (normal, #4045)", {"_scope": "release"}, "0.71.3"),
+  ("RELEASE GATE: before its `from` it is refused", True, "the normal release gate applies from 0.70.0", {"_scope": "release"}, "0.69.2"),
+  ("RELEASE GATE: its smoke rules are the same (a host missing is RED)", True, "host gx10 has no CRUX receipt", {"_scope": "release", "hosts": ("lambda",)}, "0.70.0"),
+  ("RELEASE GATE: a release_gate without its ruling is refused", True, "ladder.release_gate is missing ['ruling']", {"_scope": "release", "_noruling": True}, "0.70.0"),
   ("the sweep's merge meta beside a receipt is skipped by name", False, "lambda-gpu.meta.json is the sweep's merge meta", {"meta": True}, "0.69.1"),
   ("any OTHER non-receipt beside the receipts still FAILs", True, "stray.json is not a crux-inference-receipt/v1", {"meta": True, "junk": True}, "0.69.1"),
   ("a control-only smoke says so instead of claiming a separate control check", False, "(control-only smoke)", {"controlonly": True}, "0.69.1"),
@@ -1149,9 +1155,11 @@ rows = [
 bad = 0
 for name, want_fail, needle, kw, version in rows:
     with tempfile.TemporaryDirectory() as d:
+        kw = dict(kw); scope = kw.pop("_scope", "crux-smoke")
+        LL = L if not kw.pop("_noruling", False) else dict(L, release_gate={k: v for k, v in L["release_gate"].items() if k != "ruling"})
         build(d, **kw)
         lines = []
-        got = C.judge(L, version, d, os.path.join(d, "prompt-certification.json"), CUT, "crux-smoke", lines.append)
+        got = C.judge(LL, version, d, os.path.join(d, "prompt-certification.json"), CUT, scope, lines.append)
         ok = got == want_fail and any(needle in ln for ln in lines)
         print(("ok    smoke " if ok else "FAIL  smoke ") + name + ("" if ok else " -> failed=%s %s" % (got, lines[-3:])))
         bad |= not ok
@@ -1178,6 +1186,8 @@ SM
     smutant meta-not-skipped  's/^                out(f"note  {os.path.basename(f)} is the sweep.s merge meta, not a receipt -- skipped"); continue$/                pass/'
     smutant any-json-skipped  's/^            if os.path.basename(f).endswith(".meta.json") and isinstance(R, dict) and "schema" not in R and "cells" not in R:$/            if True:/'
     smutant control-only-hidden 's/^                elif all(pc for _, pc in got):$/                elif False:/'
+    smutant release-before-from 's/^        if frm is None or cur is None or cur < frm:$/        if frm is None or cur is None:/'
+    smutant release-unrecorded 's/^        missing = \[k for k in ("from", "ruling") if not g.get(k)\]/        missing = [k for k in ("from",) if not g.get(k)]/'
     smutant all-modes-counted 's/^            for mode in matrix\[sha\]:$/            for mode in ("off", "on"):/'
     vmutant() { # vmutant <label> <sed deleting a binding rule in model_ladder_crux.apr_sha_of> -- the smoke table must go RED
       local md="$mdir/v-$1"; mkdir -p "$md"
@@ -1288,6 +1298,16 @@ CW
     }
     if bash scripts/check_certify_nightly.sh > "$mdir/cn.out" 2>&1; then printf 'ok    nightly: check_certify_nightly.sh -- the driver table + %s mutants (#4040)\n' "$(grep -c '^ok    mutant' "$mdir/cn.out")"
     else grep -E '^FAIL' "$mdir/cn.out"; bad=$((bad+1)); fi
+    # #4045: --scope release without --nightly is refused by name (the smoke alone is not a release)
+    out=$(MODEL_LADDER_ROOT="$PWD" bash "$SELF" --scope release --cut-commit "$(git rev-parse HEAD)" 2>&1); r=$?
+    if [ "$r" = 2 ] && grep -q '^decline: --scope release needs --nightly' <<< "$out"; then echo "ok    release: --scope release without --nightly declines by name"
+    else echo "FAIL  release: --scope release without --nightly did not decline by name (rc $r)"; bad=$((bad+1)); fi
+    sed 's/^  if \[ "\$SCOPE" = release \] \&\& \[ -z "\$NIGHTLY_ROOT_DIR" \]; then$/  if false; then/' "$SELF" > "$mdir/rs-mut.sh"
+    if cmp -s "$SELF" "$mdir/rs-mut.sh"; then echo "FAIL  release mutant smoke-alone did not apply"; bad=$((bad+1))
+    else out=$(MODEL_LADDER_ROOT="$PWD" bash "$mdir/rs-mut.sh" --scope release --cut-commit "$(git rev-parse HEAD)" 2>&1)
+      if grep -q '^decline: --scope release needs --nightly' <<< "$out"; then echo "FAIL  release mutant smoke-alone SURVIVED"; bad=$((bad+1))
+      else echo "ok    release mutant smoke-alone killed by the decline row"; fi
+    fi
     if nightly_wiring "$SELF"; then echo "ok    nightly: --nightly with no nightly refuses by name, before any receipt is judged"
     else echo "FAIL  nightly: --nightly with an empty root did not refuse by name"; bad=$((bad+1)); fi
     sed 's/^  if ! python3 scripts\/lib\/nightly_admission.py /  if false \&\& python3 scripts\/lib\/nightly_admission.py /' "$SELF" > "$mdir/nw-mut.sh"
@@ -1335,7 +1355,14 @@ git show "origin/main:evidence/release/context-rungs.json" > "$TMP_RUNGS" 2> /de
 [ -n "$CUT_COMMIT" ] || CUT_COMMIT=$(git -c safe.directory="$PWD" rev-parse HEAD 2> /dev/null || true)
 # 0.69.1 OPERATOR EMERGENCY SCOPE (scripts/lib/crux_smoke_scope.py): `--scope crux-smoke` judges CRUX smoke
 # receipts from the release binary INSTEAD of the ladder, only for the release its contract entry names.
+SMOKE_RC=""
 if [ -n "$SCOPE" ]; then
+  # #4045: `release` is the NORMAL gate from 0.70.0 -- CRUX smoke on the release binary (below) AND the nightly
+  # long certification admitted and bound to the cut (--nightly, further down). Neither alone is a release.
+  if [ "$SCOPE" = release ] && [ -z "$NIGHTLY_ROOT_DIR" ]; then
+    echo "decline: --scope release needs --nightly <root> -- the normal release gate is CRUX smoke on the release binary AND the nightly long certification (#4045)"
+    exit 2
+  fi
   [ -n "$CRUX_DIR" ] || CRUX_DIR="evidence/crux/$VERSION"
   python3 -c 'import sys, yaml
 sys.path.insert(0, "scripts/lib"); import crux_smoke_scope
@@ -1343,12 +1370,17 @@ L = yaml.safe_load(open(sys.argv[1]))["ladder"]
 sys.exit(1 if crux_smoke_scope.judge(L, sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], print) else 0)' \
     "$LADDER" "$VERSION" "$CRUX_DIR" "${CRUX_CERT:-$CRUX_DIR/prompt-certification.json}" "$CUT_COMMIT" "$SCOPE"
   rc=$?
-  if [ "$rc" = 0 ]; then
+  if [ "$SCOPE" = release ]; then
+    SMOKE_RC=$rc
+    if [ "$rc" = 0 ]; then echo "ok    RELEASE GATE: CRUX smoke on the release binary satisfied -- now the nightly long certification"
+    else echo "RED   RELEASE GATE: CRUX smoke on the release binary NOT satisfied (see FAIL rows) -- the nightly is still judged, and cannot rescue it"; fi
+    CRUX_DIR=""   # the admitted nightly supplies the long CRUX receipts
+  elif [ "$rc" = 0 ]; then
     echo "ok    OPERATOR EMERGENCY SCOPE: CRUX smoke only -- satisfied. The model ladder was NOT run for this release (nightly only); this is not \"every rung green\""
   else
     echo "RED   OPERATOR EMERGENCY SCOPE: CRUX smoke only -- NOT satisfied (see FAIL rows)"; rc=1
   fi
-  exit "$rc"
+  [ "$SCOPE" = release ] || exit "$rc"
 fi
 # #4040: --nightly <root> judges the release on last night's long certification (scripts/certify_nightly.sh)
 # instead of receipts measured for this cut. Admission (scripts/lib/nightly_admission.py): per REQUIRED host,
@@ -1384,8 +1416,14 @@ rm -f "$TMP_EQUIV" "$TMP_EQUIV.paths" "$TMP_EQUIV.lock_a" "$TMP_EQUIV.lock_b"
 # The producer that writes these receipts must not bypass the fleet GPU lock (#3712): RED, not a decline.
 # #3957 F1: exit 2 now also means DEFER, so a raw GPU call must not hide behind it -- always RED.
 if ! lock_audit scripts/model_ladder.sh; then rc=1; fi
+# #4045: under --scope release a RED smoke fails the release whatever the nightly said.
+if [ -n "$SMOKE_RC" ] && [ "$SMOKE_RC" != 0 ]; then
+  echo "RED   RELEASE GATE: the release binary's CRUX smoke is RED -- the nightly cannot stand in for the binary being released (#4045)"
+  rc=1
+fi
 case $rc in
-  0) if [ "$named_red" = 1 ]; then
+  0) [ "$SCOPE" = release ] && echo "ok    RELEASE GATE (normal, #4045): CRUX smoke on the release binary GREEN, and the nightly long certification bound to the cut"
+     if [ "$named_red" = 1 ]; then
        echo "ok    no blocking cell: every required rung is green, or RED-MODEL / RED-UNSUPPORTED re-proven on this sweep, or a KNOWN-RED shipping with its ticket (counted RED above, never green)"
      elif [ "$override" = 1 ]; then
        echo "ok    every required rung green -- against receipts bound by an OPERATOR OVERRIDE (#4022 lock delta, see above), not by the default rule"
