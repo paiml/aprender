@@ -2927,9 +2927,12 @@ jobs:
     needs: [gpu-touched]
     if: github.event_name == 'pull_request' && needs.gpu-touched.outputs.gpu_touched == '1'
     runs-on: [self-hosted, Linux, X64, cuda, yoga, ephemeral, docker]
-    # 15 -> 25 (#3810): the derived cuda-only set needs a second, default-feature
-    # test build of aprender-serve to list against (measured 167 s + 136 s warm).
-    timeout-minutes: 25
+    # 15 -> 35 (#3810): the derived cuda-only set needs a second, default-feature
+    # test build of aprender-serve to list against. MEASURED on this PR's own run
+    # (job 107295428985, yoga-eph, sharing yoga with a coverage job): the step
+    # took 18 m 20 s and the job 21 m 18 s (tests alone 51 s). 25 left 3.7 min
+    # of margin on a shared runner, a future flaky timeout, so 35.
+    timeout-minutes: 35
     continue-on-error: false
     concurrency:
       group: perf-yoga
