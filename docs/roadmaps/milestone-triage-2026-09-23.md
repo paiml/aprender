@@ -39,11 +39,12 @@ Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 a
 
 **Totals.**
 
-- 0.70.0 today: close?: 4 · 0.70.0: 77 · 0.71.0: 44 · 0.72.0: 15 · 0.73.0: 16 · 0.74.0: 17 · 0.75.0: 5
-- no milestone today: 0.69.1 (in flight): 13 · verify-close: 6 · close?: 3 · DECIDE 0.70.0/0.71.0: 4 · DECIDE 0.70.0/0.71.0/0.72.0: 1 · DECIDE 0.71.0/0.72.0: 2 · DECIDE 0.73.0/0.74.0: 1 · 0.70.0: 32 · 0.71.0: 46 · 0.72.0: 10 · 0.73.0: 11 · 0.74.0: 5 · 0.75.0: 1 · none (pinned): 1
+- 0.70.0 today (178): close?: 4 · DECIDE 0.73.0/0.74.0: 2 · 0.70.0: 77 · 0.71.0: 44 · 0.72.0: 15 · 0.73.0: 16 · 0.74.0: 15 · 0.75.0: 5
+- no milestone today (136): 0.69.1 (in flight): 12 · verify-close: 6 · close?: 3 · DECIDE (recommend 0.70.0): 1 · DECIDE 0.70.0/0.71.0: 4 · DECIDE 0.70.0/0.71.0 (in flight): 1 · DECIDE 0.70.0/0.71.0/0.72.0: 1 · DECIDE 0.71.0/0.72.0: 2 · DECIDE 0.73.0/0.74.0: 1 · 0.70.0: 31 · 0.71.0: 46 · 0.72.0: 10 · 0.73.0: 11 · 0.74.0: 5 · 0.75.0: 1 · none (pinned): 1
 
 ## Decisions for the operator
 
+- #3483 → **re-check 0.71 vs 0.73**: applied as 0.71, but rule 2 sends FP8/batched-path correctness to 0.73 (as #2765). Flagged by the quorum; not re-moved without a ruling
 - #3421, #3428 → **0.73.0/0.74.0**: must-carry in both #3999 and #4001 (REVERTED to 0.70.0 after a move made in error)
 - #3997 → **recommend 0.70.0 as the first slice**: the ratchet epic is named by five epics (REVERTED to no milestone after a move made in error)
 - #3951 → **0.70.0/0.71.0**: must-carry in #3998 and #3994, and likely resolved by #3990 (re-measure)
@@ -171,7 +172,7 @@ Snapshot: `gh issue list` at 2026-09-23 ~15:40 CEST, 178 open issues in 0.70.0 a
 | #3852 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | owned_fused_matmul refuses IQ4_NL while its own message claims IQ* is supported — the refusal overclaims its c |
 | #3858 | 0.71.0 | debt ratchet pillars B/C (#3997: pv at the deepest level, ontology merge), slice 2 | falsification_tests[].test does not bind at all — a prose test name is decoration, and prose is the majority s |
 | #3866 | 0.71.0 | debt ratchet pillars B/C (#3997: pv at the deepest level, ontology merge), slice 2 | check_readme_claims.sh --self-test: a must-RED row returns GREEN, because two counters measure different popul |
-| #3867 | 0.71.0 | debt ratchet pillars B/C (#3997: pv at the deepest level, ontology merge), slice 2 | README.md is not ungated — it is gated in a REGION, and the boundary is invisible in the rendered file: enumer |
+| #3867 | 0.71.0 | debt ratchet pillars B/C (#3997: pv at the deepest level, ontology merge), slice 2 (NOTE: a README gate boundary is arguably docs debt, pillar D / 0.73; the reason is flagged, not re-moved) | README.md is not ungated — it is gated in a REGION, and the boundary is invisible in the rendered file: enumer |
 | #3868 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | tensor-layout-v1.yaml asserts a compile-time guarantee that is FALSE — and the copy that ships to crates.io ca |
 | #3869 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | IQ4_NL (ggml type 20) has no dequant path in realizar — two Qwen2.5 inventory models cannot generate on either |
 | #3871 | 0.71.0 | model/backend correctness or the certified matrix: Don't Leave Behind (#3994) | Re-apply #3784's binary-identity fix as a design: the ladder receipt names the CHECKOUT HEAD, not the binary t |
