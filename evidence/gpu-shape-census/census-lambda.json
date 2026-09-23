@@ -1,5 +1,14 @@
 {
  "schema": "gguf-census/v1",
+ "roots": [
+  "~/models",
+  "~/.apr/models",
+  "~/.cache/apr/models"
+ ],
+ "depth": 1,
+ "missing_roots": [
+  "~/.cache/apr/models"
+ ],
  "files": [
   {
    "file": "Qwen2.5-0.5B-Instruct-IQ3_M.gguf",
@@ -1678,6 +1687,222 @@
    ]
   },
   {
+   "file": "Qwen3.5-122B-A10B-UD-IQ4_XS-00001-of-00003.gguf",
+   "bytes": 10943552,
+   "architecture": "qwen35moe",
+   "shapes": []
+  },
+  {
+   "file": "Qwen3.5-122B-A10B-UD-IQ4_XS-00003-of-00003.gguf",
+   "bytes": 10498961024,
+   "architecture": "unknown",
+   "shapes": [
+    {
+     "qtype": 0,
+     "type": "F32",
+     "k": 4,
+     "n": 12288,
+     "block": 1,
+     "tensors": 6,
+     "example": "blk.40.ssm_conv1d.weight"
+    },
+    {
+     "qtype": 0,
+     "type": "F32",
+     "k": 3072,
+     "n": 256,
+     "block": 1,
+     "tensors": 9,
+     "example": "blk.39.ffn_gate_inp.weight"
+    },
+    {
+     "qtype": 8,
+     "type": "Q8_0",
+     "k": 1024,
+     "n": 3072,
+     "block": 32,
+     "tensors": 8,
+     "example": "blk.40.ffn_down_shexp.weight"
+    },
+    {
+     "qtype": 8,
+     "type": "Q8_0",
+     "k": 3072,
+     "n": 64,
+     "block": 32,
+     "tensors": 12,
+     "example": "blk.40.ssm_alpha.weight"
+    },
+    {
+     "qtype": 8,
+     "type": "Q8_0",
+     "k": 3072,
+     "n": 512,
+     "block": 32,
+     "tensors": 4,
+     "example": "blk.43.attn_k.weight"
+    },
+    {
+     "qtype": 8,
+     "type": "Q8_0",
+     "k": 3072,
+     "n": 1024,
+     "block": 32,
+     "tensors": 18,
+     "example": "blk.39.ffn_gate_shexp.weight"
+    },
+    {
+     "qtype": 8,
+     "type": "Q8_0",
+     "k": 3072,
+     "n": 8192,
+     "block": 32,
+     "tensors": 6,
+     "example": "blk.40.attn_gate.weight"
+    },
+    {
+     "qtype": 8,
+     "type": "Q8_0",
+     "k": 3072,
+     "n": 12288,
+     "block": 32,
+     "tensors": 6,
+     "example": "blk.40.attn_qkv.weight"
+    },
+    {
+     "qtype": 8,
+     "type": "Q8_0",
+     "k": 3072,
+     "n": 16384,
+     "block": 32,
+     "tensors": 2,
+     "example": "blk.43.attn_q.weight"
+    },
+    {
+     "qtype": 8,
+     "type": "Q8_0",
+     "k": 8192,
+     "n": 3072,
+     "block": 32,
+     "tensors": 8,
+     "example": "blk.40.ssm_out.weight"
+    }
+   ]
+  },
+  {
+   "file": "Qwen2.5-0.5B-f16-notemplate.gguf",
+   "bytes": 994154304,
+   "architecture": "qwen2",
+   "shapes": [
+    {
+     "qtype": 1,
+     "type": "F16",
+     "k": 896,
+     "n": 128,
+     "block": 1,
+     "tensors": 48,
+     "example": "blk.0.attn_k.weight"
+    },
+    {
+     "qtype": 1,
+     "type": "F16",
+     "k": 896,
+     "n": 896,
+     "block": 1,
+     "tensors": 48,
+     "example": "blk.0.attn_output.weight"
+    },
+    {
+     "qtype": 1,
+     "type": "F16",
+     "k": 896,
+     "n": 4864,
+     "block": 1,
+     "tensors": 48,
+     "example": "blk.0.ffn_gate.weight"
+    },
+    {
+     "qtype": 1,
+     "type": "F16",
+     "k": 896,
+     "n": 151936,
+     "block": 1,
+     "tensors": 1,
+     "example": "token_embd.weight"
+    },
+    {
+     "qtype": 1,
+     "type": "F16",
+     "k": 4864,
+     "n": 896,
+     "block": 1,
+     "tensors": 24,
+     "example": "blk.0.ffn_down.weight"
+    }
+   ]
+  },
+  {
+   "file": "Qwen3-0.6B-bf16-notemplate.gguf",
+   "bytes": 1198177920,
+   "architecture": "qwen3",
+   "shapes": [
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 1024,
+     "n": 1024,
+     "block": 1,
+     "tensors": 56,
+     "example": "blk.0.attn_k.weight"
+    },
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 1024,
+     "n": 2048,
+     "block": 1,
+     "tensors": 28,
+     "example": "blk.0.attn_q.weight"
+    },
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 1024,
+     "n": 3072,
+     "block": 1,
+     "tensors": 56,
+     "example": "blk.0.ffn_gate.weight"
+    },
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 1024,
+     "n": 151936,
+     "block": 1,
+     "tensors": 1,
+     "example": "token_embd.weight"
+    },
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 2048,
+     "n": 1024,
+     "block": 1,
+     "tensors": 28,
+     "example": "blk.0.attn_output.weight"
+    },
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 3072,
+     "n": 1024,
+     "block": 1,
+     "tensors": 28,
+     "example": "blk.0.ffn_down.weight"
+    }
+   ]
+  },
+  {
    "file": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
    "bytes": 1117320736,
    "architecture": "qwen2",
@@ -2135,6 +2360,7 @@
   }
  ],
  "unreadable": [],
+ "skipped_for_depth": [],
  "host": "lambda",
  "measured": "2026-09-23"
 }

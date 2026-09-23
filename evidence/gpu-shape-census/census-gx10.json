@@ -1,5 +1,15 @@
 {
  "schema": "gguf-census/v1",
+ "roots": [
+  "~/models",
+  "~/.apr/models",
+  "~/.cache/apr/models"
+ ],
+ "depth": 1,
+ "missing_roots": [
+  "~/.apr/models",
+  "~/.cache/apr/models"
+ ],
  "files": [
   {
    "file": "Qwen3-1.7B-Q4_K_M.gguf",
@@ -411,6 +421,148 @@
      "block": 256,
      "tensors": 12,
      "example": "blk.0.ffn_down.weight"
+    }
+   ]
+  },
+  {
+   "file": "Qwen3.5-0.8B-UD-IQ2_XXS.gguf",
+   "bytes": 338227456,
+   "architecture": "qwen35",
+   "shapes": [
+    {
+     "qtype": 0,
+     "type": "F32",
+     "k": 4,
+     "n": 6144,
+     "block": 1,
+     "tensors": 18,
+     "example": "blk.0.ssm_conv1d.weight"
+    },
+    {
+     "qtype": 8,
+     "type": "Q8_0",
+     "k": 1024,
+     "n": 16,
+     "block": 32,
+     "tensors": 36,
+     "example": "blk.0.ssm_alpha.weight"
+    },
+    {
+     "qtype": 10,
+     "type": "Q2_K",
+     "k": 3584,
+     "n": 1024,
+     "block": 256,
+     "tensors": 3,
+     "example": "blk.0.ffn_down.weight"
+    },
+    {
+     "qtype": 12,
+     "type": "Q4_K",
+     "k": 2048,
+     "n": 1024,
+     "block": 256,
+     "tensors": 18,
+     "example": "blk.0.ssm_out.weight"
+    },
+    {
+     "qtype": 13,
+     "type": "Q5_K",
+     "k": 1024,
+     "n": 248320,
+     "block": 256,
+     "tensors": 1,
+     "example": "token_embd.weight"
+    },
+    {
+     "qtype": 16,
+     "type": "IQ2_XXS",
+     "k": 1024,
+     "n": 512,
+     "block": 256,
+     "tensors": 6,
+     "example": "blk.3.attn_k.weight"
+    },
+    {
+     "qtype": 16,
+     "type": "IQ2_XXS",
+     "k": 1024,
+     "n": 3584,
+     "block": 256,
+     "tensors": 48,
+     "example": "blk.0.ffn_gate.weight"
+    },
+    {
+     "qtype": 16,
+     "type": "IQ2_XXS",
+     "k": 1024,
+     "n": 4096,
+     "block": 256,
+     "tensors": 6,
+     "example": "blk.3.attn_q.weight"
+    },
+    {
+     "qtype": 16,
+     "type": "IQ2_XXS",
+     "k": 1024,
+     "n": 6144,
+     "block": 256,
+     "tensors": 18,
+     "example": "blk.0.attn_qkv.weight"
+    },
+    {
+     "qtype": 16,
+     "type": "IQ2_XXS",
+     "k": 2048,
+     "n": 1024,
+     "block": 256,
+     "tensors": 6,
+     "example": "blk.3.attn_output.weight"
+    },
+    {
+     "qtype": 16,
+     "type": "IQ2_XXS",
+     "k": 3584,
+     "n": 1024,
+     "block": 256,
+     "tensors": 11,
+     "example": "blk.6.ffn_down.weight"
+    },
+    {
+     "qtype": 18,
+     "type": "IQ3_XXS",
+     "k": 1024,
+     "n": 512,
+     "block": 256,
+     "tensors": 6,
+     "example": "blk.3.attn_v.weight"
+    },
+    {
+     "qtype": 18,
+     "type": "IQ3_XXS",
+     "k": 1024,
+     "n": 2048,
+     "block": 256,
+     "tensors": 18,
+     "example": "blk.0.attn_gate.weight"
+    },
+    {
+     "qtype": 21,
+     "type": "IQ3_S",
+     "k": 3584,
+     "n": 1024,
+     "block": 256,
+     "tensors": 5,
+     "example": "blk.1.ffn_down.weight"
+    },
+    {
+     "qtype": 22,
+     "type": "IQ2_S",
+     "k": 3584,
+     "n": 1024,
+     "block": 256,
+     "tensors": 5,
+     "example": "blk.8.ffn_down.weight"
     }
    ]
   },
@@ -911,6 +1063,333 @@
    ]
   },
   {
+   "file": "Qwen3.5-2B-BF16.gguf",
+   "bytes": 3775709216,
+   "architecture": "qwen35",
+   "shapes": [
+    {
+     "qtype": 0,
+     "type": "F32",
+     "k": 4,
+     "n": 6144,
+     "block": 1,
+     "tensors": 18,
+     "example": "blk.0.ssm_conv1d.weight"
+    },
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 2048,
+     "n": 16,
+     "block": 1,
+     "tensors": 36,
+     "example": "blk.0.ssm_alpha.weight"
+    },
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 2048,
+     "n": 512,
+     "block": 1,
+     "tensors": 12,
+     "example": "blk.11.attn_k.weight"
+    },
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 2048,
+     "n": 2048,
+     "block": 1,
+     "tensors": 42,
+     "example": "blk.0.attn_gate.weight"
+    },
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 2048,
+     "n": 4096,
+     "block": 1,
+     "tensors": 6,
+     "example": "blk.11.attn_q.weight"
+    },
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 2048,
+     "n": 6144,
+     "block": 1,
+     "tensors": 66,
+     "example": "blk.0.attn_qkv.weight"
+    },
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 2048,
+     "n": 248320,
+     "block": 1,
+     "tensors": 1,
+     "example": "token_embd.weight"
+    },
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 6144,
+     "n": 2048,
+     "block": 1,
+     "tensors": 24,
+     "example": "blk.0.ffn_down.weight"
+    }
+   ]
+  },
+  {
+   "file": "Qwen3.5-4B-BF16.gguf",
+   "bytes": 8424393632,
+   "architecture": "qwen35",
+   "shapes": [
+    {
+     "qtype": 0,
+     "type": "F32",
+     "k": 4,
+     "n": 8192,
+     "block": 1,
+     "tensors": 24,
+     "example": "blk.0.ssm_conv1d.weight"
+    },
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 2560,
+     "n": 32,
+     "block": 1,
+     "tensors": 48,
+     "example": "blk.0.ssm_alpha.weight"
+    },
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 2560,
+     "n": 1024,
+     "block": 1,
+     "tensors": 16,
+     "example": "blk.11.attn_k.weight"
+    },
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 2560,
+     "n": 4096,
+     "block": 1,
+     "tensors": 24,
+     "example": "blk.0.attn_gate.weight"
+    },
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 2560,
+     "n": 8192,
+     "block": 1,
+     "tensors": 32,
+     "example": "blk.0.attn_qkv.weight"
+    },
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 2560,
+     "n": 9216,
+     "block": 1,
+     "tensors": 64,
+     "example": "blk.1.ffn_gate.weight"
+    },
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 2560,
+     "n": 248320,
+     "block": 1,
+     "tensors": 1,
+     "example": "token_embd.weight"
+    },
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 4096,
+     "n": 2560,
+     "block": 1,
+     "tensors": 32,
+     "example": "blk.0.ssm_out.weight"
+    },
+    {
+     "qtype": 30,
+     "type": "BF16",
+     "k": 9216,
+     "n": 2560,
+     "block": 1,
+     "tensors": 32,
+     "example": "blk.1.ffn_down.weight"
+    }
+   ]
+  },
+  {
+   "file": "Qwen3.5-4B-UD-Q4_K_XL.gguf",
+   "bytes": 2912109728,
+   "architecture": "qwen35",
+   "shapes": [
+    {
+     "qtype": 0,
+     "type": "F32",
+     "k": 4,
+     "n": 8192,
+     "block": 1,
+     "tensors": 24,
+     "example": "blk.0.ssm_conv1d.weight"
+    },
+    {
+     "qtype": 1,
+     "type": "F16",
+     "k": 2560,
+     "n": 32,
+     "block": 1,
+     "tensors": 48,
+     "example": "blk.0.ssm_alpha.weight"
+    },
+    {
+     "qtype": 8,
+     "type": "Q8_0",
+     "k": 4096,
+     "n": 2560,
+     "block": 32,
+     "tensors": 24,
+     "example": "blk.0.ssm_out.weight"
+    },
+    {
+     "qtype": 12,
+     "type": "Q4_K",
+     "k": 2560,
+     "n": 1024,
+     "block": 256,
+     "tensors": 5,
+     "example": "blk.7.attn_k.weight"
+    },
+    {
+     "qtype": 12,
+     "type": "Q4_K",
+     "k": 2560,
+     "n": 8192,
+     "block": 256,
+     "tensors": 5,
+     "example": "blk.7.attn_q.weight"
+    },
+    {
+     "qtype": 12,
+     "type": "Q4_K",
+     "k": 2560,
+     "n": 9216,
+     "block": 256,
+     "tensors": 44,
+     "example": "blk.0.ffn_gate.weight"
+    },
+    {
+     "qtype": 12,
+     "type": "Q4_K",
+     "k": 4096,
+     "n": 2560,
+     "block": 256,
+     "tensors": 8,
+     "example": "blk.3.attn_output.weight"
+    },
+    {
+     "qtype": 12,
+     "type": "Q4_K",
+     "k": 9216,
+     "n": 2560,
+     "block": 256,
+     "tensors": 12,
+     "example": "blk.7.ffn_down.weight"
+    },
+    {
+     "qtype": 13,
+     "type": "Q5_K",
+     "k": 2560,
+     "n": 1024,
+     "block": 256,
+     "tensors": 3,
+     "example": "blk.3.attn_k.weight"
+    },
+    {
+     "qtype": 13,
+     "type": "Q5_K",
+     "k": 2560,
+     "n": 4096,
+     "block": 256,
+     "tensors": 24,
+     "example": "blk.0.attn_gate.weight"
+    },
+    {
+     "qtype": 13,
+     "type": "Q5_K",
+     "k": 2560,
+     "n": 8192,
+     "block": 256,
+     "tensors": 27,
+     "example": "blk.0.attn_qkv.weight"
+    },
+    {
+     "qtype": 13,
+     "type": "Q5_K",
+     "k": 2560,
+     "n": 9216,
+     "block": 256,
+     "tensors": 10,
+     "example": "blk.2.ffn_gate.weight"
+    },
+    {
+     "qtype": 13,
+     "type": "Q5_K",
+     "k": 9216,
+     "n": 2560,
+     "block": 256,
+     "tensors": 5,
+     "example": "blk.12.ffn_down.weight"
+    },
+    {
+     "qtype": 14,
+     "type": "Q6_K",
+     "k": 2560,
+     "n": 1024,
+     "block": 256,
+     "tensors": 8,
+     "example": "blk.3.attn_v.weight"
+    },
+    {
+     "qtype": 14,
+     "type": "Q6_K",
+     "k": 2560,
+     "n": 248320,
+     "block": 256,
+     "tensors": 1,
+     "example": "token_embd.weight"
+    },
+    {
+     "qtype": 14,
+     "type": "Q6_K",
+     "k": 9216,
+     "n": 2560,
+     "block": 256,
+     "tensors": 15,
+     "example": "blk.0.ffn_down.weight"
+    },
+    {
+     "qtype": 23,
+     "type": "IQ4_XS",
+     "k": 2560,
+     "n": 9216,
+     "block": 256,
+     "tensors": 10,
+     "example": "blk.12.ffn_gate.weight"
+    }
+   ]
+  },
+  {
    "file": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
    "bytes": 1117320736,
    "architecture": "qwen2",
@@ -1307,6 +1786,7 @@
   }
  ],
  "unreadable": [],
+ "skipped_for_depth": [],
  "host": "gx10",
  "measured": "2026-09-23"
 }
