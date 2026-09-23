@@ -280,6 +280,38 @@ The capital of France is Paris.
 Completed in 5.08s (cached)
 T
 }
+# #3928 acceptance asks for BOTH backends. The CPU capture, VERBATIM: gx10, 2026-09-23,
+# apr 0.69.1 (7168e4b68) sha256 01e821432fe8c463…, Qwen3-1.7B-Q4_K_M.gguf sha256 b139949c5bd74937…,
+# the ladder's own invocation (`run --prompt … --max-tokens 16 --verbose --no-gpu`), rc=0. Its chrome
+# differs from the GPU one: `verbose:` preamble, the formatted prompt, the raw decode.
+cap_run_verbose_cpu() { cat <<'T'
+verbose: apr 0.69.1
+verbose: offline = off
+verbose: contract gate = enforced over 1 path(s)
+verbose: model = /home/noah/models/Qwen3-1.7B-Q4_K_M.gguf (1107409472 bytes)
+=== APR Run ===
+
+Source: /home/noah/models/Qwen3-1.7B-Q4_K_M.gguf
+Using mmap for 1056MB model
+[DEBUG] has_chat_template=true, filename_instruct=false
+[DEBUG] formatted_prompt="<|im_start|>user\nWhat is the capital of France? Answer briefly.<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+[DEBUG] add_bos=false, encoded 22 tokens: [151644, 872, 198, 3838, 374, 279, 6722, 315, 9625, 30, 21806, 26753, 13, 151645, 198, 151644, 77091, 198, 151667, 271, 151668, 271]
+Loading model: /home/noah/models/Qwen3-1.7B-Q4_K_M.gguf
+[BOS-FALLBACK] No tokenizer.ggml.bos_token_id in GGUF — using architecture default for 'qwen3'
+Architecture: Transformer [GGUF: qwen3] (28 layers, vocab_size=151936)
+Config: hidden_size=2048, context_length=40960, quant=mixed(Q4_K×168,Q6_K×28) lm_head=Q6_K, threads=20
+Model loaded in 799.4ms
+Backend: CPU (SIMD-accelerated)
+[DEBUG] input_count=22, total_tokens=29, generated_count=7
+[DEBUG] generated token ids: [785, 6722, 315, 9625, 374, 12095, 13]
+[DEBUG] raw decoded: "The capital of France is Paris."
+
+Output:
+The capital of France is Paris.
+
+Completed in 7.04s (cached)
+T
+}
 cap_run_degenerate() { cat <<'T'
 Backend: GPU (NVIDIA GB10, 122502 MB VRAM)
 
@@ -312,6 +344,7 @@ reply-containing-You-judged-whole|cap_reply_with_you|bad
 truncated-capture-no-envelope|cap_no_envelope|red:envelope
 envelope-but-no-reply|cap_no_reply|red:reply
 run-verbose-chatter-not-judged|cap_run_verbose|clean
+run-verbose-cpu-chatter-not-judged|cap_run_verbose_cpu|clean
 run-degenerate-reply-in-block|cap_run_degenerate|bad
 run-output-never-closed|cap_run_unterminated|red:unclosed
 CASES
