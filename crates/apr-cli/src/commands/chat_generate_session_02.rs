@@ -103,6 +103,10 @@ impl ChatSession {
                 .chat_template
                 .format_conversation(&messages)
                 .map_err(|e| format!("[Template error: {}]", e))?;
+            // #3723: `--thinking on` removes the empty <think> prefill; on a template with no
+            // thinking mode it is refused by name, never answered in OFF mode.
+            let formatted_prompt = realizar::chat_template::apply_thinking_mode(&formatted_prompt, config.thinking)
+                .map_err(|e| format!("[Template error: {}]", e))?;
 
             if config.trace {
                 eprintln!(

@@ -652,15 +652,31 @@ def _cosine(a, b):
     return num / den if den else None
 
 
+def _greedy_raw(r):
+    """#3957 F9: an engine's RAW greedy record, verbatim, for the ladder judge to compare itself.
+    -> {"raw": {...}} | {"refused": why} | {"why": unreadable}."""
+    if r.get("refused"):
+        return {"refused": r["refused"]}
+    try:
+        with open(r["tokens"], encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return {"why": "raw greedy record unreadable: %s" % exc}
+    return {"raw": raw} if isinstance(raw, dict) else {"why": "raw greedy record is not an object"}
+
+
 def report_greedy(rows):
     rows = [r for r in rows if r.get("kind") == "greedy"]
     groups = {}
     for r in rows:
-        groups.setdefault((r["model_sha256"], r["host"], r["prompt_id"]), {})[r["engine"]] = r
+        # #3957 F9: thinking is part of the key -- an ON and an OFF greedy row are different cells.
+        groups.setdefault((r["model_sha256"], r["host"], r["prompt_id"], r.get("thinking", "unset")), {})[r["engine"]] = r
     out = []
     for key in sorted(groups):
         by = groups[key]
-        rep = {"key": dict(zip(("model_sha256", "host", "prompt_id"), key)), "engines": sorted(by)}
+        rep = {"key": dict(zip(("model_sha256", "host", "prompt_id", "thinking"), key)), "engines": sorted(by)}
+        for eng, r in sorted(by.items()):
+            rep.setdefault(eng, {}).update(_greedy_raw(r))
         apr = by.get("apr")
         for eng, r in sorted(by.items()):
             if eng == "apr":
@@ -678,7 +694,7 @@ def report_greedy(rows):
                         item["logit_cosine_at_divergence"] = _cosine(la[d], lb[d])
             except (OSError, ValueError, KeyError, TypeError) as exc:
                 item = {"why": "not compared: %s" % exc}
-            rep[eng] = item
+            rep[eng].update(item)
         out.append(rep)
     return out
 

@@ -186,6 +186,9 @@ pub(crate) struct RunOptions {
     /// #3672: apply the model's chat template (`--chat`, or an instruct/chat source name)
     /// even when its metadata and file name say base model. The prompt itself stays raw.
     pub chat_template: bool,
+    /// #3723: `--thinking on|off`. `None` renders the production default; realizar applies it
+    /// to the rendered prompt and refuses `on` for a template with no thinking mode.
+    pub thinking: Option<bool>,
     /// `--stream`: emit one NDJSON event per generated token.
     ///
     /// Known here (not only at the print site) because streaming is the one
@@ -221,6 +224,7 @@ impl Default for RunOptions {
             repeat_last_n: 64,
             split_prompt: false,
             chat_template: false,
+            thinking: None,
             stream: false,
         }
     }

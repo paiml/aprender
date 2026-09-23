@@ -44,6 +44,8 @@ pub(crate) fn run(
     split_prompt: bool,
     // #3672: apply the model's chat template once, in realizar; the prompt is raw text.
     chat_template: bool,
+    // #3723: `--thinking on|off` (None: the production default), applied in realizar.
+    thinking: Option<bool>,
 ) -> Result<()> {
     // GH-516: Warn on --language/--task since whisper integration is not yet wired up
     if language.is_some() {
@@ -115,6 +117,7 @@ pub(crate) fn run(
         repeat_last_n,
         split_prompt,
         chat_template,
+        thinking,
         stream,
     };
 

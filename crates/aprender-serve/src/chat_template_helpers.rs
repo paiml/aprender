@@ -177,3 +177,99 @@ pub fn format_messages(
     );
     template.format_conversation(messages)
 }
+
+/// #3723: set the thinking mode of an already RENDERED prompt, for `--thinking on|off`.
+///
+/// `None` and `Some(false)` return the rendering unchanged: OFF is what production renders
+/// today (a Qwen3/Qwen3.5 model is routed to [`Qwen3NoThinkTemplate`], whose rendering ends
+/// in an EMPTY `<think>` block that pre-closes the model's reasoning).
+///
+/// `Some(true)` removes that empty block, so the model opens its own. It is the derivation
+/// `apr qa`'s golden ON leg has always used (`without_thinking_prefill`, #3724), applied to the
+/// rendering rather than to a template name, so a replacement template is followed rather than
+/// bypassed. The prompt is never pre-rendered by a caller and re-sent as user text: realizar
+/// would zero-width-escape its special tokens (#3743).
+///
+/// # Errors
+///
+/// `--thinking on` on a rendering with no empty `<think>` prefill is REFUSED by name: that
+/// template has no thinking mode to enable, and silently answering in OFF mode is the defect
+/// #3723 exists to remove.
+pub fn apply_thinking_mode(rendered: &str, thinking: Option<bool>) -> Result<String, RealizarError> {
+    if thinking != Some(true) {
+        return Ok(rendered.to_string());
+    }
+    let refuse = || {
+        RealizarError::InferenceError(
+            "--thinking on: this model's rendered prompt carries no empty <think></think> \
+             prefill, so its chat template has no thinking mode to enable (#3723). Refused, \
+             not ignored: re-run without --thinking, or with --thinking off."
+                .to_string(),
+        )
+    };
+    let start = rendered.rfind("<think>").ok_or_else(refuse)?;
+    let tail = &rendered[start + "<think>".len()..];
+    let close = tail.find("</think>").ok_or_else(refuse)?;
+    // Only an EMPTY block at the very END is the suppression prefill. A block with reasoning
+    // in it is conversation content, and cutting it would change what was asked.
+    if !tail[..close].trim().is_empty() || !tail[close + "</think>".len()..].trim().is_empty() {
+        return Err(refuse());
+    }
+    Ok(rendered[..start].to_string())
+}
+
+#[cfg(test)]
+mod thinking_mode_tests {
+    use super::*;
+
+    fn qwen35(q: &str) -> String {
+        format_messages(&[ChatMessage::user(q)], Some("Qwen3.5-0.8B-Q4_K_M.gguf")).expect("render")
+    }
+
+    /// #3723 must-RED: ON renders the thinking template, NOT the no-think one. A mutant mapping ON
+    /// to OFF leaves the empty prefill in place and fails here.
+    #[test]
+    fn thinking_on_removes_the_empty_prefill() {
+        let off = qwen35("What is 2+2?");
+        assert!(off.ends_with("<|im_start|>assistant\n<think>\n</think>\n"), "{off:?}");
+        let on = apply_thinking_mode(&off, Some(true)).expect("a Qwen3.5 template has a thinking mode");
+        assert_ne!(on, off, "--thinking on rendered the no-think prompt");
+        assert!(on.ends_with("<|im_start|>assistant\n"), "{on:?}");
+        assert!(!on.contains("<think>"), "{on:?}");
+        // the conversation itself is untouched
+        assert_eq!(format!("{on}<think>\n</think>\n"), off);
+    }
+
+    /// #3723 must-RED: OFF (and no flag) still render no-think, byte for byte.
+    #[test]
+    fn thinking_off_and_absent_keep_the_no_think_rendering() {
+        let off = qwen35("What is 2+2?");
+        assert_eq!(apply_thinking_mode(&off, Some(false)).expect("off"), off);
+        assert_eq!(apply_thinking_mode(&off, None).expect("absent"), off);
+    }
+
+    /// ON on a template with no thinking mode is refused by name, never silently OFF.
+    #[test]
+    fn thinking_on_without_a_thinking_template_is_refused() {
+        let chatml = format_messages(&[ChatMessage::user("hi")], Some("Qwen2-0.5B-Instruct")).expect("render");
+        let err = apply_thinking_mode(&chatml, Some(true)).expect_err("ChatML has no thinking mode");
+        assert!(err.to_string().contains("no thinking mode to enable (#3723)"), "{err}");
+        assert_eq!(apply_thinking_mode(&chatml, Some(false)).expect("off"), chatml);
+    }
+
+    /// A think block WITH content, or text after an empty one, is conversation, not a prefill.
+    #[test]
+    fn a_non_empty_or_non_trailing_block_is_not_a_prefill() {
+        for r in [
+            "<|im_start|>assistant\n<think>\nreasoning\n</think>\n",
+            "<|im_start|>assistant\n<think>\n</think>\nanswer",
+            "<|im_start|>assistant\n<think>\n",
+        ] {
+            assert!(apply_thinking_mode(r, Some(true)).is_err(), "{r:?}");
+        }
+        assert_eq!(
+            apply_thinking_mode("u<think>  \n\t</think>\n", Some(true)).expect("whitespace-only is empty"),
+            "u"
+        );
+    }
+}

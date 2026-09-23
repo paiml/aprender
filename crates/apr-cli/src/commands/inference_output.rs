@@ -334,7 +334,8 @@ pub(crate) fn realizar_config(
         .with_seed(options.seed)
         .with_repeat_penalty(options.repeat_penalty)
         .with_repeat_last_n(options.repeat_last_n)
-        .with_force_chat_template(options.chat_template);
+        .with_force_chat_template(options.chat_template)
+        .with_thinking(options.thinking);
 
     if options.no_gpu {
         config = config.without_gpu();
