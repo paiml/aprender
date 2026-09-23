@@ -15,10 +15,17 @@ Branch `fix/3837-cuda-feature-lint-gate` off `main@49fe19c28`; author aprender-d
   - 6 `unnecessary_unwrap`: `if let Some(w) = x.as_ref().filter(|_| cond)`. The else-if chains are unchanged, and
     line 3237's identical check (no unwrap) is untouched.
   - Dead functions with zero callers workspace-wide, tests included (verified by grep and `git log -S`; all dead
-    since the April monorepo import): deleted. A diff-shape check shows each deletion is exactly one fn.
-  - Test-only hooks (`forward_jit_compiles`, `reset_forward_jit_counter` and the forward cache's counter methods,
-    used only by the R-3 tests under `#[cfg(all(test, feature = "cuda"))]`): `#[cfg(test)]`. The backward
-    cache's counter methods had no user at all: deleted.
+    since the April monorepo import): deleted, each WHOLE (signature through its closing brace, with its doc
+    comment and `cfg`). Two hunks remove two ADJACENT functions each. Per file vs origin/main, `fn` lines removed
+    and total lines -/+:
+    `matmul_f16.rs` 2 fns (`cublas_gemm_backward_a_f16`, `_b_f16`), -67/+1; `backward_graph.rs` 1
+    (`try_capture_backward`), -47/+1; `cuda_trainer.rs` 2 (`clip_workspace_gradients`,
+    `fused_clip_workspace_gradients`), -102/+8; `cuda_backward/cache.rs` 2 methods (`jit_compiles`,
+    `reset_jit_counter`), -9/+0. The `+` lines are the imports clippy then flagged and the `#[allow]` comments.
+  - Test-only hooks, used only by the R-3 tests (which sit under `#[cfg(all(test, feature = "cuda"))]`): the two
+    free functions `forward_jit_compiles` and `reset_forward_jit_counter` were `#[cfg(feature = "cuda")]` and are
+    now `#[cfg(all(test, feature = "cuda"))]`, matching their tests. The forward cache's methods `jit_compiles`
+    and `reset_jit_counter` gained `#[cfg(test)]`. The backward cache's two methods had no user at all: deleted.
   - Fields BUILT at init but never read (`embed_transposed`, `profiler_op_*`, `fused_clip`): a reasoned
     `#[allow(dead_code)]`. Removing them changes GPU allocation, which needs a GPU-verified run; no GPU was
     available during the 0.69.1 sweep. FINDING: `fused_clip` means the ALB-078 fused-clip pipeline is allocated
