@@ -885,13 +885,19 @@ EQ
 import json, os, sys, tempfile
 sys.path.insert(0, sys.argv[1]); import crux_smoke_scope as C
 CUT = "d" * 40
+# the checkout's `git rev-parse` stand-in: only the cut's own short sha resolves
+C.model_ladder_crux._git_resolve = lambda short: CUT if CUT.startswith(short) else ("e" * 40 if ("e" * 40).startswith(short) else None)
 SH = ["1" * 64, "2" * 64, "3" * 64]
 L = {"emergency_scopes": [{"name": "crux-smoke", "release": "0.69.1", "date": "2026-09-23", "quote": "q",
                             "hosts": ["lambda", "gx10"], "thinking": ["off", "on"]}]}
 # 2 = SH[1] is admitted with thinking OFF only (its ON leg loops at greedy, the real 2B's shape)
 ADMIT = {s: {"off": ["ctl"], "on": ["ctl"]} for s in SH}
 ADMIT[SH[1]] = {"off": ["ctl"], "on": []}
-def build(d, hosts=("lambda", "gx10"), drop=None, ctl="GREEN", noctl=False, sha=CUT, cell="GREEN", admit=None, dropmode=None, onlymode=None):
+def build(d, hosts=("lambda", "gx10"), drop=None, ctl="GREEN", noctl=False, sha=CUT, cell="GREEN", admit=None, dropmode=None, onlymode=None,
+          real=None, cellver=None):
+    # real=<version line>: the shape crux_inference_dogfood.sh ACTUALLY writes (copied from lambda's X2 shard
+    # evidence/crux/0.69.1/d8a6df53a/shards/00fe7986ff5f-off/lambda-gpu.json): no apr.sha, a SHORT harness.sha,
+    # and the binary named only by `apr --version`'s line, repeated in every cell's engines.apr.version.
     json.dump({"schema": "crux-prompt-certification/v1", "admitted_by_sha": {s: ["ctl"] for s in SH},
                "admitted_by_sha_thinking": admit or ADMIT}, open(os.path.join(d, "prompt-certification.json"), "w"))
     for h in hosts:
@@ -903,10 +909,13 @@ def build(d, hosts=("lambda", "gx10"), drop=None, ctl="GREEN", noctl=False, sha=
                 if dropmode == (h, s, t):
                     continue
                 cells.append({"key": {"model_sha256": s, "host": h, "thinking": t, "verb": "run"},
-                              "verdict": cell if (h, s, t) == ("lambda", "3" * 64, "on") else "GREEN", "positive_control": False})
+                              "verdict": cell if (h, s, t) == ("lambda", "3" * 64, "on") else "GREEN", "positive_control": False,
+                              "engines": {"apr": {"answered": True, "version": (cellver or {}).get((h, s, t), real)}} if real else {}})
                 if not noctl:
                     cells.append({"key": {"model_sha256": s, "host": h, "thinking": t, "verb": "run"}, "verdict": ctl, "positive_control": True})
-        json.dump({"schema": "crux-inference-receipt/v1", "host": h, "backend": "gpu", "apr": {"sha": sha},
+        json.dump({"schema": "crux-inference-receipt/v1", "host": h, "backend": "gpu",
+                   **({"apr": {"version_line": real}, "harness": {"sha": real.split("(")[-1].rstrip(")")[:9],
+                       "driver": "scripts/crux_inference_dogfood.sh"}} if real else {"apr": {"sha": sha}}),
                    "cells": cells, "summary": {"verdict": "PASS"}}, open(os.path.join(d, h + "-gpu.json"), "w"))
 rows = [
   ("green: both hosts, 3 certified models x off/on, controls GREEN", False, "OPERATOR EMERGENCY SCOPE: CRUX smoke only", {}, "0.69.1"),
@@ -922,6 +931,15 @@ rows = [
    {"admit": dict(ADMIT, **{"3" * 64: {"off": [], "on": []}})}, "0.69.1"),
   ("an UNADMITTED mode's green cells never count toward the pass", True, "thinking=off: no CRUX cell",
    {"onlymode": {("lambda", "2" * 64): ("on",)}}, "0.69.1"),
+  ("a REAL-shaped receipt (version line only, short harness sha) binds to the cut", False,
+   "OPERATOR EMERGENCY SCOPE: CRUX smoke only", {"real": "apr 0.69.1 (ddddddddd)"}, "0.69.1"),
+  ("a real-shaped receipt from another binary is RED", True, "not the release binary", {"real": "apr 0.69.1 (eeeeeeeee)"}, "0.69.1"),
+  ("a real-shaped receipt whose short sha resolves to nothing is RED", True, "not the release binary",
+   {"real": "apr 0.69.1 (abcdef012)"}, "0.69.1"),
+  ("a DIRTY binary's version line binds to nothing and is RED", True, "not the release binary",
+   {"real": "apr 0.69.1 (ddddddddd-dirty)"}, "0.69.1"),
+  ("a cell measured by a different binary unbinds the whole receipt", True, "not the release binary",
+   {"real": "apr 0.69.1 (ddddddddd)", "cellver": {("gx10", "1" * 64, "on"): "apr 0.69.1 (eeeeeeeee)"}}, "0.69.1"),
   ("the admitted matrix is printed", False, "2222222222 -> off;", {}, "0.69.1"),
   ("a mode the certification does NOT admit needs no cells (the real 2B shape: OFF only)", False,
    "ok    gx10 certified model 222222222222 thinking=off",
@@ -957,6 +975,18 @@ SM
     smutant any-release       's/^    if str(version) != str(entry\["release"\]):$/    if False:/'
     smutant zero-modes-ok     's/^        if not m:$/        if False:/'
     smutant all-modes-counted 's/^            for mode in matrix\[sha\]:$/            for mode in ("off", "on"):/'
+    vmutant() { # vmutant <label> <sed deleting a binding rule in model_ladder_crux.apr_sha_of> -- the smoke table must go RED
+      local md="$mdir/v-$1"; mkdir -p "$md"
+      cp scripts/lib/crux_smoke_scope.py "$md/"
+      sed "$2" scripts/lib/model_ladder_crux.py > "$md/model_ladder_crux.py"
+      if cmp -s scripts/lib/model_ladder_crux.py "$md/model_ladder_crux.py"; then echo "FAIL  binding mutant $1 did not apply"; bad=$((bad+1)); return; fi
+      if smoke_table "$md" > /dev/null 2>&1; then echo "FAIL  binding mutant $1 SURVIVED the table"; bad=$((bad+1))
+      else printf 'ok    binding mutant %-16s killed by the table\n' "$1"; fi
+    }
+    vmutant version-line-unread 's/^    if not m:$/    if True:/'
+    vmutant short-sha-unresolved 's/^    return (resolve or _git_resolve)(m.group(1))$/    return m.group(1)/'
+    vmutant dirty-accepted      's/(\[0-9a-f\]{7,40})\\)\$/([0-9a-f]{7,40})/'
+    vmutant mixed-cells-ok      's/^        if v is not None and (not isinstance(v, str) or v.strip() != line.strip()):$/        if False:/'
     # #3710 ruling 1: CRUX coverage scoped to the certified models (model_ladder_crux.py).
     xmutant uncertified-owes-crux green-uncertified-no-crux 's/^                    elif certified is not None and sha not in certified:$/                    elif False:/'
     xmutant no-cert-relaxes   red-certification-missing 's/^        return None, True$/        return set(), False/'
