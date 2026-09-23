@@ -2927,7 +2927,9 @@ jobs:
     needs: [gpu-touched]
     if: github.event_name == 'pull_request' && needs.gpu-touched.outputs.gpu_touched == '1'
     runs-on: [self-hosted, Linux, X64, cuda, yoga, ephemeral, docker]
-    timeout-minutes: 15
+    # 15 -> 25 (#3810): the derived cuda-only set needs a second, default-feature
+    # test build of aprender-serve to list against (measured 167 s + 136 s warm).
+    timeout-minutes: 25
     continue-on-error: false
     concurrency:
       group: perf-yoga
@@ -2947,72 +2949,85 @@ jobs:
       - name: aprender-gpu cuda unit tests (--features cuda --lib --release)
         run: |
           nice -n 19 cargo test -p aprender-gpu --features cuda --lib --release
-      # THE SERVE CUDA FILTER IS `cuda::` (#3810). It used to be `gguf::cuda::`, on
-      # the premise that every cuda-only unit test lives there. That was false:
-      # `crates/aprender-serve/src/lib.rs` gates `pub mod cuda;` and
-      # `pub mod safetensors_cuda;` behind `#[cfg(feature = "cuda")]`, and
-      # `apr/mod.rs` gates `mod cuda;` the same way. Measured on main @ 49fe19c28
-      # with `--list` on the `--features cuda --lib` binary: 17,679 lib tests;
-      # `gguf::cuda::` selected 70, while 1,240 under `cuda::` (1,067 of them
-      # `cuda::executor::`, including the #3759/#3728/#3807 GPU rows) ran nowhere
-      # in CI. `cuda::` is a libtest SUBSTRING filter, and the substring
-      # selects exactly the cuda-gated modules: `gguf::cuda::`, `cuda::`,
-      # `safetensors_cuda::` and `apr::cuda::`. That is 1,337 tests, all
-      # `#[cfg(feature = "cuda")]`, and no CPU-only test. A module-path filter,
-      # not a hand-listed set, so a new cuda test is selected the day it is
-      # written.
+      # THE SERVE CUDA SET IS DERIVED, NOT FILTERED (#3810). The step used to filter
+      # `gguf::cuda::`, on the premise that every cuda-only unit test lives there.
+      # That was false, and so is ANY module-path filter:
+      #   * `lib.rs` gates `pub mod cuda;` and `pub mod safetensors_cuda;`, and
+      #     `apr/mod.rs` gates `mod cuda_tests;`;
+      #   * individual `#[cfg(feature = "cuda")]` tests sit inside CPU modules
+      #     (`gguf::tests::tests_13`, `brick::fused_tests`, `gpu::scheduler::core`,
+      #     `ptx_parity::tests`, ...).
+      # Measured on main @ 49fe19c28 (yoga): the `--features cuda` lib binary lists
+      # 17,679 tests and the default one 16,010. **1,672 exist only with cuda**:
+      # `gguf::cuda::` selected 70 of them, a `cuda::` substring would select
+      # 1,337, and **335 are outside every `cuda::` path**. So the set is DERIVED:
+      # the cuda binary's `--list` minus the default binary's `--list`, run by
+      # name with `--exact`. A new cuda-gated test is selected the day it is
+      # written, wherever it lives. Any test that cannot run on this card is
+      # excluded BY NAME with a comment here, never by weakening an assert.
       #
-      # 8 GB OF VRAM, MEASURED, NOT ARGUED. `cuda::executor::` tests allocate
-      # device memory and launch kernels (the old "every test is host-side"
-      # comment was true only of `gguf::cuda::`). Measured on yoga (RTX 4060
-      # Laptop, 8 GB): the whole selection peaks at 3,134 MiB, 0 failed,
-      # 4 ignored, ~35-45 s wall. A test that ever exceeds the card is excluded BY
-      # NAME with a comment here, never by weakening an assert.
+      # MEASURED on yoga (RTX 4060 Laptop, 8 GB), the derived 1,672: 1,661 pass,
+      # 11 ignored, 0 failed; peak 3,120 MiB; 36 s of test wall time. The cost
+      # is the second listing, which needs a default-feature test build of
+      # aprender-serve: 167 s + 136 s warm on yoga, more cold. That is why the
+      # job's timeout-minutes was raised.
       #
-      # `--test-threads 1`, MEASURED. At libtest's default parallelism, 1 run in 6
-      # SEGFAULTED (rc 139) after `cuda::executor::layers::batched::…graphed_replay`
-      # logged "Graph capture failed … CUDA_ERROR_UNKNOWN (code: 901)" and a
-      # poisoned context, and 2 of 3 --nocapture runs logged a 901. That is CUDA
-      # graph capture racing other threads' launches in one process. Single-
-      # threaded: 0 segfaults and 0 901s in 3 runs, at the same wall time.
+      # `--test-threads 1`, MEASURED: at libtest's default parallelism, 1 run in
+      # 6 SEGFAULTED (rc 139) after `…batched::…graphed_replay` logged "Graph
+      # capture failed … CUDA_ERROR_UNKNOWN (code: 901)" and a poisoned context
+      # (#4043). Single-threaded: 0 of 3, at the same wall time.
       #
-      # `--nocapture` is what lets the step see a SKIP: `cuda_executor_or_skip!`
-      # prints "SKIP: CUDA executor unavailable…" and RETURNS, which libtest counts
-      # as a pass. On a CUDA runner a skip means the device never engaged, so any
-      # such line fails the step.
-      - name: "aprender-serve cuda unit tests (filter cuda:: — every cuda-gated module)"
+      # `--nocapture` is what lets the step see a device skip. The skip macros
+      # print, e.g., "SKIP: CUDA executor unavailable…" and RETURN, which libtest
+      # counts as a pass. The grep is UNANCHORED, because under --nocapture the
+      # message lands on the `test X ... ` line.
+      - name: "aprender-serve cuda unit tests (the derived cuda-only set, by name)"
         run: |
           set -euo pipefail
-          log="$RUNNER_TEMP/serve-cuda.txt"
-          nice -n 19 cargo test -p aprender-serve --features cuda --lib --release cuda:: \
-            -- --test-threads 1 --nocapture > "$log" 2>&1 || { cat "$log"; exit 1; }
-          # Anti-vacuity 1: libtest's own summary, not a count of interleaved lines.
-          passed=$(sed -nE 's/^test result: ok\. ([0-9]+) passed;.*/\1/p' "$log" | tail -1)
-          if [ "${passed:-0}" -eq 0 ]; then
+          export LC_ALL=C
+          t="$RUNNER_TEMP"
+          # 1. Derive: every lib test the cuda feature adds.
+          nice -n 19 cargo test -p aprender-serve --features cuda --lib --release -- --list 2>/dev/null \
+            | sed -n 's/: test$//p' | sort > "$t/serve-cuda-list.txt"
+          nice -n 19 cargo test -p aprender-serve --lib --release -- --list 2>/dev/null \
+            | sed -n 's/: test$//p' | sort > "$t/serve-cpu-list.txt"
+          comm -23 "$t/serve-cuda-list.txt" "$t/serve-cpu-list.txt" > "$t/serve-cuda-only.txt"
+          n_cuda=$(wc -l < "$t/serve-cuda-list.txt"); n_cpu=$(wc -l < "$t/serve-cpu-list.txt")
+          n_only=$(wc -l < "$t/serve-cuda-only.txt")
+          printf 'cuda binary %s tests, default binary %s, cuda-only %s\n' "$n_cuda" "$n_cpu" "$n_only"
+          # Anti-vacuity 1: both listings are real and the difference is non-empty.
+          if [ "$n_cuda" -eq 0 ] || [ "$n_cpu" -eq 0 ] || [ "$n_only" -eq 0 ]; then
+            echo "::error::the derived cuda-only set is empty (cuda ${n_cuda}, default ${n_cpu}, only ${n_only}); the cuda feature did not engage, or a listing failed"
+            exit 1
+          fi
+          # 2. Run exactly that set, on the device, one test at a time.
+          log="$t/serve-cuda.txt"
+          # shellcheck disable=SC2046 # test names contain no whitespace
+          nice -n 19 cargo test -p aprender-serve --features cuda --lib --release -- \
+            --exact --test-threads 1 --nocapture $(cat "$t/serve-cuda-only.txt") > "$log" 2>&1 \
+            || { cat "$log"; exit 1; }
+          # Anti-vacuity 2: libtest's own summary must account for EVERY derived test.
+          summary=$(grep -E '^test result: ok\.' "$log" | tail -1)
+          passed=$(printf '%s' "$summary" | sed -nE 's/.* ([0-9]+) passed;.*/\1/p')
+          ignored=$(printf '%s' "$summary" | sed -nE 's/.* ([0-9]+) ignored;.*/\1/p')
+          if [ -z "$passed" ] || [ -z "$ignored" ] || [ $((passed + ignored)) -ne "$n_only" ]; then
             cat "$log"
-            echo "::error::the cuda:: filter passed ZERO tests — the module paths moved, or the cuda feature did not engage"
+            echo "::error::libtest ran $((${passed:-0} + ${ignored:-0})) of the ${n_only} derived cuda-only tests; some were never executed"
             exit 1
           fi
-          # Anti-vacuity 2: every prefix the comment above names selected at least one test.
-          list="$RUNNER_TEMP/serve-cuda-list.txt"
-          nice -n 19 cargo test -p aprender-serve --features cuda --lib --release cuda:: -- --list > "$list" 2>/dev/null
-          for prefix in 'gguf::cuda::' 'cuda::executor::'; do
-            c=$(grep -cE "^${prefix}.*: test$" "$list" || true)
-            if [ "${c:-0}" -eq 0 ]; then
-              echo "::error::the cuda:: filter selected ZERO tests under ${prefix} — a prefix this step claims to cover is gone"
-              exit 1
-            fi
-            printf '%s %s test(s) selected\n' "$prefix" "$c"
-          done
-          # Anti-vacuity 3: a self-skip is a pass libtest cannot tell apart.
-          skips=$(grep -c '^SKIP: CUDA executor unavailable' "$log" || true)
+          # Anti-vacuity 3: a device skip is a pass libtest cannot tell apart (unanchored).
+          dev_skip='(CUDA|GPU) (executor |scheduler )?(unavailable|not available)|no CUDA device'
+          skips=$(grep -cE "$dev_skip" "$log" || true)
           if [ "${skips:-0}" -ne 0 ]; then
-            grep '^SKIP: CUDA executor unavailable' "$log" | head -5
-            echo "::error::${skips} cuda test(s) SKIPPED on a CUDA runner — the executor never engaged, so their passes prove nothing"
+            grep -E "$dev_skip" "$log" | head -5
+            echo "::error::${skips} cuda test(s) skipped for want of a device on a CUDA runner; their passes prove nothing"
             exit 1
           fi
-          grep -E '^test result:' "$log"
-          printf 'cuda:: %s test(s) passed on the device, 0 skipped\n' "$passed"
+          # Model-absent skips are legitimate on CI (the models are not on this runner): reported, not failed.
+          model_skips=$(grep -cE 'is absent|[Mm]odel not (found|available)' "$log" || true)
+          echo "$summary"
+          printf 'cuda-only: %s passed + %s ignored = %s derived, 0 device skips, %s model-absent skip line(s)\n' \
+            "$passed" "$ignored" "$n_only" "${model_skips:-0}"
 
   # APEX-001 EV-2a: the same figure, rendered on two architectures, must be the same bytes.
   #
