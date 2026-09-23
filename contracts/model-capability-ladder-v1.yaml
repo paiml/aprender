@@ -68,6 +68,14 @@ ladder:
   serve_health:
     stall_s: 90
     ceiling_s: 900
+  # #3710 ruling 3 / #4022 (operator 2026-09-23, relayed by aprender-cf; "recommended for all questions"):
+  # the release commit X = 4f81bdea7 + #4022, a scoped hotfix. A receipt measured at `receipts_at`
+  # binds X ONLY when every path of the diff matches `paths` AND Cargo.lock changes no dependency
+  # (scripts/lib/ladder_equiv.py). The gate prints the diff it accepted; anything outside is STALE BY SHA.
+  hotfix_scope:
+    receipts_at: 4f81bdea7bdc17da7a4b22823ef000671b78a435
+    paths: ["crates/aprender-mcp/**", "crates/apr-cli/Cargo.toml", "Cargo.lock", "docs/**"]
+    ruling: "#3710 ruling 3 / #4022"
   inventory:
     # #3957 F2: `apr_sha_drift` (#3940) is DELETED. It declared, in prose no code read, that
     # receipts measured at 9b7739951 stood for the cut 28c24207a. check_model_ladder.sh now

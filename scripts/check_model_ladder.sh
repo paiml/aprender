@@ -61,9 +61,9 @@ cd "${MODEL_LADDER_ROOT:-$(dirname "$SELF")/..}" || exit 2
 #       <cut commit, 40-hex> <file of apr_shas proven equal to the cut modulo evidence/>
 #       <CRUX receipt dir>  → exit 0/1/2
 judge() {
-  python3 - "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" "${7:-}" "${8:-}" "${9:-}" <<'PY'
+  python3 - "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" "${7:-}" "${8:-}" "${9:-}" "${10:-}" <<'PY'
 import fnmatch, json, os, sys, yaml
-ladder_p, main_p, rdir, version, rungs_p, rungs_main_p, cut, equiv_p, crux_dir = sys.argv[1:10]
+ladder_p, main_p, rdir, version, rungs_p, rungs_main_p, cut, equiv_p, crux_dir, cert_p = sys.argv[1:11]
 # A mutant copy of a module, in --self-test: each directory is searched first when set.
 sys.path.insert(0, "scripts/lib")
 for _lib in (os.environ.get("MODEL_LADDER_CRUX_LIB"), os.environ.get("MODEL_LADDER_CELLS_LIB"),
@@ -91,9 +91,15 @@ import re
 # caller proves with git and passes in. A short or absent sha binds to nothing.
 if not re.fullmatch(r"[0-9a-f]{40}", cut or ""):
     print(f"decline: the cut commit {cut!r} is not a full 40-hex sha — a receipt cannot be bound to it (#3957 F2)"); sys.exit(2)
-equiv = set()
+equiv, equiv_proof = set(), {}
 if equiv_p and os.path.exists(equiv_p):
-    equiv = {ln.strip() for ln in open(equiv_p) if re.fullmatch(r"[0-9a-f]{40}", ln.strip())}
+    # one line per sha that binds the cut: "<sha>" or "<sha>\t<proof>" (#3710 ruling 3 records the proof)
+    for ln in open(equiv_p):
+        parts = ln.rstrip("\n").split("\t", 1)
+        if re.fullmatch(r"[0-9a-f]{40}", parts[0].strip()):
+            equiv.add(parts[0].strip())
+            if len(parts) > 1:
+                equiv_proof[parts[0].strip()] = parts[1].strip()
 if "apr_sha_drift" in (L.get("inventory") or {}) or "apr_sha_drift" in L:
     print("FAIL  the ladder carries `apr_sha_drift` — a prose declaration no code reads cannot excuse a receipt measured at another commit; "
           "the gate binds receipts by apr_sha. Delete the key and re-measure at the cut (#3957 F2)"); rc = 1
@@ -337,6 +343,8 @@ for h in hosts:
         print(f"FAIL  {h['id']:7} receipt carries no 40-hex apr_sha ({asha!r}) — it names a version, and a version is not a build (#3957 F2)"); rc = 1; continue
     if asha != cut and asha not in equiv:
         print(f"FAIL  {h['id']:7} receipt measured at apr_sha {asha[:12]}, cut is {cut[:12]}, and the trees differ outside evidence/ — STALE BY SHA: re-measure at the cut (#3957 F2)"); rc = 1; continue
+    if asha != cut and asha in equiv_proof:
+        print(f"ok    {h['id']:7} receipt apr_sha {asha[:12]} binds cut {cut[:12]}: {equiv_proof[asha]}")
     if int(R.get("executed", 0)) < 1:
         print(f"FAIL  {h['id']:7} receipt executed=0 — a receipt that measured nothing is not evidence"); rc = 1; continue
     inv = R.get("inventory")
@@ -451,7 +459,7 @@ if model_ladder_cells.judge(L, good, rungs_doc, print, rungs_main):
     rc = 1
 # #3957 F4/F8: every (model, format, quant, host, backend, verb) cell must be PROVEN by an outside
 # oracle -- the CRUX receipts bound to the cut -- or, for .apr, by the chain to its source.
-if model_ladder_crux.judge(L, good, crux_dir, cut, equiv, print, RV.proven):
+if model_ladder_crux.judge(L, good, crux_dir, cut, equiv, print, RV.proven, cert_p):
     rc = 1
 # #3957 F1: a DEFERRED row is not green. DEFER is `Unknown(NotRun)` in the fleet vocabulary
 # (crates/aprender-contracts/src/ontology/verdict.rs FLEET_LABELS), the same element as
@@ -533,7 +541,7 @@ if [ "$SELF_TEST" = 1 ]; then
     # (every fixture receipt carries it as apr_sha); a case overrides it with a `cut_commit` file,
     # and lists shas proven equal to the cut in `equivalent_shas`.
     cut=$(cat "$c/cut_commit" 2>/dev/null || echo "$CASE_CUT")
-    out=$(judge "$lad" "$main" "$c/receipts" "$(cat "$c/version" 2>/dev/null || echo 0.0.0-case)" "$c/context-rungs.json" "$c/context-rungs_main.json" "$cut" "$c/equivalent_shas" "$c/crux"); got=$?
+    out=$(judge "$lad" "$main" "$c/receipts" "$(cat "$c/version" 2>/dev/null || echo 0.0.0-case)" "$c/context-rungs.json" "$c/context-rungs_main.json" "$cut" "$c/equivalent_shas" "$c/crux" "$c/certification.json"); got=$?
     n=$((n+1))
     # #3887 THE OTHER POLARITY. A case that exists to prove a gate stays QUIET rests on rc
     # alone otherwise, and that works only because an over-eager check happens to flip rc.
@@ -735,6 +743,50 @@ if [ "$SELF_TEST" = 1 ]; then
     xmutant greedy-only-cells red-crux-greedy-only-with-cells 's/^            if R.get("cells"):$/            if False:/'
     xmutant red-model-off-owed red-model-thinking-off-missing 's/^    if red_model and not got:/    if False:/'
     xmutant unsup-cell-named  green-red-unsupported-proven  's/^                    if named == "RED-UNSUPPORTED" and b in ("cuda", "gpu"):/                    if False:/'
+    # #3710 ruling 3 / #4022: the scoped-hotfix receipt binding (scripts/lib/ladder_equiv.py), a pure
+    # classifier driven by a case table: in scope binds; one stray path, a dependency change in
+    # Cargo.lock, or a receipt not at the pinned receipts_at does NOT.
+    equiv_table() { # equiv_table <lib dir> -> 0 when every row lands, 1 otherwise
+      python3 - "$1" <<'EQ'
+import sys; sys.path.insert(0, sys.argv[1]); import ladder_equiv as L
+A, B = "a" * 40, "b" * 40
+S = {"receipts_at": A, "paths": ["crates/aprender-mcp/**", "crates/apr-cli/Cargo.toml", "Cargo.lock", "docs/**"], "ruling": "r3"}
+lk = '[[package]]\nname = "apr-cli"\nversion = "0.69.1"\n\n[[package]]\nname = "serde"\nversion = "1.0.1"\nsource = "registry+x"\nchecksum = "c"\n'
+rows = [
+  ("in-scope hotfix binds", ("hotfix",), (A, B, ["crates/aprender-mcp/src/lib.rs", "docs/r.md", "crates/apr-cli/Cargo.toml"], S)),
+  ("a stray path is NOT equivalent", (None, "outside its scope"), (A, B, ["crates/aprender-mcp/src/lib.rs", "crates/aprender-serve/src/x.rs"], S)),
+  ("a receipt not at receipts_at is NOT equivalent", (None, "pinned receipts_at"), ("c" * 40, B, ["docs/r.md"], S)),
+  ("a workspace version bump in Cargo.lock binds", ("hotfix",), (A, B, ["Cargo.lock"], S, lk, lk.replace('"0.69.1"', '"0.69.2"'))),
+  ("an external dependency change in Cargo.lock is NOT equivalent", (None, "changes dependencies"), (A, B, ["Cargo.lock"], S, lk, lk.replace("1.0.1", "1.0.2"))),
+  ("evidence-only binds without the scope", ("evidence",), ("c" * 40, B, ["evidence/x.json"], S)),
+]
+bad = 0
+for name, want, args in rows:
+    kind, proof = L.classify(*args)
+    ok = kind == want[0] and (len(want) == 1 or want[1] in proof)
+    print(("ok    equiv " if ok else "FAIL  equiv ") + name + ("" if ok else " -> %r %r" % (kind, proof)))
+    bad |= not ok
+sys.exit(bad)
+EQ
+    }
+    if equiv_table scripts/lib; then printf 'ok    equiv: the scoped-hotfix table lands on the shipped classifier\n'
+    else equiv_table scripts/lib; bad=$((bad+1)); fi
+    emutant() { # emutant <label> <sed deleting the rule>
+      local md="$mdir/e-$1"; mkdir -p "$md"
+      sed "$2" scripts/lib/ladder_equiv.py > "$md/ladder_equiv.py"
+      if cmp -s scripts/lib/ladder_equiv.py "$md/ladder_equiv.py"; then echo "FAIL  equiv mutant $1 did not apply"; bad=$((bad+1)); return; fi
+      if equiv_table "$md" > /dev/null 2>&1; then echo "FAIL  equiv mutant $1 SURVIVED the table"; bad=$((bad+1))
+      else printf 'ok    equiv mutant %-16s killed by the table\n' "$1"; fi
+    }
+    emutant stray-allowed  's/^    if stray:$/    if False:/'
+    emutant deps-allowed   's/^        if why:$/        if False:/'
+    emutant any-receipt    's/^    if receipt_sha != scope.get("receipts_at"):$/    if False:/'
+    # #3710 ruling 1: CRUX coverage scoped to the certified models (model_ladder_crux.py).
+    xmutant uncertified-owes-crux green-uncertified-no-crux 's/^                    elif certified is not None and sha not in certified:$/                    elif False:/'
+    xmutant no-cert-relaxes   red-certification-missing 's/^        return None, True$/        return set(), False/'
+    xmutant certified-unheld  red-certified-not-held    's/^        if s_ not in held:$/        if False:/'
+    xmutant cert-read-as-receipt green-cert-beside-crux-receipts 's/                   if not os.path.basename(f).startswith("prompt-certification")) if crux_dir else \[\]/                   ) if crux_dir else []/'
+    xmutant certified-as-none red-certified-missing-crux 's/^    need = certified is None or bool(held \& certified)$/    need = False; certified = set()/'
     if [ -n "$mdir" ] && [ "$mdir" != "/" ] && [ -d "$mdir" ]; then rm -rf -- "$mdir"; fi
   fi
   echo "self-test: $n case(s), $bad bad"
@@ -775,20 +827,27 @@ for f in glob.glob(sys.argv[1] + "/*.json"):
     try: print(json.load(open(f)).get("apr_sha") or "")
     except Exception: pass' "$RECEIPT_DIR" 2> /dev/null | sort -u | while read -r s; do
   [ -n "$s" ] && [ -n "$CUT_COMMIT" ] || continue
-  if git -c safe.directory="$PWD" cat-file -e "$s^{commit}" 2> /dev/null \
-     && git -c safe.directory="$PWD" diff --quiet "$s" "$CUT_COMMIT" -- . ':(exclude)evidence' 2> /dev/null; then
-    printf '%s\n' "$s"
-  fi
+  git -c safe.directory="$PWD" cat-file -e "$s^{commit}" 2> /dev/null || continue
+  # #3957 F2 + #3710 ruling 3: evidence-only, or the contract's scoped hotfix -- scripts/lib/ladder_equiv.py.
+  git -c safe.directory="$PWD" diff --name-only "$s" "$CUT_COMMIT" 2> /dev/null > "$TMP_EQUIV.paths" || continue
+  git -c safe.directory="$PWD" show "$s:Cargo.lock" > "$TMP_EQUIV.lock_a" 2> /dev/null || : > "$TMP_EQUIV.lock_a"
+  git -c safe.directory="$PWD" show "$CUT_COMMIT:Cargo.lock" > "$TMP_EQUIV.lock_b" 2> /dev/null || : > "$TMP_EQUIV.lock_b"
+  python3 -c 'import sys, yaml
+sys.path.insert(0, "scripts/lib"); import ladder_equiv
+scope = (yaml.safe_load(open(sys.argv[3]))["ladder"] or {}).get("hotfix_scope") or {}
+paths = [ln.strip() for ln in open(sys.argv[4]) if ln.strip()]
+kind, proof = ladder_equiv.classify(sys.argv[1], sys.argv[2], paths, scope, open(sys.argv[5]).read(), open(sys.argv[6]).read())
+if kind: print(sys.argv[1] + "\t" + proof)' "$s" "$CUT_COMMIT" "$LADDER" "$TMP_EQUIV.paths" "$TMP_EQUIV.lock_a" "$TMP_EQUIV.lock_b"
 done > "$TMP_EQUIV"
 [ -n "$CRUX_DIR" ] || CRUX_DIR="evidence/crux/$VERSION"
 TMP_OUT=$(mktemp)
-judge "$LADDER" "$MAIN_LADDER" "$RECEIPT_DIR" "$VERSION" evidence/release/context-rungs.json "$TMP_RUNGS" "$CUT_COMMIT" "$TMP_EQUIV" "$CRUX_DIR" > "$TMP_OUT"; rc=$?
+judge "$LADDER" "$MAIN_LADDER" "$RECEIPT_DIR" "$VERSION" evidence/release/context-rungs.json "$TMP_RUNGS" "$CUT_COMMIT" "$TMP_EQUIV" "$CRUX_DIR" "$CRUX_DIR/prompt-certification.json" > "$TMP_OUT"; rc=$?
 cat "$TMP_OUT"
 # #3957 F9/F10: a run whose only non-green cells are re-proven RED-MODEL / RED-UNSUPPORTED exits 0,
 # and must not then claim "every required rung green". Read from the file, never through a pipe.
 named_red=0; grep -q '^RED   [0-9]* RED-MODEL' "$TMP_OUT" && named_red=1
 rm -f "$TMP_OUT"
-rm -f "$TMP_EQUIV"
+rm -f "$TMP_EQUIV" "$TMP_EQUIV.paths" "$TMP_EQUIV.lock_a" "$TMP_EQUIV.lock_b"
 [ -n "$TMP_RUNGS" ] && [ -f "$TMP_RUNGS" ] && rm -f "$TMP_RUNGS"
 # The producer that writes these receipts must not bypass the fleet GPU lock (#3712): RED, not a decline.
 # #3957 F1: exit 2 now also means DEFER, so a raw GPU call must not hide behind it -- always RED.
