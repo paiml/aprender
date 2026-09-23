@@ -854,6 +854,25 @@ pub enum Commands {
         /// as the prompt. Matches Claude Code's `claude -p --input-format json` shape.
         #[arg(long, value_enum, default_value_t = CodeInputFormat::Text)]
         input_format: CodeInputFormat,
+
+        /// Run the `apr serve` child on the CPU (`apr serve run --no-gpu`) (#3978).
+        /// The default is `--gpu`.
+        #[arg(long, alias = "cpu", conflicts_with = "gpu")]
+        no_gpu: bool,
+
+        /// Run the `apr serve` child on the GPU (`apr serve run --gpu`), the default.
+        #[arg(long, conflicts_with = "no_gpu")]
+        gpu: bool,
+
+        /// Generate exactly this many tokens per model call (#3978). Overrides the
+        /// manifest value and the APR_AGENT_MAX_TOKENS_CAP cap.
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        max_tokens: Option<u32>,
+
+        /// Thinking mode: `off` (what apr serve does) or `on`, which is refused
+        /// because apr serve has no thinking-ON path yet (#3723) (#3978).
+        #[arg(long, value_parser = ["off", "on"])]
+        think: Option<String>,
     },
     /// Extended analysis, profiling, QA, and visualization commands
     #[command(flatten)]

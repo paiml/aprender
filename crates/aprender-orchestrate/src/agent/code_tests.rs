@@ -1417,3 +1417,34 @@ fn falsify_3775_tool_error_writes_one_json_document() {
 fn falsify_3775_empty_completion_is_a_failure_document() {
     assert_eq!(assert_one_error_document("empty", "failed", "empty_completion"), 1);
 }
+
+// ═══ #3978: `--think on` is refused by name, before anything is launched ═══
+#[test]
+fn f3978_think_on_is_refused_naming_3723() {
+    let err = refuse_think_on(Some(true)).expect_err("--think on must refuse");
+    let msg = err.to_string();
+    assert!(msg.contains("#3723") && msg.contains("--think on"), "{msg}");
+    assert!(refuse_think_on(Some(false)).is_ok());
+    assert!(refuse_think_on(None).is_ok());
+}
+
+#[test]
+fn f3978_think_on_refuses_before_any_model_is_discovered() {
+    // A model path that does not exist: if cmd_code_with reached discovery or a
+    // launch, the error would be about the model, not about --think.
+    let err = cmd_code_with(
+        Some(PathBuf::from("/nonexistent/f3978.gguf")),
+        PathBuf::from("."),
+        None,
+        vec!["hi".into()],
+        true,
+        1,
+        None,
+        None,
+        "text",
+        "text",
+        CodeServeOptions { think: Some(true), ..Default::default() },
+    )
+    .expect_err("--think on must refuse");
+    assert!(err.to_string().contains("#3723"), "{err}");
+}
