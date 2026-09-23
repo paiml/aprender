@@ -235,3 +235,53 @@ def carry(paths, meta_a, meta_b, roots=None):
         return False, "the diff touches the inference path: %s" % "; ".join(hits[:5]) + (
             " (+%d more)" % (len(hits) - 5) if len(hits) > 5 else "")
     return True, "carried forward: %d path(s), none on the inference path -- %s" % (len(cleared), "; ".join(cleared))
+
+
+def _git(repo, *args):
+    return subprocess.run(["git", "-c", "safe.directory=*", "-C", repo, *args], capture_output=True, text=True)
+
+
+def _checkout_meta(tree):
+    r = subprocess.run(["cargo", "metadata", "--no-deps", "--offline", "--format-version", "1",
+                        "--manifest-path", os.path.join(tree, "Cargo.toml")], capture_output=True, text=True)
+    if r.returncode != 0:
+        return None
+    import json
+    return json.loads(r.stdout)
+
+
+def carry_between(repo, sha_a, sha_b):
+    """Run `carry` for two commits of `repo`: each endpoint is checked out DETACHED in a throwaway worktree
+    (its metadata and its sources are read there, never from whatever the caller has checked out), and the
+    changed paths are `git diff --name-only A B`. Any failure -> (False, why): unknown never carries."""
+    import shutil
+    import tempfile
+    trees, tmp = [], tempfile.mkdtemp(prefix="ladder-carry-")
+    try:
+        for i, sha in enumerate((sha_a, sha_b)):
+            t = os.path.join(tmp, "t%d" % i)
+            r = _git(repo, "worktree", "add", "--detach", "--quiet", t, sha + "^{commit}")
+            if r.returncode != 0:
+                return False, "cannot check out %s: %s" % (sha[:12], r.stderr.strip()[:200])
+            trees.append(t)
+        d = _git(repo, "diff", "--name-only", sha_a, sha_b)
+        if d.returncode != 0:
+            return False, "git diff %s %s failed" % (sha_a[:12], sha_b[:12])
+        metas = [_checkout_meta(t) for t in trees]
+        if None in metas:
+            return False, "cargo metadata failed at an endpoint -- the closure is unknown"
+        # workspace_root differs per worktree; each closure is relative to its own root, so both compare
+        return carry([p for p in d.stdout.splitlines() if p], metas[0], metas[1], roots=trees)
+    finally:
+        for t in trees:
+            _git(repo, "worktree", "remove", "--force", t)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) != 4:
+        sys.exit("usage: ladder_carry.py <repo> <receipt sha> <cut sha>")
+    ok, proof = carry_between(sys.argv[1], sys.argv[2], sys.argv[3])
+    print(proof)
+    sys.exit(0 if ok else 1)
