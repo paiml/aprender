@@ -15,7 +15,7 @@ fn trace_prompt_tokens(trace: bool, model: &realizar::gguf::GGUFModel, prompt_to
     let decoded = model.decode(prompt_tokens);
     eprintln!(
         "[APR-TRACE] Decoded: {:?}",
-        &decoded[..decoded.len().min(200)]
+        crate::commands::log_head(&decoded, 200)
     );
 }
 
@@ -136,7 +136,7 @@ impl ChatSession {
                 );
                 eprintln!(
                     "[APR-TRACE] {:?}",
-                    &formatted_prompt[..formatted_prompt.len().min(500)]
+                    crate::commands::log_head(&formatted_prompt, 500)
                 );
             }
 

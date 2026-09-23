@@ -383,7 +383,7 @@ fn run_gguf_inference(
         );
         eprintln!(
             "[DEBUG] raw decoded: {:?}",
-            &raw_text[..raw_text.len().min(200)]
+            log_head(&raw_text, 200)
         );
     }
     let text = clean_model_output(&raw_text);
