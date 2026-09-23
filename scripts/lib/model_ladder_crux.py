@@ -63,10 +63,45 @@ def quant_of(fname):
     return m.group(1).upper() if m else "?"
 
 
-def apr_sha_of(receipt):
+#: `apr --version`'s own line, as crux_inference_dogfood.sh records it: "apr 0.69.1 (d8a6df53a)"
+APR_VERSION_SHA = re.compile(r"^apr \S+ \(([0-9a-f]{7,40})\)$")
+
+
+def _git_resolve(short):
+    """A short sha -> the full commit sha in this checkout, or None (unknown or ambiguous)."""
+    import subprocess
+    try:
+        r = subprocess.run(["git", "rev-parse", "--verify", "--quiet", short + "^{commit}"],
+                           capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    full = r.stdout.strip()
+    return full if r.returncode == 0 and HEX40.fullmatch(full) else None
+
+
+def apr_sha_of(receipt, resolve=None):
+    """The FULL sha of the apr binary a receipt measured, or None.
+
+    An explicit apr.sha / apr_sha wins. Otherwise the sha comes from the BINARY'S OWN version line (the
+    producer, crux_inference_dogfood.sh, records only `apr.version_line`; harness.sha is the harness
+    checkout, never the binary). Every cell's engines.apr.version must name the same binary, since a
+    receipt mixing binaries binds to none. The short sha is resolved in this checkout and must be
+    unambiguous. A dirty or unparseable line -> None, so the receipt fails closed (#3957 F2; aprender-3a
+    2026-09-23: the real receipt's only binding was the version line, and the judge read a field no
+    producer writes)."""
     a = receipt.get("apr")
     sha = (a.get("sha") if isinstance(a, dict) else None) or receipt.get("apr_sha")
-    return sha if isinstance(sha, str) else None
+    if sha is not None:
+        return sha if isinstance(sha, str) else None
+    line = a.get("version_line") if isinstance(a, dict) else None
+    m = APR_VERSION_SHA.match(line.strip()) if isinstance(line, str) else None
+    if not m:
+        return None
+    for c in receipt.get("cells") or []:
+        v = ((c.get("engines") or {}).get("apr") or {}).get("version") if isinstance(c, dict) else None
+        if v is not None and (not isinstance(v, str) or v.strip() != line.strip()):
+            return None
+    return (resolve or _git_resolve)(m.group(1))
 
 
 def load_crux(crux_dir, cut, equiv, out):
