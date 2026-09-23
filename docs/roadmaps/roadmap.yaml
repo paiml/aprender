@@ -20972,6 +20972,26 @@ roadmap:
   labels:
   - kind:code
   notes: 'Minted by aprender-f8. The cop (aprender-04), verbatim: "(a) the JSON envelope missing on a driver error is a new 0.69.1 issue and **yours** (same area). Every exit writes exactly one JSON document to stdout, with the error fields matching fd''s #3720 schema (one schema)." The schema is the #3720 text aprender-f8 proposed (https://github.com/paiml/aprender/issues/3720#issuecomment-5767761121), which aprender-fd accepted (comment 5767765474), verbatim: "Accepted as written on #3720 (comment 5767765474), with one precision: `empty_completion` uses the command''s own inference-failure exit code (apr run 8, apr code 1), so nothing gets re-mapped." Fields: status ok|refused|failed; error {kind, message, exit_code} iff status != ok; capacity iff kind == capacity_refused; existing apr code fields (type/subtype/is_error/result) stay, is_error == (status != ok).'
+- id: PMAT-3778
+  github_issue: 3778
+  item_type: task
+  title: 'CRUX engine drivers for #3739: llamafile and HF transformers — probe/gen/tok/tmpl/greedy rows to row contract v1'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-21T19:11:28Z
+  updated: 2026-09-21T19:11:28Z
+  spec: null
+  acceptance_criteria:
+  - "scripts/crux_engine_llamafile.sh probe prints llamafile's --version and the sha256 of the forjar-declared binary; gen appends one row per cell to $CRUX_MANIFEST (row contract v1), a cell llamafile cannot run being a row with rc null and llamafile's own error as refused"
+  - "scripts/crux_engine_hf.sh runs uv run --frozen over scripts/crux_hf/uv.lock (transformers[serving]==5.17.0, torch==2.14.0 exact); probe prints resolved versions, CUDA state and the lock sha256; gen/tok/tmpl/greedy append one row each, refusals quoting the exception"
+  - "measured on lambda-labs (receipt docs/audits/impl-PMAT-3778-receipt.md): llamafile loads qwen35; --cli ignores thinking control and -n, the server honours both; HF every path on CPU"
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: "#3739 engine seam, agreed with the cop (aprender-04) and aprender-76 (#3774, correspondence + judge). Stops at the receipt."
 - id: PMAT-3785
   github_issue: 3785
   item_type: task
@@ -21250,4 +21270,88 @@ roadmap:
   estimated_effort: null
   labels:
   - kind:docs
+  notes: null
+- id: PMAT-3947
+  github_issue: 3947
+  item_type: task
+  title: 'aprender-core has no IQ dequantizer, so tensor_contract cannot inspect three release-blocking models — port from the validated aprender-serve decoders'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-9b
+  created: 2026-09-23T00:00:00Z
+  updated: 2026-09-23T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Per-tensor census of the three files, measured before any code'
+  - 'tensor_contract inspects those tensors, with an external oracle and a positive control that FAILS on a wrong decode'
+  - 'The three rows go green on their own merits, without weakening tensor_contract or whitelisting a type; #3850 must not regress'
+  - 'Report as capability cells (model, quant, tensor type, crate) -> number and oracle'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'PR #3958. CPU dequant only; the CUDA IQ4 GEMV kernels are out of scope.'
+- id: PMAT-3952
+  github_issue: 3952
+  item_type: task
+  title: 'CRUX: vLLM as a pre-release comparator engine; #3971 source-weight cache verification; #3964 ollama loads only inside
+    the GPU lock'
+  status: inprogress
+  priority: critical
+  assigned_to: aprender-83
+  created: '2026-09-23T08:40:00Z'
+  updated: '2026-09-23T13:40:00Z'
+  spec: null
+  acceptance_criteria:
+  - '#3952 done_when: --engines ...,vllm produces vLLM gen rows on at least one host, judged by the unchanged rule; each host
+    where it cannot run records a named refusal; a planted mismatch (vLLM right, apr wrong) is RED in the judge case table'
+  - '#3971: both source-weight drivers (hf, vllm) hash every cached file against the name it promises and refuse by name on
+    mismatch; CRUX uses its own HF_HOME'
+  - '#3964 (operator: ''yes you may change ollama''): every CRUX ollama model load runs while the GPU lock is held, proven
+    by a behavioural check that catches a no-lock mutant'
+  - 'cop ruling: an unpinned comparator makes the cell RED (''oracle unpinned''), never a third state'
+  - 'cop (critical path): both source-weight drivers run in BATCH mode — one engine load per gen-batch call, row contract
+    v1 per item; plus `serve stream` for #3962 (aprender-19)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Fold, per the cop (aprender-6a): #3781 (PMAT-3778 hf+llamafile drivers) + PMAT-3952-crux-vllm (vLLM driver, #3971
+    verification, batch mode, serve stream) + PMAT-3952-crux-vllm-judge (vllm comparator, unpinned-oracle RED, #3964 lock
+    check), on top of aprender-6c''s fix/3957-gate-hardening (F6), which this depends on. Stops at the receipt.'
+- id: PMAT-3957
+  github_issue: 3957
+  item_type: task
+  title: '0.69.1 gate hardening (no GPU): sha-bound receipts, missing-field=FAIL, verb output oracles, CRUX judge strength, DEFER exits 2 (+F1b, F8, F6 quorum-revised)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-6c
+  created: 2026-09-23T00:00:00Z
+  updated: 2026-09-23T00:00:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3962
+  github_issue: 3962
+  item_type: task
+  title: 'CRUX producer: per-verb prompt sets (incl. hard prompts) + code verb + hf/vllm quorum rows — prompt-certification half (aprender-dd)'
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-dd
+  created: 2026-09-23T00:00:00Z
+  updated: 2026-09-23T00:00:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
   notes: null

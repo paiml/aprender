@@ -809,6 +809,7 @@ def collect(args):
     for k in keys:
         prompt = prompts[k[5]]
         entries = {}
+        unpinned = []
         for eng in ENGINES:
             row = by_key[k].get(eng)
             if row is None:
@@ -822,9 +823,17 @@ def collect(args):
                     entries[eng]["answered"] = False
                     entries[eng]["why"] = ("unpinned: the run's meta records no version for %s, so a verdict it "
                                            "vouched for could not name what produced it" % eng)
+                    unpinned.append(eng)
         fmt = next((by_key[k][e].get("format") for e in by_key[k] if by_key[k][e].get("format")), None) \
             or fmt_of_model.get(k[0])
         verdict, ok, reasons, extracted = judge_cell(entries, prompt, fmt)
+        if unpinned:
+            # No third state (operator doctrine, 2026-09-23; cop ruling on #3952): a cell whose oracle cannot be
+            # named is NOT PROVEN, and not-proven is RED. The reason says which kind of RED this is — it is not
+            # a finding that apr answered wrongly.
+            verdict = "RED"
+            reasons.append("oracle unpinned: %s answered with no recorded version, so this cell is not proven "
+                           "(this is not a finding that apr was wrong)" % ", ".join(unpinned))
         for eng in ENGINES:
             entries[eng]["correct"] = ok[eng]
             # #3832: one indivisible record per engine — WHICH engine, at WHICH
