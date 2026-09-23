@@ -21444,3 +21444,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4055
+  github_issue: 4055
+  item_type: bug
+  title: 'ladder: serve teardown refuses to kill its own survivor from a symlinked cwd; the orphan keeps the GPU-lock fd and stalls the next cell 1800 s (#4055)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-36
+  created: 2026-09-23T00:00:00Z
+  updated: 2026-09-23T00:00:00Z
+  spec: scripts/model_ladder.sh
+  acceptance_criteria:
+  - ladder_serve_teardown compares a survivor's /proc cwd with the PHYSICAL cwd (pwd -P), so a ladder run from a symlinked path (gx10/yoga /mnt/nvme-raid0) kills its own survivor and reports escalated
+  - a teardown never reports clean or escalated while /proc/locks records the GPU lock under a pid of its own process tree; it reports failed
+  - check_ladder_serve_teardown.sh runs the shipped teardown against real processes from a symlinked cwd (escalated, server dead, lock free) and with a double-forked escapee holding the lock fd (failed)
+  - its --self-test plants the logical $PWD and a lock-blind verdict, and each turns its case RED
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
