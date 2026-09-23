@@ -139,6 +139,16 @@
     },
     {
      "backend": null,
+     "verb": "inspect",
+     "lock": "gpu",
+     "t_start": 1002.0,
+     "t_acquired": 1002.1,
+     "t_end": 1002.5,
+     "rc": 0,
+     "lock_wait_s": 0.1
+    },
+    {
+     "backend": null,
      "verb": "code",
      "lock": "gpu",
      "t_start": 1004.0,
@@ -337,6 +347,16 @@
      "t_end": 1003.0,
      "rc": 0,
      "lock_wait_s": 0.5
+    },
+    {
+     "backend": null,
+     "verb": "inspect",
+     "lock": "gpu",
+     "t_start": 1002.0,
+     "t_acquired": 1002.1,
+     "t_end": 1002.5,
+     "rc": 0,
+     "lock_wait_s": 0.1
     },
     {
      "backend": null,

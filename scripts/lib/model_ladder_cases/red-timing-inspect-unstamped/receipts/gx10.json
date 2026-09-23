@@ -1,6 +1,6 @@
 {
  "schema": "apr-model-ladder-receipt/v2",
- "host": "lambda",
+ "host": "gx10",
  "version": "1.2.3",
  "sha": "abc1234",
  "gpu": "x",
@@ -139,16 +139,6 @@
     },
     {
      "backend": null,
-     "verb": "inspect",
-     "lock": "gpu",
-     "t_start": 1002.0,
-     "t_acquired": 1002.1,
-     "t_end": 1002.5,
-     "rc": 0,
-     "lock_wait_s": 0.1
-    },
-    {
-     "backend": null,
      "verb": "code",
      "lock": "gpu",
      "t_start": 1004.0,
@@ -173,7 +163,7 @@
      "lock": "gpu",
      "t_start": 1012.0,
      "t_acquired": 1012.5,
-     "t_end": 1011.0,
+     "t_end": 1015.0,
      "rc": 0,
      "lock_wait_s": 0.5
     },
@@ -350,16 +340,6 @@
     },
     {
      "backend": null,
-     "verb": "inspect",
-     "lock": "gpu",
-     "t_start": 1002.0,
-     "t_acquired": 1002.1,
-     "t_end": 1002.5,
-     "rc": 0,
-     "lock_wait_s": 0.1
-    },
-    {
-     "backend": null,
      "verb": "code",
      "lock": "gpu",
      "t_start": 1004.0,
@@ -384,7 +364,7 @@
      "lock": "gpu",
      "t_start": 1012.0,
      "t_acquired": 1012.5,
-     "t_end": 1011.0,
+     "t_end": 1015.0,
      "rc": 0,
      "lock_wait_s": 0.5
     },
