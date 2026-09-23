@@ -227,7 +227,39 @@ else:
 # EMPTY TEXT IS A REASON, never clean: a route whose body yields no generated text measured nothing
 # about the model, and "" handed to the detector is the vacuous pass #3957 F4c removes.
 serve_route_bad() {
-  local text bytes
+  local text bytes term
+  # #3957 Q6: a STREAM must end with its terminal event -- `data: [DONE]` (SSE) or an object
+  # with `"done": true` (NDJSON). Without it the server stopped mid-reply (or curl's --max-time
+  # did), and the text that did arrive is a prefix judged as if it were the answer.
+  term=$(python3 -c '
+import json, sys
+raw = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+try:
+    one = json.loads(raw)
+except ValueError:
+    one = None
+else:
+    # A one-line NDJSON stream parses as one object. /api/chat says `done` on every chunk,
+    # and `done: false` is an unfinished reply whichever way it arrived.
+    print("open" if isinstance(one, dict) and one.get("done") is False else "single"); raise SystemExit
+lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+if any(ln.startswith("data:") for ln in lines):
+    print("ok" if any(ln[5:].strip() == "[DONE]" for ln in lines if ln.startswith("data:")) else "open")
+elif lines:
+    def done(ln):
+        try:
+            d = json.loads(ln)
+        except ValueError:
+            return False
+        return isinstance(d, dict) and d.get("done") is True
+    print("ok" if done(lines[-1]) else "open")
+else:
+    print("single")
+' "$1" 2> /dev/null)
+  if [ "$term" = open ]; then
+    printf 'truncated stream: the %s response has no terminal event (data: [DONE] / "done": true) -- a prefix is not an answer (#3957 Q6)' "$2"
+    return 0
+  fi
   text=$(serve_reply_text "$1")
   if [ -z "${text//[[:space:]]/}" ]; then
     bytes=$(wc -c < "$1" 2> /dev/null | tr -d ' ')

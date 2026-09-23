@@ -283,7 +283,7 @@ judge_body() { # judge_body <src> <body-text> -> the reason, or nothing
 }
 
 # name|printf-format of the body|expect  (clean · bad = a verdict about the text ·
-# empty = "nothing measured", which must never be clean)
+# empty = "nothing measured" · truncated = a stream with no terminal event; neither is ever clean)
 body_cases() {
 cat <<'CASES'
 json-nonstream-correct|{"choices":[{"message":{"role":"assistant","content":"The capital of France is Paris."}}]}|clean
@@ -294,6 +294,8 @@ sse-role-only-delta|data: {"choices":[{"delta":{"role":"assistant"}}]}\n\ndata: 
 ndjson-api-chat-garbage|{"message":{"role":"assistant","content":"zombie zombie "},"done":false}\n{"message":{"role":"assistant","content":"zombie zombie zombie"},"done":false}\n{"done":true}\n|bad
 ndjson-api-chat-correct|{"message":{"role":"assistant","content":"Paris."},"done":false}\n{"done":true}\n|clean
 empty-body|\n|empty
+sse-truncated-no-done|data: {"choices":[{"delta":{"content":"The capital of France is Paris."}}]}\n\n|truncated
+ndjson-truncated-no-done|{"message":{"role":"assistant","content":"Paris."},"done":false}\n|truncated
 CASES
 }
 
@@ -306,6 +308,7 @@ run_body_table() { # -> 0 all as expected
     got=$(judge_body "$src" "$body") || return 2
     if [ -z "$got" ]; then cls=clean
     elif case "$got" in "nothing measured"*) true ;; *) false ;; esac; then cls=empty
+    elif case "$got" in "truncated stream"*) true ;; *) false ;; esac; then cls=truncated
     else cls=bad; fi
     if [ "$cls" = "$want" ]; then
       printf '  ok    %-34s %s\n' "$name" "$cls"
@@ -390,6 +393,17 @@ if [ "$SELF_TEST" = 1 ]; then
   if run_body_table "$m6" > /dev/null 2>&1; then
     echo "SELF-TEST FAILED: mutant 6 passed -- a stream that carried nothing reads as clean" >&2; exit 1
   fi
+  echo "  RED (expected)"
+
+  # Mutant 7 (#3957 Q6): a stream with no terminal event is judged on its prefix.
+  m7=$(mktemp)
+  sed 's/^  if \[ "$term" = open \]; then$/  if false; then/' "$SCRIPT" > "$m7"
+  cmp -s "$SCRIPT" "$m7" && { rm -f "$m7"; echo "SELF-TEST INCONCLUSIVE: mutant 7 changed nothing" >&2; exit 1; }
+  echo "self-test: mutant 7 (truncated stream judged on its prefix)"
+  if run_body_table "$m7" > /dev/null 2>&1; then
+    rm -f "$m7"; echo "SELF-TEST FAILED: mutant 7 passed -- a stream that never finished reads as an answer" >&2; exit 1
+  fi
+  rm -f "$m7"
   echo "  RED (expected)"
 
   echo "self-test: PASS — red when the detector stops flagging, when the verdict stops reading it, when an unlocatable reply passes silently, and when the reply is cut short"
