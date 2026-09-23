@@ -706,7 +706,7 @@ if [ "$SELF_TEST" = 1 ]; then
     rmutant no-file-unsup     red-unsupported-key-no-file    's/^            if n:$/            if True:/'
     rmutant not-judged-honest red-model-receipt-rejected-not-judged 's/^            if missing:/            if False:/'
     rmutant unsup-ran         red-unsupported-ran            's/^        if be.get("rc") in (0, None) or be.get("ran") is not False:/        if False:/'
-    rmutant unsup-stdout      red-unsupported-stdout         's/^        if run.get("stdout_bytes") != 0:/        if False:/'
+    rmutant unsup-stdout      red-unsupported-stdout         's/^        if run.get("generated_bytes") != 0:/        if False:/'
     rmutant unsup-fell-back   red-unsupported-fell-back      's/^        if be.get("fallback") or/        if False and be.get("fallback") or/'
     rmutant unsup-by-name     red-unsupported-no-refusal     's/^        if not isinstance(refusal, str) or needle not in refusal or REFUSAL_CLASS not in refusal:/        if False:/'
     rmutant unsup-arch-header red-unsupported-arch-mismatch  's/^        elif got != arch:/        elif False:/'

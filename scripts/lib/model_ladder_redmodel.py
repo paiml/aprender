@@ -44,7 +44,7 @@ RED-UNSUPPORTED is proven, per (host, file), only when ALL of these hold:
   1. The row records the architecture from the file header (`architecture`), and it equals
      the key's.
   2. On cuda, `apr run --gpu` was OBSERVED refusing by name. rc != 0, no fallback on any
-     verb, `stdout_bytes == 0` (nothing generated), and a `refusal` text naming
+     verb, `generated_bytes == 0` (nothing generated: stdout minus apr's `verbose:` preamble), and a `refusal` text naming
      "no CUDA forward for architecture '<arch>'" plus "This is a refusal, not a fallback"
      (aprender-serve capability::no_cuda_forward_reason).
   3. The architecture has NO CUDA path, as measured on this sweep. A row of that
@@ -309,8 +309,8 @@ class RedVerdicts:
             probs.append("apr FELL BACK instead of refusing")
         if be.get("rc") in (0, None) or be.get("ran") is not False:
             probs.append(f"`apr run --gpu` exited {be.get('rc')!r} with ran={be.get('ran')!r} -- the model ran, so it is not unsupported")
-        if run.get("stdout_bytes") != 0:
-            probs.append(f"`apr run --gpu` wrote {run.get('stdout_bytes')!r} stdout bytes -- a refusal generates nothing")
+        if run.get("generated_bytes") != 0:
+            probs.append(f"`apr run --gpu` generated {run.get('generated_bytes')!r} bytes of output -- a refusal generates nothing")
         needle = f"no CUDA forward for architecture '{arch}'"
         if not isinstance(refusal, str) or needle not in refusal or REFUSAL_CLASS not in refusal:
             probs.append(f"no refusal BY NAME was observed (want {needle!r} and {REFUSAL_CLASS!r}, got {refusal!r})")

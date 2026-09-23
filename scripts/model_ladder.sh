@@ -883,15 +883,18 @@ except Exception: print("unknown")' "$arch_json")
     # ladder against every other session on the box. #3743's side dropped it.
     run_flag=$(flag_for run "$flag")
     # #3957 F10: stdout and stderr go to SEPARATE files. A refusal generates nothing, and the only way
-    # to observe "nothing" is a stdout byte count that the merged stream cannot give. The refusal is
-    # recorded verbatim, so the judge can check that apr refused BY NAME
-    # (capability::no_cuda_forward_reason) and did not just fail.
+    # to observe "nothing" is a stdout byte count that the merged stream cannot give. `generated_bytes`
+    # leaves out apr's own `verbose: ` preamble, which --verbose prints BEFORE the pre-load refusal
+    # (measured on lambda, apr 0.69.1 (7b8aa7e32) on Qwen3.5-35B-A3B-UD-IQ4_XS: rc 12, 178 stdout
+    # bytes, all four of them `verbose:` lines). The refusal is recorded verbatim, so the judge can
+    # check that apr refused BY NAME (capability::no_cuda_forward_reason) and did not just fail.
     run_o="$WORK/${rid//[^A-Za-z0-9._-]/_}.$b.run.out"; run_e="$WORK/${rid//[^A-Za-z0-9._-]/_}.$b.run.err"
     # shellcheck disable=SC2086
     apr_locked run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 --verbose $run_flag > "$run_o" 2> "$run_e"; run_rc=$?
     [ "$run_rc" = "$LOCK_BUSY" ] && lock_timeout "apr run $rid ($b)"
     run_out=$(cat "$run_o" "$run_e")
     run_stdout_bytes=$(stat -c %s "$run_o" 2> /dev/null || echo null)
+    run_generated_bytes=$(grep -v '^verbose: ' "$run_o" | wc -c)
     run_refusal_json=$(grep -h -m1 -F 'no CUDA forward for architecture' "$run_e" "$run_o" | head -1 | tr -d '\r\n' | json_str_or_null)
     fb=false; ran=true; esc=false
     if grep -qE 'falling back to CPU|path rejected, attempting fallback|runs on the CPU; the GPU backend' <<< "$run_out"; then fb=true; fi
@@ -948,7 +951,7 @@ except Exception: print("unknown")' "$arch_json")
 
     [ $first = 1 ] || be_json="$be_json,"; first=0
     be_json="$be_json\"$b\":{\"ran\":$ran,\"fallback\":$fb,\"escaped_special\":$esc,\"rc\":$run_rc"
-    be_json="$be_json,\"verbs\":{\"run\":{\"ran\":$ran,\"rc\":$run_rc,\"stdout_bytes\":$run_stdout_bytes,\"refusal\":$run_refusal_json}"
+    be_json="$be_json,\"verbs\":{\"run\":{\"ran\":$ran,\"rc\":$run_rc,\"stdout_bytes\":$run_stdout_bytes,\"generated_bytes\":$run_generated_bytes,\"refusal\":$run_refusal_json}"
     # #3921: `output_bad` carries the REASON, or null. A string here is a verdict
     # about what the verb produced; the rc beside it is only about whether it ran.
     chat_bad_json=$(printf '%s' "${chat_bad:-}" | json_str_or_null)

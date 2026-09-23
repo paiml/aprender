@@ -329,7 +329,7 @@
    "capability_match": {
     "passed": false,
     "skipped": false,
-    "message": "apr run: this build has no CUDA forward for architecture 'qwen35moe': Qwen3.5 MoE is a hybrid (Gated DeltaNet / SSM layers + mixture-of-experts), and the qwen3moe CUDA forward (#3714) does not run SSM layers. Re-run without --gpu to use the CPU path deliberately. This is a refusal, not a fallback: nothing was loaded and nothing was generated."
+    "message": "error: Not implemented: this build has no CUDA forward for architecture 'qwen35moe': Qwen3.5 MoE is a hybrid (Gated DeltaNet / SSM layers + mixture-of-experts), and the qwen3moe CUDA forward (#3714) does not run SSM layers. Re-run without --gpu to use the CPU path deliberately. This is a refusal, not a fallback: nothing was loaded and nothing was generated."
    },
    "golden_output": {
     "passed": true,
@@ -345,8 +345,9 @@
       "run": {
        "ran": false,
        "rc": 1,
-       "refusal": "apr run: this build has no CUDA forward for architecture 'qwen35moe': Qwen3.5 MoE is a hybrid (Gated DeltaNet / SSM layers + mixture-of-experts), and the qwen3moe CUDA forward (#3714) does not run SSM layers. Re-run without --gpu to use the CPU path deliberately. This is a refusal, not a fallback: nothing was loaded and nothing was generated.",
-       "stdout_bytes": 42
+       "refusal": "error: Not implemented: this build has no CUDA forward for architecture 'qwen35moe': Qwen3.5 MoE is a hybrid (Gated DeltaNet / SSM layers + mixture-of-experts), and the qwen3moe CUDA forward (#3714) does not run SSM layers. Re-run without --gpu to use the CPU path deliberately. This is a refusal, not a fallback: nothing was loaded and nothing was generated.",
+       "stdout_bytes": 178,
+       "generated_bytes": 42
       },
       "chat": {
        "ran": false,

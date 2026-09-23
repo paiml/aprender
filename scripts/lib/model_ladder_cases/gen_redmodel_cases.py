@@ -22,7 +22,8 @@ D, D_SHA = "Qwen3.5-0.8B-IQ4_XS.gguf", "d" * 64          # the defective file (F
 C, C_SHA = "Qwen3.5-4B-Q4_K_M.gguf", "c" * 64            # its positive-control sibling
 M, M_SHA = "Qwen3.5-35B-A3B-UD-IQ4_XS.gguf", "3" * 64    # the unsupported architecture (F10)
 IDS = [151667, 198, 32313, 11, 1077, 594, 1490]
-REFUSAL = ("apr run: this build has no CUDA forward for architecture 'qwen35moe': Qwen3.5 MoE is a hybrid "
+# Verbatim, as `apr run --gpu` printed it on lambda (apr 0.69.1 (7b8aa7e32), rc 12).
+REFUSAL = ("error: Not implemented: this build has no CUDA forward for architecture 'qwen35moe': Qwen3.5 MoE is a hybrid "
            "(Gated DeltaNet / SSM layers + mixture-of-experts), and the qwen3moe CUDA forward (#3714) does not run SSM "
            "layers. Re-run without --gpu to use the CPU path deliberately. This is a refusal, not a fallback: nothing "
            "was loaded and nothing was generated.")
@@ -101,7 +102,8 @@ def build_f10(arch="qwen35moe", key_arch="qwen35moe"):
     m["architecture"] = arch
     be = m["backends"]["cuda"]
     be.update({"ran": False, "rc": 1, "fallback": False})
-    be["verbs"]["run"] = {"ran": False, "rc": 1, "refusal": REFUSAL.replace("qwen35moe'", f"{arch}'"), "stdout_bytes": 0}
+    be["verbs"]["run"] = {"ran": False, "rc": 1, "refusal": REFUSAL.replace("qwen35moe'", f"{arch}'"),
+                          "stdout_bytes": 178, "generated_bytes": 0}   # 178 = apr's `verbose:` preamble, measured
     be["verbs"]["chat"] = {"ran": False, "rc": 1}
     be["verbs"]["serve"] = {"probed": False, "why": "apr serve --gpu refused the architecture", "routes": {}, "teardown": "clean"}
     m.update({"green": False, "qa_rc": 1, "gates_failed": ["capability_match"], "gates_account_for_rc": True,
@@ -252,16 +254,16 @@ def main():
     L, rec, crux = build_f10()   # the operator's must-RED: the model RUNS (refusal removed) -> RED
     be = row(rec, M)["backends"]["cuda"]
     be.update({"ran": True, "rc": 0})
-    be["verbs"]["run"] = {"ran": True, "rc": 0, "refusal": None, "stdout_bytes": 312}
+    be["verbs"]["run"] = {"ran": True, "rc": 0, "refusal": None, "stdout_bytes": 490, "generated_bytes": 312}
     write("red-unsupported-model-runs", L, rec, crux, 1, r"declared RED-UNSUPPORTED .* NOT OBSERVED")
 
     L, rec, crux = build_f10()   # isolated: exit 0 alone (refusal text and zero bytes still present)
     row(rec, M)["backends"]["cuda"].update({"ran": True, "rc": 0})
     write("red-unsupported-ran", L, rec, crux, 1, r"exited 0 with ran=True -- the model ran")
 
-    L, rec, crux = build_f10()   # isolated: stdout bytes alone
-    row(rec, M)["backends"]["cuda"]["verbs"]["run"]["stdout_bytes"] = 42
-    write("red-unsupported-stdout", L, rec, crux, 1, r"wrote 42 stdout bytes")
+    L, rec, crux = build_f10()   # isolated: generated output alone
+    row(rec, M)["backends"]["cuda"]["verbs"]["run"]["generated_bytes"] = 42
+    write("red-unsupported-stdout", L, rec, crux, 1, r"generated 42 bytes of output")
 
     L, rec, crux = build_f10()   # the operator's must-RED: it falls back
     row(rec, M)["backends"]["cuda"]["fallback"] = True
