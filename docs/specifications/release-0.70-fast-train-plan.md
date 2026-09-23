@@ -12,7 +12,7 @@ child issues only after operator review.
 
 | # | Bar | Definition used here | First-green proof |
 |---|---|---|---|
-| X1 | freeze → publish ≤ 4 h, measured on 0.70 itself | **freeze** = the timestamp of the commit that cuts `release/0.70.0*` (the T-5 reconcile starts from it). **publish** = the later of: `aprender` 0.70.0 visible on crates.io (`cargo search aprender --limit 1` reports 0.70.0), and the GitHub release object's `publishedAt`. Both are recorded in the train ledger by the automation, never retyped. | the 0.70.0 train ledger carries both timestamps, and `scripts/check_release_train_duration.sh` (FT-10) computes ≤ 4 h from them, and exits non-zero at > 4 h |
+| X1 | freeze → publish ≤ 4 h for the **automated path**, measured on 0.70 itself; fix-and-re-sweep cycles carry a separately declared budget (Q6 split) | **freeze** = the timestamp of the commit that cuts `release/0.70.0*` (the T-5 reconcile starts from it). **publish** = the later of: `aprender` 0.70.0 visible on crates.io (`cargo search aprender --limit 1` reports 0.70.0), and the GitHub release object's `publishedAt`. Both are recorded in the train ledger by the automation, never retyped. | the 0.70.0 train ledger carries both timestamps, and `scripts/check_release_train_duration.sh` (FT-10) computes ≤ 4 h from them, and exits non-zero at > 4 h |
 | X2 | lock idle-GPU fraction falls by > half | #3986's method: while `/tmp/apr-gpu.lock` is held, sample `nvidia-smi --query-gpu=utilization.gpu` at 1 Hz; idle fraction = samples at ≤ 5 % / all samples. The baseline window and the 0.70 window are each a full pre-freeze sweep on lambda | `scripts/gpu_lock_idle_sample.sh` (FT-2) writes one JSON per window; the 0.70 value ≤ ½ × the baseline |
 
 **Baselines, measured, with their source:**
@@ -47,7 +47,7 @@ Every row has a `done_when` that names no person, a baseline, and a **first-gree
   - **in-tree bare-flock callers are in scope** (quorum fix): every caller that takes `/tmp/apr-gpu.lock` without gpu-q is enumerated from the tree (`model_ladder.sh`'s `apr_locked`, `gpu_exclusive_run.sh` (not in this repo: a fleet script outside the tree), …). Each one either routes through the same refusal or is listed in a shrink-only census. A new bare `flock /tmp/apr-gpu.lock` caller turns the census RED.
 - **ownership boundary:** gpu-q is fleet state (infra/forjar). The aprender side is the recipe and a `scripts/gpu_test.sh` that implements it.
 
-### FT-2 · Lock idle sampling (the X2 instrument)
+### FT-2 · Lock idle sampling (the X2 instrument; per Q3 it also records `Σ(jobs_waiting × idle_s)`)
 - **done_when:** `scripts/gpu_lock_idle_sample.sh` samples utilization at 1 Hz while the lock is held, and writes `{host, window, samples, idle_fraction, holders[]}`.
   - A window with 0 samples is an error, never 0 % idle.
   - `holders[]` comes from the lock's `fuser`, so the cause of idle time is attributable.
@@ -95,7 +95,7 @@ Every row has a `done_when` that names no person, a baseline, and a **first-gree
 
   Three must-RED fixtures. A real 0.70 sweep receipt shows > 1 host contributing.
 
-### FT-6 · VRAM-budget sharing, pilot only (#3986 P4)
+### FT-6 · VRAM-budget sharing, pilot only (#3986 P4) — **MOVED TO 0.71 by the quorum (Q4)**; kept here for the record
 - **done_when:**
   - On yoga, a known-green model run executes concurrently with a CUDA correctness suite as separate processes (NOT MPS: an MPS client fault can kill the others).
   - The model run's outputs are byte-identical to a solo run of the same binary and model.
