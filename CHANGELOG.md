@@ -291,6 +291,10 @@ only after that device A/B came back exact.
   aprender-mcp no longer depends on `anyhow`. It was not part of the frozen tree the sweep
   measured.
 - `apr code --thinking on` refuses: `apr serve` has no thinking-ON path yet. (#3723)
+- **Known gap: the `apr capability` verb has no book page in 0.69.1.** `apr capability --help`
+  and `--json` document it. The book's CLI parity check reads 112/113
+  (FALSIFY-BOOK-CLI-PARITY-001: `book/src/cli/capability.md` does not exist). The chapter, its
+  page contract and the SUMMARY entry land in the post-release follow-up (`d5cecdee6`).
 - `apr serve`'s Ollama `/api/generate` accepts no `context`, so a multi-turn conversation
   cannot continue on that wire. `/api/chat` and `/v1/chat/completions` carry history.
   (#4025, 0.70)
