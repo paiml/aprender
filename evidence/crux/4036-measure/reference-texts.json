@@ -1,0 +1,451 @@
+{
+ "note": "hf/vLLM reference rows of the unbatched baseline (cold, 1b483fff6) vs the batched run (batched, 3488e25af): engine, verb, prompt, refused, answer text (#4036)",
+ "legs": {
+  "cold": [
+   {
+    "engine": "hf",
+    "verb": "chat",
+    "prompt_id": "ctl-2plus2",
+    "refused": null,
+    "text": "<answer>4</answer>",
+    "batch": {
+     "id": "1282914-1790186740732942311",
+     "size": 1
+    }
+   },
+   {
+    "engine": "hf",
+    "verb": "chat",
+    "prompt_id": "ctl-code-add",
+    "refused": null,
+    "text": "```python\ndef add(a, b):\n    return a + b\n```",
+    "batch": {
+     "id": "1314823-1790186963090818444",
+     "size": 1
+    }
+   },
+   {
+    "engine": "hf",
+    "verb": "chat",
+    "prompt_id": "ctl-recall-7",
+    "refused": null,
+    "text": "<answer>7</answer>",
+    "batch": {
+     "id": "1304893-1790186881533151224",
+     "size": 1
+    }
+   },
+   {
+    "engine": "hf",
+    "verb": "code",
+    "prompt_id": "ctl-code-add",
+    "refused": null,
+    "text": "```python\ndef add(a, b):\n    return a + b\n```",
+    "batch": {
+     "id": "1438827-1790187380434107644",
+     "size": 1
+    }
+   },
+   {
+    "engine": "hf",
+    "verb": "run",
+    "prompt_id": "ctl-2plus2",
+    "refused": null,
+    "text": "<answer>4</answer>",
+    "batch": {
+     "id": "1238238-1790186471488890477",
+     "size": 1
+    }
+   },
+   {
+    "engine": "hf",
+    "verb": "run",
+    "prompt_id": "ctl-code-add",
+    "refused": null,
+    "text": "```python\ndef add(a, b):\n    return a + b\n```",
+    "batch": {
+     "id": "1268646-1790186623744330504",
+     "size": 1
+    }
+   },
+   {
+    "engine": "hf",
+    "verb": "serve run",
+    "prompt_id": "ctl-2plus2",
+    "refused": null,
+    "text": "<answer>4</answer>",
+    "batch": {
+     "id": "1327453-1790187122057866278",
+     "size": 1
+    }
+   },
+   {
+    "engine": "hf",
+    "verb": "serve run",
+    "prompt_id": "ctl-recall-7",
+    "refused": null,
+    "text": "<answer>7</answer>",
+    "batch": {
+     "id": "1329095-1790187131132240882",
+     "size": 1
+    }
+   },
+   {
+    "engine": "hf",
+    "verb": "serve stream",
+    "prompt_id": "ctl-2plus2",
+    "refused": null,
+    "text": "<answer>4</answer>",
+    "batch": {
+     "id": "1378601-1790187235844833720",
+     "size": 1
+    }
+   },
+   {
+    "engine": "hf",
+    "verb": "serve stream",
+    "prompt_id": "ctl-recall-7",
+    "refused": null,
+    "text": "<answer>7</answer>",
+    "batch": {
+     "id": "1380017-1790187252002178785",
+     "size": 1
+    }
+   },
+   {
+    "engine": "vllm",
+    "verb": "chat",
+    "prompt_id": "ctl-2plus2",
+    "refused": null,
+    "text": "<answer>4</answer>",
+    "batch": {
+     "id": "1288568-1790186786759771295",
+     "size": 1
+    }
+   },
+   {
+    "engine": "vllm",
+    "verb": "chat",
+    "prompt_id": "ctl-code-add",
+    "refused": null,
+    "text": "```python\ndef add(a, b):\n    return a + b\n```",
+    "batch": {
+     "id": "1317164-1790186983995533458",
+     "size": 1
+    }
+   },
+   {
+    "engine": "vllm",
+    "verb": "chat",
+    "prompt_id": "ctl-recall-7",
+    "refused": null,
+    "text": "<answer>7</answer>",
+    "batch": {
+     "id": "1306736-1790186893949247730",
+     "size": 1
+    }
+   },
+   {
+    "engine": "vllm",
+    "verb": "code",
+    "prompt_id": "ctl-code-add",
+    "refused": null,
+    "text": "```python\ndef add(a, b):\n    return a + b\n```",
+    "batch": {
+     "id": "1441100-1790187400128177306",
+     "size": 1
+    }
+   },
+   {
+    "engine": "vllm",
+    "verb": "run",
+    "prompt_id": "ctl-2plus2",
+    "refused": null,
+    "text": "<answer>4</answer>",
+    "batch": {
+     "id": "1242586-1790186496385853145",
+     "size": 1
+    }
+   },
+   {
+    "engine": "vllm",
+    "verb": "run",
+    "prompt_id": "ctl-code-add",
+    "refused": null,
+    "text": "```python\ndef add(a, b):\n    return a + b\n```",
+    "batch": {
+     "id": "1270085-1790186643363809731",
+     "size": 1
+    }
+   },
+   {
+    "engine": "vllm",
+    "verb": "serve run",
+    "prompt_id": "ctl-2plus2",
+    "refused": null,
+    "text": "<answer>4</answer>",
+    "batch": {
+     "id": "1329709-1790187138982628252",
+     "size": 1
+    }
+   },
+   {
+    "engine": "vllm",
+    "verb": "serve run",
+    "prompt_id": "ctl-recall-7",
+    "refused": null,
+    "text": "<answer>7</answer>",
+    "batch": {
+     "id": "1331321-1790187187573339666",
+     "size": 1
+    }
+   },
+   {
+    "engine": "vllm",
+    "verb": "serve stream",
+    "prompt_id": "ctl-2plus2",
+    "refused": null,
+    "text": "<answer>4</answer>",
+    "batch": {
+     "id": "1381120-1790187261259559725",
+     "size": 1
+    }
+   },
+   {
+    "engine": "vllm",
+    "verb": "serve stream",
+    "prompt_id": "ctl-recall-7",
+    "refused": null,
+    "text": "<answer>7</answer>",
+    "batch": {
+     "id": "1404280-1790187313965870523",
+     "size": 1
+    }
+   }
+  ],
+  "batched": [
+   {
+    "engine": "hf",
+    "verb": "chat",
+    "prompt_id": "ctl-2plus2",
+    "refused": null,
+    "text": "<answer>4</answer>",
+    "batch": {
+     "id": "1561581-1790187686304609197",
+     "size": 5
+    }
+   },
+   {
+    "engine": "hf",
+    "verb": "chat",
+    "prompt_id": "ctl-code-add",
+    "refused": null,
+    "text": "```python\ndef add(a, b):\n    return a + b\n```",
+    "batch": {
+     "id": "1561581-1790187686304609197",
+     "size": 5
+    }
+   },
+   {
+    "engine": "hf",
+    "verb": "chat",
+    "prompt_id": "ctl-recall-7",
+    "refused": null,
+    "text": "<answer>7</answer>",
+    "batch": {
+     "id": "1561581-1790187686304609197",
+     "size": 5
+    }
+   },
+   {
+    "engine": "hf",
+    "verb": "code",
+    "prompt_id": "ctl-code-add",
+    "refused": null,
+    "text": "```python\ndef add(a, b):\n    return a + b\n```",
+    "batch": {
+     "id": "1568038-1790187699317682320",
+     "size": 5
+    }
+   },
+   {
+    "engine": "hf",
+    "verb": "run",
+    "prompt_id": "ctl-2plus2",
+    "refused": null,
+    "text": "<answer>4</answer>",
+    "batch": {
+     "id": "1561581-1790187686304609197",
+     "size": 5
+    }
+   },
+   {
+    "engine": "hf",
+    "verb": "run",
+    "prompt_id": "ctl-code-add",
+    "refused": null,
+    "text": "```python\ndef add(a, b):\n    return a + b\n```",
+    "batch": {
+     "id": "1561581-1790187686304609197",
+     "size": 5
+    }
+   },
+   {
+    "engine": "hf",
+    "verb": "serve run",
+    "prompt_id": "ctl-2plus2",
+    "refused": null,
+    "text": "<answer>4</answer>",
+    "batch": {
+     "id": "1568038-1790187699317682320",
+     "size": 5
+    }
+   },
+   {
+    "engine": "hf",
+    "verb": "serve run",
+    "prompt_id": "ctl-recall-7",
+    "refused": null,
+    "text": "<answer>7</answer>",
+    "batch": {
+     "id": "1568038-1790187699317682320",
+     "size": 5
+    }
+   },
+   {
+    "engine": "hf",
+    "verb": "serve stream",
+    "prompt_id": "ctl-2plus2",
+    "refused": null,
+    "text": "<answer>4</answer>",
+    "batch": {
+     "id": "1568038-1790187699317682320",
+     "size": 5
+    }
+   },
+   {
+    "engine": "hf",
+    "verb": "serve stream",
+    "prompt_id": "ctl-recall-7",
+    "refused": null,
+    "text": "<answer>7</answer>",
+    "batch": {
+     "id": "1568038-1790187699317682320",
+     "size": 5
+    }
+   },
+   {
+    "engine": "vllm",
+    "verb": "chat",
+    "prompt_id": "ctl-2plus2",
+    "refused": null,
+    "text": "<answer>4</answer>",
+    "batch": {
+     "id": "1578258-1790187710868566801",
+     "size": 5
+    }
+   },
+   {
+    "engine": "vllm",
+    "verb": "chat",
+    "prompt_id": "ctl-code-add",
+    "refused": null,
+    "text": "```python\ndef add(a, b):\n    return a + b\n```",
+    "batch": {
+     "id": "1578258-1790187710868566801",
+     "size": 5
+    }
+   },
+   {
+    "engine": "vllm",
+    "verb": "chat",
+    "prompt_id": "ctl-recall-7",
+    "refused": null,
+    "text": "<answer>7</answer>",
+    "batch": {
+     "id": "1578258-1790187710868566801",
+     "size": 5
+    }
+   },
+   {
+    "engine": "vllm",
+    "verb": "code",
+    "prompt_id": "ctl-code-add",
+    "refused": null,
+    "text": "```python\ndef add(a, b):\n    return a + b\n```",
+    "batch": {
+     "id": "1614560-1790187803120057832",
+     "size": 5
+    }
+   },
+   {
+    "engine": "vllm",
+    "verb": "run",
+    "prompt_id": "ctl-2plus2",
+    "refused": null,
+    "text": "<answer>4</answer>",
+    "batch": {
+     "id": "1578258-1790187710868566801",
+     "size": 5
+    }
+   },
+   {
+    "engine": "vllm",
+    "verb": "run",
+    "prompt_id": "ctl-code-add",
+    "refused": null,
+    "text": "```python\ndef add(a, b):\n    return a + b\n```",
+    "batch": {
+     "id": "1578258-1790187710868566801",
+     "size": 5
+    }
+   },
+   {
+    "engine": "vllm",
+    "verb": "serve run",
+    "prompt_id": "ctl-2plus2",
+    "refused": null,
+    "text": "<answer>4</answer>",
+    "batch": {
+     "id": "1614560-1790187803120057832",
+     "size": 5
+    }
+   },
+   {
+    "engine": "vllm",
+    "verb": "serve run",
+    "prompt_id": "ctl-recall-7",
+    "refused": null,
+    "text": "<answer>7</answer>",
+    "batch": {
+     "id": "1614560-1790187803120057832",
+     "size": 5
+    }
+   },
+   {
+    "engine": "vllm",
+    "verb": "serve stream",
+    "prompt_id": "ctl-2plus2",
+    "refused": null,
+    "text": "<answer>4</answer>",
+    "batch": {
+     "id": "1614560-1790187803120057832",
+     "size": 5
+    }
+   },
+   {
+    "engine": "vllm",
+    "verb": "serve stream",
+    "prompt_id": "ctl-recall-7",
+    "refused": null,
+    "text": "<answer>7</answer>",
+    "batch": {
+     "id": "1614560-1790187803120057832",
+     "size": 5
+    }
+   }
+  ]
+ },
+ "identical_ignoring_batch_id": true,
+ "rows": 20
+}

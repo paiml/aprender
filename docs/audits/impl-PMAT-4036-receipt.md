@@ -46,7 +46,7 @@ Author: aprender-83 (claude-opus-5-5).
 **Comparison with the baseline.**
 - Run-to-run variance on the same code: `final-*` vs `head-*` is 289 vs 373 s cold and 130 vs 158 s warm. The round-1 fix changes only key contents, not what runs. Summary: 17.3 min → 4.8–6.2 min batched, and → 2.2–2.6 min on a warm cache.
 - Every GREEN leg's receipt is identical to the baseline **cell for cell**: same 32 keys, same 32 verdicts.
-- Batching changed no reference answer: all 20 hf/vLLM rows have the same text and refusal state, unbatched vs batched.
+- Batching changed no reference answer: all 20 hf/vLLM rows have the same text and refusal state, unbatched vs batched. The rows of both legs are in `evidence/crux/4036-measure/reference-texts.json` (`identical_ignoring_batch_id: true`).
 
 **A defect this measurement found.** The `warm` leg at `1b483fff6` cached llama.cpp too. It took 74 s, and its receipt was RED on 14 of 32 cells, all of them apr serve cells on raw-prompt routes ("no reference renderer was given"). Fixed in `78df5a98c`: llama.cpp is never cached. The failure was RED, never a false GREEN.
 
