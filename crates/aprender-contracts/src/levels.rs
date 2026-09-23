@@ -59,7 +59,8 @@ pub fn ladder_block() -> String {
     out.push_str(
         "\nL4 and L5 are grounded only textually until PVL-001 EV-8b lands: a claimed Lean \
          proof counts when a sorry-free Lean theorem in this tree matches it (a claim with \
-         none is reported self-declared and excluded from L4), but no checked lake \
+         none is reported self-declared and excluded from L4), a not-applicable count is \
+         taken from the contract's own verification summary, and no checked lake \
          discharge summary is read yet.\n",
     );
     out.push_str(END_MARKER);

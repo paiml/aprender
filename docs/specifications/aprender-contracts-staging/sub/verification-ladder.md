@@ -14,7 +14,7 @@ the math) and **enforcement layers** (how we enforce it in the build).
 | L2 | Falsification tests cover every obligation |
 | L1 | Contract YAML with equations |
 
-L4 and L5 are grounded only textually until PVL-001 EV-8b lands: a claimed Lean proof counts when a sorry-free Lean theorem in this tree matches it (a claim with none is reported self-declared and excluded from L4), but no checked lake discharge summary is read yet.
+L4 and L5 are grounded only textually until PVL-001 EV-8b lands: a claimed Lean proof counts when a sorry-free Lean theorem in this tree matches it (a claim with none is reported self-declared and excluded from L4), a not-applicable count is taken from the contract's own verification summary, and no checked lake discharge summary is read yet.
 <!-- end generated from ProofLevel -->
 
 ## Enforcement Layers (practical deployment, strictest first)
