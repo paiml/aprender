@@ -8,7 +8,7 @@
 # 2026-09-23: the hatch goes, coverage is RED, and the two rows that are unmeasurable by
 # CONSTRUCTION before a publish -- `publish-dry-run` (a workspace root cannot dry-run before
 # its members are on the registry) and `declared:check_multiplatform_dogfood` (no host can
-# `cargo install` a version that is not on crates.io) -- become a NAMED post-publish
+# install a version that is not on crates.io) -- become a NAMED post-publish
 # obligation, status OPEN: legal in --phase pre-publish only, only for those two names,
 # listed on the receipt as OPEN and never as passed. The post-publish dogfood runs the same
 # rows with measurements, and mark() refuses OPEN in any other phase, so an unmet obligation
