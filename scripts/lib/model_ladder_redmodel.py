@@ -404,6 +404,7 @@ class RedVerdicts:
             reference's own GPU backend). apr identical to the reference passes; the oracle's two
             backends agreeing FULLY while apr diverges is plain RED; a missing CUDA leg is plain RED;
           - apr and both llama.cpp backends all answer WRONG (`expect` absent from the final answer);
+          - apr's own CPU/GPU first divergence is >= the oracle's CPU/CUDA one (cop ruling (b));
         and the `control` (the same architecture at a higher quant) answers CORRECTLY on the same
         prompt in BOTH engines. raw.top2_logits, when present, are reported as evidence, never the bar."""
         sha = x.get("sha256") or sha_of(host, f)
@@ -478,10 +479,23 @@ class RedVerdicts:
                 if answers(r.get("generated_text"), expect):
                     p.append(f"{pid}/{th}: {n} answers CORRECTLY ({expect!r}) -- the file can answer, so the wrong answer "
                              f"is not the model's")
+            # Cop ruling (b), 2026-09-23: apr's own CPU/GPU split is calibrated like parity -- it must come
+            # no earlier than the oracle's own CPU/CUDA split on the same ids (6c: apr splits at step 31 on a
+            # 0.015 margin, the oracle at step 2).
+            d_cg = None if ca is None else _first_diff(ca["generated_ids"], a["generated_ids"])
             if ca is None:
-                p.append(f"{pid}/{th}: no apr CPU leg with raw ids in a cpu-lane receipt -- CPU == GPU is unmeasured")
-            elif ca["generated_ids"] != a["generated_ids"]:
-                p.append(f"{pid}/{th}: apr CPU and GPU DIFFER at step {_first_diff(ca['generated_ids'], a['generated_ids'])}")
+                p.append(f"{pid}/{th}: no apr CPU leg with raw ids in a cpu-lane receipt -- apr CPU vs GPU is unmeasured")
+            elif d_cg is None:
+                shown.append(f"{pid}/{th}: apr CPU == GPU")
+            elif d_ref is None:  # the oracle never split: apr CPU/GPU split is its own
+                p.append(f"{pid}/{th}: apr CPU and GPU diverge at step {d_cg}{_margins(ca, a, d_cg)} while the oracle's CPU "
+                         f"and CUDA legs agree on every token -- apr's split is its own, not shared noise")
+            elif d_cg < d_ref:
+                p.append(f"{pid}/{th}: apr CPU and GPU diverge at step {d_cg}, EARLIER than the oracle's own CPU/CUDA split "
+                         f"(step {d_ref}) -- apr's backends disagree more than the reference's do")
+            else:
+                shown.append(f"{pid}/{th}: apr CPU/GPU split at step {d_cg}{_margins(ca, a, d_cg)}, not earlier than the "
+                             f"oracle's own at step {d_ref}")
             cc = ctl.get((pid, th))
             ca2, co2 = _raw(cc, "apr"), _raw(cc, "llama.cpp@official")
             if ca2 is None or co2 is None:
@@ -492,7 +506,7 @@ class RedVerdicts:
                          f"prompt, not the quant, may be at fault")
             probs.extend(p)
         return probs, (f"wrong answer in apr and both llama.cpp backends on the official template: {'; '.join(shown)}; "
-                       f"control {cfile} answers {e['expect']!r} in both engines; apr CPU == GPU")
+                       f"control {cfile} answers {e['expect']!r} in both engines")
 
     @staticmethod
     def _prove_unsupported(x, e):
