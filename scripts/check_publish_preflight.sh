@@ -56,7 +56,13 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 die_env() { printf '%s: ENV %s\n' "$PROG" "$*" >&2; exit 2; }
 
-# The only rows a pre-publish dogfood receipt may DEFER (PMAT-745): both need the
+# #3957 F1b, operator ruling (a) 2026-09-23: DEFER is ABOLISHED. A receipt with ANY deferred
+# row is refused, whatever the phase. The two rows below are unmeasurable before a publish by
+# construction, so they are OPEN post-publish obligations (dogfood.sh POST_PUBLISH_OBLIGATIONS)
+# -- accepted in a pre-publish receipt only, and never read as passed. `coverage` is gone from
+# the list: it was deferred WORK, and it is RED now.
+PREPUBLISH_OPEN_OBLIGATIONS="publish-dry-run declared:check_multiplatform_dogfood"
+# HISTORY (superseded by the line above). The only rows a pre-publish dogfood receipt could DEFER (PMAT-745): both need the
 # crate to be ON the registry before they can be measured, so before a cascade
 # they are recorded with their obligation instead of failing by construction.
 # `coverage` added 2026-09-22 by operator ruling for 0.69.1 (#3839). It is the FIRST row
@@ -66,7 +72,6 @@ die_env() { printf '%s: ENV %s\n' "$PROG" "$*" >&2; exit 2; }
 # COV_FLOOR, and the REMOVAL of `coverage` from this line. The whitelist stays a whitelist,
 # so this does not loosen anything else; a row not named here is still refused whatever it
 # is called.
-PREPUBLISH_DEFERRABLE="publish-dry-run declared:check_multiplatform_dogfood coverage"
 
 root_version() { # root -> the root manifest's package version, from cargo metadata
     local root="$1"
@@ -97,44 +102,52 @@ newest_receipt() { # dir -> path of the newest receipt-*.json, or nothing
 # function, same verdict: the two ends cannot disagree.
 # rule_r5 root head version -> prints its row; 0 accepted, 1 refused
 rule_r5() {
-    local root="$1" head="$2" version="$3" rdir receipt verdict rcommit rversion rphase rdeferred bad_defer g
+    local root="$1" head="$2" version="$3" rdir receipt verdict rcommit rversion rphase rdeferred ropen bad_defer g
     rdir="${PUBLISH_PREFLIGHT_RECEIPT_DIR:-$root/.dogfood}"
     receipt="$(newest_receipt "$rdir")"
     if [ -z "$receipt" ]; then
         echo "FAIL  R5 no dogfood receipt under $rdir (run scripts/dogfood.sh on this commit)"
         return 1
     else
-        read -r verdict rcommit rversion rphase rdeferred < <(python3 -c '
+        read -r verdict rcommit rversion rphase rdeferred ropen < <(python3 -c '
 import json, sys
 try:
     d = json.load(open(sys.argv[1]))
 except Exception:
-    print("UNREADABLE - - - -"); sys.exit(0)
+    print("UNREADABLE - - - - -"); sys.exit(0)
 deferred = d.get("deferred") or []
+opened = d.get("open_obligations") or []
 print(d.get("verdict") or "-", d.get("commit") or "-", d.get("version") or "-",
-      d.get("phase") or "full", ",".join(str(x) for x in deferred) or "-")' "$receipt")
-        # A pre-publish receipt may DEFER only the rows that need the PUBLISHED
-        # crate (scripts/dogfood.sh --phase pre-publish). Any other deferred row
-        # is a refusal to measure, and this gate refuses with it. The set is a
-        # whitelist: a row not named here is refused, whatever it is called.
+      d.get("phase") or "full", ",".join(str(x) for x in deferred) or "-",
+      ",".join(str(x) for x in opened) or "-")' "$receipt")
+        # #3957 F1b: any deferred row refuses. An OPEN row is accepted only in a pre-publish
+        # receipt and only for the closed list; the list is a whitelist, so a row not named in
+        # it is refused whatever it is called.
         bad_defer=""
-        if [ "$rphase" = pre-publish ] && [ "$rdeferred" != "-" ]; then
+        if [ "$rdeferred" != "-" ]; then
+            printf 'FAIL  R5 dogfood receipt %s DEFERS [%s] -- DEFER is abolished (#3957 F1b): a row is measured or it is RED\n' \
+                "$(basename "$receipt")" "$rdeferred"
+            return 1
+        fi
+        if [ "$ropen" != "-" ] && [ "$rphase" != pre-publish ]; then
+            printf 'FAIL  R5 dogfood receipt %s carries OPEN obligations outside the pre-publish phase: %s -- an unmet obligation (#3957 F1b)\n' \
+                "$(basename "$receipt")" "$ropen"
+            return 1
+        elif [ "$ropen" != "-" ]; then
             # Split on commas into an array: an unquoted expansion would also
             # glob, and a gate should not depend on what files sit in its cwd.
-            local -a deferred_rows=()
-            IFS=, read -r -a deferred_rows <<< "$rdeferred"
-            for g in "${deferred_rows[@]}"; do
-                case " $PREPUBLISH_DEFERRABLE " in *" $g "*) ;; *) bad_defer="$bad_defer $g" ;; esac
+            local -a open_rows=()
+            IFS=, read -r -a open_rows <<< "$ropen"
+            for g in "${open_rows[@]}"; do
+                case " $PREPUBLISH_OPEN_OBLIGATIONS " in *" $g "*) ;; *) bad_defer="$bad_defer $g" ;; esac
             done
-        elif [ "$rphase" != pre-publish ] && [ "$rdeferred" != "-" ]; then
-            bad_defer=" $rdeferred (deferred outside the pre-publish phase)"
         fi
         if [ -n "$bad_defer" ]; then
-            printf 'FAIL  R5 dogfood receipt %s defers a row this gate does not accept:%s (accepted in --phase pre-publish: %s)\n' \
-                "$(basename "$receipt")" "$bad_defer" "$PREPUBLISH_DEFERRABLE"
+            printf 'FAIL  R5 dogfood receipt %s carries an OPEN obligation this gate does not accept:%s (accepted in --phase pre-publish: %s)\n' \
+                "$(basename "$receipt")" "$bad_defer" "$PREPUBLISH_OPEN_OBLIGATIONS"
             return 1
         elif [ "$verdict" = GO ] && [ "$rcommit" = "$head" ] && [ "$rversion" = "$version" ]; then
-            echo "ok    R5 dogfood receipt $(basename "$receipt"): GO for ${head:0:9} at $version (phase $rphase${rdeferred:+, deferred: $rdeferred})"
+            echo "ok    R5 dogfood receipt $(basename "$receipt"): GO for ${head:0:9} at $version (phase $rphase$([ "$ropen" = - ] || printf ', OPEN post-publish obligations: %s' "$ropen"))"
         else
             printf 'FAIL  R5 dogfood receipt %s: verdict=%s commit=%s version=%s (need GO, %s, %s)\n' \
                 "$(basename "$receipt")" "$verdict" "${rcommit:0:9}" "$rversion" "${head:0:9}" "${version:-?}"
@@ -351,9 +364,9 @@ selftest() {
         printf '#!/usr/bin/env bash\n[ "${1:-} ${2:-}" = "--version 1.2.3" ] || { echo "FAIL  judge asked about: $*"; exit 1; }\n[ "${FX_LADDER_RC:-0}" = 0 ] || echo "FAIL  fx-rung red on lambda"\nexit "${FX_LADDER_RC:-0}"\n' \
             > "$1/scripts/check_model_ladder.sh"
     }
-    write_receipt() { # dir, verdict, commit, version [, phase, deferred-json-array]
-        printf '{"crate":"preflight-fixture","version":"%s","timestamp":"20260903T000000Z","commit":"%s","gates":[],"phase":"%s","deferred":%s,"verdict":"%s"}\n' \
-            "$4" "$3" "${5:-full}" "${6:-[]}" "$2" > "$1/.dogfood/receipt-20260903T000000Z.json"
+    write_receipt() { # dir, verdict, commit, version [, phase, deferred-json-array, open-obligations-json-array]
+        printf '{"crate":"preflight-fixture","version":"%s","timestamp":"20260903T000000Z","commit":"%s","gates":[],"phase":"%s","deferred":%s,"open_obligations":%s,"verdict":"%s"}\n' \
+            "$4" "$3" "${5:-full}" "${6:-[]}" "${7:-[]}" "$2" > "$1/.dogfood/receipt-20260903T000000Z.json"
     }
     # A throwaway WORKSPACE: root package plus members a and b, where a has a
     # dev-dependency on b declared either path-only or with a version (R6).
@@ -448,10 +461,28 @@ selftest() {
     d="$tmp/lookalike"; build_repo "$d"; git -C "$d" tag -d v1.2.3 >/dev/null; git -C "$d" tag v1-2-3
     row tag_lookalike_refuses          1 "FAIL  R3" "$d"
 
-    # R5, pre-publish phase: the two registry-bound rows may be deferred, nothing else.
+    # R5 (#3957 F1b, operator ruling (a)): DEFER is abolished -- ANY deferred row refuses,
+    # including the two registry-bound rows and coverage, which this list used to admit. Those
+    # two rows are now OPEN post-publish obligations, accepted in pre-publish only.
     d="$tmp/prepub-ok"; build_repo "$d"
+    write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3 pre-publish '[]' '["publish-dry-run","declared:check_multiplatform_dogfood"]'
+    row prepublish_open_obligations_pass 0 "PASS" "$d"
+
+    d="$tmp/prepub-defer-registry"; build_repo "$d"
     write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3 pre-publish '["publish-dry-run","declared:check_multiplatform_dogfood"]'
-    row prepublish_allowed_deferrals_pass 0 "PASS" "$d"
+    row prepublish_registry_deferral_refuses 1 "DEFER is abolished" "$d"
+
+    d="$tmp/prepub-defer-coverage"; build_repo "$d"
+    write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3 pre-publish '["coverage"]'
+    row prepublish_coverage_deferral_refuses 1 "DEFER is abolished" "$d"
+
+    d="$tmp/prepub-open-coverage"; build_repo "$d"
+    write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3 pre-publish '[]' '["publish-dry-run","coverage"]'
+    row prepublish_unlisted_open_refuses 1 "OPEN obligation this gate does not accept: coverage" "$d"
+
+    d="$tmp/full-open"; build_repo "$d"
+    write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3 full '[]' '["publish-dry-run"]'
+    row open_outside_prepublish_refuses 1 "OPEN obligations outside the pre-publish phase" "$d"
 
     d="$tmp/prepub-bad"; build_repo "$d"
     write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3 pre-publish '["publish-dry-run","bashrs"]'

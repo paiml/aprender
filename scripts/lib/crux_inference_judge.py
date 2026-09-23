@@ -8,28 +8,30 @@ The split is deliberate. The judge is the part the case table
 (scripts/check_crux_inference_judge.sh) can drive with fixtures, with no model,
 GPU or comparator, in milliseconds.
 
-THE ONE RULE (issue #3739 done_when 3). A cell is keyed by (model sha256, host,
-verb, thinking, rung, prompt). It is RED when llama.cpp OR ollama answered it
-correctly and apr did not. "apr did not" includes every way of not answering:
-a non-zero exit, a backend that fell back to one the lane did not ask for, a
-refusal, output the judge cannot parse, and an apr row that is simply MISSING.
-Absence is a violation here, never a skip.
+THE RULE (#3957 F6, the quorum-revised CRUX oracle). A cell is keyed by (model sha256, host,
+verb, thinking, rung, prompt) and is GREEN or RED -- there is no third state (operator 2026-09-23,
+"no defer"). It is GREEN only when ALL of these hold, and RED naming every one that does not:
 
-The other outcomes:
-  GREEN      apr correct, and at least one comparator ANSWERED (right or wrong)
-  UNJUDGED   no comparator answered, so there is no external oracle for the cell
-  ALL_WRONG  the comparators answered, none correctly, and apr was wrong too
-ANY UNJUDGED cell declines the run (exit 2): it was never compared, and the
-amended scope makes a missing cell a NO-GO.
+  1. apr answered, and its answer is CORRECT under the prompt's oracle (scripts/lib/crux_oracles.py:
+     the constrained <answer>X</answer>, think blocks stripped, an unclosed think block RED). A v1
+     `expect_any` prompt is a substring oracle and is RED ("not Paris" contains "Paris").
+  2. SAME-REPRESENTATION: the engines that read the IDENTICAL weights -- the ggml family
+     (llama.cpp, ollama, llamafile: ONE vote, they share llama.cpp's code) for a GGUF, hf/vLLM for
+     SafeTensors -- answered, agree with each other, and agree with apr on the EXTRACTED answer.
+     A .apr has no such engine; it is proven only through its chain (check_model_ladder F8).
+  3. GROUND TRUTH: a bf16 control (hf or vLLM) answered, and every one that did is correct. The
+     control proves the prompt is answerable; it never votes against a quantized answer.
 
-ALL_WRONG is NAMED, never a violation and never a pass (the cop's ruling, #3739:
-the bar is "apr right wherever a competitor is right"). Two things keep it from
-becoming the escape: the receipt counts ALL_WRONG per model, and the prompt set
-must declare a POSITIVE CONTROL (`"control": true`), a prompt the smallest model
-answers right on every engine. Every model must have a measured control cell.
-A control cell that comes back ALL_WRONG is a broken harness, not a model
-limitation, and declines the run; so does a model with no control cell, and a
-prompt set that declares no control at all.
+"apr did not answer" includes a non-zero exit, a backend fallback, a refusal, unparseable
+output, a DEGENERATE completion (one character >= 90%, or a multi-character token loop,
+#3971) and a MISSING row. ALL_WRONG is recorded as a flag on a RED cell, never its own verdict.
+
+CONTROLS. Every (model, host, verb, thinking) must have a POSITIVE control cell (`"control": true`);
+one missing declines the run (exit 2). Per verb, the judge plants a wrong apr answer (the prompt's
+`negative`) into a GREEN control cell and must see RED; a lane that cannot see a wrong answer
+declines the run. A v2 prompt set is used only with its certification receipt (#3962 J2,
+`--certification`); an uncertified set declines. Exit 2 is never green (check_model_ladder
+refuses a DECLINED receipt).
 
 PERFORMANCE IS TRANSCRIBED, NEVER COMPUTED. Token counts and rates are copied
 from what each engine prints about itself, labelled with the engine that
@@ -40,7 +42,7 @@ writes is an input to the verdict.
 Usage:
   crux_inference_judge.py collect --manifest M --prompts P --meta META \\
       --out-json R.json --out-md R.md
-Exit: 0 no RED, no UNJUDGED, every model's control measured and not ALL_WRONG;
+Exit: 0 every cell GREEN, every lane controlled both ways, the prompt set certified;
 1 any RED; 2 decline.
 """
 
@@ -49,11 +51,14 @@ import ast
 import datetime
 import json
 import math
+import os
 import re
 import struct
 import sys
 
-COMPARATORS = ("llama.cpp", "ollama", "hf", "llamafile")
+COMPARATORS = ("llama.cpp", "ollama", "hf", "llamafile", "vllm")
+# Plugin engines write row contract v1 through their own driver (scripts/crux_engine_<e>.*).
+PLUGIN_ENGINES = ("hf", "llamafile", "vllm")
 ENGINES = ("apr",) + COMPARATORS
 
 #: Why an engine produced nothing (#3832). These are NOT interchangeable and the
@@ -142,8 +147,12 @@ def engine_versions(meta):
         "ollama": ol.get("server_version"),
         "llama.cpp": lc.get("build"),
     }
-    for eng in ("hf", "llamafile"):
-        out[eng] = (meta.get(eng) or {}).get("version")
+    # A plugin engine's version IS its probe line (the producer writes `probe`, never `version`): this read
+    # `version` alone, so every plugin cell carried version None and no receipt could say which hf, llamafile
+    # or vllm had vouched (#3952).
+    for eng in PLUGIN_ENGINES:
+        m = meta.get(eng) or {}
+        out[eng] = m.get("version") or m.get("probe")
     return {k: v for k, v in out.items()}
 
 
@@ -287,7 +296,7 @@ def parse_apr_chat(stdout):
 
 
 def parse_engine_json(stdout):
-    """hf and llamafile rows (row contract v1, #3739 issuecomment-5765991210):
+    """Plugin-engine rows — hf, llamafile, vllm (row contract v1, #3739 issuecomment-5765991210):
     the engine driver writes `{"text": <the answer only>, "reported": {...}}`."""
     out = {"answer": None, "why": None, "reported": {}}
     try:
@@ -320,11 +329,79 @@ def degenerate(text):
     if len(chars) < 8:
         return False
     top = max(chars.count(ch) for ch in set(chars))
-    return top >= 0.9 * len(chars)
+    return top >= 0.9 * len(chars) or token_loop(text) is not None
 
 
-def correct(entry, expect_any):
-    return entry.get("answered", False) and any(p in (entry.get("answer") or "") for p in expect_any)
+def token_loop(text):
+    """#3957 F6 / #3971: a MULTI-character loop is no answer either. Measured live: vLLM on a
+    poisoned HF cache answered "NavControllerNavController..." (64 tokens) in every cell, and the
+    one-character rule above scored it ANSWERED, so it corroborated apr 4/4. The signal is
+    output_verification.rs's repeated-fragment rule, which scripts/model_ladder.sh mirrors: a
+    fragment of 4..16 bytes repeated three times back to back. A fragment that is all whitespace
+    or one repeated character is left to the rule above -- indentation is not a loop.
+    -> the fragment, or None."""
+    b = (text or "").encode("utf-8", "replace")
+    if len(b) < 12:
+        return None
+    for fl in range(4, min(16, len(b) // 3) + 1):
+        for i in range(0, len(b) - fl * 3 + 1):
+            f = b[i:i + fl]
+            if len(set(f)) < 2 or not f.strip():
+                continue
+            if b[i + fl:i + 2 * fl] == f and b[i + 2 * fl:i + 3 * fl] == f:
+                return f.decode("utf-8", "replace")
+    return None
+
+
+# ------------------------------------------------------------ the oracle (#3957 F6) --
+# Operator 2026-09-23: "CRUX is critical here, as we need quorum our style on them, as we could
+# test 'the happy path'". Quorum review of that design: do-not-implement-as-written, 2/2; the
+# revision (#3957 comment 5790953724) and the cop's corrections are what this implements:
+#   Q1  no UNJUDGED -- a cell is GREEN or RED. A split, a missing oracle, a failed control: RED.
+#   Q2  two oracles. SAME-REPRESENTATION: apr against the engines that read the IDENTICAL weights
+#       (GGUF: the ggml family; SafeTensors: hf/vLLM), compared on the EXTRACTED answer.
+#       GROUND TRUTH: the prompt's verifiable answer; hf/vLLM at bf16 are the control that the
+#       prompt is answerable, never a vote against a quantized token stream.
+#   Q3  the answer is the constrained <answer>X</answer> (scripts/lib/crux_oracles.py, #3962),
+#       never a substring: "not Paris" contains "Paris". A v1 `expect_any` prompt is RED.
+#   Q5  a think block is stripped before judging; an UNCLOSED one is RED (budget exhausted).
+# ggml family = llama.cpp + ollama + llamafile: they share llama.cpp's code, so they are ONE vote.
+import crux_oracles  # noqa: E402  (scripts/lib is this file's own directory)
+
+FAMILY = {"llama.cpp": "ggml", "ollama": "ggml", "llamafile": "ggml", "hf": "bf16", "vllm": "bf16"}
+SAME_REP = {"gguf": "ggml", "safetensors": "bf16"}
+V1_WHY = ("v1 prompt: `expect_any` is a substring oracle, not a constrained <answer> -- \"not Paris\" "
+          "contains \"Paris\" (#3957 Q3); certify a v2 prompt (#3962)")
+
+
+def model_format(name):
+    f = (name or "").lower()
+    if f.endswith(".gguf"):
+        return "gguf"
+    if f.endswith(".apr"):
+        return "apr"
+    if f.endswith(".safetensors") or "safetensors" in f:
+        return "safetensors"
+    return None
+
+
+def spoke(entry):
+    """Answered -- or produced a DEGENERATE completion, which is garbage said, not silence."""
+    return bool(entry.get("answered")) or str(entry.get("why") or "").startswith("degenerate")
+
+
+def oracle_eval(prompt, entry):
+    """-> {"correct", "extracted", "why"} for one engine's entry, through the one oracle."""
+    if not entry.get("answered"):
+        return {"correct": False, "extracted": None, "why": entry.get("why") or "did not answer"}
+    if "oracle" not in prompt:
+        return {"correct": False, "extracted": None, "why": V1_WHY}
+    turns = entry.get("turns") or None
+    text = entry.get("answer")
+    v = crux_oracles.evaluate(prompt, text, turns)
+    judged = turns[-1] if (turns and prompt["oracle"].get("type") == "state_recall") else text
+    return {"correct": bool(v.get("correct")), "why": v.get("why"),
+            "extracted": crux_oracles.extract(prompt, judged)}
 
 
 def engine_entry(row, prompt):
@@ -373,7 +450,7 @@ def engine_entry(row, prompt):
         p = parse_llamacpp_cli(stdout, content)
     elif engine == "ollama":
         p = parse_ollama(stdout, stderr)
-    elif engine in ("hf", "llamafile"):
+    elif engine in PLUGIN_ENGINES:
         p = parse_engine_json(stdout)
         if row.get("source"):
             e["source"] = row["source"]
@@ -395,7 +472,7 @@ def engine_entry(row, prompt):
     if be and (be.get("fell_back") or (row.get("backend") and be.get("ran") != row.get("backend"))):
         e["why"] = "backend: asked %s, ran %s (fell_back=%s)" % (row.get("backend"), be.get("ran"), be.get("fell_back"))
         return e
-    if engine in ("hf", "llamafile"):
+    if engine in PLUGIN_ENGINES:
         # A plugin engine is held to the lane as apr is. The integration run's
         # cpu lane got `!` x64 from an HF load that went to CUDA anyway (and
         # outside the GPU lock). The device must be REPORTED: an unverifiable
@@ -541,7 +618,8 @@ def judge_deterministic(rows, kind):
                     "references_producing": len(produced),
                     "apr_produced": apr_val is not None}
         if not produced:
-            verdict = "UNJUDGED"
+            # #3957 Q1: no UNJUDGED. A parity cell no reference produced is non-corroboration: RED.
+            verdict = "RED"
         elif apr_val is None or any(not refs[e]["equal"] for e in produced):
             verdict = "RED"
         else:
@@ -626,44 +704,68 @@ def cell_quorum(entries):
     }
 
 
-def judge_cell(entries, expect_any):
-    ok = {k: correct(v, expect_any) for k, v in entries.items()}
-    answered = {k: v.get("answered", False) for k, v in entries.items()}
+def judge_cell(entries, prompt, fmt):
+    """-> (verdict GREEN|RED, {engine: correct}, [reasons], {engine: extracted}). GREEN only when no
+    reason stands: apr correct, the same-representation family agreeing with apr on the extracted
+    answer, and a ground-truth control that answered correctly. Everything else is RED, named."""
+    ev = {e: oracle_eval(prompt, v) for e, v in entries.items()}
+    ok = {e: ev[e]["correct"] for e in entries}
+    ext = {e: ev[e]["extracted"] for e in entries if entries[e].get("answered")}
+    why = []
+    a = entries["apr"]
+    if not a.get("answered"):
+        why.append("apr did not answer: %s" % (a.get("why") or "no row"))
+    elif not ok["apr"]:
+        why.append("apr is wrong: %s" % ev["apr"]["why"])
+    fam = SAME_REP.get(fmt)
+    if fam is None:
+        why.append("no same-representation oracle: no engine but apr reads a %s file -- a .apr is proven only "
+                   "through its chain to its source (#3957 F8)" % (fmt or "format-unknown"))
+    else:
+        same = [e for e in COMPARATORS if FAMILY.get(e) == fam and spoke(entries[e])]
+        vals = {e: (ext.get(e) if entries[e].get("answered") else "<degenerate>") for e in same}
+        if not same:
+            why.append("no same-representation oracle: no %s-family engine answered on the identical weights "
+                       "(#3957 Q2)" % fam)
+        elif len(set(vals.values())) > 1 or None in vals.values():
+            why.append("same-representation SPLIT %s -- a split is RED, never a prompt swap (#3957 Q1)"
+                       % json.dumps(vals, ensure_ascii=False))
+        elif a.get("answered") and ext.get("apr") != next(iter(vals.values())):
+            why.append("apr differs from the %s family on the identical weights: apr %r vs %r (#3957 Q2)"
+                       % (fam, ext.get("apr"), next(iter(vals.values()))))
+    ctl = [e for e in COMPARATORS if FAMILY.get(e) == "bf16" and spoke(entries[e])]
+    if not ctl:
+        why.append("no ground-truth control: neither hf nor vllm answered, so nothing shows this prompt is "
+                   "answerable (#3957 Q2)")
+    else:
+        bad = [e for e in ctl if not ok[e]]
+        if bad:
+            why.append("ground-truth control FAILED (%s) -- a control that cannot answer vouches for nothing; "
+                       "the prompt or the control engine is broken (#3957 Q2, #3971)"
+                       % "; ".join("%s: %s" % (e, ev[e]["why"]) for e in bad))
+    return ("RED" if why else "GREEN"), ok, why, ext
 
-    # THE FLOOR IS ASYMMETRIC, and that is a correction to #3832 as I first
-    # wrote it. I implemented the rule literally — "a cell judged on fewer than
-    # two engines is UNJUDGED", checked before any comparison — and the case
-    # table turned SEVEN legitimate REDs into UNJUDGED in one run, among them
-    # "a missing apr row where llama.cpp is right is RED", which is CRUX's whole
-    # reason to exist. The fixtures were right and the rule was wrong.
-    #
-    # The asymmetry is not a compromise, it is the actual logic:
-    #
-    #   RED  needs ONE comparator. "llama.cpp answered correctly and apr did
-    #        not" is a complete claim on its own — the oracle spoke and apr
-    #        failed it. Requiring a second engine would suppress exactly the
-    #        finding CRUX was built for, and every way apr fails to answer (a
-    #        fallback, exit 14, a degenerate completion, a missing row) is a
-    #        cell where only one engine answered BY CONSTRUCTION.
-    #
-    #   GREEN and ALL_WRONG need an ORACLE. apr being right about itself is not
-    #        evidence, so a cell no comparator answered stays UNJUDGED.
-    #
-    # So the guarantee is "apr can never be GREEN on its own word", which is what
-    # the floor was for; the count is recorded on the cell either way, so a
-    # reader can see the coverage behind any verdict rather than infer it.
-    if any(ok.get(c) for c in COMPARATORS) and not ok.get("apr"):
-        return "RED", ok
-    if not any(answered.get(c) for c in COMPARATORS):
-        return "UNJUDGED", ok
-    if ok.get("apr"):
-        return "GREEN", ok
-    return "ALL_WRONG", ok
+
+def certification_ok(prompts_path, receipt_path):
+    """#3962 J2 through the certifier's own `check` -> True, or the reason it refused."""
+    if not receipt_path:
+        return "no --certification receipt was given"
+    import contextlib
+    import io
+    import crux_prompt_certify as mod   # through sys.path, as crux_oracles is -- never by this file's location
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            rc = mod.check(argparse.Namespace(prompts=prompts_path, receipt=receipt_path))
+    except (OSError, ValueError, KeyError) as exc:
+        return "certification unreadable: %s" % exc
+    return True if rc == 0 else (buf.getvalue().strip() or "refused (rc %s)" % rc)
 
 
 def collect(args):
     with open(args.prompts, encoding="utf-8") as fh:
-        prompts = {p["id"]: p for p in json.load(fh)["prompts"]}
+        pdoc = json.load(fh)
+    prompts = {p["id"]: p for p in pdoc["prompts"]}
     with open(args.meta, encoding="utf-8") as fh:
         meta = json.load(fh)
     rows = []
@@ -685,6 +787,9 @@ def collect(args):
     # under active development. Keyed by sha so a rename cannot silently drop it.
     subject_dev = {m.get("sha256"): m.get("under_development")
                    for m in (meta.get("models") or []) if m.get("under_development")}
+    # #3957 Q2: the FORMAT picks the same-representation oracle. From the row, else the model's name.
+    fmt_of_model = {m.get("sha256"): (m.get("format") or model_format(m.get("name")))
+                    for m in (meta.get("models") or [])}
 
     keys = []
     by_key = {}
@@ -692,7 +797,9 @@ def collect(args):
         # serve cells come in two modes (nonstream, stream): an additive key part,
         # absent for run and chat. Plugin serve rows are non-streaming.
         mode = r.get("mode") or ("nonstream" if r["verb"] == "serve run" else "")
-        k = (r["model_sha256"], r["host"], r["verb"], r["thinking"], prompts[r["prompt_id"]]["rung"], r["prompt_id"], mode)
+        pr = prompts[r["prompt_id"]]
+        k = (r["model_sha256"], r["host"], r["verb"], r["thinking"], pr.get("rung") or pr.get("tier") or "v2",
+             r["prompt_id"], mode)
         if k not in by_key:
             keys.append(k)
             by_key[k] = {}
@@ -709,7 +816,15 @@ def collect(args):
                                 "why": "missing: no row for this engine" if eng in requested else "not requested"}
             else:
                 entries[eng] = engine_entry(row, prompt)
-        verdict, ok = judge_cell(entries, prompt["expect_any"])
+                # #3952: a comparator the receipt cannot name a version for cannot vouch — for apr or against
+                # it. Its answer is kept on the record; it is not an oracle.
+                if eng in COMPARATORS and entries[eng].get("answered") and not versions.get(eng):
+                    entries[eng]["answered"] = False
+                    entries[eng]["why"] = ("unpinned: the run's meta records no version for %s, so a verdict it "
+                                           "vouched for could not name what produced it" % eng)
+        fmt = next((by_key[k][e].get("format") for e in by_key[k] if by_key[k][e].get("format")), None) \
+            or fmt_of_model.get(k[0])
+        verdict, ok, reasons, extracted = judge_cell(entries, prompt, fmt)
         for eng in ENGINES:
             entries[eng]["correct"] = ok[eng]
             # #3832: one indivisible record per engine — WHICH engine, at WHICH
@@ -723,6 +838,12 @@ def collect(args):
             "key": dict(zip(("model_sha256", "host", "verb", "thinking", "rung", "prompt_id"), k[:6]),
                         **({"mode": k[6]} if k[6] else {})),
             "verdict": verdict,
+            # #3957: why a cell is RED, every reason, and what each engine's answer extracted to.
+            "reasons": reasons,
+            "format": fmt,
+            "extracted": extracted,
+            "all_wrong": verdict == "RED" and not any(ok.get(e) for e in ENGINES)
+                         and any(v.get("answered") for v in entries.values()),
             # #3832: the cell states its own coverage, so a reader never has to
             # infer how many engines produced the verdict they are reading.
             "quorum": cell_quorum(entries),
@@ -741,7 +862,8 @@ def collect(args):
             },
             # additive (aprender-97, #3715): pv reads the control by this flag, never by a prompt name
             "positive_control": bool(prompt.get("control")),
-            "expect_any": prompt["expect_any"],
+            "oracle": prompt.get("oracle"),
+            **({"expect_any": prompt["expect_any"]} if "expect_any" in prompt else {}),
             "engines": entries,
             "agreement": {
                 "answered": sorted(said),
@@ -752,39 +874,56 @@ def collect(args):
                              else {"measured": False, "why": "not measured for the %s verb" % k[2]}),
         })
 
-    counts = {v: sum(1 for c in cells if c["verdict"] == v) for v in ("RED", "GREEN", "UNJUDGED", "ALL_WRONG")}
-    judged = counts["RED"] + counts["GREEN"] + counts["ALL_WRONG"]
+    counts = {v: sum(1 for c in cells if c["verdict"] == v) for v in ("RED", "GREEN")}
+    counts["ALL_WRONG"] = sum(1 for c in cells if c.get("all_wrong"))   # a SUBSET of RED (#3957 F6), never its own state
+    judged = counts["RED"] + counts["GREEN"]
     all_wrong_by_model = {}
     for c in cells:
-        if c["verdict"] == "ALL_WRONG":
+        if c.get("all_wrong"):
             k = c["key"]["model_sha256"]
             all_wrong_by_model[k] = all_wrong_by_model.get(k, 0) + 1
     controls = [pid for pid, p in prompts.items() if p.get("control")]
-    broken = sorted({"%s/%s" % (c["key"]["model_sha256"][:12], c["key"]["prompt_id"])
-                     for c in cells if c["key"]["prompt_id"] in controls and c["verdict"] == "ALL_WRONG"})
-    models = sorted({c["key"]["model_sha256"] for c in cells})
-    uncontrolled = [m[:12] for m in models
-                    if not any(c["key"]["model_sha256"] == m and c["key"]["prompt_id"] in controls for c in cells)]
+    # #3957 F6: ONE positive control per (model, host, verb, thinking) -- a control measured on
+    # `run` says nothing about whether the `chat` lane can see a right answer.
+    lanes = sorted({(c["key"]["model_sha256"], c["key"]["host"], c["key"]["verb"], c["key"]["thinking"]) for c in cells})
+    uncontrolled = ["%s/%s/%s/%s" % (m[:12], h, v, t) for (m, h, v, t) in lanes
+                    if not any((c["key"]["model_sha256"], c["key"]["host"], c["key"]["verb"], c["key"]["thinking"])
+                               == (m, h, v, t) and c["positive_control"] for c in cells)]
+    # #3957 F6 / J3: a NEGATIVE control per verb. The judge plants a wrong apr answer into a GREEN
+    # control cell of that verb and must see RED; a lane that cannot see a wrong answer vouches
+    # for nothing. The planted text is the prompt's own `negative` (#3962), else a fixed non-answer.
+    negative = {}
+    for verb in sorted({c["key"]["verb"] for c in cells}):
+        ctl = next((c for c in cells if c["key"]["verb"] == verb and c["positive_control"] and c["verdict"] == "GREEN"), None)
+        if ctl is None:
+            continue   # no GREEN control for this verb: the run is RED or uncontrolled already
+        planted = prompts[ctl["key"]["prompt_id"]].get("negative") or "<answer>__crux_negative_control__</answer>"
+        ents = {e: dict(v) for e, v in ctl["engines"].items()}
+        ents["apr"] = dict(ents["apr"], answered=True, answer=planted, why=None,
+                           turns=(ents["apr"].get("turns") or [])[:-1] + [planted] if ents["apr"].get("turns") else None)
+        nv = judge_cell(ents, prompts[ctl["key"]["prompt_id"]], ctl["format"])[0]
+        negative[verb] = {"prompt_id": ctl["key"]["prompt_id"], "planted": planted, "verdict": nv}
+    blind = sorted(v for v, r in negative.items() if r["verdict"] != "RED")
+    # #3962 J2: a v2 prompt set is used only under the certification receipt that covers its bytes.
+    certified = None
+    if pdoc.get("schema") == "crux-inference-prompts/v2":
+        certified = certification_ok(args.prompts, getattr(args, "certification", None))
     declined_because = None
     if not controls:
         declined_because = "the prompt set declares no positive control (\"control\": true)"
     elif not cells:
         declined_because = "no cell was measured"
     elif uncontrolled:
-        declined_because = "no positive-control cell was measured for model(s) " + ", ".join(uncontrolled)
-    elif broken:
-        declined_because = "positive control came back ALL_WRONG (a broken harness, not a model limit): " + ", ".join(broken)
-    det_counts = {v: sum(1 for d in det if d["verdict"] == v) for v in ("RED", "GREEN", "UNJUDGED")}
+        declined_because = "no positive-control cell for (model/host/verb/thinking) " + ", ".join(uncontrolled)
+    elif blind:
+        declined_because = ("negative control: a planted wrong apr answer was NOT judged RED for verb(s) %s -- "
+                            "the lane cannot see a wrong answer" % ", ".join(blind))
+    elif certified is not None and certified is not True:
+        declined_because = "the v2 prompt set is not certified: %s (#3962 J2)" % certified
+    det_counts = {v: sum(1 for d in det if d["verdict"] == v) for v in ("RED", "GREEN")}
     if counts["RED"] or det_counts["RED"]:
         verdict, rc = "RED", 1
     elif declined_because:
-        verdict, rc = "DECLINE", 2
-    elif counts["UNJUDGED"] or det_counts["UNJUDGED"]:
-        # An UNJUDGED cell was never compared to anything: under the amended
-        # scope (#3739, 17:19Z) "a missing cell is a NO-GO", and an unmeasured
-        # cell is a missing one. (A run with no GREEN cannot reach PASS: every
-        # model has a control cell, and a control that is not RED, UNJUDGED or
-        # ALL_WRONG is GREEN.)
         verdict, rc = "DECLINE", 2
     else:
         verdict, rc = "PASS", 0
@@ -796,7 +935,8 @@ def collect(args):
         "deterministic": det,
         "greedy": greedy,
         "summary": dict(counts, cells=len(cells), judged=judged, verdict=verdict, deterministic=det_counts,
-                        all_wrong_by_model=all_wrong_by_model, controls=controls,
+                        all_wrong_by_model=all_wrong_by_model, controls=controls, negative_controls=negative,
+                        certified=certified,
                         declined_because=declined_because if verdict == "DECLINE" else None),
     })
     with open(args.out_json, "w", encoding="utf-8") as fh:
@@ -819,13 +959,13 @@ def render_md(r):
     lines = [
         "# CRUX inference dogfood: %s on %s (%s lane)" % (r.get("version"), r.get("host"), r.get("backend")),
         "",
-        "apr `%s` · llama.cpp `%s` · ollama `%s` · hf `%s` · llamafile `%s` · judged %s" % (
+        "apr `%s` · llama.cpp `%s` · ollama `%s` · hf `%s` · llamafile `%s` · vllm `%s` · judged %s" % (
             r.get("apr", {}).get("version_line"), r.get("llama_cpp", {}).get("build"),
             r.get("ollama", {}).get("server_version"), r.get("hf", {}).get("probe"),
-            r.get("llamafile", {}).get("probe"), r["judged_at"]),
+            r.get("llamafile", {}).get("probe"), r.get("vllm", {}).get("probe"), r["judged_at"]),
         "",
-        "**%s**: %d cells, %d RED, %d GREEN, %d ALL_WRONG, %d UNJUDGED." % (
-            s["verdict"], s["cells"], s["RED"], s["GREEN"], s["ALL_WRONG"], s["UNJUDGED"]),
+        "**%s**: %d cells, %d RED (%d of them ALL_WRONG), %d GREEN." % (
+            s["verdict"], s["cells"], s["RED"], s["ALL_WRONG"], s["GREEN"]),
         "",
         "| model | verb | thinking | prompt | verdict | %s | token parity |" % " | ".join(ENGINES),
         "|---|---|---|---|---|%s---|" % ("---|" * len(ENGINES)),
@@ -875,6 +1015,7 @@ def main(argv):
     c = sub.add_parser("collect")
     for flag in ("--manifest", "--prompts", "--meta", "--out-json", "--out-md"):
         c.add_argument(flag, required=True)
+    c.add_argument("--certification", default=None, help="#3962 J2: the prompt-certification receipt for a v2 set")
     args = ap.parse_args(argv)
     try:
         return collect(args)
