@@ -646,7 +646,16 @@ ladder_serve_teardown() { # <wrapper-pid> <port> -> prints clean|escalated|faile
 # load can be silent for minutes, and a log-only rule would call it hung. A loading
 # process burns CPU; a hung one does not.
 #
-# Prints one of:  ready <s> | died <s> | stalled <s> | ceiling <s>
+# #4015: the clocks above start when the GPU LOCK is ACQUIRED, not at launch. `apr_locked`
+# is `flock … choom … apr serve`; while another job holds the lock, flock sleeps and
+# `apr serve` does not exist yet, so the log and the CPU are both quiet and the old rule
+# read a contended card as a hung server (gx10 q4k.apr, 2026-09-23). The lock wait has
+# its own bound and its own verdict, `lock_wait`, never `stalled`. A third progress
+# signal, bytes read from storage, covers a load that pages a model in from disk with
+# little CPU.
+#
+# Prints:  <verdict> <lock-wait-s> <s-since-acquired>
+#   verdict: ready | died | stalled | ceiling | lock_wait
 ladder_tree_jiffies() { # <pid> -> utime+stime summed over pid and every descendant
     local -a frontier next c
     local p total=0 f
@@ -665,25 +674,61 @@ ladder_tree_jiffies() { # <pid> -> utime+stime summed over pid and every descend
     printf '%s' "$total"
 }
 
-ladder_serve_wait_health() { # <wrapper-pid> <port> <log> <stall-s> <ceiling-s>
-    local pid="$1" port="$2" log="$3" stall="$4" ceiling="$5"
-    local waited=0 quiet=0 size last_size=-1 jif last_jif=-1
+ladder_tree_read_bytes() { # <pid> -> read_bytes (fetched from storage) summed over pid and descendants
+    local -a frontier next c
+    local p total=0 k v
+    frontier=("$1")
+    while [ "${#frontier[@]}" -gt 0 ]; do
+        next=()
+        for p in "${frontier[@]}"; do
+            while read -r k v; do
+                [ "$k" = "read_bytes:" ] && total=$((total + v))
+            done < "/proc/$p/io" 2>/dev/null || true
+            mapfile -t c < <(pgrep -P "$p" 2>/dev/null)
+            next+=("${c[@]}")
+        done
+        frontier=("${next[@]}")
+    done
+    printf '%s' "$total"
+}
+
+ladder_lock_acquired() { # <wrapper-pid>: 0 once the flock in the wrapper has started its command
+    local pid="$1" f comm
+    comm=$(cat "/proc/$pid/comm" 2>/dev/null) || return 1
+    # `cmd &` makes $! the flock itself; a backgrounded FUNCTION (apr_locked) makes it a
+    # subshell whose child is the flock.
+    if [ "$comm" = flock ]; then f="$pid"; else f=$(pgrep -P "$pid" -x flock 2>/dev/null | head -1); fi
+    [ -n "$f" ] && pgrep -P "$f" >/dev/null 2>&1
+}
+
+ladder_serve_wait_health() { # <wrapper-pid> <port> <log> <stall-s> <ceiling-s> <lock-wait-s>
+    local pid="$1" port="$2" log="$3" stall="$4" ceiling="$5" lockw="$6"
+    local waited=0 quiet=0 size last_size=-1 jif last_jif=-1 rb last_rb=-1 locked=0
+    # Phase 1 (#4015): queued behind the GPU lock. Only the lock bound runs here.
+    until ladder_lock_acquired "$pid"; do
+        # flock gave up (-w, exit 75) or failed without ever starting the server.
+        if ! kill -0 "$pid" 2>/dev/null; then printf 'lock_wait %s 0' "$locked"; return 1; fi
+        if [ "$locked" -ge "$lockw" ]; then printf 'lock_wait %s 0' "$locked"; return 1; fi
+        sleep 1; locked=$((locked + 1))
+    done
+    # Phase 2: the server exists. Stall and ceiling count from here.
     while :; do
         if curl -fsS --max-time 2 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
-            printf 'ready %s' "$waited"; return 0
+            printf 'ready %s %s' "$locked" "$waited"; return 0
         fi
         # A server that dies mid-load is RED now, not after a stall window: the
         # wrapper (flock) exits only once its child has.
-        if ! kill -0 "$pid" 2>/dev/null; then printf 'died %s' "$waited"; return 1; fi
+        if ! kill -0 "$pid" 2>/dev/null; then printf 'died %s %s' "$locked" "$waited"; return 1; fi
         size=$(stat -c %s "$log" 2>/dev/null || printf 0)
         jif=$(ladder_tree_jiffies "$pid")
-        if [ "$size" != "$last_size" ] || [ "$jif" != "$last_jif" ]; then
-            quiet=0; last_size="$size"; last_jif="$jif"
+        rb=$(ladder_tree_read_bytes "$pid")
+        if [ "$size" != "$last_size" ] || [ "$jif" != "$last_jif" ] || [ "$rb" != "$last_rb" ]; then
+            quiet=0; last_size="$size"; last_jif="$jif"; last_rb="$rb"
         else
             quiet=$((quiet + 1))
         fi
-        if [ "$quiet" -ge "$stall" ]; then printf 'stalled %s' "$waited"; return 1; fi
-        if [ "$waited" -ge "$ceiling" ]; then printf 'ceiling %s' "$waited"; return 1; fi
+        if [ "$quiet" -ge "$stall" ]; then printf 'stalled %s %s' "$locked" "$waited"; return 1; fi
+        if [ "$waited" -ge "$ceiling" ]; then printf 'ceiling %s %s' "$locked" "$waited"; return 1; fi
         sleep 1; waited=$((waited + 1))
     done
 }
@@ -714,10 +759,12 @@ ladder_serve_probe() { # ladder_serve_probe <model> <backend-flag> <rung-id> <ba
     pid=$!
     # Health, bounded by the SERVER (#3943 b). A server that never comes up is a FAIL
     # naming WHY the wait ended, never a skip.
-    local wait_out wait_why
+    local wait_out wait_why lock_s
+    # The lock bound is flock's own -w plus a grace, so flock's exit-75 normally ends it.
     wait_out=$(ladder_serve_wait_health "$pid" "$port" "$WORK/serve-$rid-$bname.log" \
-        "$SERVE_STALL_S" "$SERVE_CEILING_S") || true
+        "$SERVE_STALL_S" "$SERVE_CEILING_S" "$((LOCK_WAIT + 5))") || true
     wait_why=${wait_out%% *}; waited=${wait_out##* }
+    lock_s=${wait_out#* }; lock_s=${lock_s%% *}
     if [ "$wait_why" != "ready" ]; then
         td=$(ladder_serve_teardown "$pid" "$port")
         # #3943 + #3949: the WHY names what ended the wait (died / stalled / ceiling, with
@@ -729,11 +776,14 @@ import json, sys
 tail = sys.argv[2]
 kind = sys.argv[4] if len(sys.argv) > 4 else "timeout"
 bounds = " (stall window %ss, ceiling %ss)" % (sys.argv[5], sys.argv[6]) if len(sys.argv) > 6 else ""
+# #4015: queue time behind the GPU lock is reported, never counted as the server stalling.
+if len(sys.argv) > 7:
+    bounds += "; %ss waiting for the GPU lock first" % sys.argv[7]
 last = tail.splitlines()[-1] if tail else "the serve log was empty"
 print(json.dumps({"probed": False,
                   "why": "apr serve did not answer /health: %s after %ss%s; last log line: %s" % (kind, sys.argv[1], bounds, last),
                   "log_tail": tail or None, "teardown": sys.argv[3], "routes": {}}))
-' "$waited" "$(serve_log_tail "$WORK/serve-$rid-$bname.log")" "$td" "$wait_why" "$SERVE_STALL_S" "$SERVE_CEILING_S"
+' "$waited" "$(serve_log_tail "$WORK/serve-$rid-$bname.log")" "$td" "$wait_why" "$SERVE_STALL_S" "$SERVE_CEILING_S" "$lock_s"
         return 1
     fi
 
