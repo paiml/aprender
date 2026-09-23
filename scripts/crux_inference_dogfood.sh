@@ -96,7 +96,7 @@ THINK_MODES="off,on"
 ONLY_PROMPTS=""
 GREEDY_PIDS=""
 GREEDY_MAXTOK=256
-# --reference-cache <dir> (#4036): the reference engines' rows (llama.cpp, hf, vllm, llamafile) are host-independent
+# --reference-cache <dir> (#4036): the pure comparators' rows (hf, vllm, llamafile) are host-independent
 # truth, cached per (model, mode, engine, verb, prompt) under a key bound to the oracle version, the sampling and
 # the harness files (scripts/lib/crux_ref_cache.py). A mode whose every reference entry is cached runs ONLY apr and
 # injects the cached rows; any absent entry runs the whole mode and stores its clean rows; a STALE entry refuses
@@ -533,12 +533,10 @@ PY
 
 ref_cache_args() { # ref_cache_args: REF_ENGINES + REF_ARGS for the current model and mode (#4036)
   # An engine is cached only when it would really run here AND says which build it is: an unversioned oracle
-  # cannot be keyed, so it simply runs. ollama is not cached (not in the sweep, and its import is per run).
+  # cannot be keyed, so it simply runs. llama.cpp always runs: its llama-server is apr's reference renderer on the
+  # serve routes (a hit that switched it off refused 14 apr serve cells on gx10). ollama: not in the sweep.
   REF_ENGINES=(); REF_ARGS=()
   local e v src=""
-  if [ "$LLAMA_OK" = 1 ] && [ -n "${LLAMA_BUILD:-}" ]; then
-    REF_ENGINES+=(llama.cpp); REF_ARGS+=(--oracle "llama.cpp=$LLAMA_BUILD pin $(llama_pin_get build_commit 2>/dev/null)")
-  fi
   for e in "${PLUGIN_ENGINES[@]}"; do
     want "$e" && [ "${EXT_OK[$e]:-0}" = 1 ] || continue
     source_engine "$e" && [ -n "$HF_MODEL_WHY" ] && continue
@@ -763,9 +761,8 @@ PY
   # A hit (or a stale entry) runs this mode with the cached engines REMOVED: they neither run nor emit, and the
   # cached (or refused) rows are appended after the verb loop. Restored before the next mode and the greedy rows.
   if [ "$REF_SKIP" = 1 ]; then
-    REF_SAVED_ENGINES=$ENGINES; REF_SAVED_LLAMA_OK=$LLAMA_OK
+    REF_SAVED_ENGINES=$ENGINES
     ENGINES=$(for e in ${ENGINES//,/ }; do case " ${REF_ENGINES[*]} " in *" $e "*) ;; *) printf '%s\n' "$e" ;; esac; done | paste -sd,)
-    case " ${REF_ENGINES[*]} " in *" llama.cpp "*) LLAMA_OK=0 ;; esac
   fi
 
   for VERB in ${VERBS//,/ }; do
@@ -875,7 +872,7 @@ PY
   done
   if [ "$REF_SKIP" = 1 ]; then
     cat "$WORK/$SHA12/refcache-rows.jsonl" >> "$MANIFEST"
-    ENGINES=$REF_SAVED_ENGINES; LLAMA_OK=$REF_SAVED_LLAMA_OK
+    ENGINES=$REF_SAVED_ENGINES
   elif [ "${#REF_ENGINES[@]}" -gt 0 ]; then
     python3 scripts/lib/crux_ref_cache.py store "${REF_ARGS[@]}" 2>&1 | sed 's/^/  /'
   fi

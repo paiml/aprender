@@ -15,6 +15,7 @@
 #   5. a refused reference row is never stored → the next run is a MISS for that engine, not a hit
 #   6. MUTANT: the stale check disabled (why_stale always None) → row 3's receipt is no longer RED: the table
 #                                 catches it
+#   7. llama.cpp is refused by name: it is apr's reference renderer on the serve routes, so it always runs
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
 set -uo pipefail
@@ -258,6 +259,17 @@ mu=$(summary mutant)
 case "$mu" in
   *"=RED"*) broke "MUTANT (stale check disabled) still RED: the table cannot see the stale check ($mu)" ;;
   *) ok "MUTANT (stale check disabled) turns the tampered run non-RED, so row 3 is what catches it ($mu)" ;;
+esac
+
+# Row 7: llama.cpp is never cached. Its llama-server renders apr's raw-prompt serve routes; a hit that switched it
+# off refused 14 of apr's own serve cells on gx10 (2026-09-23). The lib refuses it by name.
+why=$(cd "$T" && python3 scripts/lib/crux_ref_cache.py lookup --cache "$TMP/c7" --work "$TMP" --manifest /dev/null \
+  --model-sha "$MSHA" --thinking off --backend gpu --host stub --engines llama.cpp --verbs run \
+  --oracle "llama.cpp=b1" --temperature 0 --seed 42 --context 4096 --root "$T" --out-rows "$TMP/c7.rows" 2>&1)
+rc=$?
+case "$rc:$why" in
+  1:*"reference renderer"*) ok "llama.cpp cannot be cached: refused by name (it renders apr's serve routes)" ;;
+  *) broke "llama.cpp cacheable? rc $rc: $why" ;;
 esac
 
 printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"

@@ -1,15 +1,20 @@
 """crux_ref_cache.py: the CRUX reference cache (#4036, part of #4033 lever c).
 
-A reference answer (llama.cpp, hf, vLLM, llamafile) to a prompt is a property of the ORACLE and the QUESTION, not of the
+A reference answer (hf, vLLM, llamafile) to a prompt is a property of the ORACLE and the QUESTION, not of the
 host that asked it: the same model file, prompt, sampling and engine build give the same truth on lambda and on gx10.
 So a host that already measured the references can hand them to the next host, and that host runs only the apr legs.
 Measured on the 0.69.1 lambda sweep (aprender-36, #4033): the reference engines are 84% of CRUX wall time.
+
+llama.cpp is NOT cached, and asking to cache it is refused: its llama-server is also apr's REFERENCE RENDERER
+on the serve verb (the raw-prompt routes, POST /generate and the like, get their prompt rendered by it). A
+cache hit that switched llama.cpp off refused 14 of apr's own serve cells on gx10 (2026-09-23), RED rather
+than a false GREEN, and no saving. Only pure comparators are cached: engines no apr cell depends on.
 
 KEY. One entry per (model sha256, thinking mode, backend, engine, row verb, prompt id), bound to everything that could
 change the answer. The key holds:
   - the prompt object's sha256 (messages, max_tokens, verbs);
   - the mode's max_tokens for that prompt, and the protocol's temperature, seed and context;
-  - the oracle's version: llama.cpp's build line; a plugin's probe reduced to its package versions;
+  - the oracle's version: a plugin's probe reduced to its package versions;
   - the HF source (repo, revision, dtype) for the source-weight engines;
   - a digest of every harness file that PRODUCES a reference row: the dogfood, its cell libs and the engine's driver.
 The host is NOT in the key; that is the point. The backend IS: a CPU-lane reference does not vouch for a GPU lane.
@@ -40,7 +45,9 @@ import sys
 import tempfile
 
 SCHEMA = "crux-ref-cache/v1"
-CACHED_ENGINES = ("llama.cpp", "hf", "vllm", "llamafile")
+CACHED_ENGINES = ("hf", "vllm", "llamafile")
+NOT_CACHEABLE = {"llama.cpp": "its llama-server is apr's reference renderer on the serve routes, so it must run "
+                              "wherever apr runs (#4036, measured on gx10)"}
 SOURCE_ENGINES = ("hf", "vllm")
 
 # The harness files that PRODUCE a reference row. The judge's files (crux_inference_judge.py, crux_oracles.py, the
@@ -58,7 +65,6 @@ COMMON_FILES = (
     "scripts/llama_bin.sh",
 )
 ENGINE_FILES = {
-    "llama.cpp": (),
     "hf": ("scripts/crux_engine_hf.sh", "scripts/lib/crux_hf_verify.py", "scripts/crux_hf/engine.py",
            "scripts/crux_hf/pyproject.toml", "scripts/crux_hf/uv.lock"),
     "vllm": ("scripts/crux_engine_vllm.sh", "scripts/lib/crux_hf_verify.py", "scripts/crux_vllm/engine.py",
@@ -150,6 +156,8 @@ def plan(a):
     oracles = dict(o.split("=", 1) for o in a.oracle)
     engines = [e for e in a.engines.split(",") if e]
     for e in engines:
+        if e in NOT_CACHEABLE:
+            sys.exit("crux_ref_cache: %s cannot be cached: %s" % (e, NOT_CACHEABLE[e]))
         if e not in CACHED_ENGINES:
             sys.exit("crux_ref_cache: %s is not a reference engine (cached: %s)" % (e, ", ".join(CACHED_ENGINES)))
         if e not in oracles:

@@ -21,9 +21,9 @@
 # budgets are impractical on a CPU lane, and F9's CPU reference needs greedy rows alone. The receipt then has no
 # judged cell, so the judge DECLINES it (exit 2, "no cell was measured") while its greedy[] carries the rows: a
 # greedy-only receipt is F9 evidence, never a CRUX verdict, and the plan file says so.
-# --reference-cache <dir> (#4036): the certified shards reuse the reference engines' rows (llama.cpp, hf, vLLM) that
-# an earlier run stored there, keyed by model sha + mode + prompt + oracle version + harness; a host then runs only
-# the apr legs. A miss runs the mode in full and stores; a stale entry is RED. Greedy shards never read it: their
+# --reference-cache <dir> (#4036): the certified shards reuse the source-weight engines' rows (hf, vLLM) that an
+# earlier run stored there, keyed by model sha + mode + prompt + oracle version + harness; a host then runs apr and
+# llama.cpp only (llama.cpp always runs: it is apr's reference renderer on the serve routes). A miss runs the mode in full and stores; a stale entry is RED. Greedy shards never read it: their
 # rows decode apr's ids through a llama-server on THIS host. Share the dir between hosts by copying it
 # (rsync -a lambda:<dir>/ gx10:<dir>/); each entry is written by one atomic rename, so two writers cannot tear one.
 set -uo pipefail
