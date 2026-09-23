@@ -290,6 +290,8 @@ pub mod fixtures;
 /// Per spec §3: Format Support Matrix - auto-detect from magic bytes.
 /// APR is first-class, GGUF and SafeTensors are backwards-compatible.
 pub mod format;
+#[cfg(test)]
+mod fusion_call_site_guard_3985;
 pub mod generate;
 pub mod gguf;
 /// GPU acceleration module (Phase 4: ≥100 tok/s target)

@@ -21,7 +21,7 @@ fusion_decisions:
       replaces:
       - SiluKernel (trueno-gpu/src/kernels/elementwise/activations.rs)
       - ElementwiseMulKernel (trueno-gpu/src/kernels/elementwise/activations.rs)
-    call_site: realizar/src/cuda/executor/layers/indexed.rs:1411
+    call_site: crates/aprender-serve/src/cuda/executor/layers/indexed_ffn.rs:172
     saves_per_layer: 1
     saves_per_seq_28L: 28
     memory_saved_bytes: 75776
@@ -39,7 +39,7 @@ fusion_decisions:
       fused: BatchedSwigluKernel (trueno-gpu/src/kernels/elementwise/swiglu.rs)
       replaces:
       - M × FusedSwigluKernel invocations
-    call_site: realizar/src/cuda/executor/layers/prefill.rs
+    call_site: crates/aprender-serve/src/cuda/executor/layers/prefill.rs:927
     benchmark:
       model: qwen2.5-coder-7b-instruct-q4_k_m
       prefill_tok_s: 290
