@@ -600,6 +600,9 @@ contracts:
 	@echo "== contract engine tests =="
 	@cargo test -p aprender-contracts --lib 2>&1 | grep -E "test result" | tail -1
 
+# #3839: skips are EXACT full test paths from scripts/coverage-skips.txt, one reason
+# per entry. They used to be 19 --skip substrings that removed 2,713 tests (2,702 of
+# which pass without a GPU), so the number measured a subset over the whole denominator.
 coverage: ## Coverage summary + threshold check (warm: ~3min)
 	@echo "📊 Running coverage ($(COV_THRESHOLD)%+ threshold)..."
 	@which cargo-llvm-cov > /dev/null 2>&1 || { cargo install cargo-llvm-cov --locked || exit 1; }
@@ -615,11 +618,7 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 		--workspace --exclude aprender-gpu --lib \
 		--lcov --output-path target/coverage/lcov.info \
 		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" \
-		-- --skip prop_gbm_expected_value --skip slow --skip heavy --skip h12_ --skip j2_ \
-		   --skip falsification --skip chaos --skip disconnect --skip benchmark_parity \
-		   --skip qwen2_generation --skip qwen2_golden --skip qwen2_weight --skip load_test \
-		   --skip spec_checklist_w --skip spec_checklist_u --skip verify_audio --skip g9_roofline \
-		   --skip cuda --skip gpu_ \
+		-- --exact $$(sed -e '/^#/d' -e '/^[[:space:]]*$$/d' -e 's/^/--skip /' scripts/coverage-skips.txt) \
 		|| { test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml; exit 1; }
 	@echo "📊 Parsing LCOV for the threshold check..."
 	@# Parse LCOV for line coverage (LH=lines hit, LF=lines found)
