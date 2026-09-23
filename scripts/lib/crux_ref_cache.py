@@ -162,6 +162,14 @@ def digest(key):
     return hashlib.sha256(json.dumps(key, sort_keys=True).encode()).hexdigest()
 
 
+def content_sha256(ent):
+    """The whole stored truth — key, rows and the files map — as one digest, recorded at store and checked at
+    lookup. A rule per field only sees the fields it names: deleting a row's `stdout` passed every one of them
+    (quorum round 4, lane 1, measured). Any field added, removed or changed moves this digest."""
+    return hashlib.sha256(json.dumps({"key": ent.get("key"), "rows": ent.get("rows"), "files": ent.get("files")},
+                                     sort_keys=True).encode()).hexdigest()
+
+
 def entry_dir(cache, d):
     return os.path.join(cache, d[:2], d)
 
@@ -202,6 +210,8 @@ def why_stale(key, d, edir):
         ent = json.load(open(os.path.join(edir, "entry.json")))
     except (OSError, ValueError) as e:
         return "entry.json unreadable (%s)" % e.__class__.__name__
+    if not ent.get("content_sha256") or content_sha256(ent) != ent["content_sha256"]:
+        return "its content changed since it was stored (a key, row or files field was edited, added or removed)"
     if ent.get("key") != key:
         diff = sorted(f for f in set(key) | set(ent.get("key") or {}) if key.get(f) != (ent.get("key") or {}).get(f))
         return "its key no longer matches its digest (fields: %s)" % ", ".join(diff)
@@ -330,10 +340,11 @@ def cmd_store(a):
             shutil.rmtree(tmp)
             skipped += 1
             continue
-        json.dump({"key": k, "rows": mine, "files": files,
-                   "origin": {"host": a.host, "backend": a.backend, "harness_git_sha": a.harness_git_sha or None,
-                              "stored_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")}},
-                  open(os.path.join(tmp, "entry.json"), "w"), indent=1, sort_keys=True)
+        ent = {"key": k, "rows": mine, "files": files,
+               "origin": {"host": a.host, "backend": a.backend, "harness_git_sha": a.harness_git_sha or None,
+                          "stored_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")}}
+        ent["content_sha256"] = content_sha256(ent)
+        json.dump(ent, open(os.path.join(tmp, "entry.json"), "w"), indent=1, sort_keys=True)
         try:
             os.rename(tmp, edir)
             stored += 1

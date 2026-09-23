@@ -22,6 +22,8 @@
 #  11. MUST-DECLINE: a lookup that crashes inside the real dogfood declines the run, never a silent recompute
 #  12. an edited pointer that resolves to the SAME hashed file: STALE on the real lib, REUSED by a mutant without the
 #      pointer rule — so the rule, not a sha256 or a crash, is what refuses it
+#  13. a field REMOVED from a stored row (stdout; stderr, which no verdict reads): STALE by the entry's content
+#      digest; a mutant without the digest REUSES the stderr edit
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
 set -uo pipefail
@@ -310,15 +312,18 @@ case "$nc" in
   *) broke "new global cap: $nc (a hit would reuse a truth generated under another cap)" ;;
 esac
 
-# Row 9: MUST-RED — a row's artifact POINTER rewritten to a traversal, key and files{} untouched (quorum round 3,
-# lane 2 measured this passing as intact and reading outside the cache). It is STALE: 0 engine calls, every cell RED.
+# Row 9: MUST-RED — a row's artifact POINTER rewritten to a traversal, key and files{} untouched and the content
+# digest RE-SEALED, so only the pointer rule can refuse it (quorum round 3, lane 2 measured the traversal passing as
+# intact and reading outside the cache). It is STALE: 0 engine calls, every cell RED.
 cp -r "$CACHE" "$TMP/cache-ptr"
 python3 - "$TMP/cache-ptr" <<'PY' || exit 2
-import glob, json, sys
+import glob, hashlib, json, sys
 # every entry: the cache holds entries of several keys by now (rows 4 and 8), and only this run's must be hit
 for p in glob.glob(sys.argv[1] + "/*/*/entry.json"):
     e = json.load(open(p))
     e["rows"][0]["stdout"] = "refcache:" + "../" * 8 + "etc/hostname"
+    e["content_sha256"] = hashlib.sha256(json.dumps({"key": e.get("key"), "rows": e.get("rows"), "files": e.get("files")},
+                                                    sort_keys=True).encode()).hexdigest()  # RE-SEALED: only the pointer rule may refuse it
     json.dump(e, open(p, "w"), indent=1, sort_keys=True)
 PY
 run_row ptr "$T" "$TMP/cache-ptr"
@@ -365,11 +370,13 @@ fi
 # rule disabled (its own cache, since the lib is in the digest): the edited entry is REUSED, 0 calls, GREEN.
 dot_ptr() { # dot_ptr <cache>: every entry's first row points at ./<its own file>
   python3 - "$1" <<'PY' || exit 2
-import glob, json, sys
+import glob, hashlib, json, sys
 for p in glob.glob(sys.argv[1] + "/*/*/entry.json"):
     e = json.load(open(p))
     v = e["rows"][0]["stdout"]
     e["rows"][0]["stdout"] = "refcache:./" + v[len("refcache:"):]
+    e["content_sha256"] = hashlib.sha256(json.dumps({"key": e.get("key"), "rows": e.get("rows"), "files": e.get("files")},
+                                                    sort_keys=True).encode()).hexdigest()  # RE-SEALED: only the pointer rule may refuse it
     json.dump(e, open(p, "w"), indent=1, sort_keys=True)
 PY
 }
@@ -391,6 +398,45 @@ mp=$(summary mptr)
 case "$dt|$mp" in
   "0 | "*"=RED"*"|0 | "*"=GREEN"*) ok "an equivalent-but-edited pointer: STALE on the real lib ($dt); REUSED with the pointer rule disabled ($mp)" ;;
   *) broke "pointer rule: real lib $dt, mutant $mp" ;;
+esac
+
+# Row 13: a FIELD REMOVED from a stored row. Deleting `stdout` passed every per-field rule (quorum round 4, lane 1,
+# measured); the entry's content digest now refuses any field added, removed or changed. MUST-RED on `stdout`;
+# and `stderr` — a field no verdict reads — is STALE on the real lib but REUSED by a mutant without the content
+# digest, so the digest (not the judge noticing a missing answer) is what refuses it.
+del_field() { # del_field <cache> <field>: every entry's first row loses <field>; nothing else is touched
+  python3 - "$1" "$2" <<'PY' || exit 2
+import glob, json, sys
+for p in glob.glob(sys.argv[1] + "/*/*/entry.json"):
+    e = json.load(open(p))
+    e["rows"][0].pop(sys.argv[2], None)
+    json.dump(e, open(p, "w"), indent=1, sort_keys=True)
+PY
+}
+cp -r "$CACHE" "$TMP/cache-del"; del_field "$TMP/cache-del" stdout
+run_row del "$T" "$TMP/cache-del"
+dl=$(summary del)
+cp -r "$CACHE" "$TMP/cache-dels"; del_field "$TMP/cache-dels" stderr
+run_row dels "$T" "$TMP/cache-dels"
+ds=$(summary dels)
+MC="$TMP/mutant-content"; mk_tree "$MC"
+python3 - "$MC/scripts/lib/crux_ref_cache.py" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+a = "    if not ent.get(\"content_sha256\") or content_sha256(ent) != ent[\"content_sha256\"]:"
+assert s.count(a) == 1, "content-digest anchor moved: update this check with the lib"
+open(p, "w").write(s.replace(a, "    if False:"))
+PY
+run_row mcon-cold "$MC" "$TMP/cache-mcon"; del_field "$TMP/cache-mcon" stderr
+run_row mcon "$MC" "$TMP/cache-mcon"
+mc=$(summary mcon)
+case "$dl|$ds|$mc" in
+  "0 | "*"=RED"*"|0 | "*"=RED"*"|0 | "*"=GREEN"*)
+    if grep -q 'its content changed since it was stored' "$TMP/del.out/stub-gpu.json" "$TMP/dels.out/stub-gpu.json"; then
+      ok "a REMOVED field is STALE (stdout: $dl; stderr: $ds); a mutant without the content digest REUSES the stderr edit ($mc)"
+    else broke "field removal: RED but not for the content digest"; fi ;;
+  *) broke "field removal: stdout $dl, stderr $ds, mutant $mc" ;;
 esac
 
 printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"
