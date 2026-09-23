@@ -622,20 +622,45 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	@mkdir -p target/coverage
 	@rm -f target/coverage/lcov.info target/coverage/test.log target/coverage/failed-tests.txt
 	@printf '%s' '$(COVERAGE_EXCLUDE_REGEX)' > target/coverage/.exclude-re
-	@echo "🧪 Tests with instrumentation + report in ONE invocation (CB-127-A: cargo llvm-cov test, not nextest)..."
+	@# #4023: aprender-serve's lib tests run as SEVERAL processes. In one process they build up
+	@# memory across tests (#4028: 30 GB single-threaded, 45 GB at 22 threads on gx10) and earlyoom
+	@# SIGTERMed them on yoga's 28 GB box (run 35868368976); one module group per process peaks
+	@# <= 7.8 GB. EVERY run is --no-report and ONE `cargo llvm-cov report` merges them: a run WITH a
+	@# report cleans the earlier profiles (measured: the first run's coverage fell to 0).
+	@echo "🧪 Workspace lib tests except aprender-serve (instrumented, --no-report)..."
 	@PROPTEST_CASES=10 QUICKCHECK_TESTS=10 RUST_MIN_STACK=16777216 CARGO_BUILD_JOBS=4 \
-		$(COV_CARGO_ENV) cargo llvm-cov test \
-		--workspace --exclude aprender-gpu --lib --ignore-run-fail \
-		--lcov --output-path target/coverage/lcov.info \
-		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" \
+		$(COV_CARGO_ENV) cargo llvm-cov test --no-report \
+		--workspace --exclude aprender-gpu --exclude aprender-serve --lib --ignore-run-fail \
 		-- --exact $$(sed -e '/^#/d' -e '/^[[:space:]]*$$/d' -e 's/^/--skip /' scripts/coverage-skips.txt) \
 		2>&1 | tee target/coverage/test.log; \
 	rc=$${PIPESTATUS[0]}; \
 	if [ "$$rc" -ne 0 ]; then \
-		echo "❌ coverage DID NOT MEASURE: cargo llvm-cov exited $$rc (build or report failure;"; \
+		echo "❌ coverage DID NOT MEASURE: cargo llvm-cov exited $$rc on the workspace run (build failure;"; \
 		echo "   with --ignore-run-fail a failing test alone does not stop it). No coverage verdict."; \
 		exit 1; \
 	fi
+	@echo "🧪 aprender-serve lib tests, one process per module group (instrumented, --no-report)..."
+	@rm -rf target/coverage/serve-shards
+	@$(COV_CARGO_ENV) cargo llvm-cov test --no-report -p aprender-serve --lib -- --list \
+		> target/coverage/serve-list.txt 2>> target/coverage/test.log || \
+		{ echo "❌ coverage DID NOT MEASURE: could not list aprender-serve's lib tests. No coverage verdict."; exit 1; }
+	@python3 scripts/coverage_serve_shards.py target/coverage/serve-list.txt scripts/coverage-skips.txt target/coverage/serve-shards
+	@for shard in target/coverage/serve-shards/shard-*.txt; do \
+		echo "   $$shard ($$(wc -l < $$shard) tests)"; \
+		PROPTEST_CASES=10 QUICKCHECK_TESTS=10 RUST_MIN_STACK=16777216 CARGO_BUILD_JOBS=4 \
+			$(COV_CARGO_ENV) cargo llvm-cov test --no-report -p aprender-serve --lib --ignore-run-fail \
+			-- --exact $$(cat $$shard) 2>&1 | tee -a target/coverage/test.log; \
+		rc=$${PIPESTATUS[0]}; \
+		if [ "$$rc" -ne 0 ]; then \
+			echo "❌ coverage DID NOT MEASURE: cargo llvm-cov exited $$rc on $$shard. No coverage verdict."; \
+			exit 1; \
+		fi; \
+	done
+	@echo "📊 Merging every run's profiles into one report..."
+	@$(COV_CARGO_ENV) cargo llvm-cov report --lcov --output-path target/coverage/lcov.info \
+		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" 2>&1 | tee -a target/coverage/test.log; \
+	rc=$${PIPESTATUS[0]}; \
+	if [ "$$rc" -ne 0 ]; then echo "❌ coverage DID NOT MEASURE: cargo llvm-cov report exited $$rc. No coverage verdict."; exit 1; fi
 	@# #3839: --ignore-run-fail keeps one failing test from blanking the number (the 2026-09-23
 	@# nightly wrote no lcov because of one timing test). Failures are LISTED, not hidden, and
 	@# every test run here is also run by CI's workspace-test, which fails on them.
