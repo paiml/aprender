@@ -28,7 +28,9 @@ import json, os, sys, time
 d, case, mc = sys.argv[1], sys.argv[2], sys.argv[3]
 if case == "missing":
     sys.exit(0)
-w = {"schema": "apr-candidate-watch/v1", "version": "0.70.0", "sha": mc, "andon": False, "real_red": [], "bookkeeping_red": ["dogfood:bashrs"]}
+now = time.time()
+w = {"schema": "apr-candidate-watch/v1", "version": "0.70.0", "sha": mc, "andon": False, "real_red": [], "bookkeeping_red": ["dogfood:bashrs"],
+     "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - (7 * 3600 if case in ("stale", "stale-fresh-mtime") else 60)))}
 if case == "other-sha":
     w["sha"] = "b" * 40
 if case == "andon":
@@ -38,6 +40,7 @@ json.dump(w, open(p, "w"))
 if case == "stale":
     t = time.time() - 7 * 3600
     os.utime(p, (t, t))
+# stale-fresh-mtime: the verdict is 7 h old by its own `at`, its FILE was just copied (fresh mtime)
 PY
   ( cd "$w" && V=0.70.0 MC="$MC" AP="$w/ap" LOG="$w/log" STATUS="$w/status" CANDIDATE_WATCH_STATE="$w/state" bash -c '
       say() { echo "SAY $*"; }
@@ -50,11 +53,11 @@ table() { # table <autopilot> -> ok/FAIL <row> lines
   out=$(run "$ap" fresh)
   if grep -q '^SAY WATCH GREEN .*aaaaaaaaa' <<< "$out" && grep -q '^PREFLIGHT-RAN' <<< "$out"; then echo "ok    fresh-green-publishes"
   else echo "FAIL  fresh-green-publishes -- $(tr '\n' ' ' <<< "$out" | cut -c1-160)"; fi
-  for c in missing other-sha stale andon; do
+  for c in missing other-sha stale stale-fresh-mtime andon; do
     out=$(run "$ap" "$c")
     case "$c" in
       missing) needle="no candidate-watch verdict" ;; other-sha) needle="not the release commit" ;;
-      stale) needle="h old (> 6 h)" ;; andon) needle="ANDON: REAL gate(s) red: dogfood:model-parity" ;;
+      stale|stale-fresh-mtime) needle="h old (> 6 h)" ;; andon) needle="ANDON: REAL gate(s) red: dogfood:model-parity" ;;
     esac
     if grep -q "^DIE candidate watch: .*$needle" <<< "$out" && ! grep -q '^PREFLIGHT-RAN' <<< "$out"; then echo "ok    $c-refused"
     else echo "FAIL  $c-refused -- $(tr '\n' ' ' <<< "$out" | cut -c1-160)"; fi
@@ -71,7 +74,8 @@ mutant() { # mutant <label> <row> <old> <new>
 }
 mutant gate-uncalled missing-refused '    watch_gate "${CANDIDATE_WATCH_STATE:-$HOME/.local/state/aprender-candidate-watch}" "$V" "$MC" "${CANDIDATE_WATCH_MAX_AGE_H:-6}"' '    :'
 mutant sha-unchecked other-sha-refused ' or w.get("sha") != sha:' ':'
-mutant age-unchecked stale-refused 'if age > max_h:' 'if False:'
+mutant age-unchecked stale-refused 'if age > max_h or age < -0.1:' 'if False:'
+mutant age-from-mtime stale-fresh-mtime-refused 'age = (time.time() - at) / 3600.0' 'age = (time.time() - os.path.getmtime(fs[-1])) / 3600.0'
 mutant andon-unchecked andon-refused 'if w.get("andon") or w.get("real_red"):' 'if False:'
 echo "check_publish_reads_watch: $([ "$bad" = 0 ] && echo PASS || echo FAIL)"
 exit "$bad"

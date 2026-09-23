@@ -82,6 +82,19 @@ else run_rc preflight:R5 bash scripts/check_publish_preflight.sh --receipt-only;
 # the version-agreement check autopilot runs right after `wait` (autopilot.sh: bump-version.sh --check)
 if [ -n "${WATCH_BUMP_CMD:-}" ]; then run_rc step:wait bash -c "$WATCH_BUMP_CMD"
 else run_rc step:wait bash scripts/bump-version.sh --check; fi
+# G-ONT (#4045): ONT-001 complete is a MUST-RED gate from the contract's release_gate.from (0.70.0). It runs against
+# an infra checkout the watch host keeps at origin/main ($APR_ONT_INFRA, pinned to its HEAD). No checkout configured
+# is RED, never a skipped gate: the must-RED would otherwise vanish exactly where nobody looks.
+if python3 -c 'import re, sys, yaml
+f = (yaml.safe_load(open("contracts/model-capability-ladder-v1.yaml"))["ladder"].get("release_gate") or {}).get("from")
+v = lambda s: tuple(int(x) for x in re.match(r"(\d+)\.(\d+)\.(\d+)", str(s)).groups())
+sys.exit(0 if f and v(sys.argv[1]) >= v(f) else 1)' "$VERSION" 2> /dev/null; then
+  if [ -n "${APR_ONT_INFRA:-}" ] && [ -d "$APR_ONT_INFRA" ]; then
+    run_rc g-ont:complete bash scripts/check_ont_complete.sh --infra "$APR_ONT_INFRA" --pin "$(git -C "$APR_ONT_INFRA" rev-parse HEAD 2> /dev/null)"
+  else
+    printf 'g-ont:complete\tFAIL\tnot run: no ONT infra checkout configured (APR_ONT_INFRA) -- a must-RED gate that cannot run is RED\n' >> "$RESULTS"
+  fi
+fi
 
 # 2 + 3. classify, age, table, verdict
 python3 - "$RESULTS" "scripts/release/gate_classes.yaml" "$D/first-red.json" "$D/watch-$TS" "$SHA" "$VERSION" <<'PY'
@@ -101,7 +114,7 @@ for ln in open(res_p):
     gid, verdict, note = (ln.rstrip("\n").split("\t") + ["", ""])[:3]
     c = (classes.get(gid) or {}).get("class")
     cls = c if c in ("real", "bookkeeping") else "real"   # UNCLASSIFIED is real: never quietly waived
-    if gid == "shadow:skills":
+    if gid in ("shadow:skills", "g-ont:complete"):   # the watch's own gates: real by definition
         cls = "real"
     red = verdict in RED
     if red:
@@ -109,7 +122,7 @@ for ln in open(res_p):
         (real_red if cls == "real" else book_red).append(gid)
     else:
         first.pop(gid, None)
-    rows.append({"gate": gid, "class": cls + ("" if c or gid == "shadow:skills" else " (UNCLASSIFIED)"), "verdict": verdict,
+    rows.append({"gate": gid, "class": cls + ("" if c or gid in ("shadow:skills", "g-ont:complete") else " (UNCLASSIFIED)"), "verdict": verdict,
                  "first_red_at": first.get(gid, {}).get("at") if red else None, "note": note})
 json.dump(first, open(first_p, "w"), indent=1)
 doc = {"schema": "apr-candidate-watch/v1", "version": version, "sha": sha, "at": now, "rows": rows,
@@ -136,7 +149,8 @@ import json, sys
 FIX = {"dogfood:contracts": ["census", "readme"], "dogfood:declared:check_no_claim_literals": ["claims"],
        "dogfood:pmat-verify": ["complexity"]}
 w = json.load(open(sys.argv[1]))
-print(" ".join(sorted({f for g in w.get("bookkeeping_red") or [] for f in FIX.get(g, [])})))
+reds = (w.get("bookkeeping_red") or []) + (w.get("real_red") or [])   # a proposal never clears a real red's andon
+print(" ".join(sorted({f for g in reds for f in FIX.get(g, [])})))
 PY
 )
   if [ -n "$fixers" ]; then

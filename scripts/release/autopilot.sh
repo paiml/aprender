@@ -239,10 +239,17 @@ fs = sorted(glob.glob(os.path.join(state, v, "watch-*.json")), key=os.path.getmt
 if not fs:
     print("no candidate-watch verdict under %s/%s -- the gates were never run on the candidate" % (state, v)); sys.exit(1)
 w = json.load(open(fs[-1]))
-age = (time.time() - os.path.getmtime(fs[-1])) / 3600.0
+# age from the verdict's OWN timestamp, never the file's mtime: a copy or restore of the state dir must not
+# re-freshen a stale verdict (degraded quorum, Sonnet). A verdict without a readable `at` is refused.
+try:
+    import calendar
+    at = calendar.timegm(time.strptime(w["at"], "%Y-%m-%dT%H:%M:%SZ"))   # the watch writes UTC
+except (KeyError, TypeError, ValueError):
+    print("the latest watch verdict carries no readable `at` timestamp"); sys.exit(1)
+age = (time.time() - at) / 3600.0
 if w.get("schema") != "apr-candidate-watch/v1" or w.get("sha") != sha:
     print("the latest watch verdict is for %s, not the release commit %s" % (str(w.get("sha"))[:9], sha[:9])); sys.exit(1)
-if age > max_h:
+if age > max_h or age < -0.1:
     print("the latest watch verdict is %.1f h old (> %g h) -- re-run the watch on the candidate" % (age, max_h)); sys.exit(1)
 if w.get("andon") or w.get("real_red"):
     print("the watch is in ANDON: REAL gate(s) red: %s" % ", ".join(w.get("real_red") or [])); sys.exit(1)

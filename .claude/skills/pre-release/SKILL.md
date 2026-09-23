@@ -353,6 +353,8 @@ bash scripts/check_model_ladder.sh --scope release --nightly <nightly root> \
 - `FAIL  NIGHTLY <host>: ...` means no admissible nightly: run `scripts/certify_nightly.sh --host <id>` on that host, or
   re-measure in full.
 - `STALE BY SHA` means the delta since the nightly reaches apr inference: re-measure. Never widen anything to pass.
+- **G-ONT** (from 0.70.0): `bash scripts/check_ont_complete.sh --infra <infra clone> --pin <its sha>` must exit 0.
+  The candidate watch runs it as `g-ont:complete`. RED names every unbound row and unmet `done_when`.
 
 ## Verdict
 

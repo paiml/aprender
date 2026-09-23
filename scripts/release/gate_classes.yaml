@@ -16,8 +16,10 @@ gates:
     class: real
     why: the release binary answers --help with its registered surface
   dogfood:contracts:
-    class: bookkeeping
-    why: contract counts/validation bookkeeping (make contracts)
+    class: real
+    why: 'make contracts runs pv lint over the provable contracts (falsification + schema): a failing contract is a
+      broken correctness claim, not accounting (degraded quorum, Sonnet). Its census half still gets a proposed
+      auto-fix'
   dogfood:contracts-exit-integrity:
     class: bookkeeping
     why: 'the contracts recipe''s own exit-code hygiene: tooling integrity, not user output'

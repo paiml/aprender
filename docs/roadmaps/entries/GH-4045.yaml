@@ -1,0 +1,17 @@
+- id: GH-4045
+  github_issue: 4045
+  item_type: task
+  kind: code
+  title: 'Release process for 0.70+: CRUX-smoke gate on the release binary; full ladder + full CRUX move to nightly; #4033 levers wired into the workflow'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T20:30:19.864488525+00:00
+  updated: 2026-09-23T20:30:19.864488525+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

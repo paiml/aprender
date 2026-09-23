@@ -1141,11 +1141,25 @@ Each lever carries a must-RED proving it cannot turn a real RED green.
 | #4035 one load per cell, #4036 CRUX reference cache | aprender-83 | `model_ladder.sh` / `crux_inference_dogfood.sh` |
 | #4038 prefix parity | aprender-36 | the ladder's think-block gate |
 
+### §14.2b G-ONT: ONT-001 complete (a must-RED gate from 0.70.0)
+Operator, verbatim via the release cop: *"the ontology spec MUST be finished in .7"*.
+`scripts/check_ont_complete.sh --infra <infra checkout> --pin <its sha>` must exit 0. That means every ONT row of
+`infra/docs/specifications/paiml-ontology.md` is bound in the ledger, and every `done_when` probe passes against the
+release tree; a declined probe is not done.
+- **Mechanical trigger:** the candidate watch runs it as the REAL row `g-ont:complete` from `release_gate.from`,
+  against the infra clone the watch host keeps at origin/main (`APR_ONT_INFRA`). No clone configured is RED, never
+  skipped. The publish re-reads the watch (§14.3), so a red G-ONT stops the publish.
+- **In CI:** with no `--infra`, it is REPORT-only (its self-test is the CI row), because it is RED by design until
+  ONT-001 is done.
+
 ### §14.3 Shift-left (M8): no publish-blocking gate is first evaluated at publish
 From the freeze, every gate that can block a publish runs on the release branch's candidate sha, on every push to it
 and at least hourly. REAL gates protect users and andon on red: ladder/CRUX, the tag-is-what-was-judged rule, clean-room,
-dogfood. BOOKKEEPING gates auto-fix or report, and never block the publish: complexity, census/README counts, bashrs on
-release scripts, CB-200, claim literals. The measure per release is **0 gates first-seen-red at publish** (ledger, M7).
+dogfood, `contracts` (it runs `pv lint` falsification; its census half still gets a proposed auto-fix), and G-ONT.
+BOOKKEEPING gates auto-fix or report, and never block the publish: complexity, census/README counts, bashrs on
+release scripts, CB-200, claim literals. The classes are `scripts/release/gate_classes.yaml`, over a gate set DERIVED
+from the publish path. The publish RE-READS the watch's verdict, which must be for the release commit, fresh by its
+own timestamp, and carry no real red (`autopilot.sh watch_gate`). The measure per release is **0 gates first-seen-red at publish** (ledger, M7).
 
 ### §14.4 Retired
 Phase 2 (a full ladder + full CRUX sweep on release night) is retired as a release step. It is the nightly now.
@@ -1159,3 +1173,5 @@ Phase 2 (a full ladder + full CRUX sweep on release night) is retired as a relea
 | RG-4 | a nightly without the cpu CRUX lane is refused | require gpu only → `e2e-cpu-lane-missing` RED |
 | RG-5 | a nightly whose delta touches the measurement is STALE | carry everything → `e2e-ancestor-stale` RED |
 | RG-6 | the release gate is refused before `from` or without its ruling | `release-before-from`, `release-unrecorded` |
+| RG-7 | the watch without an ONT infra clone is RED on `g-ont:complete` (check_release_shift_left.sh) | `g-ont-skipped` |
+| RG-8 | the publish refuses a stale verdict even when its FILE is freshly copied (check_publish_reads_watch.sh) | `age-from-mtime` |
