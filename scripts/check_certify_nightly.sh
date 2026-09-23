@@ -38,8 +38,20 @@ printf '%s\n' "$*" >> "$FAKE_GH_LOG"
 # so the title match is the shipped code's, not the fake's.
 if [ "$1 $2" = "issue list" ] && [ -n "${FAKE_GH_OPEN:-}" ]; then
   q=""; while [ $# -gt 0 ]; do [ "$1" = -q ] && q=$2; shift; done
-  printf '[{"number": 7, "title": "nightly certification RED: lambda-old"}, {"number": %s, "title": "nightly certification RED: lambda"}]' \
-    "$FAKE_GH_OPEN" | jq -r "${q:-.}"
+  # the jq filter the driver passes is applied for real: its select(.title == "...") | .number shape, in python
+  python3 - "$FAKE_GH_OPEN" "$q" <<'PY'
+import json, re, sys
+rows = [{"number": 7, "title": "nightly certification RED: lambda-old"}, {"number": int(sys.argv[1]), "title": "nightly certification RED: lambda"}]
+m = re.fullmatch(r'\.\[\] \| select\(\.title == "(.*)"\) \| \.number', sys.argv[2])
+if m:
+    for r in rows:
+        if r["title"] == m.group(1):
+            print(r["number"])
+elif sys.argv[2] == "empty":
+    pass
+else:
+    sys.exit("fake gh: an unexpected -q filter %r (the driver changed its query shape)" % sys.argv[2])
+PY
 fi
 exit 0
 GH

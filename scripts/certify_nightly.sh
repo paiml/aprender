@@ -6,8 +6,8 @@
 # at most 24 h old, measured at an ANCESTOR of the cut. check_model_ladder.sh --nightly then binds those
 # receipts to the cut through the #4037 carry-forward, or refuses them as STALE, and the release re-measures.
 #
-#   bash scripts/certify_nightly.sh --host <id> --root <dir> [--sha <commit>] [--certification <receipt>]
-#        [--no-issue] [--self-test]
+#   bash scripts/certify_nightly.sh --host <id> --root <dir> [--sha <commit>] [--certification <receipt>] [--no-issue]
+# Its case table is scripts/check_certify_nightly.sh (a guard, so guard_tree runs it).
 #
 # PER NIGHT, PER HOST, into <root>/<sha>/<host>/:
 #   1. a DETACHED worktree at <sha> (default: origin/main, fetched). The instrument is the commit being judged,
@@ -34,7 +34,7 @@ REPO=$(pwd)
 PROG=certify_nightly
 die() { printf '%s: %s\n' "$PROG" "$1" >&2; exit 2; }
 
-HOST=""; ROOT=""; SHA=""; CERT=""; ISSUE=1; SELF_TEST=0
+HOST=""; ROOT=""; SHA=""; CERT=""; ISSUE=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --host) [ $# -ge 2 ] || die "--host needs a value"; HOST="$2"; shift 2 ;;
@@ -42,16 +42,10 @@ while [ $# -gt 0 ]; do
     --sha) [ $# -ge 2 ] || die "--sha needs a value"; SHA="$2"; shift 2 ;;
     --certification) [ $# -ge 2 ] || die "--certification needs a value"; CERT="$2"; shift 2 ;;
     --no-issue) ISSUE=0; shift ;;
-    --self-test) SELF_TEST=1; shift ;;
     -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) die "unknown argument '$1'" ;;
   esac
 done
-
-# ---------------------------------------------------------------- self-test
-if [ "$SELF_TEST" = 1 ]; then
-  exec bash scripts/check_certify_nightly.sh
-fi
 
 [ -n "$HOST" ] && [ -n "$ROOT" ] || die "usage: --host <id> --root <dir> [--sha <commit>]"
 GH="${NIGHTLY_GH:-gh}"
