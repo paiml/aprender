@@ -954,3 +954,6 @@ impl OwnedQuantizedModelCuda {
 const PARITY_GATE_COSINE_MIN: f32 = 0.98;
 
 include!("mod_parity_gate.rs");
+// #3975: under `gguf::cuda::` so ci.yml's `cuda-unit` lane (filter `gguf::cuda::`,
+// a real GPU on yoga) executes it rather than it SKIPping on a GPU-less runner.
+include!("gemm_layout_tests_3975.rs");

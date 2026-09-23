@@ -41,6 +41,7 @@ impl CudaKernels {
             KernelType::GemmTiled { .. }
             | KernelType::GemmOptimized { .. }
             | KernelType::GemmBiasActivation { .. } => "gemm_tiled",
+            KernelType::GemmBtTiled { .. } => "gemm_backward_a_tiled",
             KernelType::GemmTensorCore { .. } => "gemm_tensor_core",
             KernelType::GemmFp16TensorCore { .. } => "gemm_wmma_fp16",
             KernelType::QuantizedGemm { .. } => "q4k_gemm_fused",

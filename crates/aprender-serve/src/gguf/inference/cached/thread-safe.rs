@@ -59,7 +59,7 @@ impl OwnedQuantizedModelCachedSync {
     /// # Errors
     /// Returns error if lock is poisoned
     #[cfg(feature = "cuda")]
-    fn get_cuda_scheduler(
+    pub(crate) fn get_cuda_scheduler(
         &self,
     ) -> Result<std::sync::MutexGuard<'_, Option<crate::gpu::CudaScheduler>>> {
         use crate::gpu::CudaScheduler;
@@ -94,7 +94,7 @@ impl OwnedQuantizedModelCachedSync {
     /// Tries CudaScheduler first (no buffer limits), falls back to HybridScheduler (wgpu).
     /// This bypasses the wgpu 256MB buffer limit that was blocking GPU batch inference.
     #[cfg(feature = "cuda")]
-    fn batch_matmul_gpu_prefer_cuda(
+    pub(crate) fn batch_matmul_gpu_prefer_cuda(
         &self,
         input: &[f32],
         weight_f32: &[f32],
@@ -117,8 +117,9 @@ impl OwnedQuantizedModelCachedSync {
         // Try CUDA first (no buffer size limits)
         if let Ok(mut cuda_guard) = self.get_cuda_scheduler() {
             if let Some(ref mut cuda_sched) = *cuda_guard {
+                // #3975: `weight_f32` is dequantized [out, in] = [n, k].
                 return cuda_sched
-                    .matmul(input, weight_f32, batch_size, in_dim, out_dim)
+                    .matmul_bt(input, weight_f32, batch_size, in_dim, out_dim)
                     .map_err(|e| RealizarError::UnsupportedOperation {
                         operation: "batch_matmul_gpu_prefer_cuda".to_string(),
                         reason: format!("CUDA matmul failed: {e}"),
@@ -130,7 +131,7 @@ impl OwnedQuantizedModelCachedSync {
         let mut scheduler_guard = self.get_scheduler()?;
         if let Some(ref mut scheduler) = *scheduler_guard {
             return scheduler
-                .matmul(input, weight_f32, batch_size, in_dim, out_dim)
+                .matmul_transpose_b(input, weight_f32, batch_size, in_dim, out_dim)
                 .map_err(|e| RealizarError::UnsupportedOperation {
                     operation: "batch_matmul_gpu_prefer_cuda".to_string(),
                     reason: format!("GPU matmul failed: {e}"),
@@ -168,7 +169,7 @@ impl OwnedQuantizedModelCachedSync {
         let mut scheduler_guard = self.get_scheduler()?;
         if let Some(ref mut scheduler) = *scheduler_guard {
             return scheduler
-                .matmul(input, weight_f32, batch_size, in_dim, out_dim)
+                .matmul_transpose_b(input, weight_f32, batch_size, in_dim, out_dim)
                 .map_err(|e| RealizarError::UnsupportedOperation {
                     operation: "batch_matmul_gpu_prefer_cuda".to_string(),
                     reason: format!("GPU matmul failed: {e}"),
@@ -407,5 +408,3 @@ impl OwnedQuantizedModelCachedSync {
             })
     }
 }
-
-include!("gemm_layout_tests_3975.rs");

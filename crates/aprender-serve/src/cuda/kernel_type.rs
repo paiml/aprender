@@ -16,6 +16,15 @@ pub enum KernelType {
         k: u32,
         tile_size: u32,
     },
+    /// Tiled C[m, n] = A[m, k] @ B^T with B row-major `[n, k]` — a weight in the
+    /// `[out, in]` layout, used as-is (#3975). Emitted by trueno's
+    /// `GemmBackwardAKernel` bound as (M, N, K) = (m, k, n).
+    GemmBtTiled {
+        m: u32,
+        n: u32,
+        k: u32,
+        tile_size: u32,
+    },
     /// Tensor Core GEMM (fp16)
     GemmTensorCore {
         m: u32,

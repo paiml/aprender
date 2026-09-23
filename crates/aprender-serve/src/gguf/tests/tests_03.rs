@@ -186,16 +186,21 @@ fn test_imp_109b_fused_batch_matmul_gpu() {
         output
     };
 
-    let mut scheduler = HybridScheduler::with_threshold(1000).expect("test");
-    let reference = scheduler
-        .matmul(
-            &activations,
-            &weight_f32,
-            batch_size,
-            config.hidden_dim,
-            config.intermediate_dim,
-        )
-        .expect("Reference matmul should succeed");
+    // #3975: this reference used to be `HybridScheduler::matmul` on the same
+    // [out, in] weight — the call under test, so it agreed with the layout bug by
+    // construction. It is now an independent CPU oracle: y[b, o] = x[b, :] . W[o, :].
+    let (in_dim, out_dim) = (config.hidden_dim, config.intermediate_dim);
+    let reference: Vec<f32> = (0..batch_size)
+        .flat_map(|b| {
+            let x = &activations[b * in_dim..(b + 1) * in_dim];
+            (0..out_dim)
+                .map(|o| {
+                    let w = &weight_f32[o * in_dim..(o + 1) * in_dim];
+                    x.iter().zip(w).map(|(a, b)| a * b).sum::<f32>()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
 
     for i in 0..fused_output.len() {
         let diff = (fused_output[i] - reference[i]).abs();
