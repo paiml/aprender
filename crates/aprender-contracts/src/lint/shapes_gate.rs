@@ -33,6 +33,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use crate::ontology::arming::ArmedShapes;
+use crate::ontology::capability_cells;
 use crate::ontology::extract::release_inputs::Subject;
 use crate::ontology::extract::{
     self, apr_model, cli_surface, code, gguf, json, lean, parity_receipt, pv_contract,
@@ -272,25 +273,10 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
     }
     // ONT-4c5: the validator's half runs on the gate's own copy — `pv extract` keeps writing what was found
     let mut owned = extraction.graph.clone();
-    let cells = match cells_gate::corpus(
-        &mut owned,
-        &shapes,
-        &extraction.gguf.rungs,
-        &extraction.receipts,
-    ) {
+    let cells = match cells_corpus(&mut owned, &shapes, &extraction) {
         Ok(c) => c,
-        Err(e) => {
-            return ShapesOutcome::ExtractFailed(ExtractFailure::Receipt(receipts::ReceiptError {
-                file: e.file.clone(),
-                what: e.to_string(),
-            }))
-        }
+        Err(answer) => return answer,
     };
-    if cells.as_ref().is_some_and(|c| c.domain.is_empty()) {
-        return ShapesOutcome::EmptyDomain {
-            shapes_n: shapes.len(),
-        };
-    }
     let graph = &owned;
 
     // #3610: the per-shape reach, computed BEFORE any verdict — did this shape grade anything at all?
@@ -302,28 +288,10 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
     }
     carry_extract_warnings(&mut report, &extraction.warnings);
     let pc_extract = extract_controls();
-    let pc_shapes = cells_gate::pc_shapes(&shapes, &arming);
-    if let Some((which, _)) = pc_shapes.iter().find(|(_, v)| v.as_str() != "fired") {
-        return ShapesOutcome::PositiveControlFailed {
-            shapes_n: shapes.len(),
-            focus_nodes_n: report.focus_nodes_n,
-            which: format!("pc_shapes.{which}"),
-        };
-    }
-    if let Some(cc) = &cells {
-        if !cells_gate::wiring_holds(&report, graph, cc) {
-            return ShapesOutcome::Differential {
-                shapes_n: shapes.len(),
-                focus_nodes_n: report.focus_nodes_n,
-                passed: 0,
-                n: 1,
-                failed: vec![format!(
-                    "capability-cells wiring: the rungs the shape flagged differ from the rungs owning the {} NotRun cell(s)",
-                    cc.not_run.len()
-                )],
-            };
-        }
-    }
+    let pc_shapes = match cells_controls(&shapes, &arming, &report, graph, cells.as_ref()) {
+        Ok(pc) => pc,
+        Err(answer) => return answer,
+    };
     let unmeasured = needs_receipts(&shapes) && extraction.receipts.is_empty();
     // Every shape in scope empty is the global vacuity — unless every one of them declared it (#3610 quorum).
     let all_allow_empty = shapes.iter().all(|s| s.allow_empty.is_some());
@@ -427,6 +395,62 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
         result: Box::new(result),
         findings: counted.findings,
     }
+}
+
+/// ONT-4c5, before validation: `apply` on the gate's own graph when a contract declares `capability-cells`. A
+/// non-numeral receipt version is the declaration's fault (exit 3); |D| = 0 is R-2's decline, never Pass.
+fn cells_corpus(
+    owned: &mut Graph,
+    shapes: &[NodeShape],
+    extraction: &extract::Extraction,
+) -> Result<Option<capability_cells::CapabilityCells>, ShapesOutcome> {
+    let cells = cells_gate::corpus(owned, shapes, &extraction.gguf.rungs, &extraction.receipts)
+        .map_err(|e| {
+            ShapesOutcome::ExtractFailed(ExtractFailure::Receipt(receipts::ReceiptError {
+                file: e.file.clone(),
+                what: e.to_string(),
+            }))
+        })?;
+    if cells.as_ref().is_some_and(|c| c.domain.is_empty()) {
+        return Err(ShapesOutcome::EmptyDomain {
+            shapes_n: shapes.len(),
+        });
+    }
+    Ok(cells)
+}
+
+/// ONT-4c5, after validation: every per-shape positive control fired, and the corpus went through `apply` (the
+/// rungs the shape flagged are the rungs owning a NotRun cell). Either miss is a decline, never a verdict.
+fn cells_controls(
+    shapes: &[NodeShape],
+    arming: &ArmedShapes,
+    report: &Report,
+    graph: &Graph,
+    cells: Option<&capability_cells::CapabilityCells>,
+) -> Result<BTreeMap<String, String>, ShapesOutcome> {
+    let pc_shapes = cells_gate::pc_shapes(shapes, arming);
+    if let Some((which, _)) = pc_shapes.iter().find(|(_, v)| v.as_str() != "fired") {
+        return Err(ShapesOutcome::PositiveControlFailed {
+            shapes_n: shapes.len(),
+            focus_nodes_n: report.focus_nodes_n,
+            which: format!("pc_shapes.{which}"),
+        });
+    }
+    if let Some(cc) = cells {
+        if !cells_gate::wiring_holds(report, graph, cc) {
+            return Err(ShapesOutcome::Differential {
+                shapes_n: shapes.len(),
+                focus_nodes_n: report.focus_nodes_n,
+                passed: 0,
+                n: 1,
+                failed: vec![format!(
+                    "capability-cells wiring: the rungs the shape flagged differ from the rungs owning the {} NotRun cell(s)",
+                    cc.not_run.len()
+                )],
+            });
+        }
+    }
+    Ok(pc_shapes)
 }
 
 /// The shape set this run grades and its arming, or the answer that stands in for a verdict (unsupported or
