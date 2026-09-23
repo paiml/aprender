@@ -109,6 +109,17 @@ Also fixed: the packaged mirror, which the lane did not flag.
     `rcp.approx` (≤1 ulp). It matters only on near-ties, and Q6_K's measured margin is ~500× (2.0e-8 vs 1e-5). If a
     future shape erodes that margin, this is the first suspect.
 
+## Quorum round 3, lane 1: FAIL, fixed
+- **Blocking, fixed.** The guard built `need` only from the census's `files`, so a GGUF the SCANNER dropped could
+  never fail. Now:
+  - a census with a non-empty `skipped_for_depth` or `unreadable` is RED, naming each unread held GGUF;
+  - a census that does not record those fields is refused;
+  - a missing ROOT is recorded and not RED, because a directory that does not exist holds no model.
+  - Self-test rows: 3 added (20 total). Mutants: each drop check removed breaks exactly its own row.
+- **Cosmetic, fixed.** `apr capability`'s "N further types run on the CPU" now also counts types refused on this
+  device.
+- The other two findings are the known non-blocking ones above.
+
 A fresh round of three lanes judges the new head.
 
 ## Not done

@@ -79,6 +79,15 @@ def check(root):
         doc = json.loads(c.read_text(encoding="utf-8"))
         hosts.append(doc.get("host") or c.stem.replace("census-", ""))
         shas[c.name] = hashlib.sha256(c.read_bytes()).hexdigest()
+        # A held GGUF the SCANNER dropped never enters `need`, so nothing below could fail on it (round-3 quorum).
+        # The census states every drop; a census that cannot state them is refused. A missing ROOT is recorded, not
+        # RED: a directory that does not exist holds no model, so nothing was dropped.
+        if not all(k in doc for k in ("skipped_for_depth", "unreadable", "missing_roots")):
+            return [f"refused: {c.name} does not record skipped_for_depth/unreadable/missing_roots — regenerate it with scripts/lib/gguf_census.py"]
+        for f in doc["skipped_for_depth"]:
+            errs.append(f"{c.name}: held GGUF {f} was NOT READ (deeper than --depth {doc.get('depth')}) — its shapes are unchecked; raise --depth")
+        for u in doc["unreadable"]:
+            errs.append(f"{c.name}: held GGUF {u.get('file')} was NOT READ ({u.get('why')}) — its shapes are unchecked")
         for f in doc.get("files", []):
             for s in f.get("shapes", []):
                 if s["qtype"] in wl:
@@ -150,7 +159,8 @@ if [ "${1:-}" = "--self-test" ]; then
 import hashlib, json, sys
 from pathlib import Path
 d = Path(sys.argv[1])
-census = {"schema": "gguf-census/v1", "host": "h1", "files": [{"file": "m.gguf", "shapes": [
+census = {"schema": "gguf-census/v1", "host": "h1", "skipped_for_depth": [], "unreadable": [], "missing_roots": ["~/absent"],
+          "files": [{"file": "m.gguf", "shapes": [
     {"qtype": 12, "k": 2560, "n": 9216}, {"qtype": 23, "k": 3584, "n": 1024}, {"qtype": 11, "k": 512, "n": 512}]}]}
 cp = d / "evidence/gpu-shape-census/census-h1.json"
 cp.write_text(json.dumps(census))
@@ -176,6 +186,11 @@ elif what == "stale":   c["files"][0]["shapes"].append({"qtype": 11, "k": 256, "
 elif what == "no-receipt": rp.unlink(); rp = None
 elif what == "no-whitelist": (d / "crates/aprender-serve/src/gguf/dtype.rs").write_text("fn other() {}\n")
 elif what == "unlisted-type-held": pass  # ggml 11 is held but not whitelisted: must NOT be required
+elif what in ("census-skipped", "census-unreadable", "census-old-schema"):   # the SCANNER dropped a held GGUF
+    if what == "census-skipped":    c["skipped_for_depth"] = ["~/models/deep/sub/x.gguf"]
+    if what == "census-unreadable": c["unreadable"] = [{"file": "~/models/bad.gguf", "why": "bad magic"}]
+    if what == "census-old-schema": del c["skipped_for_depth"]
+    cp.write_text(json.dumps(c)); r["census"] = {cp.name: hashlib.sha256(cp.read_bytes()).hexdigest()}
 elif what.startswith("excl-"):          # #4096: ggml 23 excluded at cc>=12
     rs = d / "crates/aprender-serve/src/gguf/dtype.rs"
     rs.write_text(rs.read_text() + "pub(crate) const GPU_QTYPES_UNLOADABLE_AT_CC: [u32; 1] = [23];\n"
@@ -217,6 +232,9 @@ ED
   row RED-failed-row                     failed             1
   row RED-stale-receipt                  stale              1
   row RED-missing-host-receipt           no-receipt         1
+  row RED-census-depth-skipped-held-gguf census-skipped     1 "held GGUF ~/models/deep/sub/x.gguf was NOT READ"
+  row RED-census-unreadable-held-gguf    census-unreadable  1 "held GGUF ~/models/bad.gguf was NOT READ (bad magic)"
+  row REFUSED-census-without-drop-fields census-old-schema  2 "does not record skipped_for_depth"
   row REFUSED-no-whitelist-parsed        no-whitelist       2
   row green-exclusion-below-threshold    excl-below-threshold 0
   row green-excluded-type-red-on-cc12    excl-red-on-cc12   0

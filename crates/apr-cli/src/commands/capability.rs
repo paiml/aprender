@@ -112,9 +112,21 @@ pub fn run(json: bool) -> Result<()> {
         );
         println!("  {}", quant_line(&name, id, excluded_from(r), cc));
     }
+    // A type refused on THIS device (a per-capability exclusion) runs on the CPU here too, so it is counted.
+    let refused_here = sup
+        .iter()
+        .filter(|r| excluded_from(r).is_some_and(|m| cc.is_some_and(|c| i64::from(c) >= m)))
+        .count();
     println!(
-        "\n{} further ggml type(s) have no verified GPU kernel and run on the CPU.",
-        unsup.len()
+        "\n{} further ggml type(s) have no verified GPU kernel and run on the CPU{}.",
+        unsup.len(),
+        if refused_here > 0 {
+            format!(
+                "; {refused_here} more listed above are refused on this device and run on the CPU"
+            )
+        } else {
+            String::new()
+        }
     );
     println!("Run with --json for every row, including the reason each one carries.");
     Ok(())
