@@ -189,6 +189,11 @@ def write(name, L, rec, crux, rc, must, must_not=None):
         with open(os.path.join(d, "receipts", f"{h}.json"), "w", encoding="utf-8") as fh:
             json.dump(R, fh, indent=1)
     for n, X in crux.items():
+        # every apr greedy row records the backend it RAN on (#3957 F9); a case overrides it to plant a fallback
+        lane = X.get("backend")
+        for gg in X.get("greedy", []):
+            if isinstance(gg.get("apr"), dict) and isinstance(gg["apr"].get("raw"), dict):
+                gg["apr"]["raw"].setdefault("backend", {"requested": lane, "ran": lane, "fell_back": False})
         with open(os.path.join(d, "crux", f"{n}.json"), "w", encoding="utf-8") as fh:
             json.dump(X, fh, indent=1)
     shutil.copy(os.path.join(BASE, "version"), os.path.join(d, "version"))
@@ -362,9 +367,21 @@ def main():
     L, rec, crux = build_wa()   # apr on a non-official prompt: the wrong answer may be the template
     crux["lambda-gpu"]["greedy"][0]["apr"]["raw"]["prompt_ids"] = PIDS
     write("red-model-wrong-answer-not-official", L, rec, crux, 1, r"apr did not run on the model's OFFICIAL template")
-    L, rec, crux = build_wa()   # apr CPU != GPU
+    L, rec, crux = build_wa()   # apr CPU != GPU while the oracle's own backends agree fully
     crux["lambda-cpu"]["greedy"][0]["apr"]["raw"]["generated_ids"] = div(5)
-    write("red-model-wrong-answer-cpu-ne-gpu", L, rec, crux, 1, r"apr CPU and GPU DIFFER at step 5")
+    write("red-model-wrong-answer-cpu-ne-gpu", L, rec, crux, 1, r"apr CPU and GPU diverge at step 5 while the oracle's CPU and CUDA legs agree on every token")
+    L, rec, crux = build_wa(apr_div=None, ref_div=4)   # cop ruling (b) must-RED: apr's CPU/GPU split EARLIER than the oracle's
+    crux["lambda-cpu"]["greedy"][0]["apr"]["raw"]["generated_ids"] = div(2)
+    write("red-model-wrong-answer-cpu-gpu-earlier", L, rec, crux, 1, r"apr CPU and GPU diverge at step 2, EARLIER than the oracle's own CPU/CUDA split \(step 4\)")
+    L, rec, crux = build_wa(apr_div=None, ref_div=2)   # #4004's shape: apr splits LATER than the oracle -> admitted
+    crux["lambda-cpu"]["greedy"][0]["apr"]["raw"]["generated_ids"] = div(5)
+    write("green-red-model-wrong-answer-cpu-gpu-calibrated", L, rec, crux, 0, r"apr CPU/GPU split at step 5, not earlier than the oracle's own at step 2", r"FAIL")
+    L, rec, crux = build_wa()   # the apr "GPU" row fell back to the CPU (measured on IQ2_XXS, 165578f17)
+    crux["lambda-gpu"]["greedy"][0]["apr"]["raw"]["backend"] = {"requested": "gpu", "ran": "cpu", "fell_back": True}
+    write("red-model-wrong-answer-gpu-fell-back", L, rec, crux, 1, r"the apr GPU-lane row did NOT run on the GPU \(ran='cpu', fell_back=True\)")
+    L, rec, crux = build_f9()   # ... and the think-block class holds its GPU leg to the same rule
+    crux["lambda-gpu"]["greedy"][0]["apr"]["raw"]["backend"] = {"requested": "gpu", "ran": "cpu", "fell_back": True}
+    write("red-model-gpu-fell-back", L, rec, crux, 1, r"the apr GPU-lane row did NOT run on the GPU")
     L, rec, crux = build_wa()   # a wrong_answer key must say what the right answer is
     del L["ladder"]["inventory"]["red_model"][W]["expect"]
     write("red-model-wrong-answer-no-expect", L, rec, crux, 1, r"is a wrong_answer key with no `expect`")

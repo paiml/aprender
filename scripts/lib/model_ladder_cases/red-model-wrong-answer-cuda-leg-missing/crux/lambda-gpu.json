@@ -316,7 +316,12 @@
       198,
       248068,
       198
-     ]
+     ],
+     "backend": {
+      "requested": "gpu",
+      "ran": "gpu",
+      "fell_back": false
+     }
     }
    }
   },
@@ -356,7 +361,12 @@
       198,
       248068,
       198
-     ]
+     ],
+     "backend": {
+      "requested": "gpu",
+      "ran": "gpu",
+      "fell_back": false
+     }
     }
    },
    "llama.cpp@official": {

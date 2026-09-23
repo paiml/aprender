@@ -316,7 +316,12 @@
       198,
       248068,
       198
-     ]
+     ],
+     "backend": {
+      "requested": "cpu",
+      "ran": "cpu",
+      "fell_back": false
+     }
     }
    },
    "llama.cpp@official": {
@@ -411,7 +416,12 @@
       198,
       248068,
       198
-     ]
+     ],
+     "backend": {
+      "requested": "cpu",
+      "ran": "cpu",
+      "fell_back": false
+     }
     }
    },
    "llama.cpp@official": {
