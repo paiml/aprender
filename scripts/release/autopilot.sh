@@ -225,11 +225,42 @@ if run_step assets; then
 fi
 
 # 5. preflight (R1-R6; R5 reads the pre-publish receipt in this worktree)
+# #4045 M8 (shift-left): the publish RE-READS the candidate watch's verdict (scripts/release/candidate_watch.sh has
+# run every publish-blocking gate on the candidate since the freeze) -- it does not first-run them. The verdict must
+# be for THIS release commit, no older than CANDIDATE_WATCH_MAX_AGE_H (6) hours, and carry no REAL red (andon).
+# Missing, stale, another sha, or andon: no publish. scripts/check_publish_reads_watch.sh runs watch_gate() and
+# run_preflight() against stubs, once per outcome, plus a gate-removed mutant.
+watch_gate() { # watch_gate <state dir> <version> <release commit> <max age h>
+    local out rc=0
+    out=$(python3 - "$1" "$2" "$3" "$4" <<'PY'
+import glob, json, os, sys, time
+state, v, sha, max_h = sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4])
+fs = sorted(glob.glob(os.path.join(state, v, "watch-*.json")), key=os.path.getmtime)
+if not fs:
+    print("no candidate-watch verdict under %s/%s -- the gates were never run on the candidate" % (state, v)); sys.exit(1)
+w = json.load(open(fs[-1]))
+age = (time.time() - os.path.getmtime(fs[-1])) / 3600.0
+if w.get("schema") != "apr-candidate-watch/v1" or w.get("sha") != sha:
+    print("the latest watch verdict is for %s, not the release commit %s" % (str(w.get("sha"))[:9], sha[:9])); sys.exit(1)
+if age > max_h:
+    print("the latest watch verdict is %.1f h old (> %g h) -- re-run the watch on the candidate" % (age, max_h)); sys.exit(1)
+if w.get("andon") or w.get("real_red"):
+    print("the watch is in ANDON: REAL gate(s) red: %s" % ", ".join(w.get("real_red") or [])); sys.exit(1)
+print("GREEN for %s, %.1f h old, %d bookkeeping red reported" % (sha[:9], age, len(w.get("bookkeeping_red") or [])))
+PY
+) || rc=$?
+    [ "$rc" = 0 ] || die "candidate watch: $out -- no publish (#4045 M8)"
+    say "WATCH $out"
+}
+run_preflight() {
+    watch_gate "${CANDIDATE_WATCH_STATE:-$HOME/.local/state/aprender-candidate-watch}" "$V" "$MC" "${CANDIDATE_WATCH_MAX_AGE_H:-6}"
+    bash scripts/check_publish_preflight.sh > "$AP/preflight.log" 2>&1; rc=$?
+    tail -3 "$AP/preflight.log" >> "$STATUS"
+    [ $rc -eq 0 ] || die "publish preflight refused rc=$rc"
+    say "PREFLIGHT PASS"
+}
 if run_step preflight; then
-  bash scripts/check_publish_preflight.sh > "$AP/preflight.log" 2>&1; rc=$?
-  tail -3 "$AP/preflight.log" >> "$STATUS"
-  [ $rc -eq 0 ] || die "publish preflight refused rc=$rc"
-  say "PREFLIGHT PASS"
+  run_preflight
 fi
 
 
