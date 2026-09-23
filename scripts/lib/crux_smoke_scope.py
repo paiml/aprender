@@ -81,6 +81,11 @@ def judge(L, version, crux_dir, cert_p, cut, scope_name, out):
             out(f"FAIL  CRUX receipt {os.path.basename(f)} unreadable: {exc}"); failed = True
             continue
         if not isinstance(R, dict) or R.get("schema") != "crux-inference-receipt/v1":
+            # crux_sweep_shards.sh writes the merge's meta as <host>-<backend>.meta.json BESIDE the receipt
+            # (aprender-3a, 0.69.1 phase 3). It claims no schema and no cells: named and skipped. Any other
+            # non-receipt here is still a FAIL.
+            if os.path.basename(f).endswith(".meta.json") and isinstance(R, dict) and "schema" not in R and "cells" not in R:
+                out(f"note  {os.path.basename(f)} is the sweep's merge meta, not a receipt -- skipped"); continue
             out(f"FAIL  {os.path.basename(f)} is not a crux-inference-receipt/v1"); failed = True
             continue
         asha = model_ladder_crux.apr_sha_of(R)
@@ -114,6 +119,10 @@ def judge(L, version, crux_dir, cert_p, cut, scope_name, out):
                 elif not ctl or any(v != "GREEN" for v in ctl):
                     out(f"FAIL  {h} certified model {sha[:12]} thinking={mode}: the positive control is missing or not GREEN "
                         f"-- a lane that cannot answer its control proves nothing"); failed = True
+                elif all(pc for _, pc in got):
+                    # every cell IS a control: "control GREEN" is then implied by "all GREEN", not a second check
+                    out(f"ok    {h} certified model {sha[:12]} thinking={mode}: {len(got)} CRUX cell(s) GREEN -- every cell is a "
+                        f"positive control (control-only smoke)")
                 else:
                     out(f"ok    {h} certified model {sha[:12]} thinking={mode}: {len(got)} CRUX cell(s) GREEN, control GREEN")
     return failed

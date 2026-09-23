@@ -1085,7 +1085,7 @@ L = {"emergency_scopes": [{"name": "crux-smoke", "release": "0.69.1", "date": "2
 ADMIT = {s: {"off": ["ctl"], "on": ["ctl"]} for s in SH}
 ADMIT[SH[1]] = {"off": ["ctl"], "on": []}
 def build(d, hosts=("lambda", "gx10"), drop=None, ctl="GREEN", noctl=False, sha=CUT, cell="GREEN", admit=None, dropmode=None, onlymode=None,
-          real=None, cellver=None):
+          real=None, cellver=None, meta=False, junk=False, controlonly=False):
     # real=<version line>: the shape crux_inference_dogfood.sh ACTUALLY writes (copied from lambda's X2 shard
     # evidence/crux/0.69.1/d8a6df53a/shards/00fe7986ff5f-off/lambda-gpu.json): no apr.sha, a SHORT harness.sha,
     # and the binary named only by `apr --version`'s line, repeated in every cell's engines.apr.version.
@@ -1102,13 +1102,23 @@ def build(d, hosts=("lambda", "gx10"), drop=None, ctl="GREEN", noctl=False, sha=
                 cells.append({"key": {"model_sha256": s, "host": h, "thinking": t, "verb": "run"},
                               "verdict": cell if (h, s, t) == ("lambda", "3" * 64, "on") else "GREEN", "positive_control": False,
                               "engines": {"apr": {"answered": True, "version": (cellver or {}).get((h, s, t), real)}} if real else {}})
-                if not noctl:
+                if controlonly:
+                    cells[-1]["positive_control"] = True
+                elif not noctl:
                     cells.append({"key": {"model_sha256": s, "host": h, "thinking": t, "verb": "run"}, "verdict": ctl, "positive_control": True})
         json.dump({"schema": "crux-inference-receipt/v1", "host": h, "backend": "gpu",
                    **({"apr": {"version_line": real}, "harness": {"sha": real.split("(")[-1].rstrip(")")[:9],
                        "driver": "scripts/crux_inference_dogfood.sh"}} if real else {"apr": {"sha": sha}}),
                    "cells": cells, "summary": {"verdict": "PASS"}}, open(os.path.join(d, h + "-gpu.json"), "w"))
+        if meta:   # crux_sweep_shards.sh's merge meta, real keys: no schema, no cells
+            json.dump({"version": "0.69.1", "host": h, "backend": "gpu", "apr": {"version_line": "apr 0.69.1 (ddddddddd)"},
+                       "harness": {"sha": "ddddddddd"}, "models": []}, open(os.path.join(d, h + "-gpu.meta.json"), "w"))
+    if junk:
+        json.dump({"note": "not a receipt"}, open(os.path.join(d, "stray.json"), "w"))
 rows = [
+  ("the sweep's merge meta beside a receipt is skipped by name", False, "lambda-gpu.meta.json is the sweep's merge meta", {"meta": True}, "0.69.1"),
+  ("any OTHER non-receipt beside the receipts still FAILs", True, "stray.json is not a crux-inference-receipt/v1", {"meta": True, "junk": True}, "0.69.1"),
+  ("a control-only smoke says so instead of claiming a separate control check", False, "(control-only smoke)", {"controlonly": True}, "0.69.1"),
   ("green: both hosts, 3 certified models x off/on, controls GREEN", False, "OPERATOR EMERGENCY SCOPE: CRUX smoke only", {}, "0.69.1"),
   ("a host missing is RED", True, "host gx10 has no CRUX receipt", {"hosts": ("lambda",)}, "0.69.1"),
   ("a certified model missing on a host is RED", True, "no CRUX cell", {"drop": ("gx10", "2" * 64)}, "0.69.1"),
@@ -1165,6 +1175,9 @@ SM
     smutant any-sha           's/^        if asha != cut:$/        if False:/'
     smutant any-release       's/^    if str(version) != str(entry\["release"\]):$/    if False:/'
     smutant zero-modes-ok     's/^        if not m:$/        if False:/'
+    smutant meta-not-skipped  's/^                out(f"note  {os.path.basename(f)} is the sweep.s merge meta, not a receipt -- skipped"); continue$/                pass/'
+    smutant any-json-skipped  's/^            if os.path.basename(f).endswith(".meta.json") and isinstance(R, dict) and "schema" not in R and "cells" not in R:$/            if True:/'
+    smutant control-only-hidden 's/^                elif all(pc for _, pc in got):$/                elif False:/'
     smutant all-modes-counted 's/^            for mode in matrix\[sha\]:$/            for mode in ("off", "on"):/'
     vmutant() { # vmutant <label> <sed deleting a binding rule in model_ladder_crux.apr_sha_of> -- the smoke table must go RED
       local md="$mdir/v-$1"; mkdir -p "$md"
