@@ -1,0 +1,137 @@
+{
+  "ticket": "PMAT-4029",
+  "executor": "claude-code-agent",
+  "width": 3,
+  "base": "origin/chore/0.69.1-merge-back",
+  "base_note": "main lacks scripts/crux_vllm/ until #4046 (0.69.1 merge-back) lands; the PR is retargeted to main after it",
+  "head": "b98e2eeac5039b30c7865c29ce8a16526903322f",
+  "diff_sha256": "6231624e1c569966f5aad7e2bcdd3c9107faba5679ef808b49d33cb80b412d5a",
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "model-gate.sh"
+  },
+  "degraded": "same-family",
+  "fallback": {
+    "reason": "agy rounds 1-3 produced no counted verdict: all 9 lanes exited 3 on LANE ISOLATION (refs moved in the shared .git by OTHER sessions' worktrees \u2014 fix/3837, fix/4048, feat/4036, chore/0.69.1-merge-back, docs/milestone-triage-0.70; attributed by reflog + worktree list), plus one 503 and one schema miss in round 3; gpt-oss-120b-medium 429 (88h reset). Operator rule (CLAUDE.md, 2026-09-23): quorum lanes fall back to Claude Code, never the author's model id (author opus-5-5 -> sonnet-5 lanes), same-family quorums valid and marked degraded: same-family.",
+    "agy_rounds": [
+      {
+        "round": 1,
+        "head": "59df35df4",
+        "counted": 0,
+        "votes": {
+          "PASS": 2,
+          "do-not-implement-as-written": 1
+        },
+        "acted_on": "lane 1: the case stubbed the loader, so neither call site ran (confirmed: call-site mutant rc 0)"
+      },
+      {
+        "round": 2,
+        "head": "6c2366091",
+        "counted": 0,
+        "votes": {
+          "PASS": 2,
+          "FAIL": 1
+        },
+        "acted_on": "lane 1: module-scope fakes never restored"
+      },
+      {
+        "round": 3,
+        "head": "05cd34347",
+        "counted": 0,
+        "votes": {
+          "PASS": 1,
+          "NO-VERDICT": 2
+        },
+        "acted_on": "delegate read: restore case did not check transformers"
+      }
+    ]
+  },
+  "claude_rounds": [
+    {
+      "round": 4,
+      "head": "d48292f89",
+      "votes": {
+        "FAIL": 2,
+        "PASS": 1
+      },
+      "acted_on": "lanes 1+3 measured: a serve item refused for sharing a batch sized the run engine (104096 vs 4101); lane 2 measured: context == budget fixture let 2*context and +4096 survive"
+    },
+    {
+      "round": 5,
+      "head": "7b0e6c2fc",
+      "votes": {
+        "PASS": 2,
+        "FAIL": 1
+      },
+      "acted_on": "lane 2 measured: clamp at 8192 survived"
+    },
+    {
+      "round": 6,
+      "head": "fb9635b1b",
+      "votes": {
+        "PASS": 1,
+        "FAIL": 2
+      },
+      "acted_on": "lane 3 measured: missing roadmap fragment (required gate RED); lane 2 measured: thinking gate and single-item skip survived"
+    },
+    {
+      "round": 7,
+      "head": "b98e2eeac",
+      "votes": {
+        "PASS": 3
+      },
+      "acted_on": "none"
+    }
+  ],
+  "lanes": [
+    {
+      "lane": 1,
+      "model": "claude-sonnet-5",
+      "family": "claude",
+      "model_source": "agent-report",
+      "verdict": "PASS",
+      "agent_id": "a08c275b5a0826972",
+      "focus": "fix correctness; fixture arithmetic",
+      "summary": "model_len computed after the item_error and mixed-interface refusals, stamped on every row, used at both vLLM call sites; all 12 fixtures recomputed; gate reproduced byte-identical (52/52, sha256 8aa228bc\u2026)."
+    },
+    {
+      "lane": 2,
+      "model": "claude-sonnet-5",
+      "family": "claude",
+      "model_source": "agent-report",
+      "verdict": "PASS",
+      "agent_id": "a13e1e92169ae4947",
+      "focus": "mutant hunt",
+      "summary": "9 new compiled mutants: 8 RED; 1 survivor (assign batch_max_tokens only if absent) unreachable from main(), which calls run_batch once per process: contrived by the stated rule."
+    },
+    {
+      "lane": 3,
+      "model": "claude-sonnet-5",
+      "family": "claude",
+      "model_source": "agent-report",
+      "verdict": "PASS",
+      "agent_id": "ad3f5c4a2ba8eb516",
+      "focus": "regressions, CI guards, commit honesty",
+      "summary": "6 roadmap guards + row-write-set + 2 python-scanning + 4 crux guards rc 0; aggregate --check rc 0; every commit's N/N count reproduced at its own commit; check_crux_inference_judge.sh (untouched file) timed out in-lane."
+    }
+  ],
+  "agreed": true,
+  "verdict": "PASS",
+  "partial": false,
+  "partial_reasons": [],
+  "gate": {
+    "cmd": "python3 scripts/crux_vllm/test_engine.py",
+    "exit": 0,
+    "cases": "52/52",
+    "log_sha256": "8aa228bc49f875d9f5eb6f8dc01e7afea583909b5b95979e7e4aedf8698954d0"
+  },
+  "not_run": [
+    "a real thinking-ON vllm serve rerun at the certified ON budget on GPU (ticket acceptance 2) \u2014 no GPU on lambda/gx10 until the cop pings '0.69.1 published'"
+  ],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "note": "stop at the receipt; never arm (cop rule)"
+  }
+}
