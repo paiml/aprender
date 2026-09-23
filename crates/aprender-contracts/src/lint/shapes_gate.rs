@@ -306,6 +306,9 @@ pub fn run_shapes_gate_with(contract_dir: &Path, opts: &ShapesOptions) -> Shapes
         &extraction.github,
         &extraction.example.errors,
     );
+    // PV-ONT-013 NAMES the NotRun cells; it deliberately does not add to `counted.violations`. The verdict comes
+    // from the armed shape's own `maxCount 0` violation on the same edges, and `cells_controls` declines when the
+    // two disagree (wiring_holds), so the named list and the verdict cannot drift apart silently.
     if let Some(cc) = &cells {
         counted.findings.extend(cells_gate::findings(cc, &arming));
     }
@@ -388,7 +391,7 @@ fn cells_corpus(
     let cells = cells_gate::corpus(owned, shapes, &extraction.gguf.rungs, &extraction.receipts)
         .map_err(|e| {
             ShapesOutcome::ExtractFailed(ExtractFailure::Receipt(receipts::ReceiptError {
-                file: e.file.clone(),
+                file: e.file(),
                 what: e.to_string(),
             }))
         })?;

@@ -92,6 +92,7 @@ aprender-contracts-cli	--test	ont4b2_code_lean_w3c
 aprender-contracts-cli	--test	ont4b_shapes_gate
 aprender-contracts-cli	--test	ont4c1_model_receipts
 aprender-contracts-cli	--test	ont4c3_parity_receipts
+aprender-contracts-cli	--test	ont4c5_capability_cells
 aprender-contracts-cli	--test	ont4d_subsumption
 aprender-contracts-cli	--test	ont4e_refines_gate
 aprender-contracts-cli	--test	ont4f_github_entities
