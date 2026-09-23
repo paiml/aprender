@@ -310,6 +310,10 @@ or drop `--backend`."
             emit_trace,
             output_format,
             input_format,
+            no_gpu,
+            gpu: _,
+            max_tokens,
+            thinking,
         } => dispatch_code_command(CodeArgs {
             model,
             project,
@@ -321,6 +325,9 @@ or drop `--backend`."
             emit_trace,
             output_format: *output_format,
             input_format: *input_format,
+            no_gpu: *no_gpu,
+            max_tokens: *max_tokens,
+            think: thinking.as_deref(),
         }),
 
         _ => return None,
@@ -340,6 +347,9 @@ struct CodeArgs<'a> {
     emit_trace: &'a Option<PathBuf>,
     output_format: crate::CodeOutputFormat,
     input_format: crate::CodeInputFormat,
+    no_gpu: bool,
+    max_tokens: Option<u32>,
+    think: Option<&'a str>,
 }
 
 /// Dispatch `apr code` (PMAT-182): the sovereign coding assistant.
@@ -372,7 +382,19 @@ fn dispatch_code_command(args: CodeArgs<'_>) -> Result<(), CliError> {
         crate::CodeOutputFormat::Json => "json",
     };
     let started = std::time::Instant::now();
-    batuta::agent::code::cmd_code(
+    // #3978: the serve child's backend, generation length and thinking mode.
+    let serve_opts = batuta::agent::code::CodeServeOptions {
+        serve: batuta::agent::driver::apr_serve::ServeLaunchOptions {
+            backend: if args.no_gpu {
+                batuta::agent::driver::apr_serve::ServeBackend::Cpu
+            } else {
+                batuta::agent::driver::apr_serve::ServeBackend::Gpu
+            },
+            max_tokens: args.max_tokens,
+        },
+        think: args.think.map(|t| t == "on"),
+    };
+    batuta::agent::code::cmd_code_with(
         args.model.clone(),
         args.project.to_path_buf(),
         args.resume.clone(),
@@ -386,6 +408,7 @@ fn dispatch_code_command(args: CodeArgs<'_>) -> Result<(), CliError> {
             crate::CodeInputFormat::Text => "text",
             crate::CodeInputFormat::Json => "json",
         },
+        serve_opts,
     )
     .map_err(|e| {
         let err = CliError::Aprender(e.to_string());
