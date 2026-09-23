@@ -25,9 +25,11 @@ apr-cli	--lib	commands::test_llm_band
 apr-cli	--lib	commands::tokenize
 apr-cli	--test	backend_refusal_case_table
 apr-cli	--test	beat_apr_sibling_cli_reach
+apr-cli	--test	capability_mirror
 apr-cli	--test	cli_commands
 apr-cli	--test	pixel_regression
 apr-cli	--test	registry_failure_catalogue
+apr-cli	--test	thinking_budgets_mirror
 apr-format	--lib	falsifiers
 aprender-cgp	--lib	analysis::contracts
 aprender-compute-xtask	--bins
@@ -128,6 +130,7 @@ aprender-rag	--lib	loader::text
 aprender-rag-cli	--lib	<root>
 aprender-serve	--lib	capability
 aprender-serve	--lib	cli::cli_tests
+aprender-serve	--lib	infer
 aprender-serve	--lib	quantize::contract_tests
 aprender-shell	--lib	model
 aprender-simulate	--lib	demos::tsp_grasp
@@ -151,5 +154,3 @@ aprender-train	--lib	hf_pipeline::export::pipeline
 aprender-train	--lib	models::llama_370m
 aprender-train	--lib	research::archive::tests
 aprender-viz	--test	render_determinism
-apr-cli	--test	capability_mirror
-apr-cli	--test	thinking_budgets_mirror
