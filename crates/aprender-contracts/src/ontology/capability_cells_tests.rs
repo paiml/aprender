@@ -236,7 +236,10 @@ fn a_version_that_is_not_dotted_numerals_is_refused_by_name() {
     for bad in ["0.69.1-rc1", "", "v0.69", "0..1"] {
         let recs = [receipt(bad, "lambda", &[row("a", SHA_A, true, "")])];
         let err = compute(&rungs, &recs).expect_err(bad);
-        assert_eq!(err.version, bad);
+        assert!(
+            matches!(&err, CellsError::Version { version, .. } if version == bad),
+            "{err:?}"
+        );
         assert!(err.to_string().contains("refused by name"), "{err}");
     }
 }
@@ -376,4 +379,22 @@ fn a_refused_label_lands_on_its_own_rung_only() {
     assert!(g
         .objects(&iri("model", SHA_B), &model("refusedLabel"))
         .is_empty());
+}
+
+/// Review lane B: two required rungs with one id would merge into one cell and cross-attribute a gap.
+#[test]
+fn two_required_rungs_sharing_an_id_are_refused_by_name() {
+    let mut twin = rung("a", SHA_B, &[], true);
+    twin.contract = "other-ladder-v1".into();
+    let rungs = [rung("a", SHA_A, &[], true), twin];
+    let recs = [receipt("0.69.1", "lambda", &[row("a", SHA_A, true, "")])];
+    let err = compute(&rungs, &recs).expect_err("duplicate required id");
+    assert!(
+        matches!(&err, CellsError::DuplicateRung { id, contracts } if id == "a" && contracts.len() == 2),
+        "{err:?}"
+    );
+    assert!(err.to_string().contains("refused by name"), "{err}");
+    // an OPTIONAL twin is outside D and is not a conflict
+    let rungs = [rung("a", SHA_A, &[], true), rung("a", SHA_B, &[], false)];
+    assert!(compute(&rungs, &recs).is_ok());
 }

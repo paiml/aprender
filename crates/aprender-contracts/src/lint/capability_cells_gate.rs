@@ -19,7 +19,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ontology::arming::ArmedShapes;
-use crate::ontology::capability_cells::{self, CapabilityCells, VersionError};
+use crate::ontology::capability_cells::{self, CapabilityCells, CellsError};
 use crate::ontology::extract::gguf::{self, Rung};
 use crate::ontology::rdf::Graph;
 use crate::ontology::receipts::Receipt;
@@ -74,7 +74,7 @@ pub fn corpus(
     shapes: &[NodeShape],
     rungs: &[Rung],
     receipts: &[Receipt],
-) -> Result<Option<CapabilityCells>, VersionError> {
+) -> Result<Option<CapabilityCells>, CellsError> {
     if !declared(shapes) {
         return Ok(None);
     }
@@ -123,7 +123,7 @@ pub fn wiring_holds(report: &Report, graph: &Graph, cc: &CapabilityCells) -> boo
         .results
         .iter()
         .filter(|r| r.shape == SHAPE && r.severity == Severity::Violation)
-        .filter_map(|r| rung_id(graph, &r.focus))
+        .flat_map(|r| rung_ids(graph, &r.focus))
         .collect();
     // a refused label makes its row NotRun, so its rung already owns a not_run cell
     let owning: BTreeSet<String> = cc
@@ -134,12 +134,15 @@ pub fn wiring_holds(report: &Report, graph: &Graph, cc: &CapabilityCells) -> boo
     flagged == owning
 }
 
-fn rung_id(graph: &Graph, focus: &str) -> Option<String> {
+/// Every `model:id` on a focus node: two rungs that share a sha share one node (ONT-4c1 keys by sha256), and
+/// reading only the first id would make an honest tree decline as a wiring Differential (review lane B).
+fn rung_ids(graph: &Graph, focus: &str) -> Vec<String> {
     graph
         .objects(focus, &gguf::model("id"))
-        .first()
-        .and_then(|t| t.as_literal())
+        .iter()
+        .filter_map(|t| t.as_literal())
         .map(|(id, _)| id.to_string())
+        .collect()
 }
 
 /// One finding per NotRun cell and per refused label, naming it. Error when the shape is armed, Warning when not.
@@ -203,6 +206,38 @@ mod tests {
         assert_eq!(
             PLANT, text,
             "tests/fixtures/ont/capability-cells-plant.yaml drifted from the embedded plant"
+        );
+    }
+
+    /// Review lane C: the §5 probe reads `pc_shapes` and `capability_cells` at the TOP level of the single-gate
+    /// report, which flattens `extra`; so they must be DIRECT keys of the serialized `GateExtra::Shapes`, not nested
+    /// under `controls` (they sit in a boxed, flattened `ShapesControls`).
+    #[test]
+    fn pc_shapes_and_capability_cells_serialize_as_direct_keys_of_the_shapes_extra() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/ont/capcells-clean/contracts");
+        let outcome = super::super::shapes_gate::run_shapes_gate(&dir);
+        let super::super::shapes_gate::ShapesOutcome::Ran { result, .. } = outcome else {
+            panic!("capcells-clean must run: {outcome:?}");
+        };
+        let v = serde_json::to_value(result.extra.as_ref().expect("extra")).expect("serializes");
+        assert_eq!(v["type"], "shapes", "{v}");
+        assert!(
+            v.get("controls").is_none(),
+            "the box leaked as a nested key: {v}"
+        );
+        assert_eq!(v["pc_shapes"][SHAPE], "fired", "{v}");
+        assert!(v["pc_extract"].is_object(), "{v}");
+        assert_eq!(v["capability_cells"]["v_star"], "0.69.1", "{v}");
+        assert_eq!(
+            v["capability_cells"]["domain"].as_array().map(Vec::len),
+            Some(4),
+            "{v}"
+        );
+        assert_eq!(
+            v["capability_cells"]["not_run"],
+            serde_json::json!([]),
+            "{v}"
         );
     }
 }
