@@ -335,44 +335,78 @@ fn glob_match(pat: &str, name: &str) -> bool {
 /// nobody re-measures. The override is named in the returned provenance so a probed
 /// number cannot be mistaken for a measured one.
 #[cfg(feature = "inference")]
-fn thinking_on_budget_for(model_file: &str) -> std::result::Result<(usize, String), String> {
-    if let Ok(raw) = std::env::var("APR_THINKING_ON_BUDGET") {
-        let n: usize = raw.trim().parse().map_err(|_| {
-            format!("APR_THINKING_ON_BUDGET={raw:?} is not a token count (#3907)")
-        })?;
-        return Ok((n, format!("PROBE OVERRIDE APR_THINKING_ON_BUDGET={n}, not a measurement")));
+/// The probe override, or `None` when the variable is unset.
+///
+/// Split out of `thinking_on_budget_for` because
+/// `check_complexity_ratchet.sh` measured the combined function at **cognitive
+/// 32** against a ceiling of 25 and refused it as NEW against the merge-base.
+/// Every message below is byte-identical to the single-function version: the
+/// split is for the nesting, and the strings are the contract (`#3907`).
+fn thinking_on_budget_override() -> std::result::Result<Option<(usize, String)>, String> {
+    let Ok(raw) = std::env::var("APR_THINKING_ON_BUDGET") else {
+        return Ok(None);
+    };
+    let n: usize = raw
+        .trim()
+        .parse()
+        .map_err(|_| format!("APR_THINKING_ON_BUDGET={raw:?} is not a token count (#3907)"))?;
+    Ok(Some((
+        n,
+        format!("PROBE OVERRIDE APR_THINKING_ON_BUDGET={n}, not a measurement"),
+    )))
+}
+
+/// One matched row of the `models` table. A row that declares no `budget`
+/// REFUSES rather than inheriting the default, which was measured on a
+/// different model (#3907).
+fn thinking_on_budget_row(
+    v: &serde_yaml::Value,
+    pat: &str,
+    model_file: &str,
+) -> std::result::Result<(usize, String), String> {
+    let Some(b) = v.get("budget").and_then(serde_yaml::Value::as_u64) else {
+        let why = v
+            .get("why_unmeasured")
+            .and_then(|x| x.as_str())
+            .unwrap_or("no reason recorded");
+        return Err(format!(
+            "no measured thinking budget for `{model_file}` (matches `{pat}` in \
+             contracts/thinking-budgets-v1.yaml, which declares no `budget`). \
+             Refusing rather than inheriting the default, which was measured on a \
+             different model: {} (#3907)",
+            why.trim()
+        ));
+    };
+    let basis = v.get("basis").and_then(|x| x.as_str()).unwrap_or("").trim();
+    if basis.is_empty() {
+        return Err(format!(
+            "`{pat}` declares budget {b} with no `basis` — a budget without the \
+             measurement behind it is not a budget (#3907)"
+        ));
     }
-    let doc: serde_yaml::Value = serde_yaml::from_str(THINKING_BUDGETS)
-        .map_err(|e| format!("the embedded thinking-budget table did not parse: {e} (#3907)"))?;
-    if let Some(models) = doc.get("models").and_then(|m| m.as_mapping()) {
-        for (k, v) in models {
-            let Some(pat) = k.as_str() else { continue };
-            if !glob_match(pat, model_file) {
-                continue;
-            }
-            let Some(b) = v.get("budget").and_then(serde_yaml::Value::as_u64) else {
-                let why = v
-                    .get("why_unmeasured")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or("no reason recorded");
-                return Err(format!(
-                    "no measured thinking budget for `{model_file}` (matches `{pat}` in \
-                     contracts/thinking-budgets-v1.yaml, which declares no `budget`). \
-                     Refusing rather than inheriting the default, which was measured on a \
-                     different model: {} (#3907)",
-                    why.trim()
-                ));
-            };
-            let basis = v.get("basis").and_then(|x| x.as_str()).unwrap_or("").trim();
-            if basis.is_empty() {
-                return Err(format!(
-                    "`{pat}` declares budget {b} with no `basis` — a budget without the \
-                     measurement behind it is not a budget (#3907)"
-                ));
-            }
-            return Ok((usize::try_from(b).unwrap_or(0), format!("{pat}: {basis}")));
+    Ok((usize::try_from(b).unwrap_or(0), format!("{pat}: {basis}")))
+}
+
+/// The first `models` pattern that matches `model_file`, or `None` when the
+/// model is unlisted and the `default` row applies.
+fn thinking_on_budget_match(
+    doc: &serde_yaml::Value,
+    model_file: &str,
+) -> Option<std::result::Result<(usize, String), String>> {
+    let models = doc.get("models").and_then(|m| m.as_mapping())?;
+    for (k, v) in models {
+        let Some(pat) = k.as_str() else { continue };
+        if glob_match(pat, model_file) {
+            return Some(thinking_on_budget_row(v, pat, model_file));
         }
     }
+    None
+}
+
+/// The `default` row, for a model no pattern names.
+fn thinking_on_budget_default(
+    doc: &serde_yaml::Value,
+) -> std::result::Result<(usize, String), String> {
     let d = doc.get("default").ok_or_else(|| {
         "contracts/thinking-budgets-v1.yaml has no `default` and this model is unlisted (#3907)"
             .to_string()
@@ -386,6 +420,18 @@ fn thinking_on_budget_for(model_file: &str) -> std::result::Result<(usize, Strin
         return Err("`default` declares a budget with no `basis` (#3907)".to_string());
     }
     Ok((usize::try_from(b).unwrap_or(0), format!("default: {basis}")))
+}
+
+fn thinking_on_budget_for(model_file: &str) -> std::result::Result<(usize, String), String> {
+    if let Some(over) = thinking_on_budget_override()? {
+        return Ok(over);
+    }
+    let doc: serde_yaml::Value = serde_yaml::from_str(THINKING_BUDGETS)
+        .map_err(|e| format!("the embedded thinking-budget table did not parse: {e} (#3907)"))?;
+    if let Some(hit) = thinking_on_budget_match(&doc, model_file) {
+        return hit;
+    }
+    thinking_on_budget_default(&doc)
 }
 
 /// The same conversation with production's THINKING SUPPRESSION removed, or
