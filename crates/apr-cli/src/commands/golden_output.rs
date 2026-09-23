@@ -499,12 +499,22 @@ fn judge_thinking_on_output(generated: &str, patterns: &[&str], budget: usize) -
             // only the answer after it scored "skipped reasoning, answered" as
             // "reasoned, answered", so the leg could not fail on the case it exists
             // to catch (Qwen3.5-0.8B Q4_K_M answered at budget 8).
-            if !any_think_block_has_content(generated) {
-                return Some(format!(
-                    "golden_output_thinking_on: the <think> block closed EMPTY within {budget} tokens \
-                     — the model skipped the reasoning, so this leg judged an answer given without \
-                     thinking (#3948)"
-                ));
+            match max_think_block_words(generated) {
+                0 => {
+                    return Some(format!(
+                        "golden_output_thinking_on: the <think> block closed EMPTY within {budget} tokens \
+                         — the model skipped the reasoning, so this leg judged an answer given without \
+                         thinking (#3948)"
+                    ))
+                },
+                n if n < MIN_THINK_WORDS => {
+                    return Some(format!(
+                        "golden_output_thinking_on: the <think> block closed within {budget} tokens holding \
+                         {n} word(s), below the {MIN_THINK_WORDS}-word minimum -- a token between the tags \
+                         is not reasoning (#3948)"
+                    ))
+                },
+                _ => {},
             }
             match verify_output(&answer, "golden_output_thinking_on", patterns) {
                 OutputVerification::Fail { reason } => Some(reason),
@@ -514,21 +524,48 @@ fn judge_thinking_on_output(generated: &str, patterns: &[&str], budget: usize) -
     }
 }
 
-/// #3948: does any closed `<think>` block hold more than whitespace?
+/// #3948 quorum item 1: the fewest words a closed `<think>` block must hold to count as
+/// reasoning. `<think>.</think>` -- one token between the tags -- passed the "any content"
+/// rule, so a model could skip reasoning with a single token. A word is a whitespace-split
+/// run holding at least one alphanumeric character. Measured controls on the same prompt
+/// reason for 445-2149 characters (#3961); the one model that skipped reasoning wrote 0.
 #[cfg(feature = "inference")]
-fn any_think_block_has_content(generated: &str) -> bool {
+const MIN_THINK_WORDS: usize = 3;
+
+/// #3948: the most words any closed `<think>` block holds.
+#[cfg(feature = "inference")]
+fn max_think_block_words(generated: &str) -> usize {
     let mut rest = generated;
+    let mut best = 0;
     while let Some(start) = rest.find("<think>") {
         let body = &rest[start + "<think>".len()..];
         let Some(end) = body.find("</think>") else {
-            return false;
+            break;
         };
-        if !body[..end].trim().is_empty() {
-            return true;
-        }
+        let words = body[..end]
+            .split_whitespace()
+            .filter(|w| w.chars().any(char::is_alphanumeric))
+            .count();
+        best = best.max(words);
         rest = &body[end + "</think>".len()..];
     }
-    false
+    best
+}
+
+/// #3961: the characters inside every closed `<think>` block, for the pass receipt.
+#[cfg(feature = "inference")]
+pub(crate) fn think_body_chars(generated: &str) -> usize {
+    let mut rest = generated;
+    let mut n = 0;
+    while let Some(start) = rest.find("<think>") {
+        let body = &rest[start + "<think>".len()..];
+        let Some(end) = body.find("</think>") else {
+            break;
+        };
+        n += body[..end].trim().chars().count();
+        rest = &body[end + "</think>".len()..];
+    }
+    n
 }
 
 /// The golden cases as (prompt, expected patterns) for one architecture.
@@ -1774,13 +1811,41 @@ mod golden_output_tests {
         let absent = judge_thinking_on_output("2 + 2 = 4.", &patterns, 2048)
             .expect("no think block means the leg judged nothing");
         assert!(absent.contains("never entered"), "{absent}");
-        // #3948: closed but EMPTY → the reasoning was skipped; a right answer does not save it
-        for empty in ["<think></think>2 + 2 = 4.", "<think>\n\n</think>\n\n2 + 2 = 4."] {
+        // #3948: closed but EMPTY → the reasoning was skipped; a right answer does not save it.
+        // Space- and tab-only bodies are empty too (quorum item 5).
+        for empty in [
+            "<think></think>2 + 2 = 4.",
+            "<think>\n\n</think>\n\n2 + 2 = 4.",
+            "<think> \t  \t </think>2 + 2 = 4.",
+        ] {
             let skipped = judge_thinking_on_output(empty, &patterns, 2048)
                 .expect("an empty think block proves no reasoning happened");
             assert!(skipped.contains("closed EMPTY within 2048 tokens"), "{skipped}");
             assert!(!skipped.contains("never entered"), "{skipped}");
         }
+    }
+
+    /// #3948 quorum item 1, MUST-RED: a block holding one character or one token is not
+    /// reasoning either. `any_think_block_has_content` accepted `<think>.</think>`, so a
+    /// model that emitted a single token between the tags passed the leg it skipped.
+    #[test]
+    fn a_think_block_of_one_character_or_one_token_is_not_reasoning() {
+        let patterns = vec!["4"];
+        for thin in [
+            "<think>.</think>2 + 2 = 4.",
+            "<think> a </think>2 + 2 = 4.",
+            "<think>Hmm</think>2 + 2 = 4.",
+            "<think>ok so</think>2 + 2 = 4.",
+        ] {
+            let got = judge_thinking_on_output(thin, &patterns, 2048)
+                .unwrap_or_else(|| panic!("{thin:?} is not reasoning and must not pass"));
+            assert!(got.contains("golden_output_thinking_on"), "{got}");
+        }
+        // the boundary's other side: three words is the minimum that passes
+        assert_eq!(
+            judge_thinking_on_output("<think>2 plus 2</think>2 + 2 = 4.", &patterns, 2048),
+            None
+        );
     }
 
     /// The ON budget is the ON leg's alone. #3724's ruling: the fix is the prompt,

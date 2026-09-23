@@ -882,9 +882,9 @@ fn note_gpu_golden_skip(config: &QaConfig, message: &str) {
 /// (the same reason `golden_output_apr` does it). Stop tokens come from the
 /// model's own EOS, which `run_gguf_inference` merges in.
 ///
-/// Returns the text and the dispatch's own `used_gpu` (#3711).
+/// Returns the text, the dispatch's own `used_gpu` (#3711) and the generated token count (#3961).
 #[cfg(feature = "inference")]
-fn golden_output_runtime(path: &Path, prompt: &str, max_tokens: usize) -> Result<(String, bool)> {
+fn golden_output_runtime(path: &Path, prompt: &str, max_tokens: usize) -> Result<(String, bool, usize)> {
     use realizar::gguf::MappedGGUFModel;
     use realizar::{run_inference, InferenceConfig};
 
@@ -905,7 +905,7 @@ fn golden_output_runtime(path: &Path, prompt: &str, max_tokens: usize) -> Result
         .with_top_k(1);
     let result = run_inference(&infer_config)
         .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?;
-    Ok((result.text, result.used_gpu))
+    Ok((result.text, result.used_gpu, result.generated_token_count))
 }
 
 /// Gate 1 for an architecture the dense loader refuses: the same golden cases,
@@ -955,7 +955,7 @@ fn run_golden_output_gate_runtime(
 
     let mut served_by = String::new();
     for (prompt, expected_patterns) in &test_cases {
-        let (output_text, used_gpu) = golden_output_runtime(path, prompt.as_str(), golden_max_tokens)?;
+        let (output_text, used_gpu, _) = golden_output_runtime(path, prompt.as_str(), golden_max_tokens)?;
         // #3711: the backend first — a GPU that fell back is a FAIL even when the CPU's answer is right
         match runtime_golden_backend(used_gpu, gpu_not_run) {
             Ok(label) => served_by = label,
@@ -1003,6 +1003,7 @@ fn run_golden_output_gate_runtime(
 
     // #3724 done_when 3: the hybrid rungs are thinking-capable too, and this leg
     // is where they are judged.
+    let mut on_leg = String::new();
     if let Some((on_prompt, on_patterns)) = thinking_on_case(architecture.as_deref()) {
         // #3907 WIRING (#3907 landed the resolver and reached only the DENSE leg at
         // golden_output.rs:795; this is the HYBRID leg, and it kept passing the raw
@@ -1016,7 +1017,7 @@ fn run_golden_output_gate_runtime(
             .file_name()
             .map(|f| f.to_string_lossy().into_owned())
             .unwrap_or_default();
-        let (on_budget, _basis) = match thinking_on_budget_for(&model_file) {
+        let (on_budget, budget_basis) = match thinking_on_budget_for(&model_file) {
             Ok(v) => v,
             Err(reason) => {
                 return Ok(GateResult::failed(
@@ -1028,11 +1029,16 @@ fn run_golden_output_gate_runtime(
                 ))
             },
         };
-        // #3711 made this return the backend alongside the text; the ON leg judges
-        // the answer, and the backend was already judged on the OFF cases above.
-        let (on_text, _used_gpu) = golden_output_runtime(path, on_prompt.as_str(), on_budget)?;
+        let (on_text, on_used_gpu, on_tokens) = golden_output_runtime(path, on_prompt.as_str(), on_budget)?;
         let generated = on_text.strip_prefix(on_prompt.as_str()).unwrap_or(&on_text);
-        if let Some(reason) = judge_thinking_on_output(generated, &on_patterns, on_budget) {
+        if let Some(reason) = thinking_on_leg_failure(
+            generated,
+            &on_patterns,
+            on_budget,
+            on_used_gpu,
+            gpu_not_run,
+            &budget_basis,
+        ) {
             return Ok(GateResult::failed(
                 "golden_output",
                 &reason,
@@ -1041,18 +1047,49 @@ fn run_golden_output_gate_runtime(
                 start.elapsed(),
             ));
         }
+        // #3961: a pass says what the ON leg did -- its own backend, how much it reasoned
+        // and how long it ran. `think_body_chars` is the number that told the 0.8B model
+        // that skipped reasoning (0) from the controls that did (445-2149).
+        on_leg = format!(
+            "; thinking-ON leg served by {}, think_body_chars={}, generated_tokens={on_tokens}",
+            if on_used_gpu { "GPU" } else { "CPU" },
+            think_body_chars(generated),
+        );
     }
 
     Ok(GateResult::passed(
         "golden_output",
         &format!(
-            "{} golden test cases passed through the runtime entry point (served by {served_by})",
+            "{} golden test cases passed through the runtime entry point (served by {served_by}){on_leg}",
             test_cases.len(),
         ),
         Some(test_cases.len() as f64),
         Some(test_cases.len() as f64),
         start.elapsed(),
     ))
+}
+
+/// #3961: the hybrid thinking-ON leg's whole verdict, pure so a table can drive it.
+#[cfg(feature = "inference")]
+pub(crate) fn thinking_on_leg_failure(
+    generated: &str,
+    on_patterns: &[&str],
+    on_budget: usize,
+    on_used_gpu: bool,
+    gpu_not_run: Option<&'static str>,
+    budget_basis: &str,
+) -> Option<String> {
+    // The backend first, as on the OFF cases: a GPU-expected leg the CPU served is a FAIL
+    // even when the CPU's answer is right. The ON leg used to skip this ("the backend was
+    // already judged on the OFF cases") -- an assumption nothing checked, on the longest
+    // generation the gate runs, the one most exposed to a mid-run fallback (#3961).
+    if let Err(failure) = runtime_golden_backend(on_used_gpu, gpu_not_run) {
+        return Some(format!(
+            "golden_output_thinking_on: {failure} [budget basis — {budget_basis}]"
+        ));
+    }
+    judge_thinking_on_output(generated, &on_patterns, on_budget)
+        .map(|r| format!("{r} [budget basis — {budget_basis}]"))
 }
 
 /// Without `inference` there is no runtime to certify.
@@ -1217,6 +1254,50 @@ mod pmat3782_degenerate_is_not_an_answer {
 }
 
 /// #3904: the golden gate's failure reason must say what it dropped.
+#[cfg(all(test, feature = "inference"))]
+mod thinking_on_leg_3961 {
+    use super::thinking_on_leg_failure;
+
+    const REASONED: &str = "<think>two plus two is four</think>2 + 2 = 4.";
+
+    /// #3961 MUST-RED: the ON leg fell back to the CPU where the GPU was expected. The OFF
+    /// cases judged THEIR backend; this leg is the longest generation the gate runs and was
+    /// judged on its text alone, so a CPU-served answer passed as a GPU cell (#3922 shape).
+    #[test]
+    fn an_on_leg_that_fell_back_is_red() {
+        let got = thinking_on_leg_failure(REASONED, &["4"], 2048, false, None, "row qwen35")
+            .expect("a GPU-expected ON leg the CPU served is not a pass");
+        assert!(got.contains("golden_output_thinking_on"), "{got}");
+        assert!(got.contains("fell back"), "{got}");
+    }
+
+    /// Positive controls: GPU-served, and CPU where the GPU was never expected.
+    #[test]
+    fn an_on_leg_on_its_expected_backend_passes() {
+        assert_eq!(thinking_on_leg_failure(REASONED, &["4"], 2048, true, None, "b"), None);
+        assert_eq!(
+            thinking_on_leg_failure(REASONED, &["4"], 2048, false, Some("no cuda build"), "b"),
+            None
+        );
+    }
+
+    /// #3948 quorum item 4: an ON-leg failure names the budget basis, as the dense leg's
+    /// does (golden_output.rs), so "closed EMPTY within 2048" cannot cite the wrong row.
+    #[test]
+    fn an_on_leg_failure_names_its_budget_basis() {
+        let got = thinking_on_leg_failure(
+            "<think>two plus two is four</think>It is five.",
+            &["4"],
+            2048,
+            true,
+            None,
+            "row Qwen3.5-0.8B-Q4_K_M",
+        )
+        .expect("a wrong answer fails");
+        assert!(got.contains("[budget basis — row Qwen3.5-0.8B-Q4_K_M]"), "{got}");
+    }
+}
+
 #[cfg(test)]
 mod loud_truncation_3904 {
     use super::*;
