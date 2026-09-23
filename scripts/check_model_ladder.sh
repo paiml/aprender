@@ -35,7 +35,7 @@ LADDER="contracts/model-capability-ladder-v1.yaml"
 # Overridable so the floor below can be PROVEN against a planted case in a temp dir
 # rather than by planting a permanently-failing case in the real table (#3887).
 CASES_DIR="${MODEL_LADDER_CASES_DIR:-scripts/lib/model_ladder_cases}"
-SELF_TEST=0; ONLY_CASE=""; RECEIPT_DIR=""; LADDER_MAIN_OVERRIDE=""; CUT_COMMIT=""
+SELF_TEST=0; ONLY_CASE=""; RECEIPT_DIR=""; LADDER_MAIN_OVERRIDE=""; CUT_COMMIT=""; CRUX_DIR=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --self-test) SELF_TEST=1; shift ;;
@@ -45,6 +45,7 @@ while [ $# -gt 0 ]; do
     --ladder-main) [ $# -ge 2 ] || { echo "--ladder-main needs a value" >&2; exit 2; }; LADDER_MAIN_OVERRIDE="$2"; shift 2 ;;
     --version) [ $# -ge 2 ] || { echo "--version needs a value" >&2; exit 2; }; VERSION_OVERRIDE="$2"; shift 2 ;;
     --cut-commit) [ $# -ge 2 ] || { echo "--cut-commit needs a value" >&2; exit 2; }; CUT_COMMIT="$2"; shift 2 ;;
+    --crux) [ $# -ge 2 ] || { echo "--crux needs a value" >&2; exit 2; }; CRUX_DIR="$2"; shift 2 ;;
     -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) echo "check_model_ladder: unknown argument '$1'" >&2; exit 2 ;;
   esac
@@ -57,13 +58,18 @@ cd "${MODEL_LADDER_ROOT:-$(dirname "$SELF")/..}" || exit 2
 
 # ---------------------------------------------------------------- the judge
 # judge <ladder> <ladder_at_main_or_empty> <receipt_dir> <version> <context-rungs.json> <its origin/main copy>
-#       <cut commit, 40-hex> <file of apr_shas proven equal to the cut modulo evidence/>  → exit 0/1/2
+#       <cut commit, 40-hex> <file of apr_shas proven equal to the cut modulo evidence/>
+#       <CRUX receipt dir>  → exit 0/1/2
 judge() {
-  python3 - "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" "${7:-}" "${8:-}" <<'PY'
+  python3 - "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" "${7:-}" "${8:-}" "${9:-}" <<'PY'
 import fnmatch, json, os, sys, yaml
-ladder_p, main_p, rdir, version, rungs_p, rungs_main_p, cut, equiv_p = sys.argv[1:9]
-sys.path.insert(0, os.environ.get("MODEL_LADDER_CELLS_LIB") or "scripts/lib")  # a mutant copy of the module, in --self-test
+ladder_p, main_p, rdir, version, rungs_p, rungs_main_p, cut, equiv_p, crux_dir = sys.argv[1:10]
+# A mutant copy of a module, in --self-test: each directory is searched first when set.
+sys.path.insert(0, "scripts/lib")
+for _lib in (os.environ.get("MODEL_LADDER_CRUX_LIB"), os.environ.get("MODEL_LADDER_CELLS_LIB")):
+    if _lib: sys.path.insert(0, _lib)
 import model_ladder_cells
+import model_ladder_crux
 try:
     L = yaml.safe_load(open(ladder_p))["ladder"]
 except Exception as e:
@@ -407,6 +413,10 @@ for pat in inv_deferred:
         rc = 1
 if model_ladder_cells.judge(L, good, rungs_doc, print, rungs_main):
     rc = 1
+# #3957 F4/F8: every (model, format, quant, host, backend, verb) cell must be PROVEN by an outside
+# oracle -- the CRUX receipts bound to the cut -- or, for .apr, by the chain to its source.
+if model_ladder_crux.judge(L, good, crux_dir, cut, equiv, print):
+    rc = 1
 # #3957 F1: a DEFERRED row is not green. DEFER is `Unknown(NotRun)` in the fleet vocabulary
 # (crates/aprender-contracts/src/ontology/verdict.rs FLEET_LABELS), the same element as
 # `decline` -- exit 2. It used to fall through to exit 0, so a run whose only non-green rows
@@ -487,7 +497,7 @@ if [ "$SELF_TEST" = 1 ]; then
     # (every fixture receipt carries it as apr_sha); a case overrides it with a `cut_commit` file,
     # and lists shas proven equal to the cut in `equivalent_shas`.
     cut=$(cat "$c/cut_commit" 2>/dev/null || echo "$CASE_CUT")
-    out=$(judge "$lad" "$main" "$c/receipts" "$(cat "$c/version" 2>/dev/null || echo 0.0.0-case)" "$c/context-rungs.json" "$c/context-rungs_main.json" "$cut" "$c/equivalent_shas"); got=$?
+    out=$(judge "$lad" "$main" "$c/receipts" "$(cat "$c/version" 2>/dev/null || echo 0.0.0-case)" "$c/context-rungs.json" "$c/context-rungs_main.json" "$cut" "$c/equivalent_shas" "$c/crux"); got=$?
     n=$((n+1))
     # #3887 THE OTHER POLARITY. A case that exists to prove a gate stays QUIET rests on rc
     # alone otherwise, and that works only because an over-eager check happens to flip rc.
@@ -614,6 +624,25 @@ if [ "$SELF_TEST" = 1 ]; then
     cmutant pass-beyond-fit red-cells-pass-beyond-its-arithmetic 's/                            if not fit:/                            if False:/'
     cmutant family-long     red-cells-missing-cell          's/    if arch in (long_for.get("families") or \[\]):/    if False:/'
     cmutant rungs-floor     red-cells-rung-dropped-vs-main  's/            if gone:/            if False:/'
+    # #3957 F4/F8: the CRUX join (scripts/lib/model_ladder_crux.py), each rule deleted in a copy
+    # imported through MODEL_LADDER_CRUX_LIB; the case that names the rule must go RED.
+    xmutant() { # xmutant <label> <case that must kill it> <sed expression deleting the rule>
+      local md="$mdir/x-$1"; mkdir -p "$md"
+      sed "$3" scripts/lib/model_ladder_crux.py > "$md/model_ladder_crux.py"
+      if cmp -s scripts/lib/model_ladder_crux.py "$md/model_ladder_crux.py"; then echo "FAIL  crux mutant $1 did not apply -- case $2 proves nothing"; bad=$((bad+1)); return; fi
+      if MODEL_LADDER_CRUX_LIB="$md" bash "$SELF" --self-test --case "$2" > /dev/null 2>&1; then echo "FAIL  crux mutant $1 SURVIVED: case $2 stays ok with the rule deleted"; bad=$((bad+1))
+      else printf 'ok    crux mutant %-18s killed by case %s\n' "$1" "$2"; fi
+    }
+    xmutant no-receipts       red-crux-missing        's/^    if not files:/    if False:/'
+    xmutant cell-red-ignored  red-crux-cell-red       's/^    if bad:/    if False:/'
+    xmutant cell-absent-ok    red-crux-verb-absent    's/^    if not got:/    if False and not got:/'
+    xmutant unbound-receipt   red-crux-unbound        's/^        if not (asha and HEX40.fullmatch(asha)) or (asha != cut and asha not in equiv):/        if False:/'
+    xmutant declined-receipt  red-crux-declined       's/^        if summ.get("verdict") == "DECLINE":/        if False:/'
+    xmutant apr-no-source     red-apr-no-source       's/^    if not isinstance(src, dict) or not src.get("file") or not HEX64.fullmatch(str(src.get("sha256") or "")):/    if False:/'
+    xmutant apr-tensor-diff   red-apr-tensor-perturbed 's/^    elif td.get("tensors_differing") != 0:/    elif False:/'
+    xmutant apr-summary-diff  red-apr-summary-diff-only 's/td.get("method") != "elementwise" or //'
+    xmutant apr-greedy        red-apr-greedy-differs  's/^        elif e.get("equal") is not True:/        elif False:/'
+    xmutant apr-source-proven red-apr-source-red      's/s_ok, s_why = crux_cell(index, src_sha, host, b, v)/s_ok, s_why = True, "mutant"/'
     if [ -n "$mdir" ] && [ "$mdir" != "/" ] && [ -d "$mdir" ]; then rm -rf -- "$mdir"; fi
   fi
   echo "self-test: $n case(s), $bad bad"
@@ -659,7 +688,8 @@ for f in glob.glob(sys.argv[1] + "/*.json"):
     printf '%s\n' "$s"
   fi
 done > "$TMP_EQUIV"
-judge "$LADDER" "$MAIN_LADDER" "$RECEIPT_DIR" "$VERSION" evidence/release/context-rungs.json "$TMP_RUNGS" "$CUT_COMMIT" "$TMP_EQUIV"; rc=$?
+[ -n "$CRUX_DIR" ] || CRUX_DIR="evidence/crux/$VERSION"
+judge "$LADDER" "$MAIN_LADDER" "$RECEIPT_DIR" "$VERSION" evidence/release/context-rungs.json "$TMP_RUNGS" "$CUT_COMMIT" "$TMP_EQUIV" "$CRUX_DIR"; rc=$?
 rm -f "$TMP_EQUIV"
 [ -n "$TMP_RUNGS" ] && [ -f "$TMP_RUNGS" ] && rm -f "$TMP_RUNGS"
 # The producer that writes these receipts must not bypass the fleet GPU lock (#3712): RED, not a decline.
