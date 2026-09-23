@@ -514,7 +514,11 @@ COV_THRESHOLD := 95
 # So the enforced condition is "do not regress below what we actually have".
 # Raise this number whenever a run comes in higher; never lower it to make red
 # go away. Integer truncation gives ~0.78pt of headroom before 88 becomes 87.
-COV_FLOOR := 88
+# 2026-09-23, #4023: 88 -> 89. The first COMPLETE measurement (every aprender-serve process
+# exited normally; coverage-nightly run 35908686532) was 849871/941605 = 90.26%. 89 is a
+# ratchet with margin, since 90 would leave no room for noise; it goes to 90 once two
+# consecutive nightlies measure >= 90.5% (release-cop ruling).
+COV_FLOOR := 89
 # #4023: libtest threads for aprender-serve's `gpu` coverage shard (25.9 GB at 22 on yoga).
 COV_GPU_SHARD_THREADS ?= 4
 
