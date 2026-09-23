@@ -252,20 +252,31 @@ else
 fi
 
 # Row 4: MUTANT — keep_alive 0 stripped from every ollama call (run, chat pty, serve). The check must see it.
-MK="$TMP/mutant-ka-tree"; mkdir -p "$MK/scripts"
+# keep_alive is set in the dogfood (run, chat pty) AND in scripts/lib/crux_cells_serve_code.sh (serve, code; #3962):
+# the mutant strips it from BOTH, in a tree where scripts/lib is a real directory so the mutated lib is the one sourced
+MK="$TMP/mutant-ka-tree"; mkdir -p "$MK/scripts/lib"
 for f in "$ROOT"/scripts/* "$ROOT"/scripts/.[!.]*; do
   [ -e "$f" ] || continue
-  [ "$(basename "$f")" = crux_inference_dogfood.sh ] && continue
+  case "$(basename "$f")" in crux_inference_dogfood.sh|lib) continue ;; esac
   ln -s "$f" "$MK/scripts/$(basename "$f")"
 done
+for f in "$ROOT"/scripts/lib/*; do
+  [ "$(basename "$f")" = crux_cells_serve_code.sh ] && continue
+  ln -s "$f" "$MK/scripts/lib/$(basename "$f")"
+done
 for d in "$ROOT"/*; do [ "$(basename "$d")" = scripts ] || ln -s "$d" "$MK/$(basename "$d")"; done
-python3 - "$DOGFOOD" "$MK/scripts/crux_inference_dogfood.sh" <<'PY'
-import sys
-s = open(sys.argv[1]).read()
-n = s.count("--keepalive 0 ") + s.count("""--extra '{"keep_alive": 0}' """)
-assert n >= 3, "keep_alive anchors moved (%d found): update this check with the dogfood" % n
-s = s.replace("--keepalive 0 ", "").replace("""--extra '{"keep_alive": 0}' """, "")
-open(sys.argv[2], "w").write(s)
+python3 - "$DOGFOOD" "$MK/scripts/crux_inference_dogfood.sh" "$ROOT/scripts/lib/crux_cells_serve_code.sh" "$MK/scripts/lib/crux_cells_serve_code.sh" <<'PY'
+import re, sys
+total = 0
+for src, dst in ((sys.argv[1], sys.argv[2]), (sys.argv[3], sys.argv[4])):
+    try:
+        s = open(src).read()
+    except OSError:
+        continue  # a tree without the serve/code lib: the dogfood carries every call
+    pat = re.compile(r"""--keepalive 0 |--extra '\{"keep_alive": 0\}' |, "keep_alive": 0|"keep_alive": 0, ?""")
+    total += len(pat.findall(s))
+    open(dst, "w").write(pat.sub("", s))
+assert total >= 3, "keep_alive anchors moved (%d found): update this check with the dogfood and the serve/code lib" % total
 PY
 [ $? -eq 0 ] || broke "keep_alive mutant: could not plant (anchors moved)"
 run_row mutantka "$MK" "/nonexistent/gpu-q"

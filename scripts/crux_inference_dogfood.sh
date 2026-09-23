@@ -87,6 +87,9 @@ KEEP_WORK=0
 # --greedy (#3957 F9, aprender-36): also write kind=greedy rows — apr and llama.cpp greedy ids on the identical
 # GGUF, thinking ON and OFF (scripts/lib/crux_cells_greedy.sh). Prompts default to the positive control.
 GREEDY=0
+# --thinking-modes (#3962 final sweep): which modes a THINKING-CAPABLE model is judged in; a model without a
+# thinking template is judged OFF only. Default both.
+THINK_MODES="off,on"
 GREEDY_PIDS=""
 GREEDY_MAXTOK=256
 MODELS=()
@@ -103,6 +106,7 @@ while [ $# -gt 0 ]; do
     --timeout) [ $# -ge 2 ] || decline "--timeout needs a value"; TMO="$2"; shift 2 ;;
     --keep-ollama-models) KEEP_OLLAMA=1; shift ;;
     --keep-work) KEEP_WORK=1; shift ;;
+    --thinking-modes) [ $# -ge 2 ] || decline "--thinking-modes needs a value"; THINK_MODES="$2"; shift 2 ;;
     --greedy) GREEDY=1; shift ;;
     --greedy-prompts) [ $# -ge 2 ] || decline "--greedy-prompts needs a value"; GREEDY_PIDS="${2//,/ }"; shift 2 ;;
     --greedy-max-tokens) [ $# -ge 2 ] || decline "--greedy-max-tokens needs a value"; GREEDY_MAXTOK="$2"; shift 2 ;;
@@ -118,6 +122,9 @@ case "$BACKEND" in gpu|cpu) ;; *) decline "--backend is gpu or cpu, got '$BACKEN
 # `serve run` and `serve stream`, over EVERY route apr serve mounts) and code
 # (`apr code -p`), the last two from scripts/lib/crux_cells_serve_code.sh (#3962).
 case ",$VERBS," in *,run,*) ;; *) decline "verbs '$VERBS': run must be included, because the positive control lives in the run verb" ;; esac
+for tm in ${THINK_MODES//,/ }; do
+  case "$tm" in off|on) ;; *) decline "--thinking-modes takes off and/or on, got '$tm'" ;; esac
+done
 for v in ${VERBS//,/ }; do
   case "$v" in run|chat|serve|code) ;; *) decline "verb '$v': this driver runs run, chat, serve and code" ;; esac
 done
@@ -305,7 +312,10 @@ for p in d["prompts"]:
     json.dump(users, open("%s/turns-%s.json" % (w, p["id"]), "w"))
     open("%s/turns-%s.txt" % (w, p["id"]), "w").write("".join(u + "\n" for u in users))
     mt = p.get("max_tokens", glob_mt)
-    # Thinking OFF only in this slice (see THINK below), so the `off` budget.
+    # Per thinking mode (#3962 v2: {off, on}); maxtok-<id>.txt is re-pointed at the current mode by the
+    # thinking loop below, which is what the serve/code lib reads.
+    for th in ("off", "on"):
+        open("%s/maxtok-%s-%s.txt" % (w, p["id"], th), "w").write(str(int(mt[th] if isinstance(mt, dict) else mt)))
     open("%s/maxtok-%s.txt" % (w, p["id"]), "w").write(str(int(mt["off"] if isinstance(mt, dict) else mt)))
     v = p.get("verb", "run")
     verbs = v if isinstance(v, list) else [v] + (["serve run", "serve stream"] if v == "run" else [])
@@ -326,6 +336,12 @@ MAXTOK=$(python3 -c 'import json,sys
 d = json.load(open(sys.argv[1]))
 m = d.get("max_tokens")
 print(int(m) if m is not None else max(int(p["max_tokens"]["off"]) for p in d["prompts"]))' "$PROMPTS") || decline "max_tokens unreadable"
+# The same cap in thinking-ON mode: v1's global, else the largest per-prompt `on` budget.
+MAXTOK_ON=$(python3 -c 'import json,sys
+d = json.load(open(sys.argv[1]))
+m = d.get("max_tokens")
+print(int(m) if m is not None else max(int(p["max_tokens"]["on"]) for p in d["prompts"]))' "$PROMPTS") || decline "max_tokens unreadable"
+MAXTOK_OFF=$MAXTOK
 # The serve and code cells (#3962). Sourced and option-neutral; it fails by return status.
 # shellcheck source=scripts/lib/crux_cells_serve_code.sh
 . scripts/lib/crux_cells_serve_code.sh || decline "scripts/lib/crux_cells_serve_code.sh could not be sourced"
@@ -580,19 +596,40 @@ open(f, "a").write(json.dumps({"name": name, "sha256": sha,
     "tokenization": {"refused": twhy or None}}) + "\n")
 PY
 
-  # Thinking OFF only in this slice. apr has no toggle yet (#3723), and a
-  # thinking-capable model is told OFF explicitly by the comparators, which
-  # otherwise default to thinking.
-  THINK=off
+  # THINKING MODES (#3962 final sweep). A thinking-capable model runs every verb in each requested mode; one
+  # without a thinking template runs OFF only. Every engine is told the mode EXPLICITLY (the comparators otherwise
+  # default to thinking): apr `--thinking` (#3723/#3990), llama.cpp `--reasoning`, ollama `--think`, the plugin
+  # drivers and the serve/code lib through $THINK. An apr without `--thinking` cannot run ON, and asking it to is a
+  # refusal of the whole run BY NAME — never OFF rows recorded as ON.
+  modes="off"
+  [ "$THINKING_CAPABLE" = true ] && modes="${THINK_MODES//,/ }"
+  apr_think_flag=0
+  "$APR" run --help 2>/dev/null | grep -q -- '--thinking' && apr_think_flag=1
+  ol_help=""
+  [ "$OLLAMA_OK" = 1 ] && ol_help=$("$OLLAMA" run --help 2>&1)
+  SHA12_MODEL=$SHA12
+  for THINK in $modes; do
+  # every cell dir of this mode lives under <sha12>/<mode>: ON and OFF cells of one prompt must not overwrite each
+  # other's artifacts (the run/chat cells here and the serve/code lib all build $WORK/$SHA12/<verb>/...)
+  SHA12="$SHA12_MODEL/$THINK"
+  mkdir -p "$WORK/$SHA12" || decline "cannot create $WORK/$SHA12"
+  if [ "$THINK" = on ] && [ "$apr_think_flag" = 0 ]; then
+    decline "thinking ON was asked for $NAME, but this apr has no \`run --thinking\` (#3723): pass --thinking-modes off, or use an apr that has it"
+  fi
   LLAMA_THINK=()
   OLLAMA_THINK=()
+  APR_THINK=()
   if [ "$THINKING_CAPABLE" = true ]; then
-    LLAMA_THINK=(--reasoning off)
-    if [ "$OLLAMA_OK" = 1 ]; then
-      ol_help=$("$OLLAMA" run --help 2>&1)
-      case "$ol_help" in *--think*) OLLAMA_THINK=(--think=false) ;; esac
-    fi
+    LLAMA_THINK=(--reasoning "$THINK")
+    case "$ol_help" in *--think*) OLLAMA_THINK=(--think="$([ "$THINK" = on ] && echo true || echo false)") ;; esac
+    [ "$apr_think_flag" = 1 ] && APR_THINK=(--thinking "$THINK")
   fi
+  if [ "$THINK" = on ]; then MAXTOK=$MAXTOK_ON; else MAXTOK=$MAXTOK_OFF; fi
+  for f in "$WORK"/maxtok-*-"$THINK".txt; do
+    [ -f "$f" ] || continue
+    base=${f%-"$THINK".txt}
+    cp -- "$f" "$base.txt"
+  done
 
   for VERB in ${VERBS//,/ }; do
   VERB_KEY=$VERB
@@ -631,7 +668,7 @@ PY
       # crux_pty_chat.py drives them through a pseudo-terminal, one turn at a
       # time, and writes the row-contract JSON the judge reads.
       cell_add_stdin "$cell" "$d/apr-$pid" "$WORK/turns-$pid.txt" "$APR" chat "$M" \
-        --temperature "$TEMP" --max-tokens "$MAXTOK" "$APR_BE"
+        --temperature "$TEMP" --max-tokens "$MAXTOK" "$APR_BE" "${APR_THINK[@]}"
       [ "$LLAMA_OK" = 1 ] && cell_add "$cell" "$d/llama-$pid" python3 scripts/lib/crux_pty_chat.py \
         --marker '(?m)^> $' --turns "$WORK/turns-$pid.json" --out "$d/llama-$pid.json" --exit-line /exit \
         --device "$LLAMA_DEVICE" --turn-timeout "$TMO" --start-timeout "$TMO" --strip '\[ Prompt:[^]]*\]' -- \
@@ -645,7 +682,7 @@ PY
       fi
     else
       cell_add "$cell" "$d/apr-$pid" "$APR" run "$M" --prompt "$content" --max-tokens "$MAXTOK" \
-        --temperature "$TEMP" --seed "$SEED" --format json -v "$APR_BE"
+        --temperature "$TEMP" --seed "$SEED" --format json -v "$APR_BE" "${APR_THINK[@]}"
       [ "$LLAMA_OK" = 1 ] && cell_add "$cell" "$d/llama-$pid" "$LLAMA_CLI" -m "$M" -p "$content" -st -n "$MAXTOK" \
         --temp "$TEMP" --seed "$SEED" -c "$CTX" -ngl "$NGL" "${LLAMA_DEV[@]}" "${LLAMA_THINK[@]}"
       if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then
@@ -693,6 +730,8 @@ PY
     done
   done
   done
+  done  # thinking modes
+  SHA12=$SHA12_MODEL
 
   [ "$GREEDY" = 1 ] && greedy_cells
 
