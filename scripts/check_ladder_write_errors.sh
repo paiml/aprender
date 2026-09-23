@@ -93,7 +93,8 @@ run_cases() { # <bodies> <ladder-script> -> 0 when every case lands
   # a SPARSE 10 TiB "model" (ext4's max file is 16 TiB): no disk used, but larger than any free space.
   # The fixture is asserted, not assumed -- a silent fallback to an empty file made this row vacuous once.
   truncate -s 10T "$T/ok/huge.gguf" 2>/dev/null
-  [ "$(stat -c %s "$T/ok/huge.gguf" 2>/dev/null || echo 0)" = 10995116277760 ] || bad work-footprint "could not make the 10 TiB sparse fixture"
+  hs=$(stat -c %s "$T/ok/huge.gguf" 2>/dev/null) || hs=0
+  [ "$hs" = 10995116277760 ] || bad work-footprint "could not make the 10 TiB sparse fixture"
   helper "$b" "ladder_work_preflight $T/ok 'huge.gguf|$T/ok/huge.gguf'" ; r=$?
   { [ "$r" != 0 ] && grep -q "largest cell needs" "$T/h.out" && grep -q "huge.gguf" "$T/h.out"; } && ok work-footprint || bad work-footprint "rc=$r $(cut -c1-100 "$T/h.out")"
   printf 'x' > "$T/ok/small.gguf"
