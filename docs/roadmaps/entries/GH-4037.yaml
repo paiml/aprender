@@ -1,0 +1,17 @@
+- id: GH-4037
+  github_issue: 4037
+  item_type: task
+  kind: code
+  title: 'certification: carry a cell''s receipt forward when the diff since its apr_sha doesn''t touch that cell''s inference path'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-23T16:21:19.242900467+00:00
+  updated: 2026-09-23T16:21:19.242900467+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

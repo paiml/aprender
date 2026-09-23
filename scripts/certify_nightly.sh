@@ -67,8 +67,13 @@ SHA9=${SHA:0:9}
 DIR="$ROOT/$SHA/$HOST"
 if [ -f "$DIR/verdict.json" ]; then
   g=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("green"))' "$DIR/verdict.json" 2> /dev/null)
-  echo "$PROG: $HOST at $SHA9 already judged (green=$g) -- $DIR/verdict.json"
-  [ "$g" = True ] && exit 0 || exit 1
+  if [ "$g" = True ]; then
+    echo "$PROG: $HOST at $SHA9 already judged GREEN -- $DIR/verdict.json"; exit 0
+  fi
+  # A RED night is RE-MEASURED on the next run: a transient failure (build, lock, host) must not cost the day's
+  # admission until main moves. The old verdict is kept beside it, never overwritten.
+  mv -f "$DIR/verdict.json" "$DIR/verdict.$(date +%s).red.json" || die "cannot set the RED verdict aside"
+  echo "$PROG: $HOST at $SHA9 was RED -- re-measuring (the old verdict is kept)"
 fi
 mkdir -p "$DIR" || die "cannot create $DIR"
 T0=$(date +%s.%N)
@@ -107,9 +112,15 @@ if [ -n "${NIGHTLY_BUILD_CMD:-}" ]; then
 else
   CARGO_TARGET_DIR="$ROOT/target" step build cargo build --release -p apr-cli --bin apr --features cuda --locked || build_rc=$?
 fi
-want="apr $VERSION ($SHA9)"
+want="apr $VERSION ($SHA9...)"
 got=$("$APR" --version 2> /dev/null | head -1)
-proved=0; [ "$build_rc" = 0 ] && [ "$got" = "$want" ] && proved=1
+# The binary names its commit with `git rev-parse --short` (core.abbrev: 9 here today, longer as the repo grows or
+# per host config): accept any 7-40 hex sha the nightly's sha STARTS with -- the same rule the CRUX judge binds by
+# (model_ladder_crux.APR_VERSION_SHA). A different commit, a -dirty build or another version is unproved.
+proved=0
+if [ "$build_rc" = 0 ] && [[ "$got" =~ ^apr\ ${VERSION//./\.}\ \(([0-9a-f]{7,40})\)$ ]] && [ "${SHA#"${BASH_REMATCH[1]}"}" != "$SHA" ]; then
+  proved=1
+fi
 
 # 3 + 4. measure (only a proved binary measures anything)
 ladder_rc=""; crux_rc=""
@@ -120,23 +131,35 @@ if [ "$proved" = 1 ]; then
   else
     DOGFOOD_ALLOW_UNPINNED=1 APR="$APR" step ladder choom -n 1000 -- bash scripts/model_ladder.sh --host "$HOST" --out "$DIR/ladder" || ladder_rc=$?
   fi
+  # BOTH lanes: every ladder rung claims cpu AND cuda, and the judge wants a CRUX verdict per backend. The gpu
+  # lane takes gpu-q per cell; the cpu lane takes no GPU lock (crux_sweep_shards --backend cpu).
   crux_rc=0
-  if [ -n "${NIGHTLY_CRUX_CMD:-}" ]; then
-    APR="$APR" OUT="$DIR/crux" step crux bash -c "$NIGHTLY_CRUX_CMD" || crux_rc=$?
-  elif [ -z "$CERT" ] || [ ! -f "$CERT" ]; then
-    printf -- '--- crux: no prompt-certification receipt under %s/evidence/crux/ -- not run\n' "$SRC" >> "$LOG"; crux_rc=2
-  else
-    CRUX_GPU_PRIO="${CRUX_GPU_PRIO:-5}" step crux bash scripts/crux_sweep_shards.sh "$VERSION" --host "$HOST" --apr "$APR" \
-      --out "$DIR/crux" --scope admitted --certification "$CERT" || crux_rc=$?
-  fi
+  for lane in ${NIGHTLY_CRUX_LANES:-gpu cpu}; do
+    lrc=0
+    if [ -n "${NIGHTLY_CRUX_CMD:-}" ]; then
+      LANE="$lane" APR="$APR" OUT="$DIR/crux" step "crux-$lane" bash -c "$NIGHTLY_CRUX_CMD" || lrc=$?
+    elif [ -z "$CERT" ] || [ ! -f "$CERT" ]; then
+      printf -- '--- crux-%s: no prompt-certification receipt under %s/evidence/crux/ -- not run\n' "$lane" "$SRC" >> "$LOG"; lrc=2
+    else
+      CRUX_GPU_PRIO="${CRUX_GPU_PRIO:-5}" step "crux-$lane" bash scripts/crux_sweep_shards.sh "$VERSION" --host "$HOST" --apr "$APR" \
+        --backend "$lane" --out "$DIR/crux" --scope admitted --certification "$CERT" || lrc=$?
+    fi
+    [ "$lrc" = 0 ] || crux_rc=$lrc
+  done
 fi
 T1=$(date +%s.%N)
+# The certification the CRUX lanes ran under is kept BESIDE the verdict: the checkout it came from is removed below,
+# and the release judge reads it through the verdict (nightly_admission.assemble).
+if [ -n "$CERT" ] && [ -f "$CERT" ]; then
+  cp -f "$CERT" "$DIR/prompt-certification.json" && CERT="$DIR/prompt-certification.json"
+fi
 
 # 5. verdict
 python3 - "$DIR" "$SHA" "$HOST" "$VERSION" "$want" "$got" "$build_rc" "$proved" "${ladder_rc:-}" "${crux_rc:-}" \
-    "$T0" "$T1" "${CERT:-}" > "$DIR/verdict.json.tmp" <<'PY' || die "the verdict could not be written"
+    "$T0" "$T1" "${CERT:-}" "${NIGHTLY_CRUX_LANES:-gpu cpu}" > "$DIR/verdict.json.tmp" <<'PY' || die "the verdict could not be written"
 import glob, hashlib, json, os, sys
-d, sha, host, version, want, got, build_rc, proved, lrc, crc, t0, t1, cert = sys.argv[1:14]
+d, sha, host, version, want, got, build_rc, proved, lrc, crc, t0, t1, cert, lanes = sys.argv[1:15]
+lanes = lanes.split()
 why = []
 def load(p):
     try:
@@ -145,10 +168,10 @@ def load(p):
         return None
 lad_p = os.path.join(d, "ladder", host + ".json")
 lad = load(lad_p)
-cx = [f for f in glob.glob(os.path.join(d, "crux", host + "-*.json"))
-      if not f.endswith((".meta.json", "-greedy.json", ".plan.json"))]
-crux_p = cx[0] if len(cx) == 1 else None
-crux = load(crux_p) if crux_p else None
+crux = {}
+for lane in lanes:   # exactly <host>-<lane>.json per lane: the merge meta / plan / greedy files are not receipts
+    p = os.path.join(d, "crux", "%s-%s.json" % (host, lane))
+    crux[lane] = (p, load(p))
 if proved != "1":
     why.append("the binary is not proved: build rc %s, `apr --version` read %r, want %r" % (build_rc, got, want))
 else:
@@ -158,22 +181,27 @@ else:
         why.append("the ladder receipt is at apr_sha %r, not %s" % (lad.get("apr_sha"), sha))
     elif int(lad.get("executed") or 0) < 1 or int(lad.get("red") or 0) != 0:
         why.append("the ladder is RED: executed=%s red=%s" % (lad.get("executed"), lad.get("red")))
-    if crux is None:
-        why.append("no single CRUX host receipt under %s/crux (%d found, crux rc %s)" % (d, len(cx), crc))
-    elif (crux.get("summary") or {}).get("verdict") != "PASS":
-        s = crux.get("summary") or {}
-        why.append("CRUX is %s: %s" % (s.get("verdict"), s.get("declined_because") or "RED %s" % s.get("RED")))
+    for lane, (p, r) in sorted(crux.items()):
+        if r is None or r.get("schema") != "crux-inference-receipt/v1":
+            why.append("no CRUX %s receipt at %s (crux rc %s)" % (lane, p, crc))
+        elif (r.get("summary") or {}).get("verdict") != "PASS":
+            s = r.get("summary") or {}
+            why.append("CRUX %s is %s: %s" % (lane, s.get("verdict"), s.get("declined_because") or "RED %s" % s.get("RED")))
 cert_sha = hashlib.sha256(open(cert, "rb").read()).hexdigest() if cert and os.path.isfile(cert) else None
 print(json.dumps({
     "schema": "apr-nightly-certification/v1", "sha": sha, "host": host, "version": version,
     "apr_version_line": got or None, "t_start": float(t0), "t_end": float(t1),
     "ladder": {"rc": int(lrc) if lrc else None, "receipt": lad_p if lad is not None else None},
-    "crux": {"rc": int(crc) if crc else None, "receipt": crux_p,
-             "verdict": (crux.get("summary") or {}).get("verdict") if crux else None},
+    "crux": {"rc": int(crc) if crc else None,
+             "lanes": {lane: {"receipt": p if r is not None else None,
+                              "verdict": (r.get("summary") or {}).get("verdict") if r else None} for lane, (p, r) in crux.items()}},
     "certification": {"path": cert or None, "sha256": cert_sha},
     "green": not why, "why": why}, indent=2))
 PY
 mv -f "$DIR/verdict.json.tmp" "$DIR/verdict.json" || die "cannot place $DIR/verdict.json"
+# The checkout is reproducible from the sha the verdict names; keeping one per night would grow the shared .git's
+# worktree list and the disk without bound. The receipts under $DIR stay.
+git worktree remove --force "$SRC" >> "$LOG" 2>&1 || echo "$PROG: could not remove the worktree $SRC" >&2
 green=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["green"])' "$DIR/verdict.json")
 if [ "$green" = True ]; then
   echo "$PROG: GREEN $HOST at $SHA9 -- $DIR/verdict.json"
