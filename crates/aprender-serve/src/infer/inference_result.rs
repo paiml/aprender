@@ -1083,8 +1083,11 @@ fn f2_accept_or_reject(
     true
 }
 
+/// #3922: `pub` so `apr chat` can gate its GPU path on the same check `apr run`
+/// uses. It was private, which is part of why `chat` had no F2 gate: the check
+/// existed and could not be reached from the only other verb that needed it.
 #[cfg(feature = "cuda")]
-fn validate_gpu_first_token(
+pub fn validate_gpu_first_token(
     cuda_model: &mut crate::gguf::OwnedQuantizedModelCuda,
     _gen_config: &crate::gguf::QuantizedGenerateConfig,
     probe_context: &[u32],

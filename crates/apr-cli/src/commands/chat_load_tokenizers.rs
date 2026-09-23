@@ -289,49 +289,84 @@ fn try_init_gguf_cuda(
     }
 }
 
-/// GH-224: Try to initialize APR CUDA model.
-/// GH-272: Warns about F32 performance when VRAM > 2GB.
-/// Returns (cuda_model, init_failed).
+/// Initialize the CUDA model `apr chat` uses for an `.apr` (#3922).
+///
+/// ROUTED ONTO THE PATH `apr run` ALREADY USES. This built an
+/// `AprV2ModelCuda` — a generic transformer class that is **Q4K-only by
+/// construction and wrong for Q4K**: its init refuses F32 and bf16 with
+/// `GH-279 Quantized weight 'blk.0.attn_q.weight' not cached`, and on a Q4K
+/// `.apr` it produced GARBAGE on both required hosts while the same model
+/// answered correctly on CPU. There is no configuration in which it did useful
+/// GPU work.
+///
+/// Measured, one binary, every cell (d8):
+///
+///     model      via AprV2ModelCuda        via this path
+///     q4k .apr   GARBAGE on GPU            CORRECT on GPU
+///     F32 .apr   init fails -> CPU         CORRECT ON GPU
+///     bf16 .apr  init fails -> CPU         rc=14 decline -> CPU
+///
+/// Nothing gets worse; q4k goes garbage -> correct and F32 goes CPU -> GPU.
+///
+/// The loading chain is `run`'s and `apr bench`'s:
+/// `MappedAprModel` -> `OwnedQuantizedModel::from_apr` -> `OwnedQuantizedModelCuda`.
+///
+/// AND IT BRINGS THE F2 GATE, which is half the value. `try_apr_cuda_inference`
+/// probes the GPU's first token against the CPU's and falls back when they
+/// disagree; `chat` had no such check, so a silently wrong kernel had nothing to
+/// stop it. Routing without the gate would be a half-fix.
+///
+/// Returns `(model, init_failed)`. `init_failed` is sticky in the caller, so a
+/// decline here means CPU for the whole session rather than a retry per turn.
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(feature = "cuda")]
 fn try_init_apr_cuda(
-    model_bytes: &[u8],
+    _model_bytes: &[u8],
     path: &Path,
-) -> (Option<realizar::apr::AprV2ModelCuda>, bool) {
-    use realizar::apr::{AprV2Model, AprV2ModelCuda};
-    if !AprV2ModelCuda::is_available() {
-        return (None, false);
-    }
-    let apr_model = match AprV2Model::from_bytes(model_bytes.to_vec()) {
+) -> (Option<realizar::gguf::OwnedQuantizedModelCuda>, bool) {
+    use realizar::apr::MappedAprModel;
+    use realizar::gguf::{
+        OwnedQuantizedModel, OwnedQuantizedModelCuda, QuantizedGenerateConfig,
+    };
+
+    // Read from the mapped file rather than the caller's byte buffer: the fused
+    // path wants the tensor map, and `from_apr` is where a non-Q4K `.apr` is
+    // refused by name instead of faulting later (#3885's shape at a third site).
+    let mapped = match MappedAprModel::from_path(path) {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("[APR model parse failed: {}, will use CPU]", e);
+            eprintln!("[APR CUDA: cannot map {}: {e} — will use CPU]", path.display());
             return (None, true);
-        }
+        },
     };
-    match AprV2ModelCuda::new(apr_model, 0) {
-        Ok(cuda_model) => {
-            let vram_mb = cuda_model.vram_mb();
-            println!(
-                "{}",
-                format!(
-                    "[APR CUDA: {} ({} MB VRAM) — pre-cached]",
-                    cuda_model.device_name(),
-                    vram_mb
-                )
-                .bright_green()
-            );
-            // GH-272: Warn about F32 performance when model VRAM > 2GB
-            if vram_mb > 2048 {
-                print_apr_f32_perf_tip(vram_mb, path);
-            }
-            (Some(cuda_model), false)
-        }
+    let model = match OwnedQuantizedModel::from_apr(&mapped) {
+        Ok(m) => m,
         Err(e) => {
-            eprintln!("[APR CUDA init failed: {}, will use CPU]", e);
-            (None, true)
-        }
+            eprintln!("[APR CUDA: not a fused-kernel APR ({e}) — will use CPU]");
+            return (None, true);
+        },
+    };
+    let mut cuda_model = match OwnedQuantizedModelCuda::new(model, 0) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("[APR CUDA init failed: {e}, will use CPU]");
+            return (None, true);
+        },
+    };
+
+    // F2: does the GPU agree with the CPU on the first token? A disagreement is a
+    // silently wrong kernel, which is exactly what this routing exists to stop
+    // being invisible. An empty probe context is the same one `run` uses.
+    let probe_config = QuantizedGenerateConfig::default();
+    eprintln!("[GH-480] F2 validation starting...");
+    if !realizar::infer::validate_gpu_first_token(&mut cuda_model, &probe_config, &[]) {
+        eprintln!("[GH-480] F2 validation FAILED — falling back to CPU");
+        return (None, true);
     }
+    eprintln!("[GH-480] F2 validation PASSED — launching GPU generation");
+
+    println!("{}", "[APR CUDA: fused Q4K kernels, F2-validated]".bright_green());
+    (Some(cuda_model), false)
 }
 
 /// GH-272: Print F32 performance tip suggesting APR-native Q4K quantization.

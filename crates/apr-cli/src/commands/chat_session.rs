@@ -44,7 +44,9 @@ mod realizar_chat {
         cached_gguf_cuda: Option<realizar::gguf::OwnedQuantizedModelCuda>,
         /// GH-224: Cached APR CUDA model (avoids re-uploading weights per message)
         #[cfg(feature = "cuda")]
-        cached_apr_cuda: Option<realizar::apr::AprV2ModelCuda>,
+        // #3922: the fused-kernel class `run` and `bench` use, not the generic
+        // transformer that produced garbage on Q4K and refused everything else.
+        cached_apr_cuda: Option<realizar::gguf::OwnedQuantizedModelCuda>,
         /// GH-224: Cached SafeTensors CUDA model (avoids re-loading per message)
         #[cfg(feature = "cuda")]
         cached_safetensors_cuda: Option<realizar::safetensors_cuda::SafeTensorsCudaModel>,
