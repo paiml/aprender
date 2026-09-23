@@ -632,22 +632,41 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	@COVDIR=$$($(COV_CARGO_ENV) cargo llvm-cov show-env 2>/dev/null | grep CARGO_LLVM_COV_TARGET_DIR | sed "s/.*=//"); \
 	if [ -n "$$COVDIR" ]; then find "$$COVDIR" -name '*.profraw' -delete 2>/dev/null || true; fi
 	@mkdir -p target/coverage
+	@rm -f target/coverage/lcov.info target/coverage/test.log target/coverage/failed-tests.txt
 	@printf '%s' '$(COVERAGE_EXCLUDE_REGEX)' > target/coverage/.exclude-re
 	@echo "🧪 Tests with instrumentation + report in ONE invocation (CB-127-A: cargo llvm-cov test, not nextest)..."
 	@PROPTEST_CASES=10 QUICKCHECK_TESTS=10 RUST_MIN_STACK=16777216 CARGO_BUILD_JOBS=4 \
 		$(COV_CARGO_ENV) cargo llvm-cov test \
-		--workspace --exclude aprender-gpu --lib \
+		--workspace --exclude aprender-gpu --lib --ignore-run-fail \
 		--lcov --output-path target/coverage/lcov.info \
 		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" \
 		-- --exact $$(sed -e '/^#/d' -e '/^[[:space:]]*$$/d' -e 's/^/--skip /' scripts/coverage-skips.txt) \
-		|| exit 1
+		2>&1 | tee target/coverage/test.log; \
+	rc=$${PIPESTATUS[0]}; \
+	if [ "$$rc" -ne 0 ]; then \
+		echo "❌ coverage DID NOT MEASURE: cargo llvm-cov exited $$rc (build or report failure;"; \
+		echo "   with --ignore-run-fail a failing test alone does not stop it). No coverage verdict."; \
+		exit 1; \
+	fi
+	@# #3839: --ignore-run-fail keeps one failing test from blanking the number (the 2026-09-23
+	@# nightly wrote no lcov because of one timing test). Failures are LISTED, not hidden, and
+	@# every test run here is also run by CI's workspace-test, which fails on them.
+	@grep -E '^test .* \.\.\. FAILED$$' target/coverage/test.log | sed -e 's/^test //' -e 's/ \.\.\. FAILED$$//' | sort -u > target/coverage/failed-tests.txt || true
 	@echo "📊 Parsing LCOV for the threshold check..."
 	@# Parse LCOV for line coverage (LH=lines hit, LF=lines found)
-	@LH=$$(awk -F: '/^LH:/{s+=$$2} END{print s+0}' target/coverage/lcov.info); \
+	@if [ ! -s target/coverage/lcov.info ]; then echo "❌ coverage DID NOT MEASURE: no lcov.info was written. No coverage verdict."; exit 1; fi; \
+	LH=$$(awk -F: '/^LH:/{s+=$$2} END{print s+0}' target/coverage/lcov.info); \
 	LF=$$(awk -F: '/^LF:/{s+=$$2} END{print s+0}' target/coverage/lcov.info); \
-	if [ "$$LF" -gt 0 ]; then COV_PCT=$$((LH * 100 / LF)); else COV_PCT=0; fi; \
+	if [ "$$LF" -eq 0 ]; then echo "❌ coverage DID NOT MEASURE: lcov.info has 0 instrumented lines. No coverage verdict."; exit 1; fi; \
+	COV_PCT=$$((LH * 100 / LF)); \
+	NFAIL=$$(wc -l < target/coverage/failed-tests.txt); \
 	echo "TOTAL: $$LH/$$LF lines covered ($${COV_PCT}%)"; \
-	echo "TOTAL $$LH $$LF $${COV_PCT}%" > target/coverage/summary.txt; \
+	echo "TOTAL $$LH $$LF $${COV_PCT}% failed_tests=$$NFAIL" > target/coverage/summary.txt; \
+	if [ "$$NFAIL" -gt 0 ]; then \
+		echo "⚠  $$NFAIL test(s) FAILED in the instrumented run (measured anyway; CI workspace-test gates them):"; \
+		sed 's/^/     /' target/coverage/failed-tests.txt; \
+		sed 's/^/FAILED /' target/coverage/failed-tests.txt >> target/coverage/summary.txt; \
+	fi; \
 	mkdir -p .pmat-metrics || exit 1; \
 	printf '{"coverage_pct":%s}' "$$COV_PCT" > .pmat-metrics/coverage.result; \
 	echo "   wrote .pmat-metrics/coverage.result ($${COV_PCT}%) for pmat score"; \
