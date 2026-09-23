@@ -826,6 +826,37 @@ struct AprCudaModelInfo {
     hidden_dim: usize,
 }
 
+/// The notice a CUDA decline owes the user when the model's quantization has no verified
+/// GPU kernel — `None` when every inspected projection is GPU-eligible (#3908).
+///
+/// A FUNCTION rather than an inline `eprintln!` so the verdict and its wording can be
+/// asserted without capturing stderr or owning a GPU.
+///
+/// WHY THIS EXIT NEEDS AN UNCONDITIONAL NOTICE AND THE TWO ABOVE IT DO NOT. The standard
+/// its sibling carries — "CUDA init failure MUST be visible without --verbose … user saw
+/// downstream wgpu gibberish without ever knowing CUDA was rejected" — applies where the
+/// condition is CUDA-SPECIFIC, because then the other backends proceed and may SUCCEED and
+/// the rejection becomes unobservable. Verified rather than assumed:
+/// `run_apr_cpu_inference` delegates to `run_apr_quantized_cpu_inference`, which loads
+/// through the SAME `OwnedQuantizedModel`, and `try_apr_wgpu_inference` re-reads the same
+/// `MappedAprModel`. So a `from_path` or `from_apr` failure fails EVERY backend and
+/// surfaces loudly on its own; only the quant whitelist is a CUDA-only verdict that leaves
+/// the run going.
+///
+/// Measured cost of its absence: a bf16 `.apr` declines here, execution continues, wgpu
+/// fails with "Unsupported quantization type 30 for WGPU dequant", and two readers
+/// concluded the defect was wgpu routing. CUDA had already declined, correctly, silently.
+#[cfg(feature = "cuda")]
+fn apr_cuda_decline_notice(model: &crate::gguf::OwnedQuantizedModel) -> Option<String> {
+    let qtype = model.first_gpu_unsupported_quant()?;
+    Some(format!(
+        "{CUDA_FALLBACK_LOG_PREFIX}: no verified GPU kernel for quantization type {qtype} — \
+         CUDA declined this model before wgpu or CPU was tried. Any backend error after this \
+         line is downstream of THIS decision, not its cause. Convert with \
+         `apr convert --quantize fp16` (type 1 is GPU-eligible), or run with --no-gpu (#3908)."
+    ))
+}
+
 /// Load an APR model and initialize it on CUDA, returning None on any failure.
 #[cfg(feature = "cuda")]
 fn load_apr_cuda_model(
@@ -843,7 +874,8 @@ fn load_apr_cuda_model(
         if verbose { eprintln!("[APR-CUDA] OwnedQuantizedModel::from_apr failed: {}", e); }
     }).ok()?;
 
-    if model_has_legacy_quant(&model) {
+    if let Some(notice) = apr_cuda_decline_notice(&model) {
+        eprintln!("{notice}");
         return None;
     }
 
@@ -1463,6 +1495,90 @@ mod pmat3757_wgpu_attempt_gate {
             wrong.len(),
             CASES.len(),
             wrong.join("")
+        );
+    }
+
+    // ── #3908: a CUDA decline on the quant whitelist must ANNOUNCE itself ──────────
+
+    /// The notice exists and NAMES THE TYPE, both directions.
+    ///
+    /// A verdict test alone would not have caught the defect this fixes: the old code's
+    /// verdict was already correct — it declined bf16, rightly. What was missing was that
+    /// it said so. Hence the emission test below as well.
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn apr_cuda_decline_names_the_type_and_is_silent_when_eligible() {
+        // Built the same way the PMAT-785 whitelist tests build theirs.
+        let cfg = crate::gguf::GGUFConfig {
+            architecture: "test".to_string(),
+            constraints: crate::gguf::ArchConstraints::from_architecture("test"),
+            hidden_dim: 64,
+            intermediate_dim: 128,
+            num_layers: 1,
+            num_heads: 4,
+            num_kv_heads: 4,
+            vocab_size: 100,
+            context_length: 256,
+            rope_theta: 10000.0,
+            eps: 1e-5,
+            rope_type: 0,
+            explicit_head_dim: None,
+            query_pre_attn_scalar: None,
+            bos_token_id: None,
+            eos_token_id: None,
+        };
+        let eligible = crate::gguf::test_helpers::create_test_model_with_config(&cfg);
+
+        // 30 is BF16 — the type that produced #3908, absent from the whitelist.
+        let mut bad = crate::gguf::test_helpers::create_test_model_with_config(&cfg);
+        bad.lm_head_weight.qtype = 30;
+        let notice = super::apr_cuda_decline_notice(&bad)
+            .expect("a model whose lm_head has no verified GPU kernel owes the user a notice");
+        assert!(notice.contains("30"), "the notice must NAME the declining type: {notice}");
+        assert!(
+            notice.starts_with(super::CUDA_FALLBACK_LOG_PREFIX),
+            "the notice must announce which backend was rejected: {notice}"
+        );
+        assert!(
+            notice.contains("downstream of THIS decision"),
+            "the notice must say later backend errors are downstream, since misattributing \
+             them to wgpu is the defect it exists to prevent: {notice}"
+        );
+
+        assert!(
+            super::apr_cuda_decline_notice(&eligible).is_none(),
+            "a fully GPU-eligible model must produce no decline notice"
+        );
+    }
+
+    /// MUST-RED: the notice is actually EMITTED at the exit, unconditionally.
+    ///
+    /// Read from source because the alternative is capturing stderr from a path that needs
+    /// a GPU. Delete the `eprintln!` at that exit and this goes red — which is the point:
+    /// the previous code's verdict was right and its silence was the bug, so a test that
+    /// only checks the verdict would have passed on the broken version.
+    #[cfg(feature = "cuda")]
+    #[test]
+    fn the_decline_notice_is_emitted_unconditionally_not_behind_verbose() {
+        let src = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/infer/gguf_gpu_generate.rs"
+        ))
+        .expect("own source readable");
+        let at = src
+            .find("if let Some(notice) = apr_cuda_decline_notice(&model)")
+            .expect("the quant-whitelist exit must consult apr_cuda_decline_notice");
+        let tail = &src[at..at + 220];
+        assert!(
+            tail.contains("eprintln!(\"{notice}\")"),
+            "the quant-whitelist exit must PRINT the notice before returning None — a silent \
+             decline here is #3908, and the sibling exit's own comment says a CUDA rejection \
+             MUST be visible without --verbose"
+        );
+        assert!(
+            !tail.contains("if verbose"),
+            "the decline notice must not be behind --verbose: the user who needs it is the \
+             one who did not pass it"
         );
     }
 }
