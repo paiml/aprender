@@ -11,11 +11,11 @@
   acceptance_criteria:
   - the CPU lane's apr calls (run, chat, serve) take no fleet GPU lock and run with CUDA_VISIBLE_DEVICES set and empty, so they cannot open a CUDA context; they keep choom 1000
   - every other lane keeps apr_locked, and the unlocked runner has exactly one caller (apr_lane's cpu branch)
-  - running the CPU lane concurrently with the GPU lane is OPT-IN (MODEL_LADDER_CONCURRENT_LANES=1; cop ruling on #4034) and, opted in, overlaps whatever the rung's backend order; the default stays serial until a post-publish lambda 9B A/B shows a gain, with a memory-pressure check on gx10's 27B
+  - 'running the CPU lane concurrently with the GPU lane is OPT-IN (MODEL_LADDER_CONCURRENT_LANES=1; cop ruling on #4034) and, opted in, overlaps whatever the rung''s backend order; the default stays serial until a post-publish lambda 9B A/B shows a gain, with a memory-pressure check on gx10''s 27B'
   - a lane that yields no parseable single-key fragment is an explicit RED fragment (ran false, lane_error), never absent from the row
   - a decline inside the background lane still ends the ladder with rc 2, and a decline on the GPU lane kills the background lane
   - check_ladder_cpu_lane.sh proves each of these against the shipped script, and its --self-test mutants each turn a case RED
-  - the saving is measured on a real rung against the serial baseline (yoga qwen35-2b: none measurable, #4034 comment 5800622966; lambda 9B pending publish)
+  - 'the saving is measured on a real rung against the serial baseline (yoga qwen35-2b: none measurable, #4034 comment 5800622966; lambda 9B pending publish)'
   phases: []
   subtasks: []
   estimated_effort: null
