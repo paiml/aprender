@@ -124,7 +124,8 @@
         }
       },
       "green": true,
-      "file": "c.gguf"
+      "file": "c.gguf",
+      "qa_rc": 0
     }
   ],
   "inventory": [

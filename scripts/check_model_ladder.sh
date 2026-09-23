@@ -117,7 +117,13 @@ def why_of(x, backends):  # every reason a measured row is not green on the clai
     # reason is printed DEFERRED and never counted green (#3846/#3880). A gate that cannot
     # tell an accepted refusal from a new regression is not reading either.
     qa_rc = x.get("qa_rc")
-    if qa_rc not in (0, None):
+    # #3957 F3: `not in (0, None)` let a row with NO qa_rc through as if apr qa had exited 0.
+    # An absent field is never the passing value (release-readiness-v1 cell_pass precondition);
+    # the producer writes qa_rc on every row it builds, so absence means the row was not built
+    # by it, or was built from nothing.
+    if "qa_rc" not in x or not isinstance(qa_rc, int) or isinstance(qa_rc, bool):
+        why.append(f"`qa_rc` is MISSING or not an integer ({qa_rc!r}) — a row that cannot say how apr qa exited has not shown that it passed (#3957 F3)")
+    elif qa_rc != 0:
         gf = x.get("gates_failed") or []
         named = ", ".join(str(g) for g in gf) if gf else "NO GATE NAMED"
         why.append(f"apr qa exited {qa_rc} — gates_failed: {named} (#3898)")
@@ -146,6 +152,12 @@ def why_of(x, backends):  # every reason a measured row is not green on the clai
                 r = vb.get(verb)
                 if r is None: why.append(f"{b}: verb `{verb}` is MISSING from the receipt — not measured is not passed (#3828)")
                 elif not r.get("ran"): why.append(f"{b}: verb `{verb}` did not run (rc={r.get('rc')})")
+                # #3957 F4a: the producer's verb_ok reads `output_bad` and this judge did not, so a
+                # verb that exited 0 while printing gibberish was ok HERE -- the #3897 asymmetry in
+                # the other direction. The judge is the decision surface; it reads what the
+                # producer read.
+                if r is not None and r.get("output_bad"):
+                    why.append(f"{b}: verb `{verb}` produced bad output: {_disp(r.get('output_bad'))} (#3957 F4a)")
             sv = vb.get("serve")
             if sv is None:
                 why.append(f"{b}: verb `serve` is MISSING from the receipt — no rung has ever asked apr serve to load a model (#3571, #3828)")
@@ -162,6 +174,7 @@ def why_of(x, backends):  # every reason a measured row is not green on the clai
                     why.append(f"{b}: verb `serve` recorded no /api/chat probe — the ollama-compat route is the one real Ollama harnesses hit and it cannot inherit /v1 coverage (alfredodeza, #3715; #3828)")
                 for rk, rv in sorted(rts.items()):
                     if not rv.get("ok"): why.append(f"{b}: serve route {rk} returned http {rv.get('http')} (#3828)")
+                    if rv.get("output_bad"): why.append(f"{b}: serve route {rk} produced bad output: {_disp(rv.get('output_bad'))} (#3957 F4a)")
             # #3838: the teardown is part of the measurement, and the JUDGE has to read it.
             # The producer marks its own cell red on a failed teardown, but that enforces the
             # rule only in the code that happened to observe the failure -- a receipt written
@@ -337,7 +350,10 @@ for h in hosts:
             if req: print(f"FAIL  {h['id']:7} {rid:22} ABSENT — a required rung the host does not hold is unmeasured, not passed"); rc = 1
             else:   print(f"skip  {h['id']:7} {rid:22} absent ({tag})")
             continue
-        if x.get("sha_ok") is False:
+        # #3957 F3: `is False` passed a row with no sha_ok at all. Only an explicit True is a match.
+        if "sha_ok" not in x:
+            print(f"FAIL  {h['id']:7} {rid:22} `sha_ok` is MISSING — a row that does not say its file matched the pinned sha256 has not shown it measured this rung (#3957 F3)"); rc = 1; continue
+        if x.get("sha_ok") is not True:
             print(f"FAIL  {h['id']:7} {rid:22} sha256 mismatch — a different file is a different measurement"); rc = 1; continue
         why = why_of(x, r.get("backends", []))
         if why:
@@ -490,8 +506,15 @@ if [ "$SELF_TEST" = 1 ]; then
     mutant q4k-without-cuda   red-q4k-rung-cpu-only  's/if is_q4k(r) and "cuda" not in (r.get("backends") or \[\]):/if False:/'
     mutant inventory-missing  red-inventory-model-missing 's/if x is None or not x.get("present"):  # held by the host, absent from the run/if False:/'
     # #3898: the rule that reads `qa_rc`. Deleting it must break the case that names it.
-    mutant qa-rc-ignored      red-qa-rc-nonzero-refused 's/if qa_rc not in (0, None):/if False:/'
+    mutant qa-rc-ignored      red-qa-rc-nonzero-refused 's/    elif qa_rc != 0:/    elif False:/'
     mutant gates-unaccounted  red-gates-do-not-account-for-rc 's|if x.get("gates_account_for_rc") is False:|if False:|'
+    # #3957 F4a: the judge reads `output_bad` on chat, code and every serve route.
+    # #3957 F3: an ABSENT qa_rc / sha_ok is a FAIL, never the passing value.
+    mutant qa-rc-absent       red-qa-rc-missing           's/if "qa_rc" not in x or not isinstance(qa_rc, int) or isinstance(qa_rc, bool):/if False:/'
+    mutant sha-ok-absent      red-sha-ok-missing          's/        if "sha_ok" not in x:/        if False:/'
+    mutant verb-output-bad    red-chat-output-bad-rc0     's/if r is not None and r.get("output_bad"):/if False:/'
+    mutant verb-output-bad-code red-code-output-bad-rc0   's/if r is not None and r.get("output_bad"):/if False:/'
+    mutant route-output-bad   red-serve-route-output-bad  's/if rv.get("output_bad"): why.append/if False: why.append/'
     # AND THE CROSS-CHECK THAT MAKES THE MUTANT MEAN SOMETHING (#3898).
     # A mutant killed by its own case only proves the case reads the rule. It does NOT
     # prove the rule covers a surface nothing else covers — and #3842's reconcile is the
@@ -499,7 +522,7 @@ if [ "$SELF_TEST" = 1 ]; then
     # So: delete the qa_rc rule and require the #3842 case to stay GREEN. If #3842 went red
     # too, the two rules would be redundant and this one would be unjustified.
     qa_mut="$mdir/cross-qa-rc.sh"
-    sed 's/if qa_rc not in (0, None):/if False:/' "$SELF" > "$qa_mut"
+    sed 's/    elif qa_rc != 0:/    elif False:/' "$SELF" > "$qa_mut"
     if cmp -s "$SELF" "$qa_mut"; then
       echo "FAIL  cross-check mutant did not apply -- the #3842 independence claim proves nothing"; bad=$((bad+1))
     elif MODEL_LADDER_ROOT="$PWD" bash "$qa_mut" --self-test --case red-receipt-red-not-recorded >/dev/null 2>&1; then

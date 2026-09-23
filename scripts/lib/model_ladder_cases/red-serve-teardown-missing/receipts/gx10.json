@@ -122,7 +122,8 @@
         }
       },
       "green": true,
-      "file": "c.gguf"
+      "file": "c.gguf",
+      "qa_rc": 0
     },
     {
       "id": "q3-q4km",
@@ -238,7 +239,8 @@
         }
       },
       "green": true,
-      "file": "q.gguf"
+      "file": "q.gguf",
+      "qa_rc": 0
     }
   ],
   "inventory": [
