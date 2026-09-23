@@ -35,7 +35,7 @@ LADDER="contracts/model-capability-ladder-v1.yaml"
 # Overridable so the floor below can be PROVEN against a planted case in a temp dir
 # rather than by planting a permanently-failing case in the real table (#3887).
 CASES_DIR="${MODEL_LADDER_CASES_DIR:-scripts/lib/model_ladder_cases}"
-SELF_TEST=0; ONLY_CASE=""; RECEIPT_DIR=""; LADDER_MAIN_OVERRIDE=""; CUT_COMMIT=""; CRUX_DIR=""
+SELF_TEST=0; ONLY_CASE=""; RECEIPT_DIR=""; LADDER_MAIN_OVERRIDE=""; CUT_COMMIT=""; CRUX_DIR=""; SCOPE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --self-test) SELF_TEST=1; shift ;;
@@ -46,6 +46,7 @@ while [ $# -gt 0 ]; do
     --version) [ $# -ge 2 ] || { echo "--version needs a value" >&2; exit 2; }; VERSION_OVERRIDE="$2"; shift 2 ;;
     --cut-commit) [ $# -ge 2 ] || { echo "--cut-commit needs a value" >&2; exit 2; }; CUT_COMMIT="$2"; shift 2 ;;
     --crux) [ $# -ge 2 ] || { echo "--crux needs a value" >&2; exit 2; }; CRUX_DIR="$2"; shift 2 ;;
+    --scope) [ $# -ge 2 ] || { echo "--scope needs a value" >&2; exit 2; }; SCOPE="$2"; shift 2 ;;
     -h|--help) awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"; exit 0 ;;
     *) echo "check_model_ladder: unknown argument '$1'" >&2; exit 2 ;;
   esac
@@ -61,9 +62,9 @@ cd "${MODEL_LADDER_ROOT:-$(dirname "$SELF")/..}" || exit 2
 #       <cut commit, 40-hex> <file of apr_shas proven equal to the cut modulo evidence/>
 #       <CRUX receipt dir>  → exit 0/1/2
 judge() {
-  python3 - "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" "${7:-}" "${8:-}" "${9:-}" <<'PY'
+  python3 - "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" "${7:-}" "${8:-}" "${9:-}" "${10:-}" <<'PY'
 import fnmatch, json, os, sys, yaml
-ladder_p, main_p, rdir, version, rungs_p, rungs_main_p, cut, equiv_p, crux_dir = sys.argv[1:10]
+ladder_p, main_p, rdir, version, rungs_p, rungs_main_p, cut, equiv_p, crux_dir, cert_p = sys.argv[1:11]
 # A mutant copy of a module, in --self-test: each directory is searched first when set.
 sys.path.insert(0, "scripts/lib")
 for _lib in (os.environ.get("MODEL_LADDER_CRUX_LIB"), os.environ.get("MODEL_LADDER_CELLS_LIB"),
@@ -91,9 +92,15 @@ import re
 # caller proves with git and passes in. A short or absent sha binds to nothing.
 if not re.fullmatch(r"[0-9a-f]{40}", cut or ""):
     print(f"decline: the cut commit {cut!r} is not a full 40-hex sha — a receipt cannot be bound to it (#3957 F2)"); sys.exit(2)
-equiv = set()
+equiv, equiv_proof = set(), {}
 if equiv_p and os.path.exists(equiv_p):
-    equiv = {ln.strip() for ln in open(equiv_p) if re.fullmatch(r"[0-9a-f]{40}", ln.strip())}
+    # one line per sha that binds the cut: "<sha>" or "<sha>\t<proof>" (#3710 ruling 3 records the proof)
+    for ln in open(equiv_p):
+        parts = ln.rstrip("\n").split("\t", 1)
+        if re.fullmatch(r"[0-9a-f]{40}", parts[0].strip()):
+            equiv.add(parts[0].strip())
+            if len(parts) > 1:
+                equiv_proof[parts[0].strip()] = parts[1].strip()
 if "apr_sha_drift" in (L.get("inventory") or {}) or "apr_sha_drift" in L:
     print("FAIL  the ladder carries `apr_sha_drift` — a prose declaration no code reads cannot excuse a receipt measured at another commit; "
           "the gate binds receipts by apr_sha. Delete the key and re-measure at the cut (#3957 F2)"); rc = 1
@@ -321,6 +328,45 @@ if main_p and os.path.exists(main_p):
         print(f"FAIL  ladder at origin/main unreadable: {e}"); rc = 1
 else:
     print("!     BOOTSTRAP: no ladder at origin/main yet; the anti-shrink floor arms when this lands")
+# #3907 (operator ruling via the release cop aprender-cf, 2026-09-23): a KNOWN RED that ships with its
+# ticket. `ladder.known_red` pins ONE model (rung id or file, AND its sha256) to ONE failure clause (a
+# regex over the row's reason) and ONE ticket. A row is covered only when EVERY reason it fails is
+# matched by an entry pinned to that same model: the same model failing another clause, or another
+# model failing this clause, is still RED. An entry that covers nothing on this sweep is refused as
+# STALE, the #3880 no-amnesty rule, so a known red cannot outlive its defect.
+KR = []
+for i, e in enumerate(L.get("known_red") or []):
+    e = e if isinstance(e, dict) else {}
+    missing = [k for k in ("sha256", "clause", "ticket", "ruling") if not str(e.get(k) or "").strip()]
+    if not (e.get("rung") or e.get("file")):
+        missing.append("rung|file")
+    if missing:
+        print(f"FAIL  known_red entry {i} has no {', '.join(missing)} -- a known red names its model, its sha256, its clause, its ticket and its ruling"); rc = 1
+        continue
+    # `clause` is one regex or a LIST: a single defect can surface as more than one reason on a row
+    # (#3907's golden failure also makes `apr qa` exit non-zero naming that gate, #3898). Each regex is
+    # pinned to this model; a reason none of them matches still makes the row RED.
+    try:
+        e["_re"] = [re.compile(c) for c in (e["clause"] if isinstance(e["clause"], list) else [e["clause"]])]
+    except re.error as exc:
+        print(f"FAIL  known_red entry {i} ({e['ticket']}) clause is not a valid regex: {exc}"); rc = 1
+        continue
+    e["_used"] = 0
+    KR.append(e)
+
+def known_red(row_key, f, sha, why):
+    """-> the covering entries when EVERY reason is matched by an entry pinned to this model, else None."""
+    if not why or not KR:
+        return None
+    hits = []
+    for w in why:
+        e = next((e for e in KR if (e.get("rung") == row_key or e.get("file") == f) and e["sha256"] == sha
+                  and any(r_.search(w) for r_ in e["_re"])), None)
+        if e is None:
+            return None
+        hits.append(e)
+    return hits
+
 good = {}  # host id -> a receipt that passed the host-level checks; the cells judge reads only these
 for h in hosts:
     f = os.path.join(rdir, f"{h['id']}.json")
@@ -337,6 +383,8 @@ for h in hosts:
         print(f"FAIL  {h['id']:7} receipt carries no 40-hex apr_sha ({asha!r}) — it names a version, and a version is not a build (#3957 F2)"); rc = 1; continue
     if asha != cut and asha not in equiv:
         print(f"FAIL  {h['id']:7} receipt measured at apr_sha {asha[:12]}, cut is {cut[:12]}, and the trees differ outside evidence/ — STALE BY SHA: re-measure at the cut (#3957 F2)"); rc = 1; continue
+    if asha != cut and asha in equiv_proof:
+        print(f"ok    {h['id']:7} receipt apr_sha {asha[:12]} binds cut {cut[:12]}: {equiv_proof[asha]}")
     if int(R.get("executed", 0)) < 1:
         print(f"FAIL  {h['id']:7} receipt executed=0 — a receipt that measured nothing is not evidence"); rc = 1; continue
     inv = R.get("inventory")
@@ -377,6 +425,10 @@ for h in hosts:
             continue  # a ladder rung: judged, required, in the rung loop below
         why = why_of(x, inv_backends)
         if named_red(h["id"], f, x, why, inv_backends): continue
+        kr = known_red(None, f, x.get("sha256") or item.get("sha256"), why)
+        if kr:
+            for e in kr: e["_used"] += 1
+            print(f"KNOWN-RED {h['id']:7} inv:{f} ships with {', '.join(sorted({e['ticket'] for e in kr}))} -- " + "; ".join(why)); continue
         # #3846 / operator ruling 2026-09-22 ("we kick the MoE work to later"): a DECLARED
         # deferral. `inventory.deferred` maps a filename glob to a REASON, and a failing row
         # whose file matches one is printed DEFERRED with that reason instead of refusing.
@@ -419,6 +471,10 @@ for h in hosts:
             print(f"FAIL  {h['id']:7} {rid:22} sha256 mismatch — a different file is a different measurement"); rc = 1; continue
         why = why_of(x, r.get("backends", []))
         if named_red(h["id"], r.get("gguf") or x.get("file") or rid, x, why, r.get("backends", [])): continue
+        kr = known_red(rid, r.get("gguf") or x.get("file"), x.get("sha256") or r.get("sha256"), why)
+        if kr:
+            for e in kr: e["_used"] += 1
+            print(f"KNOWN-RED {h['id']:7} {rid} ships with {', '.join(sorted({e['ticket'] for e in kr}))} -- " + "; ".join(why)); continue
         if why:
             if req: print(f"FAIL  {h['id']:7} {rid:22} " + "; ".join(why)); rc = 1
             else:   print(f"warn  {h['id']:7} {rid:22} ({tag}) " + "; ".join(why))
@@ -447,11 +503,20 @@ for pat in inv_deferred:
         rc = 1
 if RV.finish(good, {k: list(v) for k, v in held_sha.items()}, [h["id"] for h in hosts], lambda y: not why_of(y, ["cuda"])):
     rc = 1
+# #3907: after EVERY host, a known-red entry that covered nothing is stale; one that covered rows is
+# summarised so the run cannot then claim "every required rung green".
+for e in KR:
+    if e["_used"] == 0:
+        print(f"FAIL  known-red entry {e.get('rung') or e.get('file')} {e['ticket']} covered NOTHING on this sweep -- "
+              f"the clause no longer fails (or the model changed): delete the entry, a known red must not outlive its defect"); rc = 1
+if any(e["_used"] for e in KR):
+    print(f"KNOWN-RED {sum(e['_used'] for e in KR)} row(s) ship RED with their tickets: "
+          + ", ".join(sorted({e['ticket'] for e in KR if e['_used']})) + " -- counted RED, never green")
 if model_ladder_cells.judge(L, good, rungs_doc, print, rungs_main):
     rc = 1
 # #3957 F4/F8: every (model, format, quant, host, backend, verb) cell must be PROVEN by an outside
 # oracle -- the CRUX receipts bound to the cut -- or, for .apr, by the chain to its source.
-if model_ladder_crux.judge(L, good, crux_dir, cut, equiv, print, RV.proven):
+if model_ladder_crux.judge(L, good, crux_dir, cut, equiv, print, RV.proven, cert_p):
     rc = 1
 # #3957 F1: a DEFERRED row is not green. DEFER is `Unknown(NotRun)` in the fleet vocabulary
 # (crates/aprender-contracts/src/ontology/verdict.rs FLEET_LABELS), the same element as
@@ -533,7 +598,7 @@ if [ "$SELF_TEST" = 1 ]; then
     # (every fixture receipt carries it as apr_sha); a case overrides it with a `cut_commit` file,
     # and lists shas proven equal to the cut in `equivalent_shas`.
     cut=$(cat "$c/cut_commit" 2>/dev/null || echo "$CASE_CUT")
-    out=$(judge "$lad" "$main" "$c/receipts" "$(cat "$c/version" 2>/dev/null || echo 0.0.0-case)" "$c/context-rungs.json" "$c/context-rungs_main.json" "$cut" "$c/equivalent_shas" "$c/crux"); got=$?
+    out=$(judge "$lad" "$main" "$c/receipts" "$(cat "$c/version" 2>/dev/null || echo 0.0.0-case)" "$c/context-rungs.json" "$c/context-rungs_main.json" "$cut" "$c/equivalent_shas" "$c/crux" "$c/certification.json"); got=$?
     n=$((n+1))
     # #3887 THE OTHER POLARITY. A case that exists to prove a gate stays QUIET rests on rc
     # alone otherwise, and that works only because an over-eager check happens to flip rc.
@@ -597,6 +662,12 @@ if [ "$SELF_TEST" = 1 ]; then
     # #3957 F3: an ABSENT qa_rc / sha_ok is a FAIL, never the passing value.
     mutant qa-rc-absent       red-qa-rc-missing           's/if "qa_rc" not in x or not isinstance(qa_rc, int) or isinstance(qa_rc, bool):/if False:/'
     mutant sha-ok-absent      red-sha-ok-missing          's/        if "sha_ok" not in x:/        if False:/'
+    # #3907: a KNOWN-RED is pinned to ONE model, ONE clause and ONE ticket, and goes stale when it covers nothing.
+    mutant kr-any-model      red-known-red-other-model  's/(e.get("rung") == row_key or e.get("file") == f) and e\["sha256"\] == sha/True/'
+    mutant kr-any-reason     red-known-red-extra-clause 's/^            return None$/            continue/'
+    mutant kr-any-clause     red-known-red-other-clause 's/ and any(r_.search(w) for r_ in e\["_re"\])//'
+    mutant kr-never-stale    red-known-red-stale        's/^    if e\["_used"\] == 0:$/    if False:/'
+    mutant kr-no-ticket-ok   red-known-red-no-ticket    's/("sha256", "clause", "ticket", "ruling")/("sha256", "clause", "ruling")/'
     # #3957 F1: a deferred row exits 2 (Unknown/NotRun), never 0.
     mutant defer-exits-0      defer-inventory-declared    's/if deferred_rows and rc == 0:/if False:/'
     mutant defer-exits-0-qa   defer-qa-rc-declared        's/if deferred_rows and rc == 0:/if False:/'
@@ -735,6 +806,193 @@ if [ "$SELF_TEST" = 1 ]; then
     xmutant greedy-only-cells red-crux-greedy-only-with-cells 's/^            if R.get("cells"):$/            if False:/'
     xmutant red-model-off-owed red-model-thinking-off-missing 's/^    if red_model and not got:/    if False:/'
     xmutant unsup-cell-named  green-red-unsupported-proven  's/^                    if named == "RED-UNSUPPORTED" and b in ("cuda", "gpu"):/                    if False:/'
+    # #3710 ruling 3 / #4022: the scoped-hotfix receipt binding (scripts/lib/ladder_equiv.py), a pure
+    # classifier driven by a case table: in scope binds; one stray path, a dependency change in
+    # Cargo.lock, or a receipt not at the pinned receipts_at does NOT.
+    equiv_table() { # equiv_table <lib dir> -> 0 when every row lands, 1 otherwise
+      python3 - "$1" <<'EQ'
+import sys; sys.path.insert(0, sys.argv[1]); import ladder_equiv as L
+A, B = "a" * 40, "b" * 40
+S = {"receipts_at": A, "paths": ["crates/aprender-mcp/**", "crates/apr-cli/Cargo.toml", "Cargo.lock", "docs/**"], "ruling": "r3"}
+lk = '[[package]]\nname = "apr-cli"\nversion = "0.69.1"\n\n[[package]]\nname = "serde"\nversion = "1.0.1"\nsource = "registry+x"\nchecksum = "c"\n'
+rows = [
+  ("in-scope hotfix binds", ("hotfix",), (A, B, ["crates/aprender-mcp/src/lib.rs", "docs/r.md", "crates/apr-cli/Cargo.toml"], S)),
+  ("a stray path is NOT equivalent", (None, "outside its scope"), (A, B, ["crates/aprender-mcp/src/lib.rs", "crates/aprender-serve/src/x.rs"], S)),
+  ("a receipt not at receipts_at is NOT equivalent", (None, "pinned receipts_at"), ("c" * 40, B, ["docs/r.md"], S)),
+  ("a workspace version bump in Cargo.lock binds", ("hotfix",), (A, B, ["Cargo.lock"], S, lk, lk.replace('"0.69.1"', '"0.69.2"'))),
+  ("an external dependency change in Cargo.lock is NOT equivalent", (None, "changes dependencies"), (A, B, ["Cargo.lock"], S, lk, lk.replace("1.0.1", "1.0.2"))),
+  ("evidence-only binds without the scope", ("evidence",), ("c" * 40, B, ["evidence/x.json"], S)),
+]
+# #4022 OPERATOR OVERRIDE, pinned to EXACTLY one lock delta: aprender-mcp drops its `anyhow` edge.
+def lock(mcp_deps, cli_deps=("aprender-mcp",), extra=""):
+    q = lambda ds: ", ".join('"%s"' % d for d in ds)
+    return ('[[package]]\nname = "anyhow"\nversion = "1.0.0"\nsource = "registry+x"\nchecksum = "a"\n\n'
+            '[[package]]\nname = "serde"\nversion = "1.0.1"\nsource = "registry+x"\nchecksum = "c"\n\n'
+            '[[package]]\nname = "aprender-mcp"\nversion = "0.69.1"\ndependencies = [%s]\n\n'
+            '[[package]]\nname = "apr-cli"\nversion = "0.69.1"\ndependencies = [%s]\n%s' % (q(mcp_deps), q(cli_deps), extra))
+BASE = lock(["anyhow", "serde"], ("aprender-mcp", "anyhow"))
+PINNED = lock(["serde"], ("aprender-mcp", "anyhow"))
+_, dsha = L.lock_delta(BASE, PINNED)
+SO = dict(S, lock_overrides=[{"delta_sha256": dsha, "ticket": "#4022", "date": "2026-09-23", "ruling": "q"}])
+rows += [
+  ("the pinned lock delta binds as OPERATOR OVERRIDE", ("override", "OPERATOR OVERRIDE (#4022 lock delta)"), (A, B, ["Cargo.lock"], SO, BASE, PINNED)),
+  ("an ADDED edge is not the pinned delta: RED", (None, "no operator override pinned"), (A, B, ["Cargo.lock"], SO, BASE, lock(["serde", "anyhow", "extra"], ("aprender-mcp", "anyhow")))),
+  ("a NEW package is not the pinned delta: RED", (None, "no operator override pinned"), (A, B, ["Cargo.lock"], SO, BASE, lock(["serde"], ("aprender-mcp", "anyhow"), '\n[[package]]\nname = "nix"\nversion = "0.29.0"\nsource = "registry+x"\nchecksum = "n"\n'))),
+  ("ANOTHER crate's edges change too: RED", (None, "no operator override pinned"), (A, B, ["Cargo.lock"], SO, BASE, lock(["serde"], ("aprender-mcp",)))),
+  ("a DIFFERENT removal (changed delta hash): RED", (None, "no operator override pinned"), (A, B, ["Cargo.lock"], SO, BASE, lock(["anyhow"], ("aprender-mcp", "anyhow")))),
+  ("the same delta with no override pinned stays RED", (None, "no operator override pinned"), (A, B, ["Cargo.lock"], S, BASE, PINNED)),
+  ("an override without its recorded ruling is not an override: RED", (None, "no operator override pinned"),
+   (A, B, ["Cargo.lock"], dict(S, lock_overrides=[{"delta_sha256": dsha, "ticket": "#4022", "date": "2026-09-23"}]), BASE, PINNED)),
+]
+# #4032 (X2 = X + one commit): its two files EXACTLY, never a directory glob.
+S2 = dict(S, paths=S["paths"] + ["crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs",
+                                  "crates/aprender-serve/src/gguf/inference/forward/qwen35_known_issue.rs"])
+rows += [
+  ("X2's two #4032 files bind with the #4022 ones", ("hotfix",), (A, B, ["crates/aprender-mcp/src/lib.rs",
+      "crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs",
+      "crates/aprender-serve/src/gguf/inference/forward/qwen35_known_issue.rs"], S2)),
+  ("a THIRD aprender-serve file beside #4032's is RED", (None, "outside its scope"), (A, B, [
+      "crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs",
+      "crates/aprender-serve/src/gguf/inference/forward/forward_qwen3.rs"], S2)),
+]
+bad = 0
+for name, want, args in rows:
+    kind, proof = L.classify(*args)
+    ok = kind == want[0] and (len(want) == 1 or want[1] in proof)
+    print(("ok    equiv " if ok else "FAIL  equiv ") + name + ("" if ok else " -> %r %r" % (kind, proof)))
+    bad |= not ok
+sys.exit(bad)
+EQ
+    }
+    if equiv_table scripts/lib; then printf 'ok    equiv: the scoped-hotfix table lands on the shipped classifier\n'
+    else equiv_table scripts/lib; bad=$((bad+1)); fi
+    emutant() { # emutant <label> <sed deleting the rule>
+      local md="$mdir/e-$1"; mkdir -p "$md"
+      sed "$2" scripts/lib/ladder_equiv.py > "$md/ladder_equiv.py"
+      if cmp -s scripts/lib/ladder_equiv.py "$md/ladder_equiv.py"; then echo "FAIL  equiv mutant $1 did not apply"; bad=$((bad+1)); return; fi
+      if equiv_table "$md" > /dev/null 2>&1; then echo "FAIL  equiv mutant $1 SURVIVED the table"; bad=$((bad+1))
+      else printf 'ok    equiv mutant %-16s killed by the table\n' "$1"; fi
+    }
+    emutant stray-allowed  's/^    if stray:$/    if False:/'
+    emutant deps-allowed   's/^        if why:$/        if False:/'
+    emutant any-receipt    's/^    if receipt_sha != scope.get("receipts_at"):$/    if False:/'
+    emutant override-any-delta 's/o.get("delta_sha256") == delta_sha/True/'
+    emutant override-no-ruling 's/and all(str(o.get(k) or "").strip() for k in ("ticket", "ruling", "date"))/and True/'
+    # 0.69.1 OPERATOR EMERGENCY SCOPE (scripts/lib/crux_smoke_scope.py): a hermetic table over generated
+    # receipts. Every must-RED names its reason; the green row is the control.
+    smoke_table() { # smoke_table <lib dir> -> 0 when every row lands
+      python3 - "$1" <<'SM'
+import json, os, sys, tempfile
+sys.path.insert(0, sys.argv[1]); import crux_smoke_scope as C
+CUT = "d" * 40
+# the checkout's `git rev-parse` stand-in: only the cut's own short sha resolves
+C.model_ladder_crux._git_resolve = lambda short: CUT if CUT.startswith(short) else ("e" * 40 if ("e" * 40).startswith(short) else None)
+SH = ["1" * 64, "2" * 64, "3" * 64]
+L = {"emergency_scopes": [{"name": "crux-smoke", "release": "0.69.1", "date": "2026-09-23", "quote": "q",
+                            "hosts": ["lambda", "gx10"], "thinking": ["off", "on"]}]}
+# 2 = SH[1] is admitted with thinking OFF only (its ON leg loops at greedy, the real 2B's shape)
+ADMIT = {s: {"off": ["ctl"], "on": ["ctl"]} for s in SH}
+ADMIT[SH[1]] = {"off": ["ctl"], "on": []}
+def build(d, hosts=("lambda", "gx10"), drop=None, ctl="GREEN", noctl=False, sha=CUT, cell="GREEN", admit=None, dropmode=None, onlymode=None,
+          real=None, cellver=None):
+    # real=<version line>: the shape crux_inference_dogfood.sh ACTUALLY writes (copied from lambda's X2 shard
+    # evidence/crux/0.69.1/d8a6df53a/shards/00fe7986ff5f-off/lambda-gpu.json): no apr.sha, a SHORT harness.sha,
+    # and the binary named only by `apr --version`'s line, repeated in every cell's engines.apr.version.
+    json.dump({"schema": "crux-prompt-certification/v1", "admitted_by_sha": {s: ["ctl"] for s in SH},
+               "admitted_by_sha_thinking": admit or ADMIT}, open(os.path.join(d, "prompt-certification.json"), "w"))
+    for h in hosts:
+        cells = []
+        for s in SH:
+            if drop == (h, s):
+                continue
+            for t in (onlymode.get((h, s), ("off", "on")) if onlymode else ("off", "on")):
+                if dropmode == (h, s, t):
+                    continue
+                cells.append({"key": {"model_sha256": s, "host": h, "thinking": t, "verb": "run"},
+                              "verdict": cell if (h, s, t) == ("lambda", "3" * 64, "on") else "GREEN", "positive_control": False,
+                              "engines": {"apr": {"answered": True, "version": (cellver or {}).get((h, s, t), real)}} if real else {}})
+                if not noctl:
+                    cells.append({"key": {"model_sha256": s, "host": h, "thinking": t, "verb": "run"}, "verdict": ctl, "positive_control": True})
+        json.dump({"schema": "crux-inference-receipt/v1", "host": h, "backend": "gpu",
+                   **({"apr": {"version_line": real}, "harness": {"sha": real.split("(")[-1].rstrip(")")[:9],
+                       "driver": "scripts/crux_inference_dogfood.sh"}} if real else {"apr": {"sha": sha}}),
+                   "cells": cells, "summary": {"verdict": "PASS"}}, open(os.path.join(d, h + "-gpu.json"), "w"))
+rows = [
+  ("green: both hosts, 3 certified models x off/on, controls GREEN", False, "OPERATOR EMERGENCY SCOPE: CRUX smoke only", {}, "0.69.1"),
+  ("a host missing is RED", True, "host gx10 has no CRUX receipt", {"hosts": ("lambda",)}, "0.69.1"),
+  ("a certified model missing on a host is RED", True, "no CRUX cell", {"drop": ("gx10", "2" * 64)}, "0.69.1"),
+  ("the positive control RED is RED", True, "not GREEN", {"ctl": "RED"}, "0.69.1"),
+  ("a non-control cell RED beside a GREEN control is RED", True, "1 of 2 cell(s) not GREEN", {"cell": "RED"}, "0.69.1"),
+  ("no positive control is RED", True, "positive control is missing", {"noctl": True}, "0.69.1"),
+  ("a receipt at a sha other than the cut is RED", True, "not the release binary", {"sha": "e" * 40}, "0.69.1"),
+  ("the scope used for another release is RED", True, "for release 0.69.1 ONLY", {}, "0.70.0"),
+  ("an ADMITTED mode missing on a host is RED", True, "thinking=off: no CRUX cell", {"dropmode": ("gx10", "2" * 64, "off")}, "0.69.1"),
+  ("a certified model with ZERO admitted modes is RED", True, "has NO admitted thinking mode",
+   {"admit": dict(ADMIT, **{"3" * 64: {"off": [], "on": []}})}, "0.69.1"),
+  ("an UNADMITTED mode's green cells never count toward the pass", True, "thinking=off: no CRUX cell",
+   {"onlymode": {("lambda", "2" * 64): ("on",)}}, "0.69.1"),
+  ("a REAL-shaped receipt (version line only, short harness sha) binds to the cut", False,
+   "OPERATOR EMERGENCY SCOPE: CRUX smoke only", {"real": "apr 0.69.1 (ddddddddd)"}, "0.69.1"),
+  ("a real-shaped receipt from another binary is RED", True, "not the release binary", {"real": "apr 0.69.1 (eeeeeeeee)"}, "0.69.1"),
+  ("a real-shaped receipt whose short sha resolves to nothing is RED", True, "not the release binary",
+   {"real": "apr 0.69.1 (abcdef012)"}, "0.69.1"),
+  ("a DIRTY binary's version line binds to nothing and is RED", True, "not the release binary",
+   {"real": "apr 0.69.1 (ddddddddd-dirty)"}, "0.69.1"),
+  ("a cell measured by a different binary unbinds the whole receipt", True, "not the release binary",
+   {"real": "apr 0.69.1 (ddddddddd)", "cellver": {("gx10", "1" * 64, "on"): "apr 0.69.1 (eeeeeeeee)"}}, "0.69.1"),
+  ("the admitted matrix is printed", False, "2222222222 -> off;", {}, "0.69.1"),
+  ("a mode the certification does NOT admit needs no cells (the real 2B shape: OFF only)", False,
+   "ok    gx10 certified model 222222222222 thinking=off",
+   {"onlymode": {("lambda", "2" * 64): ("off",), ("gx10", "2" * 64): ("off",)}}, "0.69.1"),
+]
+bad = 0
+for name, want_fail, needle, kw, version in rows:
+    with tempfile.TemporaryDirectory() as d:
+        build(d, **kw)
+        lines = []
+        got = C.judge(L, version, d, os.path.join(d, "prompt-certification.json"), CUT, "crux-smoke", lines.append)
+        ok = got == want_fail and any(needle in ln for ln in lines)
+        print(("ok    smoke " if ok else "FAIL  smoke ") + name + ("" if ok else " -> failed=%s %s" % (got, lines[-3:])))
+        bad |= not ok
+sys.exit(bad)
+SM
+    }
+    if smoke_table scripts/lib; then printf 'ok    smoke: the emergency-scope table lands on the shipped module\n'
+    else smoke_table scripts/lib; bad=$((bad+1)); fi
+    smutant() { # smutant <label> <sed deleting the rule>
+      local md="$mdir/s-$1"; mkdir -p "$md"
+      cp scripts/lib/model_ladder_crux.py "$md/"
+      sed "$2" scripts/lib/crux_smoke_scope.py > "$md/crux_smoke_scope.py"
+      if cmp -s scripts/lib/crux_smoke_scope.py "$md/crux_smoke_scope.py"; then echo "FAIL  smoke mutant $1 did not apply"; bad=$((bad+1)); return; fi
+      if smoke_table "$md" > /dev/null 2>&1; then echo "FAIL  smoke mutant $1 SURVIVED the table"; bad=$((bad+1))
+      else printf 'ok    smoke mutant %-18s killed by the table\n' "$1"; fi
+    }
+    smutant host-optional     's/^        if h not in seen_hosts:$/        if False:/'
+    smutant model-optional    's/^                if not got:$/                if False:/'
+    smutant red-cells-ok      's/^                if red:$/                if False:/'
+    smutant control-optional  's/^                elif not ctl or any(v != "GREEN" for v in ctl):$/                elif False:/'
+    smutant any-sha           's/^        if asha != cut:$/        if False:/'
+    smutant any-release       's/^    if str(version) != str(entry\["release"\]):$/    if False:/'
+    smutant zero-modes-ok     's/^        if not m:$/        if False:/'
+    smutant all-modes-counted 's/^            for mode in matrix\[sha\]:$/            for mode in ("off", "on"):/'
+    vmutant() { # vmutant <label> <sed deleting a binding rule in model_ladder_crux.apr_sha_of> -- the smoke table must go RED
+      local md="$mdir/v-$1"; mkdir -p "$md"
+      cp scripts/lib/crux_smoke_scope.py "$md/"
+      sed "$2" scripts/lib/model_ladder_crux.py > "$md/model_ladder_crux.py"
+      if cmp -s scripts/lib/model_ladder_crux.py "$md/model_ladder_crux.py"; then echo "FAIL  binding mutant $1 did not apply"; bad=$((bad+1)); return; fi
+      if smoke_table "$md" > /dev/null 2>&1; then echo "FAIL  binding mutant $1 SURVIVED the table"; bad=$((bad+1))
+      else printf 'ok    binding mutant %-16s killed by the table\n' "$1"; fi
+    }
+    vmutant version-line-unread 's/^    if not m:$/    if True:/'
+    vmutant short-sha-unresolved 's/^    return (resolve or _git_resolve)(m.group(1))$/    return m.group(1)/'
+    vmutant dirty-accepted      's/(\[0-9a-f\]{7,40})\\)\$/([0-9a-f]{7,40})/'
+    vmutant mixed-cells-ok      's/^        if v is not None and (not isinstance(v, str) or v.strip() != line.strip()):$/        if False:/'
+    # #3710 ruling 1: CRUX coverage scoped to the certified models (model_ladder_crux.py).
+    xmutant uncertified-owes-crux green-uncertified-no-crux 's/^                    elif certified is not None and sha not in certified:$/                    elif False:/'
+    xmutant no-cert-relaxes   red-certification-missing 's/^        return None, True$/        return set(), False/'
+    xmutant certified-unheld  red-certified-not-held    's/^        if s_ not in held:$/        if False:/'
+    xmutant cert-read-as-receipt green-cert-beside-crux-receipts 's/                   if not os.path.basename(f).startswith("prompt-certification")) if crux_dir else \[\]/                   ) if crux_dir else []/'
+    xmutant certified-as-none red-certified-missing-crux 's/^    need = certified is None or bool(held \& certified)$/    need = False; certified = set()/'
     if [ -n "$mdir" ] && [ "$mdir" != "/" ] && [ -d "$mdir" ]; then rm -rf -- "$mdir"; fi
   fi
   echo "self-test: $n case(s), $bad bad"
@@ -767,6 +1025,23 @@ git show "origin/main:evidence/release/context-rungs.json" > "$TMP_RUNGS" 2> /de
 # #3957 F2: the cut. `--cut-commit`, else HEAD. safe.directory because a CI container's checkout
 # is owned by another uid and plain rev-parse dies there (#3581). Unresolvable -> the judge declines.
 [ -n "$CUT_COMMIT" ] || CUT_COMMIT=$(git -c safe.directory="$PWD" rev-parse HEAD 2> /dev/null || true)
+# 0.69.1 OPERATOR EMERGENCY SCOPE (scripts/lib/crux_smoke_scope.py): `--scope crux-smoke` judges CRUX smoke
+# receipts from the release binary INSTEAD of the ladder, only for the release its contract entry names.
+if [ -n "$SCOPE" ]; then
+  [ -n "$CRUX_DIR" ] || CRUX_DIR="evidence/crux/$VERSION"
+  python3 -c 'import sys, yaml
+sys.path.insert(0, "scripts/lib"); import crux_smoke_scope
+L = yaml.safe_load(open(sys.argv[1]))["ladder"]
+sys.exit(1 if crux_smoke_scope.judge(L, sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], print) else 0)' \
+    "$LADDER" "$VERSION" "$CRUX_DIR" "${CRUX_CERT:-$CRUX_DIR/prompt-certification.json}" "$CUT_COMMIT" "$SCOPE"
+  rc=$?
+  if [ "$rc" = 0 ]; then
+    echo "ok    OPERATOR EMERGENCY SCOPE: CRUX smoke only -- satisfied. The model ladder was NOT run for this release (nightly only); this is not \"every rung green\""
+  else
+    echo "RED   OPERATOR EMERGENCY SCOPE: CRUX smoke only -- NOT satisfied (see FAIL rows)"; rc=1
+  fi
+  exit "$rc"
+fi
 TMP_EQUIV=$(mktemp)
 # A receipt measured at another commit still binds when that commit's tree equals the cut's
 # outside evidence/ -- committing the receipts is itself a commit. Proven here, per sha, with git.
@@ -775,30 +1050,44 @@ for f in glob.glob(sys.argv[1] + "/*.json"):
     try: print(json.load(open(f)).get("apr_sha") or "")
     except Exception: pass' "$RECEIPT_DIR" 2> /dev/null | sort -u | while read -r s; do
   [ -n "$s" ] && [ -n "$CUT_COMMIT" ] || continue
-  if git -c safe.directory="$PWD" cat-file -e "$s^{commit}" 2> /dev/null \
-     && git -c safe.directory="$PWD" diff --quiet "$s" "$CUT_COMMIT" -- . ':(exclude)evidence' 2> /dev/null; then
-    printf '%s\n' "$s"
-  fi
+  git -c safe.directory="$PWD" cat-file -e "$s^{commit}" 2> /dev/null || continue
+  # #3957 F2 + #3710 ruling 3: evidence-only, or the contract's scoped hotfix -- scripts/lib/ladder_equiv.py.
+  git -c safe.directory="$PWD" diff --name-only "$s" "$CUT_COMMIT" 2> /dev/null > "$TMP_EQUIV.paths" || continue
+  git -c safe.directory="$PWD" show "$s:Cargo.lock" > "$TMP_EQUIV.lock_a" 2> /dev/null || : > "$TMP_EQUIV.lock_a"
+  git -c safe.directory="$PWD" show "$CUT_COMMIT:Cargo.lock" > "$TMP_EQUIV.lock_b" 2> /dev/null || : > "$TMP_EQUIV.lock_b"
+  python3 -c 'import sys, yaml
+sys.path.insert(0, "scripts/lib"); import ladder_equiv
+scope = (yaml.safe_load(open(sys.argv[3]))["ladder"] or {}).get("hotfix_scope") or {}
+paths = [ln.strip() for ln in open(sys.argv[4]) if ln.strip()]
+kind, proof = ladder_equiv.classify(sys.argv[1], sys.argv[2], paths, scope, open(sys.argv[5]).read(), open(sys.argv[6]).read())
+if kind: print(sys.argv[1] + "\t" + proof)' "$s" "$CUT_COMMIT" "$LADDER" "$TMP_EQUIV.paths" "$TMP_EQUIV.lock_a" "$TMP_EQUIV.lock_b"
 done > "$TMP_EQUIV"
 [ -n "$CRUX_DIR" ] || CRUX_DIR="evidence/crux/$VERSION"
 TMP_OUT=$(mktemp)
-judge "$LADDER" "$MAIN_LADDER" "$RECEIPT_DIR" "$VERSION" evidence/release/context-rungs.json "$TMP_RUNGS" "$CUT_COMMIT" "$TMP_EQUIV" "$CRUX_DIR" > "$TMP_OUT"; rc=$?
+judge "$LADDER" "$MAIN_LADDER" "$RECEIPT_DIR" "$VERSION" evidence/release/context-rungs.json "$TMP_RUNGS" "$CUT_COMMIT" "$TMP_EQUIV" "$CRUX_DIR" "$CRUX_DIR/prompt-certification.json" > "$TMP_OUT"; rc=$?
 cat "$TMP_OUT"
 # #3957 F9/F10: a run whose only non-green cells are re-proven RED-MODEL / RED-UNSUPPORTED exits 0,
 # and must not then claim "every required rung green". Read from the file, never through a pipe.
 named_red=0; grep -q '^RED   [0-9]* RED-MODEL' "$TMP_OUT" && named_red=1
+# #3907: a shipped KNOWN-RED is likewise RED, never green -- the summary must not say otherwise.
+grep -q '^KNOWN-RED [0-9]* row(s) ship RED' "$TMP_OUT" && named_red=1
+# #4022: a receipt bound to the cut by an OPERATOR OVERRIDE is not "every rung green" either.
+override=0; grep -q 'OPERATOR OVERRIDE (' "$TMP_OUT" && override=1
 rm -f "$TMP_OUT"
-rm -f "$TMP_EQUIV"
+rm -f "$TMP_EQUIV" "$TMP_EQUIV.paths" "$TMP_EQUIV.lock_a" "$TMP_EQUIV.lock_b"
 [ -n "$TMP_RUNGS" ] && [ -f "$TMP_RUNGS" ] && rm -f "$TMP_RUNGS"
 # The producer that writes these receipts must not bypass the fleet GPU lock (#3712): RED, not a decline.
 # #3957 F1: exit 2 now also means DEFER, so a raw GPU call must not hide behind it -- always RED.
 if ! lock_audit scripts/model_ladder.sh; then rc=1; fi
 case $rc in
   0) if [ "$named_red" = 1 ]; then
-       echo "ok    no blocking cell: every required rung is green, or RED-MODEL / RED-UNSUPPORTED re-proven on this sweep (counted RED above, never green)"
+       echo "ok    no blocking cell: every required rung is green, or RED-MODEL / RED-UNSUPPORTED re-proven on this sweep, or a KNOWN-RED shipping with its ticket (counted RED above, never green)"
+     elif [ "$override" = 1 ]; then
+       echo "ok    every required rung green -- against receipts bound by an OPERATOR OVERRIDE (#4022 lock delta, see above), not by the default rule"
      else
        echo "ok    every required rung green on every required host"
-     fi ;;
+     fi
+     [ "$override" = 1 ] && [ "$named_red" = 1 ] && echo "note  receipts bound by OPERATOR OVERRIDE (#4022 lock delta) -- see the binding lines above" ;;
   1) echo "RED   the release claims a capability no receipt proves — see FAIL rows (EPIC #3477)" ;;
   2) echo "NO-GO the verdict is not green: see DEFER / decline lines above (#3957 F1)" ;;
 esac

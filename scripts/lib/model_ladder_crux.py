@@ -63,21 +63,59 @@ def quant_of(fname):
     return m.group(1).upper() if m else "?"
 
 
-def apr_sha_of(receipt):
+#: `apr --version`'s own line, as crux_inference_dogfood.sh records it: "apr 0.69.1 (d8a6df53a)"
+APR_VERSION_SHA = re.compile(r"^apr \S+ \(([0-9a-f]{7,40})\)$")
+
+
+def _git_resolve(short):
+    """A short sha -> the full commit sha in this checkout, or None (unknown or ambiguous)."""
+    import subprocess
+    try:
+        r = subprocess.run(["git", "rev-parse", "--verify", "--quiet", short + "^{commit}"],
+                           capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    full = r.stdout.strip()
+    return full if r.returncode == 0 and HEX40.fullmatch(full) else None
+
+
+def apr_sha_of(receipt, resolve=None):
+    """The FULL sha of the apr binary a receipt measured, or None.
+
+    An explicit apr.sha / apr_sha wins. Otherwise the sha comes from the BINARY'S OWN version line (the
+    producer, crux_inference_dogfood.sh, records only `apr.version_line`; harness.sha is the harness
+    checkout, never the binary). Every cell's engines.apr.version must name the same binary, since a
+    receipt mixing binaries binds to none. The short sha is resolved in this checkout and must be
+    unambiguous. A dirty or unparseable line -> None, so the receipt fails closed (#3957 F2; aprender-3a
+    2026-09-23: the real receipt's only binding was the version line, and the judge read a field no
+    producer writes)."""
     a = receipt.get("apr")
     sha = (a.get("sha") if isinstance(a, dict) else None) or receipt.get("apr_sha")
-    return sha if isinstance(sha, str) else None
+    if sha is not None:
+        return sha if isinstance(sha, str) else None
+    line = a.get("version_line") if isinstance(a, dict) else None
+    m = APR_VERSION_SHA.match(line.strip()) if isinstance(line, str) else None
+    if not m:
+        return None
+    for c in receipt.get("cells") or []:
+        v = ((c.get("engines") or {}).get("apr") or {}).get("version") if isinstance(c, dict) else None
+        if v is not None and (not isinstance(v, str) or v.strip() != line.strip()):
+            return None
+    return (resolve or _git_resolve)(m.group(1))
 
 
 def load_crux(crux_dir, cut, equiv, out):
     """-> ({(sha, host, lane, crux_verb): [verdict, ...]}, failed)."""
     index, failed = {}, False
-    files = sorted(glob.glob(os.path.join(crux_dir or "", "*.json"))) if crux_dir else []
+    files = sorted(f for f in glob.glob(os.path.join(crux_dir or "", "*.json"))
+                   if not os.path.basename(f).startswith("prompt-certification")) if crux_dir else []
     if not files:
         out(f"FAIL  no CRUX receipt under {crux_dir!r} -- no verb of any model has been judged against an "
             f"outside engine, so every cell below is unproven (#3957 F4)")
         return index, True
     for f in files:
+        # The prompt certification and its inventory live BESIDE the receipts (evidence/crux/<v>/, #3962);
+        # they are inputs to the coverage rule, not receipts. Every OTHER json here must be a receipt.
         try:
             with open(f, encoding="utf-8") as fh:
                 R = json.load(fh)
@@ -174,7 +212,30 @@ def apr_chain(x, backends):
     return src["sha256"], why
 
 
-def judge(L, good, crux_dir, cut, equiv, out, red=None):
+def load_certified(cert_p, out):
+    """#3710 ruling 1: the models CRUX must cover are the CERTIFIED ones -- the keys of the prompt
+    certification's per-model admissions (admitted_by_sha / admitted_by_sha_thinking), read from the
+    receipt, never listed here. -> (set of sha256, failed). An absent or unreadable receipt is RED, and
+    returns None: every held model stays CRUX-required, so a missing receipt can never RELAX the gate."""
+    try:
+        with open(cert_p, encoding="utf-8") as fh:
+            C = json.load(fh)
+    except (OSError, ValueError, TypeError) as exc:
+        out(f"FAIL  no prompt-certification receipt at {cert_p!r} ({exc}) -- which models CRUX must cover is unknown, "
+            f"so every held model stays CRUX-required (#3710 ruling 1)")
+        return None, True
+    keys = set()
+    for field in ("admitted_by_sha", "admitted_by_sha_thinking"):
+        v = C.get(field)
+        if isinstance(v, dict):
+            keys |= {k for k in v if HEX64.fullmatch(str(k))}
+    if not keys:
+        out(f"FAIL  prompt-certification {cert_p!r} certifies no model -- CRUX coverage cannot be scoped (#3710 ruling 1)")
+        return None, True
+    return keys, False
+
+
+def judge(L, good, crux_dir, cut, equiv, out, red=None, cert_p=None):
     """Print one line per cell and a per-format summary. -> True when any cell is not proven.
 
     `red` (#3957 F9/F10): {(host, file): "RED-MODEL:<axis>" | "RED-UNSUPPORTED"}, holding ONLY the verdicts
@@ -184,7 +245,24 @@ def judge(L, good, crux_dir, cut, equiv, out, red=None):
     verbs = list((L.get("cells") or {}).get("verbs") or ["run", "chat", "serve", "code"])
     inv_backends = list((L.get("inventory") or {}).get("backends") or [])
     rung_by_file = {r.get("gguf"): r for r in L.get("rungs") or []}
-    index, failed = load_crux(crux_dir, cut, equiv, out)
+    certified, failed = (load_certified(cert_p, out) if cert_p else (None, False))
+    held = set()
+    for R in good.values():
+        inv = {i.get("file"): i.get("sha256") for i in R.get("inventory") or [] if isinstance(i, dict)}
+        for x in R.get("rungs") or []:
+            if x.get("present"):
+                held.add(x.get("sha256") or inv.get(x.get("file")) or (rung_by_file.get(x.get("file")) or {}).get("sha256"))
+    need = certified is None or bool(held & certified)
+    if need or (crux_dir and glob.glob(os.path.join(crux_dir, "*.json"))):
+        index, lfail = load_crux(crux_dir, cut, equiv, out)
+        failed = failed or (lfail and need)
+    else:
+        index = {}
+        out("note  no CRUX receipt needed: no held model is CRUX-certified; every model is proven by the ladder (#3710 ruling 1)")
+    for s_ in sorted(certified or ()):
+        if s_ not in held:
+            failed = True
+            out(f"FAIL  certified model {s_[:12]} is held by no required host -- CRUX must prove every certified model (#3710 ruling 1)")
     tally = {}
     for host in sorted(good):
         R = good[host]
@@ -203,7 +281,7 @@ def judge(L, good, crux_dir, cut, equiv, out, red=None):
             for b in backends:
                 for v in verbs:
                     label = f"{f} fmt={fmt} quant={q} host={host} backend={b} verb={v}"
-                    t = tally.setdefault(fmt, [0, 0, 0])
+                    t = tally.setdefault(fmt, [0, 0, 0, 0])
                     t[0] += 1
                     named = red.get((host, f))
                     if named == "RED-UNSUPPORTED" and b in ("cuda", "gpu"):
@@ -216,10 +294,21 @@ def judge(L, good, crux_dir, cut, equiv, out, red=None):
                         per_b = [w for w in chain_why if not w.startswith(tuple(f"{o}:" for o in backends if o != b))]
                         if src_sha is None:
                             ok, why = False, per_b[0]
+                        elif certified is not None and src_sha not in certified:
+                            # ruling 1: the chain's tensor + runtime links still hold; the source itself is
+                            # proven by the ladder, not by CRUX, since it is not certified
+                            ok, why = (not per_b), ("; ".join(per_b) if per_b else
+                                       f"chain to source {src_sha[:12]} (source not CRUX-certified; proven by the ladder, #3710 ruling 1)")
                         else:
                             s_ok, s_why = crux_cell(index, src_sha, host, b, v)
                             reasons = per_b + ([] if s_ok else [f"source {src_sha[:12]} is not proven: {s_why} (#3957 F8)"])
                             ok, why = (not reasons), ("; ".join(reasons) if reasons else f"chain to source {src_sha[:12]}: {s_why}")
+                    elif certified is not None and sha not in certified:
+                        # #3710 ruling 1: CRUX GREEN is required only for the certified models; this one is
+                        # proven by the ladder's golden oracle (why_of above), which still refuses any red row.
+                        t[3] += 1
+                        out(f"note  cell {label} -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)")
+                        continue
                     else:
                         axis = named.split(":", 1)[1].split(",") if named and named.startswith("RED-MODEL") else None
                         ok, why = crux_cell(index, sha, host, b, v, red_model=axis)
@@ -234,6 +323,7 @@ def judge(L, good, crux_dir, cut, equiv, out, red=None):
                         failed = True
                         out(f"FAIL  cell {label} -- {why}")
     out("cells by format: " + ", ".join(f"{k} {v[1]}/{v[0]} proven" + (f", {v[2]} named RED (F9/F10)" if v[2] else "")
+                                        + (f", {v[3]} ladder-only (not CRUX-certified)" if v[3] else "")
                                         for k, v in sorted(tally.items()))
         if tally else "FAIL  no cell was owed -- a release that measured no cell proved nothing")
     return failed or not tally
