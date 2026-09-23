@@ -1,0 +1,296 @@
+{
+  "ticket": "PMAT-3968",
+  "base": "origin/release/0.69.1-batch-2",
+  "base_resolved": "origin/release/0.69.1-batch-2",
+  "base_note": "no origin/origin/release/0.69.1-batch-2 exists; judged against the local ref",
+  "head": "c055c2a8d395b74ae351aee7b7174e35410867df",
+  "diff_sha256": "4d314d21170021867262d209f098119fbb9af3016f1b842834930f48c322c112",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 255396,
+  "author": {
+    "model": "claude-opus-5-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements all acceptance criteria for PMAT-3968. The GPU-whitelisted quant types are now derived from the census via `gguf_census.py` and measured through `bound_gemv` against the CPU decoder. The `shape_conformance_tests.rs` correctly implements the negative control per type, ensuring a blind type licenses nothing. The guard script `check_gpu_shape_conformance.sh` validates receipts and censuses, and correctly identifies unproven shapes, missing/stale/blind receipts, and stale per-capability exclusions (with a comprehensive self-test). Finally, `IQ3_S` and `IQ2_S` are correctly refused at cc >= 12, the contract reflects this, and the guard script guarantees the exclusion cannot outlive its fix. No refuting findings were identified.",
+      "findings": [],
+      "raw_bytes": 4449,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.1-pro-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.1-pro-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-3968 passes review. The diff implements per-shape GPU conformance and per-capability quant exclusions as specified in the ticket and cop ruling (b). Specifically:\n\n1. Census-Derived Shapes: `scripts/lib/gguf_census.py` reads headers of held GGUF models directly, producing machine-verified censuses for lambda (27 files) and gx10 (18 files) totaling 188 unique whitelisted (qtype, k, n) shapes.\n2. Production Dispatch Measurement: `shape_conformance_tests.rs` exercises all 188 shapes via `BoundWeight::bind` and `CudaExecutor::bound_gemv` against the CPU oracle with condition-aware scaling (|err| / Σ|w||x| <= 1e-5). Worst measured error across both hosts is 1.302e-7. Negative controls per quant type corrupt block 0 of row 0 in GPU memory, confirming failure sensitivity (17/17 RED on lambda; 15/17 RED on gx10, where the 2 unexecuted controls correspond to excluded types).\n3. CC >= 12 Exclusions: Types 21 (IQ3_S) and 22 (IQ2_S) are excluded at compute capability >= 12 (`GPU_QTYPES_UNLOADABLE_AT_CC` and `GPU_QTYPE_EXCLUSION_MIN_CC_MAJOR` in `dtype.rs`) due to sm_12x ModuleLoad 218 errors (#4096). The gate fails closed if capability query fails. The contract YAML and `apr capability` CLI are synced and verified by unit tests and mirror tests.\n4. Conformance Checker and Anti-Staleness: `scripts/check_gpu_shape_conformance.sh` joins the whitelist, exclusions, censuses, and receipts, failing if any shape is unproven, receipt is stale/missing/blind, or an exclusion becomes stale (passes at cc >= 12 with RED controls). `--self-test` cleanly passes all 20 test fixtures. All relevant unit tests (`apr-cli`, `pmat785`, `prose_whitelist`, `capability_mirror`) pass.",
+      "findings": [],
+      "raw_bytes": 5178,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.8-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.8-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-3968 review: PASS. The diff fully satisfies all acceptance criteria without weakening gates or expanding beyond ticket requirements. Census rows are machine-derived by scripts/lib/gguf_census.py; the shape conformance harness tests every held shape through the production BoundWeight::bind + CudaExecutor::bound_gemv dispatch against the CPU oracle with condition-aware tolerance (<= 1e-5) and verified negative controls; IQ3_S and IQ2_S are cleanly excluded at compute capability >= 12 failing closed; and check_gpu_shape_conformance.sh enforces anti-vacuity, receipt freshness, and exclusion staleness across all hosts.",
+      "findings": [
+        {
+          "claim": "check_gpu_shape_conformance.sh self-test passes all 20 test cases verifying green, unlisted, new held shape, blind negative control, failed row, stale receipt, missing receipt, scanner drop cases, and exclusion cases (stale, unexercised, missing cc, policy drift).",
+          "file": "scripts/check_gpu_shape_conformance.sh",
+          "grounding": "measured",
+          "line": 10011
+        },
+        {
+          "claim": "check_gpu_shape_conformance.sh validates that all 188 censused (qtype, k, n) shapes across hosts are proven in committed receipts and passes cleanly on the tree.",
+          "file": "scripts/check_gpu_shape_conformance.sh",
+          "grounding": "measured",
+          "line": 9847
+        },
+        {
+          "claim": "Capability contract and packaged CLI mirror declare gpu_excluded_from_cc_major: 12 on IQ3_S (21) and IQ2_S (22), matching the kernel exclusion in dtype.rs.",
+          "file": "contracts/apr-model-capability-v1.yaml",
+          "grounding": "cited",
+          "line": 155
+        },
+        {
+          "claim": "All 32 capability and contract tests in apr-cli pass.",
+          "file": "crates/apr-cli/src/commands/capability.rs",
+          "grounding": "measured",
+          "line": 303
+        },
+        {
+          "claim": "The 9 pmat785 GPU quant gate tests in aprender-serve pass, verifying whitelist exactness, exclusion at cc >= 12, and narrowness to listed types.",
+          "file": "crates/aprender-serve/src/gguf/tests/pmat785_gpu_quant_gate.rs",
+          "grounding": "measured",
+          "line": 976
+        },
+        {
+          "claim": "every_quant_row_agrees_with_the_gpu_dispatch_predicate and prose_whitelist tests in aprender-serve pass, verifying strict parity between capability contracts and the runtime dispatch predicate.",
+          "file": "crates/aprender-serve/src/capability.rs",
+          "grounding": "measured",
+          "line": 393
+        },
+        {
+          "claim": "The 25 CUDA gemv entry name and thread mapping tests in aprender-serve pass under the cuda feature.",
+          "file": "crates/aprender-serve/src/cuda/gemv_entry_name_tests_3477.rs",
+          "grounding": "measured",
+          "line": 295
+        }
+      ],
+      "raw_bytes": 7050,
+      "err_bytes": 62,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "role": "independent",
+      "fallback": {
+        "judged_by": "gemini-3.7-flash-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-3.7-flash-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "contracts/apr-model-capability-v1.yaml",
+      "line": 155,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Capability contract and packaged CLI mirror declare gpu_excluded_from_cc_major: 12 on IQ3_S (21) and IQ2_S (22), matching the kernel exclusion in dtype.rs."
+      ]
+    },
+    {
+      "file": "crates/apr-cli/src/commands/capability.rs",
+      "line": 303,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "All 32 capability and contract tests in apr-cli pass."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/capability.rs",
+      "line": 393,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "every_quant_row_agrees_with_the_gpu_dispatch_predicate and prose_whitelist tests in aprender-serve pass, verifying strict parity between capability contracts and the runtime dispatch predicate."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/cuda/gemv_entry_name_tests_3477.rs",
+      "line": 295,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The 25 CUDA gemv entry name and thread mapping tests in aprender-serve pass under the cuda feature."
+      ]
+    },
+    {
+      "file": "crates/aprender-serve/src/gguf/tests/pmat785_gpu_quant_gate.rs",
+      "line": 976,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The 9 pmat785 GPU quant gate tests in aprender-serve pass, verifying whitelist exactness, exclusion at cc >= 12, and narrowness to listed types."
+      ]
+    },
+    {
+      "file": "scripts/check_gpu_shape_conformance.sh",
+      "line": 9847,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "check_gpu_shape_conformance.sh validates that all 188 censused (qtype, k, n) shapes across hosts are proven in committed receipts and passes cleanly on the tree."
+      ]
+    },
+    {
+      "file": "scripts/check_gpu_shape_conformance.sh",
+      "line": 10011,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "check_gpu_shape_conformance.sh self-test passes all 20 test cases verifying green, unlisted, new held shape, blind negative control, failed row, stale receipt, missing receipt, scanner drop cases, and exclusion cases (stale, unexercised, missing cc, policy drift)."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 1: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 2: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 3: non-empty .err (62 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+  ],
+  "fallback": {
+    "same_family_width": 1,
+    "chain": [
+      {
+        "model": "gemini-3.1-pro-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.8-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-3.7-flash-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gpt-oss-120b-medium",
+        "family": "openai",
+        "disposition": "fallback"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      },
+      {
+        "model": "claude-opus-4-6-thinking",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "family": "claude",
+        "disposition": "width",
+        "why": "same family as the author: at most 1 lane, recorded role width, counted toward no floor (R-15a)"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-3.1-pro-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "prah": {
+      "source": "install-receipt",
+      "path": "/home/noah/.claude/skills/paiml-implement/bin/prah"
+    }
+  },
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5-5/claude"
+  }
+}
