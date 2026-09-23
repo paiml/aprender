@@ -9,8 +9,9 @@ leg, never for a whole certification and never per prompt:
                A multi-turn prompt is answered turn by turn with the history so far, exactly as the hf
                and vLLM drivers do (conversation_turns). `--reasoning-format none` keeps the think block
                in the reply, so an unclosed one reaches the oracle as unclosed.
-  --leg hf     scripts/crux_engine_hf.sh gen   (aprender-83's driver; it appends its own row)
-  --leg vllm   scripts/crux_engine_vllm.sh gen (likewise), both on the PINNED source weights.
+  --leg hf     scripts/crux_engine_hf.sh gen-batch   (aprender-83's driver; it appends its own rows)
+  --leg vllm   scripts/crux_engine_vllm.sh gen-batch (likewise), both on the PINNED source weights, one
+               engine load per leg.
 
 Every cell is greedy: temperature 0, seed 0, max_tokens from the prompt's own `max_tokens[thinking]`,
 enable_thinking explicit. Rows are CRUX row contract v1, appended to --manifest. A cell whose row is
@@ -136,28 +137,37 @@ def ggml_leg(a, prompts, thinking_modes, manifest: Path, work: Path) -> None:
 
 
 def driver_leg(a, prompts, thinking_modes, manifest: Path, work: Path) -> None:
+    """ONE `gen-batch` call per leg: one engine load for every (prompt, thinking) item (aprender-83,
+    PMAT-3952-crux-vllm@f98729841). Every item is the in-process `chat` interface, so the batch holds one
+    interface; the driver appends one row-contract-v1 row per item, in order."""
     engine = a.leg
     script = Path(a.drivers) / "scripts" / f"crux_engine_{engine}.sh"
     if not script.exists():
         die(f"{script} not found (the {engine} driver lives on aprender-83's branch until it lands)")
     skip = done_cells(manifest, engine, a.source_revision)
-    env = dict(os.environ, CRUX_MANIFEST=str(manifest), CRUX_WORK=str(work))
     d = work / "messages"
     d.mkdir(parents=True, exist_ok=True)
+    items = []
     for thinking in thinking_modes:
         for p in prompts:
-            if (p["id"], thinking, None) in skip or (p["id"], thinking, p["max_tokens"][thinking]) in skip:
+            if (p["id"], thinking, p["max_tokens"][thinking]) in skip:
                 continue
             mfile = d / f"{p['id']}.json"
             mfile.write_text(json.dumps({"messages": p["messages"]}), encoding="utf-8")
-            r = subprocess.run(["bash", str(script), "gen", "--model", a.gguf, "--model-sha256", a.gguf_sha256,
-                                "--verb", "chat", "--prompt-id", p["id"], "--messages", str(mfile),
-                                "--thinking", thinking, "--backend", "gpu", "--host", a.host,
-                                "--max-tokens", str(p["max_tokens"][thinking]), "--seed", "0", "--temperature", "0",
-                                "--context", str(a.context), "--source-repo", a.source_repo,
-                                "--source-revision", a.source_revision], env=env, capture_output=True, text=True)
-            print(f"{engine} {p['id']} thinking={thinking}: driver exit {r.returncode}"
-                  + (f" {r.stderr.strip()[-200:]}" if r.returncode else ""), flush=True)
+            items.append({"prompt_id": p["id"], "verb": "chat", "messages": str(mfile), "thinking": thinking,
+                          "max_tokens": p["max_tokens"][thinking]})
+    if not items:
+        print(f"{engine}: nothing to do")
+        return
+    batch = work / f"{engine}-{a.source_revision[:12]}-batch.jsonl"
+    batch.write_text("".join(json.dumps(it) + "\n" for it in items), encoding="utf-8")
+    env = dict(os.environ, CRUX_MANIFEST=str(manifest), CRUX_WORK=str(work))
+    r = subprocess.run(["bash", str(script), "gen-batch", "--batch", str(batch), "--model", a.gguf,
+                        "--model-sha256", a.gguf_sha256, "--backend", "gpu", "--host", a.host, "--seed", "0",
+                        "--temperature", "0", "--context", str(a.context), "--source-repo", a.source_repo,
+                        "--source-revision", a.source_revision], env=env, capture_output=True, text=True)
+    print(f"{engine}: {len(items)} items, driver exit {r.returncode}" + (f" {r.stderr.strip()[-300:]}" if r.returncode else ""),
+          flush=True)
 
 
 def main(argv: list) -> int:
