@@ -22,6 +22,8 @@ D, D_SHA = "Qwen3.5-0.8B-IQ4_XS.gguf", "d" * 64          # the defective file (F
 C, C_SHA = "Qwen3.5-4B-Q4_K_M.gguf", "c" * 64            # its positive-control sibling
 M, M_SHA = "Qwen3.5-35B-A3B-UD-IQ4_XS.gguf", "3" * 64    # the unsupported architecture (F10)
 IDS = [151667, 198, 32313, 11, 1077, 594, 1490]
+PIDS = [248045, 846, 198, 3838, 374, 220, 17, 10, 17, 30, 248046, 198, 248045, 74455, 198]   # apr's rendering
+OPIDS = PIDS + [248068, 198]                                                               # the official ON form opens <think>
 # Verbatim, as `apr run --gpu` printed it on lambda (apr 0.69.1 (7b8aa7e32), rc 12).
 REFUSAL = ("error: Not implemented: this build has no CUDA forward for architecture 'qwen35moe': Qwen3.5 MoE is a hybrid "
            "(Gated DeltaNet / SSM layers + mixture-of-experts), and the qwen3moe CUDA forward (#3714) does not run SSM "
@@ -47,15 +49,22 @@ def crux_cell(sha, host, verb, thinking, verdict, control=False):
             "verdict": verdict, **({"positive_control": True} if control else {})}
 
 
-def raw(ids, text):
-    return {"generated_ids": list(ids), "generated_text": text, "greedy": True, "special": True, "max_tokens": 256}
+def raw(ids, text, prompt_ids=None, template_ids=None):
+    r = {"generated_ids": list(ids), "generated_text": text, "greedy": True, "special": True, "max_tokens": 256,
+         "prompt_ids": list(prompt_ids or PIDS)}
+    if template_ids is not None:
+        r["template_prompt_ids"] = list(template_ids)
+    return r
 
 
 def greedy(sha, host, apr_ids, oracle_ids, oracle_text, apr_text=None, extra=None):
+    """A thinking-ON greedy entry: the PARITY row (apr and llama.cpp on apr's ids) and the llama.cpp@official
+    row (the model's own template, #3990), which is where the defect must show."""
     g = {"key": {"model_sha256": sha, "host": host, "prompt_id": "think-2plus2", "thinking": "on"},
-         "engines": ["apr", "llama.cpp"],
+         "engines": ["apr", "llama.cpp", "llama.cpp@official"],
          "apr": {"raw": raw(apr_ids, apr_text if apr_text is not None else oracle_text)},
-         "llama.cpp": {"raw": raw(oracle_ids, oracle_text), "version": "b10987"}}
+         "llama.cpp": {"raw": raw(oracle_ids, oracle_text), "version": "b10987"},
+         "llama.cpp@official": {"raw": raw(oracle_ids, oracle_text, OPIDS, OPIDS), "version": "b10987"}}
     g.update(extra or {})
     return g
 
@@ -158,9 +167,22 @@ def main():
     write("green-red-model-bf16-proven", L, rec, crux, 0, r"RED-MODEL lambda +Qwen3.5-0.8B-IQ4_XS.gguf", r"FAIL")
 
     L, rec, crux = build_f9()   # the operator's must-RED: llama.cpp CLOSES the block on this run -> apr's fault
-    for X in (crux["lambda-gpu"],):
-        X["greedy"][0]["llama.cpp"]["raw"]["generated_text"] = "<think>\nTwo plus two is four.\n</think>\n\n<answer>4</answer>"
-    write("red-model-oracle-closes", L, rec, crux, 1, r"llama.cpp does NOT reproduce think_never_closed")
+    crux["lambda-gpu"]["greedy"][0]["llama.cpp@official"]["raw"]["generated_text"] = "<think>\nTwo plus two is four.\n</think>\n\n<answer>4</answer>"
+    write("red-model-oracle-closes", L, rec, crux, 1, r"llama.cpp on the OFFICIAL template does NOT reproduce think_never_closed")
+
+    L, rec, crux = build_f9()   # #3990: the defect shown ONLY on apr's rendering -- no official-template row
+    for X in crux.values():
+        for gg in X.get("greedy", []):
+            gg.pop("llama.cpp@official", None)
+    write("red-model-official-missing", L, rec, crux, 1, r"no llama.cpp@official row")
+
+    L, rec, crux = build_f9()   # #3990: an "official" row that actually ran on apr's ids launders a template defect
+    crux["lambda-gpu"]["greedy"][0]["llama.cpp@official"]["raw"]["prompt_ids"] = PIDS
+    write("red-model-official-not-official", L, rec, crux, 1, r"did not run on the official template's ids")
+
+    L, rec, crux = build_f9()   # the parity row: the engines ran on different prompt ids
+    crux["lambda-gpu"]["greedy"][0]["llama.cpp"]["raw"]["prompt_ids"] = OPIDS
+    write("red-model-parity-prompt-differs", L, rec, crux, 1, r"did not run on the same prompt ids")
 
     L, rec, crux = build_f9()   # must-RED: the key is present and no oracle ran
     for X in crux.values():
@@ -184,7 +206,7 @@ def main():
     write("red-model-equal-flag-not-trusted", L, rec, crux, 1, r"DIFFER from llama.cpp's on the identical GGUF at step 0")
 
     L, rec, crux = build_f9()   # the positive control does not close under llama.cpp: the instrument is blind
-    crux["lambda-gpu"]["greedy"][1]["llama.cpp"]["raw"]["generated_text"] = "<think>\nThe sum of two and two"
+    crux["lambda-gpu"]["greedy"][1]["llama.cpp@official"]["raw"]["generated_text"] = "<think>\nThe sum of two and two"
     write("red-model-control-blind", L, rec, crux, 1, r"the instrument is blind")
 
     L, rec, crux = build_f9()   # the control is the defective file itself
@@ -238,8 +260,8 @@ def main():
     write("red-model-bf16-not-reproduced", L, rec, crux, 1, r"the bf16 hf leg does NOT reproduce")
 
     L, rec, crux = build_f9("think_empty")   # think_empty: a closed block WITH content under llama.cpp is not empty
-    crux["lambda-gpu"]["greedy"][0]["llama.cpp"]["raw"]["generated_text"] = "<think>\nFour.\n</think>\n4"
-    write("red-model-empty-oracle-has-content", L, rec, crux, 1, r"llama.cpp does NOT reproduce think_empty")
+    crux["lambda-gpu"]["greedy"][0]["llama.cpp@official"]["raw"]["generated_text"] = "<think>\nFour.\n</think>\n4"
+    write("red-model-empty-oracle-has-content", L, rec, crux, 1, r"llama.cpp on the OFFICIAL template does NOT reproduce think_empty")
 
     L, rec, crux = build_f9()   # lambda's receipt is REJECTED (stale sha): the key is NOT JUDGED, never "matches nothing"
     lam(rec)["apr_sha"] = "5" * 40
@@ -251,7 +273,8 @@ def main():
     for lane in ("cpu", "gpu"):
         g = copy.deepcopy(crux[f"lambda-{lane}"]["greedy"][0])
         g["key"]["prompt_id"] = "fact-capital-france"
-        g["llama.cpp"]["raw"]["generated_text"] = "<think>\nParis is the capital.\n</think>\n<answer>Paris</answer>"
+        for eng in ("llama.cpp", "llama.cpp@official"):
+            g[eng]["raw"]["generated_text"] = "<think>\nParis is the capital.\n</think>\n<answer>Paris</answer>"
         crux[f"lambda-{lane}"]["greedy"].append(g)
     write("green-red-model-named-prompts", L, rec, crux, 0, r"RED-MODEL lambda +Qwen3.5-0.8B-IQ4_XS.gguf", r"FAIL")
 

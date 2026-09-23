@@ -297,7 +297,8 @@
    },
    "engines": [
     "apr",
-    "llama.cpp"
+    "llama.cpp",
+    "llama.cpp@official"
    ],
    "apr": {
     "raw": {
@@ -313,7 +314,24 @@
      "generated_text": "<think>\nOkay, let me think about this. Okay, let me think about this.",
      "greedy": true,
      "special": true,
-     "max_tokens": 256
+     "max_tokens": 256,
+     "prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198
+     ]
     }
    },
    "llama.cpp": {
@@ -330,7 +348,80 @@
      "generated_text": "<think>\nOkay, let me think about this. Okay, let me think about this.",
      "greedy": true,
      "special": true,
-     "max_tokens": 256
+     "max_tokens": 256,
+     "prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198
+     ]
+    },
+    "version": "b10987"
+   },
+   "llama.cpp@official": {
+    "raw": {
+     "generated_ids": [
+      151667,
+      198,
+      32313,
+      11,
+      1077,
+      594,
+      1490
+     ],
+     "generated_text": "<think>\nOkay, let me think about this. Okay, let me think about this.",
+     "greedy": true,
+     "special": true,
+     "max_tokens": 256,
+     "prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198,
+      248068,
+      198
+     ],
+     "template_prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198,
+      248068,
+      198
+     ]
     },
     "version": "b10987"
    }
@@ -344,7 +435,8 @@
    },
    "engines": [
     "apr",
-    "llama.cpp"
+    "llama.cpp",
+    "llama.cpp@official"
    ],
    "apr": {
     "raw": {
@@ -356,7 +448,24 @@
      "generated_text": "<think>\nThe sum of two and two is four.\n</think>\n\n<answer>4</answer>",
      "greedy": true,
      "special": true,
-     "max_tokens": 256
+     "max_tokens": 256,
+     "prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198
+     ]
     }
    },
    "llama.cpp": {
@@ -366,10 +475,79 @@
       198,
       32313
      ],
+     "generated_text": "<think>\nThe sum of two and two is four.\n</think>\n\n<answer>4</answer>",
+     "greedy": true,
+     "special": true,
+     "max_tokens": 256,
+     "prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198
+     ]
+    },
+    "version": "b10987"
+   },
+   "llama.cpp@official": {
+    "raw": {
+     "generated_ids": [
+      151667,
+      198,
+      32313
+     ],
      "generated_text": "<think>\nThe sum of two and two",
      "greedy": true,
      "special": true,
-     "max_tokens": 256
+     "max_tokens": 256,
+     "prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198,
+      248068,
+      198
+     ],
+     "template_prompt_ids": [
+      248045,
+      846,
+      198,
+      3838,
+      374,
+      220,
+      17,
+      10,
+      17,
+      30,
+      248046,
+      198,
+      248045,
+      74455,
+      198,
+      248068,
+      198
+     ]
     },
     "version": "b10987"
    }

@@ -688,8 +688,11 @@ if [ "$SELF_TEST" = 1 ]; then
       if MODEL_LADDER_REDMODEL_LIB="$md" bash "$SELF" --self-test --case "$2" > /dev/null 2>&1; then echo "FAIL  redmodel mutant $1 SURVIVED: case $2 stays ok with the rule deleted"; bad=$((bad+1))
       else printf 'ok    redmodel mutant %-19s killed by case %s\n' "$1" "$2"; fi
     }
-    rmutant oracle-closes     red-model-oracle-closes        's/^            if st != want:/            if False:/'
-    rmutant empty-has-content red-model-empty-oracle-has-content 's/^            if st != want:/            if False:/'
+    rmutant oracle-closes     red-model-oracle-closes        's/^            elif think_state(off.get("generated_text")) != want:/            elif False:/'
+    rmutant empty-has-content red-model-empty-oracle-has-content 's/^            elif think_state(off.get("generated_text")) != want:/            elif False:/'
+    rmutant official-missing  red-model-official-missing     's/^            if off is None:/            if False:/'
+    rmutant official-ids      red-model-official-not-official 's/^            elif not (_ids(off.get("template_prompt_ids")) and off.get("prompt_ids") == off.get("template_prompt_ids")):/            elif False:/'
+    rmutant parity-prompt     red-model-parity-prompt-differs 's/^            if not (_ids(a.get("prompt_ids")) and a.get("prompt_ids") == o.get("prompt_ids")):/            if False:/'
     rmutant no-oracle         red-model-no-oracle            's/^        if not gpu:/        if False:/'
     rmutant ids-differ        red-model-apr-ne-oracle        's/^            if a\["generated_ids"\] != o\["generated_ids"\]:/            if False:/'
     rmutant equal-flag        red-model-equal-flag-not-trusted 's/^            if a\["generated_ids"\] != o\["generated_ids"\]:/            if False:/'

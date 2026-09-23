@@ -17,14 +17,18 @@ disagrees, the row is plain FAIL and blocks, and the line names what failed.
 RED-MODEL is proven, per (host, file), only when ALL of these hold on this sweep. The
 evidence comes from the CRUX receipts bound to the cut (cop ruling 2026-09-23: one mechanism
 answers "what does llama.cpp do on this file", not a second runner in the ladder):
-  1. SAME-QUANT DIFFERENTIAL. A thinking-ON greedy entry for this file's sha256 in a gpu-lane
-     CRUX receipt carries RAW `generated_ids` for apr AND llama.cpp. Both are greedy, the
-     oracle prints special tokens, both use the same max_tokens, and the two lists are EQUAL.
-     This judge compares the lists itself; it reads no `equal` or `first_divergence` flag.
-  2. THE ORACLE REPRODUCES THE DECLARED DEFECT. llama.cpp's `generated_text` shows the
-     defect the key names: `think_never_closed` means no </think>, and `think_empty` means
-     closed with no word inside. If llama.cpp closes the block the key declares unclosed,
-     the fault is apr's, and the row is plain RED.
+  1. ENGINE PARITY ON apr's IDS. A thinking-ON greedy entry for this file's sha256 in a
+     gpu-lane CRUX receipt carries RAW records for apr AND llama.cpp that ran on the SAME
+     prompt ids, both greedy, the oracle printing special tokens, with the same max_tokens,
+     and whose `generated_ids` are EQUAL. This judge compares the lists itself; it reads no
+     `equal` or `first_divergence` flag.
+  2. THE DEFECT ON THE OFFICIAL TEMPLATE (#3990, cop ruling 2026-09-23). apr's rendering is
+     not the model's own chat template (measured by aprender-83: the official Qwen3.5 ON form
+     opens `<think>\n`). An oracle that only ever saw apr's prompt would launder an apr
+     TEMPLATE defect into a model verdict. So a `llama.cpp@official` row must have run on the
+     official template's ids (`prompt_ids == template_prompt_ids`), and its `generated_text`
+     must show the defect the key names: `think_never_closed` means no </think>, and
+     `think_empty` means closed with no word inside. If it closes, the fault is apr's: plain RED.
   3. POSITIVE CONTROL ON A SIBLING. The key names a sibling file, held on the same host with
      a different sha. llama.cpp's greedy output for it closes the think block with content,
      and its thinking-ON positive-control CRUX cells are GREEN (at least one, none RED).
@@ -93,6 +97,10 @@ def _raw(g, engine):
     if not (isinstance(ids, list) and ids and all(isinstance(i, int) and not isinstance(i, bool) for i in ids)):
         return None
     return r
+
+
+def _ids(v):
+    return isinstance(v, list) and bool(v) and all(isinstance(i, int) and not isinstance(i, bool) for i in v)
 
 
 def _first_diff(a, b):
@@ -257,6 +265,9 @@ class RedVerdicts:
                 probs.append(f"{pid}: no raw generated_ids for " + " and ".join(n for n, v in (("apr", a), ("llama.cpp", o)) if v is None))
                 continue
             p = []
+            if not (_ids(a.get("prompt_ids")) and a.get("prompt_ids") == o.get("prompt_ids")):
+                p.append(f"{pid}: the parity row's engines did not run on the same prompt ids -- a divergence would be the "
+                         f"prompt's, not the engine's")
             if not (a.get("greedy") is True and o.get("greedy") is True and o.get("special") is True):
                 p.append(f"{pid}: the runs are not both greedy with the oracle printing special tokens")
             if a.get("max_tokens") != o.get("max_tokens"):
@@ -264,9 +275,16 @@ class RedVerdicts:
             if a["generated_ids"] != o["generated_ids"]:
                 p.append(f"{pid}: apr's greedy ids DIFFER from llama.cpp's on the identical GGUF at step "
                          f"{_first_diff(a['generated_ids'], o['generated_ids'])} -- the output is apr's, not the file's")
-            st = think_state(o.get("generated_text"))
-            if st != want:
-                p.append(f"{pid}: llama.cpp does NOT reproduce {e['defect']} (its think block is {st}) -- the defect is apr's")
+            off = _raw(g, "llama.cpp@official")
+            if off is None:
+                p.append(f"{pid}: no llama.cpp@official row -- the defect was never shown on the model's own template, only "
+                         f"on apr's rendering (#3990)")
+            elif not (_ids(off.get("template_prompt_ids")) and off.get("prompt_ids") == off.get("template_prompt_ids")):
+                p.append(f"{pid}: the llama.cpp@official row did not run on the official template's ids -- it proves "
+                         f"nothing about the model under its own template (#3990)")
+            elif think_state(off.get("generated_text")) != want:
+                p.append(f"{pid}: llama.cpp on the OFFICIAL template does NOT reproduce {e['defect']} (its think block is "
+                         f"{think_state(off.get('generated_text'))}) -- the defect is apr's")
             if e.get("bf16_reproduces"):
                 legs = {n: g.get(n) for n in ("hf", "vllm") if isinstance(g.get(n), dict)}
                 texts = {n: ((v.get("raw") or {}).get("generated_text")) for n, v in legs.items()}
@@ -291,10 +309,12 @@ class RedVerdicts:
         elif csha == sha or cfile == f:
             probs.append(f"the positive control {cfile} is the defective file itself, so it controls nothing")
         else:
-            co = [_raw(g, "llama.cpp") for g in self._greedy_on(csha, host, "gpu")]
+            co = [_raw(g, "llama.cpp@official") for g in self._greedy_on(csha, host, "gpu")]
+            co = [r if r is not None and _ids(r.get("template_prompt_ids")) and r.get("prompt_ids") == r.get("template_prompt_ids")
+                  else None for r in co]
             if not co or any(r is None for r in co):
-                probs.append(f"no llama.cpp thinking-ON greedy output for the control {cfile} on {host} -- the instrument "
-                             f"was not shown to see a working think block")
+                probs.append(f"no llama.cpp@official thinking-ON greedy output on the official template for the control "
+                             f"{cfile} on {host} -- the instrument was not shown to see a working think block")
             elif any(think_state(r.get("generated_text")) != "ok" for r in co):
                 probs.append(f"the control {cfile} does not close its think block with content under llama.cpp -- the "
                              f"instrument is blind, so the attribution means nothing")
@@ -303,7 +323,7 @@ class RedVerdicts:
                 probs.append(f"the control {cfile} has no thinking-ON positive-control CRUX cell on {host}")
             elif any(v != "GREEN" for v in vs):
                 probs.append(f"the control {cfile}'s positive-control CRUX cells are not all GREEN ({vs})")
-        return probs, (f"llama.cpp reproduces it on the identical GGUF ({', '.join(shown)}); "
+        return probs, (f"apr == llama.cpp on apr's ids ({', '.join(shown)}); llama.cpp shows it on the official template; "
                        f"control {cfile} closes and answers; apr CPU == GPU")
 
     @staticmethod

@@ -670,7 +670,10 @@ def report_greedy(rows):
     groups = {}
     for r in rows:
         # #3957 F9: thinking is part of the key -- an ON and an OFF greedy row are different cells.
-        groups.setdefault((r["model_sha256"], r["host"], r["prompt_id"], r.get("thinking", "unset")), {})[r["engine"]] = r
+        # #3990: llama.cpp run on the model's OWN template is a second row for the same engine, kept apart
+        # from the parity row (apr's ids) under "llama.cpp@official".
+        eng = r["engine"] + ("@official" if r.get("prompt_source") == "official" else "")
+        groups.setdefault((r["model_sha256"], r["host"], r["prompt_id"], r.get("thinking", "unset")), {})[eng] = r
     out = []
     for key in sorted(groups):
         by = groups[key]
