@@ -134,6 +134,7 @@ aprender-serve	--lib	capability
 aprender-serve	--lib	cli::cli_tests
 aprender-serve	--lib	infer
 aprender-serve	--lib	quantize::contract_tests
+aprender-serve	--test	tokenizer_nonascii_4005
 aprender-shell	--lib	model
 aprender-simulate	--lib	demos::tsp_grasp
 aprender-simulate	--lib	demos::tsp_instance
