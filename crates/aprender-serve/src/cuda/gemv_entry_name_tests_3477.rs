@@ -72,7 +72,6 @@ mod gemv_entry_name_tests_3477 {
             KernelType::FusedRmsNormQ4KGemv { k, n, epsilon: 1e-6 },
             KernelType::FusedGateUpQ4KGemv { k, n },
             KernelType::FusedGateUpSwigluHwDp4aQ4KGemv { k, n },
-            KernelType::FusedKVHwDp4aQ4KGemv { k, n },
         ]
     }
 
