@@ -293,8 +293,22 @@ quant_types:
     reason: no GPU GEMV kernel
   - name: IQ2_XXS
     ggml_type: 16
-    gpu_supported: false
-    reason: no GPU GEMV kernel; IQ also fails the CPU dequant path
+    gpu_supported: true
+    # Implemented for 0.69.1 (#3950). Device A/B against `iq_parallel_matvec`
+    # on RTX 4090 sm_89. Synthetic k=512 n=64 and k=300 n=16 (padded tail):
+    # EXACT, 0.000e0. Real bytes, EVERY IQ2_XXS tensor of
+    # Qwen3.5-0.8B-UD-IQ2_XXS.gguf (sha256 a369165c8ec45a92), 95/95 over all
+    # 6 shapes it uses -- (k,n) = (512,1024) (1024,2048) (1024,3584)
+    # (3584,1024) (4096,1024) (6144,1024) -- worst |err|/sum|w||x| 2.713e-7
+    # against a 1e-5 bar, output NaN-prefilled with 0 rows unwritten; positive
+    # control on the real bytes (corrupted block scales) -> 4.156e3, RED.
+    # Proved able to fail first on four
+    # mechanisms: sign-code width 7->8: GPU 378.9 vs CPU -2.6; aux1 u16 halves
+    # swapped: GPU 2753.4 vs CPU -2.6; row stride 66->64: GPU -10820048 vs
+    # CPU 4815.1; scale nibble dropped: GPU 351.4 vs CPU -2.6.
+    # "IQ also fails the CPU dequant path" was about aprender-CORE; the
+    # aprender-SERVE decoder (the A/B oracle) has worked since PMAT-3477.
+    reason: ''
   - name: IQ2_XS
     ggml_type: 17
     gpu_supported: false

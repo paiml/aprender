@@ -38,7 +38,7 @@ fn test_config() -> GGUFConfig {
 
 /// The whitelist predicate is the single source of truth. GPU-eligible set is
 /// exactly {F32(0), F16(1), Q4_0(2), Q4_1(3), Q5_0(6), Q5_1(7), Q8_0(8),
-/// Q4_K(12), Q5_K(13), Q6_K(14), IQ4_NL(20), IQ3_S(21), IQ4_XS(23)}; everything
+/// Q4_K(12), Q5_K(13), Q6_K(14), IQ2_XXS(16), IQ4_NL(20), IQ3_S(21), IQ4_XS(23)}; everything
 /// else gates to CPU. This is what the construction gate and the primary-path
 /// gate both consume — they MUST agree.
 #[test]
@@ -54,7 +54,10 @@ fn gpu_unsupported_quant_qtype_whitelist_is_exact() {
     // device, each with planted faults proven RED first. Q5_1's were the 5th bit
     // dropped and the affine min dropped; IQ3_S's were the scale nibble, the 9th
     // grid bit and the sign bits. Never moved on a kernel's existence alone.
-    for &q in &[0u32, 1, 2, 3, 6, 7, 8, 12, 13, 14, 20, 21, 23] {
+    // #3950: IQ2_XXS(16) joined on the same terms — 95/95 real tensors of
+    // Qwen3.5-0.8B-UD-IQ2_XXS over all 6 shapes, |err|/sum|w||x| <= 2.7e-7,
+    // four planted faults RED first.
+    for &q in &[0u32, 1, 2, 3, 6, 7, 8, 12, 13, 14, 16, 20, 21, 23] {
         assert!(
             !gpu_unsupported_quant_qtype(q),
             "qtype {q} has a verified GPU kernel and must be GPU-eligible"
@@ -66,7 +69,6 @@ fn gpu_unsupported_quant_qtype_whitelist_is_exact() {
         10,   /*Q2_K*/
         11,   /*Q3_K*/
         15,   /*Q8_K*/
-        16,   /*IQ2_XXS*/
         18,   /*IQ3_XXS*/
         22,   /*IQ2_S*/
         30,   /*BF16*/

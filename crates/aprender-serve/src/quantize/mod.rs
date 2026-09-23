@@ -79,7 +79,7 @@ pub mod iq2_s;
 pub mod iq2_xxs;
 #[cfg(test)]
 #[path = "iq2_xxs_geometry_tests.rs"]
-mod iq2_xxs_geometry_tests;
+pub(crate) mod iq2_xxs_geometry_tests;
 
 pub mod iq3_s;
 pub mod iq3_xxs;
