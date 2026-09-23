@@ -30,8 +30,47 @@ import time
 ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\x1b[()][AB012]|\r")
 
 
+BACKSPACE = re.compile(r"[^\n\x08]\x08")
+
+
 def clean(text):
-    return ANSI.sub("", text)
+    """The text a person would SEE: ANSI removed, and every backspace applied.
+
+    llama.cpp's chat CLI draws a spinner (`/`, `\x08`, `-`, `\x08`, ...) over the line it
+    echoes. Left in, `</answer>` reads `</\x08/\x08/answer>`, the echo of the typed turn
+    no longer matches it, and the whole prompt was recorded as the ANSWER (#3962 B3,
+    aprender-83's v2 smoke: the llama.cpp chat row was the prompt echo, OFF and ON)."""
+    t = ANSI.sub("", text)
+    prev = None
+    while prev != t:
+        prev, t = t, BACKSPACE.sub("", t)
+    return t.replace("\x08", "")
+
+
+def extract_reply(reply, turn, answer_after=None, strips=()):
+    """(reply text, why-not) from the transcript between two prompt markers.
+
+    The terminal echoes the typed turn and the reply follows it. An echo that
+    cannot be found is an ERROR, never a reply: the transcript would then carry the
+    prompt itself, and a prompt that quotes `<answer></answer>` or the recall fact
+    can pass an oracle it never answered."""
+    last = None
+    if answer_after:
+        for last in re.finditer(answer_after, reply, re.M):
+            pass
+    if last is not None:
+        reply = reply[last.end():]
+    else:
+        # No --answer-after, or it did not match this turn (a one-line turn draws no
+        # continuation line): the reply follows the echo of what was typed.
+        k = reply.find(turn)
+        if k < 0:
+            return None, ("the typed turn's echo was not found in the transcript, so the reply "
+                          "cannot be separated from the prompt")
+        reply = reply[k + len(turn):]
+    for rx in strips:
+        reply = rx.sub("", reply)
+    return reply.strip(), None
 
 
 class Session:
@@ -131,20 +170,12 @@ def main(argv):
                 out["error"] = "turn %d: no prompt marker within %.0fs" % (i + 1, a.turn_timeout)
                 rc = 3
                 break
-            reply = clean(s.buf)[pos:end]
-            if a.answer_after:
-                last = None
-                for last in re.finditer(a.answer_after, reply, re.M):
-                    pass
-                if last is not None:
-                    reply = reply[last.end():]
-            else:
-                k = reply.find(turn)      # the terminal echoes what was typed; the reply follows it
-                if k >= 0:
-                    reply = reply[k + len(turn):]
-            for rx in strips:
-                reply = rx.sub("", reply)
-            out["turns"].append(reply.strip())
+            reply, why = extract_reply(clean(s.buf)[pos:end], turn, a.answer_after, strips)
+            if why:
+                out["error"] = "turn %d: %s" % (i + 1, why)
+                rc = 3
+                break
+            out["turns"].append(reply)
             pos = end + 1
     s.close(a.exit_line)
     if out["turns"] and rc == 0:
