@@ -73,9 +73,6 @@ grep -cE '^\s*- id:' contracts/apr-serve-openai-compat-v1.yaml     # 57
 for i in 3825 3760 3786 3754 3718 3981 3598 3979 3978 3987 2794; do gh issue view $i -R paiml/aprender --json state,milestone; done
 ```
 
-## 7. Quorum record
-
-_Filled after the quorum returns._
 
 ## Quorum record: decision quorum, 2026-09-23 (aprender-cb)
 
