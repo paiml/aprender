@@ -1,0 +1,62 @@
+{
+ "Qwen2.5-0.5B-Instruct-IQ3_M.gguf|IQ4_NL": {
+  "tensors": 96,
+  "elems": 231211008,
+  "bit_exact": 231211008,
+  "mismatch": 0,
+  "max_abs": 0.0,
+  "max_rel": 0.0,
+  "nonfinite": 0,
+  "size_mismatch": 0,
+  "census": 96,
+  "verdict": "GREEN"
+ },
+ "Qwen2.5-0.5B-Instruct-IQ3_M.gguf|IQ3_S": {
+  "tensors": 21,
+  "elems": 91521024,
+  "bit_exact": 91521024,
+  "mismatch": 0,
+  "max_abs": 0.0,
+  "max_rel": 0.0,
+  "nonfinite": 0,
+  "size_mismatch": 0,
+  "census": 21,
+  "verdict": "GREEN"
+ },
+ "Qwen2.5-0.5B-Instruct-IQ4_XS.gguf|IQ4_XS": {
+  "tensors": 24,
+  "elems": 104595456,
+  "bit_exact": 104595456,
+  "mismatch": 0,
+  "max_abs": 0.0,
+  "max_rel": 0.0,
+  "nonfinite": 0,
+  "size_mismatch": 0,
+  "census": 24,
+  "verdict": "GREEN"
+ },
+ "Qwen2.5-0.5B-Instruct-IQ4_XS.gguf|IQ4_NL": {
+  "tensors": 120,
+  "elems": 250478592,
+  "bit_exact": 250478592,
+  "mismatch": 0,
+  "max_abs": 0.0,
+  "max_rel": 0.0,
+  "nonfinite": 0,
+  "size_mismatch": 0,
+  "census": 120,
+  "verdict": "GREEN"
+ },
+ "Qwen3.5-4B-UD-Q4_K_XL.gguf|IQ4_XS": {
+  "tensors": 10,
+  "elems": 235929600,
+  "bit_exact": 235929600,
+  "mismatch": 0,
+  "max_abs": 0.0,
+  "max_rel": 0.0,
+  "nonfinite": 0,
+  "size_mismatch": 0,
+  "census": 10,
+  "verdict": "GREEN"
+ }
+}
