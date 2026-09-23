@@ -348,10 +348,13 @@
 
     #[test]
     fn test_clean_chat_response_multiple_bpe_spaces() {
-        // Multiple Ġ should collapse to single space after cleaning
+        // Each Ġ is one space: two Ġ are two spaces.
         let raw = "HelloĠĠworld";
         let cleaned = clean_chat_response(raw);
-        assert_eq!(cleaned, "Hello world");
+        // 0.69.1 CRUX sweep: runs of spaces are content (byte-level BPE `ĠĠ` IS two spaces -- the tokens
+        // Python indentation is made of), so they survive; only surrounding blank lines and trailing
+        // whitespace go. This test used to assert the collapse, i.e. the ctl-code-add defect.
+        assert_eq!(cleaned, "Hello  world");
     }
 
     #[test]

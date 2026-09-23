@@ -632,15 +632,15 @@ fn clean_chat_response(raw: &str) -> String {
 
     cleaned = normalize_repeated_punctuation(&cleaned);
 
-    while cleaned.contains("  ") {
-        cleaned = cleaned.replace("  ", " ");
-    }
-
-    let trimmed = cleaned.trim();
+    // WHITESPACE IS CONTENT (0.69.1 CRUX sweep, ctl-code-add RED in both thinking modes): a loop here
+    // collapsed every run of spaces to one, so Python indentation came out as a single space while
+    // llama.cpp kept four, and the whole reply was trim()med, which ate the FIRST line's indentation
+    // too. Only the blank lines around the reply and its trailing whitespace are dropped.
+    let trimmed = cleaned.trim_start_matches(['\n', '\r']).trim_end();
 
     // Stop at first line if the model started a new turn
     if let Some(first_newline) = trimmed.find('\n') {
-        let first_line = trimmed[..first_newline].trim();
+        let first_line = trimmed[..first_newline].trim_end();
         let rest = trimmed[first_newline..].trim();
         if looks_like_new_turn(rest) {
             return first_line.to_string();
