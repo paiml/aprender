@@ -21444,3 +21444,22 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4048
+  github_issue: 4048
+  item_type: task
+  title: 'GH-4048: aprender-serve test modules include files from outside the crate; cargo test from the published tarball cannot compile'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-70
+  created: 2026-09-24T00:00:00Z
+  updated: 2026-09-24T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - cargo package -p aprender-serve, unpacked outside the repo, cargo test --lib --no-run compiles (the published 0.69.1 crate fails with 3 errors).
+  - fusion_call_site_guard_3985 and tokenizer_tests_unk_3609 read their files at run time and SKIP by name only out of tree; in tree a missing file fails.
+  - The #3985 guard still goes RED in tree on a stale call_site.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Second instance (tokenizer_tests_unk_3609, tests/fixtures) found by the tarball test. The gate that missed all three is #4114.'
