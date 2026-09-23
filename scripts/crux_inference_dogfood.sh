@@ -10,7 +10,7 @@
 # ollama for same model: chat/serve/run/code, etc".
 #
 # Usage: bash scripts/crux_inference_dogfood.sh <version> --model <gguf> [--model <gguf>]...
-#          [--host <id>] [--backend gpu|cpu] [--engines apr,llama.cpp,ollama,hf,llamafile]
+#          [--host <id>] [--backend gpu|cpu] [--engines apr,llama.cpp,ollama,hf,llamafile,vllm]
 #          [--verbs run] [--out <dir>] [--prompts <file>] [--timeout <s>]
 #          [--keep-ollama-models] [--keep-work]
 #   <version>  the apr version under test; `apr --version` must report it, or
@@ -37,7 +37,7 @@
 #   llama   scripts/llama_bin.sh ONLY ($LLAMA_BENCH_PATH names the pinned build).
 #   ollama  $OLLAMA_BIN, else the forjar-declared $HOME/.local/bin/ollama, else
 #           /usr/local/bin/ollama; the SERVER's /api/version is what is recorded.
-#   hf, llamafile  (the 19:03Z / 19:04Z amendments) are PLUGIN engines: the
+#   hf, llamafile, vllm  (the 19:03Z / 19:04Z amendments; vllm #3952) are PLUGIN engines: the
 #           engine worker's scripts/crux_engine_<e>.{sh,py} (row contract v1,
 #           #3739 issuecomment-5765991210) with `probe` and `gen` subcommands. It
 #           appends its own rows to $CRUX_MANIFEST. An absent script, a failing
@@ -69,7 +69,7 @@ decline() { printf 'decline: %s\n' "$*" >&2; exit 2; }
 VERSION=""
 HOST_ID=""
 BACKEND="gpu"
-ENGINES="apr,llama.cpp,ollama,hf,llamafile"
+ENGINES="apr,llama.cpp,ollama,hf,llamafile,vllm"
 VERBS="run"
 OUT_DIR=""
 PROMPTS="scripts/crux_inference_prompts.json"
@@ -176,9 +176,15 @@ if want ollama; then
     fi
   fi
 fi
-# ---- plugin engines (hf, llamafile): resolved by script, recorded by their probe --
+# ---- plugin engines (hf, llamafile, vllm): resolved by script, recorded by their probe --
+# One list, so a new engine is one word here and not a hunt through every loop (#3952).
+PLUGIN_ENGINES=(hf llamafile vllm)
+# The engines that cannot load the GGUF and run its SOURCE weights instead, from the
+# evidence/crux/hf-sources.yaml sidecar: hf by design, vllm because 0.30.0 cannot read a
+# local GGUF (#3952). A model with no declared source is a refused row for each of them.
+source_engine() { case "$1" in hf|vllm) return 0 ;; *) return 1 ;; esac; }
 declare -A EXT_OK EXT_WHY EXT_SCRIPT EXT_PROBE
-for eng in hf llamafile; do
+for eng in "${PLUGIN_ENGINES[@]}"; do
   want "$eng" || continue
   EXT_OK[$eng]=0
   for f in "scripts/crux_engine_$eng.sh" "scripts/crux_engine_$eng.py"; do
@@ -453,13 +459,13 @@ serve_cell() {
   { printf 'srv=""; for f in'; printf ' %q' "${srv_pids[@]}"; printf '; do srv="$srv $(cat "$f")"; done\n'
     printf 'kill $srv 2> /dev/null; wait $srv 2> /dev/null\n'; } >> "$cell"
   [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ] && cell_add_ollama_unload "$cell" "$d/ollama-serve" "$OL_NAME"
-  for eng in hf llamafile; do
+  for eng in "${PLUGIN_ENGINES[@]}"; do
     want "$eng" && [ "${EXT_OK[$eng]}" = 1 ] || continue
-    [ "$eng" = hf ] && [ -n "$HF_MODEL_WHY" ] && continue
+    source_engine "$eng" && [ -n "$HF_MODEL_WHY" ] && continue
     case "${EXT_SCRIPT[$eng]}" in *.py) ext_run=(python3) ;; *) ext_run=(bash) ;; esac
     ext_extra=()
     [ "$eng" = llamafile ] && ext_extra=(--interface server)
-    [ "$eng" = hf ] && ext_extra=("${HF_SRC[@]}")
+    source_engine "$eng" && ext_extra=("${HF_SRC[@]}")
     for pid in $PIDS; do
       cell_add "$cell" "$d/$eng-$pid.driver" "${ext_run[@]}" "${EXT_SCRIPT[$eng]}" gen \
         --model "$M" --model-sha256 "$SHA" --verb "serve run" --prompt-id "$pid" \
@@ -471,7 +477,7 @@ serve_cell() {
   printf 'exit 0\n' >> "$cell"
 
   declare -A before=()
-  for pid in $PIDS; do before[hf-$pid]=$(rows_for hf "$pid"); before[llamafile-$pid]=$(rows_for llamafile "$pid"); done
+  for pid in $PIDS; do for eng in "${PLUGIN_ENGINES[@]}"; do before[$eng-$pid]=$(rows_for "$eng" "$pid"); done; done
   run_cell "$cell"
   for pid in $PIDS; do
     for mode in nonstream stream; do
@@ -481,10 +487,10 @@ serve_cell() {
       if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then cell_result ollama "$pid" "$d/ollama-$pid-$mode" "$d/ollama-$pid-$mode.json" "$mode"
       elif want ollama; then emit_gen ollama "$pid" "" "" "" "${OL_REFUSED:-$OLLAMA_WHY}" "" "$mode"; fi
     done
-    for eng in hf llamafile; do
+    for eng in "${PLUGIN_ENGINES[@]}"; do
       want "$eng" || continue
       if [ "${EXT_OK[$eng]}" != 1 ]; then emit_gen "$eng" "$pid" "" "" "" "${EXT_WHY[$eng]}" "" nonstream; continue; fi
-      if [ "$eng" = hf ] && [ -n "$HF_MODEL_WHY" ]; then emit_gen hf "$pid" "" "" "" "$HF_MODEL_WHY" "" nonstream; continue; fi
+      if source_engine "$eng" && [ -n "$HF_MODEL_WHY" ]; then emit_gen "$eng" "$pid" "" "" "" "$HF_MODEL_WHY" "" nonstream; continue; fi
       if [ -n "$CELL_WHY" ]; then emit_gen "$eng" "$pid" "" "" "" "$CELL_WHY" "" nonstream
       elif [ "$(rows_for "$eng" "$pid")" -le "${before[$eng-$pid]}" ]; then
         emit_gen "$eng" "$pid" "" "" "" "engine driver ${EXT_SCRIPT[$eng]} gen exited $(cat "$d/$eng-$pid.driver.rc" 2>/dev/null || echo '?') without appending a row: $(tail -c 200 "$d/$eng-$pid.driver.err" 2>/dev/null | tr '\n' ' ')" "" nonstream
@@ -525,7 +531,11 @@ for M_IN in "${MODELS[@]}"; do
   # evidence/crux/hf-sources.yaml at a pinned revision; no entry = a refused hf row.
   HF_SRC=()
   HF_MODEL_WHY=""
-  if want hf && [ "${EXT_OK[hf]:-0}" = 1 ]; then
+  src_wanted=0
+  for eng in "${PLUGIN_ENGINES[@]}"; do
+    source_engine "$eng" && want "$eng" && [ "${EXT_OK[$eng]:-0}" = 1 ] && src_wanted=1
+  done
+  if [ "$src_wanted" = 1 ]; then
     hf_line=$(python3 - "$HF_SOURCES" "$SHA" <<'PY'
 import sys, yaml
 try:
@@ -660,15 +670,15 @@ PY
         cell_add_ollama_unload "$cell" "$d/ollama-$pid" "$OL_NAME"
       fi
     fi
-    for eng in hf llamafile; do
+    for eng in "${PLUGIN_ENGINES[@]}"; do
       want "$eng" && [ "${EXT_OK[$eng]}" = 1 ] || continue
-      [ "$eng" = hf ] && [ -n "$HF_MODEL_WHY" ] && continue
+      source_engine "$eng" && [ -n "$HF_MODEL_WHY" ] && continue
       case "${EXT_SCRIPT[$eng]}" in *.py) ext_run=(python3) ;; *) ext_run=(bash) ;; esac
       # llamafile's `--cli` ignores the thinking switch and does not bound output
       # with -n (infra-3c, measured on 0.10.6); its server honours both.
       ext_extra=()
       [ "$eng" = llamafile ] && ext_extra=(--interface server)
-      [ "$eng" = hf ] && ext_extra=("${HF_SRC[@]}")
+      source_engine "$eng" && ext_extra=("${HF_SRC[@]}")
       cell_add "$cell" "$d/$eng-$pid.driver" "${ext_run[@]}" "${EXT_SCRIPT[$eng]}" gen \
         --model "$M" --model-sha256 "$SHA" --verb "$VERB" --prompt-id "$pid" \
         --messages "$WORK/messages-$pid.json" --prompt-file "$WORK/prompt-$pid.txt" \
@@ -677,7 +687,8 @@ PY
     done
     printf 'exit 0\n' >> "$cell"
 
-    before_hf=$(rows_for hf "$pid"); before_lf=$(rows_for llamafile "$pid")
+    declare -A before_run=()
+    for eng in "${PLUGIN_ENGINES[@]}"; do before_run[$eng]=$(rows_for "$eng" "$pid"); done
     run_cell "$cell"
 
     pty_out=""; [ "$VERB" = chat ] && pty_out=json
@@ -686,11 +697,11 @@ PY
     elif want llama.cpp; then emit_gen llama.cpp "$pid" "" "" "" "$LLAMA_WHY"; fi
     if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then cell_result ollama "$pid" "$d/ollama-$pid" "${pty_out:+$d/ollama-$pid.json}"
     elif want ollama; then emit_gen ollama "$pid" "" "" "" "${OL_REFUSED:-$OLLAMA_WHY}"; fi
-    for eng in hf llamafile; do
+    for eng in "${PLUGIN_ENGINES[@]}"; do
       want "$eng" || continue
       if [ "${EXT_OK[$eng]}" != 1 ]; then emit_gen "$eng" "$pid" "" "" "" "${EXT_WHY[$eng]}"; continue; fi
-      if [ "$eng" = hf ] && [ -n "$HF_MODEL_WHY" ]; then emit_gen hf "$pid" "" "" "" "$HF_MODEL_WHY"; continue; fi
-      before=$before_hf; [ "$eng" = llamafile ] && before=$before_lf
+      if source_engine "$eng" && [ -n "$HF_MODEL_WHY" ]; then emit_gen "$eng" "$pid" "" "" "" "$HF_MODEL_WHY"; continue; fi
+      before=${before_run[$eng]}
       if [ -n "$CELL_WHY" ]; then emit_gen "$eng" "$pid" "" "" "" "$CELL_WHY"
       elif [ "$(rows_for "$eng" "$pid")" -le "$before" ]; then
         emit_gen "$eng" "$pid" "" "" "" "engine driver ${EXT_SCRIPT[$eng]} gen exited $(cat "$d/$eng-$pid.driver.rc" 2>/dev/null || echo '?') without appending a row: $(tail -c 200 "$d/$eng-$pid.driver.err" 2>/dev/null | tr '\n' ' ')"
@@ -708,11 +719,13 @@ done
 GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
 HARNESS_SHA=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null) || HARNESS_SHA=""
 EXT_META="$WORK/ext-engines.json"
-python3 - "$EXT_META" "${EXT_PROBE[hf]:-}" "${EXT_WHY[hf]:-}" "${EXT_PROBE[llamafile]:-}" "${EXT_WHY[llamafile]:-}" <<'PY'
+ext_args=()
+for eng in "${PLUGIN_ENGINES[@]}"; do ext_args+=("$eng" "${EXT_PROBE[$eng]:-}" "${EXT_WHY[$eng]:-}"); done
+python3 - "$EXT_META" "${ext_args[@]}" <<'PY'
 import json, sys
-out, hp, hw, lp, lw = sys.argv[1:6]
-json.dump({"hf": {"probe": hp or None, "unavailable": hw or None},
-           "llamafile": {"probe": lp or None, "unavailable": lw or None}}, open(out, "w"))
+out, rest = sys.argv[1], sys.argv[2:]
+json.dump({rest[i]: {"probe": rest[i + 1] or None, "unavailable": rest[i + 2] or None}
+           for i in range(0, len(rest), 3)}, open(out, "w"))
 PY
 python3 - "$WORK/meta.json" "$MODELS_JSONL" "$VERSION" "$HOST" "$BACKEND" "$ENGINES" "$VERBS" \
   "$APR_VERSION_LINE" "${LLAMA_BUILD:-}" "$(llama_pin_get build_commit 2>/dev/null)" "$LLAMA_WHY" \

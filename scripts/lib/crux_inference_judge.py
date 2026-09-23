@@ -53,7 +53,9 @@ import re
 import struct
 import sys
 
-COMPARATORS = ("llama.cpp", "ollama", "hf", "llamafile")
+COMPARATORS = ("llama.cpp", "ollama", "hf", "llamafile", "vllm")
+# Plugin engines write row contract v1 through their own driver (scripts/crux_engine_<e>.*).
+PLUGIN_ENGINES = ("hf", "llamafile", "vllm")
 ENGINES = ("apr",) + COMPARATORS
 
 #: Why an engine produced nothing (#3832). These are NOT interchangeable and the
@@ -142,8 +144,12 @@ def engine_versions(meta):
         "ollama": ol.get("server_version"),
         "llama.cpp": lc.get("build"),
     }
-    for eng in ("hf", "llamafile"):
-        out[eng] = (meta.get(eng) or {}).get("version")
+    # A plugin engine's version IS its probe line (the producer writes `probe`, never `version`): this read
+    # `version` alone, so every plugin cell carried version None and no receipt could say which hf, llamafile
+    # or vllm had vouched (#3952).
+    for eng in PLUGIN_ENGINES:
+        m = meta.get(eng) or {}
+        out[eng] = m.get("version") or m.get("probe")
     return {k: v for k, v in out.items()}
 
 
@@ -287,7 +293,7 @@ def parse_apr_chat(stdout):
 
 
 def parse_engine_json(stdout):
-    """hf and llamafile rows (row contract v1, #3739 issuecomment-5765991210):
+    """Plugin-engine rows — hf, llamafile, vllm (row contract v1, #3739 issuecomment-5765991210):
     the engine driver writes `{"text": <the answer only>, "reported": {...}}`."""
     out = {"answer": None, "why": None, "reported": {}}
     try:
@@ -373,7 +379,7 @@ def engine_entry(row, prompt):
         p = parse_llamacpp_cli(stdout, content)
     elif engine == "ollama":
         p = parse_ollama(stdout, stderr)
-    elif engine in ("hf", "llamafile"):
+    elif engine in PLUGIN_ENGINES:
         p = parse_engine_json(stdout)
         if row.get("source"):
             e["source"] = row["source"]
@@ -395,7 +401,7 @@ def engine_entry(row, prompt):
     if be and (be.get("fell_back") or (row.get("backend") and be.get("ran") != row.get("backend"))):
         e["why"] = "backend: asked %s, ran %s (fell_back=%s)" % (row.get("backend"), be.get("ran"), be.get("fell_back"))
         return e
-    if engine in ("hf", "llamafile"):
+    if engine in PLUGIN_ENGINES:
         # A plugin engine is held to the lane as apr is. The integration run's
         # cpu lane got `!` x64 from an HF load that went to CUDA anyway (and
         # outside the GPU lock). The device must be REPORTED: an unverifiable
@@ -709,6 +715,12 @@ def collect(args):
                                 "why": "missing: no row for this engine" if eng in requested else "not requested"}
             else:
                 entries[eng] = engine_entry(row, prompt)
+                # #3952: a comparator the receipt cannot name a version for cannot vouch — for apr or against
+                # it. Its answer is kept on the record; it is not an oracle.
+                if eng in COMPARATORS and entries[eng].get("answered") and not versions.get(eng):
+                    entries[eng]["answered"] = False
+                    entries[eng]["why"] = ("unpinned: the run's meta records no version for %s, so a verdict it "
+                                           "vouched for could not name what produced it" % eng)
         verdict, ok = judge_cell(entries, prompt["expect_any"])
         for eng in ENGINES:
             entries[eng]["correct"] = ok[eng]
@@ -819,10 +831,10 @@ def render_md(r):
     lines = [
         "# CRUX inference dogfood: %s on %s (%s lane)" % (r.get("version"), r.get("host"), r.get("backend")),
         "",
-        "apr `%s` · llama.cpp `%s` · ollama `%s` · hf `%s` · llamafile `%s` · judged %s" % (
+        "apr `%s` · llama.cpp `%s` · ollama `%s` · hf `%s` · llamafile `%s` · vllm `%s` · judged %s" % (
             r.get("apr", {}).get("version_line"), r.get("llama_cpp", {}).get("build"),
             r.get("ollama", {}).get("server_version"), r.get("hf", {}).get("probe"),
-            r.get("llamafile", {}).get("probe"), r["judged_at"]),
+            r.get("llamafile", {}).get("probe"), r.get("vllm", {}).get("probe"), r["judged_at"]),
         "",
         "**%s**: %d cells, %d RED, %d GREEN, %d ALL_WRONG, %d UNJUDGED." % (
             s["verdict"], s["cells"], s["RED"], s["GREEN"], s["ALL_WRONG"], s["UNJUDGED"]),
