@@ -165,3 +165,26 @@ fn try_qwen35_stream_tokens(
     })?;
     Ok(Some((tokens, prompt_len, tokenizer)))
 }
+
+/// A state that serves no Qwen3.5 hybrid is not this arm's: every entry declines,
+/// so the raw chain reaches the registry exactly as before.
+#[cfg(test)]
+mod qwen35_raw_generate_tests {
+    use super::*;
+
+    #[test]
+    fn a_state_without_a_hybrid_leaves_the_raw_chain_unchanged() {
+        let state = AppState::demo().expect("demo state");
+        assert!(state.qwen35_session().is_none(), "the fixture must hold no hybrid");
+        let cancel = CancelToken::new();
+        let one: GenerateRequest =
+            serde_json::from_value(serde_json::json!({"prompt": "hi", "max_tokens": 4}))
+                .expect("request");
+        let many: BatchGenerateRequest =
+            serde_json::from_value(serde_json::json!({"prompts": ["hi"], "max_tokens": 4}))
+                .expect("request");
+        assert!(matches!(try_qwen35_generate(&state, &one, &cancel), Ok(None)));
+        assert!(matches!(try_qwen35_batch_generate(&state, &many, &cancel), Ok(None)));
+        assert!(matches!(try_qwen35_stream_tokens(&state, &one, &cancel), Ok(None)));
+    }
+}

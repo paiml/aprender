@@ -509,3 +509,56 @@ async fn both_chat_wires_agree_on_the_same_request() {
     );
     let _ = mapped;
 }
+
+/// #3962: the five realizar RAW routes answered 503 "No model available" on every
+/// Qwen3.5 model (aprender-83's CRUX serve sweep). Each must now answer what `apr
+/// run` answers for the same rendered prompt — not 200 with an echo, not a 503.
+#[tokio::test(flavor = "multi_thread")]
+async fn every_raw_route_answers_from_the_hybrid() {
+    let Some((state, mapped)) = state_or_skip(true) else {
+        return;
+    };
+    let expected = one_shot_answer(&mapped, 16, true);
+    assert!(!expected.is_empty(), "the reference answered nothing");
+    let messages = [ChatMessage {
+        role: "user".to_string(),
+        content: QUESTION.to_string(),
+        ..Default::default()
+    }];
+    let rendered = crate::api::format_chat_messages_official(
+        Some(&mapped.model),
+        &messages,
+        mapped.model.architecture(),
+    );
+    let one = serde_json::json!({"prompt": rendered, "max_tokens": 16, "temperature": 0.0});
+    let many = serde_json::json!({"prompts": [rendered], "max_tokens": 16, "temperature": 0.0});
+    for (route, body) in [
+        ("/generate", &one),
+        ("/batch/generate", &many),
+        ("/realize/batch", &many),
+        ("/stream/generate", &one),
+        ("/realize/generate", &one),
+    ] {
+        let (status, text) = post(create_router(state.clone()), route, body.clone()).await;
+        assert_eq!(status, StatusCode::OK, "{route}: {text}");
+        let answer = if route.contains("batch") {
+            let v: serde_json::Value = serde_json::from_str(&text).expect("json");
+            v["results"][0]["text"].as_str().expect("results[0].text").to_string()
+        } else if text.starts_with("event:") || text.contains("\nevent:") || text.contains("data:") {
+            text.lines()
+                .filter_map(|l| l.strip_prefix("data: "))
+                .filter_map(|d| serde_json::from_str::<serde_json::Value>(d).ok())
+                .filter_map(|v| v["text"].as_str().map(str::to_string))
+                .collect::<String>()
+        } else {
+            let v: serde_json::Value = serde_json::from_str(&text).expect("json");
+            v["text"].as_str().expect("text").to_string()
+        };
+        assert!(!answer.contains(QUESTION), "{route} echoed the prompt: {answer:?}");
+        assert_eq!(
+            clean_chat_output(&answer),
+            expected,
+            "{route} answered differently from `apr run` on the same rendered prompt"
+        );
+    }
+}
