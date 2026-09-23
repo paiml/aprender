@@ -88,9 +88,6 @@ grep -lE 'llama\.cpp|llamacpp' contracts/beat-*.yaml                            
 gh issue view 911 -R paiml/infra --json title,state
 ```
 
-## 7. Quorum record
-
-_Filled after the quorum returns._
 
 ## Quorum record: decision quorum, 2026-09-23 (aprender-cb)
 
