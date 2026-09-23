@@ -26,6 +26,7 @@
 #      content digest; a mutant without the digest REUSES the backend edit
 #  14. an unreferenced file added to files{} (hashed, digest re-sealed) is STALE; a mutant without the converse
 #      rule REUSES it
+#  15. MUST-RED: an origin-only edit, not re-sealed, is STALE (the seal covers the whole entry)
 #  NOT covered, by design: a coherent re-seal by a cache writer (see the lib's THREAT MODEL)
 #
 # Exit: 0 every row behaved · 1 a row broke · 2 ENV.
@@ -325,7 +326,7 @@ import glob, hashlib, json, sys
 for p in glob.glob(sys.argv[1] + "/*/*/entry.json"):
     e = json.load(open(p))
     e["rows"][0]["stdout"] = "refcache:" + "../" * 8 + "etc/hostname"
-    e["content_sha256"] = hashlib.sha256(json.dumps({"key": e.get("key"), "rows": e.get("rows"), "files": e.get("files")},
+    e["content_sha256"] = hashlib.sha256(json.dumps({k: v for k, v in e.items() if k != "content_sha256"},
                                                     sort_keys=True).encode()).hexdigest()  # RE-SEALED: only the pointer rule may refuse it
     json.dump(e, open(p, "w"), indent=1, sort_keys=True)
 PY
@@ -379,7 +380,7 @@ for p in glob.glob(sys.argv[1] + "/*/*/entry.json"):
     e = json.load(open(p))
     v = e["rows"][0]["stdout"]
     e["rows"][0]["stdout"] = "refcache:./" + v[len("refcache:"):]
-    e["content_sha256"] = hashlib.sha256(json.dumps({"key": e.get("key"), "rows": e.get("rows"), "files": e.get("files")},
+    e["content_sha256"] = hashlib.sha256(json.dumps({k: v for k, v in e.items() if k != "content_sha256"},
                                                     sort_keys=True).encode()).hexdigest()  # RE-SEALED: only the pointer rule may refuse it
     json.dump(e, open(p, "w"), indent=1, sort_keys=True)
 PY
@@ -456,7 +457,7 @@ for p in glob.glob(sys.argv[1] + "/*/*/entry.json"):
     extra = os.path.join(os.path.dirname(p), "files", "smuggled.txt")
     open(extra, "w").write("not a row's artifact\n")
     e["files"]["smuggled.txt"] = hashlib.sha256(open(extra, "rb").read()).hexdigest()
-    e["content_sha256"] = hashlib.sha256(json.dumps({"key": e.get("key"), "rows": e.get("rows"), "files": e.get("files")},
+    e["content_sha256"] = hashlib.sha256(json.dumps({k: v for k, v in e.items() if k != "content_sha256"},
                                                     sort_keys=True).encode()).hexdigest()
     json.dump(e, open(p, "w"), indent=1, sort_keys=True)
 PY
@@ -480,7 +481,7 @@ for p in glob.glob(sys.argv[1] + "/*/*/entry.json"):
     extra = os.path.join(os.path.dirname(p), "files", "smuggled.txt")
     open(extra, "w").write("not a row's artifact\n")
     e["files"]["smuggled.txt"] = hashlib.sha256(open(extra, "rb").read()).hexdigest()
-    e["content_sha256"] = hashlib.sha256(json.dumps({"key": e.get("key"), "rows": e.get("rows"), "files": e.get("files")},
+    e["content_sha256"] = hashlib.sha256(json.dumps({k: v for k, v in e.items() if k != "content_sha256"},
                                                     sort_keys=True).encode()).hexdigest()
     json.dump(e, open(p, "w"), indent=1, sort_keys=True)
 PY
@@ -491,6 +492,25 @@ case "$ex|$mx" in
                   && ok "an unreferenced file in files{} (hashed, re-sealed) is STALE ($ex); a mutant without the converse rule REUSES it ($mx)" \
                   || broke "extra file: RED but not for the unreferenced file ($ex)" ;;
   *) broke "extra file: real lib $ex, mutant $mx" ;;
+esac
+
+# Row 15: MUST-RED — an ORIGIN-only edit, NOT re-sealed (the provenance a hit reports). The seal once covered only
+# {key, rows, files}, so this passed as a HIT and served a false origin (quorum round 6, lane 2, measured).
+cp -r "$CACHE" "$TMP/cache-origin"
+python3 - "$TMP/cache-origin" <<'PY' || exit 2
+import glob, json, sys
+for p in glob.glob(sys.argv[1] + "/*/*/entry.json"):
+    e = json.load(open(p))
+    e["origin"]["host"] = "not-the-host-that-measured-it"
+    json.dump(e, open(p, "w"), indent=1, sort_keys=True)
+PY
+run_row origin "$T" "$TMP/cache-origin"
+og=$(summary origin)
+case "$og" in
+  "0 | "*"=RED"*) grep -q 'its content changed since it was stored' "$TMP/origin.out/stub-gpu.json" \
+                  && ok "an origin-only edit (not re-sealed) is STALE ($og)" \
+                  || broke "origin edit: RED but not for the seal ($og)" ;;
+  *) broke "origin edit: $og — a false provenance was served" ;;
 esac
 
 printf '%s: %d ok, %d broke\n' "$PROG" "$PASS" "$FAIL"

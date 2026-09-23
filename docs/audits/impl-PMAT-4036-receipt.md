@@ -18,7 +18,7 @@ Author: aprender-83 (claude-opus-5-5).
     - hit: inject the rows, and the engines do not run;
     - miss: run the mode and store its clean rows;
     - stale: refuse every reference row, which is RED and never reused. An entry is stale when any of three independent defenses fails:
-      - its **content digest** fails: the key, rows and files map are sealed at store time, so any field added, removed or changed is caught (quorum round 4, lane 1);
+      - its **content digest** fails: the WHOLE entry (key, rows, files map, origin) is sealed at store time, so any field added, removed or changed anywhere is caught (quorum round 4, lane 1; the origin since quorum round 6, lane 2);
       - an **artifact's sha256** moved;
       - a row's **pointer** is not a plain name that the entry's own `files{}` holds, even if the digest was re-sealed (quorum round 3, lane 2);
       - `files{}` holds a file **no row points at** (quorum round 5, lane 2).
@@ -57,7 +57,7 @@ Author: aprender-83 (claude-opus-5-5).
 
 ## Hermetic tables (real dogfood + real judge, stub engines)
 
-**`scripts/check_crux_ref_cache.sh` — 14/14**
+**`scripts/check_crux_ref_cache.sh` — 15/15**
 
 1. Cold stores.
 2. Warm makes 0 reference calls, the receipt is identical cell for cell, and every injected row is provenanced.
@@ -73,6 +73,7 @@ Author: aprender-83 (claude-opus-5-5).
 12. An edited pointer that resolves to the SAME hashed file, with the digest re-sealed, is STALE on the real lib, and REUSED by a mutant with the row↔file rules disabled (the pointer rule and its converse). Those rules are what refuse it.
 13. A field REMOVED from a stored row, either `stdout` or `backend` (which no per-field rule reads and whose removal orphans no file), is STALE by the content digest. A mutant without the digest REUSES the `backend` edit.
 14. An unreferenced file added to `files{}`, hashed and with the digest re-sealed, is STALE (quorum round 5, lane 2). A mutant without the converse rule REUSES it.
+15. MUST-RED: an origin-only edit, not re-sealed, is STALE. The seal once covered only {key, rows, files}, and this edit passed (quorum round 6, lane 2).
 
 **`scripts/check_crux_plugin_batch.sh` — 5/5**
 

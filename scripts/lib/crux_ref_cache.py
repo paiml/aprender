@@ -169,10 +169,11 @@ def digest(key):
 
 
 def content_sha256(ent):
-    """The whole stored truth — key, rows and the files map — as one digest, recorded at store and checked at
-    lookup. A rule per field only sees the fields it names: deleting a row's `stdout` passed every one of them
-    (quorum round 4, lane 1, measured). Any field added, removed or changed moves this digest."""
-    return hashlib.sha256(json.dumps({"key": ent.get("key"), "rows": ent.get("rows"), "files": ent.get("files")},
+    """The WHOLE entry — every field but this seal itself: key, rows, files, origin — as one digest, recorded at store
+    and checked at lookup. A rule per field only sees the fields it names: deleting a row's `stdout` passed every one
+    of them (quorum round 4, lane 1), and the origin was left outside a {key, rows, files} seal (quorum round 6,
+    lane 2, measured). Any field added, removed or changed anywhere in the entry moves this digest."""
+    return hashlib.sha256(json.dumps({k: v for k, v in ent.items() if k != "content_sha256"},
                                      sort_keys=True).encode()).hexdigest()
 
 
