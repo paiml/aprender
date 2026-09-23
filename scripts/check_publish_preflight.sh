@@ -790,6 +790,8 @@ FXJUDGE
     git -C "$d" worktree add -q --detach "$tmp/sc-tree-rogue" rogue; git -C "$d" checkout -q rel
     FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" SCOPE_TREE="$tmp/sc-tree-rogue" row scope_tree_off_main_refuses 1 "is not on fixture-main" "$d"
     # --crux: receipts from a PATH, certification still from the (scope) tree
+    # bashrs SEC010: self-test fixture: $tmp is this script's own mktemp -d dir.
+    # bashrs disable-next-line=SEC010
     d="$tmp/sc-crux"; build_repo "$d"; mkdir -p "$tmp/sc-crux-receipts"
     FX_EXPECT_CRUX="$tmp/sc-crux-receipts" SCOPE=crux-smoke CRUX="$tmp/sc-crux-receipts" row scope_crux_path_passes_through 0 "receipts from $tmp/sc-crux-receipts" "$d"
     FX_EXPECT_CRUX="$tmp/sc-crux-receipts" SCOPE=crux-smoke CRUX="$tmp/sc-crux-receipts" row scope_crux_path_green 0 "OPERATOR EMERGENCY SCOPE crux-smoke satisfied" "$d"
