@@ -558,8 +558,13 @@ fi
 # never name another session's process — which is what makes escalating to a kill
 # safe on a box several agents share.
 ladder_serve_teardown() { # <wrapper-pid> <port> -> prints clean|escalated|failed|undetermined
-    local pid="$1" port="$2" i p c spid
+    local pid="$1" port="$2" i p c spid here
     local -a frontier next tree=() alive=()
+    # #4055: the PHYSICAL cwd. `readlink -f /proc/$p/cwd` is physical, and $PWD is the logical
+    # spelling. On gx10 and yoga, /mnt/nvme-raid0 -> /home/noah/eph-work/intel-mirror, so a ladder
+    # run from /mnt/nvme-raid0/... compared them unequal and REFUSED to kill its own survivor,
+    # which kept the inherited GPU-lock fd and stalled the next locked call for LOCK_WAIT (1800 s).
+    here=$(pwd -P)
     # #3943: LIVENESS IS A PROPERTY OF THE PROCESS, NOT THE PORT. This used to kill the
     # wrapper and then read "/health does not answer" as "the server is gone". That is
     # only true of a server that was LISTENING. The health-wait timeout calls this for a
@@ -596,7 +601,7 @@ ladder_serve_teardown() { # <wrapper-pid> <port> -> prints clean|escalated|faile
         # so they are ours by construction. The cwd check still guards pid REUSE between
         # the pgrep and the kill, on a box several agents share (cop, #3828).
         for p in "${alive[@]}"; do
-            if kill -0 "$p" 2>/dev/null && [ "$(readlink -f "/proc/$p/cwd" 2>/dev/null)" != "$PWD" ]; then
+            if kill -0 "$p" 2>/dev/null && [ "$(readlink -f "/proc/$p/cwd" 2>/dev/null)" != "$here" ]; then
                 printf 'failed'; return 1
             fi
         done
@@ -612,7 +617,7 @@ ladder_serve_teardown() { # <wrapper-pid> <port> -> prints clean|escalated|faile
             if kill -0 "$p" 2>/dev/null; then printf 'failed'; return 1; fi
         done
         wait "$pid" 2>/dev/null
-        printf 'escalated'; return 0
+        ladder_td_verdict escalated "$pid" "${tree[@]}"; return $?
     fi
     wait "$pid" 2>/dev/null
     # Every process in the tree is gone. The port is now evidence, not proof: if
@@ -620,18 +625,35 @@ ladder_serve_teardown() { # <wrapper-pid> <port> -> prints clean|escalated|faile
     # and apply the cwd test before touching it, exactly as before.
     if curl -fsS --max-time 1 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
         spid=$(ss -tlnpH "sport = :$port" 2>/dev/null | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
-        if [ -z "$spid" ] || [ "$(readlink -f "/proc/$spid/cwd" 2>/dev/null)" != "$PWD" ]; then
+        if [ -z "$spid" ] || [ "$(readlink -f "/proc/$spid/cwd" 2>/dev/null)" != "$here" ]; then
             printf 'failed'; return 1
         fi
         kill "$spid" 2>/dev/null
         for i in $(seq 1 10); do
-            kill -0 "$spid" 2>/dev/null || { printf 'escalated'; return 0; }
+            kill -0 "$spid" 2>/dev/null || { ladder_td_verdict escalated "$pid" "${tree[@]}"; return $?; }
             sleep 1
         done
         kill -9 "$spid" 2>/dev/null
-        printf 'escalated'; return 0
+        ladder_td_verdict escalated "$pid" "${tree[@]}"; return $?
     fi
-    printf 'clean'; return 0
+    ladder_td_verdict clean "$pid" "${tree[@]}"; return $?
+}
+
+# #4055: `clean` and `escalated` are claims that nothing of ours survives, and the GPU LOCK is
+# the thing a survivor costs the fleet: flock hands its fd to the child, so a server that escapes
+# the kill (re-parented, double-forked) keeps the fleet lock after its wrapper is gone. /proc/locks
+# still records the lock under the pid that TOOK it (the flock wrapper), even when that pid is
+# dead. So either verdict becomes `failed` while the lock is recorded under a pid of this tree.
+ladder_td_verdict() { # <clean|escalated> <pid...> -> prints the verdict, or `failed` if a pid still holds the GPU lock
+    local verdict="$1" ino holder q; shift
+    if [ -n "${GPU_LOCK:-}" ] && ino=$(stat -c %i "$GPU_LOCK" 2>/dev/null); then
+        for holder in $(awk -v i=":$ino" '$2 != "->" && substr($6, length($6) - length(i) + 1) == i { print $5 }' /proc/locks 2>/dev/null); do
+            for q in "$@"; do
+                [ -n "$q" ] && [ "$holder" = "$q" ] && { printf 'failed'; return 1; }
+            done
+        done
+    fi
+    printf '%s' "$verdict"; return 0
 }
 
 # ── #3943 (b): wait on the SERVER, not on a clock ────────────────────────────

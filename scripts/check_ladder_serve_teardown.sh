@@ -23,6 +23,13 @@
 #   exits      $! is the server itself, dies with the kill -> `clean`, DEAD
 #   foreign    a listener on the port that is NOT in the tree, started from another
 #              cwd -> `failed`, and it must be left ALIVE (never signal what is not ours)
+#   symlink-cwd  `loading`, with the ladder's cwd reached through a SYMLINK (#4055): gx10 and
+#              yoga spell it /mnt/nvme-raid0 -> /home/noah/eph-work/intel-mirror. The cwd check
+#              compared the physical /proc cwd with the logical $PWD and refused to kill its
+#              own survivor -> must be `escalated`, the server DEAD, and the lock FREE
+#   lock-escapee  the server double-forks a child that keeps the inherited GPU-lock fd and
+#              escapes the tree (#4055) -> must be `failed`, never `escalated`: the fleet lock
+#              is still held by something this teardown launched
 #
 # THE HEALTH WAIT (#3943 b) is checked the same way: the shipped
 # `ladder_serve_wait_health` is extracted and run against a fake loader.
@@ -34,7 +41,9 @@
 #   forever    advancing but never binds                                  -> ceiling
 #
 # --self-test plants the regression (the parentage tree is discarded, which is the old
-# port-only behaviour) and requires `loading` to turn this RED.
+# port-only behaviour) and requires `loading` to turn this RED. It also plants the two
+# #4055 regressions: the logical $PWD instead of `pwd -P` must turn `symlink-cwd` RED, and a
+# verdict that ignores the lock must turn `lock-escapee` RED.
 #
 # Exit: 0 all cases as expected · 1 a case landed wrong · 2 could not check.
 #       --self-test: 0 when the planted regression turns this RED, 1 otherwise.
@@ -59,8 +68,10 @@ extract_teardown() {
   local src="$1" body
   [ -f "$src" ] || { echo "  cannot read $src" >&2; return 2; }
   body=$(awk '/^ladder_serve_teardown\(\) \{/{f=1} f{print} f && /^\}$/{exit}' "$src")
+  body="$body"$'\n'"$(awk '/^ladder_td_verdict\(\) \{/{f=1} f{print} f && /^\}$/{exit}' "$src")"
   # Anti-vacuity: an extraction that lost the function tests nothing.
-  if ! grep -q 'printf .clean.' <<< "$body" || ! grep -q 'kill' <<< "$body"; then
+  if ! grep -q 'ladder_td_verdict clean' <<< "$body" || ! grep -q 'kill' <<< "$body" \
+     || ! grep -q '^ladder_td_verdict() {' <<< "$body"; then
     echo "  the extracted teardown does not print 'clean' or signal anything — this check no longer knows what it is running" >&2
     return 2
   fi
@@ -108,6 +119,9 @@ with socketserver.TCPServer(("127.0.0.1", port), H) as srv:
 PY
 
 LOCK="$TMP/gpu.lock"
+GPU_LOCK="$LOCK"   # the teardown's verdict reads the fleet lock by this name (#4055)
+mkdir -p "$TMP/real" && ln -s "$TMP/real" "$TMP/link"
+lock_free() { flock -n "$LOCK" true; }
 fake_locked() { flock -w 5 "$LOCK" python3 "$TMP/fake_server.py" "$@"; }
 
 wait_health() { local port="$1" i; for i in $(seq 1 50); do curl -fsS --max-time 1 "http://127.0.0.1:$port/health" >/dev/null 2>&1 && return 0; sleep 0.2; done; return 1; }
@@ -159,6 +173,34 @@ run_cases() { # <teardown-function-body> -> 0 if every case lands, 1 otherwise
     echo "  FAIL foreign: teardown='$td', foreign alive=$(alive "$fpid" && echo yes || echo no) — want 'failed' and the foreign listener untouched"; fails=1
   else echo "  ok   foreign: '$td', foreign listener untouched"; fi
   kill -9 "$fpid" 2>/dev/null || true
+
+  # symlink-cwd (#4055): the ladder's shell sits in a SYMLINKED dir; the server inherits it
+  port=$(( 20000 + (RANDOM % 20000) ))
+  rm -f "$TMP/sym.pid" "$TMP/sym.out"
+  ( cd "$TMP/link" || exit 2
+    fake_locked "$port" 30 "$TMP/sym.pid" & pid=$!
+    wait_pidfile "$TMP/sym.pid" || exit 2
+    td=$(ladder_serve_teardown "$pid" "$port") || true
+    printf '%s' "$td" > "$TMP/sym.out" )
+  spid=$(cat "$TMP/sym.pid" 2>/dev/null); td=$(cat "$TMP/sym.out" 2>/dev/null)
+  if [ -z "$spid" ]; then echo "  symlink-cwd: fake server never started" >&2; return 2; fi
+  if [ "$td" != "escalated" ] || alive "$spid" || ! lock_free; then
+    echo "  FAIL symlink-cwd: teardown='$td', server alive=$(alive "$spid" && echo yes || echo no), lock free=$(lock_free && echo yes || echo no) — want 'escalated', dead, free"; fails=1
+  else echo "  ok   symlink-cwd: '$td', server dead, lock free"; fi
+  kill -9 "$spid" 2>/dev/null || true
+
+  # lock-escapee (#4055): a double-forked child keeps the inherited lock fd, outside the tree
+  port=$(( 20000 + (RANDOM % 20000) ))
+  rm -f "$TMP/esc.pid" "$TMP/escsrv.pid"
+  flock -w 5 "$LOCK" sh -c '(setsid sh -c "echo \$\$ > \"$1\"; exec sleep 300" > /dev/null 2>&1 &); exec python3 "$2" "$3" 0 "$4"' \
+    _ "$TMP/esc.pid" "$TMP/fake_server.py" "$port" "$TMP/escsrv.pid" & pid=$!
+  wait_pidfile "$TMP/escsrv.pid" && wait_pidfile "$TMP/esc.pid" && wait_health "$port" || { echo "  lock-escapee: fixture never started" >&2; return 2; }
+  spid=$(cat "$TMP/escsrv.pid"); fpid=$(cat "$TMP/esc.pid")
+  td=$(ladder_serve_teardown "$pid" "$port") || true
+  if [ "$td" != "failed" ] || alive "$spid"; then
+    echo "  FAIL lock-escapee: teardown='$td', server alive=$(alive "$spid" && echo yes || echo no), lock free=$(lock_free && echo yes || echo no) — want 'failed' (an escapee of ours holds the GPU lock) and the server dead"; fails=1
+  else echo "  ok   lock-escapee: '$td' — the escaped child still holds the lock, so the teardown refuses to call it done"; fi
+  kill -9 "$spid" "$fpid" 2>/dev/null || true
 
   return "$fails"
 }
@@ -220,7 +262,16 @@ if [ "$SELF_TEST" -eq 1 ]; then
   if ! grep -q "FAIL slow-cpu" <<< "$wout" || [ "$(grep -c '^  FAIL' <<< "$wout")" -ne 1 ]; then
     echo "SELF-TEST FAIL: the log-only plant must turn EXACTLY slow-cpu red — anything else means the check is not measuring the CPU leg"; exit 1
   fi
-  echo "SELF-TEST OK: both planted regressions turned this RED"; exit 0
+  # The #4055 plants: each must turn ITS case red.
+  p3=$(sed 's/^    here=\$(pwd -P)$/    here=$PWD  # PLANTED: the logical cwd/' <<< "$body")
+  grep -q 'PLANTED' <<< "$p3" || { echo "  self-test: could not plant the logical-cwd regression — the anchor moved" >&2; exit 2; }
+  o3=$(run_cases "$p3" 2>&1) || true
+  grep -q '^  FAIL symlink-cwd' <<< "$o3" || { printf '%s\n' "$o3"; echo "SELF-TEST FAIL: the logical \$PWD plant left symlink-cwd green"; exit 1; }
+  p4=$(sed 's/^    if \[ -n "\${GPU_LOCK:-}" \] && ino=/    if false \&\& ino=/' <<< "$body")
+  grep -q 'if false && ino=' <<< "$p4" || { echo "  self-test: could not plant the lock-blind verdict — the anchor moved" >&2; exit 2; }
+  o4=$(run_cases "$p4" 2>&1) || true
+  grep -q '^  FAIL lock-escapee' <<< "$o4" || { printf '%s\n' "$o4"; echo "SELF-TEST FAIL: a lock-blind verdict left lock-escapee green"; exit 1; }
+  echo "SELF-TEST OK: all four planted regressions turned this RED"; exit 0
 fi
 
 rc=0
