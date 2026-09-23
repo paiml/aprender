@@ -49,6 +49,14 @@
 #   bash scripts/check_publish_preflight.sh             # the gate
 #   bash scripts/check_publish_preflight.sh --selftest  # case table, both polarities
 #   bash scripts/check_publish_preflight.sh --receipt-only  # R2+R5 only: T-1, before the tag (#3708)
+#   bash scripts/check_publish_preflight.sh --scope crux-smoke [--cut-commit SHA]
+#       R7 under a RECORDED operator emergency scope (contracts/model-capability-ladder-v1.yaml
+#       `ladder.emergency_scopes`; 0.69.1 only): the judge's own `--scope` path
+#       (scripts/lib/crux_smoke_scope.py) decides R7 from CRUX smoke receipts bound to the CUT --
+#       the commit the release binary was built from -- instead of the model matrix. The cut
+#       defaults to HEAD; when HEAD is the cut plus committed receipts, HEAD may differ from the
+#       cut ONLY under evidence/, or the published source is not the measured binary's. The
+#       model-matrix rows are still printed, as EVIDENCE, never as the verdict.
 set -uo pipefail
 
 PROG=${0##*/}
@@ -166,11 +174,52 @@ rule_r7() {
         echo "FAIL  R7 no model-matrix judge at $judge: the committed receipts cannot be judged"
         return 1
     fi
+    if [ -n "${SCOPE:-}" ]; then
+        rule_r7_scope "$root" "$version" "$judge"
+        return $?
+    fi
     out="$(cd "$root" && bash "$judge" --version "$version" 2>&1)"; rc=$?
     case "$rc" in
         0) echo "ok    R7 model matrix green for $version (committed receipts, $(basename "$judge"))"; return 0 ;;
         2) echo "FAIL  R7 the model-matrix judge DECLINED (rc 2), and a decline is not a pass: $(tail -n 1 <<< "$out")" ;;
         *) printf 'FAIL  R7 model matrix NOT green for %s (rc %s):\n%s\n' "$version" "$rc" \
+               "$(grep -E '^FAIL' <<< "$out" | head -n 10 | sed 's/^/        /')" ;;
+    esac
+    return 1
+}
+
+# R7 under a recorded operator emergency scope (0.69.1: CRUX smoke only). The scope is READ by the
+# judge (`--scope`, scripts/lib/crux_smoke_scope.py), never re-implemented here: it refuses another
+# release, receipts from another binary, and a missing host. This rule adds the one binding the judge
+# cannot see: the source being PUBLISHED is the source the smoked binary was built from.
+# rule_r7_scope root version judge -> prints its rows; 0 accepted, 1 refused
+rule_r7_scope() {
+    local root="$1" version="$2" judge="$3" cut head out rc ev evrc
+    head="$(git -C "$root" rev-parse HEAD 2>/dev/null)"
+    cut="$(git -C "$root" rev-parse --verify --quiet "${CUT_COMMIT:-HEAD}^{commit}" 2>/dev/null)"
+    if [ -z "$cut" ]; then
+        echo "FAIL  R7 OPERATOR EMERGENCY SCOPE $SCOPE: the cut ${CUT_COMMIT:-HEAD} does not resolve in this tree"
+        return 1
+    fi
+    if [ "$cut" != "$head" ] && ! git -C "$root" diff --quiet "$cut" "$head" -- . ':(exclude)evidence' 2>/dev/null; then
+        printf 'FAIL  R7 OPERATOR EMERGENCY SCOPE %s: HEAD %s differs from the cut %s OUTSIDE evidence/ -- the published source is not the smoked binary'"'"'s:\n%s\n' \
+            "$SCOPE" "${head:0:12}" "${cut:0:12}" \
+            "$(git -C "$root" diff --name-only "$cut" "$head" -- . ':(exclude)evidence' | head -n 10 | sed 's/^/        /')"
+        return 1
+    fi
+    out="$(cd "$root" && bash "$judge" --version "$version" --scope "$SCOPE" --cut-commit "$cut" 2>&1)"; rc=$?
+    grep -E '^OPERATOR EMERGENCY SCOPE' <<< "$out" | head -n 1 | sed 's/^/        /'
+    # The model matrix, reported as EVIDENCE only: under the scope it is not the verdict, and a
+    # stale or red row must still be visible.
+    ev="$(cd "$root" && bash "$judge" --version "$version" 2>&1)"; evrc=$?
+    if [ "$evrc" != 0 ]; then
+        printf '        evidence only (NOT the verdict under the emergency scope): model matrix rc %s\n%s\n' "$evrc" \
+            "$(grep -E '^FAIL' <<< "$ev" | head -n 10 | sed 's/^/          evidence /')"
+    fi
+    case "$rc" in
+        0) echo "ok    R7 OPERATOR EMERGENCY SCOPE $SCOPE: CRUX smoke satisfied at the cut ${cut:0:12} ($(basename "$judge") --scope); the model matrix was NOT the gate for $version"; return 0 ;;
+        2) echo "FAIL  R7 OPERATOR EMERGENCY SCOPE $SCOPE: the judge DECLINED (rc 2), and a decline is not a pass: $(tail -n 1 <<< "$out")" ;;
+        *) printf 'FAIL  R7 OPERATOR EMERGENCY SCOPE %s NOT satisfied for %s (rc %s):\n%s\n' "$SCOPE" "$version" "$rc" \
                "$(grep -E '^FAIL' <<< "$out" | head -n 10 | sed 's/^/        /')" ;;
     esac
     return 1
@@ -289,7 +338,11 @@ for n, t, req in sorted(vdev):
         echo "REFUSE $PROG: publishing is not allowed from this tree (see the FAIL rows)."
         return 1
     fi
-    echo "PASS  $PROG: clean, versioned, tagged, on $main_ref, dogfood GO, model matrix green"
+    if [ -n "${SCOPE:-}" ]; then
+        echo "PASS  $PROG: clean, versioned, tagged, on $main_ref, dogfood GO, OPERATOR EMERGENCY SCOPE $SCOPE satisfied (the model matrix was NOT the gate)"
+    else
+        echo "PASS  $PROG: clean, versioned, tagged, on $main_ref, dogfood GO, model matrix green"
+    fi
     return 0
 }
 
@@ -359,10 +412,24 @@ selftest() {
     }
     # R7's judge, committed in every fixture: it must be asked about THIS version (1.2.3), and it
     # answers FX_LADDER_RC (default 0). A judge asked about anything else is red.
+    # Under `--scope` (0.69.1 emergency scope) it must be called `--version 1.2.3 --scope crux-smoke
+    # --cut-commit <the cut, full sha>` and answers FX_SCOPE_RC; the cut it expects is FX_EXPECT_CUT
+    # (default HEAD), so a preflight that passes HEAD when the cut is below it goes red.
     write_judge() { # dir
         mkdir -p "$1/scripts"
-        printf '#!/usr/bin/env bash\n[ "${1:-} ${2:-}" = "--version 1.2.3" ] || { echo "FAIL  judge asked about: $*"; exit 1; }\n[ "${FX_LADDER_RC:-0}" = 0 ] || echo "FAIL  fx-rung red on lambda"\nexit "${FX_LADDER_RC:-0}"\n' \
-            > "$1/scripts/check_model_ladder.sh"
+        cat > "$1/scripts/check_model_ladder.sh" <<'FXJUDGE'
+#!/usr/bin/env bash
+if [ "${3:-}" = "--scope" ]; then
+    [ "${1:-} ${2:-} ${4:-} ${5:-}" = "--version 1.2.3 crux-smoke --cut-commit" ] || { echo "FAIL  judge scope call: $*"; exit 1; }
+    [ "${6:-}" = "$(git rev-parse "${FX_EXPECT_CUT:-HEAD}")" ] || { echo "FAIL  judge asked about cut ${6:-}"; exit 1; }
+    echo "OPERATOR EMERGENCY SCOPE: CRUX smoke only -- release 1.2.3 (fixture)"
+    [ "${FX_SCOPE_RC:-0}" = 0 ] || echo "FAIL  host gx10 has no CRUX receipt"
+    exit "${FX_SCOPE_RC:-0}"
+fi
+[ "${1:-} ${2:-}" = "--version 1.2.3" ] || { echo "FAIL  judge asked about: $*"; exit 1; }
+[ "${FX_LADDER_RC:-0}" = 0 ] || echo "FAIL  fx-rung red on lambda"
+exit "${FX_LADDER_RC:-0}"
+FXJUDGE
     }
     write_receipt() { # dir, verdict, commit, version [, phase, deferred-json-array, open-obligations-json-array]
         printf '{"crate":"preflight-fixture","version":"%s","timestamp":"20260903T000000Z","commit":"%s","gates":[],"phase":"%s","deferred":%s,"open_obligations":%s,"verdict":"%s"}\n' \
@@ -513,6 +580,33 @@ selftest() {
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     row r7_judge_absent_refuses        1 "FAIL  R7 no model-matrix judge" "$d"
 
+    # R7 under the recorded operator EMERGENCY SCOPE (--scope crux-smoke). The scope's own must-REDs
+    # (another release, receipts from another binary, a host missing) live in the judge's reader,
+    # scripts/lib/crux_smoke_scope.py, and its table; these rows prove the preflight ASKS it, with the
+    # cut, takes its verdict, keeps the model matrix as evidence only, and binds published == smoked.
+    d="$tmp/sc-green"; build_repo "$d"
+    FX_LADDER_RC=1 SCOPE=crux-smoke row scope_green_over_a_red_matrix_passes 0 "OPERATOR EMERGENCY SCOPE crux-smoke satisfied" "$d"
+    FX_LADDER_RC=1 SCOPE=crux-smoke row scope_keeps_the_matrix_as_evidence 0 "evidence FAIL  fx-rung red on lambda" "$d"
+    FX_SCOPE_RC=1 SCOPE=crux-smoke row scope_red_refuses 1 "FAIL  R7 OPERATOR EMERGENCY SCOPE crux-smoke NOT satisfied" "$d"
+    FX_SCOPE_RC=1 SCOPE=crux-smoke row scope_red_names_the_reason 1 "host gx10 has no CRUX receipt" "$d"
+    FX_SCOPE_RC=2 SCOPE=crux-smoke row scope_decline_refuses 1 "the judge DECLINED" "$d"
+    FX_LADDER_RC=1 row no_scope_matrix_still_gates 1 "FAIL  R7 model matrix NOT green" "$d"
+    # the receipts committed on top of the cut: HEAD differs from the cut ONLY under evidence/
+    d="$tmp/sc-evidence"; build_repo "$d"; cut="$(git -C "$d" rev-parse HEAD)"
+    mkdir -p "$d/evidence/crux/1.2.3"; printf '{}\n' > "$d/evidence/crux/1.2.3/lambda-gpu.json"
+    git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'receipts' >/dev/null
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" row scope_cut_below_evidence_commit_passes 0 "satisfied at the cut ${cut:0:12}" "$d"
+    FX_EXPECT_CUT="$cut" SCOPE=crux-smoke row scope_head_is_not_the_cut_refuses 1 "judge asked about cut" "$d"
+    # a SOURCE change on top of the cut: what would be published is not what was smoked
+    d="$tmp/sc-source"; build_repo "$d"; cut="$(git -C "$d" rev-parse HEAD)"
+    printf 'pub fn g() {}\n' >> "$d/src/lib.rs"
+    git -C "$d" add -A; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'src' >/dev/null
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" row scope_source_change_over_the_cut_refuses 1 "OUTSIDE evidence/" "$d"
+    d="$tmp/sc-badcut"; build_repo "$d"
+    SCOPE=crux-smoke CUT_COMMIT=0123456789abcdef0123456789abcdef01234567 row scope_unresolvable_cut_refuses 1 "does not resolve" "$d"
+
     # --receipt-only (#3708): the T-1 end of R5. An UNTAGGED tree with a GO
     # receipt passes it (the full gate refuses the same tree on R3 -- the row
     # above -- which is why T-1 cannot run the full gate), and every receipt
@@ -536,10 +630,19 @@ selftest() {
     [ "$fail" -eq 0 ]
 }
 
-case "${1:-}" in
+SCOPE=""; CUT_COMMIT=""; MODE=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --scope) [ $# -ge 2 ] || { printf '%s: --scope needs a name\n' "$PROG" >&2; exit 2; }; SCOPE="$2"; shift 2 ;;
+        --cut-commit) [ $# -ge 2 ] || { printf '%s: --cut-commit needs a sha\n' "$PROG" >&2; exit 2; }; CUT_COMMIT="$2"; shift 2 ;;
+        *) [ -z "$MODE" ] || { printf '%s: unexpected argument %s\n' "$PROG" "$1" >&2; exit 2; }; MODE="$1"; shift ;;
+    esac
+done
+[ -z "$CUT_COMMIT" ] || [ -n "$SCOPE" ] || { printf '%s: --cut-commit is only meaningful with --scope\n' "$PROG" >&2; exit 2; }
+case "$MODE" in
     --selftest) selftest ;;
     --receipt-only) receipt_gate ;;
     '')         gate ;;
-    -h|--help)  sed -n '2,40p' "$0" ;;
-    *)          printf '%s: unknown argument %s\n' "$PROG" "$1" >&2; exit 2 ;;
+    -h|--help)  sed -n '2,48p' "$0" ;;
+    *)          printf '%s: unknown argument %s\n' "$PROG" "$MODE" >&2; exit 2 ;;
 esac
