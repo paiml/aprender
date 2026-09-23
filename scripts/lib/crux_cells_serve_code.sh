@@ -155,9 +155,11 @@ serve_routes_cell() {
   cell_add "$cell" "$d/apr-sweep" python3 scripts/lib/crux_serve_routes.py sweep --url "http://127.0.0.1:$pa" \
     --out-dir "$d/apr" --device "apr serve $APR_BE" "${render[@]}" "${common[@]}"
   if [ "$LLAMA_OK" = 1 ]; then
+    # #3962 B4: every oracle route, not only chat -- apr's raw routes are judged against llama's
+    # /v1/completions on the byte-identical rendered prompt (--render-url: llama renders for itself).
     cell_add "$cell" "$d/llama-sweep" python3 scripts/lib/crux_serve_routes.py sweep --url "http://127.0.0.1:$CRUX_PL" \
-      --routes "POST /v1/chat/completions" --model gguf --extra "$(crux_think_extra)" \
-      --out-dir "$d/llama" --device "$LLAMA_DEVICE" "${common[@]}"
+      --routes "$(python3 scripts/lib/crux_serve_routes.py oracle-routes)" --model gguf --extra "$(crux_think_extra)" \
+      --out-dir "$d/llama" --device "$LLAMA_DEVICE" "${render[@]}" "${common[@]}"
   fi
   if [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ]; then
     cell_add "$cell" "$d/ollama-sweep" python3 scripts/lib/crux_serve_routes.py sweep --url "$OLLAMA_HOST_URL" \

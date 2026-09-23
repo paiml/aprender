@@ -441,6 +441,7 @@ def token_loop(text):
 #   Q5  a think block is stripped before judging; an UNCLOSED one is RED (budget exhausted).
 # ggml family = llama.cpp + ollama + llamafile: they share llama.cpp's code, so they are ONE vote.
 import crux_oracles  # noqa: E402  (scripts/lib is this file's own directory)
+import crux_serve_routes  # noqa: E402  (#3962 B4: the route -> oracle-route map lives with the route tables)
 
 FAMILY = {"llama.cpp": "ggml", "ollama": "ggml", "llamafile": "ggml", "hf": "bf16", "vllm": "bf16"}
 SAME_REP = {"gguf": "ggml", "safetensors": "bf16"}
@@ -492,9 +493,11 @@ def engine_entry(row, prompt, prompt_opened=None):
     stdout, stderr = read_text(row.get("stdout")), read_text(row.get("stderr"))
     content = prompt["messages"][-1]["content"]
     engine = row["engine"]
-    if row.get("verb") == "serve run":
+    if row.get("verb") in ("serve run", "serve stream"):
         # serve (#3739 slice 4): every server, apr's included, is read through the ONE
-        # OpenAI client's contract JSON (scripts/lib/crux_openai_client.py).
+        # OpenAI client's contract JSON (scripts/lib/crux_openai_client.py). #3962 B4: the
+        # sweep writes stream cells as verb `serve stream`; read as run output, a comparator's
+        # JSON fell to the llama-cli echo parser ("the echoed prompt was not found").
         p = parse_engine_json(stdout)
         if engine == "apr":
             # apr serve's responses report no backend: recorded, not scored as verified.
@@ -933,6 +936,35 @@ def collect(args):
             by_key[k] = {}
         by_key[k][r["engine"]] = r
 
+    # #3962 B4: apr serve mounts ~11 generation routes; llama-server answers two of them and the
+    # plugins answer on no named route at all. An apr route cell with no comparator row ON ITS OWN
+    # ROUTE borrows one, per engine, from (1) the oracle route that asks its question in the same
+    # representation (crux_serve_routes.oracle_route, same mode), else (2) the route-less plugin row.
+    # A native row always wins; cells never merge (route stays a key part, R1); the borrowed entry
+    # names its source route. A route with no mapped oracle borrows NOTHING and is RED below.
+    # A plugin `serve stream` row carries no mode (its verb already says stream), so the route-less
+    # source is looked up at the cell's mode and then mode-less. A comparator-only cell whose rows
+    # were all borrowed has no subject of its own: it is dropped, not left RED "apr missing".
+    oracle_of, lent = {}, set()
+    for k in keys:
+        if not k[7] or "apr" not in by_key[k]:
+            continue
+        orc = crux_serve_routes.oracle_route(k[7])
+        oracle_of[k] = orc
+        if orc is None:
+            continue
+        sources = [k[:7] + (orc,), k[:7] + ("",), k[:6] + ("", "")]
+        for eng in COMPARATORS:
+            if eng in by_key[k]:
+                continue
+            for src in sources:
+                if src != k and eng in by_key.get(src, {}):
+                    by_key[k][eng] = dict(by_key[src][eng], borrowed_from_route=src[7] or "(route-less plugin row)")
+                    lent.add((src, eng))
+                    break
+    keys = [k for k in keys if "apr" in by_key[k] or not by_key[k]
+            or not all((k, e) in lent for e in by_key[k])]
+
     # #3962 J2 (per cell): the certification admits prompts PER MODEL (quant sha). A prompt it did not
     # admit for this model is RED on that cell, however right the answer -- it was never shown answerable.
     # dd 292645efb: admission PER THINKING MODE when the receipt carries it. The strict key admits a
@@ -963,6 +995,8 @@ def collect(args):
                                 "why": "missing: no row for this engine" if eng in requested else "not requested"}
             else:
                 entries[eng] = engine_entry(row, prompt, opened_by.get((row.get("model_sha256"), row.get("prompt_id"))))
+                if row.get("borrowed_from_route"):
+                    entries[eng]["borrowed_from_route"] = row["borrowed_from_route"]
                 # #3952: a comparator the receipt cannot name a version for cannot vouch — for apr or against
                 # it. Its answer is kept on the record; it is not an oracle.
                 if eng in COMPARATORS and entries[eng].get("answered") and not versions.get(eng):
@@ -973,6 +1007,11 @@ def collect(args):
         fmt = next((by_key[k][e].get("format") for e in by_key[k] if by_key[k][e].get("format")), None) \
             or fmt_of_model.get(k[0])
         verdict, ok, reasons, extracted = judge_cell(entries, prompt, fmt)
+        if k in oracle_of and oracle_of[k] is None:
+            verdict = "RED"
+            reasons = reasons + ["no oracle route mapped for %s: no comparator route asks its question in the same "
+                                 "representation, so nothing can vouch for it -- map its kind in "
+                                 "crux_serve_routes.ORACLE_ROUTE_BY_KIND (#3962 B4)" % k[7]]
         if admitted_mode is not None:
             by_mode = admitted_mode.get(k[0]) if isinstance(admitted_mode.get(k[0]), dict) else {}
             if k[5] not in (by_mode.get(k[3]) or ()):
@@ -1003,6 +1042,8 @@ def collect(args):
             "key": dict(zip(("model_sha256", "host", "verb", "thinking", "rung", "prompt_id"), k[:6]),
                         **({"mode": k[6]} if k[6] else {}), **({"route": k[7]} if k[7] else {})),
             "verdict": verdict,
+            # #3962 B4: the comparator route this apr route was judged against (None: unmapped).
+            **({"oracle_route": oracle_of[k]} if k in oracle_of else {}),
             # #3957: why a cell is RED, every reason, and what each engine's answer extracted to.
             "reasons": reasons,
             "format": fmt,
