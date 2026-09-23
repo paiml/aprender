@@ -249,6 +249,7 @@
             system: Some("Expert mode".to_string()),
             inspect: true,
             force_cpu: true,
+            accel_forced: false,
             json: false,
             trace: true,
             trace_output: Some(PathBuf::from("/tmp/all_fields.json")),
@@ -331,7 +332,7 @@
     fn test_run_nonexistent_path_without_trace() {
         let path = Path::new("/definitely/not/a/real/path/model.apr");
         let result = run(
-            path, 0.7, 0.9, 512, None, false, false, false, None, false, None, "info", false,
+            path, 0.7, 0.9, 512, None, false, false, false /* #3955 accel_forced */, false, None, false, None, "info", false,
             false, // offline
             false, // #3794: --json
         );
@@ -348,7 +349,7 @@
     fn test_run_nonexistent_safetensors() {
         let path = Path::new("/no/such/model.safetensors");
         let result = run(
-            path, 0.5, 0.8, 256, None, false, false, false, None, false, None, "info", false,
+            path, 0.5, 0.8, 256, None, false, false, false /* #3955 accel_forced */, false, None, false, None, "info", false,
             false, // offline
             false, // #3794: --json
         );
@@ -359,7 +360,7 @@
     fn test_run_nonexistent_apr() {
         let path = Path::new("/no/such/model.apr");
         let result = run(
-            path, 1.0, 1.0, 1024, None, true, true, false, None, false, None, "warn", false,
+            path, 1.0, 1.0, 1024, None, true, true, false /* #3955 accel_forced */, false, None, false, None, "warn", false,
             false, // offline
             false, // #3794: --json
         );
@@ -384,7 +385,7 @@
             128,
             Some("System prompt"),
             true,
-            false,
+            false, false /* #3955 accel_forced */,
             true,
             Some(&steps),
             true,
@@ -401,7 +402,7 @@
     fn test_run_nonexistent_no_system_inspect_off() {
         let path = Path::new("/no/model.bin");
         let result = run(
-            path, 0.7, 0.9, 512, None, false, false, false, None, false, None, "info", false,
+            path, 0.7, 0.9, 512, None, false, false, false /* #3955 accel_forced */, false, None, false, None, "info", false,
             false, // offline
             false, // #3794: --json
         );
@@ -419,7 +420,7 @@
             512,
             None,
             false,
-            false,
+            false, false /* #3955 accel_forced */,
             true,
             Some(&steps),
             false,
@@ -436,7 +437,7 @@
     fn test_run_nonexistent_trace_without_output() {
         let path = Path::new("/no/model.apr");
         let result = run(
-            path, 0.7, 0.9, 512, None, false, false, true,  // trace enabled
+            path, 0.7, 0.9, 512, None, false, false, false /* #3955 accel_forced */, true,  // trace enabled
             None,  // no trace steps
             false, // not verbose
             None,  // no trace output
@@ -451,7 +452,7 @@
     fn test_run_nonexistent_with_profile_only() {
         let path = Path::new("/no/model.gguf");
         let result = run(
-            path, 0.7, 0.9, 512, None, false, false,
+            path, 0.7, 0.9, 512, None, false, false, false /* #3955 accel_forced */,
             true, // trace must be on for profile to print
             None, false, None, "info", true, // profile enabled
             false, // offline
