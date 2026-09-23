@@ -19,6 +19,9 @@
 #              llama.cpp -ngl 999, ollama's default; cpu = --no-gpu, -ngl 0, num_gpu 0.
 #              An apr that falls back from the lane's backend did not answer the cell.
 #   --out      receipt dir (default evidence/crux/<version>); writes <host>-<backend>.{json,md}
+#   --prompts  default scripts/crux_inference_prompts.v2.json when present (#3962), else v1
+#   --certification  the prompt-certification receipt handed to the judge (default
+#              evidence/crux/<version>/prompt-certification.json, when the judge takes one)
 #
 # Exit: 0 no RED, no UNJUDGED cell, every model's positive control measured and
 # not ALL_WRONG · 1 any RED · 2 decline (a cell no comparator answered, a broken
@@ -72,7 +75,10 @@ BACKEND="gpu"
 ENGINES="apr,llama.cpp,ollama,hf,llamafile"
 VERBS="run"
 OUT_DIR=""
-PROMPTS="scripts/crux_inference_prompts.json"
+# v2 (#3962) is the prompt set once it is in the tree; v1 only until then.
+PROMPTS="scripts/crux_inference_prompts.v2.json"
+[ -f "$PROMPTS" ] || PROMPTS="scripts/crux_inference_prompts.json"
+CERT=""
 HF_SOURCES="${CRUX_HF_SOURCES:-evidence/crux/hf-sources.yaml}"
 TMO=600
 LOCK_WAIT=3600
@@ -88,10 +94,11 @@ while [ $# -gt 0 ]; do
     --verbs)   [ $# -ge 2 ] || decline "--verbs needs a value"; VERBS="$2"; shift 2 ;;
     --out)     [ $# -ge 2 ] || decline "--out needs a value"; OUT_DIR="$2"; shift 2 ;;
     --prompts) [ $# -ge 2 ] || decline "--prompts needs a value"; PROMPTS="$2"; shift 2 ;;
+    --certification) [ $# -ge 2 ] || decline "--certification needs a value"; CERT="$2"; shift 2 ;;
     --timeout) [ $# -ge 2 ] || decline "--timeout needs a value"; TMO="$2"; shift 2 ;;
     --keep-ollama-models) KEEP_OLLAMA=1; shift ;;
     --keep-work) KEEP_WORK=1; shift ;;
-    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
     -*) decline "unknown argument '$1'" ;;
     *) [ -z "$VERSION" ] || decline "one version, got '$VERSION' and '$1'"; VERSION="$1"; shift ;;
   esac
@@ -711,7 +718,15 @@ esac
 # refused the traversal shape; this removes any remaining relative indirection.
 OUT_DIR=$(realpath -m -- "$OUT_DIR") || decline "cannot resolve --out path"
 mkdir -p "$OUT_DIR" || decline "cannot create $OUT_DIR"
-python3 scripts/lib/crux_inference_judge.py collect --manifest "$MANIFEST" --prompts "$PROMPTS" \
+# The prompt-certification receipt (#3962 Q1): default evidence/crux/<version>/prompt-certification.json.
+# It is passed whenever the judge takes it. A missing receipt is the judge's to refuse, never skipped here.
+CERT_ARGS=()
+if grep -q -- '--certification' scripts/lib/crux_inference_judge.py; then
+  CERT_ARGS=(--certification "${CERT:-evidence/crux/$VERSION/prompt-certification.json}")
+elif [ -n "$CERT" ]; then
+  decline "--certification given, but this tree's judge does not take one"
+fi
+python3 scripts/lib/crux_inference_judge.py collect --manifest "$MANIFEST" --prompts "$PROMPTS" "${CERT_ARGS[@]}" \
   --meta "$WORK/meta.json" --out-json "$OUT_DIR/$HOST-$BACKEND.json" --out-md "$OUT_DIR/$HOST-$BACKEND.md"
 rc=$?
 printf 'receipt: %s/%s-%s.json (judge rc %s)\n' "$OUT_DIR" "$HOST" "$BACKEND" "$rc"
