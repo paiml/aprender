@@ -59,6 +59,77 @@ ladder:
     - { id: lambda, isa: x86_64, gpu: "RTX 4090", cc: sm_89,  required: true }
     - { id: gx10,   isa: aarch64, gpu: "GB10",     cc: sm_121, required: true }
   inventory:
+    # ------------------------------------------------------------------ #3940
+    # apr_sha_drift: the receipts for this cut were produced by a build that is NOT the
+    # cut. check_model_ladder.sh refuses that by default; this states the delta and
+    # classifies it, and the gate refuses this key too if it ever excuses nothing.
+    #
+    #   receipts   apr_sha 9b7739951        (lambda.json, gx10.json — both)
+    #   cut        28c24207a               7 commits ahead
+    #   delta touching what apr is compiled from — exactly two paths:
+    #       crates/apr-cli/contracts/apr-model-capability-v1.yaml
+    #       crates/apr-cli/src/commands/golden_output.rs
+    #
+    # PATH 1, the capability mirror. Compiled into the binary: capability.rs declares
+    # `const CAPABILITY_CONTRACT: &str = include_str!(...)`, so the quant whitelist the
+    # receipts were measured against is the one linked at build time. Diffed
+    # programmatically, exactly two entries changed, both false -> true:
+    #       Q5_1   ggml_type 7    no GPU GEMV kernel  ->  supported (#3885)
+    #       IQ3_S  ggml_type 21   no GPU GEMV kernel  ->  supported (#3884)
+    #
+    # This cannot overstate a green, and the reason has to be stated in this order
+    # because the short version of it is FALSE:
+    #
+    #   (a) Widening `capability_match` is permissive, so a row blocked only by one of
+    #       these two types flips red -> green.
+    #   (b) "Permissive can only flip red -> green, so it is always safe" IS NOT TRUE
+    #       IN THIS GATE. A red -> green flip on a DEFERRED row makes its deferral
+    #       stale -- matched > 0, deferred 0 -- and check_model_ladder.sh refuses a
+    #       stale deferral by name. Widening can therefore turn the GATE red. Any
+    #       future declaration reusing this reasoning must check (c) again rather than
+    #       quote (a).
+    #   (c) MEASURED for this cut: no deferral can be unblocked by a QUANT-type
+    #       widening. Four keys, and the mechanism of each was read off the receipt
+    #       rather than off the key's prose:
+    #           *A3B*                              capability_match, blocked by the
+    #                                              qwen3moe ARCHITECTURE, not a quant
+    #           Qwen2.5-0.5B-Instruct-IQ3_M.gguf   tensor_contract  — a DIFFERENT gate
+    #           Qwen2.5-0.5B-Instruct-IQ4_XS.gguf  tensor_contract  — a DIFFERENT gate
+    #           Qwen3.5-4B-UD-Q4_K_XL.gguf         tensor_contract  — a DIFFERENT gate
+    #       The three filename keys fail on `tensor_contract` (no aprender-core IQ
+    #       dequantizer, so the inspection cannot run at all), which the GPU whitelist
+    #       does not feed. Note IQ3_M files carry IQ3_S tensors, so the IQ3_S flip is
+    #       the one that LOOKS like it could collide.
+    #       AND THE RECEIPTS SETTLE IT DIRECTLY, which beats the mechanism argument:
+    #       each of those three deferrals records "capability_match and golden_output
+    #       both pass" at apr_sha 9b7739951. capability_match ALREADY PASSES for all
+    #       three, so the widening has no blocker of theirs left to remove. A flip it
+    #       cannot cause cannot make their deferrals stale.
+    #
+    # PATH 2, golden_output.rs. A four-function split taken for the complexity ratchet
+    # (cognitive 32 against a ceiling of 25), with every emitted message byte-identical.
+    # It is benign BECAUSE the messages are byte-identical -- a property of how that
+    # split was done, NOT of splits in general. A later refactor of this file that
+    # changes any message is NOT covered here.
+    #   Checked, not assumed: #3914 (350c557ca) changed the chat template this file
+    #   renders, which would make a pre-fix measurement stale. `git merge-base
+    #   --is-ancestor 350c557ca 9b7739951` is TRUE -- the receipts were measured WITH
+    #   the template fix, so the green tinyllama row is sound.
+    #
+    # WHAT THIS DOES NOT COVER, which is the half a declaration usually omits:
+    #   - any commit after 28c24207a. This names one cut; re-measure or re-declare.
+    #   - a message change in golden_output.rs (see PATH 2).
+    #   - a whitelist widening on a type that a deferral is keyed to — re-run (c).
+    #   - the ARCHITECTURE deferral *A3B*: unaffected here, but a future qwen3moe CUDA
+    #     forward would make it stale on its own terms, independently of this key.
+    #   - it says nothing about whether the rows are correct. It says only that this
+    #     binary delta cannot turn a red row green behind our backs.
+    apr_sha_drift: >-
+      receipts measured at 9b7739951, cut 28c24207a, 7 commits: the capability mirror
+      (Q5_1 ggml 7 and IQ3_S ggml 21, false -> true, #3885/#3884) and a byte-identical
+      four-function split in golden_output.rs. No deferral is quant-keyed, so no
+      deferral can go stale from the widening; see the comment above for the full
+      reasoning and its limits (#3940).
     dirs: ["~/models", "~/.apr/models", "~/.cache/apr/models"]   # depth 1, the fleet's model dirs
     # WIDENED 2026-09-22 by operator ruling: "don't leave behind. if it fits on this machine
     # and/or gx10 with CUDA we must support for Qwen 3.5 and 2.5. we kick the MoE work to later".
@@ -82,39 +153,19 @@ ladder:
     # the case table proves. Delete this key when #3714 lands.
     deferred:
       "*A3B*": "mixture-of-experts: no CUDA forward for qwen3moe in this build (#3714, lands 0.70.0); operator ruling 2026-09-22 kicks the MoE work to later"
-      # OPERATOR RULING 2026-09-23, on the 0.69.1 ladder's seven FAIL rows. The five
-      # capability-gap rows split into two classes and the ruling treats them DIFFERENTLY:
-      #
-      #   CLASS 1 (these three) -- the model RUNS on CUDA and the GATE cannot INSPECT it.
-      #   DEFERRED. `apr qa` exits 5 on tensor_contract because aprender-core has no IQ
-      #   dequantizer and cannot read ~10 of the model's tensors (#3850, refusing as
-      #   designed). That is an inspection limit, not a capability gap.
-      #
-      #   CLASS 2 -- the model does NOT run on CUDA at all. HELD, NOT DEFERRED:
-      #   Qwen3.5-0.8B-UD-IQ2_XXS.gguf (ggml type 18, no verified GPU GEMV kernel) and
-      #   qwen2.5-coder-0.5b-instruct.apr (ggml type 30 BF16, `apr run --gpu` rc=14).
-      #   The operator kept "don't leave behind" intact for those two, so 0.69.1 WAITS on
-      #   an IQ2_XXS kernel and a BF16 kernel. They are deliberately absent from this map.
-      #
-      # MEASURED, not assumed, on lambda at apr_sha 9b7739951 -- each of the three:
-      #   capability_match passed, golden_output passed, cuda ran=True fallback=False,
-      #   verbs run=0 chat=0 code=0, zero bad serve routes. Only tensor_contract fails.
-      # A deferral whose "the model works" half is unmeasured is laundering; this one is
-      # not, and the receipt is the evidence.
-      #
-      # EXACT FILENAMES, NOT GLOBS, AND THE REASON IS MEASURED: `*IQ4_XS*` matches THREE
-      # held files -- these two plus Qwen3.5-0.8B-IQ4_XS.gguf, which is red for an
-      # unrelated reason (golden_output_thinking_on: think block unclosed within its
-      # budget) and Qwen3.5-35B-A3B-UD-IQ4_XS.gguf, already covered by *A3B*. A
-      # quantisation-shaped glob here would have silently excused a thinking-budget
-      # defect. A deferral key must be no wider than the mechanism it names.
-      #
-      # DELETE ALL THREE when the IQ dequantizer lands in aprender-core. #3880's amnesty
-      # check enforces that: a key matching held files that defers none is refused as
-      # stale, so these cannot outlive the limit they excuse.
-      "Qwen2.5-0.5B-Instruct-IQ3_M.gguf": "gate inspection limit, not a capability gap: aprender-core has no IQ3_M dequantizer so tensor_contract cannot inspect this model and `apr qa` exits 5 (#3850). The model RUNS on CUDA -- measured at apr_sha 9b7739951: capability_match and golden_output both pass, cuda ran with no fallback, verbs run/chat/code all rc=0. Operator ruling 2026-09-23 defers an inspection limit on a working model; delete when the IQ dequantizer lands"
-      "Qwen2.5-0.5B-Instruct-IQ4_XS.gguf": "gate inspection limit, not a capability gap: aprender-core has no IQ4_XS dequantizer so tensor_contract cannot inspect this model and `apr qa` exits 5 (#3850). The model RUNS on CUDA -- measured at apr_sha 9b7739951: capability_match and golden_output both pass, cuda ran with no fallback, verbs run/chat/code all rc=0. Operator ruling 2026-09-23 defers an inspection limit on a working model; delete when the IQ dequantizer lands"
-      "Qwen3.5-4B-UD-Q4_K_XL.gguf": "gate inspection limit, not a capability gap: this UD mix carries IQ4_XS tensors and aprender-core has no IQ4_XS dequantizer, so tensor_contract cannot inspect 10 tensors and `apr qa` exits 5 (#3850). The model RUNS on CUDA -- measured at apr_sha 9b7739951: capability_match and golden_output both pass, cuda ran with no fallback, verbs run/chat/code all rc=0, all 6 serve routes http 200. A prior quorum ruled DEFER on this row (#3900 Q1); operator ruling 2026-09-23 confirms it and extends the same treatment to the two IQ rows above; delete when the IQ dequantizer lands"
+      # THE THREE FILENAME DEFERRALS DECLARED HERE ON 2026-09-23 ARE RETIRED.
+      # Operator doctrine, same day, verbatim: "no defer; from now forward we practice
+      # toyota way and oracle approach of crux with capabiltiy report style from Alfredo".
+      # A capability is ORACLE-PROVEN or it is RED; there is no third state, so
+      # "the model runs but tensor_contract cannot inspect it" is RED and the work is the
+      # missing IQ dequantizer in aprender-core (#3850), not a declaration. Stop the line.
+      #   retired: Qwen2.5-0.5B-Instruct-IQ3_M.gguf
+      #            Qwen2.5-0.5B-Instruct-IQ4_XS.gguf
+      #            Qwen3.5-4B-UD-Q4_K_XL.gguf
+      # *A3B* stays for now: it is an EXPLICIT operator ruling of 2026-09-22 ("we kick the
+      # MoE work to later"), not the deferral habit the doctrine abolishes. Retiring it
+      # would make #3714 (qwen3moe CUDA forward) a release blocker, which is the operator's
+      # call and not this file's.
     backends: [cuda]
   # #3712 row B (operator 2026-09-21: "MORE than enough tokens for our needs (overdo it), and our verbs are
   # dogfooded, i.e chat with and without thinking, ditto run, ditto code"). A cell is (model, host, verb,
