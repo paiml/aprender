@@ -1524,6 +1524,120 @@ $L_exit:
     )
 }
 
+/// #3908: BF16 GEMV PTX. Byte-for-byte the F16 kernel above except the decode.
+///
+/// A bfloat16 IS the top 16 bits of an f32, so widening is `bits << 16`
+/// reinterpreted as f32 -- EXACT, with no rounding, no table and no scale. That
+/// is why this kernel is held to BIT-EXACT agreement with the CPU decoder
+/// (`float16_row_dot(Bf16, ..)`) rather than to a tolerance: no step in it can
+/// legitimately differ by an ulp.
+///
+/// The indexing is inherited unchanged from `generate_f16_gemv_ptx`, which is
+/// the LAYOUT-001 argument rather than an assumption: both formats are 2 bytes
+/// per element and row-major, and `row_base = w_ptr + row * k * 2` is already
+/// what the CPU reference computes (`float16_matmul`: `start = row * in_dim * 2`).
+///
+/// The PTX is pure ASCII on purpose, comments included: ptxas rejects a
+/// non-ASCII byte anywhere in the module and a name-check guard will not see it.
+fn generate_bf16_gemv_ptx(k: u32, n: u32) -> String {
+    // k and n size the grid in the caller; the PTX reads them as parameters so
+    // one module serves every shape (the cache key still carries them).
+    let _ = (k, n);
+
+    String::from(
+        r"
+.version 7.5
+.target sm_70
+.address_size 64
+
+// BF16 GEMV, row-major: y[row] = sum_i bf16_to_f32(w[row*k + i]) * x[i]
+// bf16_to_f32(bits) == f32::from_bits(bits << 16), exact.
+.visible .entry bf16_gemv_warp_reduce(
+    .param .u64 y_ptr,
+    .param .u64 w_ptr,
+    .param .u64 x_ptr,
+    .param .u32 k_dim,
+    .param .u32 n_dim
+)
+{
+    .reg .u32 %r<20>;
+    .reg .u64 %rd<16>;
+    .reg .f32 %f<16>;
+    .reg .pred %p<8>;
+
+    mov.u32 %r0, %tid.x;
+    mov.u32 %r1, %ctaid.x;
+
+    ld.param.u32 %r2, [n_dim];
+    ld.param.u32 %r3, [k_dim];
+    ld.param.u64 %rd0, [y_ptr];
+    ld.param.u64 %rd1, [w_ptr];
+    ld.param.u64 %rd2, [x_ptr];
+
+    // Rows beyond n_dim do no work (grid is padded to whole warps).
+    setp.ge.u32 %p0, %r1, %r2;
+    @%p0 bra $L_exit;
+
+    mov.f32 %f0, 0f00000000;
+
+    // rd3 = row_base = w_ptr + ctaid * k_dim * 2   (2 bytes per bf16)
+    shl.b32 %r4, %r3, 1;
+    mul.wide.u32 %rd3, %r1, %r4;
+    add.u64 %rd3, %rd1, %rd3;
+
+    // i = tid, stride 32
+    mov.u32 %r5, %r0;
+
+$L_loop:
+    setp.ge.u32 %p1, %r5, %r3;
+    @%p1 bra $L_loop_end;
+
+    // w = bf16_to_f32(row_base[i]): zero-extending 16-bit load, shift into the
+    // high half, reinterpret. mov.b32 between .u32 and .f32 is a bitcast.
+    mul.wide.u32 %rd4, %r5, 2;
+    add.u64 %rd4, %rd3, %rd4;
+    ld.global.u16 %r6, [%rd4];
+    shl.b32 %r7, %r6, 16;
+    mov.b32 %f1, %r7;
+
+    // x = x_ptr[i]
+    mul.wide.u32 %rd5, %r5, 4;
+    add.u64 %rd5, %rd2, %rd5;
+    ld.global.f32 %f2, [%rd5];
+
+    fma.rn.f32 %f0, %f1, %f2, %f0;
+
+    add.u32 %r5, %r5, 32;
+    bra $L_loop;
+
+$L_loop_end:
+    // Warp reduction: identical idiom to the block-quantized GEMVs here.
+    shfl.sync.down.b32 %f4, %f0, 16, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f4;
+    shfl.sync.down.b32 %f5, %f0, 8, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f5;
+    shfl.sync.down.b32 %f6, %f0, 4, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f6;
+    shfl.sync.down.b32 %f7, %f0, 2, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f7;
+    shfl.sync.down.b32 %f8, %f0, 1, 31, 0xffffffff;
+    add.f32 %f0, %f0, %f8;
+
+    setp.ne.u32 %p2, %r0, 0;
+    @%p2 bra $L_exit;
+
+    mul.wide.u32 %rd6, %r1, 4;
+    add.u64 %rd6, %rd0, %rd6;
+    st.global.f32 [%rd6], %f0;
+
+$L_exit:
+    ret;
+}
+",
+    )
+}
+
+
 /// BUG-GGUF-002 FIX: Generate Q5_0 GEMV PTX with correct candle layout
 ///
 /// The GGUF Q5_0 format uses "candle layout" where:

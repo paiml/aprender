@@ -287,17 +287,13 @@ fn golden_prompt_for(architecture: Option<&str>, question: &str) -> String {
     format_messages(&[ChatMessage::user(question)], Some(architecture)).unwrap_or_else(|_| legacy())
 }
 
-/// The budget the THINKING-ON leg gets (#3724 done_when 3: "a budget that
-/// overdoes it").
-///
-/// Measured on lambda, qwen3-8b-q4km, greedy: at 2048 the three golden questions
-/// produce think blocks of 545 / 114 / 126 tokens and every block closes. 512 —
-/// the production leg's budget — is NOT enough for the first one on x86, which is
-/// the whole defect. This number belongs to the ON leg only: the production leg's
-/// budget is deliberately untouched, because the fix is the prompt, never the
-/// budget.
-#[cfg(feature = "inference")]
-const THINKING_ON_BUDGET: usize = 2048;
+// #3907 wiring: `const THINKING_ON_BUDGET: usize = 2048` was DELETED here, not
+// merely stopped-being-used. While it existed a third site could reach for it, and
+// a named constant reads as authoritative to the next reviewer — which is exactly
+// how the hybrid leg at output_verification.rs came to pass it to both its
+// generation and its judging while the dense leg used the resolver. The resolver
+// `thinking_on_budget_for` is now the ONLY way to obtain an ON-leg budget, and its
+// 2048 lives in contracts/thinking-budgets-v1.yaml's `default`, WITH its basis.
 
 /// The per-model budgets, embedded from the packaged mirror (#3907).
 ///
@@ -1752,9 +1748,16 @@ mod golden_output_tests {
 
     /// The ON budget is the ON leg's alone. #3724's ruling: the fix is the prompt,
     /// never the budget — the production leg keeps the budget it had.
+    ///
+    /// #3907 wiring: this used to open `assert_eq!(THINKING_ON_BUDGET, 2048)`, which
+    /// pinned a constant's VALUE and said nothing about whether anything READ it. It
+    /// passed while the hybrid leg bypassed the resolver entirely, and it would have
+    /// passed after the bypass was fixed with the constant dead — an assertion
+    /// orthogonal to the property it appeared to guard. Deleted with the constant.
+    /// What remains is the claim that actually constrains something: the ON leg's
+    /// budget does not become the production leg's.
     #[test]
     fn the_thinking_on_budget_does_not_touch_the_production_leg() {
-        assert_eq!(THINKING_ON_BUDGET, 2048);
         let config = QaConfig::default();
         assert_eq!(
             config.max_tokens.max(512),
