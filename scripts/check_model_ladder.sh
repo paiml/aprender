@@ -1332,7 +1332,9 @@ for h in ("lambda", "gx10"):
                "certification": {"path": os.path.abspath(os.path.join(c, "certification.json"))}, "green": True, "why": []},
               open(d + "/verdict.json", "w"))
 NE
-      MODEL_LADDER_ROOT="$PWD" bash "$1" --nightly "$n" --cut-commit "$(git rev-parse HEAD)" --ladder "$c/ladder.yaml" --ladder-main "$c/ladder.yaml" --version 1.2.3 2>&1; rc=$?
+      # shellcheck disable=SC2086
+      MODEL_LADDER_ROOT="$PWD" bash "$1" --nightly "$n" --cut-commit "$(git rev-parse HEAD)" --ladder "${NE_LADDER:-$c/ladder.yaml}" \
+        --ladder-main "${NE_LADDER:-$c/ladder.yaml}" --version 1.2.3 ${NE_EXTRA_ARGS:-} 2>&1; rc=$?
       rm -rf -- "$n"; return "$rc"
     }
     head=$(git rev-parse HEAD)
@@ -1366,6 +1368,45 @@ NE
     else out=$(nightly_e2e "$mdir/ne-mut.sh" "$head" 0); r=$?
       if [ "$r" = 0 ]; then echo "FAIL  nightly mutant dirs-unlinked SURVIVED e2e-green"; bad=$((bad+1))
       else echo "ok    nightly mutant dirs-unlinked killed by e2e-green"; fi
+    fi
+    # #4045 end to end: --scope release = CRUX smoke on the release binary AND the admitted nightly. A GREEN smoke
+    # with a GREEN nightly releases; a RED smoke with the SAME green nightly does not (the nightly cannot stand in).
+    release_e2e() { # release_e2e <script> <GREEN|RED> -> the gate's output, its rc
+      local sm lad rc; sm=$(mktemp -d); lad="$sm/ladder.yaml"
+      python3 - "scripts/lib/model_ladder_cases/green/ladder.yaml" "$lad" "$sm" "$(git rev-parse HEAD)" "$2" <<'RE'
+import json, os, sys, yaml
+src, lad, sm, cut, want = sys.argv[1:6]
+L = yaml.safe_load(open(src))
+L["ladder"]["release_gate"] = {"from": "1.0.0", "ruling": "fixture", "crux_smoke": {"hosts": ["lambda", "gx10"], "thinking": ["off", "on"]}}
+yaml.safe_dump(L, open(lad, "w"))
+SH = ["0" * 64, "1" * 64]
+json.dump({"schema": "crux-prompt-certification/v1", "admitted_by_sha": {s: ["fixture-control"] for s in SH},
+           "admitted_by_sha_thinking": {s: {"off": ["fixture-control"], "on": []} for s in SH}},
+          open(os.path.join(sm, "prompt-certification.json"), "w"))
+for h in ("lambda", "gx10"):
+    cells = [{"key": {"model_sha256": s, "host": h, "thinking": "off", "verb": "run"}, "positive_control": True,
+              "verdict": "RED" if (want == "RED" and h == "gx10" and s == SH[1]) else "GREEN"} for s in SH]
+    json.dump({"schema": "crux-inference-receipt/v1", "host": h, "backend": "gpu", "apr": {"sha": cut}, "cells": cells,
+               "summary": {"verdict": "PASS"}}, open(os.path.join(sm, h + "-gpu.json"), "w"))
+RE
+      NE_LADDER="$lad" NE_EXTRA_ARGS="--scope release --crux $sm" nightly_e2e "$1" "$(git rev-parse HEAD)" 0; rc=$?
+      rm -rf -- "$sm"; return "$rc"
+    }
+    out=$(release_e2e "$SELF" GREEN); r=$?
+    if [ "$r" = 0 ] && grep -q '^ok    RELEASE GATE (normal, #4045): CRUX smoke on the release binary GREEN' <<< "$out"; then
+      echo "ok    release e2e-release-green -- smoke GREEN + nightly GREEN releases"
+    else echo "FAIL  release e2e-release-green -- rc $r: $(grep -E '^(FAIL|RED|decline)' <<< "$out" | head -3 | tr '\n' ' ')"; bad=$((bad+1)); fi
+    out=$(release_e2e "$SELF" RED); r=$?
+    if [ "$r" = 1 ] && grep -q "^RED   RELEASE GATE: the release binary's CRUX smoke is RED" <<< "$out" && grep -q '^ok    NIGHTLY gx10: GREEN' <<< "$out"; then
+      echo "ok    release e2e-smoke-red-nightly-green -- a RED smoke is not rescued by a GREEN nightly"
+    else echo "FAIL  release e2e-smoke-red-nightly-green -- rc $r"; bad=$((bad+1)); fi
+    sed 's/^if \[ -n "\$SMOKE_RC" \] \&\& \[ "\$SMOKE_RC" != 0 \]; then$/if false; then/' "$SELF" > "$mdir/sr-mut.sh"
+    if cmp -s "$SELF" "$mdir/sr-mut.sh"; then echo "FAIL  release mutant smoke-folded-out did not apply"; bad=$((bad+1))
+    else out=$(release_e2e "$mdir/sr-mut.sh" RED); r=$?
+      # killed = the row's expectation (rc 1 naming the RED smoke) no longer holds under the mutant
+      if [ "$r" = 1 ] && grep -q "^RED   RELEASE GATE: the release binary's CRUX smoke is RED" <<< "$out"; then
+        echo "FAIL  release mutant smoke-folded-out SURVIVED e2e-smoke-red-nightly-green"; bad=$((bad+1))
+      else echo "ok    release mutant smoke-folded-out killed by e2e-smoke-red-nightly-green (rc $r)"; fi
     fi
     if nightly_wiring "$SELF"; then echo "ok    nightly: --nightly with no nightly refuses by name, before any receipt is judged"
     else echo "FAIL  nightly: --nightly with an empty root did not refuse by name"; bad=$((bad+1)); fi
