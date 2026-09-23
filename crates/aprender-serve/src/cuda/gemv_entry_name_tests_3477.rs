@@ -187,11 +187,12 @@ mod gemv_entry_name_tests_3477 {
     /// it fell through to Q4_K and the bytes were read as a different scheme.
     ///
     /// These are not hypothetical: all were measured in lambda's inventory.
-    /// BF16 sits in `Qwen3-0.6B-BF16`,
     /// IQ2_XXS/IQ3_XXS/Q2_K in `Qwen3.5-0.8B-UD-IQ2_XXS`, IQ3_S in two more.
     ///
-    /// #3869/#3884/#3885: IQ4_NL, IQ3_S and Q5_1 were on this list and have
-    /// been REMOVED because they now have kernels. It is not deleted from the guard - it moved to
+    /// #3869/#3884/#3885/#3908: IQ4_NL, IQ3_S, Q5_1 and BF16 were on this list
+    /// and have been REMOVED because they now have kernels. BF16 sat in
+    /// `Qwen3-0.6B-BF16` and in `qwen2.5-coder-0.5b-instruct.apr` (290 of its
+    /// 291 tensors), the model whose rc=14 #3908 was filed for. It is not deleted from the guard - it moved to
     /// `iq4_nl_has_a_kernel_but_is_not_admitted_until_it_is_measured` below,
     /// which asserts the other half. A row that outlives its premise is
     /// converted, never dropped.
@@ -204,7 +205,6 @@ mod gemv_entry_name_tests_3477 {
             (16, "IQ2_XXS"),
             (18, "IQ3_XXS"),
             (22, "IQ2_S"),
-            (30, "BF16"),
         ];
         let admitted: Vec<String> = census
             .iter()
@@ -361,6 +361,54 @@ mod gemv_entry_name_tests_3477 {
             !crate::gguf::gpu_unsupported_quant_qtype(7),
             "#3885: the kernel was measured EXACT against the CPU decoder on device \
              (iq4_nl_device_ab_tests), so Q5_1 is GPU-eligible"
+        );
+    }
+
+    /// #3908: BF16 is admitted BECAUSE its kernel was measured, and it is the
+    /// only type here measured BIT-EXACTLY rather than within a tolerance.
+    ///
+    /// ```text
+    /// #3908 A/B: 64 rows, 0 ULP (bit-exact) on integer-exact data
+    /// #3908 A/B: 64 rows, worst relative disagreement 1.468e-5
+    /// ```
+    ///
+    /// RTX 4090 sm_89. bf16 decoding is `bits << 16` reinterpreted as f32, which
+    /// rounds nothing, so the decode can be held to 0 ULP. The GEMV still SUMS
+    /// and the GPU sums in a different order, so the exact comparison is made
+    /// well-posed with integer-exact data (every partial sum exact in f32) rather
+    /// than demanded of an arbitrary dot product -- which would fail a CORRECT
+    /// kernel. Ordinary bf16 values are measured separately at a tolerance.
+    ///
+    /// Proved able to fail first, on the three mechanisms this format has:
+    ///   shift 8 instead of 16       -> RED (all 3 A/B tests)
+    ///   byte-swapped halfword       -> RED (all 3)
+    ///   row stride k not k*2        -> RED (all 3)  the LAYOUT-001 fault
+    #[test]
+    fn bf16_is_admitted_because_its_kernel_was_measured() {
+        use crate::cuda::types::{GemvKernel, WeightQuantType};
+
+        assert_eq!(
+            WeightQuantType::from_ggml_type(30),
+            Some(WeightQuantType::BF16)
+        );
+        // 2 bytes per element, exactly F16's rule -- which is why size can never
+        // tell them apart and BF16 stays out of `from_size`'s ladder.
+        assert!(WeightQuantType::BF16.matches_size(2560 * 9216 * 2, 2560, 9216));
+        assert_eq!(
+            crate::cuda::types::BoundWeight::bind(
+                0x1000,
+                2560 * 9216 * 2,
+                WeightQuantType::BF16,
+                2560,
+                9216
+            )
+            .kernel(),
+            GemvKernel::BF16
+        );
+        assert!(
+            !crate::gguf::gpu_unsupported_quant_qtype(30),
+            "#3908: the kernel was measured BIT-EXACT against the CPU decoder on \
+             device (iq4_nl_device_ab_tests), so BF16 is GPU-eligible"
         );
     }
 

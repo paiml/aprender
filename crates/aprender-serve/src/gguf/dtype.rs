@@ -58,6 +58,11 @@ fn apr_qtype_to_dtype(qtype: u32) -> Result<&'static str> {
 ///   IQ4_XS(23) 10/10 tensors exact, cosine 1.00000000, measured at
 ///              `b782b4257` — every IQ4_XS tensor in Qwen3.5-4B-UD-Q4_K_XL,
 ///              `[2560, 9216]` each.
+///   BF16(30)   0 ULP — BIT-EXACT, 64 rows, RTX 4090 sm_89 (#3908). The only
+///              entry here that is exact rather than within a tolerance, because
+///              bf16 decoding is `bits << 16` reinterpreted and rounds nothing.
+///              Held well-posed by integer-exact data so summation order cannot
+///              matter; ordinary values measured separately at 1.468e-5.
 ///
 /// Both families carry their own planted-fault control that goes RED on a
 /// tensor OF THAT TYPE, so the greens are licensed rather than merely
@@ -70,7 +75,7 @@ fn apr_qtype_to_dtype(qtype: u32) -> Result<&'static str> {
 #[inline]
 #[must_use]
 pub(crate) fn gpu_unsupported_quant_qtype(qtype: u32) -> bool {
-    !matches!(qtype, 0 | 1 | 2 | 3 | 6 | 7 | 8 | 12 | 13 | 14 | 20 | 21 | 23)
+    !matches!(qtype, 0 | 1 | 2 | 3 | 6 | 7 | 8 | 12 | 13 | 14 | 20 | 21 | 23 | 30)
 }
 
 /// #3477 / PMAT-781/783/785: the quantized projections the Qwen3.5 hybrid
