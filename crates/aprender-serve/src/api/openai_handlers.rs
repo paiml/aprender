@@ -1457,4 +1457,47 @@ mod chat_template_wiring_3990 {
             "the handler did not tokenize the GGUF's own template"
         );
     }
+
+    /// #4007: the client's `"model"` string must not choose the template. `"m"` and `"gpt-4"`
+    /// name nothing apr knows; before #3990 they got a plain, marker-less prompt and the reply
+    /// ran on into a fabricated `Human:` turn. The GGUF's own template is rendered regardless.
+    #[test]
+    fn the_clients_model_string_does_not_pick_the_template_4007() {
+        let path = "/home/noah/models/qwen2.5-1.5b-instruct-q4_k_m.gguf";
+        if !std::path::Path::new(path).exists() {
+            eprintln!("SKIP: {path} not on this host -- the #4007 check did NOT run");
+            return;
+        }
+        let mapped =
+            std::sync::Arc::new(crate::gguf::MappedGGUFModel::from_path(path).expect("map"));
+        let state = AppState::demo()
+            .expect("demo state")
+            .with_mapped_gguf_model(mapped.clone());
+        let tokenizer = require_tokenizer(&state).expect("demo tokenizer");
+        let msgs = [ChatMessage {
+            role: "user".to_string(),
+            content: "What is the capital of France?".to_string(),
+            ..Default::default()
+        }];
+        let official =
+            super::super::format_chat_messages_official(Some(&mapped.model), &msgs, None);
+        assert!(
+            official.contains("<|im_start|>assistant\n"),
+            "the official render has ChatML turn markers: {official:?}"
+        );
+        for client_model in ["m", "gpt-4", "default", "apr"] {
+            assert_ne!(
+                format_chat_messages(&msgs, Some(client_model)),
+                official,
+                "the probe must distinguish ({client_model})"
+            );
+            let got = tokenize_chat_prompt(&tokenizer, &msgs, Some(client_model), &state)
+                .expect("tokenizes");
+            assert_eq!(
+                got,
+                tokenizer.encode(&official),
+                "\"model\":\"{client_model}\" chose the template (#4007)"
+            );
+        }
+    }
 }
