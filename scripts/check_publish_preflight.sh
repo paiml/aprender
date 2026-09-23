@@ -71,6 +71,9 @@
 #       CRUX receipts), default the published tree. A release tagged exactly at the cut predates its
 #       own scope ruling, so the ruling is read from main's checkout; that tree's HEAD must be ON
 #       the main ref, so no branch can carry a ruling of its own.
+#       --crux DIR: the CRUX smoke receipts, from a PATH (the judge's own --crux), so they need not be
+#       committed before publish. The certification that decides WHICH cells are owed is still read
+#       from the scope tree (evidence/crux/<version>/prompt-certification.json), never from DIR.
 set -uo pipefail
 
 PROG=${0##*/}
@@ -232,7 +235,18 @@ rule_r7_scope() {
             "$(git -C "$root" diff --name-only "$cut" "$head" -- crates src Cargo.toml Cargo.lock | head -n 10 | sed 's/^/        /')"
         return 1
     fi
-    out="$(cd "$stree" && bash "$sjudge" --version "$version" --scope "$SCOPE" --cut-commit "$cut" 2>&1)"; rc=$?
+    local cruxargs=()
+    if [ -n "${CRUX:-}" ]; then
+        local cdir; cdir="$(cd "$CRUX" 2>/dev/null && pwd)"
+        if [ -z "$cdir" ]; then
+            echo "FAIL  R7 OPERATOR EMERGENCY SCOPE $SCOPE: --crux $CRUX is not a directory"
+            return 1
+        fi
+        cruxargs=(--crux "$cdir")
+        echo "        receipts from $cdir; certification from $stree/evidence/crux/$version/prompt-certification.json"
+    fi
+    out="$(cd "$stree" && CRUX_CERT="${CRUX:+$stree/evidence/crux/$version/prompt-certification.json}" \
+        bash "$sjudge" --version "$version" --scope "$SCOPE" --cut-commit "$cut" "${cruxargs[@]}" 2>&1)"; rc=$?
     grep -E '^OPERATOR EMERGENCY SCOPE' <<< "$out" | head -n 1 | sed 's/^/        /'
     # The model matrix, reported as EVIDENCE only: under the scope it is not the verdict, and a
     # stale or red row must still be visible.
@@ -514,6 +528,12 @@ selftest() {
 if [ "${3:-}" = "--scope" ]; then
     [ "${1:-} ${2:-} ${4:-} ${5:-}" = "--version 1.2.3 crux-smoke --cut-commit" ] || { echo "FAIL  judge scope call: $*"; exit 1; }
     [ "${6:-}" = "$(git rev-parse "${FX_EXPECT_CUT:-HEAD}")" ] || { echo "FAIL  judge asked about cut ${6:-}"; exit 1; }
+    if [ -n "${FX_EXPECT_CRUX:-}" ]; then
+        [ "${7:-} ${8:-}" = "--crux $FX_EXPECT_CRUX" ] || { echo "FAIL  judge got receipts [${7:-} ${8:-}], not --crux $FX_EXPECT_CRUX"; exit 1; }
+        [ "${CRUX_CERT:-}" = "$PWD/evidence/crux/1.2.3/prompt-certification.json" ] || { echo "FAIL  certification read from [${CRUX_CERT:-}], not the scope tree"; exit 1; }
+    else
+        [ -z "${7:-}" ] || { echo "FAIL  judge got unexpected args: $*"; exit 1; }
+    fi
     echo "OPERATOR EMERGENCY SCOPE: CRUX smoke only -- release 1.2.3 (fixture)"
     [ "${FX_SCOPE_RC:-0}" = 0 ] || echo "FAIL  host gx10 has no CRUX receipt"
     exit "${FX_SCOPE_RC:-0}"
@@ -765,6 +785,11 @@ FXJUDGE
     git -C "$d" checkout -q -b rogue; printf 'forged\n' > "$d/RULING"; git -C "$d" add -A; gcommit "$d" -m 'rogue ruling'
     git -C "$d" worktree add -q --detach "$tmp/sc-tree-rogue" rogue; git -C "$d" checkout -q rel
     FX_EXPECT_CUT="$cut" SCOPE=crux-smoke CUT_COMMIT="$cut" SCOPE_TREE="$tmp/sc-tree-rogue" row scope_tree_off_main_refuses 1 "is not on fixture-main" "$d"
+    # --crux: receipts from a PATH, certification still from the (scope) tree
+    d="$tmp/sc-crux"; build_repo "$d"; mkdir -p "$tmp/sc-crux-receipts"
+    FX_EXPECT_CRUX="$tmp/sc-crux-receipts" SCOPE=crux-smoke CRUX="$tmp/sc-crux-receipts" row scope_crux_path_passes_through 0 "receipts from $tmp/sc-crux-receipts" "$d"
+    FX_EXPECT_CRUX="$tmp/sc-crux-receipts" SCOPE=crux-smoke CRUX="$tmp/sc-crux-receipts" row scope_crux_path_green 0 "OPERATOR EMERGENCY SCOPE crux-smoke satisfied" "$d"
+    SCOPE=crux-smoke CRUX="$tmp/no-such-dir" row scope_crux_missing_dir_refuses 1 "is not a directory" "$d"
     d="$tmp/sc-badcut"; build_repo "$d"
     SCOPE=crux-smoke CUT_COMMIT=0123456789abcdef0123456789abcdef01234567 row scope_unresolvable_cut_refuses 1 "does not resolve" "$d"
 
@@ -791,17 +816,18 @@ FXJUDGE
     [ "$fail" -eq 0 ]
 }
 
-SCOPE=""; CUT_COMMIT=""; SCOPE_TREE=""; VIA=""; MODE=""
+SCOPE=""; CUT_COMMIT=""; SCOPE_TREE=""; VIA=""; CRUX=""; MODE=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --scope) [ $# -ge 2 ] || { printf '%s: --scope needs a name\n' "$PROG" >&2; exit 2; }; SCOPE="$2"; shift 2 ;;
         --cut-commit) [ $# -ge 2 ] || { printf '%s: --cut-commit needs a sha\n' "$PROG" >&2; exit 2; }; CUT_COMMIT="$2"; shift 2 ;;
+        --crux) [ $# -ge 2 ] || { printf '%s: --crux needs a directory\n' "$PROG" >&2; exit 2; }; CRUX="$2"; shift 2 ;;
         --via) [ $# -ge 2 ] || { printf '%s: --via needs a sha\n' "$PROG" >&2; exit 2; }; VIA="$2"; shift 2 ;;
         --scope-tree) [ $# -ge 2 ] || { printf '%s: --scope-tree needs a directory\n' "$PROG" >&2; exit 2; }; SCOPE_TREE="$2"; shift 2 ;;
         *) [ -z "$MODE" ] || { printf '%s: unexpected argument %s\n' "$PROG" "$1" >&2; exit 2; }; MODE="$1"; shift ;;
     esac
 done
-[ -z "$CUT_COMMIT$SCOPE_TREE" ] || [ -n "$SCOPE" ] || { printf '%s: --cut-commit/--scope-tree are only meaningful with --scope\n' "$PROG" >&2; exit 2; }
+[ -z "$CUT_COMMIT$SCOPE_TREE$CRUX" ] || [ -n "$SCOPE" ] || { printf '%s: --cut-commit/--scope-tree/--crux are only meaningful with --scope\n' "$PROG" >&2; exit 2; }
 case "$MODE" in
     --selftest) selftest ;;
     --receipt-only) receipt_gate ;;
