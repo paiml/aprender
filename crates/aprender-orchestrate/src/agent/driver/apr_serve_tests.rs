@@ -489,7 +489,7 @@ fn ready_timeout_qwen3_coder_30b_real_size() {
 
 #[test]
 fn f3978_cpu_backend_launches_no_gpu_and_never_gpu() {
-    let opts = ServeLaunchOptions { backend: ServeBackend::Cpu, max_tokens: None };
+    let opts = ServeLaunchOptions { backend: ServeBackend::Cpu, max_tokens: None, think: None };
     let args = serve_args(std::path::Path::new("/m/x.gguf"), 4242, &opts);
     assert!(args.iter().any(|a| a == "--no-gpu"), "cpu lane must pass --no-gpu: {args:?}");
     assert!(!args.iter().any(|a| a == "--gpu"), "cpu lane must NOT pass --gpu: {args:?}");

@@ -26,7 +26,16 @@ fn try_safetensors_cuda_backend(
     };
 
     // #4007: the loaded model's architecture, not the client's `model` string.
-    let prompt = crate::api::realize_handlers::format_chat_messages_for_state(state, &request.messages, Some(&request.model));
+    // #3723: the request's thinking mode; an ON the template cannot express is refused by name.
+    let prompt = match crate::api::realize_handlers::format_chat_messages_for_state_thinking(
+        state,
+        &request.messages,
+        Some(&request.model),
+        request.thinking(),
+    ) {
+        Ok(p) => p,
+        Err(e) => return Some(fail_response(state, StatusCode::BAD_REQUEST, e.to_string())),
+    };
     let input_ids = tokenizer.encode(&prompt);
     let max_tokens = request.max_tokens.unwrap_or(256).min(4096) as usize;
 
@@ -110,7 +119,7 @@ async fn try_cuda_backend(
     // GH-319: Use actual model architecture for chat template detection
     let arch_hint = state.model_architecture();
     let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), state) {
+        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), request.thinking(), state) {
             Ok(ids) => ids,
             Err(r) => return Some(r),
         };
@@ -309,7 +318,7 @@ fn try_quantized_backend(
     // GH-319: Use actual model architecture for chat template detection
     let arch_hint = state.model_architecture();
     let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), state) {
+        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), request.thinking(), state) {
             Ok(ids) => ids,
             Err(r) => return Some(r),
         };
@@ -443,7 +452,7 @@ fn try_apr_transformer_backend(
     };
     let arch_hint = state.model_architecture();
     let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), state) {
+        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), request.thinking(), state) {
             Ok(ids) => ids,
             Err(r) => return Some(r),
         };
@@ -566,7 +575,15 @@ fn registry_fallback(
         Err(e) => return fail_response(state, super::model_resolution_status(&e), e),
     };
 
-    let prompt_text = format_chat_messages_for_state(state, &request.messages, Some(&request.model));
+    let prompt_text = match crate::api::realize_handlers::format_chat_messages_for_state_thinking(
+        state,
+        &request.messages,
+        Some(&request.model),
+        request.thinking(),
+    ) {
+        Ok(p) => p,
+        Err(e) => return fail_response(state, StatusCode::BAD_REQUEST, e.to_string()),
+    };
     let prompt_ids = tokenizer.encode(&prompt_text);
     if prompt_ids.is_empty() {
         return fail_response(state, StatusCode::BAD_REQUEST, "Messages cannot be empty");
@@ -714,7 +731,7 @@ async fn try_apr_q4k_chat_backend(
     };
     let arch_hint = state.model_architecture();
     let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), state) {
+        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), request.thinking(), state) {
             Ok(ids) => ids,
             Err(r) => return Some(r),
         };
@@ -839,6 +856,11 @@ pub async fn openai_chat_completions_handler(
             .unwrap_or_default()
             .as_millis()
     );
+
+    // #3723: two spellings of the thinking toggle that disagree are refused, never picked between.
+    if let Some(reason) = request.thinking_conflict() {
+        return fail_response(&state, StatusCode::BAD_REQUEST, reason);
+    }
 
     // #3571: a Qwen3.5 hybrid is answered from its resident session or not at all.
     if let Some(r) = try_qwen35_backend(&state, &request, &request_id, start, &cancel).await {
@@ -1020,6 +1042,7 @@ fn try_qwen3_moe_backend(
         &tokenizer,
         &request.messages,
         Some(&request.model),
+        request.thinking(),
         state,
     ) {
         Ok(ids) => ids,

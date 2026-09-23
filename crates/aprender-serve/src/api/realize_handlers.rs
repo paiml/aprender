@@ -222,35 +222,45 @@ pub fn format_chat_messages(messages: &[ChatMessage], model_name: Option<&str>) 
 /// `tokenizer.chat_template` -- and fall back to [`format_chat_messages`]' hand-coded
 /// family templates only when there is no GGUF, or the GGUF carries no template.
 ///
-/// A template that is PRESENT but fails to render is not silently replaced: the error is
-/// printed on stderr with the reason, and only then does the legacy formatter answer.
+/// Thinking OFF: production's default for every verb since #3801. For a per-request mode
+/// see [`format_chat_messages_official_thinking`].
 pub fn format_chat_messages_official(
     gguf: Option<&crate::gguf::GGUFModel>,
     messages: &[ChatMessage],
     model_hint: Option<&str>,
 ) -> String {
+    // `None` is never refused (only an explicit ON can be), so the fallback is unreachable.
+    format_chat_messages_official_thinking(gguf, messages, model_hint, None)
+        .unwrap_or_else(|_| format_chat_messages(messages, model_hint))
+}
+
+/// #3723: [`format_chat_messages_official`] with the request's thinking mode, through the
+/// ONE rule `apr run` and `apr chat` share (`official_or_legacy`): the model's own template
+/// rendered with `enable_thinking` (absent = OFF); a template that fails to render is warned
+/// about, then the family template answers; and `Some(true)` on a template whose ON and OFF
+/// renders are identical is REFUSED by name -- it has no thinking mode to turn on.
+///
+/// # Errors
+/// That refusal, for the caller to answer as a client error.
+pub fn format_chat_messages_official_thinking(
+    gguf: Option<&crate::gguf::GGUFModel>,
+    messages: &[ChatMessage],
+    model_hint: Option<&str>,
+    thinking: Option<bool>,
+) -> Result<String, crate::error::RealizarError> {
     use crate::chat_template::{self, ChatMessage as TemplateMessage};
 
-    let Some(gguf) = gguf.filter(|g| g.metadata.contains_key("tokenizer.chat_template")) else {
-        return format_chat_messages(messages, model_hint);
-    };
     let template_messages: Vec<TemplateMessage> = messages
         .iter()
         .map(|m| TemplateMessage::new(&m.role, &m.content))
         .collect();
-    // Thinking OFF: production's default for every verb since #3801 -- now rendered the
-    // template's own way (`enable_thinking=false`), not by a hand-coded prefill.
-    match chat_template::render_official_for_model(gguf, &template_messages, Some(false)) {
-        Ok(prompt) => prompt,
-        Err(e) => {
-            eprintln!(
-                "[#3990] WARNING: the model's own chat_template failed to render ({e}); \
-                 falling back to the hand-coded template, which is NOT the prompt format this \
-                 model was trained on"
-            );
-            format_chat_messages(messages, model_hint)
-        },
-    }
+    let own = gguf
+        .filter(|g| g.metadata.contains_key("tokenizer.chat_template"))
+        .map(|g| {
+            let msgs = &template_messages;
+            move |t: Option<bool>| chat_template::render_official_for_model(g, msgs, t)
+        });
+    chat_template::official_or_legacy(own, || format_chat_messages(messages, model_hint), thinking)
 }
 
 /// [`format_chat_messages_official`] against whatever GGUF the server retained.
@@ -264,10 +274,29 @@ pub fn format_chat_messages_for_state(
     messages: &[ChatMessage],
     model_hint: Option<&str>,
 ) -> String {
+    format_chat_messages_for_state_thinking(state, messages, model_hint, None)
+        .unwrap_or_else(|_| format_chat_messages(messages, model_hint))
+}
+
+/// #3723: [`format_chat_messages_for_state`] with the request's thinking mode.
+///
+/// # Errors
+/// See [`format_chat_messages_official_thinking`].
+pub fn format_chat_messages_for_state_thinking(
+    state: &AppState,
+    messages: &[ChatMessage],
+    model_hint: Option<&str>,
+    thinking: Option<bool>,
+) -> Result<String, crate::error::RealizarError> {
     let mapped = state.mapped_gguf_model();
     let architecture = state.model_architecture();
     let hint = architecture.as_deref().or(model_hint);
-    format_chat_messages_official(mapped.as_ref().map(|m| &m.model), messages, hint)
+    format_chat_messages_official_thinking(
+        mapped.as_ref().map(|m| &m.model),
+        messages,
+        hint,
+        thinking,
+    )
 }
 
 /// Clean chat output to prevent prompt injection (PMAT-088)

@@ -20,9 +20,10 @@ use axum::{
 use futures::stream::Stream;
 
 use super::{
-    build_trace_data, clean_chat_output, format_chat_messages, format_chat_messages_for_state,
-    AppState, ChatChoice, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
-    ChatMessage, ErrorResponse, FinishReason, OpenAIModel, OpenAIModelsResponse, StreamMode, Usage,
+    build_trace_data, clean_chat_output, format_chat_messages,
+    format_chat_messages_for_state_thinking, AppState, ChatChoice, ChatCompletionChunk,
+    ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ErrorResponse, FinishReason,
+    OpenAIModel, OpenAIModelsResponse, StreamMode, Usage,
 };
 use crate::generate::{CancelToken, GenerationConfig, SamplingStrategy};
 use crate::tokenizer::BPETokenizer;
@@ -69,9 +70,14 @@ fn tokenize_chat_prompt(
     tokenizer: &BPETokenizer,
     messages: &[ChatMessage],
     model_hint: Option<&str>,
+    thinking: Option<bool>,
     state: &AppState,
 ) -> Result<Vec<u32>, Response> {
-    let prompt_text = format_chat_messages_for_state(state, messages, model_hint);
+    // #3723: the request's thinking mode; an ON the model's template cannot express is the
+    // client's error, answered by name.
+    let prompt_text =
+        format_chat_messages_for_state_thinking(state, messages, model_hint, thinking)
+            .map_err(|e| fail_response(state, StatusCode::BAD_REQUEST, e.to_string()))?;
     let ids = tokenizer.encode(&prompt_text);
     if ids.is_empty() {
         return Err(fail_response(
@@ -448,6 +454,8 @@ mod pmat821_chat_handler_threading_tests {
             user: None,
             tools: None,
             tool_choice: None,
+            chat_template_kwargs: None,
+            think: None,
             stream_options: None,
         }
     }
@@ -1013,11 +1021,16 @@ fn try_gpu_backend(
     };
     // GH-319: Use actual model architecture for chat template detection
     let arch_hint = state.model_architecture();
-    let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), state) {
-            Ok(ids) => ids,
-            Err(r) => return Some(r),
-        };
+    let prompt_ids = match tokenize_chat_prompt(
+        &tokenizer,
+        &request.messages,
+        arch_hint.as_deref(),
+        request.thinking(),
+        state,
+    ) {
+        Ok(ids) => ids,
+        Err(r) => return Some(r),
+    };
     let prompt_tokens = prompt_ids.len();
     let prompt_usize: Vec<usize> = prompt_ids.iter().map(|&x| x as usize).collect();
     let (max_tokens, temperature, eos_token_id) =
@@ -1119,11 +1132,16 @@ fn try_cached_backend(
     };
     // GH-319: Use actual model architecture for chat template detection
     let arch_hint = state.model_architecture();
-    let prompt_ids =
-        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), state) {
-            Ok(ids) => ids,
-            Err(r) => return Some(r),
-        };
+    let prompt_ids = match tokenize_chat_prompt(
+        &tokenizer,
+        &request.messages,
+        arch_hint.as_deref(),
+        request.thinking(),
+        state,
+    ) {
+        Ok(ids) => ids,
+        Err(r) => return Some(r),
+    };
     let prompt_tokens = prompt_ids.len();
     let (max_tokens, temperature, eos_token_id) =
         chat_gen_params(request, &tokenizer, state.model_eos_token_id());
@@ -1494,7 +1512,7 @@ mod chat_template_wiring_3990 {
             official, legacy,
             "the probe must distinguish the two renders"
         );
-        let got = tokenize_chat_prompt(&tokenizer, &msgs, None, &state).expect("tokenizes");
+        let got = tokenize_chat_prompt(&tokenizer, &msgs, None, None, &state).expect("tokenizes");
         assert_eq!(
             got,
             tokenizer.encode(&official),
@@ -1535,7 +1553,7 @@ mod chat_template_wiring_3990 {
                 official,
                 "the probe must distinguish ({client_model})"
             );
-            let got = tokenize_chat_prompt(&tokenizer, &msgs, Some(client_model), &state)
+            let got = tokenize_chat_prompt(&tokenizer, &msgs, Some(client_model), None, &state)
                 .expect("tokenizes");
             assert_eq!(
                 got,
@@ -1609,6 +1627,43 @@ mod live_utf8_deltas_3987_tests {
         assert!(
             got[LiveUtf8Deltas::MAX_PENDING - 1].is_some(),
             "held forever: {got:?}"
+        );
+    }
+}
+
+/// #3723: `--thinking on` against a template with NO thinking mode is the client's error,
+/// named -- never an OFF answer passed off as ON.
+#[cfg(test)]
+mod thinking_on_refusal_3723 {
+    use super::*;
+
+    #[test]
+    fn thinking_on_is_refused_by_name_when_the_template_has_no_thinking_mode_3723() {
+        let path = "/home/noah/models/qwen2.5-1.5b-instruct-q4_k_m.gguf";
+        if !std::path::Path::new(path).exists() {
+            eprintln!("SKIP: {path} not on this host -- the refusal check did NOT run");
+            return;
+        }
+        let mapped =
+            std::sync::Arc::new(crate::gguf::MappedGGUFModel::from_path(path).expect("map"));
+        let state = AppState::demo()
+            .expect("demo state")
+            .with_mapped_gguf_model(mapped);
+        let tokenizer = require_tokenizer(&state).expect("demo tokenizer");
+        let msgs = [ChatMessage {
+            role: "user".to_string(),
+            content: "Hi".to_string(),
+            ..Default::default()
+        }];
+        assert!(tokenize_chat_prompt(&tokenizer, &msgs, None, Some(false), &state).is_ok());
+        let refused = tokenize_chat_prompt(&tokenizer, &msgs, None, Some(true), &state);
+        assert!(
+            refused.is_err(),
+            "Qwen2.5's template renders ON == OFF; ON must be refused"
+        );
+        assert_eq!(
+            refused.err().map(|r| r.status()),
+            Some(StatusCode::BAD_REQUEST)
         );
     }
 }

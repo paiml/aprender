@@ -562,3 +562,85 @@ async fn every_raw_route_answers_from_the_hybrid() {
         );
     }
 }
+
+/// #3723 MUST-RED: a request that asks for thinking ON is served the model's OWN template
+/// rendered with `enable_thinking=true` -- both the vLLM/SGLang spelling
+/// (`chat_template_kwargs.enable_thinking`) and apr's/Ollama's (`think`), on the OpenAI and
+/// Ollama wires. The official ON and OFF prompts differ in length, so `prompt_tokens` says
+/// which one the model was handed.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_thinking_on_request_is_served_the_official_on_prompt_3723() {
+    let Some((state, mapped)) = state_or_skip(true) else {
+        return;
+    };
+    let msgs = [crate::chat_template::ChatMessage::new("user", QUESTION)];
+    let render = |t: Option<bool>| {
+        let p = crate::chat_template::render_official_for_model(&mapped.model, &msgs, t).expect("renders");
+        mapped.model.encode(&p).expect("encodes").len()
+    };
+    let (on_len, off_len) = (render(Some(true)), render(Some(false)));
+    assert_ne!(on_len, off_len, "the probe must distinguish the ON and OFF prompts");
+    let app = create_router(state);
+
+    let openai = |extra: serde_json::Value| {
+        let mut b = chat_body(false, 1);
+        for (k, v) in extra.as_object().expect("object") {
+            b[k] = v.clone();
+        }
+        b
+    };
+    for (label, extra, want) in [
+        ("chat_template_kwargs ON", serde_json::json!({"chat_template_kwargs": {"enable_thinking": true}}), on_len),
+        ("think ON", serde_json::json!({"think": true}), on_len),
+        ("chat_template_kwargs OFF", serde_json::json!({"chat_template_kwargs": {"enable_thinking": false}}), off_len),
+        ("absent = OFF", serde_json::json!({}), off_len),
+    ] {
+        let (status, body) = post(app.clone(), "/v1/chat/completions", openai(extra)).await;
+        assert_eq!(status, StatusCode::OK, "{label}: {body}");
+        let json: serde_json::Value = serde_json::from_str(&body).expect("JSON");
+        assert_eq!(json["usage"]["prompt_tokens"].as_u64(), Some(want as u64), "{label}: {body}");
+    }
+
+    let (status, body) = post(
+        app.clone(),
+        "/api/chat",
+        serde_json::json!({
+            "model": "m",
+            "messages": [{"role": "user", "content": QUESTION}],
+            "options": {"temperature": 0.0, "top_k": 1, "num_predict": 1},
+            "stream": false,
+            "think": true,
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "/api/chat think: {body}");
+    let json: serde_json::Value = serde_json::from_str(&body).expect("JSON");
+    assert_eq!(json["prompt_eval_count"].as_u64(), Some(on_len as u64), "/api/chat think: {body}");
+
+    // Two spellings that disagree are refused, not picked between.
+    let (status, body) = post(
+        app,
+        "/v1/chat/completions",
+        openai(serde_json::json!({"think": false, "chat_template_kwargs": {"enable_thinking": true}})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body.contains("contradicts"), "{body}");
+}
+
+/// #3723: `chat_template_kwargs` carries only what apr honours; any other key is refused at
+/// deserialization, never silently dropped.
+#[test]
+fn chat_template_kwargs_parse_and_refuse_unknown_keys_3723() {
+    let parse = |v: serde_json::Value| serde_json::from_value::<ChatCompletionRequest>(v);
+    let base = serde_json::json!({"model": "m", "messages": [{"role": "user", "content": "x"}]});
+    let with = |k: &str, v: serde_json::Value| {
+        let mut b = base.clone();
+        b[k] = v;
+        b
+    };
+    assert_eq!(parse(base.clone()).expect("parses").thinking(), None);
+    assert_eq!(parse(with("chat_template_kwargs", serde_json::json!({"enable_thinking": true}))).expect("parses").thinking(), Some(true));
+    assert_eq!(parse(with("think", serde_json::json!(false))).expect("parses").thinking(), Some(false));
+    assert!(parse(with("chat_template_kwargs", serde_json::json!({"reasoning_effort": "high"}))).is_err(), "an unknown kwarg is refused");
+}

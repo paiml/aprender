@@ -43,6 +43,18 @@ pub struct ServeLaunchOptions {
     /// `APR_AGENT_MAX_TOKENS_CAP` cap, because a caller that pins generation
     /// length (CRUX parity, quorum Q5) must get the length it asked for.
     pub max_tokens: Option<u32>,
+    /// `apr code --thinking on|off` (#3723): sent on EVERY request as
+    /// `chat_template_kwargs.enable_thinking`, which `apr serve` renders through the model's
+    /// own chat template. `None` sends nothing (the server's default, thinking OFF).
+    pub think: Option<bool>,
+}
+
+/// #3723: put the thinking mode on an OpenAI request body, in the vLLM/SGLang spelling
+/// `apr serve` accepts. `None` leaves the body untouched.
+pub(crate) fn apply_thinking(body: &mut serde_json::Value, think: Option<bool>) {
+    if let Some(t) = think {
+        body["chat_template_kwargs"] = serde_json::json!({ "enable_thinking": t });
+    }
 }
 
 /// The `apr serve run` argv for one launch. Split out so the flag set is
@@ -109,6 +121,8 @@ pub struct AprServeDriver {
     model_size_bytes: Option<u64>,
     /// `apr code --max-tokens` (#3978); see [`ServeLaunchOptions::max_tokens`].
     max_tokens_override: Option<u32>,
+    /// `apr code --thinking` (#3723); see [`ServeLaunchOptions::think`].
+    think: Option<bool>,
 }
 
 impl Drop for AprServeDriver {
@@ -234,6 +248,7 @@ impl AprServeDriver {
             context_window_size: context_window.unwrap_or(4096),
             model_size_bytes,
             max_tokens_override: opts.max_tokens,
+            think: opts.think,
         };
 
         // Wait for server to be ready
@@ -439,6 +454,7 @@ impl AprServeDriver {
         if let Some(v) = seed {
             body["seed"] = serde_json::json!(v);
         }
+        apply_thinking(&mut body, self.think);
         body
     }
 }

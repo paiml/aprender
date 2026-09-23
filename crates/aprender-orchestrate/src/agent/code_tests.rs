@@ -1418,22 +1418,32 @@ fn falsify_3775_empty_completion_is_a_failure_document() {
     assert_eq!(assert_one_error_document("empty", "failed", "empty_completion"), 1);
 }
 
-// ═══ #3978: `--thinking on` is refused by name, before anything is launched ═══
+// ═══ #3723: `--thinking on` is passed through to apr serve, no longer refused up front ═══
 #[test]
-fn f3978_think_on_is_refused_naming_3723() {
-    let err = refuse_think_on(Some(true)).expect_err("--thinking on must refuse");
-    let msg = err.to_string();
-    assert!(msg.contains("#3723") && msg.contains("--thinking on"), "{msg}");
-    assert!(refuse_think_on(Some(false)).is_ok());
-    assert!(refuse_think_on(None).is_ok());
+fn f3723_thinking_rides_every_request_as_chat_template_kwargs() {
+    use crate::agent::driver::apr_serve::apply_thinking;
+    let base = serde_json::json!({"model": "m", "messages": []});
+    for (think, want) in [(Some(true), Some(true)), (Some(false), Some(false)), (None, None)] {
+        let mut body = base.clone();
+        apply_thinking(&mut body, think);
+        assert_eq!(
+            body.get("chat_template_kwargs").and_then(|k| k["enable_thinking"].as_bool()),
+            want,
+            "think={think:?}: {body}"
+        );
+    }
+    let mut untouched = base.clone();
+    apply_thinking(&mut untouched, None);
+    assert_eq!(untouched, base, "absent --thinking sends nothing (the server default, OFF)");
 }
 
+/// The old up-front refusal is gone (#3723 retired #3978's): `--thinking on` now reaches the
+/// `apr serve` launch. With a model path that does not exist the launch fails, and the one
+/// remaining refusal -- the embedded fallback, which has no thinking-ON path -- names that.
 #[test]
-fn f3978_think_on_refuses_before_any_model_is_discovered() {
-    // A model path that does not exist: if cmd_code_with reached discovery or a
-    // launch, the error would be about the model, not about --think.
+fn f3723_think_on_is_no_longer_refused_before_discovery() {
     let err = cmd_code_with(
-        Some(PathBuf::from("/nonexistent/f3978.gguf")),
+        Some(PathBuf::from("/nonexistent/f3723.gguf")),
         PathBuf::from("."),
         None,
         vec!["hi".into()],
@@ -1445,6 +1455,11 @@ fn f3978_think_on_refuses_before_any_model_is_discovered() {
         "text",
         CodeServeOptions { think: Some(true), ..Default::default() },
     )
-    .expect_err("--thinking on must refuse");
-    assert!(err.to_string().contains("#3723"), "{err}");
+    .expect_err("a nonexistent model still fails");
+    let msg = err.to_string();
+    assert!(
+        !msg.contains("apr serve has no thinking-ON path"),
+        "the up-front refusal is back: {msg}"
+    );
+    assert!(msg.contains("apr serve is unavailable") && msg.contains("embedded fallback"), "{msg}");
 }

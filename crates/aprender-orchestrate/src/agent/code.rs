@@ -359,25 +359,11 @@ pub fn cmd_code(
 pub struct CodeServeOptions {
     /// Backend and `--max-tokens` for the `apr serve` child.
     pub serve: crate::agent::driver::apr_serve::ServeLaunchOptions,
-    /// `--thinking on|off`. `Some(true)` is REFUSED: `apr serve` has no thinking-ON
-    /// path on any router (#3723), and a flag that is silently ignored would be
-    /// a false pin. `Some(false)` and `None` both run thinking OFF, which is
-    /// what `apr serve` does.
+    /// `--thinking on|off` (#3723): passed to the `apr serve` child on every request as
+    /// `chat_template_kwargs.enable_thinking`, rendered by the model's own template. A
+    /// template with no thinking mode refuses ON by name (HTTP 400), never serves OFF as ON.
+    /// `None` runs thinking OFF, `apr serve`'s default.
     pub think: Option<bool>,
-}
-
-/// The refusal for `--thinking on` (#3978, #3723), settled before anything is launched.
-pub fn refuse_think_on(think: Option<bool>) -> anyhow::Result<()> {
-    if think == Some(true) {
-        anyhow::bail!(CodeOutcome::refused(
-            "invalid_input",
-            "--thinking on: apr serve has no thinking-ON path (#3723), so apr code cannot honour it; \
-             use --thinking off"
-                .to_string(),
-            exit_code::AGENT_ERROR,
-        ));
-    }
-    Ok(())
 }
 
 /// [`cmd_code`] with explicit `apr serve` controls (#3978).
@@ -407,7 +393,6 @@ pub fn cmd_code_with(
         manifest_path.as_ref(),
         resume.as_ref(),
     )?;
-    refuse_think_on(serve_opts.think)?;
 
     // --project: change working directory for project instructions.
     // A path that is not a directory used to be skipped silently, so
@@ -502,12 +487,28 @@ pub fn cmd_code_with(
     // PMAT-CODE-SPAWN-PARITY-001: driver stored as Arc so TaskTool can
     // share it with the AgentPool for sub-agent execution.
     let driver: Arc<dyn LlmDriver> = if let Some(model_path) = manifest.model.resolve_model_path() {
+        let launch = crate::agent::driver::apr_serve::ServeLaunchOptions {
+            think: serve_opts.think,
+            ..serve_opts.serve
+        };
         match crate::agent::driver::apr_serve::AprServeDriver::launch_with(
             model_path,
             manifest.model.context_window,
-            &serve_opts.serve,
+            &launch,
         ) {
             Ok(d) => Arc::new(d),
+            Err(e) if serve_opts.think == Some(true) => {
+                // #3723: the embedded fallback renders thinking OFF only; serving it for an
+                // explicit ON would be the silent false pin the flag exists to prevent.
+                anyhow::bail!(CodeOutcome::refused(
+                    "invalid_input",
+                    format!(
+                        "--thinking on: apr serve is unavailable ({e}) and the embedded fallback \
+                         has no thinking-ON path (#3723); use --thinking off or make `apr` available"
+                    ),
+                    exit_code::AGENT_ERROR,
+                ));
+            }
             Err(e) => {
                 eprintln!("⚠ apr serve unavailable ({e}), using embedded inference");
                 Arc::from(build_fallback_driver(&manifest)?)

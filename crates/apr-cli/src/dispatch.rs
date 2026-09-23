@@ -402,6 +402,8 @@ fn dispatch_code_command(args: CodeArgs<'_>) -> Result<(), CliError> {
                 batuta::agent::driver::apr_serve::ServeBackend::Gpu
             },
             max_tokens: args.max_tokens,
+            // #3723: sent per request as chat_template_kwargs.enable_thinking.
+            think: args.think.map(|t| t == "on"),
         },
         think: args.think.map(|t| t == "on"),
     };
