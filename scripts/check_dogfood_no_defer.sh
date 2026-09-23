@@ -53,16 +53,24 @@ lift() { # lift <script> -> the obligation list and the three deciding functions
 # run_case <script> <kind> <phase> <row name> <status-or-rc> <log text> -> prints "<RESULT> <bad>"
 #   kind mark:     mark <row name> <status> "note"          bad = FAILED after the call
 #   kind declared: classify_declared <row name> gate.sh <rc> <log>   bad = its return status
+#   kind declnote: as declared, plus SCOPED|UNSCOPED -- whether the row's note carries the gate's
+#                  `SCOPED: <name>` line (#4086: a recorded-scope verdict must never read as a bare pass)
 run_case() {
   local src="$1" kind="$2" phase="$3" name="$4" arg="$5" text="$6" tmp log rc
   tmp=$(mktemp) || return 2; log=$(mktemp) || { rm -f "$tmp"; return 2; }
   lift "$src" > "$tmp" || { rm -f "$tmp" "$log"; return 2; }
-  printf '%s\n' "$text" > "$log"
+  # declnote rows spell a multi-line log with \n (a red gate's SCOPED: line sits ABOVE the 3-line tail the
+  # FAIL note quotes, as in check_model_ladder.sh's real output). Every other kind is written verbatim.
+  if [ "$kind" = declnote ]; then printf '%b\n' "$text" > "$log"; else printf '%s\n' "$text" > "$log"; fi
   cat >> "$tmp" <<'RUN'
 NAMES=(); RESULTS=(); NOTES=(); FAILED=0
 if [ "$KIND" = mark ]; then mark "$NAME" "$ARG" "note" > /dev/null; bad=$FAILED
 else classify_declared "$NAME" gate.sh "$ARG" "$LOG" > /dev/null; bad=$?; fi
-printf '%s %s\n' "${RESULTS[${#RESULTS[@]}-1]:-NONE}" "$bad"
+if [ "$KIND" = declnote ]; then
+  # #4086: does the ROW carry the gate's scope? SCOPED iff the note names it, else UNSCOPED.
+  case "${NOTES[${#NOTES[@]}-1]:-}" in *"SCOPED: "*) sc=SCOPED ;; *) sc=UNSCOPED ;; esac
+  printf '%s %s %s\n' "${RESULTS[${#RESULTS[@]}-1]:-NONE}" "$bad" "$sc"
+else printf '%s %s\n' "${RESULTS[${#RESULTS[@]}-1]:-NONE}" "$bad"; fi
 RUN
   KIND="$kind" DOGFOOD_PHASE="$phase" NAME="$name" ARG="$arg" LOG="$log" bash "$tmp" 2> /dev/null; rc=$?
   rm -f "$tmp" "$log"
@@ -86,6 +94,10 @@ mark-defer-full-is-fail|mark|full|publish-dry-run|DEFER||FAIL 1
 mark-open-publish-dry-run-pre-publish|mark|pre-publish|publish-dry-run|OPEN||OPEN 0
 mark-open-coverage-refused|mark|pre-publish|coverage|OPEN||FAIL 1
 mark-open-post-publish-refused|mark|post-publish|publish-dry-run|OPEN||FAIL 1
+scoped-pass-names-its-scope|declnote|pre-publish|declared:check_model_ladder|0|SCOPED: crux-smoke -- the emergency scope recorded for release 0.69.1 applies|PASS 0 SCOPED
+scoped-fail-names-its-scope|declnote|pre-publish|declared:check_model_ladder|1|SCOPED: crux-smoke -- the emergency scope recorded for release 0.69.1 applies\nFAIL  host gx10 has no CRUX receipt from the release binary\nFAIL  lambda certified model 00fe7986ff5f thinking=on: no CRUX cell\nRED   OPERATOR EMERGENCY SCOPE: CRUX smoke only -- NOT satisfied (see FAIL rows)|FAIL 1 SCOPED
+unscoped-pass-stays-plain|declnote|pre-publish|declared:check_model_ladder|0|ok    every required rung green|PASS 0 UNSCOPED
+scoped-word-mid-line-is-not-a-scope|declnote|pre-publish|declared:check_model_ladder|0|note: SCOPED: is only a word here|PASS 0 UNSCOPED
 CASES
 }
 
@@ -134,7 +146,10 @@ if [ "$SELF_TEST" = 1 ]; then
   mut any-obligation  table  's/^    case " \$POST_PUBLISH_OBLIGATIONS " in \*" \$1 "\*) ;; \*) st=FAIL/    case " $POST_PUBLISH_OBLIGATIONS " in *) ;; *) st=FAIL/'
   mut open-any-phase  table  's/^  if \[ "\$st" = OPEN \] && \[ "\$DOGFOOD_PHASE" != pre-publish \]; then$/  if false; then/'
   mut coverage-defer  static 's/^    mark coverage FAIL "measured/    mark coverage DEFER "measured/'
-  [ "$bad" = 0 ] && echo "self-test: PASS -- red when the hatch returns, when DEFER is legal, when any row may be OPEN, when OPEN outlives pre-publish, and when coverage defers"
+  mut scope-dropped-pass table  's/^    mark "\$name" PASS "\$path exit=0\$scoped"$/    mark "$name" PASS "$path exit=0"/'
+  mut scope-dropped-fail table  's/^    mark "\$name" FAIL "\$path exit=\$rc\$scoped — \$tail"$/    mark "$name" FAIL "$path exit=$rc — $tail"/'
+  mut scope-anywhere     table  "s/grep -m1 '^SCOPED: '/grep -m1 'SCOPED: '/"
+  [ "$bad" = 0 ] && echo "self-test: PASS -- red when the hatch returns, when DEFER is legal, when any row may be OPEN, when OPEN outlives pre-publish, when coverage defers, and when a scoped verdict loses its scope"
   exit "$bad"
 fi
 
