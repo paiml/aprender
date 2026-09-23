@@ -483,6 +483,10 @@ def rows(a):
     emitted = []
 
     def emit(pid, verb, mode, route, rc, stdout, refused):
+        if a.cell_fault:
+            # A cell whose servers outlived it held the GPU after the lock dropped.
+            # Nothing it measured is admitted: every row is RED, naming why.
+            rc, refused = None, a.cell_fault
         emitted.append({**base, "prompt_id": pid, "verb": verb, "mode": mode, "route": route,
                         "rc": rc, "stdout": stdout, "stderr": None, "refused": refused})
 
@@ -572,6 +576,7 @@ def main(argv):
         r.add_argument(f, required=True)
     r.add_argument("--thinking", default="off")
     r.add_argument("--cell-why", default="")
+    r.add_argument("--cell-fault", default="", help="the cell ran but broke its contract (a failed teardown): every row RED")
     a = ap.parse_args(argv)
     return {"plan": plan, "drive": drive, "sweep": sweep, "rows": rows}[a.cmd](a)
 

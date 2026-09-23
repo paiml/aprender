@@ -166,6 +166,11 @@ printf -- '--- %s: the code verb (apr code -p) ---\n' "$PROG"
 FAKE_APR="$TMP/fake-apr"
 cat > "$FAKE_APR" <<'SH'
 #!/usr/bin/env bash
+if [ "${1:-} ${2:-}" = "code --help" ]; then
+  [ "${FAKE_APR_FLAGS:-0}" = 1 ] && printf '      --no-gpu\n      --gpu\n      --max-tokens <MAX_TOKENS>\n      --thinking <THINKING>\n'
+  exit 0
+fi
+[ -n "${FAKE_ARGV:-}" ] && printf '%s\n' "$@" > "$FAKE_ARGV"
 case "${FAKE_APR_MODE:-ok}" in
   ok)       printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"status":"ok","result":"```python\ndef add(a, b):\n    return a + b\n```","num_turns":1}' ;;
   is_error) printf '%s\n' '{"type":"result","subtype":"error","is_error":true,"status":"error","result":"boom"}' ;;
@@ -175,10 +180,10 @@ case "${FAKE_APR_MODE:-ok}" in
 esac
 SH
 chmod +x "$FAKE_APR"
-code_case() { # <label> <py> <mode> <prompt> <want rc> <fault prefix|->
+code_case() { # <label> <py> <mode> <prompt> <want rc> <fault prefix|-> [extra wrapper args...]
   local rc got
   FAKE_APR_MODE="$3" python3 "$2" --apr "$FAKE_APR" --model m.gguf --prompt-file "$TMP/prompt-$4.json" \
-    --max-tokens 64 --out "$TMP/code.json" --timeout 20 > /dev/null 2>&1
+    --max-tokens 64 --out "$TMP/code.json" --timeout 20 "${@:7}" > /dev/null 2>&1
   rc=$?
   got=$(field "$TMP/code.json" 'd.get("protocol_fault") or ""')
   if [ "$rc" = "$5" ] && { [ "$6" = - ] || case "$got" in "$6"*) true ;; *) false ;; esac; }; then return 0; fi
@@ -193,6 +198,49 @@ crow "C3 MUST-RED stdout that is not the envelope" "$CODE_PY" not_json p1 3 not_
 crow "C4 MUST-RED a non-zero exit" "$CODE_PY" exit1 p1 3 exit_1
 crow "C5 MUST-RED an empty result" "$CODE_PY" empty p1 3 empty_text
 crow "C6 a multi-turn prompt is REFUSED for the code verb" "$CODE_PY" ok p2 4 -
+crow "C7 MUST-RED the cpu lane is REFUSED when apr code has no backend flag" "$CODE_PY" ok p1 4 - --backend cpu
+export FAKE_APR_FLAGS=1 FAKE_ARGV="$TMP/argv.txt"
+crow "C8 with #3978's flags the cpu lane runs" "$CODE_PY" ok p1 0 - --backend cpu
+if tr '\n' ' ' < "$TMP/argv.txt" | grep -q -- '--no-gpu --max-tokens 64 --thinking off --' \
+  && [ "$(field "$TMP/code.json" 'd["reported"]["backend_control"]')" = "passed: --no-gpu" ]
+then ok "C8b the lane's backend, max_tokens and thinking are PASSED and recorded as controlled"
+else bad "C8b controls passed (argv: $(tr '\n' ' ' < "$TMP/argv.txt"))"; fi
+unset FAKE_APR_FLAGS FAKE_ARGV
+
+printf -- '--- %s: cell teardown (every server gone, from the process table AND the GPU) ---\n' "$PROG"
+TD="$ROOT/scripts/lib/crux_cell_teardown.sh"
+FAKE_SMI="$TMP/fake-smi"
+printf '#!/usr/bin/env bash\ncat "%s" 2> /dev/null\n' "$TMP/smi-pids" > "$FAKE_SMI"
+chmod +x "$FAKE_SMI"
+td_case() { # <label> <want rc> <want state prefix> <td script> [pid files...]
+  local label="$1" want="$2" pre="$3" td="$4" rc st
+  shift 4
+  CRUX_NVIDIA_SMI="$FAKE_SMI" CRUX_TEARDOWN_GPU_POLLS=4 bash "$td" "$TMP/td.state" "$@" > /dev/null 2>&1
+  rc=$?
+  st=$(cat "$TMP/td.state" 2> /dev/null)
+  [ "$rc" = "$want" ] && case "$st" in "$pre"*) true ;; *) false ;; esac
+}
+tdrow() { local l="$1"; shift; if td_case "$l" "$@"; then ok "$l"; else bad "$l (state: $(cat "$TMP/td.state" 2> /dev/null))"; fi; }
+stubborn() { # a server that ignores SIGTERM; its pid goes to $1
+  bash -c 'trap "" TERM; while :; do sleep 0.2; done' > /dev/null 2>&1 &
+  printf '%s\n' "$!" > "$1"
+}
+: > "$TMP/smi-pids"
+stubborn "$TMP/srv1.pid"
+tdrow "T1 a server that ignores TERM is KILLed, then proven gone" 0 clean "$TD" "$TMP/srv1.pid" "$TMP/absent.pid"
+printf '1\n' > "$TMP/init.pid"
+tdrow "T2 MUST-RED a server that survives TERM and KILL fails the cell" 1 "FAILED: server" "$TD" "$TMP/init.pid"
+sleep 30 > /dev/null 2>&1 &
+printf '%s\n' "$!" > "$TMP/srv3.pid"
+printf '%s\n' "$(cat "$TMP/srv3.pid")" > "$TMP/smi-pids"
+tdrow "T3 MUST-RED a pid still in nvidia-smi compute-apps fails the cell" 1 "FAILED: pid" "$TD" "$TMP/srv3.pid"
+: > "$TMP/smi-pids"
+mkdir -p "$TMP/tdrows"
+: > "$TMP/tdrows/manifest.jsonl"
+python3 "$ROUTES_PY" rows --out-dir "$TMP/ok" --prompt-list "$TMP/list.jsonl" --manifest "$TMP/tdrows/manifest.jsonl" \
+  --engine apr --sha abc --host h --backend gpu --cell-fault "cell teardown FAILED: server pid(s) 42 survived" > /dev/null 2>&1
+manifest_assert "T4 MUST-RED a failed teardown makes EVERY row of the cell RED" tdrows \
+  'len(gen) == 11 and all(r["refused"].startswith("cell teardown FAILED") and r["rc"] is None for r in gen)'
 
 # ---- mutants: each must-RED row must FAIL against code with its check deleted --------
 printf -- '--- %s: mutants (each must be KILLED by its row) ---\n' "$PROG"
@@ -239,6 +287,14 @@ mutant "M6 P2 vs unknown routes filed as not-generation" "$ROUTES_PY" '        e
             other.append({"route": r, "why": "?"})' m_p2
 mutant "M7 C2 vs no is_error check" "$CODE_PY" 'if env.get("is_error") or env.get("status") not in (None, "ok"):' 'if False:' m_c2
 mutant "M8 C5 vs no empty-result check" "$CODE_PY" 'if not env.get("result"):' 'if False:' m_c5
+m_c7() { code_case x "$1" ok p1 4 - --backend cpu; }
+mutant "M9 C7 vs the cpu lane run on an apr code that cannot honour it" "$CODE_PY" '    if a.backend == "cpu" and not ctl:' '    if False:' m_c7
+m_t1() { stubborn "$TMP/srv1.pid"; td_case x 0 clean "$1" "$TMP/srv1.pid"; }
+mutant "M10 T1 vs no KILL escalation" "$TD" '    kill -KILL $left 2> /dev/null' '    :' m_t1
+m_t3() { sleep 30 > /dev/null 2>&1 & printf '%s\n' "$!" > "$TMP/srv3.pid"; cp "$TMP/srv3.pid" "$TMP/smi-pids"; td_case x 1 "FAILED: pid" "$1" "$TMP/srv3.pid"; }
+mutant "M11 T3 vs no nvidia-smi check" "$TD" 'if [ "${#pids[@]}" -gt 0 ] && command -v "$SMI" > /dev/null 2>&1; then' 'if false; then' m_t3
+m_t4() { : > "$TMP/tdrows/manifest.jsonl"; python3 "$1" rows --out-dir "$TMP/ok" --prompt-list "$TMP/list.jsonl" --manifest "$TMP/tdrows/manifest.jsonl" --engine apr --sha abc --host h --backend gpu --cell-fault "cell teardown FAILED: x" > /dev/null 2>&1; python3 -c 'import json,sys; g=[json.loads(l) for l in open(sys.argv[1]) if l.strip()]; g=[r for r in g if r["kind"]=="gen"]; assert g and all(r["refused"] for r in g)' "$TMP/tdrows/manifest.jsonl" 2> /dev/null; }
+mutant "M12 T4 vs a teardown fault that does not reach the rows" "$ROUTES_PY" '        if a.cell_fault:' '        if False:' m_t4
 
 printf '%s: %d row(s), %d failed\n' "$PROG" "$ROWS" "$FAILS"
 [ "$ROWS" -gt 0 ] || { printf '%s: zero rows ran - that is a broken table, not a pass\n' "$PROG" >&2; exit 1; }

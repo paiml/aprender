@@ -407,7 +407,9 @@ llama_tokenize_prompts() { # sets THINKING_CAPABLE; writes tok rows
   local port d="$WORK/$SHA12/tok" pid ok=0 i
   mkdir -p "$d"
   port=$(free_port) || return 1
-  choom -n 1000 -- "$LLAMA_SERVER" -m "$M" -ngl 0 -c 512 --no-warmup --host 127.0.0.1 --port "$port" \
+  # -dev none: this server runs OUTSIDE the GPU lock, so it must not even create a
+  # CUDA context. -ngl 0 alone still initialises the device and shows in nvidia-smi.
+  choom -n 1000 -- "$LLAMA_SERVER" -m "$M" -ngl 0 -dev none -c 512 --no-warmup --host 127.0.0.1 --port "$port" \
     > "$d/server.log" 2>&1 < /dev/null &
   SRV_PID=$!
   for i in $(seq 1 180); do

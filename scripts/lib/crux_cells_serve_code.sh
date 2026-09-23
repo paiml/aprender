@@ -95,11 +95,27 @@ crux_llama_server_lines() { # <cell> <dir>
   serve_wait_line "$1" "$CRUX_PL" /health "$2/llama-serve.pid"
 }
 
-crux_stop_servers_lines() { # <cell> <pid files...>
-  local cell="$1"
-  shift
-  { printf 'srv=""; for f in'; printf ' %q' "$@"; printf '; do srv="$srv $(cat "$f" 2> /dev/null)"; done\n'
-    printf 'kill $srv 2> /dev/null; wait $srv 2> /dev/null\n'; } >> "$cell"
+# The cell's teardown, installed as its FIRST lines so no path out of the cell skips
+# it: EXIT runs scripts/lib/crux_cell_teardown.sh over every server pid file the cell
+# may write, and TERM/INT become an exit, so a gpu-q or timeout kill runs it too. The
+# teardown proves each server is gone from the process table AND from nvidia-smi
+# compute-apps before the lock drops (cop, 2026-09-23: a surviving llama-server made
+# the next lock holder's prio-1 run CONTENDED). crux_teardown_why reads its verdict.
+crux_teardown_trap() { # <cell> <state file> <pid files...>
+  local cell="$1" state="$2"
+  shift 2
+  { printf 'trap %q EXIT\n' "bash $(printf '%q' "$PWD/scripts/lib/crux_cell_teardown.sh") $(printf '%q ' "$state" "$@")"
+    printf "trap 'exit 143' TERM INT\n"; } >> "$cell"
+}
+crux_teardown_why() { # <state file>: empty when clean, else why the cell is RED
+  [ -n "$CELL_WHY" ] && return 0 # the cell never ran: no server to tear down
+  local st
+  st=$(cat "$1" 2> /dev/null) || st=""
+  case "$st" in
+    clean) ;;
+    "") printf 'cell teardown left no verdict (%s): its servers are not proven gone' "$1" ;;
+    *) printf 'cell teardown %s' "$st" ;;
+  esac
 }
 
 # The comparators' thinking switch, sent in the request: llama-server honours
@@ -115,7 +131,7 @@ for l in open(sys.argv[1]):
 }
 
 serve_routes_cell() {
-  local d="$WORK/$SHA12/serve" cell pa pids=() spids=() srv_pids=() eng pid
+  local d="$WORK/$SHA12/serve" cell pa pids=() spids=() eng pid
   local -A before=() before_s=()
   mkdir -p "$d/apr" "$d/llama" "$d/ollama" "$d/stream" || return 1
   [ -s "$WORK/serve-prompts.jsonl" ] || return 0
@@ -126,13 +142,12 @@ serve_routes_cell() {
   cell="$d/cell-serve.sh"
   pa=$(free_port)
   printf '#!/usr/bin/env bash\n# one CRUX serve cell (#3962): every route apr mounts x every mode x every serve prompt\n' > "$cell"
+  crux_teardown_trap "$cell" "$d/teardown.state" "$d/apr-serve.pid" "$d/llama-serve.pid"
   { printf '%q ' "$APR" serve run "$M" --port "$pa" "$APR_BE"; printf '> %q 2>&1 < /dev/null &\necho $! > %q\n' "$d/apr-serve.log" "$d/apr-serve.pid"; } >> "$cell"
   serve_wait_line "$cell" "$pa" /health "$d/apr-serve.pid"
-  srv_pids=("$d/apr-serve.pid")
   local render=()
   if [ "$LLAMA_OK" = 1 ]; then
     crux_llama_server_lines "$cell" "$d"
-    srv_pids+=("$d/llama-serve.pid")
     render=(--render-url "http://127.0.0.1:$CRUX_PL")
   fi
   local common=(--prompt-list "$WORK/serve-prompts.jsonl" --prompt-dir "$WORK" --temperature "$TEMP" --seed "$SEED"
@@ -149,7 +164,6 @@ serve_routes_cell() {
       --routes "POST /v1/chat/completions" --model "$OL_NAME" --extra '{"keep_alive": 0}' \
       --out-dir "$d/ollama" --device "$OL_DEVICE" "${common[@]}"
   fi
-  crux_stop_servers_lines "$cell" "${srv_pids[@]}"
   [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ] && cell_add_ollama_unload "$cell" "$d/ollama-serve" "$OL_NAME"
   [ "${#pids[@]}" -gt 0 ] && crux_plugin_lines "$cell" "$d" "serve run" "${pids[@]}"
   [ "${#spids[@]}" -gt 0 ] && crux_plugin_lines "$cell" "$d/stream" "serve stream" "${spids[@]}"
@@ -158,8 +172,10 @@ serve_routes_cell() {
   for pid in "${pids[@]}"; do for eng in $(crux_plugin_engines); do before[$eng-$pid]=$(VERB_KEY="serve run" rows_for "$eng" "$pid"); done; done
   for pid in "${spids[@]}"; do for eng in $(crux_plugin_engines); do before_s[$eng-$pid]=$(VERB_KEY="serve stream" rows_for "$eng" "$pid"); done; done
   run_cell "$cell"
+  local td_why
+  td_why=$(crux_teardown_why "$d/teardown.state")
   local rowargs=(--prompt-list "$WORK/serve-prompts.jsonl" --manifest "$MANIFEST" --sha "$SHA" --host "$HOST"
-    --backend "$BACKEND" --thinking "$THINK" --cell-why "$CELL_WHY")
+    --backend "$BACKEND" --thinking "$THINK" --cell-why "$CELL_WHY" --cell-fault "$td_why")
   python3 scripts/lib/crux_serve_routes.py rows --out-dir "$d/apr" --engine apr "${rowargs[@]}"
   if [ "$LLAMA_OK" = 1 ]; then
     python3 scripts/lib/crux_serve_routes.py rows --out-dir "$d/llama" --engine llama.cpp "${rowargs[@]}"
@@ -174,29 +190,33 @@ serve_routes_cell() {
     python3 scripts/lib/crux_serve_routes.py rows --out-dir "$d/ollama" --engine ollama "${rowargs[@]}" \
       --cell-why "${OL_REFUSED:-$OLLAMA_WHY}"
   fi
+  [ -n "$td_why" ] && CELL_WHY="$td_why"
   VERB_KEY="serve run" crux_plugin_rows "$d" before "${pids[@]}"
   VERB_KEY="serve stream" crux_plugin_rows "$d/stream" before_s "${spids[@]}"
 }
 
 code_cell() {
-  local d="$WORK/$SHA12/code" cell pids=() srv_pids=() eng pid mt
+  local d="$WORK/$SHA12/code" cell pids=() eng pid mt
   local -A before=()
   mkdir -p "$d" || return 1
   [ -s "$WORK/code-prompts.txt" ] || return 0
   while IFS= read -r pid; do [ -n "$pid" ] && pids+=("$pid"); done < "$WORK/code-prompts.txt"
   cell="$d/cell-code.sh"
   printf '#!/usr/bin/env bash\n# one CRUX code cell (#3962): apr code -p, and the same prompts on every comparator\n' > "$cell"
+  crux_teardown_trap "$cell" "$d/teardown.state" "$d/llama-serve.pid" "$d/apr-code-serve.pids"
+  # Without #3978 apr code cannot be put on the CPU; with it, the lane's backend is passed.
   local apr_why=""
-  [ "$BACKEND" = gpu ] || apr_why="apr code has no backend flag: it always spawns \`apr serve run --gpu\` (agent/driver/apr_serve.rs), so it cannot be run on the $BACKEND lane"
+  if [ "$BACKEND" != gpu ] && [ "$(python3 scripts/lib/crux_apr_code.py controls --apr "$APR")" != yes ]; then
+    apr_why="apr code has no backend flag: it always spawns \`apr serve run --gpu\` (agent/driver/apr_serve.rs), so it cannot be run on the $BACKEND lane (#3978)"
+  fi
   for pid in "${pids[@]}"; do
     mt=$(cat "$WORK/maxtok-$pid.txt")
     [ -z "$apr_why" ] && cell_add "$cell" "$d/apr-$pid" python3 scripts/lib/crux_apr_code.py --apr "$APR" --model "$M" \
-      --prompt-file "$WORK/prompt-$pid.json" --max-tokens "$mt" --thinking "$THINK" --timeout "$TMO" \
-      --out "$d/apr-$pid.json"
+      --prompt-file "$WORK/prompt-$pid.json" --max-tokens "$mt" --thinking "$THINK" --backend "$BACKEND" --timeout "$TMO" \
+      --serve-pid-file "$d/apr-code-serve.pids" --out "$d/apr-$pid.json"
   done
   if [ "$LLAMA_OK" = 1 ]; then
     crux_llama_server_lines "$cell" "$d"
-    srv_pids+=("$d/llama-serve.pid")
     for pid in "${pids[@]}"; do
       cell_add "$cell" "$d/llama-$pid" python3 scripts/lib/crux_serve_routes.py drive --url "http://127.0.0.1:$CRUX_PL" \
         --route "POST /v1/chat/completions" --mode nonstream --prompt-file "$WORK/prompt-$pid.json" \
@@ -212,13 +232,15 @@ code_cell() {
         --model "$OL_NAME" --extra '{"keep_alive": 0}' --device "$OL_DEVICE" --timeout "$TMO" --out "$d/ollama-$pid.json"
     done
   fi
-  [ "${#srv_pids[@]}" -gt 0 ] && crux_stop_servers_lines "$cell" "${srv_pids[@]}"
   [ "$OLLAMA_OK" = 1 ] && [ -z "$OL_REFUSED" ] && cell_add_ollama_unload "$cell" "$d/ollama-code" "$OL_NAME"
   crux_plugin_lines "$cell" "$d" code "${pids[@]}"
   printf 'exit 0\n' >> "$cell"
 
   for pid in "${pids[@]}"; do for eng in $(crux_plugin_engines); do before[$eng-$pid]=$(VERB_KEY=code rows_for "$eng" "$pid"); done; done
   run_cell "$cell"
+  local td_why
+  td_why=$(crux_teardown_why "$d/teardown.state")
+  [ -n "$td_why" ] && CELL_WHY="$td_why"
   for pid in "${pids[@]}"; do
     if [ -n "$apr_why" ]; then VERB_KEY=code emit_gen apr "$pid" "" "" "" "$apr_why"
     else VERB_KEY=code cell_result apr "$pid" "$d/apr-$pid" "$d/apr-$pid.json"; fi
