@@ -6,9 +6,9 @@ Oracle: **gguf-py 0.17.1** `gguf.quants.dequantize` (numpy 2.3.5).
 
 | file | what it is |
 |---|---|
-| `census.py`, `census.log` | per-tensor type census (gguf-py `GGUFReader`) |
-| `compare.py`, `compare.log`, `compare_report.json`, `harness-serve/` | **before the port**: serve's decoders vs gguf-py, every IQ tensor (harness sha256 `33afc4ad00957378`) |
-| `compare_core.py`, `compare_core.log`, `compare_core_report.json`, `harness-core/` | **the port**: aprender-core `GgufReader::get_tensor_f32` @ 18f10a78e vs gguf-py, every IQ tensor, shapes included (harness sha256 `8fc0195c7a79114e`) |
+| `census.py`, `census.txt` | per-tensor type census (gguf-py `GGUFReader`) |
+| `compare.py`, `compare.txt`, `compare_report.json`, `harness-serve/` | **before the port**: serve's decoders vs gguf-py, every IQ tensor (harness sha256 `33afc4ad00957378`) |
+| `compare_core.py`, `compare_core.txt`, `compare_core_report.json`, `harness-core/` | **the port**: aprender-core `GgufReader::get_tensor_f32` @ 18f10a78e vs gguf-py, every IQ tensor, shapes included (harness sha256 `8fc0195c7a79114e`) |
 | `qa/before-*.json` / `.rc` | `apr qa` @ 8963f91a3 (sha256 `53c3e843baa966d7`) |
 | `qa/after-*.json` / `.rc` | `apr qa` @ 18f10a78e (sha256 `f9afa3419bef75db`) |
 | `qa/gate-control.json` | gate positive control: a copy of the IQ3_M file with an f16 NaN block scale planted in `blk.0.ffn_gate` (IQ4_NL) and `blk.11.ffn_down` (IQ3_S) |

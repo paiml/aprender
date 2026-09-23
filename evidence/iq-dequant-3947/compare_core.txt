@@ -1,0 +1,13 @@
+oracle gguf-py 0.17.1 numpy 2.3.5 | subject coredec.bin (aprender-core GgufReader::get_tensor_f32)
+  CONTROL Qwen2.5-0.5B-Instruct-IQ3_M.gguf IQ4_NL blk.0.ffn_gate.weight: one flipped bit -> mismatches=1 max_abs=0.006015777587890625 => RED (control works)
+  CONTROL Qwen2.5-0.5B-Instruct-IQ3_M.gguf IQ3_S blk.11.ffn_down.weight: one flipped bit -> mismatches=1 max_abs=0.011249065399169922 => RED (control works)
+  shape convention: core [896, 4864] vs gguf-py ne [896, 4864] (blk.0.ffn_gate.weight)
+GREEN (Qwen2.5-0.5B-Instruct-IQ3_M.gguf, IQ4_NL, aprender-core) tensors=96/96 elems=231211008 bit_exact=231211008 mismatches=0 max_abs=0 errors=0 shape_disagree=0
+GREEN (Qwen2.5-0.5B-Instruct-IQ3_M.gguf, IQ3_S, aprender-core) tensors=21/21 elems=91521024 bit_exact=91521024 mismatches=0 max_abs=0 errors=0 shape_disagree=0
+  CONTROL Qwen2.5-0.5B-Instruct-IQ4_XS.gguf IQ4_XS blk.0.ffn_down.weight: one flipped bit -> mismatches=1 max_abs=0.0037441253662109375 => RED (control works)
+  CONTROL Qwen2.5-0.5B-Instruct-IQ4_XS.gguf IQ4_NL blk.0.ffn_gate.weight: one flipped bit -> mismatches=1 max_abs=0.006015777587890625 => RED (control works)
+  shape convention: core [4864, 896] vs gguf-py ne [4864, 896] (blk.0.ffn_down.weight)
+GREEN (Qwen2.5-0.5B-Instruct-IQ4_XS.gguf, IQ4_XS, aprender-core) tensors=24/24 elems=104595456 bit_exact=104595456 mismatches=0 max_abs=0 errors=0 shape_disagree=0
+GREEN (Qwen2.5-0.5B-Instruct-IQ4_XS.gguf, IQ4_NL, aprender-core) tensors=120/120 elems=250478592 bit_exact=250478592 mismatches=0 max_abs=0 errors=0 shape_disagree=0
+  shape convention: core [2560, 9216] vs gguf-py ne [2560, 9216] (blk.12.ffn_gate.weight)
+GREEN (Qwen3.5-4B-UD-Q4_K_XL.gguf, IQ4_XS, aprender-core) tensors=10/10 elems=235929600 bit_exact=235929600 mismatches=0 max_abs=0 errors=0 shape_disagree=0
