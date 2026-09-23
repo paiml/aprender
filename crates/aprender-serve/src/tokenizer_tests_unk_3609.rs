@@ -14,10 +14,26 @@
 use crate::gguf::{GGUFModel, GGUFValue};
 use crate::tokenizer::{vocabulary_unk_token, BPETokenizer};
 
-const QWEN35_HEADER: &[u8] =
-    include_bytes!("../tests/fixtures/gguf-header-slices/qwen3.5-0.8b.gguf-header");
-const TINYLLAMA_HEADER: &[u8] =
-    include_bytes!("../tests/fixtures/gguf-header-slices/tinyllama-1.1b-chat.gguf-header");
+const QWEN35_HEADER: &str = "qwen3.5-0.8b.gguf-header";
+const TINYLLAMA_HEADER: &str = "tinyllama-1.1b-chat.gguf-header";
+
+/// A fixture header, read at RUN time (#4048). It used to be `include_bytes!` of
+/// `../tests/fixtures/...`, which the published crate does not carry (`/tests/` is
+/// excluded from the package), so `cargo test` from the crates.io tarball could not even
+/// compile this module. `None`, after naming the skip, only when `tests/fixtures/` is
+/// absent altogether (out of tree); in tree a missing header is a failure, never a skip.
+fn fixture(test: &str, name: &str) -> Option<Vec<u8>> {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    if !dir.is_dir() {
+        eprintln!(
+            "SKIP {test}: out of tree (no {}) - the published crate carries no tests/ (#4048)",
+            dir.display()
+        );
+        return None;
+    }
+    let path = dir.join("gguf-header-slices").join(name);
+    Some(std::fs::read(&path).unwrap_or_else(|e| panic!("in tree, {} must be readable: {e}", path.display())))
+}
 
 const UNK_ID_KEY: &str = "tokenizer.ggml.unknown_token_id";
 const EOS_ID_KEY: &str = "tokenizer.ggml.eos_token_id";
@@ -50,7 +66,10 @@ fn id_of(tok: &BPETokenizer, token: &str) -> u32 {
 
 #[test]
 fn qwen35_real_header_declares_eos_and_no_unknown_token() {
-    let model = header(QWEN35_HEADER);
+    let Some(bytes) = fixture("qwen35_real_header_declares_eos_and_no_unknown_token", QWEN35_HEADER) else {
+        return;
+    };
+    let model = header(&bytes);
     assert_eq!(u32_key(&model, EOS_ID_KEY), Some(248_046), "the real EOS id, verbatim");
     assert!(
         !model.metadata.contains_key(UNK_ID_KEY),
@@ -64,7 +83,10 @@ fn qwen35_real_header_declares_eos_and_no_unknown_token() {
 /// `token_to_id.get("<unk>").ok_or_else(..)` in `BPETokenizer::new` and this goes RED.
 #[test]
 fn qwen35_real_vocabulary_builds_a_tokenizer_with_no_unknown_token() {
-    let vocab = header(QWEN35_HEADER).vocabulary().expect("vocabulary");
+    let Some(bytes) = fixture("qwen35_real_vocabulary_builds_a_tokenizer_with_no_unknown_token", QWEN35_HEADER) else {
+        return;
+    };
+    let vocab = header(&bytes).vocabulary().expect("vocabulary");
     let unk = vocabulary_unk_token(&vocab);
     assert_eq!(unk, None, "nothing named <unk>, so nothing is passed");
     let tok = BPETokenizer::new(vocab, vec![], unk)
@@ -88,7 +110,10 @@ fn qwen35_real_vocabulary_builds_a_tokenizer_with_no_unknown_token() {
 
 #[test]
 fn tinyllama_real_header_declares_unk_and_it_still_resolves() {
-    let model = header(TINYLLAMA_HEADER);
+    let Some(bytes) = fixture("tinyllama_real_header_declares_unk_and_it_still_resolves", TINYLLAMA_HEADER) else {
+        return;
+    };
+    let model = header(&bytes);
     assert_eq!(u32_key(&model, UNK_ID_KEY), Some(0), "the real declaration, verbatim");
     let vocab = model.vocabulary().expect("vocabulary");
     assert_eq!(vocab[0], "<unk>", "id 0 is the declared <unk>");
