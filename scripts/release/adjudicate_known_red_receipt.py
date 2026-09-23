@@ -27,6 +27,8 @@ list.json: {"release": "0.69.1", "ruling": "...", "date": "...",
 A `derived_from` entry is a SUMMARY row (dogfood-gates: "<N> declared gate(s) discovered, <M> RED"). It is
 accepted only as derived from exactly those rows: its note's M equals len(derived_from), the set of the
 receipt's OTHER FAIL rows is exactly derived_from, and each of those is itself a listed, non-derived entry.
+`derived_prefix` (e.g. "declared:") scopes "other FAIL rows" to the gates that summary actually counts,
+so a built-in row (bashrs) failing beside it is judged by its own entry, not by the summary's.
 Exit: 0 written · 1 refused · 2 unreadable input.
 """
 import argparse
@@ -77,9 +79,10 @@ def refusals(src_path, src, known, commit, version):
     fails = [g for g in (src.get("gates") or []) if isinstance(g, dict) and g.get("result") == "FAIL"]
     derived = {r["gate"]: r for r in rows if r.get("derived_from") is not None}
     plain = {g for g in byname if g not in derived}
-    other_fails = {g.get("gate") for g in fails if g.get("gate") not in derived}
     for name, r in derived.items():
         df = r.get("derived_from")
+        pre = r.get("derived_prefix") or ""
+        other_fails = {g.get("gate") for g in fails if g.get("gate") not in derived and str(g.get("gate")).startswith(pre)}
         if not isinstance(df, list) or not df:
             why.append(f"known-red summary {name!r}: derived_from must be a non-empty list"); continue
         if not set(df) <= plain:
@@ -156,6 +159,9 @@ def self_test():
                           {"gate": "dogfood-gates", "result": "FAIL", "note": "16 declared gate(s) discovered, 2 RED (each named in its own row above)"}], **kw}
     def summary(note):
         r = rc(); r["gates"] = [dict(x, note=note) if x["gate"] == "dogfood-gates" else x for x in r["gates"]]; return r
+    def declared(r):  # the receipt's declared gates carry the `declared:` prefix, as dogfood.sh writes them
+        r["gates"] = [dict(x, gate="declared:" + x["gate"]) if x["gate"].startswith("check_") else x for x in r["gates"]]
+        return r
     def gates_with(extra=None, drop=None, note=None):
         r = rc()
         g = [x for x in r["gates"] if x["gate"] != drop]
@@ -180,6 +186,16 @@ def self_test():
         ("the summary row saying 3 RED -> refused", summary("16 declared gate(s) discovered, 3 RED (each named in its own row above)"), known, 1, "not 2 RED"),
         ("the summary derived from other rows than the receipt fails -> refused",
          rc(), dict(known, rows=known["rows"][:2] + [dict(known["rows"][2], derived_from=["check_model_ladder"])]), 1, "accepted only as derived from exactly"),
+        ("a listed built-in row beside a PREFIX-scoped summary -> ADJUDICATED",
+         declared(gates_with(extra={"gate": "bashrs", "result": "FAIL", "note": "8 SEC/DET/IDEM error(s) over 410 file(s)"})),
+         dict(known, rows=[dict(r, gate="declared:" + r["gate"]) if not r.get("derived_from") else
+                           dict(r, derived_prefix="declared:", derived_from=["declared:" + x for x in r["derived_from"]])
+                           for r in known["rows"]] + [{"gate": "bashrs", "ticket": "#4003", "reason": "^8 SEC/DET/IDEM error"}]),
+         0, "ADJUDICATED"),
+        ("a built-in FAIL row beside an UNSCOPED summary -> refused",
+         gates_with(extra={"gate": "bashrs", "result": "FAIL", "note": "8 SEC/DET/IDEM error(s) over 410 file(s)"}),
+         dict(known, rows=known["rows"] + [{"gate": "bashrs", "ticket": "#4003", "reason": "^8 SEC/DET/IDEM error"}]),
+         1, "accepted only as derived from exactly"),
         ("a derived_from member that is not a listed row -> refused",
          rc(), dict(known, rows=known["rows"][:2] + [dict(known["rows"][2], derived_from=["check_model_ladder", "cargo_test"])]), 1, "are not listed"),
     ]
@@ -198,7 +214,7 @@ def self_test():
             ok = got == want and any(needle in ln for ln in lines) and (bool(wrote) == (want == 0))
             if ok and want == 0:
                 a = json.load(open(wrote[0]))
-                ok = (a["verdict"] == "GO" and a["source_verdict"] == "NO-GO" and len(a["known_red"]) == 3
+                ok = (a["verdict"] == "GO" and a["source_verdict"] == "NO-GO" and len(a["known_red"]) == sum(1 for g in src["gates"] if g["result"] == "FAIL")
                       and a["source_sha256"] == hashlib.sha256(open(sp, "rb").read()).hexdigest())
             print(("ok    " if ok else "FAIL  ") + name + ("" if ok else f" -> rc={got} wrote={wrote} {lines[-2:]}"))
             bad |= not ok
