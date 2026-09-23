@@ -14,7 +14,7 @@ Integrated receipt for the #4033 stack on branch feat/4040-nightly, base = #4046
 
 ## Tables (every mutant killed by its NAMED row)
 - ladder_carry_cases.py: 45 rows / 27 mutants
-- nightly_admission_cases.py: 15 rows / 10 mutants
+- nightly_admission_cases.py: 16 rows / 11 mutants
 - check_certify_nightly.sh: 12 rows / 9 mutants
 - crux_stamps_cases.py: 10 rows / 8 mutants
 - check_crux_inference_judge.sh: 165 ok with mutants

@@ -53,7 +53,17 @@ def coherent(v):
         r = _load((lanes.get(lane) or {}).get("receipt"))
         if not isinstance(r, dict) or (r.get("summary") or {}).get("verdict") != "PASS":
             return "its CRUX %s receipt is missing or not PASS" % lane
+        # the same binding as the ladder receipt: the lane measured THIS nightly's binary (degraded quorum, Sonnet)
+        got = _crux_sha(r)
+        if got != v.get("sha"):
+            return "its CRUX %s receipt measured apr %r, not the nightly's sha" % (lane, got)
     return None
+
+
+def _crux_sha(r):
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import model_ladder_crux   # the judge's own binding rule: apr.sha, or the version line resolved to a full sha
+    return model_ladder_crux.apr_sha_of(r)
 
 
 def load_verdicts(root):

@@ -51,8 +51,9 @@ def run(mod):
     lad, cg, cc, cert = (os.path.join(d, n) for n in ("l.json", "cg.json", "cc.json", "cert.json"))
     import json as _j
     _j.dump({"apr_sha": "a" * 40, "executed": 3, "red": 0}, open(lad, "w"))
+    PASS = {"schema": "crux-inference-receipt/v1", "apr": {"sha": "a" * 40}, "summary": {"verdict": "PASS"}}
     for p in (cg, cc):
-        _j.dump({"schema": "crux-inference-receipt/v1", "summary": {"verdict": "PASS"}}, open(p, "w"))
+        _j.dump(PASS, open(p, "w"))
     open(cert, "w").write("{}")
     lanes = {"gpu": {"receipt": cg}, "cpu": {"receipt": cc}}
     good = dict(v("lambda", "a", 3), ladder={"receipt": lad}, crux={"lanes": lanes}, certification={"path": cert})
@@ -63,9 +64,11 @@ def run(mod):
                              and os.path.realpath(os.path.join(out, "crux", "lambda-cpu.json")) == cc
                              and os.path.exists(os.path.join(out, "crux", "prompt-certification.json")), bad)
     res["coherent-rederived-green"] = (mod.coherent(good) is None, mod.coherent(good))
-    _j.dump({"schema": "crux-inference-receipt/v1", "summary": {"verdict": "RED"}}, open(cc, "w"))
+    _j.dump(dict(PASS, summary={"verdict": "RED"}), open(cc, "w"))
     res["coherent-sees-red-lane"] = (mod.coherent(good) is not None and "cpu" in mod.coherent(good), mod.coherent(good))
-    _j.dump({"schema": "crux-inference-receipt/v1", "summary": {"verdict": "PASS"}}, open(cc, "w"))
+    _j.dump(dict(PASS, apr={"sha": "c" * 40}), open(cc, "w"))
+    res["coherent-sees-crux-sha"] = (mod.coherent(good) is not None and "measured apr" in mod.coherent(good), mod.coherent(good))
+    _j.dump(PASS, open(cc, "w"))
     _j.dump({"apr_sha": "b" * 40, "executed": 3, "red": 0}, open(lad, "w"))
     res["coherent-sees-ladder-sha"] = (mod.coherent(good) is not None and "not the nightly" in mod.coherent(good), mod.coherent(good))
     _j.dump({"apr_sha": "a" * 40, "executed": 3, "red": 0}, open(lad, "w"))
@@ -87,6 +90,7 @@ MUTANTS = [
     ("future-ok", "            elif age < -SKEW_S / 3600.0:", "            elif False:", "future-t_end-refused"),
     ("green-trusted", '            elif v.get("_incoherent"):', "            elif False:", "incoherent-green-refused"),
     ("lanes-gpu-only", 'REQUIRED_LANES = ("gpu", "cpu")', 'REQUIRED_LANES = ("gpu",)', "coherent-sees-red-lane"),
+    ("crux-sha-unread", '        if got != v.get("sha"):', "        if False:", "coherent-sees-crux-sha"),
     ("ladder-sha-unread", '    if lad.get("apr_sha") != v.get("sha"):', "    if False:", "coherent-sees-ladder-sha"),
 ]
 
