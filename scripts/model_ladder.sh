@@ -260,12 +260,17 @@ if start < 0:
                 ci = i
                 break
 
+# Exit codes keep the meanings they had before `run` was added (#3932 re-review: the
+# first cut swapped 3 and 4 for chat/code, so the message named the wrong missing piece):
+#   3 = no backend envelope at all (truncated)   4 = envelope, but no `Assistant:` reply
+#   5 = `Output:` opened and `Completed in` never came (a truncated `run` capture)
 if start >= 0:
     body = [lines[start].lstrip()[len("Assistant:"):].lstrip()] + lines[start + 1:env]
 elif oi >= 0 and ci >= 0:
     body = lines[oi + 1:ci]
-elif env >= 0 or oi >= 0:
-    # markers found but the capture does not close: truncated, not clean.
+elif oi >= 0:
+    sys.exit(5)
+elif env < 0:
     sys.exit(3)
 else:
     sys.exit(4)
@@ -294,6 +299,7 @@ judge_reply() {
   case $rc in
     0) printf '%s' "$text" | gibberish_reason || true ;;
     3) printf 'could not find the backend envelope in %s bytes of captured %s output -- the capture is truncated, so nothing about the reply was measured' "$n" "$verb" ;;
+    5) printf 'could not find the closing `Completed in` line after `Output:` in %s bytes of captured %s output -- the capture is truncated, so nothing about the reply was measured' "$n" "$verb" ;;
     *) printf 'could not locate the %s reply in %s bytes of captured output' "$verb" "$n" ;;
   esac
 }
@@ -910,7 +916,9 @@ for b,v in r["backends"].items():
     # #3902: the same omission #3901 found for serve, caught in the SAME pass this
     # time rather than after. A verdict that starts consulting a field while the
     # explanation builder does not is precisely how a row becomes red and silent.
-    for _vn in ("chat", "code"):
+    # #3932 re-review: `run` joined `green` (#3928) and, again, not this builder — a row
+    # red ONLY on run output printed `unknown`. Same list as the verdict, or it is #3902.
+    for _vn in ("run", "chat", "code"):
         _x=(v.get("verbs") or {}).get(_vn)
         if not isinstance(_x, dict): w.append(b+": verb `%s` absent from the receipt"%_vn)
         elif not _x.get("ran") or (_x.get("rc") or 0)!=0: w.append(b+": verb `%s` did not run (rc=%s)"%(_vn,_x.get("rc")))

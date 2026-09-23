@@ -159,6 +159,31 @@ check_verdict() { # -> 0 ok
   return $rc
 }
 
+# A red row must SAY why (#3932 re-review). The verdict reads `run` since #3928; the
+# explanation builder did not, so a row red only on run output printed `unknown` --
+# #3901/#3902's defect, a third time. Same extraction as check_ladder_serve_verdict.sh.
+extract_why() {
+  local src="$1" body
+  body=$(awk '/why=.*python3 -c/{f=1; next} f && /^print\(/{print; exit} f' "$src")
+  grep -q 'w.append' <<< "$body" || { echo "  the extracted why builder does not append reasons" >&2; return 2; }
+  printf '%s' "$body" | sed "s/')\$//"
+}
+
+RED_ONLY_ON_RUN_OUTPUT='{"capability_match":{"passed":true,"skipped":false,"message":"ok"},
+ "golden_output":{"passed":true,"skipped":false,"message":"ok"},
+ "backends":'"$(row_run_garbage)"'}'
+
+check_run_reason() { # -> 0 the run-only red names run, 1 it does not
+  local src="$1" why got
+  why=$(extract_why "$src") || return 2
+  got=$(printf '%s' "$RED_ONLY_ON_RUN_OUTPUT" | python3 -c "$why" 2>/dev/null)
+  case "$got" in
+    *'verb `run` RAN (rc=0) and produced bad output'*)
+      printf '  ok    %-30s %s\n' "reason:run-output" "${got:0:90}" ;;
+    *) printf '  FAIL  %-30s a row red only on run output says: %s\n' "reason:run-output" "${got:-empty}"; return 1 ;;
+  esac
+}
+
 # ── layer 3: WHAT TEXT IS JUDGED (#3925) ─────────────────────────────────────
 # Layer 1 proves the detector is right about a completion. It says nothing about
 # what string reaches it, and that is where this gate actually failed: `apr chat`
@@ -275,18 +300,20 @@ T
 }
 
 # name|capture-fn|expect   (clean = no reason · bad = a verdict about the reply ·
-# red = a refusal to judge, which must never be silent)
+# red:<what> = a refusal to judge, which must never be silent, NAMING what is missing:
+# envelope · reply · unclosed. The first cut of #3928 swapped exit codes 3 and 4, so
+# a capture WITH an envelope was reported as missing one; a bare `red` could not see it.)
 extraction_cases() {
 cat <<'CASES'
 chrome-wrapped-correct-answer|cap_correct_answer|clean
 code-json-envelope-not-uuid|cap_code_json|clean
 chrome-does-not-mask-gibberish|cap_chrome_gibberish|bad
 reply-containing-You-judged-whole|cap_reply_with_you|bad
-truncated-capture-no-envelope|cap_no_envelope|red
-envelope-but-no-reply|cap_no_reply|red
+truncated-capture-no-envelope|cap_no_envelope|red:envelope
+envelope-but-no-reply|cap_no_reply|red:reply
 run-verbose-chatter-not-judged|cap_run_verbose|clean
 run-degenerate-reply-in-block|cap_run_degenerate|bad
-run-output-never-closed|cap_run_unterminated|red
+run-output-never-closed|cap_run_unterminated|red:unclosed
 CASES
 }
 
@@ -296,8 +323,15 @@ run_extraction_table() { # -> 0 all as expected
     [ -n "$name" ] || continue
     got=$(judge_capture "$src" "$($fn)") || return 2
     if [ -z "$got" ]; then cls=clean
-    elif case "$got" in "could not"*) true ;; *) false ;; esac; then cls=red
-    else cls=bad; fi
+    else
+      case "$got" in
+        "could not find the backend envelope"*) cls=red:envelope ;;
+        "could not locate the"*)                cls=red:reply ;;
+        "could not find the closing"*)          cls=red:unclosed ;;
+        "could not"*)                           cls=red:unnamed ;;
+        *)                                      cls=bad ;;
+      esac
+    fi
     if [ "$cls" = "$want" ]; then
       printf '  ok    %-34s %s\n' "$name" "$cls"
     else
@@ -309,12 +343,12 @@ run_extraction_table() { # -> 0 all as expected
 
 if [ "$SELF_TEST" = 1 ]; then
   [ -f "$SCRIPT" ] || { echo "cannot read $SCRIPT" >&2; exit 2; }
-  m1=$(mktemp); m2=$(mktemp); m3=$(mktemp); m4=$(mktemp); m5=$(mktemp); m6=$(mktemp); m7=$(mktemp)
-  trap 'rm -f "$m1" "$m2" "$m3" "$m4" "$m5" "$m6" "$m7"' EXIT
+  m1=$(mktemp); m2=$(mktemp); m3=$(mktemp); m4=$(mktemp); m5=$(mktemp); m6=$(mktemp); m7=$(mktemp); m8=$(mktemp)
+  trap 'rm -f "$m1" "$m2" "$m3" "$m4" "$m5" "$m6" "$m7" "$m8"' EXIT
 
   echo "self-test: the shipped script"
   run_detector_table "$SCRIPT" > /dev/null && check_verdict "$SCRIPT" > /dev/null \
-    && run_extraction_table "$SCRIPT" > /dev/null \
+    && check_run_reason "$SCRIPT" > /dev/null && run_extraction_table "$SCRIPT" > /dev/null \
     || { echo "SELF-TEST FAILED: the shipped script is already red" >&2; exit 1; }
   echo "  GREEN (expected)"
 
@@ -404,7 +438,19 @@ if [ "$SELF_TEST" = 1 ]; then
   fi
   echo "  RED (expected)"
 
-  echo "self-test: PASS — red when the detector stops flagging, when the verdict stops reading it, when an unlocatable reply passes silently, when the reply is cut short, when the extractor is bypassed entirely, when an unterminated run reply is taken as whole, and when green stops reading the run verb"
+  # Mutant 8 (#3932 re-review): the explanation builder stops naming `run`. The row
+  # stays red (mutant 7's check still passes) and says `unknown` -- the verdict moved
+  # and the explanation did not.
+  sed 's|for _vn in ("run", "chat", "code"):|for _vn in ("chat", "code"):|' "$SCRIPT" > "$m8"
+  cmp -s "$SCRIPT" "$m8" && { echo "SELF-TEST INCONCLUSIVE: mutant 8 changed nothing" >&2; exit 1; }
+  echo "self-test: mutant 8 (the red reason stops naming the run verb)"
+  if check_run_reason "$m8" > /dev/null 2>&1; then
+    echo "SELF-TEST FAILED: mutant 8 passed -- a row red only on run output explains nothing" >&2
+    exit 1
+  fi
+  echo "  RED (expected)"
+
+  echo "self-test: PASS — red when the detector stops flagging, when the verdict stops reading it, when an unlocatable reply passes silently, when the reply is cut short, when the extractor is bypassed entirely, when an unterminated run reply is taken as whole, when green stops reading the run verb, and when the red reason stops naming it"
   exit 0
 fi
 
@@ -413,6 +459,7 @@ rc=0
 run_detector_table "$SCRIPT" || rc=$?
 [ "$rc" = 2 ] && exit 2
 check_verdict "$SCRIPT" || rc=1
+check_run_reason "$SCRIPT" || rc=1
 run_extraction_table "$SCRIPT" || rc=$?
 [ "$rc" = 2 ] && exit 2
 if [ "$rc" = 0 ]; then
